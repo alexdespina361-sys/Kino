@@ -1,0 +1,61 @@
+/* Shared base for both screens. The phone lives in controller/controller.css, the TV in tv/tv.css. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0c;
+  --surface: #17171a;
+  --surface-2: #232328;
+  --line: rgba(255, 255, 255, 0.1);
+  --text: #f5f5f7;
+  --muted: #9b9ba3;
+  --red: #e50914;
+  --red-hover: #f6121d;
+  --ok: #46d369;
+  --brand-gradient: linear-gradient(150deg, #ff3b46 0%, #c40812 55%, #8f040b 100%);
+  --bad: #ff6b6b;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+button { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+button:disabled { opacity: 0.4; cursor: default; }
+
+/* A ring that takes its size from the text around it. */
+.spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  border: 0.12em solid rgba(255, 255, 255, 0.22);
+  border-top-color: var(--red);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* The logo (Logo.tsx): sized by the font-size of whatever holds it. */
+.logo {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.22em; /* also the gap between the N and the play button */
+  text-transform: uppercase;
+}
+.logo-o {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25em;
+  height: 1.25em;
+  border-radius: 50%;
+  background: var(--brand-gradient);
+  box-shadow: 0 0.1em 0.7em rgba(229, 9, 20, 0.5), inset 0 0.07em 0 rgba(255, 255, 255, 0.3);
+  color: #fff;
+  letter-spacing: 0;
+}
+.logo-o svg { width: 0.66em; height: 0.66em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 2.4s; }
+}

@@ -1,0 +1,450 @@
+/*
+ * The TV screen. Everything is sized in em, and 1em here is 1% of the screen width (see .tv),
+ * so it looks the same on a 720p stick and a 4K panel, and is readable from the couch.
+ */
+.tv {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-size: min(1vw, 1.7778vh); /* 16:9 box inside any window shape */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tv[data-hud="hidden"][data-state="playing"] { cursor: none; }
+
+.tv-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+/* While the controls are up, the subtitles ride above them instead of hiding underneath (Chromium-based TV browsers; others ignore this). */
+.tv-video::-webkit-media-text-track-container { transition: transform 0.25s ease; }
+.tv[data-hud="visible"] .tv-video::-webkit-media-text-track-container { transform: translateY(-22%); }
+/* Subtitles: big, white, on a soft dark plate, readable on any scene. */
+.tv-video::cue {
+  font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  /* font-size comes from the viewer's subtitle-size choice (Tv.tsx) */
+  color: #fff;
+  background-color: rgba(0, 0, 0, 0.55);
+  text-shadow: 0 0.06em 0.12em rgba(0, 0, 0, 0.9);
+}
+
+/* ------------------------------ buttons ------------------------------ */
+
+.tv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-size: 1.5em;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.6em 1em;
+  border-radius: 0.5em;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  white-space: nowrap;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.tv-btn small { font-size: 0.7em; font-weight: 500; opacity: 0.8; }
+.tv-btn:hover { background: rgba(255, 255, 255, 0.26); }
+.tv-btn-icon { font-size: 2.3em; padding: 0.3em; background: transparent; border-radius: 50%; }
+.tv-btn-icon:hover { background: rgba(255, 255, 255, 0.18); }
+.tv-btn-play {
+  font-size: 2.6em;
+  width: 1.7em;
+  height: 1.7em;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+  background: #fff;
+  color: #000;
+}
+.tv-btn-play:hover { background: #e8e8e8; }
+.tv-btn-red { background: var(--red); }
+.tv-btn-red:hover { background: var(--red-hover); }
+.tv-btn-ghost { background: rgba(255, 255, 255, 0.14); }
+.tv-btn-on { background: rgba(229, 9, 20, 0.85); }
+.tv-btn-stop { color: #ff8a8a; }
+
+/* Whatever the remote has selected must be unmistakable from across the room. */
+.tv-btn:focus-visible,
+.tv-opt:focus-visible,
+.tv-ok:focus-visible {
+  outline: 0.2em solid #fff;
+  outline-offset: 0.12em;
+  transform: scale(1.08);
+}
+.tv-btn:not(.tv-btn-play):not(.tv-btn-red):focus-visible { background: rgba(255, 255, 255, 0.3); }
+
+/* ------------------------------ idle / pairing ------------------------------ */
+
+.tv-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2.4em;
+  padding: 6em 6em 4em;
+  text-align: center;
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 118%, rgba(229, 9, 20, 0.3), transparent 70%),
+    linear-gradient(#101010, #050505);
+}
+.tv-brand {
+  position: absolute;
+  top: 3em;
+  left: 4.4em;
+  font-size: 2.2em;
+}
+.tv-headline { margin: 0; font-size: 4em; font-weight: 700; letter-spacing: -0.01em; }
+.tv-lead { margin: 0; font-size: 2em; color: var(--muted); }
+.tv-ok {
+  font-size: 2.6em;
+  font-weight: 700;
+  padding: 0.6em 1.4em;
+  border-radius: 0.5em;
+  background: #fff;
+  color: #000;
+}
+.tv-ok:focus-visible { outline-color: var(--red); outline-offset: 0.18em; }
+.tv-disconnect {
+  margin-top: 1.2em;
+  font-size: 1.7em;
+  font-weight: 600;
+  padding: 0.55em 1.3em;
+  border-radius: 0.5em;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.tv-disconnect:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.tv-disconnect:focus-visible {
+  background: #fff;
+  color: #000;
+  outline: 0.14em solid var(--red);
+  outline-offset: 0.14em;
+  transform: scale(1.06);
+}
+
+.tv-spinner { font-size: 6em; }
+.tv-ready-icon {
+  display: grid;
+  place-items: center;
+  width: 6em;
+  height: 6em;
+  border-radius: 50%;
+  background: rgba(70, 211, 105, 0.14);
+  color: var(--ok);
+}
+.tv-ready-icon svg { font-size: 3.6em; }
+
+.tv-pair { display: flex; align-items: center; gap: 7em; }
+.tv-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8em;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+  font-size: 2.2em;
+}
+.tv-steps li { display: flex; align-items: center; }
+.tv-step-no {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 1.6em;
+  height: 1.6em;
+  margin-right: 0.7em;
+  border-radius: 50%;
+  background: var(--red);
+  font-size: 0.8em;
+  font-weight: 700;
+}
+.tv-code-row { padding-left: 2.1em; }
+.tv-code {
+  margin: 0;
+  font-size: 4.2em;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.tv-qr {
+  width: 22em;
+  padding: 1.2em;
+  border-radius: 1.2em;
+  background: #fff;
+  color: #222;
+  text-align: center;
+}
+.tv-qr svg { display: block; width: 100%; height: auto; }
+.tv-qr p { margin: 0.8em 0 0; font-size: 1.3em; font-weight: 600; }
+
+.tv-banner {
+  position: absolute;
+  top: 3em;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 0.6em 1.8em;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.82);
+  font-size: 1.8em;
+}
+
+/* ------------------------------ player overlay ------------------------------ */
+
+.tv-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: opacity 0.3s ease, visibility 0s linear 0s;
+}
+.tv-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
+/* The top and bottom bars slide a little as they fade, instead of just blinking out. */
+.hud-top, .hud-bottom { transition: transform 0.3s ease; }
+.tv-overlay.hidden .hud-top { transform: translateY(-1.4em); }
+.tv-overlay.hidden .hud-bottom { transform: translateY(1.4em); }
+
+.hud-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 3em 4em 7em;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.4) 55%, transparent);
+}
+.hud-titles { display: flex; flex-direction: column; gap: 0.5em; min-width: 0; }
+.hud-title {
+  margin: 0;
+  font-size: 2.8em;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70em;
+}
+.hud-episode { display: flex; align-items: center; gap: 0.9em; font-size: 1.5em; color: #ddd; }
+.hud-badge {
+  padding: 0.15em 0.6em;
+  border-radius: 0.35em;
+  background: var(--red);
+  color: #fff;
+  font-size: 0.85em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.hud-time-of-day { flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+.hud-clock { font-size: 1.7em; font-weight: 600; color: #bbb; }
+.hud-ends { margin-top: 0.4em; font-size: 1.3em; color: #8f8f8f; }
+
+.hud-center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.hud-spinner { font-size: 6em; }
+/* The big play button in the middle while paused. The row around it lets clicks through; the button itself takes them. */
+.hud-paused {
+  display: grid;
+  place-items: center;
+  width: 7em;
+  height: 7em;
+  border-radius: 50%;
+  border: 0.2em solid rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.55);
+  box-shadow: 0 0 3em rgba(0, 0, 0, 0.7);
+  color: #fff;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.hud-paused:hover { transform: scale(1.06); background: rgba(0, 0, 0, 0.7); }
+.hud-paused svg { font-size: 3.6em; }
+.hud-error {
+  max-width: 48em;
+  padding: 2.4em 3.4em;
+  border-radius: 1em;
+  background: rgba(0, 0, 0, 0.8);
+  text-align: center;
+}
+.hud-error h2 { margin: 0 0 0.4em; font-size: 2.4em; }
+.hud-error p { margin: 0 0 0.8em; font-size: 1.7em; color: #c8c8c8; }
+.hud-error small { font-family: ui-monospace, Consolas, monospace; font-size: 1.1em; color: #8a8a8a; }
+
+.hud-toast {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 30;
+  padding: 0.2em 0.9em;
+  border-radius: 0.5em;
+  background: rgba(0, 0, 0, 0.62);
+  font-size: 4.4em;
+  font-weight: 800;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: hud-toast 0.9s ease-out forwards;
+}
+@keyframes hud-toast {
+  0% { opacity: 0; transform: translate(-50%, -40%) scale(0.9); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.hud-bottom {
+  padding: 8em 4em 3em;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.6) 55%, transparent);
+}
+.hud-progress { display: flex; align-items: center; gap: 1.6em; }
+.hud-time { flex: none; min-width: 4.6em; font-size: 1.6em; color: #ddd; font-variant-numeric: tabular-nums; }
+.hud-time:last-child { text-align: right; }
+.hud-bar { flex: 1; padding: 1em 0; cursor: pointer; }
+.hud-bar-track { position: relative; height: 0.55em; border-radius: 0.3em; background: rgba(255, 255, 255, 0.28); transition: height 0.12s ease; }
+.hud-bar:hover .hud-bar-track { height: 0.8em; }
+.hud-bar-tip {
+  position: absolute;
+  bottom: 2em;
+  padding: 0.2em 0.6em;
+  border-radius: 0.4em;
+  background: rgba(0, 0, 0, 0.85);
+  font-size: 1.4em;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.hud-bar-buffered, .hud-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 0.3em; }
+.hud-bar-buffered { background: rgba(255, 255, 255, 0.38); }
+.hud-bar-fill { background: var(--red); }
+.hud-bar-thumb {
+  position: absolute;
+  top: 50%;
+  width: 1.6em;
+  height: 1.6em;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 0 0.12em #fff, 0 0.2em 0.6em rgba(0, 0, 0, 0.6);
+  transform: translate(-50%, -50%);
+}
+.hud-controls { display: flex; align-items: center; justify-content: space-between; gap: 2em; margin-top: 1em; }
+.hud-group { display: flex; align-items: center; gap: 0.9em; }
+
+.hud-upnext {
+  position: absolute;
+  right: 4em;
+  bottom: 21em;
+  z-index: 25;
+  transition: bottom 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9em;
+  width: 28em;
+  padding: 1.6em 1.8em;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 1em;
+  background: rgba(20, 20, 20, 0.95);
+  box-shadow: 0 1.5em 4em rgba(0, 0, 0, 0.8);
+  animation: hud-rise 0.3s ease;
+}
+/* With the controls gone the card drops down to where they were. */
+.tv[data-hud="hidden"] .hud-upnext { bottom: 5em; }
+@keyframes hud-rise { from { transform: translateY(1.2em); opacity: 0; } to { transform: none; opacity: 1; } }
+.hud-upnext-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.3em; color: #aaa; text-transform: uppercase; letter-spacing: 0.06em; }
+.hud-upnext-head b { color: var(--red); font-size: 1.15em; font-variant-numeric: tabular-nums; }
+.hud-upnext p { margin: 0; font-size: 1.8em; font-weight: 800; }
+.hud-upnext-bar { height: 0.45em; border-radius: 0.25em; background: rgba(255, 255, 255, 0.2); overflow: hidden; }
+.hud-upnext-bar div { height: 100%; background: var(--red); transition: width 1s linear; }
+.hud-upnext-actions { display: flex; gap: 0.8em; }
+.hud-upnext-actions .tv-btn { flex: 1; justify-content: center; font-size: 1.3em; }
+
+/* ------------------------------ audio / subtitles / speed / quality ------------------------------ */
+
+.tv-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.82);
+  animation: tv-fade 0.2s ease;
+}
+@keyframes tv-fade { from { opacity: 0; } to { opacity: 1; } }
+.tv-menu {
+  /* Width by number of columns (data-cols), never wider than the screen. Not fit-content (it measures the text, so labels
+     got cut off) and not a percentage (the backdrop is a content-sized grid, so that came out far too small). */
+  width: min(92vw, 40em);
+  padding: 2.6em 3em;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1em;
+  background: #181818;
+  box-shadow: 0 2em 5em rgba(0, 0, 0, 0.9);
+}
+.tv-menu-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.6em; }
+.tv-menu-top h2 { margin: 0; font-size: 2.4em; font-weight: 800; }
+.tv-menu[data-cols="2"] { width: min(92vw, 68em); }
+.tv-menu[data-cols="3"] { width: min(92vw, 72em); }
+.tv-menu[data-kind="episodes"][data-cols="1"] { width: min(92vw, 52em); }
+.tv-menu-cols { display: flex; gap: 2.4em; }
+/* A fixed-height stage (tall enough for the largest size) so choosing a size never moves the panel. */
+.tv-sub-preview {
+  display: grid;
+  place-items: end center;
+  height: 14vh;
+  margin-top: 1.8em;
+  padding: 0 1em 1.2vh;
+  border-radius: 0.6em;
+  background: linear-gradient(160deg, #46566b 0%, #232c38 55%, #12171e 100%);
+  overflow: hidden;
+}
+.tv-sub-preview span {
+  padding: 0.05em 0.35em;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  line-height: 1.25;
+  text-shadow: 0 0.06em 0.12em rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+  transition: font-size 0.15s ease;
+}
+.tv-menu-col { flex: 1 1 20em; min-width: 0; }
+.tv-menu[data-kind="episodes"] .tv-menu-col { flex: 0 0 18em; }
+.tv-menu[data-kind="episodes"] .tv-menu-col:last-child { flex: 1 1 40em; }
+.tv-menu-col h3 { margin: 0 0 0.8em; font-size: 1.3em; color: #8a8a8a; text-transform: uppercase; letter-spacing: 0.08em; }
+.tv-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  max-height: min(34em, 42vh);
+  overflow-y: auto;
+  padding: 0.3em;
+  scroll-padding-block: 0.9em; /* a focused option scrolls into view with room around it, not flush against the edge */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+.tv-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.7em 1em;
+  border-radius: 0.5em;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ddd;
+  font-size: 1.7em;
+  text-align: left;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.tv-opt:hover { background: rgba(255, 255, 255, 0.14); }
+.tv-opt[data-active="true"] { background: rgba(229, 9, 20, 0.25); color: #fff; font-weight: 700; }
+.tv-opt svg { flex: none; }
+.tv-opt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
