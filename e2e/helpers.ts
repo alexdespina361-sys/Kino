@@ -1,4 +1,4 @@
-import { chromium, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { chromium, expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type ServerMessage } from "../src/shared";
 
 /** A phone: a narrow touch screen, which is how the page tells a remote from a TV. */
@@ -71,6 +71,18 @@ export async function openTv(browser: Browser, viewport = { width: 1280, height:
   const page = await openLibrary(browser, undefined, viewport, seed);
   await page.getByTestId("rail-connect").click();
   return page;
+}
+
+/**
+ * A click as a hand makes it: the button is held down for a moment before it is let go. Playwright's own click lets go within a few
+ * milliseconds, so anything that a press sets moving (the rows, the banner) has not moved yet when the button comes up; a hand's has.
+ */
+export async function clickAsAHand(page: Page, target: Locator): Promise<void> {
+  const box = (await target.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(150);
+  await page.mouse.up();
 }
 
 /** The first title of a library, played with OK: its own page opens, and OK on Play starts it. */
