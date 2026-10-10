@@ -88,9 +88,7 @@ test.describe("phone UI -> server -> TV player", () => {
 
     await tv.reload();
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
-    await tv.getByTestId("unlock").focus();
-    await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("rail-connect")).toHaveAttribute("data-badged", "true"); // the library says so in its menu
+    await expect(tv.getByTestId("rail-connect")).toHaveAttribute("data-badged", "true"); // the reloaded page opens on the library, which says so in its menu
     await tv.getByTestId("rail-connect").click();
     await expect(tv.getByTestId("tv-paired")).toBeVisible(); // not asking for a new code
 

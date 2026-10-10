@@ -189,6 +189,7 @@ export const it: Dictionary = {
   "link.codeLabel": "Codice sulla TV",
 
   /* the TV's start screens and account pages */
+  "tv.welcome": "Benvenuto",
   "tv.ready": "Pronti quando vuoi",
   "tv.pressOk": "Premi OK o tocca per iniziare",
   "tv.browse": "Sfoglia la libreria",
@@ -199,6 +200,7 @@ export const it: Dictionary = {
   "tv.followingLead": "Parte qui quando parte lì.",
   "tv.connectedLead": "Invia un link dal telefono o scegli un titolo da qui.",
   "tv.stopFollowing": "Smetti di guardare insieme",
+  "tv.tapToPlay": "Tocca o premi OK per riprodurre",
   "tv.disconnect": "Scollega dal telefono",
   "tv.morePhones": "Anche un altro telefono può controllare questa TV:",
   "tv.stepOpen": "Sul telefono, apri",
@@ -360,7 +362,7 @@ export const it: Dictionary = {
   "end.more": "Altri come questo",
   "playerError.SOURCE_NOT_DIRECTLY_PLAYABLE": "Questo video non può essere riprodotto sulla TV.",
   "playerError.HLS_UNSUPPORTED": "Il browser di questa TV non può riprodurre questo tipo di flusso.",
-  "playerError.PLAYBACK_BLOCKED": "La TV ha bloccato la riproduzione. Premi OK sulla TV, poi riprova.",
+  "playerError.PLAYBACK_BLOCKED": "La TV aspetta che si prema un tasto. Premi OK sulla TV per avviare il video.",
   "playerError.generic": "Qualcosa è andato storto durante la riproduzione di questo video.",
   "tv.leave": "Esci",
   "tv.fsPrompt": "Premi OK per lo schermo intero",

@@ -27,8 +27,8 @@ import { noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
 import { PlayerEngine } from "./engine";
-import { EndCard, hasTracks, Hud, isBusy, UP_NEXT_SECONDS } from "./Hud";
-import { TvIdle, TvLocked, type Pairing } from "./Idle";
+import { EndCard, FollowStatus, hasTracks, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
+import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
 import { TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
@@ -64,9 +64,20 @@ export function Tv() {
   const controlsRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const [unlocked, setUnlocked] = useState(false);
+  /** The link of a watch party (its QR code) was opened on this screen: its code is tried once the page is unlocked, then taken out of the address. */
+  const [linkCode] = useState(() => readPartyCode(location.search));
+  /**
+   * A screen opens straight on the library; the first thing pressed there is the press the browser wants before it lets a page play
+   * video with sound. Only a screen opened by a party's link starts locked: the host's video plays on it without anyone choosing
+   * anything, so it asks for that press first.
+   */
+  const [unlocked, setUnlocked] = useState(!linkCode);
+  /** The welcome over the library while it fills in, until it has faded. */
+  const [welcoming, setWelcoming] = useState(true);
   /** Shown when the phone asked for full screen but the browser wants a press on the TV itself. */
   const [fsPrompt, setFsPrompt] = useState(false);
+  /** Whether the page is full screen right now (a button says which way it goes). */
+  const [fullscreen, setFullscreen] = useState(() => Boolean(document.fullscreenElement));
   /** This screen's own sound, off or on: nobody else's business, so it is not in the state the phone sees, nor is it kept for next time. */
   const [muted, setMuted] = useState(false);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
@@ -489,6 +500,7 @@ export function Tv() {
             setPairing(null);
             setFollowing(message.leader);
             setPartyError(null);
+            if (navigator.userActivation?.isActive) fullscreenOnce(); // the code was just typed here; a phone that added this TV is no press on it
             wasResolvingRef.current = false;
             setResolving(false);
             setMenu(null);
@@ -600,6 +612,7 @@ export function Tv() {
     // The phone shows whether the TV is full screen, so tell it whenever that changes (Esc, the HUD button, the OK prompt).
     const onFullscreenChange = () => {
       republishRef.current();
+      setFullscreen(Boolean(document.fullscreenElement));
       if (document.fullscreenElement) setFsPrompt(false);
     };
     document.addEventListener("fullscreenchange", onFullscreenChange);
@@ -648,6 +661,18 @@ export function Tv() {
   };
 
   const enterFullscreen = () => document.documentElement.requestFullscreen?.().catch(() => {});
+  /** Phones in some browsers (iPhone's) have no full screen to offer a page, and then no button for it either. */
+  const canFullscreen = Boolean(document.fullscreenEnabled);
+  const fullscreenTriedRef = useRef(false);
+  /**
+   * With no start button, the first thing done on a screen (a title chosen to play, a party joined) is the press that takes it full
+   * screen, once: leaving it is up to the viewer. A press that is a moment old (a code typed, then the server's answer) still counts.
+   */
+  const fullscreenOnce = () => {
+    if (fullscreenTriedRef.current || document.fullscreenElement) return;
+    fullscreenTriedRef.current = true;
+    void enterFullscreen();
+  };
   /** From the TV's own remote or mouse, which the browser accepts as the press it needs. */
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) void enterFullscreen();
@@ -727,8 +752,6 @@ export function Tv() {
     if (connection === "open") socketRef.current?.send({ type: "TV_NAME", name: profileName });
   }, [connection, profileName]);
 
-  // The link of a party (its QR code) was opened on this screen: its code is tried once the page is unlocked, then taken out of the address.
-  const [linkCode] = useState(() => readPartyCode(location.search));
   const linkTriedRef = useRef(false);
   useEffect(() => {
     if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current) return;
@@ -768,6 +791,7 @@ export function Tv() {
    * meanwhile. `startAt` resumes a title left unfinished; `hint` carries the picture and year the library already knows.
    */
   const playEpisode = (url: string, options: PlayOptions = {}) => {
+    fullscreenOnce();
     setMenu(null);
     setUpNextCountdown(null);
     setUpNextDismissed(false);
@@ -897,7 +921,9 @@ export function Tv() {
 
       if (following) {
         // Watching along: no playback keys (the host has them), just the buttons on the bar (Down, then OK), subtitles and full screen.
-        if (action === "down" && overlayWasVisible) controlsRef.current?.querySelector<HTMLElement>("button")?.focus();
+        // The one exception is the press the browser wants before it plays: OK is that, and starts the video.
+        if (isBlocked(player) && (action === "select" || action === "playpause" || action === "play")) engine.play();
+        else if (action === "down" && overlayWasVisible) controlsRef.current?.querySelector<HTMLElement>("button")?.focus();
         else if (action === "captions") cycleSubtitles();
         else if (action === "mute") toggleMute();
         else if (action === "fullscreen") toggleFullscreen();
@@ -998,7 +1024,7 @@ export function Tv() {
 
       {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
-      {/* Pressing OK here is also the press the browser needs to let the page go full screen. */}
+      {/* Only a party's link starts here. Pressing OK is also the press the browser needs to let the page go full screen. */}
       {!unlocked && (
         <TvLocked
           onUnlock={() => {
@@ -1025,6 +1051,8 @@ export function Tv() {
         <PartyPage
           party={party}
           following={following}
+          fullscreen={fullscreen}
+          onFullscreen={canFullscreen ? toggleFullscreen : null}
           error={partyError}
           onStart={startParty}
           onJoin={joinParty}
@@ -1065,6 +1093,8 @@ export function Tv() {
         </p>
       )}
 
+      {unlocked && showVideo && following && <FollowStatus player={player} onPlay={() => engineRef.current?.play()} />}
+
       {unlocked && showVideo && following && (
         <div className="tv-follow-bar" data-testid="tv-follow-bar" ref={controlsRef}>
           <span>{t("tv.following", { name: following })}</span>
@@ -1079,6 +1109,11 @@ export function Tv() {
           <button onClick={() => setMenu("party")} data-testid="tv-party-btn">
             <UsersIcon /> {party ? t("party.size", { count: party.guests.length + 1 }) : t("party.rail")}
           </button>
+          {canFullscreen && (
+            <button onClick={toggleFullscreen} data-testid="tv-fullscreen-btn">
+              <FullscreenIcon /> {t(fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
+            </button>
+          )}
           <button onClick={leaveParty} data-testid="tv-leave">
             {t("tv.leave")}
           </button>
@@ -1192,6 +1227,8 @@ export function Tv() {
           {connection === "replaced" ? t("tv.bannerReplaced") : connection === "connecting" ? t("tv.connecting") : t("tv.bannerReconnecting")}
         </div>
       )}
+
+      {unlocked && welcoming && <TvWelcome onDone={() => setWelcoming(false)} />}
     </main>
   );
 }

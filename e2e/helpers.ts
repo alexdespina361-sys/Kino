@@ -1,8 +1,21 @@
-import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { chromium, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type ServerMessage } from "../src/shared";
 
 /** A phone: a narrow touch screen, which is how the page tells a remote from a TV. */
 export const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true } as const;
+
+/**
+ * A browser that starts a video only for a press made in the last few seconds, which is what a phone's does (and what some of them
+ * do for every video): one that a command from another device starts, with nobody having just pressed anything here, stays stopped.
+ * It is not the browser the tests run in, so the caller closes it.
+ */
+export const strictBrowser = () => chromium.launch({ args: ["--autoplay-policy=user-gesture-required"] });
+/**
+ * Longer than the few seconds a press stays good for (see strictBrowser). Playwright counts what it asks of a page as presses, so a page
+ * that is to stay unpressed is left alone: for this long to let it start the video, and for PRESS_EXPIRES_MS to let a press run out.
+ */
+export const PRESS_EXPIRES_MS = 5500;
+export const PAGE_LEFT_ALONE_MS = 2000;
 
 /**
  * What a screen has kept about its guest (nobody signed in): the same place the page itself writes, for a test that needs the
@@ -40,7 +53,7 @@ export const withLibrary =
     await context.route(/\/api\/library\/search/, (route) => route.fulfill({ json: { items: search?.(new URL(route.request().url()).searchParams.get("q") ?? "") ?? [] } }));
   };
 
-/** Open /tv in its own browser context (its own storage, like a separate device) and press OK: the library is what shows. */
+/** Open /tv in its own browser context (its own storage, like a separate device): it opens on the library, with nothing to press first. */
 export async function openLibrary(
   browser: Browser,
   setup?: (context: BrowserContext) => Promise<unknown>,
@@ -49,8 +62,7 @@ export async function openLibrary(
 ): Promise<Page> {
   const page = await openDevice(browser, { viewport }, seed, setup);
   await page.goto("/tv");
-  await page.getByTestId("unlock").focus();
-  await page.keyboard.press("Enter"); // the remote's OK button
+  await expect(page.getByTestId("tv-browse")).toBeVisible(); // (the screen is a chunk of its own, so it is not there the moment the page has loaded)
   return page;
 }
 
@@ -59,6 +71,14 @@ export async function openTv(browser: Browser, viewport = { width: 1280, height:
   const page = await openLibrary(browser, undefined, viewport, seed);
   await page.getByTestId("rail-connect").click();
   return page;
+}
+
+/** The first title of a library, played with OK: its own page opens, and OK on Play starts it. */
+export async function playFirst(tv: Page): Promise<void> {
+  await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+  await tv.keyboard.press("Enter");
+  await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+  await tv.keyboard.press("Enter");
 }
 
 export async function readPairingCode(tv: Page): Promise<string> {

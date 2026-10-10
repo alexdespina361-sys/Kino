@@ -190,6 +190,7 @@ export const ro: Dictionary = {
   "link.codeLabel": "Codul de pe televizor",
 
   /* the TV's start screens and account pages */
+  "tv.welcome": "Bun venit",
   "tv.ready": "Gata când ești și tu",
   "tv.pressOk": "Apasă OK sau atinge ecranul pentru a porni",
   "tv.browse": "Răsfoiește biblioteca",
@@ -200,6 +201,7 @@ export const ro: Dictionary = {
   "tv.followingLead": "Pornește aici când pornește acolo.",
   "tv.connectedLead": "Trimite un link de pe telefon sau alege un titlu de aici.",
   "tv.stopFollowing": "Nu te mai uita împreună",
+  "tv.tapToPlay": "Atinge sau apasă OK pentru a reda",
   "tv.disconnect": "Deconectează de la telefon",
   "tv.morePhones": "Și alt telefon poate controla acest televizor:",
   "tv.stepOpen": "Pe telefon, deschide",
@@ -363,7 +365,7 @@ export const ro: Dictionary = {
   "end.more": "Mai multe ca acesta",
   "playerError.SOURCE_NOT_DIRECTLY_PLAYABLE": "Acest videoclip nu poate fi redat pe televizor.",
   "playerError.HLS_UNSUPPORTED": "Browserul acestui televizor nu poate reda acest tip de flux.",
-  "playerError.PLAYBACK_BLOCKED": "Televizorul a blocat redarea. Apasă OK pe televizor, apoi încearcă din nou.",
+  "playerError.PLAYBACK_BLOCKED": "Televizorul așteaptă o apăsare. Apasă OK pe televizor ca să pornească videoclipul.",
   "playerError.generic": "Ceva nu a mers la redarea acestui videoclip.",
   "tv.leave": "Ieși",
   "tv.fsPrompt": "Apasă OK pentru ecran complet",

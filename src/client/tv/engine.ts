@@ -199,6 +199,11 @@ export class PlayerEngine {
       this.pendingPlay = true;
       return;
     }
+    // Asking again after a block means someone pressed something since: the block is over unless the browser says it again.
+    if (this.errorCode === PlayerError.Blocked) {
+      this.errorCode = undefined;
+      this.emit();
+    }
     this.video.play().catch((error: unknown) => {
       // AbortError = interrupted by a newer load/pause; not a real failure.
       if (error instanceof DOMException && error.name === "NotAllowedError") this.fail(PlayerError.Blocked);

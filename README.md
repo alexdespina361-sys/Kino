@@ -51,7 +51,7 @@ pnpm build && pnpm start     # http://localhost:8787
 **Accounts and profiles**
 - Register and sign in with an email and a password (hashed with scrypt; the session is an `httpOnly` cookie). An account has up to **five
   profiles**, each with a name and one of **twelve avatars**; who is watching is asked on every new device, Netflix-style, and a profile
-  is switched from the account page (the profile picture in the phone's top bar, and in the TV's start screen and library menu).
+  is switched from the account page (the profile picture in the phone's top bar, and in the TV's library menu).
 - **Watching is saved to the profile**, wherever it is watched: **Continue watching** (the place in every unfinished film or episode, and the
   next episode of a show once one is finished), **My List**, the watched marks on episode lists, and the profile's settings. Open the app
   on another phone, TV or browser, sign in, pick the profile, and it carries on from the same second.
@@ -80,7 +80,10 @@ pnpm build && pnpm start     # http://localhost:8787
   while a phone keeps asking for it (opening the menu, or the TV's page being open); a phone that already has a TV and scans it is only offered
   to control that TV instead
 - Paste a page or media link, or tap a title from **Continue watching**, **My List** or the library. Opening the phone page as `/?url=<link>` plays that link
-  once connected (the hook for a share button; there is no installable app manifest yet)
+  once connected (the hook for a share button)
+- **Add it to the home screen** and the page opens as an app with no browser bar (`public/manifest.webmanifest`; on an iPhone that is the only
+  way to lose the bar, since its browsers have no full screen for pages): Share → *Add to Home Screen* there, the browser's menu → *Install app*
+  or *Add to Home screen* on Android
 - Remote: play/pause, ±10 s, seek bar, audio/subtitle/speed/quality/source sheets, previous and next episode, episode list,
   subtitle style, full screen, stop, disconnect (volume is the TV's own). It confirms what the TV did ("Speed 1.5×") in a line at the bottom
 
@@ -89,14 +92,16 @@ pnpm build && pnpm start     # http://localhost:8787
   title steps out of the corner and is said once, large, on the left ("You're watching …"); a skip flashes on the side it went towards; and
   the Up Next card counts down only for a profile that plays the next episode by itself
 - D-pad remote support: ←/→ seek 10 s, ↓ wakes the controls and moves focus, Enter presses, Back closes menus. Every screen before
-  the video (the first "Press OK" page, the pairing code, the connected screen, the library, the account pages) is walked with the arrow keys: the first
-  press only lands on a button, so a stray OK never presses one (`src/client/tv/dpad.ts`)
+  the video (the library, a title's page, the pairing code, the connected screen, the account pages, the "Press OK" page of a party link) is walked
+  with the arrow keys: the first press only lands on a button, so a stray OK never presses one (`src/client/tv/dpad.ts`)
 - The controls are sized to fit one row on any screen shape, with every button present (series, subtitles, sources, quality); long
   episode names are cut, and a row that still can't hold them wraps instead of running off the edge
 - Subtitles and audio like a streaming app: the language you chose is remembered. Tracks the file labels only with a code (`eng`) are
   named by their language. Subtitles are drawn by the page, so size, font, colour, opacity, background, edge, height and word spacing
   all work on any TV browser; change them from the TV's menu or the phone, with a live preview. A browser only lets a page go full screen
-  after a press on that page, so the phone's button works once the TV has had one: the TV asks for an OK press when it hasn't
+  (and play with sound) after a press on that page, so the TV goes full screen with the first title chosen on it, or the party joined with a press,
+  and is left alone after that (Esc or the button leaves it for good); the phone's button works while the TV has had a press lately: the TV asks
+  for an OK press when it hasn't. If the browser still refuses to start a video, a **Tap / press OK to play** button says so instead of a blank screen
 - **Subtitle languages.** The menu lists every language the video has. The ones a profile wants come first (a guest gets the website's
   language, English, Romanian and Italian), the rest sit under **More languages**. A signed-in profile can choose its own ordered list in
   Settings → Subtitle languages, and "Hide all other languages" if it never wants to scroll past them; **Show all languages** in the menu
@@ -110,8 +115,9 @@ pnpm build && pnpm start     # http://localhost:8787
   remembered, and the volume itself stays the device's own
 - Sources: a video can carry alternates; if the first stream fails the TV tries the next by itself, and either device can pick one
 - **The library is the front door.** The site opens straight into it, signed in or not (a guest's progress stays on that screen), so a screen can
-  pick a film with no phone at all. **Connect a phone** is one entry of its menu; once a phone is connected that page says so, with **Back to
-  the library** and **Disconnect from phone** (unpairs the TV and shows a new code; the phone goes back to the code screen)
+  pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press. (Only a party link opens a "Press OK" page
+  first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
+  says so, with **Back to the library** and **Disconnect from phone** (unpairs the TV and shows a new code; the phone goes back to the code screen)
 - **Sign in** is the button in the library's top corner (the profile picture once signed in); nobody is made to
 - **Any device can be this screen.** The same page lays itself out for the size of the device: the TV's wide layout from about 900 px
   up, and below that (a phone, a tablet, a narrow window) a compact one with a thin menu, a smaller banner, titles that swipe along, a native
@@ -155,7 +161,8 @@ is watching on it, or else by its own name ("TV 3F2A"). Ways in:
   number keys (the on-screen pad works too).
 - **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with a **Share link** button, and
   lists who is in (the host's phone can send any guest away). Typing the pairing code that another TV shows into the phone still works.
-- **From a link:** `/?party=<code>` opened on any device joins as soon as that screen is unlocked.
+- **From a link:** `/?party=<code>` opened on any device shows a "Press OK or tap to start" page and joins on that press (the press is also
+  what lets the browser play with sound and go full screen).
 
 The code lasts ten minutes (renewed while it is on screen), admits screens until the party is full, and wrong codes count against the same
 limit as pairing. A TV with a phone connected can host a party but not join one. Everybody in a party can see who else is in it; the host can remove
@@ -165,6 +172,13 @@ a guest or end the party, and a guest can leave from its own bar.
 reports its position, the server relays it, and each guest nudges its speed by a few percent when it drifts a fraction of a second, or jumps when it is
 a second or more off (`src/client/tv/sync.ts`). **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
 from the guest's *Audio & subtitles* button; volume is the device's own.
+
+**A phone as a guest** watches in either orientation. The guest's bar (Audio & subtitles, Mute, Watch party, Full screen, Leave) sits along the
+top: held sideways it is one row, held upright "Watching along with …" has a line of its own and the buttons wrap under it. The guest's screen says
+what it is waiting for: a spinner while the video loads, the reason in words when it can't be played (and the code underneath), and
+**Tap or press OK to play** when the browser wants a press before it starts a video with sound (Brave's stricter setting and iPhones do; a TV
+that hosts gets the same button). **Full screen** is on the waiting page and in the bar wherever the browser has a full screen for pages
+(Android's Chrome and Brave do; an iPhone's browsers don't: add the page to the home screen there).
 
 ### Library
 
@@ -180,12 +194,16 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
   (picture, year, a short description when the source has one, and Play / Resume / My List) with rows of titles under it, the banner shrinking
   to a line once the remote moves down to the rows. The rows are **Continue watching**, **Because you watched …** (titles like the last one
   watched, from the source), **My List**, then the library's own: the first ranked with big numbers (a "Top 10"), the others rows of pictures,
-  and a row of **categories** after the third. Arrows walk the rows, OK plays, Back leaves; playing from the library and pressing Back (twice
-  if the controls were hidden) or letting it stop comes back to the same title. A title that will not play is said so and stays in the
-  library. A TV that watches along has no library, since it can't choose what plays.
+  and a row of **categories** after the third. Arrows walk the rows, Back leaves. **Choosing a title opens its page** (a big picture, the year,
+  what it is about) with **Play** (or **Resume** / **Continue**) and **Add to My List** / **Remove from My List**; Back, the cross or a click
+  beside it closes the page. The banner's own buttons play or save the title it shows, without the page. The big banner picture fades in
+  over the previous one once it has loaded, instead of switching. Playing from the library and pressing Back (twice if the controls were
+  hidden) or letting it stop comes back to the same title. A title that will not play is said so and stays in the library. A TV that watches
+  along has no library, since it can't choose what plays.
 - **Menu, pages, categories, search (TV).** Pressing Left from the first title of any row (or the first tile of a grid) opens a menu down the
   left: **Search**, **Home**, **Movies**, **Series**, **My List**, **History**, **Watch party**, **Connect a phone**, **Settings**, and under them the
-  **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles. **Movies**
+  **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles, and
+  choosing any entry (**My List**, **History**, a category…) closes the menu over the page it opens. **Movies**
   and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard beside the
   results (a physical keyboard types too, and Backspace deletes before it means Back) with **All / Movies / Series** filters. Titles already loaded
   answer at once; after a short pause the source's search (`GET /api/library/search?q=`) adds more, and a library whose rows could not be loaded
@@ -247,8 +265,9 @@ library and its menu, watch parties (from a TV, from a phone, from a link), a se
 phone, a tablet and a phone held sideways, the end card and mute, and accounts: registering, profiles, guest progress combined into an
 account, a second device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages.
 
-Not covered by tests, because it needs real hardware: Fire TV / Android TV remotes, the wake lock, an iPhone's camera,
-and installing the app to the home screen.
+Browsers that refuse a video until it has been pressed (Brave's strict setting, iPhones) are tested with a browser started with
+`--autoplay-policy=user-gesture-required` (`strictBrowser` in `e2e/helpers.ts`). Not covered by tests, because it needs real hardware: Fire TV /
+Android TV remotes, the wake lock, an iPhone's camera and browsers, and the home screen install itself (only that the manifest and its icons are served).
 
 ## Layout
 
@@ -257,6 +276,7 @@ src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedi
 src/server/    sessions/registry.ts (devices, codes, controllers), websocket/hub.ts, resolvers/, accounts/ (store, routes, persistence), app.ts
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),
                i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
+public/        copied as it is into the built page: the web app manifest and its icons
 fixtures/      sample.mp4, hls/ (VP9, so Playwright's Chromium can decode them)
 e2e/           Playwright specs and helpers
 ```

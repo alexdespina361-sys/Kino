@@ -25,6 +25,7 @@ import { Poster } from "../shared/Poster";
 import { friendlyError } from "../shared/words";
 import type { PlayOptions } from "./Browse";
 import { useBack, useDpad } from "./dpad";
+import { PlayerError } from "./engine";
 import type { MenuKind } from "./Menu";
 import { SKIP_SECONDS } from "./keys";
 import { freshSimilar } from "./pages";
@@ -85,6 +86,49 @@ export const isBusy = (player: PlayerState, resolving: boolean) => resolving || 
 
 /** The video has subtitles to choose from, or more than one audio track. */
 export const hasTracks = (player: PlayerState) => Boolean(player.subtitles?.tracks.length) || (player.audio?.tracks.length ?? 0) > 1;
+
+/** The browser would not start the video: it wants a press first (see PlayerEngine.play), and whatever asks again after one gets it going. */
+export const isBlocked = (player: PlayerState) => player.state === "error" && player.error === PlayerError.Blocked;
+
+/** One button for the whole screen: the press the browser wants before it plays video with sound. OK on a remote presses it too (Tv.tsx). */
+function TapToPlay({ onPlay }: { onPlay: () => void }) {
+  const t = useT();
+  return (
+    <button className="tv-tap" data-testid="tv-tap-play" onClick={onPlay}>
+      <span className="hud-paused" aria-hidden="true">
+        <PlayIcon />
+      </span>
+      <b>{t("tv.tapToPlay")}</b>
+    </button>
+  );
+}
+
+/**
+ * What a screen that watches along shows over its picture while the picture is not there: it is filling up, the browser wants a
+ * press before it plays, or it can't play at all. Such a screen has no controls of its own, so without this it would only be black.
+ */
+export function FollowStatus({ player, onPlay }: { player: PlayerState; onPlay: () => void }) {
+  useT();
+  if (isBlocked(player)) return <TapToPlay onPlay={onPlay} />;
+  if (player.state === "error") {
+    return (
+      <div className="hud-center">
+        <div className="hud-error" data-testid="tv-error" role="alert">
+          <h2>{friendlyError(player.error)}</h2>
+          <small>{player.error}</small>
+        </div>
+      </div>
+    );
+  }
+  if (isBusy(player, false)) {
+    return (
+      <div className="hud-busy" data-testid="tv-busy">
+        <div className="spinner hud-spinner" data-testid="tv-buffering" />
+      </div>
+    );
+  }
+  return null;
+}
 
 /** 0..1: how far along the bar a mouse event is. */
 const fractionAt = (event: { clientX: number; currentTarget: HTMLElement }) => {
@@ -161,6 +205,9 @@ export function Hud(p: HudProps) {
         </div>
       )}
 
+      {/* Outside the overlay as well: it is what the picture is waiting for, so it stays up whether or not the controls are. */}
+      {isBlocked(player) && <TapToPlay onPlay={p.onToggle} />}
+
       {/* The overlay sits on top of the video, so a click on the empty part of it has to do what a click on the video does. */}
       <div
         className={`tv-overlay ${p.visible ? "visible" : "hidden"}`}
@@ -205,7 +252,7 @@ export function Hud(p: HudProps) {
               </button>
             </>
           )}
-          {player.state === "error" && (
+          {player.state === "error" && !isBlocked(player) && (
             <div className="hud-error" data-testid="tv-error" role="alert">
               <h2>{friendlyError(player.error)}</h2>
               <p>{t("hud.sendAnother")}</p>

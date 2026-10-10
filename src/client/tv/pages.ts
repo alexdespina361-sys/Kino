@@ -194,6 +194,8 @@ export function freshSimilar(items: readonly LibraryItem[], progress: readonly L
 /** What the buttons under the banner can do for a title. */
 export type HeroAction = "play" | "list" | "remove";
 export const heroActions = (entry: Entry | undefined): HeroAction[] => (!entry || entry.opens ? [] : entry.progressKey ? ["play", "remove"] : ["play", "list"]);
+/** ...and on a title's own page, which any title can be kept from: play it (or pick it up), keep it in My List, and for one part way through, take it off its row. */
+export const overviewActions = (entry: Entry): HeroAction[] => (entry.progressKey ? ["play", "list", "remove"] : ["play", "list"]);
 
 /** Which titles a search shows. */
 export type KindFilter = "all" | LibraryKind;

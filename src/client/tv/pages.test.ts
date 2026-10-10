@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LibraryItem, LibraryRow, LiveListItem, LiveProgress } from "../../shared";
 import { t } from "../i18n";
-import { freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, rowsOfPage, viewKey, type PageData } from "./pages";
+import { freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, rowsOfPage, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3): LibraryRow => ({
@@ -172,6 +172,13 @@ describe("heroActions", () => {
     expect(heroActions({ id: "a", title: "A", url: "u", progressKey: "k" })).toEqual(["play", "remove"]);
     expect(heroActions({ id: "a", title: "A", url: "", opens: { kind: "home" } })).toEqual([]);
     expect(heroActions(undefined)).toEqual([]);
+  });
+});
+
+describe("overviewActions", () => {
+  it("offers Play and My List for any title, and Remove besides for a card of Continue watching", () => {
+    expect(overviewActions({ id: "a", title: "A", url: "u" })).toEqual(["play", "list"]);
+    expect(overviewActions({ id: "a", title: "A", url: "u", progressKey: "k" })).toEqual(["play", "list", "remove"]);
   });
 });
 

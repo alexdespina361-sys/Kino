@@ -289,7 +289,8 @@ test.describe("English, Romanian and Italian", () => {
 
     const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, locale: "it-IT" });
     await tv.goto("/tv");
-    await expect(tv.getByTestId("unlock")).toHaveText(italian["tv.pressOk"]);
+    await expect(tv.getByTestId("tv-welcome").locator("p")).toHaveText(italian["tv.welcome"]);
+    await expect(tv.getByTestId("rail-home")).toHaveText(italian["tv.home"]);
   });
 
   test("the settings page changes the language too, for someone who is not signed in", async ({ browser }) => {
