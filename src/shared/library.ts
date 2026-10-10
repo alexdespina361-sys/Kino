@@ -10,6 +10,8 @@ export const LibraryItemSchema = z.object({
   title: z.string().max(300),
   year: z.number().int().optional(),
   image: z.string().max(2048).optional(),
+  /** A sentence or two about it, as plain text, for the TV's banner. */
+  description: z.string().max(400).optional(),
   /** A page or media link, as pasted on the phone. Relative links (`/fixtures/a.mp4`) are this server's own. */
   url: z.string().max(2048),
 });

@@ -174,14 +174,17 @@ test.describe("pairing", () => {
     const phone = await openPairedPhone(browser, tv);
     await expect(tv.getByTestId("tv-paired")).toBeVisible();
     const button = tv.getByTestId("tv-disconnect");
+    const browse = tv.getByTestId("tv-browse-open");
     await expect(button).not.toBeFocused(); // a stray OK press must not disconnect anything
+    await expect(browse).not.toBeFocused();
 
-    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowDown"); // the first press only lands on the first button
+    await expect(browse).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
     await expect(button).toBeFocused();
-    await tv.keyboard.press("ArrowUp");
-    await expect(button).not.toBeFocused();
-    await tv.keyboard.press("Enter"); // OK also lands on it, without pressing it
-    await expect(button).toBeFocused();
+    await tv.keyboard.press("ArrowLeft");
+    await expect(browse).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-paired")).toBeVisible();
     await tv.keyboard.press("Enter");
 
@@ -788,6 +791,8 @@ test.describe("watching together", () => {
     await expect(tvRoot(leader)).toHaveAttribute("data-state", "idle");
     await expect(tvRoot(follower)).toHaveAttribute("data-state", "idle");
     await expect(follower.getByTestId("tv-following")).toBeVisible(); // still in the party, waiting
+    await expect(follower.getByTestId("tv-browse-open")).toHaveCount(0); // it can't choose what plays, so no library
+    await expect(follower.getByTestId("tv-disconnect")).toHaveText("Stop watching along");
   });
 
   test("a TV added while a film is playing starts at the same place", async ({ browser, baseURL }) => {

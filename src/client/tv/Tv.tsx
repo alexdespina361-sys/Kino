@@ -44,6 +44,8 @@ const WATCHED_KEY = "tv.watched";
 const HUD_HIDE_MS = 2500;
 /** A lookup that never reports back (lost message, dead server) must not leave the TV spinning forever. */
 const RESOLVING_TIMEOUT_MS = 45_000;
+/** The video follows the end of a lookup straight away; if none has by then, the lookup failed. */
+const NO_VIDEO_AFTER_LOOKUP_MS = 1500;
 /** Skips pressed within this long of each other count as one run in the "+30s" flash. */
 const SKIP_RUN_MS = 1200;
 
@@ -67,6 +69,8 @@ export function Tv() {
   const [player, setPlayer] = useState<PlayerState>(IDLE_STATE);
   const [currentMedia, setCurrentMedia] = useState<NormalizedMedia | null>(null);
   const [resolving, setResolving] = useState(false);
+  /** A lookup is under way (or has just ended), so its end with no video after it means it failed. */
+  const wasResolvingRef = useRef(false);
 
   // Netflix Up Next Countdown & Preload State
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
@@ -76,6 +80,10 @@ export function Tv() {
   // Audio / subtitles / speed / quality / episodes picker
   const [menu, setMenu] = useState<MenuKind | null>(null);
   const [browsing, setBrowsing] = useState(false);
+  /** Playback began from the library, so ending it (or Back) goes back there instead of to the start screen. */
+  const fromBrowseRef = useRef(false);
+  /** Said on the start screens when a title that was just chosen would not play. */
+  const [notice, setNotice] = useState<string | null>(null);
 
   // How the viewer likes to watch (subtitle language, audio language, text size), remembered on this TV.
   const [initialPrefs] = useState(() => parsePrefs(readStorage(PREFS_KEY)));
@@ -436,6 +444,7 @@ export function Tv() {
             setPaired(false);
             setFollowing(null);
             setPairing(toPairing(message.pairing));
+            wasResolvingRef.current = false; // a lookup cut short by this is not a failed one
             setResolving(false);
             break;
           case "TV_RESOLVING":
@@ -513,6 +522,42 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [resolving]);
 
+  // The server only tells a phone when a lookup fails; here the end of the lookup with no video following it is the tell.
+  useEffect(() => {
+    if (resolving) {
+      wasResolvingRef.current = true;
+      setNotice(null);
+      return;
+    }
+    if (!wasResolvingRef.current) return;
+    wasResolvingRef.current = false;
+    const timer = setTimeout(() => {
+      if (currentMediaRef.current) return;
+      setNotice("That one wouldn't play. Try another.");
+      if (fromBrowseRef.current) {
+        fromBrowseRef.current = false;
+        setBrowsing(true);
+      }
+    }, NO_VIDEO_AFTER_LOOKUP_MS);
+    return () => clearTimeout(timer);
+  }, [resolving]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 8000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  // Back at the library once what was chosen from it has stopped.
+  const showedVideoRef = useRef(false);
+  useEffect(() => {
+    const showing = player.state !== "idle";
+    if (showedVideoRef.current && !showing && fromBrowseRef.current) {
+      fromBrowseRef.current = false;
+      setBrowsing(true);
+    }
+    showedVideoRef.current = showing;
+  }, [player.state]);
+
   const enterFullscreen = () => document.documentElement.requestFullscreen?.().catch(() => {});
   /** From the TV's own remote or mouse, which the browser accepts as the press it needs. */
   const toggleFullscreen = () => {
@@ -583,7 +628,8 @@ export function Tv() {
     setUpNextDismissed(true);
   };
   /** Pick an episode from the list: the server looks it up like any link, the TV shows the spinner meanwhile. */
-  const playEpisode = (url: string) => {
+  const playEpisode = (url: string, fromLibrary = false) => {
+    if (fromLibrary) fromBrowseRef.current = true;
     setMenu(null);
     setBrowsing(false);
     setUpNextCountdown(null);
@@ -618,7 +664,7 @@ export function Tv() {
       }
 
       if (action === "browse") {
-        setBrowsing((prev) => !prev);
+        if (!following && !resolving && player.state === "idle") setBrowsing(true);
         event.preventDefault();
         return;
       }
@@ -645,18 +691,8 @@ export function Tv() {
         return;
       }
 
-      if (!engine || player.state === "idle") {
-        // Waiting for a video: the only button is Disconnect. Down (or OK) moves onto it, then OK presses it.
-        const disconnect = paired && !resolving ? document.querySelector<HTMLElement>(".tv-disconnect") : null;
-        if (disconnect && document.activeElement !== disconnect && (action === "down" || action === "select")) {
-          disconnect.focus();
-          event.preventDefault();
-        } else if (disconnect && document.activeElement === disconnect && (action === "up" || action === "back")) {
-          disconnect.blur();
-          event.preventDefault();
-        }
-        return;
-      }
+      // Waiting for a video: the start screen walks its own buttons (see Idle.tsx).
+      if (!engine || player.state === "idle") return;
 
       const row = controlsRef.current;
       const focused = document.activeElement as HTMLElement | null;
@@ -726,7 +762,14 @@ export function Tv() {
         case "stop":
           engine.stop();
           break;
-        default: // "up", "back": nothing to do beyond showing the overlay
+        case "back":
+          // What was picked in the library goes back to it: the first Back shows the controls, a second one leaves.
+          if (fromBrowseRef.current && overlayWasVisible) {
+            setCurrentMedia(null);
+            engine.stop();
+          }
+          break;
+        default: // "up": nothing to do beyond showing the overlay
           break;
       }
       event.preventDefault();
@@ -768,7 +811,7 @@ export function Tv() {
         onDoubleClick={toggleFullscreen}
       />
 
-      {showVideo && <Captions videoRef={videoRef} style={captionStyle} />}
+      {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} />}
 
       {/* Pressing OK here is also the press the browser needs to let the page go full screen. */}
       {!unlocked && (
@@ -787,14 +830,16 @@ export function Tv() {
           pairing={pairing}
           resolving={resolving}
           onDisconnect={() => socketRef.current?.send({ type: "TV_UNPAIR" })}
-          onBrowse={() => setBrowsing(true)}
+          onBrowse={following ? undefined : () => setBrowsing(true)}
+          notice={notice}
         />
       )}
 
-      {unlocked && browsing && (
+      {unlocked && browsing && !following && (
         <TvBrowse
-          onPlay={playEpisode}
+          onPlay={(url) => playEpisode(url, true)}
           onClose={() => setBrowsing(false)}
+          notice={notice}
         />
       )}
 
@@ -809,7 +854,7 @@ export function Tv() {
 
       {unlocked && showVideo && !following && (
         <Hud
-          visible={controlsVisible}
+          visible={controlsVisible && menu !== "captions"}
           player={player}
           title={mainTitle}
           subTitle={series ? `Season ${series.season}, Episode ${series.episode}` : ""}

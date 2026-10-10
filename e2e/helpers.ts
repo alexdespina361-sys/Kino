@@ -5,8 +5,8 @@ import { parseServerMessage, type Command, type NormalizedMedia, type PlayerStat
 export const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true } as const;
 
 /** Open /tv in its own browser context (its own storage, like a separate device) and press OK. */
-export async function openTv(browser: Browser): Promise<Page> {
-  const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+export async function openTv(browser: Browser, viewport = { width: 1280, height: 720 }): Promise<Page> {
+  const page = await (await browser.newContext({ viewport })).newPage();
   await page.goto("/tv");
   await page.getByTestId("unlock").focus();
   await page.keyboard.press("Enter"); // the remote's OK button

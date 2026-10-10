@@ -39,7 +39,11 @@ pnpm build && pnpm start     # http://localhost:8787
 
 **TV**
 - Clean player with a fading HUD (title, clock, "ends at", seek bar with a time tooltip on hover, buffering spinner, big play/pause)
-- D-pad remote support: ←/→ seek 10 s, ↓ wakes the controls and moves focus, Enter presses, Back closes menus
+- D-pad remote support: ←/→ seek 10 s, ↓ wakes the controls and moves focus, Enter presses, Back closes menus. Every screen before
+  the video (the first "Press OK" page, the pairing code, the connected screen, the library) is walked with the arrow keys: the first
+  press only lands on a button, so a stray OK never presses one (`src/client/tv/dpad.ts`)
+- The controls are sized to fit one row on any screen shape, with every button present (series, subtitles, sources, quality); long
+  episode names are cut, and a row that still can't hold them wraps instead of running off the edge
 - Subtitles and audio like a streaming app: the language you chose is remembered. Tracks the file labels only with a code (`eng`) are
   named by their language. Subtitles are drawn by the page, so size, font, colour, opacity, background, edge, height and word spacing
   all work on any TV browser; change them from the TV's menu or the phone, with a live preview. A browser only lets a page go full screen
@@ -47,7 +51,8 @@ pnpm build && pnpm start     # http://localhost:8787
 - Episodes: seasons and episodes, past and future, when the resolver supplies them; previous / next (`P` / `N`), an up-next card and autoplay of the
   next one. The lists mark what was watched and how long is left (remembered in each device's own storage)
 - Sources: a video can carry alternates; if the first stream fails the TV tries the next by itself, and either device can pick one
-- While it waits for a video, a **Disconnect from phone** button (Down, then OK) unpairs the TV and shows a new code; the phone goes back to the code screen
+- While it waits for a video, two same-size buttons: **Browse library** and **Disconnect from phone** (unpairs the TV and shows a new code; the
+  phone goes back to the code screen). The library button is also on the pairing screen, so a TV can pick a film with no phone at all
 - Keeps the screen awake while playing; reconnects by itself, and notices a dead connection within about 25 s
 
 **Server**
@@ -79,11 +84,14 @@ The phone's home screen (and "Change video") shows rows of titles to tap, like a
 offer video openly, keeps them for six hours, and serves the old list at once while it fetches a new one (or when the place is down).
 A title is only a link: tapping it is the same as pasting it, so the existing resolver finds the video and the TV plays it.
 
-- Today there is one source, the Internet Archive's film collections (`src/server/library/internet-archive.ts`). The rows are a list in that
-  file; adult-tagged and so-titled entries are left out of the search, which is a crude filter and not a guarantee. What the Archive
-  lists, and under what terms, is its call. A few titles are OGV files, which Chrome and Firefox play but some TV browsers do not.
-- A new source is a `LibrarySource` (`id`, `name`, `load()` returning rows of `{ id, title, url, image?, year? }`), passed to
+- The default library source is Filmpire (`src/server/library/filmpire.ts`), presenting live categories (Trending Movies & Series, Popular Movies & Series, Top Rated, Animation & Anime, Action & Sci-Fi) and TMDB multi-search. Each title resolves directly to `https://filmpire.sc/watch/:id` (or `?s=1&e=1` for TV shows) which the built-in Filmpire resolver decrypts and plays automatically.
+- An alternative source is the Internet Archive's film collections (`src/server/library/internet-archive.ts`).
+- A new source is a `LibrarySource` (`id`, `name`, `load()` returning rows of `{ id, title, url, image?, year?, description? }`), passed to
   `buildApp({ librarySources })` from `src/server/index.ts`. Nothing here is specific to one site.
+- On the TV, **Browse library** (or `B`) opens a streaming-app layout: a banner for the title the remote is on (picture, year, a short
+  description when the source has one) and rows of titles under it. Arrows walk the rows, OK plays, Back leaves; playing from the
+  library and pressing Back (twice if the controls were hidden) or letting it stop comes back to the same title. A title that will not
+  play is said so on the TV and leaves it in the library. A TV that watches along has no library, since it can't choose what plays.
 - `LIBRARY=off` starts the server without a library (the e2e server does); `GET /api/library` is then empty and the phone shows nothing extra.
 
 ### Episode lists

@@ -32,10 +32,38 @@ const DocSchema = z.object({
   identifier: z.string().min(1).max(200),
   title: z.union([z.string(), z.array(z.string())]).optional(),
   year: z.union([z.number(), z.string()]).optional(),
+  description: z.union([z.string(), z.array(z.string())]).optional(),
 });
+
+const ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+  ndash: "–", mdash: "—", hellip: "…", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”",
+  eacute: "é", egrave: "è", agrave: "à", ccedil: "ç",
+};
+
+/** The Archive's descriptions are uploaders' HTML. Plain text, one paragraph, cut at a word if long. */
+export function plainDescription(raw: string | string[] | undefined, max = 300): string | undefined {
+  const text = (Array.isArray(raw) ? raw.join(" ") : (raw ?? ""))
+    .replace(/<(br|\/p|\/div|\/li)\b[^>]*>/gi, " ")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (whole, name: string) => {
+      if (name.startsWith("#")) {
+        const code = name[1] === "x" || name[1] === "X" ? Number.parseInt(name.slice(2), 16) : Number.parseInt(name.slice(1), 10);
+        return Number.isInteger(code) && code > 31 && code < 0x10ffff ? String.fromCodePoint(code) : " ";
+      }
+      return ENTITIES[name.toLowerCase()] ?? whole;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length < 20) return undefined; // "Movie." says nothing
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max * 0.6))}…`;
+}
 const SearchSchema = z.object({ response: z.object({ docs: z.array(z.unknown()) }) });
 
 const SEARCH = "https://archive.org/advancedsearch.php";
+const FIELDS = ["identifier", "title", "year", "description"];
 /**
  * Collections are open to anyone, so the rows leave out what is tagged adult and what is titled like it. Crude, and meant to be:
  * it keeps the worst off a shared TV, not everything unsuitable.
@@ -55,15 +83,17 @@ export function internetArchive(options: ArchiveOptions = {}): LibrarySource {
     docs.flatMap((doc): LibraryItem[] => {
       const parsed = DocSchema.safeParse(doc);
       if (!parsed.success) return [];
-      const { identifier, title, year } = parsed.data;
+      const { identifier, title, year, description } = parsed.data;
       const name = (Array.isArray(title) ? title[0] : title)?.trim() || identifier;
       const released = Number.parseInt(String(year ?? ""), 10);
       const id = encodeURIComponent(identifier);
+      const about = plainDescription(description);
       return [
         {
           id: identifier,
           title: name.slice(0, 300),
           ...(Number.isInteger(released) && released > 1800 ? { year: released } : {}),
+          ...(about ? { description: about } : {}),
           image: `https://archive.org/services/img/${id}`,
           url: `https://archive.org/details/${id}`,
         },
@@ -73,7 +103,7 @@ export function internetArchive(options: ArchiveOptions = {}): LibrarySource {
   const loadRow = async (row: ArchiveRow): Promise<LibraryRow> => {
     const url = new URL(SEARCH);
     url.searchParams.set("q", query(row.collection));
-    for (const field of ["identifier", "title", "year"]) url.searchParams.append("fl[]", field);
+    for (const field of FIELDS) url.searchParams.append("fl[]", field);
     url.searchParams.append("sort[]", "downloads desc");
     url.searchParams.set("rows", String(perRow));
     url.searchParams.set("output", "json");
@@ -104,7 +134,7 @@ export function internetArchive(options: ArchiveOptions = {}): LibrarySource {
           "q",
           `(${q}) AND mediatype:movies AND NOT subject:(${AVOID_SUBJECTS.join(" OR ")}) AND NOT title:(${AVOID_TITLE_WORDS.join(" OR ")})`
         );
-        for (const field of ["identifier", "title", "year"]) url.searchParams.append("fl[]", field);
+        for (const field of FIELDS) url.searchParams.append("fl[]", field);
         url.searchParams.append("sort[]", "downloads desc");
         url.searchParams.set("rows", String(perRow));
         url.searchParams.set("output", "json");

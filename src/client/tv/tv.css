@@ -127,24 +127,43 @@
   color: #000;
 }
 .tv-ok:focus-visible { outline-color: var(--red); outline-offset: 0.18em; }
-.tv-disconnect {
-  margin-top: 1.2em;
-  font-size: 1.7em;
-  font-weight: 600;
-  padding: 0.55em 1.3em;
+/* The buttons on the start screens: one size, side by side, whatever they say. */
+.tv-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; justify-content: center; gap: 1.4em; margin-top: 0.6em; }
+.tv-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 11em;
+  padding: 0.7em 1.4em;
   border-radius: 0.5em;
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--muted);
+  background: rgba(255, 255, 255, 0.12);
+  color: #d4d4d4;
+  font-size: 1.8em;
+  font-weight: 600;
+  line-height: 1.1;
   transition: background 0.15s, color 0.15s, transform 0.15s;
 }
-.tv-disconnect:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
-.tv-disconnect:focus-visible {
+.tv-action:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+.tv-action-primary { background: var(--red); color: #fff; }
+.tv-action-primary:hover { background: var(--red-hover); }
+.tv-action:focus-visible {
   background: #fff;
   color: #000;
   outline: 0.14em solid var(--red);
   outline-offset: 0.14em;
   transform: scale(1.06);
 }
+.tv-notice {
+  margin: 0;
+  padding: 0.5em 1.2em;
+  border-radius: 999px;
+  background: rgba(255, 107, 107, 0.16);
+  color: #ffb4b4;
+  font-size: 1.6em;
+  font-weight: 600;
+}
+/* The "use this screen as…" link is reachable with the remote too, so it shows where the focus is. */
+.tv .role-switch:focus-visible { color: #000; background: #fff; outline: 0.14em solid var(--red); outline-offset: 0.1em; text-decoration: none; }
 
 .tv-spinner { font-size: 6em; }
 .tv-ready-icon {
@@ -256,13 +275,13 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 3em 4em 7em;
+  padding: 2.2em 3.2em 5em;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.4) 55%, transparent);
 }
 .hud-titles { display: flex; flex-direction: column; gap: 0.5em; min-width: 0; }
 .hud-title {
   margin: 0;
-  font-size: 2.8em;
+  font-size: 2.4em;
   font-weight: 800;
   letter-spacing: -0.01em;
   text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.8);
@@ -339,7 +358,7 @@
 }
 
 .hud-bottom {
-  padding: 8em 4em 3em;
+  padding: 6em 3.2em 2.2em;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.6) 55%, transparent);
 }
 .hud-progress { display: flex; align-items: center; gap: 1.6em; }
@@ -372,13 +391,23 @@
   box-shadow: 0 0 0 0.12em #fff, 0 0.2em 0.6em rgba(0, 0, 0, 0.6);
   transform: translate(-50%, -50%);
 }
-.hud-controls { display: flex; align-items: center; justify-content: space-between; gap: 2em; margin-top: 1em; }
-.hud-group { display: flex; align-items: center; gap: 0.9em; }
+/*
+ * The controls are sized to fit one row on any screen, with every button present (series, subtitles, sources, quality):
+ * the labels are short, the episode titles are cut, and if a row still can't hold them it wraps instead of running off.
+ */
+.hud-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5em 1.2em; margin-top: 0.4em; }
+.hud-group { display: flex; align-items: center; gap: 0.5em; min-width: 0; }
+.hud-controls .tv-btn { font-size: 1.3em; padding: 0.5em 0.8em; gap: 0.4em; }
+.hud-controls .tv-btn-icon { font-size: 2em; padding: 0.25em; }
+.hud-controls .tv-btn-play { font-size: 2.3em; width: 1.6em; height: 1.6em; padding: 0; }
+/* "Previous" / "Next episode" over the episode's name, which is cut rather than allowed to widen the button. */
+.tv-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25em; min-width: 0; max-width: 9em; }
+.tv-btn-text small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.15; }
 
 .hud-upnext {
   position: absolute;
-  right: 4em;
-  bottom: 21em;
+  right: 3.2em;
+  bottom: 17em;
   z-index: 25;
   transition: bottom 0.3s ease;
   display: flex;
@@ -393,7 +422,7 @@
   animation: hud-rise 0.3s ease;
 }
 /* With the controls gone the card drops down to where they were. */
-.tv[data-hud="hidden"] .hud-upnext { bottom: 5em; }
+.tv[data-hud="hidden"] .hud-upnext { bottom: 4em; }
 @keyframes hud-rise { from { transform: translateY(1.2em); opacity: 0; } to { transform: none; opacity: 1; } }
 .hud-upnext-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.3em; color: #aaa; text-transform: uppercase; letter-spacing: 0.06em; }
 .hud-upnext-head b { color: var(--red); font-size: 1.15em; font-variant-numeric: tabular-nums; }
@@ -443,6 +472,22 @@
   overflow: hidden;
 }
 .tv-sub-preview .tv-caption { white-space: nowrap; transition: font-size 0.15s ease; }
+/* Styling subtitles: the picture shows through, the panel moves to the top, and a sample sits where the real ones will. */
+.tv-menu-backdrop[data-kind="captions"] { place-items: start center; padding-top: 1.4em; background: rgba(0, 0, 0, 0.4); }
+.tv-menu[data-kind="captions"] { padding: 1.8em 3em 2em; }
+.tv-menu[data-kind="captions"] .tv-menu-top { margin-bottom: 1em; }
+.tv-menu[data-kind="captions"] .tv-opts { max-height: min(26em, 38vh); }
+.tv-caption-stage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0 8vw;
+  pointer-events: none;
+  transition: bottom 0.25s ease;
+}
+.tv-caption-stage .tv-caption { white-space: nowrap; transition: font-size 0.15s ease; }
 .tv-opt-detail { margin-left: auto; padding-left: 1em; font-style: normal; font-size: 0.85em; color: #9a9a9a; }
 .tv-menu-col { flex: 1 1 20em; min-width: 0; }
 .tv-menu[data-kind="episodes"] .tv-menu-col { flex: 0 0 18em; }
@@ -511,110 +556,151 @@
   outline-offset: 0.14em;
 }
 
-/* ------------------------------ browse screen ------------------------------ */
+/* ------------------------------ library ------------------------------ */
 
+/* A banner for the title the remote is on, rows of titles under it. Nothing here scrolls the page: the rows are moved in script. */
 .tv-browse {
   position: absolute;
   inset: 0;
   z-index: 50;
   display: flex;
   flex-direction: column;
-  background: #111;
-  color: #fff;
-  overflow-y: auto;
-  padding: 3em 4em 5em;
-  gap: 2.5em;
+  overflow: hidden;
+  background: var(--bg);
 }
-.tv-browse-header {
+.tv-hero-bg {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 70%;
+  background-size: cover;
+  background-position: center 30%;
+  opacity: 0.55;
+  animation: tv-fade-in 0.5s ease both;
+}
+@keyframes tv-fade-in { from { opacity: 0; } }
+.tv-browse-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, var(--bg) 18%, rgba(11, 11, 12, 0.35) 65%, rgba(11, 11, 12, 0.7)),
+    linear-gradient(0deg, var(--bg) 22%, transparent 70%);
+}
+.tv-browse > :not(.tv-hero-bg):not(.tv-browse-shade) { position: relative; }
+
+.tv-browse-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 2em;
+  padding: 2.2em 4em 0;
 }
-.tv-browse-title {
-  font-size: 3em;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  margin: 0;
-}
-.tv-browse-close {
-  font-size: 1.6em;
-  padding: 0.6em 1.2em;
-}
-.tv-browse-row {
-  display: flex;
-  flex-direction: column;
-  gap: 1.2em;
-}
-.tv-browse-row-title {
-  font-size: 2em;
-  font-weight: 700;
-  margin: 0;
-  color: #e5e5e5;
-}
-.tv-browse-scroller {
-  display: flex;
-  gap: 1.6em;
-  overflow-x: auto;
-  padding: 0.5em 0.5em 1em;
-  scroll-behavior: smooth;
-}
-.tv-browse-scroller::-webkit-scrollbar {
-  height: 0.4em;
-}
-.tv-browse-scroller::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+.tv-browse-logo { font-size: 2.2em; }
+.tv-back {
+  padding: 0.5em 1.4em;
   border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #e6e6e6;
+  font-size: 1.6em;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
 }
-.tv-browse-tile {
-  flex: none;
-  width: 18em;
+.tv-back:hover { background: rgba(255, 255, 255, 0.24); color: #fff; }
+.tv-back:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--red); outline-offset: 0.14em; transform: scale(1.06); }
+
+.tv-hero {
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.8em;
-  text-align: left;
-  border-radius: 0.8em;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 0.8em;
-  transition: transform 0.15s ease, background 0.15s ease;
-  cursor: pointer;
-}
-.tv-browse-tile:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-.tv-browse-tile:focus-visible,
-.tv-browse-tile[data-focused="true"] {
-  outline: 0.25em solid #fff;
-  outline-offset: 0.15em;
-  transform: scale(1.06);
-  background: rgba(255, 255, 255, 0.18);
-  z-index: 10;
-}
-.tv-browse-art {
-  display: block;
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  border-radius: 0.6em;
+  justify-content: flex-end;
+  gap: 0.6em;
+  max-width: 54em;
+  padding: 0 4em 1.6em;
   overflow: hidden;
-  background: #222;
 }
-.tv-browse-art img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.tv-browse-name {
-  font-size: 1.3em;
-  font-weight: 700;
-  line-height: 1.3;
+.tv-hero-eyebrow { margin: 0; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--red); }
+.tv-hero-title {
+  margin: 0;
+  font-size: 4.2em;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.tv-browse-year {
-  font-size: 1.1em;
-  color: var(--muted);
-  margin-top: -0.3em;
+.tv-hero-meta { margin: 0; font-size: 1.6em; font-weight: 600; color: #cfcfd4; }
+.tv-hero-about {
+  margin: 0;
+  font-size: 1.6em;
+  line-height: 1.4;
+  color: #d9d9de;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
+.tv-hero-hint { margin: 0.2em 0 0; font-size: 1.4em; color: var(--muted); }
+.tv-hero-hint kbd { padding: 0.1em 0.6em; border-radius: 0.3em; background: rgba(255, 255, 255, 0.16); color: #fff; font: inherit; font-weight: 700; }
+.tv-actions-start { justify-content: flex-start; }
+
+.tv-rows {
+  flex: 0 0 24em;
+  position: relative;
+  overflow: hidden;
+}
+.tv-row { padding-bottom: 0.4em; }
+.tv-row-title { margin: 0 0 0 2em; font-size: 2em; font-weight: 700; color: #e8e8ec; }
+.tv-row-tiles {
+  display: flex;
+  gap: 1.6em;
+  padding: 1.1em 4em 1.3em;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 93%, transparent);
+  mask-image: linear-gradient(90deg, #000 93%, transparent);
+}
+.tv-row-tiles::-webkit-scrollbar { display: none; }
+
+.tv-tile {
+  flex: none;
+  width: 15em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  text-align: left;
+  color: #bdbdc4;
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+.tv-tile-art {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 0.7em;
+  overflow: hidden;
+  background: var(--surface-2);
+  transition: box-shadow 0.18s ease;
+}
+.tv-tile-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.tv-tile-initial { font-size: 5em; font-weight: 800; color: rgba(255, 255, 255, 0.5); }
+.tv-tile-name {
+  font-size: 1.25em;
+  font-weight: 600;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tv-tile-year { font-size: 1.05em; color: var(--muted); }
+.tv-tile:hover { color: #fff; }
+.tv-tile:focus-visible { color: #fff; transform: scale(1.1); outline: none; z-index: 2; }
+.tv-tile:focus-visible .tv-tile-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
+
+.tv-skeleton { height: 17em; border-radius: 0.7em; background: linear-gradient(90deg, #17171a, #232328, #17171a); background-size: 200% 100%; animation: tv-shimmer 1.4s linear infinite; }
+.tv-skeleton-title { width: 12em; height: 1.4em; border-radius: 0.3em; background: #17171a; }
+@keyframes tv-shimmer { to { background-position: -200% 0; } }

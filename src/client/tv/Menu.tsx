@@ -16,7 +16,7 @@ import {
   type SeriesInfo,
   type WatchedEntry,
 } from "../../shared";
-import { captionTextStyle } from "../shared/captionCss";
+import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { CheckIcon, CloseIcon } from "../shared/icons";
 
 export type MenuKind = "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes";
@@ -233,7 +233,7 @@ export function TvMenu(props: MenuProps) {
   }, [props.kind]);
 
   return (
-    <div className="tv-menu-backdrop" onClick={props.onClose}>
+    <div className="tv-menu-backdrop" data-kind={props.kind} onClick={props.onClose}>
       <div
         className="tv-menu"
         ref={props.rootRef}
@@ -277,7 +277,7 @@ export function TvMenu(props: MenuProps) {
             </div>
           ))}
         </div>
-        {(props.kind === "tracks" || props.kind === "captions") && (
+        {props.kind === "tracks" && (
           // Drawn exactly like the real subtitles, so a look can be judged before it is chosen.
           <div className="tv-sub-preview" data-testid="subtitle-preview" aria-hidden="true">
             <span className="tv-caption" style={captionTextStyle(props.captionStyle)}>
@@ -286,6 +286,14 @@ export function TvMenu(props: MenuProps) {
           </div>
         )}
       </div>
+      {props.kind === "captions" && (
+        // Over the picture at the real size and height (the panel sits at the top), so Height can be seen moving the text.
+        <div className="tv-caption-stage" data-testid="subtitle-preview" aria-hidden="true" style={{ bottom: captionBottom(props.captionStyle) }}>
+          <span className="tv-caption" style={captionTextStyle(props.captionStyle)}>
+            This is how your subtitles will look
+          </span>
+        </div>
+      )}
     </div>
   );
 }

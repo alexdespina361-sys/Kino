@@ -203,14 +203,20 @@ export function Hud(p: HudProps) {
               </button>
               {p.prevLabel && (
                 <button className="tv-btn" data-testid="tv-prev-btn" onClick={p.onPrevious} title="Previous episode (P)">
-                  <PreviousIcon /> Previous
-                  <small>{p.prevLabel}</small>
+                  <PreviousIcon />
+                  <span className="tv-btn-text">
+                    Previous
+                    <small>{p.prevLabel}</small>
+                  </span>
                 </button>
               )}
               {p.nextLabel && (
                 <button className="tv-btn tv-btn-red" data-testid="tv-next-btn" onClick={p.onNext} title="Next episode (N)">
-                  <NextIcon /> Next episode
-                  <small>{p.nextLabel}</small>
+                  <NextIcon />
+                  <span className="tv-btn-text">
+                    Next episode
+                    <small>{p.nextLabel}</small>
+                  </span>
                 </button>
               )}
             </div>

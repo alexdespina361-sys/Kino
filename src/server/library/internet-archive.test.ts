@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { LibraryRowSchema } from "../../shared";
-import { internetArchive } from "./internet-archive";
+import { internetArchive, plainDescription } from "./internet-archive";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const search = (...docs: unknown[]) => json({ response: { numFound: docs.length, start: 0, docs } });
@@ -66,6 +66,34 @@ describe("internetArchive", () => {
     ).rejects.toThrow("fetch failed");
   });
 
+  it("carries a plain-text description for the TV's banner, and skips what says nothing", async () => {
+    const get = async () =>
+      search(
+        { identifier: "a", title: "A", description: "<p>A <b>great</b> film &amp; more,<br>in two parts. Both worth it.</p>" },
+        { identifier: "b", title: "B", description: ["Short."] },
+        { identifier: "c", title: "C" },
+      );
+    const [row] = await internetArchive({ rows: [rows[0]!], fetch: get as never }).load();
+    expect(row!.items.map((item) => item.description)).toEqual(["A great film & more, in two parts. Both worth it.", undefined, undefined]);
+    expect(LibraryRowSchema.safeParse(row).success).toBe(true);
+  });
+});
+
+describe("plainDescription", () => {
+  it("joins a list, decodes entities, and cuts long text at a word", () => {
+    expect(plainDescription(["First part of it.", "Second part of it."])).toBe("First part of it. Second part of it.");
+    expect(plainDescription("Caf&eacute; &#39;noir&#39; &#x2014; a long story told twice")).toBe("Café 'noir' — a long story told twice");
+    const long = plainDescription("word ".repeat(200), 50)!;
+    expect(long.length).toBeLessThanOrEqual(51);
+    expect(long.endsWith("word…")).toBe(true);
+  });
+  it("is nothing for nothing", () => {
+    expect(plainDescription(undefined)).toBeUndefined();
+    expect(plainDescription("  <br> ")).toBeUndefined();
+  });
+});
+
+describe("internetArchive search", () => {
   it("searches archive with query and returns parsed items", async () => {
     const get = vi.fn(async (_url: URL | string) => search({ identifier: "night_movie", title: "A Night Movie", year: 1950 }));
     const source = internetArchive({ fetch: get as never });
