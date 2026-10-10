@@ -59,3 +59,18 @@ button:disabled { opacity: 0.4; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation-duration: 2.4s; }
 }
+
+/* "Use this screen as ...": a quiet text button for the screen the page guessed wrong about. */
+.role-switch {
+  align-self: center;
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted, #9a9a9a);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.role-switch:hover, .role-switch:focus-visible { color: #fff; }
+.tv .role-switch { margin-top: 2em; font-size: 1.5em; }

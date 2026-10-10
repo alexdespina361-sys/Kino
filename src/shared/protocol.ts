@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { NormalizedMediaSchema } from "./media";
+import { CaptionStyleSchema } from "./captions";
+import { MAX_ALTERNATES, NormalizedMediaSchema } from "./media";
 
 /* ------------------------------ player ------------------------------ */
 
@@ -34,8 +35,12 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("STOP") }),
   z.object({ type: z.literal("SET_QUALITY"), level: z.number().int() }),
   z.object({ type: z.literal("SET_SUBTITLE"), track: z.number().int() }),
+  /** Any of the caption look settings; what isn't mentioned stays as it is. */
+  z.object({ type: z.literal("SET_CAPTION_STYLE"), style: CaptionStyleSchema.partial() }),
   z.object({ type: z.literal("SET_SPEED"), rate: z.number().finite().min(0.25).max(4) }),
   z.object({ type: z.literal("SET_AUDIO"), track: z.number().int() }),
+  /** Play the video from another of its sources (0 is the main one). It carries on from where it was. */
+  z.object({ type: z.literal("SET_SOURCE"), index: z.number().int().min(0).max(MAX_ALTERNATES) }),
   z.object({ type: z.literal("TOGGLE_FULLSCREEN") }),
   z.object({ type: z.literal("NEXT_EPISODE") }),
 ]);
@@ -52,6 +57,14 @@ export const PlayerStateSchema = z.object({
   /** End of the buffered range around the playhead, in seconds. Drives the grey bar. */
   bufferedEnd: z.number().finite().min(0).optional(),
   playbackRate: z.number().finite().min(0.25).max(4).optional(),
+  /** The stream of the media this state is about. The phone can know the new video a moment before the TV reports on it. */
+  stream: z.string().max(2048).optional(),
+  /** The sources of this video, when it has more than one, and which one is playing. */
+  sources: z.object({ labels: z.array(z.string().max(60)).max(MAX_ALTERNATES + 1), current: z.number().int().min(0) }).optional(),
+  /** The TV page is full screen. Reported so the phone's button shows what it will do. */
+  fullscreen: z.boolean().optional(),
+  /** How subtitles look right now, so the phone's style sheet shows the real values. */
+  captionStyle: CaptionStyleSchema.optional(),
   quality: z
     .object({
       levels: z.array(PlayerQualityLevelSchema),
@@ -86,8 +99,20 @@ export const PairingCodeSchema = z.object({
 });
 export type PairingCode = z.infer<typeof PairingCodeSchema>;
 
-const TvInfoSchema = z.object({ name: z.string(), online: z.boolean() });
+const TvInfoSchema = z.object({
+  name: z.string(),
+  online: z.boolean(),
+  controlCode: z.string().max(20).optional(),
+  controllerCount: z.number().int().optional(),
+});
 export type TvInfo = z.infer<typeof TvInfoSchema>;
+
+/** How many other TVs can watch along with one: a party is the TV the phone controls plus up to this many. */
+export const MAX_FOLLOWERS = 5;
+
+/** A TV watching along, as the phone's list shows it. `id` is for removing it; the TV's own id is its secret and stays on the server. */
+export const PartyTvSchema = z.object({ id: z.string().max(100), name: z.string().max(60), online: z.boolean() });
+export type PartyTv = z.infer<typeof PartyTvSchema>;
 
 /** Resolver progress shown on the phone: "Finding video..." -> "Video found" -> (TV state takes over). */
 export const ResolveStatusSchema = z.discriminatedUnion("phase", [
@@ -120,6 +145,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("PLAY_URL"), url: z.string().max(2048), startAt: StartAtSchema.optional() }),
   /** Forget this TV: it gets a fresh pairing code and the phone goes back to the code screen. */
   z.object({ type: z.literal("UNPAIR") }),
+  /** Have another TV watch along: its pairing code, typed on the phone that controls the first TV. */
+  z.object({ type: z.literal("ADD_TV"), code: z.string().max(20) }),
+  /** Send a TV that is watching along back to its own pairing screen (an `id` from PARTY). */
+  z.object({ type: z.literal("REMOVE_TV"), id: z.string().max(100) }),
   // Keepalive from either kind of client. Answered with PONG, so a silently dead connection is noticed.
   z.object({ type: z.literal("PING") }),
 ]);
@@ -134,6 +163,19 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     deviceId: z.string(),
     paired: z.boolean(),
     pairing: PairingCodeSchema.nullable(),
+    /** The name of the TV this one is watching along with, if it is. */
+    following: z.string().max(60).optional(),
+  }),
+  /** This TV now watches along with another one: it plays what that one plays, and the other TV's phone controls both. */
+  z.object({ type: z.literal("TV_FOLLOWING"), leader: z.string().max(60) }),
+  /** Where the TV being followed is, a few times a second. The follower keeps its own picture in step with it. */
+  z.object({
+    type: z.literal("TV_SYNC"),
+    playing: z.boolean(),
+    time: z.number().finite().min(0),
+    rate: z.number().finite().min(0.25).max(4),
+    /** Which stream that position is in (the leader's `PlayerState.stream`). */
+    stream: z.string().max(2048).optional(),
   }),
   z.object({ type: z.literal("TV_CODE"), pairing: PairingCodeSchema }),
   z.object({ type: z.literal("TV_PAIRED") }),
@@ -149,7 +191,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     tv: TvInfoSchema.nullable(),
     media: NormalizedMediaSchema.nullable(),
     state: PlayerStateSchema,
+    /** The other TVs watching along. */
+    party: z.array(PartyTvSchema).max(MAX_FOLLOWERS).optional(),
   }),
+  z.object({ type: z.literal("PARTY"), tvs: z.array(PartyTvSchema).max(MAX_FOLLOWERS) }),
   z.object({ type: z.literal("TV_STATUS"), online: z.boolean() }),
   z.object({ type: z.literal("MEDIA"), media: NormalizedMediaSchema }),
   z.object({ type: z.literal("STATE"), state: PlayerStateSchema }),

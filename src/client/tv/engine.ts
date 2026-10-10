@@ -6,6 +6,7 @@ import {
   type PlayerTrack,
   type StreamType,
   type SubtitleTrack,
+  trackLabel,
 } from "../../shared";
 
 /** Error codes surfaced in PlayerState.error. */
@@ -124,6 +125,7 @@ export class PlayerEngine {
         lowLatencyMode: false,
       });
       this.hls = hls;
+      hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
       let retriedProxy = false;
       let mediaRecoverAttempts = 0;
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
@@ -232,7 +234,7 @@ export class PlayerEngine {
     if (this.video.textTracks && this.video.textTracks.length > 0) {
       for (let i = 0; i < this.video.textTracks.length; i++) {
         const t = this.video.textTracks[i]!;
-        t.mode = i === trackIndex ? "showing" : "disabled";
+        t.mode = i === trackIndex ? "hidden" : "disabled"; // hidden: loaded and timed, drawn by the page itself (Captions.tsx)
       }
     }
     this.emit();
@@ -305,7 +307,7 @@ export class PlayerEngine {
       this.hls.subtitleTracks.forEach((t, index) => {
         tracks.push({
           id: index,
-          label: t.name || t.lang || `Subtitle ${index + 1}`,
+          label: trackLabel(t.name, t.lang, `Subtitle ${index + 1}`),
           lang: t.lang,
         });
       });
@@ -321,10 +323,10 @@ export class PlayerEngine {
         const t = this.video.textTracks[i]!;
         tracks.push({
           id: i,
-          label: t.label || t.language || `Subtitle ${i + 1}`,
+          label: trackLabel(t.label, t.language, `Subtitle ${i + 1}`),
           lang: t.language,
         });
-        if (t.mode === "showing") current = i;
+        if (t.mode !== "disabled") current = i;
       }
       return { tracks, current };
     }
@@ -336,7 +338,7 @@ export class PlayerEngine {
     if (!this.hls?.audioTracks || this.hls.audioTracks.length <= 1) return undefined;
     const tracks: PlayerTrack[] = this.hls.audioTracks.map((t, index) => ({
       id: index,
-      label: t.name || t.lang || `Audio ${index + 1}`,
+      label: trackLabel(t.name, t.lang, `Audio ${index + 1}`),
       lang: t.lang,
     }));
     return {

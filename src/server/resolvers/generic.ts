@@ -1,4 +1,4 @@
-import type { NormalizedMedia } from "../../shared";
+import { MAX_ALTERNATES, type NormalizedMedia } from "../../shared";
 import { extractMedia, streamTypeOf } from "./html-extract";
 import { SafeFetchError, type SafeFetch, type SafeFetchOptions } from "./safe-fetch";
 import { UNSUPPORTED_MESSAGE, type ResolveResult, type Resolver } from "./types";
@@ -66,8 +66,18 @@ export function createGenericResolver({ fetch, fetchOptions }: GenericOptions): 
       const { title, candidates } = extractMedia(page.body, page.url);
       const best = candidates[0];
       if (!best) return { status: "unsupported", reason: UNSUPPORTED_MESSAGE };
+      // The other streams the page declares are fallbacks: if the best guess doesn't play, the TV tries them.
+      const alternates = candidates
+        .filter((candidate, index, all) => index > 0 && candidate.url !== best.url && all.findIndex((other) => other.url === candidate.url) === index)
+        .slice(0, MAX_ALTERNATES)
+        .map((candidate) => ({ stream: { url: candidate.url, type: candidate.type }, ...(candidate.subtitles ? { subtitles: candidate.subtitles } : {}) }));
       return success(
-        { title, stream: { url: best.url, type: best.type }, subtitles: best.subtitles },
+        {
+          title,
+          stream: { url: best.url, type: best.type },
+          subtitles: best.subtitles,
+          ...(alternates.length ? { alternates } : {}),
+        },
         `generic:${best.strategy}`,
       );
     },

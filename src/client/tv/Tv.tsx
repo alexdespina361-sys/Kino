@@ -1,27 +1,45 @@
 import { useEffect, useRef, useState } from "react";
-import { IDLE_STATE, type NormalizedMedia, type PlayerState } from "../../shared";
+import {
+  describeChange,
+  episodeLabel,
+  IDLE_STATE,
+  parseWatched,
+  previousEpisode,
+  recordWatching,
+  resolveCaptionStyle,
+  serializeWatched,
+  seriesKeyOf,
+  sourcesOf,
+  stateIsFor,
+  type CaptionStyle,
+  type NormalizedMedia,
+  type PlayerState,
+} from "../../shared";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
+import { FullscreenIcon } from "../shared/icons";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
+import { Captions } from "./Captions";
 import { PlayerEngine } from "./engine";
 import { Hud } from "./Hud";
 import { TvIdle, TvLocked, type Pairing } from "./Idle";
+import { TvBrowse } from "./Browse";
 import { actionForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
+import { syncStep } from "./sync";
 import {
   describeTrack,
   parsePrefs,
   pickTrack,
   PREFS_KEY,
   serializePrefs,
-  SUBTITLE_FONT_SIZE,
   type Prefs,
-  type SubtitleSize,
 } from "./prefs";
 import { useWakeLock } from "./useWakeLock";
 import "./tv.css";
 
 const DEVICE_KEY = "tv.deviceId";
+const WATCHED_KEY = "tv.watched";
 /** The overlay fades out this long after the last key press, but only while a video is actually playing. */
 const HUD_HIDE_MS = 2500;
 /** A lookup that never reports back (lost message, dead server) must not leave the TV spinning forever. */
@@ -37,8 +55,14 @@ export function Tv() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const [unlocked, setUnlocked] = useState(false);
+  /** Shown when the phone asked for full screen but the browser wants a press on the TV itself. */
+  const [fsPrompt, setFsPrompt] = useState(false);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
   const [paired, setPaired] = useState(false);
+  /** The name of the TV this one watches along with. Such a TV plays what that one plays and has no controls of its own. */
+  const [following, setFollowing] = useState<string | null>(null);
+  const followingRef = useRef<string | null>(null);
+  followingRef.current = following;
   const [pairing, setPairing] = useState<Pairing | null>(null);
   const [player, setPlayer] = useState<PlayerState>(IDLE_STATE);
   const [currentMedia, setCurrentMedia] = useState<NormalizedMedia | null>(null);
@@ -51,17 +75,32 @@ export function Tv() {
 
   // Audio / subtitles / speed / quality / episodes picker
   const [menu, setMenu] = useState<MenuKind | null>(null);
+  const [browsing, setBrowsing] = useState(false);
 
   // How the viewer likes to watch (subtitle language, audio language, text size), remembered on this TV.
   const [initialPrefs] = useState(() => parsePrefs(readStorage(PREFS_KEY)));
   const prefsRef = useRef<Prefs>(initialPrefs);
-  const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>(initialPrefs.subtitleSize ?? "medium");
+  const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(() => resolveCaptionStyle(initialPrefs.captionStyle));
+  const captionStyleRef = useRef(captionStyle);
+  captionStyleRef.current = captionStyle;
+  /** Sends the TV's current state to the phone again (set once the player exists). */
+  const republishRef = useRef<() => void>(() => {});
   // Whether the remembered choice has been applied to the video that is loaded now (once per video).
   const appliedRef = useRef({ subtitles: false, audio: false });
   const playerRef = useRef<PlayerState>(IDLE_STATE);
 
+  // Which episodes were watched, for the episode list.
+  const [watched, setWatched] = useState(() => parseWatched(readStorage(WATCHED_KEY)));
+  useEffect(() => {
+    writeStorage(WATCHED_KEY, serializeWatched(watched));
+  }, [watched]);
+  useEffect(() => {
+    if (!currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
+    setWatched((list) => recordWatching(list, currentMedia, player, Date.now()));
+  }, [player, currentMedia]);
+
   // Brief "+10s" flash after a skip, from the remote or the phone
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const [toast, setToast] = useState<{ id: number; text: string; notice?: boolean } | null>(null);
   const toastIdRef = useRef(0);
   const skipRunRef = useRef({ total: 0, at: 0 });
 
@@ -77,7 +116,7 @@ export function Tv() {
   // Preload next episode whenever current media has a series next URL
   useEffect(() => {
     const nextUrl = currentMedia?.series?.next?.url;
-    if (!nextUrl) {
+    if (!nextUrl || following) {
       preloadedNextMediaRef.current = null;
       return;
     }
@@ -117,7 +156,7 @@ export function Tv() {
     return () => {
       active = false;
     };
-  }, [currentMedia?.series?.next?.url]);
+  }, [currentMedia?.series?.next?.url, following]);
 
   const currentMediaRef = useRef<NormalizedMedia | null>(null);
   currentMediaRef.current = currentMedia;
@@ -125,7 +164,45 @@ export function Tv() {
   const upNextDismissedRef = useRef(false);
   upNextDismissedRef.current = upNextDismissed;
 
+  /* ------------------------------ sources ------------------------------ */
+
+  // Which of the video's sources is playing, and which have been tried since the last pick (a failing one is skipped).
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const sourceIndexRef = useRef(0);
+  const triedSourcesRef = useRef(new Set([0]));
+  const resetSources = () => {
+    sourceIndexRef.current = 0;
+    triedSourcesRef.current = new Set([0]);
+    setSourceIndex(0);
+  };
+  /** Play the video from one of its sources, carrying on from where it was. `manual`: someone picked it, so the others are fair game again. */
+  const loadSource = (index: number, manual: boolean) => {
+    const media = currentMediaRef.current;
+    const source = media ? sourcesOf(media)[index] : undefined;
+    if (!media || !source || (manual && index === sourceIndexRef.current)) return;
+    const at = playerRef.current.currentTime;
+    triedSourcesRef.current = manual ? new Set([index]) : triedSourcesRef.current.add(index);
+    sourceIndexRef.current = index;
+    setSourceIndex(index);
+    resetApplied();
+    void engineRef.current?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined);
+    engineRef.current?.play();
+  };
+
+  // A source that fails hands over to the next one that hasn't been tried, so the first one that works plays.
+  useEffect(() => {
+    if (player.state !== "error") return;
+    const media = currentMediaRef.current;
+    if (!media) return;
+    const sources = sourcesOf(media);
+    const next = sources.findIndex((_, index) => !triedSourcesRef.current.has(index));
+    if (next === -1) return;
+    notify(`${sources[sourceIndexRef.current]?.label ?? "That source"} didn't work. Trying ${sources[next]!.label}…`);
+    loadSource(next, false);
+  }, [player.state]);
+
   const triggerNextEpisode = () => {
+    if (followingRef.current) return; // the TV being followed picks what comes next
     setUpNextCountdown(null);
     setUpNextDismissed(false);
     const preloaded = preloadedNextMediaRef.current;
@@ -134,6 +211,7 @@ export function Tv() {
     if (preloaded && nextUrl) {
       setCurrentMedia(preloaded);
       resetApplied();
+      resetSources();
       engineRef.current?.load(preloaded.stream.url, preloaded.stream.type, preloaded.subtitles);
       engineRef.current?.play();
       socketRef.current?.send({ type: "TV_PLAY_URL", url: nextUrl });
@@ -207,10 +285,16 @@ export function Tv() {
     const picked = playerRef.current.audio?.tracks.find((candidate) => candidate.id === track);
     if (picked) remember({ audio: describeTrack(picked) });
   };
-  const chooseSize = (size: SubtitleSize) => {
-    setSubtitleSize(size);
-    remember({ subtitleSize: size });
+  /** From the TV's menu or the phone's style sheet: change some of the caption look, keep the rest, remember it. */
+  const changeCaptions = (changes: Partial<CaptionStyle>) => {
+    const next = resolveCaptionStyle({ ...captionStyleRef.current, ...changes });
+    captionStyleRef.current = next;
+    setCaptionStyle(next);
+    remember({ captionStyle: next });
   };
+  useEffect(() => republishRef.current(), [captionStyle]); // the phone's sheet shows what the TV really uses
+  const streamUrl = currentMedia?.stream.url;
+  useEffect(() => republishRef.current(), [streamUrl, sourceIndex]); // a state names its media and source, and those can change without the video doing so
 
   useEffect(() => {
     if (player.state === "idle") resetApplied();
@@ -256,28 +340,47 @@ export function Tv() {
   };
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 900);
+    const timer = setTimeout(() => setToast(null), toast.notice ? 1800 : 900);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  /** Say something on screen for a moment. */
+  const notify = (text: string) => {
+    toastIdRef.current += 1;
+    setToast({ id: toastIdRef.current, text, notice: true });
+  };
+
+  // A new speed, subtitle, audio track or quality is said on screen, whether it came from the menu, a key or the phone.
+  const lastPlayerRef = useRef<PlayerState>(IDLE_STATE);
+  useEffect(() => {
+    const change = describeChange(lastPlayerRef.current, player);
+    lastPlayerRef.current = player;
+    if (change && !followingRef.current) notify(change); // a follower is nudged in speed all the time; that is not news
+  }, [player]);
 
   /* ------------------------------ wiring ------------------------------ */
 
   useEffect(() => {
     const video = videoRef.current!;
+    const publish = (state: PlayerState) => {
+      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current);
+      setPlayer(full);
+      if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
+    };
+    // The leader's last position was this long ago (see TV_SYNC); a jump too soon after another would only chase a picture still filling.
+    let lastSeekAt = 0;
     const engine = new PlayerEngine(
       video,
-      (state) => {
-        setPlayer(state);
-        socketRef.current?.send({ type: "TV_STATE", state });
-      },
+      publish,
       () => {
         // onEnded: trigger next episode prompt or instant play
-        if (currentMediaRef.current?.series?.next && !upNextDismissedRef.current) {
+        if (!followingRef.current && currentMediaRef.current?.series?.next && !upNextDismissedRef.current) {
           setUpNextCountdown((prev) => (prev !== null && prev <= 5 ? prev : 5));
         }
       },
     );
     engineRef.current = engine;
+    republishRef.current = () => publish(engine.getState());
 
     const socket = connectSocket({
       hello: () => ({ type: "TV_HELLO", deviceId: readStorage(DEVICE_KEY) }),
@@ -287,8 +390,11 @@ export function Tv() {
           case "TV_WELCOME":
             writeStorage(DEVICE_KEY, message.deviceId);
             setPaired(message.paired);
+            setFollowing(message.following ?? null);
             setPairing(toPairing(message.pairing));
-            socketRef.current?.send({ type: "TV_STATE", state: engine.getState() });
+            if (!message.following) {
+              socketRef.current?.send({ type: "TV_STATE", state: withTvState(engine.getState(), captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current) });
+            }
             break;
           case "TV_CODE":
             setPairing(toPairing(message.pairing));
@@ -297,9 +403,38 @@ export function Tv() {
             setPaired(true);
             setPairing(null);
             break;
+          case "TV_FOLLOWING":
+            // Another TV's phone picked this one to watch along: no code to show now, and the video comes from that TV.
+            setPaired(true);
+            setPairing(null);
+            setFollowing(message.leader);
+            break;
+          case "TV_SYNC": {
+            const media = currentMediaRef.current;
+            if (!media || (message.stream && message.stream !== media.stream.url)) break; // not the same video (yet)
+            const local = engine.getState();
+            if (local.state !== "playing" && local.state !== "paused") break;
+            const rate = local.playbackRate ?? 1;
+            const step = syncStep(
+              { playing: message.playing, time: message.time, rate: message.rate },
+              { playing: local.state === "playing", time: local.currentTime, rate, buffering: Boolean(local.buffering) },
+              Date.now() - lastSeekAt,
+            );
+            if (step.seek !== undefined) {
+              engine.seek(step.seek);
+              lastSeekAt = Date.now();
+            }
+            if (Math.abs(step.rate - rate) > 0.001) engine.setPlaybackRate(step.rate);
+            if (step.play !== (local.state === "playing")) {
+              if (step.play) engine.play();
+              else engine.pause();
+            }
+            break;
+          }
           case "TV_UNPAIRED":
-            // The phone forgot this TV (it already told us to STOP): back to showing a fresh code.
+            // The phone forgot this TV (it already told us to STOP), or the party ended: back to showing a fresh code.
             setPaired(false);
+            setFollowing(null);
             setPairing(toPairing(message.pairing));
             setResolving(false);
             break;
@@ -328,6 +463,7 @@ export function Tv() {
               setUpNextCountdown(null);
               setUpNextDismissed(false);
               resetApplied();
+              resetSources();
               void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt);
             } else if (command.type === "PLAY") engine.play();
             else if (command.type === "PAUSE") engine.pause();
@@ -341,9 +477,11 @@ export function Tv() {
               engine.stop();
             } else if (command.type === "SET_QUALITY") engine.setQuality(command.level);
             else if (command.type === "SET_SUBTITLE") chooseSubtitle(command.track);
+            else if (command.type === "SET_CAPTION_STYLE") changeCaptions(command.style);
             else if (command.type === "SET_SPEED") engine.setPlaybackRate(command.rate);
             else if (command.type === "SET_AUDIO") chooseAudio(command.track);
-            else if (command.type === "TOGGLE_FULLSCREEN") toggleFullscreen();
+            else if (command.type === "SET_SOURCE") loadSource(command.index, true);
+            else if (command.type === "TOGGLE_FULLSCREEN") fullscreenFromPhone();
             else if (command.type === "NEXT_EPISODE") triggerNextEpisode();
             // Anything the phone does should be visible on the TV for a moment.
             if (command.type !== "LOAD" && command.type !== "STOP") wake();
@@ -354,7 +492,15 @@ export function Tv() {
     });
     socketRef.current = socket;
 
+    // The phone shows whether the TV is full screen, so tell it whenever that changes (Esc, the HUD button, the OK prompt).
+    const onFullscreenChange = () => {
+      republishRef.current();
+      if (document.fullscreenElement) setFsPrompt(false);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+
     return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
       socket.disconnect();
       engine.destroy();
     };
@@ -367,13 +513,29 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [resolving]);
 
+  const enterFullscreen = () => document.documentElement.requestFullscreen?.().catch(() => {});
+  /** From the TV's own remote or mouse, which the browser accepts as the press it needs. */
   const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen().catch(() => {});
-    }
+    if (!document.fullscreenElement) void enterFullscreen();
+    else document.exitFullscreen().catch(() => {});
   };
+  /**
+   * From the phone. Leaving is always allowed; going in is refused unless the TV page just got a click or key press,
+   * so then the TV asks for one (OK on its remote) instead of failing without a word.
+   */
+  const fullscreenFromPhone = () => {
+    if (document.fullscreenElement) return void document.exitFullscreen().catch(() => {});
+    document.documentElement.requestFullscreen?.().catch(() => setFsPrompt(true));
+  };
+  const acceptFullscreenPrompt = () => {
+    setFsPrompt(false);
+    void enterFullscreen();
+  };
+  useEffect(() => {
+    if (!fsPrompt) return;
+    const timer = setTimeout(() => setFsPrompt(false), 12_000);
+    return () => clearTimeout(timer);
+  }, [fsPrompt]);
 
   // Up Next Countdown interval
   useEffect(() => {
@@ -395,12 +557,13 @@ export function Tv() {
       player.duration > 30 &&
       player.currentTime >= player.duration - 15 &&
       currentMedia?.series?.next &&
+      !following &&
       !upNextDismissed &&
       upNextCountdown === null
     ) {
       setUpNextCountdown(15);
     }
-  }, [player.currentTime, player.duration, player.state, currentMedia?.series?.next, upNextDismissed, upNextCountdown]);
+  }, [player.currentTime, player.duration, player.state, currentMedia?.series?.next, following, upNextDismissed, upNextCountdown]);
 
   // Ask for a fresh code when the displayed one expires
   useEffect(() => {
@@ -422,9 +585,20 @@ export function Tv() {
   /** Pick an episode from the list: the server looks it up like any link, the TV shows the spinner meanwhile. */
   const playEpisode = (url: string) => {
     setMenu(null);
+    setBrowsing(false);
     setUpNextCountdown(null);
     setUpNextDismissed(false);
     socketRef.current?.send({ type: "TV_PLAY_URL", url });
+  };
+  /** A TV that watches along stops, and goes back to its own pairing screen. */
+  const leaveParty = () => {
+    engineRef.current?.stop();
+    setCurrentMedia(null);
+    socketRef.current?.send({ type: "TV_UNPAIR" });
+  };
+  const goToPrevious = () => {
+    const previous = previousEpisode(currentMediaRef.current?.series);
+    if (previous) playEpisode(previous.url);
   };
 
   // Arrow keys move along the buttons once one has focus; otherwise they seek. OK presses the focused button.
@@ -437,6 +611,24 @@ export function Tv() {
       const engine = engineRef.current;
       const overlayWasVisible = visibleRef.current;
       wake();
+
+      if (browsing) {
+        if (action === "back") setBrowsing(false);
+        return;
+      }
+
+      if (action === "browse") {
+        setBrowsing((prev) => !prev);
+        event.preventDefault();
+        return;
+      }
+
+      if (fsPrompt && (action === "select" || action === "back")) {
+        if (action === "select") acceptFullscreenPrompt();
+        else setFsPrompt(false);
+        event.preventDefault();
+        return;
+      }
 
       if (menu) {
         // The picker owns the keys; OK presses the focused option itself.
@@ -484,6 +676,14 @@ export function Tv() {
         if (action === "select") return; // press the focused button
       }
 
+      if (following) {
+        // Watching along: no playback keys, just the way out (Down, then OK) and full screen.
+        if (action === "down" && overlayWasVisible) controlsRef.current?.querySelector<HTMLElement>("button")?.focus();
+        else if (action === "fullscreen") toggleFullscreen();
+        event.preventDefault();
+        return;
+      }
+
       switch (action) {
         case "select":
         case "playpause":
@@ -511,6 +711,9 @@ export function Tv() {
         case "next":
           if (currentMedia?.series?.next) triggerNextEpisode();
           break;
+        case "previous":
+          goToPrevious();
+          break;
         case "captions":
           if (player.subtitles && player.subtitles.tracks.length > 0) {
             const total = player.subtitles.tracks.length;
@@ -531,7 +734,7 @@ export function Tv() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving]);
+  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, browsing]);
 
   /* ------------------------------ render ------------------------------ */
 
@@ -540,6 +743,7 @@ export function Tv() {
   // Series details
   const series = currentMedia?.series;
   const next = series?.next;
+  const previous = previousEpisode(series);
   const rawTitle = currentMedia?.title || APP_NAME;
   const mainTitle = series && rawTitle.includes("·") ? rawTitle.split("·")[0]!.trim() : rawTitle;
 
@@ -554,31 +758,56 @@ export function Tv() {
       onMouseMove={wake}
       onClick={wake}
     >
-      {/* Subtitle size: written out as a plain rule (::cue can't be sized from React, and var() inside ::cue isn't dependable on TV browsers). */}
-      <style>{`.tv-video::cue { font-size: ${SUBTITLE_FONT_SIZE[subtitleSize]}; }`}</style>
-
       <video
         ref={videoRef}
         className="tv-video"
         preload="auto"
         style={{ display: showVideo ? "block" : "none" }}
         playsInline
-        onClick={togglePlay}
+        onClick={following ? undefined : togglePlay}
         onDoubleClick={toggleFullscreen}
       />
 
-      {!unlocked && <TvLocked onUnlock={() => setUnlocked(true)} />}
+      {showVideo && <Captions videoRef={videoRef} style={captionStyle} />}
 
-      {unlocked && !showVideo && (
-        <TvIdle
-          paired={paired}
-          pairing={pairing}
-          resolving={resolving}
-          onDisconnect={() => socketRef.current?.send({ type: "TV_UNPAIR" })}
+      {/* Pressing OK here is also the press the browser needs to let the page go full screen. */}
+      {!unlocked && (
+        <TvLocked
+          onUnlock={() => {
+            void enterFullscreen();
+            setUnlocked(true);
+          }}
         />
       )}
 
-      {unlocked && showVideo && (
+      {unlocked && !showVideo && !browsing && (
+        <TvIdle
+          paired={paired}
+          following={following}
+          pairing={pairing}
+          resolving={resolving}
+          onDisconnect={() => socketRef.current?.send({ type: "TV_UNPAIR" })}
+          onBrowse={() => setBrowsing(true)}
+        />
+      )}
+
+      {unlocked && browsing && (
+        <TvBrowse
+          onPlay={playEpisode}
+          onClose={() => setBrowsing(false)}
+        />
+      )}
+
+      {unlocked && showVideo && following && (
+        <div className="tv-follow-bar" data-testid="tv-follow-bar" ref={controlsRef}>
+          <span>Watching along with {following}</span>
+          <button className="tv-leave" onClick={leaveParty} data-testid="tv-leave">
+            Leave
+          </button>
+        </div>
+      )}
+
+      {unlocked && showVideo && !following && (
         <Hud
           visible={controlsVisible}
           player={player}
@@ -586,7 +815,9 @@ export function Tv() {
           subTitle={series ? `Season ${series.season}, Episode ${series.episode}` : ""}
           badge={series ? `S${series.season}:E${series.episode}` : ""}
           clock={clock}
-          nextLabel={next ? next.title || `S${next.season}:E${next.episode}` : null}
+          nextLabel={next ? episodeLabel(next) : null}
+          prevLabel={previous ? episodeLabel(previous) : null}
+          sourceLabel={player.sources ? (player.sources.labels[player.sources.current] ?? null) : null}
           episodeCount={series?.episodes?.length ?? 0}
           resolving={resolving}
           toast={toast}
@@ -603,6 +834,7 @@ export function Tv() {
           onSkip={skip}
           onSeekTo={(time) => engineRef.current?.seek(time)}
           onNext={triggerNextEpisode}
+          onPrevious={goToPrevious}
           onDismissUpNext={dismissUpNext}
           onOpenMenu={setMenu}
           onFullscreen={toggleFullscreen}
@@ -615,16 +847,29 @@ export function Tv() {
           kind={menu}
           player={player}
           series={series}
-          subtitleSize={subtitleSize}
+          show={currentMedia ? seriesKeyOf(currentMedia) : undefined}
+          watched={watched}
+          captionStyle={captionStyle}
           rootRef={menuRef}
           onClose={() => setMenu(null)}
           onSubtitle={chooseSubtitle}
           onAudio={chooseAudio}
           onSpeed={(rate) => engineRef.current?.setPlaybackRate(rate)}
           onQuality={(level) => engineRef.current?.setQuality(level)}
-          onSize={chooseSize}
+          onSource={(index) => {
+            setMenu(null);
+            loadSource(index, true);
+          }}
+          onCaption={changeCaptions}
+          onKind={setMenu}
           onEpisode={playEpisode}
         />
+      )}
+
+      {unlocked && fsPrompt && (
+        <button className="tv-fs-prompt" data-testid="fs-prompt" onClick={acceptFullscreenPrompt}>
+          <FullscreenIcon /> Press OK for full screen
+        </button>
       )}
 
       {unlocked && connection !== "open" && (
@@ -639,6 +884,17 @@ export function Tv() {
     </main>
   );
 }
+
+/** What the TV knows that the video doesn't: which media this is, whether it is full screen, and how subtitles look. */
+const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number): PlayerState => ({
+  ...state,
+  ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
+  ...(media && state.state !== "idle" && sourcesOf(media).length > 1
+    ? { sources: { labels: sourcesOf(media).map((source) => source.label), current: sourceIndex } }
+    : {}),
+  fullscreen: Boolean(document.fullscreenElement),
+  captionStyle,
+});
 
 function toPairing(info: { code: string; expiresInMs: number } | null): Pairing | null {
   return info ? { code: info.code, expiresAt: Date.now() + info.expiresInMs } : null;

@@ -1,22 +1,35 @@
 import { useEffect, useState, type Ref } from "react";
 import {
+  CAPTION_LABELS,
+  CAPTION_SETTINGS,
+  CAPTION_TITLES,
+  CAPTION_VALUES,
+  describeStatus,
   episodeName,
+  episodeStatus,
   groupBySeason,
   isCurrentEpisode,
   PLAYBACK_SPEEDS,
+  type CaptionSetting,
+  type CaptionStyle,
   type PlayerState,
   type SeriesInfo,
+  type WatchedEntry,
 } from "../../shared";
+import { captionTextStyle } from "../shared/captionCss";
 import { CheckIcon, CloseIcon } from "../shared/icons";
-import { SUBTITLE_FONT_SIZE, SUBTITLE_SIZES, type SubtitleSize } from "./prefs";
 
-export type MenuKind = "tracks" | "speed" | "quality" | "episodes";
+export type MenuKind = "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes";
 
 interface Option {
   key: string | number;
   label: string;
   active: boolean;
+  /** Shown at the end of the row instead of a check mark (the current value of a setting). */
+  detail?: string;
   pick: () => void;
+  /** Moving onto the option already acts on it (a list of settings shows each one's choices as you pass). */
+  onFocus?: () => void;
 }
 interface Column {
   title: string;
@@ -27,28 +40,66 @@ interface MenuProps {
   kind: MenuKind;
   player: PlayerState;
   series: SeriesInfo | undefined;
-  subtitleSize: SubtitleSize;
+  captionStyle: CaptionStyle;
+  /** The show's key and what has been watched, to mark the episode list. */
+  show: string | undefined;
+  watched: readonly WatchedEntry[];
   rootRef: Ref<HTMLDivElement>;
   onClose: () => void;
   onSubtitle: (track: number) => void;
   onAudio: (track: number) => void;
   onSpeed: (rate: number) => void;
   onQuality: (level: number) => void;
-  onSize: (size: SubtitleSize) => void;
+  onSource: (index: number) => void;
+  onCaption: (changes: Partial<CaptionStyle>) => void;
+  onKind: (kind: MenuKind) => void;
   onEpisode: (url: string) => void;
 }
 
 const TITLES: Record<MenuKind, string> = {
   tracks: "Audio & Subtitles",
+  captions: "Subtitle style",
   speed: "Playback speed",
   quality: "Quality",
+  sources: "Source",
   episodes: "Episodes",
 };
 
-const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+interface Selection {
+  season: number | undefined;
+  setSeason: (season: number) => void;
+  setting: CaptionSetting;
+  setSetting: (setting: CaptionSetting) => void;
+}
 
-function columnsFor(p: MenuProps, season: number | undefined, setSeason: (season: number) => void): Column[] {
+function columnsFor(p: MenuProps, { season, setSeason, setting, setSetting }: Selection): Column[] {
   const { player, kind } = p;
+
+  if (kind === "captions") {
+    const labels = CAPTION_LABELS[setting] as Record<string, string>;
+    return [
+      {
+        title: "Style",
+        options: CAPTION_SETTINGS.map((key) => ({
+          key,
+          label: CAPTION_TITLES[key],
+          detail: (CAPTION_LABELS[key] as Record<string, string>)[p.captionStyle[key]],
+          active: key === setting,
+          pick: () => setSetting(key),
+          onFocus: () => setSetting(key),
+        })),
+      },
+      {
+        title: CAPTION_TITLES[setting],
+        options: CAPTION_VALUES[setting].map((value) => ({
+          key: value,
+          label: labels[value]!,
+          active: p.captionStyle[setting] === value,
+          pick: () => p.onCaption({ [setting]: value }),
+        })),
+      },
+    ];
+  }
 
   if (kind === "speed") {
     const rate = player.playbackRate ?? 1;
@@ -84,6 +135,21 @@ function columnsFor(p: MenuProps, season: number | undefined, setSeason: (season
     ];
   }
 
+  if (kind === "sources") {
+    const sources = player.sources;
+    return [
+      {
+        title: "Where the video comes from",
+        options: (sources?.labels ?? []).map((label, index) => ({
+          key: index,
+          label,
+          active: sources?.current === index,
+          pick: () => p.onSource(index),
+        })),
+      },
+    ];
+  }
+
   if (kind === "episodes") {
     const series = p.series;
     const groups = groupBySeason(series?.episodes ?? []);
@@ -109,6 +175,8 @@ function columnsFor(p: MenuProps, season: number | undefined, setSeason: (season
           key: `${episode.season}-${episode.episode}`,
           label: `${episode.episode}. ${episodeName(episode)}`,
           active: current,
+          // Where the check mark would be for the episode playing now: what's left of the others.
+          ...(current ? {} : { detail: describeStatus(episodeStatus(p.watched, p.show, episode.season, episode.episode)) }),
           // Picking what is already playing just closes the list.
           pick: () => (current ? p.onClose() : p.onEpisode(episode.url)),
         };
@@ -144,13 +212,8 @@ function columnsFor(p: MenuProps, season: number | undefined, setSeason: (season
       ],
     },
     {
-      title: "Subtitle size",
-      options: SUBTITLE_SIZES.map((size) => ({
-        key: size,
-        label: capitalize(size),
-        active: p.subtitleSize === size,
-        pick: () => p.onSize(size),
-      })),
+      title: "Appearance",
+      options: [{ key: "style", label: "Customize…", active: false, pick: () => p.onKind("captions") }],
     },
   ];
 }
@@ -158,7 +221,8 @@ function columnsFor(p: MenuProps, season: number | undefined, setSeason: (season
 /** Audio / subtitles / speed / quality / episodes picker. Every option is a real button so the remote's arrows and OK just work. */
 export function TvMenu(props: MenuProps) {
   const [season, setSeason] = useState<number | undefined>(props.series?.season);
-  const columns = columnsFor(props, season, setSeason);
+  const [setting, setSetting] = useState<CaptionSetting>(CAPTION_SETTINGS[0]!);
+  const columns = columnsFor(props, { season, setSeason, setting, setSetting });
 
   // Start on whatever is selected now (the episode you're watching, the current language), so OK changes nothing by accident.
   useEffect(() => {
@@ -203,19 +267,22 @@ export function TvMenu(props: MenuProps) {
                     role="option"
                     aria-selected={option.active}
                     onClick={option.pick}
+                    onFocus={option.onFocus}
                   >
                     <span>{option.label}</span>
-                    {option.active && <CheckIcon />}
+                    {option.detail !== undefined ? <em className="tv-opt-detail">{option.detail}</em> : option.active && <CheckIcon />}
                   </button>
                 ))}
               </div>
             </div>
           ))}
         </div>
-        {props.kind === "tracks" && (
-          // The same look and size the real subtitles get, so a size can be judged before it is chosen.
+        {(props.kind === "tracks" || props.kind === "captions") && (
+          // Drawn exactly like the real subtitles, so a look can be judged before it is chosen.
           <div className="tv-sub-preview" data-testid="subtitle-preview" aria-hidden="true">
-            <span style={{ fontSize: SUBTITLE_FONT_SIZE[props.subtitleSize] }}>This is how your subtitles will look</span>
+            <span className="tv-caption" style={captionTextStyle(props.captionStyle)}>
+              This is how your subtitles will look
+            </span>
           </div>
         )}
       </div>

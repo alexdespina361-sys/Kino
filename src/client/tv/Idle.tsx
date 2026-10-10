@@ -1,6 +1,7 @@
 import { formatCode } from "../shared/format";
 import { CheckIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
+import { RoleSwitch } from "../shared/RoleSwitch";
 import { QrCode } from "../shared/QrCode";
 
 export interface Pairing {
@@ -26,21 +27,26 @@ export function TvLocked({ onUnlock }: { onUnlock: () => void }) {
       <button className="tv-ok" autoFocus onClick={onUnlock} data-testid="unlock">
         Press OK to enable playback
       </button>
+      <RoleSwitch to="remote" />
     </section>
   );
 }
 
 interface IdleProps {
   paired: boolean;
+  /** The name of the TV this one watches along with, if it does. */
+  following: string | null;
   pairing: Pairing | null;
   /** The server is looking up a link the phone just sent. */
   resolving: boolean;
   /** Let go of the paired phone and show a new code. */
   onDisconnect: () => void;
+  /** Open TV library browse screen. */
+  onBrowse?: () => void;
 }
 
 /** Everything the TV shows while nothing is playing. */
-export function TvIdle({ paired, pairing, resolving, onDisconnect }: IdleProps) {
+export function TvIdle({ paired, following, pairing, resolving, onDisconnect, onBrowse }: IdleProps) {
   if (resolving) {
     return (
       <section className="tv-screen" data-testid="tv-resolving">
@@ -58,14 +64,20 @@ export function TvIdle({ paired, pairing, resolving, onDisconnect }: IdleProps) 
         <span className="tv-ready-icon">
           <CheckIcon />
         </span>
-        <h1 className="tv-headline" data-testid="tv-paired">
-          Connected. Waiting for a video…
+        <h1 className="tv-headline" data-testid={following ? "tv-following" : "tv-paired"}>
+          {following ? `Watching along with ${following}` : "Connected. Waiting for a video…"}
         </h1>
-        <p className="tv-lead">Send a link from your phone to start watching.</p>
-        {/* Reached with the remote's Down button (see Tv.tsx), then OK. */}
-        <button className="tv-disconnect" onClick={onDisconnect} data-testid="tv-disconnect">
-          Disconnect from phone
-        </button>
+        <p className="tv-lead">{following ? "It starts here when it starts there." : "Send a link from your phone or browse titles directly."}</p>
+        <div style={{ display: "flex", gap: "1em", alignItems: "center" }}>
+          {onBrowse && (
+            <button className="tv-btn tv-btn-red" onClick={onBrowse} data-testid="tv-browse-open">
+              Browse Library
+            </button>
+          )}
+          <button className="tv-disconnect" onClick={onDisconnect} data-testid="tv-disconnect">
+            {following ? "Stop watching along" : "Disconnect from phone"}
+          </button>
+        </div>
       </section>
     );
   }
@@ -99,6 +111,12 @@ export function TvIdle({ paired, pairing, resolving, onDisconnect }: IdleProps) 
             <p>Or scan this with your camera</p>
           </div>
         </div>
+        {onBrowse && (
+          <button className="tv-btn tv-btn-red" onClick={onBrowse} data-testid="tv-browse-open" style={{ marginTop: "1em" }}>
+            Browse Library
+          </button>
+        )}
+        <RoleSwitch to="remote" />
       </section>
     );
   }

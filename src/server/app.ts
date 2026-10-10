@@ -3,6 +3,7 @@ import path from "node:path";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
+import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
 import { Hub, type HubOptions } from "./websocket/hub";
@@ -16,6 +17,8 @@ export interface AppOptions {
   registry?: Registry;
   /** URL -> media. Defaults to the real registry (adapters, then generic). Tests inject fakes. */
   resolve?: ResolveFn;
+  /** Where the library's titles come from. None by default, so nothing here reaches the network unless asked. */
+  librarySources?: LibrarySource[];
   /** Let the resolver fetch loopback/LAN pages (local fixtures). Default false; env ALLOW_PRIVATE_NETWORK=1. */
   allowPrivateNetwork?: boolean;
   /** Socket liveness tuning; tests shorten it. */
@@ -52,6 +55,16 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     hub.handleConnection(socket);
   });
   app.get("/api/health", async () => ({ ok: true }));
+  const library = createLibrary({ sources: options.librarySources ?? [], log: app.log });
+  app.get("/api/library", async (_request, reply) => {
+    reply.header("Cache-Control", "public, max-age=300");
+    return library.get();
+  });
+  app.get<{ Querystring: { q?: string } }>("/api/library/search", async (request, reply) => {
+    const q = request.query.q ?? "";
+    const items = await library.search(q);
+    return reply.send({ items });
+  });
   app.options("/api/proxy", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");

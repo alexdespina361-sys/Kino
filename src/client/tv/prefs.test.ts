@@ -33,8 +33,13 @@ describe("describeTrack", () => {
 
 describe("prefs storage", () => {
   it("round-trips, including an explicit 'off'", () => {
-    const prefs = { subtitles: "off" as const, audio: { lang: "en", label: "English" }, subtitleSize: "large" as const };
+    const prefs = { subtitles: "off" as const, audio: { lang: "en", label: "English" }, captionStyle: { size: "large" as const, color: "yellow" as const } };
     expect(parsePrefs(serializePrefs(prefs))).toEqual(prefs);
+  });
+
+  it("keeps the subtitle size an older version stored, as part of the caption look", () => {
+    expect(parsePrefs('{"subtitleSize":"large"}')).toEqual({ captionStyle: { size: "large" } });
+    expect(parsePrefs('{"subtitleSize":"small","captionStyle":{"size":"xlarge"}}')).toEqual({ captionStyle: { size: "xlarge" } });
   });
 
   it("ignores missing, corrupt or foreign data", () => {
@@ -42,5 +47,6 @@ describe("prefs storage", () => {
     expect(parsePrefs("{nope")).toEqual({});
     expect(parsePrefs('{"subtitleSize":"gigantic"}')).toEqual({});
     expect(parsePrefs('{"subtitles":"on"}')).toEqual({});
+    expect(parsePrefs('{"captionStyle":{"color":"plaid"}}')).toEqual({});
   });
 });

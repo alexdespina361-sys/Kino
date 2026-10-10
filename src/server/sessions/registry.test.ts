@@ -154,6 +154,82 @@ describe("Registry: unpair", () => {
   });
 });
 
+describe("Registry: watching together", () => {
+  /** A phone paired to a leader TV, and a second TV waiting with its own code. */
+  function party() {
+    const { registry } = setup({ generateCode: counter(["111111", "222222", "333333", "444444", "555555", "666666", "777777", "888888"]) });
+    const leader = registry.tvHello();
+    const controller = registry.controllerHello();
+    registry.ensureCode(leader);
+    registry.pair(controller, "111111");
+    const join = () => {
+      const tv = registry.tvHello();
+      const code = registry.ensureCode(tv)!.code;
+      return { tv, code, result: registry.addFollower(controller, code) };
+    };
+    return { registry, leader, controller, join };
+  }
+
+  it("makes a TV watch along when its code is given to the phone that controls the leader", () => {
+    const { registry, leader, join } = party();
+    const { tv, result } = join();
+    expect(result).toEqual({ ok: true, leader, follower: tv });
+    expect(tv.leaderId).toBe(leader.id);
+    expect(leader.followerIds).toEqual([tv.id]);
+    expect(registry.followersOf(leader)).toEqual([tv]);
+    expect(registry.leaderOf(tv)).toBe(leader);
+    expect(registry.ensureCode(tv)).toBeNull(); // it has a party now, so it shows no pairing code
+  });
+
+  it("burns the code it used", () => {
+    const { registry, join } = party();
+    const { code } = join();
+    expect(registry.pair(registry.controllerHello(), code)).toBeNull();
+  });
+
+  it("needs a phone with a TV, a right code, and room in the party", () => {
+    const { registry, controller, join } = party();
+    expect(registry.addFollower(registry.controllerHello(), "999999")).toEqual({ ok: false, reason: "NOT_PAIRED" });
+    expect(registry.addFollower(controller, "000000")).toEqual({ ok: false, reason: "INVALID_CODE" });
+    for (let i = 0; i < 5; i++) expect(join().result.ok).toBe(true);
+    expect(join().result).toEqual({ ok: false, reason: "PARTY_FULL" });
+  });
+
+  it("lets the phone send a TV away by its public id, which is not the TV's secret", () => {
+    const { registry, leader, controller, join } = party();
+    const { tv } = join();
+    expect(tv.publicId).not.toContain(tv.id);
+    expect(registry.removeFollower(controller, "nobody")).toBeNull();
+    expect(registry.removeFollower(controller, tv.publicId)).toEqual({ leader, follower: tv });
+    expect(leader.followerIds).toEqual([]);
+    expect(tv.leaderId).toBeNull();
+    expect(registry.ensureCode(tv)?.code).toMatch(/^\d{6}$/); // free again, with a code of its own
+  });
+
+  it("lets a TV leave the party from its side, and leaves the others be", () => {
+    const { registry, leader, join } = party();
+    const first = join().tv;
+    const second = join().tv;
+    expect(registry.unpairDevice(first)).toBeNull();
+    expect(leader.followerIds).toEqual([second.id]);
+    expect(first.leaderId).toBeNull();
+  });
+
+  it("ends the party when the phone lets go of the leader, or the leader of the phone", () => {
+    const one = party();
+    const a = one.join().tv;
+    const b = one.join().tv;
+    one.registry.unpair(one.controller);
+    expect([a.leaderId, b.leaderId, one.leader.followerIds]).toEqual([null, null, []]);
+
+    const two = party();
+    const c = two.join().tv;
+    two.registry.unpairDevice(two.leader);
+    expect(c.leaderId).toBeNull();
+    expect(two.leader.followerIds).toEqual([]);
+  });
+});
+
 function counter(values: string[]) {
   let i = 0;
   return () => values[Math.min(i++, values.length - 1)]!;

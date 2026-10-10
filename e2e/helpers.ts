@@ -1,6 +1,9 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type ServerMessage } from "../src/shared";
 
+/** A phone: a narrow touch screen, which is how the page tells a remote from a TV. */
+export const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true } as const;
+
 /** Open /tv in its own browser context (its own storage, like a separate device) and press OK. */
 export async function openTv(browser: Browser): Promise<Page> {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
@@ -16,7 +19,7 @@ export async function readPairingCode(tv: Page): Promise<string> {
 }
 
 export async function openPairedPhone(browser: Browser, tv: Page): Promise<Page> {
-  const phone = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+  const phone = await (await browser.newContext(PHONE)).newPage();
   await phone.goto("/");
   await phone.getByTestId("code-input").fill(await readPairingCode(tv)); // connects by itself on the sixth digit
   await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");

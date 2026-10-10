@@ -68,6 +68,13 @@ export const NextIcon = (props: Props) => (
   </Icon>
 );
 
+export const PreviousIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M19 5v14L9 12z" fill="currentColor" />
+    <path d="M5 5v14" />
+  </Icon>
+);
+
 export const SubtitlesIcon = (props: Props) => (
   <Icon {...props}>
     <rect x="3" y="5" width="18" height="14" rx="2.5" />

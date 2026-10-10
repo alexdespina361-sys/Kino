@@ -9,6 +9,7 @@ import {
   NextIcon,
   PauseIcon,
   PlayIcon,
+  PreviousIcon,
   StopIcon,
   SubtitlesIcon,
 } from "../shared/icons";
@@ -26,12 +27,16 @@ export interface HudProps {
   clock: string;
   /** Label of the next episode, when there is one. */
   nextLabel: string | null;
+  /** Label of the episode before this one, when there is one. */
+  prevLabel: string | null;
+  /** Which source is playing, when the video has more than one. */
+  sourceLabel: string | null;
   /** How many episodes the source listed (0 for movies); the Episodes button appears with two or more. */
   episodeCount: number;
   /** A link is being looked up (the next episode, or one picked from the list). */
   resolving: boolean;
   /** Brief "+10s" / "-10s" flash after a skip. `id` changes on every skip so the animation replays. */
-  toast: { id: number; text: string } | null;
+  toast: { id: number; text: string; notice?: boolean } | null;
   upNext: { seconds: number; label: string } | null;
   /** The controls row, so the remote's arrows can move focus along it. */
   controlsRef: Ref<HTMLDivElement>;
@@ -39,6 +44,7 @@ export interface HudProps {
   onSkip: (seconds: number) => void;
   onSeekTo: (time: number) => void;
   onNext: () => void;
+  onPrevious: () => void;
   onDismissUpNext: () => void;
   onOpenMenu: (kind: MenuKind) => void;
   onFullscreen: () => void;
@@ -70,7 +76,7 @@ export function Hud(p: HudProps) {
   return (
     <>
       {p.toast && (
-        <div className="hud-toast" key={p.toast.id} aria-live="polite">
+        <div className={`hud-toast ${p.toast.notice ? "notice" : ""}`} data-testid="tv-toast" key={p.toast.id} aria-live="polite">
           {p.toast.text}
         </div>
       )}
@@ -195,6 +201,12 @@ export function Hud(p: HudProps) {
               >
                 <Forward10Icon />
               </button>
+              {p.prevLabel && (
+                <button className="tv-btn" data-testid="tv-prev-btn" onClick={p.onPrevious} title="Previous episode (P)">
+                  <PreviousIcon /> Previous
+                  <small>{p.prevLabel}</small>
+                </button>
+              )}
               {p.nextLabel && (
                 <button className="tv-btn tv-btn-red" data-testid="tv-next-btn" onClick={p.onNext} title="Next episode (N)">
                   <NextIcon /> Next episode
@@ -217,6 +229,11 @@ export function Hud(p: HudProps) {
                   title="Audio & subtitles (C cycles subtitles)"
                 >
                   <SubtitlesIcon /> Audio &amp; subtitles
+                </button>
+              )}
+              {p.sourceLabel && (
+                <button className="tv-btn" data-testid="tv-source-btn" onClick={() => p.onOpenMenu("sources")} title="Source">
+                  {p.sourceLabel}
                 </button>
               )}
               <button

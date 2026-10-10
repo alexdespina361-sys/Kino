@@ -11,6 +11,8 @@ describe("actionForKey", () => {
     [{ key: "MediaRewind" }, "rewind"],
     [{ key: "MediaFastForward" }, "forward"],
     [{ key: "MediaTrackNext" }, "next"],
+    [{ key: "MediaTrackPrevious" }, "previous"],
+    [{ key: "p" }, "previous"],
     [{ key: "MediaStop" }, "stop"],
     [{ key: "Escape" }, "back"],
     [{ key: "Backspace" }, "back"],
@@ -26,6 +28,8 @@ describe("actionForKey", () => {
     expect(actionForKey({ key: "Unidentified", keyCode: 89 })).toBe("rewind");
     expect(actionForKey({ key: "Unidentified", keyCode: 90 })).toBe("forward");
     expect(actionForKey({ key: "Unidentified", keyCode: 85 })).toBe("playpause");
+    expect(actionForKey({ key: "Unidentified", keyCode: 176 })).toBe("next");
+    expect(actionForKey({ key: "Unidentified", keyCode: 177 })).toBe("previous");
   });
 
   it("ignores everything else, so the browser keeps its own shortcuts", () => {

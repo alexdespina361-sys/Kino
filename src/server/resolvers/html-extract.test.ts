@@ -82,6 +82,7 @@ describe("candidate ranking", () => {
   it("takes the title from og:title, then <title>", () => {
     expect(extract('<title>Page &amp; Co</title><meta property="og:title" content="OG Title">').title).toBe("OG Title");
     expect(extract("<title>  Page &amp;\n Co </title>").title).toBe("Page & Co");
+    expect(extract('<meta property="og:title" content="Elephants Dream : Free Download, Borrow, and Streaming : Internet Archive">').title).toBe("Elephants Dream");
   });
 });
 

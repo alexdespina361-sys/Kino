@@ -25,7 +25,7 @@ export class ResolverRegistry {
     return this.adapters.find((a) => a.domains.some((d) => host === d || host.endsWith(`.${d}`)));
   }
 
-  resolve: ResolveFn = async (raw) => {
+  resolve: ResolveFn = async (raw, isPrefetch = false) => {
     if (!isHttpUrl(raw)) return { status: "invalid_url" };
 
     const started = this.now();
@@ -47,12 +47,12 @@ export class ResolverRegistry {
     if (result.status === "success") {
       result = { ...result, media: completeSeries(result.media) };
       this.cache.set(raw, { result, expiresAt: started + 600_000 }); // 10 min cache
-      if (result.media.series?.next?.url) {
-        // Pre-resolve the next episode in the background
+      if (!isPrefetch && result.media.series?.next?.url) {
+        // Pre-resolve only the immediate next episode in the background
         const nextUrl = result.media.series.next.url;
         setTimeout(() => {
           if (!this.cache.has(nextUrl)) {
-            this.resolve(nextUrl).catch(() => {});
+            this.resolve(nextUrl, true).catch(() => {});
           }
         }, 100);
       }

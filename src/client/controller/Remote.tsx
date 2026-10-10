@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import type { Command, NormalizedMedia, PlayerState, TvInfo } from "../../shared";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { episodeLabel, previousEpisode, type Command, type NormalizedMedia, type PlayerState, type TvInfo } from "../../shared";
 import { friendlyError, hostOf } from "../shared/format";
 import {
   Back10Icon,
@@ -10,12 +10,13 @@ import {
   NextIcon,
   PauseIcon,
   PlayIcon,
+  PreviousIcon,
   StopIcon,
   SubtitlesIcon,
 } from "../shared/icons";
 import { SeekBar } from "./SeekBar";
 
-export type SheetKind = "link" | "menu" | "tracks" | "speed" | "quality" | "episodes";
+export type SheetKind = "link" | "menu" | "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes" | "party";
 
 interface RemoteProps {
   tv: TvInfo;
@@ -26,6 +27,7 @@ interface RemoteProps {
   send: (command: Command) => void;
   onStop: () => void;
   onNext: () => void;
+  onPrevious: () => void;
   onOpen: (sheet: SheetKind) => void;
 }
 
@@ -52,11 +54,27 @@ function Chip({ icon, label, value, onClick, testId }: { icon?: ReactNode; label
 }
 
 /** The remote: what's playing, a seek bar, transport buttons, and the extras that apply to this video. */
-export function Remote({ tv, online, media, player, send, onStop, onNext, onOpen }: RemoteProps) {
+export function Remote({ tv, online, media, player, send, onStop, onNext, onPrevious, onOpen }: RemoteProps) {
   const series = media.series;
   const rawTitle = media.title ?? hostOf(media.stream.url) ?? media.stream.url;
   const title = series && rawTitle.includes("·") ? rawTitle.split("·")[0]!.trim() : rawTitle;
   const playing = player.state === "playing";
+  // A TV can't be sent into full screen without a press on the TV itself; if it hasn't gone in shortly after the tap, say so.
+  const [fsHint, setFsHint] = useState(false);
+  const fullscreenRef = useRef(player.fullscreen);
+  fullscreenRef.current = player.fullscreen;
+  useEffect(() => {
+    if (player.fullscreen) setFsHint(false);
+  }, [player.fullscreen]);
+  useEffect(() => {
+    if (!fsHint) return;
+    const timer = setTimeout(() => setFsHint(false), 8000);
+    return () => clearTimeout(timer);
+  }, [fsHint]);
+  const toggleFullscreen = () => {
+    send({ type: "TOGGLE_FULLSCREEN" });
+    if (!player.fullscreen) setTimeout(() => setFsHint(!fullscreenRef.current), 800);
+  };
   const busy = player.state === "loading" || (player.state !== "error" && Boolean(player.buffering));
 
   const subtitleName = player.subtitles
@@ -68,6 +86,7 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onOpen
       ? (player.quality.levels.find((level) => level.id === player.quality?.current)?.label ?? "HD")
       : "Auto";
   const next = series?.next;
+  const previous = previousEpisode(series);
 
   return (
     <>
@@ -125,11 +144,21 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onOpen
         </button>
       </div>
 
-      {next && (
-        <button className="btn btn-red btn-block" data-testid="next-episode" onClick={onNext} disabled={!online}>
-          <NextIcon /> Next episode
-          <small>{next.title || `S${next.season}:E${next.episode}`}</small>
-        </button>
+      {(previous || next) && (
+        <div className="episode-nav">
+          {previous && (
+            <button className="btn" data-testid="previous-episode" onClick={onPrevious} disabled={!online}>
+              <PreviousIcon /> Previous
+              <small>{episodeLabel(previous)}</small>
+            </button>
+          )}
+          {next && (
+            <button className="btn btn-red" data-testid="next-episode" onClick={onNext} disabled={!online}>
+              <NextIcon /> Next
+              <small>{episodeLabel(next)}</small>
+            </button>
+          )}
+        </div>
       )}
 
       <div className="chips">
@@ -145,18 +174,32 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onOpen
             onClick={() => onOpen("tracks")}
           />
         )}
+        {player.sources && (
+          <Chip
+            testId="chip-source"
+            label="Source"
+            value={player.sources.labels[player.sources.current] ?? "Source"}
+            onClick={() => onOpen("sources")}
+          />
+        )}
         <Chip testId="chip-speed" label="Speed" value={`${player.playbackRate ?? 1}×`} onClick={() => onOpen("speed")} />
         {player.quality && player.quality.levels.length > 1 && (
           <Chip testId="chip-quality" label="Quality" value={qualityName} onClick={() => onOpen("quality")} />
         )}
       </div>
 
+      {fsHint && (
+        <p className="banner" data-testid="fs-hint" role="status">
+          Press <b>OK</b> on the TV's remote to go full screen. Browsers only allow it from the TV itself.
+        </p>
+      )}
+
       <div className="actions">
         <button className="btn btn-danger" data-testid="stop" onClick={onStop}>
           <StopIcon /> Stop
         </button>
-        <button className="btn" data-testid="fullscreen" onClick={() => send({ type: "TOGGLE_FULLSCREEN" })} disabled={!online}>
-          <FullscreenIcon /> Fullscreen
+        <button className="btn" data-testid="fullscreen" onClick={toggleFullscreen} disabled={!online}>
+          <FullscreenIcon /> {player.fullscreen ? "Exit full screen" : "Full screen"}
         </button>
         <button className="btn" data-testid="change-video" onClick={() => onOpen("link")}>
           <LinkIcon /> New link

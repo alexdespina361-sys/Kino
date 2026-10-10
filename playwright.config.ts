@@ -15,7 +15,7 @@ export default defineConfig({
     command: "pnpm build && pnpm start",
     url: `http://127.0.0.1:${PORT}/api/health`,
     // ALLOW_PRIVATE_NETWORK lets the resolver fetch our own localhost fixture pages. Test-only; off by default.
-    env: { PORT: String(PORT), HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1" },
+    env: { PORT: String(PORT), HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off" },
     reuseExistingServer: false,
     timeout: 120_000,
   },

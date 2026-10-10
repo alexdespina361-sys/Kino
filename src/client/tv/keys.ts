@@ -13,10 +13,14 @@ export type RemoteAction =
   | "rewind"
   | "forward"
   | "next"
+  | "previous"
   | "captions"
-  | "fullscreen";
+  | "fullscreen"
+  | "browse";
 
 const BY_KEY: Record<string, RemoteAction> = {
+  b: "browse",
+  B: "browse",
   ArrowLeft: "left",
   ArrowRight: "right",
   ArrowUp: "up",
@@ -32,6 +36,7 @@ const BY_KEY: Record<string, RemoteAction> = {
   MediaRewind: "rewind",
   MediaFastForward: "forward",
   MediaTrackNext: "next",
+  MediaTrackPrevious: "previous",
   Escape: "back",
   Backspace: "back",
   BrowserBack: "back",
@@ -42,6 +47,8 @@ const BY_KEY: Record<string, RemoteAction> = {
   F: "fullscreen",
   n: "next",
   N: "next",
+  p: "previous",
+  P: "previous",
   s: "stop",
   S: "stop",
 };
@@ -62,6 +69,7 @@ const BY_KEY_CODE: Record<number, RemoteAction> = {
   89: "rewind",
   90: "forward",
   176: "next",
+  177: "previous",
   178: "stop",
   179: "playpause",
 };

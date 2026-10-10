@@ -6,7 +6,7 @@ export type ResolveResult =
   | { status: "temporary_failure"; reason: string }
   | { status: "invalid_url" };
 
-export type ResolveFn = (url: string) => Promise<ResolveResult>;
+export type ResolveFn = (url: string, isPrefetch?: boolean) => Promise<ResolveResult>;
 
 /** One way of turning a URL into playable media. The generic resolver is a list of these. */
 export interface Resolver {

@@ -199,5 +199,9 @@ export function extractMedia(html: string, pageUrl: URL): Extracted {
 
   const titleTag = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
   const title = ld.title ?? meta["og:title"] ?? (titleTag ? decodeEntities(titleTag).replace(/\s+/g, " ").trim() : undefined);
-  return { title: title?.slice(0, 300) || undefined, candidates };
+  return { title: title ? cleanTitle(title).slice(0, 300) || undefined : undefined, candidates };
 }
+
+/** The Internet Archive ends every page title with its own boilerplate; the TV and the phone should show just the name. */
+const ARCHIVE_SUFFIX = /\s*:\s*Free Download, Borrow, and Streaming\s*:\s*Internet Archive\s*$/i;
+const cleanTitle = (title: string) => title.replace(ARCHIVE_SUFFIX, "");

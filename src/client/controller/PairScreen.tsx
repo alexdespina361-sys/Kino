@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { SocketStatus } from "../shared/socket";
 import { ScanIcon, TvIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
+import { RoleSwitch } from "../shared/RoleSwitch";
 import { cameraAvailable, Scanner } from "./Scanner";
 
 interface PairScreenProps {
@@ -47,7 +48,7 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
       </div>
       <h1>Connect to your TV</h1>
       <p className="muted">
-        Open <b>{location.host}/tv</b> on your TV and press OK. Then {canScan ? "scan the QR code it shows" : "type the 6-digit code it shows"}.
+        Open <b>{location.host}</b> on your TV and press OK. Then {canScan ? "scan the QR code it shows" : "type the 6-digit code it shows"}.
       </p>
 
       {canScan && (
@@ -92,6 +93,7 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
       )}
 
       {scanning && <Scanner onCode={scanned} onClose={() => setScanning(false)} />}
+      <RoleSwitch to="tv" />
     </main>
   );
 }

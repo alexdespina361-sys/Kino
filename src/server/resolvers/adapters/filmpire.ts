@@ -1,4 +1,4 @@
-import type { EpisodeRef, SeriesInfo, SubtitleTrack } from "../../../shared";
+import type { AlternateSource, EpisodeRef, SeriesInfo, SubtitleTrack } from "../../../shared";
 import type { ResolveResult, SiteAdapter } from "../types";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -478,6 +478,32 @@ export function createFilmpireAdapter(): SiteAdapter {
       // 8. Wrap through /api/proxy with referer so the TV player never hits CORS issues
       const proxiedUrl = `/api/proxy?url=${encodeURIComponent(finalStreamUrl)}&referer=${encodeURIComponent(playerUrl)}`;
 
+      // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
+      const alternates: AlternateSource[] = [];
+      for (const sUrl of streamUrls) {
+        if (sUrl === chosenStream) continue;
+        if (alternates.length >= 4) break;
+        try {
+          const origin = new URL(sUrl).origin;
+          const hostName = new URL(sUrl).hostname.split(".")[0] || "Server";
+          const altToken = await getHostToken(origin, playerUrl);
+          const altDelim = sUrl.includes("?") ? "&" : "?";
+          const altFinalUrl = altToken
+            ? `${sUrl}${altDelim}token=${encodeURIComponent(altToken)}&bypass_localize=true`
+            : sUrl;
+          const altProxied = `/api/proxy?url=${encodeURIComponent(altFinalUrl)}&referer=${encodeURIComponent(playerUrl)}`;
+          alternates.push({
+            label: `Server ${alternates.length + 2} (${hostName})`,
+            stream: {
+              url: altProxied,
+              type: "hls",
+            },
+          });
+        } catch {
+          // ignore failed alternate
+        }
+      }
+
       return {
         status: "success",
         resolver: "filmpire",
@@ -489,6 +515,7 @@ export function createFilmpireAdapter(): SiteAdapter {
           },
           subtitles: subtitles.length ? subtitles : undefined,
           series: seriesInfo,
+          alternates: alternates.length ? alternates : undefined,
         },
       };
     },

@@ -1,9 +1,11 @@
 import type { WebSocket } from "ws";
 import {
   IDLE_STATE,
+  MAX_FOLLOWERS,
   parseClientMessage,
   type ClientMessage,
   type Command,
+  type PartyTv,
   type ResolveStatus,
   type ServerMessage,
 } from "../../shared";
@@ -78,7 +80,9 @@ export class Hub {
       if (conn.role === "tv" && this.tvs.get(conn.deviceId) === socket) {
         this.tvs.delete(conn.deviceId);
         const device = this.registry.getDevice(conn.deviceId);
-        if (device?.controllerId) this.toController(device.controllerId, { type: "TV_STATUS", online: false });
+        if (device) this.toControllers(device, { type: "TV_STATUS", online: false });
+        const leader = device && this.registry.leaderOf(device);
+        if (leader) this.sendParty(leader);
       }
       if (conn.role === "controller" && this.controllers.get(conn.controllerId) === socket) {
         this.controllers.delete(conn.controllerId);
@@ -114,13 +118,19 @@ export class Hub {
     this.tvs.set(device.id, socket);
     if (previous && previous !== socket) previous.close(CLOSE_REPLACED, "replaced");
 
+    const leader = this.registry.leaderOf(device);
     this.send(socket, {
       type: "TV_WELCOME",
       deviceId: device.id,
-      paired: device.controllerId !== null,
+      paired: device.controllerId !== null || leader !== undefined,
       pairing: this.registry.ensureCode(device),
+      ...(leader ? { following: leader.name } : {}),
     });
-    if (device.controllerId) this.toController(device.controllerId, { type: "TV_STATUS", online: true });
+    this.toControllers(device, { type: "TV_STATUS", online: true });
+    if (leader) {
+      this.catchUp(device, leader); // a page that was reloaded mid-film picks up where the others are
+      this.sendParty(leader);
+    }
     return { role: "tv", socket, deviceId: device.id };
   }
 
@@ -130,20 +140,34 @@ export class Hub {
 
     if (message.type === "TV_STATE") {
       device.state = message.state;
-      if (device.controllerId) this.toController(device.controllerId, { type: "STATE", state: message.state });
+      this.toControllers(device, { type: "STATE", state: message.state });
+      this.syncFollowers(device);
     } else if (message.type === "TV_NEW_CODE") {
       const pairing = this.registry.ensureCode(device);
       if (pairing) this.send(this.tvs.get(deviceId), { type: "TV_CODE", pairing });
     } else if (message.type === "TV_NEXT_EPISODE") {
+      if (device.leaderId) return; // a TV that watches along follows; it doesn't choose
       if (device.media?.series?.next?.url) {
         void this.playUrlForDevice(device, device.media.series.next.url);
       }
     } else if (message.type === "TV_PLAY_URL") {
+      if (device.leaderId) return;
       void this.playUrlForDevice(device, message.url);
     } else if (message.type === "TV_UNPAIR") {
-      const controller = this.registry.unpairDevice(device);
+      const leader = this.registry.leaderOf(device);
+      if (leader) {
+        // One of the TVs watching along leaves the party; the others carry on.
+        this.registry.detachFollower(device);
+        this.resetTv(device);
+        this.sendParty(leader);
+        return;
+      }
+      const followers = this.registry.followersOf(device);
+      const controllers = this.registry.controllersOf(device);
+      this.registry.unpairDevice(device);
       this.resetTv(device);
-      if (controller) this.sendWelcome(controller); // no TV any more: the phone is back at the code screen
+      followers.forEach((follower) => this.resetTv(follower));
+      controllers.forEach((c) => this.sendWelcome(c));
     }
   }
 
@@ -158,12 +182,21 @@ export class Hub {
 
   private sendWelcome(controller: Controller): void {
     const device = this.registry.deviceForController(controller);
+    const controlCode = device ? this.registry.ensureControlCode(device) : null;
     this.toController(controller.id, {
       type: "CTL_WELCOME",
       controllerId: controller.id,
-      tv: device ? { name: device.name, online: this.tvs.has(device.id) } : null,
+      tv: device
+        ? {
+            name: device.name,
+            online: this.tvs.has(device.id),
+            controlCode: controlCode?.code,
+            controllerCount: device.controllerIds.length,
+          }
+        : null,
       media: device?.media ?? null,
       state: device?.state ?? IDLE_STATE,
+      party: device ? this.partyOf(device) : [],
     });
   }
 
@@ -172,6 +205,8 @@ export class Hub {
     if (message.type === "PAIR") return this.pair(controller, message.code);
     if (message.type === "PLAY_URL") return void this.playUrl(controller, message.url, message.startAt);
     if (message.type === "UNPAIR") return this.unpair(controller);
+    if (message.type === "ADD_TV") return this.addTv(controller, message.code);
+    if (message.type === "REMOVE_TV") return this.removeTv(controller, message.id);
     if (message.type !== "CMD") return;
 
     const device = this.registry.deviceForController(controller);
@@ -187,35 +222,129 @@ export class Hub {
 
     if (message.command.type === "LOAD" || message.command.type === "STOP") this.bumpResolveSeq(device.id);
     this.send(this.tvs.get(device.id), { type: "TV_CMD", command: message.command });
+    // The TVs watching along load and stop with this one; play, pause and seeks reach them as the position it reports.
+    if (message.command.type === "LOAD" || message.command.type === "STOP") {
+      this.toFollowers(device, { type: "TV_CMD", command: message.command });
+    }
     // The phone always renders what the TV reports; only LOAD/STOP need an immediate placeholder.
     if (message.command.type === "LOAD" || message.command.type === "STOP") {
       this.applyCommand(device, message.command);
-      this.toController(controllerId, { type: "STATE", state: device.state });
+      this.toControllers(device, { type: "STATE", state: device.state });
     }
   }
 
   private pair(controller: Controller, code: string): void {
     if (controller.deviceId) return this.error(controller.id, "ALREADY_PAIRED", "Already connected to a TV.");
-    const now = Date.now();
-    this.failedPairings = this.failedPairings.filter((at) => now - at < this.failedPairingWindowMs);
     // While blocked the code is not even checked, so a right guess gets no answer different from a wrong one.
-    if (this.failedPairings.length >= this.maxFailedPairings) {
-      return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
-    }
-    const device = this.registry.pair(controller, code);
+    if (this.pairingPaused()) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
+
+    let device = this.registry.pair(controller, code);
+    let isNewPair = true;
     if (!device) {
-      this.failedPairings.push(now);
+      device = this.registry.joinController(controller, code);
+      isNewPair = false;
+    }
+    if (!device) {
+      this.failedPairings.push(Date.now());
       return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");
     }
-    this.send(this.tvs.get(device.id), { type: "TV_PAIRED" });
+    if (isNewPair) {
+      this.send(this.tvs.get(device.id), { type: "TV_PAIRED" });
+    }
     this.sendWelcome(controller);
+    if (!isNewPair) {
+      for (const other of this.registry.controllersOf(device)) {
+        if (other.id !== controller.id) this.sendWelcome(other);
+      }
+    }
+  }
+
+  /** Wrong codes only count against the limit for so long. True while too many were tried recently. */
+  private pairingPaused(): boolean {
+    const now = Date.now();
+    this.failedPairings = this.failedPairings.filter((at) => now - at < this.failedPairingWindowMs);
+    return this.failedPairings.length >= this.maxFailedPairings;
   }
 
   /** The phone forgets its TV: the TV stops, gets a fresh code, and the phone is sent back to the code screen. */
   private unpair(controller: Controller): void {
+    const leader = this.registry.deviceForController(controller);
+    const followers = leader ? this.registry.followersOf(leader) : [];
     const device = this.registry.unpair(controller);
-    if (device) this.resetTv(device);
+    if (device) {
+      this.resetTv(device);
+      followers.forEach((follower) => this.resetTv(follower)); // the TVs watching along lose their party
+    } else if (leader) {
+      for (const other of this.registry.controllersOf(leader)) {
+        this.sendWelcome(other);
+      }
+    }
     this.sendWelcome(controller);
+  }
+
+  /* ------------------------------ watching together ------------------------------ */
+
+  /** Another TV's code, typed on the phone: that TV now watches along with the phone's TV. */
+  private addTv(controller: Controller, code: string): void {
+    if (this.pairingPaused()) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
+    const joined = this.registry.addFollower(controller, code);
+    if (!joined.ok) {
+      if (joined.reason === "INVALID_CODE") {
+        this.failedPairings.push(Date.now());
+        return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");
+      }
+      if (joined.reason === "PARTY_FULL") {
+        return this.error(controller.id, "PARTY_FULL", `A party has room for ${MAX_FOLLOWERS + 1} TVs.`);
+      }
+      return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
+    }
+    const { leader, follower } = joined;
+    this.send(this.tvs.get(follower.id), { type: "TV_FOLLOWING", leader: leader.name });
+    this.catchUp(follower, leader);
+    this.sendParty(leader);
+  }
+
+  private removeTv(controller: Controller, publicId: string): void {
+    const removed = this.registry.removeFollower(controller, publicId);
+    if (!removed) return;
+    this.resetTv(removed.follower);
+    this.sendParty(removed.leader);
+  }
+
+  private partyOf(leader: Device): PartyTv[] {
+    return this.registry.followersOf(leader).map((follower) => ({ id: follower.publicId, name: follower.name, online: this.tvs.has(follower.id) }));
+  }
+
+  private sendParty(leader: Device): void {
+    this.toControllers(leader, { type: "PARTY", tvs: this.partyOf(leader) });
+  }
+
+  private toFollowers(leader: Device, message: ServerMessage): void {
+    for (const follower of this.registry.followersOf(leader)) this.send(this.tvs.get(follower.id), message);
+  }
+
+  /** A TV that just joined (or came back) loads what the leader has on, at the place it has reached. */
+  private catchUp(follower: Device, leader: Device): void {
+    if (!leader.media) return;
+    const at = leader.state.currentTime;
+    this.send(this.tvs.get(follower.id), {
+      type: "TV_CMD",
+      command: { type: "LOAD", media: leader.media, ...(at > 5 ? { startAt: Math.floor(at) } : {}) },
+    });
+  }
+
+  /** What the followers need from every report of the leader: is it playing, and where. They keep their own picture in step. */
+  private syncFollowers(leader: Device): void {
+    const { state } = leader;
+    if (leader.followerIds.length === 0 || (state.state !== "playing" && state.state !== "paused")) return;
+    this.toFollowers(leader, {
+      type: "TV_SYNC",
+      // A leader that is waiting for data holds the others too, so nobody runs ahead of it.
+      playing: state.state === "playing" && !state.buffering,
+      time: state.currentTime,
+      rate: state.playbackRate ?? 1,
+      ...(state.stream ? { stream: state.stream } : {}),
+    });
   }
 
   /** After a pairing ended from either side: the TV stops and shows a fresh code. */
@@ -240,9 +369,8 @@ export class Hub {
   }
 
   private async playUrlForDevice(device: Device, url: string, controllerId?: string, startAt?: number): Promise<void> {
-    const cId = controllerId || device.controllerId;
     const status = (s: ResolveStatus) => {
-      if (cId) this.toController(cId, { type: "RESOLVE_STATUS", status: s });
+      this.toControllers(device, { type: "RESOLVE_STATUS", status: s });
     };
     const tvOffline = () => status({ phase: "failed", reason: "tv_offline", message: "The TV is offline." });
     if (!this.tvs.has(device.id)) return tvOffline();
@@ -250,6 +378,7 @@ export class Hub {
     const seq = this.bumpResolveSeq(device.id);
     status({ phase: "resolving" });
     this.send(this.tvs.get(device.id), { type: "TV_RESOLVING", active: true });
+    this.toFollowers(device, { type: "TV_RESOLVING", active: true });
 
     let result: ResolveResult;
     try {
@@ -260,17 +389,17 @@ export class Hub {
     if (this.resolveSeq.get(device.id) !== seq) return; // superseded by a newer choice or a STOP
 
     this.send(this.tvs.get(device.id), { type: "TV_RESOLVING", active: false });
+    this.toFollowers(device, { type: "TV_RESOLVING", active: false });
     if (result.status !== "success") return status(failureStatus(result));
     if (!this.tvs.has(device.id)) return tvOffline();
 
     status({ phase: "found", media: result.media });
     this.send(this.tvs.get(device.id), { type: "TV_CMD", command: { type: "LOAD", media: result.media, startAt } });
     this.send(this.tvs.get(device.id), { type: "TV_CMD", command: { type: "PLAY" } });
+    this.toFollowers(device, { type: "TV_CMD", command: { type: "LOAD", media: result.media, startAt } });
     this.applyCommand(device, { type: "LOAD", media: result.media });
-    if (cId) {
-      this.toController(cId, { type: "MEDIA", media: result.media });
-      this.toController(cId, { type: "STATE", state: device.state });
-    }
+    this.toControllers(device, { type: "MEDIA", media: result.media });
+    this.toControllers(device, { type: "STATE", state: device.state });
   }
 
   /** Keep the server's memory of the TV roughly right until the TV reports its real state. */
@@ -288,6 +417,12 @@ export class Hub {
 
   private send(socket: WebSocket | undefined, message: ServerMessage): void {
     if (socket?.readyState === 1) socket.send(JSON.stringify(message));
+  }
+
+  private toControllers(device: Device, message: ServerMessage): void {
+    for (const controller of this.registry.controllersOf(device)) {
+      this.toController(controller.id, message);
+    }
   }
 
   private toController(controllerId: string, message: ServerMessage): void {

@@ -1,11 +1,16 @@
 import type { FastifyInstance } from "fastify";
+import type { WebSocket } from "ws";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseServerMessage, type ClientMessage, type Command, type ServerMessage } from "../../shared";
 import { buildApp } from "../app";
 import type { ResolveFn } from "../resolvers";
 import { CLOSE_REPLACED } from "./hub";
 
-/** Minimal fake TV / phone built on Node's global WebSocket. */
+/**
+ * Minimal fake TV / phone. It connects through `app.injectWS`, in memory: a client and a server that talk over real loopback
+ * sockets inside one Node process crash that process now and then on Windows (exit code 0xC0000409, no message, even with
+ * plain Node and no test runner). Nothing here needs a port.
+ */
 class Client {
   private queue: ServerMessage[] = [];
   private waiting: (() => void)[] = [];
@@ -23,12 +28,8 @@ class Client {
     };
   }
 
-  static open(port: number): Promise<Client> {
-    return new Promise((resolve, reject) => {
-      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
-      ws.onopen = () => resolve(new Client(ws));
-      ws.onerror = () => reject(new Error("socket error"));
-    });
+  static async open(server: FastifyInstance): Promise<Client> {
+    return new Client(await server.injectWS("/ws"));
   }
 
   send(message: ClientMessage | { type: string }): void {
@@ -64,13 +65,13 @@ class Client {
     return this.closeCode;
   }
 
+  /** The socket drops, as when a page is closed or the network goes. (A polite close never completes over `injectWS`'s in-memory streams.) */
   close(): void {
-    this.ws.close();
+    this.ws.terminate();
   }
 }
 
 let app: FastifyInstance;
-let port: number;
 const clients: Client[] = [];
 
 /** Swapped per test; the hub only ever sees this function, never the real resolvers. */
@@ -79,17 +80,19 @@ let resolveImpl: ResolveFn;
 beforeEach(async () => {
   resolveImpl = async () => ({ status: "unsupported", reason: "no resolver configured in this test" });
   app = await buildApp({ resolve: (url) => resolveImpl(url) });
-  await app.listen({ port: 0, host: "127.0.0.1" });
-  port = (app.server.address() as { port: number }).port;
+  await app.ready();
 });
 
 afterEach(async () => {
-  clients.splice(0).forEach((c) => c.close());
+  // Let every close handshake finish before the server goes.
+  const open = clients.splice(0);
+  open.forEach((c) => c.close());
+  await Promise.all(open.map((c) => c.closed(1000)));
   await app.close();
 });
 
 async function connect(): Promise<Client> {
-  const client = await Client.open(port);
+  const client = await Client.open(app);
   clients.push(client);
   return client;
 }
@@ -168,12 +171,11 @@ describe("guessing pairing codes", () => {
   /** A hub that tolerates `max` wrong codes per `windowMs`, with one TV showing a code and one phone ready to try. */
   async function guessingSetup(max: number, windowMs: number) {
     const strict = await buildApp({ hub: { maxFailedPairings: max, failedPairingWindowMs: windowMs } });
-    await strict.listen({ port: 0, host: "127.0.0.1" });
-    const strictPort = (strict.server.address() as { port: number }).port;
-    const tv = await Client.open(strictPort);
+    await strict.ready();
+    const tv = await Client.open(strict);
     tv.send({ type: "TV_HELLO" });
     const code = (await tv.next("TV_WELCOME")).pairing!.code;
-    const phone = await Client.open(strictPort);
+    const phone = await Client.open(strict);
     phone.send({ type: "CTL_HELLO" });
     await phone.next("CTL_WELCOME");
     const wrong = code === "000000" ? "000001" : "000000";
@@ -198,7 +200,7 @@ describe("guessing pairing codes", () => {
   it("counts wrong codes from every phone together", async () => {
     const { strict, phone, code, wrong, close } = await guessingSetup(2, 60_000);
     try {
-      const other = await Client.open((strict.server.address() as { port: number }).port);
+      const other = await Client.open(strict);
       other.send({ type: "CTL_HELLO" });
       await other.next("CTL_WELCOME");
       other.send({ type: "PAIR", code: wrong });
@@ -486,11 +488,10 @@ describe("keepalive", () => {
 
   it("drops a socket that has gone silent, and keeps one that keeps pinging", async () => {
     const fast = await buildApp({ hub: { staleAfterMs: 200, sweepEveryMs: 40 } });
-    await fast.listen({ port: 0, host: "127.0.0.1" });
-    const fastPort = (fast.server.address() as { port: number }).port;
+    await fast.ready();
     try {
-      const silent = await Client.open(fastPort);
-      const alive = await Client.open(fastPort);
+      const silent = await Client.open(fast);
+      const alive = await Client.open(fast);
       silent.send({ type: "TV_HELLO" });
       alive.send({ type: "TV_HELLO" });
       const deadline = Date.now() + 700;
@@ -643,5 +644,210 @@ describe("resume and skip", () => {
     const { tv, phone } = await pairedSetup();
     phone.send({ type: "CMD", command: { type: "SKIP", seconds: -10 } });
     expect((await tv.next("TV_CMD")).command).toEqual({ type: "SKIP", seconds: -10 });
+  });
+});
+
+describe("watching together", () => {
+  /** A second TV that the phone adds to the party. */
+  async function addTv(phone: Client) {
+    const tv2 = await connect();
+    tv2.send({ type: "TV_HELLO" });
+    const welcome = await tv2.next("TV_WELCOME");
+    phone.send({ type: "ADD_TV", code: welcome.pairing!.code });
+    await tv2.next("TV_FOLLOWING");
+    return { tv2, deviceId: welcome.deviceId };
+  }
+
+  it("tells the new TV it follows, and the phone who is in the party", async () => {
+    const { tv, phone } = await pairedSetup();
+    const { tv2 } = await addTv(phone);
+    const { tvs } = await phone.next("PARTY");
+    expect(tvs).toHaveLength(1);
+    expect(tvs[0]).toMatchObject({ online: true, name: expect.stringMatching(/^TV /) });
+    expect(JSON.stringify(tvs)).not.toContain("tv_"); // the TV's own id never reaches a phone
+    tv2.close();
+    expect((await phone.next("PARTY")).tvs[0]?.online).toBe(false);
+    await tv.expectNone((m) => m.type === "TV_UNPAIRED");
+  });
+
+  it("gives a TV that comes back its place in the party, and the film at the place the others are", async () => {
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "CMD", command: { type: "LOAD", media } });
+    await tv.next("TV_CMD");
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 42.7, duration: 600, stream: media.stream.url } });
+    const { tv2, deviceId } = await addTv(phone);
+    expect((await tv2.next("TV_CMD")).command).toEqual({ type: "LOAD", media, startAt: 42 });
+
+    tv2.close();
+    const back = await connect();
+    back.send({ type: "TV_HELLO", deviceId });
+    expect(await back.next("TV_WELCOME")).toMatchObject({ paired: true, following: expect.stringMatching(/^TV /) });
+    expect((await back.next("TV_CMD")).command).toMatchObject({ type: "LOAD", startAt: 42 });
+  });
+
+  it("loads and stops the followers with the leader", async () => {
+    const { phone } = await pairedSetup();
+    const { tv2 } = await addTv(phone);
+    phone.send({ type: "CMD", command: { type: "LOAD", media } });
+    expect((await tv2.next("TV_CMD")).command).toEqual({ type: "LOAD", media });
+    phone.send({ type: "CMD", command: { type: "STOP" } });
+    expect((await tv2.next("TV_CMD")).command).toEqual({ type: "STOP" });
+  });
+
+  it("looks a link up once and gives every TV the video, with the spinner meanwhile", async () => {
+    let lookups = 0;
+    resolveImpl = async () => {
+      lookups++;
+      return { status: "success", resolver: "test", media };
+    };
+    const { tv, phone } = await pairedSetup();
+    const { tv2 } = await addTv(phone);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/a", startAt: 30 });
+    for (const screen of [tv, tv2]) {
+      expect((await screen.next("TV_RESOLVING")).active).toBe(true);
+      expect((await screen.next("TV_RESOLVING")).active).toBe(false);
+      expect((await screen.next("TV_CMD")).command).toEqual({ type: "LOAD", media, startAt: 30 });
+    }
+    expect(lookups).toBe(1);
+  });
+
+  it("passes the leader's position on to the followers, and nothing while it is loading", async () => {
+    const { tv, phone } = await pairedSetup();
+    const { tv2 } = await addTv(phone);
+    tv.send({ type: "TV_STATE", state: { state: "loading", currentTime: 0, duration: 0 } });
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 12.5, duration: 600, playbackRate: 1.25, stream: "/a.mp4" } });
+    expect(await tv2.next("TV_SYNC")).toEqual({ type: "TV_SYNC", playing: true, time: 12.5, rate: 1.25, stream: "/a.mp4" });
+    tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 13, duration: 600 } });
+    expect(await tv2.next("TV_SYNC")).toEqual({ type: "TV_SYNC", playing: false, time: 13, rate: 1 });
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 14, duration: 600, buffering: true } });
+    expect((await tv2.next("TV_SYNC")).playing).toBe(false); // the leader is waiting for data, so the others wait
+  });
+
+  it("does not let a follower's own position reach the phone or move the others", async () => {
+    const { tv, phone } = await pairedSetup();
+    const { tv2 } = await addTv(phone);
+    const third = await addTv(phone);
+    await phone.next("STATE").catch(() => undefined);
+    tv2.send({ type: "TV_STATE", state: { state: "playing", currentTime: 99, duration: 600 } });
+    await phone.expectNone((m) => m.type === "STATE" && m.state.currentTime === 99);
+    await third.tv2.expectNone((m) => m.type === "TV_SYNC");
+    await tv.expectNone((m) => m.type === "TV_SYNC");
+  });
+
+  it("ignores a follower that tries to choose what plays", async () => {
+    let lookups = 0;
+    resolveImpl = async () => {
+      lookups++;
+      return { status: "success", resolver: "test", media };
+    };
+    const { phone } = await pairedSetup();
+    const { tv2 } = await addTv(phone);
+    tv2.send({ type: "TV_PLAY_URL", url: "https://s.example/mine" });
+    tv2.send({ type: "TV_NEXT_EPISODE" });
+    await tv2.expectNone((m) => m.type === "TV_CMD" || m.type === "TV_RESOLVING");
+    expect(lookups).toBe(0);
+  });
+
+  it("lets the phone send a TV away, and a TV leave on its own", async () => {
+    const { tv, phone } = await pairedSetup();
+    const first = await addTv(phone);
+    const second = await addTv(phone);
+    let { tvs } = await phone.next("PARTY"); // after the first
+    ({ tvs } = await phone.next("PARTY")); // after the second
+    expect(tvs).toHaveLength(2);
+
+    phone.send({ type: "REMOVE_TV", id: tvs[0]!.id });
+    expect((await first.tv2.next("TV_CMD")).command).toEqual({ type: "STOP" });
+    expect((await first.tv2.next("TV_UNPAIRED")).pairing?.code).toMatch(/^\d{6}$/);
+    expect((await phone.next("PARTY")).tvs).toHaveLength(1);
+
+    second.tv2.send({ type: "TV_UNPAIR" });
+    expect((await second.tv2.next("TV_UNPAIRED")).pairing?.code).toMatch(/^\d{6}$/);
+    expect((await phone.next("PARTY")).tvs).toEqual([]);
+    await tv.expectNone((m) => m.type === "TV_UNPAIRED");
+  });
+
+  it("ends the party for everyone when the phone lets go of its TV, or that TV lets go of the phone", async () => {
+    const one = await pairedSetup();
+    const a = await addTv(one.phone);
+    one.phone.send({ type: "UNPAIR" });
+    expect((await a.tv2.next("TV_UNPAIRED")).pairing?.code).toMatch(/^\d{6}$/);
+
+    const two = await pairedSetup();
+    const b = await addTv(two.phone);
+    two.tv.send({ type: "TV_UNPAIR" });
+    expect((await b.tv2.next("TV_UNPAIRED")).pairing?.code).toMatch(/^\d{6}$/);
+  });
+
+  it("tells a phone that reconnects who is in the party", async () => {
+    const { phone, controllerId } = await pairedSetup();
+    await addTv(phone);
+    const again = await connect();
+    again.send({ type: "CTL_HELLO", controllerId });
+    expect((await again.next("CTL_WELCOME")).party).toHaveLength(1);
+  });
+
+  it("checks the code like a pairing code: wrong ones are counted, and there must be a TV to add to", async () => {
+    const { phone } = await pairedSetup();
+    phone.send({ type: "ADD_TV", code: "000000" });
+    expect((await phone.next("ERROR")).code).toBe("INVALID_CODE");
+
+    const loner = await connect();
+    loner.send({ type: "CTL_HELLO" });
+    await loner.next("CTL_WELCOME");
+    loner.send({ type: "ADD_TV", code: "000000" });
+    expect((await loner.next("ERROR")).code).toBe("NOT_PAIRED");
+  });
+
+  it("has room for a limited party", async () => {
+    const { phone, deviceId } = await pairedSetup();
+    for (let i = 0; i < 5; i++) await addTv(phone);
+    const extra = await connect();
+    extra.send({ type: "TV_HELLO" });
+    const welcome = await extra.next("TV_WELCOME");
+    phone.send({ type: "ADD_TV", code: welcome.pairing!.code });
+    expect((await phone.next("ERROR")).code).toBe("PARTY_FULL");
+  });
+});
+
+describe("several phones controlling one TV session", () => {
+  it("allows multiple phones to join via control code and synchronizes playback", async () => {
+    const { tv, phone, controllerId } = await pairedSetup();
+    phone.send({ type: "CTL_HELLO", controllerId });
+    const phone1Welcome = await phone.next("CTL_WELCOME");
+    const controlCode = phone1Welcome.tv?.controlCode;
+    expect(controlCode).toMatch(/^\d{6}$/);
+    expect(phone1Welcome.tv?.controllerCount).toBe(1);
+
+    // Second phone connects using the controlCode
+    const phone2 = await connect();
+    phone2.send({ type: "CTL_HELLO" });
+    await phone2.next("CTL_WELCOME");
+    phone2.send({ type: "PAIR", code: controlCode! });
+
+    const phone2Welcome = await phone2.next("CTL_WELCOME");
+    expect(phone2Welcome.tv?.online).toBe(true);
+    expect(phone2Welcome.tv?.controllerCount).toBe(2);
+
+    // Phone 1 receives updated welcome reflecting 2 controllers
+    const phone1Update = await phone.next("CTL_WELCOME");
+    expect(phone1Update.tv?.controllerCount).toBe(2);
+
+    // TV reports playback state - both phones should receive it
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 42, duration: 300 } });
+    const p1State = await phone.next("STATE");
+    const p2State = await phone2.next("STATE");
+    expect(p1State.state.currentTime).toBe(42);
+    expect(p2State.state.currentTime).toBe(42);
+
+    // Phone 2 unpairs - TV remains paired to Phone 1
+    phone2.send({ type: "UNPAIR" });
+    const p2Unpaired = await phone2.next("CTL_WELCOME");
+    expect(p2Unpaired.tv).toBeNull();
+
+    // Phone 1 updated back to 1 controller
+    const p1After = await phone.next("CTL_WELCOME");
+    expect(p1After.tv?.controllerCount).toBe(1);
+    expect(p1After.tv?.online).toBe(true);
   });
 });

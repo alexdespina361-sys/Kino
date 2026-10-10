@@ -68,6 +68,23 @@ describe("newer protocol pieces", () => {
     expect(parseClientMessage(msg({ type: "PLAY_URL", url: "https://a.example/x", startAt: 1e9 }))).toBeNull();
   });
 
+  it("takes caption style changes as a partial and rejects values outside the choices", () => {
+    const command = (style: unknown) => parseClientMessage(msg({ type: "CMD", command: { type: "SET_CAPTION_STYLE", style } }));
+    expect(command({ color: "yellow" })).not.toBeNull();
+    expect(command({})).not.toBeNull();
+    expect(command({ color: "plaid" })).toBeNull();
+    expect(command(undefined)).toBeNull();
+  });
+
+  it("takes a source index, and rejects one that cannot exist", () => {
+    const command = (index: unknown) => parseClientMessage(msg({ type: "CMD", command: { type: "SET_SOURCE", index } }));
+    expect(command(0)).not.toBeNull();
+    expect(command(8)).not.toBeNull();
+    expect(command(9)).toBeNull();
+    expect(command(-1)).toBeNull();
+    expect(command("1")).toBeNull();
+  });
+
   it("knows PING, UNPAIR, PONG, TV_UNPAIRED and TV_RESOLVING", () => {
     expect(parseClientMessage(msg({ type: "PING" }))).toEqual({ type: "PING" });
     expect(parseClientMessage(msg({ type: "UNPAIR" }))).toEqual({ type: "UNPAIR" });

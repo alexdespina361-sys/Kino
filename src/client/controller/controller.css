@@ -37,6 +37,9 @@
 .btn-red:active:not(:disabled) { background: var(--red-hover); }
 .btn-danger { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
 .btn-block { width: 100%; }
+.episode-nav { display: flex; gap: 8px; }
+.episode-nav .btn { flex: 1; min-width: 0; }
+.episode-nav .btn small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .icon-btn {
   display: inline-grid;
@@ -248,14 +251,47 @@
 .choice-dot { flex: none; width: 12px; height: 12px; border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 50%; }
 .choice.active .choice-dot { border-color: var(--red); background: var(--red); }
 
+/* Subtitle style: a small TV with a sample line (sizes are shares of its height, like on the real screen), then the choices. */
+.cap-frame {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  container-type: size;
+  flex: none;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 12px;
+  background: linear-gradient(160deg, #46566b 0%, #232c38 55%, #12171e 100%);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45);
+}
+.cap-sample {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 0.04em 0.4em;
+  border-radius: 0.12em;
+  line-height: 1.3;
+  text-align: center;
+}
+.cap-setting { display: flex; flex-direction: column; gap: 6px; }
+.cap-choices { display: flex; flex-wrap: wrap; gap: 6px; }
+.cap-choice { padding: 9px 14px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600; }
+.cap-choice.active { background: #fff; color: #000; }
+
 .seasons { display: flex; gap: 8px; padding-bottom: 4px; overflow-x: auto; }
 .season { flex: none; padding: 9px 15px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600; }
 .season.active { background: #fff; color: #000; }
 .episodes { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.episode { display: flex; align-items: center; gap: 12px; width: 100%; padding: 13px 14px; border-radius: 12px; background: var(--surface-2); text-align: left; }
+.episode { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; overflow: hidden; padding: 13px 14px; border-radius: 12px; background: var(--surface-2); text-align: left; }
 .episode-no { flex: none; min-width: 1.8em; color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 700; }
 .episode-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .episode.now { background: rgba(229, 9, 20, 0.18); box-shadow: inset 0 0 0 1.5px var(--red); }
+.episode-note { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--muted); font-size: 0.75rem; font-weight: 600; }
+.episode-note.watched { color: #46d369; }
+.episode-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.12); }
+.episode-progress i { display: block; height: 100%; background: var(--red); }
 .episode-now { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--red-hover); font-size: 0.75rem; font-weight: 700; }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -301,3 +337,52 @@
   text-align: center;
   font-size: 0.95rem;
 }
+
+/* ------------------------------ toast ------------------------------ */
+
+/* The TV's answer to a button, above everything (sheets included) so it's seen whichever screen the thumb is on. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 70;
+  margin: 0;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: rgba(245, 245, 245, 0.96);
+  color: #111;
+  font-size: 0.95rem;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  animation: toast 2s ease-out forwards;
+}
+@keyframes toast {
+  0% { opacity: 0; transform: translate(-50%, 10px); }
+  10% { opacity: 1; transform: translate(-50%, 0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Watching together */
+.party-count { flex: none; padding: 2px 8px; border-radius: 999px; background: var(--surface); color: var(--muted); font-size: 0.75rem; font-weight: 700; }
+.party-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.party-state { display: block; font-size: 0.75rem; font-weight: 600; }
+.party-state.ok { color: var(--ok); }
+.party-state.bad { color: var(--bad); }
+
+/* ------------------------------ library ------------------------------ */
+
+.library { display: flex; flex-direction: column; gap: 18px; margin-top: 6px; }
+.lib-row { display: flex; flex-direction: column; gap: 8px; }
+.lib-row h3 { font-size: 1.05rem; }
+/* The rows scroll sideways right to the screen's edge, but start in line with everything else. */
+.lib-scroller { display: flex; gap: 10px; margin: 0 -16px; padding: 0 16px 6px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding: 0 16px; }
+.lib-tile { flex: none; width: 138px; display: flex; flex-direction: column; gap: 6px; text-align: left; scroll-snap-align: start; }
+.lib-art { display: block; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
+.lib-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.lib-tile:active .lib-art { box-shadow: 0 0 0 2px var(--red); }
+.lib-title { font-size: 0.85rem; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lib-year { margin-top: -4px; color: var(--muted); font-size: 0.75rem; }

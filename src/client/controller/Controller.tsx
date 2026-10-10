@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import {
   IDLE_STATE,
+  describeChange,
+  parseWatched,
+  previousEpisode,
+  recordWatching,
+  serializeWatched,
+  seriesKeyOf,
+  stateIsFor,
   type Command,
   type NormalizedMedia,
+  type PartyTv,
   type PlayerState,
   type ResolveStatus,
   type TvInfo,
@@ -20,14 +28,16 @@ import {
   serializeHistory,
   type HistoryEntry,
 } from "./history";
+import { Library } from "./Library";
 import { PairScreen } from "./PairScreen";
 import { PlayLink } from "./PlayLink";
 import { Remote, type SheetKind } from "./Remote";
 import { Sheet } from "./Sheet";
-import { EpisodesSheet, MenuSheet, QualitySheet, SpeedSheet, TracksSheet } from "./Sheets";
+import { CaptionStyleSheet, EpisodesSheet, MenuSheet, PartySheet, QualitySheet, SourcesSheet, SpeedSheet, TracksSheet } from "./Sheets";
 import "./controller.css";
 
 const CONTROLLER_KEY = "controller.id";
+const WATCHED_KEY = "controller.watched";
 /** A lookup that has not answered by now is reported as failed instead of spinning forever. */
 const RESOLVE_TIMEOUT_MS = 40_000;
 /** How often playback progress is written to the recently-played list. Stop saves the exact spot. */
@@ -41,11 +51,6 @@ const PENDING_LINK_MS = 90_000;
  */
 const OUTDATED_SERVER = "The server doesn't understand this app version. Restart the server, then reload this page.";
 
-/** Same show, whatever the episode: "Show · S1 E3" -> "Show". Lets the list keep one "continue watching" entry per show. */
-function seriesKeyOf(media: NormalizedMedia): string | undefined {
-  return media.series ? (media.title?.split("·")[0]?.trim() || undefined) : undefined;
-}
-
 export function Controller() {
   const socketRef = useRef<Socket | null>(null);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
@@ -56,6 +61,8 @@ export function Controller() {
   const [resolve, setResolve] = useState<ResolveStatus | null>(null);
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [pairing, setPairing] = useState(false);
+  /** The other TVs that watch along with this phone's TV. */
+  const [party, setParty] = useState<PartyTv[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>(() => parseHistory(readStorage(HISTORY_KEY)));
 
   // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
@@ -72,20 +79,24 @@ export function Controller() {
     writeStorage(HISTORY_KEY, serializeHistory(history));
   }, [history]);
 
+  // Which episodes were watched, for the episode list.
+  const [watched, setWatched] = useState(() => parseWatched(readStorage(WATCHED_KEY)));
+  useEffect(() => {
+    writeStorage(WATCHED_KEY, serializeWatched(watched));
+  }, [watched]);
+
   /** A video was found: remember it in the recently-played list, under the link that led to it. */
   const onFound = (found: NormalizedMedia) => {
     setMedia(found);
     const pending = pendingRef.current;
     pendingRef.current = null;
     const previous = mediaRef.current;
-    // Not sent from this phone? Then it is the next episode starting by itself (or from the TV).
-    const advanced =
-      previous?.series?.next &&
-      found.series &&
-      previous.series.next.season === found.series.season &&
-      previous.series.next.episode === found.series.episode
-        ? previous.series.next.url
-        : undefined;
+    // Not sent from this phone? Then it is the next (or previous) episode starting from the TV.
+    const advanced = found.series
+      ? [previous?.series?.next, previousEpisode(previous?.series)].find(
+          (episode) => episode && episode.season === found.series?.season && episode.episode === found.series.episode,
+        )?.url
+      : undefined;
     const url = pending && Date.now() - pending.at < PENDING_LINK_MS ? pending.url : advanced;
     if (!url) return;
     const seriesKey = seriesKeyOf(found);
@@ -111,6 +122,7 @@ export function Controller() {
             setTv(message.tv);
             setMedia(message.media);
             setPlayer(message.state);
+            setParty(message.party ?? []);
             setError(null);
             setPairing(false);
             if (!message.tv) {
@@ -145,6 +157,9 @@ export function Controller() {
               pendingRef.current = null;
             }
             break;
+          case "PARTY":
+            setParty(message.tvs);
+            break;
           case "TV_STATUS":
             setTv((current) => (current ? { ...current, online: message.online } : current));
             break;
@@ -172,6 +187,12 @@ export function Controller() {
 
   const send = (command: Command) => {
     setError(null);
+    // A tick under the thumb, where the browser has a motor for it (not on iPhones).
+    try {
+      navigator.vibrate?.(8);
+    } catch {
+      /* no vibration here */
+    }
     socketRef.current?.send({ type: "CMD", command });
   };
 
@@ -183,6 +204,7 @@ export function Controller() {
   };
 
   const saveProgress = (current: NormalizedMedia, state: PlayerState) =>
+    stateIsFor(current, state) &&
     setHistory((list) =>
       recordProgress(list, {
         streamUrl: current.stream.url,
@@ -202,6 +224,25 @@ export function Controller() {
     saveProgress(media, player);
   }, [player, media]);
 
+  useEffect(() => {
+    if (!media || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(media, player)) return;
+    setWatched((list) => recordWatching(list, media, player, Date.now()));
+  }, [player, media]);
+
+  // What the TV just did, in a line at the bottom: the answer to a button, and the news when someone else pressed one.
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const lastPlayerRef = useRef<PlayerState>(IDLE_STATE);
+  useEffect(() => {
+    const change = describeChange(lastPlayerRef.current, player);
+    lastPlayerRef.current = player;
+    if (change) setToast((current) => ({ id: (current?.id ?? 0) + 1, text: change }));
+  }, [player]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 2000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   // A lookup that never reports back must not leave the phone waiting.
   useEffect(() => {
     if (resolve?.phase !== "resolving") return;
@@ -220,7 +261,7 @@ export function Controller() {
 
   const active = player.state !== "idle" && media !== null;
   useEffect(() => {
-    if (!active) setSheet((open) => (open && open !== "menu" ? null : open));
+    if (!active) setSheet((open) => (open && open !== "menu" && open !== "party" ? null : open));
   }, [active]);
 
   /* ------------------------------ views ------------------------------ */
@@ -245,13 +286,16 @@ export function Controller() {
   const online = connection === "open" && tv.online;
   const closeSheet = () => setSheet(null);
   const link = (
-    <PlayLink
-      tvName={tv.name}
-      resolve={resolve}
-      history={history}
-      onPlay={playLink}
-      onRemove={(url) => setHistory((list) => removeEntry(list, url))}
-    />
+    <>
+      <PlayLink
+        tvName={tv.name}
+        resolve={resolve}
+        history={history}
+        onPlay={playLink}
+        onRemove={(url) => setHistory((list) => removeEntry(list, url))}
+      />
+      <Library onPlay={playLink} />
+    </>
   );
 
   return (
@@ -260,6 +304,11 @@ export function Controller() {
         <div className="top-tv">
           <TvIcon />
           <h1 data-testid="tv-name">{tv.name}</h1>
+          {party.length > 0 && (
+            <span className="party-count" data-testid="party-count">
+              +{party.length}
+            </span>
+          )}
         </div>
         <span className={`pill ${online ? "ok" : "bad"}`} data-testid="tv-online">
           {connection !== "open" ? "Reconnecting…" : tv.online ? "TV connected" : "TV disconnected"}
@@ -271,7 +320,7 @@ export function Controller() {
 
       {connection === "open" && !tv.online && (
         <p className="banner">
-          The TV is offline. Open <b>{location.host}/tv</b> on it and this remote will pick up again.
+          The TV is offline. Open <b>{location.host}</b> on it and this remote will pick up again.
         </p>
       )}
 
@@ -284,6 +333,10 @@ export function Controller() {
           send={send}
           onStop={stop}
           onNext={() => send({ type: "NEXT_EPISODE" })}
+          onPrevious={() => {
+            const previous = previousEpisode(media.series);
+            if (previous) playLink(previous.url);
+          }}
           onOpen={setSheet}
         />
       ) : (
@@ -307,7 +360,7 @@ export function Controller() {
         </p>
       )}
 
-      {error && (
+      {error && sheet !== "party" && (
         <p className="error banner" data-testid="error" role="alert">
           {error}
         </p>
@@ -322,6 +375,10 @@ export function Controller() {
         <MenuSheet
           tvName={tv.name}
           online={online}
+          partySize={party.length}
+          controlCode={tv.controlCode}
+          controllerCount={tv.controllerCount}
+          onParty={() => setSheet("party")}
           onClose={closeSheet}
           onDisconnect={() => {
             socketRef.current?.send({ type: "UNPAIR" });
@@ -330,12 +387,33 @@ export function Controller() {
           }}
         />
       )}
+      {sheet === "party" && (
+        <PartySheet
+          tvName={tv.name}
+          party={party}
+          error={error}
+          onClose={closeSheet}
+          onAdd={(code) => {
+            setError(null);
+            socketRef.current?.send({ type: "ADD_TV", code });
+          }}
+          onRemove={(id) => socketRef.current?.send({ type: "REMOVE_TV", id })}
+        />
+      )}
       {sheet === "tracks" && (
         <TracksSheet
           player={player}
           onClose={closeSheet}
           onSubtitle={(track) => send({ type: "SET_SUBTITLE", track })}
           onAudio={(track) => send({ type: "SET_AUDIO", track })}
+          onStyle={() => setSheet("captions")}
+        />
+      )}
+      {sheet === "captions" && (
+        <CaptionStyleSheet
+          style={player.captionStyle}
+          onClose={closeSheet}
+          onChange={(changes) => send({ type: "SET_CAPTION_STYLE", style: changes })}
         />
       )}
       {sheet === "speed" && (
@@ -344,8 +422,17 @@ export function Controller() {
       {sheet === "quality" && (
         <QualitySheet player={player} onClose={closeSheet} onPick={(level) => send({ type: "SET_QUALITY", level })} />
       )}
+      {sheet === "sources" && (
+        <SourcesSheet player={player} onClose={closeSheet} onPick={(index) => send({ type: "SET_SOURCE", index })} />
+      )}
       {sheet === "episodes" && media?.series?.episodes && (
-        <EpisodesSheet series={media.series} onClose={closeSheet} onPlay={playLink} />
+        <EpisodesSheet series={media.series} show={seriesKeyOf(media)} watched={watched} onClose={closeSheet} onPlay={playLink} />
+      )}
+
+      {toast && (
+        <p className="toast" key={toast.id} data-testid="toast" role="status">
+          {toast.text}
+        </p>
       )}
     </main>
   );

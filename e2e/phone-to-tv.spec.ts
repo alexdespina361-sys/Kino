@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openPairedPhone, openTv, RawPhone, readPairingCode, tvRoot, tvTime } from "./helpers";
+import { openPairedPhone, openTv, PHONE, RawPhone, readPairingCode, tvRoot, tvTime } from "./helpers";
 
 test.describe("phone UI -> server -> TV player", () => {
   test("MP4: pair, load, play, pause, seek, stop", async ({ browser, baseURL }) => {
@@ -75,7 +75,7 @@ test.describe("phone UI -> server -> TV player", () => {
     const real = await readPairingCode(tv);
     const wrong = real === "000000" ? "000001" : "000000";
 
-    const phone = await (await browser.newContext()).newPage();
+    const phone = await (await browser.newContext(PHONE)).newPage();
     await phone.goto("/");
     await phone.getByTestId("code-input").fill(wrong);
     await expect(phone.getByTestId("error")).toHaveText("Invalid or expired code.");
@@ -202,7 +202,7 @@ test("media with subtitles: loads subtitles on TV, supports SET_SUBTITLE and SET
 
   // Switch subtitle on
   phone.cmd({ type: "SET_SUBTITLE", track: 0 });
-  await expect.poll(() => tv.evaluate(() => document.querySelector("video")!.textTracks[0]?.mode)).toBe("showing");
+  await expect.poll(() => tv.evaluate(() => document.querySelector("video")!.textTracks[0]?.mode)).toBe("hidden");
 
   // Switch subtitle off
   phone.cmd({ type: "SET_SUBTITLE", track: -1 });

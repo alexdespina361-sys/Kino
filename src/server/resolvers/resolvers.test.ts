@@ -46,6 +46,24 @@ describe("generic resolver", () => {
     });
   });
 
+  it("offers the other streams a page declares as alternates, without repeating the main one", async () => {
+    const html = '<title>Two</title><video><source src="/m/a.mp4" type="video/mp4"><source src="/m/b.m3u8"><source src="/m/a.mp4"></video>';
+    const result = await resolveWith(fetchReturning(page("https://site.example/watch/2", html)), "https://site.example/watch/2");
+    expect(result).toMatchObject({
+      status: "success",
+      media: {
+        stream: { url: "https://site.example/m/a.mp4", type: "mp4" },
+        alternates: [{ stream: { url: "https://site.example/m/b.m3u8", type: "hls" } }],
+      },
+    });
+  });
+
+  it("has no alternates key at all when the page declares one stream", async () => {
+    const result = await resolveWith(fetchReturning(page("https://site.example/watch/3", '<video src="/m/a.mp4"></video>')), "https://site.example/watch/3");
+    expect(result).toMatchObject({ status: "success" });
+    expect("alternates" in (result as { media: object }).media).toBe(false);
+  });
+
   it("uses the final URL after redirects to resolve relative media paths", async () => {
     const result = await resolveWith(
       fetchReturning(page("https://cdn.example/final/page", '<video src="a.mp4"></video>')),
