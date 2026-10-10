@@ -259,6 +259,13 @@ export class Registry {
     return open && left > 0 ? { code: open.value, expiresInMs: left } : null;
   }
 
+  /** Whether a code is one a party is open with now: what a phone is told when it types such a code where a TV's pairing code goes. */
+  isPartyCode(code: string): boolean {
+    const hostId = this.deviceByPartyCode.get(code);
+    const host = hostId ? this.devices.get(hostId) : undefined;
+    return host !== undefined && host.partyCode?.value === code && this.partyCodeOf(host) !== null;
+  }
+
   /** The code others join this TV's party with (a new one if none is open): having one is what makes a TV a host. Null for a TV that is itself a guest. */
   ensurePartyCode(host: Device): PairingCode | null {
     if (host.leaderId) return null;

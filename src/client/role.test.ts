@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { chooseRole, type RoleInput } from "./role";
+import { chooseRole, isPhone, type RoleInput } from "./role";
 
 const DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+const PIXEL = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36";
 const IPAD = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15";
 const FIRE_TV = "Mozilla/5.0 (Linux; Android 9; AFTMM Build/PS7233; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/110.0 Mobile Safari/537.36";
 const FIRE_TABLET = "Mozilla/5.0 (Linux; Android 11; KFTRWI) AppleWebKit/537.36 (KHTML, like Gecko) Silk/120.0 like Chrome/120.0 Safari/537.36";
@@ -66,5 +67,26 @@ describe("chooseRole", () => {
     expect(chooseRole(page({ storedRole: "remote" }))).toBe("remote");
     expect(chooseRole(page({ storedRole: "tv", userAgent: IPHONE, touchPoints: 5 }))).toBe("tv");
     expect(chooseRole(page({ storedRole: "nonsense" }))).toBe("tv");
+  });
+});
+
+describe("isPhone", () => {
+  it("is a phone: touch is how it is used, and the screen is small, held either way up", () => {
+    expect(isPhone({ userAgent: IPHONE, touchPoints: 5, coarsePointer: true, shortSide: 390 })).toBe(true);
+    expect(isPhone({ userAgent: PIXEL, touchPoints: 5, coarsePointer: true, shortSide: 412 })).toBe(true);
+  });
+
+  it("is not a tablet, which can be somebody's screen with a phone to control it", () => {
+    expect(isPhone({ userAgent: IPAD, touchPoints: 5, coarsePointer: true, shortSide: 820 })).toBe(false);
+    expect(isPhone({ userAgent: FIRE_TABLET, touchPoints: 10, coarsePointer: true, shortSide: 800 })).toBe(false);
+  });
+
+  it("is not a computer, even one with a touch screen beside its mouse or pad", () => {
+    expect(isPhone({ userAgent: DESKTOP, touchPoints: 0, coarsePointer: false, shortSide: 1080 })).toBe(false);
+    expect(isPhone({ userAgent: DESKTOP, touchPoints: 10, coarsePointer: false, shortSide: 360 })).toBe(false); // a touch laptop
+  });
+
+  it("is not a TV, whatever it claims about touch", () => {
+    for (const userAgent of [FIRE_TV, TIZEN, WEBOS, ANDROID_TV]) expect(isPhone({ userAgent, touchPoints: 1, coarsePointer: true, shortSide: 360 })).toBe(false);
   });
 });

@@ -2,7 +2,7 @@ import type { Direction } from "./dpad";
 
 /**
  * Where the arrow keys lead on the library screen. The screen is a few blocks ("zones") of buttons laid out in rows: the menu
- * on the left, the account button on top, the banner's buttons (Play, My List) under it on the pages with rows, and in the middle
+ * on the left, the account button on top (with the full screen one beside it), the banner's buttons (Play, My List) under it on the pages with rows, and in the middle
  * either rows of titles, a grid, or the search keyboard with its filter and results. A title's own page lies over all of these
  * while it is open, with a row of buttons that the arrow keys do not leave.
  * Pure, so the walking can be tested without a screen.
@@ -40,7 +40,12 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     return null;
   }
 
-  if (at.zone === "top") return direction === "down" ? (shape.hero?.length ? { zone: "hero", row: 0, col: 0 } : CONTENT) : null;
+  if (at.zone === "top") {
+    // The account button and, beside it, the full screen one.
+    if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
+    if (direction === "right") return at.col < (lengths[0] ?? 0) - 1 ? { ...at, col: at.col + 1 } : null;
+    return direction === "down" ? (shape.hero?.length ? { zone: "hero", row: 0, col: 0 } : CONTENT) : null;
+  }
 
   if (at.zone === "hero") {
     const buttons = lengths[0] ?? 0;

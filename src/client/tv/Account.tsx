@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ACCENTS, UI_LANGUAGES } from "../../shared";
+import { ACCENTS, MAX_PROFILES, UI_LANGUAGES, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
 import { useLinkApproval } from "../account/LinkApprove";
-import { ProfileGrid } from "../account/Profiles";
+import { ProfileEditor, ProfileGrid } from "../account/Profiles";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_SWATCH } from "../account/theme";
 import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
@@ -16,8 +16,8 @@ import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { Screen } from "./Idle";
 
-/** The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, and "Who's watching?". */
-export type AccountView = "panel" | "signin" | "approve" | "profiles";
+/** The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", and the same page for making and changing profiles. */
+export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage";
 
 /** How often the TV asks whether a phone has approved it. */
 const POLL_MS = 2000;
@@ -267,40 +267,108 @@ function TvApproveAsk({ code, onBack, onClose }: { code: string; onBack: () => v
   );
 }
 
-/** "Who's watching?": the profiles of the signed-in account as big pictures. Shown by itself when nobody has been picked on this TV yet. */
-export function TvProfiles({ forced, onDone, onBack }: { forced: boolean; onDone: () => void; onBack: () => void }) {
+interface ProfilesProps {
+  /** Nobody has been picked on this screen yet: the page can't be left without choosing (or signing out). */
+  forced: boolean;
+  /** Opened by "Manage profiles": it starts on the pictures that lead to the editors, and Back goes to the account page. */
+  manage: boolean;
+  onDone: () => void;
+  onBack: () => void;
+}
+
+/**
+ * "Who's watching?": the profiles of the signed-in account as big pictures, shown by itself when nobody has been picked on this TV
+ * yet. It is also where profiles are made, changed and removed, so none of that needs a phone: Manage profiles turns each picture
+ * into the way to its editor, with a tile to add one while there is room.
+ */
+export function TvProfiles({ forced, manage, onDone, onBack }: ProfilesProps) {
   const t = useT();
   const account = useAccount();
+  const [managing, setManaging] = useState(manage);
+  const [editing, setEditing] = useState<Profile | "new" | null>(null);
   if (!account.me) return null;
+  const { profiles } = account.me;
+
+  if (editing) {
+    const existing = editing === "new" ? undefined : editing;
+    const close = () => setEditing(null);
+    return (
+      <Screen key="edit" testId="tv-profile-edit" compact focus onBack={close}>
+        <h1 className="tv-headline tv-headline-small">{t(existing ? "profiles.edit" : "profiles.new")}</h1>
+        <ProfileEditor
+          tv
+          profile={existing}
+          taken={profiles.map((other) => other.avatar)}
+          onSave={async (name, avatar) => {
+            if (existing) {
+              await account.updateProfile(existing.id, { name, avatar });
+            } else {
+              const added = await account.addProfile(name, avatar);
+              if (added && forced) {
+                account.choose(added.id); // nobody was picked yet, and this one was made by whoever is here
+                return onDone();
+              }
+            }
+            close();
+          }}
+          onCancel={close}
+          onDelete={
+            existing && profiles.length > 1
+              ? async () => {
+                  await account.deleteProfile(existing.id);
+                  close();
+                }
+              : undefined
+          }
+        />
+      </Screen>
+    );
+  }
+
+  const pick = (picked: Profile) => {
+    account.choose(picked.id);
+    onDone();
+  };
+  const doneManaging = manage ? onBack : () => setManaging(false);
   return (
-    <Screen testId="tv-profiles" focus onBack={forced ? undefined : onBack}>
-      <h1 className="tv-headline">{t("profiles.title")}</h1>
+    <Screen key={managing ? "manage" : "pick"} testId="tv-profiles" focus onBack={managing ? doneManaging : forced ? undefined : onBack}>
+      <h1 className="tv-headline">{t(managing ? "profiles.manage" : "profiles.title")}</h1>
       <ProfileGrid
         tv
-        profiles={account.me.profiles}
+        mode={managing ? "manage" : "pick"}
+        profiles={profiles}
         current={account.profile?.id}
-        onPick={(picked) => {
-          account.choose(picked.id);
-          onDone();
-        }}
+        onPick={managing ? setEditing : pick}
+        {...(managing || forced ? { onAdd: () => setEditing("new") } : {})}
       />
-      <p className="tv-lead tv-hint">{t("tv.profilesHint")}</p>
+      {managing && <p className="tv-lead tv-hint">{t("profiles.count", { count: profiles.length, max: MAX_PROFILES })}</p>}
       <div className="tv-actions">
-        {!forced && (
-          <button className="tv-action" onClick={onBack} data-nav data-testid="tv-profiles-back">
-            {t("common.back")}
+        {managing ? (
+          <button className="tv-action tv-action-primary" onClick={doneManaging} data-nav data-testid="tv-profiles-done">
+            {t("common.done")}
           </button>
+        ) : (
+          <>
+            <button className="tv-action" onClick={() => setManaging(true)} data-nav data-testid="tv-profiles-manage">
+              {t("profiles.manage")}
+            </button>
+            {!forced && (
+              <button className="tv-action" onClick={onBack} data-nav data-testid="tv-profiles-back">
+                {t("common.back")}
+              </button>
+            )}
+            <button className="tv-action" onClick={() => void account.signOut().then(onDone)} data-nav data-testid="tv-profiles-signout">
+              {t("auth.signOut")}
+            </button>
+          </>
         )}
-        <button className="tv-action" onClick={() => void account.signOut().then(onDone)} data-nav data-testid="tv-profiles-signout">
-          {t("auth.signOut")}
-        </button>
       </div>
     </Screen>
   );
 }
 
 /** Who is watching, and what the site looks like and does: language, colour, autoplay. For guests it is where signing in starts. */
-export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch }: { onClose: () => void; onSignIn: () => void; onApprove: () => void; onSwitch: () => void }) {
+export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManage }: { onClose: () => void; onSignIn: () => void; onApprove: () => void; onSwitch: () => void; onManage: () => void }) {
   const t = useT();
   const language = useLanguage();
   const account = useAccount();
@@ -311,14 +379,16 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch }: { onC
     <Screen testId="tv-account" focus onBack={onClose}>
       <div className="tv-panel">
         <section className="tv-panel-who">
-          {me && profile ? (
-            <Avatar id={profile.avatar} className="tv-panel-avatar" />
-          ) : (
-            <span className="tv-panel-guest" aria-hidden="true">
-              <UserIcon />
-            </span>
-          )}
-          <h1 data-testid="tv-account-name">{me && profile ? profile.name : t("tv.notSignedIn")}</h1>
+          <div className="tv-panel-id">
+            {me && profile ? (
+              <Avatar id={profile.avatar} className="tv-panel-avatar" />
+            ) : (
+              <span className="tv-panel-guest" aria-hidden="true">
+                <UserIcon />
+              </span>
+            )}
+            <h1 data-testid="tv-account-name">{me && profile ? profile.name : t("tv.notSignedIn")}</h1>
+          </div>
           <p>{me ? t("account.signedInAs", { email: me.account.email }) : t("auth.pitchDetail")}</p>
           <div className="tv-panel-actions">
             {me && profile ? (
@@ -328,6 +398,9 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch }: { onC
                     {t("profiles.switch")}
                   </button>
                 )}
+                <button className="tv-action" onClick={onManage} data-nav data-testid="tv-manage-profiles">
+                  {t("profiles.manage")}
+                </button>
                 <button className="tv-action" onClick={onApprove} data-nav data-testid="tv-approve">
                   {t("account.signInTv")}
                 </button>
@@ -393,6 +466,14 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch }: { onC
 export function TvAccount({ view, onView, forced }: { view: AccountView; onView: (view: AccountView | null) => void; forced: boolean }) {
   if (view === "signin") return <TvSignIn onClose={() => onView(null)} />;
   if (view === "approve") return <TvApprove onClose={() => onView("panel")} />;
-  if (view === "profiles") return <TvProfiles forced={forced} onDone={() => onView(null)} onBack={() => onView("panel")} />;
-  return <TvAccountPanel onClose={() => onView(null)} onSignIn={() => onView("signin")} onApprove={() => onView("approve")} onSwitch={() => onView("profiles")} />;
+  if (view === "profiles" || view === "manage") return <TvProfiles forced={forced} manage={view === "manage"} onDone={() => onView(null)} onBack={() => onView("panel")} />;
+  return (
+    <TvAccountPanel
+      onClose={() => onView(null)}
+      onSignIn={() => onView("signin")}
+      onApprove={() => onView("approve")}
+      onSwitch={() => onView("profiles")}
+      onManage={() => onView("manage")}
+    />
+  );
 }

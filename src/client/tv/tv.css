@@ -798,7 +798,23 @@
   padding: 1.8em 4.4em 0 7em;
 }
 .tv-browse-logo { font-size: 2.2em; }
-.tv-browse-top .tv-account-chip { position: static; margin-left: auto; font-size: 1.5em; }
+/* The account button and, beside it, a round one for full screen: the same height, the same way of answering the remote. */
+.tv-browse-corner { display: flex; align-items: center; gap: 0.6em; margin-left: auto; font-size: 1.5em; }
+.tv-browse-corner .tv-account-chip { position: static; font-size: 1em; }
+.tv-corner-button {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 2.4em;
+  height: 2.4em;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #e6e6e6;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.tv-corner-button svg { width: 1.2em; height: 1.2em; }
+.tv-corner-button:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.tv-corner-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
 
 /* The banner takes the top third; moving down to the rows below the first lets it shrink to a line or two, so the rows get the room. */
 .tv-hero {
@@ -984,16 +1000,22 @@
   flex: none;
   align-items: center;
   gap: 0.8em;
-  margin: 0 1.6em 0 0.9em;
-  padding: 0.55em 0.7em;
+  margin: 0 1.6em 0 0.68em;
+  padding: 0.55em 0.5em;
   border-radius: 0.5em;
   color: #b4b4bb;
   font-size: 1.7em;
   font-weight: 600;
   white-space: nowrap;
   text-align: left;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, margin-right 0.2s ease;
 }
+/*
+ * Shut, the menu is a strip of icons, and an entry is a box as wide as its icon needs, in the middle of the strip: the margins are
+ * what is left of the strip on each side, so the box lit for the focused entry is round its icon, never beside it. Open, the
+ * entry stretches to the right (the strip's own width moves in step with this margin).
+ */
+.tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: 0.68em; }
 .tv-rail-item { position: relative; }
 .tv-rail-item span { opacity: 0; transition: opacity 0.15s; }
 .tv-rail[data-open="true"] .tv-rail-item span { opacity: 1; }
@@ -1005,7 +1027,7 @@
 .tv-rail-badge { margin-left: auto; padding: 0.1em 0.7em; border-radius: 999px; background: rgb(var(--accent-rgb) / 0.35); color: #fff; font-size: 0.7em; font-style: normal; opacity: 0; transition: opacity 0.15s; }
 .tv-rail[data-open="true"] .tv-rail-badge { opacity: 1; }
 .tv-rail-item:focus-visible .tv-rail-badge { background: rgba(0, 0, 0, 0.12); color: #000; }
-.tv-rail-item[data-badged="true"]::after { content: ""; position: absolute; left: 2.1em; top: 0.35em; width: 0.45em; height: 0.45em; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 0.12em #0b0b0c; }
+.tv-rail-item[data-badged="true"]::after { content: ""; position: absolute; left: 1.7em; top: 0.3em; width: 0.45em; height: 0.45em; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 0.12em #0b0b0c; }
 .tv-rail[data-open="true"] .tv-rail-item[data-badged="true"]::after { display: none; }
 .tv-rail-group {
   margin: 0.7em 0 0 0.9em;
@@ -1125,12 +1147,12 @@
 
 /* Email and password on the TV: for a TV that has a keyboard. */
 .tv .auth-tv { width: 50em; gap: 1.1em; text-align: left; }
-.tv .auth-tv .auth-field { gap: 0.4em; }
-.tv .auth-tv .auth-field > span { font-size: 1.5em; letter-spacing: 0.06em; }
+.tv .auth-tv .auth-field, .tv .profile-editor-tv .auth-field { gap: 0.4em; }
+.tv .auth-tv .auth-field > span, .tv .profile-editor-tv .auth-field > span { font-size: 1.5em; letter-spacing: 0.06em; }
 .tv .auth-tv .auth-field > small { font-size: 1.3em; }
-.tv .auth-tv .auth-field input { padding: 0.55em 0.8em; border-width: 0.08em; border-radius: 0.4em; font-size: 2em; }
-.tv .auth-tv .auth-field input:focus { box-shadow: 0 0 0 0.14em rgb(var(--accent-rgb) / 0.5); }
-.tv .auth-tv .auth-error, .tv .auth-tv .auth-note { padding: 0.6em 0.9em; border-radius: 0.5em; font-size: 1.5em; }
+.tv .auth-tv .auth-field input, .tv .profile-editor-tv .auth-field input { padding: 0.55em 0.8em; border-width: 0.08em; border-radius: 0.4em; font-size: 2em; }
+.tv .auth-tv .auth-field input:focus, .tv .profile-editor-tv .auth-field input:focus { box-shadow: 0 0 0 0.14em rgb(var(--accent-rgb) / 0.5); }
+.tv .auth-tv .auth-error, .tv .auth-tv .auth-note, .tv .profile-editor-tv .auth-error { padding: 0.6em 0.9em; border-radius: 0.5em; font-size: 1.5em; }
 .tv .auth-tv .tv-action { width: 100%; }
 .tv .auth-tv .tv-link-input { text-align: center; text-transform: uppercase; letter-spacing: 0.16em; }
 .tv-approve-body { max-width: 34em; text-align: center; }
@@ -1147,15 +1169,36 @@
 .profile-tv .profile-tile[aria-current="true"]:focus-visible .profile-picture { box-shadow: 0 0 0 0.03em #fff, 0 0.06em 0.2em rgba(0, 0, 0, 0.6); }
 .profile-tv .profile-tile:hover .profile-name, .profile-tv .profile-tile:focus-visible .profile-name { color: #fff; }
 
+/* Making or changing a profile: the picture on the left, and on the right the name (typed with a keyboard) and the pictures to choose from. */
+.tv .profile-editor-tv { display: grid; grid-template-columns: auto minmax(0, 46em); align-items: start; gap: 1.3em 6em; width: min(100%, 72em); text-align: left; }
+.tv .profile-editor-tv > * { grid-column: 2; margin: 0; }
+.tv .profile-editor-tv .editor-preview { grid-column: 1; grid-row: 1 / span 6; align-self: center; font-size: 12em; }
+.tv .profile-editor-tv .avatar-picker legend { padding: 0 0 0.5em; font-size: 1.5em; letter-spacing: 0.06em; }
+.tv .profile-editor-tv .avatar-choices { gap: 1em; padding: 0.4em; } /* room for the one with the focus to grow and be ringed */
+.tv .profile-editor-tv .avatar-choice { transition: transform 0.15s, box-shadow 0.15s; }
+.tv .profile-editor-tv .avatar-choice:hover { transform: scale(1.08); }
+.tv .profile-editor-tv .avatar-choice[aria-checked="true"] { box-shadow: 0 0 0 0.25em var(--accent); transform: none; }
+.tv .profile-editor-tv .avatar-choice:focus-visible { outline: 0.16em solid #fff; outline-offset: 0.3em; box-shadow: none; transform: scale(1.1); }
+.tv .profile-editor-tv .avatar-choice[aria-checked="true"]:focus-visible { box-shadow: 0 0 0 0.25em var(--accent); }
+.tv .profile-editor-tv .editor-actions { gap: 1.2em; }
+.tv .profile-editor-tv .editor-actions .tv-action { flex: 1; min-width: 0; }
+.tv .profile-editor-tv .editor-confirm { gap: 1em; padding: 1.2em 1.4em; border-radius: 0.7em; }
+.tv .profile-editor-tv .editor-confirm p { font-size: 1.6em; line-height: 1.35; }
+/* What cannot be taken back: a warmer button than the rest. */
+.tv-action-danger { background: rgba(255, 107, 107, 0.2); color: #ffb4b4; }
+.tv-action-danger:hover { background: rgba(255, 107, 107, 0.34); color: #fff; }
+
 /* The account page: who is watching on the left, what the site looks like and does on the right. */
 .tv-panel { display: grid; grid-template-columns: 28em 1fr; align-items: center; gap: 6em; width: min(100%, 92em); text-align: left; }
 .tv-panel-who { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5em; }
-.tv-panel-avatar { font-size: 10em; margin-bottom: 0.1em; }
-.tv-panel-guest { display: grid; place-items: center; width: 4.4em; height: 4.4em; margin-bottom: 0.4em; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: #cfcfd4; font-size: 2.3em; }
-.tv-panel-who h1 { margin: 0; font-size: 3.2em; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em; }
+/* The picture beside the name, not above it: with the buttons under them the column has to fit a 16:9 screen, below the logo. */
+.tv-panel-id { display: flex; align-items: center; gap: 1.2em; max-width: 100%; }
+.tv-panel-avatar { flex: none; font-size: 7em; }
+.tv-panel-guest { display: grid; flex: none; place-items: center; width: 3.1em; height: 3.1em; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: #cfcfd4; font-size: 2.3em; }
+.tv-panel-who h1 { min-width: 0; margin: 0; font-size: 3.2em; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em; overflow-wrap: anywhere; }
 .tv-panel-who p { margin: 0; font-size: 1.6em; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
-.tv-panel-actions { align-self: stretch; display: flex; flex-direction: column; gap: 0.7em; margin-top: 1em; }
-.tv-panel-actions .tv-action { width: 100%; min-width: 0; }
+.tv-panel-actions { align-self: stretch; display: flex; flex-direction: column; gap: 0.6em; margin-top: 0.8em; }
+.tv-panel-actions .tv-action { width: 100%; min-width: 0; padding-block: 0.55em; }
 .tv-panel-settings { display: flex; flex-direction: column; align-items: flex-start; }
 .tv-panel-settings h2 { margin: 1.4em 0 0.5em; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .tv-panel-settings h2:first-child { margin-top: 0; }
@@ -1426,7 +1469,7 @@
   /* The account page, the pickers of who is watching. */
   .tv-panel { grid-template-columns: 1fr; gap: 2em; }
   .tv-panel-who { align-items: center; text-align: center; }
-  .tv-panel-avatar { font-size: 7em; }
+  .tv-panel-id { flex-direction: column; gap: 0.4em; }
   .tv-panel-who h1 { font-size: 2.4em; }
   .tv-panel-who p { font-size: 1.4em; }
   .tv-panel-settings { align-items: stretch; }
@@ -1436,7 +1479,10 @@
   .tv-swatch { font-size: 1.4em; }
   .tv-switch-row { max-width: none; font-size: 1.5em; }
   .tv .auth-tv { width: 100%; }
-  .tv .auth-tv .auth-field input { font-size: 1.8em; }
+  .tv .auth-tv .auth-field input, .tv .profile-editor-tv .auth-field input { font-size: 1.8em; }
+  .tv .profile-editor-tv { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 1.2em; }
+  .tv .profile-editor-tv .editor-preview { align-self: center; font-size: 7em; }
+  .tv .profile-editor-tv .editor-confirm p { font-size: 1.4em; }
   .profile-tv { gap: 1.6em 2em; }
   .profile-tv .profile-picture { font-size: 7em; }
   .profile-tv .profile-name { font-size: 1.7em; }
@@ -1445,12 +1491,12 @@
   /* The library: a thin menu on the left, a smaller banner, rows that swipe sideways and a page that swipes down. */
   .tv-rail { width: 5.6em; padding: 5em 0 2em; }
   .tv-rail[data-open="true"] { width: 24em; }
-  .tv-rail-item { margin: 0 1.2em 0 0.6em; font-size: 1.6em; }
+  .tv-rail-item { margin: 0 1.2em 0 0.68em; font-size: 1.6em; }
   .tv-rail-group { font-size: 1.2em; }
   .tv-rail-category { font-size: 1.4em; }
   .tv-browse-top { gap: 1em; padding: 1.2em 1.4em 0 6.4em; }
   .tv-browse-logo { font-size: 1.8em; }
-  .tv-browse-top .tv-account-chip { font-size: 1.3em; }
+  .tv-browse-corner { font-size: 1.3em; }
   .tv-hero { height: 17em; max-width: none; padding: 0 1.4em 0.6em 6.4em; }
   .tv-browse[data-deep="true"] .tv-hero { height: 6em; }
   .tv-browse[data-deep="true"] .tv-hero-title { font-size: 2em; }

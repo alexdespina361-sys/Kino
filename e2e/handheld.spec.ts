@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { openDevice, openLibrary, openPairedPhone, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, tvRoot, tvTime, withLibrary } from "./helpers";
+import { en } from "../src/client/i18n/en";
+import { FIRST_VISIT, openDevice, openLibrary, openPairedPhone, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, tvRoot, tvTime, withLibrary } from "./helpers";
 
 /** Any device is a screen, and any phone can bring another screen in: the TV page on a phone or a tablet, and the QR codes between devices. */
 
@@ -26,6 +27,8 @@ test.describe("a phone used as the screen", () => {
     await phone.getByTestId("switch-to-tv").tap(); // "Watch on this device": straight into the library
     await expect(phone.getByTestId("tv-hero-title")).toHaveText("Film number 1");
     expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
+    await expect(phone.getByTestId("tv-account-chip")).toBeInViewport(); // the corner's two buttons fit beside the logo
+    await expect(phone.getByTestId("fullscreen-toggle")).toBeInViewport();
 
     // Search is typed on the phone's own keyboard, and two titles fit across.
     await searchFilms(phone);
@@ -54,11 +57,30 @@ test.describe("a phone used as the screen", () => {
     await expect(phone.getByTestId("tv-account")).toBeVisible();
     await phone.getByTestId("tv-account-back").tap();
     await expect(phone.getByTestId("tv-browse")).toBeVisible();
+  });
 
-    await phone.getByTestId("rail-connect").tap();
-    await expect(phone.getByTestId("pairing-code")).toBeVisible();
-    await phone.getByTestId("tv-back-to-library").tap();
-    await expect(phone.getByTestId("tv-browse")).toBeVisible();
+  test("the menu's phone entry makes a phone the remote, where a TV's would show the code to type on one", async ({ browser }) => {
+    const phone = await openDevice(browser, PHONE, {}, withFilms);
+    await phone.goto("/tv");
+    const entry = phone.getByTestId("rail-connect");
+    await expect(entry).toHaveText(en["tv.useRemote"]);
+    await entry.tap();
+
+    // The page a phone starts on: the code of a TV goes here, and the choice is kept for the next visit.
+    await expect(phone.getByTestId("code-input")).toBeVisible();
+    await expect(phone.getByTestId("tv-browse")).toHaveCount(0);
+    expect(await phone.evaluate(() => localStorage.getItem("kino.role"))).toBe("remote");
+  });
+
+  test("a tablet is somebody's screen, so its menu still shows the code to type on a phone, with a Back button for a finger", async ({ browser }) => {
+    const tablet = await openDevice(browser, { viewport: { width: 768, height: 1024 }, hasTouch: true }, {}, withFilms);
+    await tablet.goto("/tv");
+    const entry = tablet.getByTestId("rail-connect");
+    await expect(entry).toHaveText(en["tv.connectPhone"]);
+    await entry.tap();
+    await expect(tablet.getByTestId("pairing-code")).toBeVisible();
+    await tablet.getByTestId("tv-back-to-library").tap();
+    await expect(tablet.getByTestId("tv-browse")).toBeVisible();
   });
 
   test("a tablet gets as many titles across as fit, and a phone held sideways keeps everything on screen", async ({ browser }) => {
@@ -132,11 +154,24 @@ test.describe("a phone that watches a party along", () => {
     });
   }
 
-  test("joining takes the phone's page full screen, and a button on each screen leaves it and brings it back", async ({ browser }) => {
+  test("a party's code typed on the phone's first screen, where a TV's code goes, makes the phone a screen of the party", async ({ browser }) => {
     const { host, code } = await hosting(browser);
     const phone = await openDevice(browser, PHONE);
+    await phone.goto("/");
+    await phone.getByTestId("code-input").fill(code); // sent by itself on the sixth digit
+    await expect(phone.getByTestId("unlock")).toBeVisible(); // the party's own page, as its link opens it: one press before the host's video plays here
+    expect(new URL(phone.url()).searchParams.get("party")).toBe(code);
+    await expect(phone.getByTestId("error")).toHaveCount(0);
+    await phone.getByTestId("unlock").tap();
+    await expect(phone.getByTestId("tv-following")).toBeVisible();
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+  });
+
+  test("the phone's page goes full screen at its first tap, and a button on each screen leaves it and brings it back", async ({ browser }) => {
+    const { host, code } = await hosting(browser);
+    const phone = await openDevice(browser, { ...PHONE, storageState: FIRST_VISIT });
     await join(phone, code);
-    await expect.poll(() => isFullScreen(phone)).toBe(true); // the digits typed were the press
+    await expect.poll(() => isFullScreen(phone)).toBe(true); // the first tap on the page was the press
     const waiting = phone.getByTestId("tv-fullscreen");
     await expect(waiting).toHaveText("Exit full screen");
     await waiting.tap();

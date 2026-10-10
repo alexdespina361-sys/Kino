@@ -51,7 +51,9 @@ pnpm build && pnpm start     # http://localhost:8787
 **Accounts and profiles**
 - Register and sign in with an email and a password (hashed with scrypt; the session is an `httpOnly` cookie). An account has up to **five
   profiles**, each with a name and one of **twelve avatars**; who is watching is asked on every new device, Netflix-style, and a profile
-  is switched from the account page (the profile picture in the phone's top bar, and in the TV's library menu).
+  is switched from the account page (the profile picture in the phone's top bar, and in the library's top corner on the TV). The TV makes,
+  renames, re-pictures and removes profiles itself, with the remote's arrow keys: profile picture in the top corner (or the gear in the
+  menu) → **Manage profiles**; the "Who's watching?" page that follows a sign-in has the same tile for a new profile and the same button.
 - **Watching is saved to the profile**, wherever it is watched: **Continue watching** (the place in every unfinished film or episode, and the
   next episode of a show once one is finished), **My List**, the watched marks on episode lists, and the profile's settings. Open the app
   on another phone, TV or browser, sign in, pick the profile, and it carries on from the same second.
@@ -62,12 +64,13 @@ pnpm build && pnpm start     # http://localhost:8787
   connection returns, and as the page closes. It sends only what changed since the last revision (`POST /api/profiles/:id/sync`), and a
   device that is offline keeps working and catches up.
 - **Sign a TV in from the phone.** Typing an email on a TV remote is a chore, so the TV's sign-in page shows a QR code and a short code
-  (`ABCD-2345`). A phone that is already signed in opens it (the camera app, or Account → "Sign in a TV" to scan or type the code), sees what is
+  (`ABCD-2345`). A phone that is already signed in opens it (the camera app, or Account → "Sign in another device" to scan or type the code), sees what is
   asking, and approves; the TV is signed in a moment later. The code works once and expires after five minutes, and nothing signs a TV in
   until a signed-in person says yes. A screen that is signed in itself can do the asking too (a computer with no phone at hand): its account
-  page has **Sign in a TV**: type the code the other screen shows, check who is asking, approve.
+  page has **Sign in another device**: type the code the other screen shows, check who is asking, approve.
 - The phone's account page: profiles, settings, devices (sign others out), password, delete account. The TV has its own: who's watching,
-  profiles, settings.
+  **Manage profiles**, and the settings (language, colour, autoplay). The subtitle languages, the devices, the password and deleting the
+  account are on the phone's page only.
 - **Settings per profile:** website language, accent colour (the red can be any of several colours), whether the next episode follows by
   itself, and the subtitle languages (below).
 
@@ -99,8 +102,12 @@ pnpm build && pnpm start     # http://localhost:8787
 - Subtitles and audio like a streaming app: the language you chose is remembered. Tracks the file labels only with a code (`eng`) are
   named by their language. Subtitles are drawn by the page, so size, font, colour, opacity, background, edge, height and word spacing
   all work on any TV browser; change them from the TV's menu or the phone, with a live preview. A browser only lets a page go full screen
-  (and play with sound) after a press on that page, so the TV goes full screen with the first title chosen on it, or the party joined with a press,
-  and is left alone after that (Esc or the button leaves it for good); the phone's button works while the TV has had a press lately: the TV asks
+  (and play with sound) after a press on that page, so a screen goes full screen at its first key press or click, once, and is left alone after
+  that. Leaving it (Esc, `F`, or the round button in the library's corner, beside the account button, which the arrow keys reach too) is
+  remembered in that browser, so the next visit stays as it was; going in again with the button makes it open full screen once more
+  (`src/client/shared/fullscreen.ts`). Safari is left out of the automatic part, as it takes no typed letters in a full-screen page. The phone's
+  remote doesn't do it by itself (it is where codes get typed) but has the same button on its first screen and in its menu (*Full screen on this
+  phone*). The phone's button for the TV's full screen works while the TV has had a press lately: the TV asks
   for an OK press when it hasn't. If the browser still refuses to start a video, a **Tap / press OK to play** button says so instead of a blank screen
 - **Subtitle languages.** The menu lists every language the video has. The ones a profile wants come first (a guest gets the website's
   language, English, Romanian and Italian), the rest sit under **More languages**. A signed-in profile can choose its own ordered list in
@@ -147,7 +154,9 @@ becomes the player; a phone or tablet starts as the remote, and can be the playe
 `/?role=tv` asks for one screen without remembering it, the `/?code=` and `/?url=` links made for the phone always open the remote, and a
 `/?party=` link always opens a screen. A device that was guessed wrong has a way over: **Watch on this device** on the phone's connect page,
 the TV menu of a connected phone, and a quiet "Use this screen as a remote" link on the TV's own pages; the choice is remembered on that
-device. The rules are in `src/client/role.ts`. Each role is a chunk of its own (`src/client/main.tsx`), so a phone downloads the remote and a
+device. In the library's menu a **phone** (a touch screen under 600 px, not a TV browser) has **Use as a remote** where other screens have
+**Connect a phone**: it is for controlling a TV, so the entry goes to the remote's page instead of showing a code for another phone. A tablet
+keeps **Connect a phone**, since it can be somebody's screen. The rules are in `src/client/role.ts`. Each role is a chunk of its own (`src/client/main.tsx`), so a phone downloads the remote and a
 TV the player, and the video library (hls.js) and the QR scanner load only when they are needed.
 
 ### Watch party
@@ -161,8 +170,11 @@ is watching on it, or else by its own name ("TV 3F2A"). Ways in:
   number keys (the on-screen pad works too).
 - **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with a **Share link** button, and
   lists who is in (the host's phone can send any guest away). Typing the pairing code that another TV shows into the phone still works.
+- **From a phone with no TV:** the code of a party typed where a TV's code goes (the phone's first screen) is recognised, and the phone opens
+  the party as a screen (`/?party=<code>`), the same as the link does. The server answers such a code with `PARTY_CODE`; other wrong
+  codes are still "Invalid or expired code" and count against the pairing limit.
 - **From a link:** `/?party=<code>` opened on any device shows a "Press OK or tap to start" page and joins on that press (the press is also
-  what lets the browser play with sound and go full screen).
+  what lets the browser play with sound, and it takes the page full screen like any first press).
 
 The code lasts ten minutes (renewed while it is on screen), admits screens until the party is full, and wrong codes count against the same
 limit as pairing. A TV with a phone connected can host a party but not join one. Everybody in a party can see who else is in it; the host can remove
@@ -246,7 +258,10 @@ The server is one Node process that serves the page, the API and the sockets fro
    about this in its log.
 4. Set `TMDB_API_KEY` to your own key, and `REGISTRATION=closed` (or `MAX_ACCOUNTS`) once the people it is for have signed up.
 5. Phones and TVs reach it over `https://<name>.onrender.com`, so camera scanning works. Pairings live in memory: if the instance sleeps or
-   restarts, the TV shows a new code and the phone reconnects to it (accounts, progress and lists are not lost).
+   restarts, the TV shows a new code and the phone reconnects to it (accounts, progress and lists are not lost). Pairings and watch parties
+   also live in the memory of **one service**: two services (two `onrender.com` names, even of the same repository) do not know each other's
+   codes, so a phone on a different address than the TV answers "Invalid or expired code" however well the code is typed. Use the address the
+   TV shows (the party page prints it) on every device, and delete a duplicate service.
 
 Limits to know about: there is no password reset or email check (no mail is sent), and the sign-in rate limits are per address, so they
 are best-effort behind a shared proxy.
@@ -264,8 +279,11 @@ Tests never touch the internet; they use `fixtures/` (served at `/fixtures/`) an
 throwaway credentials from `e2e/testAccount.ts`. The e2e suite covers pairing by code and by QR link, camera scanning (Chromium's fake
 webcam shows a generated QR code), disconnect and switching TVs, resume, the D-pad, HUD fading, subtitle memory and the episode lists, the
 library and its menu, watch parties (from a TV, from a phone, from a link), a second phone and a phone that scans another TV, the TV page on a
-phone, a tablet and a phone held sideways, the end card and mute, and accounts: registering, profiles, guest progress combined into an
-account, a second device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages.
+phone, a tablet and a phone held sideways, the end card and mute, full screen (at the first press, kept for the next visit, the buttons), and
+accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
+device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
+tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
+itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`).
 
 Browsers that refuse a video until it has been pressed (Brave's strict setting, iPhones) are tested with a browser started with
 `--autoplay-policy=user-gesture-required` (`strictBrowser` in `e2e/helpers.ts`). Playwright's own click lets go of the button within a few milliseconds,

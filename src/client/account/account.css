@@ -154,7 +154,7 @@
 .avatar-button:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff; }
 .signin-pill { display: inline-flex; align-items: center; flex: none; gap: 6px; padding: 8px 14px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
 .signin-pill:active { background: var(--surface); }
-.pair-corner { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; }
+.pair-corner { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; display: flex; align-items: center; gap: 8px; }
 .pair { position: relative; }
 
 .choose { align-items: center; justify-content: center; gap: 22px; text-align: center; }

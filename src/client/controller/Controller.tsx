@@ -18,8 +18,9 @@ import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { readStorage, writeStorage } from "../shared/format";
+import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { MoreIcon, TvIcon } from "../shared/icons";
-import { readLaunchParams } from "../shared/launch";
+import { partyLink, readLaunchParams } from "../shared/launch";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
@@ -72,6 +73,8 @@ export function Controller() {
   // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
   const launchRef = useRef(readLaunchParams(location.search));
   const [code, setCode] = useState(launchRef.current.code ?? "");
+  /** The code that was last sent to connect with: when the server says it belongs to a watch party instead, this is the party to go to. */
+  const sentCodeRef = useRef("");
   // The account page, and the sign-in request of a TV (from its QR code) waiting for this signed-in phone to say yes or no.
   const [showAccount, setShowAccount] = useState(false);
   const [approveCode, setApproveCode] = useState<string | null>(launchRef.current.link ?? null);
@@ -114,6 +117,7 @@ export function Controller() {
               // Scanned the TV's QR code: connect straight away. A phone that has a TV is asked first (unless this is that TV's own code).
               launchRef.current = { ...launch, code: undefined, control: undefined };
               if (!message.tv) {
+                sentCodeRef.current = scanned;
                 socketRef.current?.send({ type: "PAIR", code: scanned });
                 setPairing(true);
               } else if (message.tv.controlCode !== scanned) {
@@ -147,6 +151,11 @@ export function Controller() {
             setMedia(message.media);
             break;
           case "ERROR":
+            // The code was a watch party's, which a screen joins, not a remote: this phone becomes one, as the party's own link would make it.
+            if (message.code === "PARTY_CODE" && sentCodeRef.current) {
+              location.assign(partyLink(sentCodeRef.current));
+              break;
+            }
             // "Invalid message" means the server is older than this page (started before an update, never restarted); see socketError.
             setError(socketError(message.code, message.message));
             setPairing(false);
@@ -242,7 +251,7 @@ export function Controller() {
   /* ------------------------------ views ------------------------------ */
 
   const closeApprove = () => setApproveCode(null);
-  const accountButton = <AccountButton onClick={() => setShowAccount(true)} />;
+  const accountButton = <AccountButton onClick={() => setShowAccount(true)} />
   // On top of whichever screen is showing: the account, a TV asking to be signed in, and what the account has to say.
   const accountLayer = (
     <>
@@ -280,12 +289,19 @@ export function Controller() {
           onSubmit={(value) => {
             setError(null);
             setPairing(true);
+            sentCodeRef.current = value;
             socketRef.current?.send({ type: "PAIR", code: value });
           }}
           connection={connection}
           pending={pairing}
           error={error}
-          corner={accountButton}
+          corner={
+            <>
+              {/* This page's own full screen, which hides the browser's bar (the TV's is a button on the remote, in the paired phone's menu there is this one). */}
+              <FullscreenToggle className="icon-btn" />
+              {accountButton}
+            </>
+          }
         />
         {accountLayer}
       </>

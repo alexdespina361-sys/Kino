@@ -19,6 +19,7 @@ import { useAccount } from "../account/AccountProvider";
 import { profileStore, useProfileData } from "../account/store";
 import { t, useT } from "../i18n";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
+import { canFullscreen as offersFullscreen, enterFullscreen, toggleFullscreen } from "../shared/fullscreen";
 import { FullscreenIcon, MutedIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
@@ -500,7 +501,6 @@ export function Tv() {
             setPairing(null);
             setFollowing(message.leader);
             setPartyError(null);
-            if (navigator.userActivation?.isActive) fullscreenOnce(); // the code was just typed here; a phone that added this TV is no press on it
             wasResolvingRef.current = false;
             setResolving(false);
             setMenu(null);
@@ -660,24 +660,8 @@ export function Tv() {
     notify(t(video.muted ? "notice.muted" : "notice.unmuted"));
   };
 
-  const enterFullscreen = () => document.documentElement.requestFullscreen?.().catch(() => {});
-  /** Phones in some browsers (iPhone's) have no full screen to offer a page, and then no button for it either. */
-  const canFullscreen = Boolean(document.fullscreenEnabled);
-  const fullscreenTriedRef = useRef(false);
-  /**
-   * With no start button, the first thing done on a screen (a title chosen to play, a party joined) is the press that takes it full
-   * screen, once: leaving it is up to the viewer. A press that is a moment old (a code typed, then the server's answer) still counts.
-   */
-  const fullscreenOnce = () => {
-    if (fullscreenTriedRef.current || document.fullscreenElement) return;
-    fullscreenTriedRef.current = true;
-    void enterFullscreen();
-  };
-  /** From the TV's own remote or mouse, which the browser accepts as the press it needs. */
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) void enterFullscreen();
-    else document.exitFullscreen().catch(() => {});
-  };
+  /** Phones in some browsers (iPhone's) have no full screen to offer a page, and then no button for it either. (The first press on a screen takes it full screen by itself: see `setUpFullscreen`.) */
+  const canFullscreen = offersFullscreen();
   /**
    * From the phone. Leaving is always allowed; going in is refused unless the TV page just got a click or key press,
    * so then the TV asks for one (OK on its remote) instead of failing without a word.
@@ -688,7 +672,7 @@ export function Tv() {
   };
   const acceptFullscreenPrompt = () => {
     setFsPrompt(false);
-    void enterFullscreen();
+    enterFullscreen();
   };
   useEffect(() => {
     if (!fsPrompt) return;
@@ -791,7 +775,6 @@ export function Tv() {
    * meanwhile. `startAt` resumes a title left unfinished; `hint` carries the picture and year the library already knows.
    */
   const playEpisode = (url: string, options: PlayOptions = {}) => {
-    fullscreenOnce();
     setMenu(null);
     setUpNextCountdown(null);
     setUpNextDismissed(false);
@@ -1024,15 +1007,8 @@ export function Tv() {
 
       {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
-      {/* Only a party's link starts here. Pressing OK is also the press the browser needs to let the page go full screen. */}
-      {!unlocked && (
-        <TvLocked
-          onUnlock={() => {
-            void enterFullscreen();
-            setUnlocked(true);
-          }}
-        />
-      )}
+      {/* Only a party's link starts here. Pressing OK is also the first press, which takes the page full screen. */}
+      {!unlocked && <TvLocked onUnlock={() => setUnlocked(true)} />}
 
       {unlocked && !showVideo && !accountPage && (resolving || (screen === "connect" && !following)) && (
         <TvIdle

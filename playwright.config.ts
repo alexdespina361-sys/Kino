@@ -8,7 +8,13 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 8_000 },
   reporter: [["list"]],
-  use: { baseURL: `http://127.0.0.1:${PORT}`, trace: "retain-on-failure" },
+  use: {
+    baseURL: `http://127.0.0.1:${PORT}`,
+    trace: "retain-on-failure",
+    // Every page starts as if its viewer had left full screen on an earlier visit (see src/client/shared/fullscreen.ts): a screen would
+    // otherwise go full screen at the first key press of any test. The tests of full screen itself start from FIRST_VISIT (e2e/helpers.ts).
+    storageState: { cookies: [], origins: [{ origin: `http://127.0.0.1:${PORT}`, localStorage: [{ name: "kino.fullscreen.left", value: "1" }] }] },
+  },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   // The real thing: production build, one Fastify process serving UI + /ws + local fixtures.
   webServer: {

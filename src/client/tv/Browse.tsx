@@ -5,8 +5,11 @@ import { hintOf, listEntryOf } from "../account/cards";
 import { profileStore, useProfileData } from "../account/store";
 import { useLanguage, useT } from "../i18n";
 import { BackspaceIcon, CheckIcon, ClockIcon, CloseIcon, FilmIcon, GearIcon, HomeIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { canFullscreen } from "../shared/fullscreen";
+import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
 import { hueOf } from "../shared/Poster";
+import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { AccountChip } from "./Idle";
 import { actionForKey } from "./keys";
@@ -146,6 +149,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const [filter, setFilter] = useState<KindFilter>(remembered.filter);
   const [searching, setSearching] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
+  /** A phone is for controlling a TV with: the menu's phone entry takes it to the remote instead of showing a code for one. */
+  const [phone] = useState(thisIsPhone);
   const [focused, setFocused] = useState<Focused | null>(null);
   /** The title whose own page is open over the library. */
   const [detail, setDetail] = useState<Focused | null>(null);
@@ -254,7 +259,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     { id: "list", label: t("rows.myList"), icon: <PlusIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list" }) },
     { id: "history", label: t("tv.history"), icon: <ClockIcon />, current: view.kind === "history", testId: "rail-history", onPress: () => choose({ kind: "history" }) },
     { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: t("party.size", { count: partySize }) } : {}), testId: "rail-party", onPress: onParty },
-    { id: "connect", label: t("tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { badge: t("tv.phoneConnected") } : {}), testId: "rail-connect", onPress: onConnect },
+    phone
+      ? { id: "connect", label: t("tv.useRemote"), icon: <PhoneIcon />, testId: "rail-connect", onPress: () => switchRole("remote") }
+      : { id: "connect", label: t("tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { badge: t("tv.phoneConnected") } : {}), testId: "rail-connect", onPress: onConnect },
     { id: "settings", label: t("tv.settings"), icon: <GearIcon />, testId: "rail-settings", onPress: onSettings },
   ];
   const groups: Array<{ kind: LibraryKind | undefined; title: string }> = [
@@ -290,10 +297,11 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
 
   // What the arrow keys can reach, row by row: the key handler below reads it through a ref.
   const showAccount = accountStatus === "ready";
+  const topButtons = (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the account button, then the full screen one beside it
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   const shape: Shape = {
     rail: entries.map(() => 1),
-    top: showAccount ? [1] : [],
+    top: topButtons > 0 ? [topButtons] : [],
     ...(rowsPage ? { hero: !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
     ...(grid ? { grid: gridRows(grid.entries.length, gridColumns) } : {}),
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: gridRows(shownResults.length, resultColumns) } : {}),
@@ -516,7 +524,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
             {notice}
           </p>
         )}
-        {showAccount && <AccountChip onOpen={onAccount} zone />}
+        <div className="tv-browse-corner">
+          {showAccount && <AccountChip onOpen={onAccount} zone />}
+          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": showAccount ? 1 : 0 }} />
+        </div>
       </header>
 
       {rowsPage && (

@@ -31,6 +31,7 @@ import { CheckIcon, ScanIcon } from "../shared/icons";
 import { controlLink, partyLink } from "../shared/launch";
 import { hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
+import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { RoleSwitch } from "../shared/RoleSwitch";
 import { captionLabel, captionTitle, statusWords, trackName } from "../shared/words";
 import { codeFromScan } from "./scan";
@@ -446,6 +447,7 @@ export function MenuSheet({
       <button className="btn btn-block" data-testid="party-open" onClick={onParty}>
         {partySize === 0 ? t("menu.partyOpen") : t("menu.partyActive", { count: partySize + 1 })}
       </button>
+      <FullscreenToggle className="btn btn-block" labels={{ enter: t("phone.fullscreen"), exit: t("phone.exitFullscreen") }} />
       <button className="btn btn-danger btn-block" data-testid="disconnect" onClick={onDisconnect}>
         {t("menu.disconnect")}
       </button>

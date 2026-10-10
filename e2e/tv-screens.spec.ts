@@ -767,6 +767,53 @@ test.describe("movies, series, and the rest of the menu", () => {
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
   });
 
+  for (const shape of [
+    { where: "on a TV", viewport: { width: 1280, height: 720 } },
+    { where: "at a phone's width", viewport: { width: 390, height: 844 } },
+  ]) {
+    test(`the entry the remote is on is a square around its icon, in the middle of the closed menu, and holds its icon when the menu is open: ${shape.where}`, async ({ browser }) => {
+      const tv = await openLibrary(browser, withLibrary(library), shape.viewport);
+      await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+      await choose(tv, "rail-list"); // nothing saved: the menu shuts with the remote still on this entry
+
+      /** Where the entry, its icon and the menu lie from left to right. */
+      const across = () =>
+        tv.evaluate(() => {
+          const entry = document.querySelector('[data-testid="rail-list"]')!;
+          const strip = document.querySelector('[data-testid="tv-rail"]')!.getBoundingClientRect();
+          const box = entry.getBoundingClientRect();
+          const icon = entry.querySelector("svg")!.getBoundingClientRect();
+          return { strip: [strip.left, strip.right], box: [box.left, box.right], icon: [icon.left, icon.right] };
+        });
+      const middle = ([from, to]: number[]) => (from! + to!) / 2;
+
+      await expect(rail(tv)).toHaveAttribute("data-open", "false");
+      await expect(tv.getByTestId("rail-list")).toBeFocused();
+      // (the box takes a moment to settle: it narrows as the menu closes)
+      await expect
+        .poll(async () => {
+          const { strip, box, icon } = await across();
+          return {
+            iconInsideBox: icon[0]! >= box[0]! && icon[1]! <= box[1]!,
+            iconInMiddleOfBox: Math.abs(middle(icon) - middle(box)) <= 1,
+            boxInMiddleOfMenu: Math.abs(middle(box) - middle(strip)) <= 1,
+          };
+        })
+        .toEqual({ iconInsideBox: true, iconInMiddleOfBox: true, boxInMiddleOfMenu: true });
+
+      await tv.keyboard.press("ArrowUp"); // brings the menu back, on the entry above
+      await tv.keyboard.press("ArrowDown");
+      await expect(rail(tv)).toHaveAttribute("data-open", "true");
+      await expect(tv.getByTestId("rail-list")).toBeFocused();
+      await expect
+        .poll(async () => {
+          const { strip, box, icon } = await across();
+          return { iconInsideBox: icon[0]! >= box[0]! && icon[1]! <= box[1]!, boxInsideMenu: box[0]! >= strip[0]! && box[1]! <= strip[1]! };
+        })
+        .toEqual({ iconInsideBox: true, boxInsideMenu: true });
+    });
+  }
+
   test("clicking My List or History shuts the menu, whether or not they have anything in them", async ({ browser }) => {
     const seed = guestStorage({ list: [{ key: "url:https://films.example/saved", at: Date.now() - 1000, id: "s1", title: "Saved For Later", url: "https://films.example/saved" }] });
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);

@@ -54,7 +54,7 @@ export function useLinkApproval(code: string) {
   return { signedIn, email: account.me?.account.email ?? "", view, who, problem, outcome, busy, decide };
 }
 
-/** "Sign in this screen?" on the phone: who is asking, and a button for each answer. */
+/** "Sign in this device?" on the phone: who is asking, and a button for each answer. */
 export function LinkApprove({ code, onClose }: { code: string; onClose: () => void }) {
   const t = useT();
   const { signedIn, email, view, who, problem, outcome, busy, decide } = useLinkApproval(code);

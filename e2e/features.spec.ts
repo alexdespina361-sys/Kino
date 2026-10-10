@@ -5,7 +5,7 @@ import { join } from "node:path";
 import qrcode from "qrcode-generator";
 import type { NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, tvRoot, tvTime, withLibrary } from "./helpers";
+import { FIRST_VISIT, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, tvRoot, tvTime, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -807,12 +807,21 @@ test.describe("the episode before", () => {
 test.describe("full screen", () => {
   const isFullScreen = (tv: Page) => tv.evaluate(() => document.fullscreenElement !== null);
 
-  test("the TV goes full screen with the first title chosen on it, and is left alone after that", async ({ browser, baseURL }) => {
-    const films = { updatedAt: Date.now(), rows: [{ id: "r", title: "Films", source: "Test", items: [{ id: "a", title: "The Sample", url: sample(baseURL!) }] }] };
-    const tv = await openLibrary(browser, withLibrary(films));
+  const filmsOf = (baseURL: string) => ({ updatedAt: Date.now(), rows: [{ id: "r", title: "Films", source: "Test", items: [{ id: "a", title: "The Sample", url: sample(baseURL) }] }] });
+  /** The library on a device that has never opened the page (the config's pages start as if full screen had been left). */
+  async function firstVisit(browser: Browser, baseURL: string) {
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, storageState: FIRST_VISIT }, {}, withLibrary(filmsOf(baseURL)));
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    return tv;
+  }
+
+  test("a screen goes full screen at its first press, and is left alone after that", async ({ browser, baseURL }) => {
+    const tv = await firstVisit(browser, baseURL!);
     expect(await isFullScreen(tv)).toBe(false); // nothing was asked of the viewer first
-    await playFirst(tv);
+    await playFirst(tv); // its first press is the one that does it
     await expect.poll(() => isFullScreen(tv)).toBe(true);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing"); // (F is the player's key: nothing hears it while a video is still being found)
 
     await tv.keyboard.press("f"); // leaving is the viewer's choice
     await expect.poll(() => isFullScreen(tv)).toBe(false);
@@ -823,6 +832,75 @@ test.describe("full screen", () => {
     await tv.keyboard.press("Enter");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     expect(await isFullScreen(tv)).toBe(false); // not pulled back in for the next title
+  });
+
+  test("what the viewer chose is kept for the next visit: leaving stays left, and going in by the button opens full screen again", async ({ browser, baseURL }) => {
+    const tv = await firstVisit(browser, baseURL!);
+    await tv.keyboard.press("ArrowRight");
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+    const button = tv.getByTestId("fullscreen-toggle");
+    await expect(button).toHaveAttribute("aria-label", "Exit full screen");
+
+    await button.click();
+    await expect.poll(() => isFullScreen(tv)).toBe(false);
+    await expect(button).toHaveAttribute("aria-label", "Full screen");
+    await tv.reload(); // the next visit: left as it was (there is nothing to wait for, it is something that does not happen)
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await tv.keyboard.press("ArrowRight");
+    await tv.waitForTimeout(600);
+    expect(await isFullScreen(tv)).toBe(false);
+
+    await tv.getByTestId("fullscreen-toggle").click(); // in again by choice
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+    await tv.reload(); // (leaving full screen because the page went away is no choice of the viewer's)
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await tv.keyboard.press("ArrowRight");
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+  });
+
+  test("the library's corner has a full screen button beside the account button, and the arrow keys reach it", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser, withLibrary(filmsOf(baseURL!)));
+    const chip = tv.getByTestId("tv-account-chip");
+    const button = tv.getByTestId("fullscreen-toggle");
+    const [chipBox, buttonBox] = [(await chip.boundingBox())!, (await button.boundingBox())!];
+    expect(buttonBox.x).toBeGreaterThanOrEqual(chipBox.x + chipBox.width); // to its right, as tall and level with it
+    expect(Math.abs(buttonBox.height - chipBox.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(buttonBox.y - chipBox.y)).toBeLessThanOrEqual(1);
+
+    for (let up = 0; up < 3 && !(await chip.evaluate((element) => element === document.activeElement)); up++) await tv.keyboard.press("ArrowUp");
+    await expect(chip).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(button).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+    await expect(button).toHaveAttribute("aria-label", "Exit full screen");
+    await tv.keyboard.press("Enter");
+    await expect.poll(() => isFullScreen(tv)).toBe(false);
+    await tv.keyboard.press("ArrowLeft");
+    await expect(chip).toBeFocused();
+  });
+
+  test("the remote does not go full screen by itself, but has the button on its first screen and in its menu", async ({ browser }) => {
+    const first = await openDevice(browser, { ...PHONE, storageState: FIRST_VISIT });
+    await first.goto("/");
+    await first.getByTestId("code-input").tap(); // where a code gets typed: no surprises
+    await first.waitForTimeout(600);
+    expect(await isFullScreen(first)).toBe(false);
+    const [toggleBox, accountBox] = [(await first.getByTestId("fullscreen-toggle").boundingBox())!, (await first.getByTestId("account-button").boundingBox())!];
+    expect(toggleBox.x + toggleBox.width).toBeLessThanOrEqual(accountBox.x); // beside the account button
+    await first.getByTestId("fullscreen-toggle").tap();
+    await expect.poll(() => isFullScreen(first)).toBe(true);
+    await expect(first.getByTestId("fullscreen-toggle")).toHaveAttribute("aria-label", "Exit full screen");
+
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.getByTestId("menu").click();
+    const row = phone.getByTestId("menu-sheet").getByTestId("fullscreen-toggle");
+    await expect(row).toHaveText(en["phone.fullscreen"]); // (the sheet is the TV's: the words say it is about this phone)
+    await row.click();
+    await expect.poll(() => isFullScreen(phone)).toBe(true);
+    await expect(row).toHaveText(en["phone.exitFullscreen"]);
+    expect(await isFullScreen(tv)).toBe(false);
   });
 
   test("the phone's button leaves full screen, and asks for an OK press on the TV to come back", async ({ browser, baseURL }) => {
@@ -1058,7 +1136,7 @@ test.describe("a watch party started on a TV", () => {
     await host.keyboard.press("Escape"); // closes the panel
     await expect(host.getByTestId("tv-party-panel")).toHaveCount(0);
     await host.mouse.move(80, 80);
-    await expect(host.getByTestId("tv-party-btn")).toContainText("2 TVs");
+    await expect(host.getByTestId("tv-party-btn")).toContainText("2 devices");
   });
 
   test("a guest keeps its own subtitles: the host's stay as they are", async ({ browser, baseURL }) => {

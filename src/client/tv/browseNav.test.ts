@@ -49,6 +49,17 @@ describe("stepFrom on rows of titles", () => {
   it("does not offer the account button when there is none", () => {
     expect(stepFrom({ rows: [3] }, at("rows", 0, 0), "up")).toBeNull();
   });
+
+  it("walks from the account button to the full screen one beside it, and back", () => {
+    const corner: Shape = { ...shape, top: [2] };
+    expect(stepFrom(corner, at("rows", 0, 3), "up")).toEqual(at("top", 0, 0)); // (it lands on the account button, as before)
+    expect(stepFrom(corner, at("top", 0, 0), "right")).toEqual(at("top", 0, 1));
+    expect(stepFrom(corner, at("top", 0, 1), "right")).toBeNull();
+    expect(stepFrom(corner, at("top", 0, 1), "left")).toEqual(at("top", 0, 0));
+    expect(stepFrom(corner, at("top", 0, 0), "left")).toBeNull();
+    expect(stepFrom(corner, at("top", 0, 1), "down")).toEqual({ zone: "content", row: -1, col: -1 });
+    expect(stepFrom(shape, at("top", 0, 0), "right")).toBeNull(); // one button: nowhere to go
+  });
 });
 
 describe("stepFrom with the banner's buttons (Play, My List)", () => {

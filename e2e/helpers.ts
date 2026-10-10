@@ -2,7 +2,11 @@ import { chromium, expect, type Browser, type BrowserContext, type Locator, type
 import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type ServerMessage } from "../src/shared";
 
 /** A phone: a narrow touch screen, which is how the page tells a remote from a TV. */
-export const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true } as const;
+/** (The screen is the phone's own: the project's desktop browser would otherwise say 1920 by 1080 whatever the window is.) */
+export const PHONE = { viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: true } as const;
+
+/** A device that has never opened the page: nothing kept, so a screen goes full screen at its first press (the config's pages start as if it had been left). */
+export const FIRST_VISIT = { cookies: [], origins: [] };
 
 /**
  * A browser that starts a video only for a press made in the last few seconds, which is what a phone's does (and what some of them
