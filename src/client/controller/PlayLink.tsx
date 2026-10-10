@@ -1,21 +1,20 @@
 import { useState, type FormEvent } from "react";
 import type { ResolveStatus } from "../../shared";
-import { formatTime, hostOf } from "../shared/format";
+import { useT } from "../i18n";
 import { ClipboardIcon, CloseIcon, PlayIcon } from "../shared/icons";
 import { firstLink } from "../shared/launch";
-import { progressFraction, resumePoint, type HistoryEntry } from "./history";
+import { resolveFailure } from "../shared/words";
 
 interface PlayLinkProps {
   tvName: string;
   resolve: ResolveStatus | null;
-  history: HistoryEntry[];
-  /** Send a page or media link to the TV, optionally from a saved position. */
-  onPlay: (url: string, startAt?: number) => void;
-  onRemove: (url: string) => void;
+  /** Send a page or media link to the TV. */
+  onPlay: (url: string) => void;
 }
 
-/** "Paste a link" box with progress, plus the recently played list. Used as the home screen and inside a sheet. */
-export function PlayLink({ tvName, resolve, history, onPlay, onRemove }: PlayLinkProps) {
+/** "Paste a link" box and the answer to it. Used as the home screen and inside a sheet. */
+export function PlayLink({ tvName, resolve, onPlay }: PlayLinkProps) {
+  const t = useT();
   const [url, setUrl] = useState("");
   // Reading the clipboard needs a secure page and a permission; where it isn't there, the button just isn't offered.
   const canPaste = typeof navigator !== "undefined" && typeof navigator.clipboard?.readText === "function";
@@ -47,24 +46,24 @@ export function PlayLink({ tvName, resolve, history, onPlay, onRemove }: PlayLin
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
-            placeholder="Paste a video or page link"
-            aria-label="Video or page link"
+            placeholder={t("play.paste")}
+            aria-label={t("play.pasteLabel")}
             value={url}
             onChange={(event) => setUrl(event.target.value)}
           />
           {canPaste && !url && (
             <button type="button" className="field-btn" onClick={paste} data-testid="paste">
-              <ClipboardIcon /> Paste
+              <ClipboardIcon /> {t("play.pasteButton")}
             </button>
           )}
           {url && (
-            <button type="button" className="field-btn icon" onClick={() => setUrl("")} aria-label="Clear">
+            <button type="button" className="field-btn icon" onClick={() => setUrl("")} aria-label={t("common.clear")}>
               <CloseIcon />
             </button>
           )}
         </div>
         <button type="submit" className="btn btn-red btn-block" data-testid="play-url" disabled={!url.trim()}>
-          <PlayIcon /> Play on {tvName}
+          <PlayIcon /> {t("play.on", { tv: tvName })}
         </button>
       </form>
 
@@ -73,63 +72,12 @@ export function PlayLink({ tvName, resolve, history, onPlay, onRemove }: PlayLin
           {resolve.phase === "resolving" && (
             <>
               <span className="spinner" />
-              Finding video…
+              {t("play.finding")}
             </>
           )}
-          {resolve.phase === "found" && `Video found. Sending to ${tvName}…`}
-          {resolve.phase === "failed" && resolve.message}
+          {resolve.phase === "found" && t("play.found", { tv: tvName })}
+          {resolve.phase === "failed" && resolveFailure(resolve)}
         </p>
-      )}
-
-      {history.length > 0 && (
-        <section className="recents" aria-label="Recently played">
-          <h3>Recently played</h3>
-          <ul>
-            {history.map((entry) => {
-              const resume = resumePoint(entry);
-              const fraction = progressFraction(entry);
-              return (
-                <li key={entry.url} data-testid="recent-item">
-                  <button
-                    className="recent"
-                    onClick={() => onPlay(entry.url, resume)}
-                    data-testid="recent-play"
-                    aria-label={`${resume === undefined ? "Play" : "Resume"} ${entry.title}`}
-                  >
-                    <span className="recent-title">{entry.title}</span>
-                    <span className="recent-meta">
-                      {hostOf(entry.url)}
-                      {resume !== undefined && <b> · Resume {formatTime(resume)}</b>}
-                    </span>
-                    {fraction > 0 && (
-                      <span className="recent-bar" aria-hidden="true">
-                        <i style={{ width: `${fraction * 100}%` }} />
-                      </span>
-                    )}
-                  </button>
-                  {resume !== undefined && (
-                    <button
-                      className="mini"
-                      onClick={() => onPlay(entry.url)}
-                      data-testid="recent-restart"
-                      aria-label={`Start ${entry.title} from the beginning`}
-                    >
-                      Start over
-                    </button>
-                  )}
-                  <button
-                    className="icon-btn"
-                    onClick={() => onRemove(entry.url)}
-                    data-testid="recent-remove"
-                    aria-label={`Remove ${entry.title} from the list`}
-                  >
-                    <CloseIcon />
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
       )}
     </div>
   );

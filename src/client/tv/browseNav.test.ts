@@ -32,7 +32,7 @@ describe("stepFrom on rows of titles", () => {
     expect(stepFrom(shape, at("rows", 2, 4), "down")).toBeNull();
   });
 
-  it("reaches Back from the top row and comes back down to where it was", () => {
+  it("reaches the account button from the top row and comes back down to where it was", () => {
     expect(stepFrom(shape, at("rows", 0, 3), "up")).toEqual(at("top", 0, 0));
     expect(stepFrom(shape, at("top", 0, 0), "down")).toEqual({ zone: "content", row: -1, col: -1 });
     expect(stepFrom(shape, at("top", 0, 0), "left")).toBeNull();
@@ -46,8 +46,32 @@ describe("stepFrom on rows of titles", () => {
     expect(stepFrom(shape, at("rail", 2, 0), "left")).toBeNull();
   });
 
-  it("does not offer Back when there is none", () => {
+  it("does not offer the account button when there is none", () => {
     expect(stepFrom({ rows: [3] }, at("rows", 0, 0), "up")).toBeNull();
+  });
+});
+
+describe("stepFrom with the banner's buttons (Play, My List)", () => {
+  const shape: Shape = { rail: [1, 1, 1], top: [1], hero: [2], rows: [6, 4] };
+
+  it("goes up from the first row to the buttons, and down from them to the titles", () => {
+    expect(stepFrom(shape, at("rows", 0, 4), "up")).toEqual(at("hero", 0, 0));
+    expect(stepFrom(shape, at("hero", 0, 1), "down")).toEqual({ zone: "content", row: -1, col: -1 });
+    expect(stepFrom(shape, at("rows", 1, 0), "up")).toEqual(at("rows", 0, 0)); // only the first row leads to them
+  });
+
+  it("walks along the buttons, opens the menu to their left, and reaches the account button above them", () => {
+    expect(stepFrom(shape, at("hero", 0, 0), "right")).toEqual(at("hero", 0, 1));
+    expect(stepFrom(shape, at("hero", 0, 1), "right")).toBeNull();
+    expect(stepFrom(shape, at("hero", 0, 1), "left")).toEqual(at("hero", 0, 0));
+    expect(stepFrom(shape, at("hero", 0, 0), "left")).toEqual({ zone: "rail", row: -1, col: -1 });
+    expect(stepFrom(shape, at("hero", 0, 0), "up")).toEqual(at("top", 0, 0));
+  });
+
+  it("comes down from the account button onto the buttons when there are some, and onto the titles when there are none", () => {
+    expect(stepFrom(shape, at("top", 0, 0), "down")).toEqual(at("hero", 0, 0));
+    expect(stepFrom({ ...shape, hero: [] }, at("top", 0, 0), "down")).toEqual({ zone: "content", row: -1, col: -1 });
+    expect(stepFrom({ ...shape, hero: [] }, at("rows", 0, 0), "up")).toEqual(at("top", 0, 0));
   });
 });
 
@@ -75,9 +99,36 @@ describe("stepFrom on the search page", () => {
     expect(stepFrom({ ...shape, results: [] }, at("keys", 1, 5), "right")).toBeNull();
   });
 
-  it("walks the results as a grid and goes up to Back from the first row", () => {
+  it("walks the results as a grid and goes up to the account button from the first row", () => {
     expect(stepFrom(shape, at("results", 0, 1), "down")).toEqual(at("results", 1, 1));
     expect(stepFrom(shape, at("results", 1, 2), "down")).toEqual(at("results", 2, 0)); // the last row has one
     expect(stepFrom(shape, at("results", 0, 2), "up")).toEqual(at("top", 0, 0));
+  });
+});
+
+describe("stepFrom with the search filter (All, Movies, Series)", () => {
+  // The filter sits above the results, to the right of the keys.
+  const shape: Shape = { rail: [1, 1], top: [1], keys: [6, 6, 6, 2], chips: [3], results: gridRows(7, 3) };
+
+  it("reaches the filter from the first row of keys, and the rest of the keys still lead to the results", () => {
+    expect(stepFrom(shape, at("keys", 0, 5), "right")).toEqual(at("chips", 0, 0));
+    expect(stepFrom(shape, at("keys", 1, 5), "right")).toEqual(at("results", 1, 0));
+  });
+
+  it("walks along the filter and goes back to the keys from its first button", () => {
+    expect(stepFrom(shape, at("chips", 0, 0), "right")).toEqual(at("chips", 0, 1));
+    expect(stepFrom(shape, at("chips", 0, 2), "right")).toBeNull();
+    expect(stepFrom(shape, at("chips", 0, 0), "left")).toEqual(at("keys", 0, 5));
+  });
+
+  it("goes between the filter and the results in the same column, and up from the filter to the account button", () => {
+    expect(stepFrom(shape, at("chips", 0, 2), "down")).toEqual(at("results", 0, 2));
+    expect(stepFrom(shape, at("results", 0, 1), "up")).toEqual(at("chips", 0, 1));
+    expect(stepFrom(shape, at("chips", 0, 1), "up")).toEqual(at("top", 0, 0));
+  });
+
+  it("stays on the filter when there is nothing below it, and skips it when there is no filter", () => {
+    expect(stepFrom({ ...shape, results: [] }, at("chips", 0, 1), "down")).toBeNull();
+    expect(stepFrom({ ...shape, chips: [] }, at("results", 0, 1), "up")).toEqual(at("top", 0, 0));
   });
 });

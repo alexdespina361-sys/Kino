@@ -2,10 +2,11 @@ import type { Direction } from "./dpad";
 
 /**
  * Where the arrow keys lead on the library screen. The screen is a few blocks ("zones") of buttons laid out in rows: the menu
- * on the left, the Back button on top, and in the middle either rows of titles, a grid, or the search keyboard with its results.
+ * on the left, the account button on top, the banner's buttons (Play, My List) under it on the pages with rows, and in the middle
+ * either rows of titles, a grid, or the search keyboard with its filter and results.
  * Pure, so the walking can be tested without a screen.
  */
-export type Zone = "rail" | "top" | "rows" | "grid" | "keys" | "results";
+export type Zone = "rail" | "top" | "hero" | "rows" | "grid" | "keys" | "chips" | "results";
 
 export interface Pos {
   zone: Zone;
@@ -32,7 +33,15 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     return null;
   }
 
-  if (at.zone === "top") return direction === "down" ? CONTENT : null;
+  if (at.zone === "top") return direction === "down" ? (shape.hero?.length ? { zone: "hero", row: 0, col: 0 } : CONTENT) : null;
+
+  if (at.zone === "hero") {
+    const buttons = lengths[0] ?? 0;
+    if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : RAIL;
+    if (direction === "right") return at.col < buttons - 1 ? { ...at, col: at.col + 1 } : null;
+    if (direction === "up") return shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
+    return CONTENT;
+  }
 
   const length = lengths[at.row] ?? 0;
   // The keyboard's last row has two wide keys under six narrow ones, so a step there keeps to what is above or below it.
@@ -49,15 +58,22 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
         const row = Math.min(at.row, shape.keys.length - 1);
         return { zone: "keys", row, col: (shape.keys[row] ?? 1) - 1 };
       }
+      if (at.zone === "chips" && shape.keys?.length) return { zone: "keys", row: 0, col: (shape.keys[0] ?? 1) - 1 };
       return RAIL;
     case "right":
       if (at.col < length - 1) return { ...at, col: at.col + 1 };
-      if (at.zone === "keys" && shape.results?.length) return { zone: "results", row: Math.min(at.row, shape.results.length - 1), col: 0 };
+      if (at.zone === "keys") {
+        if (at.row === 0 && shape.chips?.length) return { zone: "chips", row: 0, col: 0 };
+        if (shape.results?.length) return { zone: "results", row: Math.min(at.row, shape.results.length - 1), col: 0 };
+      }
       return null;
     case "up":
       if (at.row > 0) return into(at.row - 1);
+      if (at.zone === "rows" && shape.hero?.length) return { zone: "hero", row: 0, col: 0 };
+      if (at.zone === "results" && shape.chips?.length) return { zone: "chips", row: 0, col: Math.min(at.col, (shape.chips[0] ?? 1) - 1) };
       return shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
     case "down":
+      if (at.zone === "chips") return shape.results?.length ? { zone: "results", row: 0, col: Math.min(at.col, (shape.results[0] ?? 1) - 1) } : null;
       return at.row < lengths.length - 1 ? into(at.row + 1) : null;
   }
 }

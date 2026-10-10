@@ -1,10 +1,12 @@
 import { z } from "zod";
-import type { LibraryItem, LibraryRow } from "../../shared";
+import type { EpisodeDetail, LibraryItem, LibraryRow } from "../../shared";
 import type { LibrarySource } from "./library";
 
 export const FILMPIRE_TMDB_API_KEY = process.env.TMDB_API_KEY ?? "90b2cae8d7161e8ba0f3836240d7d352";
 const BASE_URL = "https://api.themoviedb.org/3";
 const IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
+const BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
+const STILL_BASE = "https://image.tmdb.org/t/p/w300";
 
 export interface FilmpireCategory {
   id: string;
@@ -73,6 +75,19 @@ const TmdbResponseSchema = z.object({
   results: z.array(z.unknown()),
 });
 
+const TmdbSeasonSchema = z.object({
+  episodes: z.array(
+    z.object({
+      season_number: z.number().int().optional(),
+      episode_number: z.number().int(),
+      name: z.string().optional(),
+      overview: z.string().optional(),
+      still_path: z.string().nullable().optional(),
+      runtime: z.number().nullable().optional(),
+    }),
+  ),
+});
+
 function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem | null {
   const parsed = TmdbItemSchema.safeParse(raw);
   if (!parsed.success) return null;
@@ -88,6 +103,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   const validYear = Number.isInteger(year) && year! > 1800 ? year : undefined;
 
   const poster = doc.poster_path ? `${IMAGE_BASE}${doc.poster_path}` : (doc.backdrop_path ? `${IMAGE_BASE}${doc.backdrop_path}` : undefined);
+  const backdrop = doc.backdrop_path ? `${BACKDROP_BASE}${doc.backdrop_path}` : undefined;
   const description = doc.overview ? doc.overview.trim().slice(0, 400) : undefined;
   const url = isTv ? `https://filmpire.sc/watch/${doc.id}?s=1&e=1` : `https://filmpire.sc/watch/${doc.id}`;
 
@@ -96,9 +112,23 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
     title: title.slice(0, 300),
     ...(validYear ? { year: validYear } : {}),
     ...(poster ? { image: poster } : {}),
+    ...(backdrop ? { backdrop } : {}),
     ...(description ? { description } : {}),
+    kind: isTv ? "series" : "movie",
     url,
   };
+}
+
+/** The TMDB id and kind of a title from its Filmpire link (`/watch/603`, or `/watch/1399?s=1&e=1` for a show), or null for any other link. */
+function parseWatchLink(link: string): { id: number; type: "movie" | "tv" } | null {
+  try {
+    const url = new URL(link);
+    const match = /^\/watch\/(\d+)$/.exec(url.pathname);
+    if (!match || !/(^|\.)filmpire\.sc$/.test(url.hostname)) return null;
+    return { id: Number(match[1]), type: url.searchParams.has("s") ? "tv" : "movie" };
+  } catch {
+    return null;
+  }
 }
 
 export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySource {
@@ -123,6 +153,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       id: `filmpire-${cat.id}`,
       title: cat.title,
       source: "Filmpire",
+      kind: cat.type === "tv" ? "series" : "movie",
       items,
     };
   };
@@ -148,6 +179,44 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         return data.results
           .map((item) => toLibraryItem(item))
           .filter((item): item is LibraryItem => item !== null);
+      } catch {
+        return [];
+      }
+    },
+    async similar(link: string): Promise<LibraryItem[]> {
+      const title = parseWatchLink(link);
+      if (!title) return [];
+      try {
+        const fullUrl = `${BASE_URL}/${title.type}/${title.id}/recommendations?api_key=${apiKey}&language=en-US&page=1`;
+        const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+        if (!res.ok) return [];
+        const data = TmdbResponseSchema.parse(await res.json());
+        return data.results
+          .map((item) => toLibraryItem(item, title.type))
+          .filter((item): item is LibraryItem => item !== null);
+      } catch {
+        return [];
+      }
+    },
+    async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
+      const title = parseWatchLink(link);
+      if (title?.type !== "tv") return [];
+      try {
+        const fullUrl = `${BASE_URL}/tv/${title.id}/season/${season}?api_key=${apiKey}&language=en-US`;
+        const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+        if (!res.ok) return [];
+        return TmdbSeasonSchema.parse(await res.json()).episodes.map((episode) => {
+          const name = episode.name?.trim();
+          const overview = episode.overview?.trim();
+          return {
+            season,
+            episode: episode.episode_number,
+            ...(name ? { title: name.slice(0, 200) } : {}),
+            ...(overview ? { overview: overview.slice(0, 400) } : {}),
+            ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
+            ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
+          };
+        });
       } catch {
         return [];
       }

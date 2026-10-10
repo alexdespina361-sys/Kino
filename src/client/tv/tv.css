@@ -1,6 +1,8 @@
 /*
  * The TV screen. Everything is sized in em, and 1em here is 1% of the screen width (see .tv),
  * so it looks the same on a 720p stick and a 4K panel, and is readable from the couch.
+ * On a screen too small for that (a phone, a narrow window) the unit stops shrinking at 9px, and below 760px wide the pages
+ * are laid out for a hand-held screen: the last block of this file.
  */
 .tv {
   position: fixed;
@@ -8,7 +10,7 @@
   overflow: hidden;
   background: #000;
   color: #fff;
-  font-size: min(1vw, 1.7778vh); /* 16:9 box inside any window shape */
+  font-size: max(min(1vw, 1.7778vh), 9px); /* 16:9 box inside any window shape */
   user-select: none;
   -webkit-user-select: none;
 }
@@ -78,10 +80,10 @@
   color: #000;
 }
 .tv-btn-play:hover { background: #e8e8e8; }
-.tv-btn-red { background: var(--red); }
-.tv-btn-red:hover { background: var(--red-hover); }
+.tv-btn-red { background: var(--accent); }
+.tv-btn-red:hover { background: var(--accent-hover); }
 .tv-btn-ghost { background: rgba(255, 255, 255, 0.14); }
-.tv-btn-on { background: rgba(229, 9, 20, 0.85); }
+.tv-btn-on { background: rgb(var(--accent-rgb) / 0.85); }
 .tv-btn-stop { color: #ff8a8a; }
 
 /* Whatever the remote has selected must be unmistakable from across the room. */
@@ -93,6 +95,8 @@
   transform: scale(1.08);
 }
 .tv-btn:not(.tv-btn-play):not(.tv-btn-red):focus-visible { background: rgba(255, 255, 255, 0.3); }
+/* In a list that scrolls an option keeps its size: a larger one would be cut off at the list's edges, which also grew a scrollbar. The ring is enough. */
+.tv-opt:focus-visible { transform: none; }
 
 /* ------------------------------ idle / pairing ------------------------------ */
 
@@ -107,7 +111,7 @@
   padding: 6em 6em 4em;
   text-align: center;
   background:
-    radial-gradient(ellipse 90% 55% at 50% 118%, rgba(229, 9, 20, 0.3), transparent 70%),
+    radial-gradient(ellipse 90% 55% at 50% 118%, rgb(var(--accent-rgb) / 0.3), transparent 70%),
     linear-gradient(#101010, #050505);
 }
 .tv-brand {
@@ -126,7 +130,7 @@
   background: #fff;
   color: #000;
 }
-.tv-ok:focus-visible { outline-color: var(--red); outline-offset: 0.18em; }
+.tv-ok:focus-visible { outline-color: var(--accent); outline-offset: 0.18em; }
 /* The buttons on the start screens: one size, side by side, whatever they say. */
 .tv-actions { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; justify-content: center; gap: 1.4em; margin-top: 0.6em; }
 .tv-action {
@@ -144,12 +148,12 @@
   transition: background 0.15s, color 0.15s, transform 0.15s;
 }
 .tv-action:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
-.tv-action-primary { background: var(--red); color: #fff; }
-.tv-action-primary:hover { background: var(--red-hover); }
+.tv-action-primary { background: var(--accent); color: #fff; }
+.tv-action-primary:hover { background: var(--accent-hover); }
 .tv-action:focus-visible {
   background: #fff;
   color: #000;
-  outline: 0.14em solid var(--red);
+  outline: 0.14em solid var(--accent);
   outline-offset: 0.14em;
   transform: scale(1.06);
 }
@@ -163,7 +167,7 @@
   font-weight: 600;
 }
 /* The "use this screen as…" link is reachable with the remote too, so it shows where the focus is. */
-.tv .role-switch:focus-visible { color: #000; background: #fff; outline: 0.14em solid var(--red); outline-offset: 0.1em; text-decoration: none; }
+.tv .role-switch:focus-visible { color: #000; background: #fff; outline: 0.14em solid var(--accent); outline-offset: 0.1em; text-decoration: none; }
 
 .tv-spinner { font-size: 6em; }
 .tv-ready-icon {
@@ -197,7 +201,7 @@
   height: 1.6em;
   margin-right: 0.7em;
   border-radius: 50%;
-  background: var(--red);
+  background: var(--accent);
   font-size: 0.8em;
   font-weight: 700;
 }
@@ -294,7 +298,7 @@
 .hud-badge {
   padding: 0.15em 0.6em;
   border-radius: 0.35em;
-  background: var(--red);
+  background: var(--accent);
   color: #fff;
   font-size: 0.85em;
   font-weight: 700;
@@ -306,6 +310,50 @@
 
 .hud-center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .hud-spinner { font-size: 6em; }
+/* Waiting for the picture. Outside the overlay, so it shows while the controls are away; its way out is the only part that takes presses. */
+.hud-busy { position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1em; pointer-events: none; }
+.hud-stuck {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7em;
+  padding: 1em 1.8em 1.2em;
+  border-radius: 0.8em;
+  background: rgba(0, 0, 0, 0.72);
+  text-align: center;
+  pointer-events: auto;
+}
+.hud-stuck p { margin: 0; font-size: 1.7em; color: #d8d8d8; }
+/* OK presses it, so it looks pressed-to-be from the start. */
+.hud-stuck .tv-btn { outline: 0.2em solid #fff; outline-offset: 0.12em; }
+/* While the picture is held, what you are watching is said once, big, on the left (the corner title steps aside), over a soft shade. */
+.hud-titles { transition: opacity 0.25s ease; }
+.tv-overlay[data-paused] .hud-titles { opacity: 0; }
+.hud-center::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.3) 42%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.tv-overlay[data-paused] .hud-center::before { opacity: 1; }
+.hud-pause-card {
+  position: absolute;
+  left: 3.2em;
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  max-width: 24em;
+  transform: translateY(-50%);
+  text-shadow: 0 0.05em 0.4em rgba(0, 0, 0, 0.9);
+  animation: hud-card-in 0.4s ease both;
+}
+.hud-pause-card small { font-size: 1.3em; font-weight: 600; color: #b3b3b3; text-transform: uppercase; letter-spacing: 0.1em; }
+.hud-pause-card b { font-size: 3.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; text-wrap: balance; }
+.hud-pause-card span { font-size: 1.6em; color: #ddd; }
+@keyframes hud-card-in { from { opacity: 0; transform: translateY(-44%); } }
 /* The big play button in the middle while paused. The row around it lets clicks through; the button itself takes them. */
 .hud-paused {
   display: grid;
@@ -350,6 +398,9 @@
 }
 /* A sentence ("Speed 1.5×") rather than a number: smaller, and up under the title so it doesn't cover the picture. */
 .hud-toast.notice { top: 24%; font-size: 2.4em; font-weight: 700; white-space: nowrap; animation-duration: 1.8s; }
+/* A skip is flashed on the half of the picture it went towards, the way a double tap does on a phone. */
+.hud-toast.side-back { left: 22%; }
+.hud-toast.side-forward { left: 78%; }
 @keyframes hud-toast {
   0% { opacity: 0; transform: translate(-50%, -40%) scale(0.9); }
   15% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -380,14 +431,14 @@
 }
 .hud-bar-buffered, .hud-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 0.3em; }
 .hud-bar-buffered { background: rgba(255, 255, 255, 0.38); }
-.hud-bar-fill { background: var(--red); }
+.hud-bar-fill { background: var(--accent); }
 .hud-bar-thumb {
   position: absolute;
   top: 50%;
   width: 1.6em;
   height: 1.6em;
   border-radius: 50%;
-  background: var(--red);
+  background: var(--accent);
   box-shadow: 0 0 0 0.12em #fff, 0 0.2em 0.6em rgba(0, 0, 0, 0.6);
   transform: translate(-50%, -50%);
 }
@@ -425,12 +476,46 @@
 .tv[data-hud="hidden"] .hud-upnext { bottom: 4em; }
 @keyframes hud-rise { from { transform: translateY(1.2em); opacity: 0; } to { transform: none; opacity: 1; } }
 .hud-upnext-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.3em; color: #aaa; text-transform: uppercase; letter-spacing: 0.06em; }
-.hud-upnext-head b { color: var(--red); font-size: 1.15em; font-variant-numeric: tabular-nums; }
+.hud-upnext-head b { color: var(--accent); font-size: 1.15em; font-variant-numeric: tabular-nums; text-transform: none; letter-spacing: 0; }
 .hud-upnext p { margin: 0; font-size: 1.8em; font-weight: 800; }
 .hud-upnext-bar { height: 0.45em; border-radius: 0.25em; background: rgba(255, 255, 255, 0.2); overflow: hidden; }
-.hud-upnext-bar div { height: 100%; background: var(--red); transition: width 1s linear; }
+.hud-upnext-bar div { height: 100%; background: var(--accent); transition: width 1s linear; }
 .hud-upnext-actions { display: flex; gap: 0.8em; }
 .hud-upnext-actions .tv-btn { flex: 1; justify-content: center; font-size: 1.3em; }
+
+/* ------------------------------ the end card ------------------------------ */
+
+/* A film that has played to its end: a dark veil over the last frame, what it was, the way out, and a few titles like it. */
+.tv-end {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.6em;
+  padding: 3em 6em;
+  text-align: center;
+  background: radial-gradient(ellipse 80% 70% at 50% 40%, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.95));
+  animation: tv-fade 0.35s ease;
+}
+.tv-end-kicker { margin: 0; font-size: 1.5em; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+.tv-end h1 { margin: 0; max-width: 18em; font-size: 4em; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+.tv-end-sub { margin: -0.8em 0 0; font-size: 1.8em; color: var(--muted); }
+.tv-end .tv-actions { margin-top: 0.4em; }
+.tv-end .tv-action { gap: 0.5em; white-space: nowrap; }
+.tv-end-more { width: min(100%, 62em); margin-top: 1em; }
+.tv-end-more h2 { margin: 0 0 0.7em; font-size: 1.7em; font-weight: 700; color: #d4d4d4; text-align: center; }
+.tv-end-tiles { display: flex; justify-content: center; gap: 1.4em; }
+.tv-end-tile { display: flex; flex: 0 1 11.5em; flex-direction: column; gap: 0.5em; min-width: 0; text-align: left; color: #bdbdc4; transition: transform 0.18s ease, color 0.18s ease; }
+.tv-end-art { position: relative; display: grid; place-items: center; width: 100%; aspect-ratio: 2 / 3; border-radius: 0.6em; overflow: hidden; transition: box-shadow 0.18s ease; }
+.tv-end-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.tv-end-art .poster-initial { display: grid; place-items: center; font-size: 4em; font-weight: 800; color: rgba(255, 255, 255, 0.5); }
+.tv-end-name { font-size: 1.2em; font-weight: 600; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv-end-tile:hover { color: #fff; }
+.tv-end-tile:focus-visible { color: #fff; transform: scale(1.06); outline: none; z-index: 2; }
+.tv-end-tile:focus-visible .tv-end-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
 
 /* ------------------------------ audio / subtitles / speed / quality ------------------------------ */
 
@@ -448,6 +533,8 @@
   /* Width by number of columns (data-cols), never wider than the screen. Not fit-content (it measures the text, so labels
      got cut off) and not a percentage (the backdrop is a content-sized grid, so that came out far too small). */
   width: min(92vw, 40em);
+  max-height: 94vh; /* a short screen (a phone on its side) scrolls the panel instead of cutting it off */
+  overflow-y: auto;
   padding: 2.6em 3em;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 1em;
@@ -459,6 +546,10 @@
 .tv-menu[data-cols="2"] { width: min(92vw, 68em); }
 .tv-menu[data-cols="3"] { width: min(92vw, 72em); }
 .tv-menu[data-kind="episodes"][data-cols="1"] { width: min(92vw, 52em); }
+/* Audio, languages, releases and adjustments side by side: wide enough for all four, and still inside the screen. */
+.tv-menu[data-kind="tracks"] { width: min(94vw, 92em); }
+.tv-menu[data-kind="tracks"][data-cols="2"] { width: min(94vw, 72em); }
+.tv-menu[data-kind="tracks"] .tv-opt { font-size: 1.5em; }
 .tv-menu-cols { display: flex; gap: 2.4em; }
 /* A fixed-height stage (tall enough for the largest size) so choosing a size never moves the panel. */
 .tv-sub-preview {
@@ -471,7 +562,7 @@
   background: linear-gradient(160deg, #46566b 0%, #232c38 55%, #12171e 100%);
   overflow: hidden;
 }
-.tv-sub-preview .tv-caption { white-space: nowrap; transition: font-size 0.15s ease; }
+.tv-sub-preview .tv-caption { white-space: normal; transition: font-size 0.15s ease; }
 /* Styling subtitles: the picture shows through, the panel moves to the top, and a sample sits where the real ones will. */
 .tv-menu-backdrop[data-kind="captions"] { place-items: start center; padding-top: 1.4em; background: rgba(0, 0, 0, 0.4); }
 .tv-menu[data-kind="captions"] { padding: 1.8em 3em 2em; }
@@ -490,6 +581,16 @@
 .tv-caption-stage .tv-caption { white-space: nowrap; transition: font-size 0.15s ease; }
 .tv-opt-detail { margin-left: auto; padding-left: 1em; font-style: normal; font-size: 0.85em; color: #9a9a9a; }
 .tv-menu-col { flex: 1 1 20em; min-width: 0; }
+.tv-menu-col[data-size="narrow"] { flex: 0 0 18em; }
+.tv-menu-col[data-size="wide"] { flex: 1 1 24em; }
+/* Release names are long and have no spaces: let them break, and show two lines before cutting them off. */
+.tv-menu-col[data-wrap="true"] .tv-opt span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .tv-menu[data-kind="episodes"] .tv-menu-col { flex: 0 0 18em; }
 .tv-menu[data-kind="episodes"] .tv-menu-col:last-child { flex: 1 1 40em; }
 .tv-menu-col h3 { margin: 0 0 0.8em; font-size: 1.3em; color: #8a8a8a; text-transform: uppercase; letter-spacing: 0.08em; }
@@ -498,8 +599,9 @@
   flex-direction: column;
   gap: 0.5em;
   max-height: min(34em, 42vh);
+  overflow-x: hidden;
   overflow-y: auto;
-  padding: 0.3em;
+  padding: 0.5em; /* room for the ring around the option the remote is on */
   scroll-padding-block: 0.9em; /* a focused option scrolls into view with room around it, not flush against the edge */
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
@@ -518,9 +620,61 @@
   transition: transform 0.12s ease, background 0.12s ease;
 }
 .tv-opt:hover { background: rgba(255, 255, 255, 0.14); }
-.tv-opt[data-active="true"] { background: rgba(229, 9, 20, 0.25); color: #fff; font-weight: 700; }
+/* A label between groups of options ("More languages"): not an option, so the remote walks past it. */
+.tv-opt-heading { margin-top: 0.6em; padding: 0 0.4em; font-size: 1.3em; font-weight: 700; color: #8a8a8a; text-transform: uppercase; letter-spacing: 0.08em; }
+.tv-opt[data-active="true"] { background: rgb(var(--accent-rgb) / 0.25); color: #fff; font-weight: 700; }
 .tv-opt svg { flex: none; }
-.tv-opt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-opt:not(.tv-ep) span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A show's episodes with a picture and a line about each, the way a streaming app lists them: wider and taller than the plain list, a few at a time. */
+.tv-menu[data-kind="episodes"][data-rich="true"] { width: min(94vw, 82em); }
+.tv-menu[data-kind="episodes"][data-rich="true"][data-cols="1"] { width: min(94vw, 68em); }
+.tv-menu[data-kind="episodes"][data-rich="true"] .tv-menu-col { flex-basis: 15em; }
+.tv-menu[data-kind="episodes"][data-rich="true"] .tv-menu-col:last-child { flex-basis: 40em; }
+.tv-menu[data-kind="episodes"][data-rich="true"] .tv-opts { max-height: min(46em, 62vh); }
+.tv-menu-show { margin-left: 0.8em; font-size: 0.55em; font-weight: 600; color: #8a8a8a; }
+.tv-opt.tv-ep {
+  display: grid;
+  grid-template-columns: 2.6em 12.5em minmax(0, 1fr);
+  align-items: center;
+  justify-content: stretch;
+  gap: 1.1em;
+  padding: 0.6em 1em 0.6em 0.4em;
+  font-size: 1em;
+  font-weight: 400;
+}
+.tv-ep-no { text-align: center; font-size: 2em; font-weight: 700; color: #8a8a8a; font-variant-numeric: tabular-nums; }
+.tv-ep-still { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 0.4em; }
+.tv-ep-still img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tv-ep-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: 2.6em;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.tv-ep:focus-visible .tv-ep-play { opacity: 1; }
+.tv-ep-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 0.35em; background: rgba(255, 255, 255, 0.3); }
+.tv-ep-bar i { display: block; height: 100%; background: var(--accent); }
+.tv-ep-text { display: flex; flex-direction: column; gap: 0.3em; min-width: 0; }
+.tv-ep-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1em; }
+.tv-ep-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.5em; font-weight: 700; color: #fff; }
+.tv-ep-meta { display: inline-flex; flex: none; align-items: center; gap: 0.3em; font-size: 1.15em; color: #9a9a9a; white-space: nowrap; }
+.tv-ep-meta[data-state="watched"] { color: #46d369; }
+.tv-ep-meta[data-state="now"] { color: #fff; font-weight: 700; }
+.tv-ep-about {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-size: 1.1em;
+  line-height: 1.3;
+  color: #b5b5b5;
+}
 
 /* A TV that watches along has no controls of its own, only a way out. */
 .tv-follow-bar {
@@ -540,7 +694,10 @@
   transition: opacity 0.25s;
 }
 .tv[data-hud="hidden"] .tv-follow-bar { opacity: 0; pointer-events: none; }
-.tv-leave {
+.tv-follow-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
   font-size: 1em;
   font-weight: 600;
   padding: 0.4em 1.1em;
@@ -548,11 +705,11 @@
   background: rgba(255, 255, 255, 0.12);
   color: var(--muted);
 }
-.tv-leave:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
-.tv-leave:focus-visible {
+.tv-follow-bar button:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+.tv-follow-bar button:focus-visible {
   background: #fff;
   color: #000;
-  outline: 0.14em solid var(--red);
+  outline: 0.14em solid var(--accent);
   outline-offset: 0.14em;
 }
 
@@ -592,70 +749,87 @@
   align-items: center;
   justify-content: space-between;
   gap: 2em;
-  padding: 2.2em 4em 0 7em;
+  padding: 1.8em 4.4em 0 7em;
 }
 .tv-browse-logo { font-size: 2.2em; }
-.tv-back {
-  padding: 0.5em 1.4em;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
-  color: #e6e6e6;
-  font-size: 1.6em;
-  font-weight: 600;
-  transition: background 0.15s, color 0.15s, transform 0.15s;
-}
-.tv-back:hover { background: rgba(255, 255, 255, 0.24); color: #fff; }
-.tv-back:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--red); outline-offset: 0.14em; transform: scale(1.06); }
+.tv-browse-top .tv-account-chip { position: static; margin-left: auto; font-size: 1.5em; }
 
+/* The banner takes the top third; moving down to the rows below the first lets it shrink to a line or two, so the rows get the room. */
 .tv-hero {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: none;
+  height: 17.5em;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  gap: 0.6em;
   max-width: 57em;
-  padding: 0 4em 1.6em 7em;
+  padding: 0 4em 0.8em 7em;
   overflow: hidden;
+  transition: height 0.3s ease;
 }
-.tv-hero-eyebrow { margin: 0; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--red); }
+.tv-browse[data-deep="true"] .tv-hero { height: 8em; }
+.tv-browse[data-deep="true"] .tv-hero-about, .tv-browse[data-deep="true"] .tv-hero-actions { display: none; }
+.tv-browse[data-deep="true"] .tv-hero-title { font-size: 2.4em; }
+.tv-hero-eyebrow { margin: 0; font-size: 1.3em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 .tv-hero-title {
   margin: 0;
-  font-size: 4.2em;
+  font-size: 3em;
   font-weight: 800;
-  line-height: 1.05;
+  line-height: 1.1;
   letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv-hero-meta { margin: 0; font-size: 1.4em; font-weight: 600; color: #cfcfd4; }
+.tv-hero-about {
+  margin: 0;
+  font-size: 1.4em;
+  line-height: 1.4;
+  color: #d9d9de;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.tv-hero-meta { margin: 0; font-size: 1.6em; font-weight: 600; color: #cfcfd4; }
-.tv-hero-about {
-  margin: 0;
-  font-size: 1.6em;
-  line-height: 1.4;
-  color: #d9d9de;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.tv-hero-text { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.4em; min-height: 0; animation: tv-rise 0.4s ease both; }
+@keyframes tv-rise { from { opacity: 0; transform: translateY(0.9em); } }
+.tv-hero-actions { display: flex; gap: 0.9em; margin-top: 0.3em; padding: 0.25em; }
+.tv-hero-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.5em 1.2em;
+  border-radius: 0.5em;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 1.5em;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
 }
-.tv-hero-hint { margin: 0.2em 0 0; font-size: 1.4em; color: var(--muted); }
-.tv-hero-hint kbd { padding: 0.1em 0.6em; border-radius: 0.3em; background: rgba(255, 255, 255, 0.16); color: #fff; font: inherit; font-weight: 700; }
+.tv-hero-button.is-primary { background: var(--accent); }
+.tv-hero-button:hover { background: rgba(255, 255, 255, 0.28); }
+.tv-hero-button.is-primary:hover { background: var(--accent-hover); }
+.tv-hero-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
+.tv-hero-button svg { flex: none; }
 .tv-actions-start { justify-content: flex-start; }
 
+/* The remote moves them in script, and a wheel or a swipe scrolls them too (a computer or a phone is a screen as well). */
 .tv-rows {
-  flex: 0 0 24em;
+  flex: 1 1 0;
+  min-height: 0;
   position: relative;
-  overflow: hidden;
+  overflow: hidden auto;
+  scrollbar-width: none;
 }
-.tv-row { padding-bottom: 0.4em; }
-.tv-row-title { margin: 0 0 0 3.5em; font-size: 2em; font-weight: 700; color: #e8e8ec; }
+.tv-rows::-webkit-scrollbar { display: none; }
+.tv-row { padding-bottom: 0.2em; }
+.tv-row-title { margin: 0 0 0 4.1em; font-size: 1.7em; font-weight: 700; color: #e8e8ec; }
 .tv-row-tiles {
   display: flex;
-  gap: 1.6em;
-  padding: 1.1em 4em 1.3em 7em;
+  gap: 1.3em;
+  padding: 0.8em 4em 1em 7em;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -664,44 +838,44 @@
 }
 .tv-row-tiles::-webkit-scrollbar { display: none; }
 
+/* A title is a wide picture with its name under it. */
 .tv-tile {
   flex: none;
   width: 15em;
   display: flex;
   flex-direction: column;
-  gap: 0.35em;
   text-align: left;
   color: #bdbdc4;
   transition: transform 0.18s ease, color 0.18s ease;
 }
+.tv-tile-body { display: flex; flex-direction: column; gap: 0.3em; width: 100%; min-width: 0; }
 .tv-tile-art {
   position: relative;
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: 4 / 3;
-  border-radius: 0.7em;
+  aspect-ratio: 16 / 9;
+  border-radius: 0.6em;
   overflow: hidden;
   background: var(--surface-2);
   transition: box-shadow 0.18s ease;
 }
 .tv-tile-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.tv-tile-initial { font-size: 5em; font-weight: 800; color: rgba(255, 255, 255, 0.5); }
+.tv-tile-initial { font-size: 4em; font-weight: 800; color: rgba(255, 255, 255, 0.5); }
 .tv-tile-name {
-  font-size: 1.25em;
+  font-size: 1.2em;
   font-weight: 600;
   line-height: 1.25;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
-.tv-tile-year { font-size: 1.05em; color: var(--muted); }
+.tv-tile-year { font-size: 1em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tv-tile:hover { color: #fff; }
 .tv-tile:focus-visible { color: #fff; transform: scale(1.1); outline: none; z-index: 2; }
 .tv-tile:focus-visible .tv-tile-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
 
-.tv-skeleton { height: 17em; border-radius: 0.7em; background: linear-gradient(90deg, #17171a, #232328, #17171a); background-size: 200% 100%; animation: tv-shimmer 1.4s linear infinite; }
+.tv-skeleton { height: 8.44em; border-radius: 0.6em; background: linear-gradient(90deg, #17171a, #232328, #17171a); background-size: 200% 100%; animation: tv-shimmer 1.4s linear infinite; }
 .tv-skeleton-title { width: 12em; height: 1.4em; border-radius: 0.3em; background: #17171a; }
 @keyframes tv-shimmer { to { background-position: -200% 0; } }
 
@@ -743,32 +917,38 @@
   text-align: left;
   transition: background 0.15s, color 0.15s;
 }
-.tv-rail-item span, .tv-rail-group span { opacity: 0; transition: opacity 0.15s; }
-.tv-rail[data-open="true"] .tv-rail-item span, .tv-rail[data-open="true"] .tv-rail-group span { opacity: 1; }
-.tv-rail-item svg, .tv-rail-group svg { flex: none; font-size: 1.15em; }
+.tv-rail-item { position: relative; }
+.tv-rail-item span { opacity: 0; transition: opacity 0.15s; }
+.tv-rail[data-open="true"] .tv-rail-item span { opacity: 1; }
+.tv-rail-item svg { flex: none; font-size: 1.15em; }
 .tv-rail-item:hover { color: #fff; }
-.tv-rail-item[aria-current="page"] { color: #fff; box-shadow: inset 0.14em 0 0 var(--red); }
+.tv-rail-item[aria-current="page"] { color: #fff; box-shadow: inset 0.14em 0 0 var(--accent); }
 .tv-rail-item:focus-visible { background: #fff; color: #000; outline: none; box-shadow: none; }
+/* A state beside a name (a phone is connected): a dot on its icon while the menu is shut, a word once it is open. */
+.tv-rail-badge { margin-left: auto; padding: 0.1em 0.7em; border-radius: 999px; background: rgb(var(--accent-rgb) / 0.35); color: #fff; font-size: 0.7em; font-style: normal; opacity: 0; transition: opacity 0.15s; }
+.tv-rail[data-open="true"] .tv-rail-badge { opacity: 1; }
+.tv-rail-item:focus-visible .tv-rail-badge { background: rgba(0, 0, 0, 0.12); color: #000; }
+.tv-rail-item[data-badged="true"]::after { content: ""; position: absolute; left: 2.1em; top: 0.35em; width: 0.45em; height: 0.45em; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 0.12em #0b0b0c; }
+.tv-rail[data-open="true"] .tv-rail-item[data-badged="true"]::after { display: none; }
 .tv-rail-group {
-  display: flex;
-  align-items: center;
-  gap: 0.8em;
-  margin: 0.4em 0 0 0.9em;
-  padding: 0.55em 0.7em;
+  margin: 0.7em 0 0 0.9em;
+  padding: 0.3em 0.7em;
   color: #7c7c85;
-  font-size: 1.4em;
+  font-size: 1.3em;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 /* A category sits under that heading, in line with its words. */
-.tv-rail-category { margin-left: 3.4em; padding-left: 0.6em; font-size: 1.5em; }
+.tv-rail-category { margin-left: 1.6em; padding-left: 0.6em; font-size: 1.5em; }
 
 /* A whole category, or the search results: titles in a grid under a heading. */
 .tv-view, .tv-search { flex: 1 1 0; min-height: 0; display: flex; padding: 0.6em 4em 0 7em; }
 .tv-view { flex-direction: column; }
-.tv-view-title { margin: 0; font-size: 3.6em; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
-.tv-view-meta { margin: 0.2em 0 0; font-size: 1.6em; font-weight: 600; color: #b4b4bb; }
+.tv-view-title { margin: 0; font-size: 3em; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.tv-view-meta { margin: 0.2em 0 0; font-size: 1.5em; font-weight: 600; color: #b4b4bb; }
+.tv-view-empty { margin: 1.4em 0 0; max-width: 28em; font-size: 1.8em; line-height: 1.4; color: var(--muted); }
+.tv-filters { display: flex; gap: 0.8em; padding: 0.3em; }
 .tv-grid {
   position: relative;
   flex: 1 1 0;
@@ -801,7 +981,7 @@
   overflow: hidden;
 }
 .tv-query-hint { color: #6f6f78; font-weight: 500; }
-.tv-caret { width: 0.08em; height: 1.1em; margin-left: 0.1em; background: var(--red); animation: tv-blink 1s steps(1) infinite; }
+.tv-caret { width: 0.08em; height: 1.1em; margin-left: 0.1em; background: var(--accent); animation: tv-blink 1s steps(1) infinite; }
 @keyframes tv-blink { 50% { opacity: 0; } }
 .tv-keys { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5em; margin-top: 1.2em; }
 .tv-key {
@@ -822,3 +1002,522 @@
 .tv-key-wide { grid-column: span 3; font-size: 1.5em; text-transform: none; }
 .tv-key:hover { background: rgba(255, 255, 255, 0.2); }
 .tv-key:focus-visible { background: #fff; color: #000; outline: none; transform: scale(1.08); z-index: 2; }
+
+/* ------------------------------ account: chip, sign-in, profiles, panel ------------------------------ */
+
+.tv-screen-compact { gap: 1.5em; padding: 5.5em 6em 2.5em; }
+.tv-headline-small { font-size: 3.4em; }
+.tv-hint { margin: 0; font-size: 1.5em; color: var(--muted); }
+
+/* Top right of the library: who is watching, or a way to sign in. */
+.tv-account-chip {
+  position: absolute;
+  top: 2.6em;
+  right: 4.4em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.3em 1.1em 0.3em 0.3em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #e6e6e6;
+  font-size: 1.7em;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.tv-account-chip > svg { box-sizing: content-box; width: 1.1em; height: 1.1em; padding: 0.35em; border-radius: 50%; background: rgba(255, 255, 255, 0.14); }
+.tv-chip-avatar { font-size: 1.8em; border-radius: 50%; }
+.tv-account-chip:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.tv-account-chip:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
+
+/* Signing in with the phone: the code in the steps, the QR code beside them, and what it is waiting for under both. */
+.tv-link-code { font-size: 3.4em; letter-spacing: 0.1em; }
+.tv-screen-compact .tv-pair { gap: 5em; }
+.tv-screen-compact .tv-qr { width: 19em; padding: 1em; }
+.tv-screen-compact .tv-qr p { font-size: 1.2em; margin-top: 0.6em; }
+.tv-qr-wait { width: 5em; height: 5em; margin: 5em auto; border-color: rgba(0, 0, 0, 0.14); border-top-color: #333; }
+.tv-signin-status { display: flex; align-items: center; gap: 0.7em; margin: 0; font-size: 1.8em; }
+.tv-signin-status .spinner { width: 0.9em; height: 0.9em; }
+.tv-signin-status.is-problem { color: #ffb4b4; }
+.tv-screen-compact .tv-actions { margin-top: 0; }
+
+/* A TV with a phone says who else may come in: the steps and the QR code of the party page's invite, under a line of their own. */
+.tv-join-title { margin: 0.4em 0 -0.3em; font-size: 1.8em; font-weight: 700; }
+.tv-screen-compact .tv-ready-icon { width: 4.4em; height: 4.4em; }
+.tv-screen-compact .tv-ready-icon svg { font-size: 2.6em; }
+
+/* Email and password on the TV: for a TV that has a keyboard. */
+.tv .auth-tv { width: 50em; gap: 1.1em; text-align: left; }
+.tv .auth-tv .auth-field { gap: 0.4em; }
+.tv .auth-tv .auth-field > span { font-size: 1.5em; letter-spacing: 0.06em; }
+.tv .auth-tv .auth-field > small { font-size: 1.3em; }
+.tv .auth-tv .auth-field input { padding: 0.55em 0.8em; border-width: 0.08em; border-radius: 0.4em; font-size: 2em; }
+.tv .auth-tv .auth-field input:focus { box-shadow: 0 0 0 0.14em rgb(var(--accent-rgb) / 0.5); }
+.tv .auth-tv .auth-error, .tv .auth-tv .auth-note { padding: 0.6em 0.9em; border-radius: 0.5em; font-size: 1.5em; }
+.tv .auth-tv .tv-action { width: 100%; }
+.tv .auth-tv .tv-link-input { text-align: center; text-transform: uppercase; letter-spacing: 0.16em; }
+.tv-approve-body { max-width: 34em; text-align: center; }
+
+/* Who is watching: the pictures big enough to read from the couch, the focused one raised and ringed. */
+.profile-tv { display: flex; flex-wrap: wrap; justify-content: center; gap: 2.4em 3.6em; margin: 0.6em 0 0; }
+.profile-tv li { flex: none; }
+.profile-tv .profile-tile { width: auto; gap: 1.1em; color: #9a9aa2; } /* room for the picture to grow and be ringed without touching the name */
+.profile-tv .profile-picture { font-size: 10em; }
+.profile-tv .profile-name { max-width: 5.5em; font-size: 2.2em; }
+/* The picture is 10em, so its rings are in hundredths of that: 0.03em is a third of an em of the page. */
+.profile-tv .profile-tile:hover .profile-picture, .profile-tv .profile-tile:focus-visible .profile-picture { transform: scale(1.1); box-shadow: 0 0 0 0.03em #fff, 0 0.06em 0.2em rgba(0, 0, 0, 0.6); }
+.profile-tv .profile-tile[aria-current="true"] .profile-picture { box-shadow: 0 0 0 0.025em var(--accent); }
+.profile-tv .profile-tile[aria-current="true"]:focus-visible .profile-picture { box-shadow: 0 0 0 0.03em #fff, 0 0.06em 0.2em rgba(0, 0, 0, 0.6); }
+.profile-tv .profile-tile:hover .profile-name, .profile-tv .profile-tile:focus-visible .profile-name { color: #fff; }
+
+/* The account page: who is watching on the left, what the site looks like and does on the right. */
+.tv-panel { display: grid; grid-template-columns: 28em 1fr; align-items: center; gap: 6em; width: min(100%, 92em); text-align: left; }
+.tv-panel-who { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5em; }
+.tv-panel-avatar { font-size: 10em; margin-bottom: 0.1em; }
+.tv-panel-guest { display: grid; place-items: center; width: 4.4em; height: 4.4em; margin-bottom: 0.4em; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: #cfcfd4; font-size: 2.3em; }
+.tv-panel-who h1 { margin: 0; font-size: 3.2em; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em; }
+.tv-panel-who p { margin: 0; font-size: 1.6em; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
+.tv-panel-actions { align-self: stretch; display: flex; flex-direction: column; gap: 0.7em; margin-top: 1em; }
+.tv-panel-actions .tv-action { width: 100%; min-width: 0; }
+.tv-panel-settings { display: flex; flex-direction: column; align-items: flex-start; }
+.tv-panel-settings h2 { margin: 1.4em 0 0.5em; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.tv-panel-settings h2:first-child { margin-top: 0; }
+.tv-choices { display: flex; gap: 0.8em; }
+.tv-choice {
+  padding: 0.6em 1.4em;
+  border-radius: 0.5em;
+  background: rgba(255, 255, 255, 0.1);
+  color: #d4d4d4;
+  font-size: 1.8em;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.tv-choice:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.tv-choice[aria-checked="true"] { background: rgb(var(--accent-rgb) / 0.3); color: #fff; box-shadow: inset 0 0 0 0.1em var(--accent); }
+.tv-choice:focus-visible { background: #fff; color: #000; box-shadow: none; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
+.tv-swatches { display: flex; gap: 1.1em; padding: 0.3em; }
+.tv-swatch { display: grid; place-items: center; width: 2.8em; height: 2.8em; border-radius: 50%; color: #fff; font-size: 1.6em; transition: transform 0.15s, box-shadow 0.15s; }
+.tv-swatch svg { opacity: 0; font-size: 0.95em; transition: opacity 0.15s; }
+.tv-swatch[aria-checked="true"] { box-shadow: 0 0 0 0.12em #0b0b0c, 0 0 0 0.22em #fff; }
+.tv-swatch[aria-checked="true"] svg { opacity: 1; }
+.tv-swatch:hover { transform: scale(1.1); }
+.tv-swatch:focus-visible { transform: scale(1.22); outline: 0.14em solid #fff; outline-offset: 0.28em; }
+.tv-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2em;
+  width: 100%;
+  max-width: 40em;
+  padding: 0.7em 1.2em;
+  border-radius: 0.6em;
+  background: rgba(255, 255, 255, 0.09);
+  color: #e6e6e6;
+  font-size: 1.8em;
+  font-weight: 600;
+  text-align: left;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.tv-switch-row:hover { background: rgba(255, 255, 255, 0.16); }
+.tv-switch-row:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.03); }
+.tv-switch { position: relative; flex: none; width: 2.6em; height: 1.5em; border-radius: 999px; background: rgba(120, 120, 130, 0.6); transition: background 0.18s; }
+.tv-switch::after { content: ""; position: absolute; top: 0.18em; left: 0.18em; width: 1.14em; height: 1.14em; border-radius: 50%; background: #fff; box-shadow: 0 0.05em 0.2em rgba(0, 0, 0, 0.4); transition: transform 0.18s; }
+.tv-switch-row[aria-checked="true"] .tv-switch { background: var(--accent); }
+.tv-switch-row[aria-checked="true"] .tv-switch::after { transform: translateX(1.1em); }
+.tv-panel-settings .tv-hint { margin-top: 1.2em; max-width: 40em; text-align: left; }
+
+/* What the account says in passing (what was brought across at sign-in), over everything. */
+.tv-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 5em;
+  z-index: 70;
+  max-width: 62em;
+  margin: 0;
+  padding: 0.7em 1.7em;
+  border-radius: 999px;
+  background: rgba(245, 245, 245, 0.97);
+  color: #111;
+  font-size: 1.9em;
+  font-weight: 700;
+  text-align: center;
+  transform: translateX(-50%);
+  box-shadow: 0 0.4em 2em rgba(0, 0, 0, 0.6);
+  animation: tv-toast-life 4.5s ease-out forwards;
+  pointer-events: none;
+}
+@keyframes tv-toast-life {
+  0% { opacity: 0; transform: translate(-50%, 0.8em); }
+  7% { opacity: 1; transform: translate(-50%, 0); }
+  90% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ------------------------------ library: the rows of the home page ------------------------------ */
+
+.tv-row { animation: tv-rise 0.45s ease both; }
+
+/* A ranking: big outlined numbers tucked behind tall posters. */
+.tv-tile-ranked { width: auto; flex-direction: row; align-items: flex-start; }
+.tv-tile-ranked .tv-tile-body { position: relative; z-index: 1; width: 8.6em; flex: none; }
+.tv-tile-ranked .tv-tile-art { aspect-ratio: 2 / 3; }
+/* The box is as tall as the poster and the poster slides over its right edge; the digits inside are sized on their own. */
+.tv-rank { flex: none; display: flex; align-items: flex-end; justify-content: flex-end; width: 4.6em; height: 12.9em; margin-right: -1.1em; }
+.tv-rank-wide { width: 7.2em; }
+.tv-rank b {
+  color: #0b0b0c;
+  font-size: 8.7em;
+  font-weight: 900;
+  line-height: 0.78;
+  letter-spacing: -0.07em;
+  -webkit-text-stroke: 0.04em rgba(255, 255, 255, 0.5);
+  paint-order: stroke fill;
+  transition: -webkit-text-stroke-color 0.18s ease;
+}
+.tv-tile-ranked:focus-visible .tv-rank b { -webkit-text-stroke-color: #fff; }
+
+/* What is part way through: a little wider, with a play badge and a bar for how far it got. */
+.tv-tile-continue { width: 17em; }
+.tv-tile-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.55), transparent 55%);
+  color: #fff;
+  font-size: 2.6em;
+}
+.tv-tile-play svg { filter: drop-shadow(0 0.05em 0.2em rgba(0, 0, 0, 0.7)); opacity: 0.9; }
+.tv-tile-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 0.45em; background: rgba(255, 255, 255, 0.28); }
+.tv-tile-progress i { display: block; height: 100%; background: var(--accent); }
+
+/* A category: a tile of its own colour (from its name), with the first title's picture dimmed behind its name. */
+.tv-tile-category {
+  position: relative;
+  width: 15em;
+  height: 8.44em;
+  justify-content: flex-end;
+  gap: 0.2em;
+  padding: 0.8em 1em;
+  border-radius: 0.6em;
+  overflow: hidden;
+  background: linear-gradient(135deg, hsl(var(--hue) 55% 30%), hsl(calc(var(--hue) + 50) 60% 14%));
+  color: #fff;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.tv-tile-category img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.32; mix-blend-mode: luminosity; }
+.tv-tile-category::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0, 0, 0, 0.55), transparent 65%); }
+.tv-category-name, .tv-category-count { position: relative; z-index: 1; }
+.tv-category-name { font-size: 1.6em; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tv-category-count { font-size: 1.1em; font-weight: 600; color: rgba(255, 255, 255, 0.78); }
+.tv-tile-category:focus-visible { transform: scale(1.1); box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
+
+/* ------------------------------ watch party ------------------------------ */
+
+/* Start one or join one: two big cards, side by side. */
+.tv-party-choices { display: flex; gap: 2.4em; margin-top: 0.4em; }
+.tv-party-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5em;
+  width: 24em;
+  padding: 1.6em 1.4em 1.4em;
+  border-radius: 1em;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e6e6e6;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.tv-party-choice svg { font-size: 3.4em; }
+.tv-party-choice b { font-size: 2.1em; font-weight: 700; line-height: 1.15; }
+.tv-party-choice small { font-size: 1.4em; line-height: 1.3; color: var(--muted); }
+.tv-party-choice:hover { background: rgba(255, 255, 255, 0.18); color: #fff; }
+.tv-party-choice:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.05); }
+.tv-party-choice:focus-visible small { color: #444; }
+
+/* How to get in: smaller than the pairing page's steps, because the list of who is in sits under it. */
+.tv-party-invite .tv-steps { font-size: 1.8em; }
+.tv-party-invite .tv-code { font-size: 3.4em; }
+.tv-screen-compact .tv-party-invite { gap: 4em; }
+.tv-screen-compact .tv-party-invite .tv-qr { width: 15em; padding: 0.8em; }
+.tv-screen-compact .tv-party-invite .tv-qr p { font-size: 1.1em; }
+
+/* Who is in: a chip each, the host first. */
+.tv-party-members { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6em 0.8em; max-width: 80em; margin: 0; padding: 0; list-style: none; }
+.tv-party-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.35em 0.8em 0.35em 1em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 1.7em;
+  font-weight: 600;
+}
+.tv-party-member[data-online="false"] { opacity: 0.55; }
+.tv-party-dot { flex: none; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--ok); }
+.tv-party-member[data-online="false"] .tv-party-dot { background: #8a8a8a; }
+.tv-party-name { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-party-member small { font-size: 0.7em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.tv-party-remove {
+  margin-left: auto;
+  padding: 0.25em 0.8em;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #d4d4d4;
+  font-size: 0.75em;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+.tv-party-remove:hover { background: rgba(255, 255, 255, 0.24); color: #fff; }
+.tv-party-remove:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.12em; }
+
+/* Typing a party's code: six boxes (the sixth digit sends it) and a number pad for a remote with no digits. */
+.tv-code-boxes { display: flex; gap: 0.5em; margin: 0.4em 0 0; }
+.tv-code-boxes i {
+  display: grid;
+  place-items: center;
+  width: 1.3em;
+  height: 1.6em;
+  border-bottom: 0.06em solid rgba(255, 255, 255, 0.28);
+  border-radius: 0.2em;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 3.4em;
+  font-style: normal;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.tv-code-boxes i[data-filled="true"] { background: rgba(255, 255, 255, 0.18); border-bottom-color: var(--accent); }
+.tv-code-boxes i:nth-child(3) { margin-right: 0.5em; }
+.tv-party-error { min-height: 1.4em; margin: 0; font-size: 1.6em; font-weight: 600; color: #ffb4b4; visibility: hidden; }
+.tv-party-error.is-shown { visibility: visible; }
+.tv-pad { display: grid; grid-template-columns: repeat(3, 5.6em); gap: 0.5em; }
+.tv-pad .tv-key { padding: 0.4em 0; }
+
+/* Over a film: the same, in the panel the other pickers use. */
+.tv-menu[data-kind="party"] { width: min(94vw, 80em); }
+.tv-menu[data-kind="party"][data-cols="1"] { width: min(92vw, 52em); }
+.tv-party-start p { margin: 0 0 1.2em; font-size: 1.8em; line-height: 1.35; color: #cfcfd4; }
+.tv-party-invite-col { flex: 1 1 36em; }
+.tv-menu .tv-party-invite { gap: 2.4em; }
+.tv-menu .tv-party-invite .tv-steps { font-size: 1.35em; }
+.tv-menu .tv-party-invite .tv-code { font-size: 3.4em; }
+.tv-menu .tv-party-invite .tv-qr { width: 13em; padding: 0.7em; }
+.tv-menu .tv-party-invite .tv-qr p { font-size: 1em; margin-top: 0.4em; }
+.tv-party-side { display: flex; flex: 0 0 24em; flex-direction: column; gap: 1em; }
+.tv-menu[data-cols="1"] .tv-party-side { flex: 1 1 auto; }
+.tv-party-side h3 { margin-bottom: 0; }
+.tv-party-side .tv-party-members { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 0.5em; }
+.tv-party-side .tv-party-member { font-size: 1.5em; }
+.tv-party-side .tv-hint { font-size: 1.3em; }
+
+/* ------------------------------ a hand-held screen ------------------------------ */
+
+/*
+ * A phone, a tablet, or a window that narrow, is read at arm's length rather than across a room: the unit stays at 10px instead of
+ * following the width, and what sits side by side on a TV is stacked. Swipes scroll and taps press; every button and every key is the
+ * same. (Any wider and the TV's own layout fits: Browse.tsx asks for the same width.)
+ */
+@media (max-width: 899px) {
+  .tv { font-size: 10px; }
+
+  /* Pages with a few things in the middle: from the top down, scrolling when there is more than fits, centred when there is less. */
+  .tv-screen { justify-content: flex-start; gap: 1.6em; padding: 6em 1.6em 2.4em; overflow-y: auto; }
+  .tv-screen::before, .tv-screen::after { content: ""; margin: auto; }
+  .tv-screen-compact { gap: 1.4em; padding: 6em 1.6em 2.4em; }
+  .tv-brand { top: 1.8em; left: 1.6em; font-size: 2em; }
+  .tv-headline { font-size: 2.6em; }
+  .tv-headline-small { font-size: 2.4em; }
+  .tv-lead { font-size: 1.6em; }
+  .tv-join-title { font-size: 1.5em; }
+  .tv-hint { font-size: 1.3em; }
+  .tv-notice { font-size: 1.3em; }
+  .tv-ok { font-size: 2em; }
+  .tv-spinner { font-size: 4em; }
+  .tv-ready-icon { width: 5em; height: 5em; }
+  .tv-actions { grid-auto-flow: row; grid-auto-columns: auto; width: 100%; max-width: 28em; }
+  .tv-action { min-width: 0; font-size: 1.6em; }
+  .tv .role-switch { font-size: 1.3em; }
+
+  .tv-pair, .tv-screen-compact .tv-pair, .tv-screen-compact .tv-party-invite { flex-direction: column; gap: 2em; }
+  .tv-steps { font-size: 1.6em; }
+  .tv-code { font-size: 3.4em; }
+  .tv-link-code { font-size: 2.8em; }
+  .tv-qr, .tv-screen-compact .tv-qr { width: 16em; padding: 1em; }
+  .tv-qr p, .tv-screen-compact .tv-qr p { font-size: 1.1em; }
+
+  /* The account page, the pickers of who is watching. */
+  .tv-panel { grid-template-columns: 1fr; gap: 2em; }
+  .tv-panel-who { align-items: center; text-align: center; }
+  .tv-panel-avatar { font-size: 7em; }
+  .tv-panel-who h1 { font-size: 2.4em; }
+  .tv-panel-who p { font-size: 1.4em; }
+  .tv-panel-settings { align-items: stretch; }
+  .tv-panel-settings h2 { font-size: 1.2em; }
+  .tv-choices { flex-wrap: wrap; }
+  .tv-choice { font-size: 1.5em; }
+  .tv-swatch { font-size: 1.4em; }
+  .tv-switch-row { max-width: none; font-size: 1.5em; }
+  .tv .auth-tv { width: 100%; }
+  .tv .auth-tv .auth-field input { font-size: 1.8em; }
+  .profile-tv { gap: 1.6em 2em; }
+  .profile-tv .profile-picture { font-size: 7em; }
+  .profile-tv .profile-name { font-size: 1.7em; }
+  .tv-toast { max-width: calc(100% - 3em); bottom: 3em; font-size: 1.5em; }
+
+  /* The library: a thin menu on the left, a smaller banner, rows that swipe sideways and a page that swipes down. */
+  .tv-rail { width: 5.6em; padding: 5em 0 2em; }
+  .tv-rail[data-open="true"] { width: 24em; }
+  .tv-rail-item { margin: 0 1.2em 0 0.6em; font-size: 1.6em; }
+  .tv-rail-group { font-size: 1.2em; }
+  .tv-rail-category { font-size: 1.4em; }
+  .tv-browse-top { gap: 1em; padding: 1.2em 1.4em 0 6.4em; }
+  .tv-browse-logo { font-size: 1.8em; }
+  .tv-browse-top .tv-account-chip { font-size: 1.3em; }
+  .tv-hero { height: 17em; max-width: none; padding: 0 1.4em 0.6em 6.4em; }
+  .tv-browse[data-deep="true"] .tv-hero { height: 6em; }
+  .tv-browse[data-deep="true"] .tv-hero-title { font-size: 2em; }
+  .tv-hero-eyebrow { font-size: 1.1em; }
+  .tv-hero-title { font-size: 2.4em; }
+  .tv-hero-meta, .tv-hero-about { font-size: 1.2em; }
+  .tv-hero-button { font-size: 1.3em; }
+  .tv-row-title { margin-left: 4.9em; font-size: 1.5em; }
+  .tv-row-tiles { gap: 1em; padding: 0.8em 1.4em 1em 6.4em; }
+  .tv-tile { width: 13em; }
+  .tv-tile-continue { width: 14em; }
+  .tv-tile-category { width: 13em; height: 7.3em; }
+  .tv-tile-ranked { width: auto; }
+  .tv-tile-ranked .tv-tile-body { width: 7.2em; }
+  .tv-rank { width: 3.8em; height: 10.8em; }
+  .tv-rank-wide { width: 6em; }
+  .tv-rank b { font-size: 7.3em; }
+  .tv-skeleton { height: 7.3em; }
+  .tv-view, .tv-search { padding: 0.6em 1.4em 0 6.4em; }
+  .tv-view-title { font-size: 2.4em; }
+  .tv-view-meta { font-size: 1.3em; }
+  .tv-view-empty { font-size: 1.5em; }
+  .tv-grid { grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); gap: 1.2em 1em; }
+  .tv-grid .tv-tile, .tv-grid .tv-tile-category { width: auto; }
+  .tv-grid .tv-tile-category { height: 7.3em; }
+  .tv-search { flex-direction: column; gap: 0.6em; }
+  .tv-search-side { width: auto; }
+  .tv-search-main { flex: 1 1 0; }
+  .tv-filters { flex-wrap: wrap; }
+  .tv-query { height: 2.2em; font-size: 2em; }
+  input.tv-query { width: 100%; background: transparent; color: #fff; font-family: inherit; font-weight: 600; outline: none; border-top: 0; border-inline: 0; border-radius: 0; }
+  input.tv-query::placeholder { color: #6f6f78; font-weight: 500; }
+
+  /* The player: the same controls, tucked closer to the edges. */
+  .hud-top { padding: 1.4em 1.6em 3.6em; }
+  .hud-title { max-width: 100%; font-size: 1.9em; }
+  .hud-episode { font-size: 1.3em; }
+  .hud-clock { font-size: 1.3em; }
+  .hud-ends { font-size: 1.1em; }
+  .hud-bottom { padding: 4em 1.6em 1.4em; }
+  .hud-progress { gap: 1em; }
+  .hud-time { min-width: 3.6em; font-size: 1.3em; }
+  .hud-controls .tv-btn { font-size: 1.2em; }
+  .hud-controls .tv-btn-icon { font-size: 1.9em; }
+  .hud-controls .tv-btn-play { font-size: 2.2em; }
+  .hud-pause-card { left: 1.6em; max-width: 20em; }
+  .hud-pause-card b { font-size: 2.6em; }
+  .hud-pause-card span { font-size: 1.3em; }
+  .hud-paused { width: 5.6em; height: 5.6em; }
+  .hud-toast { font-size: 3.2em; }
+  .hud-toast.notice { font-size: 1.8em; }
+  .hud-error { max-width: calc(100% - 3em); padding: 1.6em; }
+  .hud-error h2 { font-size: 1.9em; }
+  .hud-error p { font-size: 1.4em; }
+  .hud-stuck { padding: 1em 1.4em 1.2em; }
+  .hud-stuck p { font-size: 1.4em; }
+  .hud-upnext { left: 1.6em; right: 1.6em; width: auto; bottom: 15em; }
+  .tv[data-hud="hidden"] .hud-upnext { bottom: 3em; }
+  .tv-end { justify-content: flex-start; gap: 1.2em; padding: 4em 1.6em 2em; overflow-y: auto; }
+  .tv-end::before, .tv-end::after { content: ""; margin: auto; }
+  .tv-end-kicker { font-size: 1.2em; }
+  .tv-end h1 { font-size: 2.6em; }
+  .tv-end-sub { margin-top: -0.4em; font-size: 1.4em; }
+  .tv-end .tv-actions { margin-top: 0; }
+  .tv-end-more { margin-top: 0.4em; }
+  .tv-end-more h2 { font-size: 1.4em; }
+  .tv-end-tiles { gap: 0.8em; }
+  .tv-end-tile { flex: 1 1 0; max-width: 11.5em; }
+  .tv-end-name { font-size: 1.1em; }
+  .tv-end-art .poster-initial { font-size: 2.6em; }
+  .tv-follow-bar { top: 1em; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 2em); font-size: 1.2em; }
+  .tv-fs-prompt { bottom: 6em; font-size: 1.5em; }
+  .tv-banner { top: 2em; font-size: 1.4em; }
+
+  /* The pickers over the film: one column, as high as the screen allows. */
+  .tv-menu, .tv-menu[data-cols], .tv-menu[data-kind] { width: min(94vw, 40em); padding: 1.6em; }
+  .tv-menu-top { margin-bottom: 1em; }
+  .tv-menu-top h2 { font-size: 1.8em; }
+  .tv-menu-cols { flex-direction: column; gap: 1.2em; }
+  .tv-menu-col, .tv-menu-col[data-size], .tv-menu[data-kind="episodes"] .tv-menu-col, .tv-menu[data-kind="episodes"] .tv-menu-col:last-child { flex: none; }
+  .tv-menu-col h3 { font-size: 1.1em; }
+  .tv-opts, .tv-menu[data-kind="episodes"][data-rich="true"] .tv-opts { max-height: min(34em, 46vh); }
+  .tv-opt, .tv-menu[data-kind="tracks"] .tv-opt { font-size: 1.4em; }
+  .tv-opt.tv-ep { grid-template-columns: 1.6em 9em minmax(0, 1fr); gap: 0.8em; font-size: 1em; }
+  .tv-ep-no { font-size: 1.5em; }
+  .tv-ep-name { font-size: 1.3em; }
+  .tv-ep-about { font-size: 1em; -webkit-line-clamp: 2; }
+  .tv-menu[data-kind="captions"] .tv-opts { max-height: min(16em, 26vh); }
+  .tv-sub-preview { height: 10vh; }
+
+  /* A watch party. */
+  .tv-party-choices { flex-direction: column; gap: 1.2em; width: 100%; max-width: 28em; }
+  .tv-party-choice { width: 100%; padding: 1.2em; }
+  .tv-party-choice svg { font-size: 2.6em; }
+  .tv-party-choice b { font-size: 1.8em; }
+  .tv-party-choice small { font-size: 1.2em; }
+  .tv-party-invite .tv-steps { font-size: 1.5em; }
+  .tv-party-invite .tv-code, .tv-menu .tv-party-invite .tv-code { font-size: 3em; }
+  .tv-screen-compact .tv-party-invite .tv-qr, .tv-menu .tv-party-invite .tv-qr { width: 13em; }
+  .tv-menu .tv-party-invite .tv-steps { font-size: 1.3em; }
+  .tv-party-members { gap: 0.5em; }
+  .tv-party-member { font-size: 1.4em; }
+  .tv-code-boxes i { font-size: 2.6em; }
+  .tv-party-error { font-size: 1.4em; }
+  .tv-pad { grid-template-columns: repeat(3, 4.6em); }
+  .tv-key { font-size: 1.6em; }
+}
+
+/* A phone held sideways, or a window as flat as one: the same pages, with whatever takes height giving some back. */
+@media (max-height: 520px) {
+  .tv-screen { justify-content: flex-start; gap: 1.2em; padding-top: 4.4em; padding-bottom: 1.6em; overflow-y: auto; }
+  .tv-screen::before, .tv-screen::after { content: ""; margin: auto; }
+  .tv-brand { top: 1.4em; font-size: 1.8em; }
+  .tv-browse-top { padding-top: 0.8em; }
+  .tv-rail { padding-top: 4.2em; padding-bottom: 1.4em; }
+  .tv-hero { height: 13em; }
+  .tv-hero-about { display: none; }
+  .tv-pair, .tv-screen-compact .tv-pair { gap: 4em; }
+  .tv-steps { font-size: 1.8em; }
+  .tv-code { font-size: 3.2em; }
+  .tv-qr, .tv-screen-compact .tv-qr { width: 15em; padding: 0.9em; }
+  .tv-screen-compact .tv-ready-icon { display: none; }
+  .tv-screen-compact .tv-party-invite .tv-qr { width: 13em; }
+  .tv-search-side { overflow-y: auto; scrollbar-width: none; }
+  .tv-query { height: 1.8em; }
+  .tv-keys { gap: 0.4em; margin-top: 0.6em; }
+  .tv-key { padding: 0.3em 0; font-size: 1.6em; }
+  .tv-key-wide { font-size: 1.3em; }
+  .tv-end { padding-top: 3em; padding-bottom: 1.4em; gap: 1em; }
+  .tv-end-tile { max-width: 8em; }
+}
+
+/* ...and a short screen that is also wide (a phone sideways) still has the room for things to sit side by side. */
+@media (max-height: 520px) and (min-width: 600px) {
+  .tv-pair, .tv-screen-compact .tv-pair, .tv-screen-compact .tv-party-invite { flex-direction: row; }
+  .tv-actions { grid-auto-flow: column; grid-auto-columns: 1fr; width: auto; max-width: none; }
+  .tv-party-choices { flex-direction: row; width: auto; max-width: none; }
+  .tv-party-choice { width: 22em; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-menu-backdrop, .tv-end, .hud-upnext, .tv-toast, .hud-toast, .hud-pause-card { animation-duration: 0.01s; }
+  .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }
+  .tv-hero { transition: none; }
+  .tv-tile, .tv-tile-category, .tv-end-tile, .tv-action, .tv-hero-button, .tv-choice, .tv-swatch, .tv-switch-row, .tv-key { transition: none; }
+  .tv-tile:focus-visible, .tv-tile-category:focus-visible, .tv-end-tile:focus-visible { transform: none; }
+}

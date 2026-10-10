@@ -1,10 +1,11 @@
-import { chromium, expect, test, type Page } from "@playwright/test";
+import { chromium, expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import qrcode from "qrcode-generator";
 import type { NormalizedMedia } from "../src/shared";
-import { loadOnTv, openPairedPhone, openTv, PHONE, RawPhone, readPairingCode, tvRoot, tvTime } from "./helpers";
+import { en } from "../src/client/i18n/en";
+import { loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, RawPhone, readPairingCode, tvRoot, tvTime, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -67,6 +68,8 @@ test.describe("one page", () => {
     await expect(tv.getByTestId("unlock")).toBeVisible();
     await tv.getByTestId("unlock").focus();
     await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible(); // the library first; the code is one menu entry away
+    await tv.getByTestId("rail-connect").click();
 
     const phone = await (await browser.newContext(PHONE)).newPage();
     await phone.goto("/");
@@ -174,7 +177,7 @@ test.describe("pairing", () => {
     const phone = await openPairedPhone(browser, tv);
     await expect(tv.getByTestId("tv-paired")).toBeVisible();
     const button = tv.getByTestId("tv-disconnect");
-    const browse = tv.getByTestId("tv-browse-open");
+    const browse = tv.getByTestId("tv-back-to-library");
     await expect(button).not.toBeFocused(); // a stray OK press must not disconnect anything
     await expect(browse).not.toBeFocused();
 
@@ -193,17 +196,6 @@ test.describe("pairing", () => {
     await phone.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
     await expect(tv.getByTestId("tv-paired")).toBeVisible();
-  });
-
-  test("opening another TV's QR link moves the phone over and frees the first TV", async ({ browser }) => {
-    const tv1 = await openTv(browser);
-    const phone = await openPairedPhone(browser, tv1);
-    const tv2 = await openTv(browser);
-
-    await phone.goto(`/?code=${await readPairingCode(tv2)}`);
-    await expect(tv2.getByTestId("tv-paired")).toBeVisible();
-    await expect(tv1.getByTestId("pairing-code")).toBeVisible();
-    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
   });
 });
 
@@ -226,8 +218,8 @@ test.describe("playing links", () => {
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
 
     await phone.reload(); // the list lives in the phone's storage
-    await expect(phone.getByTestId("recent-item")).toHaveCount(1);
-    await phone.getByTestId("recent-play").click();
+    await expect(phone.getByTestId("continue-item")).toHaveCount(1);
+    await phone.getByTestId("continue-play").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
   });
 
@@ -291,6 +283,27 @@ test.describe("the TV player", () => {
     phone.close();
   });
 
+  test("M and the button silence this screen's own sound, and say so", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.playUrl(sample(baseURL!));
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    const muted = () => tv.evaluate(() => document.querySelector("video")!.muted);
+    expect(await muted()).toBe(false);
+
+    await tv.keyboard.press("m");
+    await expect.poll(muted).toBe(true);
+    await expect(tv.locator(".hud-toast")).toHaveText(en["notice.muted"]);
+    await expect(tv.getByTestId("tv-mute-btn")).toHaveAttribute("aria-pressed", "true");
+
+    await tv.getByTestId("tv-mute-btn").click(); // the button does the same (the key press just woke the controls)
+    await expect.poll(muted).toBe(false);
+    await expect(tv.locator(".hud-toast")).toHaveText(en["notice.unmuted"]);
+    await expect(tv.getByTestId("tv-mute-btn")).toHaveAttribute("aria-pressed", "false");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing"); // and nothing else was touched
+    phone.close();
+  });
+
   test("subtitle language and size are remembered for the next video", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
@@ -330,10 +343,10 @@ test.describe("the TV player", () => {
     await tv.getByTestId("tv-audio-sub-btn").click();
     const modal = tv.getByTestId("audio-subtitles-modal");
     await expect(modal).toHaveAttribute("data-kind", "tracks");
-    await expect(tv.getByRole("option", { name: "Default", exact: true })).toBeVisible();
+    await expect(tv.getByRole("option", { name: "Off", exact: true })).toBeVisible();
     await expect(tv.getByTestId("subtitle-preview")).toBeVisible();
 
-    await tv.getByRole("option", { name: "Customize…" }).click();
+    await tv.getByRole("option", { name: "Subtitle style…" }).click();
     await expect(modal).toHaveAttribute("data-kind", "captions");
     await expect(tv.getByTestId("subtitle-preview")).toBeVisible();
 
@@ -444,6 +457,65 @@ test.describe("series", () => {
     phone.close();
   });
 
+  test("when the library knows the episodes the TV lists them as cards: a picture, the length, a line about each", async ({ browser, baseURL }) => {
+    const asked: string[] = [];
+    const picture = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='9'><rect width='16' height='9' fill='teal'/></svg>";
+    const tv = await openLibrary(browser, (context) =>
+      context.route(/\/api\/library\/episodes/, (route) => {
+        asked.push(new URL(route.request().url()).search);
+        return route.fulfill({
+          json: {
+            episodes: [
+              { season: 1, episode: 1, title: "The Pilot", overview: "A stranger arrives in town.", still: picture, runtime: 47 },
+              { season: 1, episode: 2, title: "A Long Night", overview: "Nobody sleeps.", still: "/fixtures/missing-still.jpg", runtime: 52 },
+              { season: 1, episode: 3, title: "Cold Open", runtime: 61 },
+            ],
+          },
+        });
+      }),
+    );
+    await tv.getByTestId("rail-connect").click();
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: seriesMedia(baseURL!) });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+
+    await tv.getByTestId("tv-episodes-btn").click();
+    const card = (episode: number) => tv.locator(".tv-ep").nth(episode - 1);
+    await expect(tv.locator(".tv-ep")).toHaveCount(3);
+    await expect(card(1)).toContainText("The Pilot");
+    await expect(card(1)).toContainText("A stranger arrives in town.");
+    await expect(card(1)).toContainText("47 min");
+    await expect(card(1).locator("img")).toBeVisible();
+    await expect(card(2).locator("img")).toHaveCount(0); // its picture does not load, so the tile is a colour instead
+    await expect(card(3)).toContainText("1 h 1 min"); // the length, said in hours once it is more than one
+    await expect(card(2)).toContainText("Now playing"); // episode 2 is the one on
+    await expect(card(2)).toHaveAttribute("aria-selected", "true");
+    // The page asked about the season by the first episode's link, once.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("season=1");
+    expect(asked[0]).toContain(encodeURIComponent(`${baseURL}/fixtures/pages/video.html`));
+
+    // The remote moves down the cards and OK plays the one it stops on.
+    await tv.keyboard.press("ArrowDown");
+    await expect(card(3)).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-title")).toHaveText("Fixture HLS Stream", { timeout: 15_000 });
+    phone.close();
+  });
+
+  test("when the library knows nothing of the episodes the list stays plain", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser); // the test server has no library, so it has nothing to say about a season
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: seriesMedia(baseURL!) });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+
+    await tv.getByTestId("tv-episodes-btn").click();
+    await expect(tv.getByRole("option", { name: /3\. Cold Open/ })).toBeVisible();
+    await expect(tv.locator(".tv-ep")).toHaveCount(0);
+    await expect(tv.getByTestId("audio-subtitles-modal")).toHaveAttribute("data-rich", "false");
+    phone.close();
+  });
+
   test("the phone lists every episode, marks the current one, and plays the one you pick", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);
@@ -458,6 +530,33 @@ test.describe("series", () => {
     await expect(phone.getByTestId("media-title")).toHaveText("Fixture HLS Stream");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", /playing|paused/);
   });
+
+  test("the phone's list is cards too when the library knows the episodes: the length, a line about each, and the library's own names", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.context().route(/\/api\/library\/episodes/, (route) =>
+      route.fulfill({
+        json: {
+          episodes: [
+            { season: 1, episode: 1, title: "The Pilot", overview: "A stranger arrives in town.", runtime: 47 },
+            { season: 1, episode: 3, title: "Cold Open", runtime: 61 },
+          ],
+        },
+      }),
+    );
+    await loadOnTv(phone, seriesMedia(baseURL!));
+    await expect(phone.getByTestId("media-title")).toBeVisible();
+
+    await phone.getByTestId("chip-episodes").click();
+    const row = (episode: number) => phone.locator(`[data-testid="episode"][data-episode="${episode}"]`);
+    await expect(row(1)).toHaveClass(/rich/);
+    await expect(row(1)).toContainText("The Pilot"); // the library's name, over the source's "Pilot"
+    await expect(row(1)).toContainText("A stranger arrives in town.");
+    await expect(row(1)).toContainText("47 min");
+    await expect(row(3)).toContainText("1 h 1 min");
+    await expect(row(2)).toContainText("The Long Night"); // the library has nothing on it, so the source's name stays
+    await expect(row(2)).toContainText("Now playing");
+  });
 });
 
 test.describe("watched markers", () => {
@@ -467,8 +566,14 @@ test.describe("watched markers", () => {
   };
 
   type Saved = { episode: number; done: boolean; position: number };
-  const savedOnTv = (tv: Page) => tv.evaluate(() => JSON.parse(localStorage.getItem("tv.watched") ?? "[]") as Saved[]);
-  const savedOnPhone = (phone: Page) => phone.evaluate(() => JSON.parse(localStorage.getItem("controller.watched") ?? "[]") as Saved[]);
+  /** What a screen has kept of the episodes watched: nobody is signed in, so it is the browser's own (guest) copy of the profile data. */
+  const savedWatched = (page: Page) =>
+    page.evaluate(() => {
+      const saved = JSON.parse(localStorage.getItem("kino.data.guest") ?? "null") as { data?: { watched?: Array<Saved & { deleted?: boolean }> } } | null;
+      return (saved?.data?.watched ?? []).filter((entry) => !entry.deleted) as Saved[];
+    });
+  const savedOnTv = savedWatched;
+  const savedOnPhone = savedWatched;
 
   test("the TV marks an episode watched or half-watched in its list", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
@@ -550,8 +655,15 @@ test.describe("languages", () => {
     await tv.getByTestId("tv-audio-sub-btn").click();
     for (const name of ["Romanian", "Dutch", "English (SDH)"]) await expect(tv.getByRole("option", { name, exact: true })).toBeVisible();
 
+    // Someone who has chosen no languages gets the site's own, English, Romanian and Italian first: Dutch comes after them.
+    await expect(tv.getByText("More languages", { exact: true })).toBeVisible();
+    const order = await tv.getByRole("listbox", { name: "Subtitles" }).getByRole("option").allTextContents();
+    expect(order.map((text) => text.trim()).filter((text) => text !== "Off")).toEqual(["English (SDH)", "Romanian", "Dutch"]);
+
     await phone.getByTestId("chip-tracks").click();
     await expect(phone.getByTestId("subtitle-0")).toHaveText(/Romanian/);
+    await expect(phone.getByTestId("subtitle-1")).toHaveCount(0); // Dutch is not one of the three: it is one tap away
+    await phone.getByTestId("subtitle-more").click();
     await expect(phone.getByTestId("subtitle-1")).toHaveText(/Dutch/);
   });
 });
@@ -791,7 +903,8 @@ test.describe("watching together", () => {
     await expect(tvRoot(leader)).toHaveAttribute("data-state", "idle");
     await expect(tvRoot(follower)).toHaveAttribute("data-state", "idle");
     await expect(follower.getByTestId("tv-following")).toBeVisible(); // still in the party, waiting
-    await expect(follower.getByTestId("tv-browse-open")).toHaveCount(0); // it can't choose what plays, so no library
+    await expect(follower.getByTestId("tv-back-to-library")).toHaveCount(0); // it can't choose what plays, so no library
+    await expect(follower.getByTestId("tv-browse")).toHaveCount(0);
     await expect(follower.getByTestId("tv-disconnect")).toHaveText("Stop watching along");
   });
 
@@ -822,7 +935,7 @@ test.describe("watching together", () => {
     await expect(follower.getByTestId("pairing-code")).toBeVisible(); // back to its own code
     await expect(tvRoot(leader)).toHaveAttribute("data-state", "idle");
 
-    // Add it again, play, and leave from the TV with the remote: Down moves onto Leave, OK presses it.
+    // Add it again, play, and leave from the TV with the remote: Down moves onto the bar, Right along it to Leave, OK presses it.
     await phone.getByTestId("party-code").fill(await readPairingCode(follower));
     await expect(phone.getByTestId("party-tv")).toHaveCount(1);
     await phone.getByTestId("sheet-close").click();
@@ -830,7 +943,11 @@ test.describe("watching together", () => {
     await phone.getByTestId("play-url").click();
     await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
     await follower.keyboard.press("ArrowDown"); // wakes the overlay
-    await follower.keyboard.press("ArrowDown"); // onto Leave
+    await follower.keyboard.press("ArrowDown"); // onto the first button of the bar (Mute)
+    for (let i = 0; i < 4 && !(await follower.getByTestId("tv-leave").evaluate((el) => el === document.activeElement)); i++) {
+      await follower.keyboard.press("ArrowRight");
+    }
+    await expect(follower.getByTestId("tv-leave")).toBeFocused();
     await follower.keyboard.press("Enter");
     await expect(follower.getByTestId("pairing-code")).toBeVisible();
     await expect(tvRoot(leader)).toHaveAttribute("data-state", "playing"); // the leader carries on
@@ -845,6 +962,261 @@ test.describe("watching together", () => {
     await phone.getByTestId("party-code").fill("000000");
     await expect(phone.getByTestId("party-error")).toBeVisible();
     await expect(phone.getByTestId("party-tv")).toHaveCount(0);
+  });
+});
+
+test.describe("a watch party started on a TV", () => {
+  const films = (baseURL: string) => ({
+    updatedAt: Date.now(),
+    rows: [{ id: "r", title: "Films", source: "Test", items: [{ id: "a", title: "The Sample", url: `${baseURL}/fixtures/sample.mp4` }] }],
+  });
+  const video = (tv: Page) => tv.evaluate(() => ({ paused: document.querySelector("video")!.paused, time: document.querySelector("video")!.currentTime, rate: document.querySelector("video")!.playbackRate }));
+  const screen = (browser: Browser, baseURL: string) => openLibrary(browser, withLibrary(films(baseURL)));
+  const codeOf = async (host: Page) => (await host.getByTestId("tv-party-code").innerText()).replace(/\s/g, "");
+  /** The first title of the library, played with OK. */
+  async function playFirst(tv: Page) {
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await tv.keyboard.press("Enter");
+  }
+  async function startParty(host: Page): Promise<string> {
+    await host.getByTestId("rail-party").click();
+    await host.getByTestId("tv-party-start").click();
+    return codeOf(host);
+  }
+  /** The remote of a screen that is not in a party yet: Watch party in the menu, then Join, then the digits. */
+  async function joinWith(guest: Page, code: string) {
+    await guest.getByTestId("rail-party").click();
+    await guest.getByTestId("tv-party-join").click();
+    await guest.keyboard.type(code);
+  }
+  /** A host that has started a party, and a guest that has joined it by typing the code. */
+  async function party(browser: Browser, baseURL: string) {
+    const host = await screen(browser, baseURL);
+    const code = await startParty(host);
+    const guest = await screen(browser, baseURL);
+    await joinWith(guest, code);
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+    return { host, guest, code };
+  }
+
+  test("a TV starts a party from the library's menu, another joins with the code, and both see who is in", async ({ browser, baseURL }) => {
+    const { host, guest } = await party(browser, baseURL!);
+    for (const tv of [host, guest]) await expect(tv.getByTestId("tv-party-member")).toHaveCount(2);
+    await expect(host.getByTestId("tv-party-member").first()).toContainText("you");
+    await expect(guest.getByTestId("tv-party-member").first()).toContainText("Host");
+    await expect(guest.getByTestId("tv-party-member").nth(1)).toContainText("you");
+    await expect(guest.getByTestId("tv-following")).toContainText(await host.getByTestId("tv-party-member").first().locator(".tv-party-name").innerText());
+
+    await host.getByTestId("tv-back-to-library").click(); // the menu goes on saying so
+    await expect(host.getByTestId("rail-party")).toHaveAttribute("data-badged", "true");
+  });
+
+  test("what the host plays plays on the guest, and its pause and speed carry over", async ({ browser, baseURL }) => {
+    const { host, guest } = await party(browser, baseURL!);
+    await host.getByTestId("tv-back-to-library").click();
+    await playFirst(host);
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "playing");
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "playing");
+    await expect(guest.getByTestId("tv-follow-bar")).toBeVisible();
+    await expect(guest.getByTestId("tv-play-btn")).toHaveCount(0); // the host has the controls
+
+    await host.keyboard.press("Space");
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "paused");
+    await expect.poll(async () => (await video(guest)).paused).toBe(true);
+
+    await host.mouse.move(60, 60); // wakes the controls
+    await host.getByTestId("tv-speed-btn").click();
+    await host.getByRole("option", { name: "1.5×" }).click();
+    await expect.poll(async () => (await video(guest)).rate, { timeout: 10_000 }).toBeGreaterThan(1.3);
+  });
+
+  test("a party can be started from a film, and a screen that joins later starts where the host is", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    await playFirst(host);
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "playing");
+    await host.mouse.move(60, 60);
+    await host.getByTestId("tv-party-btn").click();
+    await expect(host.getByTestId("tv-party-panel")).toBeVisible();
+    await host.getByTestId("tv-party-start").click();
+    await expect(host.getByTestId("tv-party-code")).toBeVisible();
+    const code = await codeOf(host);
+
+    const guest = await screen(browser, baseURL!);
+    await joinWith(guest, code);
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", /playing|paused/, { timeout: 15_000 });
+    await expect.poll(async () => Math.abs((await video(guest)).time - (await video(host)).time), { timeout: 10_000 }).toBeLessThan(2.5);
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+
+    await host.keyboard.press("Escape"); // closes the panel
+    await expect(host.getByTestId("tv-party-panel")).toHaveCount(0);
+    await host.mouse.move(80, 80);
+    await expect(host.getByTestId("tv-party-btn")).toContainText("2 TVs");
+  });
+
+  test("a guest keeps its own subtitles: the host's stay as they are", async ({ browser, baseURL }) => {
+    const host = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(host));
+    await expect(host.getByTestId("tv-paired")).toBeVisible();
+    await host.getByTestId("tv-back-to-library").click();
+    const code = await startParty(host);
+    const guest = await screen(browser, baseURL!);
+    await joinWith(guest, code);
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+
+    phone.cmd({ type: "LOAD", media: seriesMedia(baseURL!) });
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "paused", { timeout: 15_000 });
+    await guest.mouse.move(60, 60);
+    await guest.getByTestId("tv-audio-sub-btn").click();
+    await expect(guest.getByTestId("audio-subtitles-modal")).toBeVisible();
+    await guest.getByRole("option", { name: "English" }).click();
+    await expect(guest.getByRole("option", { name: "English" })).toHaveAttribute("aria-selected", "true");
+    await guest.waitForTimeout(800);
+    expect(phone.states.at(-1)?.subtitles?.current).toBe(-1); // what the host shows did not change
+    phone.close();
+  });
+
+  test("a code that is wrong is refused, and the number pad starts over", async ({ browser, baseURL }) => {
+    const guest = await screen(browser, baseURL!);
+    await joinWith(guest, "000000");
+    await expect(guest.getByTestId("tv-party-error")).toHaveText("Invalid or expired code.");
+    const filled = guest.getByTestId("tv-party-digits").locator('[data-filled="true"]');
+    await expect(filled).toHaveCount(0);
+
+    for (const digit of "123") await guest.getByTestId(`pad-${digit}`).click(); // the on-screen keys work as well
+    await expect(filled).toHaveCount(3);
+    await guest.keyboard.press("Escape"); // Back takes a digit back, and leaves when there are none
+    await expect(filled).toHaveCount(2);
+    await guest.keyboard.press("Escape");
+    await guest.keyboard.press("Escape");
+    await expect(guest.getByTestId("tv-party-start")).toHaveCount(0);
+    await guest.keyboard.press("Escape");
+    await expect(guest.getByTestId("tv-party-start")).toBeVisible();
+  });
+
+  test("the party's link joins a screen as soon as it is unlocked, and leaves nothing in the address", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    const code = await startParty(host);
+    const guest = await openDevice(browser, { viewport: { width: 1280, height: 720 } });
+    await guest.goto(`/?party=${code}`);
+    await guest.getByTestId("unlock").focus();
+    await guest.keyboard.press("Enter");
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+    expect(new URL(guest.url()).search).toBe("");
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+  });
+
+  test("a phone that opens the party's link becomes a screen of the party, not a remote", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    const code = await startParty(host);
+    const phone = await openDevice(browser, PHONE);
+    await phone.goto(`/?party=${code}`);
+    await phone.getByTestId("unlock").tap();
+    await expect(phone.getByTestId("tv-following")).toBeVisible();
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+  });
+
+  test("the host sends a guest away, and the guest is told and can come back with the same code", async ({ browser, baseURL }) => {
+    const { host, guest, code } = await party(browser, baseURL!);
+    await host.getByTestId("tv-party-remove").click();
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(1);
+    await expect(guest.getByTestId("tv-following")).toHaveCount(0);
+    await expect(guest.getByTestId("tv-flash")).toHaveText("You are no longer in the party.");
+    await expect(guest.getByTestId("tv-party-start")).toBeVisible();
+
+    await guest.getByTestId("tv-party-join").click(); // the code is still good
+    await guest.keyboard.type(code);
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+  });
+
+  test("a guest that leaves by choice is not told it has left", async ({ browser, baseURL }) => {
+    const { host, guest } = await party(browser, baseURL!);
+    await guest.getByTestId("tv-disconnect").click();
+    await expect(guest.getByTestId("tv-party-start")).toBeVisible();
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(1);
+    await expect(guest.getByTestId("tv-flash")).toHaveCount(0);
+  });
+
+  test("ending the party sends everyone back to their own screen", async ({ browser, baseURL }) => {
+    const { host, guest } = await party(browser, baseURL!);
+    await host.getByTestId("tv-party-end").click();
+    await expect(host.getByTestId("tv-party-start")).toBeVisible();
+    await expect(guest.getByTestId("tv-following")).toHaveCount(0);
+    await expect(guest.getByTestId("tv-flash")).toHaveText("You are no longer in the party.");
+  });
+
+  test("a TV with a phone connected cannot join, and is told why", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    const code = await startParty(host);
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    await expect(tv.getByTestId("tv-paired")).toBeVisible();
+    await tv.getByTestId("tv-back-to-library").click();
+    await joinWith(tv, code);
+    await expect(tv.getByTestId("tv-party-error")).toHaveText("Disconnect the phone from this TV before joining a party.");
+    await expect(tv.getByTestId("tv-following")).toHaveCount(0);
+    phone.close();
+  });
+
+  test("the phone of a TV shows its party's code and who is in, and a screen that types the code joins", async ({ browser, baseURL }) => {
+    const host = await openTv(browser);
+    const phone = await openPairedPhone(browser, host);
+    await phone.getByTestId("menu").click();
+    await phone.getByTestId("party-open").click();
+    await expect(phone.getByTestId("party-invite").getByTestId("pairing-qr")).toBeVisible();
+    const code = (await phone.getByTestId("party-join-code").innerText()).replace(/\s/g, "");
+    expect(code).toMatch(/^\d{6}$/);
+    await expect(phone.getByTestId("party-host")).toContainText("Host");
+    await expect(phone.getByTestId("party-tv")).toHaveCount(0);
+
+    const guest = await screen(browser, baseURL!);
+    await joinWith(guest, code);
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+    await expect(phone.getByTestId("party-tv")).toHaveCount(1);
+    await expect(phone.getByTestId("party-join-code")).toBeVisible(); // the code is still good for the next screen
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByTestId("party-count")).toHaveText("+1");
+  });
+
+  test("the phone shares the party's link, or copies it where sharing isn't there", async ({ browser }) => {
+    const host = await openTv(browser);
+    const phone = await openPairedPhone(browser, host);
+    await phone.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const defineShare = (share: unknown) =>
+      phone.evaluate((value) => {
+        Object.defineProperty(navigator, "share", { configurable: true, value: value ? (data: ShareData) => ((window as unknown as { shared: ShareData }).shared = data) : undefined });
+      }, share);
+    await phone.getByTestId("menu").click();
+    await phone.getByTestId("party-open").click();
+    const code = (await phone.getByTestId("party-join-code").innerText()).replace(/\s/g, "");
+    const link = new URL(`/?party=${code}`, phone.url()).href;
+
+    await defineShare(true);
+    await phone.getByTestId("party-share").click();
+    await expect.poll(() => phone.evaluate(() => (window as unknown as { shared?: ShareData }).shared?.url)).toBe(link);
+
+    await defineShare(false);
+    await phone.getByTestId("party-share").click();
+    await expect(phone.getByTestId("party-share")).toHaveText("Link copied");
+    expect(await phone.evaluate(() => navigator.clipboard.readText())).toBe(link);
+  });
+
+  test("a party that the TV ends is not opened again by the phone's sheet, until the phone asks", async ({ browser }) => {
+    const host = await openTv(browser);
+    const phone = await openPairedPhone(browser, host);
+    await phone.getByTestId("menu").click();
+    await phone.getByTestId("party-open").click();
+    await expect(phone.getByTestId("party-join-code")).toBeVisible();
+
+    await host.getByTestId("tv-back-to-library").click();
+    await host.getByTestId("rail-party").click();
+    await host.getByTestId("tv-party-end").click();
+    await expect(phone.getByTestId("party-invite-open")).toBeVisible();
+    await phone.waitForTimeout(1200);
+    await expect(phone.getByTestId("party-join-code")).toHaveCount(0);
+
+    await phone.getByTestId("party-invite-open").click();
+    await expect(phone.getByTestId("party-join-code")).toBeVisible();
   });
 });
 

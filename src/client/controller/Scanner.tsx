@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { t, useT } from "../i18n";
 import { CloseIcon } from "../shared/icons";
 import { codeFromScan } from "./scan";
 
@@ -17,19 +18,23 @@ export const cameraAvailable = () => typeof navigator !== "undefined" && Boolean
 
 function describeCameraError(error: unknown): string {
   const name = error instanceof DOMException ? error.name : "";
-  if (name === "NotAllowedError" || name === "SecurityError") return "Camera access was blocked. Allow it in the browser's site settings, or type the code instead.";
-  if (name === "NotFoundError" || name === "OverconstrainedError") return "No camera found on this device.";
-  if (name === "NotReadableError") return "The camera is busy in another app.";
-  return "Couldn't start the camera. You can type the code instead.";
+  if (name === "NotAllowedError" || name === "SecurityError") return t("scan.blocked");
+  if (name === "NotFoundError" || name === "OverconstrainedError") return t("scan.noCamera");
+  if (name === "NotReadableError") return t("scan.busy");
+  return t("scan.failed");
 }
 
-/** Full-screen camera that reads the TV's QR code and hands back the six-digit code in it. */
-export function Scanner({ onCode, onClose }: { onCode: (code: string) => void; onClose: () => void }) {
+/**
+ * Full-screen camera that reads the TV's QR code and hands back the code in it. `read` says what counts as one: the six
+ * digits of pairing (the default) or, with `linkFromScan`, the code on the TV's sign-in screen.
+ */
+export function Scanner({ onCode, onClose, read = codeFromScan }: { onCode: (code: string) => void; onClose: () => void; read?: (text: string) => string | null }) {
+  useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   // The latest callbacks, without restarting the camera whenever the parent re-renders.
-  const handlers = useRef({ onCode, onClose });
-  handlers.current = { onCode, onClose };
+  const handlers = useRef({ onCode, onClose, read });
+  handlers.current = { onCode, onClose, read };
 
   useEffect(() => {
     let stopped = false;
@@ -84,7 +89,7 @@ export function Scanner({ onCode, onClose }: { onCode: (code: string) => void; o
           } catch {
             /* a frame that can't be read is just skipped */
           }
-          const code = text ? codeFromScan(text) : null;
+          const code = text ? handlers.current.read(text) : null;
           if (code && !stopped) {
             stopped = true;
             handlers.current.onCode(code);
@@ -111,16 +116,16 @@ export function Scanner({ onCode, onClose }: { onCode: (code: string) => void; o
   }, []);
 
   return (
-    <div className="scanner" role="dialog" aria-modal="true" aria-label="Scan the QR code on your TV" data-testid="scanner">
+    <div className="scanner" role="dialog" aria-modal="true" aria-label={t("scan.title")} data-testid="scanner">
       <video ref={videoRef} className="scanner-video" playsInline muted />
       <div className="scanner-shade" aria-hidden="true">
         <div className="scanner-frame" />
       </div>
-      <button className="scanner-close" onClick={onClose} aria-label="Close camera" data-testid="scanner-close">
+      <button className="scanner-close" onClick={onClose} aria-label={t("scan.close")} data-testid="scanner-close">
         <CloseIcon />
       </button>
       <p className="scanner-hint" role={error ? "alert" : "status"} data-testid="scanner-hint">
-        {error ?? "Point the camera at the QR code on your TV"}
+        {error ?? t("scan.hint")}
       </p>
     </div>
   );

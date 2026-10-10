@@ -1,7 +1,29 @@
 import jsQR from "jsqr";
 import qrcode from "qrcode-generator";
 import { describe, expect, it } from "vitest";
-import { codeFromScan } from "./scan";
+import { codeFromScan, linkFromScan } from "./scan";
+
+describe("linkFromScan", () => {
+  it("reads the sign-in code out of the link the TV's QR code holds", () => {
+    expect(linkFromScan("https://tv.example.com/?link=ABCD2345")).toBe("ABCD2345");
+    expect(linkFromScan("http://192.168.1.20:5173/?link=abcd-2345&x=1")).toBe("ABCD2345");
+  });
+
+  it("takes the code on its own, in any case, with or without the dash", () => {
+    expect(linkFromScan(" abcd-2345 \n")).toBe("ABCD2345");
+    expect(linkFromScan("ABCD2345")).toBe("ABCD2345");
+  });
+
+  it("ignores a pairing code and anything else a camera might pick up", () => {
+    expect(linkFromScan("https://example.com/?code=123456")).toBeNull();
+    expect(linkFromScan("123456")).toBeNull();
+    expect(linkFromScan("https://example.com/")).toBeNull();
+    expect(linkFromScan("https://example.com/?link=SHORT")).toBeNull();
+    expect(linkFromScan("https://example.com/?link=ABCD0OI1")).toBeNull(); // 0, O, I and 1 are never in a code
+    expect(linkFromScan("WIFI:S:home;T:WPA;P:secret;;")).toBeNull();
+    expect(linkFromScan("")).toBeNull();
+  });
+});
 
 describe("codeFromScan", () => {
   it("reads the code out of the link the TV's QR code holds", () => {
@@ -11,6 +33,13 @@ describe("codeFromScan", () => {
 
   it("takes a bare six-digit code", () => {
     expect(codeFromScan(" 654321 \n")).toBe("654321");
+  });
+
+  it("reads the code a TV with a phone shows for another one, unless only a TV to pair is wanted", () => {
+    expect(codeFromScan("https://tv.example.com/?control=123456")).toBe("123456");
+    expect(codeFromScan("https://tv.example.com/?control=123456", ["code"])).toBeNull(); // no use in a watch party
+    expect(codeFromScan("https://tv.example.com/?code=654321", ["code"])).toBe("654321");
+    expect(codeFromScan("https://tv.example.com/?control=12345&code=654321")).toBe("654321"); // the first that is a code
   });
 
   it("ignores anything else a camera might pick up", () => {

@@ -1,22 +1,40 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { z } from "zod";
-import { LibraryItemSchema, LibrarySchema, type Library, type LibraryItem } from "../../shared";
-import { BackspaceIcon, GridIcon, HomeIcon, SearchIcon } from "../shared/icons";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode } from "react";
+import { LibraryItemsSchema, LibrarySchema, listKey, type Library, type LibraryItem, type LibraryKind, type PlayHint } from "../../shared";
+import { useAccount } from "../account/AccountProvider";
+import { hintOf, listEntryOf } from "../account/cards";
+import { profileStore, useProfileData } from "../account/store";
+import { useLanguage, useT } from "../i18n";
+import { BackspaceIcon, CheckIcon, ClockIcon, CloseIcon, FilmIcon, GearIcon, HomeIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
+import { hueOf } from "../shared/Poster";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
+import { AccountChip } from "./Idle";
 import { actionForKey } from "./keys";
 import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
+import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, rowsOfPage, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type View } from "./pages";
+import { Rail, type RailEntry } from "./Rail";
+
+/** What a screen that starts a title can add: where to pick it up, and the picture and year the library already knows for it. */
+export interface PlayOptions {
+  startAt?: number;
+  hint?: PlayHint;
+}
 
 interface BrowseProps {
-  onPlay: (url: string) => void;
-  onClose: () => void;
+  onPlay: (url: string, options?: PlayOptions) => void;
+  /** The account button in the corner: signing in for a guest, the account page for somebody signed in. */
+  onAccount: () => void;
+  /** The menu's pages that are not the library: the settings, pairing a phone, and the watch party. */
+  onSettings: () => void;
+  onConnect: () => void;
+  onParty: () => void;
+  /** A phone is connected to this TV. */
+  connected: boolean;
+  /** How many screens are in the watch party this TV hosts (itself included); 0 when there is none. */
+  partySize: number;
   /** Said when the title that was just chosen would not play. */
   notice?: string | null;
 }
-
-/** The page that is open: everything in rows, one category as a grid, or the search. */
-type View = { kind: "home" } | { kind: "category"; rowId: string } | { kind: "search" };
-const viewKey = (view: View) => (view.kind === "category" ? `category:${view.rowId}` : view.kind);
 
 /** What the screen looked like when it was left, so coming back from a film lands on the same title, at once. */
 const remembered = {
@@ -26,8 +44,13 @@ const remembered = {
   results: [] as LibraryItem[],
   /** The query `results` answers. */
   resultsFor: "",
+  filter: "all" as KindFilter,
   /** Where the remote was on each page. */
   focus: {} as Record<string, Pos>,
+  /** The row of a page of rows the remote was on (rows come and go as things are watched and saved, so a number is not enough). */
+  row: {} as Record<string, string>,
+  /** The titles like what a card is about, by the card's key. Nothing found is remembered too. */
+  similar: {} as Record<string, LibraryItem[]>,
 };
 
 /** Wait this long on a title before the banner changes to it, so scrolling past many does not flicker through them. */
@@ -36,23 +59,55 @@ const BANNER_DELAY_MS = 200;
 const SEARCH_DELAY_MS = 350;
 const GRID_COLUMNS = 5;
 const RESULT_COLUMNS = 3;
+/** A phone, a tablet or a narrow window (the same width tv.css lays out for a hand-held screen): grids are as many titles wide as fit, and search is typed on the device's own keyboard. */
+const NARROW = "(max-width: 899px)";
+/** About how wide a title is on a hand-held screen, with the room around it. */
+const NARROW_TILE_PX = 190;
 
-const SearchSchema = z.object({ items: z.array(LibraryItemSchema) });
+/** How many titles wide a grid is on a hand-held screen, or 0 when the screen is wide enough for the TV's own layout. */
+function useNarrowColumns(): number {
+  const read = () => (matchMedia(NARROW).matches ? Math.max(2, Math.floor(innerWidth / NARROW_TILE_PX)) : 0);
+  const [columns, setColumns] = useState(read);
+  useEffect(() => {
+    const update = () => setColumns(read());
+    addEventListener("resize", update);
+    return () => removeEventListener("resize", update);
+  }, []);
+  return columns;
+}
+/** The menu lists this many categories of each kind before "More…". */
+const RAIL_CATEGORIES = 4;
 
 /** What the banner and the picture behind the screen show: the title the remote is on. */
 interface Focused {
-  item: LibraryItem;
+  entry: Entry;
   label: string;
   source?: string;
 }
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
+const RAIL: Target = { zone: "rail", row: -1, col: -1 };
+/** Where the remote can start on a page, in the order they are tried. */
 const CONTENT_ZONES: Zone[] = ["rows", "grid", "keys"];
+/** What it can be put back on when a page is returned to. */
+const RESTORABLE: Zone[] = [...CONTENT_ZONES, "chips", "results"];
 
 const find = (root: ParentNode, pos: Pos) => root.querySelector<HTMLElement>(`[data-zone="${pos.zone}"][data-row="${pos.row}"][data-col="${pos.col}"]`);
 function posOf(element: Element | null): Pos | null {
   if (!(element instanceof HTMLElement) || !element.dataset.zone) return null;
   return { zone: element.dataset.zone as Zone, row: Number(element.dataset.row), col: Number(element.dataset.col) };
+}
+
+/** Where the remote was on this page, with the row of a page of rows found again by name. */
+function savedPos(view: View, rows: readonly HomeRow[]): Pos | undefined {
+  const key = viewKey(view);
+  const saved = remembered.focus[key];
+  if (!saved) return undefined;
+  if (!isRowsPage(view) || saved.zone !== "rows") return saved;
+  const id = remembered.row[key];
+  const row = rows.findIndex((candidate) => candidate.id === id);
+  // A card that was watched moves to the front of "Continue watching", so its place there is the first.
+  return row === -1 ? undefined : { zone: "rows", row, col: id === "continue" ? 0 : saved.col };
 }
 
 /** Scroll `container` just far enough that `element` shows with some room around it. */
@@ -65,22 +120,36 @@ function keepInView(container: HTMLElement, element: HTMLElement) {
 }
 
 /**
- * The library on the TV, laid out like a streaming app: a menu down the left (search, home, and a page for each category), a
- * banner for the title the remote is on, and rows of titles under it. The arrow keys walk everything; Left from the first title
- * of any row opens the menu, OK plays, and Back steps out: of the menu, then to the home page, then out of the library.
+ * The library on the TV, laid out like a streaming app: a menu down the left (search, home, movies, series, My List, history, the
+ * phone, settings, and the categories), the account button in the corner, and on the pages of rows a banner with Play and My List
+ * for the title the remote is on, with the rows under it. The arrow keys walk everything; Left from the first title of any row opens
+ * the menu, OK plays, and Back steps out: of the menu, then to the home page, and from there into the menu.
  */
-export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
+export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, connected, partySize, notice }: BrowseProps) {
+  const t = useT();
+  const language = useLanguage();
+  const { status: accountStatus } = useAccount();
+  const { progress, list } = useProfileData();
+  const narrowColumns = useNarrowColumns();
+  const narrow = narrowColumns > 0;
+  const gridColumns = narrowColumns || GRID_COLUMNS;
+  const resultColumns = narrowColumns || RESULT_COLUMNS;
   const [library, setLibrary] = useState<Library | null>(remembered.library);
   const [status, setStatus] = useState<"loading" | "ready" | "failed">(remembered.library ? "ready" : "loading");
   const [attempt, setAttempt] = useState(0);
   const [view, setViewState] = useState<View>(remembered.view);
   const [query, setQuery] = useState(remembered.query);
   const [results, setResults] = useState<LibraryItem[]>(remembered.results);
+  const [filter, setFilter] = useState<KindFilter>(remembered.filter);
   const [searching, setSearching] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [focused, setFocused] = useState<Focused | null>(null);
+  /** The remote is on a row below the first, so the banner makes room for the rows. */
+  const [deep, setDeep] = useState(false);
   /** Somewhere to put the focus once the next render has put it on screen. */
   const [pending, setPending] = useState<Target>(null);
+  const newest = progress[0];
+  const [similarItems, setSimilarItems] = useState<LibraryItem[]>(() => (newest ? (remembered.similar[newest.key] ?? []) : []));
   const bannerTimer = useRef<number>(0);
   const rootRef = useRef<HTMLElement>(null);
   const rowsRef = useRef<HTMLDivElement>(null);
@@ -104,30 +173,116 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
     };
   }, [attempt]);
 
+  // "Because you watched ...": the server knows titles like the one this profile watched last.
+  useEffect(() => {
+    if (!newest) return setSimilarItems([]);
+    const known = remembered.similar[newest.key];
+    if (known) return setSimilarItems(known);
+    let live = true;
+    fetch(`/api/library/similar?url=${encodeURIComponent(newest.url)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: unknown) => {
+        const parsed = LibraryItemsSchema.safeParse(data);
+        const items = parsed.success ? parsed.data.items : [];
+        remembered.similar[newest.key] = items;
+        if (live) setSimilarItems(items);
+      })
+      .catch(() => {}); // not remembered, so the next visit asks again
+    return () => {
+      live = false;
+    };
+  }, [newest?.key]);
+
   const rows = useMemo(() => (library?.rows ?? []).filter((row) => row.items.length > 0), [library]);
   const hasTiles = status === "ready" && rows.length > 0;
-  const category = view.kind === "category" ? rows.find((row) => row.id === view.rowId) : undefined;
+  const similar = useMemo(() => {
+    const items = newest ? freshSimilar(similarItems, progress, list) : [];
+    return newest && items.length > 0 ? { title: newest.title, items } : null;
+  }, [newest, similarItems, progress, list]);
+  const data = useMemo<PageData>(() => ({ rows, progress, list, similar }), [rows, progress, list, similar]);
 
-  // Where the remote starts on the home page: the first title, or on a return from a film, the one it left.
-  const homeFocus = remembered.focus.home;
-  const startRow = Math.min(homeFocus?.row ?? 0, Math.max(0, rows.length - 1));
-  const startCol = Math.min(homeFocus?.col ?? 0, Math.max(0, (rows[startRow]?.items.length ?? 1) - 1));
-  const start = rows[startRow]?.items[startCol];
-  const shown: Focused | null = focused ?? (view.kind === "home" && start ? { item: start, label: rows[startRow]!.title, source: rows[startRow]!.source } : null);
+  const rowsPage = isRowsPage(view);
+  // `language` is not read, but the rows' titles and notes are words in it
+  /* eslint-disable react-hooks/exhaustive-deps */
+  const homeRows = useMemo<HomeRow[]>(() => (isRowsPage(view) ? rowsOfPage(view.kind, data) : []), [view, data, language]);
+  const grid = useMemo(() => gridOf(view, data), [view, data, language]);
+  /* eslint-enable react-hooks/exhaustive-deps */
+  const shownResults = useMemo(() => ofKind(results, filter), [results, filter]);
+
+  // Where the remote starts on a page of rows: the first title, or on a return from a film, the one it left.
+  const homeFocus = rowsPage ? savedPos(view, homeRows) : undefined;
+  const startRow = Math.min(homeFocus?.row ?? 0, Math.max(0, homeRows.length - 1));
+  const startCol = Math.min(homeFocus?.col ?? 0, Math.max(0, (homeRows[startRow]?.entries.length ?? 1) - 1));
+  const start = homeRows[startRow]?.entries[startCol];
+  const shown: Focused | null = focused ?? (rowsPage && start ? { entry: start, label: homeRows[startRow]!.title, ...(homeRows[startRow]!.source ? { source: homeRows[startRow]!.source! } : {}) } : null);
+  const actions = rowsPage ? heroActions(shown?.entry) : [];
+  const saved = useMemo(() => new Set(list.map((entry) => entry.key)), [list]);
+  const inList = shown ? saved.has(listKey(shown.entry.url)) : false;
+
+  // The menu closes by itself when the remote leaves it for the page; on a page with nothing to stand on it stays, under the remote.
+  const choose = (next: View) => {
+    remembered.view = next;
+    setViewState(next);
+    setFocused(null);
+    setDeep(false);
+    setPending(CONTENT);
+  };
+
+  // The menu: the pages first, then the categories in a group each for films and for shows, a few of each with "More…" after them.
+  const entries: RailEntry[] = [
+    { id: "search", label: t("tv.search"), icon: <SearchIcon />, current: view.kind === "search", testId: "rail-search", onPress: () => choose({ kind: "search" }) },
+    { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) },
+    { id: "movies", label: t("tv.movies"), icon: <FilmIcon />, current: view.kind === "movies", testId: "rail-movies", onPress: () => choose({ kind: "movies" }) },
+    { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
+    { id: "list", label: t("rows.myList"), icon: <PlusIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list" }) },
+    { id: "history", label: t("tv.history"), icon: <ClockIcon />, current: view.kind === "history", testId: "rail-history", onPress: () => choose({ kind: "history" }) },
+    { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: t("party.size", { count: partySize }) } : {}), testId: "rail-party", onPress: onParty },
+    { id: "connect", label: t("tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { badge: t("tv.phoneConnected") } : {}), testId: "rail-connect", onPress: onConnect },
+    { id: "settings", label: t("tv.settings"), icon: <GearIcon />, testId: "rail-settings", onPress: onSettings },
+  ];
+  const groups: Array<{ kind: LibraryKind | undefined; title: string }> = [
+    { kind: "movie", title: t("tv.movieCategories") },
+    { kind: "series", title: t("tv.seriesCategories") },
+    { kind: undefined, title: t("tv.categories") },
+  ];
+  for (const { kind, title } of groups) {
+    const own = rows.filter((row) => row.kind === kind);
+    own.slice(0, RAIL_CATEGORIES).forEach((row, i) =>
+      entries.push({
+        id: `category:${row.id}`,
+        label: row.title,
+        ...(i === 0 ? { group: title } : {}),
+        current: view.kind === "category" && view.rowId === row.id,
+        testId: `rail-category-${row.id}`,
+        onPress: () => choose({ kind: "category", rowId: row.id }),
+      }),
+    );
+    if (own.length > RAIL_CATEGORIES) {
+      const beyond = view.kind === "category" && own.findIndex((row) => row.id === view.rowId) >= RAIL_CATEGORIES;
+      entries.push({
+        id: `more:${kind ?? "all"}`,
+        label: t("tv.moreCategories"),
+        current: beyond || (view.kind === "categories" && view.of === kind),
+        testId: `rail-more-${kind ?? "all"}`,
+        onPress: () => choose({ kind: "categories", ...(kind ? { of: kind } : {}) }),
+      });
+    }
+  }
+  const openEntry = entries.findIndex((entry) => entry.current);
+  const railIndex = openEntry === -1 ? 1 : openEntry; // a page the menu has no line for belongs to Home
 
   // What the arrow keys can reach, row by row: the key handler below reads it through a ref.
+  const showAccount = accountStatus === "ready";
+  const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   const shape: Shape = {
-    rail: Array.from({ length: 2 + rows.length }, () => 1),
-    top: [1],
-    ...(view.kind === "home" ? { rows: hasTiles ? rows.map((row) => row.items.length) : status === "loading" ? [] : [1] } : {}),
-    ...(view.kind === "category" && category ? { grid: gridRows(category.items.length, GRID_COLUMNS) } : {}),
-    ...(view.kind === "search" ? { keys: KEYBOARD_SHAPE, results: gridRows(results.length, RESULT_COLUMNS) } : {}),
+    rail: entries.map(() => 1),
+    top: showAccount ? [1] : [],
+    ...(rowsPage ? { hero: !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
+    ...(grid ? { grid: gridRows(grid.entries.length, gridColumns) } : {}),
+    ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: gridRows(shownResults.length, resultColumns) } : {}),
   };
-  const railIndex = view.kind === "search" ? 0 : view.kind === "home" ? 1 : 2 + Math.max(0, rows.findIndex((row) => row.id === view.rowId));
-  const latest = useRef({ shape, view, query, railIndex });
-  latest.current = { shape, view, query, railIndex };
-  const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  const latest = useRef({ shape, view, query, railIndex, homeRows });
+  latest.current = { shape, view, query, railIndex, homeRows };
 
   /** Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. */
   const resolve = (target: Target): Pos | null => {
@@ -135,8 +290,8 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
     if (!target || !root) return null;
     if (target.row !== -1) return target as Pos;
     if (target.zone === "rail") return { zone: "rail", row: latest.current.railIndex, col: 0 };
-    const saved = remembered.focus[viewKey(latest.current.view)];
-    if (saved && CONTENT_ZONES.concat("results").includes(saved.zone) && find(root, saved)) return saved;
+    const at = savedPos(latest.current.view, latest.current.homeRows);
+    if (at && RESTORABLE.includes(at.zone) && find(root, at)) return at;
     return CONTENT_ZONES.map((zone): Pos => ({ zone, row: 0, col: 0 })).find((pos) => find(root, pos)) ?? null;
   };
   const focusAt = (target: Target) => {
@@ -151,21 +306,13 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
     } else focusAt(target);
   };
 
-  const choose = (next: View) => {
-    remembered.view = next;
-    setViewState(next);
-    setFocused(null);
-    setRailOpen(false);
-    setPending(CONTENT);
-  };
-
   useEffect(() => {
     if (!pending) return;
     setPending(null);
     focusAt(pending);
   }, [pending]);
 
-  // Keys pressed while it loaded may have landed on Back, or nowhere; once there is something to see, the remote goes to it.
+  // Keys pressed while it loaded may have landed on the account button, or nowhere; once there is something to see, the remote goes to it.
   useEffect(() => {
     const at = posOf(document.activeElement);
     if (!at || at.zone === "top") setPending(CONTENT);
@@ -173,15 +320,16 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
 
   // A category that is gone (the library was refreshed) leaves its page empty: go home.
   useEffect(() => {
-    if (view.kind === "category" && status === "ready" && !category) choose({ kind: "home" });
-  }, [view, status, category]);
+    if (view.kind === "category" && status === "ready" && !grid) choose({ kind: "home" });
+  }, [view, status, grid]);
 
   useEffect(() => () => window.clearTimeout(bannerTimer.current), []);
 
   useEffect(() => {
     remembered.query = query;
     remembered.results = results;
-  }, [query, results]);
+    remembered.filter = filter;
+  }, [query, results, filter]);
 
   // Search: what is already loaded answers at once, the server adds what it knows once the typing pauses.
   useEffect(() => {
@@ -204,8 +352,8 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
     const timer = window.setTimeout(() => {
       fetch(`/api/library/search?q=${encodeURIComponent(text)}`, { signal: controller.signal })
         .then((res) => (res.ok ? res.json() : null))
-        .then((data: unknown) => {
-          const parsed = SearchSchema.safeParse(data);
+        .then((answer: unknown) => {
+          const parsed = LibraryItemsSchema.safeParse(answer);
           if (parsed.success) setResults(mergeItems(local, parsed.data.items));
           remembered.resultsFor = text;
           setSearching(false);
@@ -238,16 +386,21 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
       if (action === "back") {
         event.preventDefault();
         if (event.key === "Backspace" && page.kind === "search" && text) return setQuery(text.slice(0, -1));
-        if (posOf(document.activeElement)?.zone === "rail") go(CONTENT);
-        else if (page.kind !== "home") choose({ kind: "home" });
-        else closeRef.current();
+        if (posOf(document.activeElement)?.zone === "rail" && resolve(CONTENT)) go(CONTENT);
+        else if (page.kind !== "home") choose({ kind: "home" }); // (also from the menu, when the page has no title to go back to)
+        else go(RAIL); // home is as far back as it goes: the menu is the next step
         return;
       }
       if (action !== "up" && action !== "down" && action !== "left" && action !== "right") return;
+      if (event.target instanceof HTMLInputElement && (action === "left" || action === "right")) return; // in the search box of a small screen they move the cursor
       event.preventDefault();
 
       const at = posOf(document.activeElement);
-      if (!at) return focusAt(CONTENT);
+      if (!at) {
+        // Nowhere to stand yet. On a page with titles that is the first one; on an empty page Left reaches the menu and Up the account button.
+        if (resolve(CONTENT)) return focusAt(CONTENT);
+        return go(action === "left" ? RAIL : action === "up" && now.top?.length ? { zone: "top", row: 0, col: 0 } : null);
+      }
       go(stepFrom(now, at, action));
     };
     window.addEventListener("keydown", onKey);
@@ -256,8 +409,11 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
 
   /** The remote moved onto a title: keep it in view (the page itself never scrolls) and, after a pause, let the banner say what it is. */
   const arrived = (element: HTMLElement, pos: Pos, now: Focused) => {
-    remembered.focus[viewKey(latest.current.view)] = pos;
+    const key = viewKey(latest.current.view);
+    remembered.focus[key] = pos;
     if (pos.zone === "rows") {
+      remembered.row[key] = latest.current.homeRows[pos.row]?.id ?? "";
+      setDeep(pos.row > 0);
       const scroller = element.parentElement!;
       const edge = element.getBoundingClientRect();
       const box = scroller.getBoundingClientRect();
@@ -266,8 +422,8 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
       else if (edge.right > box.right - room) scroller.scrollBy({ left: edge.right - box.right + room, behavior: "smooth" });
       rowsRef.current?.scrollTo({ top: scroller.parentElement!.offsetTop, behavior: "smooth" });
     } else {
-      const grid = element.closest<HTMLElement>(".tv-grid");
-      if (grid) keepInView(grid, element);
+      const container = element.closest<HTMLElement>(".tv-grid");
+      if (container) keepInView(container, element);
     }
 
     window.clearTimeout(bannerTimer.current);
@@ -279,27 +435,50 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
     setStatus("loading");
     setAttempt((n) => n + 1);
   };
-  const play = (item: LibraryItem) => onPlay(new URL(item.url, location.href).href);
+  const playEntry = (entry: Entry) => onPlay(new URL(entry.url, location.href).href, { hint: hintOf(entry), ...(entry.startAt ? { startAt: entry.startAt } : {}) });
+  const press = (entry: Entry) => (entry.opens ? choose(entry.opens) : playEntry(entry));
 
-  const tile = (item: LibraryItem, pos: Pos, label: string, source?: string) => (
-    <Tile key={`${pos.zone}-${item.id}`} item={item} pos={pos} onArrive={(element) => arrived(element, pos, { item, label, ...(source ? { source } : {}) })} onPlay={() => play(item)} />
+  const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string) => (
+    <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} rank={pos.col + 1} pos={pos} onArrive={(element) => arrived(element, pos, { entry, label, ...(source ? { source } : {}) })} onPress={() => press(entry)} />
   );
 
+  const doAction = (action: HeroAction) => {
+    const entry = shown?.entry;
+    if (!entry) return;
+    if (action === "play") playEntry(entry);
+    else if (action === "list") profileStore.setInList(listEntryOf(entry), !inList);
+    else if (entry.progressKey) {
+      profileStore.removeProgress(entry.progressKey);
+      setFocused(null);
+      go(CONTENT);
+    }
+  };
+
+  const resumes = shown?.entry.startAt !== undefined;
+  const heroLabel: Record<HeroAction, ReactNode> = {
+    play: (
+      <>
+        <PlayIcon /> {resumes ? t("rows.resume") : t("rows.play")}
+      </>
+    ),
+    list: (
+      <>
+        {inList ? <CheckIcon /> : <PlusIcon />} {t("rows.myList")}
+      </>
+    ),
+    remove: (
+      <>
+        <CloseIcon /> {t("rows.remove")}
+      </>
+    ),
+  };
+
   return (
-    <section className="tv-browse" ref={rootRef} data-testid="tv-browse" data-view={viewKey(view)} aria-label="Library">
-      {shown?.item.image && <div className="tv-hero-bg" key={shown.item.id} style={{ backgroundImage: `url(${JSON.stringify(shown.item.image)})` }} />}
+    <section className="tv-browse" ref={rootRef} data-testid="tv-browse" data-view={viewKey(view)} data-deep={deep} aria-label={t("tv.library")}>
+      <Backdrop image={shown?.entry.backdrop ?? shown?.entry.image} />
       <div className="tv-browse-shade" />
 
-      <Rail
-        open={railOpen}
-        onOpen={setRailOpen}
-        current={railIndex}
-        categories={rows}
-        onSearch={() => choose({ kind: "search" })}
-        onHome={() => choose({ kind: "home" })}
-        onCategory={(rowId) => choose({ kind: "category", rowId })}
-        onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)}
-      />
+      <Rail open={railOpen} onOpen={setRailOpen} entries={entries} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
 
       <header className="tv-browse-top">
         <span className="tv-browse-logo">
@@ -310,35 +489,46 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
             {notice}
           </p>
         )}
-        <button className="tv-back" onClick={onClose} data-testid="tv-browse-close" data-zone="top" data-row={0} data-col={0}>
-          Back
-        </button>
+        {showAccount && <AccountChip onOpen={onAccount} zone />}
       </header>
 
-      {view.kind === "home" && (
+      {rowsPage && (
         <>
           <div className="tv-hero" data-testid="tv-hero">
             {shown ? (
-              <>
-                <p className="tv-hero-eyebrow">{shown.label}</p>
+              <div className="tv-hero-text" key={shown.entry.id}>
+                <p className="tv-hero-eyebrow">{shown.entry.opens ? t("tv.byCategory") : shown.label}</p>
                 <h1 className="tv-hero-title" data-testid="tv-hero-title">
-                  {shown.item.title}
+                  {shown.entry.title}
                 </h1>
-                <p className="tv-hero-meta">{[shown.item.year, shown.source].filter(Boolean).join("  ·  ")}</p>
-                {shown.item.description && <p className="tv-hero-about">{shown.item.description}</p>}
-                <p className="tv-hero-hint">
-                  <kbd>OK</kbd> to play
-                </p>
-              </>
+                <p className="tv-hero-meta">{[shown.entry.year, shown.entry.note, shown.entry.opens ? shown.entry.source : (shown.source ?? undefined)].filter(Boolean).join("  ·  ")}</p>
+                {shown.entry.description && <p className="tv-hero-about">{shown.entry.description}</p>}
+                <div className="tv-hero-actions">
+                  {actions.map((action, col) => (
+                    <button
+                      key={action}
+                      className={`tv-hero-button${action === "play" ? " is-primary" : ""}`}
+                      data-testid={`tv-hero-${action}`}
+                      data-zone="hero"
+                      data-row={0}
+                      data-col={col}
+                      aria-pressed={action === "list" ? inList : undefined}
+                      onClick={() => doAction(action)}
+                    >
+                      {heroLabel[action]}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : status === "loading" ? (
-              <p className="tv-hero-eyebrow">Getting the library…</p>
+              <p className="tv-hero-eyebrow">{t("tv.loadingLibrary")}</p>
             ) : (
               <>
-                <h1 className="tv-hero-title">{status === "failed" ? "The library isn't reachable right now" : "Nothing in the library yet"}</h1>
-                <p className="tv-hero-about">{status === "failed" ? "Check the connection, or send a link from your phone." : "It fills in a moment after the server starts."}</p>
+                <h1 className="tv-hero-title">{status === "failed" ? t("tv.libraryFailed") : t("tv.libraryEmpty")}</h1>
+                <p className="tv-hero-about">{status === "failed" ? t("tv.libraryFailedHelp") : t("tv.libraryEmptyHelp")}</p>
                 <div className="tv-actions tv-actions-start">
                   <button className="tv-action tv-action-primary" onClick={retry} autoFocus data-testid="tv-browse-retry" data-zone="rows" data-row={0} data-col={0}>
-                    Try again
+                    {t("common.retry")}
                   </button>
                 </div>
               </>
@@ -346,11 +536,11 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
           </div>
 
           <div className="tv-rows" ref={rowsRef}>
-            {hasTiles
-              ? rows.map((row, r) => (
-                  <section className="tv-row" key={row.id} aria-label={row.title}>
+            {homeRows.length > 0
+              ? homeRows.map((row, r) => (
+                  <section className="tv-row" key={row.id} data-layout={row.layout} aria-label={row.title}>
                     <h2 className="tv-row-title">{row.title}</h2>
-                    <div className="tv-row-tiles">{row.items.map((item, c) => tile(item, { zone: "rows", row: r, col: c }, row.title, row.source))}</div>
+                    <div className="tv-row-tiles">{row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source))}</div>
                   </section>
                 ))
               : status === "loading" && (
@@ -367,53 +557,97 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
         </>
       )}
 
-      {view.kind === "category" && category && (
-        <div className="tv-view" data-testid="tv-category">
+      {grid && (
+        <div className="tv-view" data-testid={view.kind === "category" ? "tv-category" : `tv-${view.kind}`}>
           <h1 className="tv-view-title" data-testid="tv-view-title">
-            {category.title}
+            {grid.title}
           </h1>
-          <p className="tv-view-meta">
-            {category.items.length} titles · {category.source}
-          </p>
-          <div className="tv-grid" style={{ "--cols": GRID_COLUMNS } as CSSProperties}>
-            {category.items.map((item, i) => tile(item, { zone: "grid", row: Math.floor(i / GRID_COLUMNS), col: i % GRID_COLUMNS }, category.title, category.source))}
-          </div>
+          {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
+          {grid.entries.length > 0 ? (
+            <div className="tv-grid" style={{ "--cols": gridColumns } as CSSProperties}>
+              {grid.entries.map((entry, i) => tile(entry, { zone: "grid", row: Math.floor(i / gridColumns), col: i % gridColumns }, grid.title, grid.layout))}
+            </div>
+          ) : (
+            <p className="tv-view-empty" data-testid="tv-view-empty">
+              {grid.empty}
+            </p>
+          )}
         </div>
       )}
 
       {view.kind === "search" && (
         <div className="tv-search" data-testid="tv-search">
           <div className="tv-search-side">
-            <p className="tv-query" data-testid="tv-query" aria-live="polite">
-              {query ? <span>{query}</span> : <span className="tv-query-hint">Search titles</span>}
-              <i className="tv-caret" />
-            </p>
-            <div className="tv-keys" role="group" aria-label="Keyboard">
-              {KEYBOARD_KEYS.map((key, i) => (
-                <Key key={key} testId={`key-${key}`} pos={{ zone: "keys", row: Math.floor(i / KEYBOARD_COLUMNS), col: i % KEYBOARD_COLUMNS }} onPress={() => setQuery((before) => appendTo(before, key))}>
-                  {key}
-                </Key>
-              ))}
-              <Key testId="key-space" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 0 }} onPress={() => setQuery((before) => appendTo(before, " "))}>
-                Space
-              </Key>
-              <Key testId="key-delete" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 1 }} onPress={() => setQuery((before) => before.slice(0, -1))}>
-                <BackspaceIcon /> Delete
-              </Key>
-            </div>
+            {narrow ? (
+              <input
+                className="tv-query"
+                data-testid="tv-query"
+                type="search"
+                enterKeyHint="search"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                autoFocus
+                placeholder={t("tv.searchHint")}
+                aria-label={t("tv.search")}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            ) : (
+              <>
+                <p className="tv-query" data-testid="tv-query" aria-live="polite">
+                  {query ? <span>{query}</span> : <span className="tv-query-hint">{t("tv.searchHint")}</span>}
+                  <i className="tv-caret" />
+                </p>
+                <div className="tv-keys" role="group" aria-label={t("tv.keyboard")}>
+                  {KEYBOARD_KEYS.map((key, i) => (
+                    <Key key={key} testId={`key-${key}`} pos={{ zone: "keys", row: Math.floor(i / KEYBOARD_COLUMNS), col: i % KEYBOARD_COLUMNS }} onPress={() => setQuery((before) => appendTo(before, key))}>
+                      {key}
+                    </Key>
+                  ))}
+                  <Key testId="key-space" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 0 }} onPress={() => setQuery((before) => appendTo(before, " "))}>
+                    {t("tv.space")}
+                  </Key>
+                  <Key testId="key-delete" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 1 }} onPress={() => setQuery((before) => before.slice(0, -1))}>
+                    <BackspaceIcon /> {t("tv.delete")}
+                  </Key>
+                </div>
+              </>
+            )}
           </div>
           <div className="tv-search-main">
+            <div className="tv-filters" role="radiogroup" aria-label={t("tv.search")}>
+              {KIND_FILTERS.map((value, col) => {
+                const pos: Pos = { zone: "chips", row: 0, col };
+                return (
+                  <button
+                    key={value}
+                    className="tv-choice"
+                    role="radio"
+                    aria-checked={filter === value}
+                    data-testid={`filter-${value}`}
+                    data-zone={pos.zone}
+                    data-row={pos.row}
+                    data-col={pos.col}
+                    onClick={() => setFilter(value)}
+                    onFocus={() => (remembered.focus.search = pos)}
+                  >
+                    {t(value === "all" ? "tv.filterAll" : value === "movie" ? "tv.filterMovies" : "tv.filterSeries")}
+                  </button>
+                );
+              })}
+            </div>
             <p className="tv-view-meta" data-testid="tv-search-status">
               {!query.trim()
-                ? "Type a title to search."
-                : results.length > 0
-                  ? `${results.length} ${results.length === 1 ? "title" : "titles"} for “${query.trim()}”${searching ? " · still looking…" : ""}`
+                ? t("tv.typeToSearch")
+                : shownResults.length > 0
+                  ? `${t("tv.found", { count: shownResults.length, query: query.trim() })}${searching ? t("tv.stillLooking") : ""}`
                   : searching
-                    ? "Looking…"
-                    : `Nothing matches “${query.trim()}”.`}
+                    ? t("tv.looking")
+                    : t("tv.nothingMatches", { query: query.trim() })}
             </p>
-            <div className="tv-grid tv-results" style={{ "--cols": RESULT_COLUMNS } as CSSProperties}>
-              {results.map((item, i) => tile(item, { zone: "results", row: Math.floor(i / RESULT_COLUMNS), col: i % RESULT_COLUMNS }, "Search"))}
+            <div className="tv-grid tv-results" style={{ "--cols": resultColumns } as CSSProperties}>
+              {shownResults.map((item, i) => tile(entryOfItem(item), { zone: "results", row: Math.floor(i / resultColumns), col: i % resultColumns }, t("tv.search"), "wide"))}
             </div>
           </div>
         </div>
@@ -422,62 +656,23 @@ export function TvBrowse({ onPlay, onClose, notice }: BrowseProps) {
   );
 }
 
-/** The menu down the left: a strip of icons that opens into names while the remote is on it. */
-function Rail({
-  open,
-  onOpen,
-  current,
-  categories,
-  onSearch,
-  onHome,
-  onCategory,
-  onArrive,
-}: {
-  open: boolean;
-  onOpen: (open: boolean) => void;
-  /** Which entry is the page that is open (0 search, 1 home, then the categories). */
-  current: number;
-  categories: Library["rows"];
-  onSearch: () => void;
-  onHome: () => void;
-  onCategory: (rowId: string) => void;
-  onArrive: (element: HTMLElement) => void;
-}) {
-  const entry = (row: number, label: string, onPress: () => void, icon?: ReactNode, testId?: string) => (
-    <button
-      key={row}
-      className={`tv-rail-item${icon ? "" : " tv-rail-category"}`}
-      data-zone="rail"
-      data-row={row}
-      data-col={0}
-      data-testid={testId}
-      aria-current={current === row ? "page" : undefined}
-      onClick={onPress}
-      onFocus={(event) => onArrive(event.currentTarget)}
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
+/**
+ * The picture behind the banner. A new one fades in over the one before it, which goes once it has, so moving along a row
+ * changes the scene smoothly instead of blinking through black.
+ */
+function Backdrop({ image }: { image: string | undefined }) {
+  const [layers, setLayers] = useState<Array<{ id: number; image: string }>>([]);
+  const counter = useRef(0);
+  useEffect(() => {
+    if (!image) return setLayers([]);
+    setLayers((now) => (now.at(-1)?.image === image ? now : [...now.slice(-1), { id: ++counter.current, image }]));
+  }, [image]);
   return (
-    <nav
-      className="tv-rail"
-      data-open={open}
-      data-testid="tv-rail"
-      aria-label="Library menu"
-      onFocus={() => onOpen(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onOpen(false);
-      }}
-    >
-      {entry(0, "Search", onSearch, <SearchIcon />, "rail-search")}
-      {entry(1, "Home", onHome, <HomeIcon />, "rail-home")}
-      <p className="tv-rail-group" aria-hidden={!open}>
-        <GridIcon />
-        <span>Categories</span>
-      </p>
-      {open && categories.map((row, i) => entry(2 + i, row.title, () => onCategory(row.id), undefined, `rail-category-${i}`))}
-    </nav>
+    <>
+      {layers.map((layer) => (
+        <div key={layer.id} className="tv-hero-bg" style={{ backgroundImage: `url(${JSON.stringify(layer.image)})` }} onAnimationEnd={() => setLayers((now) => now.filter((other) => other.id >= layer.id))} />
+      ))}
+    </>
   );
 }
 
@@ -497,38 +692,63 @@ function Key({ children, pos, wide, testId, onPress }: { children: ReactNode; po
   );
 }
 
-/** Pictures this small stay cheap to draw, and a missing one still gets a tile with a colour of its own. */
-function hueOf(text: string): number {
-  let hash = 0;
-  for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return hash % 360;
-}
-
-function Tile({ item, pos, onArrive, onPlay }: { item: LibraryItem; pos: Pos; onArrive: (element: HTMLElement) => void; onPlay: () => void }) {
+/** One title (or category) of a row, in the shape its row asks for. */
+function Tile({ entry, layout, rank, pos, onArrive, onPress }: { entry: Entry; layout: Layout; rank: number; pos: Pos; onArrive: (element: HTMLElement) => void; onPress: () => void }) {
   const [broken, setBroken] = useState(false);
-  const hue = hueOf(item.id);
+  const hue = hueOf(entry.id);
+  // A ranking shows the upright poster; everything else is wide, and falls back to the poster when there is no wide picture.
+  const picture = layout === "ranked" ? (entry.image ?? entry.backdrop) : (entry.backdrop ?? entry.image);
+  const showPicture = picture && !broken;
+  const common = {
+    "data-zone": pos.zone,
+    "data-row": pos.row,
+    "data-col": pos.col,
+    onClick: onPress,
+    onFocus: (event: FocusEvent<HTMLElement>) => onArrive(event.currentTarget),
+    title: entry.title,
+  };
+
+  if (layout === "categories") {
+    return (
+      <button className="tv-tile tv-tile-category" data-testid="tv-category-tile" {...common} style={{ "--hue": hue } as CSSProperties}>
+        {showPicture && <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} />}
+        <span className="tv-category-name">{entry.title}</span>
+        {entry.note && <span className="tv-category-count">{entry.note}</span>}
+      </button>
+    );
+  }
+
+  const under = entry.note ?? entry.year;
   return (
-    <button
-      className="tv-tile"
-      data-testid="tv-browse-tile"
-      data-zone={pos.zone}
-      data-row={pos.row}
-      data-col={pos.col}
-      onClick={onPlay}
-      onFocus={(event) => onArrive(event.currentTarget)}
-      title={item.title}
-    >
-      <span className="tv-tile-art" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
-        {item.image && !broken ? (
-          <img src={item.image} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} />
-        ) : (
-          <span className="tv-tile-initial" aria-hidden="true">
-            {item.title.trim().charAt(0).toUpperCase()}
-          </span>
-        )}
+    <button className={`tv-tile tv-tile-${layout}`} data-testid="tv-browse-tile" aria-label={layout === "ranked" ? entry.title : undefined} {...common}>
+      {layout === "ranked" && (
+        <span className={`tv-rank${rank > 9 ? " tv-rank-wide" : ""}`} aria-hidden="true">
+          <b>{rank}</b>
+        </span>
+      )}
+      <span className="tv-tile-body">
+        <span className="tv-tile-art" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
+          {showPicture ? (
+            <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} />
+          ) : (
+            <span className="tv-tile-initial" aria-hidden="true">
+              {entry.title.trim().charAt(0).toUpperCase()}
+            </span>
+          )}
+          {layout === "continue" && (
+            <span className="tv-tile-play" aria-hidden="true">
+              <PlayIcon />
+            </span>
+          )}
+          {(entry.progress ?? 0) > 0 && (
+            <span className="tv-tile-progress" aria-hidden="true">
+              <i style={{ width: `${Math.round((entry.progress ?? 0) * 100)}%` }} />
+            </span>
+          )}
+        </span>
+        {layout !== "ranked" && <span className="tv-tile-name">{entry.title}</span>}
+        {layout !== "ranked" && under && <span className="tv-tile-year">{under}</span>}
       </span>
-      <span className="tv-tile-name">{item.title}</span>
-      {item.year && <span className="tv-tile-year">{item.year}</span>}
     </button>
   );
 }

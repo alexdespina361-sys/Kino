@@ -14,23 +14,34 @@ export function normalizeLang(code: string | undefined): string | undefined {
   return THREE_TO_TWO[base] ?? base;
 }
 
-const languageNames = (() => {
-  try {
-    return new Intl.DisplayNames(["en"], { type: "language" });
-  } catch {
-    return undefined; // an environment without it: labels stay as the source wrote them
+const displayNames = new Map<string, Intl.DisplayNames | null>();
+/** One namer per language of the reader, made when first asked for; null in an environment without `Intl.DisplayNames`. */
+function namer(locale: string): Intl.DisplayNames | null {
+  let names = displayNames.get(locale);
+  if (names === undefined) {
+    try {
+      names = new Intl.DisplayNames([locale], { type: "language" });
+    } catch {
+      names = null; // labels stay as the source wrote them
+    }
+    displayNames.set(locale, names);
   }
-})();
+  return names;
+}
 
-/** "ro" / "ron" / "pt-BR" -> "Romanian" / "Romanian" / "Brazilian Portuguese"; undefined when the code is not one we can name. */
-export function languageName(code: string | undefined): string | undefined {
+/**
+ * "ro" / "ron" / "pt-BR" -> "Romanian" / "Romanian" / "Brazilian Portuguese" (or "Română" for a Romanian reader, with `locale`);
+ * undefined when the code is not one we can name.
+ */
+export function languageName(code: string | undefined, locale = "en"): string | undefined {
   const trimmed = code?.trim().replace("_", "-");
   const base = normalizeLang(trimmed);
-  if (!base || !languageNames) return undefined;
+  const names = namer(locale);
+  if (!base || !names) return undefined;
   try {
     const region = trimmed?.split("-")[1];
-    const name = languageNames.of(region && /^[a-z]{2}$/i.test(region) ? `${base}-${region.toUpperCase()}` : base);
-    return name && name.toLowerCase() !== base ? name : undefined;
+    const name = names.of(region && /^[a-z]{2}$/i.test(region) ? `${base}-${region.toUpperCase()}` : base);
+    return name && name.toLowerCase() !== base ? name.replace(/^./u, (first) => first.toLocaleUpperCase(locale)) : undefined; // Romanian and Italian write language names in lower case; a menu starts them with a capital
   } catch {
     return undefined;
   }
@@ -49,4 +60,14 @@ export function trackLabel(label: string | undefined, lang: string | undefined, 
   const own = label?.trim() ?? "";
   if (GENERIC.test(own)) return languageName(lang) ?? (own || fallback);
   return (isLanguageCode(own) ? languageName(own) : undefined) ?? own;
+}
+
+/**
+ * A track's label in the language of the page: a label that only names the language of the track ("English") is said in the
+ * reader's language ("Engleză"); anything with more to it (a release name, "Commentary") stays as the file wrote it.
+ */
+export function localTrackLabel(track: { label: string; lang?: string | undefined }, locale: string): string {
+  const english = languageName(track.lang);
+  if (english && track.label.trim().toLowerCase() === english.toLowerCase()) return languageName(track.lang, locale) ?? track.label;
+  return track.label;
 }

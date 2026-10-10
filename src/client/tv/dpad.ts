@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { actionForKey } from "./keys";
 
 export type Direction = "up" | "down" | "left" | "right";
@@ -61,6 +61,23 @@ export function moveFocus(root: ParentNode, direction: Direction): boolean {
   if (next === -1) return false;
   items[next]!.focus();
   return true;
+}
+
+/** Back on a screen of its own: Escape, the remote's Back, and Backspace outside a text field. Without a handler, Back is left alone. */
+export function useBack(onBack: (() => void) | undefined): void {
+  const latest = useRef(onBack);
+  latest.current = onBack;
+  const active = onBack !== undefined;
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || actionForKey(event) !== "back") return;
+      event.preventDefault();
+      latest.current?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active]);
 }
 
 /**

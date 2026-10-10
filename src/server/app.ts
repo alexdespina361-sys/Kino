@@ -3,6 +3,10 @@ import path from "node:path";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
+import type { Registration } from "../shared";
+import type { PasswordCost } from "./accounts/password";
+import { accountRoutes } from "./accounts/routes";
+import type { AccountStore } from "./accounts/store";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
@@ -10,6 +14,15 @@ import { Hub, type HubOptions } from "./websocket/hub";
 import { Registry } from "./sessions/registry";
 
 export interface AppOptions {
+  /** Accounts, profiles and what they watched. Without it the server has no sign-in and every screen just keeps its own history. The app closes it when it stops. */
+  accounts?: AccountStore;
+  /** `closed` stops new accounts being made. */
+  registration?: Registration;
+  maxAccounts?: number;
+  /** How many proxies sit in front of the server (a host like Render has one), so a visitor's address and https are read from the right place. */
+  trustProxy?: boolean | number;
+  /** Tests use a cheaper password hash. */
+  passwordCost?: PasswordCost;
   /** Built Vite app. Served at / and /tv. Omitted in tests/dev where Vite serves the UI. */
   clientDir?: string;
   /** Local test media served at /fixtures/. */
@@ -36,7 +49,20 @@ export function defaultFixturesDir(): string {
 }
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? false });
+  // A number is "this many proxies in front of me" (Fastify no longer reads a bare number as that, so spell it out).
+  const proxies = options.trustProxy;
+  const trustProxy = typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies;
+  const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
+  if (options.accounts) {
+    const accounts = options.accounts;
+    app.addHook("onClose", async () => accounts.close());
+    await app.register(accountRoutes, {
+      store: accounts,
+      ...(options.registration ? { registration: options.registration } : {}),
+      ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
+      ...(options.passwordCost ? { passwordCost: options.passwordCost } : {}),
+    });
+  }
   const resolve =
     options.resolve ??
     createResolver({
@@ -65,6 +91,19 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const items = await library.search(q);
     return reply.send({ items });
   });
+  app.get<{ Querystring: { url?: string } }>("/api/library/similar", async (request, reply) => {
+    const link = request.query.url ?? "";
+    if (!link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
+    reply.header("Cache-Control", "public, max-age=3600");
+    return reply.send({ items: await library.similar(link) });
+  });
+  app.get<{ Querystring: { url?: string; season?: string } }>("/api/library/episodes", async (request, reply) => {
+    const link = request.query.url ?? "";
+    const season = Number(request.query.season);
+    if (!link || link.length > 2048 || !Number.isInteger(season) || season < 0 || season > 200) return reply.code(400).send({ error: "Missing 'url' or 'season' parameter" });
+    reply.header("Cache-Control", "public, max-age=3600");
+    return reply.send({ episodes: await library.episodes(link, season) });
+  });
   app.options("/api/proxy", async (_request, reply) => {
     reply.header("Access-Control-Allow-Origin", "*");
     reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
@@ -88,9 +127,18 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     await app.register(fastifyStatic, { root: fixturesDir, prefix: "/fixtures/", decorateReply: false });
   }
 
-  const clientDir = options.clientDir;
+  const clientDir = options.clientDir && path.resolve(options.clientDir);
   if (clientDir && existsSync(path.join(clientDir, "index.html"))) {
-    await app.register(fastifyStatic, { root: clientDir, prefix: "/" });
+    const assetsDir = path.join(clientDir, "assets") + path.sep;
+    await app.register(fastifyStatic, {
+      root: clientDir,
+      prefix: "/",
+      // Vite names the files in /assets after what is in them, so a changed file has a new name and an old one can be kept for good.
+      // The page itself is always checked again, which is how a new build reaches a screen that still has the old one.
+      setHeaders: (reply, filePath) => {
+        if (filePath.startsWith(assetsDir)) reply.header("Cache-Control", "public, max-age=31536000, immutable");
+      },
+    });
     // One SPA: "/" is the phone, "/tv" is the receiver. Both are index.html.
     app.setNotFoundHandler((request, reply) => {
       const isPage = request.method === "GET" && !request.url.startsWith("/api") && !request.url.startsWith("/ws");

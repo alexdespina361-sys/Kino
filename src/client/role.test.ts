@@ -48,10 +48,18 @@ describe("chooseRole", () => {
     expect(chooseRole(page({ search: "?role=banana" }))).toBe("tv"); // not a role: the guess decides
   });
 
+  it("plays a watch party's link, wherever it is opened", () => {
+    expect(chooseRole(page({ search: "?party=123456", userAgent: IPHONE, touchPoints: 5 }))).toBe("tv");
+    expect(chooseRole(page({ search: "?party=123456", storedRole: "remote" }))).toBe("tv");
+    expect(chooseRole(page({ search: "?party=123456&role=remote" }))).toBe("remote"); // an explicit role still wins
+  });
+
   it("treats the links made for the phone as the remote, wherever they are opened", () => {
     expect(chooseRole(page({ search: "?code=123456" }))).toBe("remote");
     expect(chooseRole(page({ search: "?url=https%3A%2F%2Fsite.example%2Fwatch" }))).toBe("remote");
     expect(chooseRole(page({ search: "?text=look+at+this", storedRole: "tv" }))).toBe("remote");
+    // the code on a TV's sign-in screen is meant for a phone, even one that was last used as a TV
+    expect(chooseRole(page({ search: "?link=ABCD2345", storedRole: "tv" }))).toBe("remote");
   });
 
   it("remembers what the switch chose, over the guess", () => {

@@ -1,4 +1,5 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { t, useT } from "../i18n";
 import { formatRemaining, formatTime } from "../shared/format";
 
 interface SeekBarProps {
@@ -15,6 +16,7 @@ interface SeekBarProps {
  * time updates, so the thumb doesn't fight the finger; the seek is sent once, on release.
  */
 export function SeekBar({ currentTime, duration, buffered = 0, onSeek }: SeekBarProps) {
+  useT();
   const barRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<number | null>(null);
   const shown = drag ?? currentTime;
@@ -39,7 +41,7 @@ export function SeekBar({ currentTime, duration, buffered = 0, onSeek }: SeekBar
         className={`seek-bar ${drag !== null ? "dragging" : ""}`}
         role="slider"
         tabIndex={0}
-        aria-label="Seek"
+        aria-label={t("hud.seek")}
         aria-valuemin={0}
         aria-valuemax={Math.floor(duration)}
         aria-valuenow={Math.floor(shown)}

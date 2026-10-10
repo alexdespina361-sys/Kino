@@ -2,30 +2,37 @@ import { useEffect, useRef, useState } from "react";
 import {
   describeChange,
   episodeLabel,
+  formatDelay,
   IDLE_STATE,
-  parseWatched,
   previousEpisode,
-  recordWatching,
   resolveCaptionStyle,
-  serializeWatched,
   seriesKeyOf,
   sourcesOf,
   stateIsFor,
   type CaptionStyle,
   type NormalizedMedia,
+  type PartyView,
+  type PlayableSource,
   type PlayerState,
 } from "../../shared";
+import { useAccount } from "../account/AccountProvider";
+import { profileStore, useProfileData } from "../account/store";
+import { t, useT } from "../i18n";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
-import { FullscreenIcon } from "../shared/icons";
+import { FullscreenIcon, MutedIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
+import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
+import { noticeText, socketError } from "../shared/words";
+import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
 import { PlayerEngine } from "./engine";
-import { Hud } from "./Hud";
+import { EndCard, hasTracks, Hud, isBusy, UP_NEXT_SECONDS } from "./Hud";
 import { TvIdle, TvLocked, type Pairing } from "./Idle";
-import { TvBrowse } from "./Browse";
+import { TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
+import { PartyPage, PartyPanel } from "./Party";
 import { syncStep } from "./sync";
 import {
   describeTrack,
@@ -35,11 +42,11 @@ import {
   serializePrefs,
   type Prefs,
 } from "./prefs";
+import { useSlow } from "./useSlow";
 import { useWakeLock } from "./useWakeLock";
 import "./tv.css";
 
 const DEVICE_KEY = "tv.deviceId";
-const WATCHED_KEY = "tv.watched";
 /** The overlay fades out this long after the last key press, but only while a video is actually playing. */
 const HUD_HIDE_MS = 2500;
 /** A lookup that never reports back (lost message, dead server) must not leave the TV spinning forever. */
@@ -50,6 +57,7 @@ const NO_VIDEO_AFTER_LOOKUP_MS = 1500;
 const SKIP_RUN_MS = 1200;
 
 export function Tv() {
+  useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   const engineRef = useRef<PlayerEngine | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -59,31 +67,57 @@ export function Tv() {
   const [unlocked, setUnlocked] = useState(false);
   /** Shown when the phone asked for full screen but the browser wants a press on the TV itself. */
   const [fsPrompt, setFsPrompt] = useState(false);
+  /** This screen's own sound, off or on: nobody else's business, so it is not in the state the phone sees, nor is it kept for next time. */
+  const [muted, setMuted] = useState(false);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
   const [paired, setPaired] = useState(false);
+  const pairedRef = useRef(false);
+  pairedRef.current = paired;
   /** The name of the TV this one watches along with. Such a TV plays what that one plays and has no controls of its own. */
   const [following, setFollowing] = useState<string | null>(null);
   const followingRef = useRef<string | null>(null);
   followingRef.current = following;
+  /** The watch party this TV is in, as host or as guest, and when the code that lets others in stops working. */
+  const [party, setParty] = useState<PartyView | null>(null);
+  const [partyEnds, setPartyEnds] = useState<number | null>(null);
+  /** Why the code just typed on the party page was refused. `id` changes with each refusal. */
+  const [partyError, setPartyError] = useState<{ id: number; text: string } | null>(null);
+  /** This TV is leaving a party by choice, so being taken out of it a moment later is not news. */
+  const leavingRef = useRef(false);
   const [pairing, setPairing] = useState<Pairing | null>(null);
+  /** Once a phone is connected: the code that lets another one in, while the page that shows it is open. */
+  const [control, setControl] = useState<Pairing | null>(null);
   const [player, setPlayer] = useState<PlayerState>(IDLE_STATE);
   const [currentMedia, setCurrentMedia] = useState<NormalizedMedia | null>(null);
   const [resolving, setResolving] = useState(false);
   /** A lookup is under way (or has just ended), so its end with no video after it means it failed. */
   const wasResolvingRef = useRef(false);
+  /** Waiting for a picture (a lookup, loading, filling up) for too long: a way out is offered. */
+  const stuck = useSlow(isBusy(player, resolving));
 
   // Netflix Up Next Countdown & Preload State
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
   const [upNextDismissed, setUpNextDismissed] = useState(false);
   const preloadedNextMediaRef = useRef<NormalizedMedia | null>(null);
+  /** The video played to its end (anything that moves the picture on clears it). With nothing following by itself, the end card is shown. */
+  const [ended, setEnded] = useState(false);
 
-  // Audio / subtitles / speed / quality / episodes picker
-  const [menu, setMenu] = useState<MenuKind | null>(null);
-  const [browsing, setBrowsing] = useState(false);
-  /** Playback began from the library, so ending it (or Back) goes back there instead of to the start screen. */
-  const fromBrowseRef = useRef(false);
-  /** Said on the start screens when a title that was just chosen would not play. */
+  // Audio / subtitles / speed / quality / episodes picker, and the watch party over a film
+  const [menu, setMenu] = useState<MenuKind | "party" | null>(null);
+  /** What the TV shows while nothing plays: the library, the page for connecting a phone, or the watch party. */
+  const [screen, setScreen] = useState<"library" | "connect" | "party">("library");
+  const screenRef = useRef(screen);
+  screenRef.current = screen;
+  /** Said on the library when a title that was just chosen would not play. */
   const [notice, setNotice] = useState<string | null>(null);
+  /** A line said over the library for a moment ("A phone is connected."). */
+  const [flash, setFlash] = useState<{ id: number; text: string } | null>(null);
+  const flashIdRef = useRef(0);
+  useEffect(() => {
+    if (!flash) return;
+    const timer = setTimeout(() => setFlash(null), 4500);
+    return () => clearTimeout(timer);
+  }, [flash]);
 
   // How the viewer likes to watch (subtitle language, audio language, text size), remembered on this TV.
   const [initialPrefs] = useState(() => parsePrefs(readStorage(PREFS_KEY)));
@@ -100,18 +134,24 @@ export function Tv() {
   const appliedRef = useRef({ subtitles: false, audio: false });
   const playerRef = useRef<PlayerState>(IDLE_STATE);
 
-  // Which episodes were watched, for the episode list.
-  const [watched, setWatched] = useState(() => parseWatched(readStorage(WATCHED_KEY)));
-  useEffect(() => {
-    writeStorage(WATCHED_KEY, serializeWatched(watched));
-  }, [watched]);
+  // Who is watching: the account page (sign in, profiles, settings) takes the place of the start screens, never of a video.
+  const account = useAccount();
+  const [accountView, setAccountView] = useState<AccountView | null>(null);
+  /** Signed in, and nobody has been picked on this TV yet: that question comes first. */
+  const choosing = account.status === "ready" && account.choosing;
+  const accountPage: AccountView | null = player.state === "idle" ? (choosing ? "profiles" : accountView) : null;
+
+  // What the profile in use has watched: it marks the episode list, and every few seconds of playback is added to it.
+  const { watched, settings } = useProfileData();
+  /** Whether the next episode follows by itself (the profile's choice); off, the Up Next card waits for OK. */
+  const autoplay = settings.autoplayNext ?? true;
   useEffect(() => {
     if (!currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
-    setWatched((list) => recordWatching(list, currentMedia, player, Date.now()));
+    profileStore.playbackAt(currentMedia, player);
   }, [player, currentMedia]);
 
   // Brief "+10s" flash after a skip, from the remote or the phone
-  const [toast, setToast] = useState<{ id: number; text: string; notice?: boolean } | null>(null);
+  const [toast, setToast] = useState<{ id: number; text: string; notice?: boolean; side?: "back" | "forward" } | null>(null);
   const toastIdRef = useRef(0);
   const skipRunRef = useRef({ total: 0, at: 0 });
 
@@ -208,7 +248,8 @@ export function Tv() {
     const sources = sourcesOf(media);
     const next = sources.findIndex((_, index) => !triedSourcesRef.current.has(index));
     if (next === -1) return;
-    notify(`${sources[sourceIndexRef.current]?.label ?? "That source"} didn't work. Trying ${sources[next]!.label}…`);
+    const failed = sources[sourceIndexRef.current];
+    notify(t("notice.sourceFailed", { from: failed ? sourceName(failed, sourceIndexRef.current) : t("notice.thatSource"), to: sourceName(sources[next]!, next) }));
     loadSource(next, false);
   }, [player.state]);
 
@@ -216,11 +257,13 @@ export function Tv() {
     if (followingRef.current) return; // the TV being followed picks what comes next
     setUpNextCountdown(null);
     setUpNextDismissed(false);
+    setEnded(false);
     const preloaded = preloadedNextMediaRef.current;
     const nextUrl = currentMediaRef.current?.series?.next?.url;
 
     if (preloaded && nextUrl) {
       setCurrentMedia(preloaded);
+      profileStore.playbackStarted(preloaded);
       resetApplied();
       resetSources();
       engineRef.current?.load(preloaded.stream.url, preloaded.stream.type, preloaded.subtitles);
@@ -240,6 +283,13 @@ export function Tv() {
   // Paused, loading, failed, or a menu open: the overlay stays put.
   const stickyRef = useRef(false);
   stickyRef.current = player.state !== "playing" || menu !== null;
+
+  // A finger on a hidden overlay brings the controls up and goes no further, so reaching for them does not pause the film.
+  const touchWokeRef = useRef(false);
+  const tapVideo = () => {
+    if (touchWokeRef.current) touchWokeRef.current = false;
+    else togglePlay();
+  };
 
   /** Show the overlay and start the countdown to hiding it again. */
   const wake = () => {
@@ -309,7 +359,7 @@ export function Tv() {
     setSubtitleDelay(clamped);
     remember({ subtitleDelay: clamped });
     toastIdRef.current += 1;
-    setToast({ id: toastIdRef.current, text: `Subtitle delay: ${clamped > 0 ? "+" : ""}${clamped.toFixed(1)}s` });
+    setToast({ id: toastIdRef.current, text: t("notice.delay", { value: formatDelay(clamped) }) });
   };
   useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]); // the phone's sheet shows what the TV really uses
   const streamUrl = currentMedia?.stream.url;
@@ -317,6 +367,7 @@ export function Tv() {
 
   useEffect(() => {
     if (player.state === "idle") resetApplied();
+    if (player.state !== "paused") setEnded(false); // the end card lasts as long as the picture stays on the last frame
   }, [player.state]);
 
   // When a video's tracks show up, switch to the language the viewer picked last time. Once per video, and never over a manual pick.
@@ -355,7 +406,7 @@ export function Tv() {
     run.total = now - run.at < SKIP_RUN_MS && Math.sign(run.total) === Math.sign(seconds) ? run.total + seconds : seconds;
     run.at = now;
     toastIdRef.current += 1;
-    setToast({ id: toastIdRef.current, text: `${run.total > 0 ? "+" : "−"}${Math.abs(run.total)}s` });
+    setToast({ id: toastIdRef.current, text: `${run.total > 0 ? "+" : "−"}${Math.abs(run.total)}s`, side: run.total > 0 ? "forward" : "back" });
   };
   useEffect(() => {
     if (!toast) return;
@@ -372,7 +423,7 @@ export function Tv() {
   // A new speed, subtitle, audio track or quality is said on screen, whether it came from the menu, a key or the phone.
   const lastPlayerRef = useRef<PlayerState>(IDLE_STATE);
   useEffect(() => {
-    const change = describeChange(lastPlayerRef.current, player);
+    const change = describeChange(lastPlayerRef.current, player, noticeText);
     lastPlayerRef.current = player;
     if (change && !followingRef.current) notify(change); // a follower is nudged in speed all the time; that is not news
   }, [player]);
@@ -392,10 +443,13 @@ export function Tv() {
       video,
       publish,
       () => {
-        // onEnded: trigger next episode prompt or instant play
-        if (!followingRef.current && currentMediaRef.current?.series?.next && !upNextDismissedRef.current) {
+        // The next episode follows (the Up Next card counts down), or there is nothing after this and the end card says so.
+        if (followingRef.current) return; // a screen that watches along waits for what the host does
+        if (currentMediaRef.current?.series?.next && !upNextDismissedRef.current) {
           setUpNextCountdown((prev) => (prev !== null && prev <= 5 ? prev : 5));
         }
+        setMenu(null);
+        setEnded(true);
       },
     );
     engineRef.current = engine;
@@ -411,23 +465,49 @@ export function Tv() {
             setPaired(message.paired);
             setFollowing(message.following ?? null);
             setPairing(toPairing(message.pairing));
+            setControl(null);
+            setParty(null); // a party this TV is in is sent right after
+            setPartyEnds(null);
             if (!message.following) {
               socketRef.current?.send({ type: "TV_STATE", state: withTvState(engine.getState(), captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current) });
             }
             break;
           case "TV_CODE":
-            setPairing(toPairing(message.pairing));
+            if (message.control) setControl(toPairing(message.pairing));
+            else setPairing(toPairing(message.pairing));
             break;
           case "TV_PAIRED":
+            // The first phone changes the page by itself; one that joins later (or any, over the library) is told in a line.
+            if (pairedRef.current || screenRef.current === "library") setFlash({ id: ++flashIdRef.current, text: t("tv.phoneJoined") });
             setPaired(true);
             setPairing(null);
             break;
           case "TV_FOLLOWING":
-            // Another TV's phone picked this one to watch along: no code to show now, and the video comes from that TV.
+            // A party took this TV in (a phone added it, or its code was typed here): what this TV was doing stops, and the video comes from the host.
+            followingRef.current = message.leader;
             setPaired(true);
             setPairing(null);
             setFollowing(message.leader);
+            setPartyError(null);
+            wasResolvingRef.current = false;
+            setResolving(false);
+            setMenu(null);
+            if (currentMediaRef.current) {
+              setCurrentMedia(null);
+              engine.stop();
+            }
             break;
+          case "TV_PARTY":
+            setParty(message.party);
+            setPartyEnds(message.party?.code ? Date.now() + message.party.code.expiresInMs : null);
+            break;
+          case "ERROR": {
+            // Mostly a party code that would not do (wrong, out of date, a full party): said on the party page, or over the library.
+            const text = socketError(message.code, message.message);
+            if (screenRef.current === "party") setPartyError({ id: ++flashIdRef.current, text });
+            else setFlash({ id: ++flashIdRef.current, text });
+            break;
+          }
           case "TV_SYNC": {
             const media = currentMediaRef.current;
             if (!media || (message.stream && message.stream !== media.stream.url)) break; // not the same video (yet)
@@ -451,12 +531,15 @@ export function Tv() {
             break;
           }
           case "TV_UNPAIRED":
-            // The phone forgot this TV (it already told us to STOP), or the party ended: back to showing a fresh code.
+            // The phone forgot this TV (it already told us to STOP), or the party ended or sent it away: back to showing a fresh code.
+            if (followingRef.current && !leavingRef.current) setFlash({ id: ++flashIdRef.current, text: t("party.ended") });
+            leavingRef.current = false;
             setPaired(false);
             setFollowing(null);
             setPairing(toPairing(message.pairing));
             wasResolvingRef.current = false; // a lookup cut short by this is not a failed one
             setResolving(false);
+            setMenu(null);
             break;
           case "TV_RESOLVING":
             setResolving(message.active);
@@ -480,6 +563,7 @@ export function Tv() {
               }
 
               setCurrentMedia(command.media);
+              profileStore.playbackStarted(command.media); // it moves to the front of "Continue watching" at once
               setUpNextCountdown(null);
               setUpNextDismissed(false);
               resetApplied();
@@ -545,11 +629,7 @@ export function Tv() {
     wasResolvingRef.current = false;
     const timer = setTimeout(() => {
       if (currentMediaRef.current) return;
-      setNotice("That one wouldn't play. Try another.");
-      if (fromBrowseRef.current) {
-        fromBrowseRef.current = false;
-        setBrowsing(true);
-      }
+      setNotice(t("notice.wouldntPlay"));
     }, NO_VIDEO_AFTER_LOOKUP_MS);
     return () => clearTimeout(timer);
   }, [resolving]);
@@ -559,16 +639,13 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  // Back at the library once what was chosen from it has stopped.
-  const showedVideoRef = useRef(false);
-  useEffect(() => {
-    const showing = player.state !== "idle";
-    if (showedVideoRef.current && !showing && fromBrowseRef.current) {
-      fromBrowseRef.current = false;
-      setBrowsing(true);
-    }
-    showedVideoRef.current = showing;
-  }, [player.state]);
+  const toggleMute = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+    setMuted(video.muted);
+    notify(t(video.muted ? "notice.muted" : "notice.unmuted"));
+  };
 
   const enterFullscreen = () => document.documentElement.requestFullscreen?.().catch(() => {});
   /** From the TV's own remote or mouse, which the browser accepts as the press it needs. */
@@ -594,9 +671,9 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [fsPrompt]);
 
-  // Up Next Countdown interval
+  // Up Next Countdown interval. A profile that plays the next episode only on request gets the card without a countdown.
   useEffect(() => {
-    if (upNextCountdown === null) return;
+    if (upNextCountdown === null || !autoplay) return;
     if (upNextCountdown <= 0) {
       triggerNextEpisode();
       return;
@@ -605,7 +682,7 @@ export function Tv() {
       setUpNextCountdown((prev) => (prev !== null ? prev - 1 : null));
     }, 1000);
     return () => clearTimeout(timer);
-  }, [upNextCountdown]);
+  }, [upNextCountdown, autoplay]);
 
   // Check near end of video (last 15s) to trigger Netflix up next card
   useEffect(() => {
@@ -618,7 +695,7 @@ export function Tv() {
       !upNextDismissed &&
       upNextCountdown === null
     ) {
-      setUpNextCountdown(15);
+      setUpNextCountdown(UP_NEXT_SECONDS);
     }
   }, [player.currentTime, player.duration, player.state, currentMedia?.series?.next, following, upNextDismissed, upNextCountdown]);
 
@@ -632,6 +709,53 @@ export function Tv() {
     return () => clearTimeout(timer);
   }, [pairing]);
 
+  // The page of a TV with a phone shows the code that lets another phone in. Asking for it is what keeps it good, so it is asked for
+  // while that page is open and again well before it runs out; when the page closes the code is forgotten.
+  const showsControl = unlocked && paired && !following && !resolving && !accountPage && screen === "connect" && player.state === "idle";
+  useEffect(() => {
+    if (!showsControl) return setControl(null);
+    if (connection !== "open") return;
+    const timer = setTimeout(() => socketRef.current?.send({ type: "TV_NEW_CODE" }), control ? Math.max(1000, (control.expiresAt - Date.now()) / 2) : 0);
+    return () => clearTimeout(timer);
+  }, [showsControl, connection, control]);
+
+  /* ----------------------------- watch party ----------------------------- */
+
+  // What this screen is called on a party's list: the profile in use, else the TV's own name (the empty name).
+  const profileName = account.me && account.profile ? account.profile.name : "";
+  useEffect(() => {
+    if (connection === "open") socketRef.current?.send({ type: "TV_NAME", name: profileName });
+  }, [connection, profileName]);
+
+  // The link of a party (its QR code) was opened on this screen: its code is tried once the page is unlocked, then taken out of the address.
+  const [linkCode] = useState(() => readPartyCode(location.search));
+  const linkTriedRef = useRef(false);
+  useEffect(() => {
+    if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current) return;
+    linkTriedRef.current = true;
+    history.replaceState(null, "", location.pathname);
+    socketRef.current?.send({ type: "TV_PARTY_JOIN", code: linkCode });
+  }, [linkCode, unlocked, connection]);
+
+  // The code that lets others into a party lasts ten minutes. While it is on screen it is renewed; a party nobody came to goes away with it.
+  const partyShown = menu === "party" || (screen === "party" && player.state === "idle");
+  useEffect(() => {
+    if (party?.role !== "host") return;
+    const left = partyEnds === null ? 0 : partyEnds - Date.now();
+    if (partyShown) {
+      const timer = setTimeout(() => socketRef.current?.send({ type: "TV_PARTY_OPEN" }), Math.max(500, left));
+      return () => clearTimeout(timer);
+    }
+    if (party.guests.length > 0) return;
+    const timer = setTimeout(() => setParty(null), Math.max(0, left));
+    return () => clearTimeout(timer);
+  }, [party, partyEnds, partyShown]);
+
+  const startParty = () => void socketRef.current?.send({ type: "TV_PARTY_OPEN" });
+  const joinParty = (code: string) => void socketRef.current?.send({ type: "TV_PARTY_JOIN", code });
+  const removeFromParty = (id: string) => void socketRef.current?.send({ type: "TV_PARTY_REMOVE", id });
+  const endParty = () => void socketRef.current?.send({ type: "TV_PARTY_CLOSE" });
+
   /* --------------------------- remote control --------------------------- */
 
   const togglePlay = () => (player.state === "playing" ? engineRef.current?.pause() : engineRef.current?.play());
@@ -639,24 +763,61 @@ export function Tv() {
     setUpNextCountdown(null);
     setUpNextDismissed(true);
   };
-  /** Pick an episode from the list: the server looks it up like any link, the TV shows the spinner meanwhile. */
-  const playEpisode = (url: string, fromLibrary = false) => {
-    if (fromLibrary) fromBrowseRef.current = true;
+  /**
+   * Pick an episode from the list, or a title from the library: the server looks it up like any link, the TV shows the spinner
+   * meanwhile. `startAt` resumes a title left unfinished; `hint` carries the picture and year the library already knows.
+   */
+  const playEpisode = (url: string, options: PlayOptions = {}) => {
     setMenu(null);
-    setBrowsing(false);
     setUpNextCountdown(null);
     setUpNextDismissed(false);
-    socketRef.current?.send({ type: "TV_PLAY_URL", url });
+    socketRef.current?.send({ type: "TV_PLAY_URL", url, ...(options.startAt ? { startAt: options.startAt } : {}), ...(options.hint ? { hint: options.hint } : {}) });
   };
-  /** A TV that watches along stops, and goes back to its own pairing screen. */
+  /** A TV that watches along stops, and goes back to being on its own. */
   const leaveParty = () => {
+    leavingRef.current = true;
+    setMenu(null);
     engineRef.current?.stop();
     setCurrentMedia(null);
     socketRef.current?.send({ type: "TV_UNPAIR" });
   };
+  /** Stop what plays and go back to the library. A host that does takes the video from its guests too (the server tells them). */
+  const stopPlayback = () => {
+    setCurrentMedia(null);
+    setUpNextCountdown(null);
+    engineRef.current?.stop();
+  };
+  /** The next subtitle track, and off after the last. Works for a TV that watches along too: what is read is its own choice. */
+  const cycleSubtitles = () => {
+    const subtitles = playerRef.current.subtitles;
+    if (subtitles && subtitles.tracks.length > 0) chooseSubtitle(subtitles.current + 1 >= subtitles.tracks.length ? -1 : subtitles.current + 1);
+  };
+  /**
+   * Whoever is at the TV stopped waiting for a video that will not start (a lookup that never answers, a stream that never loads):
+   * it is forgotten, the TV is back where it was, and the server drops a late answer instead of starting the film after all.
+   * A TV that watches along only stops looking at the wait; what plays is up to the TV it follows.
+   */
+  const cancelLoad = () => {
+    wasResolvingRef.current = false; // giving up is not a lookup that failed: no "wouldn't play" notice
+    setResolving(false);
+    setCurrentMedia(null);
+    setUpNextCountdown(null);
+    setMenu(null);
+    engineRef.current?.stop();
+    if (!followingRef.current) socketRef.current?.send({ type: "TV_CANCEL" });
+  };
   const goToPrevious = () => {
     const previous = previousEpisode(currentMediaRef.current?.series);
     if (previous) playEpisode(previous.url);
+  };
+
+  /** The video is over and nothing follows it by itself: the end card is up. */
+  const finished = ended && !following && !resolving && upNextCountdown === null && player.state === "paused" && player.duration > 0 && player.currentTime >= player.duration - 1.5;
+  /** Once more from the start. */
+  const watchAgain = () => {
+    setEnded(false);
+    engineRef.current?.seek(0);
+    engineRef.current?.play();
   };
 
   // Arrow keys move along the buttons once one has focus; otherwise they seek. OK presses the focused button.
@@ -670,10 +831,10 @@ export function Tv() {
       const overlayWasVisible = visibleRef.current;
       wake();
 
-      if (browsing) return; // the library walks and closes itself (Browse.tsx)
+      if (accountPage) return; // the account pages walk and close themselves (Account.tsx)
 
       if (action === "browse") {
-        if (!following && !resolving && player.state === "idle") setBrowsing(true);
+        if (!following && !resolving && player.state === "idle") setScreen("library");
         event.preventDefault();
         return;
       }
@@ -682,6 +843,12 @@ export function Tv() {
         if (action === "select") acceptFullscreenPrompt();
         else setFsPrompt(false);
         event.preventDefault();
+        return;
+      }
+
+      if (finished) {
+        // The end card walks its own buttons and leaves on Back (see EndCard); full screen is still the page's.
+        if (action === "fullscreen") toggleFullscreen();
         return;
       }
 
@@ -700,8 +867,15 @@ export function Tv() {
         return;
       }
 
-      // Waiting for a video: the start screen walks its own buttons (see Idle.tsx).
+      // Waiting for a video: the library and the other pages walk their own buttons (see Browse.tsx, Idle.tsx).
       if (!engine || player.state === "idle") return;
+
+      // A video that will not start: OK or Back gives up on it, whether or not the controls are up.
+      if (stuck && !following && (action === "select" || action === "back")) {
+        cancelLoad();
+        event.preventDefault();
+        return;
+      }
 
       const row = controlsRef.current;
       const focused = document.activeElement as HTMLElement | null;
@@ -722,8 +896,10 @@ export function Tv() {
       }
 
       if (following) {
-        // Watching along: no playback keys, just the way out (Down, then OK) and full screen.
+        // Watching along: no playback keys (the host has them), just the buttons on the bar (Down, then OK), subtitles and full screen.
         if (action === "down" && overlayWasVisible) controlsRef.current?.querySelector<HTMLElement>("button")?.focus();
+        else if (action === "captions") cycleSubtitles();
+        else if (action === "mute") toggleMute();
         else if (action === "fullscreen") toggleFullscreen();
         event.preventDefault();
         return;
@@ -760,23 +936,20 @@ export function Tv() {
           goToPrevious();
           break;
         case "captions":
-          if (player.subtitles && player.subtitles.tracks.length > 0) {
-            const total = player.subtitles.tracks.length;
-            chooseSubtitle(player.subtitles.current + 1 >= total ? -1 : player.subtitles.current + 1);
-          }
+          cycleSubtitles();
+          break;
+        case "mute":
+          toggleMute();
           break;
         case "fullscreen":
           toggleFullscreen();
           break;
         case "stop":
-          engine.stop();
+          stopPlayback();
           break;
         case "back":
-          // What was picked in the library goes back to it: the first Back shows the controls, a second one leaves.
-          if (fromBrowseRef.current && overlayWasVisible) {
-            setCurrentMedia(null);
-            engine.stop();
-          }
+          // Back leaves the video for the library: the first press shows the controls, a second one leaves.
+          if (overlayWasVisible) stopPlayback();
           break;
         default: // "up": nothing to do beyond showing the overlay
           break;
@@ -786,7 +959,7 @@ export function Tv() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, browsing]);
+  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, accountPage, stuck, finished]);
 
   /* ------------------------------ render ------------------------------ */
 
@@ -809,6 +982,9 @@ export function Tv() {
       data-hud={controlsVisible ? "visible" : "hidden"}
       onMouseMove={wake}
       onClick={wake}
+      onPointerDown={(event) => {
+        touchWokeRef.current = event.pointerType === "touch" && !visibleRef.current;
+      }}
     >
       <video
         ref={videoRef}
@@ -816,7 +992,7 @@ export function Tv() {
         preload="auto"
         style={{ display: showVideo ? "block" : "none" }}
         playsInline
-        onClick={following ? undefined : togglePlay}
+        onClick={following ? undefined : tapVideo}
         onDoubleClick={toggleFullscreen}
       />
 
@@ -832,41 +1008,105 @@ export function Tv() {
         />
       )}
 
-      {unlocked && !showVideo && !browsing && (
+      {unlocked && !showVideo && !accountPage && (resolving || (screen === "connect" && !following)) && (
         <TvIdle
           paired={paired}
-          following={following}
           pairing={pairing}
+          control={control}
           resolving={resolving}
+          stuck={stuck}
+          onCancel={cancelLoad}
           onDisconnect={() => socketRef.current?.send({ type: "TV_UNPAIR" })}
-          onBrowse={following ? undefined : () => setBrowsing(true)}
+          onBack={() => setScreen("library")}
+        />
+      )}
+
+      {unlocked && !showVideo && !accountPage && !resolving && (following || screen === "party") && (
+        <PartyPage
+          party={party}
+          following={following}
+          error={partyError}
+          onStart={startParty}
+          onJoin={joinParty}
+          onRemove={removeFromParty}
+          onEnd={endParty}
+          onLeave={leaveParty}
+          onBack={() => setScreen("library")}
+        />
+      )}
+
+      {unlocked && !showVideo && !accountPage && !resolving && !following && screen === "library" && (
+        <TvBrowse
+          onPlay={playEpisode}
+          onAccount={() => setAccountView(account.me ? "panel" : "signin")}
+          onSettings={() => setAccountView("panel")}
+          onConnect={() => setScreen("connect")}
+          onParty={() => {
+            setPartyError(null);
+            setScreen("party");
+          }}
+          connected={paired}
+          partySize={party ? party.guests.length + 1 : 0}
           notice={notice}
         />
       )}
 
-      {unlocked && browsing && !following && (
-        <TvBrowse
-          onPlay={(url) => playEpisode(url, true)}
-          onClose={() => setBrowsing(false)}
-          notice={notice}
-        />
+      {unlocked && accountPage && <TvAccount view={accountPage} forced={choosing} onView={setAccountView} />}
+
+      {unlocked && account.message && (
+        <p className="tv-toast" role="status" key={account.message.id} data-testid="tv-account-toast">
+          {account.message.text}
+        </p>
+      )}
+
+      {unlocked && !showVideo && flash && (
+        <p className="tv-toast" role="status" key={`flash-${flash.id}`} data-testid="tv-flash">
+          {flash.text}
+        </p>
       )}
 
       {unlocked && showVideo && following && (
         <div className="tv-follow-bar" data-testid="tv-follow-bar" ref={controlsRef}>
-          <span>Watching along with {following}</span>
-          <button className="tv-leave" onClick={leaveParty} data-testid="tv-leave">
-            Leave
+          <span>{t("tv.following", { name: following })}</span>
+          {hasTracks(player) && (
+            <button onClick={() => setMenu("tracks")} data-testid="tv-audio-sub-btn">
+              <SubtitlesIcon /> {t("player.audioSubtitles")}
+            </button>
+          )}
+          <button onClick={toggleMute} aria-pressed={muted} data-testid="tv-mute-btn">
+            {muted ? <MutedIcon /> : <VolumeIcon />} {t(muted ? "hud.unmute" : "hud.mute")}
+          </button>
+          <button onClick={() => setMenu("party")} data-testid="tv-party-btn">
+            <UsersIcon /> {party ? t("party.size", { count: party.guests.length + 1 }) : t("party.rail")}
+          </button>
+          <button onClick={leaveParty} data-testid="tv-leave">
+            {t("tv.leave")}
           </button>
         </div>
       )}
 
-      {unlocked && showVideo && !following && (
+      {unlocked && showVideo && finished && (
+        <EndCard
+          title={mainTitle}
+          subTitle={series ? t("player.seasonEpisode", { season: series.season, episode: series.episode }) : ""}
+          page={currentMedia?.page}
+          hasNext={Boolean(next)}
+          onNext={triggerNextEpisode}
+          onAgain={watchAgain}
+          onLibrary={() => {
+            stopPlayback();
+            setScreen("library");
+          }}
+          onPlay={playEpisode}
+        />
+      )}
+
+      {unlocked && showVideo && !following && !finished && (
         <Hud
           visible={controlsVisible && menu !== "captions"}
           player={player}
           title={mainTitle}
-          subTitle={series ? `Season ${series.season}, Episode ${series.episode}` : ""}
+          subTitle={series ? t("player.seasonEpisode", { season: series.season, episode: series.episode }) : ""}
           badge={series ? `S${series.season}:E${series.episode}` : ""}
           clock={clock}
           nextLabel={next ? episodeLabel(next) : null}
@@ -878,8 +1118,8 @@ export function Tv() {
           upNext={
             upNextCountdown !== null && next
               ? {
-                  seconds: upNextCountdown,
-                  label: next.title || `Season ${next.season}, Episode ${next.episode}`,
+                  seconds: autoplay ? upNextCountdown : null,
+                  label: next.title || t("player.seasonEpisode", { season: next.season, episode: next.episode }),
                 }
               : null
           }
@@ -891,12 +1131,31 @@ export function Tv() {
           onPrevious={goToPrevious}
           onDismissUpNext={dismissUpNext}
           onOpenMenu={setMenu}
+          partySize={party ? party.guests.length + 1 : 0}
+          onParty={() => setMenu("party")}
+          muted={muted}
+          onMute={toggleMute}
           onFullscreen={toggleFullscreen}
-          onStop={() => engineRef.current?.stop()}
+          onStop={stopPlayback}
+          stuck={stuck}
+          onCancel={cancelLoad}
         />
       )}
 
-      {unlocked && showVideo && menu && (
+      {unlocked && showVideo && menu === "party" && (
+        <PartyPanel
+          party={party}
+          following={following}
+          rootRef={menuRef}
+          onClose={() => setMenu(null)}
+          onStart={startParty}
+          onRemove={removeFromParty}
+          onEnd={endParty}
+          onLeave={leaveParty}
+        />
+      )}
+
+      {unlocked && showVideo && menu && menu !== "party" && (
         <TvMenu
           kind={menu}
           player={player}
@@ -924,29 +1183,28 @@ export function Tv() {
 
       {unlocked && fsPrompt && (
         <button className="tv-fs-prompt" data-testid="fs-prompt" onClick={acceptFullscreenPrompt}>
-          <FullscreenIcon /> Press OK for full screen
+          <FullscreenIcon /> {t("tv.fsPrompt")}
         </button>
       )}
 
       {unlocked && connection !== "open" && (
         <div className="tv-banner" data-testid="tv-banner">
-          {connection === "replaced"
-            ? "This TV page was opened in another window."
-            : connection === "connecting"
-              ? "Connecting…"
-              : "Reconnecting…"}
+          {connection === "replaced" ? t("tv.bannerReplaced") : connection === "connecting" ? t("tv.connecting") : t("tv.bannerReconnecting")}
         </div>
       )}
     </main>
   );
 }
 
+/** What a source is called on screen: the name it came with, or its place in the list. */
+const sourceName = (source: PlayableSource, index: number) => source.label ?? t("player.sourceN", { n: index + 1 });
+
 /** What the TV knows that the video doesn't: which media this is, whether it is full screen, and how subtitles look. */
 const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number): PlayerState => ({
   ...state,
   ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
   ...(media && state.state !== "idle" && sourcesOf(media).length > 1
-    ? { sources: { labels: sourcesOf(media).map((source) => source.label), current: sourceIndex } }
+    ? { sources: { labels: sourcesOf(media).map(sourceName), current: sourceIndex } }
     : {}),
   fullscreen: Boolean(document.fullscreenElement),
   captionStyle,

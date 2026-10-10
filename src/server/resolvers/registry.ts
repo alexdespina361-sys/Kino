@@ -45,7 +45,7 @@ export class ResolverRegistry {
     }
 
     if (result.status === "success") {
-      result = { ...result, media: completeSeries(result.media) };
+      result = { ...result, media: completeSeries({ ...result.media, page: result.media.page ?? raw }) };
       this.cache.set(raw, { result, expiresAt: started + 600_000 }); // 10 min cache
       if (!isPrefetch && result.media.series?.next?.url) {
         // Pre-resolve only the immediate next episode in the background

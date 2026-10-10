@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { languageName, normalizeLang, trackLabel } from "./lang";
+import { languageName, localTrackLabel, normalizeLang, trackLabel } from "./lang";
 
 describe("languageName", () => {
   it("names the languages people watch in, from two- or three-letter codes", () => {
@@ -46,5 +46,29 @@ describe("trackLabel", () => {
   it("agrees with normalizeLang about what a code means", () => {
     expect(normalizeLang("eng")).toBe("en");
     expect(trackLabel("", "eng", "x")).toBe(languageName("en"));
+  });
+});
+
+describe("languageName in the language of the reader", () => {
+  it("says the name the way the reader's language does, starting with a capital", () => {
+    expect(languageName("en", "ro")).toBe("Engleză");
+    expect(languageName("ron", "it")).toBe("Rumeno");
+    expect(languageName("it", "it")).toBe("Italiano");
+    expect(languageName("de", "en")).toBe("German");
+  });
+
+  it("still gives up on what it cannot name", () => {
+    expect(languageName("Track 2", "ro")).toBeUndefined();
+    expect(languageName("en", "not a locale!")).toBeUndefined();
+  });
+});
+
+describe("localTrackLabel", () => {
+  it("translates a label that is only the language, and leaves the rest as the file wrote it", () => {
+    expect(localTrackLabel({ label: "English", lang: "en" }, "ro")).toBe("Engleză");
+    expect(localTrackLabel({ label: "Romanian", lang: "ron" }, "it")).toBe("Rumeno");
+    expect(localTrackLabel({ label: "English (SDH)", lang: "en" }, "ro")).toBe("English (SDH)");
+    expect(localTrackLabel({ label: "Commentary" }, "ro")).toBe("Commentary");
+    expect(localTrackLabel({ label: "English", lang: "en" }, "en")).toBe("English");
   });
 });

@@ -16,6 +16,7 @@ export type RemoteAction =
   | "previous"
   | "captions"
   | "fullscreen"
+  | "mute" // M: this screen's own sound off and on
   | "browse";
 
 const BY_KEY: Record<string, RemoteAction> = {
@@ -45,6 +46,8 @@ const BY_KEY: Record<string, RemoteAction> = {
   C: "captions",
   f: "fullscreen",
   F: "fullscreen",
+  m: "mute",
+  M: "mute",
   n: "next",
   N: "next",
   p: "previous",
@@ -74,8 +77,24 @@ const BY_KEY_CODE: Record<number, RemoteAction> = {
   179: "playpause",
 };
 
-export function actionForKey(event: { key: string; keyCode?: number }): RemoteAction | null {
-  return BY_KEY[event.key] ?? (event.keyCode !== undefined ? BY_KEY_CODE[event.keyCode] : undefined) ?? null;
+/** The input types that are pressed, not typed into. */
+const NOT_TEXT = new Set(["button", "checkbox", "radio", "range", "submit", "reset", "file", "image", "color"]);
+
+/** A text field has the keyboard: letters, Space, Backspace and the sideways arrows are for typing in it, not for the remote. */
+export function isEditable(target: { tagName?: string; type?: string; isContentEditable?: boolean } | EventTarget | null | undefined): boolean {
+  const element = target as { tagName?: string; type?: string; isContentEditable?: boolean } | null | undefined;
+  if (!element?.tagName) return false;
+  if (element.isContentEditable || element.tagName === "TEXTAREA") return true;
+  return element.tagName === "INPUT" && !NOT_TEXT.has((element.type ?? "text").toLowerCase());
+}
+
+/** What still works with the cursor in a text field: moving between fields, OK, and leaving (but not Backspace, which deletes). */
+const WHILE_TYPING = new Set<RemoteAction>(["up", "down", "select", "back"]);
+
+export function actionForKey(event: { key: string; keyCode?: number; target?: EventTarget | null }): RemoteAction | null {
+  const action = BY_KEY[event.key] ?? (event.keyCode !== undefined ? BY_KEY_CODE[event.keyCode] : undefined) ?? null;
+  if (action && isEditable(event.target) && (!WHILE_TYPING.has(action) || event.key === "Backspace" || event.keyCode === 8)) return null;
+  return action;
 }
 
 /** How far the arrow keys, rewind and fast-forward jump. */
