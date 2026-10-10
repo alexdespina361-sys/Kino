@@ -13,6 +13,7 @@ import {
   MAX_FOLLOWERS,
   PLAYBACK_SPEEDS,
   resolveCaptionStyle,
+  trackLabel,
   type CaptionStyle,
   type PartyTv,
   type PlayerState,
@@ -86,13 +87,40 @@ export function TracksSheet({
   onSubtitle,
   onAudio,
   onStyle,
+  onDelay,
   onClose,
-}: Close & { player: PlayerState; onSubtitle: (track: number) => void; onAudio: (track: number) => void; onStyle: () => void }) {
+}: Close & {
+  player: PlayerState;
+  onSubtitle: (track: number) => void;
+  onAudio: (track: number) => void;
+  onStyle: () => void;
+  onDelay?: (delay: number) => void;
+}) {
   const subtitles = player.subtitles;
   const audio = player.audio;
+  const currentDelay = player.subtitleDelay ?? 0;
+  const [selectedLang, setSelectedLang] = useState<string>("all");
+
+  const languages = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const t of subtitles?.tracks ?? []) {
+      const code = (t.lang || "und").toLowerCase();
+      if (!map.has(code)) {
+        map.set(code, trackLabel(t.lang, t.lang, code.toUpperCase()));
+      }
+    }
+    return Array.from(map.entries());
+  }, [subtitles?.tracks]);
+
+  const filteredTracks = useMemo(() => {
+    const all = subtitles?.tracks ?? [];
+    if (selectedLang === "all") return all;
+    return all.filter((t) => (t.lang || "und").toLowerCase() === selectedLang);
+  }, [subtitles?.tracks, selectedLang]);
+
   const subtitleChoices: Choice[] = [
     { key: -1, label: "Off", active: (subtitles?.current ?? -1) === -1, testId: "subtitle--1", pick: () => onSubtitle(-1) },
-    ...(subtitles?.tracks ?? []).map((track) => ({
+    ...filteredTracks.map((track) => ({
       key: track.id,
       label: track.label,
       active: subtitles?.current === track.id,
@@ -117,6 +145,44 @@ export function TracksSheet({
         </>
       )}
       <h3 className="sheet-section">Subtitles</h3>
+      {onDelay && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "rgba(255,255,255,0.06)", borderRadius: "8px", margin: "8px 0 14px" }}>
+          <span style={{ fontSize: "14px", fontWeight: 500 }}>
+            Delay: {currentDelay > 0 ? `+${currentDelay.toFixed(1)}s` : `${currentDelay.toFixed(1)}s`}
+          </span>
+          <div style={{ display: "flex", gap: "6px" }}>
+            <button type="button" className="btn btn-sm" onClick={() => onDelay(Math.round((currentDelay - 0.5) * 10) / 10)} title="Earlier">
+              −0.5s
+            </button>
+            <button type="button" className="btn btn-sm" onClick={() => onDelay(0)} title="Reset">
+              0.0s
+            </button>
+            <button type="button" className="btn btn-sm" onClick={() => onDelay(Math.round((currentDelay + 0.5) * 10) / 10)} title="Later">
+              +0.5s
+            </button>
+          </div>
+        </div>
+      )}
+      {languages.length > 1 && (
+        <div style={{ margin: "10px 0 8px" }}>
+          <label style={{ display: "block", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#8a8a93", marginBottom: "6px" }}>
+            Search by language
+          </label>
+          <select
+            className="field-input"
+            value={selectedLang}
+            onChange={(e) => setSelectedLang(e.target.value)}
+            style={{ width: "100%", padding: "8px 12px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: "6px", color: "#fff", fontSize: "14px" }}
+          >
+            <option value="all">All Languages ({subtitles?.tracks.length ?? 0})</option>
+            {languages.map(([code, name]) => (
+              <option key={code} value={code} style={{ background: "#1f1f23", color: "#fff" }}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
       <ChoiceList choices={subtitleChoices} />
       <button className="btn btn-block" data-testid="open-caption-style" onClick={onStyle}>
         Subtitle style…

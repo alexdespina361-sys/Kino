@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { LibraryItem, LibraryRow } from "../../shared";
 import type { LibrarySource } from "./library";
 
-export const FILMPIRE_TMDB_API_KEY = "90b2cae8d7161e8ba0f3836240d7d352";
+export const FILMPIRE_TMDB_API_KEY = process.env.TMDB_API_KEY ?? "90b2cae8d7161e8ba0f3836240d7d352";
 const BASE_URL = "https://api.themoviedb.org/3";
 const IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
 
@@ -14,13 +14,40 @@ export interface FilmpireCategory {
 }
 
 export const FILMPIRE_CATEGORIES: FilmpireCategory[] = [
+  // Trending & Highlights
   { id: "trending-movies", title: "Trending Movies", path: "/trending/movie/week", type: "movie" },
   { id: "trending-tv", title: "Trending Series", path: "/trending/tv/week", type: "tv" },
   { id: "popular-movies", title: "Popular Movies", path: "/movie/popular?language=en-US&page=1", type: "movie" },
   { id: "popular-tv", title: "Popular Series", path: "/tv/popular?language=en-US&page=1", type: "tv" },
   { id: "top-rated-movies", title: "Top Rated Movies", path: "/movie/top_rated?language=en-US&page=1", type: "movie" },
-  { id: "animation-tv", title: "Animation & Anime", path: "/discover/tv?with_genres=16", type: "tv" },
-  { id: "action-movies", title: "Action & Sci-Fi", path: "/discover/movie?with_genres=878", type: "movie" },
+  { id: "top-rated-tv", title: "Best Rated TV Series", path: "/tv/top_rated?language=en-US&page=1", type: "tv" },
+
+  // Movies by Genre (from explore-movies)
+  { id: "action-movies", title: "Action Movies", path: "/discover/movie?with_genres=28&sort_by=popularity.desc", type: "movie" },
+  { id: "scifi-movies", title: "Sci-Fi Movies", path: "/discover/movie?with_genres=878&sort_by=popularity.desc", type: "movie" },
+  { id: "comedy-movies", title: "Comedy Movies", path: "/discover/movie?with_genres=35&sort_by=popularity.desc", type: "movie" },
+  { id: "horror-movies", title: "Horror Movies", path: "/discover/movie?with_genres=27&sort_by=popularity.desc", type: "movie" },
+  { id: "animation-movies", title: "Animated Movies", path: "/discover/movie?with_genres=16&sort_by=popularity.desc", type: "movie" },
+  { id: "thriller-movies", title: "Thriller Movies", path: "/discover/movie?with_genres=53&sort_by=popularity.desc", type: "movie" },
+  { id: "adventure-movies", title: "Adventure Movies", path: "/discover/movie?with_genres=12&sort_by=popularity.desc", type: "movie" },
+  { id: "crime-movies", title: "Crime Movies", path: "/discover/movie?with_genres=80&sort_by=popularity.desc", type: "movie" },
+  { id: "fantasy-movies", title: "Fantasy Movies", path: "/discover/movie?with_genres=14&sort_by=popularity.desc", type: "movie" },
+  { id: "drama-movies", title: "Drama Movies", path: "/discover/movie?with_genres=18&sort_by=popularity.desc", type: "movie" },
+  { id: "mystery-movies", title: "Mystery Movies", path: "/discover/movie?with_genres=9648&sort_by=popularity.desc", type: "movie" },
+  { id: "romance-movies", title: "Romance Movies", path: "/discover/movie?with_genres=10749&sort_by=popularity.desc", type: "movie" },
+  { id: "family-movies", title: "Family Movies", path: "/discover/movie?with_genres=10751&sort_by=popularity.desc", type: "movie" },
+  { id: "documentary-movies", title: "Documentary Movies", path: "/discover/movie?with_genres=99&sort_by=popularity.desc", type: "movie" },
+
+  // Series by Genre (from explore-series)
+  { id: "action-adventure-tv", title: "Action & Adventure Series", path: "/discover/tv?with_genres=10759&sort_by=popularity.desc", type: "tv" },
+  { id: "scifi-fantasy-tv", title: "Sci-Fi & Fantasy Series", path: "/discover/tv?with_genres=10765&sort_by=popularity.desc", type: "tv" },
+  { id: "animation-anime-tv", title: "Animation & Anime Series", path: "/discover/tv?with_genres=16&sort_by=popularity.desc", type: "tv" },
+  { id: "comedy-tv", title: "Comedy Series", path: "/discover/tv?with_genres=35&sort_by=popularity.desc", type: "tv" },
+  { id: "crime-tv", title: "Crime Series", path: "/discover/tv?with_genres=80&sort_by=popularity.desc", type: "tv" },
+  { id: "drama-tv", title: "Drama Series", path: "/discover/tv?with_genres=18&sort_by=popularity.desc", type: "tv" },
+  { id: "mystery-tv", title: "Mystery Series", path: "/discover/tv?with_genres=9648&sort_by=popularity.desc", type: "tv" },
+  { id: "kids-tv", title: "Kids & Family Shows", path: "/discover/tv?with_genres=10762&sort_by=popularity.desc", type: "tv" },
+  { id: "documentary-tv", title: "Docuseries", path: "/discover/tv?with_genres=99&sort_by=popularity.desc", type: "tv" },
 ];
 
 export interface FilmpireSourceOptions {

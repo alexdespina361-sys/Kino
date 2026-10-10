@@ -92,6 +92,13 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
   description when the source has one) and rows of titles under it. Arrows walk the rows, OK plays, Back leaves; playing from the
   library and pressing Back (twice if the controls were hidden) or letting it stop comes back to the same title. A title that will not
   play is said so on the TV and leaves it in the library. A TV that watches along has no library, since it can't choose what plays.
+- **Menu, categories, search (TV).** Pressing Left from the first title of any row (or the first tile of a grid) opens a menu down the
+  left, as in a streaming app: **Search**, **Home** and one entry per row of the library under **Categories**. Right or Back returns to
+  the titles. A category opens as a grid of all its titles (Back goes home, Back again closes the library). **Search** shows an
+  on-screen keyboard (letters, digits, Space, Delete) beside the results; a physical keyboard types too, and Backspace deletes before it
+  means Back. Titles already loaded answer at once; after a short pause the source's search (`GET /api/library/search?q=`) adds more,
+  and a library whose rows could not be loaded can still be searched. Playing a result and pressing Back returns to the same search.
+  The menu and search only use the generic library endpoints, so they work with whichever `LibrarySource` is configured.
 - `LIBRARY=off` starts the server without a library (the e2e server does); `GET /api/library` is then empty and the phone shows nothing extra.
 
 ### Episode lists

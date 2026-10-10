@@ -428,15 +428,21 @@ export function createFilmpireAdapter(): SiteAdapter {
               if (!item.url) continue;
               const langCode = (item.lang || "en").toLowerCase();
               const count = [...seenLangs].filter((l) => l.startsWith(langCode)).length;
-              if (count >= 2) continue;
+              if (count >= 12) continue;
               seenLangs.add(`${langCode}_${count}`);
 
               const langName = LANG_NAMES[langCode] || langCode.toUpperCase();
-              const label = count === 0 ? langName : `${langName} (SDH)`;
+              let label = langName;
+              if (item.subtitleFileName) {
+                const clean = item.subtitleFileName.replace(/\.(srt|vtt)$/i, "").trim();
+                label = count === 0 ? `${langName} · ${clean}` : `${langName} (${count + 1}) · ${clean}`;
+              } else if (count > 0) {
+                label = `${langName} (${count + 1})`;
+              }
               subtitles.push({
                 id: subtitles.length,
                 url: `/api/proxy?url=${encodeURIComponent(item.url)}&format=vtt`,
-                label,
+                label: label.slice(0, 100),
                 lang: langCode,
               });
             }

@@ -406,6 +406,7 @@ export function Controller() {
           onClose={closeSheet}
           onSubtitle={(track) => send({ type: "SET_SUBTITLE", track })}
           onAudio={(track) => send({ type: "SET_AUDIO", track })}
+          onDelay={(delay) => send({ type: "SET_SUBTITLE_DELAY", delay })}
           onStyle={() => setSheet("captions")}
         />
       )}

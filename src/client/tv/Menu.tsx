@@ -41,6 +41,8 @@ interface MenuProps {
   player: PlayerState;
   series: SeriesInfo | undefined;
   captionStyle: CaptionStyle;
+  subtitleDelay?: number;
+  onSubtitleDelay?: (delay: number) => void;
   /** The show's key and what has been watched, to mark the episode list. */
   show: string | undefined;
   watched: readonly WatchedEntry[];
@@ -209,6 +211,29 @@ function columnsFor(p: MenuProps, { season, setSeason, setting, setSetting }: Se
           active: subtitles?.current === track.id,
           pick: () => p.onSubtitle(track.id),
         })),
+      ],
+    },
+    {
+      title: `Delay (${(p.subtitleDelay ?? 0) > 0 ? "+" : ""}${(p.subtitleDelay ?? 0).toFixed(1)}s)`,
+      options: [
+        {
+          key: "sub-earlier",
+          label: "−0.5s Earlier",
+          active: false,
+          pick: () => p.onSubtitleDelay?.(Math.round(((p.subtitleDelay ?? 0) - 0.5) * 10) / 10),
+        },
+        {
+          key: "sub-reset",
+          label: "0.0s (Reset)",
+          active: Math.abs(p.subtitleDelay ?? 0) < 0.05,
+          pick: () => p.onSubtitleDelay?.(0),
+        },
+        {
+          key: "sub-later",
+          label: "+0.5s Later",
+          active: false,
+          pick: () => p.onSubtitleDelay?.(Math.round(((p.subtitleDelay ?? 0) + 0.5) * 10) / 10),
+        },
       ],
     },
     {

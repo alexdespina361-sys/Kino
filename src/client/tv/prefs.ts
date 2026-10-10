@@ -16,6 +16,7 @@ const PrefsSchema = z
     audio: ChosenTrackSchema.optional(),
     /** Only what the viewer changed; the rest is the default look. */
     captionStyle: CaptionStyleSchema.partial().optional(),
+    subtitleDelay: z.number().optional(),
     /** Older versions stored just a size. */
     subtitleSize: z.enum(["small", "medium", "large"]).optional(),
   })

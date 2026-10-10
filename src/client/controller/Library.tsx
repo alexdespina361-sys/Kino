@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LibrarySchema, type Library as LibraryData, type LibraryItem } from "../../shared";
 
 /** What the server last listed, so a visit to the home screen after the first shows it at once. */
@@ -13,6 +13,25 @@ export function Library({ onPlay }: { onPlay: (url: string) => void }) {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<LibraryItem[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [filter, setFilter] = useState<"all" | "movies" | "series">("all");
+
+  const displayedRows = useMemo(() => {
+    if (!library) return [];
+    if (filter === "movies") {
+      return library.rows.filter((r) => r.id.includes("movie") || r.title.toLowerCase().includes("movie"));
+    }
+    if (filter === "series") {
+      return library.rows.filter(
+        (r) =>
+          r.id.includes("tv") ||
+          r.title.toLowerCase().includes("series") ||
+          r.title.toLowerCase().includes("shows") ||
+          r.title.toLowerCase().includes("docuseries") ||
+          r.title.toLowerCase().includes("anime"),
+      );
+    }
+    return library.rows;
+  }, [library, filter]);
 
   useEffect(() => {
     let live = true;
@@ -119,6 +138,35 @@ export function Library({ onPlay }: { onPlay: (url: string) => void }) {
         )}
       </div>
 
+      {searchResults === null && (
+        <div className="lib-filter-pills" style={{ display: "flex", gap: "8px", margin: "10px 0 16px" }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${filter === "all" ? "active" : ""}`}
+            style={{ borderRadius: "20px", padding: "4px 14px", background: filter === "all" ? "var(--red, #e50914)" : "rgba(255,255,255,0.08)", color: "#fff", border: "none" }}
+            onClick={() => setFilter("all")}
+          >
+            All
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${filter === "movies" ? "active" : ""}`}
+            style={{ borderRadius: "20px", padding: "4px 14px", background: filter === "movies" ? "var(--red, #e50914)" : "rgba(255,255,255,0.08)", color: "#fff", border: "none" }}
+            onClick={() => setFilter("movies")}
+          >
+            Movies
+          </button>
+          <button
+            type="button"
+            className={`btn btn-sm ${filter === "series" ? "active" : ""}`}
+            style={{ borderRadius: "20px", padding: "4px 14px", background: filter === "series" ? "var(--red, #e50914)" : "rgba(255,255,255,0.08)", color: "#fff", border: "none" }}
+            onClick={() => setFilter("series")}
+          >
+            Series
+          </button>
+        </div>
+      )}
+
       {searchResults !== null ? (
         <div className="lib-row" data-testid="library-search-results">
           <h3>
@@ -134,7 +182,7 @@ export function Library({ onPlay }: { onPlay: (url: string) => void }) {
           )}
         </div>
       ) : (
-        library.rows.map((row) => (
+        displayedRows.map((row) => (
           <div className="lib-row" key={row.id} data-testid="library-row">
             <h3>{row.title}</h3>
             <div className="lib-scroller">

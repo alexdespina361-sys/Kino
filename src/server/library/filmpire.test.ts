@@ -114,6 +114,15 @@ describe("filmpireSource", () => {
     const source = filmpireSource({ categories: mockCategories, fetch: get as never });
     await expect(source.load()).rejects.toThrow(/HTTP 503/);
   });
+
+  it("exports a rich set of movie and series categories", async () => {
+    const { FILMPIRE_CATEGORIES } = await import("./filmpire");
+    expect(FILMPIRE_CATEGORIES.length).toBeGreaterThanOrEqual(20);
+    const movieCats = FILMPIRE_CATEGORIES.filter((c) => c.type === "movie");
+    const tvCats = FILMPIRE_CATEGORIES.filter((c) => c.type === "tv");
+    expect(movieCats.length).toBeGreaterThanOrEqual(10);
+    expect(tvCats.length).toBeGreaterThanOrEqual(8);
+  });
 });
 
 describe("filmpireSource search", () => {

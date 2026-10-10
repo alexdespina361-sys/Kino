@@ -585,14 +585,14 @@
     linear-gradient(90deg, var(--bg) 18%, rgba(11, 11, 12, 0.35) 65%, rgba(11, 11, 12, 0.7)),
     linear-gradient(0deg, var(--bg) 22%, transparent 70%);
 }
-.tv-browse > :not(.tv-hero-bg):not(.tv-browse-shade) { position: relative; }
+.tv-browse > :not(.tv-hero-bg):not(.tv-browse-shade):not(.tv-rail) { position: relative; }
 
 .tv-browse-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 2em;
-  padding: 2.2em 4em 0;
+  padding: 2.2em 4em 0 7em;
 }
 .tv-browse-logo { font-size: 2.2em; }
 .tv-back {
@@ -614,8 +614,8 @@
   flex-direction: column;
   justify-content: flex-end;
   gap: 0.6em;
-  max-width: 54em;
-  padding: 0 4em 1.6em;
+  max-width: 57em;
+  padding: 0 4em 1.6em 7em;
   overflow: hidden;
 }
 .tv-hero-eyebrow { margin: 0; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--red); }
@@ -651,11 +651,11 @@
   overflow: hidden;
 }
 .tv-row { padding-bottom: 0.4em; }
-.tv-row-title { margin: 0 0 0 2em; font-size: 2em; font-weight: 700; color: #e8e8ec; }
+.tv-row-title { margin: 0 0 0 3.5em; font-size: 2em; font-weight: 700; color: #e8e8ec; }
 .tv-row-tiles {
   display: flex;
   gap: 1.6em;
-  padding: 1.1em 4em 1.3em;
+  padding: 1.1em 4em 1.3em 7em;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -704,3 +704,121 @@
 .tv-skeleton { height: 17em; border-radius: 0.7em; background: linear-gradient(90deg, #17171a, #232328, #17171a); background-size: 200% 100%; animation: tv-shimmer 1.4s linear infinite; }
 .tv-skeleton-title { width: 12em; height: 1.4em; border-radius: 0.3em; background: #17171a; }
 @keyframes tv-shimmer { to { background-position: -200% 0; } }
+
+/* ------------------------------ library: menu, categories, search ------------------------------ */
+
+/* The menu: a strip of icons down the left that opens into names while the remote is on it, over whatever is there. */
+.tv-rail {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 6em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  padding: 6em 0 3em;
+  overflow: hidden auto;
+  scrollbar-width: none;
+  transition: width 0.2s ease;
+}
+.tv-rail::-webkit-scrollbar { display: none; }
+.tv-rail[data-open="true"] {
+  width: 27em;
+  background: linear-gradient(90deg, #0b0b0c 86%, rgba(11, 11, 12, 0));
+}
+.tv-rail-item {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.8em;
+  margin: 0 1.6em 0 0.9em;
+  padding: 0.55em 0.7em;
+  border-radius: 0.5em;
+  color: #b4b4bb;
+  font-size: 1.7em;
+  font-weight: 600;
+  white-space: nowrap;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.tv-rail-item span, .tv-rail-group span { opacity: 0; transition: opacity 0.15s; }
+.tv-rail[data-open="true"] .tv-rail-item span, .tv-rail[data-open="true"] .tv-rail-group span { opacity: 1; }
+.tv-rail-item svg, .tv-rail-group svg { flex: none; font-size: 1.15em; }
+.tv-rail-item:hover { color: #fff; }
+.tv-rail-item[aria-current="page"] { color: #fff; box-shadow: inset 0.14em 0 0 var(--red); }
+.tv-rail-item:focus-visible { background: #fff; color: #000; outline: none; box-shadow: none; }
+.tv-rail-group {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  margin: 0.4em 0 0 0.9em;
+  padding: 0.55em 0.7em;
+  color: #7c7c85;
+  font-size: 1.4em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+/* A category sits under that heading, in line with its words. */
+.tv-rail-category { margin-left: 3.4em; padding-left: 0.6em; font-size: 1.5em; }
+
+/* A whole category, or the search results: titles in a grid under a heading. */
+.tv-view, .tv-search { flex: 1 1 0; min-height: 0; display: flex; padding: 0.6em 4em 0 7em; }
+.tv-view { flex-direction: column; }
+.tv-view-title { margin: 0; font-size: 3.6em; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.tv-view-meta { margin: 0.2em 0 0; font-size: 1.6em; font-weight: 600; color: #b4b4bb; }
+.tv-grid {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 5), 15em);
+  align-content: start;
+  gap: 1.4em 1.6em;
+  margin: 0.4em -1em 0;
+  padding: 1.2em 1em 4em;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.tv-grid::-webkit-scrollbar { display: none; }
+
+.tv-search { gap: 3em; }
+.tv-search-side { flex: none; width: 32em; }
+.tv-search-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+.tv-search-main .tv-view-meta { margin-top: 0.9em; }
+.tv-query {
+  display: flex;
+  align-items: center;
+  height: 2.4em;
+  margin: 0.4em 0 0;
+  padding: 0 0.6em;
+  border-bottom: 0.1em solid rgba(255, 255, 255, 0.35);
+  font-size: 2.2em;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tv-query-hint { color: #6f6f78; font-weight: 500; }
+.tv-caret { width: 0.08em; height: 1.1em; margin-left: 0.1em; background: var(--red); animation: tv-blink 1s steps(1) infinite; }
+@keyframes tv-blink { 50% { opacity: 0; } }
+.tv-keys { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5em; margin-top: 1.2em; }
+.tv-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4em;
+  padding: 0.5em 0;
+  border-radius: 0.4em;
+  background: rgba(255, 255, 255, 0.11);
+  color: #e6e6ea;
+  font-size: 1.9em;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: uppercase;
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+}
+.tv-key-wide { grid-column: span 3; font-size: 1.5em; text-transform: none; }
+.tv-key:hover { background: rgba(255, 255, 255, 0.2); }
+.tv-key:focus-visible { background: #fff; color: #000; outline: none; transform: scale(1.08); z-index: 2; }

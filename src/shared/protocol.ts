@@ -43,6 +43,7 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("SET_SOURCE"), index: z.number().int().min(0).max(MAX_ALTERNATES) }),
   z.object({ type: z.literal("TOGGLE_FULLSCREEN") }),
   z.object({ type: z.literal("NEXT_EPISODE") }),
+  z.object({ type: z.literal("SET_SUBTITLE_DELAY"), delay: z.number().finite().min(-60).max(60) }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;
 
@@ -65,6 +66,8 @@ export const PlayerStateSchema = z.object({
   fullscreen: z.boolean().optional(),
   /** How subtitles look right now, so the phone's style sheet shows the real values. */
   captionStyle: CaptionStyleSchema.optional(),
+  /** Subtitle delay in seconds, positive for later, negative for earlier. */
+  subtitleDelay: z.number().finite().optional(),
   quality: z
     .object({
       levels: z.array(PlayerQualityLevelSchema),

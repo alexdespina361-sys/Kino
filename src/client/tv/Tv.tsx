@@ -91,6 +91,9 @@ export function Tv() {
   const [captionStyle, setCaptionStyle] = useState<CaptionStyle>(() => resolveCaptionStyle(initialPrefs.captionStyle));
   const captionStyleRef = useRef(captionStyle);
   captionStyleRef.current = captionStyle;
+  const [subtitleDelay, setSubtitleDelay] = useState<number>(() => initialPrefs.subtitleDelay ?? 0);
+  const subtitleDelayRef = useRef(subtitleDelay);
+  subtitleDelayRef.current = subtitleDelay;
   /** Sends the TV's current state to the phone again (set once the player exists). */
   const republishRef = useRef<() => void>(() => {});
   // Whether the remembered choice has been applied to the video that is loaded now (once per video).
@@ -300,7 +303,15 @@ export function Tv() {
     setCaptionStyle(next);
     remember({ captionStyle: next });
   };
-  useEffect(() => republishRef.current(), [captionStyle]); // the phone's sheet shows what the TV really uses
+  const chooseSubtitleDelay = (delay: number) => {
+    const clamped = Math.max(-60, Math.min(60, Math.round(delay * 10) / 10));
+    subtitleDelayRef.current = clamped;
+    setSubtitleDelay(clamped);
+    remember({ subtitleDelay: clamped });
+    toastIdRef.current += 1;
+    setToast({ id: toastIdRef.current, text: `Subtitle delay: ${clamped > 0 ? "+" : ""}${clamped.toFixed(1)}s` });
+  };
+  useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]); // the phone's sheet shows what the TV really uses
   const streamUrl = currentMedia?.stream.url;
   useEffect(() => republishRef.current(), [streamUrl, sourceIndex]); // a state names its media and source, and those can change without the video doing so
 
@@ -371,7 +382,7 @@ export function Tv() {
   useEffect(() => {
     const video = videoRef.current!;
     const publish = (state: PlayerState) => {
-      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current);
+      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current);
       setPlayer(full);
       if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
     };
@@ -401,7 +412,7 @@ export function Tv() {
             setFollowing(message.following ?? null);
             setPairing(toPairing(message.pairing));
             if (!message.following) {
-              socketRef.current?.send({ type: "TV_STATE", state: withTvState(engine.getState(), captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current) });
+              socketRef.current?.send({ type: "TV_STATE", state: withTvState(engine.getState(), captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current) });
             }
             break;
           case "TV_CODE":
@@ -486,6 +497,7 @@ export function Tv() {
               engine.stop();
             } else if (command.type === "SET_QUALITY") engine.setQuality(command.level);
             else if (command.type === "SET_SUBTITLE") chooseSubtitle(command.track);
+            else if (command.type === "SET_SUBTITLE_DELAY") chooseSubtitleDelay(command.delay);
             else if (command.type === "SET_CAPTION_STYLE") changeCaptions(command.style);
             else if (command.type === "SET_SPEED") engine.setPlaybackRate(command.rate);
             else if (command.type === "SET_AUDIO") chooseAudio(command.track);
@@ -658,10 +670,7 @@ export function Tv() {
       const overlayWasVisible = visibleRef.current;
       wake();
 
-      if (browsing) {
-        if (action === "back") setBrowsing(false);
-        return;
-      }
+      if (browsing) return; // the library walks and closes itself (Browse.tsx)
 
       if (action === "browse") {
         if (!following && !resolving && player.state === "idle") setBrowsing(true);
@@ -811,7 +820,7 @@ export function Tv() {
         onDoubleClick={toggleFullscreen}
       />
 
-      {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} />}
+      {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
       {/* Pressing OK here is also the press the browser needs to let the page go full screen. */}
       {!unlocked && (
@@ -895,6 +904,8 @@ export function Tv() {
           show={currentMedia ? seriesKeyOf(currentMedia) : undefined}
           watched={watched}
           captionStyle={captionStyle}
+          subtitleDelay={subtitleDelay}
+          onSubtitleDelay={chooseSubtitleDelay}
           rootRef={menuRef}
           onClose={() => setMenu(null)}
           onSubtitle={chooseSubtitle}
@@ -931,7 +942,7 @@ export function Tv() {
 }
 
 /** What the TV knows that the video doesn't: which media this is, whether it is full screen, and how subtitles look. */
-const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number): PlayerState => ({
+const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number): PlayerState => ({
   ...state,
   ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
   ...(media && state.state !== "idle" && sourcesOf(media).length > 1
@@ -939,6 +950,7 @@ const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: Norm
     : {}),
   fullscreen: Boolean(document.fullscreenElement),
   captionStyle,
+  subtitleDelay,
 });
 
 function toPairing(info: { code: string; expiresInMs: number } | null): Pairing | null {

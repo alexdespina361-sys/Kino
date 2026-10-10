@@ -22,7 +22,7 @@ const sameCues = (a: TextTrackCue[], b: TextTrackCue[]) => a.length === b.length
  * Draws the subtitles that are on right now. The tracks stay "hidden" (loaded, but not painted by the browser), so this
  * is the only thing the viewer sees, and the style settings apply the same way on every TV browser.
  */
-export function Captions({ videoRef, style }: { videoRef: RefObject<HTMLVideoElement | null>; style: CaptionStyle }) {
+export function Captions({ videoRef, style, delay = 0 }: { videoRef: RefObject<HTMLVideoElement | null>; style: CaptionStyle; delay?: number }) {
   const [cues, setCues] = useState<TextTrackCue[]>([]);
 
   useEffect(() => {
@@ -33,10 +33,11 @@ export function Captions({ videoRef, style }: { videoRef: RefObject<HTMLVideoEle
     // list as the video plays, so a track switched on while paused (or just loaded) would otherwise show nothing.
     const refresh = () => {
       const now = video.currentTime;
+      const matchTime = now - delay;
       const active: TextTrackCue[] = [];
       for (const track of Array.from(video.textTracks)) {
         if (track.mode === "disabled" || !isCaptionTrack(track)) continue;
-        for (const cue of Array.from(track.cues ?? [])) if (cue.startTime <= now && now < cue.endTime) active.push(cue);
+        for (const cue of Array.from(track.cues ?? [])) if (cue.startTime <= matchTime && matchTime < cue.endTime) active.push(cue);
       }
       setCues((current) => (sameCues(current, active) ? current : active));
     };
@@ -56,7 +57,7 @@ export function Captions({ videoRef, style }: { videoRef: RefObject<HTMLVideoEle
       video.textTracks.removeEventListener("removetrack", refresh);
       clearInterval(timer);
     };
-  }, [videoRef]);
+  }, [videoRef, delay]);
 
   return (
     <div className="tv-captions" data-testid="captions" style={{ "--caption-bottom": captionBottom(style) } as CSSProperties}>

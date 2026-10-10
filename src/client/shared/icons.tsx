@@ -153,3 +153,28 @@ export const ChevronIcon = (props: Props) => (
     <path d="M9 6l6 6-6 6" />
   </Icon>
 );
+
+export const SearchIcon = (props: Props) => (
+  <Icon {...props}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="M21 21l-4.3-4.3" />
+  </Icon>
+);
+
+export const HomeIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10" />
+  </Icon>
+);
+
+export const GridIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" />
+  </Icon>
+);
+
+export const BackspaceIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1zM17 9l-6 6M11 9l6 6" />
+  </Icon>
+);
