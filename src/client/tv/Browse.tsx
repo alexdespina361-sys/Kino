@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
 import { LibraryItemsSchema, LibrarySchema, listKey, type Library, type LibraryItem, type LibraryKind, type PlayHint } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { hintOf, listEntryOf } from "../account/cards";
@@ -786,7 +786,14 @@ function Tile({ entry, layout, rank, pos, onArrive, onPress }: { entry: Entry; l
     "data-zone": pos.zone,
     "data-row": pos.row,
     "data-col": pos.col,
-    onClick: onPress,
+    // Pressed with the mouse, a title would take the focus at once, and the banner shrinks and the rows climb to make room for it
+    // before the button is let go: the click would then come down on something else, and nothing would open. So the press takes
+    // nothing, and the click takes the focus, then does what it is for.
+    onMouseDown: (event: MouseEvent<HTMLElement>) => event.preventDefault(),
+    onClick: (event: MouseEvent<HTMLElement>) => {
+      event.currentTarget.focus({ preventScroll: true });
+      onPress();
+    },
     onFocus: (event: FocusEvent<HTMLElement>) => onArrive(event.currentTarget),
     title: entry.title,
   };

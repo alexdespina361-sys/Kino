@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
-import { guestStorage, openDevice, openLibrary, openPairedPhone, openTv, RawPhone, readPairingCode, tvRoot, withLibrary } from "./helpers";
+import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, RawPhone, readPairingCode, tvRoot, withLibrary } from "./helpers";
 
 /** What the screens look like on a TV: the remote walks them, the buttons match, and everything fits. */
 
@@ -575,6 +575,34 @@ test.describe("the library on the TV", () => {
     await tv.getByTestId("tv-detail").click({ position: { x: 640, y: 120 } }); // the empty part of it
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
     await expect(tiles(tv).nth(2)).toBeFocused();
+  });
+
+  test("a click held the way a hand holds it opens a title in a lower row, though the rows would move on the press", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(library));
+    await expect(tiles(tv).first()).toBeFocused();
+    await clickAsAHand(tv, tiles(tv).nth(10 + 1)); // "Second row second": the banner shrinks and the rows climb the moment it is pressed
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("Second row second");
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+
+    await tv.keyboard.press("Escape");
+    await expect(tv.locator("[data-testid='tv-browse-tile']:focus")).toHaveAttribute("title", "Second row second"); // the remote is where the mouse was
+    await expect(tv.getByTestId("tv-hero-title")).toHaveText("Second row second");
+  });
+
+  test("a double click opens a title's page and leaves it open, instead of pressing what the page puts under the pointer", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(library));
+    await expect(tiles(tv).first()).toBeFocused();
+    await tiles(tv).nth(1).dblclick();
+    await tv.waitForTimeout(900);
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("Film number 2");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle"); // not played by the second click
+
+    await tv.getByTestId("tv-detail-close").click();
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    await tiles(tv).nth(10 + 1).dblclick(); // a lower row too
+    await tv.waitForTimeout(900);
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("Second row second");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
   });
 
   test("the banner's Play still plays at once, for whoever wants to skip the page", async ({ browser }) => {

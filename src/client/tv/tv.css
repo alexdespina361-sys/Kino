@@ -870,8 +870,11 @@
   flex-direction: column;
   justify-content: flex-end;
   background: var(--bg);
-  animation: tv-fade 0.25s ease;
+  animation: tv-fade 0.25s ease, tv-arrive 0.5s linear;
 }
+/* While it arrives the page lets the pointer through to the library: the second click of a double click would otherwise land on the
+   page, closing it or pressing Play, and the title would seem not to open at all. */
+@keyframes tv-arrive { from, to { pointer-events: none; } }
 .tv-detail-text { position: relative; display: flex; flex-direction: column; gap: 0.5em; max-width: 62em; padding: 0 4em 4.5em 7em; animation: tv-rise 0.4s ease both; }
 .tv-detail-title { margin: 0; font-size: 4.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .tv-detail-about {
@@ -1602,7 +1605,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-upnext, .tv-toast, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p { animation-duration: 0.01s; }
+  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-upnext, .tv-toast, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p { animation-duration: 0.01s; }
+  .tv-detail { animation-duration: 0.01s, 0.5s; } /* the fade is quick; the pointer is still let through for as long */
   .tv-welcome { transition-duration: 0.01s; }
   .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }
   .tv-hero { transition: none; }

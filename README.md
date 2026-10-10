@@ -196,7 +196,9 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
   watched, from the source), **My List**, then the library's own: the first ranked with big numbers (a "Top 10"), the others rows of pictures,
   and a row of **categories** after the third. Arrows walk the rows, Back leaves. **Choosing a title opens its page** (a big picture, the year,
   what it is about) with **Play** (or **Resume** / **Continue**) and **Add to My List** / **Remove from My List**; Back, the cross or a click
-  beside it closes the page. The banner's own buttons play or save the title it shows, without the page. The big banner picture fades in
+  beside it closes the page. With a mouse it is a click on the title (hovering shows nothing; the title's name is the tooltip), on any row; the
+  second click of a double click goes through the page to the title under it instead of closing the page or pressing Play, for the half second
+  the page takes to arrive. The banner's own buttons play or save the title it shows, without the page. The big banner picture fades in
   over the previous one once it has loaded, instead of switching. Playing from the library and pressing Back (twice if the controls were
   hidden) or letting it stop comes back to the same title. A title that will not play is said so and stays in the library. A TV that watches
   along has no library, since it can't choose what plays.
@@ -266,7 +268,9 @@ phone, a tablet and a phone held sideways, the end card and mute, and accounts: 
 account, a second device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages.
 
 Browsers that refuse a video until it has been pressed (Brave's strict setting, iPhones) are tested with a browser started with
-`--autoplay-policy=user-gesture-required` (`strictBrowser` in `e2e/helpers.ts`). Not covered by tests, because it needs real hardware: Fire TV /
+`--autoplay-policy=user-gesture-required` (`strictBrowser` in `e2e/helpers.ts`). Playwright's own click lets go of the button within a few milliseconds,
+a hand takes a tenth of a second or more, and anything that moves under the pointer on the press makes the click miss, so clicks on things that
+move on focus use `clickAsAHand`. Not covered by tests, because it needs real hardware: Fire TV /
 Android TV remotes, the wake lock, an iPhone's camera and browsers, and the home screen install itself (only that the manifest and its icons are served).
 
 ## Layout
