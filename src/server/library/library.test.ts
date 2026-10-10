@@ -110,3 +110,93 @@ describe("createLibrary", () => {
     expect(await setup([]).library.get()).toEqual({ rows: [], updatedAt: 0 });
   });
 });
+
+describe("createLibrary similar", () => {
+  const item = (id: string) => ({ id, title: id, url: `https://x.example/${id}` });
+  /** A source that knows titles like any link, and counts how often it was asked. */
+  const knowing = (id: string, answer: () => Promise<ReturnType<typeof item>[]>): LibrarySource & { asked: string[] } => {
+    const asked: string[] = [];
+    return {
+      id,
+      name: id,
+      load: gives(row("R")),
+      asked,
+      similar: (link: string) => {
+        asked.push(link);
+        return answer();
+      },
+    };
+  };
+
+  it("asks the sources in turn and takes the first answer that has titles", async () => {
+    const silent = knowing("a", () => Promise.resolve([]));
+    const wise = knowing("b", () => Promise.resolve([item("one"), item("two")]));
+    const later = knowing("c", () => Promise.resolve([item("three")]));
+    const { library } = setup([silent, wise, later]);
+    expect((await library.similar("https://x.example/watch/1")).map((found) => found.id)).toEqual(["one", "two"]);
+    expect(silent.asked).toHaveLength(1);
+    expect(later.asked).toHaveLength(0);
+  });
+
+  it("remembers an answer until the library would go stale", async () => {
+    const source = knowing("a", () => Promise.resolve([item("one")]));
+    const { library, advance } = setup([source]);
+    await library.similar("https://x.example/watch/1");
+    await library.similar("https://x.example/watch/1");
+    expect(source.asked).toHaveLength(1);
+    advance(1000);
+    await library.similar("https://x.example/watch/1");
+    expect(source.asked).toHaveLength(2);
+  });
+
+  it("is empty when a source fails or none knows how", async () => {
+    const broken = knowing("a", () => Promise.reject(new Error("down")));
+    expect(await setup([broken]).library.similar("https://x.example/watch/1")).toEqual([]);
+    expect(await setup([fakeSource("plain", [gives(row("R"))])]).library.similar("https://x.example/watch/1")).toEqual([]);
+  });
+});
+
+describe("createLibrary episodes", () => {
+  const detail = (episode: number) => ({ season: 1, episode, title: `Episode ${episode}` });
+  const knowing = (id: string, answer: () => Promise<ReturnType<typeof detail>[]>): LibrarySource & { asked: string[] } => {
+    const asked: string[] = [];
+    return {
+      id,
+      name: id,
+      load: gives(row("R")),
+      asked,
+      episodes: (link: string, season: number) => {
+        asked.push(`${season}|${link}`);
+        return answer();
+      },
+    };
+  };
+
+  it("asks the sources in turn and takes the first answer that has episodes", async () => {
+    const silent = knowing("a", () => Promise.resolve([]));
+    const wise = knowing("b", () => Promise.resolve([detail(1), detail(2)]));
+    const later = knowing("c", () => Promise.resolve([detail(3)]));
+    const { library } = setup([silent, wise, later]);
+    expect((await library.episodes("https://x.example/watch/1?s=1&e=1", 1)).map((found) => found.episode)).toEqual([1, 2]);
+    expect(later.asked).toHaveLength(0);
+  });
+
+  it("remembers each season of a show apart, until the library would go stale", async () => {
+    const source = knowing("a", () => Promise.resolve([detail(1)]));
+    const { library, advance } = setup([source]);
+    await library.episodes("https://x.example/watch/1?s=1&e=1", 1);
+    await library.episodes("https://x.example/watch/1?s=1&e=1", 1);
+    expect(source.asked).toHaveLength(1);
+    await library.episodes("https://x.example/watch/1?s=2&e=1", 2);
+    expect(source.asked).toHaveLength(2);
+    advance(1000);
+    await library.episodes("https://x.example/watch/1?s=1&e=1", 1);
+    expect(source.asked).toHaveLength(3);
+  });
+
+  it("is empty when a source fails or none knows how", async () => {
+    const broken = knowing("a", () => Promise.reject(new Error("down")));
+    expect(await setup([broken]).library.episodes("https://x.example/watch/1", 1)).toEqual([]);
+    expect(await setup([fakeSource("plain", [gives(row("R"))])]).library.episodes("https://x.example/watch/1", 1)).toEqual([]);
+  });
+});

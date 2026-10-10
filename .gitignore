@@ -8,3 +8,5 @@ dist/*
 playwright-report/
 test-results/
 .vite/
+# accounts (password hashes!) when kept in a file next to the server
+data/

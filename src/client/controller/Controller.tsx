@@ -2,113 +2,88 @@ import { useEffect, useRef, useState } from "react";
 import {
   IDLE_STATE,
   describeChange,
-  parseWatched,
   previousEpisode,
-  recordWatching,
-  serializeWatched,
   seriesKeyOf,
   stateIsFor,
   type Command,
   type NormalizedMedia,
   type PartyTv,
+  type PlayHint,
   type PlayerState,
   type ResolveStatus,
   type TvInfo,
 } from "../../shared";
+import { useAccount } from "../account/AccountProvider";
+import { profileStore, useProfileData } from "../account/store";
+import { useT } from "../i18n";
+import { Rich } from "../i18n/Rich";
 import { readStorage, writeStorage } from "../shared/format";
 import { MoreIcon, TvIcon } from "../shared/icons";
 import { readLaunchParams } from "../shared/launch";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
-import {
-  HISTORY_KEY,
-  parseHistory,
-  recordPlay,
-  recordProgress,
-  removeEntry,
-  serializeHistory,
-  type HistoryEntry,
-} from "./history";
+import { noticeText, resolveFailure, socketError } from "../shared/words";
+import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
+import { LinkApprove } from "../account/LinkApprove";
 import { Library } from "./Library";
 import { PairScreen } from "./PairScreen";
 import { PlayLink } from "./PlayLink";
 import { Remote, type SheetKind } from "./Remote";
+import { ContinueRow, ListRow } from "./Rows";
 import { Sheet } from "./Sheet";
-import { CaptionStyleSheet, EpisodesSheet, MenuSheet, PartySheet, QualitySheet, SourcesSheet, SpeedSheet, TracksSheet } from "./Sheets";
+import {
+  CaptionStyleSheet,
+  EpisodesSheet,
+  MenuSheet,
+  OtherTvSheet,
+  PartySheet,
+  QualitySheet,
+  SourcesSheet,
+  SpeedSheet,
+  TracksSheet,
+  type PartyInvite,
+} from "./Sheets";
 import "./controller.css";
 
 const CONTROLLER_KEY = "controller.id";
-const WATCHED_KEY = "controller.watched";
 /** A lookup that has not answered by now is reported as failed instead of spinning forever. */
 const RESOLVE_TIMEOUT_MS = 40_000;
-/** How often playback progress is written to the recently-played list. Stop saves the exact spot. */
-const PROGRESS_EVERY_MS = 5_000;
-/** The link a phone sent is only attached to a "found" that arrives soon after. */
-const PENDING_LINK_MS = 90_000;
-
-/**
- * This page only sends messages it knows are valid, so "invalid message" means the server is older than the page:
- * it was started before an update and never restarted. "Invalid message." alone leaves nobody any the wiser.
- */
-const OUTDATED_SERVER = "The server doesn't understand this app version. Restart the server, then reload this page.";
 
 export function Controller() {
+  const t = useT();
+  const account = useAccount();
   const socketRef = useRef<Socket | null>(null);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
   const [tv, setTv] = useState<TvInfo | null>(null);
   const [media, setMedia] = useState<NormalizedMedia | null>(null);
   const [player, setPlayer] = useState<PlayerState>(IDLE_STATE);
   const [error, setError] = useState<string | null>(null);
-  const [resolve, setResolve] = useState<ResolveStatus | null>(null);
+  /** What the lookup of a link is up to (a status of "cancelled" clears it instead of being kept). */
+  const [resolve, setResolve] = useState<Exclude<ResolveStatus, { phase: "cancelled" }> | null>(null);
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [pairing, setPairing] = useState(false);
-  /** The other TVs that watch along with this phone's TV. */
+  /** The other TVs that watch along with this phone's TV, and the code that brings another one in. */
   const [party, setParty] = useState<PartyTv[]>([]);
-  const [history, setHistory] = useState<HistoryEntry[]>(() => parseHistory(readStorage(HISTORY_KEY)));
+  const [invite, setInvite] = useState<PartyInvite>(null);
+  /** The code of another TV that this phone scanned while it had one: waiting to be told what the new TV is for. `control`: that TV has a phone, so joining its party is not an option. */
+  const [other, setOther] = useState<{ code: string; control: boolean } | null>(null);
+  // What the profile in use has watched and saved: "Continue watching", My List, and the marks on the episode list.
+  const { progress, watched, list } = useProfileData();
 
   // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
   const launchRef = useRef(readLaunchParams(location.search));
   const [code, setCode] = useState(launchRef.current.code ?? "");
-
-  const mediaRef = useRef<NormalizedMedia | null>(null);
-  mediaRef.current = media;
-  /** The link the phone just sent, waiting for the resolver to say what it turned out to be. */
-  const pendingRef = useRef<{ url: string; at: number } | null>(null);
-  const lastSaveRef = useRef(0);
-
+  // The account page, and the sign-in request of a TV (from its QR code) waiting for this signed-in phone to say yes or no.
+  const [showAccount, setShowAccount] = useState(false);
+  const [approveCode, setApproveCode] = useState<string | null>(launchRef.current.link ?? null);
   useEffect(() => {
-    writeStorage(HISTORY_KEY, serializeHistory(history));
-  }, [history]);
+    // A sign-in code is for one use: it does not stay in the address (a reload or a bookmark would offer it again).
+    if (launchRef.current.link) window.history.replaceState(null, "", location.pathname);
+  }, []);
 
-  // Which episodes were watched, for the episode list.
-  const [watched, setWatched] = useState(() => parseWatched(readStorage(WATCHED_KEY)));
-  useEffect(() => {
-    writeStorage(WATCHED_KEY, serializeWatched(watched));
-  }, [watched]);
-
-  /** A video was found: remember it in the recently-played list, under the link that led to it. */
+  /** A video was found: it moves to the front of "Continue watching" (keeping its place if it was left unfinished). */
   const onFound = (found: NormalizedMedia) => {
     setMedia(found);
-    const pending = pendingRef.current;
-    pendingRef.current = null;
-    const previous = mediaRef.current;
-    // Not sent from this phone? Then it is the next (or previous) episode starting from the TV.
-    const advanced = found.series
-      ? [previous?.series?.next, previousEpisode(previous?.series)].find(
-          (episode) => episode && episode.season === found.series?.season && episode.episode === found.series.episode,
-        )?.url
-      : undefined;
-    const url = pending && Date.now() - pending.at < PENDING_LINK_MS ? pending.url : advanced;
-    if (!url) return;
-    const seriesKey = seriesKeyOf(found);
-    setHistory((list) =>
-      recordPlay(list, {
-        url,
-        title: found.title ?? "",
-        streamUrl: found.stream.url,
-        ...(seriesKey ? { seriesKey } : {}),
-        now: Date.now(),
-      }),
-    );
+    profileStore.playbackStarted(found);
   };
 
   useEffect(() => {
@@ -123,21 +98,27 @@ export function Controller() {
             setMedia(message.media);
             setPlayer(message.state);
             setParty(message.party ?? []);
+            setInvite(null);
             setError(null);
             setPairing(false);
             if (!message.tv) {
               setSheet(null);
               setResolve(null);
+              setOther(null);
             }
 
             const launch = launchRef.current;
-            if (launch.code || launch.url) window.history.replaceState(null, "", location.pathname);
-            if (launch.code) {
-              // Scanned the TV's QR code: connect straight away, switching TVs if this phone had another.
-              launchRef.current = { ...launch, code: undefined };
-              if (message.tv) socketRef.current?.send({ type: "UNPAIR" });
-              socketRef.current?.send({ type: "PAIR", code: launch.code });
-              setPairing(true);
+            if (launch.code || launch.control || launch.url) window.history.replaceState(null, "", location.pathname);
+            const scanned = launch.code ?? launch.control;
+            if (scanned) {
+              // Scanned the TV's QR code: connect straight away. A phone that has a TV is asked first (unless this is that TV's own code).
+              launchRef.current = { ...launch, code: undefined, control: undefined };
+              if (!message.tv) {
+                socketRef.current?.send({ type: "PAIR", code: scanned });
+                setPairing(true);
+              } else if (message.tv.controlCode !== scanned) {
+                setOther({ code: scanned, control: launch.code === undefined });
+              }
             } else if (launch.url && message.tv) {
               // Shared a link to this app: play it as soon as there is a TV to play it on.
               launchRef.current = { ...launch, url: undefined };
@@ -149,16 +130,15 @@ export function Controller() {
             setPlayer(message.state);
             break;
           case "RESOLVE_STATUS":
-            setResolve(message.status);
+            setResolve(message.status.phase === "cancelled" ? null : message.status); // given up on at the TV: nothing left to wait for
             if (message.status.phase === "found") {
               onFound(message.status.media);
               setSheet((open) => (open === "link" || open === "episodes" ? null : open));
-            } else if (message.status.phase === "failed") {
-              pendingRef.current = null;
             }
             break;
           case "PARTY":
             setParty(message.tvs);
+            setInvite(message.code ? { code: message.code.code, endsAt: Date.now() + message.code.expiresInMs } : null);
             break;
           case "TV_STATUS":
             setTv((current) => (current ? { ...current, online: message.online } : current));
@@ -167,8 +147,10 @@ export function Controller() {
             setMedia(message.media);
             break;
           case "ERROR":
-            setError(message.code === "BAD_MESSAGE" ? OUTDATED_SERVER : message.message);
+            // "Invalid message" means the server is older than this page (started before an update, never restarted); see socketError.
+            setError(socketError(message.code, message.message));
             setPairing(false);
+            setInvite((current) => (current === "asking" ? null : current)); // no answer is coming
             break;
         }
       },
@@ -177,12 +159,26 @@ export function Controller() {
     return () => socket.disconnect();
   }, []);
 
-  /** Any pasted or shared link (page or direct media): the server finds the video and tells the TV. */
-  const playLink = (link: string, startAt?: number) => {
+  /**
+   * Any pasted or shared link (page or direct media): the server finds the video and tells the TV. `startAt` picks up an
+   * unfinished title where it was left, and `hint` carries the picture and year a library tile already has.
+   */
+  const playLink = (link: string, startAt?: number, hint?: PlayHint) => {
     setError(null);
     setResolve(null);
-    pendingRef.current = { url: link, at: Date.now() };
-    socketRef.current?.send({ type: "PLAY_URL", url: link, ...(startAt ? { startAt } : {}) });
+    socketRef.current?.send({ type: "PLAY_URL", url: link, ...(startAt ? { startAt } : {}), ...(hint ? { hint } : {}) });
+  };
+
+  /** Ask the TV for the code of its party; asking is what opens one, and the TV answers with the code (and who is in). */
+  const openParty = () => {
+    setInvite("asking");
+    socketRef.current?.send({ type: "OPEN_PARTY" });
+  };
+
+  /** The menu shows the code a second phone joins with: opening it asks again, which gives the current code and keeps it good for a while. */
+  const openMenu = () => {
+    socketRef.current?.send({ type: "CTL_HELLO", controllerId: readStorage(CONTROLLER_KEY) });
+    setSheet("menu");
   };
 
   const send = (command: Command) => {
@@ -197,43 +193,22 @@ export function Controller() {
   };
 
   const stop = () => {
-    if (media && player.duration > 0) saveProgress(media, player);
-    pendingRef.current = null;
+    if (media && player.duration > 0 && stateIsFor(media, player)) profileStore.playbackAt(media, player); // the exact spot it stopped at
     setResolve(null);
     send({ type: "STOP" });
   };
 
-  const saveProgress = (current: NormalizedMedia, state: PlayerState) =>
-    stateIsFor(current, state) &&
-    setHistory((list) =>
-      recordProgress(list, {
-        streamUrl: current.stream.url,
-        position: state.currentTime,
-        duration: state.duration,
-        now: Date.now(),
-      }),
-    );
-
-  // Every few seconds of real playback, remember how far it got. A pause saves at once: the TV stops reporting while nothing changes.
+  // What the TV reports of the video is where it got to: remembered every few seconds (the store ignores what barely moved).
   useEffect(() => {
-    const watching = player.state === "playing" || player.state === "paused";
-    if (!media || !watching || player.buffering || player.duration <= 0) return;
-    const now = Date.now();
-    if (player.state === "playing" && now - lastSaveRef.current < PROGRESS_EVERY_MS) return;
-    lastSaveRef.current = now;
-    saveProgress(media, player);
-  }, [player, media]);
-
-  useEffect(() => {
-    if (!media || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(media, player)) return;
-    setWatched((list) => recordWatching(list, media, player, Date.now()));
+    if (!media || (player.state !== "playing" && player.state !== "paused") || player.buffering || player.duration <= 0 || !stateIsFor(media, player)) return;
+    profileStore.playbackAt(media, player);
   }, [player, media]);
 
   // What the TV just did, in a line at the bottom: the answer to a button, and the news when someone else pressed one.
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   const lastPlayerRef = useRef<PlayerState>(IDLE_STATE);
   useEffect(() => {
-    const change = describeChange(lastPlayerRef.current, player);
+    const change = describeChange(lastPlayerRef.current, player, noticeText);
     lastPlayerRef.current = player;
     if (change) setToast((current) => ({ id: (current?.id ?? 0) + 1, text: change }));
   }, [player]);
@@ -266,40 +241,72 @@ export function Controller() {
 
   /* ------------------------------ views ------------------------------ */
 
+  const closeApprove = () => setApproveCode(null);
+  const accountButton = <AccountButton onClick={() => setShowAccount(true)} />;
+  // On top of whichever screen is showing: the account, a TV asking to be signed in, and what the account has to say.
+  const accountLayer = (
+    <>
+      {approveCode ? (
+        <Page title={t("account.signInTv")} onBack={closeApprove} testId="approve-page">
+          <LinkApprove code={approveCode} onClose={closeApprove} />
+        </Page>
+      ) : (
+        showAccount && <AccountScreen onClose={() => setShowAccount(false)} />
+      )}
+      {account.message && (
+        <p className="account-toast" key={account.message.id} role="status" data-testid="account-toast">
+          {account.message.text}
+        </p>
+      )}
+    </>
+  );
+
+  // Signed in on a phone that has not been told who is holding it: the first thing to ask.
+  if (account.choosing && !approveCode) {
+    return (
+      <>
+        <ChooseProfile />
+        {accountLayer}
+      </>
+    );
+  }
+
   if (!tv) {
     return (
-      <PairScreen
-        code={code}
-        onCodeChange={setCode}
-        onSubmit={(value) => {
-          setError(null);
-          setPairing(true);
-          socketRef.current?.send({ type: "PAIR", code: value });
-        }}
-        connection={connection}
-        pending={pairing}
-        error={error}
-      />
+      <>
+        <PairScreen
+          code={code}
+          onCodeChange={setCode}
+          onSubmit={(value) => {
+            setError(null);
+            setPairing(true);
+            socketRef.current?.send({ type: "PAIR", code: value });
+          }}
+          connection={connection}
+          pending={pairing}
+          error={error}
+          corner={accountButton}
+        />
+        {accountLayer}
+      </>
     );
   }
 
   const online = connection === "open" && tv.online;
   const closeSheet = () => setSheet(null);
+  const absolute = (url: string) => new URL(url, location.href).href;
   const link = (
     <>
-      <PlayLink
-        tvName={tv.name}
-        resolve={resolve}
-        history={history}
-        onPlay={playLink}
-        onRemove={(url) => setHistory((list) => removeEntry(list, url))}
-      />
-      <Library onPlay={playLink} />
+      <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} />
+      <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} />
+      <ListRow items={list} onPlay={(url, hint) => playLink(absolute(url), undefined, hint)} onRemove={(url) => profileStore.removeFromList(url)} />
+      <Library onPlay={(url, hint) => playLink(url, undefined, hint)} />
     </>
   );
 
   return (
     <main className="phone">
+      {accountLayer}
       <header className="top">
         <div className="top-tv">
           <TvIcon />
@@ -311,16 +318,17 @@ export function Controller() {
           )}
         </div>
         <span className={`pill ${online ? "ok" : "bad"}`} data-testid="tv-online">
-          {connection !== "open" ? "Reconnecting…" : tv.online ? "TV connected" : "TV disconnected"}
+          {connection !== "open" ? t("phone.reconnecting") : tv.online ? t("phone.tvConnected") : t("phone.tvDisconnected")}
         </span>
-        <button className="icon-btn" aria-label="TV menu" data-testid="menu" onClick={() => setSheet("menu")}>
+        {accountButton}
+        <button className="icon-btn" aria-label={t("phone.tvMenu")} data-testid="menu" onClick={openMenu}>
           <MoreIcon />
         </button>
       </header>
 
       {connection === "open" && !tv.online && (
         <p className="banner">
-          The TV is offline. Open <b>{location.host}</b> on it and this remote will pick up again.
+          <Rich k="phone.tvOffline" parts={{ host: <b>{location.host}</b> }} />
         </p>
       )}
 
@@ -341,8 +349,8 @@ export function Controller() {
         />
       ) : (
         <section className="home">
-          <h2>What do you want to watch?</h2>
-          <p className="muted">Paste a link to a video, or to a page that has one. It plays on {tv.name}, without the page.</p>
+          <h2>{t("phone.homeTitle")}</h2>
+          <p className="muted">{t("phone.homeHelp", { tv: tv.name })}</p>
           {link}
         </section>
       )}
@@ -352,10 +360,10 @@ export function Controller() {
           {resolve.phase === "resolving" ? (
             <>
               <span className="spinner" />
-              Finding video…
+              {t("play.finding")}
             </>
           ) : (
-            resolve.message
+            resolveFailure(resolve)
           )}
         </p>
       )}
@@ -367,7 +375,7 @@ export function Controller() {
       )}
 
       {sheet === "link" && (
-        <Sheet title={`Play on ${tv.name}`} onClose={closeSheet} testId="link-sheet">
+        <Sheet title={t("play.on", { tv: tv.name })} onClose={closeSheet} testId="link-sheet">
           {link}
         </Sheet>
       )}
@@ -391,13 +399,36 @@ export function Controller() {
         <PartySheet
           tvName={tv.name}
           party={party}
+          invite={invite}
           error={error}
           onClose={closeSheet}
+          onInvite={openParty}
           onAdd={(code) => {
             setError(null);
             socketRef.current?.send({ type: "ADD_TV", code });
           }}
           onRemove={(id) => socketRef.current?.send({ type: "REMOVE_TV", id })}
+        />
+      )}
+      {other && (
+        <OtherTvSheet
+          tvName={tv.name}
+          guests={party.length}
+          phones={tv.controllerCount ?? 1}
+          canAdd={!other.control}
+          onClose={() => setOther(null)}
+          onAdd={() => {
+            setError(null);
+            socketRef.current?.send({ type: "ADD_TV", code: other.code });
+            setOther(null);
+            setSheet("party");
+          }}
+          onSwitch={() => {
+            socketRef.current?.send({ type: "UNPAIR" });
+            socketRef.current?.send({ type: "PAIR", code: other.code });
+            setPairing(true);
+            setOther(null);
+          }}
         />
       )}
       {sheet === "tracks" && (

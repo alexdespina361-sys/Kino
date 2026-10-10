@@ -70,23 +70,44 @@ export const NormalizedMediaSchema = z.object({
   series: SeriesInfoSchema.optional(),
   /** Other sources for the same video, in the order to try them. The main `stream` is always tried first. */
   alternates: z.array(AlternateSourceSchema).max(MAX_ALTERNATES).optional(),
+  /** The link that plays this again, which is what "continue watching" and the history are saved against (the stream's own link may stop working). Filled in by the server from what was asked for. */
+  page: z.string().max(2048).optional(),
+  /** A picture (upright and wide) and a year for cards, when whoever asked for it knew them (a library tile did). */
+  poster: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path").optional(),
+  backdrop: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path").optional(),
+  year: z.number().int().min(1800).max(2200).optional(),
 });
 export type NormalizedMedia = z.infer<typeof NormalizedMediaSchema>;
+
+/** What a screen knows about a title it asks to play: sent along so the card for it has a picture. */
+export const PlayHintSchema = z.object({ poster: NormalizedMediaSchema.shape.poster, backdrop: NormalizedMediaSchema.shape.backdrop, year: NormalizedMediaSchema.shape.year });
+export type PlayHint = z.infer<typeof PlayHintSchema>;
+
+/** The media with what the one who asked for it knew about it, without overriding what the source said. */
+export function withHint(media: NormalizedMedia, hint: PlayHint | undefined): NormalizedMedia {
+  if (!hint) return media;
+  const poster = media.poster ?? hint.poster;
+  const backdrop = media.backdrop ?? hint.backdrop;
+  const year = media.year ?? hint.year;
+  if (poster === media.poster && backdrop === media.backdrop && year === media.year) return media;
+  return { ...media, ...(poster ? { poster } : {}), ...(backdrop ? { backdrop } : {}), ...(year ? { year } : {}) };
+}
 
 /* ------------------------------ sources ------------------------------ */
 
 export interface PlayableSource {
-  label: string;
+  /** What the source called it, if it did: the screen names the others ("Source 2"...) in its own language. */
+  label: string | undefined;
   stream: NormalizedMedia["stream"];
   subtitles: SubtitleTrack[] | undefined;
 }
 
-/** The main stream and then the alternates, each with a name for the picker. */
+/** The main stream and then the alternates, in the order to try them. */
 export function sourcesOf(media: NormalizedMedia): PlayableSource[] {
   return [
-    { label: "Source 1", stream: media.stream, subtitles: media.subtitles },
-    ...(media.alternates ?? []).map((alternate, index) => ({
-      label: alternate.label?.trim() || `Source ${index + 2}`,
+    { label: undefined, stream: media.stream, subtitles: media.subtitles },
+    ...(media.alternates ?? []).map((alternate) => ({
+      label: alternate.label?.trim() || undefined,
       stream: alternate.stream,
       subtitles: alternate.subtitles ?? media.subtitles,
     })),
@@ -118,10 +139,10 @@ export function groupBySeason(episodes: readonly EpisodeRef[]): SeasonGroup[] {
 export const isCurrentEpisode = (series: SeriesInfo, episode: EpisodeRef) =>
   series.season === episode.season && series.episode === episode.episode;
 
-/** "S1:E3" titles are placeholders from the source; anything else is a real episode name. */
-export function episodeName(episode: EpisodeRef): string {
+/** "S1:E3" titles are placeholders from the source; anything else is a real episode name. `unnamed` (in the screen's language) is what the rest are called. */
+export function episodeName(episode: EpisodeRef, unnamed: string): string {
   const title = episode.title?.trim();
-  return title && !/^S\d+\s*:?\s*E\d+$/i.test(title) ? title : `Episode ${episode.episode}`;
+  return title && !/^S\d+\s*:?\s*E\d+$/i.test(title) ? title : unnamed;
 }
 
 /** Same show, whatever the episode: "Show · S1 E3" -> "Show". Lets lists keep one entry per show. */

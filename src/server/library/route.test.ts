@@ -56,3 +56,51 @@ describe("GET /api/library/search", () => {
     expect(res2.json()).toEqual({ items: [{ id: "i2", title: "A Night to Remember", url: "https://x.example/2" }] });
   });
 });
+
+describe("GET /api/library/similar", () => {
+  it("lists the titles a source finds like the one a link plays", async () => {
+    const similarSource: LibrarySource = {
+      ...source,
+      similar: async (link) => (link.endsWith("/1") ? [{ id: "s1", title: "Alike", url: "https://x.example/s1" }] : []),
+    };
+    app = await buildApp({ librarySources: [similarSource] });
+
+    const found = await app.inject({ url: `/api/library/similar?url=${encodeURIComponent("https://x.example/watch/1")}` });
+    expect(found.statusCode).toBe(200);
+    expect(found.headers["cache-control"]).toBe("public, max-age=3600");
+    expect(found.json()).toEqual({ items: [{ id: "s1", title: "Alike", url: "https://x.example/s1" }] });
+
+    const unknown = await app.inject({ url: `/api/library/similar?url=${encodeURIComponent("https://x.example/watch/2")}` });
+    expect(unknown.json()).toEqual({ items: [] });
+  });
+
+  it("wants a link", async () => {
+    app = await buildApp({ librarySources: [source] });
+    expect((await app.inject({ url: "/api/library/similar" })).statusCode).toBe(400);
+  });
+});
+
+describe("GET /api/library/episodes", () => {
+  it("lists what a source knows of one season of the show a link plays", async () => {
+    const episodesSource: LibrarySource = {
+      ...source,
+      episodes: async (link, season) => (link.endsWith("?s=2&e=1") ? [{ season, episode: 1, title: "Pilot", runtime: 42 }] : []),
+    };
+    app = await buildApp({ librarySources: [episodesSource] });
+
+    const found = await app.inject({ url: `/api/library/episodes?season=2&url=${encodeURIComponent("https://x.example/watch/1?s=2&e=1")}` });
+    expect(found.statusCode).toBe(200);
+    expect(found.headers["cache-control"]).toBe("public, max-age=3600");
+    expect(found.json()).toEqual({ episodes: [{ season: 2, episode: 1, title: "Pilot", runtime: 42 }] });
+
+    const unknown = await app.inject({ url: `/api/library/episodes?season=1&url=${encodeURIComponent("https://x.example/watch/9")}` });
+    expect(unknown.json()).toEqual({ episodes: [] });
+  });
+
+  it("wants a link and a season that is a number", async () => {
+    app = await buildApp({ librarySources: [source] });
+    expect((await app.inject({ url: "/api/library/episodes?season=1" })).statusCode).toBe(400);
+    expect((await app.inject({ url: "/api/library/episodes?url=https%3A%2F%2Fx.example%2Fa" })).statusCode).toBe(400);
+    expect((await app.inject({ url: "/api/library/episodes?season=abc&url=https%3A%2F%2Fx.example%2Fa" })).statusCode).toBe(400);
+  });
+});

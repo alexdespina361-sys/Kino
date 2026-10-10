@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from "react";
+import { t, useT } from "../i18n";
 import { CloseIcon } from "../shared/icons";
 
 /** A bottom sheet: the phone's way of showing a short list of choices without leaving the remote. */
@@ -13,6 +14,7 @@ export function Sheet({
   children: ReactNode;
   testId?: string;
 }) {
+  useT();
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -32,7 +34,7 @@ export function Sheet({
         <div className="sheet-grip" aria-hidden="true" />
         <div className="sheet-head">
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close" data-testid="sheet-close">
+          <button className="icon-btn" onClick={onClose} aria-label={t("common.close")} data-testid="sheet-close">
             <CloseIcon />
           </button>
         </div>

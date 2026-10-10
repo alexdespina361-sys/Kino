@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Registry, generatePairingCode } from "./registry";
+import { Registry, cleanLabel, generatePairingCode } from "./registry";
 
 function setup(options: ConstructorParameters<typeof Registry>[0] = {}) {
   let time = 1_000_000;
@@ -114,6 +114,49 @@ describe("Registry: pairing", () => {
   });
 });
 
+describe("Registry: a second phone", () => {
+  /** A TV with one phone connected. */
+  function paired() {
+    const { registry, advance } = setup({ generateCode: counter(["111111", "222222", "333333"]) });
+    const device = registry.tvHello();
+    const first = registry.controllerHello();
+    registry.ensureCode(device);
+    registry.pair(first, "111111");
+    return { registry, advance, device, first };
+  }
+
+  it("joins with the control code of the TV, and both phones are controllers of it", () => {
+    const { registry, device, first } = paired();
+    const code = registry.ensureControlCode(device).code;
+    const second = registry.controllerHello();
+    expect(registry.joinController(second, code)).toBe(device);
+    expect(registry.deviceForController(second)).toBe(device);
+    expect(registry.controllersOf(device)).toEqual([first, second]);
+  });
+
+  it("keeps the control code good for as long as a phone keeps asking for it, and not a minute after that", () => {
+    const { registry, advance, device } = paired();
+    const code = registry.ensureControlCode(device).code;
+    for (let i = 0; i < 3; i++) {
+      advance(9 * 60 * 1000);
+      expect(registry.ensureControlCode(device)).toEqual({ code, expiresInMs: 10 * 60 * 1000 });
+    }
+    advance(10 * 60 * 1000 + 1);
+    expect(registry.joinController(registry.controllerHello(), code)).toBeNull();
+    expect(registry.ensureControlCode(device).code).not.toBe(code);
+  });
+
+  it("lets either phone bring another TV into the party, not only the first", () => {
+    const { registry, device, first } = paired();
+    const second = registry.controllerHello();
+    registry.joinController(second, registry.ensureControlCode(device).code);
+    const guest = registry.tvHello();
+    const result = registry.addFollower(second, registry.ensureCode(guest)!.code);
+    expect(result).toEqual({ ok: true, leader: device, follower: guest });
+    expect(registry.removeFollower(first, guest.publicId)).toEqual({ leader: device, follower: guest });
+  });
+});
+
 describe("Registry: unpair", () => {
   it("frees the TV: it is unpaired, idle, and can be given a fresh code", () => {
     const { registry } = setup({ generateCode: counter(["111111", "222222"]) });
@@ -195,6 +238,26 @@ describe("Registry: watching together", () => {
     expect(join().result).toEqual({ ok: false, reason: "PARTY_FULL" });
   });
 
+  it("leaves a TV that hosts guests of its own alone, with its code still good; one whose party is empty is taken along without it", () => {
+    const { registry, controller } = party();
+    const host = registry.tvHello();
+    const pairingCode = registry.ensureCode(host)!.code;
+    const partyCode = registry.ensurePartyCode(host)!.code;
+    const guest = registry.tvHello();
+    registry.joinParty(guest, partyCode);
+    expect(registry.addFollower(controller, pairingCode)).toEqual({ ok: false, reason: "TV_HOSTING" });
+    expect([host.leaderId, host.code?.value, guest.leaderId]).toEqual([null, pairingCode, host.id]); // nothing moved, nothing burnt
+    registry.closeParty(host);
+    expect(registry.addFollower(controller, pairingCode).ok).toBe(true); // the same code works once that party is over
+
+    const lonely = registry.tvHello(); // a party was opened here but nobody came: it is left for this one
+    const lonelyPairing = registry.ensureCode(lonely)!.code;
+    const lonelyParty = registry.ensurePartyCode(lonely)!.code;
+    expect(registry.addFollower(controller, lonelyPairing).ok).toBe(true);
+    expect(registry.partyCodeOf(lonely)).toBeNull();
+    expect(registry.joinParty(registry.tvHello(), lonelyParty)).toEqual({ ok: false, reason: "INVALID_CODE" }); // no party hangs off a guest
+  });
+
   it("lets the phone send a TV away by its public id, which is not the TV's secret", () => {
     const { registry, leader, controller, join } = party();
     const { tv } = join();
@@ -227,6 +290,119 @@ describe("Registry: watching together", () => {
     two.registry.unpairDevice(two.leader);
     expect(c.leaderId).toBeNull();
     expect(two.leader.followerIds).toEqual([]);
+  });
+});
+
+describe("Registry: a party started on a TV", () => {
+  const codes = ["111111", "222222", "333333", "444444", "555555", "666666", "777777", "888888", "999999"];
+  /** A TV that has opened a party (no phone anywhere), and a way to bring more TVs. */
+  function hosted() {
+    const { registry, advance } = setup({ generateCode: counter(codes) });
+    const host = registry.tvHello();
+    const opened = registry.ensurePartyCode(host)!;
+    return { registry, advance, host, code: opened.code, arrive: () => registry.tvHello() };
+  }
+
+  it("gives the host a code that stays the same until it runs out, and a guest no party of its own", () => {
+    const { registry, advance, host, code } = hosted();
+    expect(code).toBe("111111");
+    expect(registry.partyCodeOf(host)).toMatchObject({ code, expiresInMs: 10 * 60 * 1000 });
+    expect(registry.ensurePartyCode(host)?.code).toBe(code);
+    advance(10 * 60 * 1000);
+    expect(registry.partyCodeOf(host)).toBeNull();
+    expect(registry.inParty(host)).toBe(false);
+    expect(registry.ensurePartyCode(host)?.code).toBe("222222");
+    expect(registry.inParty(host)).toBe(true);
+
+    const guest = registry.tvHello();
+    expect(registry.joinParty(guest, "222222").ok).toBe(true);
+    expect(registry.ensurePartyCode(guest)).toBeNull();
+  });
+
+  it("makes every TV that types the code a guest: the code is not used up", () => {
+    const { registry, host, code, arrive } = hosted();
+    const [first, second] = [arrive(), arrive()];
+    expect(registry.joinParty(first!, code)).toEqual({ ok: true, host });
+    expect(registry.joinParty(second!, code)).toEqual({ ok: true, host });
+    expect(host.followerIds).toEqual([first!.id, second!.id]);
+    expect(first!.leaderId).toBe(host.id);
+    expect(registry.ensureCode(first!)).toBeNull(); // it has a party now, so it shows no pairing code
+    expect(registry.joinParty(first!, code)).toEqual({ ok: true, host }); // typing it again changes nothing
+    expect(host.followerIds).toHaveLength(2);
+  });
+
+  it("turns away a wrong or expired code, the host's own, and a party with no room left", () => {
+    const { registry, advance, host, code, arrive } = hosted();
+    expect(registry.joinParty(arrive(), "000000")).toEqual({ ok: false, reason: "INVALID_CODE" });
+    expect(registry.joinParty(host, code)).toEqual({ ok: false, reason: "INVALID_CODE" });
+    for (let i = 0; i < 5; i++) expect(registry.joinParty(arrive(), code).ok).toBe(true);
+    expect(registry.joinParty(arrive(), code)).toEqual({ ok: false, reason: "PARTY_FULL" });
+    advance(10 * 60 * 1000);
+    expect(registry.joinParty(arrive(), code)).toEqual({ ok: false, reason: "INVALID_CODE" });
+    expect(host.followerIds).toHaveLength(5); // the guests already there stay
+  });
+
+  it("asks a TV that has a phone, guests or another party to let go of that first, and takes an empty party of its own along", () => {
+    const { registry, host, code, arrive } = hosted();
+    const withPhone = arrive();
+    registry.ensureCode(withPhone);
+    registry.pair(registry.controllerHello(), withPhone.code!.value);
+    expect(registry.joinParty(withPhone, code)).toEqual({ ok: false, reason: "HAS_PHONE" });
+
+    const other = registry.tvHello();
+    const otherCode = registry.ensurePartyCode(other)!.code;
+    const guestOfOther = arrive();
+    registry.joinParty(guestOfOther, otherCode);
+    expect(registry.joinParty(other, code)).toEqual({ ok: false, reason: "HOSTING" });
+    expect(registry.joinParty(guestOfOther, code)).toEqual({ ok: false, reason: "ALREADY_IN_PARTY" });
+
+    const lonely = registry.tvHello();
+    const lonelyCode = registry.ensurePartyCode(lonely)!.code;
+    expect(registry.joinParty(lonely, code)).toEqual({ ok: true, host });
+    expect(registry.joinParty(arrive(), lonelyCode)).toEqual({ ok: false, reason: "INVALID_CODE" }); // its own code went with it
+  });
+
+  it("lets the host send a guest away by its public id, or end the party for all of them", () => {
+    const { registry, host, code, arrive } = hosted();
+    const [first, second] = [arrive(), arrive()];
+    registry.joinParty(first!, code);
+    registry.joinParty(second!, code);
+    expect(registry.removeGuest(host, "nobody")).toBeNull();
+    expect(registry.removeGuest(host, first!.publicId)).toBe(first);
+    expect(first!.leaderId).toBeNull();
+    expect(host.followerIds).toEqual([second!.id]);
+
+    expect(registry.closeParty(host)).toEqual([second]);
+    expect([second!.leaderId, host.followerIds, registry.partyCodeOf(host)]).toEqual([null, [], null]);
+    expect(registry.joinParty(arrive(), code)).toEqual({ ok: false, reason: "INVALID_CODE" });
+    expect(registry.inParty(host)).toBe(false);
+  });
+
+  it("takes the guests down with a host that lets go, and never hands a party code to someone else's code", () => {
+    const { registry, host, code, arrive } = hosted();
+    const guest = arrive();
+    registry.joinParty(guest, code);
+    registry.unpairDevice(host);
+    expect([guest.leaderId, registry.partyCodeOf(host)]).toEqual([null, null]);
+
+    // codes of every kind share one space: a new party code is never one that is live as a pairing code
+    const clash = setup({ generateCode: counter(["123456", "123456", "654321"]) });
+    const a = clash.registry.tvHello();
+    const b = clash.registry.tvHello();
+    expect(clash.registry.ensureCode(a)?.code).toBe("123456");
+    expect(clash.registry.ensurePartyCode(b)?.code).toBe("654321");
+  });
+
+  it("names a screen by the name it chose, cleaned up, or by its own", () => {
+    const { registry, host } = hosted();
+    expect(registry.displayName(host)).toMatch(/^TV [0-9A-F]{4}$/);
+    registry.setLabel(host, "  Alex \n\t the  Great ");
+    expect(registry.displayName(host)).toBe("Alex the Great");
+    registry.setLabel(host, "x".repeat(100));
+    expect(registry.displayName(host)).toHaveLength(40);
+    registry.setLabel(host, "   ");
+    expect(registry.displayName(host)).toMatch(/^TV /);
+    expect(cleanLabel("\u0000‮")).toBeNull(); // nothing but control and direction marks
   });
 });
 

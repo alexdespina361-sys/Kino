@@ -1,4 +1,4 @@
-import type { Library, LibraryItem, LibraryRow } from "../../shared";
+import type { EpisodeDetail, Library, LibraryItem, LibraryRow } from "../../shared";
 
 /** A place that offers video openly and can list some of it as rows of titles. Each one is asked as seldom as the cache allows. */
 export interface LibrarySource {
@@ -7,11 +7,17 @@ export interface LibrarySource {
   /** Collect the rows. Throws when the place cannot be reached. */
   load(): Promise<LibraryRow[]>;
   search?(query: string): Promise<LibraryItem[]>;
+  /** Titles like the one a link plays, when the link is one of this place's own (anything else: none). */
+  similar?(link: string): Promise<LibraryItem[]>;
+  /** What is known about each episode of one season of the show a link plays, when the link is one of this place's own (anything else: none). */
+  episodes?(link: string, season: number): Promise<EpisodeDetail[]>;
 }
 
 export interface LibraryService {
   get(): Promise<Library>;
   search(query: string): Promise<LibraryItem[]>;
+  similar(link: string): Promise<LibraryItem[]>;
+  episodes(link: string, season: number): Promise<EpisodeDetail[]>;
 }
 
 export interface LibraryOptions {
@@ -26,6 +32,8 @@ export interface LibraryOptions {
 
 export const LIBRARY_TTL_MS = 6 * 60 * 60 * 1000;
 export const LIBRARY_RETRY_MS = 2 * 60 * 1000;
+/** What is asked about a link ("titles like this one", "this show's episodes") is remembered for this many links, for as long as the library is. */
+const ANSWERS_REMEMBERED = 200;
 
 interface Entry {
   source: LibrarySource;
@@ -46,6 +54,33 @@ export function createLibrary(options: LibraryOptions): LibraryService {
   const ttlMs = options.ttlMs ?? LIBRARY_TTL_MS;
   const retryMs = options.retryMs ?? LIBRARY_RETRY_MS;
   const entries: Entry[] = options.sources.map((source) => ({ source, rows: [], collectedAt: 0, nextAttempt: 0, inflight: null }));
+
+  /**
+   * A question about a link, put to the places in turn: the first one that knows the link answers. An empty answer is
+   * remembered too, so a link nobody knows is not asked about again and again; when the memory is full the oldest goes.
+   */
+  const answers = <T>() => {
+    const known = new Map<string, { at: number; items: T[] }>();
+    return async (key: string, ask: (source: LibrarySource) => Promise<T[]> | undefined): Promise<T[]> => {
+      const before = known.get(key);
+      if (before && now() - before.at < ttlMs) return before.items;
+      let items: T[] = [];
+      for (const { source } of entries) {
+        try {
+          items = (await ask(source)) ?? [];
+        } catch {
+          items = [];
+        }
+        if (items.length > 0) break;
+      }
+      known.delete(key);
+      known.set(key, { at: now(), items });
+      if (known.size > ANSWERS_REMEMBERED) known.delete(known.keys().next().value!);
+      return items;
+    };
+  };
+  const similarTo = answers<LibraryItem>();
+  const episodesOf = answers<EpisodeDetail>();
 
   const collect = (entry: Entry): Promise<void> => {
     entry.inflight ??= entry.source
@@ -119,5 +154,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
 
       return localMatches;
     },
+    similar: (link: string) => similarTo(link, (source) => source.similar?.(link)),
+    episodes: (link: string, season: number) => episodesOf(`${season}|${link}`, (source) => source.episodes?.(link, season)),
   };
 }

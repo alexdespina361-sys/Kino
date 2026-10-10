@@ -11,6 +11,7 @@ import {
   sortEpisodes,
   sourcesOf,
   stateIsFor,
+  withHint,
   type EpisodeRef,
   type NormalizedMedia,
 } from "./media";
@@ -40,10 +41,10 @@ describe("episode lists", () => {
   });
 
   it("names an episode by its title, or by its number when the title is just a placeholder", () => {
-    expect(episodeName(ep(1, 3, "The Pilot"))).toBe("The Pilot");
-    expect(episodeName(ep(1, 3, "S1:E3"))).toBe("Episode 3");
-    expect(episodeName(ep(1, 3, "S1 E3"))).toBe("Episode 3");
-    expect(episodeName(ep(1, 3))).toBe("Episode 3");
+    expect(episodeName(ep(1, 3, "The Pilot"), "Episode 3")).toBe("The Pilot");
+    expect(episodeName(ep(1, 3, "S1:E3"), "Episode 3")).toBe("Episode 3");
+    expect(episodeName(ep(1, 3, "S1 E3"), "Episodio 3")).toBe("Episodio 3");
+    expect(episodeName(ep(1, 3), "Episode 3")).toBe("Episode 3");
   });
 
   it("labels an episode by its title, or by its numbers when it has none", () => {
@@ -134,10 +135,10 @@ describe("sourcesOf", () => {
   const subs = [{ id: "en", label: "English", url: "/en.vtt" }];
 
   it("is just the main stream for a video with no alternates", () => {
-    expect(sourcesOf({ stream: main })).toEqual([{ label: "Source 1", stream: main, subtitles: undefined }]);
+    expect(sourcesOf({ stream: main })).toEqual([{ label: undefined, stream: main, subtitles: undefined }]);
   });
 
-  it("lists the alternates after the main stream, naming the unnamed ones by number", () => {
+  it("lists the alternates after the main stream, with the names their sources gave them (and none where they gave none)", () => {
     const list = sourcesOf({
       stream: main,
       subtitles: subs,
@@ -146,7 +147,7 @@ describe("sourcesOf", () => {
         { label: "  Server B ", stream: { url: "https://mirror.example/b.mp4", type: "mp4" }, subtitles: [] },
       ],
     });
-    expect(list.map((source) => source.label)).toEqual(["Source 1", "Source 2", "Server B"]);
+    expect(list.map((source) => source.label)).toEqual([undefined, undefined, "Server B"]);
     expect(list[1]?.subtitles).toBe(subs); // an alternate without subtitles of its own uses the main ones
     expect(list[2]?.subtitles).toEqual([]); // one that says it has none keeps none
   });
@@ -155,5 +156,27 @@ describe("sourcesOf", () => {
     const alternate = { stream: { url: "https://mirror.example/a.mp4", type: "mp4" as const } };
     expect(NormalizedMediaSchema.safeParse({ stream: main, alternates: Array(8).fill(alternate) }).success).toBe(true);
     expect(NormalizedMediaSchema.safeParse({ stream: main, alternates: Array(9).fill(alternate) }).success).toBe(false);
+  });
+});
+
+describe("withHint", () => {
+  const plain: NormalizedMedia = { title: "Film", stream: { url: "https://cdn.example/a.mp4", type: "mp4" } };
+
+  it("gives a title the picture and year its asker knew, and changes nothing without a hint", () => {
+    expect(withHint(plain, { poster: "/p.jpg", year: 2001 })).toEqual({ ...plain, poster: "/p.jpg", year: 2001 });
+    expect(withHint(plain, undefined)).toBe(plain);
+    expect(withHint(plain, {})).toBe(plain);
+  });
+
+  it("keeps what the source said", () => {
+    const known = { ...plain, poster: "/source.jpg", year: 1999 };
+    expect(withHint(known, { poster: "/p.jpg", year: 2001 })).toBe(known);
+    expect(withHint({ ...plain, year: 1999 }, { poster: "/p.jpg", year: 2001 })).toEqual({ ...plain, year: 1999, poster: "/p.jpg" });
+  });
+
+  it("only takes a picture that is a real link or path", () => {
+    expect(NormalizedMediaSchema.safeParse({ ...plain, poster: "javascript:alert(1)" }).success).toBe(false);
+    expect(NormalizedMediaSchema.safeParse({ ...plain, poster: "//evil.example/x.jpg" }).success).toBe(false);
+    expect(NormalizedMediaSchema.safeParse({ ...plain, poster: "/posters/x.jpg", year: 2020 }).success).toBe(true);
   });
 });

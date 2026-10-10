@@ -1,15 +1,63 @@
-import { expect, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type ServerMessage } from "../src/shared";
 
 /** A phone: a narrow touch screen, which is how the page tells a remote from a TV. */
 export const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true } as const;
 
-/** Open /tv in its own browser context (its own storage, like a separate device) and press OK. */
-export async function openTv(browser: Browser, viewport = { width: 1280, height: 720 }): Promise<Page> {
-  const page = await (await browser.newContext({ viewport })).newPage();
+/**
+ * What a screen has kept about its guest (nobody signed in): the same place the page itself writes, for a test that needs the
+ * screen to have watched or chosen something before it opens.
+ */
+export function guestStorage(data: { progress?: unknown[]; watched?: unknown[]; list?: unknown[]; settings?: unknown[] }): Record<string, string> {
+  return { "kino.data.guest": JSON.stringify({ v: 1, data: { progress: [], watched: [], list: [], settings: [], ...data }, rev: 0, dirty: [] }) };
+}
+
+/**
+ * A new device (its own storage) whose localStorage already holds `seed`, unless the page has written there since.
+ * `setup` runs on the new context before any page opens, for what the page asks for as it loads (the library).
+ */
+export async function openDevice(
+  browser: Browser,
+  options: Parameters<Browser["newContext"]>[0],
+  seed: Record<string, string> = {},
+  setup?: (context: BrowserContext) => Promise<unknown>,
+): Promise<Page> {
+  const context = await browser.newContext(options);
+  if (Object.keys(seed).length > 0) {
+    await context.addInitScript((entries) => {
+      for (const [key, value] of Object.entries(entries)) if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
+    }, seed);
+  }
+  await setup?.(context);
+  return context.newPage();
+}
+
+/** Answer the library's requests with `library` (and the search with `search`): the server the tests run against has no library of its own. */
+export const withLibrary =
+  (library: unknown, search?: (query: string) => unknown) =>
+  async (context: BrowserContext): Promise<void> => {
+    await context.route("**/api/library", (route) => route.fulfill({ json: library }));
+    await context.route(/\/api\/library\/search/, (route) => route.fulfill({ json: { items: search?.(new URL(route.request().url()).searchParams.get("q") ?? "") ?? [] } }));
+  };
+
+/** Open /tv in its own browser context (its own storage, like a separate device) and press OK: the library is what shows. */
+export async function openLibrary(
+  browser: Browser,
+  setup?: (context: BrowserContext) => Promise<unknown>,
+  viewport = { width: 1280, height: 720 },
+  seed: Record<string, string> = {},
+): Promise<Page> {
+  const page = await openDevice(browser, { viewport }, seed, setup);
   await page.goto("/tv");
   await page.getByTestId("unlock").focus();
   await page.keyboard.press("Enter"); // the remote's OK button
+  return page;
+}
+
+/** The same, and on to "Connect a phone" in the library's menu, where the code to type on the phone is. */
+export async function openTv(browser: Browser, viewport = { width: 1280, height: 720 }, seed: Record<string, string> = {}): Promise<Page> {
+  const page = await openLibrary(browser, undefined, viewport, seed);
+  await page.getByTestId("rail-connect").click();
   return page;
 }
 

@@ -7,14 +7,22 @@
   --line: rgba(255, 255, 255, 0.1);
   --text: #f5f5f7;
   --muted: #9b9ba3;
-  --red: #e50914;
-  --red-hover: #f6121d;
-  --ok: #46d369;
+  /* The colour a profile gives the site (account/theme.ts sets data-accent on <html>); red is where everybody starts. */
+  --accent: #e50914;
+  --accent-hover: #f6121d;
+  --accent-rgb: 229 9 20;
   --brand-gradient: linear-gradient(150deg, #ff3b46 0%, #c40812 55%, #8f040b 100%);
+  --ok: #46d369;
   --bad: #ff6b6b;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
+
+:root[data-accent="blue"] { --accent: #2b7fff; --accent-hover: #4d95ff; --accent-rgb: 43 127 255; --brand-gradient: linear-gradient(150deg, #5aa0ff 0%, #1f62d6 55%, #14418f 100%); }
+:root[data-accent="purple"] { --accent: #9b5cff; --accent-hover: #b07dff; --accent-rgb: 155 92 255; --brand-gradient: linear-gradient(150deg, #b98aff 0%, #7a3fe0 55%, #52289b 100%); }
+:root[data-accent="green"] { --accent: #1fb86a; --accent-hover: #34d17f; --accent-rgb: 31 184 106; --brand-gradient: linear-gradient(150deg, #4fe39a 0%, #14925a 55%, #0b6038 100%); }
+:root[data-accent="orange"] { --accent: #ff8a1f; --accent-hover: #ffa047; --accent-rgb: 255 138 31; --brand-gradient: linear-gradient(150deg, #ffb35c 0%, #e26a00 55%, #a14a00 100%); }
+:root[data-accent="pink"] { --accent: #ff4f9a; --accent-hover: #ff72b0; --accent-rgb: 255 79 154; --brand-gradient: linear-gradient(150deg, #ff86bb 0%, #e02479 55%, #9d1455 100%); }
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
@@ -27,7 +35,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   width: 1em;
   height: 1em;
   border: 0.12em solid rgba(255, 255, 255, 0.22);
-  border-top-color: var(--red);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
 }
@@ -50,7 +58,7 @@ button:disabled { opacity: 0.4; cursor: default; }
   height: 1.25em;
   border-radius: 50%;
   background: var(--brand-gradient);
-  box-shadow: 0 0.1em 0.7em rgba(229, 9, 20, 0.5), inset 0 0.07em 0 rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0.1em 0.7em rgb(var(--accent-rgb) / 0.5), inset 0 0.07em 0 rgba(255, 255, 255, 0.3);
   color: #fff;
   letter-spacing: 0;
 }

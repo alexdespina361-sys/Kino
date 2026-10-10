@@ -33,8 +33,8 @@
 .btn:active:not(:disabled) { transform: scale(0.97); }
 .btn svg { font-size: 1.2em; flex: none; }
 .btn small { font-size: 0.8em; font-weight: 500; opacity: 0.8; }
-.btn-red { background: var(--red); color: #fff; }
-.btn-red:active:not(:disabled) { background: var(--red-hover); }
+.btn-red { background: var(--accent); color: #fff; }
+.btn-red:active:not(:disabled) { background: var(--accent-hover); }
 .btn-danger { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
 .btn-block { width: 100%; }
 .episode-nav { display: flex; gap: 8px; }
@@ -64,8 +64,8 @@
   height: 72px;
   margin: 4px auto 0;
   border-radius: 50%;
-  background: rgba(229, 9, 20, 0.14);
-  color: var(--red-hover);
+  background: rgb(var(--accent-rgb) / 0.14);
+  color: var(--accent-hover);
   font-size: 2rem;
 }
 .pair h1 { font-size: 1.6rem; }
@@ -84,7 +84,7 @@
   font-variant-numeric: tabular-nums;
 }
 .code-input::placeholder { color: rgba(255, 255, 255, 0.18); }
-.code-input:focus, .field input:focus { outline: 2px solid var(--red); outline-offset: 1px; }
+.code-input:focus, .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ------------------------------ header and banners ------------------------------ */
 
@@ -136,22 +136,12 @@
 }
 .field-btn.icon { padding: 8px; font-size: 1rem; color: var(--muted); }
 
-.recents h3 { margin: 6px 0 10px; color: var(--muted); font-size: 0.78rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
-.recents ul { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.recents li { display: flex; align-items: center; gap: 4px; padding-right: 4px; border-radius: 14px; background: var(--surface); }
-.recent { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; padding: 13px 14px; text-align: left; }
-.recent-title { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.recent-meta { overflow: hidden; color: var(--muted); font-size: 0.8rem; text-overflow: ellipsis; white-space: nowrap; }
-.recent-meta b { color: var(--red-hover); font-weight: 600; }
-.recent-bar { display: block; height: 3px; margin-top: 7px; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, 0.14); }
-.recent-bar i { display: block; height: 100%; background: var(--red); }
-.mini { flex: none; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 0.72rem; font-weight: 600; }
 
 /* ------------------------------ remote ------------------------------ */
 
 .now-playing { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
 .episode-line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.85rem; }
-.badge { padding: 2px 8px; border-radius: 5px; background: var(--red); color: #fff; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; }
+.badge { padding: 2px 8px; border-radius: 5px; background: var(--accent); color: #fff; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; }
 .now-playing h2 { font-size: 1.55rem; line-height: 1.2; overflow-wrap: anywhere; }
 .state { display: flex; align-items: center; gap: 8px; min-height: 1.3em; color: var(--muted); font-size: 0.95rem; }
 .state.bad { color: var(--bad); }
@@ -159,19 +149,19 @@
 
 .seek { display: flex; flex-direction: column; }
 .seek-bar { position: relative; padding: 16px 0; cursor: pointer; touch-action: pan-y; }
-.seek-bar:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; border-radius: 6px; }
+.seek-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 .seek-track { position: relative; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.2); transition: height 0.1s ease; }
 .seek-bar.dragging .seek-track { height: 8px; }
 .seek-buffered, .seek-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 3px; }
 .seek-buffered { background: rgba(255, 255, 255, 0.2); }
-.seek-fill { background: var(--red); }
+.seek-fill { background: var(--accent); }
 .seek-thumb {
   position: absolute;
   top: 50%;
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--red);
+  background: var(--accent);
   transform: translate(-50%, -50%);
   transition: width 0.1s ease, height 0.1s ease;
 }
@@ -247,9 +237,9 @@
 
 .choices { display: flex; flex-direction: column; gap: 6px; }
 .choice { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border-radius: 12px; background: var(--surface-2); text-align: left; }
-.choice.active { background: rgba(229, 9, 20, 0.2); box-shadow: inset 0 0 0 1.5px var(--red); font-weight: 600; }
+.choice.active { background: rgb(var(--accent-rgb) / 0.2); box-shadow: inset 0 0 0 1.5px var(--accent); font-weight: 600; }
 .choice-dot { flex: none; width: 12px; height: 12px; border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 50%; }
-.choice.active .choice-dot { border-color: var(--red); background: var(--red); }
+.choice.active .choice-dot { border-color: var(--accent); background: var(--accent); }
 
 /* Subtitle style: a small TV with a sample line (sizes are shares of its height, like on the real screen), then the choices. */
 .cap-frame {
@@ -279,6 +269,14 @@
 .cap-choices { display: flex; flex-wrap: wrap; gap: 6px; }
 .cap-choice { padding: 9px 14px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600; }
 .cap-choice.active { background: #fff; color: #000; }
+.cap-count { margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-size: 0.72rem; font-weight: 700; }
+.cap-choice.active .cap-count { background: rgba(0, 0, 0, 0.14); }
+/* The chips past the profile's own languages: a label before them, and chips that open or widen the list rather than choose. */
+.cap-label { flex-basis: 100%; margin-top: 6px; color: var(--muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.cap-choice.more { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22); color: var(--muted); }
+.delay-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); font-size: 0.9rem; font-weight: 500; }
+.delay-row b { margin-left: 4px; font-variant-numeric: tabular-nums; }
+.delay-buttons { display: flex; gap: 6px; }
 
 .seasons { display: flex; gap: 8px; padding-bottom: 4px; overflow-x: auto; }
 .season { flex: none; padding: 9px 15px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600; }
@@ -287,12 +285,20 @@
 .episode { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; overflow: hidden; padding: 13px 14px; border-radius: 12px; background: var(--surface-2); text-align: left; }
 .episode-no { flex: none; min-width: 1.8em; color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 700; }
 .episode-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.episode.now { background: rgba(229, 9, 20, 0.18); box-shadow: inset 0 0 0 1.5px var(--red); }
+.episode.now { background: rgb(var(--accent-rgb) / 0.18); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .episode-note { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--muted); font-size: 0.75rem; font-weight: 600; }
 .episode-note.watched { color: #46d369; }
 .episode-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.12); }
-.episode-progress i { display: block; height: 100%; background: var(--red); }
-.episode-now { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--red-hover); font-size: 0.75rem; font-weight: 700; }
+.episode-progress i { display: block; height: 100%; background: var(--accent); }
+.episode-now { display: inline-flex; flex: none; align-items: center; gap: 4px; color: var(--accent-hover); font-size: 0.75rem; font-weight: 700; }
+/* With what the library knows of the season: a picture, how long each runs, a line about it. */
+.episode.rich { align-items: flex-start; gap: 10px; padding: 10px 12px 10px 10px; }
+.episode.rich .episode-no { min-width: 1.2em; padding-top: 2px; font-size: 0.9rem; }
+.episode-still { position: relative; flex: none; width: 112px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; }
+.episode-still img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.episode-text { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.episode.rich .episode-title { flex: none; font-weight: 700; }
+.episode-about { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--muted); font-size: 0.78rem; line-height: 1.35; }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -372,17 +378,39 @@
 .party-state { display: block; font-size: 0.75rem; font-weight: 600; }
 .party-state.ok { color: var(--ok); }
 .party-state.bad { color: var(--bad); }
+/* A code that brings another screen in (to the party, or to the TV as a second remote): the digits to read out, the QR code to scan. */
+.code-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: var(--surface-2); }
+.code-card-title { color: var(--muted); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.code-card-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.code-card-code { font-size: 2rem; font-weight: 800; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.code-card svg { flex: none; width: 104px; height: 104px; border-radius: 8px; }
+.code-card-wait { align-items: center; padding: 28px; }
+.sheet-body form { display: flex; flex-direction: column; gap: 8px; }
 
-/* ------------------------------ library ------------------------------ */
+/* ------------------------------ library and rows of cards ------------------------------ */
 
 .library { display: flex; flex-direction: column; gap: 18px; margin-top: 6px; }
 .lib-row { display: flex; flex-direction: column; gap: 8px; }
 .lib-row h3 { font-size: 1.05rem; }
 /* The rows scroll sideways right to the screen's edge, but start in line with everything else. */
-.lib-scroller { display: flex; gap: 10px; margin: 0 -16px; padding: 0 16px 6px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding: 0 16px; }
-.lib-tile { flex: none; width: 138px; display: flex; flex-direction: column; gap: 6px; text-align: left; scroll-snap-align: start; }
-.lib-art { display: block; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--surface-2); }
-.lib-art img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.lib-tile:active .lib-art { box-shadow: 0 0 0 2px var(--red); }
+.lib-scroller { display: flex; gap: 10px; margin: 0 -16px; padding: 0 16px 6px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding: 0 16px; scrollbar-width: none; }
+.lib-scroller::-webkit-scrollbar { display: none; }
+.lib-tile { position: relative; flex: none; width: 138px; scroll-snap-align: start; }
+.lib-card { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; }
+.lib-art { position: relative; display: block; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--surface-2); transition: transform 0.18s ease, box-shadow 0.18s ease; }
+.lib-art img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; }
+.poster-initial { display: grid; place-items: center; width: 100%; height: 100%; color: rgba(255, 255, 255, 0.5); font-size: 2.2rem; font-weight: 800; }
+.lib-card:active .lib-art { transform: scale(0.97); box-shadow: 0 0 0 2px var(--accent); }
 .lib-title { font-size: 0.85rem; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lib-year { margin-top: -4px; color: var(--muted); font-size: 0.75rem; }
+/* How far a started title got: a thin bar across the foot of its picture. */
+.lib-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.55); }
+.lib-progress i { display: block; height: 100%; background: var(--accent); }
+/* A round button in the corner of a picture: take it off the row, or add it to My List. */
+.lib-remove { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 0.95rem; backdrop-filter: blur(4px); transition: background 0.15s ease, transform 0.1s ease; }
+.lib-remove:active { transform: scale(0.9); }
+.lib-tile[data-in-list="true"] .lib-add { background: var(--accent); }
+
+.lib-pills { display: flex; gap: 8px; margin: -4px 0 0; }
+.lib-pill { padding: 7px 15px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 0.85rem; font-weight: 600; transition: background 0.15s ease, color 0.15s ease; }
+.lib-pill[aria-pressed="true"] { background: #fff; color: #000; }

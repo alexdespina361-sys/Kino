@@ -124,6 +124,11 @@ describe("ResolverRegistry", () => {
     expect(await registry.resolve("https://a.example.evil.com/")).toMatchObject({ resolver: "generic:test" });
   });
 
+  it("says which page the video came from, so it can be played again later", async () => {
+    const registry = new ResolverRegistry([], genericOk, log);
+    expect(await registry.resolve("https://a.example/watch/1")).toMatchObject({ media: { page: "https://a.example/watch/1" } });
+  });
+
   it("rejects non-http(s) and malformed input as invalid_url", async () => {
     const registry = new ResolverRegistry([], genericOk, log);
     for (const bad of ["", "not a url", "file:///etc/passwd", "javascript:alert(1)", "ftp://x/y"]) {

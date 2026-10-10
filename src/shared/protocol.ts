@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { CaptionStyleSchema } from "./captions";
-import { MAX_ALTERNATES, NormalizedMediaSchema } from "./media";
+import { MAX_ALTERNATES, NormalizedMediaSchema, PlayHintSchema } from "./media";
 
 /* ------------------------------ player ------------------------------ */
 
@@ -113,14 +113,30 @@ export type TvInfo = z.infer<typeof TvInfoSchema>;
 /** How many other TVs can watch along with one: a party is the TV the phone controls plus up to this many. */
 export const MAX_FOLLOWERS = 5;
 
-/** A TV watching along, as the phone's list shows it. `id` is for removing it; the TV's own id is its secret and stays on the server. */
+/** A screen in a party, as the lists show it. `id` is for removing it; the screen's own id is its secret and stays on the server. */
 export const PartyTvSchema = z.object({ id: z.string().max(100), name: z.string().max(60), online: z.boolean() });
 export type PartyTv = z.infer<typeof PartyTvSchema>;
+
+/**
+ * The party a TV is in, as it shows it: who is in, and (to the host only) the code the others join with. The host is the
+ * screen the others watch along with; everyone else is a guest.
+ */
+export const PartyViewSchema = z.object({
+  role: z.enum(["host", "guest"]),
+  /** This TV's own id in the lists below, so they can say which one is "you". */
+  you: z.string().max(100),
+  host: PartyTvSchema,
+  guests: z.array(PartyTvSchema).max(MAX_FOLLOWERS),
+  code: PairingCodeSchema.optional(),
+});
+export type PartyView = z.infer<typeof PartyViewSchema>;
 
 /** Resolver progress shown on the phone: "Finding video..." -> "Video found" -> (TV state takes over). */
 export const ResolveStatusSchema = z.discriminatedUnion("phase", [
   z.object({ phase: z.literal("resolving") }),
   z.object({ phase: z.literal("found"), media: NormalizedMediaSchema }),
+  /** Whoever is at the TV gave up waiting; the phone has nothing more to wait for. */
+  z.object({ phase: z.literal("cancelled") }),
   z.object({
     phase: z.literal("failed"),
     reason: z.enum(["invalid_url", "unsupported", "temporary_failure", "tv_offline"]),
@@ -137,21 +153,35 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("TV_STATE"), state: PlayerStateSchema }),
   z.object({ type: z.literal("TV_NEW_CODE") }),
   z.object({ type: z.literal("TV_NEXT_EPISODE") }),
-  z.object({ type: z.literal("TV_PLAY_URL"), url: z.string().max(2048) }),
+  z.object({ type: z.literal("TV_PLAY_URL"), url: z.string().max(2048), startAt: StartAtSchema.optional(), hint: PlayHintSchema.optional() }),
   /** The TV lets go of its phone: it gets a fresh pairing code and the phone goes back to the code screen. */
   z.object({ type: z.literal("TV_UNPAIR") }),
+  /** Whoever is at the TV stopped waiting for a video that will not come: a lookup still running is dropped and what was loading stops. */
+  z.object({ type: z.literal("TV_CANCEL") }),
+  /** What this screen is called on the others' lists: the profile in use, or nothing for the TV's own name. */
+  z.object({ type: z.literal("TV_NAME"), name: z.string().max(60) }),
+  /** Start a watch party on this TV: what it plays, the others play along with. Answered with TV_PARTY, which carries the code to join with. */
+  z.object({ type: z.literal("TV_PARTY_OPEN") }),
+  /** Join the party that a code from its host belongs to. The TV then plays what the host plays. Leaving is TV_UNPAIR. */
+  z.object({ type: z.literal("TV_PARTY_JOIN"), code: z.string().max(20) }),
+  /** The host sends one guest away (an `id` from TV_PARTY). */
+  z.object({ type: z.literal("TV_PARTY_REMOVE"), id: z.string().max(100) }),
+  /** The host ends the party: every guest is back on its own. */
+  z.object({ type: z.literal("TV_PARTY_CLOSE") }),
   // Phone
   z.object({ type: z.literal("CTL_HELLO"), controllerId: z.string().max(100).optional() }),
   z.object({ type: z.literal("PAIR"), code: z.string().max(20) }),
   z.object({ type: z.literal("CMD"), command: CommandSchema }),
   /** A page or media URL. The server resolves it to media; the phone never tells the TV what to fetch. */
-  z.object({ type: z.literal("PLAY_URL"), url: z.string().max(2048), startAt: StartAtSchema.optional() }),
+  z.object({ type: z.literal("PLAY_URL"), url: z.string().max(2048), startAt: StartAtSchema.optional(), hint: PlayHintSchema.optional() }),
   /** Forget this TV: it gets a fresh pairing code and the phone goes back to the code screen. */
   z.object({ type: z.literal("UNPAIR") }),
   /** Have another TV watch along: its pairing code, typed on the phone that controls the first TV. */
   z.object({ type: z.literal("ADD_TV"), code: z.string().max(20) }),
   /** Send a TV that is watching along back to its own pairing screen (an `id` from PARTY). */
   z.object({ type: z.literal("REMOVE_TV"), id: z.string().max(100) }),
+  /** Ask for the code that lets other screens join this TV's party, starting one if there is none. Answered with PARTY. */
+  z.object({ type: z.literal("OPEN_PARTY") }),
   // Keepalive from either kind of client. Answered with PONG, so a silently dead connection is noticed.
   z.object({ type: z.literal("PING") }),
 ]);
@@ -180,7 +210,11 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     /** Which stream that position is in (the leader's `PlayerState.stream`). */
     stream: z.string().max(2048).optional(),
   }),
-  z.object({ type: z.literal("TV_CODE"), pairing: PairingCodeSchema }),
+  /** The party this TV is in has changed (or it has left it: null). Sent again whenever someone joins, leaves or goes offline. */
+  z.object({ type: z.literal("TV_PARTY"), party: PartyViewSchema.nullable() }),
+  /** A fresh code to show. `control`: not one for the first phone to pair with, but the one that lets another phone in (this TV has a phone already). */
+  z.object({ type: z.literal("TV_CODE"), pairing: PairingCodeSchema, control: z.boolean().optional() }),
+  /** A phone has connected to this TV: the first one pairs it, a later one joins it. */
   z.object({ type: z.literal("TV_PAIRED") }),
   z.object({ type: z.literal("TV_CMD"), command: CommandSchema }),
   /** The phone forgot this TV. Back to the pairing screen with a fresh code. */
@@ -197,7 +231,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     /** The other TVs watching along. */
     party: z.array(PartyTvSchema).max(MAX_FOLLOWERS).optional(),
   }),
-  z.object({ type: z.literal("PARTY"), tvs: z.array(PartyTvSchema).max(MAX_FOLLOWERS) }),
+  /** The guests of the TV's party, and the code to join it with when one is open. */
+  z.object({ type: z.literal("PARTY"), tvs: z.array(PartyTvSchema).max(MAX_FOLLOWERS), code: PairingCodeSchema.optional() }),
   z.object({ type: z.literal("TV_STATUS"), online: z.boolean() }),
   z.object({ type: z.literal("MEDIA"), media: NormalizedMediaSchema }),
   z.object({ type: z.literal("STATE"), state: PlayerStateSchema }),

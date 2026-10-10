@@ -12,6 +12,14 @@ export function formatRemaining(currentTime: number, duration: number): string {
   return duration > 0 ? `-${formatTime(Math.max(0, duration - currentTime))}` : "";
 }
 
+/** What is left of a video in the units a person would say: "2 h", "1 h 12 min", "23 min" (never less than a minute). */
+export function formatLeft(seconds: number): string {
+  const minutes = Math.max(1, Math.round((Number.isFinite(seconds) ? seconds : 0) / 60));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return hours > 0 ? (rest > 0 ? `${hours} h ${rest} min` : `${hours} h`) : `${minutes} min`;
+}
+
 /** A time of day as "21:05" (24 hours, the way a TV clock shows it). */
 export function formatClock(date: Date): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -33,23 +41,14 @@ export function hostOf(url: string): string {
   }
 }
 
-/** Plain words for the error codes the player reports. The raw code stays available for debugging. */
-export function friendlyError(code: string | undefined): string {
-  switch (code) {
-    case "SOURCE_NOT_DIRECTLY_PLAYABLE":
-      return "This video can't be played on the TV.";
-    case "HLS_UNSUPPORTED":
-      return "This TV's browser can't play this kind of stream.";
-    case "PLAYBACK_BLOCKED":
-      return "The TV blocked playback. Press OK on the TV, then try again.";
-    default:
-      return "Something went wrong while playing this video.";
-  }
-}
-
 /** "482731" -> "482 731" */
 export function formatCode(code: string): string {
   return code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code;
+}
+
+/** "ABCD2345" -> "ABCD-2345": the sign-in code of a TV, in two halves that are easy to read out and compare. */
+export function formatLinkCode(code: string): string {
+  return code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
 }
 
 export function readStorage(key: string): string | undefined {
