@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import type { PartyView } from "../../shared";
 import { useT } from "../i18n";
 import { formatCode } from "../shared/format";
-import { BackspaceIcon, CheckIcon, CloseIcon, UsersIcon } from "../shared/icons";
+import { BackspaceIcon, CheckIcon, CloseIcon, FullscreenIcon, UsersIcon } from "../shared/icons";
 import { partyLink } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { Screen } from "./Idle";
@@ -78,6 +78,9 @@ interface PageProps {
   party: PartyView | null;
   /** The name of the screen this one watches along with. Known before the list of who is in the party is. */
   following: string | null;
+  /** Whether the page is full screen, and the way to change that (null where the browser has no full screen to give a page). */
+  fullscreen: boolean;
+  onFullscreen: (() => void) | null;
   /** Why the code that was typed was refused. `id` changes with every refusal. */
   error: { id: number; text: string } | null;
   onStart: () => void;
@@ -110,6 +113,12 @@ export function PartyPage(p: PageProps) {
         <p className="tv-lead">{t("tv.followingLead")}</p>
         {p.party && <Members party={p.party} nav={PAGE_NAV} />}
         <div className="tv-actions">
+          {/* A phone's browser keeps its address bar over the page until the page goes full screen, so the way there is offered while waiting. */}
+          {p.onFullscreen && (
+            <button className="tv-action" onClick={p.onFullscreen} data-testid="tv-fullscreen" data-nav>
+              <FullscreenIcon /> {t(p.fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
+            </button>
+          )}
           <button className="tv-action" onClick={p.onLeave} data-testid="tv-disconnect" data-nav>
             {t("tv.stopFollowing")}
           </button>

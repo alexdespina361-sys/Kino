@@ -190,6 +190,7 @@ export const en = {
   "link.codeLabel": "Code on the TV",
 
   /* the TV's start screens and account pages */
+  "tv.welcome": "Welcome",
   "tv.ready": "Ready when you are",
   "tv.pressOk": "Press OK or tap to start",
   "tv.browse": "Browse library",
@@ -200,6 +201,7 @@ export const en = {
   "tv.followingLead": "It starts here when it starts there.",
   "tv.connectedLead": "Send a link from your phone, or pick a title here.",
   "tv.stopFollowing": "Stop watching along",
+  "tv.tapToPlay": "Tap or press OK to play",
   "tv.disconnect": "Disconnect from phone",
   "tv.morePhones": "Another phone can control this TV too:",
   "tv.stepOpen": "On your phone, open",
@@ -361,7 +363,7 @@ export const en = {
   "end.more": "More like this",
   "playerError.SOURCE_NOT_DIRECTLY_PLAYABLE": "This video can't be played on the TV.",
   "playerError.HLS_UNSUPPORTED": "This TV's browser can't play this kind of stream.",
-  "playerError.PLAYBACK_BLOCKED": "The TV blocked playback. Press OK on the TV, then try again.",
+  "playerError.PLAYBACK_BLOCKED": "The TV is waiting for a press. Press OK on the TV to start the video.",
   "playerError.generic": "Something went wrong while playing this video.",
   "tv.leave": "Leave",
   "tv.fsPrompt": "Press OK for full screen",

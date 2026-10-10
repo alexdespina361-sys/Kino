@@ -11,7 +11,7 @@ import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from
 import { AccountChip } from "./Idle";
 import { actionForKey } from "./keys";
 import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
-import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, rowsOfPage, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type View } from "./pages";
+import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, rowsOfPage, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type View } from "./pages";
 import { Rail, type RailEntry } from "./Rail";
 
 /** What a screen that starts a title can add: where to pick it up, and the picture and year the library already knows for it. */
@@ -87,6 +87,8 @@ interface Focused {
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
 const RAIL: Target = { zone: "rail", row: -1, col: -1 };
+/** The first button of a title's own page: Play. */
+const DETAIL: Target = { zone: "detail", row: 0, col: 0 };
 /** Where the remote can start on a page, in the order they are tried. */
 const CONTENT_ZONES: Zone[] = ["rows", "grid", "keys"];
 /** What it can be put back on when a page is returned to. */
@@ -123,7 +125,8 @@ function keepInView(container: HTMLElement, element: HTMLElement) {
  * The library on the TV, laid out like a streaming app: a menu down the left (search, home, movies, series, My List, history, the
  * phone, settings, and the categories), the account button in the corner, and on the pages of rows a banner with Play and My List
  * for the title the remote is on, with the rows under it. The arrow keys walk everything; Left from the first title of any row opens
- * the menu, OK plays, and Back steps out: of the menu, then to the home page, and from there into the menu.
+ * the menu, OK on a title opens its own page (play it, keep it in My List), and Back steps out: of that page, of the menu, then to
+ * the home page, and from there into the menu.
  */
 export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, connected, partySize, notice }: BrowseProps) {
   const t = useT();
@@ -144,6 +147,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const [searching, setSearching] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [focused, setFocused] = useState<Focused | null>(null);
+  /** The title whose own page is open over the library. */
+  const [detail, setDetail] = useState<Focused | null>(null);
   /** The remote is on a row below the first, so the banner makes room for the rows. */
   const [deep, setDeep] = useState(false);
   /** Somewhere to put the focus once the next render has put it on screen. */
@@ -217,14 +222,26 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const shown: Focused | null = focused ?? (rowsPage && start ? { entry: start, label: homeRows[startRow]!.title, ...(homeRows[startRow]!.source ? { source: homeRows[startRow]!.source! } : {}) } : null);
   const actions = rowsPage ? heroActions(shown?.entry) : [];
   const saved = useMemo(() => new Set(list.map((entry) => entry.key)), [list]);
-  const inList = shown ? saved.has(listKey(shown.entry.url)) : false;
+  const isSaved = (entry: Entry) => saved.has(listKey(entry.url));
 
-  // The menu closes by itself when the remote leaves it for the page; on a page with nothing to stand on it stays, under the remote.
+  // Choosing a page shuts the menu at once. On a page with nothing to stand on (an empty list) the remote stays on the menu's line
+  // for it, but the menu itself is closed; an arrow key opens it again.
   const choose = (next: View) => {
     remembered.view = next;
     setViewState(next);
     setFocused(null);
+    setDetail(null);
     setDeep(false);
+    setRailOpen(false);
+    setPending(CONTENT);
+  };
+  /** A title's own page opens over the library, on Play; closing it puts the remote back on the title it came from. */
+  const openDetail = (title: Focused) => {
+    setDetail(title);
+    setPending(DETAIL);
+  };
+  const closeDetail = () => {
+    setDetail(null);
     setPending(CONTENT);
   };
 
@@ -280,9 +297,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     ...(rowsPage ? { hero: !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
     ...(grid ? { grid: gridRows(grid.entries.length, gridColumns) } : {}),
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: gridRows(shownResults.length, resultColumns) } : {}),
+    ...(detail ? { detail: [overviewActions(detail.entry).length] } : {}),
   };
-  const latest = useRef({ shape, view, query, railIndex, homeRows });
-  latest.current = { shape, view, query, railIndex, homeRows };
+  const latest = useRef({ shape, view, query, railIndex, homeRows, detail });
+  latest.current = { shape, view, query, railIndex, homeRows, detail };
 
   /** Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. */
   const resolve = (target: Target): Pos | null => {
@@ -372,10 +390,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     const onKey = (event: KeyboardEvent) => {
       const root = rootRef.current;
       if (!root || event.altKey || event.ctrlKey || event.metaKey) return;
-      const { shape: now, view: page, query: text } = latest.current;
+      const { shape: now, view: page, query: text, detail: open } = latest.current;
 
-      // A keyboard types into the search box.
-      const typed = page.kind === "search" ? typedCharacter(event) : null;
+      // A keyboard types into the search box (not while a title's page is over it).
+      const typed = page.kind === "search" && !open ? typedCharacter(event) : null;
       if (typed !== null) {
         event.preventDefault();
         setQuery((before) => appendTo(before, typed));
@@ -385,6 +403,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
       const action = actionForKey(event);
       if (action === "back") {
         event.preventDefault();
+        if (open) return closeDetail();
         if (event.key === "Backspace" && page.kind === "search" && text) return setQuery(text.slice(0, -1));
         if (posOf(document.activeElement)?.zone === "rail" && resolve(CONTENT)) go(CONTENT);
         else if (page.kind !== "home") choose({ kind: "home" }); // (also from the menu, when the page has no title to go back to)
@@ -396,6 +415,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
       event.preventDefault();
 
       const at = posOf(document.activeElement);
+      if (open) return go(at?.zone === "detail" ? stepFrom(now, at, action) : DETAIL); // the page over the library keeps the remote to itself
       if (!at) {
         // Nowhere to stand yet. On a page with titles that is the first one; on an empty page Left reaches the menu and Up the account button.
         if (resolve(CONTENT)) return focusAt(CONTENT);
@@ -436,41 +456,48 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     setAttempt((n) => n + 1);
   };
   const playEntry = (entry: Entry) => onPlay(new URL(entry.url, location.href).href, { hint: hintOf(entry), ...(entry.startAt ? { startAt: entry.startAt } : {}) });
-  const press = (entry: Entry) => (entry.opens ? choose(entry.opens) : playEntry(entry));
+  // A category opens its page; a title opens its own page, where it is played or kept in My List (the banner's buttons do the same without it).
+  const press = (title: Focused) => (title.entry.opens ? choose(title.entry.opens) : openDetail(title));
 
-  const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string) => (
-    <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} rank={pos.col + 1} pos={pos} onArrive={(element) => arrived(element, pos, { entry, label, ...(source ? { source } : {}) })} onPress={() => press(entry)} />
-  );
+  const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string) => {
+    const title: Focused = { entry, label, ...(source ? { source } : {}) };
+    return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} rank={pos.col + 1} pos={pos} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title)} />;
+  };
 
-  const doAction = (action: HeroAction) => {
-    const entry = shown?.entry;
+  const doAction = (action: HeroAction, entry: Entry | undefined = shown?.entry) => {
     if (!entry) return;
     if (action === "play") playEntry(entry);
-    else if (action === "list") profileStore.setInList(listEntryOf(entry), !inList);
+    else if (action === "list") profileStore.setInList(listEntryOf(entry), !isSaved(entry));
     else if (entry.progressKey) {
       profileStore.removeProgress(entry.progressKey);
       setFocused(null);
-      go(CONTENT);
+      if (detail) closeDetail();
+      else go(CONTENT);
     }
   };
 
-  const resumes = shown?.entry.startAt !== undefined;
-  const heroLabel: Record<HeroAction, ReactNode> = {
-    play: (
+  /** What a button says for a title; a title's own page spells out what My List does, where the banner has room for the name only. */
+  const labelOf = (action: HeroAction, entry: Entry, spelled: boolean): ReactNode => {
+    if (action === "play") {
+      return (
+        <>
+          <PlayIcon /> {entry.startAt !== undefined ? t("rows.resume") : t("rows.play")}
+        </>
+      );
+    }
+    if (action === "remove") {
+      return (
+        <>
+          <CloseIcon /> {t("rows.remove")}
+        </>
+      );
+    }
+    const kept = isSaved(entry);
+    return (
       <>
-        <PlayIcon /> {resumes ? t("rows.resume") : t("rows.play")}
+        {kept ? <CheckIcon /> : <PlusIcon />} {spelled ? t(kept ? "rows.removeFromList" : "library.addToList") : t("rows.myList")}
       </>
-    ),
-    list: (
-      <>
-        {inList ? <CheckIcon /> : <PlusIcon />} {t("rows.myList")}
-      </>
-    ),
-    remove: (
-      <>
-        <CloseIcon /> {t("rows.remove")}
-      </>
-    ),
+    );
   };
 
   return (
@@ -512,10 +539,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
                       data-zone="hero"
                       data-row={0}
                       data-col={col}
-                      aria-pressed={action === "list" ? inList : undefined}
+                      aria-pressed={action === "list" ? isSaved(shown.entry) : undefined}
                       onClick={() => doAction(action)}
                     >
-                      {heroLabel[action]}
+                      {labelOf(action, shown.entry, false)}
                     </button>
                   ))}
                 </div>
@@ -652,25 +679,81 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
           </div>
         </div>
       )}
+
+      {detail && (
+        // A tap on the empty part of the page closes it, as Back does.
+        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" onClick={(event) => event.target === event.currentTarget && closeDetail()}>
+          <Backdrop image={detail.entry.backdrop ?? detail.entry.image} />
+          <div className="tv-browse-shade" />
+          <button className="tv-hero-button tv-detail-close" onClick={closeDetail} data-testid="tv-detail-close">
+            <CloseIcon /> {t("common.close")}
+          </button>
+          <div className="tv-detail-text">
+            <p className="tv-hero-eyebrow">{detail.label}</p>
+            <h1 className="tv-detail-title" data-testid="tv-detail-title">
+              {detail.entry.title}
+            </h1>
+            <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, detail.source].filter(Boolean).join("  ·  ")}</p>
+            {detail.entry.description && <p className="tv-detail-about">{detail.entry.description}</p>}
+            <div className="tv-hero-actions">
+              {overviewActions(detail.entry).map((action, col) => (
+                <button
+                  key={action}
+                  className={`tv-hero-button${action === "play" ? " is-primary" : ""}`}
+                  data-testid={`tv-detail-${action}`}
+                  data-zone="detail"
+                  data-row={0}
+                  data-col={col}
+                  aria-pressed={action === "list" ? isSaved(detail.entry) : undefined}
+                  onClick={() => doAction(action, detail.entry)}
+                >
+                  {labelOf(action, detail.entry, true)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
 /**
- * The picture behind the banner. A new one fades in over the one before it, which goes once it has, so moving along a row
- * changes the scene smoothly instead of blinking through black.
+ * The picture behind the banner. A new one is fetched and decoded first, and only then fades in over the one before it, so a slow
+ * picture leaves the old one in place and then eases in, instead of fading while still empty and appearing all at once when it
+ * arrives. The pictures it covers go once it is fully in. No picture (or one that cannot be had) fades to the plain background.
  */
 function Backdrop({ image }: { image: string | undefined }) {
-  const [layers, setLayers] = useState<Array<{ id: number; image: string }>>([]);
+  const [layers, setLayers] = useState<Array<{ id: number; image: string | undefined }>>([]);
   const counter = useRef(0);
   useEffect(() => {
-    if (!image) return setLayers([]);
-    setLayers((now) => (now.at(-1)?.image === image ? now : [...now.slice(-1), { id: ++counter.current, image }]));
+    let live = true;
+    const show = (picture: string | undefined) => live && setLayers((now) => (now.at(-1)?.image === picture ? now : [...now.slice(-3), { id: ++counter.current, image: picture }]));
+    if (!image) show(undefined);
+    else {
+      const loader = new Image();
+      loader.src = image;
+      const ready = loader.decode
+        ? loader.decode()
+        : new Promise<void>((resolve, reject) => {
+            loader.onload = () => resolve();
+            loader.onerror = reject;
+          });
+      ready.then(() => show(image), () => show(undefined));
+    }
+    return () => {
+      live = false;
+    };
   }, [image]);
   return (
     <>
       {layers.map((layer) => (
-        <div key={layer.id} className="tv-hero-bg" style={{ backgroundImage: `url(${JSON.stringify(layer.image)})` }} onAnimationEnd={() => setLayers((now) => now.filter((other) => other.id >= layer.id))} />
+        <div
+          key={layer.id}
+          className="tv-hero-bg"
+          {...(layer.image ? { style: { backgroundImage: `url(${JSON.stringify(layer.image)})` } } : {})}
+          onAnimationEnd={() => setLayers((now) => now.filter((other) => other.id >= layer.id))}
+        />
       ))}
     </>
   );

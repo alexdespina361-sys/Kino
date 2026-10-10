@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
@@ -80,7 +80,42 @@ export function AccountChip({ onOpen, zone = false }: { onOpen: () => void; zone
   );
 }
 
-/** Before the first OK press the browser will not let a page play video, so the TV asks for one. */
+/** How long the welcome stays before it fades, and how long the fade takes. */
+const WELCOME_MS = 1400;
+const WELCOME_FADE_MS = 700;
+
+/**
+ * The first moments of a screen that has just opened: the name and a greeting over the library as it fills in. It fades away by
+ * itself, or at the first press, and never takes a press: the library under it is already there.
+ */
+export function TvWelcome({ onDone }: { onDone: () => void }) {
+  const t = useT();
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    const leave = () => setLeaving(true);
+    const timer = window.setTimeout(leave, WELCOME_MS);
+    window.addEventListener("keydown", leave);
+    window.addEventListener("pointerdown", leave);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", leave);
+      window.removeEventListener("pointerdown", leave);
+    };
+  }, []);
+  useEffect(() => {
+    if (!leaving) return;
+    const timer = window.setTimeout(onDone, WELCOME_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [leaving]);
+  return (
+    <div className="tv-welcome" data-leaving={leaving} data-testid="tv-welcome" aria-hidden="true">
+      <Logo />
+      <p>{t("tv.welcome")}</p>
+    </div>
+  );
+}
+
+/** A screen that opened on a watch party's link needs one press before the browser will let the host's video play, so it asks for it. */
 export function TvLocked({ onUnlock }: { onUnlock: () => void }) {
   const t = useT();
   return (

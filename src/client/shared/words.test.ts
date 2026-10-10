@@ -73,7 +73,7 @@ describe("friendlyError", () => {
     expect(friendlyError("SOMETHING_NEW")).toBe("Something went wrong while playing this video.");
     expect(friendlyError(undefined)).toBe("Something went wrong while playing this video.");
     setLanguage("ro", false);
-    expect(friendlyError("PLAYBACK_BLOCKED")).not.toBe("The TV blocked playback. Press OK on the TV, then try again.");
+    expect(friendlyError("PLAYBACK_BLOCKED")).not.toBe("The TV is waiting for a press. Press OK on the TV to start the video.");
   });
 });
 

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import qrcode from "qrcode-generator";
 import type { NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, RawPhone, readPairingCode, tvRoot, tvTime, withLibrary } from "./helpers";
+import { loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, tvRoot, tvTime, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -65,10 +65,8 @@ test.describe("one page", () => {
   test("the same address is the TV on a screen without touch and the remote on a phone, and they pair", async ({ browser }) => {
     const tv = await (await browser.newContext(desktop)).newPage();
     await tv.goto("/");
-    await expect(tv.getByTestId("unlock")).toBeVisible();
-    await tv.getByTestId("unlock").focus();
-    await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("tv-browse")).toBeVisible(); // the library first; the code is one menu entry away
+    await expect(tv.getByTestId("tv-browse")).toBeVisible(); // the library first, with nothing to press; the code is one menu entry away
+    await expect(tv.getByTestId("unlock")).toHaveCount(0);
     await tv.getByTestId("rail-connect").click();
 
     const phone = await (await browser.newContext(PHONE)).newPage();
@@ -80,27 +78,28 @@ test.describe("one page", () => {
   test("/tv is the TV whatever the device, and ?role= picks a screen without remembering it", async ({ browser }) => {
     const touch = await (await browser.newContext(PHONE)).newPage();
     await touch.goto("/tv");
-    await expect(touch.getByTestId("unlock")).toBeVisible();
+    await expect(touch.getByTestId("tv-browse")).toBeVisible();
 
     const wide = await (await browser.newContext(desktop)).newPage();
     await wide.goto("/?role=remote");
     await expect(wide.getByTestId("code-input")).toBeVisible();
     await wide.goto("/");
-    await expect(wide.getByTestId("unlock")).toBeVisible(); // asking once did not change what "/" is
+    await expect(wide.getByTestId("tv-browse")).toBeVisible(); // asking once did not change what "/" is
   });
 
-  test("a screen the page guessed wrong about can be switched, and stays switched", async ({ browser }) => {
+  test("a screen the page guessed wrong about can be switched from the page that shows the code, and stays switched", async ({ browser }) => {
     const page = await (await browser.newContext(desktop)).newPage();
     await page.goto("/");
+    await page.getByTestId("rail-connect").click();
     await page.getByTestId("switch-to-remote").click();
     await expect(page.getByTestId("code-input")).toBeVisible();
     await page.reload();
     await expect(page.getByTestId("code-input")).toBeVisible();
 
     await page.getByTestId("switch-to-tv").click();
-    await expect(page.getByTestId("unlock")).toBeVisible();
+    await expect(page.getByTestId("tv-browse")).toBeVisible();
     await page.reload();
-    await expect(page.getByTestId("unlock")).toBeVisible();
+    await expect(page.getByTestId("tv-browse")).toBeVisible();
   });
 
   test("a paired remote can become a TV from its menu", async ({ browser }) => {
@@ -108,7 +107,7 @@ test.describe("one page", () => {
     const phone = await openPairedPhone(browser, tv);
     await phone.getByTestId("menu").click();
     await phone.getByTestId("switch-to-tv").click();
-    await expect(phone.getByTestId("unlock")).toBeVisible();
+    await expect(phone.getByTestId("tv-browse")).toBeVisible();
   });
 });
 
@@ -808,9 +807,22 @@ test.describe("the episode before", () => {
 test.describe("full screen", () => {
   const isFullScreen = (tv: Page) => tv.evaluate(() => document.fullscreenElement !== null);
 
-  test("the TV goes full screen when OK is pressed on its first screen", async ({ browser }) => {
-    const tv = await openTv(browser);
+  test("the TV goes full screen with the first title chosen on it, and is left alone after that", async ({ browser, baseURL }) => {
+    const films = { updatedAt: Date.now(), rows: [{ id: "r", title: "Films", source: "Test", items: [{ id: "a", title: "The Sample", url: sample(baseURL!) }] }] };
+    const tv = await openLibrary(browser, withLibrary(films));
+    expect(await isFullScreen(tv)).toBe(false); // nothing was asked of the viewer first
+    await playFirst(tv);
     await expect.poll(() => isFullScreen(tv)).toBe(true);
+
+    await tv.keyboard.press("f"); // leaving is the viewer's choice
+    await expect.poll(() => isFullScreen(tv)).toBe(false);
+    await tv.keyboard.press("Escape"); // back to the library, on the title it left (the film now also has a card in Continue watching, above it)
+    await expect(tv.locator("[data-testid='tv-browse-tile']:focus")).toHaveAttribute("title", "The Sample");
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    expect(await isFullScreen(tv)).toBe(false); // not pulled back in for the next title
   });
 
   test("the phone's button leaves full screen, and asks for an OK press on the TV to come back", async ({ browser, baseURL }) => {
@@ -819,6 +831,7 @@ test.describe("full screen", () => {
     await phone.getByTestId("url-input").fill(sample(baseURL!));
     await phone.getByTestId("play-url").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await tv.keyboard.press("f"); // a press on the TV itself is what lets it go full screen
     const button = phone.getByTestId("fullscreen");
     await expect(button).toHaveText("Exit full screen"); // the phone shows what the TV is really doing
 
@@ -973,11 +986,6 @@ test.describe("a watch party started on a TV", () => {
   const video = (tv: Page) => tv.evaluate(() => ({ paused: document.querySelector("video")!.paused, time: document.querySelector("video")!.currentTime, rate: document.querySelector("video")!.playbackRate }));
   const screen = (browser: Browser, baseURL: string) => openLibrary(browser, withLibrary(films(baseURL)));
   const codeOf = async (host: Page) => (await host.getByTestId("tv-party-code").innerText()).replace(/\s/g, "");
-  /** The first title of the library, played with OK. */
-  async function playFirst(tv: Page) {
-    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
-    await tv.keyboard.press("Enter");
-  }
   async function startParty(host: Page): Promise<string> {
     await host.getByTestId("rail-party").click();
     await host.getByTestId("tv-party-start").click();
@@ -1098,7 +1106,13 @@ test.describe("a watch party started on a TV", () => {
     const code = await startParty(host);
     const guest = await openDevice(browser, { viewport: { width: 1280, height: 720 } });
     await guest.goto(`/?party=${code}`);
-    await guest.getByTestId("unlock").focus();
+    // This is the one screen that still asks for a press first (the host's video will play on it without anyone choosing anything).
+    await expect(guest.getByTestId("unlock")).toBeFocused();
+    await expect(guest.getByTestId("tv-browse")).toHaveCount(0);
+    await guest.keyboard.press("ArrowDown");
+    await expect(guest.getByTestId("switch-to-remote")).toBeFocused();
+    await guest.keyboard.press("ArrowUp");
+    await expect(guest.getByTestId("unlock")).toBeFocused();
     await guest.keyboard.press("Enter");
     await expect(guest.getByTestId("tv-following")).toBeVisible();
     expect(new URL(guest.url()).search).toBe("");

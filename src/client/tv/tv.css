@@ -137,6 +137,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.5em;
   min-width: 11em;
   padding: 0.7em 1.4em;
   border-radius: 0.5em;
@@ -168,6 +169,28 @@
 }
 /* The "use this screen as…" link is reachable with the remote too, so it shows where the focus is. */
 .tv .role-switch:focus-visible { color: #000; background: #fff; outline: 0.14em solid var(--accent); outline-offset: 0.1em; text-decoration: none; }
+
+/* The first moments of a screen that has just opened: the name and a greeting over the library as it fills in, then it fades away
+   (by itself, or at the first press). It never takes a press: the library under it is already there. */
+.tv-welcome {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2em;
+  background:
+    radial-gradient(ellipse 90% 55% at 50% 118%, rgb(var(--accent-rgb) / 0.3), transparent 70%),
+    linear-gradient(#101010, #050505);
+  pointer-events: none;
+  transition: opacity 0.7s ease;
+}
+.tv-welcome[data-leaving="true"] { opacity: 0; }
+.tv-welcome .logo { font-size: 7em; animation: tv-welcome-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.tv-welcome p { margin: 0; font-size: 2em; font-weight: 600; letter-spacing: 0.32em; text-transform: uppercase; color: var(--muted); animation: tv-welcome-in 0.9s 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes tv-welcome-in { from { opacity: 0; transform: translateY(0.35em) scale(0.94); } }
 
 .tv-spinner { font-size: 6em; }
 .tv-ready-icon {
@@ -371,6 +394,22 @@
 }
 .hud-paused:hover { transform: scale(1.06); background: rgba(0, 0, 0, 0.7); }
 .hud-paused svg { font-size: 3.6em; }
+/* The browser wants a press before it plays video with sound (a phone, a TV nobody has touched yet): the whole screen is the button. */
+.tv-tap {
+  position: absolute;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1em;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+}
+.tv-tap b { font-size: 2.2em; font-weight: 700; text-shadow: 0 0.05em 0.4em rgba(0, 0, 0, 0.9); }
+.tv-tap:focus-visible { outline: 0.2em solid #fff; outline-offset: -0.5em; }
 .hud-error {
   max-width: 48em;
   padding: 2.4em 3.4em;
@@ -680,8 +719,11 @@
 .tv-follow-bar {
   position: absolute;
   top: 2em;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  width: max-content; /* centred, and as wide as its buttons need up to the screen's width (left: 50% would give it half the screen to wrap in) */
+  max-width: calc(100% - 2em);
+  margin: 0 auto;
   z-index: 40;
   display: flex;
   align-items: center;
@@ -725,24 +767,28 @@
   overflow: hidden;
   background: var(--bg);
 }
+/* Each picture is fully opaque and fades in over the one before it; the dimming is the shade's, so when the old one goes there is nothing to see change. */
 .tv-hero-bg {
   position: absolute;
   inset: 0 0 auto 0;
   height: 70%;
+  background-color: var(--bg);
   background-size: cover;
   background-position: center 30%;
-  opacity: 0.55;
-  animation: tv-fade-in 0.5s ease both;
+  animation: tv-fade-in 1s ease both;
+  pointer-events: none; /* a picture is not something to press: the page under it gets the click */
 }
 @keyframes tv-fade-in { from { opacity: 0; } }
 .tv-browse-shade {
   position: absolute;
   inset: 0;
+  pointer-events: none;
   background:
     linear-gradient(90deg, var(--bg) 18%, rgba(11, 11, 12, 0.35) 65%, rgba(11, 11, 12, 0.7)),
-    linear-gradient(0deg, var(--bg) 22%, transparent 70%);
+    linear-gradient(0deg, var(--bg) 22%, transparent 70%),
+    rgba(11, 11, 12, 0.45);
 }
-.tv-browse > :not(.tv-hero-bg):not(.tv-browse-shade):not(.tv-rail) { position: relative; }
+.tv-browse > :not(.tv-hero-bg):not(.tv-browse-shade):not(.tv-rail):not(.tv-detail) { position: relative; }
 
 .tv-browse-top {
   display: flex;
@@ -767,7 +813,7 @@
   transition: height 0.3s ease;
 }
 .tv-browse[data-deep="true"] .tv-hero { height: 8em; }
-.tv-browse[data-deep="true"] .tv-hero-about, .tv-browse[data-deep="true"] .tv-hero-actions { display: none; }
+.tv-browse[data-deep="true"] .tv-hero .tv-hero-about, .tv-browse[data-deep="true"] .tv-hero .tv-hero-actions { display: none; } /* the banner's own; a title's page (.tv-detail) is not in it, and keeps its buttons */
 .tv-browse[data-deep="true"] .tv-hero-title { font-size: 2.4em; }
 .tv-hero-eyebrow { margin: 0; font-size: 1.3em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 .tv-hero-title {
@@ -814,6 +860,34 @@
 .tv-hero-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
 .tv-hero-button svg { flex: none; }
 .tv-actions-start { justify-content: flex-start; }
+
+/* A title's own page, over the library: its picture, what it is, and what can be done with it (the same buttons as the banner's). */
+.tv-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: var(--bg);
+  animation: tv-fade 0.25s ease;
+}
+.tv-detail-text { position: relative; display: flex; flex-direction: column; gap: 0.5em; max-width: 62em; padding: 0 4em 4.5em 7em; animation: tv-rise 0.4s ease both; }
+.tv-detail-title { margin: 0; font-size: 4.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.tv-detail-about {
+  margin: 0.3em 0 0;
+  max-width: 40em;
+  font-size: 1.6em;
+  line-height: 1.45;
+  color: #d9d9de;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tv-detail .tv-hero-actions { flex-wrap: wrap; margin-top: 0.8em; }
+.tv-detail .tv-hero-button { font-size: 1.7em; }
+.tv-detail .tv-detail-close { position: absolute; top: 1.8em; right: 4.4em; z-index: 1; font-size: 1.3em; }
 
 /* The remote moves them in script, and a wheel or a swipe scrolls them too (a computer or a phone is a screen as well). */
 .tv-rows {
@@ -1381,6 +1455,11 @@
   .tv-hero-title { font-size: 2.4em; }
   .tv-hero-meta, .tv-hero-about { font-size: 1.2em; }
   .tv-hero-button { font-size: 1.3em; }
+  .tv-detail-text { padding: 0 1.4em 2.4em; }
+  .tv-detail-title { font-size: 2.8em; }
+  .tv-detail-about { font-size: 1.3em; -webkit-line-clamp: 5; }
+  .tv-detail .tv-hero-button { font-size: 1.4em; }
+  .tv-detail .tv-detail-close { top: 1.2em; right: 1.4em; font-size: 1.2em; }
   .tv-row-title { margin-left: 4.9em; font-size: 1.5em; }
   .tv-row-tiles { gap: 1em; padding: 0.8em 1.4em 1em 6.4em; }
   .tv-tile { width: 13em; }
@@ -1444,7 +1523,10 @@
   .tv-end-tile { flex: 1 1 0; max-width: 11.5em; }
   .tv-end-name { font-size: 1.1em; }
   .tv-end-art .poster-initial { font-size: 2.6em; }
-  .tv-follow-bar { top: 1em; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 2em); font-size: 1.2em; }
+  .tv-follow-bar { top: 1em; flex-wrap: wrap; justify-content: center; gap: 0.6em; padding: 0.6em; border-radius: 1.4em; font-size: 1.2em; }
+  .tv-follow-bar > span { flex: 1 1 100%; text-align: center; }
+  .tv-follow-bar button { padding: 0.5em 0.9em; }
+  .tv-tap b { font-size: 1.7em; }
   .tv-fs-prompt { bottom: 6em; font-size: 1.5em; }
   .tv-banner { top: 2em; font-size: 1.4em; }
 
@@ -1491,6 +1573,10 @@
   .tv-rail { padding-top: 4.2em; padding-bottom: 1.4em; }
   .tv-hero { height: 13em; }
   .tv-hero-about { display: none; }
+  .tv-detail-text { padding-bottom: 1.6em; }
+  .tv-detail-title { font-size: 2.6em; }
+  .tv-detail-about { font-size: 1.3em; -webkit-line-clamp: 3; }
+  .tv-detail .tv-detail-close { top: 1em; }
   .tv-pair, .tv-screen-compact .tv-pair { gap: 4em; }
   .tv-steps { font-size: 1.8em; }
   .tv-code { font-size: 3.2em; }
@@ -1508,6 +1594,7 @@
 
 /* ...and a short screen that is also wide (a phone sideways) still has the room for things to sit side by side. */
 @media (max-height: 520px) and (min-width: 600px) {
+  .tv-follow-bar > span { flex-basis: auto; }
   .tv-pair, .tv-screen-compact .tv-pair, .tv-screen-compact .tv-party-invite { flex-direction: row; }
   .tv-actions { grid-auto-flow: column; grid-auto-columns: 1fr; width: auto; max-width: none; }
   .tv-party-choices { flex-direction: row; width: auto; max-width: none; }
@@ -1515,7 +1602,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-menu-backdrop, .tv-end, .hud-upnext, .tv-toast, .hud-toast, .hud-pause-card { animation-duration: 0.01s; }
+  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-upnext, .tv-toast, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p { animation-duration: 0.01s; }
+  .tv-welcome { transition-duration: 0.01s; }
   .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }
   .tv-hero { transition: none; }
   .tv-tile, .tv-tile-category, .tv-end-tile, .tv-action, .tv-hero-button, .tv-choice, .tv-swatch, .tv-switch-row, .tv-key { transition: none; }

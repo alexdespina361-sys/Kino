@@ -106,6 +106,23 @@ describe("stepFrom on the search page", () => {
   });
 });
 
+describe("stepFrom on a title's own page", () => {
+  // Over the library: the page's buttons are all the arrow keys reach, however much lies under it.
+  const shape: Shape = { rail: [1, 1], top: [1], hero: [2], rows: [8, 3], detail: [3] };
+
+  it("walks along the buttons and stops at the ends, without leaving for the menu", () => {
+    expect(stepFrom(shape, at("detail", 0, 0), "right")).toEqual(at("detail", 0, 1));
+    expect(stepFrom(shape, at("detail", 0, 1), "left")).toEqual(at("detail", 0, 0));
+    expect(stepFrom(shape, at("detail", 0, 2), "right")).toBeNull();
+    expect(stepFrom(shape, at("detail", 0, 0), "left")).toBeNull();
+  });
+
+  it("goes nowhere up or down", () => {
+    expect(stepFrom(shape, at("detail", 0, 1), "up")).toBeNull();
+    expect(stepFrom(shape, at("detail", 0, 1), "down")).toBeNull();
+  });
+});
+
 describe("stepFrom with the search filter (All, Movies, Series)", () => {
   // The filter sits above the results, to the right of the keys.
   const shape: Shape = { rail: [1, 1], top: [1], keys: [6, 6, 6, 2], chips: [3], results: gridRows(7, 3) };
