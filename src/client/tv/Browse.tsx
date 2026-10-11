@@ -633,7 +633,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
               <p className="tv-hero-eyebrow">{t("tv.loadingLibrary")}</p>
             ) : (
               <>
-                <h1 className="tv-hero-title">{status === "failed" ? t("tv.libraryFailed") : t("tv.libraryEmpty")}</h1>
+                <h1 className="tv-hero-title tv-hero-status">{status === "failed" ? t("tv.libraryFailed") : t("tv.libraryEmpty")}</h1>
                 <p className="tv-hero-about">{status === "failed" ? t("tv.libraryFailedHelp") : t("tv.libraryEmptyHelp")}</p>
                 <div className="tv-actions tv-actions-start">
                   <button className="tv-action tv-action-primary" onClick={retry} autoFocus data-testid="tv-browse-retry" data-zone="rows" data-row={0} data-col={0}>
@@ -874,6 +874,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
           <ListEditor
             tv
             list={lists.find((info) => info.id === overlay.id)}
+            taken={lists.filter((info) => info.id !== overlay.id).map(listName)}
             onSave={(name) => {
               if (overlay.id) {
                 profileStore.renameList(overlay.id, name);

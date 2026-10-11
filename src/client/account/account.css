@@ -9,7 +9,7 @@
 
 .auth-form { display: flex; flex-direction: column; gap: 14px; }
 .auth-field { display: flex; flex-direction: column; gap: 6px; }
-.auth-field > span { color: var(--muted); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; }
+.auth-field > span:first-child { color: var(--muted); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; }
 .auth-field > small { color: var(--muted); font-size: 0.78rem; }
 .auth-field input {
   width: 100%;
@@ -22,6 +22,12 @@
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .auth-field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.25); }
+/* The eye in a password field. */
+.secret { position: relative; display: block; }
+.auth-field .secret input { padding-right: 52px; }
+.secret-eye { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; color: var(--muted); font-size: 1.25rem; transform: translateY(-50%); transition: color 0.15s ease, background 0.15s ease; }
+.secret-eye:hover, .secret-eye:focus-visible { background: var(--surface-2); color: var(--text); outline: none; }
+.secret-eye[aria-pressed="true"] { color: var(--accent); }
 .auth-error, .auth-ok { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 0.9rem; line-height: 1.35; }
 .auth-error { background: rgb(255 107 107 / 0.12); color: var(--bad); }
 .auth-ok { background: rgb(70 211 105 / 0.12); color: var(--ok); }
@@ -52,7 +58,7 @@
 .profile-tile:active .profile-picture { transform: scale(0.96); }
 .profile-tile[aria-current="true"] .profile-picture { box-shadow: 0 0 0 3px var(--accent); }
 .profile-tile:hover, .profile-tile:focus-visible { color: var(--text); outline: none; }
-.profile-name { max-width: 100%; overflow: hidden; font-size: 0.95rem; text-overflow: ellipsis; white-space: nowrap; }
+.profile-name { display: -webkit-box; max-width: 100%; overflow: hidden; overflow-wrap: anywhere; font-size: 0.95rem; line-height: 1.25; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 2; } /* up to two lines, then an ellipsis: a name can be sixteen letters */
 .profile-pencil { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 14%; background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 0.34em; }
 .profile-add .profile-picture { display: grid; place-items: center; width: 1em; height: 1em; border: 2px dashed rgba(255, 255, 255, 0.28); }
 .profile-plus { display: grid; place-items: center; color: var(--muted); font-size: 0.42em; }

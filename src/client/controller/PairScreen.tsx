@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { LanguageSwitch } from "../account/LanguageSwitch";
 import { t, useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
@@ -17,15 +17,31 @@ interface PairScreenProps {
   /** A code is out and the server hasn't answered yet. */
   pending: boolean;
   error: string | null;
+  /** Something to know before trying again (the TV that was connected is gone). */
+  notice?: string | null;
   /** Top right: the way into the account page. */
   corner?: ReactNode;
 }
 
-export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, error, corner }: PairScreenProps) {
+/** A connection that has not come in this long is said to be missing, not just "reaching". */
+const OFFLINE_AFTER_MS = 4000;
+
+export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, error, notice, corner }: PairScreenProps) {
   useT();
   const ready = connection === "open" && !pending;
   const [scanning, setScanning] = useState(false);
   const canScan = cameraAvailable();
+  const input = useRef<HTMLInputElement>(null);
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    if (connection === "open") return setOffline(false);
+    const timer = setTimeout(() => setOffline(true), OFFLINE_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [connection]);
+  // A code that was refused leaves an empty field: the keyboard stays up for the next try.
+  useEffect(() => {
+    if (error && code === "") input.current?.focus();
+  }, [error, code]);
 
   const change = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 6);
@@ -54,6 +70,11 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
         <TvIcon />
       </div>
       <h1>{t("pair.title")}</h1>
+      {notice && (
+        <p className="banner" data-testid="pair-notice" role="status">
+          {notice}
+        </p>
+      )}
       <p className="muted">
         <Rich k={canScan ? "pair.introScan" : "pair.introType"} parts={{ host: <b>{location.host}</b>, connect: <b>{t("tv.connectPhone")}</b> }} />
       </p>
@@ -67,6 +88,7 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
 
       <form onSubmit={submit}>
         <input
+          ref={input}
           data-testid="code-input"
           className="code-input"
           inputMode="numeric"
@@ -90,7 +112,7 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
 
       {connection !== "open" && (
         <p className="muted center">
-          <span className="spinner" /> {t("pair.reaching")}
+          <span className="spinner" /> {offline ? t("error.offline") : t("pair.reaching")}
         </p>
       )}
       {error && (

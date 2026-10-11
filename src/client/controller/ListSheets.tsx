@@ -19,6 +19,7 @@ export function ListPickerSheet({ entry, onClose }: { entry: ListEntry; onClose:
     <Sheet title={t(making ? "lists.new" : "library.addToAList")} onClose={making ? () => setMaking(false) : onClose} testId="list-picker">
       {making ? (
         <ListEditor
+          taken={lists.map(listName)}
           onSave={(name) => {
             const made = profileStore.createList(name);
             if (made) profileStore.setInList(entry, true, made);
@@ -87,6 +88,7 @@ export function ListsSheet({ onClose }: { onClose: () => void }) {
       ) : (
         <ListEditor
           list={changing}
+          taken={lists.filter((info) => info.id !== changing?.id).map(listName)}
           onSave={(name) => {
             if (changing) profileStore.renameList(changing.id, name);
             else profileStore.createList(name);

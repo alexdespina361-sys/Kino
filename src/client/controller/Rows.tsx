@@ -74,7 +74,7 @@ export function ContinueRow({ items, onPlay, onRemove }: { items: readonly LiveP
             key={item.key}
             testId="continue"
             title={item.title}
-            image={item.image}
+            image={item.backdrop ?? item.image}
             note={continueNote(item)}
             progress={fractionOf(item)}
             playLabel={`${resume === undefined ? t("rows.play") : t("rows.resume")} ${item.title}`}
@@ -132,7 +132,7 @@ export function ListRows({ lists, items, onPlay, onRemove, onManage }: ListRowsP
                   key={item.key}
                   testId="list"
                   title={item.title}
-                  image={item.image}
+                  image={item.backdrop ?? item.image}
                   note={item.year ? String(item.year) : undefined}
                   playLabel={`${t("rows.play")} ${item.title}`}
                   removeLabel={`${t("rows.removeFromList", { list: name })}: ${item.title}`}

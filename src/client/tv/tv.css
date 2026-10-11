@@ -878,6 +878,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.tv-hero .tv-hero-status { font-size: 2.4em; text-wrap: balance; white-space: normal; } /* a sentence, not a title: it wraps instead of being cut short */
 .tv-hero-meta { margin: 0; font-size: 1.4em; font-weight: 600; color: #cfcfd4; }
 .tv-hero-about {
   margin: 0;
@@ -911,7 +912,7 @@
 .tv-hero-button.is-primary:hover { background: var(--accent-hover); }
 .tv-hero-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
 .tv-hero-button svg { flex: none; }
-.tv-actions-start { justify-content: flex-start; }
+.tv-actions-start { grid-auto-columns: max-content; justify-content: start; } /* a button as wide as its words, at the left, not one that fills the banner */
 
 /* A title's own page, over the library: its picture, what it is, and what can be done with it (the same buttons as the banner's). */
 .tv-detail {

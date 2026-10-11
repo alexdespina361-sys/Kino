@@ -230,7 +230,7 @@ export function TracksSheet({
           <ChoiceList choices={releases} />
         </>
       )}
-      {onDelay && (
+      {onDelay && (subtitles?.current ?? -1) !== -1 && (
         <div className="delay-row" data-testid="subtitle-delay">
           <span>
             {t("player.delay")} <b data-testid="subtitle-delay-value">{formatDelay(delay)}</b>
@@ -588,6 +588,11 @@ export function PartySheet({
           </li>
         ))}
       </ul>
+      {party.length > 0 && (
+        <button className="btn btn-danger btn-block" data-testid="party-end" onClick={() => party.forEach((tv) => onRemove(tv.id))}>
+          {t("party.end")}
+        </button>
+      )}
 
       {!full && (
         <form onSubmit={submit}>

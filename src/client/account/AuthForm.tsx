@@ -1,8 +1,9 @@
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type ChangeEvent, type FormEvent } from "react";
 import type { Me } from "../../shared";
 import { useT } from "../i18n";
 import { useAccount } from "./AccountProvider";
 import { describeError } from "./errors";
+import { PasswordInput } from "./PasswordInput";
 
 interface AuthFormProps {
   initialMode?: "signIn" | "signUp";
@@ -28,6 +29,14 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, tv = false, a
   const id = useId();
   const signingUp = mode === "signUp";
   const nav = tv ? { "data-nav": true } : {};
+  const passwordField = {
+    id: `${id}-password`,
+    "data-testid": "auth-password",
+    autoComplete: signingUp ? "new-password" : "current-password",
+    enterKeyHint: "go" as const,
+    value: password,
+    onChange: (event: ChangeEvent<HTMLInputElement>) => setPassword(event.target.value),
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -67,16 +76,7 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, tv = false, a
       </label>
       <label className="auth-field" htmlFor={`${id}-password`}>
         <span>{t("auth.password")}</span>
-        <input
-          id={`${id}-password`}
-          data-testid="auth-password"
-          type="password"
-          autoComplete={signingUp ? "new-password" : "current-password"}
-          enterKeyHint="go"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          {...nav}
-        />
+        {tv ? <input {...passwordField} type="password" {...nav} /> : <PasswordInput {...passwordField} />}
         {signingUp && <small>{t("auth.passwordHint")}</small>}
       </label>
 

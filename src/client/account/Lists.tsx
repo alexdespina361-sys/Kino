@@ -7,6 +7,8 @@ import { listName } from "./cards";
 interface EditorProps {
   /** Absent: a new list. */
   list?: ListInfo | undefined;
+  /** The names of the account's other lists: two lists with one name can't be told apart in a row of buttons. */
+  taken?: readonly string[];
   onSave: (name: string) => void;
   onCancel: () => void;
   /** Absent for a new list and for the first one, which can't be removed. */
@@ -16,10 +18,11 @@ interface EditorProps {
 }
 
 /** The name of one list, and the way to remove it. The same on the phone (in a sheet) and on the TV (on a page of its own). */
-export function ListEditor({ list, onSave, onCancel, onDelete, tv = false }: EditorProps) {
+export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, tv = false }: EditorProps) {
   const t = useT();
   const [name, setName] = useState(list ? listName(list) : "");
   const [confirming, setConfirming] = useState(false);
+  const [clash, setClash] = useState(false);
   const nav = tv ? { "data-nav": true } : {};
   const buttonClass = (kind: "main" | "plain" | "danger") =>
     tv ? `tv-action${kind === "main" ? " tv-action-primary" : kind === "danger" ? " tv-action-danger" : ""}` : `btn${kind === "main" ? " btn-red" : kind === "danger" ? " btn-danger" : ""}`;
@@ -28,6 +31,7 @@ export function ListEditor({ list, onSave, onCancel, onDelete, tv = false }: Edi
     event.preventDefault();
     const next = name.trim();
     if (!next) return;
+    if (taken.some((other) => other.trim().toLowerCase() === next.toLowerCase())) return setClash(true);
     // The same name is nothing to save (and the first list keeps following the language of the screen until somebody really names it).
     if (list && next === listName(list)) onCancel();
     else onSave(next);
@@ -44,10 +48,19 @@ export function ListEditor({ list, onSave, onCancel, onDelete, tv = false }: Edi
           autoComplete="off"
           autoCapitalize="sentences"
           enterKeyHint="done"
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => {
+            setName(event.target.value);
+            setClash(false);
+          }}
           {...nav}
         />
       </label>
+
+      {clash && (
+        <p className="auth-error" role="alert" data-testid="list-error">
+          {t("lists.nameTaken")}
+        </p>
+      )}
 
       <div className="editor-actions">
         <button type="submit" className={buttonClass("main")} disabled={!name.trim()} data-testid="list-save" {...nav}>

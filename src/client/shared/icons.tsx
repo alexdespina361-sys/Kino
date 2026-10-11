@@ -265,6 +265,19 @@ export const LockIcon = (props: Props) => (
   </Icon>
 );
 
+export const EyeIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
+
+export const EyeOffIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M10.6 5.1A9.7 9.7 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-2.8 3.7M6.7 6.7A17 17 0 0 0 2 12s3.6 7 10 7a9.6 9.6 0 0 0 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
+  </Icon>
+);
+
 export const FilmIcon = (props: Props) => (
   <Icon {...props}>
     <rect x="3" y="4" width="18" height="16" rx="2" />

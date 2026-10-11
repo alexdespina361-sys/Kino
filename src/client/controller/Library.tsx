@@ -31,6 +31,8 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
   const [searchResults, setSearchResults] = useState<LibraryItem[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
+  const [attempt, setAttempt] = useState(0);
+  const [searchFailed, setSearchFailed] = useState(false);
 
   const displayedRows = useMemo(() => {
     if (!library) return [];
@@ -56,7 +58,7 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
     return () => {
       live = false;
     };
-  }, []);
+  }, [attempt]);
 
   useEffect(() => {
     const q = query.trim().toLowerCase();
@@ -81,6 +83,7 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
     }
     setSearchResults(localMatches);
     setSearching(true);
+    setSearchFailed(false);
 
     // 2. Debounced remote search
     let live = true;
@@ -99,10 +102,12 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
               }
             }
             setSearchResults(combined);
-          }
+          } else setSearchFailed(true);
         })
         .catch(() => {
-          if (live) setSearching(false);
+          if (!live) return;
+          setSearching(false);
+          setSearchFailed(true);
         });
     }, 350);
 
@@ -117,6 +122,23 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
       <p className="muted small" data-testid="library-loading">
         <span className="spinner" /> {t("library.loading")}
       </p>
+    );
+  }
+  if (!library && status === "failed") {
+    return (
+      <div className="lib-failed" data-testid="library-failed">
+        <p className="muted">{t("tv.libraryFailed")}</p>
+        <button
+          className="btn"
+          data-testid="library-retry"
+          onClick={() => {
+            setStatus("loading");
+            setAttempt((n) => n + 1);
+          }}
+        >
+          {t("common.retry")}
+        </button>
+      </div>
     );
   }
   if (!library || library.rows.length === 0) return null;
@@ -168,7 +190,7 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
       {searchResults !== null ? (
         <div className="lib-row" data-testid="library-search-results">
           <h3>
-            {searchResults.length > 0 ? t("library.resultsFor", { query }) : t("library.noMatches", { query })}
+            {searchResults.length > 0 ? t("library.resultsFor", { query }) : searchFailed ? t("tv.libraryFailed") : t("library.noMatches", { query })}
             {searching && <span className="spinner" style={{ marginLeft: 8 }} />}
           </h3>
           {searchResults.length > 0 && <div className="lib-scroller">{searchResults.map(tile)}</div>}
@@ -190,7 +212,7 @@ function Tile({ item, inList, label, asks, onPlay, onList }: { item: LibraryItem
   return (
     <div className="lib-tile has-remove" data-in-list={inList}>
       <button className="lib-card" data-testid="library-tile" onClick={onPlay} title={item.title}>
-        <Poster className="lib-art" title={item.title} image={item.image} seed={item.id} />
+        <Poster className="lib-art" title={item.title} image={item.backdrop ?? item.image} seed={item.id} />
         <span className="lib-title">{item.title}</span>
         {item.year && <span className="lib-year">{item.year}</span>}
       </button>

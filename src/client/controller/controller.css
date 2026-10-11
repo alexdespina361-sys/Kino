@@ -90,15 +90,19 @@
 
 .top { display: flex; align-items: center; gap: 10px; }
 .top-tv { display: flex; align-items: center; flex: 1; gap: 10px; min-width: 0; color: var(--muted); font-size: 1.3rem; }
-.top-tv h1 { overflow: hidden; color: var(--text); font-size: 1.1rem; text-overflow: ellipsis; white-space: nowrap; }
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--surface); font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
-.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.pill.ok { color: var(--ok); }
-.pill.bad { color: var(--bad); }
+.top-name { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.top-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.top-tv h1 { overflow: hidden; color: var(--text); font-size: 1.1rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.tv-status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+.tv-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.tv-status.ok { color: var(--ok); }
+.tv-status.bad { color: var(--bad); }
 
 .banner { padding: 12px 14px; border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 0.9rem; line-height: 1.4; }
 .banner b { color: var(--text); }
 .error.banner { background: rgba(255, 107, 107, 0.12); color: var(--bad); }
+/* The TV is gone: a sentence and the way out, where the remote was. */
+.away { display: flex; flex-direction: column; gap: 12px; }
 
 .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.95rem; }
 .status.failed { color: var(--bad); }
@@ -135,6 +139,7 @@
   transform: translateY(-50%);
 }
 .field-btn.icon { padding: 8px; font-size: 1rem; color: var(--muted); }
+.field input[type="search"]::-webkit-search-cancel-button { display: none; } /* the field has a clear button of its own */
 
 
 /* ------------------------------ remote ------------------------------ */
@@ -284,9 +289,13 @@
 /* The chips past the profile's own languages: a label before them, and chips that open or widen the list rather than choose. */
 .cap-label { flex-basis: 100%; margin-top: 6px; color: var(--muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .cap-choice.more { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22); color: var(--muted); }
-.delay-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); font-size: 0.9rem; font-weight: 500; }
+.delay-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); font-size: 0.9rem; font-weight: 500; }
+.delay-row > span { white-space: nowrap; }
 .delay-row b { margin-left: 4px; font-variant-numeric: tabular-nums; }
-.delay-buttons { display: flex; gap: 6px; }
+/* The three buttons share a line with the label when it fits, and a line of their own, full width, when it does not (a narrow phone, a long word). */
+.delay-buttons { display: flex; flex: 1 1 13rem; gap: 6px; }
+.delay-buttons .btn { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 8px; background: rgba(255, 255, 255, 0.08); font-size: 0.9rem; white-space: nowrap; }
+.delay-buttons .btn:hover, .delay-buttons .btn:focus-visible { background: rgba(255, 255, 255, 0.16); }
 
 .seasons { display: flex; gap: 8px; padding-bottom: 4px; overflow-x: auto; }
 .season { flex: none; padding: 9px 15px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600; }
@@ -400,6 +409,7 @@
 /* ------------------------------ library and rows of cards ------------------------------ */
 
 .library { display: flex; flex-direction: column; gap: 18px; margin-top: 6px; }
+.lib-failed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; }
 .lib-row { display: flex; flex-direction: column; gap: 8px; }
 .lib-row h3 { font-size: 1.05rem; }
 .lib-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }

@@ -128,8 +128,7 @@ export function TvSignIn({ onClose }: { onClose: () => void }) {
           </li>
         </ol>
         <div className="tv-qr">
-          {request ? <QrCode value={`${location.origin}/?link=${encodeURIComponent(request.code)}`} label={t("link.scan")} /> : <div className="tv-qr-wait spinner" />}
-          <p>{t("link.scan")}</p>
+          {request ? <QrCode value={`${location.origin}/?link=${encodeURIComponent(request.code)}`} label={t("link.step3")} /> : <div className="tv-qr-wait spinner" />}
         </div>
       </div>
       <p className={`tv-lead tv-signin-status${problem ? " is-problem" : ""}`} data-testid="tv-signin-status" role="status">
