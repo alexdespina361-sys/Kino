@@ -80,3 +80,15 @@ export function translate(language: UiLanguage, key: Key, params?: Params): stri
 }
 
 export const t = (key: Key, params?: Params): string => translate(current, key, params);
+
+/** The key of the name of a row of the library that this app lists itself (Filmpire's and the Internet Archive's), or null for any other. */
+export function rowKey(row: { id: string }): string | null {
+  const own = /^(?:filmpire|archive)-(.+)$/.exec(row.id);
+  return own ? `category.${own[1]}` : null;
+}
+
+/** A row of the library as the person reads it: the places name their rows in English, so the ones this app knows are said in the language of the person, and any other keeps its own name. */
+export function rowTitle(row: { id: string; title: string }, language: UiLanguage = current): string {
+  const key = rowKey(row);
+  return key && hasKey(key) ? translate(language, key) : row.title;
+}

@@ -72,6 +72,7 @@ describe("GET /api/library/similar", () => {
 
     const unknown = await app.inject({ url: `/api/library/similar?url=${encodeURIComponent("https://x.example/watch/2")}` });
     expect(unknown.json()).toEqual({ items: [] });
+    expect(unknown.headers["cache-control"]).toBe("no-store"); // may be a place that could not be reached just now
   });
 
   it("wants a link", async () => {
@@ -95,6 +96,7 @@ describe("GET /api/library/episodes", () => {
 
     const unknown = await app.inject({ url: `/api/library/episodes?season=1&url=${encodeURIComponent("https://x.example/watch/9")}` });
     expect(unknown.json()).toEqual({ episodes: [] });
+    expect(unknown.headers["cache-control"]).toBe("no-store");
   });
 
   it("wants a link and a season that is a number", async () => {
@@ -102,5 +104,29 @@ describe("GET /api/library/episodes", () => {
     expect((await app.inject({ url: "/api/library/episodes?season=1" })).statusCode).toBe(400);
     expect((await app.inject({ url: "/api/library/episodes?url=https%3A%2F%2Fx.example%2Fa" })).statusCode).toBe(400);
     expect((await app.inject({ url: "/api/library/episodes?season=abc&url=https%3A%2F%2Fx.example%2Fa" })).statusCode).toBe(400);
+  });
+});
+
+describe("GET /api/library/seasons", () => {
+  it("lists the seasons a source knows of the show a link plays, which a browser may keep for an hour", async () => {
+    const seasonsSource: LibrarySource = { ...source, seasons: async (link) => (link.endsWith("?s=1&e=1") ? [1, 2, 3] : []) };
+    app = await buildApp({ librarySources: [seasonsSource] });
+
+    const found = await app.inject({ url: `/api/library/seasons?url=${encodeURIComponent("https://x.example/watch/1?s=1&e=1")}` });
+    expect(found.statusCode).toBe(200);
+    expect(found.headers["cache-control"]).toBe("public, max-age=3600");
+    expect(found.json()).toEqual({ seasons: [1, 2, 3] });
+  });
+
+  it("answers none for a link nobody knows, and asks the browser not to keep that", async () => {
+    app = await buildApp({ librarySources: [{ ...source, seasons: async () => [] }] });
+    const unknown = await app.inject({ url: `/api/library/seasons?url=${encodeURIComponent("https://x.example/watch/9")}` });
+    expect(unknown.json()).toEqual({ seasons: [] });
+    expect(unknown.headers["cache-control"]).toBe("no-store");
+  });
+
+  it("wants a link", async () => {
+    app = await buildApp({ librarySources: [source] });
+    expect((await app.inject({ url: "/api/library/seasons" })).statusCode).toBe(400);
   });
 });

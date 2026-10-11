@@ -1,6 +1,6 @@
 import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress } from "../../shared";
 import { continueNote, listName, unfinished } from "../account/cards";
-import { t } from "../i18n";
+import { rowTitle, t } from "../i18n";
 
 /**
  * What the TV's library shows on each of its pages, worked out from the library's rows and from what this profile has watched
@@ -60,6 +60,8 @@ export interface Entry {
   note?: string;
   /** Set on the cards of "Continue watching": what removes the card. */
   progressKey?: string;
+  /** A film or a show, when it is known (a title saved in a list does not say). */
+  kind?: LibraryKind;
   /** A category: opening it shows that page instead of playing. */
   opens?: View;
   /** Where a category's titles come from. */
@@ -106,6 +108,7 @@ export const entryOfItem = (item: LibraryItem): Entry => ({
   ...(item.backdrop ? { backdrop: item.backdrop } : {}),
   ...(item.year ? { year: item.year } : {}),
   ...(item.description ? { description: item.description } : {}),
+  ...(item.kind ? { kind: item.kind } : {}),
 });
 
 export function entryOfProgress(card: LiveProgress): Entry {
@@ -117,6 +120,7 @@ export function entryOfProgress(card: LiveProgress): Entry {
     url: card.url,
     progressKey: card.key,
     progress: fractionOf(card),
+    kind: isShowCard(card) ? "series" : "movie",
     ...(card.image ? { image: card.image } : {}),
     ...(card.backdrop ? { backdrop: card.backdrop } : {}),
     ...(card.year ? { year: card.year } : {}),
@@ -136,12 +140,56 @@ function sameTitle(a: string, b: string): boolean {
   }
 }
 
-/** A title part way through is picked up from wherever it is shown, not only from Continue watching: the entry as it plays from there. */
+/** The card this profile has for a title, if any (a film and a show can have the same number in a place's links, so the kind, when it is known, tells them apart). */
+const cardOf = (entry: Entry, progress: readonly LiveProgress[]): LiveProgress | undefined =>
+  progress.find((card) => sameTitle(card.url, entry.url) && (entry.kind === undefined || isShowCard(card) === (entry.kind === "series")));
+
+/**
+ * A title part way through is picked up from wherever it is shown, not only from Continue watching: the entry as it plays from there.
+ * A show whose last episode was finished goes on with the next one (its card points at it), from the start.
+ */
 export function resumable(entry: Entry, progress: readonly LiveProgress[]): Entry {
   if (entry.startAt !== undefined || entry.opens || !entry.url) return entry;
-  const card = progress.find((candidate) => sameTitle(candidate.url, entry.url));
-  const startAt = card && resumeAt(card);
-  return card && startAt !== undefined ? { ...entry, startAt, resumeUrl: card.url } : entry;
+  const card = cardOf(entry, progress);
+  if (!card || card.done) return entry;
+  const startAt = resumeAt(card);
+  if (startAt === undefined && card.url === entry.url) return entry;
+  return { ...entry, resumeUrl: card.url, ...(startAt !== undefined ? { startAt } : {}) };
+}
+
+/** A title without what was known of how far it had got when it was opened: for opening its page again after more of it was watched (see `resumable`). */
+export function asOpened(entry: Entry): Entry {
+  const plain = { ...entry };
+  delete plain.startAt;
+  delete plain.resumeUrl;
+  delete plain.progress;
+  delete plain.note;
+  return plain;
+}
+
+/** What this profile's watched episodes of a show are filed under: the name its card has (the show's, as the player gave it), else the title's own. */
+export const showKeyOf = (entry: Entry, progress: readonly LiveProgress[]): string => cardOf(entry, progress)?.title ?? entry.title;
+
+/** What Play does on a show's own page: the episode it leads to, and where in it. */
+export interface Start {
+  season: number;
+  episode: number;
+  url: string;
+  /** Where the episode was left, when it was left part way. */
+  startAt?: number;
+}
+
+/**
+ * Where this profile is in a show: the episode it left off, or the one that the last finished episode pointed at; a show not
+ * started begins with its first episode (which a title's own link plays). Nothing for what is not a show.
+ */
+export function startOf(entry: Entry, isShow: boolean, progress: readonly LiveProgress[]): Start | undefined {
+  const card = cardOf(entry, progress);
+  if (card?.season !== undefined && card.episode !== undefined) {
+    const startAt = resumeAt(card);
+    return { season: card.season, episode: card.episode, url: card.url, ...(startAt !== undefined ? { startAt } : {}) };
+  }
+  return isShow ? { season: 1, episode: 1, url: entry.url } : undefined;
 }
 
 export const entryOfSaved = (card: LiveListItem): Entry => ({
@@ -160,7 +208,7 @@ const sourceOf = (rows: readonly LibraryRow[], row: LibraryRow): { source?: stri
 const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[]): Entry => {
   const first = row.items[0];
   const picture = first?.backdrop ?? first?.image;
-  return { id: row.id, title: row.title, url: "", opens: { kind: "category", rowId: row.id }, ...sourceOf(rows, row), note: t("tv.titles", { count: row.items.length }), ...(picture ? { image: picture } : {}) };
+  return { id: row.id, title: rowTitle(row), url: "", opens: { kind: "category", rowId: row.id }, ...sourceOf(rows, row), note: t("tv.titles", { count: row.items.length }), ...(picture ? { image: picture } : {}) };
 };
 
 /** A card of a show has an episode; a film's has none. */
@@ -199,7 +247,7 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
 
   const library = kind ? data.rows.filter((row) => row.kind === kind) : data.rows;
   library.forEach((row, index) => {
-    out.push({ id: row.id, layout: index === 0 ? "ranked" : "wide", title: row.title, ...sourceOf(data.rows, row), entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem) });
+    out.push({ id: row.id, layout: index === 0 ? "ranked" : "wide", title: rowTitle(row), ...sourceOf(data.rows, row), entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem) });
     if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, kind));
   });
   return out;
@@ -217,7 +265,7 @@ export function gridOf(view: View, data: PageData): GridPage | null {
       return { title: t("tv.history"), meta: t("tv.historyHelp"), layout: "wide", entries: data.progress.map(entryOfProgress), empty: t("tv.historyEmpty") };
     case "category": {
       const row = data.rows.find((candidate) => candidate.id === view.rowId);
-      return row ? { title: row.title, meta: [t("tv.titles", { count: row.items.length }), sourceOf(data.rows, row).source].filter(Boolean).join(" · "), layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
+      return row ? { title: rowTitle(row), meta: [t("tv.titles", { count: row.items.length }), sourceOf(data.rows, row).source].filter(Boolean).join(" · "), layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
     }
     case "categories": {
       const rows = data.rows.filter((row) => !view.of || row.kind === view.of);

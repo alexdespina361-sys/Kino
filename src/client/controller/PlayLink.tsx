@@ -10,10 +10,14 @@ interface PlayLinkProps {
   resolve: ResolveStatus | null;
   /** Send a page or media link to the TV. */
   onPlay: (url: string) => void;
+  /** The box and its button. Off, only the answer is left (a title picked from the library is answered the same way). */
+  form?: boolean;
+  /** The answer. Off for a second box on the same screen, which would say it twice. */
+  status?: boolean;
 }
 
 /** "Paste a link" box and the answer to it. Used as the home screen and inside a sheet. */
-export function PlayLink({ tvName, resolve, onPlay }: PlayLinkProps) {
+export function PlayLink({ tvName, resolve, onPlay, form = true, status = true }: PlayLinkProps) {
   const t = useT();
   const [url, setUrl] = useState("");
   // Reading the clipboard needs a secure page and a permission; where it isn't there, the button just isn't offered.
@@ -34,40 +38,43 @@ export function PlayLink({ tvName, resolve, onPlay }: PlayLinkProps) {
     }
   };
 
+  if (!form && !(status && resolve)) return null;
   return (
     <div className="play-link">
-      <form onSubmit={submit} noValidate>
-        <div className="field">
-          <input
-            data-testid="url-input"
-            type="url"
-            inputMode="url"
-            enterKeyHint="go"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            placeholder={t("play.paste")}
-            aria-label={t("play.pasteLabel")}
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-          />
-          {canPaste && !url && (
-            <button type="button" className="field-btn" onClick={paste} data-testid="paste">
-              <ClipboardIcon /> {t("play.pasteButton")}
-            </button>
-          )}
-          {url && (
-            <button type="button" className="field-btn icon" onClick={() => setUrl("")} aria-label={t("common.clear")}>
-              <CloseIcon />
-            </button>
-          )}
-        </div>
-        <button type="submit" className="btn btn-red btn-block" data-testid="play-url" disabled={!url.trim()}>
-          <PlayIcon /> {t("play.on", { tv: tvName })}
-        </button>
-      </form>
+      {form && (
+        <form onSubmit={submit} noValidate>
+          <div className="field">
+            <input
+              data-testid="url-input"
+              type="url"
+              inputMode="url"
+              enterKeyHint="go"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder={t("play.paste")}
+              aria-label={t("play.pasteLabel")}
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+            />
+            {canPaste && !url && (
+              <button type="button" className="field-btn" onClick={paste} data-testid="paste">
+                <ClipboardIcon /> {t("play.pasteButton")}
+              </button>
+            )}
+            {url && (
+              <button type="button" className="field-btn icon" onClick={() => setUrl("")} aria-label={t("common.clear")}>
+                <CloseIcon />
+              </button>
+            )}
+          </div>
+          <button type="submit" className="btn btn-red btn-block" data-testid="play-url" disabled={!url.trim()}>
+            <PlayIcon /> {t("play.on", { tv: tvName })}
+          </button>
+        </form>
+      )}
 
-      {resolve && (
+      {status && resolve && (
         <p className={`status ${resolve.phase}`} data-testid="resolve-status" data-phase={resolve.phase} role="status">
           {resolve.phase === "resolving" && (
             <>

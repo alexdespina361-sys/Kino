@@ -80,5 +80,6 @@ button:disabled { opacity: 0.4; cursor: default; }
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.role-switch:hover, .role-switch:focus-visible { color: #fff; }
+.role-switch:focus-visible { color: #fff; }
+@media (hover: hover) { .role-switch:hover { color: #fff; } }
 .tv .role-switch { margin-top: 2em; font-size: 1.5em; }

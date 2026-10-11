@@ -6,5 +6,6 @@ export * from "./library";
 export * from "./media";
 export * from "./progress";
 export * from "./protocol";
+export * from "./search";
 export * from "./tracks";
 export * from "./watched";

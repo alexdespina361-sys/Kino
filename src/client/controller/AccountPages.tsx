@@ -44,7 +44,6 @@ function SubtitleLanguages() {
   const t = useT();
   const language = useLanguage();
   const { settings, set } = useSettings();
-  const account = useAccount();
   const chosen = settings.subtitleLanguages ?? [];
   const names = useMemo(() => {
     try {
@@ -97,7 +96,6 @@ function SubtitleLanguages() {
         </div>
       )}
       <Switch label={t("settings.onlySubtitleLanguages")} checked={settings.onlySubtitleLanguages ?? false} onChange={(on) => set("onlySubtitleLanguages", on ? true : undefined)} testId="only-languages" />
-      {account.me === null && <p className="muted small">{t("settings.signInToSave")}</p>}
     </Group>
   );
 }

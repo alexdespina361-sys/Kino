@@ -26,13 +26,16 @@ import { connectSocket, type Socket, type SocketStatus } from "../shared/socket"
 import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
 import { LinkApprove } from "../account/LinkApprove";
+import type { Entry } from "../tv/pages";
 import { Library } from "./Library";
 import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
 import { PlayLink } from "./PlayLink";
 import { Remote, type SheetKind } from "./Remote";
+import { LINE_EVENT } from "./Round";
 import { ContinueRow, ListRows } from "./Rows";
 import { Sheet } from "./Sheet";
+import { TitleSheet } from "./TitleSheet";
 import {
   CaptionStyleSheet,
   EpisodesSheet,
@@ -48,6 +51,8 @@ import {
 import "./controller.css";
 
 const CONTROLLER_KEY = "controller.id";
+/** Whether this phone's home screen has the box for pasting a link (off until the menu turns it on: most people play from the library). */
+const LINK_BOX_KEY = "kino.linkbox";
 /** A lookup that has not answered by now is reported as failed instead of spinning forever. */
 const RESOLVE_TIMEOUT_MS = 40_000;
 
@@ -62,6 +67,8 @@ export function Controller() {
   const [error, setError] = useState<string | null>(null);
   /** What the lookup of a link is up to (a status of "cancelled" clears it instead of being kept). */
   const [resolve, setResolve] = useState<Exclude<ResolveStatus, { phase: "cancelled" }> | null>(null);
+  /** How many lookups have failed so far: the library asks the server for its lists again at each, which may have taken the title off them. */
+  const [failedLookups, setFailedLookups] = useState(0);
   const [sheet, setSheet] = useState<SheetKind | null>(null);
   const [pairing, setPairing] = useState(false);
   /** The other TVs that watch along with this phone's TV, and the code that brings another one in. */
@@ -71,6 +78,13 @@ export function Controller() {
   const [other, setOther] = useState<{ code: string; control: boolean } | null>(null);
   /** The sheets of the lists: the lists themselves, or the lists one title can go in. They open over whatever sheet is open. */
   const [listSheet, setListSheet] = useState<{ kind: "manage" } | { kind: "pick"; entry: ListEntry } | null>(null);
+  /** The page of a title that was tapped in the library or a list: where it is played, or put in a list. */
+  const [title, setTitle] = useState<Entry | null>(null);
+  const [linkBox, setLinkBox] = useState(() => readStorage(LINK_BOX_KEY) === "1");
+  const changeLinkBox = (on: boolean) => {
+    setLinkBox(on);
+    writeStorage(LINK_BOX_KEY, on ? "1" : null);
+  };
   // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
   const { progress, watched, lists, list } = useProfileData();
 
@@ -125,6 +139,7 @@ export function Controller() {
             if (!message.tv) {
               setSheet(null);
               setListSheet(null);
+              setTitle(null);
               setResolve(null);
               setOther(null);
             }
@@ -154,6 +169,7 @@ export function Controller() {
             break;
           case "RESOLVE_STATUS":
             setResolve(message.status.phase === "cancelled" ? null : message.status); // given up on at the TV: nothing left to wait for
+            if (message.status.phase === "failed") setFailedLookups((n) => n + 1);
             if (message.status.phase === "found") {
               onFound(message.status.media);
               setSheet((open) => (open === "link" || open === "episodes" ? null : open));
@@ -234,7 +250,7 @@ export function Controller() {
   }, [player, media]);
 
   // What the TV just did, in a line at the bottom: the answer to a button, and the news when someone else pressed one.
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const [toast, setToast] = useState<{ id: number; text: string; long?: true } | null>(null);
   const lastPlayerRef = useRef<PlayerState>(IDLE_STATE);
   const sheetRef = useRef(sheet);
   sheetRef.current = sheet;
@@ -249,9 +265,20 @@ export function Controller() {
   }, [sheet]);
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 2000);
+    const timer = setTimeout(() => setToast(null), toast.long ? 4500 : 2000);
     return () => clearTimeout(timer);
   }, [toast]);
+  // What a hold on a title did (it went in a list, or came out) is said down here as well, where the finger is.
+  useEffect(() => {
+    const say = (event: Event) => setToast((current) => ({ id: (current?.id ?? 0) + 1, text: String((event as CustomEvent<string>).detail) }));
+    window.addEventListener(LINE_EVENT, say);
+    return () => window.removeEventListener(LINE_EVENT, say);
+  }, []);
+  // A play that did not work says so where the thumb is: the page's own line sits at the top of a library that may be scrolled far from it (the link sheet has the line itself, in view).
+  useEffect(() => {
+    if (resolve?.phase === "failed" && sheetRef.current !== "link") setToast((current) => ({ id: (current?.id ?? 0) + 1, text: resolveFailure(resolve), long: true }));
+    else if (resolve?.phase === "resolving") setToast((current) => (current?.long ? null : current)); // another try: the answer to the last one has had its say
+  }, [resolve]);
 
   // A lookup that never reports back must not leave the phone waiting.
   useEffect(() => {
@@ -349,19 +376,14 @@ export function Controller() {
     if (sheet === "party") setError(null); // what went wrong in there (a code that was refused) is not for the page behind it
     setSheet(null);
   };
-  const absolute = (url: string) => new URL(url, location.href).href;
+  const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
+  // The box for pasting a link is there when it is turned on, and when the library has nothing to play instead (it would be the only way to start anything).
   const link = (
     <>
-      <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} />
-      <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} />
-      <ListRows
-        lists={lists}
-        items={list}
-        onPlay={(url, hint) => playLink(absolute(url), undefined, hint)}
-        onRemove={(url, id) => profileStore.removeFromList(url, id)}
-        onManage={() => setListSheet({ kind: "manage" })}
-      />
-      <Library onPlay={(url, hint) => playLink(url, undefined, hint)} onPick={(entry) => setListSheet({ kind: "pick", entry })} />
+      <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} />
+      <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
+      <ListRows lists={lists} items={list} onOpen={setTitle} onPick={pickList} onRemove={(url, id) => profileStore.removeFromList(url, id)} onManage={() => setListSheet({ kind: "manage" })} />
+      <Library onOpen={setTitle} onPick={pickList} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} status={false} />} />
     </>
   );
 
@@ -421,7 +443,7 @@ export function Controller() {
       ) : (
         <section className="home">
           <h2>{t("phone.homeTitle")}</h2>
-          <p className="muted">{t("phone.homeHelp", { tv: tv.name })}</p>
+          {linkBox && <p className="muted">{t("phone.homeHelp", { tv: tv.name })}</p>}
           {link}
         </section>
       )}
@@ -457,6 +479,8 @@ export function Controller() {
           partySize={party.length}
           controlCode={tv.controlCode}
           controllerCount={tv.controllerCount}
+          linkBox={linkBox}
+          onLinkBox={changeLinkBox}
           onParty={() => setSheet("party")}
           onClose={closeSheet}
           onDisconnect={disconnect}
@@ -475,6 +499,7 @@ export function Controller() {
             socketRef.current?.send({ type: "ADD_TV", code });
           }}
           onRemove={(id) => socketRef.current?.send({ type: "REMOVE_TV", id })}
+          onEnd={() => socketRef.current?.send({ type: "END_PARTY" })}
         />
       )}
       {other && (
@@ -527,6 +552,17 @@ export function Controller() {
       )}
       {sheet === "episodes" && media?.series?.episodes && (
         <EpisodesSheet series={media.series} show={seriesKeyOf(media)} watched={watched} onClose={closeSheet} onPlay={playLink} />
+      )}
+      {title && (
+        <TitleSheet
+          entry={title}
+          onPlay={(url, startAt, hint) => {
+            setTitle(null);
+            playLink(url, startAt, hint);
+          }}
+          onPick={pickList}
+          onClose={() => setTitle(null)}
+        />
       )}
       {listSheet?.kind === "manage" && <ListsSheet onClose={() => setListSheet(null)} />}
       {listSheet?.kind === "pick" && <ListPickerSheet entry={listSheet.entry} onClose={() => setListSheet(null)} />}

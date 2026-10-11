@@ -119,18 +119,64 @@ describe("stepFrom on the search page", () => {
 
 describe("stepFrom on a title's own page", () => {
   // Over the library: the page's buttons are all the arrow keys reach, however much lies under it.
-  const shape: Shape = { rail: [1, 1], top: [1], hero: [2], rows: [8, 3], detail: [3] };
+  const shape: Shape = { rail: [1, 1], top: [1], hero: [2], rows: [8, 3], detail: [3], close: [1] };
 
-  it("walks along the buttons and stops at the ends, without leaving for the menu", () => {
+  it("walks along the buttons and stops at the left end, without leaving for the menu", () => {
     expect(stepFrom(shape, at("detail", 0, 0), "right")).toEqual(at("detail", 0, 1));
     expect(stepFrom(shape, at("detail", 0, 1), "left")).toEqual(at("detail", 0, 0));
-    expect(stepFrom(shape, at("detail", 0, 2), "right")).toBeNull();
     expect(stepFrom(shape, at("detail", 0, 0), "left")).toBeNull();
   });
 
-  it("goes nowhere up or down", () => {
-    expect(stepFrom(shape, at("detail", 0, 1), "up")).toBeNull();
+  it("reaches Close from the last button with Right, and from any button with Up, and comes back with Down or Left", () => {
+    expect(stepFrom(shape, at("detail", 0, 2), "right")).toEqual(at("close", 0, 0));
+    expect(stepFrom(shape, at("detail", 0, 0), "up")).toEqual(at("close", 0, 0));
+    expect(stepFrom(shape, at("detail", 0, 1), "up")).toEqual(at("close", 0, 0));
+    expect(stepFrom(shape, at("close", 0, 0), "down")).toEqual(at("detail", 0, 0));
+    expect(stepFrom(shape, at("close", 0, 0), "left")).toEqual(at("detail", 0, 2));
+    expect(stepFrom(shape, at("close", 0, 0), "up")).toBeNull();
+    expect(stepFrom(shape, at("close", 0, 0), "right")).toBeNull();
+  });
+
+  it("goes nowhere down from a film's buttons, and stays on its last button without a Close", () => {
     expect(stepFrom(shape, at("detail", 0, 1), "down")).toBeNull();
+    expect(stepFrom({ ...shape, close: [] }, at("detail", 0, 2), "right")).toBeNull();
+    expect(stepFrom({ ...shape, close: [] }, at("detail", 0, 1), "up")).toBeNull();
+  });
+});
+
+describe("stepFrom on a show's own page (buttons, seasons, episodes, one under the other)", () => {
+  const shape: Shape = { rail: [1, 1], top: [1], rows: [8], detail: [2], close: [1], seasons: [4], episodes: [1, 1, 1] };
+
+  it("goes down from the buttons to the seasons, then to the episodes, and back up the same way", () => {
+    expect(stepFrom(shape, at("detail", 0, 1), "down")).toEqual(at("seasons", 0, 0));
+    expect(stepFrom(shape, at("seasons", 0, 2), "down")).toEqual(at("episodes", 0, 0));
+    expect(stepFrom(shape, at("episodes", 0, 0), "up")).toEqual(at("seasons", 0, 0));
+    expect(stepFrom(shape, at("seasons", 0, 3), "up")).toEqual(at("detail", 0, 0));
+    expect(stepFrom(shape, at("detail", 0, 0), "up")).toEqual(at("close", 0, 0));
+  });
+
+  it("walks along the seasons and stops at both ends", () => {
+    expect(stepFrom(shape, at("seasons", 0, 0), "right")).toEqual(at("seasons", 0, 1));
+    expect(stepFrom(shape, at("seasons", 0, 3), "right")).toBeNull();
+    expect(stepFrom(shape, at("seasons", 0, 1), "left")).toEqual(at("seasons", 0, 0));
+    expect(stepFrom(shape, at("seasons", 0, 0), "left")).toBeNull();
+  });
+
+  it("walks down the episodes and stops at the last, without leaving sideways", () => {
+    expect(stepFrom(shape, at("episodes", 0, 0), "down")).toEqual(at("episodes", 1, 0));
+    expect(stepFrom(shape, at("episodes", 1, 0), "up")).toEqual(at("episodes", 0, 0));
+    expect(stepFrom(shape, at("episodes", 2, 0), "down")).toBeNull();
+    expect(stepFrom(shape, at("episodes", 1, 0), "left")).toBeNull();
+    expect(stepFrom(shape, at("episodes", 1, 0), "right")).toBeNull();
+  });
+
+  it("skips the seasons of a show that has one, and the episodes that are not there yet", () => {
+    const oneSeason: Shape = { ...shape, seasons: [] };
+    expect(stepFrom(oneSeason, at("detail", 0, 0), "down")).toEqual(at("episodes", 0, 0));
+    expect(stepFrom(oneSeason, at("episodes", 0, 0), "up")).toEqual(at("detail", 0, 0));
+    const loading: Shape = { ...shape, episodes: [] };
+    expect(stepFrom(loading, at("seasons", 0, 1), "down")).toBeNull();
+    expect(stepFrom({ ...loading, seasons: [] }, at("detail", 0, 0), "down")).toBeNull();
   });
 });
 

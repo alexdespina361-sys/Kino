@@ -13,7 +13,19 @@ export default defineConfig({
     trace: "retain-on-failure",
     // Every page starts as if its viewer had left full screen on an earlier visit (see src/client/shared/fullscreen.ts): a screen would
     // otherwise go full screen at the first key press of any test. The tests of full screen itself start from FIRST_VISIT (e2e/helpers.ts).
-    storageState: { cookies: [], origins: [{ origin: `http://127.0.0.1:${PORT}`, localStorage: [{ name: "kino.fullscreen.left", value: "1" }] }] },
+    // And as if the phone's menu had turned on the box for pasting a link (off on a new phone, see Controller.tsx), which most tests play from.
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: `http://127.0.0.1:${PORT}`,
+          localStorage: [
+            { name: "kino.fullscreen.left", value: "1" },
+            { name: "kino.linkbox", value: "1" },
+          ],
+        },
+      ],
+    },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   // The real thing: production build, one Fastify process serving UI + /ws + local fixtures.

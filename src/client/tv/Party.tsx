@@ -129,7 +129,7 @@ export function PartyPage(p: PageProps) {
 
   if (p.party?.role === "host") {
     return (
-      <Screen testId="tv-party" compact focus onBack={p.onBack}>
+      <Screen key="host" testId="tv-party" compact focus onBack={p.onBack}>
         <h1 className="tv-headline tv-headline-small">{t("party.rail")}</h1>
         <Invite code={p.party.code?.code} />
         <Members party={p.party} nav={PAGE_NAV} onRemove={p.onRemove} />
@@ -149,7 +149,8 @@ export function PartyPage(p: PageProps) {
   if (joining) return <JoinPage error={p.error} onJoin={p.onJoin} onBack={() => setJoining(false)} />;
 
   return (
-    <Screen testId="tv-party" focus onBack={p.onBack}>
+    // (Its own key: Start turns this page into the host's, and the remote must land on that page's button, not stay on the one that went.)
+    <Screen key="start" testId="tv-party" focus onBack={p.onBack}>
       <h1 className="tv-headline">{t("party.rail")}</h1>
       <p className="tv-lead">{t("party.lead")}</p>
       <div className="tv-party-choices">
@@ -265,9 +266,13 @@ export function PartyPanel(p: PanelProps) {
 
   // What was focused may be gone (Start becomes the code, a guest left): land on Done, or on the first thing that is there.
   // Never on a button that ends the party or sends somebody away: OK on a panel that has only just opened must not do that.
+  // (A press of the mouse on the panel's empty space leaves nothing focused, and that is left as it is: only a button that has gone is replaced.)
+  const had = useRef<Element | null>(null);
   useEffect(() => {
     const root = p.rootRef.current;
-    if (root && !root.contains(document.activeElement)) (root.querySelector<HTMLElement>("[data-autofocus]") ?? root.querySelector<HTMLElement>("[data-opt]"))?.focus();
+    if (!root) return;
+    if (root.contains(document.activeElement)) had.current = document.activeElement;
+    else if (!had.current?.isConnected) (root.querySelector<HTMLElement>("[data-autofocus]") ?? root.querySelector<HTMLElement>("[data-opt]"))?.focus();
   });
 
   return (
@@ -285,7 +290,7 @@ export function PartyPanel(p: PanelProps) {
       >
         <div className="tv-menu-top">
           <h2>{t("party.rail")}</h2>
-          <button className="tv-btn tv-btn-icon" onClick={p.onClose} aria-label={t("common.close")} title={t("common.close")}>
+          <button className="tv-btn tv-btn-icon" data-menu-close onClick={p.onClose} aria-label={t("common.close")} title={t("common.close")}>
             <CloseIcon />
           </button>
         </div>

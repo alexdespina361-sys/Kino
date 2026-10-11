@@ -207,7 +207,7 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
           <FullscreenIcon /> {player.fullscreen ? t("remote.exitFullscreen") : t("remote.fullscreen")}
         </button>
         <button className="btn" data-testid="change-video" onClick={() => onOpen("link")}>
-          <LinkIcon /> {t("remote.newLink")}
+          <LinkIcon /> {t("remote.changeVideo")}
         </button>
       </div>
     </>

@@ -16,6 +16,7 @@ import {
   resolveLists,
   resolveSettings,
   seriesKeyOf,
+  titleLink,
   watchedFor,
   watchedKey,
   type ListInfo,
@@ -298,20 +299,25 @@ export class ProfileStore {
     this.put("progress", { key, at: this.now(), deleted: true });
   }
 
-  /** Take a title off a list (the first one, when none is named). */
+  /** Take a title off a list (the first one, when none is named), under whichever link it was saved with: a show saved by one of its episodes is the same show. */
   removeFromList(url: string, list: string = DEFAULT_LIST) {
-    this.put("list", { key: listKey(url, list), at: this.now(), deleted: true });
+    const key = listKey(url, list);
+    const at = this.now();
+    const keys = new Set([key, ...live(this.data.list).filter((item) => listOf(item) === list && listKey(item.url, list) === key).map((item) => item.key)]);
+    for (const each of keys) this.put("list", { key: each, at, deleted: true });
   }
 
+  /** Put a title in a list or take it out. A show goes in by its first episode's link, whichever episode it was found by. */
   setInList(entry: ListEntry, inList: boolean, list: string = DEFAULT_LIST) {
     if (!inList) return this.removeFromList(entry.url, list);
+    const url = titleLink(entry.url);
     const item: LiveListItem = {
-      key: listKey(entry.url, list),
+      key: listKey(url, list),
       at: this.now(),
       ...(list === DEFAULT_LIST ? {} : { list }),
       id: entry.id.slice(0, 200),
       title: entry.title.slice(0, 300),
-      url: entry.url,
+      url,
       ...(entry.image ? { image: entry.image } : {}),
       ...(entry.backdrop ? { backdrop: entry.backdrop } : {}),
       ...(entry.year ? { year: entry.year } : {}),

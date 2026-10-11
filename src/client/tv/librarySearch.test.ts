@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendTo, KEYBOARD_KEYS, KEYBOARD_SHAPE, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
+import { appendTo, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
 
 const item = (id: string, title: string) => ({ id, title, url: `/${id}` });
 const rows = [
@@ -8,14 +8,28 @@ const rows = [
 ];
 
 describe("matchLocal", () => {
-  it("finds titles containing the text, ignoring case, each title once, in row order", () => {
-    expect(matchLocal(rows, "NIGHT").map((found) => found.id)).toEqual(["a", "c"]);
+  it("finds titles with the words typed, ignoring case, each title once, the closest first", () => {
+    expect(matchLocal(rows, "NIGHT").map((found) => found.id)).toEqual(["c", "a"]);
     expect(matchLocal(rows, "nos").map((found) => found.id)).toEqual(["b"]);
+  });
+  it("forgives a slip of a letter, and finds a title whose name is typed without its spaces", () => {
+    expect(matchLocal(rows, "nosferatoo").map((found) => found.id)).toEqual(["b"]);
+    expect(matchLocal(rows, "night trian").map((found) => found.id)).toEqual(["c"]);
+    expect(matchLocal(rows, "nighttrain").map((found) => found.id)).toEqual(["c"]);
   });
   it("finds nothing for nothing", () => {
     expect(matchLocal(rows, "")).toEqual([]);
     expect(matchLocal(rows, "   ")).toEqual([]);
     expect(matchLocal(rows, "zzz")).toEqual([]);
+  });
+});
+
+describe("keepMatching", () => {
+  const shown = [item("x", "Stranger Things"), item("y", "Strangers on a Train"), item("z", "The Strain")];
+  it("keeps what is shown as far as it still matches the words typed since, so a list does not empty with every letter", () => {
+    expect(keepMatching(shown, "stranger things").map((found) => found.id)[0]).toBe("x");
+    expect(keepMatching(shown, "strangers on").map((found) => found.id)[0]).toBe("y");
+    expect(keepMatching(shown, "zzz")).toEqual([]);
   });
 });
 

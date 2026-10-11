@@ -143,6 +143,15 @@ test.describe("what was watched follows the person", () => {
     await expect(continuing).toContainText("1 h 15 min left"); // 6000 - 1500 seconds
     await expect(second.getByRole("region", { name: "Favourites" })).toContainText("Saved For Later");
     await expect(second.getByRole("region", { name: "Weekend" })).toContainText("Weekend Pick"); // the lists and their names come along too
+
+    // Signing every other device out: the first finds out the next time it talks to the server, and says why it is a guest again.
+    await second.getByTestId("account-button").click();
+    await second.getByTestId("menu-devices").click();
+    await second.getByTestId("signout-others").click();
+    await expect(second.getByRole("status").filter({ hasText: en["account.signedOutOthers"] })).toBeVisible();
+    await first.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(first.getByTestId("account-toast")).toHaveText(en["error.signed_out"]);
+    await expect(first.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
   });
 
   test("signing out leaves nothing of the account on the screen", async ({ browser }) => {

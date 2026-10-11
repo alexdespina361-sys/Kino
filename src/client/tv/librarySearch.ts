@@ -1,20 +1,13 @@
-import type { LibraryItem, LibraryRow } from "../../shared";
+import { itemsOf, searchItems, type LibraryItem, type LibraryRow } from "../../shared";
 
-/** Titles already on screen that contain what was typed: instant, before the server is asked. Each title once, in row order. */
+/** Titles already on screen that match what was typed (a slip of a letter or an unfinished word included), best first: instant, before the server is asked. Each title once. */
 export function matchLocal(rows: readonly LibraryRow[], query: string): LibraryItem[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-  const seen = new Set<string>();
-  const found: LibraryItem[] = [];
-  for (const row of rows) {
-    for (const item of row.items) {
-      if (!seen.has(item.id) && item.title.toLowerCase().includes(q)) {
-        seen.add(item.id);
-        found.push(item);
-      }
-    }
-  }
-  return found;
+  return searchItems(itemsOf(rows), query);
+}
+
+/** What is shown, as far as it still matches the words as they are now: while the server is asked again, the list does not empty and fill up with every letter. */
+export function keepMatching(shown: readonly LibraryItem[], query: string): LibraryItem[] {
+  return searchItems(shown, query);
 }
 
 /** What was matched on screen, then what the server found beyond it, each title once. */

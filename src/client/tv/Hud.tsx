@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Ref } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { LibraryItemsSchema, type LibraryItem, type PlayerState } from "../../shared";
 import { hintOf } from "../account/cards";
 import { useProfileData } from "../account/store";
@@ -26,6 +26,7 @@ import { friendlyError } from "../shared/words";
 import type { PlayOptions } from "./Browse";
 import { useBack, useDpad } from "./dpad";
 import { PlayerError } from "./engine";
+import { useOneLine } from "./fit";
 import type { MenuKind } from "./Menu";
 import { SKIP_SECONDS } from "./keys";
 import { freshSimilar } from "./pages";
@@ -59,8 +60,8 @@ export interface HudProps {
   toast: { id: number; text: string; notice?: boolean; side?: "back" | "forward" } | null;
   /** The next episode is coming: `seconds` counts down to it, or is null when this profile plays the next one only on request. */
   upNext: { seconds: number | null; label: string } | null;
-  /** The controls row, so the remote's arrows can move focus along it. */
-  controlsRef: Ref<HTMLDivElement>;
+  /** The controls row, so the remote's arrows can move focus along it (and the row can be kept on one line). */
+  controlsRef: RefObject<HTMLDivElement | null>;
   onToggle: () => void;
   onSkip: (seconds: number) => void;
   onSeekTo: (time: number) => void;
@@ -149,8 +150,10 @@ export function Hud(p: HudProps) {
       ? (player.quality.levels.find((level) => level.id === player.quality?.current)?.label ?? "HD")
       : t("player.auto");
   const endsAt = formatEndsAt(player.currentTime, duration, player.playbackRate ?? 1, new Date());
+  const partyLabel = p.partySize > 1 ? t("party.size", { count: p.partySize }) : t("party.rail");
   // Mouse only: where on the bar the pointer is, and what time that is.
   const [hover, setHover] = useState<number | null>(null);
+  useOneLine(p.controlsRef);
 
   return (
     <>
@@ -307,20 +310,34 @@ export function Hud(p: HudProps) {
                 <Forward10Icon />
               </button>
               {p.prevLabel && (
-                <button className="tv-btn" data-testid="tv-prev-btn" onClick={p.onPrevious} title={t("hud.previousTip")}>
+                <button
+                  className="tv-btn"
+                  data-testid="tv-prev-btn"
+                  data-fold="skips"
+                  onClick={p.onPrevious}
+                  title={t("hud.previousTip")}
+                  aria-label={`${t("hud.previous")}: ${p.prevLabel}`}
+                >
                   <PreviousIcon />
-                  <span className="tv-btn-text">
+                  <span className="tv-btn-text tv-btn-label">
                     {t("hud.previous")}
-                    <small>{p.prevLabel}</small>
+                    <small className="tv-btn-sub">{p.prevLabel}</small>
                   </span>
                 </button>
               )}
               {p.nextLabel && (
-                <button className="tv-btn" data-testid="tv-next-btn" onClick={p.onNext} title={t("hud.nextTip")}>
+                <button
+                  className="tv-btn"
+                  data-testid="tv-next-btn"
+                  data-fold="skips"
+                  onClick={p.onNext}
+                  title={t("hud.nextTip")}
+                  aria-label={`${t("hud.nextEpisode")}: ${p.nextLabel}`}
+                >
                   <NextIcon />
-                  <span className="tv-btn-text">
+                  <span className="tv-btn-text tv-btn-label">
                     {t("hud.nextEpisode")}
-                    <small>{p.nextLabel}</small>
+                    <small className="tv-btn-sub">{p.nextLabel}</small>
                   </span>
                 </button>
               )}
@@ -328,23 +345,34 @@ export function Hud(p: HudProps) {
 
             <div className="hud-group">
               {p.episodeCount > 1 && (
-                <button className="tv-btn" data-testid="tv-episodes-btn" onClick={() => p.onOpenMenu("episodes")} title={t("player.episodes")}>
-                  <ListIcon /> {t("player.episodes")}
+                <button
+                  className="tv-btn"
+                  data-testid="tv-episodes-btn"
+                  data-fold="episodes"
+                  onClick={() => p.onOpenMenu("episodes")}
+                  title={t("player.episodes")}
+                  aria-label={t("player.episodes")}
+                >
+                  <ListIcon />
+                  <span className="tv-btn-label">{t("player.episodes")}</span>
                 </button>
               )}
               {hasTracks(player) && (
                 <button
                   className={`tv-btn ${player.subtitles && player.subtitles.current !== -1 ? "tv-btn-on" : ""}`}
                   data-testid="tv-audio-sub-btn"
+                  data-fold="tracks"
                   onClick={() => p.onOpenMenu("tracks")}
                   title={t("hud.tracksTip")}
+                  aria-label={t("player.audioSubtitles")}
                 >
-                  <SubtitlesIcon /> {t("player.audioSubtitles")}
+                  <SubtitlesIcon />
+                  <span className="tv-btn-label">{t("player.audioSubtitles")}</span>
                 </button>
               )}
               {p.sourceLabel && (
                 <button className="tv-btn" data-testid="tv-source-btn" onClick={() => p.onOpenMenu("sources")} title={t("player.source")}>
-                  {p.sourceLabel}
+                  <span className="tv-btn-cut">{p.sourceLabel}</span>
                 </button>
               )}
               <button className="tv-btn" data-testid="tv-speed-btn" onClick={() => p.onOpenMenu("speed")} title={t("player.speed")}>
@@ -355,8 +383,16 @@ export function Hud(p: HudProps) {
                   {qualityLabel}
                 </button>
               )}
-              <button className={`tv-btn ${p.partySize > 1 ? "tv-btn-on" : ""}`} data-testid="tv-party-btn" onClick={p.onParty} title={t("party.rail")}>
-                <UsersIcon /> {p.partySize > 1 ? t("party.size", { count: p.partySize }) : t("party.rail")}
+              <button
+                className={`tv-btn ${p.partySize > 1 ? "tv-btn-on" : ""}`}
+                data-testid="tv-party-btn"
+                data-fold="party"
+                onClick={p.onParty}
+                title={t("party.rail")}
+                aria-label={partyLabel}
+              >
+                <UsersIcon />
+                <span className="tv-btn-label">{partyLabel}</span>
               </button>
               <button
                 className={`tv-btn tv-btn-icon ${p.muted ? "tv-btn-on" : ""}`}

@@ -32,7 +32,7 @@ import { PlayerEngine } from "./engine";
 import { pickInRows } from "./dpad";
 import { EndCard, ErrorCard, FollowStatus, hasTracks, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
 import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
-import { TvBrowse, type PlayOptions } from "./Browse";
+import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
 import { PartyPage, PartyPanel } from "./Party";
@@ -58,6 +58,8 @@ const HUD_HOLD_MS = 5000;
 const RESOLVING_TIMEOUT_MS = 45_000;
 /** The video follows the end of a lookup straight away; if none has by then, the lookup failed. */
 const NO_VIDEO_AFTER_LOOKUP_MS = 1500;
+/** The end of a lookup and the video it found are two messages; the library is not shown again between them, so this long is waited for the second. */
+const LOOKUP_END_GRACE_MS = 250;
 /** Skips pressed within this long of each other count as one run in the "+30s" flash. */
 const SKIP_RUN_MS = 1200;
 
@@ -110,6 +112,12 @@ export function Tv() {
   const [resolving, setResolving] = useState(false);
   /** A lookup is under way (or has just ended), so its end with no video after it means it failed. */
   const wasResolvingRef = useRef(false);
+  /** The wait (see `LOOKUP_END_GRACE_MS`) after the server said a lookup ended. */
+  const lookupEndTimerRef = useRef(0);
+  /** What was on when that lookup began: a lookup that ends with the same video still on has failed. */
+  const mediaBeforeLookupRef = useRef<NormalizedMedia | null>(null);
+  /** The next episode that was put on at once, from what was loaded ahead: its own lookup only confirms it, so that one failing says nothing. */
+  const putOnAtOnceRef = useRef<NormalizedMedia | null>(null);
   /** Waiting for a picture (a lookup, loading, filling up) for too long: a way out is offered. */
   const stuck = useSlow(isBusy(player, resolving));
 
@@ -287,6 +295,7 @@ export function Tv() {
     const nextUrl = currentMediaRef.current?.series?.next?.url;
 
     if (preloaded && nextUrl) {
+      putOnAtOnceRef.current = preloaded;
       setCurrentMedia(preloaded);
       profileStore.playbackStarted(preloaded);
       resetApplied();
@@ -595,12 +604,17 @@ export function Tv() {
             setMenu(null);
             break;
           case "TV_RESOLVING":
-            setResolving(message.active);
+            window.clearTimeout(lookupEndTimerRef.current);
+            if (message.active) setResolving(true);
+            else lookupEndTimerRef.current = window.setTimeout(() => setResolving(false), LOOKUP_END_GRACE_MS);
             break;
           case "TV_CMD": {
             const { command } = message;
             if (command.type === "LOAD") {
+              window.clearTimeout(lookupEndTimerRef.current);
+              wasResolvingRef.current = false; // a video followed the lookup, so it did not fail (and stopping it a moment later is not that)
               setResolving(false);
+              keepPageFor(command.media.page); // the library comes back to a show's page only if it is that show that plays
               const current = currentMediaRef.current;
               const isSameStream = current?.stream.url === command.media.stream.url;
 
@@ -669,15 +683,22 @@ export function Tv() {
   // The server only tells a phone when a lookup fails; here the end of the lookup with no video following it is the tell.
   useEffect(() => {
     if (resolving) {
+      if (!wasResolvingRef.current) mediaBeforeLookupRef.current = currentMediaRef.current;
       wasResolvingRef.current = true;
       setNotice(null);
       return;
     }
     if (!wasResolvingRef.current) return;
     wasResolvingRef.current = false;
+    const before = mediaBeforeLookupRef.current;
     const timer = setTimeout(() => {
-      if (currentMediaRef.current) return;
-      setNotice(t("notice.wouldntPlay"));
+      if (currentMediaRef.current !== before || (before && before === putOnAtOnceRef.current)) return; // a video followed (or was on already)
+      if (!before) return setNotice(t("notice.wouldntPlay"));
+      // Something was on when the pick was made (an episode chosen from the player, the next one): it carries on, or if it had ended its end card comes back, and a line says why nothing changed.
+      if (videoRef.current?.ended) {
+        setEnded(true);
+        setFlash({ id: ++flashIdRef.current, text: t("notice.wouldntPlay") }); // (the controls, and their lines, give way to the end card)
+      } else notify(t("notice.wouldntPlay"));
     }, NO_VIDEO_AFTER_LOOKUP_MS);
     return () => clearTimeout(timer);
   }, [resolving]);
@@ -1138,7 +1159,7 @@ export function Tv() {
         </p>
       )}
 
-      {unlocked && !showVideo && flash && (
+      {unlocked && (!showVideo || finished) && flash && (
         <p className="tv-toast" role="status" key={`flash-${flash.id}`} data-testid="tv-flash">
           {flash.text}
         </p>

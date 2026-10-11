@@ -150,8 +150,9 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
         .catch((error: unknown) => {
           if (stopped) return;
           if (error instanceof ApiError && error.status === 401) {
-            // Signed out somewhere else: this screen is a guest again.
+            // Signed out somewhere else: this screen is a guest again, and says why.
             setMe(null);
+            say(t("error.signed_out"));
           } else if (error instanceof ApiError && error.status === 404) {
             void load();
           } else {
@@ -197,7 +198,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
       window.removeEventListener("online", wake);
       window.removeEventListener("pagehide", leave);
     };
-  }, [syncing, status, load]);
+  }, [syncing, status, load, say]);
 
   /* ------------------------------ actions ------------------------------ */
 

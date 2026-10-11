@@ -129,6 +129,29 @@ describe("named lists", () => {
     expect(titlesIn(d, DEFAULT_LIST)).toEqual(["Film 1"]);
   });
 
+  it("keeps a show as one entry whichever of its episodes it was found by, and takes it off by any of them", () => {
+    const d = device(1_000_000);
+    const show = (season: number, episode: number) => ({ id: "show:Show", title: "Show", url: `https://site.example/watch/9?s=${season}&e=${episode}` });
+    d.store.setInList(show(3, 5), true); // from a card that continues the show
+    d.advance(1000);
+    d.store.setInList(show(1, 1), true); // from the library's tile for it
+    expect(d.store.getSnapshot().list).toMatchObject([{ key: "url:https://site.example/watch/9?s=1&e=1", url: "https://site.example/watch/9?s=1&e=1" }]);
+    expect(d.store.getSnapshot().list).toHaveLength(1);
+    d.advance(1000);
+    d.store.removeFromList(show(2, 7).url);
+    expect(d.store.getSnapshot().list).toEqual([]);
+  });
+
+  it("takes a show off that was saved under an episode's link before a show was one entry", () => {
+    const older = new MemoryStorage();
+    const link = "https://site.example/watch/9?s=3&e=5";
+    older.setItem("kino.data.guest", JSON.stringify({ v: 1, rev: 0, dirty: [], data: { list: [{ key: `url:${link}`, at: 1, id: "show:Show", title: "Show", url: link }] } }));
+    const d = device(1_000_000, older);
+    expect(d.store.getSnapshot().list).toHaveLength(1);
+    d.store.removeFromList("https://site.example/watch/9?s=1&e=1"); // as the library's tile does
+    expect(d.store.getSnapshot().list).toEqual([]);
+  });
+
   it("renames a list, the first one too, and refuses an empty name, a list that is not there, and a list beyond the limit", () => {
     const d = device(1_000_000);
     const id = d.store.createList("Weekend")!;

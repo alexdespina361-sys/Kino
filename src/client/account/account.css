@@ -26,7 +26,8 @@
 .secret { position: relative; display: block; }
 .auth-field .secret input { padding-right: 52px; }
 .secret-eye { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 10px; color: var(--muted); font-size: 1.25rem; transform: translateY(-50%); transition: color 0.15s ease, background 0.15s ease; }
-.secret-eye:hover, .secret-eye:focus-visible { background: var(--surface-2); color: var(--text); outline: none; }
+.secret-eye:focus-visible { background: var(--surface-2); color: var(--text); outline: none; }
+@media (hover: hover) { .secret-eye:hover { background: var(--surface-2); color: var(--text); outline: none; } }
 .secret-eye[aria-pressed="true"] { color: var(--accent); }
 .auth-error, .auth-ok { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 10px; font-size: 0.9rem; line-height: 1.35; }
 .auth-error { background: rgb(255 107 107 / 0.12); color: var(--bad); }
@@ -46,7 +47,8 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.auth-switch:hover, .auth-switch:focus-visible { color: var(--text); }
+.auth-switch:focus-visible { color: var(--text); }
+@media (hover: hover) { .auth-switch:hover { color: var(--text); } }
 .auth-switch.danger { color: var(--bad); text-decoration: none; }
 
 /* ------------------------------ profiles ------------------------------ */
@@ -54,10 +56,12 @@
 .profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 20px 14px; margin: 0; padding: 0; list-style: none; }
 .profile-tile { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; color: var(--muted); font-weight: 600; transition: color 0.15s ease; }
 .profile-picture { position: relative; display: block; font-size: 84px; line-height: 0; border-radius: 14%; transition: transform 0.18s ease, box-shadow 0.18s ease; }
-.profile-tile:hover .profile-picture, .profile-tile:focus-visible .profile-picture { transform: scale(1.07); box-shadow: 0 0 0 3px #fff; }
+.profile-tile:focus-visible .profile-picture { transform: scale(1.07); box-shadow: 0 0 0 3px #fff; }
+@media (hover: hover) { .profile-tile:hover .profile-picture { transform: scale(1.07); box-shadow: 0 0 0 3px #fff; } }
 .profile-tile:active .profile-picture { transform: scale(0.96); }
 .profile-tile[aria-current="true"] .profile-picture { box-shadow: 0 0 0 3px var(--accent); }
-.profile-tile:hover, .profile-tile:focus-visible { color: var(--text); outline: none; }
+.profile-tile:focus-visible { color: var(--text); outline: none; }
+@media (hover: hover) { .profile-tile:hover { color: var(--text); outline: none; } }
 .profile-name { display: -webkit-box; max-width: 100%; overflow: hidden; overflow-wrap: anywhere; font-size: 0.95rem; line-height: 1.25; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 2; } /* up to two lines, then an ellipsis: a name can be sixteen letters */
 .profile-pencil { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 14%; background: rgba(0, 0, 0, 0.45); color: #fff; font-size: 0.34em; }
 .profile-add .profile-picture { display: grid; place-items: center; width: 1em; height: 1em; border: 2px dashed rgba(255, 255, 255, 0.28); }
@@ -169,7 +173,7 @@
 .choose .profile-editor { width: 100%; text-align: left; }
 
 /* A short message from the account (what was brought across at sign-in), over everything. */
-.account-toast { position: fixed; left: 50%; top: max(16px, env(safe-area-inset-top)); z-index: 80; max-width: min(92vw, 420px); margin: 0; padding: 11px 18px; border-radius: 14px; background: rgba(245, 245, 245, 0.97); color: #111; font-size: 0.9rem; font-weight: 600; line-height: 1.3; text-align: center; transform: translateX(-50%); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5); animation: account-toast 4.5s ease-out forwards; pointer-events: none; }
+.account-toast { position: fixed; left: 50%; top: max(16px, env(safe-area-inset-top)); z-index: 80; width: max-content; max-width: min(92vw, 420px); margin: 0; padding: 11px 18px; border-radius: 14px; background: rgba(245, 245, 245, 0.97); color: #111; font-size: 0.9rem; font-weight: 600; line-height: 1.3; text-align: center; transform: translateX(-50%); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5); animation: account-toast 4.5s ease-out forwards; pointer-events: none; }
 @keyframes account-toast {
   0% { opacity: 0; transform: translate(-50%, -10px); }
   7% { opacity: 1; transform: translate(-50%, 0); }

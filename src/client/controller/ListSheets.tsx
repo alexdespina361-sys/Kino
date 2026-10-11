@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DEFAULT_LIST, listKey, listOf, MAX_LISTS } from "../../shared";
+import { DEFAULT_LIST, listKey, listOf, MAX_LISTS, savedKeys } from "../../shared";
 import { listName } from "../account/cards";
 import { ListEditor } from "../account/Lists";
 import type { ListEntry } from "../account/profileStore";
@@ -13,7 +13,7 @@ export function ListPickerSheet({ entry, onClose }: { entry: ListEntry; onClose:
   const t = useT();
   const { lists, list } = useProfileData();
   const [making, setMaking] = useState(false);
-  const saved = new Set(list.map((item) => item.key));
+  const saved = savedKeys(list);
 
   return (
     <Sheet title={t(making ? "lists.new" : "library.addToAList")} onClose={making ? () => setMaking(false) : onClose} testId="list-picker">

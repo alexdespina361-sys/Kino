@@ -4,10 +4,11 @@ import type { Direction } from "./dpad";
  * Where the arrow keys lead on the library screen. The screen is a few blocks ("zones") of buttons laid out in rows: the menu
  * on the left, the account button on top (with the full screen one beside it), the banner's buttons (Play, the list) under it on the pages with rows, and in the middle
  * either rows of titles, a grid (the lists have a row of buttons over theirs), or the search keyboard with its filter and results. A title's own page lies over all of these
- * while it is open, with a row of buttons that the arrow keys do not leave.
+ * while it is open, and the arrow keys do not leave it: its Close button in the corner, under it its row of buttons (`detail`), and for a show,
+ * under those, a row of seasons and the episodes of the one that is shown, one under the other.
  * Pure, so the walking can be tested without a screen.
  */
-export type Zone = "rail" | "top" | "hero" | "rows" | "grid" | "keys" | "chips" | "results" | "detail";
+export type Zone = "rail" | "top" | "hero" | "rows" | "grid" | "keys" | "chips" | "results" | "detail" | "close" | "seasons" | "episodes";
 
 export interface Pos {
   zone: Zone;
@@ -34,10 +35,28 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     return null;
   }
 
+  // A title's own page: Close in the corner, the buttons under it, then the seasons and the episodes of a show. Nothing leads out of it.
+  const BUTTONS: Pos = { zone: "detail", row: 0, col: 0 };
+  const CLOSE: Pos = { zone: "close", row: 0, col: 0 };
+  const firstEpisode: Pos | null = shape.episodes?.length ? { zone: "episodes", row: 0, col: 0 } : null;
+  if (at.zone === "close") {
+    if (direction === "down") return BUTTONS;
+    return direction === "left" ? { ...BUTTONS, col: Math.max(0, (shape.detail?.[0] ?? 1) - 1) } : null;
+  }
   if (at.zone === "detail") {
     if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
+    if (direction === "right") return at.col < (lengths[0] ?? 0) - 1 ? { ...at, col: at.col + 1 } : shape.close?.length ? CLOSE : null;
+    if (direction === "up") return shape.close?.length ? CLOSE : null;
+    return shape.seasons?.length ? { zone: "seasons", row: 0, col: 0 } : firstEpisode;
+  }
+  if (at.zone === "seasons") {
+    if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
     if (direction === "right") return at.col < (lengths[0] ?? 0) - 1 ? { ...at, col: at.col + 1 } : null;
-    return null;
+    return direction === "up" ? BUTTONS : firstEpisode;
+  }
+  if (at.zone === "episodes") {
+    if (direction === "up") return at.row > 0 ? { ...at, row: at.row - 1 } : shape.seasons?.length ? { zone: "seasons", row: 0, col: 0 } : BUTTONS;
+    return direction === "down" && at.row < lengths.length - 1 ? { ...at, row: at.row + 1 } : null;
   }
 
   if (at.zone === "top") {

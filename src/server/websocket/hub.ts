@@ -247,6 +247,7 @@ export class Hub {
     if (message.type === "ADD_TV") return this.addTv(controller, message.code);
     if (message.type === "REMOVE_TV") return this.removeTv(controller, message.id);
     if (message.type === "OPEN_PARTY") return this.openParty(controller);
+    if (message.type === "END_PARTY") return this.endParty(controller);
     if (message.type !== "CMD") return;
 
     const device = this.registry.deviceForController(controller);
@@ -332,6 +333,10 @@ export class Hub {
     const joined = this.registry.addFollower(controller, code);
     if (!joined.ok) {
       if (joined.reason === "INVALID_CODE") {
+        // The code of a watch party (the phone's own, read off its invite) is no wrong guess: it is told what it is for, and it is not counted against the tries.
+        if (this.registry.isPartyCode(code)) {
+          return this.error(controller.id, "ADD_PARTY_CODE", "That is the code of a watch party. Type it on the device that should join it.");
+        }
         this.failedPairings.push(Date.now());
         return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");
       }
@@ -361,6 +366,14 @@ export class Hub {
     const device = this.registry.deviceForController(controller);
     if (!device) return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
     this.registry.ensurePartyCode(device);
+    this.sendParty(device);
+  }
+
+  /** The phone ends the party its TV hosts, as the TV itself can: the code is no good any more and every guest is on its own again. */
+  private endParty(controller: Controller): void {
+    const device = this.registry.deviceForController(controller);
+    if (!device) return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
+    this.registry.closeParty(device).forEach((guest) => this.resetTv(guest));
     this.sendParty(device);
   }
 
