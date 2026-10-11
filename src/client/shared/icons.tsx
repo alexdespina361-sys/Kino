@@ -88,6 +88,12 @@ export const FullscreenIcon = (props: Props) => (
   </Icon>
 );
 
+export const ExitFullscreenIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+  </Icon>
+);
+
 export const VolumeIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M11 5 6 9H3v6h3l5 4z" />
@@ -256,6 +262,19 @@ export const LockIcon = (props: Props) => (
   <Icon {...props}>
     <rect x="5" y="11" width="14" height="10" rx="2.5" />
     <path d="M8 11V8a4 4 0 0 1 8 0v3M12 15.5v2" />
+  </Icon>
+);
+
+export const EyeIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
+
+export const EyeOffIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M10.6 5.1A9.7 9.7 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-2.8 3.7M6.7 6.7A17 17 0 0 0 2 12s3.6 7 10 7a9.6 9.6 0 0 0 4.3-1M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
   </Icon>
 );
 

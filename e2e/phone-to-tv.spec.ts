@@ -67,7 +67,8 @@ test.describe("phone UI -> server -> TV player", () => {
 
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "error");
     await expect(tvRoot(tv)).toHaveAttribute("data-error", "SOURCE_NOT_DIRECTLY_PLAYABLE");
-    await expect(phone.getByTestId("player-state")).toContainText("SOURCE_NOT_DIRECTLY_PLAYABLE");
+    await expect(phone.getByTestId("player-state")).toContainText("This video can't be played on the TV."); // in words, not as the code the TV reported
+    await expect(phone.getByTestId("player-state")).toHaveAttribute("data-error", "SOURCE_NOT_DIRECTLY_PLAYABLE");
   });
 
   test("a wrong pairing code is rejected with a clear message", async ({ browser }) => {
@@ -79,6 +80,8 @@ test.describe("phone UI -> server -> TV player", () => {
     await phone.goto("/");
     await phone.getByTestId("code-input").fill(wrong);
     await expect(phone.getByTestId("error")).toHaveText("Invalid or expired code.");
+    await expect(phone.getByTestId("code-input")).toHaveValue(""); // cleared for the next try, with the keyboard still up
+    await expect(phone.getByTestId("code-input")).toBeFocused();
     await expect(tv.getByTestId("pairing-code")).toBeVisible(); // TV still waiting
   });
 
@@ -105,6 +108,33 @@ test.describe("phone UI -> server -> TV player", () => {
     await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4`);
     await phone.getByTestId("play-url").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+  });
+
+  test("when the TV goes away the remote says so and offers another TV, instead of buttons that go nowhere", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(phone.getByTestId("player-state")).toBeVisible();
+
+    await tv.close();
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV disconnected");
+    await expect(phone.getByTestId("tv-away")).toContainText("The TV is offline");
+    await expect(phone.getByTestId("player-state")).toHaveCount(0);
+
+    await phone.getByTestId("connect-another").click();
+    await expect(phone.getByTestId("code-input")).toBeVisible();
+    await expect(phone.getByTestId("pair-notice")).toHaveCount(0); // the phone chose to leave: nothing was lost
+  });
+
+  test("the TV's name and its state fit the header of a narrow phone", async ({ browser }) => {
+    const tv = await openTv(browser);
+    const phone = await (await browser.newContext({ ...PHONE, viewport: { width: 320, height: 568 }, screen: { width: 320, height: 568 } })).newPage();
+    await phone.goto("/");
+    await phone.getByTestId("code-input").fill(await readPairingCode(tv));
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    expect(await phone.getByTestId("tv-name").evaluate((name) => name.scrollWidth - name.clientWidth)).toBeLessThanOrEqual(0); // not cut short
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
   });
 });
 

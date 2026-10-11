@@ -1,16 +1,24 @@
 import {
+  COLLECTIONS,
+  DEFAULT_LIST,
   emptyData,
   isLive,
   LIMITS,
   listKey,
+  listOf,
+  ListNameSchema,
+  MAX_LISTS,
   mergeCollection,
   mergeData,
+  newListId,
   progressFor,
   progressKeyOf,
+  resolveLists,
   resolveSettings,
   seriesKeyOf,
   watchedFor,
   watchedKey,
+  type ListInfo,
   type LiveListItem,
   type LiveProgress,
   type LiveWatched,
@@ -43,12 +51,14 @@ export interface Snapshot {
   /** "Continue watching" and "Recently played": one card per film or show. */
   progress: LiveProgress[];
   watched: LiveWatched[];
-  /** My List. */
+  /** The lists, the first one always. */
+  lists: ListInfo[];
+  /** Every saved title of every list (a title in two lists is there twice), newest first. */
   list: LiveListItem[];
   settings: Settings;
 }
 
-/** A title that can go in My List: what a library tile has. */
+/** A title that can go in a list: what a library tile has. */
 export interface ListEntry {
   id: string;
   title: string;
@@ -72,7 +82,7 @@ const live = <T extends SyncItem>(items: readonly T[]) => items.filter((item) =>
 const byNewest = <T extends { at: number }>(items: T[]) => items.sort((a, b) => b.at - a.at);
 
 /**
- * What the person has watched, saved for My List, and chosen in the settings: in memory, kept in localStorage per place (the
+ * What the person has watched, saved in its lists, and chosen in the settings: in memory, kept in localStorage per place (the
  * browser's own "guest" copy, and one per profile), and brought into line with the server by `pending` and `accept`. All
  * changes are small items stamped with the time, so the copies on every screen settle on the same answer (see account.ts).
  */
@@ -104,13 +114,19 @@ export class ProfileStore {
   }
 
   getSnapshot = (): Snapshot => {
-    this.snapshot ??= {
-      scope: this.scopeName,
-      progress: byNewest(live(this.data.progress)),
-      watched: live(this.data.watched),
-      list: byNewest(live(this.data.list)),
-      settings: resolveSettings(this.data.settings),
-    };
+    if (!this.snapshot) {
+      const lists = resolveLists(this.data.listNames);
+      const known = new Set(lists.map((list) => list.id));
+      // A title in a list that was removed on another screen meanwhile is in no list: it is not shown.
+      this.snapshot = {
+        scope: this.scopeName,
+        progress: byNewest(live(this.data.progress)),
+        watched: live(this.data.watched),
+        lists,
+        list: byNewest(live(this.data.list)).filter((item) => known.has(listOf(item))),
+        settings: resolveSettings(this.data.settings),
+      };
+    }
     return this.snapshot;
   };
 
@@ -223,7 +239,7 @@ export class ProfileStore {
   adoptGuest(): boolean {
     if (this.scopeName === GUEST) return false;
     const guest = this.read(GUEST);
-    if (!guest || guest.data.progress.length + guest.data.watched.length + guest.data.list.length === 0) return false;
+    if (!guest || guest.data.progress.length + guest.data.watched.length + guest.data.list.length + guest.data.listNames.length === 0) return false;
     // The guest's settings stay with the guest: a profile's own choices are not overwritten by a visitor's.
     this.data = mergeData(this.data, { ...guest.data, settings: [] }, this.now());
     // What came across is old news here, but the server has not seen it.
@@ -236,7 +252,7 @@ export class ProfileStore {
   /* ------------------------------ what is watched ------------------------------ */
 
   /** Add an item (or its removal) to one list, keeping the lists as short as they are meant to be. It is now news for the server. */
-  private put(name: keyof ProfileData, item: SyncItem) {
+  private put<T extends SyncItem>(name: keyof ProfileData, item: T) {
     const rest = (this.data[name] as SyncItem[]).filter((other) => other.key !== item.key);
     const items = mergeCollection<SyncItem>([item, ...rest], [], { limit: LIMITS[name], now: this.now() });
     this.data = { ...this.data, [name]: items } as ProfileData;
@@ -245,7 +261,7 @@ export class ProfileStore {
   }
 
   private markAllDirty() {
-    for (const name of ["progress", "watched", "list", "settings"] as const) for (const item of this.data[name]) this.dirty.add(`${name}:${item.key}`);
+    for (const name of COLLECTIONS) for (const item of this.data[name]) this.dirty.add(`${name}:${item.key}`);
   }
 
   private find<T extends SyncItem>(name: keyof ProfileData, key: string): (T & { deleted?: undefined }) | undefined {
@@ -282,18 +298,17 @@ export class ProfileStore {
     this.put("progress", { key, at: this.now(), deleted: true });
   }
 
-  /** Take a title off My List. */
-  removeFromList(url: string) {
-    this.put("list", { key: listKey(url), at: this.now(), deleted: true });
+  /** Take a title off a list (the first one, when none is named). */
+  removeFromList(url: string, list: string = DEFAULT_LIST) {
+    this.put("list", { key: listKey(url, list), at: this.now(), deleted: true });
   }
 
-  setInList(entry: ListEntry, inList: boolean) {
-    if (!inList) return this.removeFromList(entry.url);
-    const key = listKey(entry.url);
-    const at = this.now();
+  setInList(entry: ListEntry, inList: boolean, list: string = DEFAULT_LIST) {
+    if (!inList) return this.removeFromList(entry.url, list);
     const item: LiveListItem = {
-      key,
-      at,
+      key: listKey(entry.url, list),
+      at: this.now(),
+      ...(list === DEFAULT_LIST ? {} : { list }),
       id: entry.id.slice(0, 200),
       title: entry.title.slice(0, 300),
       url: entry.url,
@@ -303,6 +318,29 @@ export class ProfileStore {
       ...(entry.description ? { description: entry.description.slice(0, 400) } : {}),
     };
     this.put("list", item);
+  }
+
+  /** Make a list: its id, or nothing when it has no name or there are as many lists as there can be. */
+  createList(name: string): string | undefined {
+    const named = ListNameSchema.safeParse(name);
+    if (!named.success || resolveLists(this.data.listNames).length >= MAX_LISTS) return undefined;
+    const key = newListId(this.now());
+    this.put("listNames", { key, at: this.now(), name: named.data });
+    return key;
+  }
+
+  /** Give a list another name (the first list too: until then it is called "Favourites"). */
+  renameList(id: string, name: string) {
+    const named = ListNameSchema.safeParse(name);
+    if (named.success && resolveLists(this.data.listNames).some((list) => list.id === id)) this.put("listNames", { key: id, at: this.now(), name: named.data });
+  }
+
+  /** Remove a list and the titles in it. The first list stays, whatever is done: it can be renamed and emptied, not removed. */
+  deleteList(id: string) {
+    if (id === DEFAULT_LIST) return;
+    const at = this.now();
+    for (const item of live(this.data.list)) if (listOf(item) === id) this.put("list", { key: item.key, at, deleted: true });
+    this.put("listNames", { key: id, at, deleted: true });
   }
 
   /** A setting (language, colour...). `undefined` goes back to the default. */
@@ -323,13 +361,13 @@ export class ProfileStore {
         sent.set(id, item.at);
         return true;
       });
-    const request = { since: this.revision, progress: send("progress"), watched: send("watched"), list: send("list"), settings: send("settings") } as SyncRequest;
+    const request = { since: this.revision, ...Object.fromEntries(COLLECTIONS.map((name) => [name, send(name)])) } as SyncRequest;
     return { request, sent };
   }
 
   /** The server answered: take in what other screens did, and note that what was sent is safe (unless it changed again meanwhile). */
   accept(response: SyncResponse, sent: ReadonlyMap<string, number>): void {
-    const merged = mergeData(this.data, { progress: response.progress, watched: response.watched, list: response.list, settings: response.settings }, this.now());
+    const merged = mergeData(this.data, { progress: response.progress, watched: response.watched, list: response.list, listNames: response.listNames, settings: response.settings }, this.now());
     const different = JSON.stringify(merged) !== JSON.stringify(this.data);
     this.data = merged;
     this.revision = response.rev;

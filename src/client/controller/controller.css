@@ -90,15 +90,19 @@
 
 .top { display: flex; align-items: center; gap: 10px; }
 .top-tv { display: flex; align-items: center; flex: 1; gap: 10px; min-width: 0; color: var(--muted); font-size: 1.3rem; }
-.top-tv h1 { overflow: hidden; color: var(--text); font-size: 1.1rem; text-overflow: ellipsis; white-space: nowrap; }
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--surface); font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
-.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.pill.ok { color: var(--ok); }
-.pill.bad { color: var(--bad); }
+.top-name { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.top-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.top-tv h1 { overflow: hidden; color: var(--text); font-size: 1.1rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.tv-status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+.tv-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.tv-status.ok { color: var(--ok); }
+.tv-status.bad { color: var(--bad); }
 
 .banner { padding: 12px 14px; border-radius: 12px; background: var(--surface); color: var(--muted); font-size: 0.9rem; line-height: 1.4; }
 .banner b { color: var(--text); }
 .error.banner { background: rgba(255, 107, 107, 0.12); color: var(--bad); }
+/* The TV is gone: a sentence and the way out, where the remote was. */
+.away { display: flex; flex-direction: column; gap: 12px; }
 
 .status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.95rem; }
 .status.failed { color: var(--bad); }
@@ -135,6 +139,7 @@
   transform: translateY(-50%);
 }
 .field-btn.icon { padding: 8px; font-size: 1rem; color: var(--muted); }
+.field input[type="search"]::-webkit-search-cancel-button { display: none; } /* the field has a clear button of its own */
 
 
 /* ------------------------------ remote ------------------------------ */
@@ -240,6 +245,16 @@
 .choice.active { background: rgb(var(--accent-rgb) / 0.2); box-shadow: inset 0 0 0 1.5px var(--accent); font-weight: 600; }
 .choice-dot { flex: none; width: 12px; height: 12px; border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 50%; }
 .choice.active .choice-dot { border-color: var(--accent); background: var(--accent); }
+/* The lists: a choice with an icon before its name, one that makes a new list, and one that has a note (how many titles) at its end. */
+.choice { transition: background 0.15s ease, transform 0.08s ease; }
+.choice:hover:not(.active), .choice:focus-visible:not(.active) { background: rgba(255, 255, 255, 0.12); }
+.choice:active { transform: scale(0.98); }
+.choice-label { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+.choice-label svg { flex: none; color: var(--muted); }
+.choice.active .choice-label svg { color: var(--accent-hover); }
+.choice-new { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.16); color: var(--muted); }
+.choice-new:hover, .choice-new:focus-visible { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.choice-note { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--muted); font-size: 0.85rem; }
 
 /* Subtitle style: a small TV with a sample line (sizes are shares of its height, like on the real screen), then the choices. */
 .cap-frame {
@@ -274,9 +289,13 @@
 /* The chips past the profile's own languages: a label before them, and chips that open or widen the list rather than choose. */
 .cap-label { flex-basis: 100%; margin-top: 6px; color: var(--muted); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .cap-choice.more { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.22); color: var(--muted); }
-.delay-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); font-size: 0.9rem; font-weight: 500; }
+.delay-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); font-size: 0.9rem; font-weight: 500; }
+.delay-row > span { white-space: nowrap; }
 .delay-row b { margin-left: 4px; font-variant-numeric: tabular-nums; }
-.delay-buttons { display: flex; gap: 6px; }
+/* The three buttons share a line with the label when it fits, and a line of their own, full width, when it does not (a narrow phone, a long word). */
+.delay-buttons { display: flex; flex: 1 1 13rem; gap: 6px; }
+.delay-buttons .btn { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 8px; background: rgba(255, 255, 255, 0.08); font-size: 0.9rem; white-space: nowrap; }
+.delay-buttons .btn:hover, .delay-buttons .btn:focus-visible { background: rgba(255, 255, 255, 0.16); }
 
 .seasons { display: flex; gap: 8px; padding-bottom: 4px; overflow-x: auto; }
 .season { flex: none; padding: 9px 15px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600; }
@@ -390,8 +409,14 @@
 /* ------------------------------ library and rows of cards ------------------------------ */
 
 .library { display: flex; flex-direction: column; gap: 18px; margin-top: 6px; }
+.lib-failed { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; }
 .lib-row { display: flex; flex-direction: column; gap: 8px; }
 .lib-row h3 { font-size: 1.05rem; }
+.lib-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+/* A quiet button at the end of a row's heading. */
+.row-link { flex: none; padding: 4px 0 4px 10px; border-radius: 6px; color: var(--muted); font-size: 0.85rem; font-weight: 600; transition: color 0.15s ease, opacity 0.1s ease; }
+.row-link:hover, .row-link:focus-visible { color: var(--text); }
+.row-link:active { opacity: 0.6; }
 /* The rows scroll sideways right to the screen's edge, but start in line with everything else. */
 .lib-scroller { display: flex; gap: 10px; margin: 0 -16px; padding: 0 16px 6px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding: 0 16px; scrollbar-width: none; }
 .lib-scroller::-webkit-scrollbar { display: none; }
@@ -406,7 +431,7 @@
 /* How far a started title got: a thin bar across the foot of its picture. */
 .lib-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.55); }
 .lib-progress i { display: block; height: 100%; background: var(--accent); }
-/* A round button in the corner of a picture: take it off the row, or add it to My List. */
+/* A round button in the corner of a picture: take it off the row, or put it in a list. */
 .lib-remove { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 0.95rem; backdrop-filter: blur(4px); transition: background 0.15s ease, transform 0.1s ease; }
 .lib-remove:active { transform: scale(0.9); }
 .lib-tile[data-in-list="true"] .lib-add { background: var(--accent); }

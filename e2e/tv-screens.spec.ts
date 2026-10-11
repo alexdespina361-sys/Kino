@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
+import { en } from "../src/client/i18n/en";
 import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, RawPhone, readPairingCode, tvRoot, withLibrary } from "./helpers";
 
 /** What the screens look like on a TV: the remote walks them, the buttons match, and everything fits. */
@@ -14,6 +15,7 @@ test.describe("the start screens", () => {
     const page = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, withLibrary(library));
     await page.goto("/tv");
     await expect(page.getByTestId("tv-welcome")).toBeVisible();
+    await expect(page.getByTestId("welcome-enter")).toHaveCount(0); // (this screen's viewer left full screen last time: nothing is asked of them)
     await expect(page.getByTestId("unlock")).toHaveCount(0); // nothing to press first
     await expect(page.getByTestId("tv-browse")).toBeVisible();
     await expect(page.getByTestId("tv-browse-tile").first()).toBeFocused(); // the remote is already on the first title
@@ -248,7 +250,8 @@ test.describe("the pause screen", () => {
       },
     });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
-    await expect(tv.getByTestId("tv-pause-card")).toContainText("S1:E2");
+    await expect(tv.getByTestId("tv-pause-card")).toContainText("Season 1, Episode 2");
+    await expect(tv.getByTestId("tv-pause-card")).not.toContainText("S1:E2"); // said once, in words
     phone.close();
   });
 });
@@ -477,7 +480,7 @@ test.describe("the library on the TV", () => {
     await expect(page).toContainText("1931");
     await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
     await expect(tv.getByTestId("tv-detail-play")).toHaveText("Play");
-    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Add to My List");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Add to Favourites");
     await expect(tv.getByTestId("tv-detail-remove")).toHaveCount(0); // nothing started, nothing to take off a row
 
     await tv.keyboard.press("ArrowRight");
@@ -497,29 +500,162 @@ test.describe("the library on the TV", () => {
     await expect(tv.getByTestId("tv-hero-title")).toHaveText("Film number 2");
   });
 
-  test("a title is added to My List from its own page and taken out the same way", async ({ browser }) => {
+  test("a title is added to Favourites from its own page and taken out the same way", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await expect(tiles(tv).first()).toBeFocused();
     await tv.keyboard.press("Enter");
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-detail-list")).toBeFocused();
     await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Remove from My List");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Remove from Favourites");
     await expect(tv.getByTestId("tv-detail-list")).toHaveAttribute("aria-pressed", "true");
     await expect(tv.getByTestId("tv-detail")).toBeVisible(); // the page stays, to show it took
 
     await tv.keyboard.press("Escape");
-    await expect(tv.getByRole("region", { name: "My List" }).getByTestId("tv-browse-tile")).toHaveCount(1); // Home has a row of it now
+    await expect(tv.getByRole("region", { name: "Favourites" }).getByTestId("tv-browse-tile")).toHaveCount(1); // Home has a row of it now
 
     await tv.getByTestId("rail-list").click();
-    await expect(tv.getByTestId("tv-view-title")).toHaveText("My List");
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Favourites");
     await expect(tiles(tv)).toHaveCount(1);
     await tiles(tv).first().click(); // its page again, which now takes it out
-    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Remove from My List");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Remove from Favourites");
     await tv.getByTestId("tv-detail-list").click();
-    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Add to My List");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Add to Favourites");
     await tv.keyboard.press("Escape");
-    await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing saved yet");
+    await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing here yet");
+  });
+
+  test("with one list a press saves a title in Favourites; with two the buttons ask which list, and Home has a row for each", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(library));
+    await expect(tiles(tv).first()).toBeFocused();
+
+    // One list: the banner says its name, and a press puts the title in it.
+    await expect(tv.getByTestId("tv-hero-list")).toHaveText("Favourites");
+    await tv.getByTestId("tv-hero-list").click();
+    await expect(tv.getByTestId("tv-hero-list")).toHaveAttribute("aria-pressed", "true");
+
+    // A second list is made on the lists page, with the keys: its button, the name, OK.
+    await tv.getByTestId("rail-list").click();
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Favourites");
+    await expect(tiles(tv)).toHaveCount(1);
+    await tv.getByTestId("list-new").click();
+    await expect(tv.getByTestId("list-name-input")).toBeFocused();
+    await tv.keyboard.type("Weekend");
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Weekend");
+    await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing here yet");
+    await expect(tv.locator('[data-testid^="list-chip-l"]')).toBeFocused(); // the remote is on the new list's button
+
+    // Now the page of a title asks which list; a press on a list puts the title in it or takes it out, and Done closes the question.
+    await tv.getByTestId("rail-home").click();
+    await tv.locator('[data-testid="tv-browse-tile"][title="Film number 3"]').click();
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Add to a list");
+    await tv.getByTestId("tv-detail-list").click();
+    await expect(tv.getByTestId("tv-list-picker")).toBeVisible();
+    await expect(tv.getByTestId("pick-favourites")).toBeFocused();
+    await expect(tv.getByTestId("pick-favourites")).toHaveAttribute("aria-pressed", "false");
+    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("Enter");
+    await expect(tv.locator('[data-testid^="pick-l"]')).toHaveAttribute("aria-pressed", "true");
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("pick-done")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-list-picker")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-detail-list")).toBeFocused();
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("In your lists");
+
+    // Home has a row for each list; the lists page has a button for each, and keeps the one that was last shown.
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByRole("region", { name: "Favourites" }).getByTestId("tv-browse-tile")).toHaveCount(1);
+    await expect(tv.getByRole("region", { name: "Weekend" }).getByTestId("tv-browse-tile")).toHaveCount(1);
+    await tv.getByTestId("rail-list").click();
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Weekend");
+    await expect(tiles(tv)).toHaveAttribute("title", "Film number 3");
+    await tv.getByTestId("list-chip-favourites").click();
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Favourites");
+    await expect(tiles(tv)).toHaveAttribute("title", "Film number 1");
+  });
+
+  test("a list is renamed or deleted from its page, with the question before a delete; the first list can be renamed but not deleted", async ({ browser }) => {
+    const now = Date.now();
+    const seed = guestStorage({
+      listNames: [{ key: "lweekend", at: now - 5000, name: "Weekend" }],
+      list: [
+        { key: "url:https://films.example/first", at: now - 4000, id: "k1", title: "Kept First", url: "https://films.example/first" },
+        { key: "lweekend|url:https://films.example/second", at: now - 3000, list: "lweekend", id: "k2", title: "Kept Second", url: "https://films.example/second" },
+      ],
+    });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    await tv.getByTestId("rail-list").click();
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Favourites");
+    await expect(tv.locator('[data-zone="chips"]')).toHaveCount(4); // the two lists, New list, Edit list
+    await tv.getByTestId("list-chip-lweekend").click();
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Weekend");
+    await expect(tiles(tv)).toHaveAttribute("title", "Kept Second");
+
+    // Renamed: OK in the name field saves it.
+    await tv.getByTestId("list-edit").click();
+    await expect(tv.getByTestId("list-name-input")).toHaveValue("Weekend");
+    await tv.getByTestId("list-name-input").fill("Friday night");
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Friday night");
+    await expect(tv.getByTestId("list-chip-lweekend")).toHaveText("Friday night");
+
+    // Removed: the question lands the remote on the answer that keeps the list; the titles in it go with it.
+    await tv.getByTestId("list-edit").click();
+    await tv.getByTestId("list-delete").click();
+    await expect(tv.getByTestId("list-delete-cancel")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("list-delete-confirm")).toHaveCount(0);
+    await tv.getByTestId("list-delete").click();
+    await tv.getByTestId("list-delete-confirm").click();
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Favourites");
+    await expect(tv.getByTestId("list-chip-lweekend")).toHaveCount(0);
+    await expect(tiles(tv)).toHaveAttribute("title", "Kept First");
+
+    // The first list has no Delete, and takes another name: with one list left the banner says it.
+    await tv.getByTestId("list-edit").click();
+    await expect(tv.getByTestId("list-delete")).toHaveCount(0);
+    await tv.getByTestId("list-name-input").fill("Watch later");
+    await tv.getByTestId("list-save").click();
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Watch later");
+    await tv.getByTestId("rail-home").click();
+    await expect(tv.getByTestId("tv-hero-list")).toHaveText("Watch later");
+  });
+
+  test("as many lists as there can be stay on one line, and the arrow keys slide the buttons into view", async ({ browser }) => {
+    const now = Date.now();
+    const names = ["Weekend movies", "Date night", "Documentaries", "With the kids", "Rainy day", "Slow burns", "Comfort shows", "Foreign cinema", "Short films", "Rewatch", "Classics"];
+    const seed = guestStorage({ listNames: names.map((name, i) => ({ key: `l${String(i).padStart(3, "0")}`, at: now - 10_000 + i, name })) });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    await tv.getByTestId("rail-list").click();
+    await expect(tv.locator('[data-zone="chips"]')).toHaveCount(13); // twelve lists and Edit list: no New list, twelve is the most
+
+    const tops = await tv.locator(".tv-filters > *").evaluateAll((buttons) => buttons.map((button) => Math.round(button.getBoundingClientRect().top)));
+    expect(new Set(tops).size).toBe(1); // one line, not a stack of them pushing the titles off the screen
+
+    await tv.getByTestId("list-chip-favourites").focus();
+    for (let i = 0; i < 13; i++) await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("list-edit")).toBeFocused();
+    const rightEdge = async () => {
+      const edit = (await tv.getByTestId("list-edit").boundingBox())!;
+      return edit.x + edit.width;
+    };
+    await expect.poll(rightEdge).toBeLessThanOrEqual(1280); // the last button has slid into view (it takes a moment)
+  });
+
+  test("a saved title that is part way through says Resume on its own page, wherever it is shown", async ({ browser }) => {
+    const url = "https://films.example/night-train";
+    const seed = guestStorage({
+      progress: [{ key: `url:${url}`, at: Date.now() - 60_000, title: "Night Train", url, position: 1500, duration: 6000 }],
+      list: [{ key: `url:${url}`, at: Date.now() - 30_000, id: "nt", title: "Night Train", url }],
+    });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    await tv.getByTestId("rail-list").click();
+    await expect(tiles(tv)).toHaveCount(1);
+    await tiles(tv).first().click();
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("Night Train");
+    await expect(tv.getByTestId("tv-detail-play")).toHaveText("Resume"); // not "Play" from the start, as if it had never been begun
   });
 
   test("a title in a lower row has its page with every button too, where the banner has shrunk to a line", async ({ browser }) => {
@@ -537,11 +673,11 @@ test.describe("the library on the TV", () => {
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-detail-list")).toBeFocused();
     await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Remove from My List");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Remove from Favourites");
 
     await tv.keyboard.press("Escape");
     await expect(tv.locator("[data-testid='tv-browse-tile']:focus")).toHaveAttribute("title", "Second row first"); // back on the title it came from
-    await expect(tv.getByRole("region", { name: "My List" }).getByTestId("tv-browse-tile")).toHaveCount(1);
+    await expect(tv.getByRole("region", { name: "Favourites" }).getByTestId("tv-browse-tile")).toHaveCount(1);
   });
 
   test("a title that is part way through says Resume, and can be taken off its row from its page", async ({ browser }) => {
@@ -552,7 +688,7 @@ test.describe("the library on the TV", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-detail-title")).toHaveText("Night Train");
     await expect(tv.getByTestId("tv-detail-play")).toHaveText("Resume");
-    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Add to My List");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Add to Favourites");
     await expect(tv.getByTestId("tv-detail-remove")).toHaveText("Remove from this row");
 
     await tv.keyboard.press("ArrowRight");
@@ -728,7 +864,7 @@ test.describe("movies, series, and the rest of the menu", () => {
     await expect(tv.getByTestId("tv-view-title")).toHaveText("Action");
   });
 
-  test("History is everything watched, newest first and the finished ones marked; My List is what was saved", async ({ browser }) => {
+  test("History is everything watched, newest first and the finished ones marked; Favourites is what was saved", async ({ browser }) => {
     const now = Date.now();
     const seed = guestStorage({
       progress: [
@@ -746,7 +882,7 @@ test.describe("movies, series, and the rest of the menu", () => {
     await expect(tv.getByTestId("tv-history")).toContainText("Watched");
 
     await choose(tv, "rail-list");
-    await expect(tv.getByTestId("tv-view-title")).toHaveText("My List");
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Favourites");
     expect(await titlesOnScreen(tv)).toEqual(["Saved For Later"]);
   });
 
@@ -761,13 +897,61 @@ test.describe("movies, series, and the rest of the menu", () => {
     await expect(rail(tv)).toHaveAttribute("data-open", "true");
     await expect(tv.getByTestId("rail-list")).toBeFocused();
     await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing saved yet");
+    await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing here yet");
     await expect(rail(tv)).toHaveAttribute("data-open", "false");
+    await expect(tv.getByTestId("list-chip-favourites")).toBeFocused(); // an empty list still has its buttons: that is where the remote goes
     await tv.keyboard.press("Escape"); // Back is home
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
   });
 
-  test("clicking My List or History shuts the menu, whether or not they have anything in them", async ({ browser }) => {
+  for (const shape of [
+    { where: "on a TV", viewport: { width: 1280, height: 720 } },
+    { where: "at a phone's width", viewport: { width: 390, height: 844 } },
+  ]) {
+    test(`the entry the remote is on is a square around its icon, in the middle of the closed menu, and holds its icon when the menu is open: ${shape.where}`, async ({ browser }) => {
+      const tv = await openLibrary(browser, withLibrary(library), shape.viewport);
+      await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+      await choose(tv, "rail-history"); // nothing watched: the menu shuts with the remote still on this entry
+
+      /** Where the entry, its icon and the menu lie from left to right. */
+      const across = () =>
+        tv.evaluate(() => {
+          const entry = document.querySelector('[data-testid="rail-history"]')!;
+          const strip = document.querySelector('[data-testid="tv-rail"]')!.getBoundingClientRect();
+          const box = entry.getBoundingClientRect();
+          const icon = entry.querySelector("svg")!.getBoundingClientRect();
+          return { strip: [strip.left, strip.right], box: [box.left, box.right], icon: [icon.left, icon.right] };
+        });
+      const middle = ([from, to]: number[]) => (from! + to!) / 2;
+
+      await expect(rail(tv)).toHaveAttribute("data-open", "false");
+      await expect(tv.getByTestId("rail-history")).toBeFocused();
+      // (the box takes a moment to settle: it narrows as the menu closes)
+      await expect
+        .poll(async () => {
+          const { strip, box, icon } = await across();
+          return {
+            iconInsideBox: icon[0]! >= box[0]! && icon[1]! <= box[1]!,
+            iconInMiddleOfBox: Math.abs(middle(icon) - middle(box)) <= 1,
+            boxInMiddleOfMenu: Math.abs(middle(box) - middle(strip)) <= 1,
+          };
+        })
+        .toEqual({ iconInsideBox: true, iconInMiddleOfBox: true, boxInMiddleOfMenu: true });
+
+      await tv.keyboard.press("ArrowUp"); // brings the menu back, on the entry above
+      await tv.keyboard.press("ArrowDown");
+      await expect(rail(tv)).toHaveAttribute("data-open", "true");
+      await expect(tv.getByTestId("rail-history")).toBeFocused();
+      await expect
+        .poll(async () => {
+          const { strip, box, icon } = await across();
+          return { iconInsideBox: icon[0]! >= box[0]! && icon[1]! <= box[1]!, boxInsideMenu: box[0]! >= strip[0]! && box[1]! <= strip[1]! };
+        })
+        .toEqual({ iconInsideBox: true, boxInsideMenu: true });
+    });
+  }
+
+  test("clicking the lists or History shuts the menu, whether or not they have anything in them", async ({ browser }) => {
     const seed = guestStorage({ list: [{ key: "url:https://films.example/saved", at: Date.now() - 1000, id: "s1", title: "Saved For Later", url: "https://films.example/saved" }] });
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
 
@@ -776,7 +960,7 @@ test.describe("movies, series, and the rest of the menu", () => {
     await expect(rail(tv)).toHaveAttribute("data-open", "false");
 
     await tv.getByTestId("rail-list").click(); // one title saved
-    await expect(tv.getByTestId("tv-view-title")).toHaveText("My List");
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Favourites");
     await expect(tv.getByTestId("tv-browse-tile")).toHaveCount(1);
     await expect(rail(tv)).toHaveAttribute("data-open", "false");
   });
@@ -917,6 +1101,18 @@ test.describe("categories and search on the TV", () => {
     await expect(tiles(tv).last()).toHaveAttribute("title", "Film from the server");
     expect(asked.at(-1)).toBe("film");
     expect(asked.filter((q) => q.length < 2)).toEqual([]); // nothing for a single letter
+
+    // Under the letters: Space, Delete and Clear, which empties the box in one press instead of a Delete for each letter.
+    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("key-space")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("key-delete")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("key-clear")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-query")).toHaveText("Search titles");
+    await expect(tv.getByTestId("tv-search-status")).toHaveText("Type a title to search.");
+    await expect(tv.getByTestId("key-clear")).toBeFocused(); // and it stays under the remote
   });
 
   test("search: right from the keyboard reaches the filter and then the results, OK plays one, and Back returns to the same search", async ({ browser }) => {
@@ -1023,6 +1219,34 @@ test.describe("categories and search on the TV", () => {
     await expect(tv.getByTestId("tv-search")).toBeVisible();
     await tv.keyboard.type("server");
     await expect(tiles(tv).first()).toHaveAttribute("title", "Only On The Server");
+  });
+
+  test("a search that cannot be reached says so instead of saying nothing matches, and asks again by itself", async ({ browser }) => {
+    let reachable = false;
+    const tv = await openLibrary(browser, async (context) => {
+      await context.clock.install();
+      await context.route("**/api/library", (route) => route.fulfill({ json: library }));
+      await context.route(/\/api\/library\/search/, (route) =>
+        reachable ? route.fulfill({ json: { items: [{ id: "srv", title: "Only On The Server", url: "/fixtures/sample.mp4" }] } }) : route.fulfill({ status: 503, body: "down" }),
+      );
+    });
+    await expect(tiles(tv).first()).toBeFocused();
+    await choose(tv, "rail-search");
+    await tv.keyboard.type("server");
+    await expect(tv.getByTestId("tv-search-status")).toHaveText(en["tv.searchFailed"]); // not "Nothing matches": it was never asked
+    await expect(tiles(tv)).toHaveCount(0);
+
+    reachable = true;
+    await tv.clock.fastForward(5500);
+    await expect(tiles(tv).first()).toHaveAttribute("title", "Only On The Server");
+    await expect(tv.getByTestId("tv-search-status")).toHaveText("1 title for “server”");
+
+    // With titles from the rows already on screen, the line says that it is only the rest that is missing.
+    reachable = false;
+    for (let i = 0; i < "server".length; i++) await tv.keyboard.press("Backspace");
+    await tv.keyboard.type("film");
+    await expect(tv.getByTestId("tv-search-status")).toContainText(en["tv.searchOffline"].trim());
+    await expect(tiles(tv)).toHaveCount(10);
   });
 });
 
@@ -1200,6 +1424,7 @@ test.describe("a film that has ended", () => {
     const tv = await openTv(browser);
     const phone = await playToTheEnd(tv, baseURL!, film("Before"));
     await expect(tv.getByTestId("tv-end")).toBeVisible({ timeout: 15_000 });
+    await expect(tv.getByTestId("end-similar")).toHaveCount(2); // they come from the server a moment after the card; Down before them has nothing to land on
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("end-similar").first()).toBeFocused();
     await tv.keyboard.press("Enter");
@@ -1237,6 +1462,40 @@ test.describe("a film that has ended", () => {
     await tv.getByTestId("end-next").click();
     await expect(tv.getByTestId("tv-end")).toHaveCount(0);
     await expect(tvRoot(tv)).not.toHaveAttribute("data-state", "paused", { timeout: 15_000 });
+    phone.close();
+  });
+
+  test("Up Next comes with fifteen seconds left of a long episode, its count waits while the picture is held, and winding back takes it away", async ({ browser, baseURL }) => {
+    test.setTimeout(45_000);
+    const tv = await openTv(browser);
+    const episode = (n: number) => ({ season: 1, episode: n, title: `Part ${n}`, url: `${baseURL}/fixtures/pages/${n === 1 ? "video" : "hls"}.html` });
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    // (fixtures/long.mp4 is forty seconds: the card keeps away from anything of thirty or less, where the end is never far.)
+    phone.cmd({ type: "LOAD", media: { title: "Parts · S1 E1", stream: { url: "/fixtures/long.mp4", type: "mp4" }, series: { season: 1, episode: 1, episodes: [episode(1), episode(2)], next: episode(2) } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    const seek = (to: number) => tv.evaluate((time) => void (document.querySelector("video")!.currentTime = time), to);
+    const upNext = tv.getByTestId("netflix-upnext");
+    const count = async () => Number((await upNext.locator("b").innerText()).replace("s", ""));
+    await expect(upNext).toHaveCount(0); // a long way from the end
+
+    await seek(24);
+    phone.cmd({ type: "PLAY" });
+    await expect(upNext).toBeVisible();
+    phone.cmd({ type: "PAUSE" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect(tv.getByTestId("tv-pause-card")).toHaveCount(0); // one card says what is happening, not two
+    const held = await count();
+    await tv.waitForTimeout(2500);
+    expect(await count()).toBe(held); // it counts to the end of the episode, and the picture is not going there
+
+    await seek(5); // wound back, and the card goes with the end, the pause card in its place
+    await expect(upNext).toHaveCount(0);
+    await expect(tv.getByTestId("tv-pause-card")).toBeVisible();
+
+    await seek(34); // six seconds left: it never counts down from more than is left
+    phone.cmd({ type: "PLAY" });
+    await expect(upNext).toBeVisible();
+    expect(await count()).toBeLessThanOrEqual(6);
     phone.close();
   });
 });

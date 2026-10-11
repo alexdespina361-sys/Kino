@@ -103,10 +103,9 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
           </div>
         )}
         <h2 data-testid="media-title">{title}</h2>
-        <p className={`state ${player.state === "error" ? "bad" : ""}`} data-testid="player-state" data-state={player.state}>
+        <p className={`state ${player.state === "error" ? "bad" : ""}`} data-testid="player-state" data-state={player.state} data-error={player.state === "error" ? player.error : undefined}>
           {busy && <span className="spinner" />}
           {stateLabel(player, tv.name)}
-          {player.state === "error" && player.error && <small> ({player.error})</small>}
         </p>
       </section>
 

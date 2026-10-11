@@ -26,9 +26,9 @@ describe("mergeItems", () => {
 });
 
 describe("the keyboard", () => {
-  it("has every letter and digit once, in rows of six with a last row of two wide keys", () => {
+  it("has every letter and digit once, in rows of six with a last row of three wide keys", () => {
     expect(new Set(KEYBOARD_KEYS).size).toBe(36);
-    expect(KEYBOARD_SHAPE).toEqual([6, 6, 6, 6, 6, 6, 2]);
+    expect(KEYBOARD_SHAPE).toEqual([6, 6, 6, 6, 6, 6, 3]);
   });
 
   it("types letters, digits and spaces from a physical keyboard, and nothing else", () => {

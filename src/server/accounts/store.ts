@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   AVATAR_IDS,
+  COLLECTIONS,
   fillListItem,
   fillProgress,
   LIMITS,
@@ -11,6 +12,7 @@ import {
   nextAvatar,
   SETTING_SCHEMAS,
   type AvatarId,
+  type CollectionName,
   type DeviceKind,
   type LiveListItem,
   type LiveProgress,
@@ -41,16 +43,7 @@ interface Stamped {
   item: SyncItem;
   rev: number;
 }
-const COLLECTIONS = ["progress", "watched", "list", "settings"] as const;
-type Collection = (typeof COLLECTIONS)[number];
-interface DataDoc {
-  v: 1;
-  rev: number;
-  progress: Stamped[];
-  watched: Stamped[];
-  list: Stamped[];
-  settings: Stamped[];
-}
+type DataDoc = { v: 1; rev: number } & Record<CollectionName, Stamped[]>;
 interface SessionDoc {
   v: 1;
   /** sha256 of the token: the token itself is only ever in the cookie. */
@@ -64,7 +57,7 @@ interface SessionDoc {
 }
 interface ProfileData {
   rev: number;
-  collections: Record<Collection, Map<string, Stamped>>;
+  collections: Record<CollectionName, Map<string, Stamped>>;
 }
 
 export const SESSION_TTL_MS = 180 * 24 * 3600 * 1000;
@@ -173,8 +166,7 @@ export class AccountStore {
     if (key.startsWith("pdata:")) {
       const profileData = this.data.get(key.slice("pdata:".length));
       if (!profileData) return undefined;
-      const stamped = (name: Collection) => [...profileData.collections[name].values()];
-      const doc: DataDoc = { v: 1, rev: profileData.rev, progress: stamped("progress"), watched: stamped("watched"), list: stamped("list"), settings: stamped("settings") };
+      const doc = { v: 1, rev: profileData.rev, ...Object.fromEntries(COLLECTIONS.map((name) => [name, [...profileData.collections[name].values()]])) } as DataDoc;
       return doc;
     }
     return undefined;
@@ -414,19 +406,20 @@ export class AccountStore {
     if (stamped) profile.rev = rev;
     if (stamped || pruned) this.touch(`pdata:${profileId}`);
 
-    const answer = (name: Collection) => [...profile.collections[name].values()].filter((entry) => entry.rev > since && !echo.has(`${name}:${entry.item.key}`)).map((entry) => entry.item);
+    const answer = (name: CollectionName) => [...profile.collections[name].values()].filter((entry) => entry.rev > since && !echo.has(`${name}:${entry.item.key}`)).map((entry) => entry.item);
     return {
       rev: profile.rev,
       ...(reset ? { reset: true } : {}),
       progress: answer("progress") as SyncResponse["progress"],
       watched: answer("watched") as SyncResponse["watched"],
       list: answer("list") as SyncResponse["list"],
+      listNames: answer("listNames") as SyncResponse["listNames"],
       settings: answer("settings") as SyncResponse["settings"],
     };
   }
 
   /** Keep the newest items up to the limit, and forget removals once everyone has had time to hear of them. Whether anything went. */
-  private prune(map: Map<string, Stamped>, name: Collection, now: number): boolean {
+  private prune(map: Map<string, Stamped>, name: CollectionName, now: number): boolean {
     const kept = mergeCollection([...map.values()].map((entry) => entry.item), [], { limit: LIMITS[name], now });
     if (kept.length === map.size) return false;
     const keep = new Set(kept.map((item) => item.key));
@@ -440,7 +433,7 @@ export class AccountStore {
   }
 }
 
-const emptyProfileData = (): ProfileData => ({ rev: 0, collections: { progress: new Map(), watched: new Map(), list: new Map(), settings: new Map() } });
+const emptyProfileData = (): ProfileData => ({ rev: 0, collections: Object.fromEntries(COLLECTIONS.map((name) => [name, new Map()])) as ProfileData["collections"] });
 
 function validSetting(item: SyncItem): boolean {
   const schema = SETTING_SCHEMAS[item.key as SettingKey];
@@ -448,7 +441,7 @@ function validSetting(item: SyncItem): boolean {
 }
 
 /** The newer of two copies keeps what only the older one knew (a picture, a year). */
-function borrow(name: Collection, winner: SyncItem, loser: SyncItem): SyncItem {
+function borrow(name: CollectionName, winner: SyncItem, loser: SyncItem): SyncItem {
   if (name === "progress") return fillProgress(winner as unknown as LiveProgress, loser as unknown as LiveProgress) as unknown as SyncItem;
   if (name === "list") return fillListItem(winner as unknown as LiveListItem, loser as unknown as LiveListItem) as unknown as SyncItem;
   return winner;

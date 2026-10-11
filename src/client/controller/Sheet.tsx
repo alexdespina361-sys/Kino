@@ -1,6 +1,9 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { t, useT } from "../i18n";
 import { CloseIcon } from "../shared/icons";
+
+/** The sheets that are open, the one on top last: Escape closes that one, not all of them. */
+const open: object[] = [];
 
 /** A bottom sheet: the phone's way of showing a short list of choices without leaving the remote. */
 export function Sheet({
@@ -15,11 +18,18 @@ export function Sheet({
   testId?: string;
 }) {
   useT();
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
+    const me = {};
+    open.push(me);
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && open[open.length - 1] === me && close.current();
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    return () => {
+      open.splice(open.indexOf(me), 1);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>

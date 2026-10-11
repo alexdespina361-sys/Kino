@@ -31,6 +31,7 @@ import { CheckIcon, ScanIcon } from "../shared/icons";
 import { controlLink, partyLink } from "../shared/launch";
 import { hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
+import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { RoleSwitch } from "../shared/RoleSwitch";
 import { captionLabel, captionTitle, statusWords, trackName } from "../shared/words";
 import { codeFromScan } from "./scan";
@@ -229,7 +230,7 @@ export function TracksSheet({
           <ChoiceList choices={releases} />
         </>
       )}
-      {onDelay && (
+      {onDelay && (subtitles?.current ?? -1) !== -1 && (
         <div className="delay-row" data-testid="subtitle-delay">
           <span>
             {t("player.delay")} <b data-testid="subtitle-delay-value">{formatDelay(delay)}</b>
@@ -446,6 +447,7 @@ export function MenuSheet({
       <button className="btn btn-block" data-testid="party-open" onClick={onParty}>
         {partySize === 0 ? t("menu.partyOpen") : t("menu.partyActive", { count: partySize + 1 })}
       </button>
+      <FullscreenToggle className="btn btn-block" labels={{ enter: t("phone.fullscreen"), exit: t("phone.exitFullscreen") }} />
       <button className="btn btn-danger btn-block" data-testid="disconnect" onClick={onDisconnect}>
         {t("menu.disconnect")}
       </button>
@@ -586,12 +588,17 @@ export function PartySheet({
           </li>
         ))}
       </ul>
+      {party.length > 0 && (
+        <button className="btn btn-danger btn-block" data-testid="party-end" onClick={() => party.forEach((tv) => onRemove(tv.id))}>
+          {t("party.end")}
+        </button>
+      )}
 
       {!full && (
         <form onSubmit={submit}>
           <h3 className="sheet-section">{t("party.addTitle")}</h3>
           <p className="muted small">
-            <Rich k="party.help" parts={{ host: <b>{location.host}</b> }} />
+            <Rich k="party.help" parts={{ host: <b>{location.host}</b>, connect: <b>{t("tv.connectPhone")}</b> }} />
           </p>
           {cameraAvailable() && (
             <button type="button" className="btn btn-block" data-testid="party-scan" onClick={() => setScanning(true)}>

@@ -195,6 +195,22 @@ describe("sync", () => {
     expect(store.snapshot(profile.id)!.list.map((i) => "deleted" in i)).toEqual([false]);
   });
 
+  it("keeps the names of lists and which list a title is in, and a removed list stays removed", async () => {
+    const { store, profile } = await withAccount();
+    store.sync(profile.id, request(0, {
+      listNames: [{ key: "l1", at: clock, name: "Weekend" }],
+      list: [{ key: "l1|url:u", at: clock, list: "l1", id: "1", title: "T", url: "u" }],
+    }));
+    const other = store.sync(profile.id, request(0))!;
+    expect(other.listNames).toEqual([{ key: "l1", at: clock, name: "Weekend" }]);
+    expect(other.list).toMatchObject([{ key: "l1|url:u", list: "l1" }]);
+
+    advance(1000);
+    store.sync(profile.id, request(1, { listNames: [{ key: "l1", at: clock, deleted: true }] }));
+    store.sync(profile.id, request(2, { listNames: [{ key: "l1", at: clock - 5000, name: "Weekend" }] })); // a copy that never heard of it
+    expect(store.snapshot(profile.id)!.listNames).toEqual([{ key: "l1", at: clock, deleted: true }]);
+  });
+
   it("lets the newest copy borrow the picture only the older one had", async () => {
     const { store, profile } = await withAccount();
     store.sync(profile.id, request(0, { progress: [progress("film", clock - 5000, { image: "/poster.jpg", year: 1999 })] }));

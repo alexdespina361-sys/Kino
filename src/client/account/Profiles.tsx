@@ -72,16 +72,21 @@ interface EditorProps {
   onCancel: () => void;
   /** Absent for the only profile an account has: it can't be removed. */
   onDelete?: (() => Promise<void>) | undefined;
+  /** On the TV every control is reached with the remote's arrow keys (`data-nav`), and the buttons look like the TV's. */
+  tv?: boolean;
 }
 
 /** The name and picture of one profile. */
-export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete }: EditorProps) {
+export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete, tv = false }: EditorProps) {
   const t = useT();
   const [name, setName] = useState(profile?.name ?? "");
   const [avatar, setAvatar] = useState<AvatarId>(profile?.avatar ?? AVATAR_IDS.find((id) => !taken.includes(id)) ?? AVATAR_IDS[0]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const nav = tv ? { "data-nav": true } : {};
+  const buttonClass = (kind: "main" | "plain" | "danger") =>
+    tv ? `tv-action${kind === "main" ? " tv-action-primary" : kind === "danger" ? " tv-action-danger" : ""}` : `btn${kind === "main" ? " btn-red" : kind === "danger" ? " btn-danger" : ""}`;
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -99,13 +104,22 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete 
   };
 
   return (
-    <form className="profile-editor" onSubmit={submit} noValidate data-testid="profile-editor">
+    <form className={`profile-editor${tv ? " profile-editor-tv" : ""}`} onSubmit={submit} noValidate data-testid="profile-editor">
       <div className="editor-preview">
         <Avatar id={avatar} className="profile-avatar editor-avatar" />
       </div>
       <label className="auth-field">
         <span>{t("profiles.name")}</span>
-        <input data-testid="profile-name-input" value={name} maxLength={PROFILE_NAME_MAX} autoComplete="off" autoCapitalize="words" enterKeyHint="done" onChange={(event) => setName(event.target.value)} />
+        <input
+          data-testid="profile-name-input"
+          value={name}
+          maxLength={PROFILE_NAME_MAX}
+          autoComplete="off"
+          autoCapitalize="words"
+          enterKeyHint="done"
+          onChange={(event) => setName(event.target.value)}
+          {...nav}
+        />
       </label>
       <fieldset className="avatar-picker">
         <legend>{t("profiles.picture")}</legend>
@@ -120,6 +134,7 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete 
               className="avatar-choice"
               onClick={() => setAvatar(id)}
               data-testid={`avatar-${id}`}
+              {...nav}
             >
               <Avatar id={id} className="choice-avatar" />
             </button>
@@ -134,10 +149,10 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete 
       )}
 
       <div className="editor-actions">
-        <button type="submit" className="btn btn-red" disabled={busy || !name.trim()} data-testid="profile-save">
+        <button type="submit" className={buttonClass("main")} disabled={busy || !name.trim()} data-testid="profile-save" {...nav}>
           {t("common.save")}
         </button>
-        <button type="button" className="btn" onClick={onCancel} disabled={busy} data-testid="profile-cancel">
+        <button type="button" className={buttonClass("plain")} onClick={onCancel} disabled={busy} data-testid="profile-cancel" {...nav}>
           {t("common.cancel")}
         </button>
       </div>
@@ -147,14 +162,19 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete 
           <div className="editor-confirm" role="alert">
             <p>{t("profiles.deleteAsk", { name: profile?.name ?? "" })}</p>
             <div className="editor-actions">
-              <button type="button" className="btn btn-danger" disabled={busy} onClick={() => void run(onDelete)} data-testid="profile-delete-confirm">
+              <button type="button" className={buttonClass("danger")} disabled={busy} onClick={() => void run(onDelete)} data-testid="profile-delete-confirm" {...nav}>
                 <TrashIcon /> {t("common.delete")}
               </button>
-              <button type="button" className="btn" disabled={busy} onClick={() => setConfirming(false)}>
+              {/* The button that was pressed is gone: on the TV the remote lands on the safe answer. */}
+              <button type="button" className={buttonClass("plain")} disabled={busy} onClick={() => setConfirming(false)} data-testid="profile-delete-cancel" autoFocus={tv} {...nav}>
                 {t("common.cancel")}
               </button>
             </div>
           </div>
+        ) : tv ? (
+          <button type="button" className={buttonClass("danger")} onClick={() => setConfirming(true)} disabled={busy} data-testid="profile-delete" {...nav}>
+            <TrashIcon /> {t("profiles.delete")}
+          </button>
         ) : (
           <button type="button" className="auth-switch danger" onClick={() => setConfirming(true)} disabled={busy} data-testid="profile-delete">
             <TrashIcon /> {t("profiles.delete")}

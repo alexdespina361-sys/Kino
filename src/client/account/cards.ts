@@ -1,4 +1,4 @@
-import { resumeAt, type LiveProgress, type PlayHint } from "../../shared";
+import { resumeAt, type ListInfo, type LiveProgress, type PlayHint } from "../../shared";
 import { t } from "../i18n";
 import { formatLeft } from "../shared/format";
 import type { ListEntry } from "./profileStore";
@@ -20,7 +20,10 @@ export function continueNote(item: LiveProgress): string | undefined {
   return [episode, state].filter(Boolean).join(" · ") || undefined;
 }
 
-/** A library title as My List keeps it. */
+/** What a list is called: the name it was given, or for the first one, until somebody names it, "Favourites" in the language of the screen. */
+export const listName = (list: ListInfo): string => list.name ?? t("list.favourites");
+
+/** A library title as a list keeps it. */
 export const listEntryOf = (item: { id: string; title: string; url: string; image?: string | undefined; backdrop?: string | undefined; year?: number | undefined; description?: string | undefined }): ListEntry => ({
   id: item.id,
   title: item.title,

@@ -101,7 +101,7 @@ export function AccountScreen({ onClose, initial = "main" }: { onClose: () => vo
   }
   if (view === "picker" && me) {
     return (
-      <Page title={t("profiles.title")} onBack={back}>
+      <Page title={t("profiles.title")} onBack={account.choosing ? onClose : back}>
         <ProfileGrid
           profiles={me.profiles}
           current={profile?.id}

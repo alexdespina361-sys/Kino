@@ -47,7 +47,7 @@ const savedToTheAccount = (page: Page) =>
     .toEqual({ pending: 0, heard: true });
 
 const guestCopy = (page: Page) =>
-  page.evaluate(() => JSON.parse(localStorage.getItem("kino.data.guest") ?? "null") as { data: { progress: unknown[]; list: unknown[] } } | null);
+  page.evaluate(() => JSON.parse(localStorage.getItem("kino.data.guest") ?? "null") as { data: { progress: unknown[]; list: unknown[]; listNames: unknown[] } } | null);
 
 test.describe("accounts and profiles", () => {
   test("an account has a first profile, up to five can be added, and signing in again brings them all back", async ({ browser }) => {
@@ -108,13 +108,16 @@ test.describe("accounts and profiles", () => {
 test.describe("what was watched follows the person", () => {
   const night = { key: "url:https://films.example/night-train", at: Date.now() - 60_000, title: "Night Train", url: "https://films.example/night-train", position: 1500, duration: 6000 };
   const saved = { key: "url:https://films.example/saved", at: Date.now() - 120_000, id: "s1", title: "Saved For Later", url: "https://films.example/saved" };
+  // A list of its own, with a title in it.
+  const weekend = { key: "lweekend", at: Date.now() - 110_000, name: "Weekend" };
+  const picked = { key: "lweekend|url:https://films.example/picked", at: Date.now() - 100_000, list: "lweekend", id: "p1", title: "Weekend Pick", url: "https://films.example/picked" };
 
   test("what a guest watched joins the account on signing in, and another device carries on from there", async ({ browser }) => {
     test.setTimeout(60_000);
     const account = fresh();
 
     // Device A has been used without an account.
-    const first = await newPhone(browser, guestStorage({ progress: [night], list: [saved] }));
+    const first = await newPhone(browser, guestStorage({ progress: [night], list: [saved, picked], listNames: [weekend] }));
     await first.goto("/");
     await signUp(first, account);
     await expect(first.getByTestId("account-toast")).toContainText("Viewer");
@@ -123,6 +126,7 @@ test.describe("what was watched follows the person", () => {
     const left = await guestCopy(first);
     expect(left?.data.progress).toHaveLength(0);
     expect(left?.data.list).toHaveLength(0);
+    expect(left?.data.listNames).toHaveLength(0);
 
     // Device B, another browser, signs in; paired with a TV (that is where the rows are) it has the same history.
     const tv = await openTv(browser);
@@ -137,7 +141,8 @@ test.describe("what was watched follows the person", () => {
     const continuing = second.getByTestId("continue-row");
     await expect(continuing).toContainText("Night Train");
     await expect(continuing).toContainText("1 h 15 min left"); // 6000 - 1500 seconds
-    await expect(second.getByTestId("list-row")).toContainText("Saved For Later");
+    await expect(second.getByRole("region", { name: "Favourites" })).toContainText("Saved For Later");
+    await expect(second.getByRole("region", { name: "Weekend" })).toContainText("Weekend Pick"); // the lists and their names come along too
   });
 
   test("signing out leaves nothing of the account on the screen", async ({ browser }) => {
@@ -193,22 +198,22 @@ test.describe("signing a TV in from the phone", () => {
   });
 });
 
-test.describe("signing a screen in from another screen", () => {
-  /** A computer's screen page that has made an account with the email form, which is how a screen with a keyboard signs in. */
-  async function signedInScreen(browser: Browser) {
-    const screen = await openLibrary(browser);
-    const account = fresh();
-    await screen.getByTestId("tv-account-chip").click();
-    await screen.getByTestId("tv-signin-email").click();
-    await screen.getByTestId("auth-switch").click();
-    await expect(screen.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
-    await screen.getByTestId("auth-email").fill(account.email);
-    await screen.getByTestId("auth-password").fill(account.password);
-    await screen.getByTestId("auth-submit").click();
-    await expect(screen.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/);
-    return screen;
-  }
+/** A computer's screen page that has made an account with the email form, which is how a screen with a keyboard signs in. */
+async function signedInScreen(browser: Browser, account = fresh()) {
+  const screen = await openLibrary(browser);
+  await screen.getByTestId("tv-account-chip").click();
+  await screen.getByTestId("tv-signin-email").click();
+  await screen.getByTestId("auth-switch").click();
+  await expect(screen.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
+  await expect(screen.locator(".tv-headline").first()).toHaveText(en["auth.signUp"]); // the page says what the form now does, not "Sign in"
+  await screen.getByTestId("auth-email").fill(account.email);
+  await screen.getByTestId("auth-password").fill(account.password);
+  await screen.getByTestId("auth-submit").click();
+  await expect(screen.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/);
+  return screen;
+}
 
+test.describe("signing a screen in from another screen", () => {
   /** Another screen that is not signed in, showing the code that asks for it. */
   async function screenAskingToSignIn(browser: Browser) {
     const other = await openLibrary(browser);
@@ -259,6 +264,110 @@ test.describe("signing a screen in from another screen", () => {
     await screen.getByTestId("tv-approve-no").click();
     await expect(screen.getByTestId("tv-approve-done")).toContainText(en["link.denied"]);
     await expect(other.getByTestId("tv-signin-status")).toContainText(en["link.denied"], { timeout: 10_000 });
+  });
+});
+
+test.describe("profiles made and changed on the TV itself", () => {
+  test("the account page makes, renames and removes them with the remote, and 'Who's watching?' on the next sign-in is the same page", async ({ browser }) => {
+    test.setTimeout(75_000);
+    const account = fresh();
+    const tv = await signedInScreen(browser, account);
+    const profiles = tv.getByTestId("tv-profiles");
+
+    // One profile: nobody to switch to, but profiles are managed from here all the same.
+    await tv.getByTestId("tv-account-chip").click();
+    await expect(tv.getByTestId("tv-switch-profile")).toHaveCount(0);
+
+    // The page is two columns, and Up and Down keep to the one the remote is in: the top of the first does not jump across to the settings.
+    const inColumn = (name: "who" | "settings") => tv.locator(`.tv-panel-${name} :focus`);
+    await expect(inColumn("who")).toHaveCount(1);
+    await tv.keyboard.press("ArrowUp");
+    await expect(inColumn("who")).toHaveCount(1);
+    await tv.keyboard.press("ArrowRight");
+    await expect(inColumn("settings")).toHaveCount(1);
+    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-autoplay")).toBeFocused(); // the last of the settings, and Down from it goes nowhere
+    await tv.keyboard.press("ArrowLeft");
+    await expect(inColumn("who")).toHaveCount(1);
+
+    await tv.getByTestId("tv-manage-profiles").click();
+    await expect(profiles).toContainText("1 of 5 profiles");
+    await expect(tv.getByTestId("profile-Viewer")).toBeFocused();
+
+    // A new one: a picture chosen, a name typed.
+    await tv.getByTestId("profile-add").click();
+    await expect(tv.getByTestId("tv-profile-edit")).toBeVisible();
+    const picture = tv.getByTestId(`avatar-${AVATAR_IDS[7]}`);
+    await picture.click();
+    await expect(picture).toHaveAttribute("aria-checked", "true");
+    await tv.getByTestId("profile-name-input").fill("Maya");
+    await tv.getByTestId("profile-save").click();
+    await expect(tv.getByTestId("profile-Maya")).toBeVisible();
+    await expect(profiles).toContainText("2 of 5 profiles");
+
+    // Changed: OK in the name field saves it.
+    await tv.getByTestId("profile-Maya").click();
+    await expect(tv.getByTestId("profile-name-input")).toHaveValue("Maya");
+    await tv.getByTestId("profile-name-input").fill("Noa");
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("profile-Noa")).toBeVisible();
+    await expect(tv.getByTestId("profile-Maya")).toHaveCount(0);
+
+    // Removed: the question lands the remote on the answer that keeps it, and that answer is the way back.
+    await tv.getByTestId("profile-Noa").click();
+    await tv.getByTestId(`avatar-${AVATAR_IDS[7]}`).focus();
+    await tv.keyboard.press("ArrowDown"); // from the pictures to Save or Cancel, not past them to the wide Delete
+    await expect(tv.locator('[data-testid="profile-save"]:focus, [data-testid="profile-cancel"]:focus')).toHaveCount(1);
+    await tv.getByTestId("profile-delete").click();
+    await expect(tv.getByTestId("profile-delete-cancel")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("profile-delete-confirm")).toHaveCount(0);
+    await tv.getByTestId("profile-delete").click();
+    await tv.getByTestId("profile-delete-confirm").click();
+    await expect(tv.getByTestId("profile-Noa")).toHaveCount(0);
+    await expect(profiles).toContainText("1 of 5 profiles");
+
+    // The only profile left has no Delete: it can't be removed.
+    await tv.getByTestId("profile-Viewer").click();
+    await expect(tv.getByTestId("tv-profile-edit")).toBeVisible();
+    await expect(tv.getByTestId("profile-delete")).toHaveCount(0);
+    await tv.getByTestId("profile-cancel").click();
+
+    // Made again with the keys alone: Right to the new-profile tile, OK, the name, OK.
+    await expect(tv.getByTestId("profile-Viewer")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("profile-add")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("profile-name-input")).toBeFocused();
+    await tv.keyboard.type("Kim");
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("profile-Kim")).toBeVisible();
+
+    // Done: back on the account page, which can now switch to the other profile.
+    await tv.getByTestId("tv-profiles-done").click();
+    await tv.getByTestId("tv-switch-profile").click();
+    await tv.getByTestId("profile-Kim").click();
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Kim/);
+
+    // Signing in again asks who is watching, with a way to add or change profiles on that very page; there is no way round it.
+    await tv.getByTestId("tv-account-chip").click();
+    await tv.getByTestId("tv-sign-out").click();
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", en["account.signInPrompt"]);
+    await tv.getByTestId("tv-account-chip").click();
+    await tv.getByTestId("tv-signin-email").click();
+    await tv.getByTestId("auth-email").fill(account.email);
+    await tv.getByTestId("auth-password").fill(account.password);
+    await tv.getByTestId("auth-submit").click();
+    await expect(profiles).toBeVisible();
+    await expect(tv.getByTestId("profile-Viewer")).toBeVisible();
+    await expect(tv.getByTestId("profile-Kim")).toBeVisible();
+    await expect(tv.getByTestId("profile-add")).toBeVisible();
+    await expect(tv.getByTestId("tv-profiles-back")).toHaveCount(0);
+    await tv.getByTestId("tv-profiles-manage").click();
+    await expect(profiles).toContainText("2 of 5 profiles");
+    await tv.getByTestId("tv-profiles-done").click();
+    await tv.getByTestId("profile-Viewer").click();
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/);
   });
 });
 

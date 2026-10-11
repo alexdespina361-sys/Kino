@@ -1,20 +1,23 @@
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type ChangeEvent, type FormEvent } from "react";
 import type { Me } from "../../shared";
 import { useT } from "../i18n";
 import { useAccount } from "./AccountProvider";
 import { describeError } from "./errors";
+import { PasswordInput } from "./PasswordInput";
 
 interface AuthFormProps {
   initialMode?: "signIn" | "signUp";
   /** Called once somebody is signed in (or signed up). */
   onDone?: (me: Me) => void;
+  /** Called when the form turns from signing in to making an account, or back, so the page around it can say which. */
+  onMode?: (mode: "signIn" | "signUp") => void;
   /** On the TV every control is reached with the remote's arrow keys (`data-nav`), and none is focused until one is pressed. */
   tv?: boolean;
   autoFocus?: boolean;
 }
 
 /** Email and password, to sign in or to make an account. The same form on the phone and, as a fallback to the QR code, on the TV. */
-export function AuthForm({ initialMode = "signIn", onDone, tv = false, autoFocus = false }: AuthFormProps) {
+export function AuthForm({ initialMode = "signIn", onDone, onMode, tv = false, autoFocus = false }: AuthFormProps) {
   const t = useT();
   const account = useAccount();
   const open = account.registration === "open";
@@ -26,6 +29,14 @@ export function AuthForm({ initialMode = "signIn", onDone, tv = false, autoFocus
   const id = useId();
   const signingUp = mode === "signUp";
   const nav = tv ? { "data-nav": true } : {};
+  const passwordField = {
+    id: `${id}-password`,
+    "data-testid": "auth-password",
+    autoComplete: signingUp ? "new-password" : "current-password",
+    enterKeyHint: "go" as const,
+    value: password,
+    onChange: (event: ChangeEvent<HTMLInputElement>) => setPassword(event.target.value),
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -65,16 +76,7 @@ export function AuthForm({ initialMode = "signIn", onDone, tv = false, autoFocus
       </label>
       <label className="auth-field" htmlFor={`${id}-password`}>
         <span>{t("auth.password")}</span>
-        <input
-          id={`${id}-password`}
-          data-testid="auth-password"
-          type="password"
-          autoComplete={signingUp ? "new-password" : "current-password"}
-          enterKeyHint="go"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          {...nav}
-        />
+        {tv ? <input {...passwordField} type="password" {...nav} /> : <PasswordInput {...passwordField} />}
         {signingUp && <small>{t("auth.passwordHint")}</small>}
       </label>
 
@@ -101,7 +103,9 @@ export function AuthForm({ initialMode = "signIn", onDone, tv = false, autoFocus
           type="button"
           className={tv ? "tv-action" : "auth-switch"}
           onClick={() => {
-            setMode(signingUp ? "signIn" : "signUp");
+            const next = signingUp ? "signIn" : "signUp";
+            setMode(next);
+            onMode?.(next);
             setError(null);
           }}
           data-testid="auth-switch"

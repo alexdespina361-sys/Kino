@@ -1079,6 +1079,24 @@ describe("a watch party started on a TV", () => {
     expect((await stranger.tv.next("ERROR")).code).toBe("RATE_LIMITED");
   });
 
+  it("tells a phone that typed a party's code where a TV's goes what that code is, and counts no wrong guess for it", async () => {
+    const host = await openParty();
+    const phone = await connect();
+    phone.send({ type: "CTL_HELLO" });
+    await phone.next("CTL_WELCOME");
+    for (let i = 0; i < 25; i++) {
+      phone.send({ type: "PAIR", code: host.code });
+      expect((await phone.next("ERROR")).code).toBe("PARTY_CODE"); // more than the wrong ones that would pause pairing
+    }
+    phone.send({ type: "PAIR", code: "000000" });
+    expect((await phone.next("ERROR")).code).toBe("INVALID_CODE"); // pairing is not paused, and this one is a wrong guess
+
+    host.tv.send({ type: "TV_PARTY_CLOSE" });
+    await host.tv.nextWhere("TV_PARTY", (message) => message.party === null);
+    phone.send({ type: "PAIR", code: host.code });
+    expect((await phone.next("ERROR")).code).toBe("INVALID_CODE"); // the code ended with the party
+  });
+
   it("lets a guest leave, the host send one away, and the host end the party; each goes back to a TV of its own", async () => {
     const host = await openParty();
     const a = await joinWith(host.code);

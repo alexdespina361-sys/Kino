@@ -285,6 +285,10 @@ export class Hub {
       isNewPair = false;
     }
     if (!device) {
+      // The code of a watch party, typed where a TV's code goes: it is no wrong guess, and the phone is told what it is for (see Controller.tsx).
+      if (this.registry.isPartyCode(code)) {
+        return this.error(controller.id, "PARTY_CODE", "That is the code of a watch party. Watch on this device to join it.");
+      }
       this.failedPairings.push(Date.now());
       return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");
     }
@@ -332,10 +336,10 @@ export class Hub {
         return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");
       }
       if (joined.reason === "PARTY_FULL") {
-        return this.error(controller.id, "PARTY_FULL", `A party has room for ${MAX_FOLLOWERS + 1} TVs.`);
+        return this.error(controller.id, "PARTY_FULL", `A party has room for ${MAX_FOLLOWERS + 1} devices.`);
       }
       if (joined.reason === "TV_HOSTING") {
-        return this.error(controller.id, "TV_HOSTING", "That TV hosts a party of its own. End it there first.");
+        return this.error(controller.id, "TV_HOSTING", "That device hosts a party of its own. End it there first.");
       }
       return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
     }
@@ -372,7 +376,7 @@ export class Hub {
           this.failedPairings.push(Date.now());
           return refuse("INVALID_CODE", "Invalid or expired code.");
         case "PARTY_FULL":
-          return refuse("PARTY_FULL", `A party has room for ${MAX_FOLLOWERS + 1} TVs.`);
+          return refuse("PARTY_FULL", `A party has room for ${MAX_FOLLOWERS + 1} devices.`);
         case "HOSTING":
           return refuse("HOSTING", "End your own party before joining another.");
         case "HAS_PHONE":

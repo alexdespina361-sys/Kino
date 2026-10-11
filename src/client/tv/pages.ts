@@ -1,5 +1,5 @@
-import { fractionOf, resumeAt, type LibraryItem, type LibraryKind, type LibraryRow, type LiveListItem, type LiveProgress } from "../../shared";
-import { continueNote, unfinished } from "../account/cards";
+import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress } from "../../shared";
+import { continueNote, listName, unfinished } from "../account/cards";
 import { t } from "../i18n";
 
 /**
@@ -12,7 +12,8 @@ export type View =
   | { kind: "home" }
   | { kind: "movies" }
   | { kind: "series" }
-  | { kind: "list" }
+  /** One of the lists (the first when none is named). */
+  | { kind: "list"; list?: string }
   | { kind: "history" }
   | { kind: "category"; rowId: string }
   /** Every category, or only those of films or of shows. */
@@ -20,7 +21,16 @@ export type View =
   | { kind: "search" };
 
 export const viewKey = (view: View): string =>
-  view.kind === "category" ? `category:${view.rowId}` : view.kind === "categories" ? `categories:${view.of ?? "all"}` : view.kind;
+  view.kind === "category"
+    ? `category:${view.rowId}`
+    : view.kind === "categories"
+      ? `categories:${view.of ?? "all"}`
+      : view.kind === "list" && view.list && view.list !== DEFAULT_LIST
+        ? `list:${view.list}`
+        : view.kind;
+
+/** The list a page of lists shows: the one it names, or the first when it names none or one that is gone. */
+export const shownList = (view: View, lists: readonly ListInfo[]): ListInfo => lists.find((list) => view.kind === "list" && list.id === view.list) ?? lists[0] ?? { id: DEFAULT_LIST };
 
 /** The pages made of a banner and rows of titles under it. */
 export type RowsPage = "home" | "movies" | "series";
@@ -42,6 +52,8 @@ export interface Entry {
   description?: string;
   /** Where to pick up a title left unfinished. */
   startAt?: number;
+  /** The episode to pick a show up at, when it is not the one `url` names. */
+  resumeUrl?: string;
   /** 0..1, the thin bar across the picture of a title left unfinished. */
   progress?: number;
   /** A line under the title (the episode and what is left; how many titles a category has). */
@@ -62,7 +74,7 @@ export interface HomeRow {
   entries: Entry[];
 }
 
-/** The titles of a grid page (My List, History, one category, the list of categories). */
+/** The titles of a grid page (a list, History, one category, the list of categories). */
 export interface GridPage {
   title: string;
   /** The line under the title. */
@@ -79,6 +91,8 @@ export interface PageData {
   rows: readonly LibraryRow[];
   /** This profile's cards, newest first. */
   progress: readonly LiveProgress[];
+  /** The profile's lists, the first one always, and every title saved in any of them. */
+  lists: readonly ListInfo[];
   list: readonly LiveListItem[];
   /** "Because you watched ...": the title, and the titles like it. */
   similar: { title: string; items: readonly LibraryItem[] } | null;
@@ -111,6 +125,25 @@ export function entryOfProgress(card: LiveProgress): Entry {
   };
 }
 
+/** Whether two links are one title's: a show's episodes differ in the query only. */
+function sameTitle(a: string, b: string): boolean {
+  try {
+    const first = new URL(a);
+    const second = new URL(b);
+    return first.origin === second.origin && first.pathname === second.pathname;
+  } catch {
+    return false;
+  }
+}
+
+/** A title part way through is picked up from wherever it is shown, not only from Continue watching: the entry as it plays from there. */
+export function resumable(entry: Entry, progress: readonly LiveProgress[]): Entry {
+  if (entry.startAt !== undefined || entry.opens || !entry.url) return entry;
+  const card = progress.find((candidate) => sameTitle(candidate.url, entry.url));
+  const startAt = card && resumeAt(card);
+  return card && startAt !== undefined ? { ...entry, startAt, resumeUrl: card.url } : entry;
+}
+
 export const entryOfSaved = (card: LiveListItem): Entry => ({
   id: card.key,
   title: card.title,
@@ -121,10 +154,13 @@ export const entryOfSaved = (card: LiveListItem): Entry => ({
   ...(card.description ? { description: card.description } : {}),
 });
 
-const categoryEntry = (row: LibraryRow): Entry => {
+/** Where a row's titles come from, said only when the library has more than one source (with one, every title would carry the same word). */
+const sourceOf = (rows: readonly LibraryRow[], row: LibraryRow): { source?: string } => (row.source && new Set(rows.map((each) => each.source)).size > 1 ? { source: row.source } : {});
+
+const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[]): Entry => {
   const first = row.items[0];
   const picture = first?.backdrop ?? first?.image;
-  return { id: row.id, title: row.title, url: "", opens: { kind: "category", rowId: row.id }, source: row.source, note: t("tv.titles", { count: row.items.length }), ...(picture ? { image: picture } : {}) };
+  return { id: row.id, title: row.title, url: "", opens: { kind: "category", rowId: row.id }, ...sourceOf(rows, row), note: t("tv.titles", { count: row.items.length }), ...(picture ? { image: picture } : {}) };
 };
 
 /** A card of a show has an episode; a film's has none. */
@@ -137,14 +173,14 @@ const CATEGORIES_AFTER = 3;
 const CATEGORY_TILES = 12;
 
 function categoriesRow(rows: readonly LibraryRow[], of: LibraryKind | undefined): HomeRow {
-  const entries = rows.slice(0, CATEGORY_TILES).map(categoryEntry);
+  const entries = rows.slice(0, CATEGORY_TILES).map((row) => categoryEntry(row, rows));
   if (rows.length > CATEGORY_TILES) entries.push({ id: "all-categories", title: t("tv.allCategories"), url: "", opens: { kind: "categories", ...(of ? { of } : {}) }, note: t("tv.titles", { count: rows.length }) });
   return { id: "categories", layout: "categories", title: t("tv.byCategory"), entries };
 }
 
 /**
- * The rows under the banner. Home has what this profile is part way through, titles like the last one it watched, its list, then
- * the library's rows with a row of categories among them. Movies and Series have the library's rows of that kind, and what is
+ * The rows under the banner. Home has what this profile is part way through, titles like the last one it watched, a row for each of
+ * its lists that has a title in it, then the library's rows with a row of categories among them. Movies and Series have the library's rows of that kind, and what is
  * part way through of that kind.
  */
 export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
@@ -154,11 +190,16 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   const going = unfinished(data.progress).filter((card) => !kind || isShowCard(card) === (kind === "series"));
   if (going.length > 0) out.push({ id: "continue", layout: "continue", title: t("rows.continue"), entries: going.map(entryOfProgress) });
   if (!kind && data.similar && data.similar.items.length > 0) out.push({ id: "similar", layout: "wide", title: t("rows.because", { title: data.similar.title }), entries: data.similar.items.map(entryOfItem) });
-  if (!kind && data.list.length > 0) out.push({ id: "list", layout: "wide", title: t("rows.myList"), entries: data.list.map(entryOfSaved) });
+  if (!kind) {
+    for (const info of data.lists) {
+      const saved = data.list.filter((item) => listOf(item) === info.id);
+      if (saved.length > 0) out.push({ id: `list:${info.id}`, layout: "wide", title: listName(info), entries: saved.map(entryOfSaved) });
+    }
+  }
 
   const library = kind ? data.rows.filter((row) => row.kind === kind) : data.rows;
   library.forEach((row, index) => {
-    out.push({ id: row.id, layout: index === 0 ? "ranked" : "wide", title: row.title, source: row.source, entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem) });
+    out.push({ id: row.id, layout: index === 0 ? "ranked" : "wide", title: row.title, ...sourceOf(data.rows, row), entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem) });
     if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, kind));
   });
   return out;
@@ -167,18 +208,21 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
 /** The pages that are one grid. Null for the others, and for a category the library no longer has. */
 export function gridOf(view: View, data: PageData): GridPage | null {
   switch (view.kind) {
-    case "list":
-      return { title: t("rows.myList"), meta: t("tv.titles", { count: data.list.length }), layout: "wide", entries: data.list.map(entryOfSaved), empty: t("tv.listEmpty") };
+    case "list": {
+      const info = shownList(view, data.lists);
+      const saved = data.list.filter((item) => listOf(item) === info.id);
+      return { title: listName(info), meta: t("tv.titles", { count: saved.length }), layout: "wide", entries: saved.map(entryOfSaved), empty: t("tv.listEmpty") };
+    }
     case "history":
       return { title: t("tv.history"), meta: t("tv.historyHelp"), layout: "wide", entries: data.progress.map(entryOfProgress), empty: t("tv.historyEmpty") };
     case "category": {
       const row = data.rows.find((candidate) => candidate.id === view.rowId);
-      return row ? { title: row.title, meta: `${t("tv.titles", { count: row.items.length })} · ${row.source}`, layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
+      return row ? { title: row.title, meta: [t("tv.titles", { count: row.items.length }), sourceOf(data.rows, row).source].filter(Boolean).join(" · "), layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
     }
     case "categories": {
       const rows = data.rows.filter((row) => !view.of || row.kind === view.of);
       const title = view.of === "movie" ? t("tv.movieCategories") : view.of === "series" ? t("tv.seriesCategories") : t("tv.allCategories");
-      return { title, meta: "", layout: "categories", entries: rows.map(categoryEntry), empty: "" };
+      return { title, meta: "", layout: "categories", entries: rows.map((row) => categoryEntry(row, data.rows)), empty: "" };
     }
     default:
       return null;
@@ -194,7 +238,7 @@ export function freshSimilar(items: readonly LibraryItem[], progress: readonly L
 /** What the buttons under the banner can do for a title. */
 export type HeroAction = "play" | "list" | "remove";
 export const heroActions = (entry: Entry | undefined): HeroAction[] => (!entry || entry.opens ? [] : entry.progressKey ? ["play", "remove"] : ["play", "list"]);
-/** ...and on a title's own page, which any title can be kept from: play it (or pick it up), keep it in My List, and for one part way through, take it off its row. */
+/** ...and on a title's own page, which any title can be kept from: play it (or pick it up), keep it in a list, and for one part way through, take it off its row. */
 export const overviewActions = (entry: Entry): HeroAction[] => (entry.progressKey ? ["play", "list", "remove"] : ["play", "list"]);
 
 /** Which titles a search shows. */

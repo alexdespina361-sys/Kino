@@ -3,6 +3,7 @@ import { ACCENTS, preferredLanguages, UI_LANGUAGES, type SessionInfo } from "../
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
 import { describeError } from "../account/errors";
+import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_SWATCH } from "../account/theme";
 import { ago } from "../account/time";
@@ -237,7 +238,7 @@ function Password({ label, value, onChange, autoComplete, testId }: { label: str
   return (
     <label className="auth-field">
       <span>{label}</span>
-      <input type="password" autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)} data-testid={testId} />
+      <PasswordInput autoComplete={autoComplete} value={value} onChange={(event) => onChange(event.target.value)} data-testid={testId} />
     </label>
   );
 }

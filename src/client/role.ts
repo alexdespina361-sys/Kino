@@ -36,6 +36,30 @@ export function chooseRole(input: RoleInput): Role {
   return input.touchPoints > 0 ? "remote" : "tv";
 }
 
+export interface PhoneInput {
+  userAgent: string;
+  touchPoints: number;
+  /** `(pointer: coarse)`: a finger is the screen's main way in. A laptop with a touch screen besides its pad and mouse says no. */
+  coarsePointer: boolean;
+  /** The shorter side of the device's screen, in CSS pixels: the same whichever way it is held. */
+  shortSide: number;
+}
+
+/** Below this a screen is a phone's. A tablet is big enough to be somebody's screen, with a phone for its remote. */
+const PHONE_SHORT_SIDE = 600;
+
+/** A phone: held in the hand, where a TV, a monitor, a laptop or a tablet is not. The remote is what such a device is for. */
+export const isPhone = (input: PhoneInput): boolean =>
+  input.touchPoints > 0 && input.coarsePointer && input.shortSide < PHONE_SHORT_SIDE && !TV_AGENT.test(input.userAgent);
+
+export const thisIsPhone = (): boolean =>
+  isPhone({
+    userAgent: navigator.userAgent,
+    touchPoints: navigator.maxTouchPoints ?? 0,
+    coarsePointer: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
+    shortSide: Math.min(screen.width, screen.height),
+  });
+
 export const roleOfThisPage = (): Role =>
   chooseRole({
     pathname: location.pathname,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { LibraryItem, LibraryRow, LiveListItem, LiveProgress } from "../../shared";
+import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress } from "../../shared";
 import { t } from "../i18n";
-import { freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, rowsOfPage, viewKey, type PageData } from "./pages";
+import { freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3): LibraryRow => ({
@@ -12,9 +12,10 @@ const row = (id: string, kind: "movie" | "series" | undefined, count = 3): Libra
   items: Array.from({ length: count }, (_, i) => item(`${id}-${i}`, kind, { image: `poster-${id}-${i}`, backdrop: `wide-${id}-${i}` })),
 });
 const card = (key: string, extra: Partial<LiveProgress> = {}): LiveProgress => ({ key, at: 1, title: `Card ${key}`, url: `https://x.example/${key}`, position: 100, duration: 1000, ...extra });
-const saved = (key: string): LiveListItem => ({ key, at: 1, id: key, title: `Saved ${key}`, url: `https://x.example/${key}` });
+const saved = (key: string, list?: string): LiveListItem => ({ key, at: 1, id: key, title: `Saved ${key}`, url: `https://x.example/${key}`, ...(list ? { list } : {}) });
 
-const data = (overrides: Partial<PageData> = {}): PageData => ({ rows: [], progress: [], list: [], similar: null, ...overrides });
+const FIRST: ListInfo = { id: DEFAULT_LIST };
+const data = (overrides: Partial<PageData> = {}): PageData => ({ rows: [], progress: [], lists: [FIRST], list: [], similar: null, ...overrides });
 const library = [row("m1", "movie"), row("s1", "series"), row("m2", "movie"), row("s2", "series"), row("m3", "movie"), row("s3", "series")];
 
 describe("viewKey", () => {
@@ -25,6 +26,12 @@ describe("viewKey", () => {
     expect(viewKey({ kind: "categories" })).toBe("categories:all");
   });
 
+  it("tells the lists apart, and keeps the first list's name as it was", () => {
+    expect(viewKey({ kind: "list" })).toBe("list");
+    expect(viewKey({ kind: "list", list: DEFAULT_LIST })).toBe("list");
+    expect(viewKey({ kind: "list", list: "lx" })).toBe("list:lx");
+  });
+
   it("knows which pages are made of rows", () => {
     expect(["home", "movies", "series"].every((kind) => isRowsPage({ kind } as never))).toBe(true);
     expect(["list", "history", "search", "category", "categories"].some((kind) => isRowsPage({ kind } as never))).toBe(false);
@@ -32,7 +39,7 @@ describe("viewKey", () => {
 });
 
 describe("rowsOfPage: home", () => {
-  it("starts with what is part way through, then titles like the last one watched, then My List, then the library", () => {
+  it("starts with what is part way through, then titles like the last one watched, then its lists, then the library", () => {
     const rows = rowsOfPage(
       "home",
       data({
@@ -42,7 +49,7 @@ describe("rowsOfPage: home", () => {
         similar: { title: "Card a", items: [item("sim")] },
       }),
     );
-    expect(rows.slice(0, 3).map((r) => r.id)).toEqual(["continue", "similar", "list"]);
+    expect(rows.slice(0, 3).map((r) => r.id)).toEqual(["continue", "similar", `list:${DEFAULT_LIST}`]);
     expect(rows[0]!.entries.map((e) => e.title)).toEqual(["Card a"]); // the finished one is not part way through
     expect(rows[1]!.title).toBe(t("rows.because", { title: "Card a" }));
     expect(rows.slice(3, 6).map((r) => r.id)).toEqual(["m1", "s1", "m2"]);
@@ -52,8 +59,17 @@ describe("rowsOfPage: home", () => {
     const rows = rowsOfPage("home", data({ rows: library }));
     expect(rows[0]!.id).toBe("m1");
     expect(rows.map((r) => r.id)).not.toContain("continue");
-    expect(rows.map((r) => r.id)).not.toContain("list");
+    expect(rows.map((r) => r.id).some((id) => id.startsWith("list:"))).toBe(false);
     expect(rows.map((r) => r.id)).not.toContain("similar");
+  });
+
+  it("has a row for each list that has a title in it, named as the list is, and none for an empty one", () => {
+    const lists: ListInfo[] = [FIRST, { id: "la", name: "Weekend" }, { id: "lb", name: "Empty" }];
+    const rows = rowsOfPage("home", data({ lists, list: [saved("a"), saved("b", "la"), saved("c", "la")] }));
+    expect(rows.slice(0, 2).map((r) => [r.id, r.title, r.entries.length])).toEqual([
+      [`list:${DEFAULT_LIST}`, t("list.favourites"), 1],
+      ["list:la", "Weekend", 2],
+    ]);
   });
 
   it("shows the first library row as a ranking of ten at most, and the rest as wide tiles", () => {
@@ -105,9 +121,9 @@ describe("rowsOfPage: movies and series", () => {
     expect(rowsOfPage("series", data({ rows: many, progress }))[0]!.entries.map((e) => e.title)).toEqual(["Card show"]);
   });
 
-  it("has no My List or similar row of its own: those are on Home", () => {
+  it("has no list or similar rows of its own: those are on Home", () => {
     const rows = rowsOfPage("movies", data({ rows: many, list: [saved("l")], similar: { title: "x", items: [item("s")] } }));
-    expect(rows.map((r) => r.id)).not.toContain("list");
+    expect(rows.map((r) => r.id).some((id) => id.startsWith("list:"))).toBe(false);
     expect(rows.map((r) => r.id)).not.toContain("similar");
   });
 
@@ -117,10 +133,24 @@ describe("rowsOfPage: movies and series", () => {
 });
 
 describe("gridOf", () => {
-  it("is My List: the saved titles, newest first as kept", () => {
-    const page = gridOf({ kind: "list" }, data({ list: [saved("a"), saved("b")] }))!;
-    expect(page.entries.map((e) => e.title)).toEqual(["Saved a", "Saved b"]);
-    expect(page.empty).toBe(t("tv.listEmpty"));
+  it("is a list: its saved titles, newest first as kept, under the name it has", () => {
+    const lists: ListInfo[] = [FIRST, { id: "la", name: "Weekend" }];
+    const all = data({ lists, list: [saved("a"), saved("b", "la"), saved("c")] });
+    const first = gridOf({ kind: "list" }, all)!;
+    expect(first.title).toBe(t("list.favourites"));
+    expect(first.entries.map((e) => e.title)).toEqual(["Saved a", "Saved c"]);
+    expect(first.empty).toBe(t("tv.listEmpty"));
+    const second = gridOf({ kind: "list", list: "la" }, all)!;
+    expect(second.title).toBe("Weekend");
+    expect(second.entries.map((e) => e.title)).toEqual(["Saved b"]);
+  });
+
+  it("shows the first list when the list it names is gone", () => {
+    const lists: ListInfo[] = [FIRST, { id: "la", name: "Weekend" }];
+    expect(shownList({ kind: "list", list: "gone" }, lists)).toBe(lists[0]);
+    expect(shownList({ kind: "list", list: "la" }, lists)).toBe(lists[1]);
+    expect(shownList({ kind: "home" }, lists)).toBe(lists[0]);
+    expect(gridOf({ kind: "list", list: "gone" }, data({ lists }))!.title).toBe(t("list.favourites"));
   });
 
   it("is History: every card, finished ones marked as watched, unfinished ones resumable", () => {
@@ -139,6 +169,18 @@ describe("gridOf", () => {
     expect(gridOf({ kind: "category", rowId: "gone" }, data({ rows: library }))).toBeNull();
   });
 
+  it("says which source a row is from only when the library has more than one", () => {
+    const one = data({ rows: library });
+    expect(rowsOfPage("home", one).every((each) => each.source === undefined)).toBe(true);
+    expect(gridOf({ kind: "category", rowId: "m1" }, one)!.meta).toBe(t("tv.titles", { count: 3 }));
+    expect(gridOf({ kind: "categories" }, one)!.entries.every((each) => each.source === undefined)).toBe(true);
+
+    const two = data({ rows: [...library.slice(0, 5), { ...library[5]!, source: "Archive" }] });
+    expect(rowsOfPage("home", two).find((each) => each.id === "s3")?.source).toBe("Archive");
+    expect(gridOf({ kind: "category", rowId: "s3" }, two)!.meta).toBe(`${t("tv.titles", { count: 3 })} · Archive`);
+    expect(gridOf({ kind: "categories" }, two)!.entries.map((each) => each.source)).toEqual(["Test", "Test", "Test", "Test", "Test", "Archive"]);
+  });
+
   it("lists the categories, all of them or those of one kind", () => {
     expect(gridOf({ kind: "categories" }, data({ rows: library }))!.entries).toHaveLength(6);
     const movies = gridOf({ kind: "categories", of: "movie" }, data({ rows: library }))!;
@@ -155,6 +197,36 @@ describe("gridOf", () => {
   it("is nothing for the pages that are not one grid", () => {
     expect(gridOf({ kind: "home" }, data())).toBeNull();
     expect(gridOf({ kind: "search" }, data())).toBeNull();
+  });
+});
+
+describe("resumable", () => {
+  const started = card("film", { url: "https://x.example/watch/7", position: 300, duration: 1000 });
+  const episode = card("show:Dark", { url: "https://x.example/watch/9?s=1&e=3", position: 200, duration: 600 });
+
+  it("picks a title up where it was left, wherever it is shown", () => {
+    const found = resumable({ id: "m", title: "Film", url: "https://x.example/watch/7" }, [started]);
+    expect(found.startAt).toBe(300);
+    expect(found.resumeUrl).toBe("https://x.example/watch/7");
+  });
+
+  it("picks a show up at the episode it was left on, though the title's own link is the first one", () => {
+    const found = resumable({ id: "d", title: "Dark", url: "https://x.example/watch/9?s=1&e=1" }, [started, episode]);
+    expect(found.startAt).toBe(200);
+    expect(found.resumeUrl).toBe("https://x.example/watch/9?s=1&e=3");
+    expect(found.url).toBe("https://x.example/watch/9?s=1&e=1");
+  });
+
+  it("leaves alone what was not started, what was finished, another title, a category, and a card that already resumes", () => {
+    const plain = { id: "m", title: "Film", url: "https://x.example/watch/7" };
+    expect(resumable(plain, [])).toBe(plain);
+    expect(resumable(plain, [card("a", { url: plain.url, position: 2 })])).toBe(plain); // barely begun
+    expect(resumable(plain, [card("a", { url: plain.url, done: true })])).toBe(plain);
+    expect(resumable(plain, [episode])).toBe(plain);
+    const category = { id: "c", title: "C", url: "", opens: { kind: "home" } as const };
+    expect(resumable(category, [started])).toBe(category);
+    const resuming = { ...plain, startAt: 50 };
+    expect(resumable(resuming, [started])).toBe(resuming);
   });
 });
 

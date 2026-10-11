@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { LibraryItemsSchema, LibrarySchema, listKey, type Library, type LibraryItem, type LibraryKind, type PlayHint } from "../../shared";
+import { DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, type Library, type LibraryItem, type LibraryKind, type PlayHint } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
-import { hintOf, listEntryOf } from "../account/cards";
+import { hintOf, listEntryOf, listName } from "../account/cards";
+import { ListEditor } from "../account/Lists";
 import { profileStore, useProfileData } from "../account/store";
 import { useLanguage, useT } from "../i18n";
-import { BackspaceIcon, CheckIcon, ClockIcon, CloseIcon, FilmIcon, GearIcon, HomeIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { BackspaceIcon, CheckIcon, ClockIcon, CloseIcon, FilmIcon, GearIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { canFullscreen } from "../shared/fullscreen";
+import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
 import { hueOf } from "../shared/Poster";
+import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
-import { AccountChip } from "./Idle";
+import { AccountChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
-import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, rowsOfPage, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type View } from "./pages";
+import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type View } from "./pages";
 import { Rail, type RailEntry } from "./Rail";
 
 /** What a screen that starts a title can add: where to pick it up, and the picture and year the library already knows for it. */
@@ -40,6 +44,8 @@ interface BrowseProps {
 const remembered = {
   library: null as Library | null,
   view: { kind: "home" } as View,
+  /** The list the lists page showed last: the menu's entry for it opens that one. */
+  list: DEFAULT_LIST as string,
   query: "",
   results: [] as LibraryItem[],
   /** The query `results` answers. */
@@ -57,6 +63,8 @@ const remembered = {
 const BANNER_DELAY_MS = 200;
 /** Wait this long after the last key before asking the server, so a word is one question and not one per letter. */
 const SEARCH_DELAY_MS = 350;
+/** A search the server did not answer is asked again after this long. */
+const SEARCH_RETRY_MS = 5000;
 const GRID_COLUMNS = 5;
 const RESULT_COLUMNS = 3;
 /** A phone, a tablet or a narrow window (the same width tv.css lays out for a hand-held screen): grids are as many titles wide as fit, and search is typed on the device's own keyboard. */
@@ -84,6 +92,9 @@ interface Focused {
   label: string;
   source?: string;
 }
+
+/** A page over the library: choosing which lists a title is in (it was asked from `back`), or making, renaming and removing a list (`id` null: a new one). */
+type Overlay = { kind: "pick"; entry: Entry; back: Target } | { kind: "edit"; id: string | null; back: Target };
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
 const RAIL: Target = { zone: "rail", row: -1, col: -1 };
@@ -121,18 +132,29 @@ function keepInView(container: HTMLElement, element: HTMLElement) {
   else if (at.bottom > box.bottom - room) container.scrollBy({ top: at.bottom - box.bottom + room, behavior: "smooth" });
 }
 
+/** The same sideways, for a row of buttons wider than its place: it slides along to keep the one with the focus in view. */
+function slideIntoView(button: HTMLElement) {
+  const row = button.parentElement;
+  if (!row) return;
+  const room = parseFloat(getComputedStyle(row).fontSize) * 1.5;
+  const box = row.getBoundingClientRect();
+  const at = button.getBoundingClientRect();
+  if (at.left < box.left + room) row.scrollBy({ left: at.left - box.left - room, behavior: "smooth" });
+  else if (at.right > box.right - room) row.scrollBy({ left: at.right - box.right + room, behavior: "smooth" });
+}
+
 /**
- * The library on the TV, laid out like a streaming app: a menu down the left (search, home, movies, series, My List, history, the
- * phone, settings, and the categories), the account button in the corner, and on the pages of rows a banner with Play and My List
+ * The library on the TV, laid out like a streaming app: a menu down the left (search, home, movies, series, the lists, history, the
+ * phone, settings, and the categories), the account button in the corner, and on the pages of rows a banner with Play and the list
  * for the title the remote is on, with the rows under it. The arrow keys walk everything; Left from the first title of any row opens
- * the menu, OK on a title opens its own page (play it, keep it in My List), and Back steps out: of that page, of the menu, then to
+ * the menu, OK on a title opens its own page (play it, keep it in a list), and Back steps out: of that page, of the menu, then to
  * the home page, and from there into the menu.
  */
 export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, connected, partySize, notice }: BrowseProps) {
   const t = useT();
   const language = useLanguage();
   const { status: accountStatus } = useAccount();
-  const { progress, list } = useProfileData();
+  const { progress, lists, list } = useProfileData();
   const narrowColumns = useNarrowColumns();
   const narrow = narrowColumns > 0;
   const gridColumns = narrowColumns || GRID_COLUMNS;
@@ -145,12 +167,20 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const [results, setResults] = useState<LibraryItem[]>(remembered.results);
   const [filter, setFilter] = useState<KindFilter>(remembered.filter);
   const [searching, setSearching] = useState(false);
+  /** The query the server could not answer (it is asked again in a moment), so "nothing matches" is not said of a search that did not happen. */
+  const [failedFor, setFailedFor] = useState<string | null>(null);
+  const [searchTry, setSearchTry] = useState(0);
+  const searchFailed = failedFor !== null && failedFor === query.trim();
   const [railOpen, setRailOpen] = useState(false);
+  /** A phone is for controlling a TV with: the menu's phone entry takes it to the remote instead of showing a code for one. */
+  const [phone] = useState(thisIsPhone);
   const [focused, setFocused] = useState<Focused | null>(null);
   /** The title whose own page is open over the library. */
   const [detail, setDetail] = useState<Focused | null>(null);
   /** The remote is on a row below the first, so the banner makes room for the rows. */
   const [deep, setDeep] = useState(false);
+  /** The page over the library, when there is one. */
+  const [overlay, setOverlay] = useState<Overlay | null>(null);
   /** Somewhere to put the focus once the next render has put it on screen. */
   const [pending, setPending] = useState<Target>(null);
   const newest = progress[0];
@@ -204,7 +234,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     const items = newest ? freshSimilar(similarItems, progress, list) : [];
     return newest && items.length > 0 ? { title: newest.title, items } : null;
   }, [newest, similarItems, progress, list]);
-  const data = useMemo<PageData>(() => ({ rows, progress, list, similar }), [rows, progress, list, similar]);
+  const data = useMemo<PageData>(() => ({ rows, progress, lists, list, similar }), [rows, progress, lists, list, similar]);
 
   const rowsPage = isRowsPage(view);
   // `language` is not read, but the rows' titles and notes are words in it
@@ -222,7 +252,13 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const shown: Focused | null = focused ?? (rowsPage && start ? { entry: start, label: homeRows[startRow]!.title, ...(homeRows[startRow]!.source ? { source: homeRows[startRow]!.source! } : {}) } : null);
   const actions = rowsPage ? heroActions(shown?.entry) : [];
   const saved = useMemo(() => new Set(list.map((entry) => entry.key)), [list]);
-  const isSaved = (entry: Entry) => saved.has(listKey(entry.url));
+  const inList = (entry: Entry, id: string) => saved.has(listKey(entry.url, id));
+  /** Whether a title is in any list. */
+  const isSaved = (entry: Entry) => lists.some((info) => inList(entry, info.id));
+  /** With one list a press puts a title in it or takes it out; with more, a press asks which. */
+  const several = lists.length > 1;
+  const canAdd = lists.length < MAX_LISTS;
+  const shownId = shownList(view, lists).id;
 
   // Choosing a page shuts the menu at once. On a page with nothing to stand on (an empty list) the remote stays on the menu's line
   // for it, but the menu itself is closed; an arrow key opens it again.
@@ -234,6 +270,18 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     setDeep(false);
     setRailOpen(false);
     setPending(CONTENT);
+  };
+  /** Another list on the lists page: the buttons keep the remote, only what is below them changes. */
+  const selectList = (id: string) => {
+    const next: View = { kind: "list", list: id };
+    remembered.list = id;
+    remembered.view = next;
+    setViewState(next);
+  };
+  /** Closing a page over the library puts the remote back where it was asked from. */
+  const closeOverlay = () => {
+    setPending(overlay?.back ?? CONTENT);
+    setOverlay(null);
   };
   /** A title's own page opens over the library, on Play; closing it puts the remote back on the title it came from. */
   const openDetail = (title: Focused) => {
@@ -251,10 +299,12 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) },
     { id: "movies", label: t("tv.movies"), icon: <FilmIcon />, current: view.kind === "movies", testId: "rail-movies", onPress: () => choose({ kind: "movies" }) },
     { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
-    { id: "list", label: t("rows.myList"), icon: <PlusIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list" }) },
+    { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) },
     { id: "history", label: t("tv.history"), icon: <ClockIcon />, current: view.kind === "history", testId: "rail-history", onPress: () => choose({ kind: "history" }) },
     { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: t("party.size", { count: partySize }) } : {}), testId: "rail-party", onPress: onParty },
-    { id: "connect", label: t("tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { badge: t("tv.phoneConnected") } : {}), testId: "rail-connect", onPress: onConnect },
+    phone
+      ? { id: "connect", label: t("tv.useRemote"), icon: <PhoneIcon />, testId: "rail-connect", onPress: () => switchRole("remote") }
+      : { id: "connect", label: t("tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { badge: t("tv.phoneConnected") } : {}), testId: "rail-connect", onPress: onConnect },
     { id: "settings", label: t("tv.settings"), icon: <GearIcon />, testId: "rail-settings", onPress: onSettings },
   ];
   const groups: Array<{ kind: LibraryKind | undefined; title: string }> = [
@@ -290,17 +340,20 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
 
   // What the arrow keys can reach, row by row: the key handler below reads it through a ref.
   const showAccount = accountStatus === "ready";
+  const topButtons = (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the account button, then the full screen one beside it
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   const shape: Shape = {
     rail: entries.map(() => 1),
-    top: showAccount ? [1] : [],
+    top: topButtons > 0 ? [topButtons] : [],
     ...(rowsPage ? { hero: !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
     ...(grid ? { grid: gridRows(grid.entries.length, gridColumns) } : {}),
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: gridRows(shownResults.length, resultColumns) } : {}),
+    // The lists page: a button for each list, to make another and to change this one, over its titles.
+    ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
     ...(detail ? { detail: [overviewActions(detail.entry).length] } : {}),
   };
-  const latest = useRef({ shape, view, query, railIndex, homeRows, detail });
-  latest.current = { shape, view, query, railIndex, homeRows, detail };
+  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists });
+  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists };
 
   /** Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. */
   const resolve = (target: Target): Pos | null => {
@@ -310,7 +363,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     if (target.zone === "rail") return { zone: "rail", row: latest.current.railIndex, col: 0 };
     const at = savedPos(latest.current.view, latest.current.homeRows);
     if (at && RESTORABLE.includes(at.zone) && find(root, at)) return at;
-    return CONTENT_ZONES.map((zone): Pos => ({ zone, row: 0, col: 0 })).find((pos) => find(root, pos)) ?? null;
+    // (On the lists page the buttons over the titles are somewhere to stand when the list has none.)
+    const zones: Zone[] = latest.current.view.kind === "list" ? [...CONTENT_ZONES, "chips"] : CONTENT_ZONES;
+    return zones.map((zone): Pos => ({ zone, row: 0, col: 0 })).find((pos) => find(root, pos)) ?? null;
   };
   const focusAt = (target: Target) => {
     const pos = resolve(target);
@@ -369,28 +424,39 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       fetch(`/api/library/search?q=${encodeURIComponent(text)}`, { signal: controller.signal })
-        .then((res) => (res.ok ? res.json() : null))
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
         .then((answer: unknown) => {
-          const parsed = LibraryItemsSchema.safeParse(answer);
-          if (parsed.success) setResults(mergeItems(local, parsed.data.items));
+          const parsed = LibraryItemsSchema.parse(answer);
+          setResults(mergeItems(local, parsed.items));
           remembered.resultsFor = text;
+          setFailedFor(null);
           setSearching(false);
         })
         .catch(() => {
-          if (!controller.signal.aborted) setSearching(false);
+          if (controller.signal.aborted) return;
+          setFailedFor(text);
+          setSearching(false);
         });
     }, SEARCH_DELAY_MS);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query, view.kind, rows]);
+  }, [query, view.kind, rows, searchTry]);
+
+  // A search that did not get an answer is asked again every few seconds for as long as it is on screen.
+  useEffect(() => {
+    if (failedFor === null || view.kind !== "search") return;
+    const timer = window.setTimeout(() => setSearchTry((n) => n + 1), SEARCH_RETRY_MS);
+    return () => window.clearTimeout(timer);
+  }, [failedFor, searchTry, view.kind]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const root = rootRef.current;
       if (!root || event.altKey || event.ctrlKey || event.metaKey) return;
-      const { shape: now, view: page, query: text, detail: open } = latest.current;
+      const { shape: now, view: page, query: text, detail: open, overlay: over, lists: all } = latest.current;
+      if (over) return; // a page over the library walks its own buttons (see Idle.tsx)
 
       // A keyboard types into the search box (not while a title's page is over it).
       const typed = page.kind === "search" && !open ? typedCharacter(event) : null;
@@ -421,7 +487,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
         if (resolve(CONTENT)) return focusAt(CONTENT);
         return go(action === "left" ? RAIL : action === "up" && now.top?.length ? { zone: "top", row: 0, col: 0 } : null);
       }
-      go(stepFrom(now, at, action));
+      const next = stepFrom(now, at, action);
+      // Up from the titles lands on the button of the list that is shown, not on the one above whichever title the remote was on.
+      go(at.zone === "grid" && next?.zone === "chips" ? { ...next, col: Math.max(0, all.findIndex((info) => info.id === shownList(page, all).id)) } : next);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -455,19 +523,22 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     setStatus("loading");
     setAttempt((n) => n + 1);
   };
-  const playEntry = (entry: Entry) => onPlay(new URL(entry.url, location.href).href, { hint: hintOf(entry), ...(entry.startAt ? { startAt: entry.startAt } : {}) });
-  // A category opens its page; a title opens its own page, where it is played or kept in My List (the banner's buttons do the same without it).
+  const playEntry = (entry: Entry) => onPlay(new URL(entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(entry.startAt ? { startAt: entry.startAt } : {}) });
+  // A category opens its page; a title opens its own page, where it is played or kept in a list (the banner's buttons do the same without it).
   const press = (title: Focused) => (title.entry.opens ? choose(title.entry.opens) : openDetail(title));
 
   const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string) => {
-    const title: Focused = { entry, label, ...(source ? { source } : {}) };
+    const title: Focused = { entry: resumable(entry, progress), label, ...(source ? { source } : {}) };
     return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} rank={pos.col + 1} pos={pos} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title)} />;
   };
 
-  const doAction = (action: HeroAction, entry: Entry | undefined = shown?.entry) => {
+  const doAction = (action: HeroAction, entry: Entry | undefined = shown?.entry, from: Target = CONTENT) => {
     if (!entry) return;
     if (action === "play") playEntry(entry);
-    else if (action === "list") profileStore.setInList(listEntryOf(entry), !isSaved(entry));
+    else if (action === "list") {
+      if (several) setOverlay({ kind: "pick", entry, back: from });
+      else profileStore.setInList(listEntryOf(entry), !isSaved(entry));
+    }
     else if (entry.progressKey) {
       profileStore.removeProgress(entry.progressKey);
       setFocused(null);
@@ -476,7 +547,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     }
   };
 
-  /** What a button says for a title; a title's own page spells out what My List does, where the banner has room for the name only. */
+  /** What a button says for a title; a title's own page spells out what the list button does, where the banner has room for the name only. */
   const labelOf = (action: HeroAction, entry: Entry, spelled: boolean): ReactNode => {
     if (action === "play") {
       return (
@@ -493,9 +564,17 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
       );
     }
     const kept = isSaved(entry);
+    const only = listName(lists[0]!);
+    const text = spelled
+      ? several
+        ? t(kept ? "rows.inLists" : "library.addToAList")
+        : t(kept ? "rows.removeFromList" : "library.addToList", { list: only })
+      : several
+        ? t("rows.myList")
+        : only;
     return (
       <>
-        {kept ? <CheckIcon /> : <PlusIcon />} {spelled ? t(kept ? "rows.removeFromList" : "library.addToList") : t("rows.myList")}
+        {kept ? <CheckIcon /> : <PlusIcon />} {text}
       </>
     );
   };
@@ -516,7 +595,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
             {notice}
           </p>
         )}
-        {showAccount && <AccountChip onOpen={onAccount} zone />}
+        <div className="tv-browse-corner">
+          {showAccount && <AccountChip onOpen={onAccount} zone />}
+          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": showAccount ? 1 : 0 }} />
+        </div>
       </header>
 
       {rowsPage && (
@@ -540,7 +622,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
                       data-row={0}
                       data-col={col}
                       aria-pressed={action === "list" ? isSaved(shown.entry) : undefined}
-                      onClick={() => doAction(action)}
+                      onClick={() => doAction(action, undefined, { zone: "hero", row: 0, col })}
                     >
                       {labelOf(action, shown.entry, false)}
                     </button>
@@ -551,7 +633,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
               <p className="tv-hero-eyebrow">{t("tv.loadingLibrary")}</p>
             ) : (
               <>
-                <h1 className="tv-hero-title">{status === "failed" ? t("tv.libraryFailed") : t("tv.libraryEmpty")}</h1>
+                <h1 className="tv-hero-title tv-hero-status">{status === "failed" ? t("tv.libraryFailed") : t("tv.libraryEmpty")}</h1>
                 <p className="tv-hero-about">{status === "failed" ? t("tv.libraryFailedHelp") : t("tv.libraryEmptyHelp")}</p>
                 <div className="tv-actions tv-actions-start">
                   <button className="tv-action tv-action-primary" onClick={retry} autoFocus data-testid="tv-browse-retry" data-zone="rows" data-row={0} data-col={0}>
@@ -590,6 +672,50 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
             {grid.title}
           </h1>
           {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
+          {view.kind === "list" && (
+            <div className="tv-filters" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+              {lists.map((info, col) => (
+                <button
+                  key={info.id}
+                  className="tv-choice"
+                  role="radio"
+                  aria-checked={info.id === shownId}
+                  data-testid={`list-chip-${info.id}`}
+                  data-zone="chips"
+                  data-row={0}
+                  data-col={col}
+                  onClick={() => selectList(info.id)}
+                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col })}
+                >
+                  {listName(info)}
+                </button>
+              ))}
+              {canAdd && (
+                <button
+                  className="tv-choice"
+                  data-testid="list-new"
+                  data-zone="chips"
+                  data-row={0}
+                  data-col={lists.length}
+                  onClick={() => setOverlay({ kind: "edit", id: null, back: { zone: "chips", row: 0, col: lists.length } })}
+                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: lists.length })}
+                >
+                  <PlusIcon /> {t("lists.new")}
+                </button>
+              )}
+              <button
+                className="tv-choice"
+                data-testid="list-edit"
+                data-zone="chips"
+                data-row={0}
+                data-col={lists.length + (canAdd ? 1 : 0)}
+                onClick={() => setOverlay({ kind: "edit", id: shownId, back: { zone: "chips", row: 0, col: lists.length + (canAdd ? 1 : 0) } })}
+                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: lists.length + (canAdd ? 1 : 0) })}
+              >
+                <PencilIcon /> {t("lists.edit")}
+              </button>
+            </div>
+          )}
           {grid.entries.length > 0 ? (
             <div className="tv-grid" style={{ "--cols": gridColumns } as CSSProperties}>
               {grid.entries.map((entry, i) => tile(entry, { zone: "grid", row: Math.floor(i / gridColumns), col: i % gridColumns }, grid.title, grid.layout))}
@@ -638,6 +764,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
                   <Key testId="key-delete" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 1 }} onPress={() => setQuery((before) => before.slice(0, -1))}>
                     <BackspaceIcon /> {t("tv.delete")}
                   </Key>
+                  <Key testId="key-clear" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 2 }} onPress={() => setQuery("")}>
+                    {t("tv.clear")}
+                  </Key>
                 </div>
               </>
             )}
@@ -668,10 +797,12 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
               {!query.trim()
                 ? t("tv.typeToSearch")
                 : shownResults.length > 0
-                  ? `${t("tv.found", { count: shownResults.length, query: query.trim() })}${searching ? t("tv.stillLooking") : ""}`
-                  : searching
-                    ? t("tv.looking")
-                    : t("tv.nothingMatches", { query: query.trim() })}
+                  ? `${t("tv.found", { count: shownResults.length, query: query.trim() })}${searchFailed ? t("tv.searchOffline") : searching ? t("tv.stillLooking") : ""}`
+                  : searchFailed
+                    ? t("tv.searchFailed")
+                    : searching
+                      ? t("tv.looking")
+                      : t("tv.nothingMatches", { query: query.trim() })}
             </p>
             <div className="tv-grid tv-results" style={{ "--cols": resultColumns } as CSSProperties}>
               {shownResults.map((item, i) => tile(entryOfItem(item), { zone: "results", row: Math.floor(i / resultColumns), col: i % resultColumns }, t("tv.search"), "wide"))}
@@ -705,7 +836,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
                   data-row={0}
                   data-col={col}
                   aria-pressed={action === "list" ? isSaved(detail.entry) : undefined}
-                  onClick={() => doAction(action, detail.entry)}
+                  onClick={() => doAction(action, detail.entry, { zone: "detail", row: 0, col })}
                 >
                   {labelOf(action, detail.entry, true)}
                 </button>
@@ -713,6 +844,61 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
             </div>
           </div>
         </div>
+      )}
+
+      {overlay?.kind === "pick" && (
+        <Screen testId="tv-list-picker" compact focus onBack={closeOverlay}>
+          <h1 className="tv-headline tv-headline-small">{t("library.addToAList")}</h1>
+          <p className="tv-lead">{overlay.entry.title}</p>
+          <div className="tv-list-picks" role="group" aria-label={t("library.addToAList")}>
+            {lists.map((info) => {
+              const has = inList(overlay.entry, info.id);
+              return (
+                <button key={info.id} className="tv-action" aria-pressed={has} data-nav data-testid={`pick-${info.id}`} onClick={() => profileStore.setInList(listEntryOf(overlay.entry), !has, info.id)}>
+                  {has ? <CheckIcon /> : <PlusIcon />} {listName(info)}
+                </button>
+              );
+            })}
+          </div>
+          <div className="tv-actions">
+            <button className="tv-action tv-action-primary" onClick={closeOverlay} data-nav data-testid="pick-done">
+              {t("common.done")}
+            </button>
+          </div>
+        </Screen>
+      )}
+
+      {overlay?.kind === "edit" && (
+        <Screen testId="tv-list-edit" compact focus onBack={closeOverlay}>
+          <h1 className="tv-headline tv-headline-small">{t(overlay.id ? "lists.edit" : "lists.new")}</h1>
+          <ListEditor
+            tv
+            list={lists.find((info) => info.id === overlay.id)}
+            taken={lists.filter((info) => info.id !== overlay.id).map(listName)}
+            onSave={(name) => {
+              if (overlay.id) {
+                profileStore.renameList(overlay.id, name);
+                return closeOverlay();
+              }
+              const made = profileStore.createList(name);
+              if (!made) return closeOverlay();
+              selectList(made); // the new list is the last button
+              setOverlay(null);
+              setPending({ zone: "chips", row: 0, col: lists.length });
+            }}
+            onCancel={closeOverlay}
+            onDelete={
+              overlay.id && overlay.id !== DEFAULT_LIST
+                ? () => {
+                    profileStore.deleteList(overlay.id!);
+                    selectList(DEFAULT_LIST);
+                    setOverlay(null);
+                    setPending({ zone: "chips", row: 0, col: 0 });
+                  }
+                : undefined
+            }
+          />
+        </Screen>
       )}
     </section>
   );

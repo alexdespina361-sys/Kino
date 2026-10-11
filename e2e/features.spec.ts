@@ -5,7 +5,7 @@ import { join } from "node:path";
 import qrcode from "qrcode-generator";
 import type { NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, tvRoot, tvTime, withLibrary } from "./helpers";
+import { FIRST_VISIT, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, tvRoot, tvTime, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -165,6 +165,7 @@ test.describe("pairing", () => {
 
     await expect(phone.getByTestId("code-input")).toBeVisible();
     await expect(phone.getByTestId("error")).toHaveCount(0);
+    await expect(phone.getByTestId("pair-notice")).toHaveCount(0); // it chose to leave: nothing was lost
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle"); // playback stopped
     const fresh = await readPairingCode(tv); // and the TV is offering itself again
     await phone.getByTestId("code-input").fill(fresh);
@@ -192,6 +193,8 @@ test.describe("pairing", () => {
 
     await expect(tv.getByTestId("pairing-code")).toBeVisible();
     await expect(phone.getByTestId("code-input")).toBeVisible();
+    await expect(phone.getByTestId("pair-notice")).toHaveText("The connection to your TV was lost. Connect again.");
+    await expect(phone.getByTestId("code-input")).toHaveValue(""); // the code that was typed is no use any more
     await phone.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
     await expect(tv.getByTestId("tv-paired")).toBeVisible();
@@ -262,6 +265,65 @@ test.describe("the TV player", () => {
     await expect.poll(() => tv.evaluate(() => document.querySelector("video")!.playbackRate)).toBe(1.25);
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("audio-subtitles-modal")).toHaveCount(0);
+    phone.close();
+  });
+
+  test("Down brings back controls that have faded and lands on Play; the arrows keep to the bar and never wrap, and the bar waits for whoever is choosing", async ({ browser, baseURL }) => {
+    test.setTimeout(45_000);
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
+
+    await tv.keyboard.press("ArrowDown"); // the buttons were not there to be focused: Down brings them back, and lands on the first
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await expect(tv.getByTestId("tv-play-btn")).toBeFocused();
+
+    // One row of buttons: nothing before the first, nothing under the row, nothing after the last.
+    await tv.keyboard.press("ArrowLeft");
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-play-btn")).toBeFocused();
+    for (let i = 0; i < 12; i++) await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("tv-stop-btn")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("tv-stop-btn")).toBeFocused();
+
+    // The remote resting on a button gets longer than the viewer who is only watching (that is 2.5 seconds); then the bar goes, and the focus with it.
+    await tv.waitForTimeout(3500);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
+    await expect(tv.getByTestId("tv-stop-btn")).not.toBeFocused();
+    phone.close();
+  });
+
+  test("Back from a menu returns to the button that opened it, and the subtitle style is a page of the audio and subtitles menu", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" }, subtitles: [{ id: "en", label: "English", lang: "en", url: "/fixtures/sample.vtt" }] } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    const modal = tv.getByTestId("audio-subtitles-modal");
+    const subtitles = tv.getByTestId("tv-audio-sub-btn");
+
+    await tv.keyboard.press("ArrowDown");
+    for (let i = 0; i < 8 && !(await subtitles.evaluate((el) => el === document.activeElement)); i++) await tv.keyboard.press("ArrowRight");
+    await expect(subtitles).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(modal).toHaveAttribute("data-kind", "tracks");
+    await tv.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
+    await expect(subtitles).toBeFocused(); // the focus was not lost with the menu
+
+    await tv.keyboard.press("Enter");
+    await tv.getByRole("option", { name: "Subtitle style…" }).click();
+    await expect(modal).toHaveAttribute("data-kind", "captions");
+    await tv.keyboard.press("Escape");
+    await expect(modal).toHaveAttribute("data-kind", "tracks"); // one page back, not out of the menu
+    await expect(tv.getByRole("option", { name: "Subtitle style…" })).toBeFocused(); // on the entry it came from
+    await tv.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
+    await expect(subtitles).toBeFocused();
     phone.close();
   });
 
@@ -435,6 +497,23 @@ test.describe("the phone's subtitle style", () => {
     await phone.getByTestId("caption-reset").click();
     await expect(caption).toHaveCSS("color", "rgb(255, 255, 255)");
     await expect(phone.getByTestId("caption-spacing-normal")).toHaveAttribute("aria-checked", "true");
+  });
+});
+
+test.describe("the subtitle delay", () => {
+  test("is offered for subtitles that are on, and not while there are none", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await loadOnTv(phone, seriesMedia(baseURL!));
+    await expect(phone.getByTestId("media-title")).toBeVisible();
+
+    await phone.getByTestId("chip-tracks").click();
+    await expect(phone.getByTestId("subtitle-0")).toBeVisible();
+    await expect(phone.getByTestId("subtitle-delay")).toHaveCount(0);
+    await phone.getByTestId("subtitle-0").click(); // English
+    await expect(phone.getByTestId("subtitle-delay")).toBeVisible();
+    await phone.getByTestId("subtitle--1").click(); // off
+    await expect(phone.getByTestId("subtitle-delay")).toHaveCount(0);
   });
 });
 
@@ -695,6 +774,31 @@ test.describe("sources", () => {
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "error", { timeout: 15_000 });
     await tv.waitForTimeout(1500);
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "error"); // still, not trying again and again
+    await expect(tv.getByTestId("tv-error")).toBeVisible(); // a card with the way on, in place of controls that are of no use
+    await expect(tv.getByTestId("tv-play-btn")).toHaveCount(0);
+    await expect(tv.getByTestId("error-retry")).toBeFocused(); // so OK is all it takes to try again
+    phone.close();
+  });
+
+  test("on the card of a video that would not play, OK tries again and Back leaves for the library", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    let broken = true;
+    await tv.route("**/fixtures/flaky.mp4", (route) => (broken ? route.fulfill({ status: 404, body: "gone" }) : route.continue({ url: `${baseURL}/fixtures/sample.mp4` })));
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/flaky.mp4" }]) });
+    await expect(tv.getByTestId("tv-error")).toBeVisible({ timeout: 15_000 });
+
+    broken = false; // a bad moment, over
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-error")).toHaveCount(0);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", /playing|paused/, { timeout: 15_000 });
+
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/nope.mp4" }]) });
+    await expect(tv.getByTestId("tv-error")).toBeVisible({ timeout: 15_000 });
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
+    await expect.poll(() => phone.states.at(-1)?.state).toBe("idle"); // the phone is not left looking at a video that is not there
     phone.close();
   });
 
@@ -737,11 +841,13 @@ test.describe("feedback", () => {
     await expect(phone.getByTestId("media-title")).toBeVisible();
     await tv.evaluate(() => void (document.querySelector("video")!.currentTime = 5)); // past the first second, when nothing is announced
 
-    // asked for from the phone
+    // asked for from the phone: the sheet it was asked in lights the choice, so the phone says nothing on top of it
     await phone.getByTestId("chip-speed").click();
     await phone.getByTestId("speed-1.5").click();
     await expect(tv.getByTestId("tv-toast")).toHaveText("Speed 1.5×");
-    await expect(phone.getByTestId("toast")).toHaveText("Speed 1.5×");
+    await expect(phone.getByTestId("speed-1.5")).toHaveAttribute("aria-selected", "true");
+    await expect(phone.getByTestId("toast")).toHaveCount(0);
+    await phone.getByTestId("sheet-close").click();
 
     // asked for from the TV's own remote keys: C cycles the subtitles
     await tv.keyboard.press("c");
@@ -807,12 +913,32 @@ test.describe("the episode before", () => {
 test.describe("full screen", () => {
   const isFullScreen = (tv: Page) => tv.evaluate(() => document.fullscreenElement !== null);
 
-  test("the TV goes full screen with the first title chosen on it, and is left alone after that", async ({ browser, baseURL }) => {
-    const films = { updatedAt: Date.now(), rows: [{ id: "r", title: "Films", source: "Test", items: [{ id: "a", title: "The Sample", url: sample(baseURL!) }] }] };
-    const tv = await openLibrary(browser, withLibrary(films));
-    expect(await isFullScreen(tv)).toBe(false); // nothing was asked of the viewer first
-    await playFirst(tv);
+  const filmsOf = (baseURL: string) => ({ updatedAt: Date.now(), rows: [{ id: "r", title: "Films", source: "Test", items: [{ id: "a", title: "The Sample", url: sample(baseURL) }] }] });
+  /** The library on a device that has never opened the page (the config's pages start as if full screen had been left). */
+  async function firstVisit(browser: Browser, baseURL: string) {
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, storageState: FIRST_VISIT }, {}, withLibrary(filmsOf(baseURL)));
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    return tv;
+  }
+
+  test("a screen's welcome waits with a button for the press that takes it full screen, and it is left alone after that", async ({ browser, baseURL }) => {
+    const tv = await firstVisit(browser, baseURL!);
+    const welcome = tv.getByTestId("tv-welcome");
+    await expect(welcome).toBeVisible();
+    await expect(tv.getByTestId("welcome-enter")).toHaveText(en["tv.welcomeStart"]);
+    await tv.waitForTimeout(2400); // longer than a welcome stays when it asks nothing: this one waits (something that does not happen)
+    await expect(welcome).toBeVisible();
+    expect(await isFullScreen(tv)).toBe(false); // nothing is done before the viewer presses
+
+    await tv.keyboard.press("Enter"); // OK is the button's: the title that has the library's focus under the welcome is not pressed
     await expect.poll(() => isFullScreen(tv)).toBe(true);
+    await expect(welcome).toHaveCount(0, { timeout: 4_000 });
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+
+    await playFirst(tv);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing"); // (F is the player's key: nothing hears it while a video is still being found)
 
     await tv.keyboard.press("f"); // leaving is the viewer's choice
     await expect.poll(() => isFullScreen(tv)).toBe(false);
@@ -823,6 +949,116 @@ test.describe("full screen", () => {
     await tv.keyboard.press("Enter");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     expect(await isFullScreen(tv)).toBe(false); // not pulled back in for the next title
+  });
+
+  test("a click anywhere on the waiting welcome goes full screen too, and does not press what is under it", async ({ browser, baseURL }) => {
+    const tv = await firstVisit(browser, baseURL!);
+    await expect(tv.getByTestId("welcome-enter")).toBeVisible();
+    const tile = (await tv.getByTestId("tv-browse-tile").first().boundingBox())!;
+    await tv.mouse.click(tile.x + tile.width / 2, tile.y + tile.height / 2); // right over the first title, which the welcome hides
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+    await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  });
+
+  test("Back lets the waiting welcome go, and the library is as it was", async ({ browser, baseURL }) => {
+    const tv = await firstVisit(browser, baseURL!);
+    await expect(tv.getByTestId("welcome-enter")).toBeVisible();
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  });
+
+  test("on a phone the welcome's button fits the screen, and a tap on it goes full screen", async ({ browser, baseURL }) => {
+    const phone = await openDevice(browser, { viewport: { width: 390, height: 844 }, hasTouch: true, storageState: FIRST_VISIT }, {}, withLibrary(filmsOf(baseURL!)));
+    await phone.goto("/tv");
+    const button = phone.getByTestId("welcome-enter");
+    await expect(button).toBeInViewport({ ratio: 1 });
+    await button.tap();
+    await expect.poll(() => isFullScreen(phone)).toBe(true);
+    await expect(phone.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
+  });
+
+  test("a video that a phone starts while the welcome waits takes the screen from it", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser); // (starts as if full screen had been left: no button yet)
+    const phone = await openPairedPhone(browser, tv);
+    await tv.evaluate(() => localStorage.removeItem("kino.fullscreen.left"));
+    await tv.reload(); // still paired, and now a first visit as far as full screen goes
+    await expect(tv.getByTestId("welcome-enter")).toBeVisible();
+    await phone.getByTestId("url-input").fill(sample(baseURL!));
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await expect(tv.getByTestId("tv-welcome")).toHaveCount(0);
+  });
+
+  test("what the viewer chose is kept for the next visit: leaving stays left, and going in by the button opens full screen again", async ({ browser, baseURL }) => {
+    const tv = await firstVisit(browser, baseURL!);
+    await tv.keyboard.press("ArrowRight");
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+    const button = tv.getByTestId("fullscreen-toggle");
+    await expect(button).toHaveAttribute("aria-label", "Exit full screen");
+
+    await button.click();
+    await expect.poll(() => isFullScreen(tv)).toBe(false);
+    await expect(button).toHaveAttribute("aria-label", "Full screen");
+    await tv.reload(); // the next visit: left as it was (there is nothing to wait for, it is something that does not happen)
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await tv.keyboard.press("ArrowRight");
+    await tv.waitForTimeout(600);
+    expect(await isFullScreen(tv)).toBe(false);
+
+    await tv.getByTestId("fullscreen-toggle").click(); // in again by choice
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+    await tv.reload(); // (leaving full screen because the page went away is no choice of the viewer's)
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await tv.keyboard.press("ArrowRight");
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+  });
+
+  test("the library's corner has a full screen button beside the account button, and the arrow keys reach it", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser, withLibrary(filmsOf(baseURL!)));
+    const chip = tv.getByTestId("tv-account-chip");
+    const button = tv.getByTestId("fullscreen-toggle");
+    const [chipBox, buttonBox] = [(await chip.boundingBox())!, (await button.boundingBox())!];
+    expect(buttonBox.x).toBeGreaterThanOrEqual(chipBox.x + chipBox.width); // to its right, as tall and level with it
+    expect(Math.abs(buttonBox.height - chipBox.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(buttonBox.y - chipBox.y)).toBeLessThanOrEqual(1);
+
+    for (let up = 0; up < 3 && !(await chip.evaluate((element) => element === document.activeElement)); up++) await tv.keyboard.press("ArrowUp");
+    await expect(chip).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(button).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+    await expect(button).toHaveAttribute("aria-label", "Exit full screen");
+    await tv.keyboard.press("Enter");
+    await expect.poll(() => isFullScreen(tv)).toBe(false);
+    await tv.keyboard.press("ArrowLeft");
+    await expect(chip).toBeFocused();
+  });
+
+  test("the remote does not go full screen by itself, but has the button on its first screen and in its menu", async ({ browser }) => {
+    const first = await openDevice(browser, { ...PHONE, storageState: FIRST_VISIT });
+    await first.goto("/");
+    await first.getByTestId("code-input").tap(); // where a code gets typed: no surprises
+    await first.waitForTimeout(600);
+    expect(await isFullScreen(first)).toBe(false);
+    const [toggleBox, accountBox] = [(await first.getByTestId("fullscreen-toggle").boundingBox())!, (await first.getByTestId("account-button").boundingBox())!];
+    expect(toggleBox.x + toggleBox.width).toBeLessThanOrEqual(accountBox.x); // beside the account button
+    await first.getByTestId("fullscreen-toggle").tap();
+    await expect.poll(() => isFullScreen(first)).toBe(true);
+    await expect(first.getByTestId("fullscreen-toggle")).toHaveAttribute("aria-label", "Exit full screen");
+
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.getByTestId("menu").click();
+    const row = phone.getByTestId("menu-sheet").getByTestId("fullscreen-toggle");
+    await expect(row).toHaveText(en["phone.fullscreen"]); // (the sheet is the TV's: the words say it is about this phone)
+    await row.click();
+    await expect.poll(() => isFullScreen(phone)).toBe(true);
+    await expect(row).toHaveText(en["phone.exitFullscreen"]);
+    expect(await isFullScreen(tv)).toBe(false);
   });
 
   test("the phone's button leaves full screen, and asks for an OK press on the TV to come back", async ({ browser, baseURL }) => {
@@ -912,6 +1148,12 @@ test.describe("watching together", () => {
     await expect(leader.getByTestId("tv-play-btn")).toHaveCount(1);
     await expect(follower.getByTestId("tv-play-btn")).toHaveCount(0); // no player buttons on the follower
 
+    // The bar is at the top of the screen, and Up is as good a way onto it as Down; and it says when the host has stopped the picture.
+    await follower.keyboard.press("ArrowUp");
+    await expect(follower.getByTestId("tv-mute-btn")).toBeFocused();
+    await phone.getByTestId("pause").click();
+    await expect(follower.getByTestId("tv-follow-bar")).toContainText(en["hud.paused"]);
+
     await phone.getByTestId("stop").click();
     await expect(tvRoot(leader)).toHaveAttribute("data-state", "idle");
     await expect(tvRoot(follower)).toHaveAttribute("data-state", "idle");
@@ -955,8 +1197,8 @@ test.describe("watching together", () => {
     await phone.getByTestId("url-input").fill(sample(baseURL!));
     await phone.getByTestId("play-url").click();
     await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
-    await follower.keyboard.press("ArrowDown"); // wakes the overlay
-    await follower.keyboard.press("ArrowDown"); // onto the first button of the bar (Mute)
+    await follower.keyboard.press("ArrowDown"); // wakes the bar and lands on its first button (Mute), even with the bar faded away
+    await expect(follower.getByTestId("tv-mute-btn")).toBeFocused();
     for (let i = 0; i < 4 && !(await follower.getByTestId("tv-leave").evaluate((el) => el === document.activeElement)); i++) {
       await follower.keyboard.press("ArrowRight");
     }
@@ -965,6 +1207,16 @@ test.describe("watching together", () => {
     await expect(follower.getByTestId("pairing-code")).toBeVisible();
     await expect(tvRoot(leader)).toHaveAttribute("data-state", "playing"); // the leader carries on
     await expect(phone.getByTestId("party-count")).toHaveCount(0);
+  });
+
+  test("End party sends every TV away at once", async ({ browser }) => {
+    const { leader, phone, follower } = await party(browser);
+    await expect(phone.getByTestId("party-tv")).toHaveCount(1);
+    await phone.getByTestId("party-end").click();
+    await expect(phone.getByTestId("party-tv")).toHaveCount(0);
+    await expect(phone.getByTestId("party-end")).toHaveCount(0);
+    await expect(follower.getByTestId("pairing-code")).toBeVisible(); // back to its own code
+    await expect(tvRoot(leader)).toHaveAttribute("data-state", "idle");
   });
 
   test("a wrong code is refused in the sheet", async ({ browser }) => {
@@ -1047,6 +1299,7 @@ test.describe("a watch party started on a TV", () => {
     await expect(host.getByTestId("tv-party-panel")).toBeVisible();
     await host.getByTestId("tv-party-start").click();
     await expect(host.getByTestId("tv-party-code")).toBeVisible();
+    await expect(host.getByTestId("tv-party-done")).toBeFocused(); // never on the button that ends the party: OK on a panel that has just changed must not do that
     const code = await codeOf(host);
 
     const guest = await screen(browser, baseURL!);
@@ -1058,7 +1311,7 @@ test.describe("a watch party started on a TV", () => {
     await host.keyboard.press("Escape"); // closes the panel
     await expect(host.getByTestId("tv-party-panel")).toHaveCount(0);
     await host.mouse.move(80, 80);
-    await expect(host.getByTestId("tv-party-btn")).toContainText("2 TVs");
+    await expect(host.getByTestId("tv-party-btn")).toContainText("2 devices");
   });
 
   test("a guest keeps its own subtitles: the host's stay as they are", async ({ browser, baseURL }) => {
@@ -1289,7 +1542,133 @@ test.describe("the library", () => {
     await expect(phone.getByTestId("link-sheet").getByTestId("library-tile")).toHaveCount(3);
   });
 
-  test("no titles, or a library that cannot be reached, leaves the home screen as it was", async ({ browser }) => {
+  test("Escape closes the sheet on top, and the one under it the next time", async ({ browser, baseURL }) => {
+    const { tv, phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
+    // two lists, so that the round button on a title asks which
+    await phone.getByTestId("library-list-toggle").first().click();
+    await phone.getByTestId("lists-manage").click();
+    await phone.getByTestId("list-new").click();
+    await phone.getByTestId("list-name-input").fill("Weekend");
+    await phone.getByTestId("list-save").click();
+    await phone.getByTestId("sheet-close").click();
+
+    // the library in the sheet of "New link", and a list picker on top of it
+    await phone.getByTestId("url-input").fill(sample(baseURL!));
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await phone.getByTestId("change-video").click();
+    await phone.getByTestId("link-sheet").getByTestId("library-list-toggle").first().click();
+    await expect(phone.getByTestId("list-picker")).toBeVisible();
+    await phone.keyboard.press("Escape");
+    await expect(phone.getByTestId("list-picker")).toHaveCount(0);
+    await expect(phone.getByTestId("link-sheet")).toBeVisible();
+    await phone.keyboard.press("Escape");
+    await expect(phone.getByTestId("link-sheet")).toHaveCount(0);
+  });
+
+  test("the round button on a title saves it in Favourites; once there is a second list it asks which, and a cross takes a title off one list", async ({ browser }) => {
+    const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
+    await expect(phone.getByTestId("list-row")).toHaveCount(0); // nothing saved: no row, and no button for lists yet
+    await expect(phone.getByTestId("lists-manage")).toHaveCount(0);
+
+    const toggle = (n: number) => phone.getByTestId("library-list-toggle").nth(n);
+    await expect(toggle(0)).toHaveAccessibleName("Add to Favourites: The Sample");
+    await toggle(0).click();
+    await expect(toggle(0)).toHaveAccessibleName("In Favourites — tap to remove: The Sample");
+    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Sample");
+
+    // A second list, made in the sheet that the row's button opens.
+    await phone.getByTestId("lists-manage").click();
+    await expect(phone.getByTestId("lists-sheet")).toContainText("1 title");
+    await phone.getByTestId("list-new").click();
+    await phone.getByTestId("list-name-input").fill("Weekend");
+    await phone.getByTestId("list-save").click();
+    await expect(phone.getByTestId("lists-sheet")).toContainText("Weekend");
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByTestId("lists-sheet")).toHaveCount(0);
+
+    // With two lists the button asks: a tap on a list puts the title in it, and the title is "in your lists".
+    await expect(toggle(1)).toHaveAccessibleName("Add to a list: The Other One");
+    await toggle(1).click();
+    const picker = phone.getByTestId("list-picker");
+    await expect(picker).toContainText("The Other One");
+    await expect(picker.getByRole("button", { name: "Weekend" })).toHaveAttribute("aria-pressed", "false");
+    await picker.getByRole("button", { name: "Weekend" }).click();
+    await expect(picker.getByRole("button", { name: "Weekend" })).toHaveAttribute("aria-pressed", "true");
+    await picker.getByRole("button", { name: "Favourites" }).click();
+    await expect(picker.getByRole("button", { name: "Favourites" })).toHaveAttribute("aria-pressed", "true");
+    await phone.getByTestId("sheet-close").click();
+    await expect(toggle(1)).toHaveAccessibleName("In your lists: The Other One");
+    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Sample");
+    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Other One");
+    await expect(phone.getByRole("region", { name: "Weekend" })).toContainText("The Other One");
+    await expect(phone.getByRole("region", { name: "Weekend" })).not.toContainText("The Sample");
+
+    // The cross on a card takes the title off that list only.
+    await phone.getByRole("region", { name: "Weekend" }).getByTestId("list-remove").click();
+    await expect(phone.getByRole("region", { name: "Weekend" })).toHaveCount(0); // an empty list has no row
+    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Other One");
+    await expect(toggle(1)).toHaveAccessibleName("In your lists: The Other One"); // still in the first
+  });
+
+  test("a list is made from the picker with the title in it, then renamed, and deleted with the titles in it; the first list is renamed but not deleted", async ({ browser }) => {
+    const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
+    const toggle = (n: number) => phone.getByTestId("library-list-toggle").nth(n);
+    await toggle(0).click(); // Favourites
+    await phone.getByTestId("lists-manage").click();
+    await phone.getByTestId("list-new").click();
+    await phone.getByTestId("list-name-input").fill("Weekend");
+    await phone.getByTestId("list-save").click();
+    await phone.getByTestId("sheet-close").click();
+
+    // "New list" in the picker makes the list and puts the title in it.
+    await toggle(2).click();
+    const picker = phone.getByTestId("list-picker");
+    await picker.getByTestId("pick-new").click();
+    await expect(picker.getByTestId("list-editor")).toBeVisible();
+    await phone.getByTestId("list-name-input").fill("weekend"); // another list's name, in other letters
+    await phone.getByTestId("list-save").click();
+    await expect(phone.getByTestId("list-error")).toHaveText("You already have a list with that name.");
+    await phone.getByTestId("list-name-input").fill("Classics");
+    await expect(phone.getByTestId("list-error")).toHaveCount(0);
+    await phone.getByTestId("list-save").click();
+    await expect(picker.getByRole("button", { name: "Classics" })).toHaveAttribute("aria-pressed", "true");
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByRole("region", { name: "Classics" })).toContainText("Third");
+
+    // Another name for it.
+    await phone.getByTestId("lists-manage").click();
+    const sheet = phone.getByTestId("lists-sheet");
+    await expect(sheet).toContainText("Classics");
+    await sheet.getByRole("button", { name: /^Classics/ }).click();
+    await expect(phone.getByTestId("list-name-input")).toHaveValue("Classics");
+    await phone.getByTestId("list-name-input").fill("Old films");
+    await phone.getByTestId("list-save").click();
+    await expect(sheet.getByRole("button", { name: /^Old films/ })).toContainText("1 title");
+    await expect(phone.getByRole("region", { name: "Old films" })).toContainText("Third");
+
+    // Deleted, after a question; the title in it goes with it.
+    await sheet.getByRole("button", { name: /^Old films/ }).click();
+    await phone.getByTestId("list-delete").click();
+    await expect(phone.getByTestId("list-editor")).toContainText("Delete “Old films”?");
+    await phone.getByTestId("list-delete-cancel").click();
+    await phone.getByTestId("list-delete").click();
+    await phone.getByTestId("list-delete-confirm").click();
+    await expect(sheet).not.toContainText("Old films");
+    await expect(phone.getByRole("region", { name: "Old films" })).toHaveCount(0);
+    await expect(toggle(2)).toHaveAccessibleName("Add to a list: Third");
+
+    // The first list has no Delete, but takes another name.
+    await sheet.getByRole("button", { name: /^Favourites/ }).click();
+    await expect(phone.getByTestId("list-delete")).toHaveCount(0);
+    await phone.getByTestId("list-name-input").fill("Watch later");
+    await phone.getByTestId("list-save").click();
+    await expect(sheet.getByRole("button", { name: /^Watch later/ })).toBeVisible();
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByRole("region", { name: "Watch later" })).toContainText("The Sample");
+  });
+
+  test("no titles leaves the home screen as it was, and a library that cannot be reached says so", async ({ browser }) => {
     const empty = await phoneWithLibrary(browser, (route) => route.fulfill({ json: { rows: [], updatedAt: 0 } }));
     await expect(empty.phone.getByTestId("url-input")).toBeVisible();
     await expect(empty.phone.getByTestId("library")).toHaveCount(0);
@@ -1300,6 +1679,26 @@ test.describe("the library", () => {
       await expect(phone.getByTestId("url-input")).toBeVisible();
       await expect(phone.getByTestId("library")).toHaveCount(0);
       await expect(phone.getByTestId("library-loading")).toHaveCount(0);
+      await expect(phone.getByTestId("library-failed")).toContainText("The library isn't reachable right now");
     }
+  });
+
+  test("Try again asks the library again", async ({ browser }) => {
+    let up = false;
+    const { phone } = await phoneWithLibrary(browser, (route) => (up ? route.fulfill({ json: library }) : route.fulfill({ status: 500, body: "nope" })));
+    await expect(phone.getByTestId("library-failed")).toBeVisible();
+    up = true;
+    await phone.getByTestId("library-retry").click();
+    await expect(phone.getByTestId("library-row")).toHaveCount(2);
+    await expect(phone.getByTestId("library-failed")).toHaveCount(0);
+  });
+
+  test("a search that cannot be made says so, instead of saying nothing matches", async ({ browser }) => {
+    const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
+    await phone.context().route(/\/api\/library\/search/, (route) => route.fulfill({ status: 500, body: "nope" }));
+    await phone.getByTestId("library-search-input").fill("zzz");
+    await expect(phone.getByTestId("library-search-results")).toContainText("The library isn't reachable right now");
+    await phone.getByTestId("library-search-input").fill("Sample"); // a title that is on the page needs no server
+    await expect(phone.getByTestId("library-search-results")).toContainText("Results for “Sample”");
   });
 });

@@ -1,18 +1,25 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_LIST,
   emptyData,
   fillProgress,
+  LIST_NAME_MAX,
   listKey,
+  listOf,
+  ListNameSchema,
   mergeCollection,
   mergeData,
   nameFromEmail,
   newerOf,
+  newListId,
   nextAvatar,
   progressKey,
   RegisterSchema,
+  resolveLists,
   resolveSettings,
   SyncRequestSchema,
   watchedKey,
+  type ListNameItem,
   type LiveProgress,
   type ProgressItem,
   type SettingItem,
@@ -103,6 +110,44 @@ describe("keys", () => {
   });
 });
 
+describe("lists", () => {
+  it("keeps what was saved before there were lists in the first list, and tells one title in two lists apart", () => {
+    expect(listKey("https://s/watch/9", DEFAULT_LIST)).toBe("url:https://s/watch/9");
+    expect(listKey("https://s/watch/9#x", "l1abc")).toBe("l1abc|url:https://s/watch/9");
+    expect(listOf({})).toBe(DEFAULT_LIST);
+    expect(listOf({ list: "l1abc" })).toBe("l1abc");
+  });
+
+  it("always has the first list, then the others in the order they were made, and leaves out the removed", () => {
+    const names: ListNameItem[] = [
+      { key: "lb", at: 5, name: "Kids" },
+      { key: "la", at: 9, name: "Weekend" },
+      { key: "lc", at: 9, deleted: true },
+    ];
+    expect(resolveLists([])).toEqual([{ id: DEFAULT_LIST }]);
+    expect(resolveLists(names)).toEqual([{ id: DEFAULT_LIST }, { id: "la", name: "Weekend" }, { id: "lb", name: "Kids" }]);
+    expect(resolveLists([...names, { key: DEFAULT_LIST, at: 1, name: "Watchlist" }])[0]).toEqual({ id: DEFAULT_LIST, name: "Watchlist" });
+    expect(resolveLists([{ key: DEFAULT_LIST, at: 1, deleted: true }])).toEqual([{ id: DEFAULT_LIST }]);
+  });
+
+  it("gives a new list an id that sorts after the lists made before it", () => {
+    expect(newListId(1_800_000_000_000) < newListId(1_800_000_001_000)).toBe(true);
+  });
+
+  it("takes a short name, trimmed, and refuses an empty one or a long one", () => {
+    expect(ListNameSchema.parse("  Date night ")).toBe("Date night");
+    expect(ListNameSchema.safeParse("   ").success).toBe(false);
+    expect(ListNameSchema.safeParse("x".repeat(LIST_NAME_MAX + 1)).success).toBe(false);
+  });
+
+  it("combines two copies of the names like everything else: the newer name wins, and a removal stays removed", () => {
+    const a = { ...emptyData(), listNames: [{ key: "la", at: 1, name: "Old" }, { key: "lb", at: 1, name: "Kids" }] };
+    const b = { ...emptyData(), listNames: [{ key: "la", at: 2, name: "New" }, { key: "lb", at: 2, deleted: true as const }] };
+    const merged = mergeData(a, b, 5).listNames;
+    expect(merged).toEqual([{ key: "la", at: 2, name: "New" }, { key: "lb", at: 2, deleted: true }]);
+  });
+});
+
 describe("resolveSettings", () => {
   it("reads the settings that are set and ignores removed ones and values that are not a real choice", () => {
     const items: SettingItem[] = [
@@ -132,6 +177,6 @@ describe("what people type", () => {
   });
 
   it("accepts a sync with nothing to send", () => {
-    expect(SyncRequestSchema.parse({ since: 0 })).toEqual({ since: 0, progress: [], watched: [], list: [], settings: [] });
+    expect(SyncRequestSchema.parse({ since: 0 })).toEqual({ since: 0, progress: [], watched: [], list: [], listNames: [], settings: [] });
   });
 });

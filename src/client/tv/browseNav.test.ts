@@ -49,6 +49,17 @@ describe("stepFrom on rows of titles", () => {
   it("does not offer the account button when there is none", () => {
     expect(stepFrom({ rows: [3] }, at("rows", 0, 0), "up")).toBeNull();
   });
+
+  it("walks from the account button to the full screen one beside it, and back", () => {
+    const corner: Shape = { ...shape, top: [2] };
+    expect(stepFrom(corner, at("rows", 0, 3), "up")).toEqual(at("top", 0, 0)); // (it lands on the account button, as before)
+    expect(stepFrom(corner, at("top", 0, 0), "right")).toEqual(at("top", 0, 1));
+    expect(stepFrom(corner, at("top", 0, 1), "right")).toBeNull();
+    expect(stepFrom(corner, at("top", 0, 1), "left")).toEqual(at("top", 0, 0));
+    expect(stepFrom(corner, at("top", 0, 0), "left")).toBeNull();
+    expect(stepFrom(corner, at("top", 0, 1), "down")).toEqual({ zone: "content", row: -1, col: -1 });
+    expect(stepFrom(shape, at("top", 0, 0), "right")).toBeNull(); // one button: nowhere to go
+  });
 });
 
 describe("stepFrom with the banner's buttons (Play, My List)", () => {
@@ -147,5 +158,27 @@ describe("stepFrom with the search filter (All, Movies, Series)", () => {
   it("stays on the filter when there is nothing below it, and skips it when there is no filter", () => {
     expect(stepFrom({ ...shape, results: [] }, at("chips", 0, 1), "down")).toBeNull();
     expect(stepFrom({ ...shape, chips: [] }, at("results", 0, 1), "up")).toEqual(at("top", 0, 0));
+  });
+});
+
+describe("stepFrom on the lists page (a row of buttons over the grid)", () => {
+  const shape: Shape = { rail: [1, 1, 1], top: [1], chips: [5], grid: [5, 5, 2] };
+
+  it("goes up from the first row of titles to the buttons, and down from them to the titles", () => {
+    expect(stepFrom(shape, at("grid", 0, 3), "up")).toEqual(at("chips", 0, 3));
+    expect(stepFrom(shape, at("grid", 1, 3), "up")).toEqual(at("grid", 0, 3));
+    expect(stepFrom(shape, at("chips", 0, 2), "down")).toEqual(at("grid", 0, 2));
+  });
+
+  it("walks along the buttons, opens the menu from the first, and reaches the account button above them", () => {
+    expect(stepFrom(shape, at("chips", 0, 1), "right")).toEqual(at("chips", 0, 2));
+    expect(stepFrom(shape, at("chips", 0, 4), "right")).toBeNull();
+    expect(stepFrom(shape, at("chips", 0, 0), "left")).toEqual({ zone: "rail", row: -1, col: -1 });
+    expect(stepFrom(shape, at("chips", 0, 2), "up")).toEqual(at("top", 0, 0));
+  });
+
+  it("stays on the buttons when the list has no titles, and goes up from the titles to the account button when there are no buttons", () => {
+    expect(stepFrom({ ...shape, grid: [] }, at("chips", 0, 1), "down")).toBeNull();
+    expect(stepFrom({ ...shape, chips: [] }, at("grid", 0, 1), "up")).toEqual(at("top", 0, 0));
   });
 });

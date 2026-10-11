@@ -319,6 +319,19 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.ensurePartyCode(guest)).toBeNull();
   });
 
+  it("knows a code that a party is open with, for as long as it is", () => {
+    const { registry, advance, host, code } = hosted();
+    expect(registry.isPartyCode(code)).toBe(true);
+    expect(registry.isPartyCode("000000")).toBe(false);
+    registry.closeParty(host);
+    expect(registry.isPartyCode(code)).toBe(false); // it went with the party
+
+    const reopened = registry.ensurePartyCode(host)!.code;
+    expect(registry.isPartyCode(reopened)).toBe(true);
+    advance(10 * 60 * 1000);
+    expect(registry.isPartyCode(reopened)).toBe(false); // it ran out
+  });
+
   it("makes every TV that types the code a guest: the code is not used up", () => {
     const { registry, host, code, arrive } = hosted();
     const [first, second] = [arrive(), arrive()];
