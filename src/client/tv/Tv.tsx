@@ -20,6 +20,7 @@ import { useAccount } from "../account/AccountProvider";
 import { profileStore, useProfileData } from "../account/store";
 import { t, useT } from "../i18n";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
+import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen } from "../shared/fullscreen";
 import { FullscreenIcon, MutedIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
@@ -35,6 +36,8 @@ import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
 import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
+import { keepNativePlayerOut } from "./nativePlayer";
+import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
 import { syncStep } from "./sync";
 import {
@@ -79,8 +82,8 @@ export function Tv() {
    * anything, so it asks for that press first.
    */
   const [unlocked, setUnlocked] = useState(!linkCode);
-  /** The welcome over the library while it fills in, until it has faded. */
-  const [welcoming, setWelcoming] = useState(true);
+  /** The welcome over the library while it fills in, until it has faded. A party's link brings a guest straight to the party, not to a welcome. */
+  const [welcoming, setWelcoming] = useState(!linkCode);
   /** The welcome waits for a press, with a button that goes full screen, when the first press would (a screen opened by a party's link was pressed already). */
   const [asksToEnter] = useState(() => !linkCode && entersAtFirstPress());
   /** Shown when the phone asked for full screen but the browser wants a press on the TV itself. */
@@ -169,6 +172,8 @@ export function Tv() {
 
   // Who is watching: the account page (sign in, profiles, settings) takes the place of the start screens, never of a video.
   const account = useAccount();
+  const syncNowRef = useRef(account.syncNow);
+  syncNowRef.current = account.syncNow; // (the phone can ask for it: devices of the account were signed out)
   const [accountView, setAccountView] = useState<AccountView | null>(null);
   /** Signed in, and nobody has been picked on this TV yet: that question comes first. */
   const choosing = account.status === "ready" && account.choosing;
@@ -179,9 +184,10 @@ export function Tv() {
   /** Whether the next episode follows by itself (the profile's choice); off, the Up Next card waits for OK. */
   const autoplay = settings.autoplayNext ?? true;
   useEffect(() => {
-    if (!currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
+    // (A screen that watches along shows the host's video: it is the host's to continue, not an entry in this profile's row, with a place and an address that are the host's.)
+    if (following || !currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
     profileStore.playbackAt(currentMedia, player);
-  }, [player, currentMedia]);
+  }, [player, currentMedia, following]);
 
   // Brief "+10s" flash after a skip, from the remote or the phone
   const [toast, setToast] = useState<{ id: number; text: string; notice?: boolean; side?: "back" | "forward" } | null>(null);
@@ -247,6 +253,9 @@ export function Tv() {
   playerRef.current = player;
   const upNextDismissedRef = useRef(false);
   upNextDismissedRef.current = upNextDismissed;
+  /** What the phone is told about the end of the picture: that it came, and whether the next episode starts by itself (and in how long). */
+  const endingRef = useRef<Ending>({ ended: false });
+  endingRef.current = { ended, upNext: following || upNextCountdown === null ? undefined : { seconds: autoplay ? upNextCountdown : null } };
 
   /* ------------------------------ sources ------------------------------ */
 
@@ -378,6 +387,22 @@ export function Tv() {
     if (opener?.isConnected && controlsRef.current?.contains(opener)) opener.focus();
   }, [menu]);
 
+  // A control that a hand pressed (a mouse, a finger) does not keep the focus: the focus on the controls is the remote's, and it changes what the keys do
+  // (the arrows walk the buttons instead of skipping, OK presses that button again instead of pausing). A key that clicks a button has no click count.
+  // Before the button's own handler (capture), so a menu it opens has no focused opener to hand the focus back to, and while its icon is still there to be found.
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (event.detail === 0 || !(event.target instanceof Element)) return;
+      const button = event.target.closest("button");
+      if (button && controlsRef.current?.contains(button)) button.blur();
+    };
+    window.addEventListener("click", onClick, true);
+    return () => window.removeEventListener("click", onClick, true);
+  }, []);
+
+  // OK presses the button that has the focus even where the browser does not (see okPress.ts).
+  useEffect(() => pressWhatOkPresses(), []);
+
   useEffect(
     () => () => {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
@@ -426,6 +451,7 @@ export function Tv() {
   useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]); // the phone's sheet shows what the TV really uses
   const streamUrl = currentMedia?.stream.url;
   useEffect(() => republishRef.current(), [streamUrl, sourceIndex]); // a state names its media and source, and those can change without the video doing so
+  useEffect(() => republishRef.current(), [ended, upNextCountdown, autoplay, following]); // the phone follows the end of the picture and the countdown to the next episode
 
   useEffect(() => {
     if (player.state === "idle") resetApplied();
@@ -495,7 +521,7 @@ export function Tv() {
   useEffect(() => {
     const video = videoRef.current!;
     const publish = (state: PlayerState) => {
-      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current);
+      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current);
       setPlayer(full);
       if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
     };
@@ -518,20 +544,21 @@ export function Tv() {
     republishRef.current = () => publish(engine.getState());
 
     const socket = connectSocket({
-      hello: () => ({ type: "TV_HELLO", deviceId: readStorage(DEVICE_KEY) }),
+      hello: () => ({ type: "TV_HELLO", deviceId: readKept(DEVICE_KEY) }),
       onStatus: setConnection,
       onMessage: (message) => {
         switch (message.type) {
           case "TV_WELCOME":
-            writeStorage(DEVICE_KEY, message.deviceId);
+            writeKept(DEVICE_KEY, message.deviceId);
             setPaired(message.paired);
+            followingRef.current = message.following ?? null;
             setFollowing(message.following ?? null);
             setPairing(toPairing(message.pairing));
             setControl(null);
             setParty(null); // a party this TV is in is sent right after
             setPartyEnds(null);
             if (!message.following) {
-              socketRef.current?.send({ type: "TV_STATE", state: withTvState(engine.getState(), captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current) });
+              socketRef.current?.send({ type: "TV_STATE", state: withTvState(engine.getState(), captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current) });
             }
             break;
           case "TV_CODE":
@@ -624,7 +651,7 @@ export function Tv() {
               }
 
               setCurrentMedia(command.media);
-              profileStore.playbackStarted(command.media); // it moves to the front of "Continue watching" at once
+              if (!followingRef.current) profileStore.playbackStarted(command.media); // it moves to the front of "Continue watching" at once (not for a screen that watches along)
               setUpNextCountdown(null);
               setUpNextDismissed(false);
               resetApplied();
@@ -649,8 +676,10 @@ export function Tv() {
             else if (command.type === "SET_SOURCE") loadSource(command.index, true);
             else if (command.type === "TOGGLE_FULLSCREEN") fullscreenFromPhone();
             else if (command.type === "NEXT_EPISODE") triggerNextEpisode();
+            else if (command.type === "DISMISS_UP_NEXT") dismissUpNext();
+            else if (command.type === "REFRESH_ACCOUNT") syncNowRef.current();
             // Anything the phone does should be visible on the TV for a moment.
-            if (command.type !== "LOAD" && command.type !== "STOP") wake();
+            if (command.type !== "LOAD" && command.type !== "STOP" && command.type !== "REFRESH_ACCOUNT") wake();
             break;
           }
         }
@@ -665,9 +694,11 @@ export function Tv() {
       if (document.fullscreenElement) setFsPrompt(false);
     };
     document.addEventListener("fullscreenchange", onFullscreenChange);
+    const releaseVideo = keepNativePlayerOut(video);
 
     return () => {
       document.removeEventListener("fullscreenchange", onFullscreenChange);
+      releaseVideo();
       socket.disconnect();
       engine.destroy();
     };
@@ -724,6 +755,7 @@ export function Tv() {
    */
   const fullscreenFromPhone = () => {
     if (document.fullscreenElement) return void document.exitFullscreen().catch(() => {});
+    if (!canFullscreen) return; // (a browser that is never asked: see fullscreen.ts)
     document.documentElement.requestFullscreen?.().catch(() => setFsPrompt(true));
   };
   const acceptFullscreenPrompt = () => {
@@ -1257,7 +1289,7 @@ export function Tv() {
           onParty={() => openMenu("party")}
           muted={muted}
           onMute={toggleMute}
-          onFullscreen={toggleFullscreen}
+          onFullscreen={canFullscreen ? toggleFullscreen : null}
           onStop={stopPlayback}
           stuck={stuck}
           onCancel={cancelLoad}
@@ -1324,7 +1356,13 @@ export function Tv() {
 const sourceName = (source: PlayableSource, index: number) => source.label ?? t("player.sourceN", { n: index + 1 });
 
 /** What the TV knows that the video doesn't: which media this is, whether it is full screen, and how subtitles look. */
-const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number): PlayerState => ({
+/** The end of the picture, as the TV knows it: it played to the end, and the next episode is counting down (null: it waits to be asked for). */
+interface Ending {
+  ended: boolean;
+  upNext?: { seconds: number | null } | undefined;
+}
+
+const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number, ending: Ending): PlayerState => ({
   ...state,
   ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
   ...(media && state.state !== "idle" && sourcesOf(media).length > 1
@@ -1333,6 +1371,8 @@ const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: Norm
   fullscreen: Boolean(document.fullscreenElement),
   captionStyle,
   subtitleDelay,
+  ...(ending.ended && state.state === "paused" ? { ended: true } : {}),
+  ...(ending.upNext && state.state !== "idle" ? { upNext: ending.upNext } : {}),
 });
 
 function toPairing(info: { code: string; expiresInMs: number } | null): Pairing | null {

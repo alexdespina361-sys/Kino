@@ -336,9 +336,11 @@ test.describe("a menu's close button on the TV", () => {
 
     await tv.keyboard.press("ArrowUp");
     await expect(close).toBeFocused();
-    await tv.keyboard.press("Enter"); // OK closes the menu, and the remote is back on the button that opened it
+    await tv.keyboard.press("Enter"); // OK closes the menu
     await expect(modal).toHaveCount(0);
-    await expect(tv.getByTestId("tv-audio-sub-btn")).toBeFocused();
+    // A hand opened it (see `openMenu`), so the remote had no button to go back to, and none is left lit: the arrows skip until it asks for the controls.
+    // (A menu the remote opened gives the focus back to its button: "Back from a menu returns to the button that opened it", in features.spec.ts.)
+    expect(await tv.locator(".hud-controls button:focus").count()).toBe(0);
     phone.close();
   });
 
@@ -742,6 +744,8 @@ test.describe("the library on the TV", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.locator('[data-testid^="pick-l"]')).toHaveAttribute("aria-pressed", "true");
     await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("pick-new")).toBeFocused(); // a way to make a list is the last of the lists
+    await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("pick-done")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-list-picker")).toHaveCount(0);
@@ -805,6 +809,141 @@ test.describe("the library on the TV", () => {
     await expect(tv.getByTestId("tv-view-title")).toHaveText("Watch later");
     await tv.getByTestId("rail-home").click();
     await expect(tv.getByTestId("tv-hero-list")).toHaveText("Watch later");
+  });
+
+  test("a list is named with the keys on the page: the first letter is a capital, no double spaces, Delete and Clear, and no more than the name can hold", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(library));
+    await tv.getByTestId("rail-list").click();
+    await tv.getByTestId("list-new").click();
+    const field = tv.getByTestId("list-name-input");
+    await expect(field).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.locator('[data-testid^="name-key-"]:focus')).toHaveCount(1); // Down from the field is on the keys
+
+    const key = async (name: string) => {
+      await tv.getByTestId(`name-key-${name}`).focus();
+      await tv.keyboard.press("Enter");
+    };
+    await key("space"); // (no space to begin with)
+    for (const letter of "date") await key(letter);
+    await key("space");
+    await key("space"); // (nor two in a row)
+    await key("n");
+    await key("2");
+    await expect(field).toHaveValue("Date n2");
+    await key("delete");
+    await expect(field).toHaveValue("Date n");
+    await key("clear");
+    await expect(field).toHaveValue("");
+
+    await field.fill("a".repeat(24));
+    await key("b");
+    await expect(field).toHaveValue("a".repeat(24));
+    await key("clear");
+
+    // A name the other list has already is said at once; another one saves.
+    await tv.getByTestId("list-cancel").click();
+    await expect(tv.getByTestId("tv-list-edit")).toHaveCount(0);
+    await tv.getByTestId("list-new").click();
+    for (const letter of "kids") await key(letter);
+    await expect(field).toHaveValue("Kids");
+    await tv.getByTestId("list-save").focus();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Kids");
+  });
+
+  test("the picker of a title has New list: the list is made with the title in it, and Back from the keys is the picker again", async ({ browser }) => {
+    const seed = guestStorage({ listNames: [{ key: "lweekend", at: Date.now() - 5000, name: "Weekend" }] }); // two lists, so that the page of a title asks which
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    await tv.locator('[data-testid="tv-browse-tile"][title="Film number 3"]').click();
+    await tv.getByTestId("tv-detail-list").click();
+    await expect(tv.getByTestId("tv-list-picker")).toBeVisible();
+
+    await tv.getByTestId("pick-new").click();
+    await expect(tv.getByTestId("tv-list-edit")).toBeVisible();
+    await expect(tv.getByTestId("list-name-input")).toBeFocused();
+    await tv.keyboard.press("Escape"); // Back: nothing was made
+    await expect(tv.getByTestId("tv-list-picker")).toBeVisible();
+    await expect(tv.locator('[data-testid^="pick-l"]')).toHaveCount(1);
+
+    await tv.getByTestId("pick-new").click();
+    for (const letter of "kids") {
+      await tv.getByTestId(`name-key-${letter}`).focus();
+      await tv.keyboard.press("Enter");
+    }
+    await tv.getByTestId("list-save").focus();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-list-picker")).toBeVisible();
+    await expect(tv.locator('[data-testid^="pick-l"]')).toHaveCount(2);
+    await expect(tv.getByRole("button", { name: "Kids" })).toHaveAttribute("aria-pressed", "true"); // the title is in it
+    await expect(tv.getByRole("button", { name: "Weekend" })).toHaveAttribute("aria-pressed", "false");
+    await expect(tv.getByTestId("pick-done")).toBeFocused(); // the remote is on the answer
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("In your lists");
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByRole("region", { name: "Kids" }).getByTestId("tv-browse-tile")).toHaveCount(1);
+  });
+
+  test("a list is moved one place earlier or later from its page, and never the first list; the buttons over the titles follow", async ({ browser }) => {
+    const now = Date.now();
+    const seed = guestStorage({
+      listNames: [
+        { key: "la", at: now - 5000, name: "Weekend" },
+        { key: "lb", at: now - 4000, name: "Kids" },
+        { key: "lc", at: now - 3000, name: "Date night" },
+      ],
+    });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    await tv.getByTestId("rail-list").click();
+    const chips = () => tv.locator('.tv-filters [role="radio"]').allTextContents();
+    await expect.poll(chips).toEqual(["Favourites", "Weekend", "Kids", "Date night"]);
+
+    await tv.getByTestId("list-edit").click(); // the first list stays first
+    await expect(tv.getByTestId("list-move-earlier")).toHaveCount(0);
+    await expect(tv.getByTestId("list-move-later")).toHaveCount(0);
+    await tv.getByTestId("list-cancel").click();
+
+    await tv.getByTestId("list-chip-lc").click();
+    await tv.getByTestId("list-edit").click();
+    await expect(tv.getByTestId("list-move-later")).toHaveAttribute("aria-disabled", "true"); // the last of them
+    await expect(tv.getByTestId("list-move-earlier")).toHaveAttribute("aria-disabled", "false");
+    await tv.getByTestId("list-move-earlier").focus();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("list-move-later")).toHaveAttribute("aria-disabled", "false");
+    await expect(tv.getByTestId("list-move-earlier")).toBeFocused(); // the remote stays where it was, so another press goes on
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("list-move-earlier")).toHaveAttribute("aria-disabled", "true"); // the first of the others
+    await expect(tv.getByTestId("list-move-earlier")).toBeFocused(); // (a button with nowhere to go is dimmed, not gone)
+    await tv.keyboard.press("Enter"); // nothing happens
+    await tv.getByTestId("list-cancel").click();
+
+    await expect.poll(chips).toEqual(["Favourites", "Date night", "Weekend", "Kids"]);
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Date night"); // the one shown is still the one shown
+    await expect(tv.getByTestId("list-edit")).toBeFocused();
+
+    // The other way, and a new name keeps the place.
+    await tv.getByTestId("list-edit").click();
+    await tv.getByTestId("list-move-later").click();
+    await tv.getByTestId("list-name-input").fill("Late night");
+    await tv.getByTestId("list-save").click();
+    await expect.poll(chips).toEqual(["Favourites", "Weekend", "Late night", "Kids"]);
+
+    // It is where it was put after the page is opened again.
+    await expect.poll(() => tv.evaluate(() => localStorage.getItem("kino.data.guest")?.includes("Late night"))).toBe(true); // (written a moment after the change)
+    await tv.reload();
+    await tv.getByTestId("rail-list").click();
+    await expect.poll(chips).toEqual(["Favourites", "Weekend", "Late night", "Kids"]);
+  });
+
+  test("with one list besides the first there is nothing to put in another place", async ({ browser }) => {
+    const seed = guestStorage({ listNames: [{ key: "la", at: Date.now() - 5000, name: "Weekend" }] });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    await tv.getByTestId("rail-list").click();
+    await tv.getByTestId("list-chip-la").click();
+    await tv.getByTestId("list-edit").click();
+    await expect(tv.getByTestId("list-name-input")).toHaveValue("Weekend");
+    await expect(tv.getByTestId("list-move-earlier")).toHaveCount(0);
+    await expect(tv.getByTestId("list-move-later")).toHaveCount(0);
   });
 
   test("as many lists as there can be stay on one line, and the arrow keys slide the buttons into view", async ({ browser }) => {

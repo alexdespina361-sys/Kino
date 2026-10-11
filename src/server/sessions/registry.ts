@@ -63,18 +63,56 @@ export interface RegistryOptions {
   codeTtlMs?: number;
 }
 
+/** What is remembered of a TV that has a phone or a party: who it goes with, not what it is doing. */
+export interface DeviceRecord {
+  id: string;
+  publicId: string;
+  name: string;
+  label: string | null;
+  controllerId: string | null;
+  controllerIds: string[];
+  leaderId: string | null;
+  followerIds: string[];
+  /** The last day (days since 1970) the TV, or a phone of it, said anything. */
+  seenDay: number;
+}
+
+/** A phone that has a TV. */
+export interface ControllerRecord {
+  id: string;
+  deviceId: string;
+  seenDay: number;
+}
+
+export interface Records {
+  devices: DeviceRecord[];
+  controllers: ControllerRecord[];
+}
+
+const DAY_MS = 24 * 3600 * 1000;
+/** A pairing nobody has used for this long is let go when the server starts. */
+export const KEEP_PAIRINGS_DAYS = 90;
+
 const newId = (prefix: string) => `${prefix}_${randomBytes(12).toString("hex")}`;
 
-/** Everything lives in memory. A server restart means fresh devices and fresh codes - by design for now. */
+/**
+ * Who is paired with whom, and the codes that are good right now. Codes and what is playing live in memory only; the pairs
+ * themselves are handed out by `records` and taken back by `restore`, so a restart of the server (a free host sleeps and
+ * wakes) does not make every phone and TV forget each other.
+ */
 export class Registry {
   private readonly devices = new Map<string, Device>();
   private readonly controllers = new Map<string, Controller>();
   private readonly deviceByCode = new Map<string, string>();
   private readonly deviceByControlCode = new Map<string, string>();
   private readonly deviceByPartyCode = new Map<string, string>();
+  private readonly seenDays = new Map<string, number>();
   private readonly now: () => number;
   private readonly generateCode: () => string;
   private readonly codeTtlMs: number;
+
+  /** Called when something a restart should remember has changed: a pair, a party, a name, a day it was last heard from. */
+  onChange: (() => void) | undefined;
 
   constructor(options: RegistryOptions = {}) {
     this.now = options.now ?? Date.now;
@@ -82,10 +120,75 @@ export class Registry {
     this.codeTtlMs = options.codeTtlMs ?? PAIRING_CODE_TTL_MS;
   }
 
+  private today(): number {
+    return Math.floor(this.now() / DAY_MS);
+  }
+
+  /** A TV or phone was heard from. Only the day counts, so a device that is always on is written once a day, not at every ping. */
+  markSeen(id: string): void {
+    const day = this.today();
+    if (this.seenDays.get(id) === day) return;
+    this.seenDays.set(id, day);
+    this.onChange?.();
+  }
+
+  /** The pairs worth keeping: a TV with a phone or a party, and the phones that have a TV. Free TVs, codes and what is playing are not. */
+  records(): Records {
+    const today = this.today();
+    const devices = [...this.devices.values()]
+      .filter((device) => device.controllerIds.length > 0 || device.leaderId !== null || device.followerIds.length > 0)
+      .map((device) => ({
+        id: device.id,
+        publicId: device.publicId,
+        name: device.name,
+        label: device.label,
+        controllerId: device.controllerId,
+        controllerIds: [...device.controllerIds],
+        leaderId: device.leaderId,
+        followerIds: [...device.followerIds],
+        seenDay: this.seenDays.get(device.id) ?? today,
+      }));
+    const controllers = [...this.controllers.values()].flatMap((controller) =>
+      controller.deviceId ? [{ id: controller.id, deviceId: controller.deviceId, seenDay: this.seenDays.get(controller.id) ?? today }] : [],
+    );
+    return { devices, controllers };
+  }
+
+  /** Take back what `records` gave before a restart. What is too old is dropped, and so is anything that points at something no longer there. */
+  restore({ devices, controllers }: Records): void {
+    const horizon = this.today() - KEEP_PAIRINGS_DAYS;
+    for (const record of devices) {
+      if (record.seenDay < horizon || this.devices.has(record.id)) continue;
+      const { seenDay, ...kept } = record;
+      this.devices.set(record.id, { ...kept, controllerIds: [...kept.controllerIds], followerIds: [...kept.followerIds], partyCode: null, code: null, controlCode: null, media: null, state: IDLE_STATE });
+      this.seenDays.set(record.id, seenDay);
+    }
+    for (const record of controllers) {
+      if (record.seenDay < horizon || this.controllers.has(record.id)) continue;
+      this.controllers.set(record.id, { id: record.id, deviceId: record.deviceId });
+      this.seenDays.set(record.id, record.seenDay);
+    }
+    // A phone and its TV have to agree, and so do a host and its guests: what only one side remembers is let go.
+    for (const controller of this.controllers.values()) {
+      const device = controller.deviceId ? this.devices.get(controller.deviceId) : undefined;
+      if (!device?.controllerIds.includes(controller.id)) controller.deviceId = null;
+    }
+    for (const device of this.devices.values()) {
+      device.controllerIds = device.controllerIds.filter((id) => this.controllers.get(id)?.deviceId === device.id);
+      if (!device.controllerId || !device.controllerIds.includes(device.controllerId)) device.controllerId = device.controllerIds[0] ?? null;
+      const host = device.leaderId ? this.devices.get(device.leaderId) : undefined;
+      if (!host?.followerIds.includes(device.id)) device.leaderId = null;
+    }
+    for (const device of this.devices.values()) device.followerIds = device.followerIds.filter((id) => this.devices.get(id)?.leaderId === device.id);
+  }
+
   /** A TV announces itself. Unknown or missing id -> brand new device with a fresh code. */
   tvHello(deviceId?: string): Device {
     const existing = deviceId ? this.devices.get(deviceId) : undefined;
-    if (existing) return existing;
+    if (existing) {
+      this.markSeen(existing.id);
+      return existing;
+    }
     const id = newId("tv");
     const device: Device = {
       id,
@@ -103,6 +206,7 @@ export class Registry {
       state: IDLE_STATE,
     };
     this.devices.set(id, device);
+    this.markSeen(id);
     return device;
   }
 
@@ -138,9 +242,13 @@ export class Registry {
   /** A phone announces itself. Unknown or missing id -> new controller, unpaired. */
   controllerHello(controllerId?: string): Controller {
     const existing = controllerId ? this.controllers.get(controllerId) : undefined;
-    if (existing) return existing;
+    if (existing) {
+      this.markSeen(existing.id);
+      return existing;
+    }
     const controller: Controller = { id: newId("ctl"), deviceId: null };
     this.controllers.set(controller.id, controller);
+    this.markSeen(controller.id);
     return controller;
   }
 
@@ -168,6 +276,7 @@ export class Registry {
     device.controllerId = controller.id;
     if (!device.controllerIds.includes(controller.id)) device.controllerIds.push(controller.id);
     controller.deviceId = device.id;
+    this.onChange?.();
     return device;
   }
 
@@ -198,6 +307,7 @@ export class Registry {
     controller.deviceId = device.id;
     if (!device.controllerIds.includes(controller.id)) device.controllerIds.push(controller.id);
     if (!device.controllerId) device.controllerId = controller.id;
+    this.onChange?.();
     return device;
   }
 
@@ -226,6 +336,7 @@ export class Registry {
     host.followerIds.push(guest.id);
     guest.media = null;
     guest.state = IDLE_STATE;
+    this.onChange?.();
   }
 
   followersOf(leader: Device): Device[] {
@@ -245,6 +356,7 @@ export class Registry {
 
   setLabel(device: Device, name: string): void {
     device.label = cleanLabel(name);
+    this.onChange?.();
   }
 
   /** Whether a TV is part of a party: it hosts one (guests or a code open) or watches along with one. */
@@ -345,6 +457,7 @@ export class Registry {
   unpair(controller: Controller): Device | null {
     const device = this.deviceForController(controller);
     controller.deviceId = null;
+    this.onChange?.();
     if (!device) return null;
     device.controllerIds = device.controllerIds.filter((id) => id !== controller.id);
     if (device.controllerIds.length > 0) {
@@ -386,6 +499,7 @@ export class Registry {
     device.controllerIds = [];
     device.media = null;
     device.state = IDLE_STATE;
+    this.onChange?.();
     return device;
   }
 }

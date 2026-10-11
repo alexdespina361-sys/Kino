@@ -11,11 +11,16 @@ import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
 import { Hub, type HubOptions } from "./websocket/hub";
+import type { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
 
 export interface AppOptions {
   /** Accounts, profiles and what they watched. Without it the server has no sign-in and every screen just keeps its own history. The app closes it when it stops. */
   accounts?: AccountStore;
+  /** Keeps the pairs of `registry` between restarts; without it a restart makes every phone and TV forget each other. The app writes what is left of it when it stops. */
+  pairings?: PairingStore;
+  /** Where all of that is kept ("Postgres", "a file", "memory only"): `/api/health` says so, which is how to tell whether a host keeps anything between restarts. */
+  storage?: "postgres" | "file" | "memory";
   /** `closed` stops new accounts being made. */
   registration?: Registration;
   maxAccounts?: number;
@@ -81,6 +86,11 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     return result;
   };
   const hub = new Hub(options.registry ?? new Registry(), resolveForPlay, options.hub);
+  // Hooks run last-registered first: the pairs are written before the accounts close the database they share.
+  if (options.pairings) {
+    const pairings = options.pairings;
+    app.addHook("onClose", async () => pairings.close());
+  }
   app.addHook("onClose", async () => hub.dispose());
 
   await app.register(fastifyWebsocket, { options: { maxPayload: 64 * 1024 } });
@@ -91,7 +101,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     socket.on("close", (code, reason) => request.log.info({ code, reason: reason.toString() }, "ws closed"));
     hub.handleConnection(socket);
   });
-  app.get("/api/health", async () => ({ ok: true }));
+  app.get("/api/health", async () => ({ ok: true, ...(options.storage ? { storage: options.storage } : {}) }));
   app.get("/api/library", async (_request, reply) => {
     reply.header("Cache-Control", "public, max-age=300");
     return library.get();

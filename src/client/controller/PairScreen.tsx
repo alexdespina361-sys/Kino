@@ -62,9 +62,11 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
 
   return (
     <main className="phone pair">
-      {corner && <div className="pair-corner">{corner}</div>}
-      <div className="brand">
-        <Logo />
+      <div className="pair-top">
+        <div className="brand">
+          <Logo />
+        </div>
+        {corner && <div className="pair-corner">{corner}</div>}
       </div>
       <div className="pair-icon" aria-hidden="true">
         <TvIcon />

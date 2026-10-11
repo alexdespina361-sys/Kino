@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { LIST_NAME_MAX, type ListInfo } from "../../shared";
 import { useT } from "../i18n";
-import { TrashIcon } from "../shared/icons";
+import { ChevronIcon, TrashIcon } from "../shared/icons";
+import { appendTo } from "../tv/librarySearch";
+import { NameKeys } from "../tv/NameKeys";
 import { listName } from "./cards";
 
 interface EditorProps {
@@ -13,12 +15,17 @@ interface EditorProps {
   onCancel: () => void;
   /** Absent for a new list and for the first one, which can't be removed. */
   onDelete?: (() => void) | undefined;
-  /** On the TV every control is reached with the remote's arrow keys (`data-nav`), and the buttons look like the TV's. */
+  /** Put the list one place earlier or later among the others. Absent for a new list, for the first one (which stays first) and when there is no other to change places with. */
+  onMove?: ((by: -1 | 1) => void) | undefined;
+  /** Whether there is a place that way. The buttons stay when there is not (dimmed), so that the remote does not lose its place when the list reaches an end. */
+  canMoveEarlier?: boolean;
+  canMoveLater?: boolean;
+  /** On the TV every control is reached with the remote's arrow keys (`data-nav`), the buttons look like the TV's, and the name can be typed on keys of the page. */
   tv?: boolean;
 }
 
-/** The name of one list, and the way to remove it. The same on the phone (in a sheet) and on the TV (on a page of its own). */
-export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, tv = false }: EditorProps) {
+/** The name of one list, where it stands among the others, and the way to remove it. The same on the phone (in a sheet) and on the TV (on a page of its own). */
+export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, onMove, canMoveEarlier = true, canMoveLater = true, tv = false }: EditorProps) {
   const t = useT();
   const [name, setName] = useState(list ? listName(list) : "");
   const [confirming, setConfirming] = useState(false);
@@ -26,6 +33,11 @@ export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, tv = 
   const nav = tv ? { "data-nav": true } : {};
   const buttonClass = (kind: "main" | "plain" | "danger") =>
     tv ? `tv-action${kind === "main" ? " tv-action-primary" : kind === "danger" ? " tv-action-danger" : ""}` : `btn${kind === "main" ? " btn-red" : kind === "danger" ? " btn-danger" : ""}`;
+
+  const change = (update: (before: string) => string) => {
+    setName(update);
+    setClash(false);
+  };
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -62,6 +74,14 @@ export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, tv = 
         </p>
       )}
 
+      {tv && (
+        <NameKeys
+          onKey={(char) => change((before) => appendTo(before, before === "" ? char.toUpperCase() : char, LIST_NAME_MAX))}
+          onDelete={() => change((before) => before.slice(0, -1))}
+          onClear={() => change(() => "")}
+        />
+      )}
+
       <div className="editor-actions">
         <button type="submit" className={buttonClass("main")} disabled={!name.trim()} data-testid="list-save" {...nav}>
           {t("common.save")}
@@ -70,6 +90,17 @@ export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, tv = 
           {t("common.cancel")}
         </button>
       </div>
+
+      {onMove && (
+        <div className="editor-actions editor-move" role="group" aria-label={t("lists.place")}>
+          <button type="button" className={buttonClass("plain")} aria-disabled={!canMoveEarlier} onClick={() => canMoveEarlier && onMove(-1)} data-testid="list-move-earlier" {...nav}>
+            <ChevronIcon className={tv ? "flip" : "turn-up"} /> {t(tv ? "lists.moveLeft" : "lists.moveUp")}
+          </button>
+          <button type="button" className={buttonClass("plain")} aria-disabled={!canMoveLater} onClick={() => canMoveLater && onMove(1)} data-testid="list-move-later" {...nav}>
+            {t(tv ? "lists.moveRight" : "lists.moveDown")} <ChevronIcon className={tv ? undefined : "turn-down"} />
+          </button>
+        </div>
+      )}
 
       {onDelete &&
         (confirming ? (

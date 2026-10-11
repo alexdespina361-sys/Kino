@@ -8,6 +8,7 @@ import {
   NewProfileSchema,
   ProfilePatchSchema,
   RegisterSchema,
+  SessionRenameSchema,
   SyncRequestSchema,
   type DeviceKind,
   type Me,
@@ -206,6 +207,16 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   app.get("/api/sessions", async (request, reply) => {
     const auth = authenticate(request);
     if (!auth) return signedOut(reply);
+    return reply.send(store.listSessions(auth.accountId, auth.sessionId));
+  });
+
+  /** A device given a name of its owner's choosing. Answers with the list as it is now. */
+  app.patch<{ Params: { id: string } }>("/api/sessions/:id", async (request, reply) => {
+    const auth = authenticate(request);
+    if (!auth) return signedOut(reply);
+    const parsed = SessionRenameSchema.safeParse(request.body);
+    if (!parsed.success) return invalid(reply, parsed.error);
+    if (!store.renameSession(auth.accountId, request.params.id, parsed.data.label)) return refused(reply, "not_found");
     return reply.send(store.listSessions(auth.accountId, auth.sessionId));
   });
 

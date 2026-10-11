@@ -28,8 +28,8 @@ export function typedCharacter(event: { key: string; altKey?: boolean; ctrlKey?:
   return /^[a-zA-Z0-9]$/.test(event.key) ? event.key.toLowerCase() : event.key === " " ? " " : null;
 }
 
-/** The box's text after a key: no leading space, no double spaces, and not longer than a title could be. */
-export function appendTo(text: string, char: string): string {
+/** The box's text after a key: no leading space, no double spaces, and not longer than a title could be (or than `max`). */
+export function appendTo(text: string, char: string, max = 60): string {
   if (char === " " && (text === "" || text.endsWith(" "))) return text;
-  return (text + char).slice(0, 60);
+  return (text + char).slice(0, max);
 }

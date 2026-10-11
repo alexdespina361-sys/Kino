@@ -28,11 +28,15 @@ export function PlayLink({ tvName, resolve, onPlay, form = true, status = true }
     if (url.trim()) onPlay(url.trim());
   };
 
+  // A copied link is what the button is for, so it plays at once (one tap, not two); anything else is only put in the box to be looked at.
   const paste = async () => {
     try {
       const text = (await navigator.clipboard.readText()).trim();
-      const link = firstLink(text) ?? text;
-      if (link) setUrl(link);
+      const link = firstLink(text);
+      if (link) {
+        setUrl(link);
+        onPlay(link);
+      } else if (text) setUrl(text);
     } catch {
       /* denied or empty: nothing to paste */
     }

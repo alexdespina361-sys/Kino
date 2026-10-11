@@ -49,7 +49,10 @@ pnpm build && pnpm start     # http://localhost:8787
 ## What it does
 
 **Accounts and profiles**
-- Register and sign in with an email and a password (hashed with scrypt; the session is an `httpOnly` cookie). An account has up to **five
+- Register and sign in with a **name and a password, and nothing else asked for**: both can be anything (the password as short as one
+  character; the name only has to be one nobody has taken, upper or lower case alike, and may be an email address if someone prefers).
+  Passwords are hashed with scrypt; the session is an `httpOnly` cookie that lasts half a year, so closing the browser does not sign anyone
+  out. An account has up to **five
   profiles**, each with a name and one of **twelve avatars**; who is watching is asked on every new device, Netflix-style, and a profile
   is switched from the account page (the profile picture in the phone's top bar, and in the library's top corner on the TV). The TV makes,
   renames, re-pictures and removes profiles itself, with the remote's arrow keys: profile picture in the top corner (or the gear in the
@@ -64,12 +67,12 @@ pnpm build && pnpm start     # http://localhost:8787
 - **Sync** runs when a profile is chosen, every 45 seconds, a few seconds after something changes, when the tab is shown again or the
   connection returns, and as the page closes. It sends only what changed since the last revision (`POST /api/profiles/:id/sync`), and a
   device that is offline keeps working and catches up.
-- **Sign a TV in from the phone.** Typing an email on a TV remote is a chore, so the TV's sign-in page shows a QR code and a short code
+- **Sign a TV in from the phone.** Typing a name and a password on a TV remote is a chore, so the TV's sign-in page shows a QR code and a short code
   (`ABCD-2345`). A phone that is already signed in opens it (the camera app, or Account → "Sign in another device" to scan or type the code), sees what is
   asking, and approves; the TV is signed in a moment later. The code works once and expires after five minutes, and nothing signs a TV in
   until a signed-in person says yes. A screen that is signed in itself can do the asking too (a computer with no phone at hand): its account
   page has **Sign in another device**: type the code the other screen shows, check who is asking, approve.
-- The phone's account page: profiles, settings, devices (sign others out), password, delete account. The TV has its own: who's watching,
+- The phone's account page: profiles, settings, devices (sign others out, and give a device a name of its own: "Living room"), password, delete account. The TV has its own: who's watching,
   **Manage profiles**, and the settings (language, colour, autoplay). The subtitle languages, the devices, the password and deleting the
   account are on the phone's page only.
 - **Settings per profile:** website language, accent colour (the red can be any of several colours), whether the next episode follows by
@@ -95,7 +98,8 @@ pnpm build && pnpm start     # http://localhost:8787
 - **Lists on the phone.** The round **+** on a title saves it in Favourites (and takes it out again), and so does holding the title (a line at
   the bottom says "Added to Favourites", the + being a corner away from the finger); once there
   is a second list it asks which lists the title is in, with **New list** there too. Each list with something in it is a row on the home screen,
-  and **Manage lists** (at the end of the first row's heading) makes, renames and deletes them. The first list can be renamed and emptied, never deleted.
+  and **Manage lists** (at the end of the first row's heading) makes, renames, **reorders** (move up / down on the phone, left / right on the TV; the
+  home screen follows the order) and deletes them. The first list can be renamed and emptied, never deleted.
 - **Add it to the home screen** and the page opens as an app with no browser bar (`public/manifest.webmanifest`; on an iPhone that is the only
   way to lose the bar, since its browsers have no full screen for pages): Share → *Add to Home Screen* there, the browser's menu → *Install app*
   or *Add to Home screen* on Android
@@ -128,6 +132,18 @@ pnpm build && pnpm start     # http://localhost:8787
   remote doesn't do it by itself (it is where codes get typed) but has the same button on its first screen and in its menu (*Full screen on this
   phone*). The phone's button for the TV's full screen works while the TV has had a press lately: the TV asks
   for an OK press when it hasn't. If the browser still refuses to start a video, a **Tap / press OK to play** button says so instead of a blank screen
+- **TV browsers with a player of their own** (Hisense's *Hi Browser* on VIDAA is the one this was written for). A page cannot switch off what a
+  TV's firmware does with a video, but it can avoid asking for it, so the page: never asks a Hisense browser for full screen (not at the
+  first press, not by `F`, not from the phone, and the controls have no button for it), because that is what hands the picture to the
+  firmware's player; keeps the `<video>` inline and without controls (`playsinline` and the vendor spellings of it, `controlslist`,
+  no picture-in-picture, no remote playback, the native control layers hidden in CSS, any `controls` that something adds taken off at
+  once, and a video that still goes full screen on its own is put back: `src/client/tv/nativePlayer.ts`); presses OK itself when a remote
+  sends it as a key down and up with no typed Enter, which Chromium needs before a focused button counts it (`src/client/tv/okPress.ts`);
+  and knows the vendors' extra remote keys (play, pause, stop, rewind, forward, back). **To find out what a TV browser does**, open
+  `/tv?debug=1` on it: a small panel in the corner says what the browser is and what it can do, whether the TV's id was kept since the
+  browser was closed (the last four characters, in storage and in the cookie), and, live, each key it sends and where the focus went, the
+  clicks, the video's state and the page's errors. `?debug=0` turns it off. `?fullscreen=off` keeps any browser from being asked for full
+  screen (`?fullscreen=on` undoes it); both are kept for the next visits
 - **Subtitle languages.** The menu lists every language the video has. The ones a profile wants come first (a guest gets the website's
   language, English, Romanian and Italian), the rest sit under **More languages**. A signed-in profile can choose its own ordered list in
   Settings → Subtitle languages, and "Hide all other languages" if it never wants to scroll past them; **Show all languages** in the menu
@@ -157,8 +173,10 @@ pnpm build && pnpm start     # http://localhost:8787
 - Resolves a link to a playable stream: the generic resolver plus the site adapters in `src/server/resolvers/adapters/`
 - Pairing codes are single-use and expire after 10 minutes. After 20 wrong codes in a minute (all phones counted together)
   pairing pauses until the minute is over, because the code is only six digits
-- Pairings and what is playing are in memory: restarting the server forgets them, and the TV shows a new code. **Accounts are not**: they are
-  written to disk (or Postgres) a moment after every change and again when the server is told to stop
+- **Accounts and pairings are kept**: written to disk (or Postgres) a moment after every change and again when the server is told to stop.
+  A restart (or a free host sleeping and waking) leaves every phone and TV paired as it was; the TV's and the phone's own ids are also
+  kept in a cookie next to the page's storage, so a browser that wipes one of the two when it closes still finds its way back. The codes
+  on screen and what is playing are in memory only: a TV shows a new code after a restart, and tells its phone what it plays when it reconnects
 
 ### Languages
 
@@ -314,14 +332,19 @@ The server is one Node process that serves the page, the API and the sockets fro
    accounts. The server makes its table by itself (`kino_docs`); there is nothing to migrate. Started on Render without `DATABASE_URL`, it warns
    about this in its log.
 4. Set `TMDB_API_KEY` to your own key, and `REGISTRATION=closed` (or `MAX_ACCOUNTS`) once the people it is for have signed up.
-5. Phones and TVs reach it over `https://<name>.onrender.com`, so camera scanning works. Pairings live in memory: if the instance sleeps or
-   restarts, the TV shows a new code and the phone reconnects to it (accounts, progress and lists are not lost). Pairings and watch parties
-   also live in the memory of **one service**: two services (two `onrender.com` names, even of the same repository) do not know each other's
-   codes, so a phone on a different address than the TV answers "Invalid or expired code" however well the code is typed. Use the address the
-   TV shows (the party page prints it) on every device, and delete a duplicate service.
+5. Phones and TVs reach it over `https://<name>.onrender.com`, so camera scanning works. **Which phone goes with which TV is kept in the same
+   database as the accounts**, so an instance that sleeps and wakes (or is restarted by a deploy) finds every pair as it was: the TV is
+   "connected" again the moment its page reconnects, with no new code to scan. A code that is on a screen when the server restarts is not
+   kept (the TV shows a new one), and neither is what was playing (the TV tells the phone again when it reconnects). A pair nobody has used
+   for 90 days is let go. Open `https://<name>.onrender.com/api/health` to see where a service keeps things: `"storage":"postgres"` is the
+   good answer; `"file"` or `"memory"` on Render means **nothing** (accounts, sign-ins, pairs) survives the instance sleeping, and
+   `DATABASE_URL` is missing on that service (each service needs it).
+   Watch parties and the codes live in the memory of **one service**: two services (two `onrender.com` names, even of the same repository)
+   do not know each other's codes, so a phone on a different address than the TV answers "Invalid or expired code" however well the code is
+   typed. Use the address the TV shows (the party page prints it) on every device, and delete a duplicate service.
 
-Limits to know about: there is no password reset or email check (no mail is sent), and the sign-in rate limits are per address, so they
-are best-effort behind a shared proxy.
+Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),
+and the sign-in rate limits are per name and per address, so they are best-effort behind a shared proxy.
 
 ## Test
 
@@ -340,7 +363,8 @@ phone, a tablet and a phone held sideways, the end card and mute, full screen (a
 accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
-itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`).
+itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`). A Hisense browser is imitated by its user agent
+(`e2e/hisense.spec.ts`), and a TV's OK key by a raw key down and up with no typed Enter.
 
 Browsers that refuse a video until it has been pressed (Brave's strict setting, iPhones) are tested with a browser started with
 `--autoplay-policy=user-gesture-required` (`strictBrowser` in `e2e/helpers.ts`). Playwright's own click lets go of the button within a few milliseconds,
@@ -352,7 +376,8 @@ Android TV remotes, the wake lock, an iPhone's camera and browsers, and the home
 
 ```
 src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge)
-src/server/    sessions/registry.ts (devices, codes, controllers), websocket/hub.ts, resolvers/, accounts/ (store, routes, persistence), app.ts
+src/server/    sessions/ (registry: devices, codes, controllers; pairings: which phone goes with which TV, kept between restarts), websocket/hub.ts,
+               resolvers/, accounts/ (store, routes, persistence), app.ts
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),
                i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
 public/        copied as it is into the built page: the web app manifest and its icons

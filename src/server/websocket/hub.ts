@@ -102,6 +102,8 @@ export class Hub {
       case "CTL_HELLO":
         return this.controllerHello(conn.socket, message.controllerId);
       case "PING":
+        // A TV that stays on for weeks says hello once; the pings are how the registry knows it is still in use.
+        if (conn.role !== "none") this.registry.markSeen(conn.role === "tv" ? conn.deviceId : conn.controllerId);
         this.send(conn.socket, { type: "PONG" });
         return conn;
     }

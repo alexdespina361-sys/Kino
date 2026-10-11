@@ -15,8 +15,8 @@ export interface RoleInput {
   touchPoints: number;
 }
 
-/** TV browsers say so in their user agent: Fire TV ("AFTM"), Tizen, webOS, Android TV sets, Chromecast, Apple TV, Roku... */
-const TV_AGENT = /smart-?tv|hbbtv|netcast|googletv|android ?tv|bravia|\bAFT[A-Z0-9]*\b|crkey|appletv|web0s|webos|tizen|roku|viera|nettv/i;
+/** TV browsers say so in their user agent: Fire TV ("AFTM"), Tizen, webOS, VIDAA (Hisense), Android TV sets, Chromecast, Apple TV, Roku... */
+const TV_AGENT = /smart-?tv|hbbtv|netcast|googletv|android ?tv|bravia|\bAFT[A-Z0-9]*\b|crkey|appletv|web0s|webos|tizen|vidaa|roku|viera|nettv/i;
 
 /**
  * One page, two screens. In order: an address that asks for one ("/tv", "?role=remote", the "?party=" link of a watch party,

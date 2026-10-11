@@ -8,6 +8,9 @@
   margin: 0 auto;
   padding: max(16px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
 }
+@media (max-height: 700px) {
+  .phone { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+}
 .phone h1, .phone h2, .phone h3, .phone p { margin: 0; }
 .muted { color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
 .muted.small { font-size: 0.8rem; }
@@ -31,9 +34,11 @@
   transition: transform 0.08s ease, background 0.15s ease;
 }
 .btn:active:not(:disabled) { transform: scale(0.97); }
+.btn[aria-disabled="true"] { opacity: 0.4; } /* nothing to do (a list already at the end): it stays where it is, so a finger or the remote does not lose its place */
+.btn[aria-disabled="true"]:active { transform: none; }
 .btn svg { font-size: 1.2em; flex: none; }
 .btn small { font-size: 0.8em; font-weight: 500; opacity: 0.8; }
-.btn-red { background: var(--accent); color: #fff; }
+.btn-red { background: var(--accent); color: var(--accent-ink); }
 .btn-red:active:not(:disabled) { background: var(--accent-hover); }
 .btn-danger { background: rgba(255, 107, 107, 0.14); color: var(--bad); }
 .btn-block { width: 100%; }
@@ -55,7 +60,10 @@
 
 /* ------------------------------ pairing ------------------------------ */
 
-.pair { justify-content: center; gap: 18px; text-align: center; }
+/* The first screen: the logo and the corner's buttons share the top row; the rest is centered in what is left below it. */
+.pair { justify-content: flex-start; gap: 18px; text-align: center; }
+.pair-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: auto; }
+.pair > :last-child { margin-bottom: auto; }
 .brand { align-self: center; font-size: 1.05rem; }
 .pair-icon {
   display: grid;
@@ -85,6 +93,16 @@
 }
 .code-input::placeholder { color: rgba(255, 255, 255, 0.18); }
 .code-input:focus, .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* A short screen (a small phone, or one held sideways): the picture over the title goes, and what is left is packed closer, so the language row is still on screen. */
+@media (max-height: 740px) {
+  .pair { gap: 12px; }
+  .pair-icon { display: none; }
+  .pair form { gap: 10px; margin-top: 0; }
+  .pair .btn { min-height: 46px; }
+  .pair .or { margin: 0; }
+  .pair h1 { font-size: 1.45rem; }
+  .code-input { padding-block: 9px; font-size: 1.8rem; }
+}
 
 /* ------------------------------ header and banners ------------------------------ */
 
@@ -146,11 +164,18 @@
 
 .now-playing { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
 .episode-line { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 0.85rem; }
-.badge { padding: 2px 8px; border-radius: 5px; background: var(--accent); color: #fff; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; }
+.badge { padding: 2px 8px; border-radius: 5px; background: var(--accent); color: var(--accent-ink); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; }
 .now-playing h2 { font-size: 1.55rem; line-height: 1.2; overflow-wrap: anywhere; }
 .state { display: flex; align-items: center; gap: 8px; min-height: 1.3em; color: var(--muted); font-size: 0.95rem; }
 .state.bad { color: var(--bad); }
 .state small { font-size: 0.8em; opacity: 0.8; }
+/* With a button at its end (turning down the next episode) the line keeps its height: the button is taller than the words, and hangs over. */
+.state-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.state-line .state { flex: 1; min-width: 0; }
+.state-action { flex: none; margin-block: -6px; padding: 6px 14px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 0.85rem; font-weight: 600; transition: background 0.15s ease, transform 0.08s ease; }
+.state-action:focus-visible { background: rgba(255, 255, 255, 0.16); }
+@media (hover: hover) { .state-action:hover:not(:disabled) { background: rgba(255, 255, 255, 0.16); } }
+.state-action:active:not(:disabled) { background: rgba(255, 255, 255, 0.22); transform: scale(0.95); }
 
 .seek { display: flex; flex-direction: column; }
 .seek-bar { position: relative; padding: 16px 0; cursor: pointer; touch-action: pan-y; }
@@ -206,6 +231,12 @@
 .chip-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .chip-text small { color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .chip-text b { overflow: hidden; font-size: 0.95rem; text-overflow: ellipsis; white-space: nowrap; }
+/* A narrow phone: two chips per row leave a word and a half each, so the chips are all words (they are plainly buttons without the icon and the arrow). */
+@media (max-width: 380px) {
+  .chip { gap: 0; padding-inline: 12px; }
+  .chip > svg { display: none; }
+  .chip-text small { letter-spacing: 0.04em; }
+}
 
 .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .actions .btn { flex-direction: column; gap: 4px; min-height: 64px; padding: 0 6px; font-size: 0.8rem; }
@@ -458,7 +489,7 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-round:focus-visible { background: rgba(0, 0, 0, 0.88); }
 @media (hover: hover) { .lib-round:hover { background: rgba(0, 0, 0, 0.88); } }
 .lib-round:active { transform: scale(0.9); }
-.lib-round.lib-add[aria-pressed="true"] { background: var(--accent); }
+.lib-round.lib-add[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .lib-round.lib-add[aria-pressed="true"]:focus-visible { background: var(--accent-hover); }
 @media (hover: hover) { .lib-round.lib-add[aria-pressed="true"]:hover { background: var(--accent-hover); } }
 
@@ -476,7 +507,7 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-result > .lib-round { background: var(--surface-2); }
 .lib-result > .lib-round:focus-visible { background: rgba(255, 255, 255, 0.16); }
 @media (hover: hover) { .lib-result > .lib-round:hover { background: rgba(255, 255, 255, 0.16); } }
-.lib-result > .lib-round.lib-add[aria-pressed="true"] { background: var(--accent); }
+.lib-result > .lib-round.lib-add[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .lib-result > .lib-round.lib-add[aria-pressed="true"]:focus-visible { background: var(--accent-hover); }
 @media (hover: hover) { .lib-result > .lib-round.lib-add[aria-pressed="true"]:hover { background: var(--accent-hover); } }
 

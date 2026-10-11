@@ -1,3 +1,4 @@
+import "./shared/debug"; // first: with ?debug in the address it shows what the browser does, even when the rest of the app does not start
 import { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AccountProvider } from "./account/AccountProvider";

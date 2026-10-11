@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { ACCENTS, preferredLanguages, UI_LANGUAGES, type SessionInfo } from "../../shared";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ACCENTS, DEVICE_NAME_MAX, preferredLanguages, UI_LANGUAGES, type SessionInfo } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
 import { describeError } from "../account/errors";
 import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
-import { ACCENT_SWATCH } from "../account/theme";
+import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { ago } from "../account/time";
 import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
-import { CheckIcon, CloseIcon, GlobeIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon } from "../shared/icons";
+import { CheckIcon, CloseIcon, GlobeIcon, PencilIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { linkFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
@@ -126,7 +126,7 @@ export function SettingsPage() {
               aria-checked={(settings.accent ?? ACCENTS[0]) === accent}
               aria-label={t(`accent.${accent}`)}
               className="swatch"
-              style={{ background: ACCENT_SWATCH[accent] }}
+              style={{ background: ACCENT_SWATCH[accent], color: ACCENT_INK[accent] }}
               onClick={() => chooseAccent(accent)}
               data-testid={`accent-${accent}`}
             >
@@ -149,7 +149,7 @@ export function SettingsPage() {
 const KIND_ICON = { tv: TvIcon, remote: PhoneIcon, browser: GlobeIcon } as const;
 
 /** Where this account is signed in, with a way to sign any of them out (a TV left at a friend's, a lost phone). */
-export function DevicesPage() {
+export function DevicesPage({ onChanged }: { /** Some of them were signed out. */ onChanged?: (() => void) | undefined }) {
   const t = useT();
   const language = useLanguage();
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
@@ -167,6 +167,7 @@ export function DevicesPage() {
     try {
       await api.endSession(id);
       setSessions((list) => list?.filter((session) => session.id !== id) ?? null);
+      onChanged?.();
     } catch (cause) {
       setProblem(describeError(cause));
     }
@@ -175,7 +176,30 @@ export function DevicesPage() {
     try {
       await api.endOtherSessions();
       setNote(t("account.signedOutOthers"));
+      onChanged?.();
       await load();
+    } catch (cause) {
+      setProblem(describeError(cause));
+    }
+  };
+
+  // A device is called what its owner calls it (every row saying "Chrome on Windows" tells a TV from a laptop by its icon only).
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const cancelled = useRef(false);
+  const nameOf = (session: SessionInfo) => session.label || t(`device.${session.kind}`);
+  const startRename = (session: SessionInfo) => {
+    cancelled.current = false;
+    setProblem(null);
+    setDraft(nameOf(session));
+    setRenaming(session.id);
+  };
+  const saveRename = async (session: SessionInfo) => {
+    const label = draft.trim();
+    setRenaming(null);
+    if (cancelled.current || !label || label === nameOf(session)) return;
+    try {
+      setSessions(await api.renameSession(session.id, label));
     } catch (cause) {
       setProblem(describeError(cause));
     }
@@ -198,7 +222,31 @@ export function DevicesPage() {
                 <Icon />
               </span>
               <span className="device-text">
-                <b>{session.label || t(`device.${session.kind}`)}</b>
+                {renaming === session.id ? (
+                  <input
+                    className="device-name"
+                    value={draft}
+                    maxLength={DEVICE_NAME_MAX}
+                    autoFocus
+                    aria-label={t("account.deviceName")}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onBlur={() => void saveRename(session)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur(); // (done: the blur saves it)
+                      else if (event.key === "Escape") {
+                        event.stopPropagation(); // not the page's own Escape, which goes back
+                        cancelled.current = true;
+                        event.currentTarget.blur();
+                      }
+                    }}
+                    data-testid="device-name-input"
+                  />
+                ) : (
+                  <button className="device-name-button" onClick={() => startRename(session)} aria-label={t("account.renameDevice", { name: nameOf(session) })} data-testid="device-rename">
+                    <b>{nameOf(session)}</b>
+                    <PencilIcon />
+                  </button>
+                )}
                 <small>{session.current ? t("account.thisDevice") : t("account.active", { when: ago(session.lastSeenAt, Date.now(), language) })}</small>
               </span>
               {!session.current && (

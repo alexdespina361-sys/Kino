@@ -104,21 +104,24 @@ export class PostgresPersistence implements Persistence {
  * Pick the home from the environment: `DATABASE_URL` (Postgres), else `DATA_DIR` (a folder; `memory` means nowhere), else a
  * `data` folder next to where the server was started.
  */
-export async function persistenceFromEnv(env: NodeJS.ProcessEnv = process.env, log: { warn(message: string): void } = console): Promise<{ persistence: Persistence; describe: string }> {
+export async function persistenceFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  log: { warn(message: string): void } = console,
+): Promise<{ persistence: Persistence; describe: string; kind: "postgres" | "file" | "memory" }> {
   if (env.DATABASE_URL) {
     const { default: pg } = await import("pg");
     // Hosted databases (Neon, Supabase, Render) want TLS; a local one usually does not. `sslmode` in the URL decides.
     const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 4, ssl: /sslmode=(disable|allow)|localhost|127\.0\.0\.1/.test(env.DATABASE_URL) ? undefined : { rejectUnauthorized: false } });
     // A database that sleeps (Neon's free one does after a few quiet minutes) drops idle connections; without this that would crash the server.
     pool.on("error", (error) => log.warn(`Postgres: ${error.message}`));
-    return { persistence: new PostgresPersistence(pool), describe: "Postgres (DATABASE_URL)" };
+    return { persistence: new PostgresPersistence(pool), describe: "Postgres (DATABASE_URL)", kind: "postgres" };
   }
   // A free Render instance starts from a clean disk at every deploy and restart; the usual mistake is to leave the file where it is.
   if (env.RENDER && env.DATA_DIR === undefined) {
     log.warn("Render wipes this server's disk on every deploy and restart, so accounts kept in a file are lost with it. Set DATABASE_URL to a Postgres (Neon or Supabase have free ones), or put DATA_DIR on a persistent disk.");
   }
   const dir = env.DATA_DIR ?? "data";
-  if (dir === "memory") return { persistence: new MemoryPersistence(), describe: "memory only (accounts are lost when the server stops)" };
+  if (dir === "memory") return { persistence: new MemoryPersistence(), describe: "memory only (accounts are lost when the server stops)", kind: "memory" };
   const file = path.resolve(dir, "kino.json");
-  return { persistence: new FilePersistence(file, log), describe: `file ${file}` };
+  return { persistence: new FilePersistence(file, log), describe: `file ${file}`, kind: "file" };
 }

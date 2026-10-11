@@ -101,6 +101,16 @@ describe("newer protocol pieces", () => {
     expect(parseClientMessage(msg({ type: "TV_STATE", state }))).not.toBeNull();
     expect(parseClientMessage(msg({ type: "TV_STATE", state: { ...state, bufferedEnd: -1 } }))).toBeNull();
   });
+
+  it("player state says when the picture has ended and when the next episode is on its way, and the phone can turn that down", () => {
+    const state = (extra: unknown) => parseClientMessage(msg({ type: "TV_STATE", state: { state: "paused", currentTime: 60, duration: 60, ...(extra as object) } }));
+    expect(state({ ended: true })?.type).toBe("TV_STATE");
+    expect(state({ upNext: { seconds: 8 } })).not.toBeNull();
+    expect(state({ upNext: { seconds: null } })).not.toBeNull(); // a viewer who plays the next one only on request: the card has no count
+    expect(state({ upNext: { seconds: -1 } })).toBeNull();
+    expect(state({ upNext: {} })).toBeNull();
+    expect(parseClientMessage(msg({ type: "CMD", command: { type: "DISMISS_UP_NEXT" } }))).not.toBeNull();
+  });
 });
 
 describe("media helpers", () => {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isHisense } from "./browser";
 import { readStorage, writeStorage } from "./format";
 
 /**
@@ -8,14 +9,29 @@ import { readStorage, writeStorage } from "./format";
  */
 
 const LEFT_KEY = "kino.fullscreen.left";
+const REFUSED_KEY = "kino.fullscreen.refused";
 
-/** Whether the browser has a full screen to give this page (an iPhone's has none). */
-export const canFullscreen = (): boolean => Boolean(document.fullscreenEnabled);
+/**
+ * A browser that is never asked for a full screen: Hisense's (see browser.ts), or one that was opened on an address with
+ * `?fullscreen=off` (kept until `?fullscreen=on`), for a TV browser that goes wrong on it without saying what it is.
+ */
+let refused: boolean | undefined;
+function refusesFullscreen(): boolean {
+  if (refused === undefined) {
+    const asked = new URLSearchParams(location.search).get("fullscreen");
+    if (asked === "off" || asked === "on") writeStorage(REFUSED_KEY, asked === "off" ? "1" : null);
+    refused = isHisense() || readStorage(REFUSED_KEY) === "1";
+  }
+  return refused;
+}
+
+/** Whether the browser has a full screen to give this page (an iPhone's has none) and may be asked for it. */
+export const canFullscreen = (): boolean => Boolean(document.fullscreenEnabled) && !refusesFullscreen();
 
 export const isFullscreen = (): boolean => document.fullscreenElement !== null;
 
 export function enterFullscreen(): void {
-  document.documentElement.requestFullscreen?.().catch(() => {});
+  if (canFullscreen()) document.documentElement.requestFullscreen?.().catch(() => {});
 }
 
 export function toggleFullscreen(): void {

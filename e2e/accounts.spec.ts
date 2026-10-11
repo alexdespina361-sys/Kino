@@ -52,13 +52,15 @@ const guestCopy = (page: Page) =>
 test.describe("accounts and profiles", () => {
   test("an account has a first profile, up to five can be added, and signing in again brings them all back", async ({ browser }) => {
     test.setTimeout(60_000);
-    const account = fresh();
+    // A name and a password of one character: what somebody who only wants to watch types.
+    const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
     const phone = await newPhone(browser);
     await phone.goto("/");
     await signUp(phone, account);
 
-    // The first profile is named after the address; a single profile is simply used.
-    await expect(phone.getByTestId("account-profile-name")).toHaveText("Viewer");
+    // The first profile is named after the name; a single profile is simply used.
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Robert/);
+    const first = (await phone.getByTestId("account-profile-name").innerText()).trim();
 
     await phone.getByTestId("menu-profiles").click();
     for (const name of ["Maya", "Sam", "Noa", "Kim"]) {
@@ -89,7 +91,7 @@ test.describe("accounts and profiles", () => {
     await signIn(phone, account);
     const picker = phone.getByRole("dialog", { name: en["profiles.title"] });
     await expect(picker).toBeVisible();
-    for (const name of ["Viewer", "Maya", "Sam", "Noa"]) await expect(picker.getByTestId(`profile-${name}`)).toBeVisible();
+    for (const name of [first, "Maya", "Sam", "Noa"]) await expect(picker.getByTestId(`profile-${name}`)).toBeVisible();
     await expect(picker.getByTestId("profile-Kim")).toHaveCount(0);
     await picker.getByTestId("profile-Maya").click();
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Maya/);
@@ -195,6 +197,39 @@ test.describe("signing a TV in from the phone", () => {
     await phone.getByTestId("link-approve-button").click();
     await expect(phone.getByTestId("link-done")).toBeVisible();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/, { timeout: 15_000 });
+  });
+
+  test("signing the other devices out reaches the TV that goes with the phone at once, not at its next exchange with the server", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const { phone, tv } = await askToSignIn(browser);
+    await phone.getByTestId("link-approve-button").click();
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/, { timeout: 15_000 });
+
+    await tv.getByTestId("rail-connect").click(); // the same phone goes with this TV
+    await phone.goto("/");
+    await phone.getByTestId("code-input").fill(await readPairingCode(tv));
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("menu-devices").click();
+    await expect(phone.getByTestId("device")).toHaveCount(2); // this phone, and the TV
+
+    // A device is called what its owner likes: its name opens a field, Enter keeps what was typed, Escape drops it (and is not the page's own Escape).
+    const tvRow = phone.locator('[data-testid="device"][data-current="false"]');
+    const name = tvRow.getByTestId("device-name-input");
+    await tvRow.getByTestId("device-rename").click();
+    await name.fill("Living room TV");
+    await name.press("Enter");
+    await expect(tvRow.getByTestId("device-rename")).toContainText("Living room TV");
+    await tvRow.getByTestId("device-rename").click();
+    await name.fill("Never mind");
+    await name.press("Escape");
+    await expect(tvRow.getByTestId("device-rename")).toContainText("Living room TV");
+    await expect(phone.getByTestId("devices-page")).toBeVisible();
+
+    await phone.getByTestId("signout-others").click();
+    // (The TV's own exchange is up to 45 seconds away: this is the phone telling it.)
+    await expect(tv.getByTestId("tv-account-toast")).toHaveText(en["error.signed_out"], { timeout: 10_000 });
   });
 
   test("a phone that says no leaves the TV signed out", async ({ browser }) => {

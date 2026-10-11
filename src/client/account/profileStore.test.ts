@@ -171,6 +171,70 @@ describe("named lists", () => {
     expect(d.store.createList("One too many")).toBeUndefined();
   });
 
+  it("puts a list one place earlier or later, never past either end and never the first list, and a rename keeps its place", () => {
+    const d = device(1_000_000);
+    const ids = ["Weekend", "Kids", "Date night"].map((name) => {
+      d.advance(1000);
+      return d.store.createList(name)!;
+    });
+    const order = () => d.store.getSnapshot().lists.map((list) => list.id);
+    const [weekend, kids, dateNight] = ids as [string, string, string];
+    expect(order()).toEqual([DEFAULT_LIST, weekend, kids, dateNight]);
+
+    d.advance(1000);
+    d.store.moveList(dateNight, -1); // lists that were never placed keep the order they were shown in
+    expect(order()).toEqual([DEFAULT_LIST, weekend, dateNight, kids]);
+    d.store.moveList(dateNight, -1);
+    expect(order()).toEqual([DEFAULT_LIST, dateNight, weekend, kids]);
+    d.store.moveList(dateNight, -1); // already the first of the others: nothing happens
+    d.store.moveList(kids, 1); // already the last
+    d.store.moveList(DEFAULT_LIST, 1); // the first list does not move
+    d.store.moveList("nope", 1);
+    expect(order()).toEqual([DEFAULT_LIST, dateNight, weekend, kids]);
+
+    d.advance(1000);
+    d.store.renameList(weekend, "Saturday");
+    expect(order()).toEqual([DEFAULT_LIST, dateNight, weekend, kids]);
+    d.advance(1000);
+    d.store.createList("Newest");
+    expect(order().slice(0, 4)).toEqual([DEFAULT_LIST, dateNight, weekend, kids]); // a new list goes last
+    expect(order()).toHaveLength(5);
+  });
+
+  it("takes a list's place along to another screen, and a list removed there leaves the others as they were", async () => {
+    const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => Date.now() });
+    const created = accounts.createAccount("b@example.com", "hash");
+    if (!created.ok) throw new Error("no account");
+    const profile = accounts.profilesOf(created.value.id)[0]!;
+    const sync = (d: ReturnType<typeof device>) => {
+      const { request, sent } = d.store.pending();
+      d.store.accept(accounts.sync(profile.id, request)!, sent);
+    };
+    const tv = device(Date.now() - 100_000);
+    const phone = device(Date.now() - 100_000);
+    tv.store.openScope(profile.id);
+    phone.store.openScope(profile.id);
+
+    const a = tv.store.createList("A")!;
+    tv.advance(10);
+    const b = tv.store.createList("B")!;
+    tv.advance(10);
+    const c = tv.store.createList("C")!;
+    sync(tv);
+    sync(phone);
+    tv.advance(1000);
+    tv.store.moveList(c, -1);
+    sync(tv);
+    sync(phone);
+    expect(phone.store.getSnapshot().lists.map((list) => list.id)).toEqual([DEFAULT_LIST, a, c, b]);
+
+    phone.advance(5000);
+    phone.store.deleteList(a);
+    sync(phone);
+    sync(tv);
+    expect(tv.store.getSnapshot().lists.map((list) => list.id)).toEqual([DEFAULT_LIST, c, b]);
+  });
+
   it("removes a list with the titles in it, and never the first list", () => {
     const d = device(1_000_000);
     const id = d.store.createList("Weekend")!;

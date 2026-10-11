@@ -43,6 +43,10 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("SET_SOURCE"), index: z.number().int().min(0).max(MAX_ALTERNATES) }),
   z.object({ type: z.literal("TOGGLE_FULLSCREEN") }),
   z.object({ type: z.literal("NEXT_EPISODE") }),
+  /** Turn the Up Next card down: the next episode does not start by itself this time (the same as Cancel on the TV). */
+  z.object({ type: z.literal("DISMISS_UP_NEXT") }),
+  /** The phone signed devices out of the account: the TV looks at its own sign-in now, not at its next regular exchange with the server. */
+  z.object({ type: z.literal("REFRESH_ACCOUNT") }),
   z.object({ type: z.literal("SET_SUBTITLE_DELAY"), delay: z.number().finite().min(-60).max(60) }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;
@@ -64,6 +68,10 @@ export const PlayerStateSchema = z.object({
   sources: z.object({ labels: z.array(z.string().max(60)).max(MAX_ALTERNATES + 1), current: z.number().int().min(0) }).optional(),
   /** The TV page is full screen. Reported so the phone's button shows what it will do. */
   fullscreen: z.boolean().optional(),
+  /** The picture played to its end and stays on the last frame. The phone says so instead of "paused". */
+  ended: z.boolean().optional(),
+  /** The next episode is on its way (the TV shows its Up Next card): it starts in `seconds`, or on request only (null) for a viewer who has that turned off. */
+  upNext: z.object({ seconds: z.number().int().min(0).max(120).nullable() }).optional(),
   /** How subtitles look right now, so the phone's style sheet shows the real values. */
   captionStyle: CaptionStyleSchema.optional(),
   /** Subtitle delay in seconds, positive for later, negative for earlier. */

@@ -8,7 +8,7 @@ import { describeError } from "../account/errors";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
-import { ACCENT_SWATCH } from "../account/theme";
+import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
 import { formatLinkCode } from "../shared/format";
 import { CheckIcon, TvIcon, UserIcon } from "../shared/icons";
@@ -30,7 +30,7 @@ interface Request {
 
 /**
  * Sign this TV in without typing: it shows a code and a QR code, a phone that is already signed in opens the code and approves it,
- * and the answer to the TV's next question carries the session. Email and password typed here is the way for a TV with a keyboard.
+ * and the answer to the TV's next question carries the session. A name and password typed here is the way for a TV with a keyboard.
  */
 export function TvSignIn({ onClose }: { onClose: () => void }) {
   const t = useT();
@@ -152,7 +152,7 @@ export function TvSignIn({ onClose }: { onClose: () => void }) {
 
 /**
  * Sign another screen in from this one, for a computer with no phone at hand: type the code that screen shows, see who is asking,
- * and say yes. The code is typed on a keyboard (or the TV's own on-screen one), the way the email form is.
+ * and say yes. The code is typed on a keyboard (or the TV's own on-screen one), the way the name and password form is.
  */
 function TvApprove({ onClose }: { onClose: () => void }) {
   const t = useT();
@@ -440,7 +440,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
                 role="radio"
                 aria-checked={(settings.accent ?? ACCENTS[0]) === accent}
                 aria-label={t(`accent.${accent}`)}
-                style={{ background: ACCENT_SWATCH[accent] }}
+                style={{ background: ACCENT_SWATCH[accent], color: ACCENT_INK[accent] }}
                 onClick={() => chooseAccent(accent)}
                 data-nav
                 data-testid={`tv-accent-${accent}`}

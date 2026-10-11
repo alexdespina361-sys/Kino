@@ -9,10 +9,12 @@ import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, PencilIcon, PhoneIcon, Sca
 import { Logo } from "../shared/Logo";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { LinkApprove } from "../account/LinkApprove";
+import { useBackToClose } from "./backButton";
 
 /** A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. */
 export function Page({ title, onBack, children, testId }: { title: string; onBack: () => void; children: ReactNode; testId?: string }) {
   const t = useT();
+  useBackToClose(onBack); // (the phone's own Back goes back a page too, instead of leaving the site)
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && onBack();
     window.addEventListener("keydown", onKey);
@@ -45,7 +47,7 @@ function MenuRow({ icon, label, onClick, testId, detail }: { icon: ReactNode; la
 }
 
 /** Everything about the account on the phone: who is signed in, the profiles, settings, devices, and signing a TV in. */
-export function AccountScreen({ onClose, initial = "main" }: { onClose: () => void; initial?: View }) {
+export function AccountScreen({ onClose, initial = "main", onSessionsChanged }: { onClose: () => void; initial?: View; onSessionsChanged?: () => void }) {
   const t = useT();
   const account = useAccount();
   const [view, setView] = useState<View>(initial);
@@ -88,7 +90,7 @@ export function AccountScreen({ onClose, initial = "main" }: { onClose: () => vo
   if (view === "devices") {
     return (
       <Page title={t("account.devices")} onBack={back}>
-        <DevicesPage />
+        <DevicesPage onChanged={onSessionsChanged} />
       </Page>
     );
   }

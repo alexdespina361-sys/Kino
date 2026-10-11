@@ -110,16 +110,25 @@ describe("signing up and in", () => {
     expect((await other.get("/api/me")).data.me).toBeNull();
   });
 
-  it("asks for a real address and a password worth having, and for each address only once", async () => {
+  it("asks for a name and a password, whatever they are, and for each name only once", async () => {
     const { app } = await start();
     const client = new Client(app);
-    expect((await client.post("/api/auth/register", { email: "nope", password: credentials.password })).data).toEqual({ error: "invalid_email" });
-    expect((await client.post("/api/auth/register", { email: "a@b.co", password: "short" })).data).toEqual({ error: "weak_password" });
+    expect((await client.post("/api/auth/register", { email: "   ", password: credentials.password })).data).toEqual({ error: "invalid_email" });
+    expect((await client.post("/api/auth/register", { email: "robert", password: "" })).data).toEqual({ error: "weak_password" });
     expect((await client.post("/api/auth/register", { nonsense: true })).statusCode).toBe(400);
     await signedUp(app);
     const again = await client.post("/api/auth/register", credentials);
     expect(again.statusCode).toBe(409);
     expect(again.data).toEqual({ error: "email_taken" });
+
+    // A name that is no address and a password of one character make an account, and the name is the same whatever its capitals.
+    const robert = await client.post("/api/auth/register", { email: " Robert ", password: "1" });
+    expect(robert.statusCode).toBe(201);
+    expect(robert.data.account.email).toBe("robert");
+    expect(robert.data.profiles).toMatchObject([{ name: "Robert" }]);
+    expect((await new Client(app).post("/api/auth/register", { email: "ROBERT", password: "2" })).data).toEqual({ error: "email_taken" });
+    expect((await new Client(app).post("/api/auth/login", { email: "ROBERT", password: "1" })).statusCode).toBe(200);
+    expect((await new Client(app).post("/api/auth/login", { email: "robert", password: "2" })).statusCode).toBe(401);
   });
 
   it("can be closed to newcomers, or full", async () => {
@@ -161,7 +170,7 @@ describe("the account", () => {
     await tv.post("/api/auth/login", credentials);
 
     expect((await client.post("/api/me/password", { current: "not it", next: "a brand new one" })).statusCode).toBe(401);
-    expect((await client.post("/api/me/password", { current: credentials.password, next: "short" })).data).toEqual({ error: "weak_password" });
+    expect((await client.post("/api/me/password", { current: credentials.password, next: "" })).data).toEqual({ error: "weak_password" });
     expect((await client.post("/api/me/password", { current: credentials.password, next: "a brand new one" })).statusCode).toBe(204);
 
     expect((await client.get("/api/me")).data.me).not.toBeNull();
@@ -204,6 +213,34 @@ describe("the account", () => {
     expect((await client.delete("/api/sessions")).statusCode).toBe(204);
     expect((await tv.get("/api/me")).data.me).toBeNull();
     expect((await client.get("/api/me")).data.me).not.toBeNull();
+  });
+
+  it("calls a device what its owner likes, and nothing else", async () => {
+    const { app } = await start();
+    const { client } = await signedUp(app);
+    const tv = new Client(app);
+    await tv.post("/api/auth/login", { ...credentials, device: "tv" });
+    const { client: stranger } = await signedUp(app, "sam@example.com");
+
+    const listed = (await client.get("/api/sessions")).data as Array<{ id: string; kind: string; label: string }>;
+    const tvId = listed.find((s) => s.kind === "tv")!.id;
+
+    const renamed = await client.patch(`/api/sessions/${tvId}`, { label: "  Living room TV " });
+    expect(renamed.statusCode).toBe(200);
+    expect((renamed.data as typeof listed).map((s) => [s.kind, s.label]).sort()).toEqual([
+      ["browser", "Chrome on Windows"],
+      ["tv", "Living room TV"],
+    ]);
+    // Every device of the account sees the new name.
+    expect(((await tv.get("/api/sessions")).data as typeof listed).find((s) => s.kind === "tv")?.label).toBe("Living room TV");
+
+    expect((await client.patch(`/api/sessions/${tvId}`, { label: "   " })).data).toEqual({ error: "invalid_name" });
+    expect((await client.patch(`/api/sessions/${tvId}`, { label: "x".repeat(41) })).data).toEqual({ error: "invalid_name" });
+    expect((await client.patch(`/api/sessions/${tvId}`, {})).data).toEqual({ error: "invalid_request" });
+    expect((await client.patch("/api/sessions/nope", { label: "Kitchen" })).statusCode).toBe(404);
+    expect((await stranger.patch(`/api/sessions/${tvId}`, { label: "Mine now" })).statusCode).toBe(404);
+    expect((await new Client(app).patch(`/api/sessions/${tvId}`, { label: "Kitchen" })).statusCode).toBe(401);
+    expect(((await client.get("/api/sessions")).data as typeof listed).find((s) => s.kind === "tv")?.label).toBe("Living room TV");
   });
 });
 
