@@ -1419,6 +1419,104 @@ test.describe("the library", () => {
     await expect(phone.getByTestId("link-sheet").getByTestId("library-tile")).toHaveCount(3);
   });
 
+  test("the round button on a title saves it in Favourites; once there is a second list it asks which, and a cross takes a title off one list", async ({ browser }) => {
+    const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
+    await expect(phone.getByTestId("list-row")).toHaveCount(0); // nothing saved: no row, and no button for lists yet
+    await expect(phone.getByTestId("lists-manage")).toHaveCount(0);
+
+    const toggle = (n: number) => phone.getByTestId("library-list-toggle").nth(n);
+    await expect(toggle(0)).toHaveAccessibleName("Add to Favourites: The Sample");
+    await toggle(0).click();
+    await expect(toggle(0)).toHaveAccessibleName("In Favourites — tap to remove: The Sample");
+    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Sample");
+
+    // A second list, made in the sheet that the row's button opens.
+    await phone.getByTestId("lists-manage").click();
+    await expect(phone.getByTestId("lists-sheet")).toContainText("1 title");
+    await phone.getByTestId("list-new").click();
+    await phone.getByTestId("list-name-input").fill("Weekend");
+    await phone.getByTestId("list-save").click();
+    await expect(phone.getByTestId("lists-sheet")).toContainText("Weekend");
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByTestId("lists-sheet")).toHaveCount(0);
+
+    // With two lists the button asks: a tap on a list puts the title in it, and the title is "in your lists".
+    await expect(toggle(1)).toHaveAccessibleName("Add to a list: The Other One");
+    await toggle(1).click();
+    const picker = phone.getByTestId("list-picker");
+    await expect(picker).toContainText("The Other One");
+    await expect(picker.getByRole("button", { name: "Weekend" })).toHaveAttribute("aria-pressed", "false");
+    await picker.getByRole("button", { name: "Weekend" }).click();
+    await expect(picker.getByRole("button", { name: "Weekend" })).toHaveAttribute("aria-pressed", "true");
+    await picker.getByRole("button", { name: "Favourites" }).click();
+    await expect(picker.getByRole("button", { name: "Favourites" })).toHaveAttribute("aria-pressed", "true");
+    await phone.getByTestId("sheet-close").click();
+    await expect(toggle(1)).toHaveAccessibleName("In your lists: The Other One");
+    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Sample");
+    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Other One");
+    await expect(phone.getByRole("region", { name: "Weekend" })).toContainText("The Other One");
+    await expect(phone.getByRole("region", { name: "Weekend" })).not.toContainText("The Sample");
+
+    // The cross on a card takes the title off that list only.
+    await phone.getByRole("region", { name: "Weekend" }).getByTestId("list-remove").click();
+    await expect(phone.getByRole("region", { name: "Weekend" })).toHaveCount(0); // an empty list has no row
+    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Other One");
+    await expect(toggle(1)).toHaveAccessibleName("In your lists: The Other One"); // still in the first
+  });
+
+  test("a list is made from the picker with the title in it, then renamed, and deleted with the titles in it; the first list is renamed but not deleted", async ({ browser }) => {
+    const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
+    const toggle = (n: number) => phone.getByTestId("library-list-toggle").nth(n);
+    await toggle(0).click(); // Favourites
+    await phone.getByTestId("lists-manage").click();
+    await phone.getByTestId("list-new").click();
+    await phone.getByTestId("list-name-input").fill("Weekend");
+    await phone.getByTestId("list-save").click();
+    await phone.getByTestId("sheet-close").click();
+
+    // "New list" in the picker makes the list and puts the title in it.
+    await toggle(2).click();
+    const picker = phone.getByTestId("list-picker");
+    await picker.getByTestId("pick-new").click();
+    await expect(picker.getByTestId("list-editor")).toBeVisible();
+    await phone.getByTestId("list-name-input").fill("Classics");
+    await phone.getByTestId("list-save").click();
+    await expect(picker.getByRole("button", { name: "Classics" })).toHaveAttribute("aria-pressed", "true");
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByRole("region", { name: "Classics" })).toContainText("Third");
+
+    // Another name for it.
+    await phone.getByTestId("lists-manage").click();
+    const sheet = phone.getByTestId("lists-sheet");
+    await expect(sheet).toContainText("Classics");
+    await sheet.getByRole("button", { name: /^Classics/ }).click();
+    await expect(phone.getByTestId("list-name-input")).toHaveValue("Classics");
+    await phone.getByTestId("list-name-input").fill("Old films");
+    await phone.getByTestId("list-save").click();
+    await expect(sheet.getByRole("button", { name: /^Old films/ })).toContainText("1 title");
+    await expect(phone.getByRole("region", { name: "Old films" })).toContainText("Third");
+
+    // Deleted, after a question; the title in it goes with it.
+    await sheet.getByRole("button", { name: /^Old films/ }).click();
+    await phone.getByTestId("list-delete").click();
+    await expect(phone.getByTestId("list-editor")).toContainText("Delete “Old films”?");
+    await phone.getByTestId("list-delete-cancel").click();
+    await phone.getByTestId("list-delete").click();
+    await phone.getByTestId("list-delete-confirm").click();
+    await expect(sheet).not.toContainText("Old films");
+    await expect(phone.getByRole("region", { name: "Old films" })).toHaveCount(0);
+    await expect(toggle(2)).toHaveAccessibleName("Add to a list: Third");
+
+    // The first list has no Delete, but takes another name.
+    await sheet.getByRole("button", { name: /^Favourites/ }).click();
+    await expect(phone.getByTestId("list-delete")).toHaveCount(0);
+    await phone.getByTestId("list-name-input").fill("Watch later");
+    await phone.getByTestId("list-save").click();
+    await expect(sheet.getByRole("button", { name: /^Watch later/ })).toBeVisible();
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByRole("region", { name: "Watch later" })).toContainText("The Sample");
+  });
+
   test("no titles, or a library that cannot be reached, leaves the home screen as it was", async ({ browser }) => {
     const empty = await phoneWithLibrary(browser, (route) => route.fulfill({ json: { rows: [], updatedAt: 0 } }));
     await expect(empty.phone.getByTestId("url-input")).toBeVisible();

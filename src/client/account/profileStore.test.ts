@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NormalizedMedia } from "../../shared";
+import { DEFAULT_LIST, listOf, MAX_LISTS, type NormalizedMedia } from "../../shared";
 import { AccountStore } from "../../server/accounts/store";
 import { MemoryPersistence } from "../../server/accounts/persistence";
 import { GUEST, ProfileStore, type StorageLike } from "./profileStore";
@@ -93,6 +93,110 @@ describe("what is watched", () => {
   });
 });
 
+describe("named lists", () => {
+  const title = (n: number) => ({ id: String(n), title: `Film ${n}`, url: `https://site.example/film/${n}` });
+  const titlesIn = (d: ReturnType<typeof device>, list: string) =>
+    d.store
+      .getSnapshot()
+      .list.filter((item) => listOf(item) === list)
+      .map((item) => item.title)
+      .sort();
+
+  it("starts with the one list every profile has, which holds what was saved before there were lists", () => {
+    const d = device(1_000_000);
+    expect(d.store.getSnapshot().lists).toEqual([{ id: DEFAULT_LIST }]);
+    d.store.setInList(title(1), true);
+    expect(d.store.getSnapshot().list).toMatchObject([{ key: "url:https://site.example/film/1" }]);
+    expect(d.store.getSnapshot().list[0]).not.toHaveProperty("list");
+  });
+
+  it("makes lists with names, in the order they were made, and a title can be in as many as it likes", () => {
+    const d = device(1_000_000);
+    const weekend = d.store.createList("  Weekend ")!;
+    d.advance(1000);
+    const kids = d.store.createList("Kids")!;
+    expect(d.store.getSnapshot().lists).toEqual([{ id: DEFAULT_LIST }, { id: weekend, name: "Weekend" }, { id: kids, name: "Kids" }]);
+
+    d.store.setInList(title(1), true);
+    d.store.setInList(title(1), true, weekend);
+    d.store.setInList(title(2), true, weekend);
+    expect(titlesIn(d, DEFAULT_LIST)).toEqual(["Film 1"]);
+    expect(titlesIn(d, weekend)).toEqual(["Film 1", "Film 2"]);
+
+    d.advance(1000);
+    d.store.setInList(title(1), false, weekend); // out of one list, still in the other
+    expect(titlesIn(d, weekend)).toEqual(["Film 2"]);
+    expect(titlesIn(d, DEFAULT_LIST)).toEqual(["Film 1"]);
+  });
+
+  it("renames a list, the first one too, and refuses an empty name, a list that is not there, and a list beyond the limit", () => {
+    const d = device(1_000_000);
+    const id = d.store.createList("Weekend")!;
+    d.advance(1000);
+    d.store.renameList(id, "Date night");
+    d.store.renameList(DEFAULT_LIST, "Watchlist");
+    d.store.renameList(id, "   ");
+    d.store.renameList("nope", "Ghost");
+    expect(d.store.getSnapshot().lists).toEqual([{ id: DEFAULT_LIST, name: "Watchlist" }, { id, name: "Date night" }]);
+
+    expect(d.store.createList("  ")).toBeUndefined();
+    for (let n = 2; n < MAX_LISTS; n++) {
+      d.advance(10);
+      expect(d.store.createList(`List ${n}`)).toBeDefined();
+    }
+    expect(d.store.getSnapshot().lists).toHaveLength(MAX_LISTS);
+    expect(d.store.createList("One too many")).toBeUndefined();
+  });
+
+  it("removes a list with the titles in it, and never the first list", () => {
+    const d = device(1_000_000);
+    const id = d.store.createList("Weekend")!;
+    d.store.setInList(title(1), true);
+    d.store.setInList(title(1), true, id);
+    d.store.setInList(title(2), true, id);
+    d.advance(1000);
+    d.store.deleteList(id);
+    expect(d.store.getSnapshot().lists).toEqual([{ id: DEFAULT_LIST }]);
+    expect(d.store.getSnapshot().list.map((item) => item.title)).toEqual(["Film 1"]);
+    d.store.deleteList(DEFAULT_LIST);
+    expect(d.store.getSnapshot().list).toHaveLength(1);
+  });
+
+  it("goes along to another screen, and a title saved there to a list that was removed here is not shown", async () => {
+    const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => Date.now() });
+    const created = accounts.createAccount("a@example.com", "hash");
+    if (!created.ok) throw new Error("no account");
+    const profile = accounts.profilesOf(created.value.id)[0]!;
+    const sync = (d: ReturnType<typeof device>) => {
+      const { request, sent } = d.store.pending();
+      d.store.accept(accounts.sync(profile.id, request)!, sent);
+    };
+    const tv = device(Date.now() - 100_000);
+    const phone = device(Date.now() - 100_000);
+    tv.store.openScope(profile.id);
+    phone.store.openScope(profile.id);
+
+    const id = tv.store.createList("Weekend")!;
+    tv.store.setInList(title(1), true, id);
+    sync(tv);
+    sync(phone);
+    expect(phone.store.getSnapshot().lists).toEqual([{ id: DEFAULT_LIST }, { id, name: "Weekend" }]);
+    expect(titlesIn(phone, id)).toEqual(["Film 1"]);
+
+    tv.advance(2000);
+    tv.store.deleteList(id);
+    phone.advance(1000);
+    phone.store.setInList(title(2), true, id); // saved on the phone before it heard the list was gone
+    sync(tv);
+    sync(phone);
+    sync(tv);
+    for (const screen of [tv, phone]) {
+      expect(screen.store.getSnapshot().lists).toEqual([{ id: DEFAULT_LIST }]);
+      expect(screen.store.getSnapshot().list).toEqual([]);
+    }
+  });
+});
+
 describe("keeping it on the device", () => {
   it("is still there after the page is opened again, and each place has its own copy", () => {
     const first = device(1_000_000);
@@ -174,7 +278,7 @@ describe("signing in on a screen that was used as a guest", () => {
     const d = device(10_000_000);
     d.store.playbackStarted(film(1));
     d.store.openScope("pro_a");
-    d.store.accept({ rev: 4, progress: [], watched: [], list: [], settings: [] }, new Map());
+    d.store.accept({ rev: 4, progress: [], watched: [], list: [], listNames: [], settings: [] }, new Map());
     d.advance(60_000);
     d.store.adoptGuest();
     expect(d.store.pending().request.progress).toHaveLength(1);

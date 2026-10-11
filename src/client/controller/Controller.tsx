@@ -14,6 +14,7 @@ import {
   type TvInfo,
 } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
+import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
@@ -26,10 +27,11 @@ import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
 import { LinkApprove } from "../account/LinkApprove";
 import { Library } from "./Library";
+import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
 import { PlayLink } from "./PlayLink";
 import { Remote, type SheetKind } from "./Remote";
-import { ContinueRow, ListRow } from "./Rows";
+import { ContinueRow, ListRows } from "./Rows";
 import { Sheet } from "./Sheet";
 import {
   CaptionStyleSheet,
@@ -67,8 +69,10 @@ export function Controller() {
   const [invite, setInvite] = useState<PartyInvite>(null);
   /** The code of another TV that this phone scanned while it had one: waiting to be told what the new TV is for. `control`: that TV has a phone, so joining its party is not an option. */
   const [other, setOther] = useState<{ code: string; control: boolean } | null>(null);
-  // What the profile in use has watched and saved: "Continue watching", My List, and the marks on the episode list.
-  const { progress, watched, list } = useProfileData();
+  /** The sheets of the lists: the lists themselves, or the lists one title can go in. They open over whatever sheet is open. */
+  const [listSheet, setListSheet] = useState<{ kind: "manage" } | { kind: "pick"; entry: ListEntry } | null>(null);
+  // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
+  const { progress, watched, lists, list } = useProfileData();
 
   // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
   const launchRef = useRef(readLaunchParams(location.search));
@@ -315,8 +319,14 @@ export function Controller() {
     <>
       <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} />
-      <ListRow items={list} onPlay={(url, hint) => playLink(absolute(url), undefined, hint)} onRemove={(url) => profileStore.removeFromList(url)} />
-      <Library onPlay={(url, hint) => playLink(url, undefined, hint)} />
+      <ListRows
+        lists={lists}
+        items={list}
+        onPlay={(url, hint) => playLink(absolute(url), undefined, hint)}
+        onRemove={(url, id) => profileStore.removeFromList(url, id)}
+        onManage={() => setListSheet({ kind: "manage" })}
+      />
+      <Library onPlay={(url, hint) => playLink(url, undefined, hint)} onPick={(entry) => setListSheet({ kind: "pick", entry })} />
     </>
   );
 
@@ -476,6 +486,8 @@ export function Controller() {
       {sheet === "episodes" && media?.series?.episodes && (
         <EpisodesSheet series={media.series} show={seriesKeyOf(media)} watched={watched} onClose={closeSheet} onPlay={playLink} />
       )}
+      {listSheet?.kind === "manage" && <ListsSheet onClose={() => setListSheet(null)} />}
+      {listSheet?.kind === "pick" && <ListPickerSheet entry={listSheet.entry} onClose={() => setListSheet(null)} />}
 
       {toast && (
         <p className="toast" key={toast.id} data-testid="toast" role="status">

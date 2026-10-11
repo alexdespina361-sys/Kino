@@ -1,5 +1,5 @@
-import { fractionOf, resumeAt, type LibraryItem, type LibraryKind, type LibraryRow, type LiveListItem, type LiveProgress } from "../../shared";
-import { continueNote, unfinished } from "../account/cards";
+import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress } from "../../shared";
+import { continueNote, listName, unfinished } from "../account/cards";
 import { t } from "../i18n";
 
 /**
@@ -12,7 +12,8 @@ export type View =
   | { kind: "home" }
   | { kind: "movies" }
   | { kind: "series" }
-  | { kind: "list" }
+  /** One of the lists (the first when none is named). */
+  | { kind: "list"; list?: string }
   | { kind: "history" }
   | { kind: "category"; rowId: string }
   /** Every category, or only those of films or of shows. */
@@ -20,7 +21,16 @@ export type View =
   | { kind: "search" };
 
 export const viewKey = (view: View): string =>
-  view.kind === "category" ? `category:${view.rowId}` : view.kind === "categories" ? `categories:${view.of ?? "all"}` : view.kind;
+  view.kind === "category"
+    ? `category:${view.rowId}`
+    : view.kind === "categories"
+      ? `categories:${view.of ?? "all"}`
+      : view.kind === "list" && view.list && view.list !== DEFAULT_LIST
+        ? `list:${view.list}`
+        : view.kind;
+
+/** The list a page of lists shows: the one it names, or the first when it names none or one that is gone. */
+export const shownList = (view: View, lists: readonly ListInfo[]): ListInfo => lists.find((list) => view.kind === "list" && list.id === view.list) ?? lists[0] ?? { id: DEFAULT_LIST };
 
 /** The pages made of a banner and rows of titles under it. */
 export type RowsPage = "home" | "movies" | "series";
@@ -62,7 +72,7 @@ export interface HomeRow {
   entries: Entry[];
 }
 
-/** The titles of a grid page (My List, History, one category, the list of categories). */
+/** The titles of a grid page (a list, History, one category, the list of categories). */
 export interface GridPage {
   title: string;
   /** The line under the title. */
@@ -79,6 +89,8 @@ export interface PageData {
   rows: readonly LibraryRow[];
   /** This profile's cards, newest first. */
   progress: readonly LiveProgress[];
+  /** The profile's lists, the first one always, and every title saved in any of them. */
+  lists: readonly ListInfo[];
   list: readonly LiveListItem[];
   /** "Because you watched ...": the title, and the titles like it. */
   similar: { title: string; items: readonly LibraryItem[] } | null;
@@ -143,8 +155,8 @@ function categoriesRow(rows: readonly LibraryRow[], of: LibraryKind | undefined)
 }
 
 /**
- * The rows under the banner. Home has what this profile is part way through, titles like the last one it watched, its list, then
- * the library's rows with a row of categories among them. Movies and Series have the library's rows of that kind, and what is
+ * The rows under the banner. Home has what this profile is part way through, titles like the last one it watched, a row for each of
+ * its lists that has a title in it, then the library's rows with a row of categories among them. Movies and Series have the library's rows of that kind, and what is
  * part way through of that kind.
  */
 export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
@@ -154,7 +166,12 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   const going = unfinished(data.progress).filter((card) => !kind || isShowCard(card) === (kind === "series"));
   if (going.length > 0) out.push({ id: "continue", layout: "continue", title: t("rows.continue"), entries: going.map(entryOfProgress) });
   if (!kind && data.similar && data.similar.items.length > 0) out.push({ id: "similar", layout: "wide", title: t("rows.because", { title: data.similar.title }), entries: data.similar.items.map(entryOfItem) });
-  if (!kind && data.list.length > 0) out.push({ id: "list", layout: "wide", title: t("rows.myList"), entries: data.list.map(entryOfSaved) });
+  if (!kind) {
+    for (const info of data.lists) {
+      const saved = data.list.filter((item) => listOf(item) === info.id);
+      if (saved.length > 0) out.push({ id: `list:${info.id}`, layout: "wide", title: listName(info), entries: saved.map(entryOfSaved) });
+    }
+  }
 
   const library = kind ? data.rows.filter((row) => row.kind === kind) : data.rows;
   library.forEach((row, index) => {
@@ -167,8 +184,11 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
 /** The pages that are one grid. Null for the others, and for a category the library no longer has. */
 export function gridOf(view: View, data: PageData): GridPage | null {
   switch (view.kind) {
-    case "list":
-      return { title: t("rows.myList"), meta: t("tv.titles", { count: data.list.length }), layout: "wide", entries: data.list.map(entryOfSaved), empty: t("tv.listEmpty") };
+    case "list": {
+      const info = shownList(view, data.lists);
+      const saved = data.list.filter((item) => listOf(item) === info.id);
+      return { title: listName(info), meta: t("tv.titles", { count: saved.length }), layout: "wide", entries: saved.map(entryOfSaved), empty: t("tv.listEmpty") };
+    }
     case "history":
       return { title: t("tv.history"), meta: t("tv.historyHelp"), layout: "wide", entries: data.progress.map(entryOfProgress), empty: t("tv.historyEmpty") };
     case "category": {
@@ -194,7 +214,7 @@ export function freshSimilar(items: readonly LibraryItem[], progress: readonly L
 /** What the buttons under the banner can do for a title. */
 export type HeroAction = "play" | "list" | "remove";
 export const heroActions = (entry: Entry | undefined): HeroAction[] => (!entry || entry.opens ? [] : entry.progressKey ? ["play", "remove"] : ["play", "list"]);
-/** ...and on a title's own page, which any title can be kept from: play it (or pick it up), keep it in My List, and for one part way through, take it off its row. */
+/** ...and on a title's own page, which any title can be kept from: play it (or pick it up), keep it in a list, and for one part way through, take it off its row. */
 export const overviewActions = (entry: Entry): HeroAction[] => (entry.progressKey ? ["play", "list", "remove"] : ["play", "list"]);
 
 /** Which titles a search shows. */

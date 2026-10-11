@@ -55,7 +55,8 @@ pnpm build && pnpm start     # http://localhost:8787
   renames, re-pictures and removes profiles itself, with the remote's arrow keys: profile picture in the top corner (or the gear in the
   menu) → **Manage profiles**; the "Who's watching?" page that follows a sign-in has the same tile for a new profile and the same button.
 - **Watching is saved to the profile**, wherever it is watched: **Continue watching** (the place in every unfinished film or episode, and the
-  next episode of a show once one is finished), **My List**, the watched marks on episode lists, and the profile's settings. Open the app
+  next episode of a show once one is finished), **lists** (every profile has one called **Favourites**, and can make others and name them,
+  up to twelve in all; a title can be in several), the watched marks on episode lists, and the profile's settings. Open the app
   on another phone, TV or browser, sign in, pick the profile, and it carries on from the same second.
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
@@ -82,8 +83,11 @@ pnpm build && pnpm start     # http://localhost:8787
   add TVs to the party, and the menu says how many are connected. The TV flashes "A phone is connected." when one joins. That code stays good
   while a phone keeps asking for it (opening the menu, or the TV's page being open); a phone that already has a TV and scans it is only offered
   to control that TV instead
-- Paste a page or media link, or tap a title from **Continue watching**, **My List** or the library. Opening the phone page as `/?url=<link>` plays that link
+- Paste a page or media link, or tap a title from **Continue watching**, one of your lists or the library. Opening the phone page as `/?url=<link>` plays that link
   once connected (the hook for a share button)
+- **Lists on the phone.** The round button on a title saves it in Favourites (and takes it out again); once there is a second list it asks
+  which lists the title is in, with **New list** there too. Each list with something in it is a row on the home screen, and **Manage lists**
+  (at the end of the first row's heading) makes, renames and deletes them. The first list can be renamed and emptied, never deleted.
 - **Add it to the home screen** and the page opens as an app with no browser bar (`public/manifest.webmanifest`; on an iPhone that is the only
   way to lose the bar, since its browsers have no full screen for pages): Share → *Add to Home Screen* there, the browser's menu → *Install app*
   or *Add to Home screen* on Android
@@ -203,11 +207,12 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
 - A new source is a `LibrarySource` (`id`, `name`, `load()` returning rows of `{ id, title, url, image?, year?, description? }`), passed to
   `buildApp({ librarySources })` from `src/server/index.ts`. Nothing here is specific to one site.
 - **On the TV the library is the home page** (`B` returns to it from the connect and party pages): a compact banner for the title the remote is on
-  (picture, year, a short description when the source has one, and Play / Resume / My List) with rows of titles under it, the banner shrinking
+  (picture, year, a short description when the source has one, and Play / Resume / the list, named as it is) with rows of titles under it, the banner shrinking
   to a line once the remote moves down to the rows. The rows are **Continue watching**, **Because you watched …** (titles like the last one
-  watched, from the source), **My List**, then the library's own: the first ranked with big numbers (a "Top 10"), the others rows of pictures,
+  watched, from the source), a row for each of the **lists** with a title in it, then the library's own: the first ranked with big numbers (a "Top 10"), the others rows of pictures,
   and a row of **categories** after the third. Arrows walk the rows, Back leaves. **Choosing a title opens its page** (a big picture, the year,
-  what it is about) with **Play** (or **Resume** / **Continue**) and **Add to My List** / **Remove from My List**; Back, the cross or a click
+  what it is about) with **Play** (or **Resume** / **Continue**) and **Add to Favourites** / **Remove from Favourites** (with several lists, **Add to a list**
+  opens the lists, one button each, ticked for those the title is in); Back, the cross or a click
   beside it closes the page. With a mouse it is a click on the title (hovering shows nothing; the title's name is the tooltip), on any row; the
   second click of a double click goes through the page to the title under it instead of closing the page or pressing Play, for the half second
   the page takes to arrive. The banner's own buttons play or save the title it shows, without the page. The big banner picture fades in
@@ -215,9 +220,10 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
   hidden) or letting it stop comes back to the same title. A title that will not play is said so and stays in the library. A TV that watches
   along has no library, since it can't choose what plays.
 - **Menu, pages, categories, search (TV).** Pressing Left from the first title of any row (or the first tile of a grid) opens a menu down the
-  left: **Search**, **Home**, **Movies**, **Series**, **My List**, **History**, **Watch party**, **Connect a phone**, **Settings**, and under them the
+  left: **Search**, **Home**, **Movies**, **Series**, **My Lists**, **History**, **Watch party**, **Connect a phone**, **Settings**, and under them the
   **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles, and
-  choosing any entry (**My List**, **History**, a category…) closes the menu over the page it opens. **Movies**
+  choosing any entry (**My Lists**, **History**, a category…) closes the menu over the page it opens. **My Lists** is a button for each list over
+  the titles in it, with **New list** (a name typed on the on-screen or real keyboard) and **Edit list** (rename, or delete after a question). **Movies**
   and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard beside the
   results (a physical keyboard types too, and Backspace deletes before it means Back) with **All / Movies / Series** filters. Titles already loaded
   answer at once; after a short pause the source's search (`GET /api/library/search?q=`) adds more, and a library whose rows could not be loaded

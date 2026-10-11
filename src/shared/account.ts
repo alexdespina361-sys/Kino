@@ -140,10 +140,20 @@ export const WatchedItemSchema = orRemoved(WatchedLive);
 export type WatchedItem = z.infer<typeof WatchedItemSchema>;
 export type LiveWatched = z.infer<typeof WatchedLive>;
 
-/** My List: the titles somebody saved for later. */
+/** The list every profile has. A title saved with a single press goes in it, and it is there before anybody makes another. */
+export const DEFAULT_LIST = "favourites";
+export const LIST_NAME_MAX = 24;
+/** How many lists a profile can have, that first one included. */
+export const MAX_LISTS = 12;
+const ListIdSchema = z.string().min(1).max(60);
+export const ListNameSchema = z.string().trim().min(1, "invalid_name").max(LIST_NAME_MAX, "invalid_name");
+
+/** My Lists: the titles somebody saved for later, each in one of their lists (a title in two lists is two items). */
 const ListLive = z.object({
   key: KeySchema,
   at: AtSchema,
+  /** Which list it is in. Absent for `DEFAULT_LIST`, so what was saved before there were lists is in it already. */
+  list: ListIdSchema.optional(),
   id: z.string().max(200),
   title: z.string().max(300),
   url: z.string().max(2048),
@@ -155,6 +165,12 @@ const ListLive = z.object({
 export const ListItemSchema = orRemoved(ListLive);
 export type ListItem = z.infer<typeof ListItemSchema>;
 export type LiveListItem = z.infer<typeof ListLive>;
+
+/** The lists themselves, each with its name. `DEFAULT_LIST` is never made: it is there, and is called "Favourites" in the language of the screen until somebody gives it a name. */
+const ListNameLive = z.object({ key: ListIdSchema, at: AtSchema, name: ListNameSchema });
+export const ListNameItemSchema = orRemoved(ListNameLive);
+export type ListNameItem = z.infer<typeof ListNameItemSchema>;
+export type LiveListName = z.infer<typeof ListNameLive>;
 
 /** How a profile likes the website. Each setting is its own item, so changing one on the phone never undoes another changed on the TV. */
 export const SETTING_SCHEMAS = {
@@ -185,23 +201,28 @@ export function resolveSettings(items: readonly SettingItem[]): Settings {
   return settings as Settings;
 }
 
-export const LIMITS = { progress: 60, watched: 600, list: 200, settings: SETTING_KEYS.length } as const;
+export const LIMITS = { progress: 60, watched: 600, list: 400, listNames: MAX_LISTS, settings: SETTING_KEYS.length } as const;
 
 /** Everything one profile keeps, as the two screens hold it and as it travels. */
 export interface ProfileData {
   progress: ProgressItem[];
   watched: WatchedItem[];
   list: ListItem[];
+  listNames: ListNameItem[];
   settings: SettingItem[];
 }
-export const emptyData = (): ProfileData => ({ progress: [], watched: [], list: [], settings: [] });
+export const emptyData = (): ProfileData => ({ progress: [], watched: [], list: [], listNames: [], settings: [] });
+/** The parts of `ProfileData`, which is what a sync goes through one by one. */
+export const COLLECTIONS = ["progress", "watched", "list", "listNames", "settings"] as const satisfies readonly (keyof ProfileData)[];
+export type CollectionName = (typeof COLLECTIONS)[number];
 
 /** What a screen sends to bring the server up to date and ask what it missed. `since` is the last `rev` it was told of. */
 export const SyncRequestSchema = z.object({
   since: z.number().int().min(0),
   progress: z.array(ProgressItemSchema).max(LIMITS.progress * 3).default([]),
   watched: z.array(WatchedItemSchema).max(LIMITS.watched + 100).default([]),
-  list: z.array(ListItemSchema).max(LIMITS.list + 50).default([]),
+  list: z.array(ListItemSchema).max(LIMITS.list + 160).default([]),
+  listNames: z.array(ListNameItemSchema).max(LIMITS.listNames + 160).default([]),
   settings: z.array(SettingItemSchema).max(40).default([]),
 });
 export type SyncRequest = z.input<typeof SyncRequestSchema>;
@@ -214,6 +235,8 @@ export const SyncResponseSchema = z.object({
   progress: z.array(ProgressItemSchema),
   watched: z.array(WatchedItemSchema),
   list: z.array(ListItemSchema),
+  /** (A server older than the screen has no lists to tell of.) */
+  listNames: z.array(ListNameItemSchema).default([]),
   settings: z.array(SettingItemSchema),
 });
 export type SyncResponse = z.infer<typeof SyncResponseSchema>;
@@ -226,8 +249,8 @@ export const canonicalUrl = (url: string): string => url.split("#")[0]!;
 /** One card per show (all episodes share it), one per film or other link. */
 export const progressKey = (page: { show?: string | undefined; url: string }): string => (page.show ? `show:${page.show}` : `url:${canonicalUrl(page.url)}`);
 export const watchedKey = (entry: { show: string; season: number; episode: number }): string => `${entry.show}|${entry.season}x${entry.episode}`;
-/** A title in My List is told apart by the link that plays it. */
-export const listKey = (url: string): string => `url:${canonicalUrl(url)}`;
+/** A title in a list is told apart by the link that plays it. In `DEFAULT_LIST` the key is what it was before there were lists. */
+export const listKey = (url: string, list: string = DEFAULT_LIST): string => (list === DEFAULT_LIST ? `url:${canonicalUrl(url)}` : `${list}|url:${canonicalUrl(url)}`);
 
 /* ------------------------------ combining copies ------------------------------ */
 
@@ -303,9 +326,32 @@ export function mergeData(a: ProfileData, b: ProfileData, now = Date.now()): Pro
     progress: mergeCollection(a.progress, b.progress, { limit: LIMITS.progress, now, fill: (w, l) => fillProgress(w as LiveProgress, l as LiveProgress) as ProgressItem }),
     watched: mergeCollection(a.watched, b.watched, { limit: LIMITS.watched, now }),
     list: mergeCollection(a.list, b.list, { limit: LIMITS.list, now, fill: (w, l) => fillListItem(w as LiveListItem, l as LiveListItem) as ListItem }),
+    listNames: mergeCollection(a.listNames, b.listNames, { limit: LIMITS.listNames, now }),
     settings: mergeCollection(a.settings, b.settings, { limit: LIMITS.settings, now }),
   };
 }
 
 /** Whether a collection item is a live one (not a removal). */
 export const isLive = <T extends SyncItem>(item: T): item is T & { deleted?: undefined } => !item.deleted;
+
+/* ------------------------------ lists ------------------------------ */
+
+/** A list as the screens show it. `name` is absent for `DEFAULT_LIST` while nobody has renamed it: the screen calls it "Favourites" in its own language. */
+export interface ListInfo {
+  id: string;
+  name?: string;
+}
+
+/** The list a saved title is in. */
+export const listOf = (item: { list?: string | undefined }): string => item.list ?? DEFAULT_LIST;
+
+/** The lists of a profile: the first one always, then the others in the order they were made (a new id starts with the time, so ids sort that way). */
+export function resolveLists(items: readonly ListNameItem[]): ListInfo[] {
+  const named = items.filter(isLive) as LiveListName[];
+  const first = named.find((item) => item.key === DEFAULT_LIST);
+  const others = named.filter((item) => item.key !== DEFAULT_LIST).sort((a, b) => (a.key < b.key ? -1 : 1));
+  return [{ id: DEFAULT_LIST, ...(first ? { name: first.name } : {}) }, ...others.map(({ key, name }) => ({ id: key, name }))].slice(0, MAX_LISTS);
+}
+
+/** An id for a list somebody makes. */
+export const newListId = (now = Date.now()): string => `l${now.toString(36)}${Math.random().toString(36).slice(2, 5)}`;

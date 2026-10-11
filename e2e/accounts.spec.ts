@@ -47,7 +47,7 @@ const savedToTheAccount = (page: Page) =>
     .toEqual({ pending: 0, heard: true });
 
 const guestCopy = (page: Page) =>
-  page.evaluate(() => JSON.parse(localStorage.getItem("kino.data.guest") ?? "null") as { data: { progress: unknown[]; list: unknown[] } } | null);
+  page.evaluate(() => JSON.parse(localStorage.getItem("kino.data.guest") ?? "null") as { data: { progress: unknown[]; list: unknown[]; listNames: unknown[] } } | null);
 
 test.describe("accounts and profiles", () => {
   test("an account has a first profile, up to five can be added, and signing in again brings them all back", async ({ browser }) => {
@@ -108,13 +108,16 @@ test.describe("accounts and profiles", () => {
 test.describe("what was watched follows the person", () => {
   const night = { key: "url:https://films.example/night-train", at: Date.now() - 60_000, title: "Night Train", url: "https://films.example/night-train", position: 1500, duration: 6000 };
   const saved = { key: "url:https://films.example/saved", at: Date.now() - 120_000, id: "s1", title: "Saved For Later", url: "https://films.example/saved" };
+  // A list of its own, with a title in it.
+  const weekend = { key: "lweekend", at: Date.now() - 110_000, name: "Weekend" };
+  const picked = { key: "lweekend|url:https://films.example/picked", at: Date.now() - 100_000, list: "lweekend", id: "p1", title: "Weekend Pick", url: "https://films.example/picked" };
 
   test("what a guest watched joins the account on signing in, and another device carries on from there", async ({ browser }) => {
     test.setTimeout(60_000);
     const account = fresh();
 
     // Device A has been used without an account.
-    const first = await newPhone(browser, guestStorage({ progress: [night], list: [saved] }));
+    const first = await newPhone(browser, guestStorage({ progress: [night], list: [saved, picked], listNames: [weekend] }));
     await first.goto("/");
     await signUp(first, account);
     await expect(first.getByTestId("account-toast")).toContainText("Viewer");
@@ -123,6 +126,7 @@ test.describe("what was watched follows the person", () => {
     const left = await guestCopy(first);
     expect(left?.data.progress).toHaveLength(0);
     expect(left?.data.list).toHaveLength(0);
+    expect(left?.data.listNames).toHaveLength(0);
 
     // Device B, another browser, signs in; paired with a TV (that is where the rows are) it has the same history.
     const tv = await openTv(browser);
@@ -137,7 +141,8 @@ test.describe("what was watched follows the person", () => {
     const continuing = second.getByTestId("continue-row");
     await expect(continuing).toContainText("Night Train");
     await expect(continuing).toContainText("1 h 15 min left"); // 6000 - 1500 seconds
-    await expect(second.getByTestId("list-row")).toContainText("Saved For Later");
+    await expect(second.getByRole("region", { name: "Favourites" })).toContainText("Saved For Later");
+    await expect(second.getByRole("region", { name: "Weekend" })).toContainText("Weekend Pick"); // the lists and their names come along too
   });
 
   test("signing out leaves nothing of the account on the screen", async ({ browser }) => {

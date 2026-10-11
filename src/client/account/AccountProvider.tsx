@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { AvatarId, DeviceKind, Me, Profile, Registration } from "../../shared";
+import { COLLECTIONS, type AvatarId, type DeviceKind, type Me, type Profile, type Registration } from "../../shared";
 import { readStorage, writeStorage } from "../shared/format";
 import { setLanguage, t } from "../i18n";
 import { ApiError, api, beaconSync } from "./api";
@@ -180,7 +180,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
     const leave = () => {
       profileStore.flush();
       const { request } = profileStore.pending();
-      if (request.progress?.length || request.watched?.length || request.list?.length || request.settings?.length) beaconSync(id, request);
+      if (COLLECTIONS.some((name) => request[name]?.length)) beaconSync(id, request);
     };
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("online", wake);

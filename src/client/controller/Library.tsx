@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LibrarySchema, listKey, type Library as LibraryData, type LibraryItem, type PlayHint } from "../../shared";
-import { hintOf, listEntryOf } from "../account/cards";
+import { hintOf, listEntryOf, listName } from "../account/cards";
+import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { CheckIcon, PlusIcon } from "../shared/icons";
@@ -15,11 +16,15 @@ type Filter = "all" | "movies" | "series";
 const isMovies = (row: LibraryData["rows"][number]) => row.id.includes("movie") || row.title.toLowerCase().includes("movie");
 const isSeries = (row: LibraryData["rows"][number]) => row.id.includes("tv") || /series|shows|docuseries|anime/i.test(row.title);
 
-/** Rows of titles from the server's library, to scroll through and tap. A title plays like a pasted link. Absent when there is none. */
-export function Library({ onPlay }: { onPlay: (url: string, hint: PlayHint) => void }) {
+/**
+ * Rows of titles from the server's library, to scroll through and tap. A title plays like a pasted link. Absent when there is none.
+ * The round button on a title puts it in the list, or takes it out; with more than one list it asks which (`onPick`).
+ */
+export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHint) => void; onPick: (entry: ListEntry) => void }) {
   const t = useT();
-  const { list } = useProfileData();
+  const { lists, list } = useProfileData();
   const saved = useMemo(() => new Set(list.map((entry) => entry.key)), [list]);
+  const several = lists.length > 1;
   const [library, setLibrary] = useState<LibraryData | null>(remembered);
   const [status, setStatus] = useState<Status>(remembered ? "ready" : "loading");
   const [query, setQuery] = useState("");
@@ -116,15 +121,21 @@ export function Library({ onPlay }: { onPlay: (url: string, hint: PlayHint) => v
   }
   if (!library || library.rows.length === 0) return null;
 
-  const tile = (item: LibraryItem) => (
-    <Tile
-      key={item.id}
-      item={item}
-      inList={saved.has(listKey(item.url))}
-      onPlay={() => onPlay(new URL(item.url, location.href).href, hintOf(item))}
-      onToggleList={(add) => profileStore.setInList(listEntryOf(item), add)}
-    />
-  );
+  const tile = (item: LibraryItem) => {
+    const inList = lists.some((info) => saved.has(listKey(item.url, info.id)));
+    const label = several ? t(inList ? "rows.inLists" : "library.addToAList") : t(inList ? "library.inList" : "library.addToList", { list: listName(lists[0]!) });
+    return (
+      <Tile
+        key={item.id}
+        item={item}
+        inList={inList}
+        label={label}
+        asks={several}
+        onPlay={() => onPlay(new URL(item.url, location.href).href, hintOf(item))}
+        onList={() => (several ? onPick(listEntryOf(item)) : profileStore.setInList(listEntryOf(item), !inList))}
+      />
+    );
+  };
 
   return (
     <section className="library" data-testid="library" aria-label={t("library.title")}>
@@ -175,8 +186,7 @@ export function Library({ onPlay }: { onPlay: (url: string, hint: PlayHint) => v
   );
 }
 
-function Tile({ item, inList, onPlay, onToggleList }: { item: LibraryItem; inList: boolean; onPlay: () => void; onToggleList: (add: boolean) => void }) {
-  const t = useT();
+function Tile({ item, inList, label, asks, onPlay, onList }: { item: LibraryItem; inList: boolean; label: string; asks: boolean; onPlay: () => void; onList: () => void }) {
   return (
     <div className="lib-tile has-remove" data-in-list={inList}>
       <button className="lib-card" data-testid="library-tile" onClick={onPlay} title={item.title}>
@@ -186,9 +196,10 @@ function Tile({ item, inList, onPlay, onToggleList }: { item: LibraryItem; inLis
       </button>
       <button
         className="lib-remove lib-add"
-        onClick={() => onToggleList(!inList)}
+        onClick={onList}
         aria-pressed={inList}
-        aria-label={`${inList ? t("library.inList") : t("library.addToList")}: ${item.title}`}
+        aria-haspopup={asks ? "dialog" : undefined}
+        aria-label={`${label}: ${item.title}`}
         data-testid="library-list-toggle"
       >
         {inList ? <CheckIcon /> : <PlusIcon />}
