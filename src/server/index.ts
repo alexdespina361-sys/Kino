@@ -2,6 +2,8 @@ import { persistenceFromEnv } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
 import { buildApp, defaultClientDir, defaultFixturesDir } from "./app";
 import { filmpireSource } from "./library/filmpire";
+import { PairingStore } from "./sessions/pairings";
+import { Registry } from "./sessions/registry";
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -13,8 +15,11 @@ function trustProxy(env: NodeJS.ProcessEnv): boolean | number {
   return /^\d+$/.test(value) ? Number(value) : value === "true";
 }
 
-const { persistence, describe } = await persistenceFromEnv();
+const { persistence, describe, kind } = await persistenceFromEnv();
 const accounts = await AccountStore.open({ persistence, log: console });
+// Which phone goes with which TV is kept in the same place, so a restart (a free host sleeps when nobody is using it) does not undo every pairing.
+const registry = new Registry();
+const pairings = await PairingStore.open({ registry, persistence, log: console });
 
 const app = await buildApp({
   clientDir: defaultClientDir(),
@@ -22,13 +27,16 @@ const app = await buildApp({
   // LIBRARY=off: no browsing library (the e2e server, or anyone who would rather not fetch external library).
   librarySources: process.env.LIBRARY === "off" ? [] : [filmpireSource()],
   accounts,
+  registry,
+  pairings,
+  storage: kind,
   // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),
   trustProxy: trustProxy(process.env),
   logger: true,
 });
-app.log.info(`Accounts are kept in ${describe}.`);
+app.log.info(`Accounts and pairings are kept in ${describe}.`);
 
 await app.listen({ port, host });
 

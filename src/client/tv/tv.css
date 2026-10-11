@@ -10,7 +10,8 @@
   overflow: hidden;
   background: #000;
   color: #fff;
-  font-size: max(min(1vw, 1.7778vh), 9px); /* 16:9 box inside any window shape */
+  --em: max(min(1vw, 1.7778vh), 9px); /* 16:9 box inside any window shape (also for what is drawn at a size of its own: see the HUD's focus captions) */
+  font-size: var(--em);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -24,6 +25,12 @@
   object-fit: contain;
   background: #000;
 }
+/* The controls are the page's own (Hud.tsx). If a browser draws its player's anyway (see nativePlayer.ts), they are kept out of sight; one rule each, as a browser drops a whole rule for a name it does not know. */
+.tv-video::-webkit-media-controls { display: none !important; }
+.tv-video::-webkit-media-controls-enclosure { display: none !important; }
+.tv-video::-webkit-media-controls-panel { display: none !important; }
+.tv-video::-webkit-media-controls-overlay-play-button { display: none !important; }
+.tv-video::-webkit-media-controls-start-playback-button { display: none !important; }
 /* Subtitles are drawn by the page (Captions.tsx), so every look setting works the same on every TV browser. */
 .tv-captions {
   position: absolute;
@@ -65,7 +72,7 @@
   white-space: nowrap;
   transition: transform 0.12s ease, background 0.12s ease;
 }
-.tv-btn small { font-size: 0.7em; font-weight: 500; opacity: 0.8; }
+.tv-btn small { font-size: 0.8em; font-weight: 500; opacity: 0.85; }
 .tv-btn:hover { background: rgba(255, 255, 255, 0.26); }
 .tv-btn-icon { font-size: 2.3em; padding: 0.3em; background: transparent; border-radius: 50%; }
 .tv-btn-icon:hover { background: rgba(255, 255, 255, 0.18); }
@@ -80,10 +87,11 @@
   color: #000;
 }
 .tv-btn-play:hover { background: #e8e8e8; }
-.tv-btn-red { background: var(--accent); }
+.tv-btn-red { background: var(--accent); color: var(--accent-ink); }
 .tv-btn-red:hover { background: var(--accent-hover); }
 .tv-btn-ghost { background: rgba(255, 255, 255, 0.14); }
 .tv-btn-on { background: rgb(var(--accent-rgb) / 0.85); }
+.tv-btn-on:not(:focus-visible) { color: var(--accent-ink); } /* (focused, it is the pale one every button is, and white is right on that) */
 
 /* Whatever the remote has selected must be unmistakable from across the room. */
 .tv-btn:focus-visible,
@@ -149,8 +157,8 @@
 }
 .tv-action svg { flex: none; }
 .tv-action:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
-.tv-action-primary { background: var(--accent); color: #fff; }
-.tv-action-primary:hover { background: var(--accent-hover); }
+.tv-action-primary { background: var(--accent); color: var(--accent-ink); }
+.tv-action-primary:hover { background: var(--accent-hover); color: var(--accent-ink); }
 .tv-action:focus-visible {
   background: #fff;
   color: #000;
@@ -239,6 +247,7 @@
   margin-right: 0.7em;
   border-radius: 50%;
   background: var(--accent);
+  color: var(--accent-ink);
   font-size: 0.8em;
   font-weight: 700;
 }
@@ -336,7 +345,7 @@
   padding: 0.15em 0.6em;
   border-radius: 0.35em;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
   font-size: 0.85em;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -529,6 +538,31 @@
 .hud-controls[data-fit~="tight"] .hud-group { gap: 0.3em; }
 .hud-controls[data-fit~="tight"] .tv-btn:not(.tv-btn-icon):not(.tv-btn-play) { padding-inline: 0.55em; gap: 0.3em; }
 .hud-controls[data-fit~="names"] .tv-btn-sub { display: none; }
+/* A control that is only an icon says what it is while the remote is on it (a mouse has the tooltip). It is drawn above the button, at a size of its own. */
+.hud-controls .tv-btn:is(.tv-btn-icon, .tv-btn-play, [data-folded]):focus-visible { position: relative; }
+.hud-controls .tv-btn:is(.tv-btn-icon, .tv-btn-play, [data-folded]):focus-visible::after {
+  content: attr(aria-label);
+  position: absolute;
+  bottom: calc(100% + var(--em) * 0.7);
+  left: 50%;
+  width: max-content;
+  max-width: calc(var(--em) * 26);
+  padding: 0.3em 0.7em;
+  overflow: hidden;
+  border-radius: 0.4em;
+  background: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  font-size: calc(var(--em) * 1.15);
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+/* The first and the last of the bar are at the edges of the screen: their captions grow inwards. */
+.hud-controls .hud-group:first-child .tv-btn-play:focus-visible::after { left: 0; transform: none; }
+.hud-controls .hud-group:last-child .tv-btn:last-child:focus-visible::after { right: 0; left: auto; transform: none; }
 /* A button that has given up its words is an icon button like the rest of them. */
 .hud-controls .tv-btn[data-folded] { font-size: 2em; padding: 0.25em; border-radius: 50%; }
 .hud-controls .tv-btn[data-folded] .tv-btn-label { display: none; }
@@ -927,7 +961,7 @@
   white-space: nowrap;
   transition: background 0.15s, color 0.15s, transform 0.15s;
 }
-.tv-hero-button.is-primary { background: var(--accent); }
+.tv-hero-button.is-primary { background: var(--accent); color: var(--accent-ink); }
 .tv-hero-button:hover { background: rgba(255, 255, 255, 0.28); }
 .tv-hero-button.is-primary:hover { background: var(--accent-hover); }
 .tv-hero-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
@@ -1026,15 +1060,16 @@
 }
 .tv-tile-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .tv-tile-initial { font-size: 4em; font-weight: 800; color: rgba(255, 255, 255, 0.5); }
+/* What is written under a title is read from the couch: no smaller than about 1.1% of the screen's width (22 px on a 1080p one). */
 .tv-tile-name {
-  font-size: 1.2em;
+  font-size: 1.3em;
   font-weight: 600;
   line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tv-tile-year { font-size: 1em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv-tile-year { font-size: 1.15em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tv-tile:hover { color: #fff; }
 .tv-tile:focus-visible { color: #fff; transform: scale(1.1); outline: none; z-index: 2; }
 .tv-tile:focus-visible .tv-tile-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
@@ -1220,7 +1255,7 @@
 .tv-screen-compact .tv-ready-icon { width: 4.4em; height: 4.4em; }
 .tv-screen-compact .tv-ready-icon svg { font-size: 2.6em; }
 
-/* Email and password on the TV: for a TV that has a keyboard. */
+/* A name and password on the TV: for a TV that has a keyboard. */
 .tv .auth-tv { width: 50em; gap: 1.1em; text-align: left; }
 .tv .auth-tv .auth-field, .tv .profile-editor-tv .auth-field { gap: 0.4em; }
 .tv .auth-tv .auth-field > span, .tv .profile-editor-tv .auth-field > span { font-size: 1.5em; letter-spacing: 0.06em; }
@@ -1264,9 +1299,23 @@
 .tv-list-picks { display: flex; flex-direction: column; gap: 0.8em; width: min(100%, 26em); max-height: 42vh; overflow-y: auto; padding: 0.4em; }
 .tv-list-picks .tv-action { justify-content: flex-start; }
 .tv-list-picks .tv-action[aria-pressed="true"]:not(:focus-visible) { background: rgb(var(--accent-rgb) / 0.3); color: #fff; box-shadow: inset 0 0 0 0.1em var(--accent); }
+/* A way to make a list, last among the lists: outlined, so that it is not taken for one of them. */
+.tv-list-picks .tv-action-new:not(:hover):not(:focus-visible) { background: transparent; box-shadow: inset 0 0 0 0.08em rgba(255, 255, 255, 0.28); }
 /* A list's editor has a name and no picture: one column. */
 .tv .profile-editor-tv.list-editor-tv { grid-template-columns: minmax(0, 46em); justify-content: center; }
 .tv .profile-editor-tv.list-editor-tv > * { grid-column: 1; }
+/* The name is typed on keys of the page (twelve to a row; a screen held in the hand has its own keyboard). Everything is a little smaller than elsewhere, so that it all stays on the screen. */
+.tv-name-keys { grid-template-columns: repeat(12, 1fr); gap: 0.4em; margin-top: 0; }
+.tv-name-keys .tv-key { padding: 0.3em 0; font-size: 1.5em; }
+.tv-name-keys .tv-key-wide { grid-column: span 4; font-size: 1.2em; }
+.tv-name-keys .tv-key-first { grid-column: 1 / span 4; } /* the wide keys start a row of their own, after however many letters there are */
+@media (min-width: 900px) {
+  .tv .profile-editor-tv.list-editor-tv { gap: 0.9em; }
+  .tv .list-editor-tv .auth-field input { font-size: 1.8em; }
+  .tv .list-editor-tv .tv-action { font-size: 1.5em; }
+}
+/* A list already at the end has nowhere to move: its button stays, so the remote does not lose its place. */
+.tv-action[aria-disabled="true"] { opacity: 0.4; }
 .tv-action-danger { background: rgba(255, 107, 107, 0.2); color: #ffb4b4; }
 .tv-action-danger:hover { background: rgba(255, 107, 107, 0.34); color: #fff; }
 
@@ -1529,7 +1578,7 @@
  * same. (Any wider and the TV's own layout fits: Browse.tsx asks for the same width.)
  */
 @media (max-width: 899px) {
-  .tv { font-size: 10px; }
+  .tv { --em: 10px; }
 
   /* Pages with a few things in the middle: from the top down, scrolling when there is more than fits, centred when there is less. */
   .tv-screen { justify-content: flex-start; gap: 1.6em; padding: 6em 1.6em 2.4em; overflow-y: auto; }
@@ -1573,6 +1622,7 @@
   .tv .profile-editor-tv { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 1.2em; }
   .tv .profile-editor-tv .editor-preview { align-self: center; font-size: 7em; }
   .tv .profile-editor-tv .editor-confirm p { font-size: 1.4em; }
+  .tv-name-keys { display: none; }
   .profile-tv { gap: 1.6em 2em; }
   .profile-tv .profile-picture { font-size: 7em; }
   .profile-tv .profile-name { font-size: 1.7em; }

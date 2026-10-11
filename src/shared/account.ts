@@ -11,7 +11,8 @@ import { z } from "zod";
 
 export const MAX_PROFILES = 5;
 export const PROFILE_NAME_MAX = 16;
-export const PASSWORD_MIN = 8;
+/** A password can be anything, as short as one character: the only rule is that there is one. */
+export const PASSWORD_MIN = 1;
 
 /** The pictures a profile can have: drawn in client/account/Avatar.tsx. */
 export const AVATAR_IDS = ["fox", "cat", "panda", "owl", "bear", "rabbit", "frog", "penguin", "robot", "alien", "ghost", "monster"] as const;
@@ -28,19 +29,26 @@ export const ACCENTS = ["red", "blue", "purple", "green", "orange", "pink"] as c
 export type Accent = (typeof ACCENTS)[number];
 export const AccentSchema = z.enum(ACCENTS);
 
-export const EmailSchema = z
+/**
+ * What an account signs in with: any name at all (an e-mail address too: the accounts made when it had to be one still work), only not
+ * one that somebody has already. Kept without capitals, so "Robert" and "robert" are the same account. (The field is still called
+ * `email` where it travels and is stored, and a name that will not do is still told as `invalid_email`: older pages and saved accounts speak that.)
+ */
+export const LoginNameSchema = z
   .string()
   .trim()
   .toLowerCase()
-  .max(254)
-  .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "invalid_email");
+  .min(1, "invalid_email")
+  .max(254, "invalid_email")
+  .regex(/^[^\p{Cc}\p{Cf}]+$/u, "invalid_email")
+  .transform((name) => name.normalize("NFC"));
 export const NewPasswordSchema = z.string().min(PASSWORD_MIN, "weak_password").max(200, "weak_password");
 /** Who is asking: the screen the sign-in is for, so the list of devices can say "TV" or "Phone". */
 export const DeviceKindSchema = z.enum(["tv", "remote", "browser"]);
 export type DeviceKind = z.infer<typeof DeviceKindSchema>;
 
-export const RegisterSchema = z.object({ email: EmailSchema, password: NewPasswordSchema, device: DeviceKindSchema.optional() });
-export const LoginSchema = z.object({ email: EmailSchema, password: z.string().min(1).max(200), device: DeviceKindSchema.optional() });
+export const RegisterSchema = z.object({ email: LoginNameSchema, password: NewPasswordSchema, device: DeviceKindSchema.optional() });
+export const LoginSchema = z.object({ email: LoginNameSchema, password: z.string().min(1).max(200), device: DeviceKindSchema.optional() });
 
 export const ProfileNameSchema = z.string().trim().min(1, "invalid_name").max(PROFILE_NAME_MAX, "invalid_name");
 export const ProfileSchema = z.object({ id: z.string().max(60), name: ProfileNameSchema, avatar: AvatarIdSchema });
@@ -83,11 +91,16 @@ export const SessionInfoSchema = z.object({
 });
 export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 
-/** The name a first profile gets from an e-mail address: "alex.popescu@x.com" -> "Alex". */
-export function nameFromEmail(email: string): string {
-  const word = email.split("@")[0]?.split(/[._+-]/)[0]?.replace(/[^\p{L}\p{N}]/gu, "") ?? "";
+/** What a device is called on that list when its owner names it ("Living room TV"), instead of the browser and system it was made out of. */
+export const DEVICE_NAME_MAX = 40;
+export const SessionRenameSchema = z.object({ label: z.string().trim().min(1, "invalid_name").max(DEVICE_NAME_MAX, "invalid_name") });
+
+/** The name a first profile gets from what the account signs in with: "alex.popescu@x.com" -> "Alex", "robert" -> "Robert", "my tv" -> "My tv". */
+export function nameFromEmail(login: string): string {
+  const own = login.includes("@") ? (login.split("@")[0]?.split(/[._+-]/)[0] ?? "") : login; // an address gives the part before the @, which is a name; a name is the name
+  const word = own.replace(/[^\p{L}\p{N} ]/gu, "").replace(/\s+/g, " ").trim();
   if (!word) return "Me";
-  return (word.charAt(0).toUpperCase() + word.slice(1)).slice(0, PROFILE_NAME_MAX);
+  return (word.charAt(0).toUpperCase() + word.slice(1)).slice(0, PROFILE_NAME_MAX).trim();
 }
 
 /** The picture a new profile gets when its maker has not chosen one: the first one not taken yet. */
@@ -167,7 +180,13 @@ export type ListItem = z.infer<typeof ListItemSchema>;
 export type LiveListItem = z.infer<typeof ListLive>;
 
 /** The lists themselves, each with its name. `DEFAULT_LIST` is never made: it is there, and is called "Favourites" in the language of the screen until somebody gives it a name. */
-const ListNameLive = z.object({ key: ListIdSchema, at: AtSchema, name: ListNameSchema });
+const ListNameLive = z.object({
+  key: ListIdSchema,
+  at: AtSchema,
+  name: ListNameSchema,
+  /** Where it stands among the lists after the first, once somebody has moved one (0 is the first of them). Lists that were never placed follow, in the order they were made. */
+  order: z.number().int().min(0).max(MAX_LISTS).optional(),
+});
 export const ListNameItemSchema = orRemoved(ListNameLive);
 export type ListNameItem = z.infer<typeof ListNameItemSchema>;
 export type LiveListName = z.infer<typeof ListNameLive>;
@@ -353,11 +372,15 @@ export const listOf = (item: { list?: string | undefined }): string => item.list
  */
 export const savedKeys = (items: readonly { url: string; list?: string | undefined }[]): Set<string> => new Set(items.map((item) => listKey(item.url, listOf(item))));
 
-/** The lists of a profile: the first one always, then the others in the order they were made (a new id starts with the time, so ids sort that way). */
+/**
+ * The lists of a profile: the first one always, then the others in the order they were put in (`order`), and those that never were
+ * in the order they were made (a new id starts with the time, so ids sort that way: a list made after a move goes last).
+ */
 export function resolveLists(items: readonly ListNameItem[]): ListInfo[] {
   const named = items.filter(isLive) as LiveListName[];
   const first = named.find((item) => item.key === DEFAULT_LIST);
-  const others = named.filter((item) => item.key !== DEFAULT_LIST).sort((a, b) => (a.key < b.key ? -1 : 1));
+  const placed = (item: LiveListName) => item.order ?? Number.MAX_SAFE_INTEGER;
+  const others = named.filter((item) => item.key !== DEFAULT_LIST).sort((a, b) => (placed(a) === placed(b) ? (a.key < b.key ? -1 : 1) : placed(a) < placed(b) ? -1 : 1));
   return [{ id: DEFAULT_LIST, ...(first ? { name: first.name } : {}) }, ...others.map(({ key, name }) => ({ id: key, name }))].slice(0, MAX_LISTS);
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { t, useT } from "../i18n";
 import { CloseIcon } from "../shared/icons";
+import { useBackToClose } from "./backButton";
 
 /** The sheets that are open, the one on top last: Escape closes that one, not all of them. */
 const open: object[] = [];
@@ -127,6 +128,7 @@ export function Sheet({
     };
   }, []);
   usePullToClose(backdrop, panel, close);
+  useBackToClose(onClose); // (the phone's Back button closes it, not the page behind it)
 
   return (
     <div className="sheet-backdrop" ref={backdrop} onClick={onClose}>

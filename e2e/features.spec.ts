@@ -298,6 +298,39 @@ test.describe("the TV player", () => {
     phone.close();
   });
 
+  test("a control the remote rests on is named above it; one a hand pressed keeps neither the focus nor the name, so the arrows still skip", async ({ browser, baseURL }) => {
+    test.setTimeout(45_000);
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    const play = tv.getByTestId("tv-play-btn");
+    const nameAbove = () => play.evaluate((button) => getComputedStyle(button, "::after").content);
+    const focusedControls = tv.locator(".hud-controls button:focus");
+
+    await tv.keyboard.press("ArrowDown"); // the remote lands on Play, and the name of a button with only a picture is said above it
+    await expect(play).toBeFocused();
+    const label = (await play.getAttribute("aria-label"))!;
+    expect(label.length).toBeGreaterThan(0);
+    expect(await nameAbove()).toBe(`"${label}"`);
+    await tv.keyboard.press("ArrowRight"); // (the arrows walk the buttons while one has the focus)
+    await expect(play).not.toBeFocused();
+    await expect(focusedControls).toHaveCount(1);
+    await tv.keyboard.press("ArrowLeft");
+    await expect(play).toBeFocused();
+
+    // A hand presses it: the video plays, and the focus is not left behind, nor the name. (Asked at once, not waited for: the bar fades after
+    // a few seconds and lets go of the focus by itself, which would hide a button that kept it.)
+    await play.click();
+    expect(await play.evaluate((button) => button === document.activeElement)).toBe(false);
+    expect(await nameAbove()).not.toContain(label);
+    // So the arrows skip, and walk no buttons, until the remote asks for them again.
+    await tv.keyboard.press("ArrowRight");
+    expect(await focusedControls.count()).toBe(0);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    phone.close();
+  });
+
   test("Back from a menu returns to the button that opened it, and the subtitle style is a page of the audio and subtitles menu", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
@@ -469,6 +502,26 @@ test.describe("the TV player", () => {
     phone.cmd({ type: "LOAD", media: { ...seriesMedia(baseURL!), stream: { url: "/fixtures/sample.mp4?again=1", type: "mp4" } } });
     await expect(tv.getByTestId("caption")).toHaveText("Hello, this is a subtitle test!");
     expect(await css("color")).toBe("rgb(255, 235, 59)");
+    phone.close();
+  });
+
+  test("on a screen held upright the subtitles are sized and placed for the picture, which is a strip across the middle of it", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser, { width: 390, height: 844 });
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: seriesMedia(baseURL!) });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "SET_SUBTITLE", track: 0 });
+    const caption = tv.getByTestId("caption");
+    await expect(caption).toHaveText("Hello, this is a subtitle test!");
+
+    // The picture is 390 × 219 here. 4.6% of the screen's height would be a caption of 39 px on a 390-px screen; 4.6% of the picture
+    // would be 10 px: the text is the least that can be read, and it sits on the picture, not on the black below it.
+    expect(parseFloat(await caption.evaluate((el) => getComputedStyle(el).fontSize))).toBe(14);
+    const pictureTop = (844 - (390 * 9) / 16) / 2;
+    const pictureBottom = (844 + (390 * 9) / 16) / 2;
+    const box = (await caption.boundingBox())!;
+    expect(box.y).toBeGreaterThan(pictureTop);
+    expect(box.y + box.height).toBeLessThanOrEqual(pictureBottom);
     phone.close();
   });
 });
@@ -1336,6 +1389,25 @@ test.describe("a watch party started on a TV", () => {
     phone.close();
   });
 
+  test("what a guest watches along is not put in its own Continue watching: it is the host's to continue", async ({ browser, baseURL }) => {
+    const host = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(host));
+    await expect(host.getByTestId("tv-paired")).toBeVisible();
+    await host.getByTestId("tv-back-to-library").click();
+    const code = await startParty(host);
+    const guest = await screen(browser, baseURL!);
+    await joinWith(guest, code);
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+
+    phone.cmd({ type: "LOAD", media: { ...seriesMedia(baseURL!), page: `${baseURL}/fixtures/pages/none.html` } }); // (a video that says where it came from is one that can be continued)
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "paused", { timeout: 15_000 });
+    const cards = (tv: Page) => tv.evaluate(() => (JSON.parse(localStorage.getItem("kino.data.guest") ?? "null") as { data: { progress: unknown[] } } | null)?.data.progress.length ?? 0);
+    await expect.poll(() => cards(host), { timeout: 10_000 }).toBe(1); // (the host's own row has it)
+    await guest.waitForTimeout(1500); // (a screen writes a moment after a change)
+    expect(await cards(guest)).toBe(0);
+    phone.close();
+  });
+
   test("a code that is wrong is refused, and the number pad starts over", async ({ browser, baseURL }) => {
     const guest = await screen(browser, baseURL!);
     await joinWith(guest, "000000");
@@ -1358,6 +1430,12 @@ test.describe("a watch party started on a TV", () => {
     const host = await screen(browser, baseURL!);
     const code = await startParty(host);
     const guest = await openDevice(browser, { viewport: { width: 1280, height: 720 } });
+    // A guest comes for the party: the library's welcome is not for it, not even for the moment before the party takes the screen in.
+    await guest.addInitScript(() => {
+      new MutationObserver(() => {
+        if (document.querySelector('[data-testid="tv-welcome"]')) (window as unknown as { welcomed: boolean }).welcomed = true;
+      }).observe(document, { childList: true, subtree: true });
+    });
     await guest.goto(`/?party=${code}`);
     // This is the one screen that still asks for a press first (the host's video will play on it without anyone choosing anything).
     await expect(guest.getByTestId("unlock")).toBeFocused();
@@ -1370,6 +1448,7 @@ test.describe("a watch party started on a TV", () => {
     await expect(guest.getByTestId("tv-following")).toBeVisible();
     expect(new URL(guest.url()).search).toBe("");
     await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+    expect(await guest.evaluate(() => (window as unknown as { welcomed?: boolean }).welcomed)).toBeFalsy();
   });
 
   test("a phone that opens the party's link becomes a screen of the party, not a remote", async ({ browser, baseURL }) => {
@@ -1402,6 +1481,18 @@ test.describe("a watch party started on a TV", () => {
     await expect(guest.getByTestId("tv-party-start")).toBeVisible();
     await expect(host.getByTestId("tv-party-member")).toHaveCount(1);
     await expect(guest.getByTestId("tv-flash")).toHaveCount(0);
+  });
+
+  test("Back on a guest's waiting page shows the way out and does not take it: OK on Leave does", async ({ browser, baseURL }) => {
+    const { host, guest } = await party(browser, baseURL!);
+    await expect(guest.getByTestId("tv-disconnect")).not.toBeFocused();
+    await guest.keyboard.press("Escape");
+    await expect(guest.getByTestId("tv-disconnect")).toBeFocused();
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+    await guest.keyboard.press("Enter");
+    await expect(guest.getByTestId("tv-party-start")).toBeVisible();
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(1);
   });
 
   test("ending the party sends everyone back to their own screen", async ({ browser, baseURL }) => {
@@ -1688,6 +1779,62 @@ test.describe("the library", () => {
     await expect(sheet.getByRole("button", { name: /^Watch later/ })).toBeVisible();
     await phone.getByTestId("sheet-close").click();
     await expect(phone.getByRole("region", { name: "Watch later" })).toContainText("The Sample");
+  });
+
+  test("the lists are put in the order wanted from the sheet that manages them: a list moves one place, never the first, and a new name keeps its place", async ({ browser }) => {
+    const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
+    await phone.getByTestId("library-list-toggle").first().click(); // Favourites: now there is a button for the lists
+    await phone.getByTestId("lists-manage").click();
+    const sheet = phone.getByTestId("lists-sheet");
+    const order = () => sheet.locator('[data-testid^="manage-"] > span:first-child').allTextContents();
+    const make = async (name: string) => {
+      await phone.getByTestId("list-new").click();
+      await phone.getByTestId("list-name-input").fill(name);
+      await phone.getByTestId("list-save").click();
+    };
+    const open = (name: string) => sheet.getByRole("button", { name: new RegExp(`^${name}`) }).click();
+
+    // One list besides the first: nothing to change places with.
+    await make("Weekend");
+    await open("Weekend");
+    await expect(phone.getByTestId("list-name-input")).toHaveValue("Weekend");
+    await expect(phone.getByTestId("list-move-earlier")).toHaveCount(0);
+    await phone.getByTestId("list-cancel").click();
+
+    await make("Kids");
+    await make("Date night");
+    await expect.poll(order).toEqual(["Favourites", "Weekend", "Kids", "Date night"]);
+
+    // The first list stays first.
+    await open("Favourites");
+    await expect(phone.getByTestId("list-move-earlier")).toHaveCount(0);
+    await phone.getByTestId("list-cancel").click();
+
+    await open("Date night");
+    await expect(phone.getByTestId("list-move-later")).toHaveAttribute("aria-disabled", "true");
+    await expect(phone.getByTestId("list-move-earlier")).toHaveAccessibleName("Move up");
+    await phone.getByTestId("list-move-earlier").click();
+    await phone.getByTestId("list-move-earlier").click();
+    await expect(phone.getByTestId("list-move-earlier")).toHaveAttribute("aria-disabled", "true"); // the first of the others
+    await phone.getByTestId("list-move-earlier").click({ force: true }); // nothing happens (a dimmed button can still be pressed)
+    await expect(phone.getByTestId("list-name-input")).toHaveValue("Date night"); // (and the sheet is still on this list)
+    await phone.getByTestId("list-cancel").click();
+    await expect.poll(order).toEqual(["Favourites", "Date night", "Weekend", "Kids"]);
+
+    // Another name keeps the place, and moving down is the other way.
+    await open("Date night");
+    await phone.getByTestId("list-move-later").click();
+    await phone.getByTestId("list-name-input").fill("Late night");
+    await phone.getByTestId("list-save").click();
+    await expect.poll(order).toEqual(["Favourites", "Weekend", "Late night", "Kids"]);
+
+    // A list that is made after that comes last, and one that is removed leaves the others as they were.
+    await make("Newest");
+    await expect.poll(order).toEqual(["Favourites", "Weekend", "Late night", "Kids", "Newest"]);
+    await open("Weekend");
+    await phone.getByTestId("list-delete").click();
+    await phone.getByTestId("list-delete-confirm").click();
+    await expect.poll(order).toEqual(["Favourites", "Late night", "Kids", "Newest"]);
   });
 
   test("no titles leaves the home screen as it was, and a library that cannot be reached says so", async ({ browser }) => {

@@ -10,6 +10,7 @@ const FIRE_TABLET = "Mozilla/5.0 (Linux; Android 11; KFTRWI) AppleWebKit/537.36 
 const TIZEN = "Mozilla/5.0 (SMART-TV; Linux; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) 94.0.4606.31/7.0 TV Safari/537.36";
 const WEBOS = "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0 Safari/537.36 WebAppManager";
 const ANDROID_TV = "Mozilla/5.0 (Linux; Android 10; BRAVIA 4K UR3 Build/QTG3.200305.006.S1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
+const VIDAA = "Mozilla/5.0 (Linux; U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0 Safari/537.36 VIDAA/6.0";
 
 const page = (changes: Partial<RoleInput>): RoleInput => ({
   pathname: "/",
@@ -32,6 +33,7 @@ describe("chooseRole", () => {
     ["Fire TV", FIRE_TV],
     ["Tizen", TIZEN],
     ["webOS", WEBOS],
+    ["a Hisense set (VIDAA)", VIDAA],
     ["an Android TV set", ANDROID_TV],
   ])("recognises a TV browser by its user agent: %s", (_name, userAgent) => {
     expect(chooseRole(page({ userAgent }))).toBe("tv");
@@ -87,6 +89,6 @@ describe("isPhone", () => {
   });
 
   it("is not a TV, whatever it claims about touch", () => {
-    for (const userAgent of [FIRE_TV, TIZEN, WEBOS, ANDROID_TV]) expect(isPhone({ userAgent, touchPoints: 1, coarsePointer: true, shortSide: 360 })).toBe(false);
+    for (const userAgent of [FIRE_TV, TIZEN, WEBOS, VIDAA, ANDROID_TV]) expect(isPhone({ userAgent, touchPoints: 1, coarsePointer: true, shortSide: 360 })).toBe(false);
   });
 });

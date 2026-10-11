@@ -34,6 +34,21 @@ describe("actionForKey", () => {
     expect(actionForKey({ key: "Unidentified", keyCode: 177 })).toBe("previous");
   });
 
+  it("knows the remotes of Hisense (VIDAA), webOS and Tizen by their key codes", () => {
+    for (const [keyCode, action] of [
+      [19, "pause"],
+      [412, "rewind"],
+      [413, "stop"],
+      [415, "play"],
+      [417, "forward"],
+      [461, "back"],
+      [10009, "back"],
+      [10252, "playpause"],
+    ] as const) {
+      expect(actionForKey({ key: "Unidentified", keyCode })).toBe(action);
+    }
+  });
+
   it("ignores everything else, so the browser keeps its own shortcuts", () => {
     expect(actionForKey({ key: "a" })).toBeNull();
     expect(actionForKey({ key: "F5", keyCode: 116 })).toBeNull();

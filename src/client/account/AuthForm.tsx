@@ -16,7 +16,7 @@ interface AuthFormProps {
   autoFocus?: boolean;
 }
 
-/** Email and password, to sign in or to make an account. The same form on the phone and, as a fallback to the QR code, on the TV. */
+/** A name and a password (anything at all, as short as one character), to sign in or to make an account. The same form on the phone and, as a fallback to the QR code, on the TV. */
 export function AuthForm({ initialMode = "signIn", onDone, onMode, tv = false, autoFocus = false }: AuthFormProps) {
   const t = useT();
   const account = useAccount();
@@ -61,9 +61,8 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, tv = false, a
         <input
           id={`${id}-email`}
           data-testid="auth-email"
-          type="email"
-          inputMode="email"
-          autoComplete="email"
+          type="text"
+          autoComplete="username"
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}

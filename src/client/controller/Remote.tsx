@@ -38,7 +38,9 @@ function stateLabel(player: PlayerState, tvName: string): string {
   if (player.state === "error") return friendlyError(player.error);
   if (player.state === "loading") return t("common.loading");
   if (player.buffering) return t("remote.buffering");
+  if (player.upNext && player.upNext.seconds !== null) return t("remote.upNextIn", { seconds: player.upNext.seconds }); // the TV's Up Next card, counting down
   if (player.state === "playing") return t("remote.playingOn", { tv: tvName });
+  if (player.ended) return t("end.finished");
   if (player.state === "paused") return t("remote.paused");
   return "";
 }
@@ -103,10 +105,18 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
           </div>
         )}
         <h2 data-testid="media-title">{title}</h2>
-        <p className={`state ${player.state === "error" ? "bad" : ""}`} data-testid="player-state" data-state={player.state} data-error={player.state === "error" ? player.error : undefined}>
-          {busy && <span className="spinner" />}
-          {stateLabel(player, tv.name)}
-        </p>
+        <div className="state-line">
+          <p className={`state ${player.state === "error" ? "bad" : ""}`} data-testid="player-state" data-state={player.state} data-error={player.state === "error" ? player.error : undefined}>
+            {busy && <span className="spinner" />}
+            {stateLabel(player, tv.name)}
+          </p>
+          {/* The TV is about to start the next episode by itself: the way to say no is here too, not only on the TV's remote. */}
+          {player.upNext && player.upNext.seconds !== null && (
+            <button className="state-action" data-testid="upnext-cancel" onClick={() => send({ type: "DISMISS_UP_NEXT" })} disabled={!online}>
+              {t("common.cancel")}
+            </button>
+          )}
+        </div>
       </section>
 
       <SeekBar

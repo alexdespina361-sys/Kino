@@ -354,11 +354,24 @@ export class AccountStore {
       .map((session) => ({ id: shortId(session.id), label: session.label, kind: session.kind, createdAt: session.createdAt, lastSeenAt: session.lastSeenAt, current: session.id === currentId }));
   }
 
+  private sessionOf(accountId: string, short: string): SessionDoc | undefined {
+    return [...this.sessions.values()].find((candidate) => candidate.accountId === accountId && shortId(candidate.id) === short);
+  }
+
   /** End one session of this account, named by the short id from the list. */
   revokeSession(accountId: string, short: string): boolean {
-    const session = [...this.sessions.values()].find((candidate) => candidate.accountId === accountId && shortId(candidate.id) === short);
+    const session = this.sessionOf(accountId, short);
     if (!session) return false;
     this.endSession(session.id);
+    return true;
+  }
+
+  /** Call one session of this account something else (the short id is from the list). */
+  renameSession(accountId: string, short: string, label: string): boolean {
+    const session = this.sessionOf(accountId, short);
+    if (!session) return false;
+    session.label = label;
+    this.touch(`session:${session.id}`);
     return true;
   }
 

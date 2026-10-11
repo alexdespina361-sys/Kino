@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t, useT } from "../i18n";
 import { CloseIcon } from "../shared/icons";
+import { useBackToClose } from "./backButton";
 import { codeFromScan } from "./scan";
 
 /** The browser's own QR reader (Chrome and Android WebViews). Not in TypeScript's DOM types yet. */
@@ -35,6 +36,7 @@ export function Scanner({ onCode, onClose, read = codeFromScan }: { onCode: (cod
   // The latest callbacks, without restarting the camera whenever the parent re-renders.
   const handlers = useRef({ onCode, onClose, read });
   handlers.current = { onCode, onClose, read };
+  useBackToClose(onClose);
 
   useEffect(() => {
     let stopped = false;

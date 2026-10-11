@@ -64,6 +64,8 @@ export function ListsSheet({ onClose }: { onClose: () => void }) {
   const back = () => setEditing(undefined);
   const changing = typeof editing === "string" ? lists.find((info) => info.id === editing) : undefined;
   const showing = editing === undefined || (typeof editing === "string" && !changing) ? undefined : editing;
+  /** The first list stays first: only the others have a place to move to, and need another to change places with. */
+  const place = changing ? lists.findIndex((info) => info.id === changing.id) : -1;
 
   return (
     <Sheet title={t(showing === undefined ? "lists.manage" : showing === null ? "lists.new" : "lists.edit")} onClose={showing === undefined ? onClose : back} testId="lists-sheet">
@@ -95,6 +97,9 @@ export function ListsSheet({ onClose }: { onClose: () => void }) {
             back();
           }}
           onCancel={back}
+          {...(changing && place > 0 && lists.length > 2
+            ? { onMove: (by: -1 | 1) => profileStore.moveList(changing.id, by), canMoveEarlier: place > 1, canMoveLater: place < lists.length - 1 }
+            : {})}
           onDelete={
             changing && changing.id !== DEFAULT_LIST
               ? () => {

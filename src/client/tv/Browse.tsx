@@ -102,8 +102,12 @@ interface Focused {
   source?: string;
 }
 
-/** A page over the library: choosing which lists a title is in (it was asked from `back`), or making, renaming and removing a list (`id` null: a new one). */
-type Overlay = { kind: "pick"; entry: Entry; back: Target } | { kind: "edit"; id: string | null; back: Target };
+/**
+ * A page over the library: choosing which lists a title is in (it was asked from `back`), or making, renaming, placing and removing a
+ * list (`id` null: a new one). A list made from the picker (`from`) takes the title in, and the picker comes back with it ticked.
+ */
+type PickOverlay = { kind: "pick"; entry: Entry; back: Target; fresh?: boolean };
+type Overlay = PickOverlay | { kind: "edit"; id: string | null; back: Target; from?: PickOverlay };
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
 const RAIL: Target = { zone: "rail", row: -1, col: -1 };
@@ -295,6 +299,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const several = lists.length > 1;
   const canAdd = lists.length < MAX_LISTS;
   const shownId = shownList(view, lists).id;
+  /** Where the list being changed stands: the first list stays first, so only the others have a place to move to (and need another to change places with). */
+  const editedId = overlay?.kind === "edit" ? overlay.id : null;
+  const editedAt = editedId ? lists.findIndex((info) => info.id === editedId) : -1;
 
   // Choosing a page shuts the menu at once. On a page with nothing to stand on (an empty list) the remote stays on the menu's line
   // for it, but the menu itself is closed; an arrow key opens it again.
@@ -320,6 +327,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     setPending(overlay?.back ?? CONTENT);
     setOverlay(null);
   };
+  /** Leaving a list's page: back to the picker it was asked from, or to where the remote was. */
+  const leaveEdit = () => (overlay?.kind === "edit" && overlay.from ? setOverlay(overlay.from) : closeOverlay());
   /** A title's own page opens over the library, on Play; closing it puts the remote back on the title it came from. */
   const openDetail = (title: Focused) => {
     setDetail(title);
@@ -942,9 +951,15 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
                 </button>
               );
             })}
+            {canAdd && (
+              <button className="tv-action tv-action-new" onClick={() => setOverlay({ kind: "edit", id: null, back: overlay.back, from: overlay })} data-nav data-testid="pick-new">
+                <PlusIcon /> {t("lists.new")}
+              </button>
+            )}
           </div>
           <div className="tv-actions">
-            <button className="tv-action tv-action-primary" onClick={closeOverlay} data-nav data-testid="pick-done">
+            {/* (A list just made from here has the title in it: the remote lands on Done.) */}
+            <button className="tv-action tv-action-primary" onClick={closeOverlay} data-nav data-testid="pick-done" {...(overlay.fresh ? { "data-autofocus": true } : {})}>
               {t("common.done")}
             </button>
           </div>
@@ -952,7 +967,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
       )}
 
       {overlay?.kind === "edit" && (
-        <Screen testId="tv-list-edit" compact focus onBack={closeOverlay}>
+        <Screen testId="tv-list-edit" compact focus onBack={leaveEdit}>
           <h1 className="tv-headline tv-headline-small">{t(overlay.id ? "lists.edit" : "lists.new")}</h1>
           <ListEditor
             tv
@@ -964,12 +979,19 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
                 return closeOverlay();
               }
               const made = profileStore.createList(name);
+              if (overlay.from) {
+                if (made) profileStore.setInList(listEntryOf(overlay.from.entry), true, made);
+                return setOverlay({ ...overlay.from, fresh: true });
+              }
               if (!made) return closeOverlay();
               selectList(made); // the new list is the last button
               setOverlay(null);
               setPending({ zone: "chips", row: 0, col: lists.length });
             }}
-            onCancel={closeOverlay}
+            onCancel={leaveEdit}
+            {...(editedAt > 0 && lists.length > 2
+              ? { onMove: (by: -1 | 1) => profileStore.moveList(editedId!, by), canMoveEarlier: editedAt > 1, canMoveLater: editedAt < lists.length - 1 }
+              : {})}
             onDelete={
               overlay.id && overlay.id !== DEFAULT_LIST
                 ? () => {

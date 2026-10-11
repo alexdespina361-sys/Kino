@@ -19,6 +19,7 @@ import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { readStorage, writeStorage } from "../shared/format";
+import { readKept, writeKept } from "../shared/kept";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { MoreIcon, TvIcon } from "../shared/icons";
 import { partyLink, readLaunchParams } from "../shared/launch";
@@ -112,7 +113,7 @@ export function Controller() {
 
   useEffect(() => {
     const socket = connectSocket({
-      hello: () => ({ type: "CTL_HELLO", controllerId: readStorage(CONTROLLER_KEY) }),
+      hello: () => ({ type: "CTL_HELLO", controllerId: readKept(CONTROLLER_KEY) }),
       onStatus: (status) => {
         setConnection(status);
         if (status !== "open") setPairing(false); // a code sent over a connection that is gone gets no answer: do not wait for one
@@ -120,7 +121,7 @@ export function Controller() {
       onMessage: (message) => {
         switch (message.type) {
           case "CTL_WELCOME": {
-            writeStorage(CONTROLLER_KEY, message.controllerId);
+            writeKept(CONTROLLER_KEY, message.controllerId);
             setTv(message.tv);
             setMedia(message.media);
             setPlayer(message.state);
@@ -222,7 +223,7 @@ export function Controller() {
 
   /** The menu shows the code a second phone joins with: opening it asks again, which gives the current code and keeps it good for a while. */
   const openMenu = () => {
-    socketRef.current?.send({ type: "CTL_HELLO", controllerId: readStorage(CONTROLLER_KEY) });
+    socketRef.current?.send({ type: "CTL_HELLO", controllerId: readKept(CONTROLLER_KEY) });
     setSheet("menu");
   };
 
@@ -304,6 +305,10 @@ export function Controller() {
   /* ------------------------------ views ------------------------------ */
 
   const closeApprove = () => setApproveCode(null);
+  /** Devices were signed out of the account: the TV that goes with this phone may be one of them, and finds out now rather than at its next exchange with the server. */
+  const tellTvToLookAgain = () => {
+    if (tv?.online) socketRef.current?.send({ type: "CMD", command: { type: "REFRESH_ACCOUNT" } });
+  };
   const accountButton = <AccountButton onClick={() => setShowAccount(true)} />
   // On top of whichever screen is showing: the account, a TV asking to be signed in, and what the account has to say.
   const accountLayer = (
@@ -313,7 +318,7 @@ export function Controller() {
           <LinkApprove code={approveCode} onClose={closeApprove} />
         </Page>
       ) : (
-        showAccount && <AccountScreen onClose={() => setShowAccount(false)} />
+        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} />
       )}
       {account.message && (
         <p className="account-toast" key={account.message.id} role="status" data-testid="account-toast">

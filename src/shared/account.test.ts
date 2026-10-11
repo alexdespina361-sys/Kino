@@ -7,6 +7,7 @@ import {
   listKey,
   listOf,
   ListNameSchema,
+  LoginSchema,
   mergeCollection,
   mergeData,
   nameFromEmail,
@@ -149,6 +150,17 @@ describe("lists", () => {
     expect(resolveLists([{ key: DEFAULT_LIST, at: 1, deleted: true }])).toEqual([{ id: DEFAULT_LIST }]);
   });
 
+  it("puts the lists someone placed in the order they placed them, and the ones never placed after, in the order they were made", () => {
+    const names: ListNameItem[] = [
+      { key: "la", at: 1, name: "First made" },
+      { key: "lb", at: 1, name: "Second made", order: 1 },
+      { key: "lc", at: 1, name: "Third made", order: 0 },
+      { key: "ld", at: 1, name: "Fourth made" },
+    ];
+    expect(resolveLists(names).map((list) => list.id)).toEqual([DEFAULT_LIST, "lc", "lb", "la", "ld"]);
+    expect(resolveLists([{ key: "lb", at: 1, name: "B", order: 3 }, { key: "la", at: 1, name: "A", order: 3 }]).map((list) => list.id)).toEqual([DEFAULT_LIST, "la", "lb"]);
+  });
+
   it("gives a new list an id that sorts after the lists made before it", () => {
     expect(newListId(1_800_000_000_000) < newListId(1_800_000_001_000)).toBe(true);
   });
@@ -181,16 +193,32 @@ describe("resolveSettings", () => {
 });
 
 describe("what people type", () => {
-  it("tidies an e-mail address and asks for a real password", () => {
+  it("tidies the name an account signs in with, which can be an address or anything else", () => {
     expect(RegisterSchema.parse({ email: "  Alex@Example.COM ", password: "longenough" }).email).toBe("alex@example.com");
-    expect(RegisterSchema.safeParse({ email: "nope", password: "longenough" }).success).toBe(false);
-    expect(RegisterSchema.safeParse({ email: "a@b.co", password: "short" }).success).toBe(false);
+    expect(RegisterSchema.parse({ email: " Robert ", password: "1" }).email).toBe("robert");
+    expect(RegisterSchema.parse({ email: "Ana Maria 7!", password: "1" }).email).toBe("ana maria 7!");
+    expect(RegisterSchema.parse({ email: "Ștefan", password: "1" }).email).toBe("ștefan");
+    expect(LoginSchema.parse({ email: "ROBERT", password: "1" }).email).toBe("robert"); // signing in finds the same account whatever the capitals
   });
 
-  it("names a first profile from the address, and picks the first picture not in use", () => {
+  it("asks for a name and a password, and for nothing about how long or how clever", () => {
+    expect(RegisterSchema.safeParse({ email: "", password: "1" }).success).toBe(false);
+    expect(RegisterSchema.safeParse({ email: "   ", password: "1" }).success).toBe(false);
+    expect(RegisterSchema.safeParse({ email: "a\nb", password: "1" }).success).toBe(false); // no line breaks or other invisible characters
+    expect(RegisterSchema.safeParse({ email: "x".repeat(255), password: "1" }).success).toBe(false);
+    expect(RegisterSchema.safeParse({ email: "robert", password: "" }).success).toBe(false);
+    for (const password of ["1", "a", "  ", "password", "🙂", "x".repeat(200)]) expect(RegisterSchema.safeParse({ email: "robert", password }).success).toBe(true);
+    expect(RegisterSchema.safeParse({ email: "robert", password: "x".repeat(201) }).success).toBe(false);
+  });
+
+  it("names a first profile from the account's name, and picks the first picture not in use", () => {
     expect(nameFromEmail("alex.popescu@x.com")).toBe("Alex");
     expect(nameFromEmail("ioana_m@x.com")).toBe("Ioana");
     expect(nameFromEmail("@x.com")).toBe("Me");
+    expect(nameFromEmail("robert")).toBe("Robert");
+    expect(nameFromEmail("my tv 2")).toBe("My tv 2");
+    expect(nameFromEmail("###")).toBe("Me");
+    expect(nameFromEmail("a very long name for a profile")).toBe("A very long name");
     expect(nextAvatar([])).toBe("fox");
     expect(nextAvatar(["fox", "cat"])).toBe("panda");
   });

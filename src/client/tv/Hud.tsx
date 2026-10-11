@@ -75,7 +75,8 @@ export interface HudProps {
   /** This screen's own sound is off (the volume stays the device's; this is only the switch). */
   muted: boolean;
   onMute: () => void;
-  onFullscreen: () => void;
+  /** Null in a browser that has no full screen to give the page, or is never asked for it (see fullscreen.ts): then there is no button. */
+  onFullscreen: (() => void) | null;
   onStop: () => void;
   /** The wait for the picture has gone on too long: a way out is offered. */
   stuck: boolean;
@@ -215,7 +216,7 @@ export function Hud(p: HudProps) {
         className={`tv-overlay ${p.visible ? "visible" : "hidden"}`}
         data-paused={(paused && !p.upNext) || undefined}
         onClick={(event) => event.target === event.currentTarget && p.onToggle()}
-        onDoubleClick={(event) => event.target === event.currentTarget && p.onFullscreen()}
+        onDoubleClick={(event) => event.target === event.currentTarget && p.onFullscreen?.()}
       >
         <header className="hud-top">
           <div className="hud-titles">
@@ -404,15 +405,17 @@ export function Hud(p: HudProps) {
               >
                 {p.muted ? <MutedIcon /> : <VolumeIcon />}
               </button>
-              <button
-                className="tv-btn tv-btn-icon"
-                data-testid="tv-fullscreen-btn"
-                onClick={p.onFullscreen}
-                title={t("hud.fullscreenTip")}
-                aria-label={t("hud.fullscreen")}
-              >
-                <FullscreenIcon />
-              </button>
+              {p.onFullscreen && (
+                <button
+                  className="tv-btn tv-btn-icon"
+                  data-testid="tv-fullscreen-btn"
+                  onClick={p.onFullscreen}
+                  title={t("hud.fullscreenTip")}
+                  aria-label={t("hud.fullscreen")}
+                >
+                  <FullscreenIcon />
+                </button>
+              )}
               <button
                 className="tv-btn tv-btn-icon tv-btn-stop"
                 data-testid="tv-stop-btn"

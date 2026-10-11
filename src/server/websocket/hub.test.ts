@@ -2,9 +2,12 @@ import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseServerMessage, type ClientMessage, type Command, type ServerMessage } from "../../shared";
+import { MemoryPersistence } from "../accounts/persistence";
 import { buildApp } from "../app";
 import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
 import type { ResolveFn } from "../resolvers";
+import { PairingStore } from "../sessions/pairings";
+import { Registry } from "../sessions/registry";
 import { CLOSE_REPLACED } from "./hub";
 
 /**
@@ -350,6 +353,53 @@ describe("reconnects", () => {
     const welcome = await tv.next("TV_WELCOME");
     expect(welcome.deviceId).not.toBe("tv_from_before_restart");
     expect(welcome.pairing?.code).toMatch(/^\d{6}$/);
+  });
+
+  it("a server that was restarted still knows the pair: the TV and the phone carry on as before, in either order", async () => {
+    // The first server's pairs are written to a database when it stops; the second starts from it, with nobody connected.
+    const persistence = new MemoryPersistence();
+    const serverOn = async () => {
+      const registry = new Registry();
+      const pairings = await PairingStore.open({ registry, persistence, flushMs: 0 });
+      const server = await buildApp({ registry, pairings, resolve: (url) => resolveImpl(url) });
+      await server.ready();
+      return server;
+    };
+    const first = await serverOn();
+    const tv = await Client.open(first);
+    tv.send({ type: "TV_HELLO" });
+    const { deviceId, pairing } = await tv.next("TV_WELCOME");
+    const phone = await Client.open(first);
+    phone.send({ type: "CTL_HELLO" });
+    await phone.next("CTL_WELCOME");
+    phone.send({ type: "PAIR", code: pairing!.code });
+    const { controllerId } = await phone.next("CTL_WELCOME");
+    tv.close();
+    phone.close();
+    await first.close();
+
+    const second = await serverOn();
+    try {
+      // The phone is back first: it has its TV, which is not here yet.
+      const phone2 = await Client.open(second);
+      clients.push(phone2);
+      phone2.send({ type: "CTL_HELLO", controllerId });
+      const welcome = await phone2.next("CTL_WELCOME");
+      expect(welcome.controllerId).toBe(controllerId);
+      expect(welcome.tv).toMatchObject({ online: false, controllerCount: 1 });
+
+      // The TV follows: still paired, nothing to show but its own screen, and the phone is told it is there.
+      const tv2 = await Client.open(second);
+      clients.push(tv2);
+      tv2.send({ type: "TV_HELLO", deviceId });
+      expect(await tv2.next("TV_WELCOME")).toMatchObject({ deviceId, paired: true, pairing: null });
+      expect((await phone2.next("TV_STATUS")).online).toBe(true);
+
+      phone2.send({ type: "CMD", command: { type: "PLAY" } });
+      expect((await tv2.next("TV_CMD")).command.type).toBe("PLAY");
+    } finally {
+      await second.close();
+    }
   });
 
   it("a second TV page takes over the device; the first is told to stand down", async () => {

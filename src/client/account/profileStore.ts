@@ -21,6 +21,7 @@ import {
   watchedKey,
   type ListInfo,
   type LiveListItem,
+  type LiveListName,
   type LiveProgress,
   type LiveWatched,
   type NormalizedMedia,
@@ -335,10 +336,29 @@ export class ProfileStore {
     return key;
   }
 
-  /** Give a list another name (the first list too: until then it is called "Favourites"). */
+  /** Give a list another name (the first list too: until then it is called "Favourites"). It keeps its place among the others. */
   renameList(id: string, name: string) {
     const named = ListNameSchema.safeParse(name);
-    if (named.success && resolveLists(this.data.listNames).some((list) => list.id === id)) this.put("listNames", { key: id, at: this.now(), name: named.data });
+    if (!named.success || !resolveLists(this.data.listNames).some((list) => list.id === id)) return;
+    const { order } = this.find<LiveListName>("listNames", id) ?? {};
+    this.put("listNames", { key: id, at: this.now(), name: named.data, ...(order === undefined ? {} : { order }) });
+  }
+
+  /** Put a list one place earlier or later among the others. The first list stays first, whatever is done. */
+  moveList(id: string, by: -1 | 1) {
+    const ids = resolveLists(this.data.listNames)
+      .map((list) => list.id)
+      .filter((other) => other !== DEFAULT_LIST);
+    const from = ids.indexOf(id);
+    const to = from + by;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to]!, ids[from]!];
+    const at = this.now();
+    // Every list is given its place, so that one that was never placed does not end up somewhere else than where it was shown.
+    ids.forEach((key, order) => {
+      const named = this.find<LiveListName>("listNames", key);
+      if (named && named.order !== order) this.put("listNames", { ...named, at, order });
+    });
   }
 
   /** Remove a list and the titles in it. The first list stays, whatever is done: it can be renamed and emptied, not removed. */

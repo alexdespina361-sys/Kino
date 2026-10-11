@@ -84,6 +84,8 @@
 /* ------------------------------ the phone's pages ------------------------------ */
 
 .flip { transform: scaleX(-1); }
+.turn-up { transform: rotate(-90deg); }
+.turn-down { transform: rotate(90deg); }
 .page { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--bg); animation: page-in 0.22s ease; }
 @keyframes page-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
 .page-head { display: flex; align-items: center; gap: 6px; padding: max(10px, env(safe-area-inset-top)) 10px 6px; }
@@ -125,8 +127,10 @@
 .segmented.compact { width: min(100%, 300px); margin: 0 auto; font-size: 0.85rem; }
 .segmented.compact button { padding: 8px 6px; }
 
-.swatches { display: flex; flex-wrap: wrap; gap: 14px; }
-.swatch { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: #fff; font-size: 1.2rem; transition: transform 0.12s ease, box-shadow 0.12s ease; }
+/* All six in one row, whatever the width: the gap gives a little first, then the swatches themselves (never a second line with one left over). */
+.swatches { display: flex; align-items: flex-start; gap: 14px; }
+.swatch { display: grid; place-items: center; flex: 0 1 42px; min-width: 0; aspect-ratio: 1; border-radius: 50%; color: #fff; font-size: 1.2rem; transition: transform 0.12s ease, box-shadow 0.12s ease; }
+@media (max-width: 380px) { .swatches { gap: 8px; } }
 .swatch svg { opacity: 0; transition: opacity 0.12s ease; }
 .swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px #fff; transform: scale(1.08); }
 .swatch[aria-checked="true"] svg { opacity: 1; }
@@ -146,6 +150,16 @@
 .device-icon { display: grid; place-items: center; color: var(--muted); font-size: 1.4rem; }
 .device-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .device-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The name is the button that renames it (a pencil after it says so); under a finger it is as wide as the row's text. */
+.device-name-button { display: flex; align-items: center; gap: 6px; min-width: 0; margin: -4px 0; padding: 4px 0; text-align: left; transition: color 0.12s ease; }
+.device-name-button b { min-width: 0; }
+.device-name-button svg { flex: none; color: var(--muted); font-size: 0.9rem; transition: color 0.12s ease; }
+.device-name-button:active svg, .device-name-button:focus-visible svg { color: var(--text); }
+@media (hover: hover) { .device-name-button:hover svg { color: var(--text); } }
+.device-name-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.device-name { width: 100%; min-width: 0; margin: -4px 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text); font: inherit; font-weight: 700; }
+.device-name:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.device-name + small { margin-top: 10px; } /* the box has a negative margin of 4px and its ring reaches 3px past it: the words under it are not left touching either */
 .device-text small { color: var(--muted); }
 .device-list li[data-current="true"] .device-text small { color: var(--ok); font-weight: 600; }
 
@@ -164,8 +178,7 @@
 .avatar-button:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff; }
 .signin-pill { display: inline-flex; align-items: center; flex: none; gap: 6px; padding: 8px 14px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 700; white-space: nowrap; }
 .signin-pill:active { background: var(--surface); }
-.pair-corner { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 14px; display: flex; align-items: center; gap: 8px; }
-.pair { position: relative; }
+.pair-corner { display: flex; align-items: center; gap: 8px; }
 
 .choose { align-items: center; justify-content: center; gap: 22px; text-align: center; }
 .choose h1 { font-size: 1.7rem; }

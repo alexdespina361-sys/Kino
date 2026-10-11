@@ -56,11 +56,12 @@ const BY_KEY: Record<string, RemoteAction> = {
   S: "stop",
 };
 
-/** Android TV style key codes, for browsers that report no usable `key` for the remote's buttons. */
+/** TV key codes, for browsers that report no usable `key` for the remote's buttons: Android TV's, then Hisense's (VIDAA), webOS's and Tizen's. */
 const BY_KEY_CODE: Record<number, RemoteAction> = {
   4: "back", // KEYCODE_BACK
   8: "back",
   13: "select",
+  19: "pause", // VIDAA
   27: "back",
   37: "left",
   38: "up",
@@ -75,6 +76,13 @@ const BY_KEY_CODE: Record<number, RemoteAction> = {
   177: "previous",
   178: "stop",
   179: "playpause",
+  412: "rewind", // VIDAA
+  413: "stop", // VIDAA
+  415: "play", // VIDAA
+  417: "forward", // VIDAA
+  461: "back", // webOS
+  10009: "back", // Tizen
+  10252: "playpause", // Tizen
 };
 
 /** The input types that are pressed, not typed into. */

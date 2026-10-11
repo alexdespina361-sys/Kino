@@ -95,6 +95,7 @@ interface PageProps {
 export function PartyPage(p: PageProps) {
   const t = useT();
   const [joining, setJoining] = useState(false);
+  const leaveRef = useRef<HTMLButtonElement>(null);
   // Back from a party that was joined: the question again, not the number pad.
   useEffect(() => {
     if (p.following) setJoining(false);
@@ -103,7 +104,8 @@ export function PartyPage(p: PageProps) {
   // A screen that watches along: the host chooses what plays, so there is nothing to do but wait, or leave.
   if (p.following) {
     return (
-      <Screen testId="tv-party-guest">
+      // (Back has nowhere to go from a page that only waits: it points at the way out, and leaving stays a press of OK.)
+      <Screen testId="tv-party-guest" onBack={() => leaveRef.current?.focus()}>
         <span className="tv-ready-icon">
           <CheckIcon />
         </span>
@@ -119,7 +121,7 @@ export function PartyPage(p: PageProps) {
               <FullscreenIcon /> {t(p.fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
             </button>
           )}
-          <button className="tv-action" onClick={p.onLeave} data-testid="tv-disconnect" data-nav>
+          <button ref={leaveRef} className="tv-action" onClick={p.onLeave} data-testid="tv-disconnect" data-nav>
             {t("tv.stopFollowing")}
           </button>
         </div>

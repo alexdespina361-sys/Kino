@@ -116,6 +116,25 @@ describe("sessions", () => {
     expect(store.getSession(mine.token)).toBeDefined();
   });
 
+  it("lets a device be renamed (only by its own account), and keeps the name between runs", async () => {
+    const persistence = new MemoryPersistence();
+    const { store, account } = await withAccount(persistence);
+    const other = store.createAccount("sam@example.com", "hash");
+    if (!other.ok) throw new Error("no account");
+    const { token } = store.createSession(account.id, "tv", "Chrome on Windows");
+    const [listed] = store.listSessions(account.id);
+
+    expect(store.renameSession(other.value.id, listed!.id, "Mine now")).toBe(false);
+    expect(store.renameSession(account.id, "nope", "Kitchen")).toBe(false);
+    expect(store.listSessions(account.id)[0]!.label).toBe("Chrome on Windows");
+
+    expect(store.renameSession(account.id, listed!.id, "Living room TV")).toBe(true);
+    await store.flush();
+    const again = await open(persistence);
+    expect(again.listSessions(account.id)[0]).toMatchObject({ kind: "tv", label: "Living room TV" });
+    expect(again.getSession(token)?.label).toBe("Living room TV");
+  });
+
   it("keeps a device that is used signed in, and lets one that is not expire", async () => {
     const { store, account } = await withAccount();
     const used = store.createSession(account.id, "browser", "Used");
@@ -367,9 +386,12 @@ describe("keeping it between runs", () => {
 describe("persistenceFromEnv", () => {
   it("chooses memory, a file, or Postgres from the environment", async () => {
     expect((await persistenceFromEnv({ DATA_DIR: "memory" })).describe).toMatch(/memory/);
+    expect((await persistenceFromEnv({ DATA_DIR: "memory" })).kind).toBe("memory");
     expect((await persistenceFromEnv({ DATA_DIR: "somewhere" })).describe).toMatch(/kino\.json/);
+    expect((await persistenceFromEnv({ DATA_DIR: "somewhere" })).kind).toBe("file");
     const pg = await persistenceFromEnv({ DATABASE_URL: "postgres://user:pass@localhost:1/db" });
     expect(pg.describe).toMatch(/Postgres/);
+    expect(pg.kind).toBe("postgres");
     await pg.persistence.close?.();
   });
 

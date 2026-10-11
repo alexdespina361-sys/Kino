@@ -78,6 +78,7 @@ export const api = {
   deleteAccount: async (password: string): Promise<void> => void (await request("POST", "/api/me/delete", { password })),
 
   sessions: (): Promise<SessionInfo[]> => ask(SessionInfoSchema.array(), "GET", "/api/sessions"),
+  renameSession: (id: string, label: string): Promise<SessionInfo[]> => ask(SessionInfoSchema.array(), "PATCH", `/api/sessions/${encodeURIComponent(id)}`, { label }),
   endSession: async (id: string): Promise<void> => void (await request("DELETE", `/api/sessions/${encodeURIComponent(id)}`)),
   endOtherSessions: async (): Promise<void> => void (await request("DELETE", "/api/sessions")),
 
