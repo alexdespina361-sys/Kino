@@ -129,7 +129,7 @@ export function PartyPage(p: PageProps) {
 
   if (p.party?.role === "host") {
     return (
-      <Screen testId="tv-party" compact focus onBack={p.onBack}>
+      <Screen key="host" testId="tv-party" compact focus onBack={p.onBack}>
         <h1 className="tv-headline tv-headline-small">{t("party.rail")}</h1>
         <Invite code={p.party.code?.code} />
         <Members party={p.party} nav={PAGE_NAV} onRemove={p.onRemove} />
@@ -149,7 +149,8 @@ export function PartyPage(p: PageProps) {
   if (joining) return <JoinPage error={p.error} onJoin={p.onJoin} onBack={() => setJoining(false)} />;
 
   return (
-    <Screen testId="tv-party" focus onBack={p.onBack}>
+    // (Its own key: Start turns this page into the host's, and the remote must land on that page's button, not stay on the one that went.)
+    <Screen key="start" testId="tv-party" focus onBack={p.onBack}>
       <h1 className="tv-headline">{t("party.rail")}</h1>
       <p className="tv-lead">{t("party.lead")}</p>
       <div className="tv-party-choices">

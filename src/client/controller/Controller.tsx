@@ -32,6 +32,7 @@ import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
 import { PlayLink } from "./PlayLink";
 import { Remote, type SheetKind } from "./Remote";
+import { LINE_EVENT } from "./Round";
 import { ContinueRow, ListRows } from "./Rows";
 import { Sheet } from "./Sheet";
 import { TitleSheet } from "./TitleSheet";
@@ -249,7 +250,7 @@ export function Controller() {
   }, [player, media]);
 
   // What the TV just did, in a line at the bottom: the answer to a button, and the news when someone else pressed one.
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const [toast, setToast] = useState<{ id: number; text: string; long?: true } | null>(null);
   const lastPlayerRef = useRef<PlayerState>(IDLE_STATE);
   const sheetRef = useRef(sheet);
   sheetRef.current = sheet;
@@ -264,9 +265,20 @@ export function Controller() {
   }, [sheet]);
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 2000);
+    const timer = setTimeout(() => setToast(null), toast.long ? 4500 : 2000);
     return () => clearTimeout(timer);
   }, [toast]);
+  // What a hold on a title did (it went in a list, or came out) is said down here as well, where the finger is.
+  useEffect(() => {
+    const say = (event: Event) => setToast((current) => ({ id: (current?.id ?? 0) + 1, text: String((event as CustomEvent<string>).detail) }));
+    window.addEventListener(LINE_EVENT, say);
+    return () => window.removeEventListener(LINE_EVENT, say);
+  }, []);
+  // A play that did not work says so where the thumb is: the page's own line sits at the top of a library that may be scrolled far from it (the link sheet has the line itself, in view).
+  useEffect(() => {
+    if (resolve?.phase === "failed" && sheetRef.current !== "link") setToast((current) => ({ id: (current?.id ?? 0) + 1, text: resolveFailure(resolve), long: true }));
+    else if (resolve?.phase === "resolving") setToast((current) => (current?.long ? null : current)); // another try: the answer to the last one has had its say
+  }, [resolve]);
 
   // A lookup that never reports back must not leave the phone waiting.
   useEffect(() => {
@@ -487,6 +499,7 @@ export function Controller() {
             socketRef.current?.send({ type: "ADD_TV", code });
           }}
           onRemove={(id) => socketRef.current?.send({ type: "REMOVE_TV", id })}
+          onEnd={() => socketRef.current?.send({ type: "END_PARTY" })}
         />
       )}
       {other && (

@@ -26,7 +26,8 @@ export interface LibraryService {
   seasons(link: string): Promise<number[]>;
   /**
    * Hears how a try at playing a link went. The places list far more than they can play, so a title whose video was not there
-   * (or could not be reached twice running) is left out of what the library lists and finds for a while; one that plays is back for good.
+   * (or could not be reached on two separate tries) is left out of what the library lists for a while, and out of what it finds
+   * too unless it was only out of reach; one that plays is back for good.
    */
   played(link: string, outcome: PlayOutcome): void;
 }
@@ -53,6 +54,8 @@ const ENOUGH_ANSWERS = 3;
 const MAX_QUERY_LENGTH = 100;
 /** A link is left out of the lists at this many strikes: a place that has no video of it is two, a video that could not be reached just now is one. */
 const STRIKES_TO_HIDE = 2;
+/** A video that could not be reached counts as another strike only when the try comes this long after the one before: a bad moment fails every try at once. */
+export const STRIKE_GAP_MS = 2 * 60 * 1000;
 /** The links that failed to play are remembered for this many of them (a link that is not a title costs a place here too), the oldest going first. */
 const FAILURES_REMEMBERED = 500;
 
@@ -77,23 +80,27 @@ export function createLibrary(options: LibraryOptions): LibraryService {
   const noVideoMs = options.noVideoMs ?? ttlMs;
   const entries: Entry[] = options.sources.map((source) => ({ source, rows: [], collectedAt: 0, nextAttempt: 0, inflight: null }));
 
-  /** The links that failed to play, with their strikes and when the last one came: at two the title is left out of the lists until `noVideoMs` has passed. */
-  const failures = new Map<string, { strikes: number; at: number }>();
-  const listed = (item: LibraryItem): boolean => {
+  /**
+   * The links that failed to play, with their strikes and when the last one came: at two the title is left out of the lists until
+   * `noVideoMs` has passed. `hard` is for a place that has no video of it at all, as against one that could not be reached.
+   */
+  const failures = new Map<string, { strikes: number; at: number; hard: boolean }>();
+  /** Whether a title is offered. A search leaves out less: a title that was only out of reach is still found when it is asked for by name. */
+  const listed = (item: LibraryItem, asked = false): boolean => {
     const failure = failures.get(item.url);
     if (!failure) return true;
     if (now() - failure.at >= noVideoMs) {
       failures.delete(item.url);
       return true;
     }
-    return failure.strikes < STRIKES_TO_HIDE;
+    return failure.strikes < STRIKES_TO_HIDE || (asked && !failure.hard);
   };
   /** The rows without the titles that are left out; a row left with nothing goes too. */
   const listedRows = (rows: LibraryRow[]): LibraryRow[] =>
     failures.size === 0
       ? rows
       : rows.flatMap((row) => {
-          const items = row.items.filter(listed);
+          const items = row.items.filter((item) => listed(item));
           return items.length === row.items.length ? [row] : items.length > 0 ? [{ ...row, items }] : [];
         });
 
@@ -170,7 +177,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       const found: LibraryItem[] = [];
       const take = (items: LibraryItem[]) => {
         for (const item of items) {
-          if (seen.has(item.id) || !listed(item)) continue;
+          if (seen.has(item.id) || !listed(item, true)) continue;
           seen.add(item.id);
           found.push(item);
         }
@@ -195,7 +202,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       if (found.length < ENOUGH_ANSWERS) take(searchItems((await Promise.all(guessesFor(text).map(ask))).flat(), text));
       return found;
     },
-    similar: async (link: string) => (await similarTo(link, (source) => source.similar?.(link))).filter(listed),
+    similar: async (link: string) => (await similarTo(link, (source) => source.similar?.(link))).filter((item) => listed(item)),
     episodes: (link: string, season: number) => episodesOf(`${season}|${link}`, (source) => source.episodes?.(link, season)),
     seasons: (link: string) => seasonsOf(link, (source) => source.seasons?.(link)),
     played(link: string, outcome: PlayOutcome) {
@@ -205,9 +212,16 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       }
       if (link.length > 2048) return;
       const before = failures.get(link);
-      const strikes = (before && now() - before.at < noVideoMs ? before.strikes : 0) + (outcome === "none" ? STRIKES_TO_HIDE : 1);
+      const kept = before && now() - before.at < noVideoMs ? before : undefined;
+      // No video at the place is final; one that could not be reached counts only as a separate try (two at once are one bad moment).
+      const next =
+        outcome === "none"
+          ? { strikes: STRIKES_TO_HIDE, at: now(), hard: true }
+          : kept && (kept.hard || now() - kept.at < STRIKE_GAP_MS)
+            ? kept
+            : { strikes: (kept?.strikes ?? 0) + 1, at: now(), hard: false };
       failures.delete(link); // (set again below, so the map stays in the order the links last failed)
-      failures.set(link, { strikes, at: now() });
+      failures.set(link, next);
       if (failures.size > FAILURES_REMEMBERED) failures.delete(failures.keys().next().value!);
     },
   };

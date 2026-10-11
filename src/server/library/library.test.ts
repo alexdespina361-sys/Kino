@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { LibraryRow } from "../../shared";
-import { createLibrary, type LibrarySource } from "./library";
+import { createLibrary, STRIKE_GAP_MS, type LibrarySource } from "./library";
 
 const row = (title: string, count = 2): LibraryRow => ({
   id: title.toLowerCase(),
@@ -346,6 +346,8 @@ describe("createLibrary titles with no video", () => {
   const urls = (rows: LibraryRow[]) => rows.flatMap((one) => one.items.map((found) => found.url));
   const first = "https://x.example/One/0";
   const second = "https://x.example/One/1";
+  /** Long enough to jump the gap between two tries without the list or the strikes going stale. */
+  const patient = { ttlMs: 100 * STRIKE_GAP_MS, noVideoMs: 10 * STRIKE_GAP_MS };
 
   it("leaves a title out of the rows once a place has no video of it, and a row with nothing left in it", async () => {
     const { library } = setup([fakeSource("a", [gives(row("One"), row("Two", 1))])]);
@@ -356,13 +358,50 @@ describe("createLibrary titles with no video", () => {
   });
 
   it("waits for a second failure when the video was only out of reach, and forgives a title once it plays", async () => {
-    const { library } = setup([fakeSource("a", [gives(row("One"))])]);
+    const { library, advance } = setup([fakeSource("a", [gives(row("One"))])], patient);
     library.played(first, "failed");
     expect(urls((await library.get()).rows)).toContain(first);
+    advance(STRIKE_GAP_MS);
     library.played(first, "failed");
     expect(urls((await library.get()).rows)).not.toContain(first);
     library.played(first, "found");
     expect(urls((await library.get()).rows)).toContain(first);
+
+    library.played(second, "failed"); // wherever it stands in its row
+    advance(STRIKE_GAP_MS);
+    library.played(second, "failed");
+    expect(urls((await library.get()).rows)).toEqual([first]);
+  });
+
+  it("counts tries that fail together as one bad moment, not as two strikes", async () => {
+    const { library, advance } = setup([fakeSource("a", [gives(row("One"))])], patient);
+    library.played(first, "failed");
+    advance(STRIKE_GAP_MS - 1);
+    library.played(first, "failed"); // another phone of the party, or the same one trying again at once
+    expect(urls((await library.get()).rows)).toContain(first);
+    advance(1);
+    library.played(first, "failed"); // a separate try, measured from the first
+    expect(urls((await library.get()).rows)).not.toContain(first);
+  });
+
+  it("still finds a title that was only out of reach when it is asked for by name, but not one that has no video", async () => {
+    const found = { id: "r", title: "Remote Title", url: "https://x.example/remote" };
+    const source: LibrarySource = { id: "s", name: "s", load: gives(row("One")), search: () => Promise.resolve([found]) };
+    const { library, advance } = setup([source], patient);
+    library.played(found.url, "failed");
+    advance(STRIKE_GAP_MS);
+    library.played(found.url, "failed");
+    expect((await library.search("remote title")).map((one) => one.id)).toEqual(["r"]);
+    library.played(found.url, "none");
+    expect(await library.search("remote title")).toEqual([]);
+  });
+
+  it("does not let a try that failed to be reached soften a title that has no video", async () => {
+    const { library, advance } = setup([fakeSource("a", [gives(row("One"))])], patient);
+    library.played(first, "none");
+    advance(STRIKE_GAP_MS);
+    library.played(first, "failed");
+    expect(urls((await library.get()).rows)).not.toContain(first);
   });
 
   it("brings a title back after a while, with its strikes forgotten", async () => {

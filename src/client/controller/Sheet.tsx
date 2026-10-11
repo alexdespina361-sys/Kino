@@ -50,6 +50,8 @@ function usePullToClose(backdrop: RefObject<HTMLDivElement | null>, sheet: RefOb
 
     const onStart = (event: TouchEvent) => {
       if (event.touches.length !== 1) return void (touch = null);
+      // A finger on a field is the field's (moving the caret, selecting what was typed), not a pull on the sheet.
+      if (event.target instanceof Element && event.target.closest("input, textarea, select")) return void (touch = null);
       const finger = event.touches[0]!;
       const list = scrollerAt(event.target, panel);
       touch = { y: finger.clientY, x: finger.clientX, free: !list || list.scrollTop <= 0, pulling: false, last: { y: finger.clientY, at: event.timeStamp }, speed: 0 };

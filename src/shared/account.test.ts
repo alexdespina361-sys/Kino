@@ -17,7 +17,9 @@ import {
   RegisterSchema,
   resolveLists,
   resolveSettings,
+  savedKeys,
   SyncRequestSchema,
+  titleLink,
   watchedKey,
   type ListNameItem,
   type LiveProgress,
@@ -107,6 +109,23 @@ describe("keys", () => {
     expect(progressKey({ url: "https://s/watch/9#top" })).toBe("url:https://s/watch/9");
     expect(watchedKey({ show: "Dark", season: 2, episode: 3 })).toBe("Dark|2x3");
     expect(listKey("https://s/watch/9#x")).toBe("url:https://s/watch/9");
+  });
+
+  it("makes a show one title in a list whichever of its episodes it was found by, and leaves every other link as it is", () => {
+    expect(titleLink("https://s/watch/1399?s=3&e=5")).toBe("https://s/watch/1399?s=1&e=1");
+    expect(titleLink("https://s/watch/1399?s=1&e=1#x")).toBe("https://s/watch/1399?s=1&e=1");
+    expect(titleLink("https://s/watch/1399?x=1&s=12&e=104&y=2")).toBe("https://s/watch/1399?x=1&s=1&e=1&y=2");
+    expect(listKey("https://s/watch/1399?s=3&e=5")).toBe(listKey("https://s/watch/1399?s=1&e=1"));
+    expect(listKey("https://s/watch/1399?s=3&e=5", "l1abc")).toBe("l1abc|url:https://s/watch/1399?s=1&e=1");
+    for (const other of ["https://s/watch/603", "https://s/watch/1399?s=3", "https://s/watch/1399?e=5&s=3", "https://s/watch/1399?ss=3&e=5", "https://archive.org/details/film"]) expect(titleLink(other)).toBe(other);
+  });
+
+  it("works out from the links which titles are saved, so a show saved under an episode's link still counts", () => {
+    const saved = savedKeys([{ url: "https://s/watch/1399?s=3&e=5" }, { url: "https://s/watch/603", list: "l1abc" }]);
+    expect(saved.has(listKey("https://s/watch/1399?s=1&e=1"))).toBe(true);
+    expect(saved.has(listKey("https://s/watch/1399?s=1&e=1", "l1abc"))).toBe(false);
+    expect(saved.has(listKey("https://s/watch/603", "l1abc"))).toBe(true);
+    expect(saved.has(listKey("https://s/watch/603"))).toBe(false);
   });
 });
 

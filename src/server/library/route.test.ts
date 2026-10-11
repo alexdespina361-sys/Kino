@@ -72,6 +72,7 @@ describe("GET /api/library/similar", () => {
 
     const unknown = await app.inject({ url: `/api/library/similar?url=${encodeURIComponent("https://x.example/watch/2")}` });
     expect(unknown.json()).toEqual({ items: [] });
+    expect(unknown.headers["cache-control"]).toBe("no-store"); // may be a place that could not be reached just now
   });
 
   it("wants a link", async () => {
@@ -95,6 +96,7 @@ describe("GET /api/library/episodes", () => {
 
     const unknown = await app.inject({ url: `/api/library/episodes?season=1&url=${encodeURIComponent("https://x.example/watch/9")}` });
     expect(unknown.json()).toEqual({ episodes: [] });
+    expect(unknown.headers["cache-control"]).toBe("no-store");
   });
 
   it("wants a link and a season that is a number", async () => {

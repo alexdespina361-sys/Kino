@@ -14,14 +14,18 @@ let remembered: LibraryData | null = null;
 type Status = "loading" | "ready" | "failed";
 type Filter = "all" | "movies" | "series";
 
+/** A search that could not be made is made again this long after. */
+const SEARCH_RETRY_MS = 5000;
+
 /**
  * The search that was open when the home screen went away (a video was started from it, and then stopped): the words, the filter, what
  * the library answered, and how far down the list the page was scrolled. Coming back is coming back to the same list, not to an empty box.
  */
 const kept: { query: string; filter: Filter; found: { query: string; items: LibraryItem[] } | null; scroll: number | null } = { query: "", filter: "all", found: null, scroll: null };
 
-const isMovies = (row: LibraryData["rows"][number]) => row.id.includes("movie") || row.title.toLowerCase().includes("movie");
-const isSeries = (row: LibraryData["rows"][number]) => row.id.includes("tv") || /series|shows|docuseries|anime/i.test(row.title);
+/** What a row is: what its place says, else what its name suggests ("Feature films", "Classic TV"). Rows that are both, or neither, are only in All. */
+const isMovies = (row: LibraryData["rows"][number]) => (row.kind ? row.kind === "movie" : /movie|film/i.test(`${row.id} ${row.title}`));
+const isSeries = (row: LibraryData["rows"][number]) => (row.kind ? row.kind === "series" : /series|shows|docuseries|anime|(^|[^a-z])tv([^a-z]|$)/i.test(`${row.id} ${row.title}`));
 
 /** What is typed, as it is looked for. */
 const wanted = (query: string) => query.trim().toLowerCase();
@@ -48,6 +52,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
   const [filter, setFilter] = useState<Filter>(kept.filter);
   const [attempt, setAttempt] = useState(0);
   const [searchFailed, setSearchFailed] = useState(false);
+  const [searchTry, setSearchTry] = useState(0);
   const root = useRef<HTMLElement>(null);
 
   const displayedRows = useMemo(() => {
@@ -121,6 +126,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
     const local = onThePage(library, q);
     const seen = new Set(local.map((item) => item.id));
     setSearchResults(local);
+    if (q.length < 2) return setSearching(false); // a letter is too little to ask the server about
     setSearching(true);
 
     // 2. Debounced remote search
@@ -154,7 +160,14 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
       live = false;
       clearTimeout(timer);
     };
-  }, [query, library]);
+  }, [query, library, searchTry]);
+
+  // A search that did not get an answer is asked again every few seconds for as long as it is on screen.
+  useEffect(() => {
+    if (!searchFailed) return;
+    const timer = setTimeout(() => setSearchTry((n) => n + 1), SEARCH_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [searchFailed, searchTry]);
 
   if (status === "loading") {
     return (
@@ -219,7 +232,13 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
       {searchResults !== null ? (
         <div className="lib-row" data-testid="library-search-results">
           <h3>
-            {searchResults.length > 0 ? t("library.resultsFor", { query }) : searchFailed ? t("tv.libraryFailed") : t("library.noMatches", { query })}
+            {searchResults.length > 0
+              ? t("library.resultsFor", { query }) + (searchFailed ? t("tv.searchOffline") : "")
+              : searching
+                ? t("tv.looking")
+                : searchFailed
+                  ? t("tv.searchFailed")
+                  : t("library.noMatches", { query })}
             {searching && <span className="spinner" style={{ marginLeft: 8 }} />}
           </h3>
           {searchResults.length > 0 && (
@@ -251,7 +270,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
 
 /** A title in a row: its picture, the round + on it, and a hold that does what the + does. */
 function Tile({ item, toggle, onOpen }: { item: LibraryItem; toggle: ListToggle; onOpen: () => void }) {
-  const hold = useHold(toggle.onClick);
+  const hold = useHold(toggle.onHold);
   return (
     <div className="lib-tile" data-in-list={toggle.inList}>
       <button className="lib-card" data-testid="library-tile" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
@@ -269,7 +288,7 @@ function Tile({ item, toggle, onOpen }: { item: LibraryItem; toggle: ListToggle;
 /** A title found by the search: one line in a list that scrolls with the page. */
 function Result({ item, toggle, onOpen }: { item: LibraryItem; toggle: ListToggle; onOpen: () => void }) {
   const t = useT();
-  const hold = useHold(toggle.onClick);
+  const hold = useHold(toggle.onHold);
   const kind = item.kind === "movie" ? t("library.kindMovie") : item.kind === "series" ? t("library.kindSeries") : undefined;
   const meta = [item.year, kind].filter(Boolean).join(" · ");
   return (

@@ -92,7 +92,8 @@ pnpm build && pnpm start     # http://localhost:8787
 - **The box for pasting a link is off** on a new phone, since most of what is played comes from the library. The phone's menu has a switch that brings
   it back (kept on that phone); it is there whatever the switch says while the library has nothing to show, as the only way to start anything.
   Opening the phone page as `/?url=<link>` plays that link once connected (the hook for a share button)
-- **Lists on the phone.** The round **+** on a title saves it in Favourites (and takes it out again), and so does holding the title; once there
+- **Lists on the phone.** The round **+** on a title saves it in Favourites (and takes it out again), and so does holding the title (a line at
+  the bottom says "Added to Favourites", the + being a corner away from the finger); once there
   is a second list it asks which lists the title is in, with **New list** there too. Each list with something in it is a row on the home screen,
   and **Manage lists** (at the end of the first row's heading) makes, renames and deletes them. The first list can be renamed and emptied, never deleted.
 - **Add it to the home screen** and the page opens as an app with no browser bar (`public/manifest.webmanifest`; on an iPhone that is the only
@@ -193,7 +194,9 @@ is watching on it, or else by its own name ("TV 3F2A"). Ways in:
   6-digit code, a QR code and the address; on another screen choose **Watch party → Join a party** and type the code with the remote's
   number keys (the on-screen pad works too).
 - **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with a **Share link** button, and
-  lists who is in (the host's phone can send any guest away). Typing the pairing code that another TV shows into the phone still works.
+  lists who is in (the host's phone can send any guest away, or end the party). Typing the pairing code that another TV shows into the phone
+  still works; a party's own code typed there is told apart from a wrong one (`ADD_PARTY_CODE`: the phone is told what the code is for, and it
+  does not count against the limit).
 - **From a phone with no TV:** the code of a party typed where a TV's code goes (the phone's first screen) is recognised, and the phone opens
   the party as a screen (`/?party=<code>`), the same as the link does. The server answers such a code with `PARTY_CODE`; other wrong
   codes are still "Invalid or expired code" and count against the pairing limit.
@@ -201,8 +204,8 @@ is watching on it, or else by its own name ("TV 3F2A"). Ways in:
   what lets the browser play with sound, and it takes the page full screen like any first press).
 
 The code lasts ten minutes (renewed while it is on screen), admits screens until the party is full, and wrong codes count against the same
-limit as pairing. A TV with a phone connected can host a party but not join one. Everybody in a party can see who else is in it; the host can remove
-a guest or end the party, and a guest can leave from its own bar.
+limit as pairing. A TV with a phone connected can host a party but not join one. Everybody in a party can see who else is in it; the host (on the TV,
+or on its phone) can remove a guest or end the party, and a guest can leave from its own bar.
 
 **What the host decides:** what plays, a guest that joins mid-film starts at the host's place, pause, skipping, speed and stop. The host
 reports its position, the server relays it, and each guest nudges its speed by a few percent when it drifts a fraction of a second, or jumps when it is
@@ -221,6 +224,9 @@ that hosts gets the same button). **Full screen** is on the waiting page and in 
 The phone's home screen (and "Change video") shows rows of titles to tap, like a streaming app. The server collects them from places that
 offer video openly, keeps them for six hours, and serves the old list at once while it fetches a new one (or when the place is down).
 A title is only a link: tapping it is the same as pasting it, so the existing resolver finds the video and the TV plays it.
+The phone's search answers from the titles on the page at once and, from the second letter, adds what the library knows; when the library
+cannot be asked it says so (keeping what the page had) and asks again every few seconds. A play that fails is said in a line at the bottom as
+well as in the page's own status, which can be far above a library that is scrolled down.
 
 - The default library source is Filmpire (`src/server/library/filmpire.ts`), presenting live categories (Trending Movies & Series, Popular Movies & Series, Top Rated, Animation & Anime, Action & Sci-Fi) and TMDB multi-search. Each title resolves directly to `https://filmpire.sc/watch/:id` (or `?s=1&e=1` for TV shows) which the built-in Filmpire resolver decrypts and plays automatically.
 - An alternative source is the Internet Archive's film collections (`src/server/library/internet-archive.ts`).
@@ -244,9 +250,11 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
   along has no library, since it can't choose what plays.
 - **Titles that do not play stop being offered.** A place lists far more than it can play, and only a try tells which. The server hears how every
   try at playing went (`library.played(link, outcome)`, from the WebSocket path only, not from `GET /api/resolve`, which anyone may ask): a place that
-  says it has no video of a title takes it off the lists at once, a video that could not be reached just now takes it off at the second failure
-  in a row, and a title that plays is back for good. Left out means out of the rows, of the search and of "titles like this" for six hours
-  (the library's own lifetime), then it is tried again; the memory is the server's, shared by everyone, and lost when it restarts. A screen
+  says it has no video of a title takes it off the lists at once; a video that could not be reached just now is one strike, and a second strike
+  from a separate try (two minutes or more after the first: a burst of failures at once is one) takes it off, and a title that plays is back
+  for good. Left out means out of the rows and of "titles like this" for six hours (the library's own lifetime), then it is tried again; a title
+  that a place said has no video is also out of the search, while one that only failed twice still turns up there (typing its name is asking
+  for it). The memory is the server's, shared by everyone, and lost when it restarts. A screen
   that sees a try fail (the TV's notice, the phone's status line) asks for the lists again past the browser's memory, and a search is asked
   again with them, so the title is gone from what is on screen. Only the title's own link counts: a show whose first episode (what its tile plays)
   is missing is left out as a whole, one whose later episode is missing is not. Nothing here asks a place about a title ahead of time; the

@@ -157,6 +157,16 @@ export function resumable(entry: Entry, progress: readonly LiveProgress[]): Entr
   return { ...entry, resumeUrl: card.url, ...(startAt !== undefined ? { startAt } : {}) };
 }
 
+/** A title without what was known of how far it had got when it was opened: for opening its page again after more of it was watched (see `resumable`). */
+export function asOpened(entry: Entry): Entry {
+  const plain = { ...entry };
+  delete plain.startAt;
+  delete plain.resumeUrl;
+  delete plain.progress;
+  delete plain.note;
+  return plain;
+}
+
 /** What this profile's watched episodes of a show are filed under: the name its card has (the show's, as the player gave it), else the title's own. */
 export const showKeyOf = (entry: Entry, progress: readonly LiveProgress[]): string => cardOf(entry, progress)?.title ?? entry.title;
 

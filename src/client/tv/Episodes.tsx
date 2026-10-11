@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { LiveProgress, LiveWatched } from "../../shared";
 import { describeStatus, episodeName, episodeStatus } from "../../shared";
 import { t } from "../i18n";
@@ -41,15 +41,21 @@ export interface SeriesPage {
 /**
  * Everything a show's own page is made of besides what any title's is: the seasons, and the episodes of the one that is shown with
  * what this profile did with each. Nothing for a film (its link is not even asked about when the library says it is one).
+ * `browsing` is the season a page that is opened again was showing, when it was left.
  */
-export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveProgress[], watched: readonly LiveWatched[]): SeriesPage {
+export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveProgress[], watched: readonly LiveWatched[], browsing?: number): SeriesPage {
   const asked = entry !== undefined && !entry.opens && entry.url !== "" && entry.kind !== "movie";
   const found = useSeasons(asked ? entry.url : undefined);
   const seasons = found ?? [];
   const isShow = entry?.kind === "series" || seasons.length > 0;
   const start = entry && isShow ? startOf(entry, true, progress) : undefined;
 
-  const [picked, setPicked] = useState<{ id: string; season: number }>();
+  const [picked, setPicked] = useState<{ id: string; season: number } | undefined>(() => (entry && browsing !== undefined ? { id: entry.id, season: browsing } : undefined));
+  // A page that was closed forgets the season that was browsed on it: it opens next on the one this profile is at.
+  const open = entry !== undefined;
+  useEffect(() => {
+    if (!open) setPicked(undefined);
+  }, [open]);
   const chosen = picked?.id === entry?.id ? picked?.season : undefined;
   const season = [chosen, start?.season].find((n) => n !== undefined && seasons.includes(n)) ?? seasons[0];
   const details = useEpisodeDetails(season === undefined ? undefined : entry?.url, season);

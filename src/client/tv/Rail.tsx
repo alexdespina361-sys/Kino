@@ -11,8 +11,10 @@ export interface RailEntry {
   group?: string;
   /** The page that is open. */
   current?: boolean;
-  /** A short state beside the name ("Connected"). */
+  /** A short count beside the name (how many are in the party). */
   badge?: string;
+  /** The entry stands for something that is on right now (a phone is connected): while the menu is shut, a dot on its icon says so; open, its name does. */
+  lit?: boolean;
   testId: string;
   onPress: () => void;
 }
@@ -55,7 +57,7 @@ export function Rail({
               data-row={row}
               data-col={0}
               data-testid={entry.testId}
-              data-badged={entry.badge ? "true" : undefined}
+              data-badged={entry.badge || entry.lit ? "true" : undefined}
               aria-current={entry.current ? "page" : undefined}
               onClick={entry.onPress}
               onFocus={(event) => onArrive(event.currentTarget)}

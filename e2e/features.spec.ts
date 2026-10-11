@@ -193,7 +193,7 @@ test.describe("pairing", () => {
 
     await expect(tv.getByTestId("pairing-code")).toBeVisible();
     await expect(phone.getByTestId("code-input")).toBeVisible();
-    await expect(phone.getByTestId("pair-notice")).toHaveText("The connection to your TV was lost. Connect again.");
+    await expect(phone.getByTestId("pair-notice")).toHaveText("This phone is no longer connected to the TV. Enter the code on the TV to connect again.");
     await expect(phone.getByTestId("code-input")).toHaveValue(""); // the code that was typed is no use any more
     await phone.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
@@ -1412,6 +1412,19 @@ test.describe("a watch party started on a TV", () => {
     await expect(guest.getByTestId("tv-flash")).toHaveText("You are no longer in the party.");
   });
 
+  test("with the remote alone: Start lands on the party page's button, and ending the party lands back on the choices", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    await host.getByTestId("rail-party").click();
+    await expect(host.getByTestId("tv-party-start")).toBeFocused();
+    await host.keyboard.press("Enter");
+    await expect(host.getByTestId("tv-party-code")).toBeVisible();
+    await expect(host.getByTestId("tv-back-to-library")).toBeFocused();
+    await host.keyboard.press("ArrowRight");
+    await expect(host.getByTestId("tv-party-end")).toBeFocused();
+    await host.keyboard.press("Enter");
+    await expect(host.getByTestId("tv-party-start")).toBeFocused();
+  });
+
   test("a TV with a phone connected cannot join, and is told why", async ({ browser, baseURL }) => {
     const host = await screen(browser, baseURL!);
     const code = await startParty(host);
@@ -1561,7 +1574,7 @@ test.describe("the library", () => {
     await phone.getByTestId("list-save").click();
     await phone.getByTestId("sheet-close").click();
 
-    // the library in the sheet of "New link", and a list picker on top of it
+    // the library in the sheet of "Change video", and a list picker on top of it
     await phone.getByTestId("url-input").fill(sample(baseURL!));
     await phone.getByTestId("play-url").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
@@ -1706,9 +1719,10 @@ test.describe("the library", () => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
     await phone.context().route(/\/api\/library\/search/, (route) => route.fulfill({ status: 500, body: "nope" }));
     await phone.getByTestId("library-search-input").fill("zzz");
-    await expect(phone.getByTestId("library-search-results")).toContainText("The library isn't reachable right now");
+    await expect(phone.getByTestId("library-search-results")).toContainText("Search can't be reached right now");
     await phone.getByTestId("library-search-input").fill("Sample"); // a title that is on the page needs no server
     await expect(phone.getByTestId("library-search-results")).toContainText("Results for “Sample”");
+    await expect(phone.getByTestId("library-search-results")).toContainText("the rest of the search can't be reached"); // (what the server could add is missing, and it says so)
   });
 });
 
@@ -1821,9 +1835,11 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("library-list-toggle").first()).toHaveAccessibleName("In Favourites — tap to remove: Film number 1");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("Film number 1");
     await expect(phone.getByTestId("title-sheet")).toHaveCount(0); // the let-go that ends a hold is not a tap
+    await expect(phone.getByTestId("toast")).toHaveText("Added to Favourites"); // the + is a corner away from the finger: a line says what the hold did
 
     await hold(phone, first);
     await expect(phone.getByTestId("library-list-toggle").first()).toHaveAccessibleName("Add to Favourites: Film number 1");
+    await expect(phone.getByTestId("toast")).toHaveText("Removed from Favourites");
     await first.click();
     await expect(phone.getByTestId("title-sheet")).toBeVisible();
   });
@@ -1963,6 +1979,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await phone.getByTestId("title-play").click();
     await expect(phone.getByTestId("resolve-status")).toHaveAttribute("data-phase", "failed");
     await expect(phone.getByTestId("url-input")).toHaveCount(0);
+    await expect(phone.getByTestId("toast")).toHaveText(await phone.getByTestId("resolve-status").innerText()); // (also down where the thumb is: the page's own line is at the top of a library that may be scrolled away)
   });
 
   test("a title whose video is not there is gone from the phone's library once the server stops offering it", async ({ browser, baseURL }) => {

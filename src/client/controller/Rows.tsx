@@ -50,7 +50,7 @@ interface CardProps {
 }
 
 function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay, onRemove, testId, toggle, onHold }: CardProps) {
-  const hold = useHold(() => (onHold ?? toggle?.onClick)?.());
+  const hold = useHold(() => (onHold ?? toggle?.onHold)?.());
   return (
     <div className="lib-tile" data-testid={`${testId}-item`}>
       <button className="lib-card" onClick={hold.tap(onPlay)} {...hold.props} aria-label={playLabel} data-testid={`${testId}-play`}>

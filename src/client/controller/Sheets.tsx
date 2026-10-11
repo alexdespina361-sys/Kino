@@ -523,6 +523,7 @@ export function PartySheet({
   onInvite,
   onAdd,
   onRemove,
+  onEnd,
   onClose,
 }: Close & {
   tvName: string;
@@ -533,6 +534,8 @@ export function PartySheet({
   onInvite: () => void;
   onAdd: (code: string) => void;
   onRemove: (id: string) => void;
+  /** End the party for everyone: the code stops working too. */
+  onEnd: () => void;
 }) {
   useT();
   const [code, setCode] = useState("");
@@ -599,7 +602,7 @@ export function PartySheet({
         ))}
       </ul>
       {party.length > 0 && (
-        <button className="btn btn-danger btn-block" data-testid="party-end" onClick={() => party.forEach((tv) => onRemove(tv.id))}>
+        <button className="btn btn-danger btn-block" data-testid="party-end" onClick={onEnd}>
           {t("party.end")}
         </button>
       )}

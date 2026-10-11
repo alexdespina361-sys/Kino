@@ -252,13 +252,15 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .choice.active .choice-dot { border-color: var(--accent); background: var(--accent); }
 /* The lists: a choice with an icon before its name, one that makes a new list, and one that has a note (how many titles) at its end. */
 .choice { transition: background 0.15s ease, transform 0.08s ease; }
-.choice:hover:not(.active), .choice:focus-visible:not(.active) { background: rgba(255, 255, 255, 0.12); }
+.choice:focus-visible:not(.active) { background: rgba(255, 255, 255, 0.12); }
+@media (hover: hover) { .choice:hover:not(.active) { background: rgba(255, 255, 255, 0.12); } }
 .choice:active { transform: scale(0.98); }
 .choice-label { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
 .choice-label svg { flex: none; color: var(--muted); }
 .choice.active .choice-label svg { color: var(--accent-hover); }
 .choice-new { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.16); color: var(--muted); }
-.choice-new:hover, .choice-new:focus-visible { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.choice-new:focus-visible { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+@media (hover: hover) { .choice-new:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); } }
 .choice-note { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--muted); font-size: 0.85rem; }
 
 /* Subtitle style: a small TV with a sample line (sizes are shares of its height, like on the real screen), then the choices. */
@@ -300,7 +302,8 @@ html.sheet-open { overscroll-behavior-y: contain; }
 /* The three buttons share a line with the label when it fits, and a line of their own, full width, when it does not (a narrow phone, a long word). */
 .delay-buttons { display: flex; flex: 1 1 13rem; gap: 6px; }
 .delay-buttons .btn { flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 8px; background: rgba(255, 255, 255, 0.08); font-size: 0.9rem; white-space: nowrap; }
-.delay-buttons .btn:hover, .delay-buttons .btn:focus-visible { background: rgba(255, 255, 255, 0.16); }
+.delay-buttons .btn:focus-visible { background: rgba(255, 255, 255, 0.16); }
+@media (hover: hover) { .delay-buttons .btn:hover { background: rgba(255, 255, 255, 0.16); } }
 
 .seasons { display: flex; gap: 8px; padding-bottom: 4px; overflow-x: auto; }
 .season { flex: none; padding: 9px 15px; border-radius: 999px; background: var(--surface-2); font-size: 0.85rem; font-weight: 600; }
@@ -376,14 +379,18 @@ html.sheet-open { overscroll-behavior-y: contain; }
   left: 50%;
   bottom: max(24px, env(safe-area-inset-bottom));
   z-index: 70;
+  /* As wide as its words, up to the screen's width (a box placed from the middle would otherwise wrap at half of it). */
+  width: max-content;
+  max-width: min(92vw, 420px);
   margin: 0;
   padding: 11px 18px;
-  border-radius: 999px;
+  border-radius: 22px;
   background: rgba(245, 245, 245, 0.96);
   color: #111;
   font-size: 0.95rem;
   font-weight: 700;
-  white-space: nowrap;
+  line-height: 1.3;
+  text-align: center;
   pointer-events: none;
   transform: translateX(-50%);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
@@ -420,7 +427,8 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 /* A quiet button at the end of a row's heading. */
 .row-link { flex: none; padding: 4px 0 4px 10px; border-radius: 6px; color: var(--muted); font-size: 0.85rem; font-weight: 600; transition: color 0.15s ease, opacity 0.1s ease; }
-.row-link:hover, .row-link:focus-visible { color: var(--text); }
+.row-link:focus-visible { color: var(--text); }
+@media (hover: hover) { .row-link:hover { color: var(--text); } }
 .row-link:active { opacity: 0.6; }
 /* The rows scroll sideways right to the screen's edge, but start in line with everything else. */
 .lib-scroller { display: flex; gap: 10px; margin: 0 -16px; padding: 0 16px 6px; overflow-x: auto; scroll-snap-type: x proximity; scroll-padding: 0 16px; scrollbar-width: none; }
@@ -435,7 +443,8 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-art { position: relative; display: block; aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: var(--surface-2); transition: transform 0.18s ease, box-shadow 0.18s ease; }
 .lib-art img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
 .poster-initial { display: grid; place-items: center; width: 100%; height: 100%; color: rgba(255, 255, 255, 0.5); font-size: 2.2rem; font-weight: 800; }
-.lib-card:hover .lib-art, .lib-card:focus-visible .lib-art { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4); }
+.lib-card:focus-visible .lib-art { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4); }
+@media (hover: hover) { .lib-card:hover .lib-art { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4); } }
 .lib-card:active .lib-art { transform: scale(0.97); box-shadow: 0 0 0 2px var(--accent); }
 .lib-title { font-size: 0.85rem; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lib-year { margin-top: -4px; color: var(--muted); font-size: 0.75rem; }
@@ -446,25 +455,30 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-corner { position: absolute; top: 6px; right: 6px; z-index: 1; display: flex; gap: 6px; }
 .lib-round { position: relative; display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 1.1rem; backdrop-filter: blur(4px); transition: background 0.15s ease, transform 0.1s ease; }
 .lib-round::after { content: ""; position: absolute; inset: -3px; }
-.lib-round:hover, .lib-round:focus-visible { background: rgba(0, 0, 0, 0.88); }
+.lib-round:focus-visible { background: rgba(0, 0, 0, 0.88); }
+@media (hover: hover) { .lib-round:hover { background: rgba(0, 0, 0, 0.88); } }
 .lib-round:active { transform: scale(0.9); }
 .lib-round.lib-add[aria-pressed="true"] { background: var(--accent); }
-.lib-round.lib-add[aria-pressed="true"]:hover, .lib-round.lib-add[aria-pressed="true"]:focus-visible { background: var(--accent-hover); }
+.lib-round.lib-add[aria-pressed="true"]:focus-visible { background: var(--accent-hover); }
+@media (hover: hover) { .lib-round.lib-add[aria-pressed="true"]:hover { background: var(--accent-hover); } }
 
 /* What a search finds: one title under another, to scroll through with the page. */
 .lib-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .lib-result { display: flex; align-items: center; gap: 6px; }
 .lib-result-main { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 0; padding: 6px; border-radius: 12px; text-align: left; -webkit-touch-callout: none; user-select: none; transition: background 0.15s ease, transform 0.08s ease; }
-.lib-result-main:hover, .lib-result-main:focus-visible { background: rgba(255, 255, 255, 0.08); }
+.lib-result-main:focus-visible { background: rgba(255, 255, 255, 0.08); }
+@media (hover: hover) { .lib-result-main:hover { background: rgba(255, 255, 255, 0.08); } }
 .lib-result-main:active { background: rgba(255, 255, 255, 0.14); transform: scale(0.99); }
 .lib-result-art { position: relative; display: block; flex: none; width: 112px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; background: var(--surface-2); }
 .lib-result-art img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
 .lib-result-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .lib-result-text .lib-year { margin-top: 0; }
 .lib-result > .lib-round { background: var(--surface-2); }
-.lib-result > .lib-round:hover, .lib-result > .lib-round:focus-visible { background: rgba(255, 255, 255, 0.16); }
+.lib-result > .lib-round:focus-visible { background: rgba(255, 255, 255, 0.16); }
+@media (hover: hover) { .lib-result > .lib-round:hover { background: rgba(255, 255, 255, 0.16); } }
 .lib-result > .lib-round.lib-add[aria-pressed="true"] { background: var(--accent); }
-.lib-result > .lib-round.lib-add[aria-pressed="true"]:hover, .lib-result > .lib-round.lib-add[aria-pressed="true"]:focus-visible { background: var(--accent-hover); }
+.lib-result > .lib-round.lib-add[aria-pressed="true"]:focus-visible { background: var(--accent-hover); }
+@media (hover: hover) { .lib-result > .lib-round.lib-add[aria-pressed="true"]:hover { background: var(--accent-hover); } }
 
 /* A title's own page (a sheet): its picture, Play and the lists, what it is about, and a show's episodes. */
 .title-art { position: relative; display: block; flex: none; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 12px; background: var(--surface-2); }

@@ -182,6 +182,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("REMOVE_TV"), id: z.string().max(100) }),
   /** Ask for the code that lets other screens join this TV's party, starting one if there is none. Answered with PARTY. */
   z.object({ type: z.literal("OPEN_PARTY") }),
+  /** End the party this phone's TV hosts: the code stops working and every guest is back on its own. */
+  z.object({ type: z.literal("END_PARTY") }),
   // Keepalive from either kind of client. Answered with PONG, so a silently dead connection is noticed.
   z.object({ type: z.literal("PING") }),
 ]);

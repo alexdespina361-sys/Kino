@@ -213,9 +213,12 @@ describe("filmpireSource similar", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
-  it("gives nothing when TMDB fails", async () => {
-    const source = filmpireSource({ fetch: (async () => json({}, 500)) as never });
-    expect(await source.similar!("https://filmpire.sc/watch/603")).toEqual([]);
+  it("gives nothing for a title TMDB does not know, and fails when TMDB cannot be reached, so that nothing is remembered of it", async () => {
+    const link = "https://filmpire.sc/watch/603";
+    expect(await filmpireSource({ fetch: (async () => json({}, 404)) as never }).similar!(link)).toEqual([]);
+    await expect(filmpireSource({ fetch: (async () => json({}, 500)) as never }).similar!(link)).rejects.toThrow();
+    await expect(filmpireSource({ fetch: (async () => json({ nope: true })) as never }).similar!(link)).rejects.toThrow();
+    await expect(filmpireSource({ fetch: (async () => Promise.reject(new Error("offline"))) as never }).similar!(link)).rejects.toThrow();
   });
 });
 
@@ -264,9 +267,12 @@ describe("filmpireSource episodes", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
-  it("gives nothing when TMDB fails or answers with something else", async () => {
-    expect(await filmpireSource({ fetch: (async () => json({}, 404)) as never }).episodes!("https://filmpire.sc/watch/1399?s=1&e=1", 1)).toEqual([]);
-    expect(await filmpireSource({ fetch: (async () => json({ nope: true })) as never }).episodes!("https://filmpire.sc/watch/1399?s=1&e=1", 1)).toEqual([]);
+  it("gives nothing for a season TMDB does not know, and fails when TMDB cannot be reached or answers with something else, so that nothing is remembered of it", async () => {
+    const link = "https://filmpire.sc/watch/1399?s=1&e=1";
+    expect(await filmpireSource({ fetch: (async () => json({}, 404)) as never }).episodes!(link, 1)).toEqual([]);
+    await expect(filmpireSource({ fetch: (async () => json({}, 500)) as never }).episodes!(link, 1)).rejects.toThrow();
+    await expect(filmpireSource({ fetch: (async () => json({ nope: true })) as never }).episodes!(link, 1)).rejects.toThrow();
+    await expect(filmpireSource({ fetch: (async () => Promise.reject(new Error("offline"))) as never }).episodes!(link, 1)).rejects.toThrow();
   });
 });
 

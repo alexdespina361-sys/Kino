@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { listKey } from "../../shared";
+import { listKey, savedKeys } from "../../shared";
 import { listName } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
@@ -12,21 +12,31 @@ export interface ListToggle {
   label: string;
   asks: boolean;
   onClick: () => void;
+  /** The same, from a hold on the title: where the + is a corner away from the finger, a line at the bottom says what happened. */
+  onHold: () => void;
 }
+
+/** The page is told (see Controller.tsx) what to say at the bottom of the screen by this event on the window, its text the event's detail. */
+export const LINE_EVENT = "kino:line";
 
 /** How a title stands with the lists: for any title, what its + says and does (`onPick` asks which list when there are several). */
 export function useListToggle(onPick: (entry: ListEntry) => void): (entry: ListEntry) => ListToggle {
   const t = useT();
   const { lists, list } = useProfileData();
-  const saved = useMemo(() => new Set(list.map((item) => item.key)), [list]);
+  const saved = useMemo(() => savedKeys(list), [list]);
   const several = lists.length > 1;
   return (entry) => {
     const inList = lists.some((info) => saved.has(listKey(entry.url, info.id)));
+    const onClick = () => (several ? onPick(entry) : profileStore.setInList(entry, !inList));
     return {
       inList,
       asks: several,
       label: several ? t(inList ? "rows.inLists" : "library.addToAList") : t(inList ? "library.inList" : "library.addToList", { list: listName(lists[0]!) }),
-      onClick: () => (several ? onPick(entry) : profileStore.setInList(entry, !inList)),
+      onClick,
+      onHold: () => {
+        onClick();
+        if (!several) window.dispatchEvent(new CustomEvent(LINE_EVENT, { detail: t(inList ? "rows.removedFrom" : "rows.addedTo", { list: listName(lists[0]!) }) }));
+      },
     };
   };
 }

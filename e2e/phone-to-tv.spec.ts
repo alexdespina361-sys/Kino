@@ -274,7 +274,7 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     await phone.getByTestId("chip-speed").click();
     const sheet = phone.getByRole("dialog");
     await expect(sheet).toBeVisible();
-    await phone.waitForTimeout(400); // (it slides up first)
+    await slidUp(sheet);
     // Marks the page, so that a reload shows; and notes whether the page kept the touches for itself (a pull left to the browser is a refresh).
     await phone.evaluate(() => {
       const w = window as unknown as { kept: boolean; moves: boolean[] };
@@ -285,18 +285,25 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     return { tv, phone, sheet };
   };
 
-  /** A finger put down at `from`, moved `by` pixels down in `steps` moves `every` milliseconds apart (through the browser's own input), and let go. */
+  /**
+   * A finger put down at `from`, moved `by` pixels down in `steps` moves `every` milliseconds apart (through the browser's own input), and let go.
+   * Each touch carries the time it happened at, so how fast the finger went is what is written here, not how busy the machine was.
+   */
   const pull = async (phone: Page, from: { x: number; y: number }, by: number, { steps = 10, every = 16 } = {}) => {
     const client = await phone.context().newCDPSession(phone);
-    const send = (type: "touchStart" | "touchMove" | "touchEnd", y: number) => client.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: from.x, y }] });
-    await send("touchStart", from.y);
+    const began = Date.now() / 1000;
+    const send = (type: "touchStart" | "touchMove" | "touchEnd", y: number, after: number) =>
+      client.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: from.x, y }], timestamp: began + after / 1000 });
+    await send("touchStart", from.y, 0);
     for (let step = 1; step <= steps; step++) {
-      await send("touchMove", from.y + (by * step) / steps);
+      await send("touchMove", from.y + (by * step) / steps, step * every);
       await phone.waitForTimeout(every);
     }
-    await send("touchEnd", from.y + by);
+    await send("touchEnd", from.y + by, steps * every);
     await client.detach();
   };
+  /** The sheet has finished sliding up, so it is where it will stay (a busy machine can hold the slide back for a while). */
+  const slidUp = (sheet: Locator) => sheet.evaluate((el) => Promise.all(el.getAnimations().map((animation) => animation.finished)).then(() => undefined));
 
   const gripOf = async (sheet: Locator) => {
     const box = (await sheet.locator(".sheet-grip").boundingBox())!;
@@ -320,8 +327,8 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     await phone.getByTestId("chip-speed").click(); // and the next one opens as usual, then goes with a flick
     const again = phone.getByRole("dialog");
     await expect(again).toBeVisible();
-    await phone.waitForTimeout(400);
-    await pull(phone, await gripOf(again), 100, { steps: 2, every: 0 }); // short, but fast (the second move comes quickly after the first)
+    await slidUp(again);
+    await pull(phone, await gripOf(again), 100, { steps: 2, every: 10 }); // short, but fast (50 px in 10 ms)
     await expect(again).toHaveCount(0);
     expect((await state(phone)).kept).toBe(true);
   });
@@ -354,5 +361,25 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     await pull(phone, { x: box.x + box.width / 2, y: box.y + 40 }, 260, { steps: 12, every: 30 });
     await expect(sheet).toHaveCount(0); // at the top, the same pull is the sheet's
     expect((await state(phone)).kept).toBe(true);
+  });
+
+  test("a finger that starts on a field is the field's: the sheet does not follow it", async ({ browser, baseURL }) => {
+    const { phone, sheet } = await withSheet(browser, baseURL!);
+    await phone.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    await phone.getByTestId("change-video").click();
+    const link = phone.getByTestId("link-sheet");
+    await expect(link).toBeVisible();
+    await slidUp(link);
+    const top = Math.round((await link.boundingBox())!.y);
+    const field = (await phone.getByTestId("url-input").boundingBox())!;
+
+    await pull(phone, { x: field.x + field.width / 2, y: field.y + field.height / 2 }, 260, { steps: 12, every: 30 });
+    await expect(link).toBeVisible();
+    expect(Math.round((await link.boundingBox())!.y)).toBe(top);
+    expect((await state(phone)).moves.some(Boolean)).toBe(false); // none of the pull was taken from the page
+
+    await pull(phone, await gripOf(link), 260, { steps: 12, every: 30 }); // the same pull from the grip still closes it
+    await expect(link).toHaveCount(0);
   });
 });

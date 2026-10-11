@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, type Library, type LibraryItem, type LibraryKind, type PlayHint } from "../../shared";
+import { DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryItem, type LibraryKind, type PlayHint } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { hintOf, listEntryOf, listName } from "../account/cards";
 import { ListEditor } from "../account/Lists";
@@ -15,8 +15,8 @@ import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AccountChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
-import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
-import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
+import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
+import { asOpened, entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
 import { Rail, type RailEntry } from "./Rail";
 
 /** What a screen that starts a title can add: where to pick it up, and the picture and year the library already knows for it. */
@@ -58,7 +58,15 @@ const remembered = {
   row: {} as Record<string, string>,
   /** The titles like what a card is about, by the card's key. Nothing found is remembered too. */
   similar: {} as Record<string, LibraryItem[]>,
+  /** The page of a show that an episode was started from, and the season it was showing: the library comes back to it, to pick the next one (or another, when that one would not play). */
+  detail: null as { page: Focused; season: number | undefined } | null,
 };
+
+/** Something else than that show plays: the library comes back to its tile, not to the page. (`link` is the page the video came from.) */
+export function keepPageFor(link: string | undefined) {
+  const kept = remembered.detail;
+  if (kept && (!link || titleLink(link) !== titleLink(kept.page.entry.url))) remembered.detail = null;
+}
 
 /** Wait this long on a title before the banner changes to it, so scrolling past many does not flicker through them. */
 const BANNER_DELAY_MS = 200;
@@ -193,10 +201,16 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   /** A phone is for controlling a TV with: the menu's phone entry takes it to the remote instead of showing a code for one. */
   const [phone] = useState(thisIsPhone);
   const [focused, setFocused] = useState<Focused | null>(null);
-  /** The title whose own page is open over the library. */
-  const [detail, setDetail] = useState<Focused | null>(null);
+  /** The title whose own page is open over the library (a show's page again when the library comes back from one of its episodes). */
+  const [detail, setDetail] = useState<Focused | null>(() => {
+    const kept = remembered.detail;
+    return kept && { ...kept.page, entry: resumable(asOpened(kept.page.entry), progress) };
+  });
+  useEffect(() => {
+    remembered.detail = null; // (it is the open page's to keep from here on: see `playEntry`)
+  }, []);
   /** What that page lists besides the buttons when the title is a show: its seasons, and the episodes of one. */
-  const series = useSeriesPage(detail?.entry, progress, watched);
+  const series = useSeriesPage(detail?.entry, progress, watched, remembered.detail?.season);
   /** The remote is on a row below the first, so the banner makes room for the rows. */
   const [deep, setDeep] = useState(false);
   /** The page over the library, when there is one. */
@@ -273,7 +287,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const start = homeRows[startRow]?.entries[startCol];
   const shown: Focused | null = focused ?? (rowsPage && start ? { entry: start, label: homeRows[startRow]!.title, ...(homeRows[startRow]!.source ? { source: homeRows[startRow]!.source! } : {}) } : null);
   const actions = rowsPage ? heroActions(shown?.entry) : [];
-  const saved = useMemo(() => new Set(list.map((entry) => entry.key)), [list]);
+  const saved = useMemo(() => savedKeys(list), [list]);
   const inList = (entry: Entry, id: string) => saved.has(listKey(entry.url, id));
   /** Whether a title is in any list. */
   const isSaved = (entry: Entry) => lists.some((info) => inList(entry, info.id));
@@ -286,6 +300,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   // for it, but the menu itself is closed; an arrow key opens it again.
   const choose = (next: View) => {
     remembered.view = next;
+    remembered.detail = null;
     setViewState(next);
     setFocused(null);
     setDetail(null);
@@ -311,6 +326,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     setPending(DETAIL);
   };
   const closeDetail = () => {
+    remembered.detail = null;
     setDetail(null);
     setPending(CONTENT);
   };
@@ -323,10 +339,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
     { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) },
     { id: "history", label: t("tv.history"), icon: <ClockIcon />, current: view.kind === "history", testId: "rail-history", onPress: () => choose({ kind: "history" }) },
-    { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: t("party.size", { count: partySize }) } : {}), testId: "rail-party", onPress: onParty },
+    { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: String(partySize) } : {}), testId: "rail-party", onPress: onParty },
     phone
       ? { id: "connect", label: t("tv.useRemote"), icon: <PhoneIcon />, testId: "rail-connect", onPress: () => switchRole("remote") }
-      : { id: "connect", label: t("tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { badge: t("tv.phoneConnected") } : {}), testId: "rail-connect", onPress: onConnect },
+      : { id: "connect", label: t(connected ? "tv.phoneConnected" : "tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { lit: true } : {}), testId: "rail-connect", onPress: onConnect },
     { id: "settings", label: t("tv.settings"), icon: <GearIcon />, testId: "rail-settings", onPress: onSettings },
   ];
   const groups: Array<{ kind: LibraryKind | undefined; title: string }> = [
@@ -418,7 +434,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   // (Also when the list changed under the remote: a title the server stopped offering takes its button with it.)
   useEffect(() => {
     const at = posOf(document.activeElement);
-    if (!at || at.zone === "top") setPending(CONTENT);
+    if (!at || at.zone === "top") setPending(latest.current.detail ? DETAIL : CONTENT);
   }, [hasTiles, status, view.kind, library]);
 
   // A video that would not play may take its title off the server's lists: ask for them again.
@@ -450,7 +466,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
       return setSearching(false);
     }
     const local = matchLocal(rows, text);
-    setResults(local);
+    setResults((before) => (text.length < 2 ? local : mergeItems(local, keepMatching(before, text)))); // (what the server found for the words a letter ago stays while it is asked again)
     if (text.length < 2) {
       remembered.resultsFor = text;
       return setSearching(false);
@@ -505,7 +521,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
       if (action === "back") {
         event.preventDefault();
         if (open) return closeDetail();
-        if (event.key === "Backspace" && page.kind === "search" && text) return setQuery(text.slice(0, -1));
+        if (event.key === "Backspace" && page.kind === "search") {
+          if (text) return setQuery(text.slice(0, -1));
+          if (event.repeat) return; // (holding it down empties the box and stops there: the repeats must not go on to leave the page)
+        }
         if (posOf(document.activeElement)?.zone === "rail" && resolve(CONTENT)) go(CONTENT);
         else if (page.kind !== "home") choose({ kind: "home" }); // (also from the menu, when the page has no title to go back to)
         else go(RAIL); // home is as far back as it goes: the menu is the next step
@@ -560,6 +579,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   };
   /** Plays a title, or when it is a show's own page that asks, the episode it leads to (`at`), from where that was left. */
   const playEntry = (entry: Entry, at?: Pick<Start, "url" | "startAt">) => {
+    remembered.detail = detail && series.isShow ? { page: detail, season: series.season } : null; // the library comes back to a show's page, to pick the next episode from it
     const startAt = at ? at.startAt : entry.startAt;
     onPlay(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(startAt ? { startAt } : {}) });
   };
@@ -641,7 +661,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
         <span className="tv-browse-logo">
           <Logo />
         </span>
-        {notice && (
+        {notice && !detail && (
           <p className="tv-notice" role="alert" data-testid="tv-notice">
             {notice}
           </p>
@@ -900,6 +920,12 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
           <button className="tv-hero-button tv-detail-close" onClick={closeDetail} data-testid="tv-detail-close" data-zone="close" data-row={0} data-col={0}>
             <CloseIcon /> {t("common.close")}
           </button>
+          {notice && (
+            // (The library's own line is under this page: an episode that would not play is said here, where the next one is picked.)
+            <p className="tv-notice tv-detail-notice" role="alert" data-testid="tv-notice">
+              {notice}
+            </p>
+          )}
         </div>
       )}
 

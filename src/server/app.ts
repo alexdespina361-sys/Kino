@@ -32,6 +32,8 @@ export interface AppOptions {
   resolve?: ResolveFn;
   /** Where the library's titles come from. None by default, so nothing here reaches the network unless asked. */
   librarySources?: LibrarySource[];
+  /** The clock the library keeps its time by; tests move it. */
+  libraryNow?: () => number;
   /** Let the resolver fetch loopback/LAN pages (local fixtures). Default false; env ALLOW_PRIVATE_NETWORK=1. */
   allowPrivateNetwork?: boolean;
   /** Socket liveness tuning; tests shorten it. */
@@ -69,7 +71,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       log: app.log,
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",
     });
-  const library = createLibrary({ sources: options.librarySources ?? [], log: app.log });
+  const library = createLibrary({ sources: options.librarySources ?? [], log: app.log, ...(options.libraryNow ? { now: options.libraryNow } : {}) });
   // Every try at playing something tells the library how it went, so the titles a place lists but has no video of stop being offered.
   const resolveForPlay: ResolveFn = async (url, isPrefetch) => {
     const result = await resolve(url, isPrefetch);
@@ -102,15 +104,18 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   app.get<{ Querystring: { url?: string } }>("/api/library/similar", async (request, reply) => {
     const link = request.query.url ?? "";
     if (!link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
-    reply.header("Cache-Control", "public, max-age=3600");
-    return reply.send({ items: await library.similar(link) });
+    const items = await library.similar(link);
+    // Only an answer is kept by the browser: none may be a place that could not be reached just now.
+    reply.header("Cache-Control", items.length > 0 ? "public, max-age=3600" : "no-store");
+    return reply.send({ items });
   });
   app.get<{ Querystring: { url?: string; season?: string } }>("/api/library/episodes", async (request, reply) => {
     const link = request.query.url ?? "";
     const season = Number(request.query.season);
     if (!link || link.length > 2048 || !Number.isInteger(season) || season < 0 || season > 200) return reply.code(400).send({ error: "Missing 'url' or 'season' parameter" });
-    reply.header("Cache-Control", "public, max-age=3600");
-    return reply.send({ episodes: await library.episodes(link, season) });
+    const episodes = await library.episodes(link, season);
+    reply.header("Cache-Control", episodes.length > 0 ? "public, max-age=3600" : "no-store");
+    return reply.send({ episodes });
   });
   app.get<{ Querystring: { url?: string } }>("/api/library/seasons", async (request, reply) => {
     const link = request.query.url ?? "";

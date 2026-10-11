@@ -192,47 +192,43 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         return [];
       }
     },
+    // (For these two a place that cannot be reached throws, and a title it does not know (404) is an answer: that way a bad moment is asked
+    // again next time instead of an empty answer being remembered for hours.)
     async similar(link: string): Promise<LibraryItem[]> {
       const title = parseWatchLink(link);
       if (!title) return [];
-      try {
-        const fullUrl = `${BASE_URL}/${title.type}/${title.id}/recommendations?api_key=${apiKey}&language=en-US&page=1`;
-        const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-        if (!res.ok) return [];
-        const data = TmdbResponseSchema.parse(await res.json());
-        return data.results
-          .map((item) => toLibraryItem(item, title.type))
-          .filter((item): item is LibraryItem => item !== null);
-      } catch {
-        return [];
-      }
+      const fullUrl = `${BASE_URL}/${title.type}/${title.id}/recommendations?api_key=${apiKey}&language=en-US&page=1`;
+      const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+      if (res.status === 404) return [];
+      if (!res.ok) throw new Error(`similar: HTTP ${res.status}`);
+      const data = TmdbResponseSchema.parse(await res.json());
+      return data.results
+        .map((item) => toLibraryItem(item, title.type))
+        .filter((item): item is LibraryItem => item !== null);
     },
     async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
       const title = parseWatchLink(link);
       if (title?.type !== "tv") return [];
-      try {
-        const fullUrl = `${BASE_URL}/tv/${title.id}/season/${season}?api_key=${apiKey}&language=en-US`;
-        const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-        if (!res.ok) return [];
-        const day = today();
-        return TmdbSeasonSchema.parse(await res.json())
-          .episodes.filter((episode) => !(episode.air_date && episode.air_date > day)) // not out yet: nothing to play
-          .map((episode) => {
-            const name = episode.name?.trim();
-            const overview = episode.overview?.trim();
-            return {
-              season,
-              episode: episode.episode_number,
-              ...(name ? { title: name.slice(0, 200) } : {}),
-              ...(overview ? { overview: overview.slice(0, 400) } : {}),
-              ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
-              ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
-              url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${episode.episode_number}`,
-            };
-          });
-      } catch {
-        return [];
-      }
+      const fullUrl = `${BASE_URL}/tv/${title.id}/season/${season}?api_key=${apiKey}&language=en-US`;
+      const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+      if (res.status === 404) return [];
+      if (!res.ok) throw new Error(`episodes: HTTP ${res.status}`);
+      const day = today();
+      return TmdbSeasonSchema.parse(await res.json())
+        .episodes.filter((episode) => !(episode.air_date && episode.air_date > day)) // not out yet: nothing to play
+        .map((episode) => {
+          const name = episode.name?.trim();
+          const overview = episode.overview?.trim();
+          return {
+            season,
+            episode: episode.episode_number,
+            ...(name ? { title: name.slice(0, 200) } : {}),
+            ...(overview ? { overview: overview.slice(0, 400) } : {}),
+            ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
+            ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
+            url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${episode.episode_number}`,
+          };
+        });
     },
     async seasons(link: string): Promise<number[]> {
       const title = parseWatchLink(link);

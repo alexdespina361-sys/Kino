@@ -5,6 +5,11 @@ export function matchLocal(rows: readonly LibraryRow[], query: string): LibraryI
   return searchItems(itemsOf(rows), query);
 }
 
+/** What is shown, as far as it still matches the words as they are now: while the server is asked again, the list does not empty and fill up with every letter. */
+export function keepMatching(shown: readonly LibraryItem[], query: string): LibraryItem[] {
+  return searchItems(shown, query);
+}
+
 /** What was matched on screen, then what the server found beyond it, each title once. */
 export function mergeItems(first: readonly LibraryItem[], more: readonly LibraryItem[]): LibraryItem[] {
   const seen = new Set(first.map((item) => item.id));

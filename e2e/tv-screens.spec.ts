@@ -873,7 +873,7 @@ test.describe("the library on the TV", () => {
     await expect(tv.getByTestId("tv-detail-title")).toHaveText("Night Train");
     await expect(tv.getByTestId("tv-detail-play")).toHaveText("Resume");
     await expect(tv.getByTestId("tv-detail-list")).toHaveText("Add to Favourites");
-    await expect(tv.getByTestId("tv-detail-remove")).toHaveText("Remove from this row");
+    await expect(tv.getByTestId("tv-detail-remove")).toHaveText("Remove from Continue watching");
 
     await tv.keyboard.press("ArrowRight");
     await tv.keyboard.press("ArrowRight");
@@ -1041,27 +1041,66 @@ test.describe("a show's own page on the TV", () => {
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
     await expect(tiles(tv).first()).toBeFocused();
+
+    await tv.keyboard.press("Enter"); // opened again, it is at the season Play is for, not the one that was browsed before
+    await expect(tv.getByTestId("tv-season-1")).toHaveAttribute("aria-checked", "true");
   });
 
-  test("OK on an episode plays it, and one with no video says so", async ({ browser, baseURL }) => {
+  test("OK on an episode plays it, and one with no video says so on the page, which is still there to pick another from", async ({ browser, baseURL }) => {
     const tv = await openLibrary(browser, withShow(baseURL!));
     await expect(tiles(tv).first()).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(episodes(tv)).toHaveCount(3); // (the arrow keys walk what is on the page: they wait for the seasons and episodes to be listed)
     await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
     await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowRight");
+    await tv.keyboard.press("Enter"); // season 2
+    await expect(tv.getByTestId("tv-season-2")).toHaveAttribute("aria-checked", "true");
+    await expect(episodes(tv).first()).toContainText("Pilot again");
     await tv.keyboard.press("ArrowDown");
     await expect(episodes(tv).first()).toBeFocused();
     await tv.keyboard.press("ArrowDown");
     await expect(episodes(tv).nth(1)).toBeFocused();
     await tv.keyboard.press("Enter"); // the second episode's page has no video
     await expect(tv.getByTestId("tv-notice")).toBeVisible({ timeout: 15_000 });
-    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-detail")).toBeVisible(); // not a library with the show's tile: the page, to pick again
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await expect(tv.getByTestId("tv-season-2")).toHaveAttribute("aria-checked", "true"); // on the season that was being looked at
+    await expect(tv.getByTestId("tv-notice")).toHaveCount(1); // (one line, and it is on the page)
 
-    await tiles(tv).first().focus();
-    await tv.keyboard.press("Enter");
     await episodes(tv).first().click(); // the first one plays
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+  });
+
+  test("Back from an episode comes back to the show's page, on the season it was in", async ({ browser, baseURL }) => {
+    const here = `${baseURL}/fixtures/pages/video.html`;
+    const tv = await openLibrary(browser, async (context) => {
+      await withLibrary({ ...library, rows: [{ id: "s", title: "Shows", source: "Test Source", kind: "series", items: [{ ...show, url: `${here}?s=1&e=1` }] }] })(context);
+      await context.route(/\/api\/library\/seasons/, (route) => route.fulfill({ json: { seasons: [1, 2] } }));
+      await context.route(/\/api\/library\/episodes/, (route) => {
+        const season = Number(new URL(route.request().url()).searchParams.get("season"));
+        return route.fulfill({ json: { episodes: [1, 2, 3].map((n) => ({ season, episode: n, title: `Part ${n}`, url: `${here}?s=${season}&e=${n}` })) } });
+      });
+    });
+    await expect(tiles(tv).first()).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(episodes(tv)).toHaveCount(3);
+    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowRight");
+    await tv.keyboard.press("Enter"); // season 2
+    await expect(tv.getByTestId("tv-season-2")).toHaveAttribute("aria-checked", "true");
+    await episodes(tv).nth(1).click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await tv.mouse.move(400, 300); // (wakes the controls)
+    await tv.getByTestId("tv-stop-btn").click();
+
+    await expect(tv.getByTestId("tv-detail")).toBeVisible(); // where the next episode is picked
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("The Long Night");
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await expect(tv.getByTestId("tv-season-2")).toHaveAttribute("aria-checked", "true"); // the season it was in
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    await expect(tv.locator('[data-testid="tv-browse-tile"][title="The Long Night"]').first()).toBeFocused(); // and Back from the page is the library, on the show it came from (the row of what was just watched is above it now)
   });
 
   test("a show part way through says Resume with its episode, shows that season, and lands on that episode", async ({ browser, baseURL }) => {
@@ -1874,6 +1913,28 @@ test.describe("a film that has ended", () => {
     await tv.getByTestId("end-next").click();
     await expect(tv.getByTestId("tv-end")).toHaveCount(0);
     await expect(tvRoot(tv)).not.toHaveAttribute("data-state", "paused", { timeout: 15_000 });
+    phone.close();
+  });
+
+  test("a next episode that will not play leaves the end card where it was, and says so", async ({ browser, baseURL }) => {
+    test.setTimeout(60_000);
+    const tv = await openTv(browser, undefined, guestStorage({ settings: [{ key: "autoplayNext", at: Date.now(), value: false }] }));
+    const first = { season: 1, episode: 1, title: "Part 1", url: `${baseURL}/fixtures/pages/video.html` };
+    const missing = { season: 1, episode: 2, title: "Part 2", url: `${baseURL}/fixtures/pages/none.html` }; // a page with no video in it
+    const phone = await playToTheEnd(tv, baseURL!, {
+      title: "Parts · S1 E1",
+      stream: { url: "/fixtures/sample.mp4", type: "mp4" },
+      series: { season: 1, episode: 1, episodes: [first, missing], next: missing },
+    });
+    const upNext = tv.getByTestId("netflix-upnext");
+    await expect(upNext).toBeVisible({ timeout: 15_000 });
+    await upNext.getByRole("button", { name: "Cancel" }).click();
+    await expect(tv.getByTestId("end-next")).toBeFocused();
+    await tv.keyboard.press("Enter");
+
+    await expect(tv.getByTestId("tv-flash")).toContainText("wouldn't play", { timeout: 25_000 }); // not a frozen last frame with nothing said
+    await expect(tv.getByTestId("tv-end")).toBeVisible();
+    await expect(tv.getByTestId("end-next")).toBeFocused(); // so OK tries again or Left/Right goes elsewhere
     phone.close();
   });
 

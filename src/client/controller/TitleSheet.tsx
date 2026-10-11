@@ -1,4 +1,4 @@
-import { listKey, type PlayHint } from "../../shared";
+import { listKey, savedKeys, type PlayHint } from "../../shared";
 import { hintOf, listEntryOf, listName } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
@@ -32,7 +32,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
   const hint = hintOf(entry);
   const play = (url: string, startAt?: number) => onPlay(new URL(url, location.href).href, startAt, hint);
 
-  const saved = new Set(list.map((item) => item.key));
+  const saved = savedKeys(list);
   const kept = lists.some((info) => saved.has(listKey(entry.url, info.id)));
   const several = lists.length > 1;
 

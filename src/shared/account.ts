@@ -249,8 +249,10 @@ export const canonicalUrl = (url: string): string => url.split("#")[0]!;
 /** One card per show (all episodes share it), one per film or other link. */
 export const progressKey = (page: { show?: string | undefined; url: string }): string => (page.show ? `show:${page.show}` : `url:${canonicalUrl(page.url)}`);
 export const watchedKey = (entry: { show: string; season: number; episode: number }): string => `${entry.show}|${entry.season}x${entry.episode}`;
-/** A title in a list is told apart by the link that plays it. In `DEFAULT_LIST` the key is what it was before there were lists. */
-export const listKey = (url: string, list: string = DEFAULT_LIST): string => (list === DEFAULT_LIST ? `url:${canonicalUrl(url)}` : `${list}|url:${canonicalUrl(url)}`);
+/** The link that stands for a whole title: every episode of a show (`?s=3&e=5`) is the show's first one, so a show found by any of them is one title. */
+export const titleLink = (url: string): string => canonicalUrl(url).replace(/([?&])s=\d+&e=\d+(?=&|$)/, "$1s=1&e=1");
+/** A title in a list is told apart by the link that plays it (a show by its first episode's). In `DEFAULT_LIST` the key is what it was before there were lists. */
+export const listKey = (url: string, list: string = DEFAULT_LIST): string => (list === DEFAULT_LIST ? `url:${titleLink(url)}` : `${list}|url:${titleLink(url)}`);
 
 /* ------------------------------ combining copies ------------------------------ */
 
@@ -344,6 +346,12 @@ export interface ListInfo {
 
 /** The list a saved title is in. */
 export const listOf = (item: { list?: string | undefined }): string => item.list ?? DEFAULT_LIST;
+
+/**
+ * What `listKey` gives for each saved title, to tell whether a title is in a list. Worked out from the links, not read from the
+ * saved keys: a show saved before shows were one title (under an episode's link) still counts as the show.
+ */
+export const savedKeys = (items: readonly { url: string; list?: string | undefined }[]): Set<string> => new Set(items.map((item) => listKey(item.url, listOf(item))));
 
 /** The lists of a profile: the first one always, then the others in the order they were made (a new id starts with the time, so ids sort that way). */
 export function resolveLists(items: readonly ListNameItem[]): ListInfo[] {
