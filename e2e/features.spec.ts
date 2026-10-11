@@ -816,11 +816,22 @@ test.describe("full screen", () => {
     return tv;
   }
 
-  test("a screen goes full screen at its first press, and is left alone after that", async ({ browser, baseURL }) => {
+  test("a screen's welcome waits with a button for the press that takes it full screen, and it is left alone after that", async ({ browser, baseURL }) => {
     const tv = await firstVisit(browser, baseURL!);
-    expect(await isFullScreen(tv)).toBe(false); // nothing was asked of the viewer first
-    await playFirst(tv); // its first press is the one that does it
+    const welcome = tv.getByTestId("tv-welcome");
+    await expect(welcome).toBeVisible();
+    await expect(tv.getByTestId("welcome-enter")).toHaveText(en["tv.welcomeStart"]);
+    await tv.waitForTimeout(2400); // longer than a welcome stays when it asks nothing: this one waits (something that does not happen)
+    await expect(welcome).toBeVisible();
+    expect(await isFullScreen(tv)).toBe(false); // nothing is done before the viewer presses
+
+    await tv.keyboard.press("Enter"); // OK is the button's: the title that has the library's focus under the welcome is not pressed
     await expect.poll(() => isFullScreen(tv)).toBe(true);
+    await expect(welcome).toHaveCount(0, { timeout: 4_000 });
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+
+    await playFirst(tv);
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing"); // (F is the player's key: nothing hears it while a video is still being found)
 
     await tv.keyboard.press("f"); // leaving is the viewer's choice
@@ -832,6 +843,47 @@ test.describe("full screen", () => {
     await tv.keyboard.press("Enter");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     expect(await isFullScreen(tv)).toBe(false); // not pulled back in for the next title
+  });
+
+  test("a click anywhere on the waiting welcome goes full screen too, and does not press what is under it", async ({ browser, baseURL }) => {
+    const tv = await firstVisit(browser, baseURL!);
+    await expect(tv.getByTestId("welcome-enter")).toBeVisible();
+    const tile = (await tv.getByTestId("tv-browse-tile").first().boundingBox())!;
+    await tv.mouse.click(tile.x + tile.width / 2, tile.y + tile.height / 2); // right over the first title, which the welcome hides
+    await expect.poll(() => isFullScreen(tv)).toBe(true);
+    await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  });
+
+  test("Back lets the waiting welcome go, and the library is as it was", async ({ browser, baseURL }) => {
+    const tv = await firstVisit(browser, baseURL!);
+    await expect(tv.getByTestId("welcome-enter")).toBeVisible();
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  });
+
+  test("on a phone the welcome's button fits the screen, and a tap on it goes full screen", async ({ browser, baseURL }) => {
+    const phone = await openDevice(browser, { viewport: { width: 390, height: 844 }, hasTouch: true, storageState: FIRST_VISIT }, {}, withLibrary(filmsOf(baseURL!)));
+    await phone.goto("/tv");
+    const button = phone.getByTestId("welcome-enter");
+    await expect(button).toBeInViewport({ ratio: 1 });
+    await button.tap();
+    await expect.poll(() => isFullScreen(phone)).toBe(true);
+    await expect(phone.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
+  });
+
+  test("a video that a phone starts while the welcome waits takes the screen from it", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser); // (starts as if full screen had been left: no button yet)
+    const phone = await openPairedPhone(browser, tv);
+    await tv.evaluate(() => localStorage.removeItem("kino.fullscreen.left"));
+    await tv.reload(); // still paired, and now a first visit as far as full screen goes
+    await expect(tv.getByTestId("welcome-enter")).toBeVisible();
+    await phone.getByTestId("url-input").fill(sample(baseURL!));
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await expect(tv.getByTestId("tv-welcome")).toHaveCount(0);
   });
 
   test("what the viewer chose is kept for the next visit: leaving stays left, and going in by the button opens full screen again", async ({ browser, baseURL }) => {

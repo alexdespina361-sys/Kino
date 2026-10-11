@@ -190,6 +190,20 @@
 .tv-welcome[data-leaving="true"] { opacity: 0; }
 .tv-welcome .logo { font-size: 7em; animation: tv-welcome-in 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .tv-welcome p { margin: 0; font-size: 2em; font-weight: 600; letter-spacing: 0.32em; text-transform: uppercase; color: var(--muted); animation: tv-welcome-in 0.9s 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* A welcome that waits for the press that goes full screen takes the presses itself (a click anywhere is that press), and its one
+   button is always the chosen one: it looks like a focused button from the start, since OK can only mean it. */
+.tv-welcome[data-asking="true"] { pointer-events: auto; cursor: pointer; }
+.tv-welcome[data-asking="true"][data-leaving="true"] { pointer-events: none; }
+.tv-welcome .tv-action {
+  margin-top: 1.4em;
+  background: #fff;
+  color: #000;
+  outline: 0.14em solid var(--accent);
+  outline-offset: 0.14em;
+  transform: scale(1.06);
+  animation: tv-welcome-in 0.9s 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+.tv-welcome .tv-action:hover { background: #e8e8e8; color: #000; }
 @keyframes tv-welcome-in { from { opacity: 0; transform: translateY(0.35em) scale(0.94); } }
 
 .tv-spinner { font-size: 6em; }
@@ -1651,7 +1665,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-upnext, .tv-toast, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p { animation-duration: 0.01s; }
+  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-upnext, .tv-toast, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p, .tv-welcome .tv-action { animation-duration: 0.01s; }
   .tv-detail { animation-duration: 0.01s, 0.5s; } /* the fade is quick; the pointer is still let through for as long */
   .tv-welcome { transition-duration: 0.01s; }
   .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }

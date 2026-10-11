@@ -5,6 +5,7 @@ import {
   episodeLabel,
   episodeName,
   groupBySeason,
+  isSameEpisode,
   NormalizedMediaSchema,
   previousEpisode,
   seriesKeyOf,
@@ -120,6 +121,16 @@ describe("seriesKeyOf and stateIsFor", () => {
   it("names the show without the episode, and has no name for a movie", () => {
     expect(seriesKeyOf({ ...media(1, 2), title: "The Long Night · S1 E2" })).toBe("The Long Night");
     expect(seriesKeyOf({ title: "A Movie", stream: { url: "https://cdn.example/m.mp4", type: "mp4" } })).toBeUndefined();
+  });
+
+  it("tells the same episode from another show's episode with the same numbers", () => {
+    const named = (title: string, season: number, episode: number): NormalizedMedia => ({ ...media(season, episode), title });
+    const playing = named("The Long Night · S1 E1", 1, 1);
+    expect(isSameEpisode(playing, named("The Long Night · S1 E1", 1, 1))).toBe(true);
+    expect(isSameEpisode(playing, named("Another Show · S1 E1", 1, 1))).toBe(false); // both are S1 E1: the show decides
+    expect(isSameEpisode(playing, named("The Long Night · S1 E2", 1, 2))).toBe(false);
+    expect(isSameEpisode(null, playing)).toBe(false);
+    expect(isSameEpisode(playing, { title: "A Movie", stream: { url: "https://cdn.example/m.mp4", type: "mp4" } })).toBe(false);
   });
 
   it("matches a player state to its media by stream, and gives a state without one the benefit of the doubt", () => {

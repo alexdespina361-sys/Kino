@@ -38,6 +38,15 @@ export function useFullscreen(): boolean {
 /** Safari takes no typed letters in a full-screen page (so that a page there can't pose as a sign-in), so it never goes there by itself. */
 const takesTyping = (): boolean => !navigator.vendor.startsWith("Apple");
 
+/** Whether the page already fills the display: in its own full screen, or in the browser's (F11, a kiosk, an installed app that opens that way). */
+const fillsDisplay = (): boolean => isFullscreen() || matchMedia("(display-mode: fullscreen)").matches;
+
+/** Whether the page may go full screen at the first press: the browser has one to give, takes typing there, and the viewer did not leave it last time. */
+const mayEnterByItself = (): boolean => canFullscreen() && takesTyping() && readStorage(LEFT_KEY) === undefined;
+
+/** Whether the first press would take this page full screen, so that the welcome can ask for it with a button. */
+export const entersAtFirstPress = (): boolean => mayEnterByItself() && !fillsDisplay();
+
 /**
  * Once, as the page starts. Keeps what the viewer chose: every way into and out of full screen (the button, a key, the phone's, the
  * browser's own) ends in the browser's `fullscreenchange`. And, for a page that plays (`byItself`), goes full screen at the first
@@ -53,19 +62,18 @@ export function setUpFullscreen({ byItself }: { byItself: boolean }): void {
     else if (!unloading && document.visibilityState === "visible") writeStorage(LEFT_KEY, "1");
   });
 
-  if (!byItself || !canFullscreen() || !takesTyping() || readStorage(LEFT_KEY) !== undefined) return;
+  if (!byItself || !mayEnterByItself()) return;
   let asking = false;
+  const stop = () => {
+    removeEventListener("keydown", enter, true);
+    removeEventListener("click", enter, true);
+  };
   const enter = (event: Event) => {
     if (!event.isTrusted || asking) return;
+    if (fillsDisplay()) return stop(); // already as full as it gets (it was opened that way, or the button got there first)
     asking = true;
     // A key that is no press to a browser (Escape) is refused: the next press is tried instead.
-    document.documentElement.requestFullscreen().then(
-      () => {
-        removeEventListener("keydown", enter, true);
-        removeEventListener("click", enter, true);
-      },
-      () => (asking = false),
-    );
+    document.documentElement.requestFullscreen().then(stop, () => (asking = false));
   };
   addEventListener("keydown", enter, true);
   addEventListener("click", enter, true);

@@ -3,12 +3,14 @@ import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { useT } from "../i18n";
 import { formatCode } from "../shared/format";
+import { enterFullscreen, useFullscreen } from "../shared/fullscreen";
 import { CheckIcon, UserIcon } from "../shared/icons";
 import { controlLink, pairLink } from "../shared/launch";
 import { Logo } from "../shared/Logo";
 import { RoleSwitch } from "../shared/RoleSwitch";
 import { QrCode } from "../shared/QrCode";
 import { navItems, useBack, useDpad } from "./dpad";
+import { actionForKey } from "./keys";
 
 export interface Pairing {
   code: string;
@@ -87,30 +89,65 @@ const WELCOME_FADE_MS = 700;
 /**
  * The first moments of a screen that has just opened: the name and a greeting over the library as it fills in. It fades away by
  * itself, or at the first press, and never takes a press: the library under it is already there.
+ *
+ * A screen that is not full screen yet (and whose viewer has not turned that down) `ask`s instead: it waits, with a button that
+ * takes it there, as that press is what a browser wants. Any other key or click is that press too (the page has already acted on
+ * it by now) and Back says not now. While it waits, the library under it gets no keys, so OK can only mean the button.
  */
-export function TvWelcome({ onDone }: { onDone: () => void }) {
+export function TvWelcome({ ask, onDone }: { ask: boolean; onDone: () => void }) {
   const t = useT();
   const [leaving, setLeaving] = useState(false);
+  const fullscreen = useFullscreen();
+  const enter = () => {
+    enterFullscreen();
+    setLeaving(true);
+  };
   useEffect(() => {
     const leave = () => setLeaving(true);
-    const timer = window.setTimeout(leave, WELCOME_MS);
-    window.addEventListener("keydown", leave);
-    window.addEventListener("pointerdown", leave);
+    if (!ask) {
+      const timer = window.setTimeout(leave, WELCOME_MS);
+      window.addEventListener("keydown", leave);
+      window.addEventListener("pointerdown", leave);
+      return () => {
+        window.clearTimeout(timer);
+        window.removeEventListener("keydown", leave);
+        window.removeEventListener("pointerdown", leave);
+      };
+    }
+    const keys = (event: KeyboardEvent) => {
+      const action = event.altKey || event.ctrlKey || event.metaKey ? null : actionForKey(event);
+      if (!action) return; // the browser's own keys (reload, F11...) and ones that mean nothing here are left alone
+      event.stopPropagation();
+      event.preventDefault();
+      if (event.type !== "keydown") return;
+      if (action === "back") leave();
+      else if (action === "select") enter();
+    };
+    window.addEventListener("keydown", keys, true);
+    window.addEventListener("keyup", keys, true);
     return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("keydown", leave);
-      window.removeEventListener("pointerdown", leave);
+      window.removeEventListener("keydown", keys, true);
+      window.removeEventListener("keyup", keys, true);
     };
   }, []);
+  // However the page got there (the button, another key, the browser's own), being full screen is what it asked for.
+  useEffect(() => {
+    if (ask && fullscreen) setLeaving(true);
+  }, [fullscreen]);
   useEffect(() => {
     if (!leaving) return;
     const timer = window.setTimeout(onDone, WELCOME_FADE_MS);
     return () => window.clearTimeout(timer);
   }, [leaving]);
   return (
-    <div className="tv-welcome" data-leaving={leaving} data-testid="tv-welcome" aria-hidden="true">
+    <div className="tv-welcome" data-leaving={leaving} data-asking={ask} data-testid="tv-welcome" aria-hidden={!ask} onClick={ask ? enter : undefined}>
       <Logo />
       <p>{t("tv.welcome")}</p>
+      {ask && (
+        <button className="tv-action" data-testid="welcome-enter">
+          {t("tv.welcomeStart")}
+        </button>
+      )}
     </div>
   );
 }

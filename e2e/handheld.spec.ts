@@ -114,8 +114,8 @@ test.describe("a phone that watches a party along", () => {
     return { host, code };
   }
   /** On a phone: the library, the party in its menu, Join, and the digits on the number pad. */
-  async function join(phone: Page, code: string) {
-    await phone.goto("/tv");
+  async function join(phone: Page, code: string, { open = true } = {}) {
+    if (open) await phone.goto("/tv");
     await expect(phone.getByTestId("tv-browse")).toBeVisible();
     await phone.getByTestId("rail-party").tap();
     await phone.getByTestId("tv-party-join").tap();
@@ -167,11 +167,14 @@ test.describe("a phone that watches a party along", () => {
     await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
   });
 
-  test("the phone's page goes full screen at its first tap, and a button on each screen leaves it and brings it back", async ({ browser }) => {
+  test("the phone's page goes full screen at its first tap, which is on the welcome's button, and a button on each screen leaves it and brings it back", async ({ browser }) => {
     const { host, code } = await hosting(browser);
     const phone = await openDevice(browser, { ...PHONE, storageState: FIRST_VISIT });
-    await join(phone, code);
-    await expect.poll(() => isFullScreen(phone)).toBe(true); // the first tap on the page was the press
+    await phone.goto("/tv");
+    await expect(phone.getByTestId("welcome-enter")).toHaveText("Start watching"); // the welcome asks for the press: anywhere on it is the button
+    await phone.getByTestId("welcome-enter").tap();
+    await expect.poll(() => isFullScreen(phone)).toBe(true);
+    await join(phone, code, { open: false });
     const waiting = phone.getByTestId("tv-fullscreen");
     await expect(waiting).toHaveText("Exit full screen");
     await waiting.tap();

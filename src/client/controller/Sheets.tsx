@@ -593,7 +593,7 @@ export function PartySheet({
         <form onSubmit={submit}>
           <h3 className="sheet-section">{t("party.addTitle")}</h3>
           <p className="muted small">
-            <Rich k="party.help" parts={{ host: <b>{location.host}</b> }} />
+            <Rich k="party.help" parts={{ host: <b>{location.host}</b>, connect: <b>{t("tv.connectPhone")}</b> }} />
           </p>
           {cameraAvailable() && (
             <button type="button" className="btn btn-block" data-testid="party-scan" onClick={() => setScanning(true)}>

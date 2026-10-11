@@ -150,6 +150,19 @@ export function seriesKeyOf(media: NormalizedMedia): string | undefined {
   return media.series ? media.title?.split("·")[0]?.trim() || undefined : undefined;
 }
 
+/**
+ * Whether `next` is the very episode of the very show that `current` already is, so that a new copy of it brings news (a picture, the
+ * list of episodes) and no new video. (Two shows both have an S1 E1: the numbers alone say nothing.)
+ */
+export const isSameEpisode = (current: NormalizedMedia | null | undefined, next: NormalizedMedia): boolean =>
+  Boolean(
+    current?.series &&
+      next.series &&
+      seriesKeyOf(current) === seriesKeyOf(next) &&
+      current.series.season === next.series.season &&
+      current.series.episode === next.series.episode,
+  );
+
 /** Whether a player state is about this media. (The phone holds the new media a moment before the TV reports on it.) */
 export const stateIsFor = (media: NormalizedMedia, state: { stream?: string | undefined }) =>
   state.stream === undefined || state.stream === media.stream.url;

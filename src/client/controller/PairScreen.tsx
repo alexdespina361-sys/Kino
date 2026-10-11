@@ -55,7 +55,7 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
       </div>
       <h1>{t("pair.title")}</h1>
       <p className="muted">
-        <Rich k={canScan ? "pair.introScan" : "pair.introType"} parts={{ host: <b>{location.host}</b> }} />
+        <Rich k={canScan ? "pair.introScan" : "pair.introType"} parts={{ host: <b>{location.host}</b>, connect: <b>{t("tv.connectPhone")}</b> }} />
       </p>
 
       {canScan && (

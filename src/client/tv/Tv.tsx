@@ -4,6 +4,7 @@ import {
   episodeLabel,
   formatDelay,
   IDLE_STATE,
+  isSameEpisode,
   previousEpisode,
   resolveCaptionStyle,
   seriesKeyOf,
@@ -19,7 +20,7 @@ import { useAccount } from "../account/AccountProvider";
 import { profileStore, useProfileData } from "../account/store";
 import { t, useT } from "../i18n";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
-import { canFullscreen as offersFullscreen, enterFullscreen, toggleFullscreen } from "../shared/fullscreen";
+import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen } from "../shared/fullscreen";
 import { FullscreenIcon, MutedIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
@@ -75,6 +76,8 @@ export function Tv() {
   const [unlocked, setUnlocked] = useState(!linkCode);
   /** The welcome over the library while it fills in, until it has faded. */
   const [welcoming, setWelcoming] = useState(true);
+  /** The welcome waits for a press, with a button that goes full screen, when the first press would (a screen opened by a party's link was pressed already). */
+  const [asksToEnter] = useState(() => !linkCode && entersAtFirstPress());
   /** Shown when the phone asked for full screen but the browser wants a press on the TV itself. */
   const [fsPrompt, setFsPrompt] = useState(false);
   /** Whether the page is full screen right now (a button says which way it goes). */
@@ -561,15 +564,9 @@ export function Tv() {
             if (command.type === "LOAD") {
               setResolving(false);
               const current = currentMediaRef.current;
-              const isSameEpisode = Boolean(
-                current?.series &&
-                command.media.series &&
-                current.series.season === command.media.series.season &&
-                current.series.episode === command.media.series.episode
-              );
               const isSameStream = current?.stream.url === command.media.stream.url;
 
-              if (isSameEpisode || isSameStream) {
+              if (isSameEpisode(current, command.media) || isSameStream) {
                 setCurrentMedia(command.media);
                 return;
               }
@@ -970,6 +967,12 @@ export function Tv() {
     return () => window.removeEventListener("keydown", onKey);
   }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, accountPage, stuck, finished]);
 
+  // The welcome belongs to the library: whatever takes the screen over (a phone sent something to play, a party, a page) ends it.
+  const libraryShows = player.state === "idle" && !accountPage && !resolving && !following && screen === "library";
+  useEffect(() => {
+    if (!libraryShows) setWelcoming(false);
+  }, [libraryShows]);
+
   /* ------------------------------ render ------------------------------ */
 
   const showVideo = player.state !== "idle";
@@ -1204,7 +1207,7 @@ export function Tv() {
         </div>
       )}
 
-      {unlocked && welcoming && <TvWelcome onDone={() => setWelcoming(false)} />}
+      {unlocked && welcoming && <TvWelcome ask={asksToEnter} onDone={() => setWelcoming(false)} />}
     </main>
   );
 }

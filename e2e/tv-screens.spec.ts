@@ -14,6 +14,7 @@ test.describe("the start screens", () => {
     const page = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, withLibrary(library));
     await page.goto("/tv");
     await expect(page.getByTestId("tv-welcome")).toBeVisible();
+    await expect(page.getByTestId("welcome-enter")).toHaveCount(0); // (this screen's viewer left full screen last time: nothing is asked of them)
     await expect(page.getByTestId("unlock")).toHaveCount(0); // nothing to press first
     await expect(page.getByTestId("tv-browse")).toBeVisible();
     await expect(page.getByTestId("tv-browse-tile").first()).toBeFocused(); // the remote is already on the first title
