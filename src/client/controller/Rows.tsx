@@ -1,14 +1,20 @@
 import type { ReactNode } from "react";
 import { fractionOf, listOf, resumeAt, type ListInfo, type LiveListItem, type LiveProgress, type PlayHint } from "../../shared";
-import { continueNote, hintOf, listName, unfinished } from "../account/cards";
+import { continueNote, hintOf, listEntryOf, listName, unfinished } from "../account/cards";
+import type { ListEntry } from "../account/profileStore";
 import { useT } from "../i18n";
-import { CloseIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
+import { entryOfSaved, type Entry } from "../tv/pages";
+import { useHold } from "./hold";
+import { ListButton, RemoveButton, useListToggle, type ListToggle } from "./Round";
 
-/** A heading (with something small at its far end, if need be) and a row of cards that scrolls sideways, to the screen's edge. */
-export function CardRow({ title, testId, aside, children }: { title: string; testId: string; aside?: ReactNode; children: ReactNode }) {
+/**
+ * A heading (with something small at its far end, if need be) and a row of cards that scrolls sideways, to the screen's edge. `wide`:
+ * big cards that snap one at a time, the next one showing at the edge (the row of what is half watched).
+ */
+export function CardRow({ title, testId, aside, wide, children }: { title: string; testId: string; aside?: ReactNode; wide?: boolean; children: ReactNode }) {
   return (
-    <section className="lib-row" data-testid={testId} aria-label={title}>
+    <section className={`lib-row${wide ? " is-wide" : ""}`} data-testid={testId} aria-label={title}>
       <RowHead title={title} aside={aside} />
       <div className="lib-scroller">{children}</div>
     </section>
@@ -37,12 +43,17 @@ interface CardProps {
   onPlay: () => void;
   onRemove: () => void;
   testId: string;
+  /** The round + beside the cross, which a hold on the card does as well. */
+  toggle?: ListToggle;
+  /** What a hold on the card does when there is no + on it. */
+  onHold?: () => void;
 }
 
-function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay, onRemove, testId }: CardProps) {
+function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay, onRemove, testId, toggle, onHold }: CardProps) {
+  const hold = useHold(() => (onHold ?? toggle?.onClick)?.());
   return (
-    <div className="lib-tile has-remove" data-testid={`${testId}-item`}>
-      <button className="lib-card" onClick={onPlay} aria-label={playLabel} data-testid={`${testId}-play`}>
+    <div className="lib-tile" data-testid={`${testId}-item`}>
+      <button className="lib-card" onClick={hold.tap(onPlay)} {...hold.props} aria-label={playLabel} data-testid={`${testId}-play`}>
         <Poster className="lib-art" title={title} image={image}>
           {progress > 0 && (
             <span className="lib-progress" aria-hidden="true">
@@ -53,20 +64,35 @@ function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay
         <span className="lib-title">{title}</span>
         {note && <span className="lib-year">{note}</span>}
       </button>
-      <button className="lib-remove" onClick={onRemove} aria-label={removeLabel} data-testid={`${testId}-remove`}>
-        <CloseIcon />
-      </button>
+      <span className="lib-corner">
+        {toggle && <ListButton toggle={toggle} title={title} testId={`${testId}-list-toggle`} />}
+        <RemoveButton label={removeLabel} onClick={onRemove} testId={`${testId}-remove`} />
+      </span>
     </div>
   );
 }
 
-/** "Continue watching": the cards of what this profile started, newest first. Tapping one picks it up where it stopped. */
-export function ContinueRow({ items, onPlay, onRemove }: { items: readonly LiveProgress[]; onPlay: (url: string, startAt: number | undefined, hint: PlayHint) => void; onRemove: (key: string) => void }) {
+/**
+ * "Continue watching": the cards of what this profile started, newest first, big and one at a time. Tapping one picks it up where it
+ * stopped; the + on it (or a hold) puts the title in a list, and the cross takes it off the row.
+ */
+export function ContinueRow({
+  items,
+  onPlay,
+  onRemove,
+  onPick,
+}: {
+  items: readonly LiveProgress[];
+  onPlay: (url: string, startAt: number | undefined, hint: PlayHint) => void;
+  onRemove: (key: string) => void;
+  onPick: (entry: ListEntry) => void;
+}) {
   const t = useT();
+  const toggleFor = useListToggle(onPick);
   const shown = unfinished(items);
   if (shown.length === 0) return null;
   return (
-    <CardRow title={t("rows.continue")} testId="continue-row">
+    <CardRow title={t("rows.continue")} testId="continue-row" wide>
       {shown.map((item) => {
         const resume = resumeAt(item);
         return (
@@ -81,6 +107,7 @@ export function ContinueRow({ items, onPlay, onRemove }: { items: readonly LiveP
             removeLabel={`${t("rows.remove")}: ${item.title}`}
             onPlay={() => onPlay(item.url, resume, hintOf(item))}
             onRemove={() => onRemove(item.key)}
+            toggle={toggleFor(listEntryOf({ id: item.key, title: item.title, url: item.url, image: item.image, backdrop: item.backdrop, year: item.year }))}
           />
         );
       })}
@@ -91,7 +118,10 @@ export function ContinueRow({ items, onPlay, onRemove }: { items: readonly LiveP
 interface ListRowsProps {
   lists: readonly ListInfo[];
   items: readonly LiveListItem[];
-  onPlay: (url: string, hint: PlayHint) => void;
+  /** A tap on a title: its page opens. */
+  onOpen: (entry: Entry) => void;
+  /** With more than one list, a hold on a title asks which lists it is in. */
+  onPick: (entry: ListEntry) => void;
   onRemove: (url: string, list: string) => void;
   /** Open the sheet where lists are made, renamed and deleted. */
   onManage: () => void;
@@ -102,7 +132,7 @@ interface ListRowsProps {
  * row has the way to the lists themselves; when there are several lists and all are empty the way is there on its own, and until
  * the first title is saved (one list, empty) there is nothing at all.
  */
-export function ListRows({ lists, items, onPlay, onRemove, onManage }: ListRowsProps) {
+export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: ListRowsProps) {
   const t = useT();
   const filled = lists.filter((info) => items.some((item) => listOf(item) === info.id));
   if (filled.length === 0 && lists.length < 2) return null;
@@ -134,10 +164,11 @@ export function ListRows({ lists, items, onPlay, onRemove, onManage }: ListRowsP
                   title={item.title}
                   image={item.backdrop ?? item.image}
                   note={item.year ? String(item.year) : undefined}
-                  playLabel={`${t("rows.play")} ${item.title}`}
+                  playLabel={`${t("rows.open")} ${item.title}`}
                   removeLabel={`${t("rows.removeFromList", { list: name })}: ${item.title}`}
-                  onPlay={() => onPlay(item.url, hintOf(item))}
+                  onPlay={() => onOpen(entryOfSaved(item))}
                   onRemove={() => onRemove(item.url, info.id)}
+                  {...(lists.length > 1 ? { onHold: () => onPick(listEntryOf(item)) } : {})}
                 />
               ))}
           </CardRow>

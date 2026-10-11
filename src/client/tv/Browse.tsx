@@ -4,7 +4,7 @@ import { useAccount } from "../account/AccountProvider";
 import { hintOf, listEntryOf, listName } from "../account/cards";
 import { ListEditor } from "../account/Lists";
 import { profileStore, useProfileData } from "../account/store";
-import { useLanguage, useT } from "../i18n";
+import { rowTitle, useLanguage, useT } from "../i18n";
 import { BackspaceIcon, CheckIcon, ClockIcon, CloseIcon, FilmIcon, GearIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
@@ -12,10 +12,11 @@ import { Logo } from "../shared/Logo";
 import { hueOf } from "../shared/Poster";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
+import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AccountChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
-import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type View } from "./pages";
+import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
 import { Rail, type RailEntry } from "./Rail";
 
 /** What a screen that starts a title can add: where to pick it up, and the picture and year the library already knows for it. */
@@ -123,9 +124,26 @@ function savedPos(view: View, rows: readonly HomeRow[]): Pos | undefined {
   return row === -1 ? undefined : { zone: "rows", row, col: id === "continue" ? 0 : saved.col };
 }
 
-/** Scroll `container` just far enough that `element` shows with some room around it. */
-function keepInView(container: HTMLElement, element: HTMLElement) {
-  const room = parseFloat(getComputedStyle(container).fontSize) * 1.5;
+/** The buttons of a title's own page, the zones its arrow keys walk. */
+const PAGE_ZONES: Zone[] = ["detail", "close", "seasons", "episodes"];
+
+/** Moving into a show's seasons lands on the one that is shown, and into its episodes on the one Play leads to (else on the first). */
+function landOnPage(next: Target, from: Pos, root: ParentNode): Target {
+  if (!next || next.row === -1 || next.zone === from.zone) return next;
+  const pick = (selector: string) => root.querySelector<HTMLElement>(selector);
+  if (next.zone === "seasons") {
+    const shown = pick('[data-zone="seasons"][aria-checked="true"]');
+    return shown ? { ...next, col: Number(shown.dataset.col) } : next;
+  }
+  if (next.zone === "episodes") {
+    const target = pick('[data-zone="episodes"][data-target="true"]');
+    return target ? { ...next, row: Number(target.dataset.row) } : next;
+  }
+  return next;
+}
+
+/** Scroll `container` just far enough that `element` shows with some room around it (a page that scrolls asks for more). */
+function keepInView(container: HTMLElement, element: HTMLElement, room = parseFloat(getComputedStyle(container).fontSize) * 1.5) {
   const box = container.getBoundingClientRect();
   const at = element.getBoundingClientRect();
   if (at.top < box.top + room) container.scrollBy({ top: at.top - box.top - room, behavior: "smooth" });
@@ -154,7 +172,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const t = useT();
   const language = useLanguage();
   const { status: accountStatus } = useAccount();
-  const { progress, lists, list } = useProfileData();
+  const { progress, watched, lists, list } = useProfileData();
   const narrowColumns = useNarrowColumns();
   const narrow = narrowColumns > 0;
   const gridColumns = narrowColumns || GRID_COLUMNS;
@@ -177,6 +195,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const [focused, setFocused] = useState<Focused | null>(null);
   /** The title whose own page is open over the library. */
   const [detail, setDetail] = useState<Focused | null>(null);
+  /** What that page lists besides the buttons when the title is a show: its seasons, and the episodes of one. */
+  const series = useSeriesPage(detail?.entry, progress, watched);
   /** The remote is on a row below the first, so the banner makes room for the rows. */
   const [deep, setDeep] = useState(false);
   /** The page over the library, when there is one. */
@@ -191,12 +211,14 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
 
   useEffect(() => {
     let live = true;
-    fetch("/api/library")
+    // (Asked again, as after a try at a video that failed or a press on Retry, it is asked past the browser's memory of the last answer.)
+    fetch("/api/library", attempt > 0 ? { cache: "reload" } : undefined)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((data: unknown) => {
         const parsed = LibrarySchema.parse(data);
         if (!live) return;
         remembered.library = parsed;
+        if (attempt > 0) remembered.resultsFor = ""; // what a search showed is asked for again against the new list
         setLibrary(parsed);
         setStatus("ready");
       })
@@ -317,7 +339,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     own.slice(0, RAIL_CATEGORIES).forEach((row, i) =>
       entries.push({
         id: `category:${row.id}`,
-        label: row.title,
+        label: rowTitle(row),
         ...(i === 0 ? { group: title } : {}),
         current: view.kind === "category" && view.rowId === row.id,
         testId: `rail-category-${row.id}`,
@@ -350,7 +372,14 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: gridRows(shownResults.length, resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
-    ...(detail ? { detail: [overviewActions(detail.entry).length] } : {}),
+    ...(detail
+      ? {
+          close: [1],
+          detail: [overviewActions(detail.entry).length],
+          ...(series.seasons.length > 1 ? { seasons: [series.seasons.length] } : {}),
+          ...(series.episodes?.length ? { episodes: series.episodes.map(() => 1) } : {}),
+        }
+      : {}),
   };
   const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists });
   latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists };
@@ -386,10 +415,16 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   }, [pending]);
 
   // Keys pressed while it loaded may have landed on the account button, or nowhere; once there is something to see, the remote goes to it.
+  // (Also when the list changed under the remote: a title the server stopped offering takes its button with it.)
   useEffect(() => {
     const at = posOf(document.activeElement);
     if (!at || at.zone === "top") setPending(CONTENT);
-  }, [hasTiles, status, view.kind]);
+  }, [hasTiles, status, view.kind, library]);
+
+  // A video that would not play may take its title off the server's lists: ask for them again.
+  useEffect(() => {
+    if (notice) setAttempt((n) => n + 1);
+  }, [notice]);
 
   // A category that is gone (the library was refreshed) leaves its page empty: go home.
   useEffect(() => {
@@ -481,7 +516,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
       event.preventDefault();
 
       const at = posOf(document.activeElement);
-      if (open) return go(at?.zone === "detail" ? stepFrom(now, at, action) : DETAIL); // the page over the library keeps the remote to itself
+      if (open) return go(at && PAGE_ZONES.includes(at.zone) ? landOnPage(stepFrom(now, at, action), at, root) : DETAIL); // the page over the library keeps the remote to itself
       if (!at) {
         // Nowhere to stand yet. On a page with titles that is the first one; on an empty page Left reaches the menu and Up the account button.
         if (resolve(CONTENT)) return focusAt(CONTENT);
@@ -523,7 +558,11 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     setStatus("loading");
     setAttempt((n) => n + 1);
   };
-  const playEntry = (entry: Entry) => onPlay(new URL(entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(entry.startAt ? { startAt: entry.startAt } : {}) });
+  /** Plays a title, or when it is a show's own page that asks, the episode it leads to (`at`), from where that was left. */
+  const playEntry = (entry: Entry, at?: Pick<Start, "url" | "startAt">) => {
+    const startAt = at ? at.startAt : entry.startAt;
+    onPlay(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(startAt ? { startAt } : {}) });
+  };
   // A category opens its page; a title opens its own page, where it is played or kept in a list (the banner's buttons do the same without it).
   const press = (title: Focused) => (title.entry.opens ? choose(title.entry.opens) : openDetail(title));
 
@@ -532,9 +571,19 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} rank={pos.col + 1} pos={pos} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title)} />;
   };
 
-  const doAction = (action: HeroAction, entry: Entry | undefined = shown?.entry, from: Target = CONTENT) => {
+  /** An episode of the show whose page is open. */
+  const playEpisode = (episode: PageEpisode) => detail && playEntry(detail.entry, episode);
+  /** The remote moved onto a button of the page: the page follows it (back to the top for the title's own buttons), as the rows and grids do. */
+  const scrollPage = (event: FocusEvent<HTMLElement>) => {
+    const target = event.target;
+    if (!target.matches(":focus-visible")) return; // a press with the mouse or a finger needs no help, and a page that moved under it would lose the click
+    if (target.closest(".tv-detail-hero")) event.currentTarget.scrollTo({ top: 0, behavior: "smooth" });
+    else keepInView(event.currentTarget, target, event.currentTarget.clientHeight * 0.22);
+  };
+
+  const doAction = (action: HeroAction, entry: Entry | undefined = shown?.entry, from: Target = CONTENT, at?: Start) => {
     if (!entry) return;
-    if (action === "play") playEntry(entry);
+    if (action === "play") playEntry(entry, at);
     else if (action === "list") {
       if (several) setOverlay({ kind: "pick", entry, back: from });
       else profileStore.setInList(listEntryOf(entry), !isSaved(entry));
@@ -550,9 +599,11 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   /** What a button says for a title; a title's own page spells out what the list button does, where the banner has room for the name only. */
   const labelOf = (action: HeroAction, entry: Entry, spelled: boolean): ReactNode => {
     if (action === "play") {
+      // A show's own page says which episode: "Play S1:E1", "Resume S2:E5".
+      const at = spelled ? series.start : undefined;
       return (
         <>
-          <PlayIcon /> {entry.startAt !== undefined ? t("rows.resume") : t("rows.play")}
+          <PlayIcon /> {at ? t(at.startAt !== undefined ? "series.resume" : "series.play", { season: at.season, episode: at.episode }) : entry.startAt !== undefined ? t("rows.resume") : t("rows.play")}
         </>
       );
     }
@@ -813,36 +864,42 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
 
       {detail && (
         // A tap on the empty part of the page closes it, as Back does.
-        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" onClick={(event) => event.target === event.currentTarget && closeDetail()}>
+        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" data-show={series.isShow} onClick={(event) => event.target === event.currentTarget && closeDetail()}>
           <Backdrop image={detail.entry.backdrop ?? detail.entry.image} />
           <div className="tv-browse-shade" />
-          <button className="tv-hero-button tv-detail-close" onClick={closeDetail} data-testid="tv-detail-close">
+          {/* The page scrolls (a show's episodes lie under what a film's page is all of); the picture and the Close button stay. */}
+          <div className="tv-detail-scroll" onClick={(event) => event.target === event.currentTarget && closeDetail()} onFocus={scrollPage}>
+            <div className="tv-detail-hero" onClick={(event) => event.target === event.currentTarget && closeDetail()}>
+              <div className="tv-detail-text">
+                <p className="tv-hero-eyebrow">{detail.label}</p>
+                <h1 className="tv-detail-title" data-testid="tv-detail-title">
+                  {detail.entry.title}
+                </h1>
+                <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, detail.source].filter(Boolean).join("  ·  ")}</p>
+                {detail.entry.description && <p className="tv-detail-about">{detail.entry.description}</p>}
+                <div className="tv-hero-actions">
+                  {overviewActions(detail.entry).map((action, col) => (
+                    <button
+                      key={action}
+                      className={`tv-hero-button${action === "play" ? " is-primary" : ""}`}
+                      data-testid={`tv-detail-${action}`}
+                      data-zone="detail"
+                      data-row={0}
+                      data-col={col}
+                      aria-pressed={action === "list" ? isSaved(detail.entry) : undefined}
+                      onClick={() => doAction(action, detail.entry, { zone: "detail", row: 0, col }, series.start)}
+                    >
+                      {labelOf(action, detail.entry, true)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {series.isShow && <SeriesSection page={series} onPlay={playEpisode} onSlide={slideIntoView} />}
+          </div>
+          <button className="tv-hero-button tv-detail-close" onClick={closeDetail} data-testid="tv-detail-close" data-zone="close" data-row={0} data-col={0}>
             <CloseIcon /> {t("common.close")}
           </button>
-          <div className="tv-detail-text">
-            <p className="tv-hero-eyebrow">{detail.label}</p>
-            <h1 className="tv-detail-title" data-testid="tv-detail-title">
-              {detail.entry.title}
-            </h1>
-            <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, detail.source].filter(Boolean).join("  ·  ")}</p>
-            {detail.entry.description && <p className="tv-detail-about">{detail.entry.description}</p>}
-            <div className="tv-hero-actions">
-              {overviewActions(detail.entry).map((action, col) => (
-                <button
-                  key={action}
-                  className={`tv-hero-button${action === "play" ? " is-primary" : ""}`}
-                  data-testid={`tv-detail-${action}`}
-                  data-zone="detail"
-                  data-row={0}
-                  data-col={col}
-                  aria-pressed={action === "list" ? isSaved(detail.entry) : undefined}
-                  onClick={() => doAction(action, detail.entry, { zone: "detail", row: 0, col })}
-                >
-                  {labelOf(action, detail.entry, true)}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       )}
 

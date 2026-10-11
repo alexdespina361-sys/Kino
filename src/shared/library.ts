@@ -49,10 +49,15 @@ export const EpisodeDetailSchema = z.object({
   still: z.string().max(2048).optional(),
   /** In minutes. */
   runtime: z.number().int().min(1).max(1000).optional(),
+  /** The link that plays it: the place that lists the episode knows how its links are made. */
+  url: z.string().max(2048).optional(),
 });
 export type EpisodeDetail = z.infer<typeof EpisodeDetailSchema>;
 
 export const EpisodeDetailsSchema = z.object({ episodes: z.array(EpisodeDetailSchema).max(500) });
+
+/** The seasons of a show that can be watched, in order (a show's specials are not among them). */
+export const SeasonsSchema = z.object({ seasons: z.array(z.number().int().min(1).max(200)).max(200) });
 
 export const LibrarySchema = z.object({
   rows: z.array(LibraryRowSchema).max(50),

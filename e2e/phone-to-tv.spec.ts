@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import { openPairedPhone, openTv, PHONE, RawPhone, readPairingCode, tvRoot, tvTime } from "./helpers";
 
 test.describe("phone UI -> server -> TV player", () => {
@@ -260,4 +260,99 @@ test("TV screen interactive controls: stop button on TV browser", async ({ brows
   await tv.getByTitle("Stop playback").click();
   await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
   await expect(phone.getByTestId("url-input")).toBeVisible();
+});
+
+test.describe("a sheet on the phone is pulled down to close", () => {
+  /** A sheet open on a phone that is playing something: the speed list, which has an option for every rate. */
+  const withSheet = async (browser: Browser, baseURL: string, height = 844) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.setViewportSize({ width: 390, height });
+    await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await phone.getByTestId("chip-speed").click();
+    const sheet = phone.getByRole("dialog");
+    await expect(sheet).toBeVisible();
+    await phone.waitForTimeout(400); // (it slides up first)
+    // Marks the page, so that a reload shows; and notes whether the page kept the touches for itself (a pull left to the browser is a refresh).
+    await phone.evaluate(() => {
+      const w = window as unknown as { kept: boolean; moves: boolean[] };
+      w.kept = true;
+      w.moves = [];
+      window.addEventListener("touchmove", (event) => w.moves.push(event.defaultPrevented));
+    });
+    return { tv, phone, sheet };
+  };
+
+  /** A finger put down at `from`, moved `by` pixels down in `steps` moves `every` milliseconds apart (through the browser's own input), and let go. */
+  const pull = async (phone: Page, from: { x: number; y: number }, by: number, { steps = 10, every = 16 } = {}) => {
+    const client = await phone.context().newCDPSession(phone);
+    const send = (type: "touchStart" | "touchMove" | "touchEnd", y: number) => client.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: from.x, y }] });
+    await send("touchStart", from.y);
+    for (let step = 1; step <= steps; step++) {
+      await send("touchMove", from.y + (by * step) / steps);
+      await phone.waitForTimeout(every);
+    }
+    await send("touchEnd", from.y + by);
+    await client.detach();
+  };
+
+  const gripOf = async (sheet: Locator) => {
+    const box = (await sheet.locator(".sheet-grip").boundingBox())!;
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+  const state = (phone: Page) => phone.evaluate(() => ({ kept: (window as unknown as { kept?: boolean }).kept === true, moves: (window as unknown as { moves: boolean[] }).moves }));
+
+  test("pulled well down, or flicked, the sheet goes, and the page is not reloaded", async ({ browser, baseURL }) => {
+    const { phone, sheet } = await withSheet(browser, baseURL!);
+    expect(await phone.evaluate(() => document.documentElement.classList.contains("sheet-open"))).toBe(true); // (the browser's pull to refresh is off while a sheet is up)
+    expect(await phone.evaluate(() => getComputedStyle(document.documentElement).overscrollBehaviorY)).toBe("contain");
+
+    await pull(phone, await gripOf(sheet), 260, { steps: 12, every: 30 }); // a slow, long pull
+    await expect(sheet).toHaveCount(0);
+    const after = await state(phone);
+    expect(after.kept).toBe(true); // still the same page
+    expect(after.moves.length).toBeGreaterThan(0);
+    expect(after.moves.every(Boolean)).toBe(true); // every move of the pull was the sheet's, none was left to the browser
+    expect(await phone.evaluate(() => document.documentElement.classList.contains("sheet-open"))).toBe(false);
+
+    await phone.getByTestId("chip-speed").click(); // and the next one opens as usual, then goes with a flick
+    const again = phone.getByRole("dialog");
+    await expect(again).toBeVisible();
+    await phone.waitForTimeout(400);
+    await pull(phone, await gripOf(again), 100, { steps: 2, every: 0 }); // short, but fast (the second move comes quickly after the first)
+    await expect(again).toHaveCount(0);
+    expect((await state(phone)).kept).toBe(true);
+  });
+
+  test("pulled a little and let go, it springs back and stays open", async ({ browser, baseURL }) => {
+    const { phone, sheet } = await withSheet(browser, baseURL!);
+    const top = (await sheet.boundingBox())!.y;
+    await pull(phone, await gripOf(sheet), 50, { steps: 5, every: 40 });
+    await expect(sheet).toBeVisible();
+    await expect.poll(async () => Math.round((await sheet.boundingBox())!.y)).toBe(Math.round(top)); // back where it was
+    expect((await state(phone)).kept).toBe(true);
+    await phone.getByTestId("speed-1.5").click(); // and it still works
+    await expect(phone.getByTestId("speed-1.5")).toHaveClass(/active/);
+  });
+
+  test("on a list that is scrolled down a pull is the list scrolling; at the top of it, the sheet", async ({ browser, baseURL }) => {
+    const { phone, sheet } = await withSheet(browser, baseURL!, 380); // low enough for the options not to fit
+    const body = sheet.locator(".sheet-body");
+    expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+    await body.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    const scrolled = await body.evaluate((el) => el.scrollTop);
+    expect(scrolled).toBeGreaterThan(20);
+
+    const box = (await body.boundingBox())!;
+    await pull(phone, { x: box.x + box.width / 2, y: box.y + 40 }, 120, { steps: 10, every: 20 });
+    await expect(sheet).toBeVisible(); // the list went back up under the finger; the sheet stayed
+    expect(await body.evaluate((el) => el.scrollTop)).toBeLessThan(scrolled);
+
+    await body.evaluate((el) => el.scrollTo(0, 0));
+    await pull(phone, { x: box.x + box.width / 2, y: box.y + 40 }, 260, { steps: 12, every: 30 });
+    await expect(sheet).toHaveCount(0); // at the top, the same pull is the sheet's
+    expect((await state(phone)).kept).toBe(true);
+  });
 });

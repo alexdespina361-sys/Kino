@@ -112,6 +112,18 @@ test.describe("the controls fit the screen", () => {
     },
   });
 
+  /** How many lines the player's controls are on. The buttons are not all as tall, so it is their middles that say. */
+  const linesOf = (tv: Page) =>
+    tv.evaluate(() => {
+      const middles = [...document.querySelectorAll(".hud-controls button")]
+        .map((button) => {
+          const { top, bottom } = button.getBoundingClientRect();
+          return (top + bottom) / 2;
+        })
+        .sort((a, b) => a - b);
+      return middles.reduce((lines, middle, i) => (i > 0 && middle - middles[i - 1]! > 10 ? lines + 1 : lines), 1);
+    });
+
   const screens = [
     { name: "720p", width: 1280, height: 720 },
     { name: "1080p", width: 1920, height: 1080 },
@@ -139,6 +151,7 @@ test.describe("the controls fit the screen", () => {
         }),
       );
       expect(rects.length).toBeGreaterThanOrEqual(10);
+      expect(await linesOf(tv)).toBe(1);
       for (const rect of rects) {
         expect(rect.left).toBeGreaterThanOrEqual(0);
         expect(rect.top).toBeGreaterThanOrEqual(0);
@@ -173,6 +186,90 @@ test.describe("the controls fit the screen", () => {
     expect(Math.max(...middles) - Math.min(...middles)).toBeLessThan(6); // all on one line
     phone.close();
   });
+
+  /** One stream at two sizes: the quality button is only there when there is a choice. */
+  const twoSizes = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:7",
+    '#EXT-X-STREAM-INF:BANDWIDTH=153168,RESOLUTION=320x180,CODECS="vp09.00.11.08"',
+    "stream.m3u8",
+    '#EXT-X-STREAM-INF:BANDWIDTH=453168,RESOLUTION=1280x720,CODECS="vp09.00.11.08"',
+    "stream.m3u8",
+    "",
+  ].join("\n");
+
+  for (const [locale, language] of [["en-US", "English"], ["ro-RO", "Romanian"], ["it-IT", "Italian"]] as const) {
+    test(`everything the controls have is on one line in ${language}, from 4K down to a small window, and stays there as the window changes`, async ({ browser, baseURL }) => {
+      const tv = await openDevice(browser, { viewport: { width: 1920, height: 1080 }, locale }, {}, (context) =>
+        context.route("**/fixtures/hls/multi.m3u8", (route) => route.fulfill({ contentType: "application/vnd.apple.mpegurl", body: twoSizes })),
+      );
+      await tv.goto("/tv");
+      await expect(tv.getByTestId("tv-browse")).toBeVisible();
+      await tv.getByTestId("rail-connect").click();
+      const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+      phone.cmd({ type: "LOAD", media: { ...fullest(baseURL!), stream: { url: "/fixtures/hls/multi.m3u8", type: "hls" } } });
+      await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+      for (const id of ["prev", "next", "episodes", "audio-sub", "source", "speed", "quality", "party", "mute", "fullscreen", "stop"]) {
+        await expect(tv.getByTestId(`tv-${id}-btn`), `the ${id} button`).toBeVisible(); // the fullest the controls get: a button for everything
+      }
+      for (const [width, height] of [[1920, 1080], [3840, 2160], [1280, 720], [1024, 768], [900, 506], [800, 600], [1920, 1080]] as const) {
+        await tv.setViewportSize({ width, height });
+        // (a frame after the window has changed, the controls have been fitted to it)
+        await expect
+          .poll(
+            async () => {
+              const overflow = await tv.evaluate(() => {
+                const row = document.querySelector(".hud-controls")!;
+                return row.scrollWidth - row.clientWidth;
+              });
+              return (await linesOf(tv)) === 1 && overflow <= 1;
+            },
+            { message: `at ${width}×${height}` },
+          )
+          .toBe(true);
+      }
+      phone.close();
+    });
+  }
+
+  test("what the controls give up on a small screen is a label, and the button keeps its name and its place", async ({ browser, baseURL }) => {
+    const tv = await openDevice(browser, { viewport: { width: 800, height: 600 }, locale: "ro-RO" });
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await tv.getByTestId("rail-connect").click();
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: fullest(baseURL!) });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    const row = tv.locator(".hud-controls");
+    await expect(row).toHaveAttribute("data-fit", /party/); // the longest label goes first of them
+    const party = tv.getByTestId("tv-party-btn");
+    await expect(party).toHaveAttribute("data-folded", "");
+    await expect(party).toHaveAttribute("aria-label", "Vizionare comună");
+    expect(await party.evaluate((button) => (button.querySelector(".tv-btn-label") as HTMLElement).offsetWidth)).toBe(0); // the words are not drawn
+    await party.click(); // and it is a button like any other
+    await expect(tv.getByTestId("tv-party-panel")).toBeVisible();
+    await tv.keyboard.press("Escape");
+
+    await tv.setViewportSize({ width: 2560, height: 1080 }); // room again: the words come back
+    await expect(party).not.toHaveAttribute("data-folded", "");
+    await expect(row).toHaveAttribute("data-fit", "");
+    expect(await party.evaluate((button) => (button.querySelector(".tv-btn-label") as HTMLElement).offsetWidth)).toBeGreaterThan(0);
+    phone.close();
+  });
+
+  test("a phone-sized screen wraps the controls on two lines rather than running them off the side", async ({ browser, baseURL }) => {
+    const tv = await openDevice(browser, { viewport: { width: 390, height: 844 }, locale: "ro-RO" });
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await tv.getByTestId("rail-connect").click();
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: fullest(baseURL!) });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect.poll(() => linesOf(tv)).toBe(2);
+    const rects = await tv.evaluate(() => [...document.querySelectorAll(".hud-controls button")].map((button) => button.getBoundingClientRect().right));
+    for (const right of rects) expect(right).toBeLessThanOrEqual(390);
+    phone.close();
+  });
 });
 
 test.describe("subtitle height on the TV", () => {
@@ -200,6 +297,78 @@ test.describe("subtitle height on the TV", () => {
     // The panel stays clear of the sample at the highest setting, so both can be seen together.
     const panel = (await tv.getByTestId("audio-subtitles-modal").boundingBox())!;
     expect(panel.y + panel.height).toBeLessThanOrEqual((await sample.boundingBox())!.y);
+    phone.close();
+  });
+});
+
+test.describe("a menu's close button on the TV", () => {
+  /** A paused film with subtitles, and the menu behind `button` open on it (opened with the mouse: the keys go on from there). */
+  const openMenu = async (browser: Browser, baseURL: string, button: string) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "A film", stream: { url: "/fixtures/sample.mp4", type: "mp4" }, subtitles: [{ id: "en", label: "English", lang: "en", url: "/fixtures/sample.vtt" }] } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await tv.getByTestId(button).click();
+    return { tv, phone };
+  };
+
+  test("the remote reaches it from the top of a column and from past the last one, and goes back in from it", async ({ browser, baseURL }) => {
+    const { tv, phone } = await openMenu(browser, baseURL!, "tv-audio-sub-btn");
+    const modal = tv.getByTestId("audio-subtitles-modal");
+    const close = modal.getByRole("button", { name: "Close" });
+    const off = modal.getByRole("option", { name: "Off" });
+    await expect(off).toBeFocused(); // the subtitles in use, at the top of the first column
+
+    await tv.keyboard.press("ArrowUp");
+    await expect(close).toBeFocused();
+    await tv.keyboard.press("ArrowUp"); // nothing is above it
+    await tv.keyboard.press("ArrowRight"); // nor beside it
+    await expect(close).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await expect(off).toBeFocused(); // back where the remote was
+
+    await tv.keyboard.press("ArrowRight"); // the next column (the delay)
+    await expect(modal.getByRole("option", { name: /^Earlier/ })).toBeFocused();
+    await tv.keyboard.press("ArrowRight"); // and past the last one
+    await expect(close).toBeFocused();
+    await tv.keyboard.press("ArrowLeft");
+    await expect(modal.getByRole("option", { name: /^Earlier/ })).toBeFocused(); // in again, on the option it left
+
+    await tv.keyboard.press("ArrowUp");
+    await expect(close).toBeFocused();
+    await tv.keyboard.press("Enter"); // OK closes the menu, and the remote is back on the button that opened it
+    await expect(modal).toHaveCount(0);
+    await expect(tv.getByTestId("tv-audio-sub-btn")).toBeFocused();
+    phone.close();
+  });
+
+  test("a menu of one column has it to the right of all of its options", async ({ browser, baseURL }) => {
+    const { tv, phone } = await openMenu(browser, baseURL!, "tv-speed-btn");
+    const modal = tv.getByTestId("audio-subtitles-modal");
+    const normal = modal.getByRole("option", { name: /Normal/ });
+    await expect(normal).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(modal.getByRole("button", { name: "Close" })).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await expect(normal).toBeFocused();
+    await tv.keyboard.press("ArrowUp"); // one option up, not the button: it is only above the first
+    await expect(normal).not.toBeFocused();
+    await expect(modal.getByRole("button", { name: "Close" })).not.toBeFocused();
+    phone.close();
+  });
+
+  test("the watch party's panel has the same button within reach", async ({ browser, baseURL }) => {
+    const { tv, phone } = await openMenu(browser, baseURL!, "tv-party-btn");
+    const panel = tv.getByTestId("tv-party-panel");
+    await expect(tv.getByTestId("tv-party-start")).toBeFocused();
+    await tv.keyboard.press("ArrowUp");
+    await expect(panel.getByRole("button", { name: "Close" })).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-party-start")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(panel.getByRole("button", { name: "Close" })).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(panel).toHaveCount(0);
     phone.close();
   });
 });
@@ -485,14 +654,29 @@ test.describe("the library on the TV", () => {
 
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-detail-list")).toBeFocused();
-    await tv.keyboard.press("ArrowRight"); // the end of the buttons
-    await expect(tv.getByTestId("tv-detail-list")).toBeFocused();
+    await tv.keyboard.press("ArrowRight"); // past the last button is the Close button in the corner
+    await expect(tv.getByTestId("tv-detail-close")).toBeFocused();
+    await tv.keyboard.press("ArrowRight"); // and that is the end of it
+    await expect(tv.getByTestId("tv-detail-close")).toBeFocused();
     await tv.keyboard.press("ArrowLeft");
-    await tv.keyboard.press("ArrowLeft"); // never on to the menu behind the page
-    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await expect(tv.getByTestId("tv-detail-list")).toBeFocused();
+    await tv.keyboard.press("ArrowUp"); // Up reaches Close from any button too
+    await expect(tv.getByTestId("tv-detail-close")).toBeFocused();
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await tv.keyboard.press("ArrowLeft"); // never on to the menu behind the page
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await tv.keyboard.press("ArrowDown"); // a film's page has nothing under its buttons
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
     await expect(tv.getByTestId("tv-rail")).toHaveAttribute("data-open", "false");
+    await expect(tv.getByTestId("tv-episodes")).toHaveCount(0);
+
+    await tv.keyboard.press("ArrowUp");
+    await tv.keyboard.press("Enter"); // OK on Close is the same as Back
+    await expect(page).toHaveCount(0);
+    await expect(tiles(tv).nth(1)).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(page).toBeVisible();
 
     await tv.keyboard.press("Escape");
     await expect(page).toHaveCount(0);
@@ -769,6 +953,184 @@ test.describe("the library on the TV", () => {
     await tv.keyboard.press("ArrowLeft");
     await expect(tv.getByTestId("tv-rail")).toHaveAttribute("data-open", "true");
     await expect(tv.getByTestId("rail-connect")).toBeVisible();
+  });
+});
+
+test.describe("a show's own page on the TV", () => {
+  const link = (episode: number, season = 1) => `https://shows.example/watch/7?s=${season}&e=${episode}`;
+  const show = { id: "show-7", title: "The Long Night", year: 2019, kind: "series", url: link(1), description: "A show about a very long night." };
+  const library = {
+    updatedAt: Date.now(),
+    rows: [
+      { id: "s", title: "Shows", source: "Test Source", kind: "series", items: [show] },
+      { id: "m", title: "Films", source: "Test Source", kind: "movie", items: [{ id: "f", title: "A film", kind: "movie", url: "/fixtures/sample.mp4" }] },
+    ],
+  };
+  /** The library with one show: `seasons` of three episodes each, whose episodes are fixture pages (the first plays, the second has no video). */
+  const withShow =
+    (baseURL: string, seasons: number[] | "unknown" = [1, 2]) =>
+    async (context: BrowserContext): Promise<void> => {
+      await withLibrary(library)(context);
+      await context.route(/\/api\/library\/seasons/, (route) => route.fulfill({ json: { seasons: seasons === "unknown" ? [] : seasons } }));
+      await context.route(/\/api\/library\/episodes/, (route) => {
+        const season = Number(new URL(route.request().url()).searchParams.get("season"));
+        const names = ["Pilot", "The Long Night", "The Third Day"];
+        const pages = ["video", "none", "hls"];
+        return route.fulfill({
+          json: { episodes: names.map((name, i) => ({ season, episode: i + 1, title: season === 1 ? name : `${name} again`, runtime: 40, url: `${baseURL}/fixtures/pages/${pages[i]}.html` })) },
+        });
+      });
+    };
+  const tiles = (tv: Page) => tv.getByTestId("tv-browse-tile");
+  const episodes = (tv: Page) => tv.getByTestId("tv-episode");
+
+  test("its seasons and episodes lie under its buttons, and Play says which episode it starts", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser, withShow(baseURL!));
+    await expect(tiles(tv).first()).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("The Long Night");
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await expect(tv.getByTestId("tv-detail-play")).toHaveText("Play S1:E1");
+    await expect(tv.getByTestId("tv-episodes")).toBeVisible();
+    await expect(tv.getByTestId("tv-season-1")).toHaveAttribute("aria-checked", "true");
+    await expect(tv.getByTestId("tv-season-2")).toHaveAttribute("aria-checked", "false");
+    await expect(episodes(tv)).toHaveCount(3);
+    await expect(episodes(tv).first()).toContainText("Pilot");
+    await expect(episodes(tv).first()).toContainText("40 min");
+    await expect(episodes(tv).first()).toHaveAttribute("data-target", "true"); // what Play starts
+    await expect(episodes(tv).nth(1)).toHaveAttribute("data-target", "false");
+  });
+
+  test("the arrow keys go from the buttons to the seasons to the episodes, and back; Close is above all of it", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser, withShow(baseURL!));
+    await expect(tiles(tv).first()).toBeFocused(); // (the keys act on what the screen has by now: OK before the library is there leads nowhere)
+    await tv.keyboard.press("Enter");
+    await expect(episodes(tv)).toHaveCount(3); // (and the arrow keys walk what is on the page: they wait for the seasons and episodes to be listed)
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-season-1")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("tv-season-2")).toBeFocused();
+    await tv.keyboard.press("Enter"); // the episodes change, and the remote stays on the season
+    await expect(tv.getByTestId("tv-season-2")).toHaveAttribute("aria-checked", "true");
+    await expect(tv.getByTestId("tv-season-2")).toBeFocused();
+    await expect(episodes(tv).first()).toContainText("Pilot again");
+    await expect(episodes(tv).first()).toHaveAttribute("data-target", "false"); // Play is for season 1
+
+    await tv.keyboard.press("ArrowDown");
+    await expect(episodes(tv).first()).toBeFocused(); // no episode of this season is the one Play starts: the first
+    await tv.keyboard.press("ArrowDown");
+    await expect(episodes(tv).nth(1)).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowDown"); // the last stays
+    await expect(episodes(tv).nth(2)).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await tv.keyboard.press("ArrowLeft"); // sideways leads nowhere from an episode
+    await expect(episodes(tv).nth(2)).toBeFocused();
+
+    await tv.keyboard.press("ArrowUp");
+    await tv.keyboard.press("ArrowUp");
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.getByTestId("tv-season-2")).toBeFocused(); // up to the season that is shown, not the first one
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await expect(tv.getByTestId("tv-detail-title")).toBeInViewport(); // the page came back up to its buttons
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.getByTestId("tv-detail-close")).toBeFocused();
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    await expect(tiles(tv).first()).toBeFocused();
+  });
+
+  test("OK on an episode plays it, and one with no video says so", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser, withShow(baseURL!));
+    await expect(tiles(tv).first()).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(episodes(tv)).toHaveCount(3); // (the arrow keys walk what is on the page: they wait for the seasons and episodes to be listed)
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowDown");
+    await expect(episodes(tv).first()).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await expect(episodes(tv).nth(1)).toBeFocused();
+    await tv.keyboard.press("Enter"); // the second episode's page has no video
+    await expect(tv.getByTestId("tv-notice")).toBeVisible({ timeout: 15_000 });
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+
+    await tiles(tv).first().focus();
+    await tv.keyboard.press("Enter");
+    await episodes(tv).first().click(); // the first one plays
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+  });
+
+  test("a show part way through says Resume with its episode, shows that season, and lands on that episode", async ({ browser, baseURL }) => {
+    const seed = guestStorage({
+      progress: [{ key: "show:The Long Night", at: Date.now() - 60_000, title: "The Long Night", url: link(2, 2), position: 600, duration: 2400, season: 2, episode: 2 }],
+      watched: [
+        { key: "The Long Night|2x1", at: Date.now() - 120_000, show: "The Long Night", season: 2, episode: 1, position: 2390, duration: 2400, done: true },
+        { key: "The Long Night|2x2", at: Date.now() - 60_000, show: "The Long Night", season: 2, episode: 2, position: 600, duration: 2400, done: false },
+      ],
+    });
+    const tv = await openLibrary(browser, withShow(baseURL!), undefined, seed);
+    await tv.getByTestId("rail-series").click();
+    await tiles(tv).nth(1).focus(); // (the first is Continue watching's card of the same show; this is the library's own)
+    await expect(tv.getByTestId("tv-hero-title")).toHaveText("The Long Night");
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-detail-play")).toHaveText("Resume S2:E2");
+    await expect(tv.getByTestId("tv-season-2")).toHaveAttribute("aria-checked", "true"); // where the profile is, not season 1
+    await expect(episodes(tv).first()).toContainText("Watched");
+    await expect(episodes(tv).nth(1)).toContainText("30 min left");
+    await expect(episodes(tv).nth(1)).toHaveAttribute("data-target", "true");
+
+    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowDown");
+    await expect(episodes(tv).nth(1)).toBeFocused(); // on the one Play starts, not the first of the season
+  });
+
+  test("the episode after a finished one is where Play leads, from its start", async ({ browser, baseURL }) => {
+    const seed = guestStorage({ progress: [{ key: "show:The Long Night", at: Date.now() - 60_000, title: "The Long Night", url: link(3), position: 0, duration: 0, season: 1, episode: 3 }] });
+    const tv = await openLibrary(browser, withShow(baseURL!), undefined, seed);
+    await tv.getByTestId("rail-series").click();
+    await tiles(tv).nth(1).focus();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-detail-play")).toHaveText("Play S1:E3"); // up next: not "Resume", nothing was begun of it
+    await expect(episodes(tv).nth(2)).toHaveAttribute("data-target", "true");
+  });
+
+  test("a show with one season lists its episodes without a row of seasons, and Play is there when the episodes cannot be listed", async ({ browser, baseURL }) => {
+    const one = await openLibrary(browser, withShow(baseURL!, [1]));
+    await expect(tiles(one).first()).toBeFocused();
+    await one.keyboard.press("Enter");
+    await expect(episodes(one)).toHaveCount(3);
+    await expect(one.getByTestId("tv-season-1")).toHaveCount(0);
+    await one.keyboard.press("ArrowDown");
+    await expect(episodes(one).first()).toBeFocused(); // straight from the buttons to the episodes
+
+    const none = await openLibrary(browser, withShow(baseURL!, "unknown"));
+    await expect(tiles(none).first()).toBeFocused();
+    await none.keyboard.press("Enter");
+    await expect(none.getByTestId("tv-detail-play")).toHaveText("Play S1:E1");
+    await expect(none.getByTestId("tv-episodes-note")).toHaveText("The episodes can't be listed right now.");
+    await none.keyboard.press("ArrowDown");
+    await expect(none.getByTestId("tv-detail-play")).toBeFocused(); // nothing to walk down to
+  });
+
+  test("a title that may be a show is asked about, and one the library calls a film is not", async ({ browser, baseURL }) => {
+    const asked: string[] = [];
+    const tv = await openLibrary(browser, async (context) => {
+      await withShow(baseURL!)(context);
+      await context.route(/\/api\/library\/seasons/, (route) => {
+        asked.push(new URL(route.request().url()).searchParams.get("url")!);
+        return route.fulfill({ json: { seasons: [1] } });
+      });
+    });
+    await tv.getByTestId("rail-movies").click();
+    await tiles(tv).first().focus();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("A film");
+    await expect(tv.getByTestId("tv-episodes")).toHaveCount(0);
+    expect(asked).toEqual([]);
   });
 });
 
@@ -1115,6 +1477,38 @@ test.describe("categories and search on the TV", () => {
     await expect(tv.getByTestId("key-clear")).toBeFocused(); // and it stays under the remote
   });
 
+  test("search: a title is found with a slip of the fingers, an unfinished word or its spaces left out, before the server has answered", async ({ browser }) => {
+    asked.length = 0;
+    const tv = await open(browser);
+    await choose(tv, "rail-search");
+    await tv.keyboard.type("secnd row frist"); // a letter missing, two letters swapped
+    await expect(tiles(tv)).toHaveCount(1);
+    await expect(tiles(tv).first()).toHaveAttribute("title", "Second row first");
+    await expect.poll(() => asked.at(-1)).toBe("secnd row frist"); // the server was asked as typed, and had nothing: the title stays
+    await expect(tiles(tv)).toHaveCount(1);
+
+    for (let i = 0; i < 15; i++) await tv.keyboard.press("Backspace");
+    await tv.keyboard.type("secondrowsec"); // no spaces, and the last word not finished
+    await expect(tiles(tv)).toHaveCount(1);
+    await expect(tiles(tv).first()).toHaveAttribute("title", "Second row second");
+  });
+
+  test("the rows are named in the language of the screen: on the home page, in the menu and on a category's page", async ({ browser }) => {
+    const rows = [
+      { id: "filmpire-trending-movies", title: "Trending Movies", source: "Filmpire", kind: "movie", items: films },
+      { id: "filmpire-comedy-movies", title: "Comedy Movies", source: "Filmpire", kind: "movie", items: films.slice(0, 5) },
+      { id: "elsewhere-picks", title: "Staff Picks", source: "Elsewhere", kind: "movie", items: films.slice(0, 3) },
+    ];
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 }, locale: "ro-RO" }, {}, withLibrary({ updatedAt: Date.now(), rows }));
+    await tv.goto("/tv");
+    await expect(tiles(tv).first()).toBeFocused();
+    await expect(tv.locator(".tv-row-title")).toHaveText(["Filme în tendințe", "Filme de comedie", "Staff Picks"]);
+
+    await choose(tv, "rail-category-filmpire-comedy-movies"); // (the menu names it the same way)
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Filme de comedie");
+    await expect(tiles(tv)).toHaveCount(5);
+  });
+
   test("search: right from the keyboard reaches the filter and then the results, OK plays one, and Back returns to the same search", async ({ browser }) => {
     const tv = await open(browser);
     await choose(tv, "rail-search");
@@ -1303,6 +1697,24 @@ test.describe("a video that will not start", () => {
     } finally {
       server.close();
     }
+  });
+
+  test("a title whose video is not there is gone from the library once the server stops offering it, and the remote is on another title", async ({ browser, baseURL }) => {
+    const dead = { id: "dead", title: "Dead Film", kind: "movie", url: `${baseURL}/fixtures/pages/none.html` };
+    const alive = { id: "alive", title: "Alive Film", kind: "movie", url: "/fixtures/sample.mp4" };
+    let offered = [dead, alive];
+    const tv = await openLibrary(browser, (context) =>
+      context.route("**/api/library", (route) => route.fulfill({ json: { updatedAt: Date.now(), rows: [{ id: "r", title: "Films", source: "S", kind: "movie", items: offered }] } })),
+    );
+    await expect(tv.getByTestId("tv-browse-tile")).toHaveCount(2);
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await tv.keyboard.press("Enter"); // its own page
+    offered = [alive]; // (what the real server does once the video has not been found)
+    await tv.keyboard.press("Enter"); // Play
+    await expect(tv.getByTestId("tv-notice")).toBeVisible({ timeout: 15_000 });
+    await expect(tv.getByTestId("tv-browse-tile")).toHaveCount(1);
+    await expect(tv.getByTestId("tv-browse-tile")).toHaveAttribute("title", "Alive Film");
+    await expect(tv.getByTestId("tv-browse-tile")).toBeFocused(); // not left on a button that is gone
   });
 
   test("a stream that never loads offers Cancel after ten seconds; OK stops it and the phone sees nothing playing", async ({ browser, baseURL }) => {

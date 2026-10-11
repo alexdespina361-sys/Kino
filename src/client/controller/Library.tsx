@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { LibrarySchema, listKey, type Library as LibraryData, type LibraryItem, type PlayHint } from "../../shared";
-import { hintOf, listEntryOf, listName } from "../account/cards";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { itemsOf, LibrarySchema, searchItems, type Library as LibraryData, type LibraryItem } from "../../shared";
+import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
-import { profileStore, useProfileData } from "../account/store";
-import { useT } from "../i18n";
-import { CheckIcon, PlusIcon } from "../shared/icons";
+import { rowTitle, useT } from "../i18n";
 import { Poster } from "../shared/Poster";
+import { entryOfItem, type Entry } from "../tv/pages";
+import { useHold } from "./hold";
+import { ListButton, useListToggle, type ListToggle } from "./Round";
 
 /** What the server last listed, so a visit to the home screen after the first shows it at once. */
 let remembered: LibraryData | null = null;
@@ -13,26 +14,41 @@ let remembered: LibraryData | null = null;
 type Status = "loading" | "ready" | "failed";
 type Filter = "all" | "movies" | "series";
 
+/**
+ * The search that was open when the home screen went away (a video was started from it, and then stopped): the words, the filter, what
+ * the library answered, and how far down the list the page was scrolled. Coming back is coming back to the same list, not to an empty box.
+ */
+const kept: { query: string; filter: Filter; found: { query: string; items: LibraryItem[] } | null; scroll: number | null } = { query: "", filter: "all", found: null, scroll: null };
+
 const isMovies = (row: LibraryData["rows"][number]) => row.id.includes("movie") || row.title.toLowerCase().includes("movie");
 const isSeries = (row: LibraryData["rows"][number]) => row.id.includes("tv") || /series|shows|docuseries|anime/i.test(row.title);
 
+/** What is typed, as it is looked for. */
+const wanted = (query: string) => query.trim().toLowerCase();
+
+/** The titles on the page that have the words in their name (a slip of a letter or an unfinished word included), best first: what a search shows before the library has answered. */
+const onThePage = (library: LibraryData | null, q: string): LibraryItem[] => searchItems(itemsOf(library?.rows ?? []), q);
+
 /**
- * Rows of titles from the server's library, to scroll through and tap. A title plays like a pasted link. Absent when there is none.
- * The round button on a title puts it in the list, or takes it out; with more than one list it asks which (`onPick`).
+ * Rows of titles from the server's library, to scroll through, and a search that lists what it finds one under another. A tap on a title
+ * opens its page (`onOpen`), a hold puts it in a list, and so does the round button on it; with more than one list that asks which
+ * (`onPick`). Absent when there is no library, unless there is something (`fallback`) to say instead.
  */
-export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHint) => void; onPick: (entry: ListEntry) => void }) {
+export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpen: (entry: Entry) => void; onPick: (entry: ListEntry) => void; failedLookups?: number; fallback?: ReactNode }) {
   const t = useT();
-  const { lists, list } = useProfileData();
-  const saved = useMemo(() => new Set(list.map((entry) => entry.key)), [list]);
-  const several = lists.length > 1;
+  const toggleFor = useListToggle(onPick);
   const [library, setLibrary] = useState<LibraryData | null>(remembered);
   const [status, setStatus] = useState<Status>(remembered ? "ready" : "loading");
-  const [query, setQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<LibraryItem[] | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [filter, setFilter] = useState<Filter>("all");
+  const [query, setQuery] = useState(kept.query);
+  const [searchResults, setSearchResults] = useState<LibraryItem[] | null>(() => {
+    const q = wanted(kept.query);
+    return !q ? null : kept.found?.query === q ? kept.found.items : onThePage(remembered, q);
+  });
+  const [searching, setSearching] = useState(() => Boolean(wanted(kept.query)) && kept.found?.query !== wanted(kept.query));
+  const [filter, setFilter] = useState<Filter>(kept.filter);
   const [attempt, setAttempt] = useState(0);
   const [searchFailed, setSearchFailed] = useState(false);
+  const root = useRef<HTMLElement>(null);
 
   const displayedRows = useMemo(() => {
     if (!library) return [];
@@ -42,14 +58,38 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
   }, [library, filter]);
 
   useEffect(() => {
+    kept.filter = filter;
+  }, [filter]);
+
+  // Back on the page with a search that was left: the page is where it was (a sheet scrolls on its own). It is the search that is kept in
+  // place, not the page: a card that was added above it in the meantime (what was just played) must not push it away.
+  const shown = Boolean(library && library.rows.length > 0);
+  useLayoutEffect(() => {
+    const section = root.current;
+    if (!shown || !section || section.closest(".sheet")) return;
+    const top = () => section.getBoundingClientRect().top + window.scrollY;
+    if (wanted(kept.query) && kept.scroll !== null) window.scrollTo(0, top() + kept.scroll);
+    return () => {
+      kept.scroll = window.scrollY - top();
+    };
+  }, [shown]);
+
+  // A video that would not play may have taken its title off the server's lists: ask for them again (the search with them).
+  useEffect(() => {
+    if (failedLookups > 0) setAttempt((n) => n + 1);
+  }, [failedLookups]);
+
+  useEffect(() => {
     let live = true;
-    fetch("/api/library")
+    // (Asked again, as after a try that failed or a press on Retry, it is asked past the browser's memory of the last answer.)
+    fetch("/api/library", attempt > 0 ? { cache: "reload" } : undefined)
       .then((response) => (response.ok ? response.json() : null))
       .then((body: unknown) => {
         const parsed = LibrarySchema.safeParse(body);
         if (!live) return;
         if (parsed.success) {
           remembered = parsed.data;
+          if (attempt > 0) kept.found = null; // what a search found is asked for again against the new list
           setLibrary(parsed.data);
           setStatus("ready");
         } else setStatus((now) => (now === "ready" ? now : "failed"));
@@ -61,29 +101,27 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
   }, [attempt]);
 
   useEffect(() => {
-    const q = query.trim().toLowerCase();
+    kept.query = query;
+    const q = wanted(query);
     if (!q) {
       setSearchResults(null);
       setSearching(false);
       return;
     }
+    setSearchFailed(false);
+
+    // What the library answered to these very words before is still good.
+    if (kept.found?.query === q) {
+      setSearchResults(kept.found.items);
+      setSearching(false);
+      return;
+    }
 
     // 1. Instant local search from loaded rows
-    const seen = new Set<string>();
-    const localMatches: LibraryItem[] = [];
-    if (library) {
-      for (const row of library.rows) {
-        for (const item of row.items) {
-          if (item.title.toLowerCase().includes(q) && !seen.has(item.id)) {
-            seen.add(item.id);
-            localMatches.push(item);
-          }
-        }
-      }
-    }
-    setSearchResults(localMatches);
+    const local = onThePage(library, q);
+    const seen = new Set(local.map((item) => item.id));
+    setSearchResults(local);
     setSearching(true);
-    setSearchFailed(false);
 
     // 2. Debounced remote search
     let live = true;
@@ -94,13 +132,14 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
           if (!live) return;
           setSearching(false);
           if (Array.isArray(data?.items)) {
-            const combined = [...localMatches];
+            const combined = [...local];
             for (const item of data.items) {
               if (!seen.has(item.id)) {
                 seen.add(item.id);
                 combined.push(item);
               }
             }
+            kept.found = { query: q, items: combined };
             setSearchResults(combined);
           } else setSearchFailed(true);
         })
@@ -126,41 +165,31 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
   }
   if (!library && status === "failed") {
     return (
-      <div className="lib-failed" data-testid="library-failed">
-        <p className="muted">{t("tv.libraryFailed")}</p>
-        <button
-          className="btn"
-          data-testid="library-retry"
-          onClick={() => {
-            setStatus("loading");
-            setAttempt((n) => n + 1);
-          }}
-        >
-          {t("common.retry")}
-        </button>
-      </div>
+      <>
+        <div className="lib-failed" data-testid="library-failed">
+          <p className="muted">{t("tv.libraryFailed")}</p>
+          <button
+            className="btn"
+            data-testid="library-retry"
+            onClick={() => {
+              setStatus("loading");
+              setAttempt((n) => n + 1);
+            }}
+          >
+            {t("common.retry")}
+          </button>
+        </div>
+        {fallback}
+      </>
     );
   }
-  if (!library || library.rows.length === 0) return null;
+  if (!library || library.rows.length === 0) return <>{fallback}</>;
 
-  const tile = (item: LibraryItem) => {
-    const inList = lists.some((info) => saved.has(listKey(item.url, info.id)));
-    const label = several ? t(inList ? "rows.inLists" : "library.addToAList") : t(inList ? "library.inList" : "library.addToList", { list: listName(lists[0]!) });
-    return (
-      <Tile
-        key={item.id}
-        item={item}
-        inList={inList}
-        label={label}
-        asks={several}
-        onPlay={() => onPlay(new URL(item.url, location.href).href, hintOf(item))}
-        onList={() => (several ? onPick(listEntryOf(item)) : profileStore.setInList(listEntryOf(item), !inList))}
-      />
-    );
-  };
+  const toggleOf = (item: LibraryItem) => toggleFor(listEntryOf(item));
+  const open = (item: LibraryItem) => () => onOpen(entryOfItem(item));
 
   return (
-    <section className="library" data-testid="library" aria-label={t("library.title")}>
+    <section className="library" data-testid="library" aria-label={t("library.title")} ref={root}>
       <div className="field lib-search-field">
         <input
           type="search"
@@ -193,13 +222,25 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
             {searchResults.length > 0 ? t("library.resultsFor", { query }) : searchFailed ? t("tv.libraryFailed") : t("library.noMatches", { query })}
             {searching && <span className="spinner" style={{ marginLeft: 8 }} />}
           </h3>
-          {searchResults.length > 0 && <div className="lib-scroller">{searchResults.map(tile)}</div>}
+          {searchResults.length > 0 && (
+            <ul className="lib-list">
+              {searchResults.map((item) => (
+                <li key={item.id}>
+                  <Result item={item} toggle={toggleOf(item)} onOpen={open(item)} />
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       ) : (
         displayedRows.map((row) => (
           <div className="lib-row" key={row.id} data-testid="library-row">
-            <h3>{row.title}</h3>
-            <div className="lib-scroller">{row.items.map(tile)}</div>
+            <h3>{rowTitle(row)}</h3>
+            <div className="lib-scroller">
+              {row.items.map((item) => (
+                <Tile key={item.id} item={item} toggle={toggleOf(item)} onOpen={open(item)} />
+              ))}
+            </div>
           </div>
         ))
       )}
@@ -208,24 +249,39 @@ export function Library({ onPlay, onPick }: { onPlay: (url: string, hint: PlayHi
   );
 }
 
-function Tile({ item, inList, label, asks, onPlay, onList }: { item: LibraryItem; inList: boolean; label: string; asks: boolean; onPlay: () => void; onList: () => void }) {
+/** A title in a row: its picture, the round + on it, and a hold that does what the + does. */
+function Tile({ item, toggle, onOpen }: { item: LibraryItem; toggle: ListToggle; onOpen: () => void }) {
+  const hold = useHold(toggle.onClick);
   return (
-    <div className="lib-tile has-remove" data-in-list={inList}>
-      <button className="lib-card" data-testid="library-tile" onClick={onPlay} title={item.title}>
+    <div className="lib-tile" data-in-list={toggle.inList}>
+      <button className="lib-card" data-testid="library-tile" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
         <Poster className="lib-art" title={item.title} image={item.backdrop ?? item.image} seed={item.id} />
         <span className="lib-title">{item.title}</span>
         {item.year && <span className="lib-year">{item.year}</span>}
       </button>
-      <button
-        className="lib-remove lib-add"
-        onClick={onList}
-        aria-pressed={inList}
-        aria-haspopup={asks ? "dialog" : undefined}
-        aria-label={`${label}: ${item.title}`}
-        data-testid="library-list-toggle"
-      >
-        {inList ? <CheckIcon /> : <PlusIcon />}
+      <span className="lib-corner">
+        <ListButton toggle={toggle} title={item.title} />
+      </span>
+    </div>
+  );
+}
+
+/** A title found by the search: one line in a list that scrolls with the page. */
+function Result({ item, toggle, onOpen }: { item: LibraryItem; toggle: ListToggle; onOpen: () => void }) {
+  const t = useT();
+  const hold = useHold(toggle.onClick);
+  const kind = item.kind === "movie" ? t("library.kindMovie") : item.kind === "series" ? t("library.kindSeries") : undefined;
+  const meta = [item.year, kind].filter(Boolean).join(" · ");
+  return (
+    <div className="lib-result" data-in-list={toggle.inList}>
+      <button className="lib-result-main" data-testid="library-result" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
+        <Poster className="lib-result-art" title={item.title} image={item.backdrop ?? item.image} seed={item.id} />
+        <span className="lib-result-text">
+          <span className="lib-title">{item.title}</span>
+          {meta && <span className="lib-year">{meta}</span>}
+        </span>
       </button>
+      <ListButton toggle={toggle} title={item.title} />
     </div>
   );
 }

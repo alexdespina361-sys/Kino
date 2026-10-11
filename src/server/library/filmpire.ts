@@ -84,9 +84,17 @@ const TmdbSeasonSchema = z.object({
       overview: z.string().optional(),
       still_path: z.string().nullable().optional(),
       runtime: z.number().nullable().optional(),
+      air_date: z.string().nullable().optional(),
     }),
   ),
 });
+
+const TmdbShowSchema = z.object({
+  seasons: z.array(z.object({ season_number: z.number().int(), episode_count: z.number().int().optional(), air_date: z.string().nullable().optional() })),
+});
+
+/** Today as TMDB writes a date, to tell what has not come out yet. */
+const today = () => new Date().toISOString().slice(0, 10);
 
 function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem | null {
   const parsed = TmdbItemSchema.safeParse(raw);
@@ -99,6 +107,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
 
   const isTv = doc.media_type ? doc.media_type === "tv" : (defaultType ? defaultType === "tv" : Boolean(doc.first_air_date));
   const rawDate = doc.release_date || doc.first_air_date;
+  if (rawDate && rawDate.slice(0, 10) > today()) return null; // not out yet: nothing to play
   const year = rawDate ? Number.parseInt(rawDate.slice(0, 4), 10) : undefined;
   const validYear = Number.isInteger(year) && year! > 1800 ? year : undefined;
 
@@ -205,21 +214,37 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         const fullUrl = `${BASE_URL}/tv/${title.id}/season/${season}?api_key=${apiKey}&language=en-US`;
         const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
         if (!res.ok) return [];
-        return TmdbSeasonSchema.parse(await res.json()).episodes.map((episode) => {
-          const name = episode.name?.trim();
-          const overview = episode.overview?.trim();
-          return {
-            season,
-            episode: episode.episode_number,
-            ...(name ? { title: name.slice(0, 200) } : {}),
-            ...(overview ? { overview: overview.slice(0, 400) } : {}),
-            ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
-            ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
-          };
-        });
+        const day = today();
+        return TmdbSeasonSchema.parse(await res.json())
+          .episodes.filter((episode) => !(episode.air_date && episode.air_date > day)) // not out yet: nothing to play
+          .map((episode) => {
+            const name = episode.name?.trim();
+            const overview = episode.overview?.trim();
+            return {
+              season,
+              episode: episode.episode_number,
+              ...(name ? { title: name.slice(0, 200) } : {}),
+              ...(overview ? { overview: overview.slice(0, 400) } : {}),
+              ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
+              ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
+              url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${episode.episode_number}`,
+            };
+          });
       } catch {
         return [];
       }
+    },
+    async seasons(link: string): Promise<number[]> {
+      const title = parseWatchLink(link);
+      if (title?.type !== "tv") return [];
+      // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
+      const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+      if (!res.ok) throw new Error(`seasons: HTTP ${res.status}`);
+      const day = today();
+      return TmdbShowSchema.parse(await res.json())
+        .seasons.filter((season) => season.season_number >= 1 && (season.episode_count ?? 0) > 0 && !(season.air_date && season.air_date > day)) // season 0 is the specials; a season not out yet has nothing to play
+        .map((season) => season.season_number)
+        .sort((a, b) => a - b);
     },
   };
 }

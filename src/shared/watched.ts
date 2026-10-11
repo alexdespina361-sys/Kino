@@ -21,14 +21,15 @@ const STARTED_S = 15;
 const isEntryOf = (entry: WatchedEntry, show: string, season: number, episode: number) =>
   entry.show === show && entry.season === season && entry.episode === episode;
 
-export type EpisodeStatus = { kind: "new" } | { kind: "started"; fraction: number; secondsLeft: number } | { kind: "watched" };
+/** A started episode says where it stopped (`position`, in seconds), for picking it up from there. */
+export type EpisodeStatus = { kind: "new" } | { kind: "started"; fraction: number; secondsLeft: number; position: number } | { kind: "watched" };
 
 export function episodeStatus(list: readonly WatchedEntry[], show: string | undefined, season: number, episode: number): EpisodeStatus {
   const entry = show ? list.find((other) => isEntryOf(other, show, season, episode)) : undefined;
   if (!entry) return { kind: "new" };
   if (entry.done) return { kind: "watched" };
   if (entry.position < STARTED_S || entry.duration <= 0) return { kind: "new" };
-  return { kind: "started", fraction: Math.min(1, entry.position / entry.duration), secondsLeft: Math.max(0, entry.duration - entry.position) };
+  return { kind: "started", fraction: Math.min(1, entry.position / entry.duration), secondsLeft: Math.max(0, entry.duration - entry.position), position: entry.position };
 }
 
 /** The words of `describeStatus`, for a page that speaks another language. */

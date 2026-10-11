@@ -298,7 +298,7 @@ export function CaptionStyleSheet({
 }
 
 /** A picture from an episode; without one (or when it does not load) a colour made from its name. */
-function Still({ src, name }: { src: string | undefined; name: string }) {
+export function Still({ src, name }: { src: string | undefined; name: string }) {
   const [broken, setBroken] = useState(false);
   const hue = hueOf(name);
   return (
@@ -414,6 +414,8 @@ export function MenuSheet({
   partySize,
   controlCode,
   controllerCount,
+  linkBox,
+  onLinkBox,
   onParty,
   onDisconnect,
   onClose,
@@ -423,6 +425,9 @@ export function MenuSheet({
   partySize: number;
   controlCode?: string;
   controllerCount?: number;
+  /** Whether the home screen has the box for pasting a link, and a way to turn it on or off. */
+  linkBox: boolean;
+  onLinkBox: (on: boolean) => void;
   onParty: () => void;
   onDisconnect: () => void;
 }) {
@@ -448,6 +453,11 @@ export function MenuSheet({
         {partySize === 0 ? t("menu.partyOpen") : t("menu.partyActive", { count: partySize + 1 })}
       </button>
       <FullscreenToggle className="btn btn-block" labels={{ enter: t("phone.fullscreen"), exit: t("phone.exitFullscreen") }} />
+      <button className={`choice${linkBox ? " active" : ""}`} role="switch" aria-checked={linkBox} onClick={() => onLinkBox(!linkBox)} data-testid="link-box-toggle">
+        <span>{t("menu.linkBox")}</span>
+        <span className="choice-dot" aria-hidden="true" />
+      </button>
+      <p className="muted small">{t("menu.linkBoxHelp", { tv: tvName })}</p>
       <button className="btn btn-danger btn-block" data-testid="disconnect" onClick={onDisconnect}>
         {t("menu.disconnect")}
       </button>

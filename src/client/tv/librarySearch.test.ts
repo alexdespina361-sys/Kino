@@ -8,9 +8,14 @@ const rows = [
 ];
 
 describe("matchLocal", () => {
-  it("finds titles containing the text, ignoring case, each title once, in row order", () => {
-    expect(matchLocal(rows, "NIGHT").map((found) => found.id)).toEqual(["a", "c"]);
+  it("finds titles with the words typed, ignoring case, each title once, the closest first", () => {
+    expect(matchLocal(rows, "NIGHT").map((found) => found.id)).toEqual(["c", "a"]);
     expect(matchLocal(rows, "nos").map((found) => found.id)).toEqual(["b"]);
+  });
+  it("forgives a slip of a letter, and finds a title whose name is typed without its spaces", () => {
+    expect(matchLocal(rows, "nosferatoo").map((found) => found.id)).toEqual(["b"]);
+    expect(matchLocal(rows, "night trian").map((found) => found.id)).toEqual(["c"]);
+    expect(matchLocal(rows, "nighttrain").map((found) => found.id)).toEqual(["c"]);
   });
   it("finds nothing for nothing", () => {
     expect(matchLocal(rows, "")).toEqual([]);

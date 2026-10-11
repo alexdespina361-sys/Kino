@@ -83,11 +83,18 @@ pnpm build && pnpm start     # http://localhost:8787
   add TVs to the party, and the menu says how many are connected. The TV flashes "A phone is connected." when one joins. That code stays good
   while a phone keeps asking for it (opening the menu, or the TV's page being open); a phone that already has a TV and scans it is only offered
   to control that TV instead
-- Paste a page or media link, or tap a title from **Continue watching**, one of your lists or the library. Opening the phone page as `/?url=<link>` plays that link
-  once connected (the hook for a share button)
-- **Lists on the phone.** The round button on a title saves it in Favourites (and takes it out again); once there is a second list it asks
-  which lists the title is in, with **New list** there too. Each list with something in it is a row on the home screen, and **Manage lists**
-  (at the end of the first row's heading) makes, renames and deletes them. The first list can be renamed and emptied, never deleted.
+- **The home screen** is the library's rows, **Continue watching** and the lists. A tap on a title in the library, a list or the search opens
+  **its own page**, as the TV has one: its picture, **Play** (or **Resume**; for a show, the episode this profile is at), the list to keep it in,
+  what it is about and, for a show, its seasons and episodes (a tap on one plays it). **Continue watching** is a row of big cards that snap one at a
+  time with the next one showing at the edge: a tap picks one up where it stopped, the **+** on it puts the title in a list and the **×** takes it off the
+  row. (One card per show and per profile. A guest's cards stay on the screen they were made on; signed in on both, the phone and the TV show the same ones.)
+  The search lists what it finds one under another, and is still there (the words, the filter, the list, the place in it) after something is played and stopped
+- **The box for pasting a link is off** on a new phone, since most of what is played comes from the library. The phone's menu has a switch that brings
+  it back (kept on that phone); it is there whatever the switch says while the library has nothing to show, as the only way to start anything.
+  Opening the phone page as `/?url=<link>` plays that link once connected (the hook for a share button)
+- **Lists on the phone.** The round **+** on a title saves it in Favourites (and takes it out again), and so does holding the title; once there
+  is a second list it asks which lists the title is in, with **New list** there too. Each list with something in it is a row on the home screen,
+  and **Manage lists** (at the end of the first row's heading) makes, renames and deletes them. The first list can be renamed and emptied, never deleted.
 - **Add it to the home screen** and the page opens as an app with no browser bar (`public/manifest.webmanifest`; on an iPhone that is the only
   way to lose the bar, since its browsers have no full screen for pages): Share → *Add to Home Screen* there, the browser's menu → *Install app*
   or *Add to Home screen* on Android
@@ -105,8 +112,11 @@ pnpm build && pnpm start     # http://localhost:8787
   Every screen before the video (the library, a title's page, the pairing code, the connected screen, the account pages, the "Press OK" page of a
   party link) is walked with the arrow keys: the first press only lands on a button, so a stray OK never presses one, and a page of columns keeps
   Up and Down to the column the remote is in (`src/client/tv/dpad.ts`)
-- The controls are sized to fit one row on any screen shape, with every button present (series, subtitles, sources, quality); long
-  episode names are cut, and a row that still can't hold them wraps instead of running off the edge
+- The controls are one line on any screen, in any language, with every button present (series, subtitles, sources, quality, party). The row
+  measures itself (`src/client/tv/fit.ts`) and gives up only as much as it must, in this order: the room between the buttons, the labels of Watch
+  party and Audio & subtitles, the episode names under Previous / Next, the labels of Previous / Next, the label of Episodes (each label becomes its
+  icon, still named for screen readers and in its tooltip), then the size of the buttons. Only a phone held upright is too narrow for that, and its
+  controls wrap on two lines
 - Subtitles and audio like a streaming app: the language you chose is remembered. Tracks the file labels only with a code (`eng`) are
   named by their language. Subtitles are drawn by the page, so size, font, colour, opacity, background, edge, height and word spacing
   all work on any TV browser; change them from the TV's menu or the phone, with a live preview. A browser only lets a page go full screen
@@ -155,7 +165,10 @@ The language can be switched on the phone's connect screen and in Settings (phon
 the last one, and a first visit follows the browser. `src/client/i18n/` holds one dictionary per language: `en.ts` is the list of keys and `ro.ts` and `it.ts` must have every one
 (the compiler and `i18n.test.ts` check, including the `{placeholders}` and the plural forms Romanian needs). Everything a person reads goes through
 `t("some.key")`; what the player and the server say in English (an error code, "Subtitle 3") is put into words by `src/client/shared/words.ts`.
-Titles and descriptions come from the library source and are not translated. Adding a language is a new dictionary and a line in `UI_LANGUAGES`.
+Titles and descriptions come from the library source and are not translated, but the names of its rows are: the places name them in English
+("Trending Movies"), so `rowTitle` (`src/client/i18n/index.ts`) says the ones this app lists itself (Filmpire's categories, the Internet Archive's
+collections) with a `category.*` word per row id, and any other row keeps the name its place gave it (`i18n.test.ts` fails when a source gains a row with no
+name in every language). Adding a language is a new dictionary and a line in `UI_LANGUAGES`.
 
 ### One page, two roles
 
@@ -219,13 +232,25 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
   watched, from the source), a row for each of the **lists** with a title in it, then the library's own: the first ranked with big numbers (a "Top 10"), the others rows of pictures,
   and a row of **categories** after the third. Arrows walk the rows, Back leaves. **Choosing a title opens its page** (a big picture, the year,
   what it is about) with **Play** (or **Resume** / **Continue**) and **Add to Favourites** / **Remove from Favourites** (with several lists, **Add to a list**
-  opens the lists, one button each, ticked for those the title is in); Back, the cross or a click
-  beside it closes the page. With a mouse it is a click on the title (hovering shows nothing; the title's name is the tooltip), on any row; the
+  opens the lists, one button each, ticked for those the title is in); Back, the **Close** button (Up from the buttons, or Right past the last one)
+  or a click beside it closes the page. **A show's page continues below its buttons** with its seasons (when there are several) and the episodes
+  of the one that is shown, as cards with a picture, a line about the episode, its length and what this profile has done with it (watched, or
+  how long is left, with a bar). **Play** says which episode it starts, *Play S1:E1*, or *Resume S2:E3* for a show part way through, and the
+  page opens on that season with the remote on that episode; OK on any episode plays it, from where it was left if it was begun. With a mouse it is a click on the title (hovering shows nothing; the title's name is the tooltip), on any row; the
   second click of a double click goes through the page to the title under it instead of closing the page or pressing Play, for the half second
   the page takes to arrive. The banner's own buttons play or save the title it shows, without the page. The big banner picture fades in
   over the previous one once it has loaded, instead of switching. Playing from the library and pressing Back (twice if the controls were
-  hidden) or letting it stop comes back to the same title. A title that will not play is said so and stays in the library. A TV that watches
+  hidden) or letting it stop comes back to the same title. A title that will not play is said so. A TV that watches
   along has no library, since it can't choose what plays.
+- **Titles that do not play stop being offered.** A place lists far more than it can play, and only a try tells which. The server hears how every
+  try at playing went (`library.played(link, outcome)`, from the WebSocket path only, not from `GET /api/resolve`, which anyone may ask): a place that
+  says it has no video of a title takes it off the lists at once, a video that could not be reached just now takes it off at the second failure
+  in a row, and a title that plays is back for good. Left out means out of the rows, of the search and of "titles like this" for six hours
+  (the library's own lifetime), then it is tried again; the memory is the server's, shared by everyone, and lost when it restarts. A screen
+  that sees a try fail (the TV's notice, the phone's status line) asks for the lists again past the browser's memory, and a search is asked
+  again with them, so the title is gone from what is on screen. Only the title's own link counts: a show whose first episode (what its tile plays)
+  is missing is left out as a whole, one whose later episode is missing is not. Nothing here asks a place about a title ahead of time; the
+  one thing known without trying is that a title with a release date in the future is not out yet, so it is never listed.
 - **Menu, pages, categories, search (TV).** Pressing Left from the first title of any row (or the first tile of a grid) opens a menu down the
   left: **Search**, **Home**, **Movies**, **Series**, **My Lists**, **History**, **Watch party**, **Connect a phone**, **Settings**, and under them the
   **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles, and
@@ -234,7 +259,14 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
   and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard (Space, Delete, and Clear for the whole box) beside the
   results (a physical keyboard types too, and Backspace deletes before it means Back) with **All / Movies / Series** filters. Titles already loaded
   answer at once; after a short pause the source's search (`GET /api/library/search?q=`) adds more, and a library whose rows could not be loaded
-  can still be searched. A search that cannot be reached says so (it asks again every few seconds) instead of saying nothing matches, and a title
+  can still be searched. **A search forgives the fingers** (`src/shared/search.ts`, on [MiniSearch](https://github.com/lucaong/MiniSearch)): every word of the
+  search has to be in the title, but a word may be unfinished (`strang thi`), a letter off (`strager things`), have two letters swapped (`thigns`, and
+  `teh office`: a word of three letters too, when another word of the search is longer), a title may
+  be typed as one word (`spiderman`), without its accents or apostrophes, with its year (`dune 2021`; a number is not forgiven), or by a short name that starts the search
+  (`lotr`, `got`, `hp`). The titles already on screen are matched this way on the TV and the phone; on the server the same ranking is applied to what the
+  places answer, and when a place finds little (TMDB's search forgives nothing: "strager things" finds nothing there) it is asked again without each
+  word (a slip in one leaves the rest to find the title: `better call sual`), and with a long word cut to its first letters or all but its last two
+  (`gladiater`), six questions at most, and the titles that come back are kept only if they match what was typed. A search that cannot be reached says so (it asks again every few seconds) instead of saying nothing matches, and a title
   that is part way through says **Resume** on its page wherever it is shown, lists and search included. The menu and search only use the generic
   library endpoints, so they work with whichever `LibrarySource` is configured.
 - `LIBRARY=off` starts the server without a library (the e2e server does); `GET /api/library` is then empty and the phone shows nothing extra.
@@ -244,7 +276,9 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
 The episode list shows what the resolver puts in `series.episodes` (`{ season, episode, title?, url }`, where `url`
 is the episode's page link). A resolver that doesn't fill it gets no list; "next episode" is derived from it when
 `series.next` isn't set. The server log's `resolve` line says `episodes: N` for a series, so `0` means the resolver
-supplied none. When the library source knows more (a picture, a line about the episode, its length: `GET /api/library/episodes`),
+supplied none. A show's page on the TV asks the library for the seasons that can be watched (`GET /api/library/seasons?url=`, empty when it
+can't tell, and then not remembered) and for the episodes of one (`GET /api/library/episodes?url=&season=`, aired ones only, each with the link
+that plays it). When the library source knows more (a picture, a line about the episode, its length: `GET /api/library/episodes`),
 the TV lists each episode streaming-app style: season picker on the left, a picture with a progress bar, the name, the length and a
 description for each, with watched marks. The phone's list is the same as cards, in one column. An episode the source gave no name is
 called "Episode 3" in the language of the screen.

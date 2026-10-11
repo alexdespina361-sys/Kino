@@ -96,6 +96,19 @@ describe("filmpireSource", () => {
     expect(rows[0]!.items[0]!.id).toBe("filmpire-movie-4");
   });
 
+  it("leaves out titles that have not come out yet, in the rows and in a search; one with no date is kept", async () => {
+    const results = [
+      { id: 1, media_type: "movie", title: "Out Already", release_date: "2020-01-01" },
+      { id: 2, media_type: "movie", title: "Not Yet", release_date: "2999-01-01" },
+      { id: 3, media_type: "tv", name: "Show Not Yet", first_air_date: "2999-06-01" },
+      { id: 4, media_type: "movie", title: "No Date At All" },
+    ];
+    const get = vi.fn(async () => json({ results }));
+    const source = filmpireSource({ categories: [mockCategories[0]!], fetch: get as never });
+    expect((await source.load())[0]!.items.map((item) => item.title)).toEqual(["Out Already", "No Date At All"]);
+    expect((await source.search!("anything")).map((item) => item.title)).toEqual(["Out Already", "No Date At All"]);
+  });
+
   it("returns partial rows when one category fails", async () => {
     const get = vi.fn(async (url: string | URL) => {
       const urlStr = String(url);
@@ -223,9 +236,23 @@ describe("filmpireSource episodes", () => {
     const season = await source.episodes!("https://filmpire.sc/watch/1399?s=2&e=5", 2);
     expect(asked[0]).toContain("/tv/1399/season/2?");
     expect(season).toEqual([
-      { season: 2, episode: 1, title: "Pilot", overview: "It begins.", still: "https://image.tmdb.org/t/p/w300/s1.jpg", runtime: 47 },
-      { season: 2, episode: 2 },
+      { season: 2, episode: 1, title: "Pilot", overview: "It begins.", still: "https://image.tmdb.org/t/p/w300/s1.jpg", runtime: 47, url: "https://filmpire.sc/watch/1399?s=2&e=1" },
+      { season: 2, episode: 2, url: "https://filmpire.sc/watch/1399?s=2&e=2" },
     ]);
+  });
+
+  it("leaves out the episodes that have not come out yet", async () => {
+    const get = vi.fn(async () =>
+      json({
+        episodes: [
+          { episode_number: 1, air_date: "2001-01-01" },
+          { episode_number: 2, air_date: null },
+          { episode_number: 3, air_date: "2999-01-01" },
+        ],
+      }),
+    );
+    const season = await filmpireSource({ fetch: get as never }).episodes!("https://filmpire.sc/watch/1399?s=1&e=1", 1);
+    expect(season.map((episode) => episode.episode)).toEqual([1, 2]);
   });
 
   it("knows nothing of films or of other places' links, and says so without asking anyone", async () => {
@@ -240,5 +267,44 @@ describe("filmpireSource episodes", () => {
   it("gives nothing when TMDB fails or answers with something else", async () => {
     expect(await filmpireSource({ fetch: (async () => json({}, 404)) as never }).episodes!("https://filmpire.sc/watch/1399?s=1&e=1", 1)).toEqual([]);
     expect(await filmpireSource({ fetch: (async () => json({ nope: true })) as never }).episodes!("https://filmpire.sc/watch/1399?s=1&e=1", 1)).toEqual([]);
+  });
+});
+
+describe("filmpireSource seasons", () => {
+  it("lists the seasons of a show that can be watched, in order, without its specials, empty seasons or seasons not out yet", async () => {
+    const asked: string[] = [];
+    const get = vi.fn(async (url: string | URL) => {
+      asked.push(String(url));
+      return json({
+        seasons: [
+          { season_number: 2, episode_count: 13, air_date: "2009-03-01" },
+          { season_number: 0, episode_count: 5, air_date: "2008-01-01" },
+          { season_number: 1, episode_count: 7, air_date: "2008-01-20" },
+          { season_number: 3, episode_count: 0, air_date: "2010-03-21" },
+          { season_number: 4, episode_count: 13, air_date: "2999-01-01" },
+          { season_number: 5, episode_count: 8, air_date: null },
+        ],
+      });
+    });
+    const source = filmpireSource({ apiKey: "k", fetch: get as never });
+
+    expect(await source.seasons!("https://filmpire.sc/watch/1396?s=3&e=2")).toEqual([1, 2, 5]);
+    expect(asked[0]).toContain("/tv/1396?");
+  });
+
+  it("knows nothing of films or of other places' links, and says so without asking anyone", async () => {
+    const get = vi.fn();
+    const source = filmpireSource({ fetch: get as never });
+    expect(await source.seasons!("https://filmpire.sc/watch/603")).toEqual([]);
+    expect(await source.seasons!("https://other.example/watch/1396?s=1&e=1")).toEqual([]);
+    expect(await source.seasons!("not a link")).toEqual([]);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("fails when TMDB cannot be reached or answers with something else, so that nothing is remembered of it", async () => {
+    const link = "https://filmpire.sc/watch/1396?s=1&e=1";
+    await expect(filmpireSource({ fetch: (async () => json({}, 500)) as never }).seasons!(link)).rejects.toThrow();
+    await expect(filmpireSource({ fetch: (async () => json({ nope: true })) as never }).seasons!(link)).rejects.toThrow();
+    await expect(filmpireSource({ fetch: (async () => Promise.reject(new Error("offline"))) as never }).seasons!(link)).rejects.toThrow();
   });
 });

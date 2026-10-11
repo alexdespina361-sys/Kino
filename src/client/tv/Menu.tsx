@@ -370,7 +370,7 @@ export function TvMenu(props: MenuProps) {
             {title}
             {props.kind === "episodes" && props.show && <small className="tv-menu-show">{props.show}</small>}
           </h2>
-          <button className="tv-btn tv-btn-icon" onClick={props.onClose} aria-label={t("common.close")} title={t("common.close")}>
+          <button className="tv-btn tv-btn-icon" data-menu-close onClick={props.onClose} aria-label={t("common.close")} title={t("common.close")}>
             <CloseIcon />
           </button>
         </div>
@@ -433,15 +433,36 @@ export function TvMenu(props: MenuProps) {
   );
 }
 
-/** Arrow-key navigation inside the menu: up/down within a column, left/right across columns. */
+/** The option the remote left for the close button, so that Down from the button goes back to it. */
+let leftForClose: HTMLElement | null = null;
+
+/**
+ * Arrow-key navigation inside the menu: up/down within a column, left/right across columns. The close button (`data-menu-close`)
+ * is over the top of the columns and at the right of them: Up from a column's first row reaches it, and so does Right from the
+ * last column; Down or Left go back in, to where the remote was.
+ */
 export function moveInMenu(root: HTMLElement | null, direction: "up" | "down" | "left" | "right"): void {
   if (!root) return;
   const options = [...root.querySelectorAll<HTMLElement>("[data-opt]")];
-  const current = options.find((option) => option === document.activeElement);
-  if (!current) {
-    (options.find((option) => option.dataset.active === "true") ?? options[0])?.focus();
+  const close = root.querySelector<HTMLElement>("[data-menu-close]");
+  const focused = document.activeElement;
+  /** What is selected now (the episode playing, the current subtitle), else the first. */
+  const selected = () => options.find((option) => option.dataset.active === "true") ?? options[0];
+
+  if (close && focused === close) {
+    if (direction === "down" || direction === "left") (leftForClose && options.includes(leftForClose) ? leftForClose : selected())?.focus();
     return;
   }
+  const current = options.find((option) => option === focused);
+  if (!current) {
+    selected()?.focus();
+    return;
+  }
+  const toClose = () => {
+    if (!close) return;
+    leftForClose = current;
+    close.focus();
+  };
 
   const col = Number(current.dataset.col);
   const inColumn = (c: number) => options.filter((option) => Number(option.dataset.col) === c);
@@ -449,10 +470,15 @@ export function moveInMenu(root: HTMLElement | null, direction: "up" | "down" | 
   const row = mine.indexOf(current);
 
   if (direction === "up" || direction === "down") {
+    if (direction === "up" && row === 0) return toClose();
     mine[Math.max(0, Math.min(mine.length - 1, row + (direction === "down" ? 1 : -1)))]?.focus();
     return;
   }
   const other = inColumn(col + (direction === "right" ? 1 : -1));
+  if (other.length === 0) {
+    if (direction === "right") toClose();
+    return;
+  }
   // Land on what is selected over there (the current episode, the current subtitle), else on the same row.
   (other.find((option) => option.dataset.active === "true") ?? other[Math.min(row, other.length - 1)])?.focus();
 }

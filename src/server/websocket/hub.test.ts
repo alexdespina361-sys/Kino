@@ -3,6 +3,7 @@ import type { WebSocket } from "ws";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseServerMessage, type ClientMessage, type Command, type ServerMessage } from "../../shared";
 import { buildApp } from "../app";
+import type { LibrarySource } from "../library/library";
 import type { ResolveFn } from "../resolvers";
 import { CLOSE_REPLACED } from "./hub";
 
@@ -1245,5 +1246,56 @@ describe("several phones controlling one TV session", () => {
     await tv.next("TV_UNPAIRED");
     tv.send({ type: "TV_NEW_CODE" });
     expect((await tv.next("TV_CODE")).control).toBeUndefined(); // free again: it is a pairing code that is offered
+  });
+});
+
+describe("what playing teaches the library", () => {
+  const dead = { id: "dead", title: "Dead Title", url: "https://site.example/watch/9" };
+  const alive = { id: "alive", title: "Alive Title", url: "https://site.example/watch/10" };
+  const source: LibrarySource = {
+    id: "fake",
+    name: "Fake",
+    load: async () => [{ id: "r", title: "Row", source: "Fake", items: [dead, alive] }],
+    search: async () => [dead, alive],
+  };
+  const listed = async () => ((await app.inject({ url: "/api/library" })).json() as { rows: { items: { id: string }[] }[] }).rows.flatMap((row) => row.items.map((item) => item.id));
+  const found = async () => ((await app.inject({ url: "/api/library/search?q=title" })).json() as { items: { id: string }[] }).items.map((item) => item.id);
+
+  it("takes a title off the lists and out of searches when its video is not there, and puts it back when it plays", async () => {
+    await app.close();
+    resolveImpl = async () => ({ status: "unsupported", reason: "no video here" });
+    app = await buildApp({ resolve: (url) => resolveImpl(url), librarySources: [source] });
+    await app.ready();
+    expect(await listed()).toEqual(["dead", "alive"]);
+
+    const { phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: dead.url });
+    await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "failed");
+    expect(await listed()).toEqual(["alive"]);
+    expect(await found()).toEqual(["alive"]);
+
+    resolveImpl = async () => ({ status: "success", resolver: "test", media });
+    phone.send({ type: "PLAY_URL", url: dead.url });
+    await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "found");
+    expect(await listed()).toEqual(["dead", "alive"]);
+  });
+
+  it("waits for a second failure when the video could only not be reached; the plain resolve route, which anyone may ask, teaches it nothing", async () => {
+    await app.close();
+    resolveImpl = async () => ({ status: "temporary_failure", reason: "try later" });
+    app = await buildApp({ resolve: (url) => resolveImpl(url), librarySources: [source] });
+    await app.ready();
+
+    const { phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: dead.url });
+    await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "failed");
+    expect(await listed()).toEqual(["dead", "alive"]);
+    phone.send({ type: "PLAY_URL", url: dead.url });
+    await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "failed");
+    expect(await listed()).toEqual(["alive"]);
+
+    resolveImpl = async () => ({ status: "unsupported", reason: "nothing" });
+    await app.inject({ url: `/api/resolve?url=${encodeURIComponent(alive.url)}` }); // (anyone can ask this route: it must not hide titles for everyone)
+    expect(await listed()).toEqual(["alive"]);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress } from "../../shared";
 import { t } from "../i18n";
-import { freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type PageData } from "./pages";
+import { freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3): LibraryRow => ({
@@ -227,6 +227,54 @@ describe("resumable", () => {
     expect(resumable(category, [started])).toBe(category);
     const resuming = { ...plain, startAt: 50 };
     expect(resumable(resuming, [started])).toBe(resuming);
+  });
+
+  it("takes a show on to the episode after the one it finished, from its start", () => {
+    const next = card("show:Dark", { url: "https://x.example/watch/9?s=1&e=4", season: 1, episode: 4, position: 0, duration: 0 });
+    const found = resumable({ id: "d", title: "Dark", url: "https://x.example/watch/9?s=1&e=1" }, [next]);
+    expect(found.resumeUrl).toBe("https://x.example/watch/9?s=1&e=4");
+    expect(found.startAt).toBeUndefined();
+  });
+
+  it("does not mistake a film for a show that has the same number in a place's links", () => {
+    const show = card("show:Dark", { url: "https://x.example/watch/9?s=1&e=3", season: 1, episode: 3, position: 200, duration: 600 });
+    const film = { id: "f", title: "Film", url: "https://x.example/watch/9", kind: "movie" as const };
+    expect(resumable(film, [show])).toBe(film);
+  });
+});
+
+describe("startOf", () => {
+  const show = { id: "d", title: "Dark", url: "https://x.example/watch/9?s=1&e=1", kind: "series" as const };
+  const left = card("show:Dark", { url: "https://x.example/watch/9?s=2&e=3", season: 2, episode: 3, position: 200, duration: 600 });
+
+  it("is where the profile left the show, with the place in the episode", () => {
+    expect(startOf(show, true, [left])).toEqual({ season: 2, episode: 3, url: "https://x.example/watch/9?s=2&e=3", startAt: 200 });
+  });
+
+  it("is the episode after the last finished one, from its start", () => {
+    const next = { ...left, episode: 4, url: "https://x.example/watch/9?s=2&e=4", position: 0, duration: 0 };
+    expect(startOf(show, true, [next])).toEqual({ season: 2, episode: 4, url: "https://x.example/watch/9?s=2&e=4" });
+  });
+
+  it("is the first episode of a show that was not started, which the title's own link plays", () => {
+    expect(startOf(show, true, [])).toEqual({ season: 1, episode: 1, url: show.url });
+    expect(startOf(show, true, [card("other")])).toEqual({ season: 1, episode: 1, url: show.url });
+  });
+
+  it("is nothing for what is not a show", () => {
+    expect(startOf({ id: "f", title: "Film", url: "https://x.example/watch/7" }, false, [])).toBeUndefined();
+    const film = card("film", { url: "https://x.example/watch/7", position: 300, duration: 1000 });
+    expect(startOf({ id: "f", title: "Film", url: "https://x.example/watch/7" }, false, [film])).toBeUndefined();
+  });
+});
+
+describe("what an entry says it is", () => {
+  it("a library title keeps its kind, a card is a show when it has an episode, and a saved title does not say", () => {
+    expect(rowsOfPage("movies", data({ rows: [row("m1", "movie")] }))[0]!.entries[0]!.kind).toBe("movie");
+    expect(rowsOfPage("series", data({ rows: [row("s1", "series")] }))[0]!.entries[0]!.kind).toBe("series");
+    const going = rowsOfPage("home", data({ progress: [card("film"), card("show:Dark", { season: 1, episode: 2 })] }))[0]!.entries;
+    expect(going.map((entry) => entry.kind)).toEqual(["movie", "series"]);
+    expect(rowsOfPage("home", data({ list: [saved("x")] })).find((each) => each.id === "list:favourites")!.entries[0]!.kind).toBeUndefined();
   });
 });
 

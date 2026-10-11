@@ -509,22 +509,42 @@
   transform: translate(-50%, -50%);
 }
 /*
- * The controls are sized to fit one row on any screen, with every button present (series, subtitles, sources, quality):
- * the labels are short, the episode titles are cut, and if a row still can't hold them it wraps instead of running off.
+ * The controls are one line, on any screen and in any language, with every button there is (series, subtitles, sources, quality).
+ * Fit.ts measures them, and when they would be wider than the row it says so in the row's data-fit: the room between them goes
+ * first, then the episode names, then the long labels, which leave their icons (a button with data-fold is data-folded then).
+ * Only a screen no wider than a phone gets as far as wrapping.
  */
-.hud-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5em 1.2em; margin-top: 0.4em; }
-.hud-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; min-width: 0; } /* a screen too narrow for a group puts its last buttons on a row of their own */
+.hud-controls { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 0.5em 1.2em; margin-top: 0.4em; }
+.hud-group { display: flex; flex: none; align-items: center; gap: 0.5em; }
 .hud-controls .tv-btn { font-size: 1.3em; padding: 0.5em 0.8em; gap: 0.4em; }
 .hud-controls .tv-btn-icon { font-size: 2em; padding: 0.25em; }
 .hud-controls .tv-btn-play { font-size: 2.3em; width: 1.6em; height: 1.6em; padding: 0; margin-right: 0.15em; } /* room for its ring, which is wide, before the icon beside it */
 /* "Previous" / "Next episode" over the episode's name, which is cut rather than allowed to widen the button. */
-.tv-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25em; min-width: 0; max-width: 9em; }
-.tv-btn-text small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.15; }
+.tv-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25em; min-width: 0; }
+.tv-btn-sub { max-width: 12em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.15; }
+/* A source is named by the site it came from, at whatever length. */
+.tv-btn-cut { max-width: 9em; overflow: hidden; text-overflow: ellipsis; }
+
+.hud-controls[data-fit~="tight"] { column-gap: 0.8em; }
+.hud-controls[data-fit~="tight"] .hud-group { gap: 0.3em; }
+.hud-controls[data-fit~="tight"] .tv-btn:not(.tv-btn-icon):not(.tv-btn-play) { padding-inline: 0.55em; gap: 0.3em; }
+.hud-controls[data-fit~="names"] .tv-btn-sub { display: none; }
+/* A button that has given up its words is an icon button like the rest of them. */
+.hud-controls .tv-btn[data-folded] { font-size: 2em; padding: 0.25em; border-radius: 50%; }
+.hud-controls .tv-btn[data-folded] .tv-btn-label { display: none; }
+.hud-controls .tv-btn[data-folded]:not(.tv-btn-on):not(:focus-visible) { background: transparent; }
+.hud-controls .tv-btn[data-folded]:not(.tv-btn-on):not(:focus-visible):hover { background: rgba(255, 255, 255, 0.18); }
+.hud-controls[data-fit~="small"] .tv-btn { font-size: 1.1em; }
+.hud-controls[data-fit~="small"] .tv-btn-icon, .hud-controls[data-fit~="small"] .tv-btn[data-folded] { font-size: 1.7em; }
+.hud-controls[data-fit~="small"] .tv-btn-play { font-size: 2em; }
+/* Nothing else is left to give up: a screen too narrow for the controls puts the last of them on a row of their own. */
+.hud-controls[data-fit~="wrap"] { flex-wrap: wrap; }
+.hud-controls[data-fit~="wrap"] .hud-group { flex: 0 1 auto; flex-wrap: wrap; min-width: 0; }
 
 .hud-upnext {
   position: absolute;
   right: 3.2em;
-  bottom: 17em;
+  bottom: 13em; /* just over the progress bar: the controls are one line */
   z-index: 25;
   transition: bottom 0.3s ease;
   display: flex;
@@ -919,12 +939,16 @@
   position: absolute;
   inset: 0;
   z-index: 60;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
   background: var(--bg);
   animation: tv-fade 0.25s ease, tv-arrive 0.5s linear;
 }
+/* The page scrolls over its picture, which stays: a film's is only its first screen, a show has its episodes under that. */
+.tv-detail-scroll { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden auto; scrollbar-width: none; }
+.tv-detail-scroll::-webkit-scrollbar { display: none; }
+.tv-detail-hero { flex: none; min-height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+/* A show's first screen leaves a little of the episodes showing under its buttons, so it is clear there is more. */
+.tv-detail[data-show="true"] .tv-detail-hero { min-height: calc(100% - 10.5em); }
+.tv-detail[data-show="true"] .tv-detail-text { padding-bottom: 2.4em; }
 /* While it arrives the page lets the pointer through to the library: the second click of a double click would otherwise land on the
    page, closing it or pressing Play, and the title would seem not to open at all. */
 @keyframes tv-arrive { from, to { pointer-events: none; } }
@@ -944,6 +968,14 @@
 .tv-detail .tv-hero-actions { flex-wrap: wrap; margin-top: 0.8em; }
 .tv-detail .tv-hero-button { font-size: 1.7em; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; } /* "Remove from <a list of your own>" can be longer than a small screen is wide */
 .tv-detail .tv-detail-close { position: absolute; top: 1.8em; right: 4.4em; z-index: 1; font-size: 1.3em; }
+
+/* A show's seasons and episodes, under its buttons. The cards are the player's own (.tv-opt.tv-ep); the section darkens the picture it slides over. */
+.tv-detail-eps { position: relative; flex: none; padding: 1em 4em 6em 7em; background: linear-gradient(to bottom, transparent, var(--bg) 5em); }
+.tv-detail-eps > * { max-width: 62em; }
+.tv-detail-eps > .tv-filters { max-width: none; } /* the seasons run as far as there is room */
+.tv-detail-eps-title { margin: 0 0 0.5em; font-size: 1.9em; font-weight: 800; letter-spacing: -0.01em; }
+.tv-detail-list { display: flex; flex-direction: column; gap: 0.5em; padding: 0.5em; margin: 0 -0.5em; } /* room for the ring around the one the remote is on */
+.tv-detail-eps-note { margin: 0.2em 0 0; font-size: 1.5em; color: var(--muted); }
 
 /* The remote moves them in script, and a wheel or a swipe scrolls them too (a computer or a phone is a screen as well). */
 .tv-rows {
@@ -1565,6 +1597,10 @@
   .tv-detail-about { font-size: 1.3em; -webkit-line-clamp: 5; }
   .tv-detail .tv-hero-button { font-size: 1.4em; }
   .tv-detail .tv-detail-close { top: 1.2em; right: 1.4em; font-size: 1.2em; }
+  .tv-detail[data-show="true"] .tv-detail-hero { min-height: calc(100% - 11em); }
+  .tv-detail[data-show="true"] .tv-detail-text { padding-bottom: 1.6em; }
+  .tv-detail-eps { padding: 0.6em 1.4em 4em; }
+  .tv-detail-eps-title { font-size: 1.6em; }
   .tv-row-title { margin-left: 4.9em; font-size: 1.5em; }
   .tv-row-tiles { gap: 1em; padding: 0.8em 1.4em 1em 6.4em; -webkit-mask-image: linear-gradient(90deg, transparent 4.9em, #000 5.7em, #000 93%, transparent); mask-image: linear-gradient(90deg, transparent 4.9em, #000 5.7em, #000 93%, transparent); }
   .tv-tile { width: 13em; }
@@ -1600,7 +1636,7 @@
   .hud-progress { gap: 1em; }
   .hud-time { min-width: 3.6em; font-size: 1.3em; }
   .hud-controls .tv-btn { font-size: 1.2em; }
-  .hud-controls .tv-btn-icon { font-size: 1.9em; }
+  .hud-controls .tv-btn-icon, .hud-controls .tv-btn[data-folded] { font-size: 1.9em; }
   .hud-controls .tv-btn-play { font-size: 2.2em; }
   .hud-pause-card { left: 1.6em; max-width: 20em; }
   .hud-pause-card b { font-size: 2.6em; }
@@ -1680,6 +1716,7 @@
   .tv-detail-title { font-size: 2.6em; }
   .tv-detail-about { font-size: 1.3em; -webkit-line-clamp: 3; }
   .tv-detail .tv-detail-close { top: 1em; }
+  .tv-detail[data-show="true"] .tv-detail-hero { min-height: calc(100% - 9em); }
   .tv-pair, .tv-screen-compact .tv-pair { gap: 4em; }
   .tv-steps { font-size: 1.8em; }
   .tv-code { font-size: 3.2em; }

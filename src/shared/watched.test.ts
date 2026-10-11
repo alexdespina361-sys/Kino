@@ -10,7 +10,7 @@ describe("episodeStatus", () => {
 
   it("tells watched, started (with how far and how long is left) and new apart", () => {
     expect(episodeStatus(list, "Show", 1, 1)).toEqual({ kind: "watched" });
-    expect(episodeStatus(list, "Show", 1, 2)).toEqual({ kind: "started", fraction: 1 / 3, secondsLeft: 1800 });
+    expect(episodeStatus(list, "Show", 1, 2)).toEqual({ kind: "started", fraction: 1 / 3, secondsLeft: 1800, position: 900 });
     expect(episodeStatus(list, "Show", 1, 3)).toEqual({ kind: "new" }); // 5 seconds in isn't "started"
     expect(episodeStatus(list, "Show", 1, 4)).toEqual({ kind: "new" });
   });
@@ -22,8 +22,8 @@ describe("episodeStatus", () => {
 
   it("describes what a list can show for it", () => {
     expect(describeStatus({ kind: "watched" })).toBe("Watched");
-    expect(describeStatus({ kind: "started", fraction: 0.3, secondsLeft: 1800 })).toBe("30 min left");
-    expect(describeStatus({ kind: "started", fraction: 0.99, secondsLeft: 20 })).toBe("1 min left");
+    expect(describeStatus({ kind: "started", fraction: 0.3, secondsLeft: 1800, position: 780 })).toBe("30 min left");
+    expect(describeStatus({ kind: "started", fraction: 0.99, secondsLeft: 20, position: 2680 })).toBe("1 min left");
     expect(describeStatus({ kind: "new" })).toBeUndefined();
   });
 });
