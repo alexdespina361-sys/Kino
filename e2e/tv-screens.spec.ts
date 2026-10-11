@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
+import { en } from "../src/client/i18n/en";
 import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, RawPhone, readPairingCode, tvRoot, withLibrary } from "./helpers";
 
 /** What the screens look like on a TV: the remote walks them, the buttons match, and everything fits. */
@@ -249,7 +250,8 @@ test.describe("the pause screen", () => {
       },
     });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
-    await expect(tv.getByTestId("tv-pause-card")).toContainText("S1:E2");
+    await expect(tv.getByTestId("tv-pause-card")).toContainText("Season 1, Episode 2");
+    await expect(tv.getByTestId("tv-pause-card")).not.toContainText("S1:E2"); // said once, in words
     phone.close();
   });
 });
@@ -619,6 +621,41 @@ test.describe("the library on the TV", () => {
     await expect(tv.getByTestId("tv-view-title")).toHaveText("Watch later");
     await tv.getByTestId("rail-home").click();
     await expect(tv.getByTestId("tv-hero-list")).toHaveText("Watch later");
+  });
+
+  test("as many lists as there can be stay on one line, and the arrow keys slide the buttons into view", async ({ browser }) => {
+    const now = Date.now();
+    const names = ["Weekend movies", "Date night", "Documentaries", "With the kids", "Rainy day", "Slow burns", "Comfort shows", "Foreign cinema", "Short films", "Rewatch", "Classics"];
+    const seed = guestStorage({ listNames: names.map((name, i) => ({ key: `l${String(i).padStart(3, "0")}`, at: now - 10_000 + i, name })) });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    await tv.getByTestId("rail-list").click();
+    await expect(tv.locator('[data-zone="chips"]')).toHaveCount(13); // twelve lists and Edit list: no New list, twelve is the most
+
+    const tops = await tv.locator(".tv-filters > *").evaluateAll((buttons) => buttons.map((button) => Math.round(button.getBoundingClientRect().top)));
+    expect(new Set(tops).size).toBe(1); // one line, not a stack of them pushing the titles off the screen
+
+    await tv.getByTestId("list-chip-favourites").focus();
+    for (let i = 0; i < 13; i++) await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("list-edit")).toBeFocused();
+    const rightEdge = async () => {
+      const edit = (await tv.getByTestId("list-edit").boundingBox())!;
+      return edit.x + edit.width;
+    };
+    await expect.poll(rightEdge).toBeLessThanOrEqual(1280); // the last button has slid into view (it takes a moment)
+  });
+
+  test("a saved title that is part way through says Resume on its own page, wherever it is shown", async ({ browser }) => {
+    const url = "https://films.example/night-train";
+    const seed = guestStorage({
+      progress: [{ key: `url:${url}`, at: Date.now() - 60_000, title: "Night Train", url, position: 1500, duration: 6000 }],
+      list: [{ key: `url:${url}`, at: Date.now() - 30_000, id: "nt", title: "Night Train", url }],
+    });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    await tv.getByTestId("rail-list").click();
+    await expect(tiles(tv)).toHaveCount(1);
+    await tiles(tv).first().click();
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("Night Train");
+    await expect(tv.getByTestId("tv-detail-play")).toHaveText("Resume"); // not "Play" from the start, as if it had never been begun
   });
 
   test("a title in a lower row has its page with every button too, where the banner has shrunk to a line", async ({ browser }) => {
@@ -1064,6 +1101,18 @@ test.describe("categories and search on the TV", () => {
     await expect(tiles(tv).last()).toHaveAttribute("title", "Film from the server");
     expect(asked.at(-1)).toBe("film");
     expect(asked.filter((q) => q.length < 2)).toEqual([]); // nothing for a single letter
+
+    // Under the letters: Space, Delete and Clear, which empties the box in one press instead of a Delete for each letter.
+    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("key-space")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("key-delete")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("key-clear")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-query")).toHaveText("Search titles");
+    await expect(tv.getByTestId("tv-search-status")).toHaveText("Type a title to search.");
+    await expect(tv.getByTestId("key-clear")).toBeFocused(); // and it stays under the remote
   });
 
   test("search: right from the keyboard reaches the filter and then the results, OK plays one, and Back returns to the same search", async ({ browser }) => {
@@ -1170,6 +1219,34 @@ test.describe("categories and search on the TV", () => {
     await expect(tv.getByTestId("tv-search")).toBeVisible();
     await tv.keyboard.type("server");
     await expect(tiles(tv).first()).toHaveAttribute("title", "Only On The Server");
+  });
+
+  test("a search that cannot be reached says so instead of saying nothing matches, and asks again by itself", async ({ browser }) => {
+    let reachable = false;
+    const tv = await openLibrary(browser, async (context) => {
+      await context.clock.install();
+      await context.route("**/api/library", (route) => route.fulfill({ json: library }));
+      await context.route(/\/api\/library\/search/, (route) =>
+        reachable ? route.fulfill({ json: { items: [{ id: "srv", title: "Only On The Server", url: "/fixtures/sample.mp4" }] } }) : route.fulfill({ status: 503, body: "down" }),
+      );
+    });
+    await expect(tiles(tv).first()).toBeFocused();
+    await choose(tv, "rail-search");
+    await tv.keyboard.type("server");
+    await expect(tv.getByTestId("tv-search-status")).toHaveText(en["tv.searchFailed"]); // not "Nothing matches": it was never asked
+    await expect(tiles(tv)).toHaveCount(0);
+
+    reachable = true;
+    await tv.clock.fastForward(5500);
+    await expect(tiles(tv).first()).toHaveAttribute("title", "Only On The Server");
+    await expect(tv.getByTestId("tv-search-status")).toHaveText("1 title for “server”");
+
+    // With titles from the rows already on screen, the line says that it is only the rest that is missing.
+    reachable = false;
+    for (let i = 0; i < "server".length; i++) await tv.keyboard.press("Backspace");
+    await tv.keyboard.type("film");
+    await expect(tv.getByTestId("tv-search-status")).toContainText(en["tv.searchOffline"].trim());
+    await expect(tiles(tv)).toHaveCount(10);
   });
 });
 
@@ -1347,6 +1424,7 @@ test.describe("a film that has ended", () => {
     const tv = await openTv(browser);
     const phone = await playToTheEnd(tv, baseURL!, film("Before"));
     await expect(tv.getByTestId("tv-end")).toBeVisible({ timeout: 15_000 });
+    await expect(tv.getByTestId("end-similar")).toHaveCount(2); // they come from the server a moment after the card; Down before them has nothing to land on
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("end-similar").first()).toBeFocused();
     await tv.keyboard.press("Enter");
@@ -1384,6 +1462,40 @@ test.describe("a film that has ended", () => {
     await tv.getByTestId("end-next").click();
     await expect(tv.getByTestId("tv-end")).toHaveCount(0);
     await expect(tvRoot(tv)).not.toHaveAttribute("data-state", "paused", { timeout: 15_000 });
+    phone.close();
+  });
+
+  test("Up Next comes with fifteen seconds left of a long episode, its count waits while the picture is held, and winding back takes it away", async ({ browser, baseURL }) => {
+    test.setTimeout(45_000);
+    const tv = await openTv(browser);
+    const episode = (n: number) => ({ season: 1, episode: n, title: `Part ${n}`, url: `${baseURL}/fixtures/pages/${n === 1 ? "video" : "hls"}.html` });
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    // (fixtures/long.mp4 is forty seconds: the card keeps away from anything of thirty or less, where the end is never far.)
+    phone.cmd({ type: "LOAD", media: { title: "Parts · S1 E1", stream: { url: "/fixtures/long.mp4", type: "mp4" }, series: { season: 1, episode: 1, episodes: [episode(1), episode(2)], next: episode(2) } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    const seek = (to: number) => tv.evaluate((time) => void (document.querySelector("video")!.currentTime = time), to);
+    const upNext = tv.getByTestId("netflix-upnext");
+    const count = async () => Number((await upNext.locator("b").innerText()).replace("s", ""));
+    await expect(upNext).toHaveCount(0); // a long way from the end
+
+    await seek(24);
+    phone.cmd({ type: "PLAY" });
+    await expect(upNext).toBeVisible();
+    phone.cmd({ type: "PAUSE" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect(tv.getByTestId("tv-pause-card")).toHaveCount(0); // one card says what is happening, not two
+    const held = await count();
+    await tv.waitForTimeout(2500);
+    expect(await count()).toBe(held); // it counts to the end of the episode, and the picture is not going there
+
+    await seek(5); // wound back, and the card goes with the end, the pause card in its place
+    await expect(upNext).toHaveCount(0);
+    await expect(tv.getByTestId("tv-pause-card")).toBeVisible();
+
+    await seek(34); // six seconds left: it never counts down from more than is left
+    phone.cmd({ type: "PLAY" });
+    await expect(upNext).toBeVisible();
+    expect(await count()).toBeLessThanOrEqual(6);
     phone.close();
   });
 });

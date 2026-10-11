@@ -84,7 +84,6 @@
 .tv-btn-red:hover { background: var(--accent-hover); }
 .tv-btn-ghost { background: rgba(255, 255, 255, 0.14); }
 .tv-btn-on { background: rgb(var(--accent-rgb) / 0.85); }
-.tv-btn-stop { color: #ff8a8a; }
 
 /* Whatever the remote has selected must be unmistakable from across the room. */
 .tv-btn:focus-visible,
@@ -117,7 +116,7 @@
 .tv-brand {
   position: absolute;
   top: 3em;
-  left: 4.4em;
+  left: calc(6em / 2.2); /* the screen's own side padding (6em), so a page of left-aligned content lines up with it */
   font-size: 2.2em;
 }
 .tv-headline { margin: 0; font-size: 4em; font-weight: 700; letter-spacing: -0.01em; }
@@ -148,6 +147,7 @@
   line-height: 1.1;
   transition: background 0.15s, color 0.15s, transform 0.15s;
 }
+.tv-action svg { flex: none; }
 .tv-action:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
 .tv-action-primary { background: var(--accent); color: #fff; }
 .tv-action-primary:hover { background: var(--accent-hover); }
@@ -260,7 +260,7 @@
   text-align: center;
 }
 .tv-qr svg { display: block; width: 100%; height: auto; }
-.tv-qr p { margin: 0.8em 0 0; font-size: 1.3em; font-weight: 600; }
+.tv-qr p { margin: 0.8em 0 0; font-size: 1.3em; font-weight: 600; text-wrap: balance; }
 
 .tv-fs-prompt {
   position: absolute;
@@ -308,7 +308,7 @@
 }
 .tv-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
 /* The top and bottom bars slide a little as they fade, instead of just blinking out. */
-.hud-top, .hud-bottom { transition: transform 0.3s ease; }
+.hud-top, .hud-bottom { position: relative; z-index: 1; transition: transform 0.3s ease; } /* above the pause shade (.hud-center), which only the picture is to be dimmed by */
 .tv-overlay.hidden .hud-top { transform: translateY(-1.4em); }
 .tv-overlay.hidden .hud-bottom { transform: translateY(1.4em); }
 
@@ -342,8 +342,8 @@
   letter-spacing: 0.04em;
 }
 .hud-time-of-day { flex: none; text-align: right; font-variant-numeric: tabular-nums; }
-.hud-clock { font-size: 1.7em; font-weight: 600; color: #bbb; }
-.hud-ends { margin-top: 0.4em; font-size: 1.3em; color: #8f8f8f; }
+.hud-clock { font-size: 1.7em; font-weight: 600; color: #ccc; text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.85); }
+.hud-ends { margin-top: 0.4em; font-size: 1.3em; color: #b4b4b4; text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.85); }
 
 .hud-center { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .hud-spinner { font-size: 6em; }
@@ -382,7 +382,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.35em;
-  max-width: 24em;
+  max-width: 34em;
   transform: translateY(-50%);
   text-shadow: 0 0.05em 0.4em rgba(0, 0, 0, 0.9);
   animation: hud-card-in 0.4s ease both;
@@ -431,9 +431,22 @@
   background: rgba(0, 0, 0, 0.8);
   text-align: center;
 }
-.hud-error h2 { margin: 0 0 0.4em; font-size: 2.4em; }
-.hud-error p { margin: 0 0 0.8em; font-size: 1.7em; color: #c8c8c8; }
-.hud-error small { font-family: ui-monospace, Consolas, monospace; font-size: 1.1em; color: #8a8a8a; }
+.hud-error h2 { margin: 0; font-size: 2.4em; text-wrap: balance; }
+/* A video that would not play from any source: what it was and what went wrong over a dark veil, with two ways on. */
+.tv-fail {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(ellipse 80% 70% at 50% 40%, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.95));
+  animation: tv-fade 0.35s ease;
+}
+.tv-fail .hud-error { display: flex; flex-direction: column; align-items: center; gap: 0.5em; max-width: 52em; padding: 0; background: none; }
+.tv-fail .hud-error small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.5em; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.tv-fail .hud-error h2 { max-width: 12em; font-size: 3.2em; line-height: 1.1; }
+.tv-fail .tv-actions { margin-top: 1.6em; }
+.tv-fail .tv-action { white-space: nowrap; }
 
 .hud-toast {
   position: absolute;
@@ -466,7 +479,7 @@
   background: linear-gradient(to top, rgba(0, 0, 0, 0.92), rgba(0, 0, 0, 0.6) 55%, transparent);
 }
 .hud-progress { display: flex; align-items: center; gap: 1.6em; }
-.hud-time { flex: none; min-width: 4.6em; font-size: 1.6em; color: #ddd; font-variant-numeric: tabular-nums; }
+.hud-time { flex: none; min-width: 4.6em; font-size: 1.6em; color: #ddd; font-variant-numeric: tabular-nums; text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.85); }
 .hud-time:last-child { text-align: right; }
 .hud-bar { flex: 1; padding: 1em 0; cursor: pointer; }
 .hud-bar-track { position: relative; height: 0.55em; border-radius: 0.3em; background: rgba(255, 255, 255, 0.28); transition: height 0.12s ease; }
@@ -500,10 +513,10 @@
  * the labels are short, the episode titles are cut, and if a row still can't hold them it wraps instead of running off.
  */
 .hud-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5em 1.2em; margin-top: 0.4em; }
-.hud-group { display: flex; align-items: center; gap: 0.5em; min-width: 0; }
+.hud-group { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; min-width: 0; } /* a screen too narrow for a group puts its last buttons on a row of their own */
 .hud-controls .tv-btn { font-size: 1.3em; padding: 0.5em 0.8em; gap: 0.4em; }
 .hud-controls .tv-btn-icon { font-size: 2em; padding: 0.25em; }
-.hud-controls .tv-btn-play { font-size: 2.3em; width: 1.6em; height: 1.6em; padding: 0; }
+.hud-controls .tv-btn-play { font-size: 2.3em; width: 1.6em; height: 1.6em; padding: 0; margin-right: 0.15em; } /* room for its ring, which is wide, before the icon beside it */
 /* "Previous" / "Next episode" over the episode's name, which is cut rather than allowed to widen the button. */
 .tv-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.25em; min-width: 0; max-width: 9em; }
 .tv-btn-text small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.15; }
@@ -535,6 +548,8 @@
 .hud-upnext-bar div { height: 100%; background: var(--accent); transition: width 1s linear; }
 .hud-upnext-actions { display: flex; gap: 0.8em; }
 .hud-upnext-actions .tv-btn { flex: 1; justify-content: center; font-size: 1.3em; }
+/* OK plays the next one, so the button looks the chosen one from the start (Cancel is Back). */
+.hud-upnext-actions .tv-btn-red { outline: 0.2em solid #fff; outline-offset: 0.12em; }
 
 /* ------------------------------ the end card ------------------------------ */
 
@@ -617,10 +632,15 @@
 }
 .tv-sub-preview .tv-caption { white-space: normal; transition: font-size 0.15s ease; }
 /* Styling subtitles: the picture shows through, the panel moves to the top, and a sample sits where the real ones will. */
-.tv-menu-backdrop[data-kind="captions"] { place-items: start center; padding-top: 1.4em; background: rgba(0, 0, 0, 0.4); }
-.tv-menu[data-kind="captions"] { padding: 1.8em 3em 2em; }
-.tv-menu[data-kind="captions"] .tv-menu-top { margin-bottom: 1em; }
-.tv-menu[data-kind="captions"] .tv-opts { max-height: min(26em, 38vh); }
+.tv-menu-backdrop[data-kind="captions"] { place-items: start center; padding-top: 1.2em; background: rgba(0, 0, 0, 0.4); }
+.tv-menu[data-kind="captions"] { padding: 1.3em 3em; }
+.tv-menu[data-kind="captions"] .tv-menu-top { margin-bottom: 0.6em; }
+.tv-menu[data-kind="captions"] .tv-menu-top h2 { font-size: 2.1em; }
+/* Six settings and half of the seventh: the panel ends above where the highest subtitles are drawn, and the half row says there is more. */
+.tv-menu[data-kind="captions"] .tv-opts { max-height: min(25.3em, 46vh); }
+.tv-menu[data-kind="captions"] .tv-opt { padding: 0.55em 0.9em; font-size: 1.4em; }
+/* A short list of choices (speed, quality, sources) is shown whole, not cut off with half an option showing. */
+.tv-menu[data-kind="speed"] .tv-opts, .tv-menu[data-kind="quality"] .tv-opts, .tv-menu[data-kind="sources"] .tv-opts { max-height: min(40em, 62vh); }
 .tv-caption-stage {
   position: absolute;
   left: 0;
@@ -921,7 +941,7 @@
   overflow: hidden;
 }
 .tv-detail .tv-hero-actions { flex-wrap: wrap; margin-top: 0.8em; }
-.tv-detail .tv-hero-button { font-size: 1.7em; }
+.tv-detail .tv-hero-button { font-size: 1.7em; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: left; } /* "Remove from <a list of your own>" can be longer than a small screen is wide */
 .tv-detail .tv-detail-close { position: absolute; top: 1.8em; right: 4.4em; z-index: 1; font-size: 1.3em; }
 
 /* The remote moves them in script, and a wheel or a swipe scrolls them too (a computer or a phone is a screen as well). */
@@ -942,8 +962,9 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, #000 93%, transparent);
-  mask-image: linear-gradient(90deg, #000 93%, transparent);
+  /* A title that has scrolled off to the left fades out before the menu's icons (6em wide) instead of sliding under them. */
+  -webkit-mask-image: linear-gradient(90deg, transparent 5.2em, #000 6.2em, #000 93%, transparent);
+  mask-image: linear-gradient(90deg, transparent 5.2em, #000 6.2em, #000 93%, transparent);
 }
 .tv-row-tiles::-webkit-scrollbar { display: none; }
 
@@ -1009,7 +1030,7 @@
 .tv-rail::-webkit-scrollbar { display: none; }
 .tv-rail[data-open="true"] {
   width: 27em;
-  background: linear-gradient(90deg, #0b0b0c 86%, rgba(11, 11, 12, 0));
+  background: linear-gradient(90deg, #0b0b0c 66%, rgba(11, 11, 12, 0));
 }
 .tv-rail-item {
   display: flex;
@@ -1063,7 +1084,10 @@
 .tv-view-title { margin: 0; font-size: 3em; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
 .tv-view-meta { margin: 0.2em 0 0; font-size: 1.5em; font-weight: 600; color: #b4b4bb; }
 .tv-view-empty { margin: 1.4em 0 0; max-width: 28em; font-size: 1.8em; line-height: 1.4; color: var(--muted); }
-.tv-filters { display: flex; flex-wrap: wrap; gap: 0.8em; padding: 0.3em; }
+/* One line of buttons however many there are (a screenful of lists would wrap into rows the arrow keys do not follow); it slides to the one with the focus. The padding is room for its ring. */
+.tv-filters { display: flex; flex: none; gap: 0.8em; padding: 0.8em; margin: -0.5em; overflow-x: auto; scrollbar-width: none; }
+.tv-filters::-webkit-scrollbar { display: none; }
+.tv-filters > * { flex: none; }
 .tv-grid {
   position: relative;
   flex: 1 1 0;
@@ -1114,7 +1138,7 @@
   text-transform: uppercase;
   transition: background 0.12s, color 0.12s, transform 0.12s;
 }
-.tv-key-wide { grid-column: span 3; font-size: 1.5em; text-transform: none; }
+.tv-key-wide { grid-column: span 2; font-size: 1.4em; text-transform: none; white-space: nowrap; }
 .tv-key:hover { background: rgba(255, 255, 255, 0.2); }
 .tv-key:focus-visible { background: #fff; color: #000; outline: none; transform: scale(1.08); z-index: 2; }
 
@@ -1140,7 +1164,7 @@
   font-weight: 600;
   transition: background 0.15s, color 0.15s, transform 0.15s;
 }
-.tv-account-chip > svg { box-sizing: content-box; width: 1.1em; height: 1.1em; padding: 0.35em; border-radius: 50%; background: rgba(255, 255, 255, 0.14); }
+.tv-account-chip > svg:not(.avatar) { box-sizing: content-box; width: 1.1em; height: 1.1em; padding: 0.35em; border-radius: 50%; background: rgba(255, 255, 255, 0.14); }
 .tv-chip-avatar { font-size: 1.8em; border-radius: 50%; }
 .tv-account-chip:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
 .tv-account-chip:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
@@ -1457,6 +1481,11 @@
 .tv-party-side .tv-party-member { font-size: 1.5em; }
 .tv-party-side .tv-hint { font-size: 1.3em; }
 
+/* A press is felt: whatever answers a click sinks a little while it is held (after every focus rule, so it wins over the focus ring's growth). */
+.tv-tile:active, .tv-tile-category:active, .tv-end-tile:active, .tv-ep:active, .tv-rail-item:active, .tv-btn:active, .tv-action:active, .tv-hero-button:active, .tv-choice:active,
+.tv-key:active, .tv-opt:active, .tv-swatch:active, .tv-switch-row:active, .tv-corner-button:active, .tv-account-chip:active, .tv-follow-bar button:active,
+.tv-party-choice:active, .tv-party-remove:active { transform: scale(0.96); }
+
 /* ------------------------------ a hand-held screen ------------------------------ */
 
 /*
@@ -1481,7 +1510,7 @@
   .tv-ok { font-size: 2em; }
   .tv-spinner { font-size: 4em; }
   .tv-ready-icon { width: 5em; height: 5em; }
-  .tv-actions { grid-auto-flow: row; grid-auto-columns: auto; width: 100%; max-width: 28em; }
+  .tv-actions { grid-auto-flow: row; grid-auto-columns: minmax(0, 1fr); width: 100%; max-width: 28em; } /* stacked, and one width */
   .tv-action { min-width: 0; font-size: 1.6em; }
   .tv .role-switch { font-size: 1.3em; }
 
@@ -1536,7 +1565,7 @@
   .tv-detail .tv-hero-button { font-size: 1.4em; }
   .tv-detail .tv-detail-close { top: 1.2em; right: 1.4em; font-size: 1.2em; }
   .tv-row-title { margin-left: 4.9em; font-size: 1.5em; }
-  .tv-row-tiles { gap: 1em; padding: 0.8em 1.4em 1em 6.4em; }
+  .tv-row-tiles { gap: 1em; padding: 0.8em 1.4em 1em 6.4em; -webkit-mask-image: linear-gradient(90deg, transparent 4.9em, #000 5.7em, #000 93%, transparent); mask-image: linear-gradient(90deg, transparent 4.9em, #000 5.7em, #000 93%, transparent); }
   .tv-tile { width: 13em; }
   .tv-tile-continue { width: 14em; }
   .tv-tile-category { width: 13em; height: 7.3em; }
@@ -1556,7 +1585,6 @@
   .tv-search { flex-direction: column; gap: 0.6em; }
   .tv-search-side { width: auto; }
   .tv-search-main { flex: 1 1 0; }
-  .tv-filters { flex-wrap: wrap; }
   .tv-query { height: 2.2em; font-size: 2em; }
   input.tv-query { width: 100%; background: transparent; color: #fff; font-family: inherit; font-weight: 600; outline: none; border-top: 0; border-inline: 0; border-radius: 0; }
   input.tv-query::placeholder { color: #6f6f78; font-weight: 500; }
@@ -1581,7 +1609,6 @@
   .hud-toast.notice { font-size: 1.8em; }
   .hud-error { max-width: calc(100% - 3em); padding: 1.6em; }
   .hud-error h2 { font-size: 1.9em; }
-  .hud-error p { font-size: 1.4em; }
   .hud-stuck { padding: 1em 1.4em 1.2em; }
   .hud-stuck p { font-size: 1.4em; }
   .hud-upnext { left: 1.6em; right: 1.6em; width: auto; bottom: 15em; }

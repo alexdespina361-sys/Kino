@@ -97,10 +97,14 @@ pnpm build && pnpm start     # http://localhost:8787
 **TV**
 - Clean player with a fading HUD (title, clock, "ends at", seek bar with a time tooltip on hover, buffering spinner, big play/pause). Paused, the
   title steps out of the corner and is said once, large, on the left ("You're watching …"); a skip flashes on the side it went towards; and
-  the Up Next card counts down only for a profile that plays the next episode by itself
-- D-pad remote support: ←/→ seek 10 s, ↓ wakes the controls and moves focus, Enter presses, Back closes menus. Every screen before
-  the video (the library, a title's page, the pairing code, the connected screen, the account pages, the "Press OK" page of a party link) is walked
-  with the arrow keys: the first press only lands on a button, so a stray OK never presses one (`src/client/tv/dpad.ts`)
+  the Up Next card comes with 15 seconds left of an episode of more than 30 seconds. It counts down only for a profile that plays the next
+  episode by itself, the count waits while the picture is held, and winding back takes the card away
+- D-pad remote support: ←/→ seek 10 s, ↓ wakes the controls (even faded) and lands on Play, Enter presses. Among the controls the arrows walk
+  the rows as they are laid out and stop at the ends; the bar waits a little longer while the remote rests on a button. Back closes a menu and
+  hands the focus back to the button that opened it (the subtitle style is a page of the audio and subtitles menu, so Back goes one page back).
+  Every screen before the video (the library, a title's page, the pairing code, the connected screen, the account pages, the "Press OK" page of a
+  party link) is walked with the arrow keys: the first press only lands on a button, so a stray OK never presses one, and a page of columns keeps
+  Up and Down to the column the remote is in (`src/client/tv/dpad.ts`)
 - The controls are sized to fit one row on any screen shape, with every button present (series, subtitles, sources, quality); long
   episode names are cut, and a row that still can't hold them wraps instead of running off the edge
 - Subtitles and audio like a streaming app: the language you chose is remembered. Tracks the file labels only with a code (`eng`) are
@@ -124,7 +128,9 @@ pnpm build && pnpm start     # http://localhost:8787
   since the host's screen decides what happens next
 - **Mute** (`M`, or the speaker button among the controls) silences this screen only: it is not shared with the phone or the party and not
   remembered, and the volume itself stays the device's own
-- Sources: a video can carry alternates; if the first stream fails the TV tries the next by itself, and either device can pick one
+- Sources: a video can carry alternates; if the first stream fails the TV tries the next by itself, and either device can pick one. When none of
+  them plays, a card takes the place of the controls: what it was and what went wrong, **Try again** (OK, from the first source) and **Back to
+  the library** (Back)
 - **The library is the front door.** The site opens straight into it, signed in or not (a guest's progress stays on that screen), so a screen can
   pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press. (Only a party link opens a "Press OK" page
   first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
@@ -169,7 +175,8 @@ One TV plays and up to five more screens watch along, in step. A guest is anybod
 (a phone that opens a party link is a screen of the party, not a remote). It works signed in or not; a screen is listed by the profile that
 is watching on it, or else by its own name ("TV 3F2A"). Ways in:
 
-- **From a TV:** menu → **Watch party** → *Start a party* (or the **Watch party** button in a film's controls). The screen shows a
+- **From a TV:** menu → **Watch party** → *Start a party* (or the **Watch party** button in a film's controls, whose panel rests on **Done**, not
+  on the button that ends the party). The screen shows a
   6-digit code, a QR code and the address; on another screen choose **Watch party → Join a party** and type the code with the remote's
   number keys (the on-screen pad works too).
 - **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with a **Share link** button, and
@@ -224,10 +231,12 @@ A title is only a link: tapping it is the same as pasting it, so the existing re
   **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles, and
   choosing any entry (**My Lists**, **History**, a category…) closes the menu over the page it opens. **My Lists** is a button for each list over
   the titles in it, with **New list** (a name typed on the on-screen or real keyboard) and **Edit list** (rename, or delete after a question). **Movies**
-  and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard beside the
+  and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard (Space, Delete, and Clear for the whole box) beside the
   results (a physical keyboard types too, and Backspace deletes before it means Back) with **All / Movies / Series** filters. Titles already loaded
   answer at once; after a short pause the source's search (`GET /api/library/search?q=`) adds more, and a library whose rows could not be loaded
-  can still be searched. The menu and search only use the generic library endpoints, so they work with whichever `LibrarySource` is configured.
+  can still be searched. A search that cannot be reached says so (it asks again every few seconds) instead of saying nothing matches, and a title
+  that is part way through says **Resume** on its page wherever it is shown, lists and search included. The menu and search only use the generic
+  library endpoints, so they work with whichever `LibrarySource` is configured.
 - `LIBRARY=off` starts the server without a library (the e2e server does); `GET /api/library` is then empty and the phone shows nothing extra.
 
 ### Episode lists
@@ -305,6 +314,6 @@ src/server/    sessions/registry.ts (devices, codes, controllers), websocket/hub
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),
                i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
 public/        copied as it is into the built page: the web app manifest and its icons
-fixtures/      sample.mp4, hls/ (VP9, so Playwright's Chromium can decode them)
+fixtures/      sample.mp4, long.mp4 (40 s, for Up Next), hls/ (VP9, so Playwright's Chromium can decode them)
 e2e/           Playwright specs and helpers
 ```

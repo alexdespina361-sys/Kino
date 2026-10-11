@@ -236,9 +236,12 @@ export const it: Dictionary = {
   "tv.stillLooking": " · sto ancora cercando…",
   "tv.looking": "Cerco…",
   "tv.nothingMatches": "Nessun risultato per “{query}”.",
+  "tv.searchFailed": "La ricerca non risponde in questo momento. Riprova da sola tra poco.",
+  "tv.searchOffline": " · il resto della ricerca non risponde",
   "tv.keyboard": "Tastiera",
   "tv.space": "Spazio",
   "tv.delete": "Cancella",
+  "tv.clear": "Cancella tutto",
   "tv.openCategory": "Apri",
 
   /* the player: menus, sheets and the controls over the picture */
@@ -333,7 +336,6 @@ export const it: Dictionary = {
   "hud.upNext": "A seguire",
   "hud.watchNow": "Guarda ora",
   "hud.endsAt": "Finisce alle {time}",
-  "hud.sendAnother": "Invia un altro link dal telefono.",
   "hud.play": "Riproduci",
   "hud.pause": "Pausa",
   "hud.playTip": "Riproduci / Pausa (OK)",

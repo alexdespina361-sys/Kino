@@ -239,9 +239,12 @@ export const ro: Dictionary = {
   "tv.stillLooking": " · încă caut…",
   "tv.looking": "Caut…",
   "tv.nothingMatches": "Nimic nu se potrivește cu „{query}”.",
+  "tv.searchFailed": "Căutarea nu răspunde acum. Încearcă din nou singură într-un moment.",
+  "tv.searchOffline": " · restul căutării nu răspunde",
   "tv.keyboard": "Tastatură",
   "tv.space": "Spațiu",
   "tv.delete": "Șterge",
+  "tv.clear": "Șterge tot",
   "tv.openCategory": "Deschide",
 
   /* the player: menus, sheets and the controls over the picture */
@@ -336,7 +339,6 @@ export const ro: Dictionary = {
   "hud.upNext": "Urmează",
   "hud.watchNow": "Vezi acum",
   "hud.endsAt": "Se termină la {time}",
-  "hud.sendAnother": "Trimite alt link de pe telefon.",
   "hud.play": "Redă",
   "hud.pause": "Pauză",
   "hud.playTip": "Redă / Pauză (OK)",

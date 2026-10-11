@@ -26,8 +26,8 @@ export function mergeItems(first: readonly LibraryItem[], more: readonly Library
 /** The letters, then the digits: six keys to a row, which is what the TV's keyboard is laid out in. */
 export const KEYBOARD_KEYS = [..."abcdefghijklmnopqrstuvwxyz0123456789"];
 export const KEYBOARD_COLUMNS = 6;
-/** The keyboard's rows, then the row of the two wide keys. */
-export const KEYBOARD_SHAPE = [...Array.from({ length: KEYBOARD_KEYS.length / KEYBOARD_COLUMNS }, () => KEYBOARD_COLUMNS), 2];
+/** The keyboard's rows, then the row of the three wide keys (Space, Delete, Clear). */
+export const KEYBOARD_SHAPE = [...Array.from({ length: KEYBOARD_KEYS.length / KEYBOARD_COLUMNS }, () => KEYBOARD_COLUMNS), 3];
 
 /** What a physical key adds to the search box, if anything (`null`: not a character for it). */
 export function typedCharacter(event: { key: string; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }): string | null {

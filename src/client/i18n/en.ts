@@ -237,9 +237,12 @@ export const en = {
   "tv.stillLooking": " · still looking…",
   "tv.looking": "Looking…",
   "tv.nothingMatches": "Nothing matches “{query}”.",
+  "tv.searchFailed": "Search can't be reached right now. It tries again in a moment.",
+  "tv.searchOffline": " · the rest of the search can't be reached",
   "tv.keyboard": "Keyboard",
   "tv.space": "Space",
   "tv.delete": "Delete",
+  "tv.clear": "Clear",
   "tv.openCategory": "Open",
 
   /* the player: menus, sheets and the controls over the picture */
@@ -334,7 +337,6 @@ export const en = {
   "hud.upNext": "Up next",
   "hud.watchNow": "Watch now",
   "hud.endsAt": "Ends at {time}",
-  "hud.sendAnother": "Send a different link from your phone.",
   "hud.play": "Play",
   "hud.pause": "Pause",
   "hud.playTip": "Play / Pause (OK)",

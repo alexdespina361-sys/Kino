@@ -15,7 +15,14 @@ const ffmpeg = (args) => execFileSync("ffmpeg", ["-y", "-loglevel", "error", ...
 // 1. Progressive MP4 (video + audio, seekable via range requests).
 ffmpeg([...video, ...audio, ...vp9, "-c:a", "libopus", "-b:a", "32k", "-shortest", "-movflags", "+faststart", "fixtures/sample.mp4"]);
 
-// 2. HLS (fMP4 segments, 4s each, video only).
+// 2. A film long enough for "Up Next" to come before its end (the card waits for more than 30 seconds). Small, so it stays cheap to keep.
+ffmpeg([
+  "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10:duration=40", "-f", "lavfi", "-i", "sine=frequency=330:duration=40",
+  "-c:v", "libvpx-vp9", "-b:v", "30k", "-deadline", "realtime", "-cpu-used", "8", "-g", "50", "-pix_fmt", "yuv420p",
+  "-c:a", "libopus", "-b:a", "16k", "-shortest", "-movflags", "+faststart", "fixtures/long.mp4",
+]);
+
+// 3. HLS (fMP4 segments, 4s each, video only).
 rmSync("fixtures/hls", { recursive: true, force: true });
 mkdirSync("fixtures/hls", { recursive: true });
 ffmpeg([

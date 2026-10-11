@@ -115,7 +115,6 @@ export function FollowStatus({ player, onPlay }: { player: PlayerState; onPlay: 
       <div className="hud-center">
         <div className="hud-error" data-testid="tv-error" role="alert">
           <h2>{friendlyError(player.error)}</h2>
-          <small>{player.error}</small>
         </div>
       </div>
     );
@@ -211,7 +210,7 @@ export function Hud(p: HudProps) {
       {/* The overlay sits on top of the video, so a click on the empty part of it has to do what a click on the video does. */}
       <div
         className={`tv-overlay ${p.visible ? "visible" : "hidden"}`}
-        data-paused={paused || undefined}
+        data-paused={(paused && !p.upNext) || undefined}
         onClick={(event) => event.target === event.currentTarget && p.onToggle()}
         onDoubleClick={(event) => event.target === event.currentTarget && p.onFullscreen()}
       >
@@ -234,30 +233,19 @@ export function Hud(p: HudProps) {
         </header>
 
         <div className="hud-center">
-          {paused && (
+          {paused && !p.upNext && (
             <>
               {/* Where the title in the top corner goes while the picture is held: what you are watching, said once, big. */}
               <div className="hud-pause-card" data-testid="tv-pause-card">
                 <small>{t("hud.watching")}</small>
                 <b>{p.title}</b>
-                {p.subTitle && (
-                  <span>
-                    {p.badge} · {p.subTitle}
-                  </span>
-                )}
+                {p.subTitle && <span>{p.subTitle}</span>}
               </div>
               {/* Mouse and touch only: the remote's OK already resumes, so this stays out of the D-pad's way (tabIndex -1). */}
               <button className="hud-paused" data-testid="tv-paused-play" tabIndex={-1} aria-label={t("hud.play")} onClick={p.onToggle}>
                 <PlayIcon />
               </button>
             </>
-          )}
-          {player.state === "error" && !isBlocked(player) && (
-            <div className="hud-error" data-testid="tv-error" role="alert">
-              <h2>{friendlyError(player.error)}</h2>
-              <p>{t("hud.sendAnother")}</p>
-              <small>{player.error}</small>
-            </div>
           )}
         </div>
 
@@ -328,7 +316,7 @@ export function Hud(p: HudProps) {
                 </button>
               )}
               {p.nextLabel && (
-                <button className="tv-btn tv-btn-red" data-testid="tv-next-btn" onClick={p.onNext} title={t("hud.nextTip")}>
+                <button className="tv-btn" data-testid="tv-next-btn" onClick={p.onNext} title={t("hud.nextTip")}>
                   <NextIcon />
                   <span className="tv-btn-text">
                     {t("hud.nextEpisode")}
@@ -403,6 +391,47 @@ export function Hud(p: HudProps) {
         </footer>
       </div>
     </>
+  );
+}
+
+interface ErrorCardProps {
+  title: string;
+  /** What went wrong, in words. */
+  message: string;
+  onRetry: () => void;
+  onLibrary: () => void;
+}
+
+/**
+ * What the TV shows when a video would not play from any of its sources: what it was, what went wrong, and two ways on (OK is the
+ * first, trying again; Back is the second, leaving). The player's controls are of no use then, so this takes their place.
+ */
+export function ErrorCard(p: ErrorCardProps) {
+  useT();
+  const rootRef = useRef<HTMLDivElement>(null);
+  useDpad(rootRef);
+  useBack(p.onLibrary);
+
+  // The first button has the focus as the card appears, so OK does what the card leads with.
+  useEffect(() => {
+    rootRef.current?.querySelector<HTMLElement>("[data-nav]")?.focus();
+  }, []);
+
+  return (
+    <div className="tv-fail" ref={rootRef}>
+      <div className="hud-error" data-testid="tv-error" role="alert">
+        <small>{p.title}</small>
+        <h2>{p.message}</h2>
+        <div className="tv-actions">
+          <button className="tv-action tv-action-primary" onClick={p.onRetry} data-testid="error-retry" data-nav>
+            <RefreshIcon /> {t("common.retry")}
+          </button>
+          <button className="tv-action" onClick={p.onLibrary} data-testid="error-library" data-nav>
+            <HomeIcon /> {t("tv.backToLibrary")}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

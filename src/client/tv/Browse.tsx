@@ -15,7 +15,7 @@ import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from
 import { AccountChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
-import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type View } from "./pages";
+import { entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type View } from "./pages";
 import { Rail, type RailEntry } from "./Rail";
 
 /** What a screen that starts a title can add: where to pick it up, and the picture and year the library already knows for it. */
@@ -63,6 +63,8 @@ const remembered = {
 const BANNER_DELAY_MS = 200;
 /** Wait this long after the last key before asking the server, so a word is one question and not one per letter. */
 const SEARCH_DELAY_MS = 350;
+/** A search the server did not answer is asked again after this long. */
+const SEARCH_RETRY_MS = 5000;
 const GRID_COLUMNS = 5;
 const RESULT_COLUMNS = 3;
 /** A phone, a tablet or a narrow window (the same width tv.css lays out for a hand-held screen): grids are as many titles wide as fit, and search is typed on the device's own keyboard. */
@@ -130,6 +132,17 @@ function keepInView(container: HTMLElement, element: HTMLElement) {
   else if (at.bottom > box.bottom - room) container.scrollBy({ top: at.bottom - box.bottom + room, behavior: "smooth" });
 }
 
+/** The same sideways, for a row of buttons wider than its place: it slides along to keep the one with the focus in view. */
+function slideIntoView(button: HTMLElement) {
+  const row = button.parentElement;
+  if (!row) return;
+  const room = parseFloat(getComputedStyle(row).fontSize) * 1.5;
+  const box = row.getBoundingClientRect();
+  const at = button.getBoundingClientRect();
+  if (at.left < box.left + room) row.scrollBy({ left: at.left - box.left - room, behavior: "smooth" });
+  else if (at.right > box.right - room) row.scrollBy({ left: at.right - box.right + room, behavior: "smooth" });
+}
+
 /**
  * The library on the TV, laid out like a streaming app: a menu down the left (search, home, movies, series, the lists, history, the
  * phone, settings, and the categories), the account button in the corner, and on the pages of rows a banner with Play and the list
@@ -154,6 +167,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const [results, setResults] = useState<LibraryItem[]>(remembered.results);
   const [filter, setFilter] = useState<KindFilter>(remembered.filter);
   const [searching, setSearching] = useState(false);
+  /** The query the server could not answer (it is asked again in a moment), so "nothing matches" is not said of a search that did not happen. */
+  const [failedFor, setFailedFor] = useState<string | null>(null);
+  const [searchTry, setSearchTry] = useState(0);
+  const searchFailed = failedFor !== null && failedFor === query.trim();
   const [railOpen, setRailOpen] = useState(false);
   /** A phone is for controlling a TV with: the menu's phone entry takes it to the remote instead of showing a code for one. */
   const [phone] = useState(thisIsPhone);
@@ -407,22 +424,32 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       fetch(`/api/library/search?q=${encodeURIComponent(text)}`, { signal: controller.signal })
-        .then((res) => (res.ok ? res.json() : null))
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
         .then((answer: unknown) => {
-          const parsed = LibraryItemsSchema.safeParse(answer);
-          if (parsed.success) setResults(mergeItems(local, parsed.data.items));
+          const parsed = LibraryItemsSchema.parse(answer);
+          setResults(mergeItems(local, parsed.items));
           remembered.resultsFor = text;
+          setFailedFor(null);
           setSearching(false);
         })
         .catch(() => {
-          if (!controller.signal.aborted) setSearching(false);
+          if (controller.signal.aborted) return;
+          setFailedFor(text);
+          setSearching(false);
         });
     }, SEARCH_DELAY_MS);
     return () => {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query, view.kind, rows]);
+  }, [query, view.kind, rows, searchTry]);
+
+  // A search that did not get an answer is asked again every few seconds for as long as it is on screen.
+  useEffect(() => {
+    if (failedFor === null || view.kind !== "search") return;
+    const timer = window.setTimeout(() => setSearchTry((n) => n + 1), SEARCH_RETRY_MS);
+    return () => window.clearTimeout(timer);
+  }, [failedFor, searchTry, view.kind]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -496,12 +523,12 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     setStatus("loading");
     setAttempt((n) => n + 1);
   };
-  const playEntry = (entry: Entry) => onPlay(new URL(entry.url, location.href).href, { hint: hintOf(entry), ...(entry.startAt ? { startAt: entry.startAt } : {}) });
+  const playEntry = (entry: Entry) => onPlay(new URL(entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(entry.startAt ? { startAt: entry.startAt } : {}) });
   // A category opens its page; a title opens its own page, where it is played or kept in a list (the banner's buttons do the same without it).
   const press = (title: Focused) => (title.entry.opens ? choose(title.entry.opens) : openDetail(title));
 
   const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string) => {
-    const title: Focused = { entry, label, ...(source ? { source } : {}) };
+    const title: Focused = { entry: resumable(entry, progress), label, ...(source ? { source } : {}) };
     return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} rank={pos.col + 1} pos={pos} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title)} />;
   };
 
@@ -646,7 +673,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
           </h1>
           {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
           {view.kind === "list" && (
-            <div className="tv-filters" role="radiogroup" aria-label={t("rows.myList")}>
+            <div className="tv-filters" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
               {lists.map((info, col) => (
                 <button
                   key={info.id}
@@ -737,6 +764,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
                   <Key testId="key-delete" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 1 }} onPress={() => setQuery((before) => before.slice(0, -1))}>
                     <BackspaceIcon /> {t("tv.delete")}
                   </Key>
+                  <Key testId="key-clear" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 2 }} onPress={() => setQuery("")}>
+                    {t("tv.clear")}
+                  </Key>
                 </div>
               </>
             )}
@@ -767,10 +797,12 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
               {!query.trim()
                 ? t("tv.typeToSearch")
                 : shownResults.length > 0
-                  ? `${t("tv.found", { count: shownResults.length, query: query.trim() })}${searching ? t("tv.stillLooking") : ""}`
-                  : searching
-                    ? t("tv.looking")
-                    : t("tv.nothingMatches", { query: query.trim() })}
+                  ? `${t("tv.found", { count: shownResults.length, query: query.trim() })}${searchFailed ? t("tv.searchOffline") : searching ? t("tv.stillLooking") : ""}`
+                  : searchFailed
+                    ? t("tv.searchFailed")
+                    : searching
+                      ? t("tv.looking")
+                      : t("tv.nothingMatches", { query: query.trim() })}
             </p>
             <div className="tv-grid tv-results" style={{ "--cols": resultColumns } as CSSProperties}>
               {shownResults.map((item, i) => tile(entryOfItem(item), { zone: "results", row: Math.floor(i / resultColumns), col: i % resultColumns }, t("tv.search"), "wide"))}

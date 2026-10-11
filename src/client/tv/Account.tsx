@@ -36,6 +36,7 @@ export function TvSignIn({ onClose }: { onClose: () => void }) {
   const t = useT();
   const account = useAccount();
   const [mode, setMode] = useState<"phone" | "email">("phone");
+  const [creating, setCreating] = useState(false); // the typed form is making an account, not signing in
   const [request, setRequest] = useState<Request | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -94,8 +95,8 @@ export function TvSignIn({ onClose }: { onClose: () => void }) {
   if (mode === "email") {
     return (
       <Screen key="email" testId="tv-signin" compact focus onBack={() => setMode("phone")}>
-        <h1 className="tv-headline tv-headline-small">{t("auth.signIn")}</h1>
-        <AuthForm tv onDone={onClose} />
+        <h1 className="tv-headline tv-headline-small">{t(creating ? "auth.signUp" : "auth.signIn")}</h1>
+        <AuthForm tv onDone={onClose} onMode={(next) => setCreating(next === "signUp")} />
         <button className="tv-action" onClick={() => setMode("phone")} data-nav data-testid="tv-signin-phone">
           {t("link.codeInstead")}
         </button>
@@ -378,7 +379,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   return (
     <Screen testId="tv-account" focus onBack={onClose}>
       <div className="tv-panel">
-        <section className="tv-panel-who">
+        <section className="tv-panel-who" data-nav-column>
           <div className="tv-panel-id">
             {me && profile ? (
               <Avatar id={profile.avatar} className="tv-panel-avatar" />
@@ -421,7 +422,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
           </div>
         </section>
 
-        <section className="tv-panel-settings">
+        <section className="tv-panel-settings" data-nav-column>
           <h2>{t("settings.language")}</h2>
           <div className="tv-choices" role="radiogroup" aria-label={t("settings.language")}>
             {UI_LANGUAGES.map((code) => (

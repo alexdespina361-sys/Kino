@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Ref } from "react";
+import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import {
   CAPTION_SETTINGS,
   CAPTION_VALUES,
@@ -148,7 +148,7 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
         title: t("player.speedShort"),
         options: PLAYBACK_SPEEDS.map((value) => ({
           key: value,
-          label: value === 1 ? t("player.normal") : `${value}×`,
+          label: value === 1 ? `1× · ${t("player.normal")}` : `${value}×`, // the controls' button says "1×": the same words here
           active: Math.abs(rate - value) < 0.01,
           pick: () => p.onSpeed(value),
         })),
@@ -339,11 +339,15 @@ export function TvMenu(props: MenuProps) {
   const title = titleOf(props.kind);
 
   // Start on whatever is selected now (the episode you're watching, the current language), so OK changes nothing by accident.
+  // Back from the caption style returns to the menu it came from, on the entry that opened it.
+  const cameFrom = useRef<MenuKind | null>(null);
   useEffect(() => {
     const root = document.querySelector<HTMLElement>("[data-tv-menu]");
     const actives = root?.querySelectorAll<HTMLElement>("[data-active='true']");
     const start = props.kind === "episodes" ? actives?.[actives.length - 1] : actives?.[0];
-    (start ?? root?.querySelector<HTMLElement>("[data-opt]"))?.focus();
+    const style = props.kind === "tracks" && cameFrom.current === "captions" ? root?.querySelector<HTMLElement>("[data-key='style']") : null;
+    cameFrom.current = props.kind;
+    (style ?? start ?? root?.querySelector<HTMLElement>("[data-opt]"))?.focus();
   }, [props.kind]);
 
   return (
@@ -385,6 +389,7 @@ export function TvMenu(props: MenuProps) {
                       key={option.key}
                       className={option.card ? "tv-opt tv-ep" : "tv-opt"}
                       data-opt
+                      data-key={option.key}
                       data-col={col}
                       data-active={option.active}
                       role="option"

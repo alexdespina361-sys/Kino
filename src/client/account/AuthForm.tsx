@@ -8,13 +8,15 @@ interface AuthFormProps {
   initialMode?: "signIn" | "signUp";
   /** Called once somebody is signed in (or signed up). */
   onDone?: (me: Me) => void;
+  /** Called when the form turns from signing in to making an account, or back, so the page around it can say which. */
+  onMode?: (mode: "signIn" | "signUp") => void;
   /** On the TV every control is reached with the remote's arrow keys (`data-nav`), and none is focused until one is pressed. */
   tv?: boolean;
   autoFocus?: boolean;
 }
 
 /** Email and password, to sign in or to make an account. The same form on the phone and, as a fallback to the QR code, on the TV. */
-export function AuthForm({ initialMode = "signIn", onDone, tv = false, autoFocus = false }: AuthFormProps) {
+export function AuthForm({ initialMode = "signIn", onDone, onMode, tv = false, autoFocus = false }: AuthFormProps) {
   const t = useT();
   const account = useAccount();
   const open = account.registration === "open";
@@ -101,7 +103,9 @@ export function AuthForm({ initialMode = "signIn", onDone, tv = false, autoFocus
           type="button"
           className={tv ? "tv-action" : "auth-switch"}
           onClick={() => {
-            setMode(signingUp ? "signIn" : "signUp");
+            const next = signingUp ? "signIn" : "signUp";
+            setMode(next);
+            onMode?.(next);
             setError(null);
           }}
           data-testid="auth-switch"

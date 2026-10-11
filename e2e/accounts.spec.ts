@@ -205,6 +205,7 @@ async function signedInScreen(browser: Browser, account = fresh()) {
   await screen.getByTestId("tv-signin-email").click();
   await screen.getByTestId("auth-switch").click();
   await expect(screen.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
+  await expect(screen.locator(".tv-headline").first()).toHaveText(en["auth.signUp"]); // the page says what the form now does, not "Sign in"
   await screen.getByTestId("auth-email").fill(account.email);
   await screen.getByTestId("auth-password").fill(account.password);
   await screen.getByTestId("auth-submit").click();
@@ -276,6 +277,19 @@ test.describe("profiles made and changed on the TV itself", () => {
     // One profile: nobody to switch to, but profiles are managed from here all the same.
     await tv.getByTestId("tv-account-chip").click();
     await expect(tv.getByTestId("tv-switch-profile")).toHaveCount(0);
+
+    // The page is two columns, and Up and Down keep to the one the remote is in: the top of the first does not jump across to the settings.
+    const inColumn = (name: "who" | "settings") => tv.locator(`.tv-panel-${name} :focus`);
+    await expect(inColumn("who")).toHaveCount(1);
+    await tv.keyboard.press("ArrowUp");
+    await expect(inColumn("who")).toHaveCount(1);
+    await tv.keyboard.press("ArrowRight");
+    await expect(inColumn("settings")).toHaveCount(1);
+    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-autoplay")).toBeFocused(); // the last of the settings, and Down from it goes nowhere
+    await tv.keyboard.press("ArrowLeft");
+    await expect(inColumn("who")).toHaveCount(1);
+
     await tv.getByTestId("tv-manage-profiles").click();
     await expect(profiles).toContainText("1 of 5 profiles");
     await expect(tv.getByTestId("profile-Viewer")).toBeFocused();
@@ -301,6 +315,9 @@ test.describe("profiles made and changed on the TV itself", () => {
 
     // Removed: the question lands the remote on the answer that keeps it, and that answer is the way back.
     await tv.getByTestId("profile-Noa").click();
+    await tv.getByTestId(`avatar-${AVATAR_IDS[7]}`).focus();
+    await tv.keyboard.press("ArrowDown"); // from the pictures to Save or Cancel, not past them to the wide Delete
+    await expect(tv.locator('[data-testid="profile-save"]:focus, [data-testid="profile-cancel"]:focus')).toHaveCount(1);
     await tv.getByTestId("profile-delete").click();
     await expect(tv.getByTestId("profile-delete-cancel")).toBeFocused();
     await tv.keyboard.press("Enter");

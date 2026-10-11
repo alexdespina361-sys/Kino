@@ -52,6 +52,8 @@ export interface Entry {
   description?: string;
   /** Where to pick up a title left unfinished. */
   startAt?: number;
+  /** The episode to pick a show up at, when it is not the one `url` names. */
+  resumeUrl?: string;
   /** 0..1, the thin bar across the picture of a title left unfinished. */
   progress?: number;
   /** A line under the title (the episode and what is left; how many titles a category has). */
@@ -123,6 +125,25 @@ export function entryOfProgress(card: LiveProgress): Entry {
   };
 }
 
+/** Whether two links are one title's: a show's episodes differ in the query only. */
+function sameTitle(a: string, b: string): boolean {
+  try {
+    const first = new URL(a);
+    const second = new URL(b);
+    return first.origin === second.origin && first.pathname === second.pathname;
+  } catch {
+    return false;
+  }
+}
+
+/** A title part way through is picked up from wherever it is shown, not only from Continue watching: the entry as it plays from there. */
+export function resumable(entry: Entry, progress: readonly LiveProgress[]): Entry {
+  if (entry.startAt !== undefined || entry.opens || !entry.url) return entry;
+  const card = progress.find((candidate) => sameTitle(candidate.url, entry.url));
+  const startAt = card && resumeAt(card);
+  return card && startAt !== undefined ? { ...entry, startAt, resumeUrl: card.url } : entry;
+}
+
 export const entryOfSaved = (card: LiveListItem): Entry => ({
   id: card.key,
   title: card.title,
@@ -133,10 +154,13 @@ export const entryOfSaved = (card: LiveListItem): Entry => ({
   ...(card.description ? { description: card.description } : {}),
 });
 
-const categoryEntry = (row: LibraryRow): Entry => {
+/** Where a row's titles come from, said only when the library has more than one source (with one, every title would carry the same word). */
+const sourceOf = (rows: readonly LibraryRow[], row: LibraryRow): { source?: string } => (row.source && new Set(rows.map((each) => each.source)).size > 1 ? { source: row.source } : {});
+
+const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[]): Entry => {
   const first = row.items[0];
   const picture = first?.backdrop ?? first?.image;
-  return { id: row.id, title: row.title, url: "", opens: { kind: "category", rowId: row.id }, source: row.source, note: t("tv.titles", { count: row.items.length }), ...(picture ? { image: picture } : {}) };
+  return { id: row.id, title: row.title, url: "", opens: { kind: "category", rowId: row.id }, ...sourceOf(rows, row), note: t("tv.titles", { count: row.items.length }), ...(picture ? { image: picture } : {}) };
 };
 
 /** A card of a show has an episode; a film's has none. */
@@ -149,7 +173,7 @@ const CATEGORIES_AFTER = 3;
 const CATEGORY_TILES = 12;
 
 function categoriesRow(rows: readonly LibraryRow[], of: LibraryKind | undefined): HomeRow {
-  const entries = rows.slice(0, CATEGORY_TILES).map(categoryEntry);
+  const entries = rows.slice(0, CATEGORY_TILES).map((row) => categoryEntry(row, rows));
   if (rows.length > CATEGORY_TILES) entries.push({ id: "all-categories", title: t("tv.allCategories"), url: "", opens: { kind: "categories", ...(of ? { of } : {}) }, note: t("tv.titles", { count: rows.length }) });
   return { id: "categories", layout: "categories", title: t("tv.byCategory"), entries };
 }
@@ -175,7 +199,7 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
 
   const library = kind ? data.rows.filter((row) => row.kind === kind) : data.rows;
   library.forEach((row, index) => {
-    out.push({ id: row.id, layout: index === 0 ? "ranked" : "wide", title: row.title, source: row.source, entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem) });
+    out.push({ id: row.id, layout: index === 0 ? "ranked" : "wide", title: row.title, ...sourceOf(data.rows, row), entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem) });
     if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, kind));
   });
   return out;
@@ -193,12 +217,12 @@ export function gridOf(view: View, data: PageData): GridPage | null {
       return { title: t("tv.history"), meta: t("tv.historyHelp"), layout: "wide", entries: data.progress.map(entryOfProgress), empty: t("tv.historyEmpty") };
     case "category": {
       const row = data.rows.find((candidate) => candidate.id === view.rowId);
-      return row ? { title: row.title, meta: `${t("tv.titles", { count: row.items.length })} · ${row.source}`, layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
+      return row ? { title: row.title, meta: [t("tv.titles", { count: row.items.length }), sourceOf(data.rows, row).source].filter(Boolean).join(" · "), layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
     }
     case "categories": {
       const rows = data.rows.filter((row) => !view.of || row.kind === view.of);
       const title = view.of === "movie" ? t("tv.movieCategories") : view.of === "series" ? t("tv.seriesCategories") : t("tv.allCategories");
-      return { title, meta: "", layout: "categories", entries: rows.map(categoryEntry), empty: "" };
+      return { title, meta: "", layout: "categories", entries: rows.map((row) => categoryEntry(row, data.rows)), empty: "" };
     }
     default:
       return null;

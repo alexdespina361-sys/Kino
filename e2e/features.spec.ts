@@ -265,6 +265,65 @@ test.describe("the TV player", () => {
     phone.close();
   });
 
+  test("Down brings back controls that have faded and lands on Play; the arrows keep to the bar and never wrap, and the bar waits for whoever is choosing", async ({ browser, baseURL }) => {
+    test.setTimeout(45_000);
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
+
+    await tv.keyboard.press("ArrowDown"); // the buttons were not there to be focused: Down brings them back, and lands on the first
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await expect(tv.getByTestId("tv-play-btn")).toBeFocused();
+
+    // One row of buttons: nothing before the first, nothing under the row, nothing after the last.
+    await tv.keyboard.press("ArrowLeft");
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-play-btn")).toBeFocused();
+    for (let i = 0; i < 12; i++) await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("tv-stop-btn")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("tv-stop-btn")).toBeFocused();
+
+    // The remote resting on a button gets longer than the viewer who is only watching (that is 2.5 seconds); then the bar goes, and the focus with it.
+    await tv.waitForTimeout(3500);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
+    await expect(tv.getByTestId("tv-stop-btn")).not.toBeFocused();
+    phone.close();
+  });
+
+  test("Back from a menu returns to the button that opened it, and the subtitle style is a page of the audio and subtitles menu", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" }, subtitles: [{ id: "en", label: "English", lang: "en", url: "/fixtures/sample.vtt" }] } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    const modal = tv.getByTestId("audio-subtitles-modal");
+    const subtitles = tv.getByTestId("tv-audio-sub-btn");
+
+    await tv.keyboard.press("ArrowDown");
+    for (let i = 0; i < 8 && !(await subtitles.evaluate((el) => el === document.activeElement)); i++) await tv.keyboard.press("ArrowRight");
+    await expect(subtitles).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(modal).toHaveAttribute("data-kind", "tracks");
+    await tv.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
+    await expect(subtitles).toBeFocused(); // the focus was not lost with the menu
+
+    await tv.keyboard.press("Enter");
+    await tv.getByRole("option", { name: "Subtitle style…" }).click();
+    await expect(modal).toHaveAttribute("data-kind", "captions");
+    await tv.keyboard.press("Escape");
+    await expect(modal).toHaveAttribute("data-kind", "tracks"); // one page back, not out of the menu
+    await expect(tv.getByRole("option", { name: "Subtitle style…" })).toBeFocused(); // on the entry it came from
+    await tv.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
+    await expect(subtitles).toBeFocused();
+    phone.close();
+  });
+
   test("the controls fade away while playing, stay while paused, and the big play button works", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
@@ -695,6 +754,31 @@ test.describe("sources", () => {
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "error", { timeout: 15_000 });
     await tv.waitForTimeout(1500);
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "error"); // still, not trying again and again
+    await expect(tv.getByTestId("tv-error")).toBeVisible(); // a card with the way on, in place of controls that are of no use
+    await expect(tv.getByTestId("tv-play-btn")).toHaveCount(0);
+    await expect(tv.getByTestId("error-retry")).toBeFocused(); // so OK is all it takes to try again
+    phone.close();
+  });
+
+  test("on the card of a video that would not play, OK tries again and Back leaves for the library", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    let broken = true;
+    await tv.route("**/fixtures/flaky.mp4", (route) => (broken ? route.fulfill({ status: 404, body: "gone" }) : route.continue({ url: `${baseURL}/fixtures/sample.mp4` })));
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/flaky.mp4" }]) });
+    await expect(tv.getByTestId("tv-error")).toBeVisible({ timeout: 15_000 });
+
+    broken = false; // a bad moment, over
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-error")).toHaveCount(0);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", /playing|paused/, { timeout: 15_000 });
+
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/nope.mp4" }]) });
+    await expect(tv.getByTestId("tv-error")).toBeVisible({ timeout: 15_000 });
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
+    await expect.poll(() => phone.states.at(-1)?.state).toBe("idle"); // the phone is not left looking at a video that is not there
     phone.close();
   });
 
@@ -1042,6 +1126,12 @@ test.describe("watching together", () => {
     await expect(leader.getByTestId("tv-play-btn")).toHaveCount(1);
     await expect(follower.getByTestId("tv-play-btn")).toHaveCount(0); // no player buttons on the follower
 
+    // The bar is at the top of the screen, and Up is as good a way onto it as Down; and it says when the host has stopped the picture.
+    await follower.keyboard.press("ArrowUp");
+    await expect(follower.getByTestId("tv-mute-btn")).toBeFocused();
+    await phone.getByTestId("pause").click();
+    await expect(follower.getByTestId("tv-follow-bar")).toContainText(en["hud.paused"]);
+
     await phone.getByTestId("stop").click();
     await expect(tvRoot(leader)).toHaveAttribute("data-state", "idle");
     await expect(tvRoot(follower)).toHaveAttribute("data-state", "idle");
@@ -1085,8 +1175,8 @@ test.describe("watching together", () => {
     await phone.getByTestId("url-input").fill(sample(baseURL!));
     await phone.getByTestId("play-url").click();
     await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
-    await follower.keyboard.press("ArrowDown"); // wakes the overlay
-    await follower.keyboard.press("ArrowDown"); // onto the first button of the bar (Mute)
+    await follower.keyboard.press("ArrowDown"); // wakes the bar and lands on its first button (Mute), even with the bar faded away
+    await expect(follower.getByTestId("tv-mute-btn")).toBeFocused();
     for (let i = 0; i < 4 && !(await follower.getByTestId("tv-leave").evaluate((el) => el === document.activeElement)); i++) {
       await follower.keyboard.press("ArrowRight");
     }
@@ -1177,6 +1267,7 @@ test.describe("a watch party started on a TV", () => {
     await expect(host.getByTestId("tv-party-panel")).toBeVisible();
     await host.getByTestId("tv-party-start").click();
     await expect(host.getByTestId("tv-party-code")).toBeVisible();
+    await expect(host.getByTestId("tv-party-done")).toBeFocused(); // never on the button that ends the party: OK on a panel that has just changed must not do that
     const code = await codeOf(host);
 
     const guest = await screen(browser, baseURL!);

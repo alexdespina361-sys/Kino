@@ -263,10 +263,11 @@ export function PartyPanel(p: PanelProps) {
   const t = useT();
   const host = p.party?.role === "host";
 
-  // What was focused may be gone (Start becomes the code, a guest left): land on the first thing that is there.
+  // What was focused may be gone (Start becomes the code, a guest left): land on Done, or on the first thing that is there.
+  // Never on a button that ends the party or sends somebody away: OK on a panel that has only just opened must not do that.
   useEffect(() => {
     const root = p.rootRef.current;
-    if (root && !root.contains(document.activeElement)) root.querySelector<HTMLElement>("[data-opt]")?.focus();
+    if (root && !root.contains(document.activeElement)) (root.querySelector<HTMLElement>("[data-autofocus]") ?? root.querySelector<HTMLElement>("[data-opt]"))?.focus();
   });
 
   return (
@@ -310,6 +311,10 @@ export function PartyPanel(p: PanelProps) {
               <h3>{t("party.members")}</h3>
               <Members party={p.party} nav={PANEL_NAV} {...(host ? { onRemove: p.onRemove } : {})} />
               {host && p.party.guests.length === 0 && <p className="tv-hint">{t("party.waiting")}</p>}
+              <button className="tv-opt" onClick={p.onClose} data-testid="tv-party-done" data-autofocus {...PANEL_NAV}>
+                <span>{t("common.done")}</span>
+                <CheckIcon />
+              </button>
               <button className="tv-opt" onClick={host ? p.onEnd : p.onLeave} data-testid={host ? "tv-party-end" : "tv-party-leave"} {...PANEL_NAV}>
                 <span>{host ? t("party.end") : t("party.leave")}</span>
               </button>

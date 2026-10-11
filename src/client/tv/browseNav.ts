@@ -56,7 +56,7 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
   }
 
   const length = lengths[at.row] ?? 0;
-  // The keyboard's last row has two wide keys under six narrow ones, so a step there keeps to what is above or below it.
+  // The keyboard's last row has three wide keys under six narrow ones, so a step there keeps to what is above or below it.
   const into = (row: number): Pos => {
     const next = lengths[row] ?? 1;
     const col = at.zone === "keys" ? Math.floor(((at.col + 0.5) * next) / Math.max(1, length)) : at.col;

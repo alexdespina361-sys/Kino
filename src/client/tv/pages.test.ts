@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress } from "../../shared";
 import { t } from "../i18n";
-import { freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, rowsOfPage, shownList, viewKey, type PageData } from "./pages";
+import { freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3): LibraryRow => ({
@@ -169,6 +169,18 @@ describe("gridOf", () => {
     expect(gridOf({ kind: "category", rowId: "gone" }, data({ rows: library }))).toBeNull();
   });
 
+  it("says which source a row is from only when the library has more than one", () => {
+    const one = data({ rows: library });
+    expect(rowsOfPage("home", one).every((each) => each.source === undefined)).toBe(true);
+    expect(gridOf({ kind: "category", rowId: "m1" }, one)!.meta).toBe(t("tv.titles", { count: 3 }));
+    expect(gridOf({ kind: "categories" }, one)!.entries.every((each) => each.source === undefined)).toBe(true);
+
+    const two = data({ rows: [...library.slice(0, 5), { ...library[5]!, source: "Archive" }] });
+    expect(rowsOfPage("home", two).find((each) => each.id === "s3")?.source).toBe("Archive");
+    expect(gridOf({ kind: "category", rowId: "s3" }, two)!.meta).toBe(`${t("tv.titles", { count: 3 })} · Archive`);
+    expect(gridOf({ kind: "categories" }, two)!.entries.map((each) => each.source)).toEqual(["Test", "Test", "Test", "Test", "Test", "Archive"]);
+  });
+
   it("lists the categories, all of them or those of one kind", () => {
     expect(gridOf({ kind: "categories" }, data({ rows: library }))!.entries).toHaveLength(6);
     const movies = gridOf({ kind: "categories", of: "movie" }, data({ rows: library }))!;
@@ -185,6 +197,36 @@ describe("gridOf", () => {
   it("is nothing for the pages that are not one grid", () => {
     expect(gridOf({ kind: "home" }, data())).toBeNull();
     expect(gridOf({ kind: "search" }, data())).toBeNull();
+  });
+});
+
+describe("resumable", () => {
+  const started = card("film", { url: "https://x.example/watch/7", position: 300, duration: 1000 });
+  const episode = card("show:Dark", { url: "https://x.example/watch/9?s=1&e=3", position: 200, duration: 600 });
+
+  it("picks a title up where it was left, wherever it is shown", () => {
+    const found = resumable({ id: "m", title: "Film", url: "https://x.example/watch/7" }, [started]);
+    expect(found.startAt).toBe(300);
+    expect(found.resumeUrl).toBe("https://x.example/watch/7");
+  });
+
+  it("picks a show up at the episode it was left on, though the title's own link is the first one", () => {
+    const found = resumable({ id: "d", title: "Dark", url: "https://x.example/watch/9?s=1&e=1" }, [started, episode]);
+    expect(found.startAt).toBe(200);
+    expect(found.resumeUrl).toBe("https://x.example/watch/9?s=1&e=3");
+    expect(found.url).toBe("https://x.example/watch/9?s=1&e=1");
+  });
+
+  it("leaves alone what was not started, what was finished, another title, a category, and a card that already resumes", () => {
+    const plain = { id: "m", title: "Film", url: "https://x.example/watch/7" };
+    expect(resumable(plain, [])).toBe(plain);
+    expect(resumable(plain, [card("a", { url: plain.url, position: 2 })])).toBe(plain); // barely begun
+    expect(resumable(plain, [card("a", { url: plain.url, done: true })])).toBe(plain);
+    expect(resumable(plain, [episode])).toBe(plain);
+    const category = { id: "c", title: "C", url: "", opens: { kind: "home" } as const };
+    expect(resumable(category, [started])).toBe(category);
+    const resuming = { ...plain, startAt: 50 };
+    expect(resumable(resuming, [started])).toBe(resuming);
   });
 });
 

@@ -25,11 +25,12 @@ import { FullscreenIcon, MutedIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from 
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
-import { noticeText, socketError } from "../shared/words";
+import { friendlyError, noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
 import { PlayerEngine } from "./engine";
-import { EndCard, FollowStatus, hasTracks, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
+import { pickInRows } from "./dpad";
+import { EndCard, ErrorCard, FollowStatus, hasTracks, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
 import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
 import { TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, SKIP_SECONDS } from "./keys";
@@ -51,6 +52,8 @@ import "./tv.css";
 const DEVICE_KEY = "tv.deviceId";
 /** The overlay fades out this long after the last key press, but only while a video is actually playing. */
 const HUD_HIDE_MS = 2500;
+/** ...and this much longer while the remote rests on one of its buttons. */
+const HUD_HOLD_MS = 5000;
 /** A lookup that never reports back (lost message, dead server) must not leave the TV spinning forever. */
 const RESOLVING_TIMEOUT_MS = 45_000;
 /** The video follows the end of a lookup straight away; if none has by then, the lookup failed. */
@@ -119,6 +122,13 @@ export function Tv() {
 
   // Audio / subtitles / speed / quality / episodes picker, and the watch party over a film
   const [menu, setMenu] = useState<MenuKind | "party" | null>(null);
+  /** The control that opened the menu, which gets the focus back when it closes, so Back never leaves the remote with nothing selected. */
+  const openerRef = useRef<HTMLElement | null>(null);
+  const openMenu = (kind: MenuKind | "party") => {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && controlsRef.current?.contains(focused)) openerRef.current = focused;
+    setMenu(kind);
+  };
   /** What the TV shows while nothing plays: the library, the page for connecting a phone, or the watch party. */
   const [screen, setScreen] = useState<"library" | "connect" | "party">("library");
   const screenRef = useRef(screen);
@@ -311,7 +321,15 @@ export function Tv() {
     setControlsVisible(true);
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
-      if (!stickyRef.current) setControlsVisible(false);
+      if (stickyRef.current) return;
+      if (controlsRef.current?.contains(document.activeElement)) {
+        // The remote is resting on a button: whoever is choosing gets a little longer than whoever is just watching.
+        hideTimerRef.current = setTimeout(() => {
+          if (!stickyRef.current) setControlsVisible(false);
+        }, HUD_HOLD_MS);
+      } else {
+        setControlsVisible(false);
+      }
     }, HUD_HIDE_MS);
   };
 
@@ -325,11 +343,31 @@ export function Tv() {
   }, [player.state, menu]);
 
   // A hidden overlay must not keep keyboard focus, or OK would press a button nobody can see.
+  // Down on a hidden one wakes it and lands on its first button, which can only be focused once it shows (see `focusControls`).
+  const focusPendingRef = useRef(false);
+  /** The last step the arrows made between rows of the controls, so a step back lands where it came from. */
+  const lastStepRef = useRef<{ from: HTMLElement; to: HTMLElement; action: "up" | "down" } | null>(null);
   useEffect(() => {
     if (!controlsVisible && controlsRef.current?.contains(document.activeElement)) {
       (document.activeElement as HTMLElement).blur();
     }
+    if (controlsVisible && focusPendingRef.current) {
+      focusPendingRef.current = false;
+      controlsRef.current?.querySelector<HTMLElement>("button")?.focus();
+    }
   }, [controlsVisible]);
+  const focusControls = () => {
+    if (visibleRef.current) controlsRef.current?.querySelector<HTMLElement>("button")?.focus();
+    else focusPendingRef.current = true;
+  };
+
+  // A closed menu hands the focus back to the button that opened it (if that is still there to take it).
+  useEffect(() => {
+    if (menu !== null) return;
+    const opener = openerRef.current;
+    openerRef.current = null;
+    if (opener?.isConnected && controlsRef.current?.contains(opener)) opener.focus();
+  }, [menu]);
 
   useEffect(
     () => () => {
@@ -678,17 +716,20 @@ export function Tv() {
   }, [fsPrompt]);
 
   // Up Next Countdown interval. A profile that plays the next episode only on request gets the card without a countdown.
+  // The count waits while the picture is paused or filling: it is the end of the episode that it counts down to.
+  const countingDown = player.state === "playing" || ended;
   useEffect(() => {
     if (upNextCountdown === null || !autoplay) return;
     if (upNextCountdown <= 0) {
       triggerNextEpisode();
       return;
     }
+    if (!countingDown) return;
     const timer = setTimeout(() => {
       setUpNextCountdown((prev) => (prev !== null ? prev - 1 : null));
     }, 1000);
     return () => clearTimeout(timer);
-  }, [upNextCountdown, autoplay]);
+  }, [upNextCountdown, autoplay, countingDown]);
 
   // Check near end of video (last 15s) to trigger Netflix up next card
   useEffect(() => {
@@ -701,9 +742,17 @@ export function Tv() {
       !upNextDismissed &&
       upNextCountdown === null
     ) {
-      setUpNextCountdown(UP_NEXT_SECONDS);
+      setUpNextCountdown(Math.min(UP_NEXT_SECONDS, Math.max(1, Math.ceil(player.duration - player.currentTime)))); // never more than is left
     }
   }, [player.currentTime, player.duration, player.state, currentMedia?.series?.next, following, upNextDismissed, upNextCountdown]);
+
+  // Winding back to before its time takes the card away (it comes again on the way to the end), and turning it down is for this pass
+  // only: wind back to well before its time (or watch again) and it comes again.
+  useEffect(() => {
+    if (player.duration <= 0 || ended) return;
+    if (upNextCountdown !== null && player.currentTime < player.duration - UP_NEXT_SECONDS - 1) setUpNextCountdown(null);
+    if (upNextDismissed && player.currentTime < player.duration - UP_NEXT_SECONDS - 5) setUpNextDismissed(false);
+  }, [player.currentTime, player.duration, upNextDismissed, upNextCountdown, ended]);
 
   // Ask for a fresh code when the displayed one expires
   useEffect(() => {
@@ -824,6 +873,22 @@ export function Tv() {
     engineRef.current?.play();
   };
 
+  /** Every source of the video has failed (a failing one hands over to the next, which is not yet a failure): the controls are of no use, so a card with a way on takes their place. */
+  const untriedSource = currentMedia ? sourcesOf(currentMedia).some((_, index) => !triedSourcesRef.current.has(index)) : false;
+  const failed = player.state === "error" && !isBlocked(player) && !following && !resolving && !untriedSource;
+  useEffect(() => {
+    if (failed) setMenu(null);
+  }, [failed]);
+  /** From the first source again, as the first time: a failure is sometimes only a bad moment. */
+  const retryPlayback = () => {
+    const source = currentMedia ? sourcesOf(currentMedia)[0] : undefined;
+    if (!source) return;
+    resetApplied();
+    resetSources();
+    void engineRef.current?.load(source.stream.url, source.stream.type, source.subtitles);
+    engineRef.current?.play();
+  };
+
   // Arrow keys move along the buttons once one has focus; otherwise they seek. OK presses the focused button.
   useEffect(() => {
     if (!unlocked) return;
@@ -850,15 +915,15 @@ export function Tv() {
         return;
       }
 
-      if (finished) {
-        // The end card walks its own buttons and leaves on Back (see EndCard); full screen is still the page's.
+      if (finished || failed) {
+        // The end card and the error card walk their own buttons and leave on Back (see EndCard, ErrorCard); full screen is still the page's.
         if (action === "fullscreen") toggleFullscreen();
         return;
       }
 
       if (menu) {
         // The picker owns the keys; OK presses the focused option itself.
-        if (action === "back") setMenu(null);
+        if (action === "back") setMenu(menu === "captions" ? "tracks" : null); // the caption style is a page of the audio and subtitles menu
         else if (action === "up" || action === "down" || action === "left" || action === "right") moveInMenu(menuRef.current, action);
         else return;
         event.preventDefault();
@@ -884,14 +949,22 @@ export function Tv() {
       const row = controlsRef.current;
       const focused = document.activeElement as HTMLElement | null;
       if (row && focused && row.contains(focused)) {
-        const buttons = [...row.querySelectorAll<HTMLElement>("button:not(:disabled)")];
-        if (action === "left" || action === "right") {
-          const next = buttons[Math.max(0, Math.min(buttons.length - 1, buttons.indexOf(focused) + (action === "right" ? 1 : -1)))];
-          next?.focus();
+        if (action === "left" || action === "right" || action === "up" || action === "down") {
+          // The arrows walk the controls the way they are laid out: along a row, and between rows. Past the edge nothing moves,
+          // except out of the controls, which is the way the bar lies (up from the player's, down from a follower's at the top).
+          const buttons = [...row.querySelectorAll<HTMLElement>("button:not(:disabled)")];
+          let next = buttons[pickInRows(buttons.map((button) => button.getBoundingClientRect()), buttons.indexOf(focused), action)];
+          const vertical = action === "up" || action === "down";
+          // Down and straight back Up (or the other way) returns to the button it left, not to the one nearest above it.
+          const left = lastStepRef.current;
+          if (next && vertical && left && left.to === focused && left.action !== action && buttons.includes(left.from)) next = left.from;
+          lastStepRef.current = next && vertical ? { from: focused, to: next, action } : null;
+          if (next) next.focus();
+          else if (action === (following ? "down" : "up")) focused.blur();
           event.preventDefault();
           return;
         }
-        if (action === "up" || action === "back") {
+        if (action === "back") {
           focused.blur();
           event.preventDefault();
           return;
@@ -903,7 +976,7 @@ export function Tv() {
         // Watching along: no playback keys (the host has them), just the buttons on the bar (Down, then OK), subtitles and full screen.
         // The one exception is the press the browser wants before it plays: OK is that, and starts the video.
         if (isBlocked(player) && (action === "select" || action === "playpause" || action === "play")) engine.play();
-        else if (action === "down" && overlayWasVisible) controlsRef.current?.querySelector<HTMLElement>("button")?.focus();
+        else if (action === "up" || action === "down") controlsRef.current?.querySelector<HTMLElement>("button")?.focus(); // the bar is at the top, yet Down was always the way in
         else if (action === "captions") cycleSubtitles();
         else if (action === "mute") toggleMute();
         else if (action === "fullscreen") toggleFullscreen();
@@ -932,8 +1005,7 @@ export function Tv() {
           skip(SKIP_SECONDS);
           break;
         case "down":
-          // First press only wakes the overlay; the next one steps onto its buttons.
-          if (overlayWasVisible) controlsRef.current?.querySelector<HTMLElement>("button")?.focus();
+          focusControls(); // wakes the overlay too, and lands on its first button
           break;
         case "next":
           if (currentMedia?.series?.next) triggerNextEpisode();
@@ -965,7 +1037,7 @@ export function Tv() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, accountPage, stuck, finished]);
+  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, accountPage, stuck, finished, failed]);
 
   // The welcome belongs to the library: whatever takes the screen over (a phone sent something to play, a party, a page) ends it.
   const libraryShows = player.state === "idle" && !accountPage && !resolving && !following && screen === "library";
@@ -1076,16 +1148,19 @@ export function Tv() {
 
       {unlocked && showVideo && following && (
         <div className="tv-follow-bar" data-testid="tv-follow-bar" ref={controlsRef}>
-          <span>{t("tv.following", { name: following })}</span>
+          <span>
+            {t("tv.following", { name: following })}
+            {player.state === "paused" && !(player.duration > 0 && player.currentTime >= player.duration - 1.5) && ` · ${t("hud.paused")}`}
+          </span>
           {hasTracks(player) && (
-            <button onClick={() => setMenu("tracks")} data-testid="tv-audio-sub-btn">
+            <button onClick={() => openMenu("tracks")} data-testid="tv-audio-sub-btn">
               <SubtitlesIcon /> {t("player.audioSubtitles")}
             </button>
           )}
           <button onClick={toggleMute} aria-pressed={muted} data-testid="tv-mute-btn">
             {muted ? <MutedIcon /> : <VolumeIcon />} {t(muted ? "hud.unmute" : "hud.mute")}
           </button>
-          <button onClick={() => setMenu("party")} data-testid="tv-party-btn">
+          <button onClick={() => openMenu("party")} data-testid="tv-party-btn">
             <UsersIcon /> {party ? t("party.size", { count: party.guests.length + 1 }) : t("party.rail")}
           </button>
           {canFullscreen && (
@@ -1115,7 +1190,19 @@ export function Tv() {
         />
       )}
 
-      {unlocked && showVideo && !following && !finished && (
+      {unlocked && showVideo && failed && (
+        <ErrorCard
+          title={mainTitle}
+          message={friendlyError(player.error)}
+          onRetry={retryPlayback}
+          onLibrary={() => {
+            stopPlayback();
+            setScreen("library");
+          }}
+        />
+      )}
+
+      {unlocked && showVideo && !following && !finished && !failed && (
         <Hud
           visible={controlsVisible && menu !== "captions"}
           player={player}
@@ -1144,9 +1231,9 @@ export function Tv() {
           onNext={triggerNextEpisode}
           onPrevious={goToPrevious}
           onDismissUpNext={dismissUpNext}
-          onOpenMenu={setMenu}
+          onOpenMenu={openMenu}
           partySize={party ? party.guests.length + 1 : 0}
-          onParty={() => setMenu("party")}
+          onParty={() => openMenu("party")}
           muted={muted}
           onMute={toggleMute}
           onFullscreen={toggleFullscreen}
