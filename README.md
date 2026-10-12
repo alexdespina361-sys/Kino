@@ -82,8 +82,20 @@ pnpm build && pnpm start     # http://localhost:8787
   Alien", from a minute in, the last two weeks). Each of these has a switch of its own: *Friends can see my lists*, *…my ratings*, *Tell friends what I watch*,
   *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*. They live in the
   profile's settings, so the server, not the screen, decides what a friend is shown or may send, from the other profile's synced settings; with friends off nothing is
-  shared, sent or received, and the friends are kept for when it is turned on again. What friends sent shows as a row, a dot (phone) or a number on the menu (TV), and a
-  line when it arrives; either friend can remove the other (the button asks twice). Friends: `/api/profiles/:id/friends…`.
+  shared, sent or received, and the friends are kept for when it is turned on again (turning it on again **resumes sharing with them at once**, so a friend you
+  mean to be rid of is removed first: with friends off, *Settings → Friends* on the phone lists the friends you still have, each with a button that removes them,
+  and nothing has to be turned on for it). What friends sent shows as a row, a dot (phone) or a number on the menu (TV), and a
+  line when it arrives; either friend can remove the other (the button asks twice), which also takes back the codes the one who removed had out, so that a code the
+  other was shown cannot bring them back. Friends: `/api/profiles/:id/friends…`.
+  Things to know: *Friends can see my ratings* does nothing, and is not shown, while ratings themselves are switched off (they stay kept, and are seen by nobody).
+  What friends send is made fit to show (no characters that turn text around or hide in it; a friend's picture is shown only if it is the address of some other
+  web site, never a path or an address on this site), and an inbox holds the newest 100 things, at most 20 from one friend; the same title sent again while it is
+  unread is not announced again. **Pictures are loaded by the browser of whoever looks, from wherever the sender says**, so the site that serves one can tell that
+  somebody opened it, as with any picture on the web. **What you watch, when you tell it, includes the address of the video** (a link pasted on the phone is the
+  address a friend would open): leave *Tell friends what I watch* off if you play links that carry a secret. The first profile of an account is named after
+  its username, and a friend (or whoever is shown one of your codes) sees that name: with an empty or one-letter password, rename it. A TV left open from before a
+  version that adds a setting needs a reload once (an older page does not know the new setting and cannot read the account's answer; newer pages leave such
+  settings out instead).
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.

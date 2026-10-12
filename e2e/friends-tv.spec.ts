@@ -313,6 +313,28 @@ test.describe("what is shared", () => {
     await ann.page.keyboard.press("Escape");
     await expect(tile(ann.page, "Friends settings")).toBeFocused();
   });
+
+  test("the switch that shares ratings is not there while ratings are turned off, and comes back with them", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    await ann.page.getByTestId("rail-settings").click();
+    await ann.page.getByTestId("tv-ratings-switch").click();
+    await expect(ann.page.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "false");
+    await ann.page.getByTestId("tv-account-back").click();
+    await openFriends(ann.page);
+    await tile(ann.page, "Friends settings").click();
+    await expect(ann.page.getByTestId("tv-friends-lists")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-friends-ratings")).toHaveCount(0);
+    await ann.page.keyboard.press("Escape");
+
+    await ann.page.getByTestId("rail-settings").click();
+    await ann.page.getByTestId("tv-ratings-switch").click();
+    await expect(ann.page.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "true");
+    await ann.page.getByTestId("tv-account-back").click();
+    await openFriends(ann.page);
+    await tile(ann.page, "Friends settings").click();
+    await expect(ann.page.getByTestId("tv-friends-ratings")).toHaveAttribute("aria-checked", "true");
+  });
 });
 
 test.describe("sending things to friends from the TV", () => {
@@ -376,6 +398,15 @@ test.describe("sending things to friends from the TV", () => {
     await invitation.click();
     await expect(bob.page.getByTestId("tv-party-guest")).toBeVisible();
     await expect(ann.page.getByTestId("tv-party-member")).toHaveCount(2);
+
+    // the invitation's code was used once: leaving and then choosing to join starts on an empty number pad, and does not go back in
+    await bob.page.getByTestId("tv-disconnect").click();
+    await expect(bob.page.getByTestId("tv-party-start")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-party-member")).toHaveCount(1);
+    await bob.page.getByTestId("tv-party-join").click();
+    await expect(bob.page.getByTestId("tv-party-digits")).toBeVisible();
+    await expect(bob.page.getByTestId("tv-party-digits").locator('[data-filled="true"]')).toHaveCount(0);
+    await expect(ann.page.getByTestId("tv-party-member")).toHaveCount(1);
   });
 
   test("a friend who is not taking things is not offered, and the page says why", async ({ browser, baseURL }) => {

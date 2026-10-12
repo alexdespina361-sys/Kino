@@ -874,7 +874,10 @@ export function Tv() {
   }, [party, partyEnds, partyShown]);
 
   const startParty = () => void socketRef.current?.send({ type: "TV_PARTY_OPEN" });
-  const joinParty = (code: string) => void socketRef.current?.send({ type: "TV_PARTY_JOIN", code });
+  const joinParty = (code: string) => {
+    setPartyJoinWith(null); // (an invitation's code is used once: the next time the page asks for a code it starts empty)
+    socketRef.current?.send({ type: "TV_PARTY_JOIN", code });
+  };
   const removeFromParty = (id: string) => void socketRef.current?.send({ type: "TV_PARTY_REMOVE", id });
   const endParty = () => void socketRef.current?.send({ type: "TV_PARTY_CLOSE" });
 

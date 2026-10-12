@@ -3,6 +3,7 @@ import {
   CODE_ALPHABET,
   INBOX_KEEP_MS,
   INBOX_MAX,
+  INBOX_PER_SENDER,
   INVITE_CODE_LENGTH,
   INVITE_TTL_MS,
   MAX_FRIENDS,
@@ -78,7 +79,9 @@ export class FriendBook {
       if (doc.items.length > 0) this.inboxes.set(key.slice("inbox:".length), doc.items);
     } else if (key.startsWith("finvite:")) {
       const doc = value as Invite;
+      // (A code that ran out while the server was off is no use to anybody: its row goes, instead of staying in the store for ever.)
       if (doc.expiresAt > this.host.now()) this.invites.set(doc.code, doc);
+      else this.host.drop(key);
     }
   }
 
@@ -127,12 +130,16 @@ export class FriendBook {
     return true;
   }
 
-  /** Stop being friends, on both sides. What they had sent each other goes too. Whether they were. */
+  /**
+   * Stop being friends, on both sides: `a` is the one who ended it. What they had sent each other goes too, and so do the codes `a`
+   * still has out: one that `b` was given (or saw on a screen) would otherwise bring them straight back. Whether they were friends.
+   */
   unfriend(a: string, b: string): boolean {
     const was = this.remove(a, b);
     const back = this.remove(b, a);
     this.without(a, b);
     this.without(b, a);
+    if (was || back) for (const invite of this.invitesOf(a)) this.removeInvite(invite.code);
     return was || back;
   }
 
@@ -229,11 +236,20 @@ export class FriendBook {
     return fresh;
   }
 
-  /** Put something in an inbox. The same title from the same friend, or a newer invitation from them to a party, replaces the old one and is new again. */
+  /**
+   * Put something in an inbox. The same title from the same friend, or a newer invitation from them to a party, replaces the old one and
+   * is new again; but one that has not been looked at yet keeps its id, so that sending it over and over is not announced over and over
+   * (a screen announces what it has not seen the id of). A friend has only so many things in an inbox (the newest): they cannot fill it
+   * and push out what the others sent.
+   */
   deliver(to: string, from: string, message: Message): InboxItem {
-    const item = { ...message, id: newItemId(), at: this.host.now(), from, read: false } as InboxItem;
-    const replaced = (old: InboxItem) => old.from === from && old.kind === item.kind && (item.kind === "party" || (old.kind === "recommend" && old.url === item.url));
-    this.setInbox(to, [item, ...this.inboxOf(to).filter((old) => !replaced(old))].slice(0, INBOX_MAX));
+    const sameThing = (old: InboxItem) => old.from === from && old.kind === message.kind && (message.kind === "party" || (old.kind === "recommend" && old.url === message.url));
+    const items = this.inboxOf(to);
+    const before = items.find(sameThing);
+    const item = { ...message, id: before && !before.read ? before.id : newItemId(), at: this.host.now(), from, read: false } as InboxItem;
+    let theirs = 1; // (this one is the first of the friend's)
+    const kept = items.filter((old) => !sameThing(old) && (old.from !== from || ++theirs <= INBOX_PER_SENDER));
+    this.setInbox(to, [item, ...kept].slice(0, INBOX_MAX));
     return item;
   }
 

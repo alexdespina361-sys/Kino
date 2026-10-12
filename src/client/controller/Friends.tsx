@@ -428,10 +428,10 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
     return () => clearTimeout(timer);
   }, [sure]);
 
-  // A friend who is gone (taken off from the other side, or from another screen) leaves nothing to show.
+  // A friend who is gone (taken off from the other side, or from another screen), or friends turned off from another screen, leave nothing to show.
   useEffect(() => {
-    if (friends.state && !friend) onGone();
-  }, [friends.state, friend, onGone]);
+    if (!friends.on || (friends.state && !friend)) onGone();
+  }, [friends.on, friends.state, friend, onGone]);
 
   if (!friend) return null;
 

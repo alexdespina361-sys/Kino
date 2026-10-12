@@ -10,6 +10,7 @@ import {
   nameFromEmail,
   newerOf,
   nextAvatar,
+  plainText,
   resolveSettings,
   SETTING_SCHEMAS,
   type AvatarId,
@@ -328,10 +329,10 @@ export class AccountStore {
     return this.now();
   }
 
-  /** Who a profile is, as a friend sees them; nothing for a profile that is gone. */
+  /** Who a profile is, as a friend sees them (the name made fit to show to somebody else: see `plainText`); nothing for a profile that is gone. */
   profileCard(profileId: string): Profile | undefined {
     const profile = this.accounts.get(this.profileOwner.get(profileId) ?? "")?.profiles.find((candidate) => candidate.id === profileId);
-    return profile && { id: profile.id, name: profile.name, avatar: profile.avatar };
+    return profile && { id: profile.id, name: plainText(profile.name) || "?", avatar: profile.avatar };
   }
 
   /** The first picture nobody on this account is using, for a profile made without choosing one. */

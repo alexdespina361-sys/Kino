@@ -20,6 +20,8 @@ export const INVITE_CODE_LENGTH = 8;
 /** How many things a friend's inbox keeps (the newest) and for how long. */
 export const INBOX_MAX = 100;
 export const INBOX_KEEP_MS = 30 * 24 * 3600 * 1000;
+/** ...and how many of those can be from one friend, so that one friend cannot fill it and push out what the others sent. */
+export const INBOX_PER_SENDER = 20;
 /** A watch-party code is no use after the party, so an invitation to one is dropped after this. */
 export const PARTY_INVITE_KEEP_MS = 12 * 3600 * 1000;
 export const FRIEND_NOTE_MAX = 200;
@@ -64,13 +66,89 @@ export function friendChoices(settings: Settings): FriendChoices {
   };
 }
 
+/** Whether a profile lets its lists be looked at: friends are on, and it shares them. */
+export function sharesLists(settings: Settings): boolean {
+  const choices = friendChoices(settings);
+  return choices.friends && choices.friendsLists;
+}
+
+/**
+ * Whether a profile lets its ratings be looked at: friends are on, it shares them, and it has not turned ratings off. (Turned off,
+ * ratings show to nobody, themselves included, though what was rated stays kept: so nobody else is shown it either.)
+ */
+export function sharesRatings(settings: Settings): boolean {
+  const choices = friendChoices(settings);
+  return choices.friends && choices.friendsRatings && settings.ratings !== false;
+}
+
+/* ------------------------------ text and pictures from friends ------------------------------ */
+
+/**
+ * Words that other people read as they were typed, made fit to show: no control characters and none that turn text around or hide in it
+ * (a name that reads backwards, a line that hides another), no more than a few marks piled on one letter, and one space where there were
+ * several. (Emoji, which join with an invisible joiner, are left whole. Nothing is added or rewritten: what comes out is never longer than
+ * what went in, so a name that fitted its limit still does.)
+ */
+export function plainText(value: string): string {
+  const cleaned = value
+    .replace(/[\t-\r]/g, " ") // (line breaks and tabs read as spaces)
+    .replace(/[­ᅟᅠ⠀ㅤﾠ]/gu, "") // (a soft hyphen and the blank fillers of Hangul and Braille: nothing to see)
+    .replace(/[\p{Cc}؜​‎‏‪-‮⁠-⁯﻿]/gu, "")
+    .replace(/(\p{M}{4})\p{M}+/gu, "$1")
+    .replace(/\s+/gu, " ")
+    .trim();
+  // (Joiners and marks on their own are nothing to look at: a name or a title made only of them is no name or title.)
+  return /[\p{L}\p{N}\p{P}\p{S}]/u.test(cleaned) ? cleaned : "";
+}
+
+/**
+ * A picture that came from a friend is loaded by the browser of whoever looks, so it is shown only if it is the web address of some
+ * other site: not a path (which would be this site's own), and not an address on this site (`ownHost` is the one the look came to),
+ * which would make that browser, signed in as it is, call the site on a friend's say-so.
+ */
+export function foreignPicture(value: string | undefined, ownHost: string | undefined): string | undefined {
+  if (!value || !isHttpUrl(value)) return undefined;
+  const hostname = (host: string) => host.replace(/:\d+$/, "").toLowerCase();
+  const url = new URL(value);
+  if (isPrivateHost(url.hostname)) return undefined;
+  return ownHost && hostname(url.host) === hostname(ownHost) ? undefined : value;
+}
+
+/**
+ * A name or an address that only a private network (or this very machine) answers to: a picture from there would make the browser of
+ * whoever looks knock on the doors of its own network on a friend's say-so. (`URL` has already turned `127.1` or `0x7f.1` into the plain
+ * four numbers. A public name that points into a private network cannot be told from here.)
+ */
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.+$/, "");
+  if (host.startsWith("[") || !host.includes(".")) return true; // (an IPv6 address; a name with no dot: localhost, a router, a NAS)
+  if (/\.(local|localhost|internal|lan|home|corp|intranet|private)$/.test(host) || host.endsWith(".home.arpa")) return true;
+  const quad = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
+  if (!quad) return false;
+  const [a, b, c] = [Number(quad[1]), Number(quad[2]), Number(quad[3])] as [number, number, number];
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    a >= 224 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && (b === 168 || (b === 0 && (c === 0 || c === 2)))) ||
+    (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
+    (a === 203 && b === 0 && c === 113)
+  );
+}
+
 /* ------------------------------ what travels ------------------------------ */
 
 const IdSchema = z.string().min(1).max(60);
 const PictureSchema = z.string().max(2048);
 const LinkSchema = z.string().max(2048).refine(isHttpUrl, "invalid_request");
-/** A picture sent by a friend is shown on the screen of another: a web address, or one of this site's own (the library keeps some of its posters here). */
-const SentPictureSchema = PictureSchema.refine((value) => isHttpUrl(value) || (value.startsWith("/") && !value.startsWith("//")), "invalid_request");
+/** A picture sent by a friend is shown on the screen of another: a web address, never a path (see `foreignPicture`). */
+const SentPictureSchema = LinkSchema;
+/** Text that is shown to others: cleaned (see `plainText`) before it is measured. */
+const shownText = (min: number, max: number) => z.string().max(1000).transform(plainText).pipe(z.string().min(min).max(max));
 
 /** A friend, as the profile that has them sees them: who they are, and what they allow right now (all false while they have friends turned off). */
 export const FriendSchema = z.object({
@@ -94,14 +172,14 @@ export type Friend = z.infer<typeof FriendSchema>;
 /** A title a friend wants this profile to see. */
 export const RecommendationSchema = z.object({
   kind: z.literal("recommend"),
-  title: z.string().trim().min(1).max(300),
+  title: shownText(1, 300),
   url: LinkSchema,
   image: SentPictureSchema.optional(),
   backdrop: SentPictureSchema.optional(),
   year: z.number().int().min(1800).max(2200).optional(),
   type: z.enum(["movie", "series"]).optional(),
   /** Why, in a few words. */
-  note: z.string().trim().max(FRIEND_NOTE_MAX).optional(),
+  note: shownText(0, FRIEND_NOTE_MAX).optional(),
 });
 /** The six-digit code of a watch party that is open now (see `partyLink`), and when it stops being one. */
 export const PartyInviteSchema = z.object({
@@ -152,6 +230,13 @@ export const FriendsStateSchema = z.object({
   invites: z.array(OpenInviteSchema),
 });
 export type FriendsState = z.infer<typeof FriendsStateSchema>;
+
+/** A friend as a profile that has friends turned off sees them: who they are and since when, nothing of what they have chosen (that is for a profile that has friends on). */
+export const KeptFriendSchema = FriendSchema.pick({ id: true, name: true, avatar: true, since: true });
+export type KeptFriend = z.infer<typeof KeptFriendSchema>;
+/** The friends of a profile that has friends turned off: only who they are, so that one can be taken off without turning anything on. */
+export const KeptFriendsSchema = z.object({ friends: z.array(KeptFriendSchema) });
+export type KeptFriends = z.infer<typeof KeptFriendsSchema>;
 
 /** Who is behind a code, before it is used. */
 export const InviteViewSchema = z.object({ code: z.string().max(20), from: z.object({ name: ProfileNameSchema, avatar: AvatarIdSchema }) });

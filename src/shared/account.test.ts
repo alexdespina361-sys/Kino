@@ -20,6 +20,7 @@ import {
   resolveSettings,
   savedKeys,
   SyncRequestSchema,
+  SyncResponseSchema,
   titleLink,
   watchedKey,
   type ListNameItem,
@@ -226,5 +227,27 @@ describe("what people type", () => {
 
   it("accepts a sync with nothing to send", () => {
     expect(SyncRequestSchema.parse({ since: 0 })).toEqual({ since: 0, progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [] });
+  });
+
+  it("reads an answer from a newer server whole: a setting this build has never heard of is left out, not a reason to refuse everything", () => {
+    const answer = {
+      rev: 7,
+      progress: [],
+      watched: [],
+      list: [],
+      settings: [
+        { key: "lang", at: 1, value: "ro" },
+        { key: "somethingNewer", at: 2, value: true },
+        { key: "alsoNewer", at: 3, deleted: true },
+        { key: "friends", at: 4, value: true },
+        "not even an item",
+      ],
+    };
+    expect(SyncResponseSchema.parse(answer).settings).toEqual([
+      { key: "lang", at: 1, value: "ro" },
+      { key: "friends", at: 4, value: true },
+    ]);
+    // (What a screen sends is still held to the settings it knows.)
+    expect(SyncRequestSchema.safeParse({ since: 0, settings: [{ key: "somethingNewer", at: 2, value: true }] }).success).toBe(false);
   });
 });

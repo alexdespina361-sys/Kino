@@ -648,13 +648,13 @@ export const ro: Dictionary = {
   "rating.finishedOn": "Terminat pe {date}",
   "rating.lastWatchedOn": "Văzut ultima dată pe {date}",
   "rating.settings": "Note",
-  "rating.settingsHelp": "Dă filmelor, serialelor și sezoanelor o notă din 10, cu o notiță dacă vrei. Dezactivate, notele sunt ascunse, dar rămân păstrate.",
+  "rating.settingsHelp": "Dă filmelor, serialelor și sezoanelor o notă din 10, cu o notiță dacă vrei. Dezactivate, notele sunt ascunse (și față de prieteni), dar rămân păstrate.",
   "rating.settingsSwitch": "Notez ce urmăresc",
 
   /* prieteni: își văd listele și notele, își trimit titluri și invitații, află ce se uită celălalt */
   "friends.title": "Prieteni",
   "friends.settings": "Prieteni",
-  "friends.settingsHelp": "Vă vedeți listele și notele, vă trimiteți titluri și invitații la vizionări comune și aflați ce se uită celălalt. Totul e opțional, iar fiecare alege ce împărtășește.",
+  "friends.settingsHelp": "Vă vedeți listele și notele, vă trimiteți titluri și invitații la vizionări comune și aflați ce se uită celălalt. Prietenii văd numele și poza acestui profil. Totul e opțional, iar fiecare alege ce împărtășește.",
   "friends.signInFirst": "Prietenii aparțin unui cont: conectează-te ca să adaugi.",
   "friends.switch": "Folosesc prietenii",
   "friends.switchLists": "Prietenii îmi pot vedea listele",
@@ -703,6 +703,7 @@ export const ro: Dictionary = {
   "friends.remove": "Șterge din prieteni",
   "friends.removeAgain": "Apasă din nou ca să ștergi din prieteni pe {name}",
   "friends.removed": "{name} nu mai e printre prietenii tăi",
+  "friends.keptHelp": "Cât timp prietenii sunt dezactivați, ei nu văd nimic de la tine și nu îți ajunge nimic. Rămân prietenii tăi până îi ștergi:",
   "friends.line.watching": "Se uită la {title}",
   "friends.line.watched": "S-a uitat la {title}",
   "friends.line.finished": "A terminat {title}",

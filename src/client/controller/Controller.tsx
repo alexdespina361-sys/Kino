@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   IDLE_STATE,
   describeChange,
@@ -116,8 +116,9 @@ export function Controller() {
   const [approveCode, setApproveCode] = useState<string | null>(launchRef.current.link ?? null);
   /** A friend's code, from the link or the QR code of their invitation: asked about until it is used or sent away. */
   const [friendCode, setFriendCode] = useState<string | null>(launchRef.current.friend ?? null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     // A sign-in code is for one use: it does not stay in the address (a reload or a bookmark would offer it again). Nor does a friend's.
+    // (Before the sheet that asks about it adds its own step to the history: that one would be changed, and the first would keep the code.)
     if (launchRef.current.link || launchRef.current.friend) window.history.replaceState(null, "", location.pathname);
   }, []);
 

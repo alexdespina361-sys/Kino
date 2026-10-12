@@ -41,7 +41,8 @@ export function whatsNew(before: Known | null, state: FriendsState, now: number)
   const name = (id: string) => state.friends.find((friend) => friend.id === id)?.name ?? "";
   const fresh = state.inbox.filter((item) => !item.read && !before.inbox.has(item.id));
   return [
-    ...fresh.flatMap((item): News[] => (item.kind === "party" ? [{ kind: "party", name: name(item.from) }] : [])),
+    // (an invitation to a party that is over is not news: a screen that was asleep for the evening wakes up to it)
+    ...fresh.flatMap((item): News[] => (item.kind === "party" && item.endsAt > now ? [{ kind: "party", name: name(item.from) }] : [])),
     ...fresh.flatMap((item): News[] => (item.kind === "recommend" ? [{ kind: "recommend", name: name(item.from), title: item.title }] : [])),
     ...state.friends.filter((friend) => !before.friends.has(friend.id)).map((friend): News => ({ kind: "friend", name: friend.name })),
     ...state.activity

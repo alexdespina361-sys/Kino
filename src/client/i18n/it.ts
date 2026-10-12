@@ -640,13 +640,13 @@ export const it: Dictionary = {
   "rating.finishedOn": "Finito il {date}",
   "rating.lastWatchedOn": "Visto l'ultima volta il {date}",
   "rating.settings": "Valutazioni",
-  "rating.settingsHelp": "Dai a film, serie e stagioni un voto da 1 a 10, con una nota se vuoi. Disattivate, le valutazioni sono nascoste ma restano salvate.",
+  "rating.settingsHelp": "Dai a film, serie e stagioni un voto da 1 a 10, con una nota se vuoi. Disattivate, le valutazioni sono nascoste (anche agli amici) ma restano salvate.",
   "rating.settingsSwitch": "Valuta ciò che guardo",
 
   /* amici: si vedono liste e valutazioni, si mandano titoli e inviti, sanno cosa guarda l'altro */
   "friends.title": "Amici",
   "friends.settings": "Amici",
-  "friends.settingsHelp": "Guarda le liste e le valutazioni degli amici, scambiatevi titoli e inviti alle visioni condivise e scopri cosa guardano. Tutto è facoltativo e ognuno sceglie cosa condividere.",
+  "friends.settingsHelp": "Guarda le liste e le valutazioni degli amici, scambiatevi titoli e inviti alle visioni condivise e scopri cosa guardano. Gli amici vedono il nome e l'immagine di questo profilo. Tutto è facoltativo e ognuno sceglie cosa condividere.",
   "friends.signInFirst": "Gli amici appartengono a un account: accedi per aggiungerne.",
   "friends.switch": "Usa gli amici",
   "friends.switchLists": "Gli amici possono vedere le mie liste",
@@ -693,6 +693,7 @@ export const it: Dictionary = {
   "friends.remove": "Rimuovi amico",
   "friends.removeAgain": "Tocca di nuovo per rimuovere {name}",
   "friends.removed": "{name} non è più tra i tuoi amici",
+  "friends.keptHelp": "Finché gli amici sono disattivati, non vedono nulla di tuo e a te non arriva nulla. Restano tuoi amici finché non li rimuovi:",
   "friends.line.watching": "Sta guardando {title}",
   "friends.line.watched": "Ha guardato {title}",
   "friends.line.finished": "Ha finito {title}",

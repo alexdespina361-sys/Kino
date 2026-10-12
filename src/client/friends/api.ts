@@ -5,6 +5,7 @@ import {
   FriendsStateSchema,
   InvitedSchema,
   InviteViewSchema,
+  KeptFriendsSchema,
   SentSchema,
   type SendRequest,
 } from "../../shared";
@@ -17,6 +18,8 @@ const part = (value: string) => encodeURIComponent(value);
 export const friendsApi = {
   /** Everything the Friends page shows: friends, inbox, what they watched, the codes given out. */
   state: (profileId: string) => ask(FriendsStateSchema, "GET", base(profileId)),
+  /** Who the friends are of a profile that has them turned off (the page above is shut to it): enough to end a friendship from the settings. */
+  kept: (profileId: string) => ask(KeptFriendsSchema, "GET", `${base(profileId)}/kept`),
   /** A new code to give to a friend. */
   invite: (profileId: string) => ask(InvitedSchema, "POST", `${base(profileId)}/invites`, {}),
   revoke: async (profileId: string, code: string): Promise<void> => void (await request("DELETE", `${base(profileId)}/invites/${part(code)}`)),

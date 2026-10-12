@@ -308,7 +308,13 @@ export const SyncResponseSchema = z.object({
   listNames: z.array(ListNameItemSchema).default([]),
   /** (...nor ratings.) */
   ratings: z.array(RatingItemSchema).default([]),
-  settings: z.array(SettingItemSchema),
+  /** (A server newer than the screen may keep settings the screen has never heard of: those are left out, rather than the whole answer being refused and the screen never syncing again until it is reloaded.) */
+  settings: z
+    .array(z.unknown())
+    .transform((items) => items.flatMap((item) => {
+      const known = SettingItemSchema.safeParse(item);
+      return known.success ? [known.data] : [];
+    })),
 });
 export type SyncResponse = z.infer<typeof SyncResponseSchema>;
 

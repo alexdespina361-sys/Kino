@@ -280,8 +280,12 @@ export class ProfileStore {
 
   /** Add an item (or its removal) to one list, keeping the lists as short as they are meant to be. It is now news for the server. */
   private put<T extends SyncItem>(name: keyof ProfileData, item: T) {
+    const before = (this.data[name] as SyncItem[]).find((other) => other.key === item.key);
+    // A change made here is the newest this copy has seen of the thing, even when this screen's clock runs behind the one that made the
+    // last change: otherwise the server would keep that one, and this screen would show a switch that is not the one the server acts on.
+    const next = before && before.at >= item.at ? { ...item, at: before.at + 1 } : item;
     const rest = (this.data[name] as SyncItem[]).filter((other) => other.key !== item.key);
-    const items = mergeCollection<SyncItem>([item, ...rest], [], { limit: LIMITS[name], now: this.now() });
+    const items = mergeCollection<SyncItem>([next, ...rest], [], { limit: LIMITS[name], now: this.now() });
     this.data = { ...this.data, [name]: items } as ProfileData;
     this.dirty.add(`${name}:${item.key}`);
     this.changed();

@@ -374,6 +374,35 @@ describe("keeping it between runs", () => {
     }
   });
 
+  it("writes and forgets in one statement to Postgres, so that stopping between the two cannot keep one and lose the other", async () => {
+    const db = new PGlite();
+    try {
+      const statements: string[] = [];
+      const persistence = new PostgresPersistence({
+        query: (text, params) => {
+          statements.push(text);
+          return db.query(text, params);
+        },
+      });
+      await persistence.load();
+      await persistence.save({ put: new Map<string, unknown>([["a", { n: 1 }], ["b", { n: 2 }]]), remove: new Set() });
+      statements.length = 0;
+
+      await persistence.save({ put: new Map<string, unknown>([["c", { n: 3 }], ["b", { n: 22 }]]), remove: new Set(["a"]) });
+      expect(statements).toHaveLength(1);
+      expect(Object.fromEntries((await persistence.load()).entries())).toEqual({ b: { n: 22 }, c: { n: 3 } });
+      statements.length = 0; // (the load above asked the database too)
+
+      await persistence.save({ put: new Map(), remove: new Set(["b", "nothing"]) }); // (only to forget)
+      await persistence.save({ put: new Map<string, unknown>([["d", { n: 4 }]]), remove: new Set() }); // (only to write)
+      await persistence.save({ put: new Map(), remove: new Set() }); // (nothing: nothing is asked of the database)
+      expect(statements).toHaveLength(2);
+      expect(Object.fromEntries((await persistence.load()).entries())).toEqual({ c: { n: 3 }, d: { n: 4 } });
+    } finally {
+      await db.close();
+    }
+  });
+
   it("writes by itself a moment after a change, and when it stops", async () => {
     const persistence = new MemoryPersistence();
     const store = await AccountStore.open({ persistence, now, flushMs: 20 });

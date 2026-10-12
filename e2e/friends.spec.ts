@@ -119,8 +119,65 @@ test.describe("friends are optional", () => {
 
     await page.getByTestId("friends-switch").click(); // off again: the rest goes away
     await expect(page.getByTestId("friends-lists")).toHaveCount(0);
+    await expect(page.getByTestId("kept-friends")).toHaveCount(0); // (no friends were made, so there is none to keep)
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("menu-friends")).toHaveCount(0);
+  });
+
+  test("turned off again, the friends are kept: the settings list them, and a friendship can be ended from there without turning anything back on", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(ann.page, bob.page);
+
+    await ann.page.getByTestId("menu-settings").click();
+    await expect(ann.page.getByTestId("kept-friends")).toHaveCount(0); // (while they are on, the page of friends is the place for them)
+    await ann.page.getByTestId("friends-switch").click();
+    await expect(ann.page.getByTestId("friends-lists")).toHaveCount(0);
+    const kept = ann.page.getByTestId("kept-friend");
+    await expect(kept).toHaveCount(1);
+    await expect(kept).toContainText(bob.name);
+
+    // it takes a second press, and then Bob is no longer a friend; friends stay off
+    const remove = ann.page.getByTestId("kept-friend-remove");
+    await remove.click();
+    await expect(remove).toHaveAttribute("data-asking", "true");
+    await remove.click();
+    await expect(ann.page.getByTestId("account-toast")).toContainText(`${bob.name} is no longer your friend`);
+    await expect(ann.page.getByTestId("kept-friends")).toHaveCount(0);
+    await expect(ann.page.getByTestId("friends-switch")).toHaveAttribute("aria-checked", "false");
+
+    await openFriends(bob.page);
+    await look(bob.page);
+    await expect(bob.page.getByTestId("friends-none")).toBeVisible();
+  });
+
+  test("when ratings are turned off, the switch that shares them with friends goes, and friends are shown none until they are back on", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(ann.page, bob.page);
+    await seed(ann.page, filmCards());
+    await bob.page.getByTestId("menu-friends").click();
+    await bob.page.getByTestId("friend-row").click();
+    await bob.page.getByTestId("friend-tab-ratings").click();
+    await expect(bob.page.getByTestId("friend-rating")).toContainText("Alpha Film");
+
+    await ann.page.getByTestId("menu-settings").click();
+    await expect(ann.page.getByTestId("friends-ratings")).toBeVisible();
+    await ann.page.getByTestId("ratings-switch").click();
+    await expect(ann.page.getByTestId("friends-ratings")).toHaveCount(0);
+    await expect(async () => {
+      await look(bob.page);
+      await expect(bob.page.getByTestId("friend-not-sharing")).toContainText(`${ann.name} is not sharing their ratings`, { timeout: 1500 });
+    }).toPass();
+
+    await ann.page.getByTestId("ratings-switch").click();
+    await expect(ann.page.getByTestId("friends-ratings")).toHaveAttribute("aria-checked", "true"); // (as it was)
+    await expect(async () => {
+      await look(bob.page);
+      await expect(bob.page.getByTestId("friend-rating")).toContainText("Alpha Film", { timeout: 1500 });
+    }).toPass();
   });
 
   test("a phone that is not signed in is told friends belong to an account", async ({ browser }) => {
@@ -191,6 +248,7 @@ test.describe("making friends", () => {
     await bob.page.getByTestId("friend-code-add").click();
     await expect(bob.page.getByTestId("account-toast")).toContainText(ann.name);
     await expect(bob.page.getByTestId("friend-link-sheet")).toHaveCount(0);
+    await expect.poll(() => bob.page.url()).not.toContain("friend="); // (nor does going back to where the page began bring it back)
 
     // the same link on a third phone: the code has been used
     const cy = await phoneWithFriends(browser, "Cy");
@@ -419,6 +477,12 @@ test.describe("sending things to friends", () => {
     await openFriends(bob.page);
     await expect(bob.page.getByTestId("inbox-recommendation")).toContainText("Alpha Film");
     await expect(bob.page.getByTestId("unread-dot")).toHaveCount(0);
+    // (a title opened from the inbox is a sheet over the page: Escape closes the sheet, and the page stays)
+    await bob.page.getByTestId("inbox-open").click();
+    await expect(bob.page.getByTestId("title-sheet")).toBeVisible();
+    await bob.page.keyboard.press("Escape");
+    await expect(bob.page.getByTestId("title-sheet")).toHaveCount(0);
+    await expect(bob.page.getByTestId("friends-page")).toBeVisible();
     await bob.page.getByTestId("inbox-dismiss").click();
     await expect(bob.page.getByTestId("inbox-recommendation")).toHaveCount(0);
     await bob.page.keyboard.press("Escape");

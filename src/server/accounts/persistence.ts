@@ -86,13 +86,13 @@ export class PostgresPersistence implements Persistence {
   }
 
   async save({ put, remove }: { put: Map<string, unknown>; remove: Set<string> }) {
-    if (put.size > 0) {
-      await this.db.query(
-        "insert into kino_docs (key, value) select * from unnest($1::text[], $2::jsonb[]) on conflict (key) do update set value = excluded.value",
-        [[...put.keys()], [...put.values()].map((value) => JSON.stringify(value))],
-      );
-    }
-    if (remove.size > 0) await this.db.query("delete from kino_docs where key = any($1::text[])", [[...remove]]);
+    if (put.size === 0 && remove.size === 0) return;
+    // One statement for both (a statement is all-or-nothing), so a server that stops between what is written and what is forgotten
+    // cannot keep one and lose the other: a friendship ended, an account deleted, would come back with the next start.
+    await this.db.query(
+      "with forgotten as (delete from kino_docs where key = any($3::text[])) insert into kino_docs (key, value) select * from unnest($1::text[], $2::jsonb[]) on conflict (key) do update set value = excluded.value",
+      [[...put.keys()], [...put.values()].map((value) => JSON.stringify(value)), [...remove]],
+    );
   }
 
   async close() {

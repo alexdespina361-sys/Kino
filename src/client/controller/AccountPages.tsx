@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ACCENTS, DEVICE_NAME_MAX, friendChoices, preferredLanguages, UI_LANGUAGES, type FriendSetting, type SessionInfo } from "../../shared";
+import { ACCENTS, DEVICE_NAME_MAX, friendChoices, preferredLanguages, UI_LANGUAGES, type FriendSetting, type KeptFriend, type SessionInfo } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
+import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
 import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { ago } from "../account/time";
+import { friendsApi } from "../friends/api";
 import { useFriends } from "../friends/FriendsProvider";
 import { LANGUAGE_NAMES, useLanguage, useT, type Key } from "../i18n";
 import { CheckIcon, CloseIcon, GlobeIcon, PencilIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon, UsersIcon } from "../shared/icons";
@@ -111,6 +113,68 @@ const FRIEND_SWITCHES: ReadonlyArray<{ key: FriendSetting; label: Key; testId: s
 ];
 
 /**
+ * Friends turned off, but not gone: who they still are, with a way to end a friendship from here, so that nobody has to turn on (if
+ * only for a moment) everything that is shared with all of them just to remove one. Only for a profile that has turned friends on
+ * and off again; nothing at all if it has no friends left.
+ */
+function KeptFriends({ profileId }: { profileId: string }) {
+  const t = useT();
+  const account = useAccount();
+  const [kept, setKept] = useState<KeptFriend[]>([]);
+  /** The friend whose removal waits for a second tap. */
+  const [asking, setAsking] = useState<string | null>(null);
+
+  useEffect(() => {
+    let stopped = false;
+    friendsApi.kept(profileId).then(
+      (answer) => !stopped && setKept(answer.friends),
+      () => undefined, // (the server cannot be reached, or does not know: there is nothing to offer then)
+    );
+    return () => {
+      stopped = true;
+    };
+  }, [profileId]);
+
+  // The second tap has to come soon; a button left asking goes back to what it was.
+  useEffect(() => {
+    if (!asking) return;
+    const timer = setTimeout(() => setAsking(null), 4000);
+    return () => clearTimeout(timer);
+  }, [asking]);
+
+  if (kept.length === 0) return null;
+  const remove = async (friend: KeptFriend) => {
+    if (asking !== friend.id) return setAsking(friend.id);
+    setAsking(null);
+    try {
+      await friendsApi.remove(profileId, friend.id);
+      setKept((list) => list.filter((each) => each.id !== friend.id));
+      account.say(t("friends.removed", { name: friend.name }));
+    } catch (error) {
+      account.say(describeError(error));
+    }
+  };
+  return (
+    <div className="kept-friends" data-testid="kept-friends">
+      <p className="muted small">{t("friends.keptHelp")}</p>
+      <ul className="friend-list">
+        {kept.map((friend) => (
+          <li key={friend.id} className="friend-row kept" data-testid="kept-friend" data-friend={friend.id}>
+            <Avatar id={friend.avatar} className="friend-avatar" />
+            <span className="friend-text">
+              <b>{friend.name}</b>
+            </span>
+            <button className="btn btn-danger" onClick={() => void remove(friend)} data-testid="kept-friend-remove" data-asking={asking === friend.id}>
+              {asking === friend.id ? t("friends.removeAgain", { name: friend.name }) : t("friends.remove")}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * Friends: the master switch and, once it is on, what friends may see and send and whether what each watches is told. These are
  * settings of the profile (so they follow it onto every screen), and each change is sent to the server at once: the server is
  * what decides what a friend is shown, from what the profile has chosen here.
@@ -139,7 +203,7 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
       <Switch label={t("friends.switch")} checked={choices.friends} onChange={(on) => change("friends", on)} testId="friends-switch" />
       {choices.friends && (
         <>
-          {FRIEND_SWITCHES.map(({ key, label, testId }) => (
+          {FRIEND_SWITCHES.filter(({ key }) => key !== "friendsRatings" || settings.ratings !== false).map(({ key, label, testId }) => (
             <Switch key={key} label={t(label)} checked={choices[key]} onChange={(on) => change(key, on)} testId={testId} />
           ))}
           <button className="btn btn-block" onClick={onOpen} data-testid="friends-open">
@@ -148,6 +212,7 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
           </button>
         </>
       )}
+      {!choices.friends && settings.friends === false && <KeptFriends profileId={account.profile.id} />}
     </Group>
   );
 }

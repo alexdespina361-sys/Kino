@@ -13,13 +13,14 @@ import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPage
 import { LinkApprove } from "../account/LinkApprove";
 import { useBackToClose } from "./backButton";
 import { FriendPage, FriendsPage } from "./Friends";
+import { sheetIsOpen } from "./Sheet";
 
 /** A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. */
 export function Page({ title, onBack, children, testId }: { title: string; onBack: () => void; children: ReactNode; testId?: string }) {
   const t = useT();
   useBackToClose(onBack); // (the phone's own Back goes back a page too, instead of leaving the site)
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onBack();
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && !sheetIsOpen() && onBack();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);

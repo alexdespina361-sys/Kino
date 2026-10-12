@@ -6,7 +6,7 @@ const NOW = 50_000_000;
 const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1, on: true, lists: true, ratings: true, activity: true, inbox: true };
 const robin: Friend = { ...sam, id: "pro_robin", name: "Robin" };
 const recommendation = (id: string, from = "pro_sam", read = false): InboxItem => ({ kind: "recommend", id, from, at: NOW, read, title: "Dune", url: "https://filmpire.sc/watch/1" });
-const invitation = (id: string, from = "pro_sam"): InboxItem => ({ kind: "party", id, from, at: NOW, read: false, code: "482731", endsAt: NOW + 1 });
+const invitation = (id: string, from = "pro_sam", endsAt = NOW + 1): InboxItem => ({ kind: "party", id, from, at: NOW, read: false, code: "482731", endsAt });
 const watched = (friend: string, key: string, extra: Partial<ActivityItem> = {}): ActivityItem => ({ friend, key, title: "Alien", url: "https://filmpire.sc/watch/2", at: NOW - 60_000, ...extra });
 const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], ...changes });
 
@@ -27,6 +27,10 @@ describe("what is new", () => {
       { kind: "party", name: "Sam" },
       { kind: "recommend", name: "Sam", title: "Dune" },
     ]);
+  });
+
+  it("leaves out an invitation to a party that is over by the time the screen looks", () => {
+    expect(whatsNew(known(state()), state({ inbox: [invitation("late", "pro_sam", NOW), recommendation("a")] }), NOW)).toEqual([{ kind: "recommend", name: "Sam", title: "Dune" }]);
   });
 
   it("is a new friend, whoever added whom", () => {

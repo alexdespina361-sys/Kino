@@ -16,6 +16,15 @@
   .friend-row:hover { background: var(--surface-2); }
 }
 
+/* Friends turned off in the settings: who is still a friend, a row (not a button) with the button that ends it. */
+.kept-friends { display: flex; flex-direction: column; gap: 10px; }
+.friend-row.kept { flex-wrap: wrap; cursor: default; }
+.friend-row.kept:active { background: var(--surface); transform: none; }
+.friend-row.kept .btn { flex: none; min-height: 40px; padding: 0 14px; font-size: 0.9rem; }
+@media (hover: hover) {
+  .friend-row.kept:hover { background: var(--surface); }
+}
+
 /* A code somebody gave, looked up: who it is from, and the button that makes them a friend. */
 .friend-code-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); }
 .friend-code-card .btn { flex: none; min-height: 44px; }

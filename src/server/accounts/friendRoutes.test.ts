@@ -23,13 +23,15 @@ async function start(persistence = new MemoryPersistence()) {
 /** One browser: it keeps its cookie, and sends it back. */
 class Client {
   cookie = "";
+  /** The address this browser is on (what its calls say they came to), when a test needs to say. */
+  host = "";
   constructor(private readonly app: FastifyInstance) {}
 
   async call(method: "GET" | "POST" | "PATCH" | "DELETE", url: string, payload?: unknown): Promise<LightMyRequestResponse & { data: any }> {
     const response = await this.app.inject({
       method,
       url,
-      headers: this.cookie ? { cookie: this.cookie } : {},
+      headers: { ...(this.cookie ? { cookie: this.cookie } : {}), ...(this.host ? { host: this.host } : {}) },
       ...(payload === undefined ? {} : { payload: payload as object }),
     });
     const set = response.headers["set-cookie"];
@@ -143,6 +145,40 @@ describe("friends are off until they are turned on", () => {
     expect((await new Client(app).get(mine(alex))).statusCode).toBe(401);
     expect((await sam.client.get(mine(alex))).statusCode).toBe(404);
     expect((await sam.client.post(mine(alex, "/invites"))).statusCode).toBe(404);
+    expect((await new Client(app).get(mine(alex, "/kept"))).statusCode).toBe(401);
+    expect((await sam.client.get(mine(alex, "/kept"))).statusCode).toBe(404);
+  });
+
+  it("still lets a profile that turned them off see who its friends are, end a friendship, take back a code and throw away what it was sent, without turning on what it shares", async () => {
+    const { alex, sam } = await friends();
+    const { data: open } = await alex.client.post(mine(alex, "/invites"));
+    await sam.client.post(mine(sam, "/send"), { to: [alex.id], kind: "recommend", title: "Dune", url: url(1) });
+    const sent = (await alex.state()).inbox[0]!;
+    await alex.keep({ list: [{ key: `url:${url(1)}`, at: 5000, id: "1", title: "Dune", url: url(1) }] });
+
+    await alex.choose({ friends: false });
+    // The page of friends and everything that adds to them or shares stays shut...
+    expect((await alex.friends()).data).toEqual({ error: "friends_off" });
+    expect((await alex.client.post(mine(alex, "/invites"))).statusCode).toBe(403);
+    expect((await alex.client.post(mine(alex, "/accept"), { code: "ABCD2345" })).statusCode).toBe(403);
+    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code: "123456", endsAt: 1 })).statusCode).toBe(403);
+    expect((await alex.client.get(mine(alex, `/${sam.id}/lists`))).statusCode).toBe(403);
+    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data).toEqual({ error: "not_shared" });
+    // ...but who the friends are can be seen, and nothing else of them: not even what they have switched on or off.
+    const kept = await alex.client.get(mine(alex, "/kept"));
+    expect(kept.statusCode).toBe(200);
+    expect(Object.keys(kept.data)).toEqual(["friends"]);
+    expect(kept.data.friends).toEqual([{ id: sam.id, name: "Sam", avatar: expect.any(String), since: expect.any(Number) }]);
+
+    expect((await alex.client.delete(mine(alex, `/invites/${open.code}`))).statusCode).toBe(204);
+    expect((await alex.client.delete(mine(alex, `/inbox/${sent.id}`))).statusCode).toBe(204);
+    expect((await alex.client.delete(mine(alex, `/${sam.id}`))).statusCode).toBe(204);
+    expect((await alex.client.get(mine(alex, "/kept"))).data).toEqual({ friends: [] });
+
+    // Friends back on afterwards: Sam is not one of them any more, and has not seen a thing in between.
+    await alex.choose({ friends: true });
+    expect((await alex.state()).friends).toEqual([]);
+    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).statusCode).toBe(404);
   });
 });
 
@@ -229,6 +265,18 @@ describe("making friends", () => {
     expect((await sam.client.post(mine(sam, "/accept"), { code: "" })).statusCode).toBe(400);
   });
 
+  it("does not count sending to friends against adding one: each has its own allowance", async () => {
+    const { app, alex, sam } = await friends();
+    const invitation = { to: [sam.id], kind: "party", code: "123456", endsAt: clock.now + 600_000 };
+    for (let i = 0; i < 60; i++) expect((await alex.client.post(mine(alex, "/send"), invitation)).statusCode).toBe(200);
+    expect((await alex.client.post(mine(alex, "/send"), invitation)).statusCode).toBe(429);
+
+    const robin = await person(app, "robin");
+    await robin.choose({ friends: true });
+    const { data: made } = await robin.client.post(mine(robin, "/invites"));
+    expect((await alex.client.post(mine(alex, "/accept"), { code: made.code })).statusCode).toBe(201);
+  });
+
   it("ends a friendship for both, and says so to one who is not a friend", async () => {
     const { alex, sam } = await friends();
     expect((await sam.client.delete(mine(sam, `/${alex.id}`))).statusCode).toBe(204);
@@ -292,6 +340,20 @@ describe("what a friend lets be seen", () => {
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).statusCode).toBe(200);
   });
 
+  it("does not show the ratings of a profile that turned ratings off, though they stay kept and the profile shares them", async () => {
+    const { alex, sam } = await friends();
+    await alex.keep({ ratings: [rated] });
+    await alex.choose({ ratings: false });
+    const refused = await sam.client.get(mine(sam, `/${alex.id}/ratings`));
+    expect(refused.statusCode).toBe(403);
+    expect(refused.data).toEqual({ error: "not_shared" });
+    expect((await sam.state()).friends[0]).toMatchObject({ lists: true, ratings: false });
+
+    await alex.choose({ ratings: true });
+    expect((await sam.client.get(mine(sam, `/${alex.id}/ratings`))).data.ratings).toMatchObject([{ title: "Dune", score: 9 }]);
+    expect((await sam.state()).friends[0]).toMatchObject({ ratings: true });
+  });
+
   it("shows nothing of anybody who is not a friend", async () => {
     const { app, alex } = await pair();
     const robin = await person(app, "robin");
@@ -299,6 +361,71 @@ describe("what a friend lets be seen", () => {
     await alex.keep({ list: [dune] });
     expect((await robin.client.get(mine(robin, `/${alex.id}/lists`))).data).toEqual({ error: "not_friends" });
     expect((await robin.client.get(mine(robin, `/${alex.id}/ratings`))).statusCode).toBe(404);
+  });
+});
+
+describe("what comes from a friend is made fit to show", () => {
+  const own = "kino.example";
+  /** What a friend could put in the pictures of their things: one that is fine, and ones that would make the browser of whoever looks call this site or something else. */
+  const pictures = { fine: "https://image.tmdb.org/t/p/w342/a.jpg", ours: "https://kino.example/api/link/ABCD2345", oursAgain: "https://KINO.example:8443/api/me", path: "/api/profiles/x/friends/invites/AAAAAAAA", script: "javascript:alert(1)" };
+
+  it("cleans the words and keeps only the pictures of other sites in a friend's lists, ratings and activity", async () => {
+    const { alex, sam } = await friends({ friendsGive: true, friendsGet: true });
+    sam.client.host = own;
+    const dune = { key: `url:${url(1)}`, at: 5000, id: "1", title: "‮enuD​", url: url(1), image: pictures.ours, backdrop: pictures.fine };
+    const alien = { key: `url:${url(2)}`, at: 5001, id: "2", title: "Alien", url: url(2), image: pictures.path, backdrop: pictures.script };
+    const rated = { key: `rate:${url(1)}`, at: 7000, title: "Dune", url: url(1), score: 9, note: "Huge.‮\n\n", ratedAt: 7000, image: pictures.oursAgain, backdrop: pictures.fine };
+    const watched = { key: `url:${url(3)}`, at: clock.now - 1000, title: `x${"́".repeat(8)} film`, url: url(3), position: 600, duration: 7200, image: pictures.ours, backdrop: pictures.fine };
+    const names = [{ key: "scary", at: 5500, name: "‮Scary​" }, { key: "blank", at: 5501, name: "‮​" }];
+    await alex.keep({ list: [dune, alien], listNames: names, ratings: [rated], progress: [watched] });
+
+    const shown = (await sam.client.get(mine(sam, `/${alex.id}/lists`))).data;
+    expect(shown.listNames.map((list: { name: string }) => list.name).sort()).toEqual(["?", "Scary"]); // (a name that is nothing to see is still a name)
+    const lists = shown.list as Array<Record<string, unknown>>;
+    const byTitle = (title: string) => lists.find((item) => item.title === title);
+    expect(byTitle("enuD")).toMatchObject({ backdrop: pictures.fine });
+    expect(byTitle("enuD")).not.toHaveProperty("image");
+    expect(byTitle("Alien")).not.toHaveProperty("image");
+    expect(byTitle("Alien")).not.toHaveProperty("backdrop");
+
+    const rating = (await sam.client.get(mine(sam, `/${alex.id}/ratings`))).data.ratings[0];
+    expect(rating).toMatchObject({ note: "Huge.", backdrop: pictures.fine });
+    expect(rating).not.toHaveProperty("image");
+
+    const [activity] = (await sam.state()).activity;
+    expect(activity).toMatchObject({ title: `x${"́".repeat(4)} film`, backdrop: pictures.fine });
+    expect(activity).not.toHaveProperty("image");
+
+    // (What Alex keeps of his own is his: he is shown it as it is.)
+    const alexsOwn = (await alex.client.post(`/api/profiles/${alex.id}/sync`, { since: 0 })).data;
+    expect(alexsOwn.list.find((item: { key: string }) => item.key === dune.key)).toMatchObject({ title: "‮enuD​", image: pictures.ours });
+  });
+
+  it("does the same to what is in the inbox, and cleans the name of a friend", async () => {
+    const { alex, sam } = await friends();
+    sam.client.host = own;
+    const sent = await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "recommend", title: "‮enuD", url: url(1), image: pictures.ours, backdrop: pictures.fine, note: "Loud.‮" });
+    expect(sent.data.sent).toEqual([sam.id]);
+    const renamed = await alex.client.call("PATCH", `/api/profiles/${alex.id}`, { name: "Al‮​ex" });
+    expect(renamed.statusCode).toBe(200);
+
+    const { inbox, friends: list } = await sam.state();
+    expect(inbox).toMatchObject([{ title: "enuD", note: "Loud.", backdrop: pictures.fine }]);
+    expect(inbox[0]).not.toHaveProperty("image");
+    expect(list[0]!.name).toBe("Alex");
+    // (...and so is the name that a code shows to whoever has it.)
+    const { data: made } = await alex.client.post(mine(alex, "/invites"));
+    expect((await sam.client.get(mine(sam, `/invites/${made.code}`))).data).toMatchObject({ from: { name: "Alex" } });
+  });
+
+  it("is told, when a title is sent, that a picture which is a path or is not on the web will not do", async () => {
+    const { alex, sam } = await friends();
+    for (const picture of [pictures.path, pictures.script, "//evil.example/a.gif"]) {
+      const body = { to: [sam.id], kind: "recommend", title: "Dune", url: url(1), image: picture };
+      expect((await alex.client.post(mine(alex, "/send"), body)).statusCode, picture).toBe(400);
+    }
+    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "recommend", title: "‮​", url: url(1) })).statusCode).toBe(400);
+    expect((await sam.state()).inbox).toEqual([]);
   });
 });
 

@@ -102,7 +102,8 @@ export function FriendPickerTv({ title, lead, build, said, onClose }: { title: s
 
 /**
  * A code made for a friend: the code, the QR code that carries its link, and a way to take it back. One is made as the page opens, when
- * there is none. When the code that was on the page is gone without being taken back here, a friend has used it: that is all it was for.
+ * there is none. When the code that was on the page is gone and there is a friend more than when it came up, a friend has used it: that
+ * is all it was for. A code that went another way (taken back on a phone, run out) is made again.
  */
 function GiveCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   const t = useT();
@@ -112,17 +113,28 @@ function GiveCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }
   const asked = useRef(false);
   const shown = useRef(false);
   const takingBack = useRef(false);
+  /** How many friends there were when the first code came up. */
+  const friendsThen = useRef(0);
+  const friendCount = friends.state?.friends.length ?? 0;
   const invite = (friends.state?.invites ?? []).reduce<OpenInvite | undefined>((newest, each) => (!newest || each.expiresAt > newest.expiresAt ? each : newest), undefined);
 
+  // (this one first: a code that is gone makes the next effect ask for another in the same moment)
+  useEffect(() => {
+    if (shown.current && !takingBack.current && friendCount > friendsThen.current) {
+      onDone();
+    } else if (invite) {
+      if (!shown.current) friendsThen.current = friendCount;
+      shown.current = true;
+    } else if (shown.current && !takingBack.current) {
+      shown.current = false;
+      asked.current = false;
+    }
+  }, [invite?.code]);
   useEffect(() => {
     if (invite || asked.current || !friends.state) return;
     asked.current = true;
     friends.invite().catch((error: unknown) => setProblem(describeError(error)));
   }, [invite, friends.state]);
-  useEffect(() => {
-    if (invite) shown.current = true;
-    else if (shown.current && !takingBack.current) onDone();
-  }, [invite?.code]);
 
   return (
     <Screen key="give" testId="tv-friend-give-page" compact focus onBack={onBack}>
@@ -310,7 +322,7 @@ export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
       <h1 className="tv-headline tv-headline-small">{t("friends.settings")}</h1>
       <p className="tv-hint tv-friend-help">{t("friends.settingsHelp")}</p>
       <div className="tv-friend-switches">
-        {SWITCHES.map(({ key, label, testId }) => (
+        {SWITCHES.filter(({ key }) => key !== "friendsRatings" || settings.ratings !== false).map(({ key, label, testId }) => (
           <button
             key={key}
             className="tv-switch-row"

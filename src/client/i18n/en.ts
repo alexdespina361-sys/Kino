@@ -640,13 +640,13 @@ export const en = {
   "rating.finishedOn": "Finished {date}",
   "rating.lastWatchedOn": "Last watched {date}",
   "rating.settings": "Ratings",
-  "rating.settingsHelp": "Give films, shows and seasons a score out of 10, with a note if you like. Turned off, ratings are hidden but kept.",
+  "rating.settingsHelp": "Give films, shows and seasons a score out of 10, with a note if you like. Turned off, ratings are hidden (from friends too) but kept.",
   "rating.settingsSwitch": "Rate what I watch",
 
   /* friends: see each other's lists and ratings, send titles and watch-party invitations, hear what the other watches */
   "friends.title": "Friends",
   "friends.settings": "Friends",
-  "friends.settingsHelp": "See each other's lists and ratings, send titles and watch-party invitations, and hear what the other is watching. All of it is optional, and each of you chooses what to share.",
+  "friends.settingsHelp": "See each other's lists and ratings, send titles and watch-party invitations, and hear what the other is watching. Friends see this profile's name and picture. All of it is optional, and each of you chooses what to share.",
   "friends.signInFirst": "Friends belong to an account: sign in to add some.",
   "friends.switch": "Use friends",
   "friends.switchLists": "Friends can see my lists",
@@ -693,6 +693,7 @@ export const en = {
   "friends.remove": "Remove friend",
   "friends.removeAgain": "Tap again to remove {name}",
   "friends.removed": "{name} is no longer your friend",
+  "friends.keptHelp": "While friends are off, they see nothing of yours and nothing reaches you. They stay your friends until you remove them:",
   "friends.line.watching": "Watching {title}",
   "friends.line.watched": "Watched {title}",
   "friends.line.finished": "Finished {title}",

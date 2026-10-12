@@ -558,6 +558,24 @@ describe("staying in step with the server", () => {
     }
   });
 
+  it("keeps a screen's change over what it had seen of the thing, even when its clock runs behind the screen that made that", async () => {
+    const { accounts, profile } = await server();
+    const phone = device(Date.now() - 100_000);
+    const tv = device(Date.now() - 100_000 - 180_000); // three minutes behind
+    tv.store.openScope(profile.id);
+    phone.store.openScope(profile.id);
+    phone.store.setSetting("friends", true);
+    sync(phone, accounts, profile.id);
+    sync(tv, accounts, profile.id);
+    expect(tv.store.getSnapshot().settings).toEqual({ friends: true });
+
+    tv.advance(60_000); // a minute later by its own clock, and still earlier than the phone's change
+    tv.store.setSetting("friends", false);
+    sync(tv, accounts, profile.id);
+    sync(phone, accounts, profile.id);
+    for (const screen of [tv, phone]) expect(screen.store.getSnapshot().settings).toEqual({ friends: false });
+  });
+
   it("carries a removal to the screen that still shows the title", async () => {
     const { accounts, profile } = await server();
     const tv = device(Date.now() - 100_000);

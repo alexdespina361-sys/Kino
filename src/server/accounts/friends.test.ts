@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CODE_ALPHABET, INBOX_KEEP_MS, INBOX_MAX, INVITE_TTL_MS, MAX_FRIENDS, MAX_OPEN_INVITES, PARTY_INVITE_KEEP_MS, type Message } from "../../shared";
+import { CODE_ALPHABET, INBOX_KEEP_MS, INBOX_MAX, INBOX_PER_SENDER, INVITE_TTL_MS, MAX_FRIENDS, MAX_OPEN_INVITES, PARTY_INVITE_KEEP_MS, type Message } from "../../shared";
 import { FriendBook } from "./friends";
 
 /** A book with a clock to move, and a record of what it asked the store to write down. */
@@ -128,6 +128,27 @@ describe("making friends with a code", () => {
     expect(friends.inboxOf("alex")).toEqual([]);
     expect(friends.unfriend("sam", "alex")).toBe(false);
   });
+
+  it("takes back the codes the one who ended it still has out, so that nobody they removed can come back by one they were shown", () => {
+    const { friends, dropped } = befriended();
+    const shown = friends.createInvite("alex");
+    const second = friends.createInvite("alex");
+    const robins = friends.createInvite("robin");
+    expect(friends.unfriend("alex", "sam")).toBe(true);
+    expect(friends.invitesOf("alex")).toEqual([]);
+    expect(friends.peekInvite(shown.code)).toBeUndefined();
+    expect(friends.redeem("sam", second.code)).toEqual({ ok: false, error: "invite_gone" });
+    expect(friends.areFriends("alex", "sam")).toBe(false);
+    expect(dropped.has(`finvite:${shown.code}`) && dropped.has(`finvite:${second.code}`)).toBe(true);
+    expect(friends.peekInvite(robins.code)?.from).toBe("robin"); // (the codes of somebody else are theirs)
+  });
+
+  it("leaves the codes alone when what was removed was no friend", () => {
+    const { friends } = book();
+    const mine = friends.createInvite("alex");
+    expect(friends.unfriend("alex", "nobody")).toBe(false);
+    expect(friends.peekInvite(mine.code)?.from).toBe("alex");
+  });
 });
 
 describe("the inbox", () => {
@@ -169,6 +190,41 @@ describe("the inbox", () => {
     expect(friends.inboxOf("sam").map((item) => item.from).sort()).toEqual(["alex", "robin"]);
   });
 
+  it("announces something once while it is unread: sent again it keeps its id, but once it has been seen it is a new thing", () => {
+    const { friends, clock } = befriended();
+    const first = friends.deliver("sam", "alex", dune);
+    clock.now += 1000;
+    const again = friends.deliver("sam", "alex", { ...dune, note: "Again!" });
+    expect(again.id).toBe(first.id);
+    expect(friends.inboxOf("sam")).toEqual([{ ...again, note: "Again!", at: 1_001_000, read: false }]);
+
+    const invitation = friends.deliver("sam", "alex", party);
+    expect(friends.deliver("sam", "alex", { ...party, code: "111222" }).id).toBe(invitation.id);
+
+    friends.markRead("sam");
+    expect(friends.deliver("sam", "alex", dune).id).not.toBe(first.id);
+    expect(friends.deliver("sam", "alex", { ...party, code: "333444" }).id).not.toBe(invitation.id);
+    expect(friends.inboxOf("sam")).toHaveLength(2);
+  });
+
+  it("keeps one friend from filling an inbox: of what they sent the newest twenty stay, and what the others sent is still there", () => {
+    const { friends, clock } = befriended();
+    const other = friends.createInvite("robin");
+    friends.redeem("sam", other.code);
+    friends.deliver("sam", "robin", alien);
+    for (let i = 0; i < INBOX_PER_SENDER + 7; i++) {
+      clock.now += 1;
+      friends.deliver("sam", "alex", { kind: "recommend", title: `Film ${i}`, url: `https://filmpire.sc/watch/${i}` });
+    }
+    const items = friends.inboxOf("sam");
+    const alexs = items.filter((item) => item.from === "alex");
+    expect(alexs).toHaveLength(INBOX_PER_SENDER);
+    expect(alexs[0]).toMatchObject({ title: `Film ${INBOX_PER_SENDER + 6}` });
+    expect(alexs.at(-1)).toMatchObject({ title: "Film 7" });
+    expect(items.filter((item) => item.from === "robin")).toHaveLength(1);
+    expect(items).toHaveLength(INBOX_PER_SENDER + 1);
+  });
+
   it("marks everything as seen, says how much was new, and lets one thing go", () => {
     const { friends } = befriended();
     friends.deliver("sam", "alex", dune);
@@ -194,16 +250,20 @@ describe("the inbox", () => {
     expect(friends.inboxOf("sam")).toEqual([]);
   });
 
-  it("keeps the newest hundred", () => {
-    const { friends, clock } = befriended();
-    for (let i = 0; i < INBOX_MAX + 5; i++) {
-      friends.deliver("sam", "alex", { kind: "recommend", title: `Film ${i}`, url: `https://filmpire.sc/watch/${i}` });
+  it("keeps the newest hundred, whoever sent them", () => {
+    const { friends, clock } = book();
+    const senders = ["a", "b", "c", "d", "e", "f"]; // (each has only INBOX_PER_SENDER in the inbox: it takes more than five friends to fill a hundred)
+    for (const sender of senders) expect(friends.redeem("sam", friends.createInvite(sender).code).ok).toBe(true);
+    const sent = senders.length * INBOX_PER_SENDER;
+    for (let i = 0; i < sent; i++) {
+      friends.deliver("sam", senders[Math.floor(i / INBOX_PER_SENDER)]!, { kind: "recommend", title: `Film ${i}`, url: `https://filmpire.sc/watch/${i}` });
       clock.now += 1;
     }
     const items = friends.inboxOf("sam");
     expect(items).toHaveLength(INBOX_MAX);
-    expect(items[0]).toMatchObject({ title: `Film ${INBOX_MAX + 4}` });
-    expect(items.at(-1)).toMatchObject({ title: "Film 5" });
+    expect(items[0]).toMatchObject({ title: `Film ${sent - 1}` });
+    expect(items.at(-1)).toMatchObject({ title: `Film ${sent - INBOX_MAX}` });
+    expect(items.some((item) => item.from === "a")).toBe(false);
   });
 });
 
@@ -269,13 +329,14 @@ describe("being kept", () => {
     expect(second.friends.peekInvite(open.code)?.from).toBe("alex");
   });
 
-  it("does not bring back a code that ran out while the server was off, and knows only its own documents", () => {
+  it("does not bring back a code that ran out while the server was off, lets its row go, and knows only its own documents", () => {
     const first = book();
     const invite = first.friends.createInvite("alex");
     const second = book();
     second.clock.now = first.clock.now + INVITE_TTL_MS + 1;
     second.friends.load(`finvite:${invite.code}`, JSON.parse(JSON.stringify(first.friends.docFor(`finvite:${invite.code}`))));
     expect(second.friends.peekInvite(invite.code)).toBeUndefined();
+    expect(second.dropped.has(`finvite:${invite.code}`)).toBe(true);
 
     expect(FriendBook.owns("account:acc_1")).toBe(false);
     expect(FriendBook.owns("pdata:pro_1")).toBe(false);
