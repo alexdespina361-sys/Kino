@@ -36,7 +36,8 @@ import { PairScreen } from "./PairScreen";
 import { PlayLink } from "./PlayLink";
 import { Remote, type SheetKind } from "./Remote";
 import { LINE_EVENT } from "./Round";
-import { ContinueRow, ListRows } from "./Rows";
+import { RatingsSheet } from "./RatingsSheet";
+import { ContinueRow, ListRows, RatingsRow } from "./Rows";
 import { Sheet } from "./Sheet";
 import { TitleSheet } from "./TitleSheet";
 import {
@@ -94,7 +95,10 @@ export function Controller() {
     writeStorage(LINK_BOX_KEY, on ? "1" : null);
   };
   // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
-  const { progress, watched, lists, list } = useProfileData();
+  const { progress, watched, lists, list, ratings, settings } = useProfileData();
+  const ratingsOn = settings.ratings ?? true;
+  /** The page that lists everything this profile rated. */
+  const [ratingsOpen, setRatingsOpen] = useState(false);
 
   // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
   const launchRef = useRef(readLaunchParams(location.search));
@@ -154,6 +158,7 @@ export function Controller() {
             if (!message.tv) {
               setSheet(null);
               setListSheet(null);
+              setRatingsOpen(false);
               setTitle(null);
               setResolve(null);
               setOther(null);
@@ -449,6 +454,7 @@ export function Controller() {
       <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
       <ListRows lists={lists} items={list} onOpen={setTitle} onPick={pickList} onRemove={(url, id) => profileStore.removeFromList(url, id)} onManage={() => setListSheet({ kind: "manage" })} />
+      {ratingsOn && <RatingsRow ratings={ratings} onOpen={setTitle} onAll={() => setRatingsOpen(true)} />}
       <Library onOpen={setTitle} onPick={pickList} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} status={false} />} />
     </>
   );
@@ -627,6 +633,7 @@ export function Controller() {
       {sheet === "episodes" && media?.series?.episodes && (
         <EpisodesSheet series={media.series} show={seriesKeyOf(media)} watched={watched} onClose={closeSheet} onPlay={playLink} />
       )}
+      {ratingsOpen && ratingsOn && <RatingsSheet ratings={ratings} onOpen={setTitle} onClose={() => setRatingsOpen(false)} />}
       {title && (
         <TitleSheet
           entry={title}

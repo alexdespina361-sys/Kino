@@ -312,3 +312,10 @@ export const RefreshIcon = (props: Props) => (
     <path d="M20 11a8 8 0 0 0-14-4.5L4 9M4 4v5h5M4 13a8 8 0 0 0 14 4.5L20 15M20 20v-5h-5" />
   </Icon>
 );
+
+/** A star: an outline, or filled in for a title that has a rating. */
+export const StarIcon = ({ filled, ...props }: Props & { filled?: boolean }) => (
+  <Icon {...props}>
+    <polygon points="12 2.5 15.1 8.8 22 9.8 17 14.6 18.2 21.5 12 18.2 5.8 21.5 7 14.6 2 9.8 8.9 8.8" {...(filled ? { fill: "currentColor" } : {})} />
+  </Icon>
+);

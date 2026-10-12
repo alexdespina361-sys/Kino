@@ -1348,6 +1348,35 @@
   .tv .list-editor-tv .auth-field input { font-size: 1.8em; }
   .tv .list-editor-tv .tv-action { font-size: 1.5em; }
 }
+/* Rating a title: the ten scores in a row, the word for the one chosen, what the note says, and the few lines about the watching. */
+.tv-rate-scopes { flex-wrap: wrap; justify-content: center; }
+.tv-rate-scopes .tv-choice { padding: 0.4em 1.1em; font-size: 1.5em; }
+.tv-scores { display: flex; justify-content: center; gap: 0.8em; padding: 0.5em; }
+.tv-score {
+  display: grid;
+  place-items: center;
+  width: 1.55em;
+  height: 1.55em;
+  border-radius: 0.35em;
+  background: rgba(255, 255, 255, 0.11);
+  color: #e6e6ea;
+  font-size: 3em;
+  font-weight: 700;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+}
+.tv-score:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+.tv-score[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
+.tv-score:focus-visible { background: #fff; color: #000; outline: 0.05em solid var(--accent); outline-offset: 0.05em; transform: scale(1.12); }
+.tv-rate-word { min-height: 1.2em; margin: 0; font-size: 2.2em; font-weight: 700; }
+.tv-rate-note { display: -webkit-box; max-width: 42em; margin: 0; overflow: hidden; color: #d8d8dc; font-size: 1.7em; line-height: 1.35; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.tv-rate-note::before { content: "“"; }
+.tv-rate-note::after { content: "”"; }
+.tv-rate-facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6em; margin: 0; padding: 0; list-style: none; }
+.tv-rate-facts li { padding: 0.3em 0.9em; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: #cfcfd4; font-size: 1.5em; }
+.tv .rating-editor-tv.list-editor-tv { grid-template-columns: minmax(0, 70em); }
+.tv-action:disabled { opacity: 0.4; }
+
 /* A list already at the end has nowhere to move: its button stays, so the remote does not lose its place. */
 .tv-action[aria-disabled="true"] { opacity: 0.4; }
 .tv-action-danger { background: rgba(255, 107, 107, 0.2); color: #ffb4b4; }
@@ -1661,6 +1690,12 @@
   .tv-panel-settings h2 { font-size: 1.2em; }
   .tv-choices { flex-wrap: wrap; }
   .tv-choice { font-size: 1.5em; }
+  .tv-rate-scopes .tv-choice { font-size: 1.3em; }
+  .tv-scores { flex-wrap: wrap; gap: 0.6em; padding: 0.2em; }
+  .tv-score { font-size: 2em; }
+  .tv-rate-word { font-size: 1.7em; }
+  .tv-rate-note { font-size: 1.3em; }
+  .tv-rate-facts li { font-size: 1.2em; }
   .tv-swatch { font-size: 1.4em; }
   .tv-switch-row { max-width: none; font-size: 1.5em; }
   .tv .auth-tv { width: 100%; }

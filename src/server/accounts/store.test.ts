@@ -230,6 +230,29 @@ describe("sync", () => {
     expect(store.snapshot(profile.id)!.listNames).toEqual([{ key: "l1", at: clock, deleted: true }]);
   });
 
+  it("keeps ratings, hands them to another screen, and lets a removal and a later rating settle in order", async () => {
+    const { store, profile } = await withAccount();
+    const rating = (at: number, extra: Record<string, unknown> = {}) => ({ key: "rate:u", at, title: "T", url: "u", score: 8, ratedAt: at, ...extra });
+    store.sync(profile.id, request(0, { ratings: [rating(clock, { note: "Big", percent: 100, watchedAt: clock - 1000 })] }));
+    expect(store.sync(profile.id, request(0))!.ratings).toMatchObject([{ key: "rate:u", score: 8, note: "Big", percent: 100 }]);
+
+    advance(1000);
+    store.sync(profile.id, request(1, { ratings: [{ key: "rate:u", at: clock, deleted: true }] }));
+    store.sync(profile.id, request(2, { ratings: [rating(clock - 5000)] })); // a copy that never heard of the removal
+    expect(store.snapshot(profile.id)!.ratings).toEqual([{ key: "rate:u", at: clock, deleted: true }]);
+    advance(1000);
+    store.sync(profile.id, request(2, { ratings: [rating(clock, { score: 3 })] }));
+    expect(store.snapshot(profile.id)!.ratings).toMatchObject([{ key: "rate:u", score: 3 }]);
+  });
+
+  it("accepts a setting that turns ratings off, and nothing but a yes or a no", async () => {
+    const { store, profile } = await withAccount();
+    store.sync(profile.id, request(0, { settings: [{ key: "ratings", at: clock, value: false }] }));
+    expect(store.snapshot(profile.id)!.settings).toMatchObject([{ key: "ratings", value: false }]);
+    store.sync(profile.id, request(1, { settings: [{ key: "ratings", at: clock + 1, value: "maybe" }] }));
+    expect(store.snapshot(profile.id)!.settings).toMatchObject([{ key: "ratings", value: false }]);
+  });
+
   it("lets the newest copy borrow the picture only the older one had", async () => {
     const { store, profile } = await withAccount();
     store.sync(profile.id, request(0, { progress: [progress("film", clock - 5000, { image: "/poster.jpg", year: 1999 })] }));

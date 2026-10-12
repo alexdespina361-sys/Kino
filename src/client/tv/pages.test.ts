@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress } from "../../shared";
+import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
+import { cardOf, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3): LibraryRow => ({
@@ -14,8 +14,10 @@ const row = (id: string, kind: "movie" | "series" | undefined, count = 3): Libra
 const card = (key: string, extra: Partial<LiveProgress> = {}): LiveProgress => ({ key, at: 1, title: `Card ${key}`, url: `https://x.example/${key}`, position: 100, duration: 1000, ...extra });
 const saved = (key: string, list?: string): LiveListItem => ({ key, at: 1, id: key, title: `Saved ${key}`, url: `https://x.example/${key}`, ...(list ? { list } : {}) });
 
+const rated = (key: string, score: number, ratedAt: number, extra: Partial<LiveRating> = {}): LiveRating => ({ key: `rate:${key}`, at: ratedAt, title: `Rated ${key}`, url: `https://x.example/${key}`, score, ratedAt, ...extra });
+
 const FIRST: ListInfo = { id: DEFAULT_LIST };
-const data = (overrides: Partial<PageData> = {}): PageData => ({ rows: [], progress: [], lists: [FIRST], list: [], similar: null, ...overrides });
+const data = (overrides: Partial<PageData> = {}): PageData => ({ rows: [], progress: [], lists: [FIRST], list: [], ratings: [], similar: null, ...overrides });
 const library = [row("m1", "movie"), row("s1", "series"), row("m2", "movie"), row("s2", "series"), row("m3", "movie"), row("s3", "series")];
 
 describe("viewKey", () => {
@@ -24,6 +26,7 @@ describe("viewKey", () => {
     expect(viewKey({ kind: "category", rowId: "x" })).toBe("category:x");
     expect(viewKey({ kind: "categories", of: "movie" })).toBe("categories:movie");
     expect(viewKey({ kind: "categories" })).toBe("categories:all");
+    expect(viewKey({ kind: "ratings" })).toBe("ratings");
   });
 
   it("tells the lists apart, and keeps the first list's name as it was", () => {
@@ -194,9 +197,55 @@ describe("gridOf", () => {
     expect(gridOf({ kind: "categories", of: "series" }, data({ rows: library }))!.title).toBe(t("tv.seriesCategories"));
   });
 
+  it("is the ratings: every title and season that was scored, the newest rating first, each with its score under it", () => {
+    const page = gridOf({ kind: "ratings" }, data({ ratings: [rated("old", 6, 100), rated("new", 9, 300), rated("show", 8, 200, { season: 2, kind: "series" })] }))!;
+    expect(page.title).toBe(t("rating.mine"));
+    expect(page.entries.map((e) => [e.title, e.note])).toEqual([
+      ["Rated new", "9/10"],
+      ["Rated show", `${t("player.season", { n: 2 })} · 8/10`],
+      ["Rated old", "6/10"],
+    ]);
+    expect(page.entries[1]).toMatchObject({ kind: "series", url: "https://x.example/show" });
+    expect(page.meta).toContain("7.7"); // three ratings, their mean
+  });
+
+  it("says what the empty ratings page is for", () => {
+    const page = gridOf({ kind: "ratings" }, data())!;
+    expect(page.entries).toEqual([]);
+    expect(page.empty).toBe(t("rating.empty"));
+    expect(page.meta).toBe(t("rating.mineHelp"));
+  });
+
   it("is nothing for the pages that are not one grid", () => {
     expect(gridOf({ kind: "home" }, data())).toBeNull();
     expect(gridOf({ kind: "search" }, data())).toBeNull();
+  });
+});
+
+describe("cardOf", () => {
+  it("finds the card of a title by its link, and of a show by any of its episodes", () => {
+    const film = card("film", { url: "https://x.example/watch/7" });
+    const episode = card("show:Dark", { url: "https://x.example/watch/9?s=1&e=3", season: 1, episode: 3 });
+    expect(cardOf({ id: "m", title: "Film", url: "https://x.example/watch/7" }, [episode, film])).toBe(film);
+    expect(cardOf({ id: "d", title: "Dark", url: "https://x.example/watch/9?s=2&e=1" }, [film, episode])).toBe(episode);
+    expect(cardOf({ id: "o", title: "Other", url: "https://x.example/watch/8" }, [film, episode])).toBeUndefined();
+  });
+
+  it("tells films apart whose links differ only in the query, instead of giving one the watching of another", () => {
+    const one = card("one", { url: "https://x.example/play?v=1" });
+    const two = card("two", { url: "https://x.example/play?v=2" });
+    expect(cardOf({ id: "b", title: "Two", url: "https://x.example/play?v=2" }, [one, two])).toBe(two);
+    expect(cardOf({ id: "c", title: "Three", url: "https://x.example/play?v=3" }, [one, two])).toBeUndefined();
+  });
+
+  it("still takes the episodes of a show for one title when its links carry more than the season and the episode", () => {
+    const episode = card("show:Dark", { url: "https://x.example/watch?id=9&s=1&e=3", season: 1, episode: 3 });
+    expect(cardOf({ id: "d", title: "Dark", url: "https://x.example/watch?id=9&e=1&s=2" }, [episode])).toBe(episode);
+    expect(cardOf({ id: "o", title: "Other", url: "https://x.example/watch?id=8&s=1&e=1" }, [episode])).toBeUndefined();
+  });
+
+  it("finds nothing for a link that is not whole", () => {
+    expect(cardOf({ id: "r", title: "Relative", url: "/fixtures/sample.mp4" }, [card("a", { url: "/fixtures/sample.mp4" })])).toBeUndefined();
   });
 });
 
@@ -296,9 +345,13 @@ describe("heroActions", () => {
 });
 
 describe("overviewActions", () => {
-  it("offers Play and My List for any title, and Remove besides for a card of Continue watching", () => {
-    expect(overviewActions({ id: "a", title: "A", url: "u" })).toEqual(["play", "list"]);
-    expect(overviewActions({ id: "a", title: "A", url: "u", progressKey: "k" })).toEqual(["play", "list", "remove"]);
+  it("offers Play, My List and Rate for any title, and Remove besides for a card of Continue watching", () => {
+    expect(overviewActions({ id: "a", title: "A", url: "u" })).toEqual(["play", "list", "rate"]);
+    expect(overviewActions({ id: "a", title: "A", url: "u", progressKey: "k" })).toEqual(["play", "list", "rate", "remove"]);
+  });
+  it("has no Rate for a profile that turned ratings off", () => {
+    expect(overviewActions({ id: "a", title: "A", url: "u" }, false)).toEqual(["play", "list"]);
+    expect(overviewActions({ id: "a", title: "A", url: "u", progressKey: "k" }, false)).toEqual(["play", "list", "remove"]);
   });
 });
 

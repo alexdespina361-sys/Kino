@@ -3,9 +3,10 @@ import { DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, sa
 import { useAccount } from "../account/AccountProvider";
 import { hintOf, listEntryOf, listName } from "../account/cards";
 import { ListEditor } from "../account/Lists";
+import { ratingFor } from "../account/ratingText";
 import { profileStore, useProfileData } from "../account/store";
 import { rowTitle, useLanguage, useT } from "../i18n";
-import { BackspaceIcon, CheckIcon, ClockIcon, CloseIcon, FilmIcon, GearIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { BackspaceIcon, CheckIcon, ClockIcon, CloseIcon, FilmIcon, GearIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
@@ -18,6 +19,7 @@ import { actionForKey } from "./keys";
 import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, typedCharacter } from "./librarySearch";
 import { asOpened, entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, listOfRow, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
 import { Rail, type RailEntry } from "./Rail";
+import { RateOverlay } from "./RateOverlay";
 
 /** What a screen that starts a title can add: where to pick it up, and the picture and year the library already knows for it. */
 export interface PlayOptions {
@@ -105,9 +107,11 @@ interface Focused {
 /**
  * A page over the library: choosing which lists a title is in (it was asked from `back`), or making, renaming, placing and removing a
  * list (`id` null: a new one). A list made from the picker (`from`) takes the title in, and the picker comes back with it ticked.
+ * Or rating a title: for a show, the seasons it has (and the one its page showed, with its number of episodes) are what can be rated apart.
  */
 type PickOverlay = { kind: "pick"; entry: Entry; back: Target; fresh?: boolean };
-type Overlay = PickOverlay | { kind: "edit"; id: string | null; back: Target; from?: PickOverlay };
+type RateOverlayState = { kind: "rate"; entry: Entry; back: Target; isShow: boolean; seasons: number[]; shown: number | undefined; episodes: number | undefined };
+type Overlay = PickOverlay | RateOverlayState | { kind: "edit"; id: string | null; back: Target; from?: PickOverlay };
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
 const RAIL: Target = { zone: "rail", row: -1, col: -1 };
@@ -184,7 +188,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const t = useT();
   const language = useLanguage();
   const { status: accountStatus } = useAccount();
-  const { progress, watched, lists, list } = useProfileData();
+  const { progress, watched, lists, list, ratings, settings } = useProfileData();
+  const ratingsOn = settings.ratings ?? true;
   const narrowColumns = useNarrowColumns();
   const narrow = narrowColumns > 0;
   const gridColumns = narrowColumns || GRID_COLUMNS;
@@ -274,7 +279,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     const items = newest ? freshSimilar(similarItems, progress, list) : [];
     return newest && items.length > 0 ? { title: newest.title, items } : null;
   }, [newest, similarItems, progress, list]);
-  const data = useMemo<PageData>(() => ({ rows, progress, lists, list, similar }), [rows, progress, lists, list, similar]);
+  const data = useMemo<PageData>(() => ({ rows, progress, lists, list, ratings: ratingsOn ? ratings : [], similar }), [rows, progress, lists, list, ratings, ratingsOn, similar]);
 
   const rowsPage = isRowsPage(view);
   // `language` is not read, but the rows' titles and notes are words in it
@@ -348,6 +353,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
     { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) },
     { id: "history", label: t("tv.history"), icon: <ClockIcon />, current: view.kind === "history", testId: "rail-history", onPress: () => choose({ kind: "history" }) },
+    ...(ratingsOn ? [{ id: "ratings", label: t("rating.mine"), icon: <StarIcon />, current: view.kind === "ratings", testId: "rail-ratings", onPress: () => choose({ kind: "ratings" }) }] : []),
     { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: String(partySize) } : {}), testId: "rail-party", onPress: onParty },
     phone
       ? { id: "connect", label: t("tv.useRemote"), icon: <PhoneIcon />, testId: "rail-connect", onPress: () => switchRole("remote") }
@@ -400,7 +406,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     ...(detail
       ? {
           close: [1],
-          detail: [overviewActions(detail.entry).length],
+          detail: [overviewActions(detail.entry, ratingsOn).length],
           ...(series.seasons.length > 1 ? { seasons: [series.seasons.length] } : {}),
           ...(series.episodes?.length ? { episodes: series.episodes.map(() => 1) } : {}),
         }
@@ -451,10 +457,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
     if (notice) setAttempt((n) => n + 1);
   }, [notice]);
 
-  // A category that is gone (the library was refreshed) leaves its page empty: go home.
+  // A category that is gone (the library was refreshed) leaves its page empty: go home. So does the ratings page once ratings are turned off.
   useEffect(() => {
-    if (view.kind === "category" && status === "ready" && !grid) choose({ kind: "home" });
-  }, [view, status, grid]);
+    if ((view.kind === "category" && status === "ready" && !grid) || (view.kind === "ratings" && !ratingsOn)) choose({ kind: "home" });
+  }, [view, status, grid, ratingsOn]);
 
   useEffect(() => () => window.clearTimeout(bannerTimer.current), []);
 
@@ -636,6 +642,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   const doAction = (action: HeroAction, entry: Entry | undefined = shown?.entry, from: Target = CONTENT, at?: Start) => {
     if (!entry) return;
     if (action === "play") playEntry(entry, at);
+    else if (action === "rate") setOverlay({ kind: "rate", entry, back: from, isShow: series.isShow, seasons: series.seasons, shown: series.season, episodes: series.episodes?.length });
     else if (action === "list") {
       if (several) setOverlay({ kind: "pick", entry, back: from });
       else profileStore.setInList(listEntryOf(entry), !isSaved(entry));
@@ -663,6 +670,14 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
       return (
         <>
           <CloseIcon /> {t("rows.remove")}
+        </>
+      );
+    }
+    if (action === "rate") {
+      const given = ratingFor(ratings, entry.url);
+      return (
+        <>
+          <StarIcon filled={given !== undefined} /> {given ? `${given.score}/10` : t("rating.rate")}
         </>
       );
     }
@@ -930,7 +945,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
                 <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, detail.source].filter(Boolean).join("  ·  ")}</p>
                 {detail.entry.description && <p className="tv-detail-about">{detail.entry.description}</p>}
                 <div className="tv-hero-actions">
-                  {overviewActions(detail.entry).map((action, col) => (
+                  {overviewActions(detail.entry, ratingsOn).map((action, col) => (
                     <button
                       key={action}
                       className={`tv-hero-button${action === "play" ? " is-primary" : ""}`}
@@ -987,6 +1002,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
             </button>
           </div>
         </Screen>
+      )}
+
+      {overlay?.kind === "rate" && (
+        <RateOverlay entry={overlay.entry} isShow={overlay.isShow} seasons={overlay.seasons} shown={overlay.shown} episodes={overlay.episodes} onClose={closeOverlay} />
       )}
 
       {overlay?.kind === "edit" && (

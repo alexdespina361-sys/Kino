@@ -533,3 +533,43 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-pills { display: flex; gap: 8px; margin: -4px 0 0; }
 .lib-pill { padding: 7px 15px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 0.85rem; font-weight: 600; transition: background 0.15s ease, color 0.15s ease; }
 .lib-pill[aria-pressed="true"] { background: #fff; color: #000; }
+
+/* Ratings: a box on a title's page (folded to one line), and the page of everything rated. */
+/* (`flex: none`: a sheet is a column that scrolls, and a box that hides its overflow may shrink, so a long page would squeeze it flat.) */
+.rating-box { display: flex; flex: none; flex-direction: column; border-radius: 12px; background: var(--surface); overflow: hidden; }
+.rating-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 13px 14px; text-align: left; font-weight: 600; transition: background 0.15s ease; }
+.rating-head:focus-visible { background: rgba(255, 255, 255, 0.06); }
+@media (hover: hover) { .rating-head:hover { background: rgba(255, 255, 255, 0.06); } }
+.rating-head:active { background: rgba(255, 255, 255, 0.1); }
+.rating-head > svg { flex: none; color: var(--muted); font-size: 1.15rem; transition: color 0.15s ease; }
+.rating-box[data-rated="true"] .rating-head > svg:first-child { color: var(--accent); }
+.rating-head-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rating-head-value { flex: none; color: var(--muted); font-size: 0.9rem; }
+.rating-box[data-rated="true"] .rating-head-value { color: var(--text); font-weight: 700; }
+.rating-body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; }
+.rating-scores { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.rating-score { min-height: 46px; border-radius: 10px; background: var(--surface-2); font-size: 1.05rem; font-weight: 700; transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease; }
+.rating-score:focus-visible { background: rgba(255, 255, 255, 0.18); }
+@media (hover: hover) { .rating-score:hover { background: rgba(255, 255, 255, 0.18); } }
+.rating-score:active { transform: scale(0.94); }
+.rating-score[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
+.rating-word { min-height: 1.3em; margin: 0; text-align: center; font-weight: 600; }
+.rating-note-field { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.rating-note { width: 100%; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 1rem; /* 16px: anything smaller makes iPhones zoom in on focus */ line-height: 1.4; resize: none; transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; }
+.rating-note:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.25); }
+.rating-note:disabled { opacity: 0.55; }
+.rating-count { align-self: flex-end; color: var(--muted); font-size: 0.75rem; }
+.rating-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.rating-facts > * { padding: 5px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 0.8rem; }
+.rating-list { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.rating-item { display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 8px; border-radius: 12px; text-align: left; transition: background 0.15s ease, transform 0.08s ease; }
+.rating-item:focus-visible { background: rgba(255, 255, 255, 0.08); }
+@media (hover: hover) { .rating-item:hover { background: rgba(255, 255, 255, 0.08); } }
+.rating-item:active { background: rgba(255, 255, 255, 0.14); transform: scale(0.99); }
+.rating-text { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+.rating-name { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.rating-line { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+.rating-badge { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; }
+.rating-badge svg { color: var(--accent); }
+.rating-quote { display: -webkit-box; overflow: hidden; color: var(--text); font-size: 0.9rem; line-height: 1.4; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.rating-item .rating-facts > * { padding: 3px 8px; font-size: 0.75rem; }

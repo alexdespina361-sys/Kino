@@ -1,6 +1,7 @@
-import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress } from "../../shared";
+import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { continueNote, listName, unfinished } from "../account/cards";
-import { rowTitle, t } from "../i18n";
+import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
+import { getLanguage, rowTitle, t } from "../i18n";
 
 /**
  * What the TV's library shows on each of its pages, worked out from the library's rows and from what this profile has watched
@@ -15,6 +16,8 @@ export type View =
   /** One of the lists (the first when none is named). */
   | { kind: "list"; list?: string }
   | { kind: "history" }
+  /** The titles this profile gave a score, and the seasons it scored. */
+  | { kind: "ratings" }
   | { kind: "category"; rowId: string }
   /** Every category, or only those of films or of shows. */
   | { kind: "categories"; of?: LibraryKind }
@@ -96,6 +99,8 @@ export interface PageData {
   /** The profile's lists, the first one always, and every title saved in any of them. */
   lists: readonly ListInfo[];
   list: readonly LiveListItem[];
+  /** What this profile rated (nothing at all when it has turned ratings off). */
+  ratings: readonly LiveRating[];
   /** "Because you watched ...": the title, and the titles like it. */
   similar: { title: string; items: readonly LibraryItem[] } | null;
 }
@@ -129,19 +134,26 @@ export function entryOfProgress(card: LiveProgress): Entry {
   };
 }
 
-/** Whether two links are one title's: a show's episodes differ in the query only. */
-function sameTitle(a: string, b: string): boolean {
+/** A link without the season and episode of its query (`s` and `e`), which are all that tells one episode of a show from another. */
+function titleOf(link: string): string | undefined {
   try {
-    const first = new URL(a);
-    const second = new URL(b);
-    return first.origin === second.origin && first.pathname === second.pathname;
+    const url = new URL(link);
+    url.searchParams.delete("s");
+    url.searchParams.delete("e");
+    return `${url.origin}${url.pathname}${url.search}`;
   } catch {
-    return false;
+    return undefined;
   }
 }
 
+/** Whether two links are one title's: a show's episodes differ in their season and episode only (films whose links differ in anything else are two). */
+function sameTitle(a: string, b: string): boolean {
+  const first = titleOf(a);
+  return first !== undefined && first === titleOf(b);
+}
+
 /** The card this profile has for a title, if any (a film and a show can have the same number in a place's links, so the kind, when it is known, tells them apart). */
-const cardOf = (entry: Entry, progress: readonly LiveProgress[]): LiveProgress | undefined =>
+export const cardOf = (entry: Entry, progress: readonly LiveProgress[]): LiveProgress | undefined =>
   progress.find((card) => sameTitle(card.url, entry.url) && (entry.kind === undefined || isShowCard(card) === (entry.kind === "series")));
 
 /**
@@ -200,6 +212,18 @@ export const entryOfSaved = (card: LiveListItem): Entry => ({
   ...(card.backdrop ? { backdrop: card.backdrop } : {}),
   ...(card.year ? { year: card.year } : {}),
   ...(card.description ? { description: card.description } : {}),
+});
+
+/** A rated title (or season) as a card: what it plays is the title's own link, and the line under it is the score. */
+export const entryOfRating = (rating: LiveRating): Entry => ({
+  id: rating.key,
+  title: rating.title,
+  url: rating.url,
+  ...(rating.image ? { image: rating.image } : {}),
+  ...(rating.backdrop ? { backdrop: rating.backdrop } : {}),
+  ...(rating.year ? { year: rating.year } : {}),
+  ...(rating.kind ? { kind: rating.kind } : {}),
+  note: ratingNote(t, rating),
 });
 
 /** Where a row's titles come from, said only when the library has more than one source (with one, every title would carry the same word). */
@@ -267,6 +291,8 @@ export function gridOf(view: View, data: PageData): GridPage | null {
     }
     case "history":
       return { title: t("tv.history"), meta: t("tv.historyHelp"), layout: "wide", entries: data.progress.map(entryOfProgress), empty: t("tv.historyEmpty") };
+    case "ratings":
+      return { title: t("rating.mine"), meta: ratingSummary(t, getLanguage(), data.ratings) || t("rating.mineHelp"), layout: "wide", entries: sortRatings(data.ratings, "new").map(entryOfRating), empty: t("rating.empty") };
     case "category": {
       const row = data.rows.find((candidate) => candidate.id === view.rowId);
       return row ? { title: rowTitle(row), meta: [t("tv.titles", { count: row.items.length }), sourceOf(data.rows, row).source].filter(Boolean).join(" · "), layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
@@ -288,10 +314,18 @@ export function freshSimilar(items: readonly LibraryItem[], progress: readonly L
 }
 
 /** What the buttons under the banner can do for a title. */
-export type HeroAction = "play" | "list" | "remove";
+export type HeroAction = "play" | "list" | "remove" | "rate";
 export const heroActions = (entry: Entry | undefined): HeroAction[] => (!entry || entry.opens ? [] : entry.progressKey ? ["play", "remove"] : ["play", "list"]);
-/** ...and on a title's own page, which any title can be kept from: play it (or pick it up), keep it in a list, and for one part way through, take it off its row. */
-export const overviewActions = (entry: Entry): HeroAction[] => (entry.progressKey ? ["play", "list", "remove"] : ["play", "list"]);
+/**
+ * ...and on a title's own page, which any title can be kept from: play it (or pick it up), keep it in a list, give it a score (unless
+ * ratings are turned off), and for one part way through, take it off its row.
+ */
+export const overviewActions = (entry: Entry, ratings = true): HeroAction[] => [
+  "play",
+  "list",
+  ...(ratings ? (["rate"] as const) : []),
+  ...(entry.progressKey ? (["remove"] as const) : []),
+];
 
 /** Which titles a search shows. */
 export type KindFilter = "all" | LibraryKind;

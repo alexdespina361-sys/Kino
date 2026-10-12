@@ -428,6 +428,7 @@ export class AccountStore {
       watched: answer("watched") as SyncResponse["watched"],
       list: answer("list") as SyncResponse["list"],
       listNames: answer("listNames") as SyncResponse["listNames"],
+      ratings: answer("ratings") as SyncResponse["ratings"],
       settings: answer("settings") as SyncResponse["settings"],
     };
   }

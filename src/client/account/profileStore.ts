@@ -13,16 +13,21 @@ import {
   newListId,
   progressFor,
   progressKeyOf,
+  RATING_NOTE_MAX,
+  ratingKey,
+  isScore,
   resolveLists,
   resolveSettings,
   seriesKeyOf,
   titleLink,
   watchedFor,
   watchedKey,
+  type LibraryKind,
   type ListInfo,
   type LiveListItem,
   type LiveListName,
   type LiveProgress,
+  type LiveRating,
   type LiveWatched,
   type NormalizedMedia,
   type Playback,
@@ -33,6 +38,7 @@ import {
   type SyncItem,
   type SyncRequest,
   type SyncResponse,
+  type WatchFacts,
 } from "../../shared";
 import { LEGACY_KEYS, readLegacy } from "./legacy";
 
@@ -57,6 +63,8 @@ export interface Snapshot {
   lists: ListInfo[];
   /** Every saved title of every list (a title in two lists is there twice), newest first. */
   list: LiveListItem[];
+  /** What the profile rated: titles and seasons, the one changed last first. */
+  ratings: LiveRating[];
   settings: Settings;
 }
 
@@ -69,6 +77,22 @@ export interface ListEntry {
   backdrop?: string | undefined;
   year?: number | undefined;
   description?: string | undefined;
+}
+
+/** A title that can be rated: the same, and whether it is a film or a show when that is known. */
+export interface RatedTitle {
+  title: string;
+  url: string;
+  image?: string | undefined;
+  backdrop?: string | undefined;
+  year?: number | undefined;
+  kind?: LibraryKind | undefined;
+}
+
+/** What a person changes in a rating: the score, the note (the note alone changes nothing without a score). */
+export interface RatingChange {
+  score?: number;
+  note?: string;
 }
 
 interface Saved {
@@ -126,6 +150,7 @@ export class ProfileStore {
         watched: live(this.data.watched),
         lists,
         list: byNewest(live(this.data.list)).filter((item) => known.has(listOf(item))),
+        ratings: byNewest(live(this.data.ratings)),
         settings: resolveSettings(this.data.settings),
       };
     }
@@ -241,7 +266,7 @@ export class ProfileStore {
   adoptGuest(): boolean {
     if (this.scopeName === GUEST) return false;
     const guest = this.read(GUEST);
-    if (!guest || guest.data.progress.length + guest.data.watched.length + guest.data.list.length + guest.data.listNames.length === 0) return false;
+    if (!guest || guest.data.progress.length + guest.data.watched.length + guest.data.list.length + guest.data.listNames.length + guest.data.ratings.length === 0) return false;
     // The guest's settings stay with the guest: a profile's own choices are not overwritten by a visitor's.
     this.data = mergeData(this.data, { ...guest.data, settings: [] }, this.now());
     // What came across is old news here, but the server has not seen it.
@@ -369,6 +394,51 @@ export class ProfileStore {
     this.put("listNames", { key: id, at, deleted: true });
   }
 
+  /**
+   * Give a title (or one season of a show) a score, a note, or both: the score is what makes it a rating, so a note on its own is kept
+   * only for a title that has one. What was watched at that moment (`facts`, see rating.ts) is remembered with it; a rating that is changed
+   * again keeps what it knew when `facts` has nothing new. The rating's date moves only with the score.
+   */
+  setRating(title: RatedTitle, season: number | undefined, change: RatingChange, facts: WatchFacts = {}) {
+    const url = titleLink(title.url);
+    const key = ratingKey(url, season);
+    if (key.length > 400 || url.length > 2048) return;
+    const before = this.find<LiveRating>("ratings", key);
+    const score = change.score ?? before?.score;
+    if (score === undefined || !isScore(score)) return;
+    const at = this.now();
+    const note = change.note !== undefined ? change.note.trim().slice(0, RATING_NOTE_MAX) : before?.note;
+    const known = <K extends keyof WatchFacts>(name: K): WatchFacts[K] => facts[name] ?? before?.[name];
+    const [watchedAt, percent, seen, of] = [known("watchedAt"), known("percent"), known("seen"), known("of")];
+    const image = title.image ?? before?.image;
+    const backdrop = title.backdrop ?? before?.backdrop;
+    const year = title.year ?? before?.year;
+    const kind = title.kind ?? before?.kind;
+    this.put("ratings", {
+      key,
+      at,
+      title: title.title.slice(0, 300),
+      url,
+      ...(image ? { image } : {}),
+      ...(backdrop ? { backdrop } : {}),
+      ...(year ? { year } : {}),
+      ...(kind ? { kind } : {}),
+      ...(season ? { season } : {}),
+      score,
+      ...(note ? { note } : {}),
+      ratedAt: change.score !== undefined && change.score !== before?.score ? at : (before?.ratedAt ?? at),
+      ...(watchedAt !== undefined ? { watchedAt } : {}),
+      ...(percent !== undefined ? { percent } : {}),
+      ...(seen !== undefined ? { seen } : {}),
+      ...(of !== undefined ? { of } : {}),
+    } satisfies LiveRating);
+  }
+
+  /** Take back a rating (of a title, or of one of its seasons). */
+  removeRating(url: string, season?: number) {
+    this.put("ratings", { key: ratingKey(url, season), at: this.now(), deleted: true });
+  }
+
   /** A setting (language, colour...). `undefined` goes back to the default. */
   setSetting<K extends SettingKey>(key: K, value: Settings[K] | undefined) {
     const at = this.now();
@@ -393,7 +463,7 @@ export class ProfileStore {
 
   /** The server answered: take in what other screens did, and note that what was sent is safe (unless it changed again meanwhile). */
   accept(response: SyncResponse, sent: ReadonlyMap<string, number>): void {
-    const merged = mergeData(this.data, { progress: response.progress, watched: response.watched, list: response.list, listNames: response.listNames, settings: response.settings }, this.now());
+    const merged = mergeData(this.data, { progress: response.progress, watched: response.watched, list: response.list, listNames: response.listNames, ratings: response.ratings, settings: response.settings }, this.now());
     const different = JSON.stringify(merged) !== JSON.stringify(this.data);
     this.data = merged;
     this.revision = response.rev;

@@ -138,6 +138,9 @@ export function SettingsPage() {
       <Group title={t("settings.playback")}>
         <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
       </Group>
+      <Group title={t("rating.settings")} help={t("rating.settingsHelp")}>
+        <Switch label={t("rating.settingsSwitch")} checked={settings.ratings ?? true} onChange={(on) => set("ratings", on)} testId="ratings-switch" />
+      </Group>
       <SubtitleLanguages />
       {account.me === null && <p className="muted small">{t("settings.signInToSave")}</p>}
     </div>

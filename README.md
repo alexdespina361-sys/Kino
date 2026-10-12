@@ -64,6 +64,16 @@ pnpm build && pnpm start     # http://localhost:8787
   next episode of a show once one is finished), **lists** (every profile has one called **Favourites**, and can make others and name them,
   up to twelve in all; a title can be in several), the watched marks on episode lists, and the profile's settings. Open the app
   on another phone, TV or browser, sign in, pick the profile, and it carries on from the same second.
+- **Ratings.** A film, a show or **one season of a show** can be given a score from 1 to 10, each with a word (1 *Appalling*, 5 *Average*, 8 *Very
+  good*, 10 *Masterpiece*), and **a score is all it takes**: one tap on the phone (the *Your rating* line on a title's page, and under a show's season tabs a
+  line for the season shown), or OK on a number on the TV (**Rate** on a title's page, with the remote already on 7). A note saying why is optional: typed
+  on the phone (kept as it is typed), and on the TV with the keys of a page of its own. The rating also **writes down the watching behind it**, with no
+  work from the person: *when it was rated*, *how much was watched* (**from 95% on it counts as all of it**, since the credits are often skipped; a
+  show or a season is counted in episodes, "2 of 3 episodes watched") and *when it was finished* (or last watched). Watching it again later adds to that;
+  rating it again changes the day it was rated only when the score changes. **My ratings** is a row on the phone's home screen with a page of its own
+  (*See all*: newest first or highest first, with the notes and those facts, and the mean) and an entry in the TV's menu. Ratings are saved to the
+  profile and synced like the lists (up to 500; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
+  and TV) switches the whole thing off, every sign of it, and keeps what was rated.
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.
@@ -76,10 +86,10 @@ pnpm build && pnpm start     # http://localhost:8787
   until a signed-in person says yes. A screen that is signed in itself can do the asking too (a computer with no phone at hand): its account
   page has **Sign in another device**: type the code the other screen shows, check who is asking, approve.
 - The phone's account page: profiles, settings, devices (sign others out, and give a device a name of its own: "Living room"), password, delete account. The TV has its own: who's watching,
-  **Manage profiles**, and the settings (language, colour, autoplay). The subtitle languages, the devices, the password and deleting the
+  **Manage profiles**, and the settings (language, colour, autoplay, ratings). The subtitle languages, the devices, the password and deleting the
   account are on the phone's page only.
 - **Settings per profile:** website language, accent colour (the red can be any of several colours), whether the next episode follows by
-  itself, and the subtitle languages (below).
+  itself, whether titles can be rated, and the subtitle languages (below).
 
 **Phone**
 - Pair by QR scan (camera) or by code; a QR link opened from the phone's camera app pairs by itself. A phone that already has a TV is asked
@@ -404,8 +414,8 @@ webcam shows a generated QR code), disconnect and switching TVs, resume, the D-p
 library and its menu, watch parties (from a TV, from a phone, from a link), a second phone and a phone that scans another TV, a phone with
 several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page whose connections are never answered:
 `sleepingServer` in `e2e/helpers.ts`, with the page's clock skipped ahead), the TV page on a
-phone, a tablet and a phone held sideways, the end card and mute, full screen (at the first press, kept for the next visit, the buttons), and
-accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
+phone, a tablet and a phone held sideways, the end card and mute, full screen (at the first press, kept for the next visit, the buttons),
+ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
 itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`). A Hisense browser is imitated by its user agent
@@ -420,7 +430,7 @@ Android TV remotes, the wake lock, an iPhone's camera and browsers, and the home
 ## Layout
 
 ```
-src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge)
+src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge), rating.ts (what a rating remembers of the watching)
 src/server/    sessions/ (registry: devices, codes, controllers; pairings: which phone goes with which TV, kept between restarts), websocket/hub.ts,
                resolvers/, accounts/ (store, routes, persistence), app.ts
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),

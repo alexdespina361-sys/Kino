@@ -375,6 +375,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const { settings, set } = useSettings();
   const { me, profile } = account;
   const autoplay = settings.autoplayNext ?? true;
+  const ratingsOn = settings.ratings ?? true;
   return (
     <Screen testId="tv-account" focus onBack={onClose}>
       <div className="tv-panel">
@@ -453,6 +454,12 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
           <h2>{t("settings.playback")}</h2>
           <button className="tv-switch-row" role="switch" aria-checked={autoplay} onClick={() => set("autoplayNext", !autoplay)} data-nav data-testid="tv-autoplay">
             <span>{t("settings.autoplayNext")}</span>
+            <span className="tv-switch" aria-hidden="true" />
+          </button>
+
+          <h2>{t("rating.settings")}</h2>
+          <button className="tv-switch-row" role="switch" aria-checked={ratingsOn} onClick={() => set("ratings", !ratingsOn)} data-nav data-testid="tv-ratings-switch">
+            <span>{t("rating.settingsSwitch")}</span>
             <span className="tv-switch" aria-hidden="true" />
           </button>
           {me && <p className="tv-hint">{t("tv.subtitlesHint")}</p>}

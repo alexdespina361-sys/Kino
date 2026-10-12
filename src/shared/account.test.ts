@@ -225,6 +225,6 @@ describe("what people type", () => {
   });
 
   it("accepts a sync with nothing to send", () => {
-    expect(SyncRequestSchema.parse({ since: 0 })).toEqual({ since: 0, progress: [], watched: [], list: [], listNames: [], settings: [] });
+    expect(SyncRequestSchema.parse({ since: 0 })).toEqual({ since: 0, progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [] });
   });
 });
