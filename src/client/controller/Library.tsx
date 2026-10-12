@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { itemsOf, LibrarySchema, searchItems, type Library as LibraryData, type LibraryItem } from "../../shared";
+import { itemsOf, LibrarySchema, rankByQuery, searchItems, type Library as LibraryData, type LibraryItem } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { rowTitle, useT } from "../i18n";
@@ -31,7 +31,7 @@ const isSeries = (row: LibraryData["rows"][number]) => (row.kind ? row.kind === 
 const wanted = (query: string) => query.trim().toLowerCase();
 
 /** The titles on the page that have the words in their name (a slip of a letter or an unfinished word included), best first: what a search shows before the library has answered. */
-const onThePage = (library: LibraryData | null, q: string): LibraryItem[] => searchItems(itemsOf(library?.rows ?? []), q);
+const onThePage = (library: LibraryData | null, q: string): LibraryItem[] => rankByQuery(searchItems(itemsOf(library?.rows ?? []), q), q);
 
 /**
  * Rows of titles from the server's library, to scroll through, and a search that lists what it finds one under another. A tap on a title
@@ -145,8 +145,9 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
                 combined.push(item);
               }
             }
-            kept.found = { query: q, items: combined };
-            setSearchResults(combined);
+            const ranked = rankByQuery(combined, q); // (the likeliest first, whether the page or the library found it)
+            kept.found = { query: q, items: ranked };
+            setSearchResults(ranked);
           } else setSearchFailed(true);
         })
         .catch(() => {

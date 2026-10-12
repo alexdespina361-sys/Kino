@@ -214,6 +214,10 @@ const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[]): Entry => {
 /** A card of a show has an episode; a film's has none. */
 const isShowCard = (card: LiveProgress) => card.season !== undefined;
 
+/** A row of Home that is made of one of this profile's lists is named after it. */
+const LIST_ROW = "list:";
+export const listOfRow = (rowId: string): string | undefined => (rowId.startsWith(LIST_ROW) ? rowId.slice(LIST_ROW.length) : undefined);
+
 /** The first row of a page is shown as a ranking of this many. */
 const RANKED = 10;
 /** The row of categories comes in after this many rows of titles, and shows this many tiles before "All categories". */
@@ -241,7 +245,7 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
   if (!kind) {
     for (const info of data.lists) {
       const saved = data.list.filter((item) => listOf(item) === info.id);
-      if (saved.length > 0) out.push({ id: `list:${info.id}`, layout: "wide", title: listName(info), entries: saved.map(entryOfSaved) });
+      if (saved.length > 0) out.push({ id: `${LIST_ROW}${info.id}`, layout: "wide", title: listName(info), entries: saved.map(entryOfSaved) });
     }
   }
 

@@ -235,6 +235,61 @@ describe("filmpireSource search", () => {
     expect(results.map((r) => r.title)).toEqual(["Valid Show"]);
   });
 
+  describe("with more than one page of answers", () => {
+    const movie = (id: number, title: string) => ({ id, media_type: "movie", title, release_date: "2020-01-01", poster_path: "/p.jpg" });
+    /** TMDB answering `search/multi` page by page, and the pages asked for. */
+    const pages = (answers: Record<number, unknown[] | number>, total: number) => {
+      const asked: number[] = [];
+      const get = vi.fn(async (url: string | URL) => {
+        const page = Number(new URL(String(url)).searchParams.get("page"));
+        asked.push(page);
+        const answer = answers[page];
+        return typeof answer === "number" ? json({}, answer) : json({ results: answer ?? [], total_pages: total });
+      });
+      return { asked, get };
+    };
+
+    it("reads the next pages (three at most) when TMDB says there are more, and a title once", async () => {
+      const { asked, get } = pages(
+        { 1: [movie(1, "Boon"), movie(2, "Boonie Bears")], 2: [movie(2, "Boonie Bears"), movie(3, "The Boondocks")], 3: [movie(4, "Boonville")], 4: [movie(5, "Too Far")] },
+        9,
+      );
+      const results = await filmpireSource({ fetch: get as never }).search!("boon");
+      expect(results.map((r) => r.title)).toEqual(["Boon", "Boonie Bears", "The Boondocks", "Boonville"]);
+      expect(asked.sort()).toEqual([1, 2, 3]);
+    });
+
+    it("asks for no more pages than TMDB has", async () => {
+      const { asked, get } = pages({ 1: [movie(1, "Boon")], 2: [movie(2, "Boonie Bears")] }, 2);
+      const results = await filmpireSource({ fetch: get as never }).search!("boon");
+      expect(results.map((r) => r.title)).toEqual(["Boon", "Boonie Bears"]);
+      expect(asked.sort()).toEqual([1, 2]);
+    });
+
+    it("leaves out a later page that cannot be had, and answers nothing when the first cannot", async () => {
+      const bad = pages({ 1: [movie(1, "Boon")], 2: 500, 3: [movie(3, "The Boondocks")] }, 3);
+      expect((await filmpireSource({ fetch: bad.get as never }).search!("boon")).map((r) => r.title)).toEqual(["Boon", "The Boondocks"]);
+      const none = pages({ 1: 500, 2: [movie(2, "Boonie Bears")] }, 3);
+      expect(await filmpireSource({ fetch: none.get as never }).search!("boon")).toEqual([]);
+    });
+
+    it("asks the provider about the first page only, but keeps out what it was already found to lack", async () => {
+      const probe = vi.fn(async (url: string | URL) => json(String(url).includes("tmdb=102") ? { status_code: 404 } : { status_code: "200", data: {} }));
+      const first = pages({ 1: [movie(102, "Gone")] }, 1);
+      const source = filmpireSource({ fetch: first.get as never, probeFetch: probe as never, verifyPlayback: true });
+      expect(await source.search!("gone")).toEqual([]);
+      expect(probe).toHaveBeenCalledTimes(1);
+
+      // (the same source, a later question: 102 is known to lack a video; 103 was never asked about and is not now)
+      first.get.mockImplementation(async (url: string | URL) => {
+        const page = Number(new URL(String(url)).searchParams.get("page"));
+        return json({ results: page === 1 ? [movie(101, "Here")] : [movie(102, "Gone"), movie(103, "Never Asked")], total_pages: 2 });
+      });
+      expect((await source.search!("here")).map((r) => r.title)).toEqual(["Here", "Never Asked"]);
+      expect(probe).toHaveBeenCalledTimes(2); // (101 only)
+    });
+  });
+
   it("fails open when playback probe times out or has a network glitch", async () => {
     const searchResults = [
       { id: 101, media_type: "movie", title: "Glitchy Movie", release_date: "2022-01-01", poster_path: "/p.jpg" },

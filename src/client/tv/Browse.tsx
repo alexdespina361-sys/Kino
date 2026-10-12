@@ -15,8 +15,8 @@ import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AccountChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
-import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
-import { asOpened, entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
+import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, typedCharacter } from "./librarySearch";
+import { asOpened, entryOfItem, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, listOfRow, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
 import { Rail, type RailEntry } from "./Rail";
 
 /** What a screen that starts a title can add: where to pick it up, and the picture and year the library already knows for it. */
@@ -475,7 +475,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
       return setSearching(false);
     }
     const local = matchLocal(rows, text);
-    setResults((before) => (text.length < 2 ? local : mergeItems(local, keepMatching(before, text)))); // (what the server found for the words a letter ago stays while it is asked again)
+    setResults((before) => (text.length < 2 ? local : mergeAnswers(local, keepMatching(before, text), text))); // (what the server found for the words a letter ago stays while it is asked again)
     if (text.length < 2) {
       remembered.resultsFor = text;
       return setSearching(false);
@@ -487,7 +487,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
         .then((answer: unknown) => {
           const parsed = LibraryItemsSchema.parse(answer);
-          setResults(mergeItems(local, parsed.items));
+          setResults(mergeAnswers(local, parsed.items, text));
           remembered.resultsFor = text;
           setFailedFor(null);
           setSearching(false);
@@ -595,9 +595,32 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
   // A category opens its page; a title opens its own page, where it is played or kept in a list (the banner's buttons do the same without it).
   const press = (title: Focused) => (title.entry.opens ? choose(title.entry.opens) : openDetail(title));
 
-  const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string) => {
+  /**
+   * The small round button in a title's corner, for a mouse (the banner's buttons and a title's own page do the same for the remote):
+   * ＋ keeps the title in the first list at once, however many lists there are; × lets it go from the list its row or page is, or clears
+   * a card off Continue watching. A category has none.
+   */
+  const cornerOf = (entry: Entry, listId: string | undefined): Corner | undefined => {
+    if (entry.opens || !entry.url) return undefined;
+    const key = entry.progressKey;
+    if (key) {
+      return {
+        kind: "clear",
+        label: t("rows.remove"),
+        run: () => {
+          profileStore.removeProgress(key);
+          if (shown?.entry.progressKey === key) setFocused(null); // (the banner would go on showing a card that is gone)
+        },
+      };
+    }
+    const info = lists.find((each) => each.id === listId) ?? lists[0]!;
+    const kept = inList(entry, info.id);
+    return { kind: kept ? "kept" : "add", label: t(kept ? "rows.removeFromList" : "library.addToList", { list: listName(info) }), run: () => profileStore.setInList(listEntryOf(entry), !kept, info.id) };
+  };
+
+  const tile = (entry: Entry, pos: Pos, label: string, layout: Layout, source?: string, listId?: string) => {
     const title: Focused = { entry: resumable(entry, progress), label, ...(source ? { source } : {}) };
-    return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} rank={pos.col + 1} pos={pos} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title)} />;
+    return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} rank={pos.col + 1} pos={pos} corner={cornerOf(entry, listId)} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title)} />;
   };
 
   /** An episode of the show whose page is open. */
@@ -729,7 +752,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
               ? homeRows.map((row, r) => (
                   <section className="tv-row" key={row.id} data-layout={row.layout} aria-label={row.title}>
                     <h2 className="tv-row-title">{row.title}</h2>
-                    <div className="tv-row-tiles">{row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source))}</div>
+                    <div className="tv-row-tiles">{row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id)))}</div>
                   </section>
                 ))
               : status === "loading" && (
@@ -798,7 +821,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, co
           )}
           {grid.entries.length > 0 ? (
             <div className="tv-grid" style={{ "--cols": gridColumns } as CSSProperties}>
-              {grid.entries.map((entry, i) => tile(entry, { zone: "grid", row: Math.floor(i / gridColumns), col: i % gridColumns }, grid.title, grid.layout))}
+              {grid.entries.map((entry, i) => tile(entry, { zone: "grid", row: Math.floor(i / gridColumns), col: i % gridColumns }, grid.title, grid.layout, undefined, view.kind === "list" ? shownId : undefined))}
             </div>
           ) : (
             <p className="tv-view-empty" data-testid="tv-view-empty">
@@ -1066,8 +1089,16 @@ function Key({ children, pos, wide, testId, onPress }: { children: ReactNode; po
   );
 }
 
+/** The round button in a title's corner: what it is (its look), what it says, and what it does. */
+interface Corner {
+  /** ＋ keeps the title (in the first list), × on a kept one lets it go, × on a card clears it off Continue watching. */
+  kind: "add" | "kept" | "clear";
+  label: string;
+  run: () => void;
+}
+
 /** One title (or category) of a row, in the shape its row asks for. */
-function Tile({ entry, layout, rank, pos, onArrive, onPress }: { entry: Entry; layout: Layout; rank: number; pos: Pos; onArrive: (element: HTMLElement) => void; onPress: () => void }) {
+function Tile({ entry, layout, rank, pos, corner, onArrive, onPress }: { entry: Entry; layout: Layout; rank: number; pos: Pos; corner: Corner | undefined; onArrive: (element: HTMLElement) => void; onPress: () => void }) {
   const [broken, setBroken] = useState(false);
   const hue = hueOf(entry.id);
   // A ranking shows the upright poster; everything else is wide, and falls back to the poster when there is no wide picture.
@@ -1082,6 +1113,9 @@ function Tile({ entry, layout, rank, pos, onArrive, onPress }: { entry: Entry; l
     // nothing, and the click takes the focus, then does what it is for.
     onMouseDown: (event: MouseEvent<HTMLElement>) => event.preventDefault(),
     onClick: (event: MouseEvent<HTMLElement>) => {
+      // The corner is no button of its own (a button inside a button, and one more stop for the remote): a click on it does its one
+      // thing and leaves the title alone, unopened and unfocused, so the next title can be kept at once.
+      if (corner && (event.target as Element).closest("[data-corner]")) return corner.run();
       event.currentTarget.focus({ preventScroll: true });
       onPress();
     },
@@ -1124,6 +1158,11 @@ function Tile({ entry, layout, rank, pos, onArrive, onPress }: { entry: Entry; l
           {(entry.progress ?? 0) > 0 && (
             <span className="tv-tile-progress" aria-hidden="true">
               <i style={{ width: `${Math.round((entry.progress ?? 0) * 100)}%` }} />
+            </span>
+          )}
+          {corner && (
+            <span className="tv-tile-corner" data-corner={corner.kind} data-testid="tv-tile-corner" title={corner.label} aria-hidden="true">
+              {corner.kind === "add" ? <PlusIcon /> : <CloseIcon />}
             </span>
           )}
         </span>

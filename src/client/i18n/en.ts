@@ -502,6 +502,8 @@ export const en = {
   "party.inviteHelp": "On the other device, open {host}, choose Watch party, then Join a party, and type this code. On a phone or computer you can also scan the code or open the link.",
   "party.share": "Share link",
   "party.copied": "Link copied",
+  "party.copyLink": "Copy link",
+  "party.copyFailed": "Could not copy: select the link and copy it",
   "party.addTitle": "Add a device that shows a code",
   "party.watching": "Watching",
   "party.offline": "Offline",

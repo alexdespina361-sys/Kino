@@ -1429,6 +1429,60 @@ test.describe("a watch party started on a TV", () => {
     await expect(host.getByTestId("tv-party-btn")).toContainText("2 devices");
   });
 
+  test("the invite has the party's link with a button that copies it, on the page and in the panel over a film, and the remote reaches it", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    await host.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const clipboard = () => host.evaluate(() => navigator.clipboard.readText());
+    const copy = host.getByTestId("tv-party-link-copy");
+    const code = await startParty(host);
+    const link = new URL(`/?party=${code}`, host.url()).href;
+
+    // The page: the whole link under the code, and OK on its button puts it on the clipboard and says so, then it says Copy link again.
+    await expect(host.getByTestId("tv-party-link-url")).toHaveText(link);
+    await expect(host.getByTestId("tv-back-to-library")).toBeFocused();
+    await host.keyboard.press("ArrowUp");
+    await expect(copy).toBeFocused();
+    await host.keyboard.press("Enter");
+    await expect(copy).toHaveText("Link copied");
+    expect(await clipboard()).toBe(link);
+    await expect(copy).toBeFocused(); // the remote kept its place
+    await expect(copy).toHaveText("Copy link"); // and the button is ready for the next time by itself
+
+    // Over a film: the left column of the panel, which the arrow keys cross over to from Done and back.
+    await host.getByTestId("tv-back-to-library").click();
+    await playFirst(host);
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "playing");
+    await host.mouse.move(60, 60);
+    await host.getByTestId("tv-party-btn").click();
+    await expect(host.getByTestId("tv-party-done")).toBeFocused();
+    await expect(host.getByTestId("tv-party-link-url")).toHaveText(link);
+    await host.keyboard.press("ArrowLeft");
+    await expect(copy).toBeFocused();
+    await host.evaluate(() => navigator.clipboard.writeText("something else"));
+    await host.keyboard.press("Enter");
+    await expect(copy).toHaveText("Link copied");
+    expect(await clipboard()).toBe(link);
+    await host.keyboard.press("ArrowRight");
+    await expect(host.getByTestId("tv-party-done")).toBeFocused();
+  });
+
+  test("there is no link before a party is started, and a browser that refuses to copy it says so and selects it instead", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    await host.getByTestId("rail-party").click();
+    await expect(host.getByTestId("tv-party-link")).toHaveCount(0); // nothing is shown before there is a party (the question comes first)
+
+    await host.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined }); // no clipboard of its own...
+      document.execCommand = () => false; // ...and the old way refused
+    });
+    await host.reload();
+    await host.getByTestId("rail-party").click();
+    await host.getByTestId("tv-party-start").click();
+    await host.getByTestId("tv-party-link-copy").click();
+    await expect(host.getByTestId("tv-party-link").getByRole("status")).toHaveText("Could not copy: select the link and copy it");
+    expect(await host.evaluate(() => window.getSelection()?.toString())).toBe(await host.getByTestId("tv-party-link-url").innerText()); // it is selected, for the keys
+  });
+
   test("a guest keeps its own subtitles: the host's stay as they are", async ({ browser, baseURL }) => {
     const host = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(host));
@@ -1611,26 +1665,41 @@ test.describe("a watch party started on a TV", () => {
     await expect(phone.getByTestId("party-count")).toHaveText("+1");
   });
 
-  test("the phone shares the party's link, or copies it where sharing isn't there", async ({ browser }) => {
+  test("the phone shows the party's link with a button that copies it, and shares it too where it has a share sheet", async ({ browser }) => {
     const host = await openTv(browser);
     const phone = await openPairedPhone(browser, host);
     await phone.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-    const defineShare = (share: unknown) =>
+    const defineShare = (share: boolean) =>
       phone.evaluate((value) => {
-        Object.defineProperty(navigator, "share", { configurable: true, value: value ? (data: ShareData) => ((window as unknown as { shared: ShareData }).shared = data) : undefined });
+        Object.defineProperty(navigator, "share", { configurable: true, value: value ? (data: ShareData) => Promise.resolve(((window as unknown as { shared: ShareData }).shared = data)) : undefined });
       }, share);
-    await phone.getByTestId("menu").click();
-    await phone.getByTestId("party-open").click();
-    const code = (await phone.getByTestId("party-join-code").innerText()).replace(/\s/g, "");
-    const link = new URL(`/?party=${code}`, phone.url()).href;
+    const openSheet = async () => {
+      await phone.getByTestId("menu").click();
+      await phone.getByTestId("party-open").click();
+      await expect(phone.getByTestId("party-join-code")).toBeVisible();
+      return new URL(`/?party=${(await phone.getByTestId("party-join-code").innerText()).replace(/\s/g, "")}`, phone.url()).href;
+    };
+    const copy = phone.getByTestId("party-link-copy");
 
+    // A phone has a share sheet: Share link is there beside the link and its button.
     await defineShare(true);
+    let link = await openSheet();
+    await expect(phone.getByTestId("party-link-url")).toHaveText(link);
     await phone.getByTestId("party-share").click();
     await expect.poll(() => phone.evaluate(() => (window as unknown as { shared?: ShareData }).shared?.url)).toBe(link);
+    await copy.click();
+    await expect(copy).toHaveText("Link copied");
+    expect(await phone.evaluate(() => navigator.clipboard.readText())).toBe(link);
+    await expect(copy).toHaveText("Copy link"); // ready for the next time by itself
 
+    // Where there is none, the link and its button are the way.
+    await phone.getByTestId("sheet-close").click();
     await defineShare(false);
-    await phone.getByTestId("party-share").click();
-    await expect(phone.getByTestId("party-share")).toHaveText("Link copied");
+    link = await openSheet();
+    await expect(phone.getByTestId("party-share")).toHaveCount(0);
+    await phone.evaluate(() => navigator.clipboard.writeText("something else"));
+    await copy.click();
+    await expect(copy).toHaveText("Link copied");
     expect(await phone.evaluate(() => navigator.clipboard.readText())).toBe(link);
   });
 
@@ -1954,14 +2023,19 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
   async function connect(
     browser: Browser,
     baseURL: string,
-    { device = {}, seed = {}, library = libraryOf(baseURL) }: { device?: Parameters<Browser["newContext"]>[0]; seed?: Record<string, string>; library?: unknown } = {},
+    {
+      device = {},
+      seed = {},
+      library = libraryOf(baseURL),
+      find = (query) => films.filter((film) => film.title.toLowerCase().includes(query.toLowerCase())),
+    }: { device?: Parameters<Browser["newContext"]>[0]; seed?: Record<string, string>; library?: unknown; find?: (query: string) => unknown[] } = {},
   ) {
     searches = 0;
     const tv = await openTv(browser);
     const phone = await openDevice(browser, { ...PHONE, ...device }, seed, async (context) => {
       await withLibrary(library, (query) => {
         searches += 1;
-        return films.filter((film) => film.title.toLowerCase().includes(query.toLowerCase()));
+        return find(query);
       })(context);
       await context.route(/\/api\/library\/seasons/, (route) => route.fulfill({ json: { seasons: [1, 2] } }));
       await context.route(/\/api\/library\/episodes/, (route) => {
@@ -2115,6 +2189,26 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await phone.getByTestId("library-search-input").fill("the lon nig");
     await expect(results).toHaveCount(1);
     await expect(results.first()).toContainText("The Long Night");
+  });
+
+  test("a short word brings a long list, the likeliest titles first (what the page has and what the library knows together), down to its end", async ({ browser, baseURL }) => {
+    const rows = [{ id: "r", title: "Classics", source: "Test Source", kind: "movie", items: [{ id: "w", title: "Welcome to the Boondocks", url: "/fixtures/sample.mp4?w=1" }, { id: "n", title: "Boonie Bears", url: "/fixtures/sample.mp4?n=1" }] }];
+    const server = [
+      { id: "far", title: "Baboon", url: "/fixtures/sample.mp4?far=1" }, // (the word is inside another)
+      ...Array.from({ length: 40 }, (_, i) => ({ id: `s${i}`, title: `Zed ${i + 1} Boone Story`, url: `/fixtures/sample.mp4?s=${i}` })), // (a word of the title begins with it)
+      { id: "d", title: "The Boondocks", url: "/fixtures/sample.mp4?d=1" }, // (the title begins with it)
+      { id: "b", title: "Boon", url: "/fixtures/sample.mp4?b=1" }, // (it is the title)
+    ];
+    const { phone } = await connect(browser, baseURL!, { library: { updatedAt: Date.now(), rows }, find: (query) => (query.includes("boon") ? server : []) });
+    await phone.getByTestId("library-search-input").fill("boon");
+    const results = phone.getByTestId("library-result");
+    await expect(results).toHaveCount(45);
+    const titles = await results.evaluateAll((all) => all.map((one) => one.getAttribute("title")));
+    expect(titles.slice(0, 4)).toEqual(["Boon", "Boonie Bears", "The Boondocks", "Welcome to the Boondocks"]);
+    expect(titles.at(-1)).toBe("Baboon");
+
+    await results.last().scrollIntoViewIfNeeded();
+    await expect(results.last()).toBeInViewport();
   });
 
   test("the rows of the library are named in the language of the phone, and a row the app does not know keeps its place's name", async ({ browser, baseURL }) => {

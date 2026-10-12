@@ -1,4 +1,4 @@
-import { guessesFor, itemsOf, normalizeQuery, searchItems, spelledOut, type EpisodeDetail, type Library, type LibraryItem, type LibraryRow } from "../../shared";
+import { guessesFor, itemsOf, normalizeQuery, rankByQuery, searchItems, spelledOut, type EpisodeDetail, type Library, type LibraryItem, type LibraryRow } from "../../shared";
 
 /** A place that offers video openly and can list some of it as rows of titles. Each one is asked as seldom as the cache allows. */
 export interface LibrarySource {
@@ -200,7 +200,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       // A place does not forgive a slip ("strager things" finds nothing there): with little to show, ask it the words on their own, and
       // let the titles that come back be matched against what was typed.
       if (found.length < ENOUGH_ANSWERS) take(searchItems((await Promise.all(guessesFor(text).map(ask))).flat(), text));
-      return found;
+      return rankByQuery(found, text); // (what was listed and what the places answered, the likeliest first)
     },
     similar: async (link: string) => (await similarTo(link, (source) => source.similar?.(link))).filter((item) => listed(item)),
     episodes: (link: string, season: number) => episodesOf(`${season}|${link}`, (source) => source.episodes?.(link, season)),

@@ -449,8 +449,15 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .code-card-title { color: var(--muted); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .code-card-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .code-card-code { font-size: 2rem; font-weight: 800; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.code-card svg { flex: none; width: 104px; height: 104px; border-radius: 8px; }
+.code-card-top svg { flex: none; width: 104px; height: 104px; border-radius: 8px; }
 .code-card-wait { align-items: center; padding: 28px; }
+/* The link that the QR code holds, to paste into a chat: the whole of it, with its own button beside it. */
+.code-card .copy-link { display: flex; flex-direction: column; gap: 6px; }
+.code-card .copy-link-row { gap: 8px; }
+.code-card .copy-link-url { padding: 13px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.07); font-size: 0.82rem; line-height: 1.2; }
+.code-card .copy-link-button { min-height: 46px; padding: 0 14px; font-size: 0.92rem; white-space: nowrap; }
+.code-card .copy-link-button[data-state="copied"] { background: var(--ok); color: #0b0b0c; }
+.code-card .copy-link-note { color: var(--bad); font-size: 0.8rem; }
 .sheet-body form { display: flex; flex-direction: column; gap: 8px; }
 
 /* ------------------------------ library and rows of cards ------------------------------ */

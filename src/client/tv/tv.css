@@ -1078,6 +1078,36 @@
 .tv-tile:focus-visible { color: #fff; transform: scale(1.1); outline: none; z-index: 2; }
 .tv-tile:focus-visible .tv-tile-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
 
+/*
+ * For a mouse: a small round button in the corner of a picture keeps the title (＋), lets it go (× in the accent colour, once it is
+ * kept), or clears a card off Continue watching (× in grey), without opening it. A remote has the banner's buttons and the title's
+ * page for the same, and a finger has its own page, so only a pointer that can hover is shown them.
+ */
+.tv-tile-corner {
+  position: absolute;
+  top: 0.5em;
+  right: 0.5em;
+  z-index: 1;
+  display: none;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  box-shadow: 0 0 0 0.08em rgba(255, 255, 255, 0.4);
+  color: #fff;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.tv-tile-corner svg { width: 1.2em; height: 1.2em; }
+.tv-tile-corner[data-corner="kept"] { background: var(--accent); box-shadow: none; color: var(--accent-ink); }
+@media (hover: hover) and (pointer: fine) {
+  .tv-tile-corner { display: grid; }
+  .tv-tile-corner:hover { background: #fff; box-shadow: none; color: #000; transform: scale(1.14); }
+  .tv-tile-corner:active { transform: scale(0.9); }
+  /* (The corner is part of the tile, so pressing it presses the tile too; only the corner should sink.) */
+  .tv-tile:has(.tv-tile-corner:active):not(:focus-visible) { transform: none; }
+}
+
 .tv-skeleton { height: 8.44em; border-radius: 0.6em; background: linear-gradient(90deg, #17171a, #232328, #17171a); background-size: 200% 100%; animation: tv-shimmer 1.4s linear infinite; }
 .tv-skeleton-title { width: 12em; height: 1.4em; border-radius: 0.3em; background: #17171a; }
 @keyframes tv-shimmer { to { background-position: -200% 0; } }
@@ -1499,6 +1529,18 @@
 .tv-screen-compact .tv-party-invite { gap: 4em; }
 .tv-screen-compact .tv-party-invite .tv-qr { width: 15em; padding: 0.8em; }
 .tv-screen-compact .tv-party-invite .tv-qr p { font-size: 1.1em; }
+/*
+ * The link the QR code holds, to copy into a chat: under the code, in line with it, the whole of it with a button beside it. Its text
+ * is as big as the TV's small text goes (1.3em of the screen: the steps it sits in are 1.8em on the page and 1.35em in the panel).
+ */
+.tv-link-row { padding-left: 2.1em; }
+.tv-link-row .copy-link { flex: 1 1 auto; font-size: 0.72em; }
+.tv-menu .tv-link-row .copy-link { font-size: 0.97em; }
+.tv .copy-link-row { gap: 0.6em; }
+.tv .copy-link-url { padding: 0.45em 0.8em; border-radius: 0.4em; background: rgba(255, 255, 255, 0.1); color: #e0e0e4; font-size: 0.92em; font-weight: 600; }
+.tv .copy-link-button { min-width: 0; padding: 0.45em 0.9em; font-size: 1em; white-space: nowrap; }
+.tv .copy-link-button[data-state="copied"]:not(:focus-visible) { background: var(--ok); color: #0b0b0c; }
+.tv .copy-link-note { margin: 0.4em 0 0; color: #ffb4b4; font-size: 0.92em; font-weight: 600; }
 
 /* Who is in: a chip each, the host first. */
 .tv-party-members { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6em 0.8em; max-width: 80em; margin: 0; padding: 0; list-style: none; }
@@ -1803,6 +1845,6 @@
   .tv-welcome { transition-duration: 0.01s; }
   .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }
   .tv-hero { transition: none; }
-  .tv-tile, .tv-tile-category, .tv-end-tile, .tv-action, .tv-hero-button, .tv-choice, .tv-swatch, .tv-switch-row, .tv-key { transition: none; }
+  .tv-tile, .tv-tile-category, .tv-end-tile, .tv-action, .tv-hero-button, .tv-choice, .tv-swatch, .tv-switch-row, .tv-key, .tv-tile-corner { transition: none; }
   .tv-tile:focus-visible, .tv-tile-category:focus-visible, .tv-end-tile:focus-visible { transform: none; }
 }

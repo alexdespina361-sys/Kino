@@ -70,6 +70,12 @@ button:disabled { opacity: 0.4; cursor: default; }
   .spinner { animation-duration: 2.4s; }
 }
 
+/* A link to paste into a chat (CopyLink.tsx): the whole of it, a click on it selects it whole, and a button beside it copies it. Each screen sizes it. */
+.copy-link { min-width: 0; }
+.copy-link-row { display: flex; align-items: center; min-width: 0; }
+.copy-link-url { display: block; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; -webkit-user-select: all; user-select: all; } /* (all of it, on as many lines as it takes: the end of it is the code) */
+.copy-link-button { flex: none; }
+
 /* "Use this screen as ...": a quiet text button for the screen the page guessed wrong about. */
 .role-switch {
   align-self: center;

@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { PartyView } from "../../shared";
 import { useT } from "../i18n";
+import { CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
 import { BackspaceIcon, CheckIcon, CloseIcon, FullscreenIcon, UsersIcon } from "../shared/icons";
 import { partyLink } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { Screen } from "./Idle";
 
-/** How a button joins the remote's arrow keys: the pages use `data-nav`, the panel over a film `data-opt` (see dpad.ts and Menu.tsx). */
+/** How a button joins the remote's arrow keys: the pages use `data-nav`, the panel over a film `data-opt` in a column (see dpad.ts and Menu.tsx). */
 type Nav = Record<string, string | number | boolean>;
 const PAGE_NAV: Nav = { "data-nav": true };
 const PANEL_NAV: Nav = { "data-opt": true, "data-col": 1 };
+/** The panel's left column, where the invite is, comes before the one with the members and the way out. */
+const PANEL_INVITE_NAV: Nav = { "data-opt": true, "data-col": 0 };
 
 /** Who is in the party, the host first. The host can send a guest away; a screen that is gone from the network is dimmed. */
 function Members({ party, nav, onRemove }: { party: PartyView; nav: Nav; onRemove?: (id: string) => void }) {
@@ -39,8 +42,11 @@ function Members({ party, nav, onRemove }: { party: PartyView; nav: Nav; onRemov
   );
 }
 
-/** How to get in: the steps, the code and the QR code that carries it. The code is renewed while it is on screen, so it can be a moment late. */
-function Invite({ code }: { code: string | undefined }) {
+/**
+ * How to get in: the steps, the code and the QR code that carries it, and the link the QR code holds, to copy into somebody's chat.
+ * The code is renewed while it is on screen, so it can be a moment late.
+ */
+function Invite({ code, nav }: { code: string | undefined; nav: Nav }) {
   const t = useT();
   return (
     <div className="tv-pair tv-party-invite">
@@ -64,6 +70,11 @@ function Invite({ code }: { code: string | undefined }) {
             {code ? formatCode(code) : "…"}
           </p>
         </li>
+        {code && (
+          <li className="tv-link-row">
+            <CopyLink link={partyLink(code)} testId="tv-party-link" buttonClass="tv-action" nav={nav} />
+          </li>
+        )}
       </ol>
       <div className="tv-qr">
         {code ? <QrCode value={partyLink(code)} label={t("party.qrLabel")} /> : <div className="spinner tv-qr-wait" />}
@@ -133,7 +144,7 @@ export function PartyPage(p: PageProps) {
     return (
       <Screen key="host" testId="tv-party" compact focus onBack={p.onBack}>
         <h1 className="tv-headline tv-headline-small">{t("party.rail")}</h1>
-        <Invite code={p.party.code?.code} />
+        <Invite code={p.party.code?.code} nav={PAGE_NAV} />
         <Members party={p.party} nav={PAGE_NAV} onRemove={p.onRemove} />
         {p.party.guests.length === 0 && <p className="tv-hint">{t("party.waiting")}</p>}
         <div className="tv-actions">
@@ -311,7 +322,7 @@ export function PartyPanel(p: PanelProps) {
           <div className="tv-menu-cols">
             {host && (
               <div className="tv-menu-col tv-party-invite-col">
-                <Invite code={p.party.code?.code} />
+                <Invite code={p.party.code?.code} nav={PANEL_INVITE_NAV} />
               </div>
             )}
             <div className="tv-menu-col tv-party-side">

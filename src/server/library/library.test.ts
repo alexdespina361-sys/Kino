@@ -286,6 +286,13 @@ describe("createLibrary search", () => {
     expect(titlesOf(await library.search("dune"))).toEqual(["Dune", "Dune: Part Two"]);
   });
 
+  it("puts the likeliest first across what is listed and what the places answer: the title that is the words, then those that begin with them, then a word that does", async () => {
+    const source = searching([listed("Welcome to the Boondocks", "Boonie Bears")], { boon: [item("1", "Boon"), item("2", "The Boondocks"), item("3", "Baboon")] });
+    const { library } = setup([source]);
+    await library.get();
+    expect(titlesOf(await library.search("boon"))).toEqual(["Boon", "Boonie Bears", "The Boondocks", "Welcome to the Boondocks", "Baboon"]);
+  });
+
   it("asks a place in the words as typed, with a short name that begins them spelled out", async () => {
     const source = searching([], { "lord of the rings": [item("1", "The Lord of the Rings"), item("2", "The Two Towers"), item("3", "The Return of the King")] });
     const { library } = setup([source]);

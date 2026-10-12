@@ -506,6 +506,8 @@ export const ro: Dictionary = {
   "party.inviteHelp": "Pe celălalt dispozitiv, deschide {host}, alege Vizionare comună, apoi Intră într-o vizionare comună și scrie acest cod. Pe telefon sau calculator poți și să scanezi codul ori să deschizi linkul.",
   "party.share": "Trimite linkul",
   "party.copied": "Link copiat",
+  "party.copyLink": "Copiază linkul",
+  "party.copyFailed": "Nu s-a putut copia: selectează linkul și copiază-l",
   "party.addTitle": "Adaugă un dispozitiv care arată un cod",
   "party.watching": "Se uită",
   "party.offline": "Deconectat",

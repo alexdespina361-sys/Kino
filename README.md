@@ -238,9 +238,10 @@ is watching on it, or else by its own name ("TV 3F2A"). Ways in:
 
 - **From a TV:** menu → **Watch party** → *Start a party* (or the **Watch party** button in a film's controls, whose panel rests on **Done**, not
   on the button that ends the party). The screen shows a
-  6-digit code, a QR code and the address; on another screen choose **Watch party → Join a party** and type the code with the remote's
+  6-digit code, a QR code and the address, and the invitation as a **link with a Copy link button beside it** (a click, or OK from the remote: it says *Link copied*),
+  to paste into somebody's chat; on another screen choose **Watch party → Join a party** and type the code with the remote's
   number keys (the on-screen pad works too).
-- **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with a **Share link** button, and
+- **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with the link and a **Copy link** button (and a **Share link** button where the browser can share), and
   lists who is in (the host's phone can send any guest away, or end the party). Typing the pairing code that another TV shows into the phone
   still works; a party's own code typed there is told apart from a wrong one (`ADD_PARTY_CODE`: the phone is told what the code is for, and it
   does not count against the limit).
@@ -289,8 +290,10 @@ well as in the page's own status, which can be far above a library that is scrol
   or a click beside it closes the page. **A show's page continues below its buttons** with its seasons (when there are several) and the episodes
   of the one that is shown, as cards with a picture, a line about the episode, its length and what this profile has done with it (watched, or
   how long is left, with a bar). **Play** says which episode it starts, *Play S1:E1*, or *Resume S2:E3* for a show part way through, and the
-  page opens on that season with the remote on that episode; OK on any episode plays it, from where it was left if it was begun. With a mouse it is a click on the title (hovering shows nothing; the title's name is the tooltip), on any row; the
-  second click of a double click goes through the page to the title under it instead of closing the page or pressing Play, for the half second
+  page opens on that season with the remote on that episode; OK on any episode plays it, from where it was left if it was begun. With a mouse it is a click on the title (its name is the tooltip), on any row; **hovering a title
+  shows a round button in its top corner** (a screen with a mouse only, not a touch screen): **+** puts the title in the profile's first list at once (once it is there the button turns into a filled **×**, and a click on that
+  takes it out), and **×** on a title of **Continue watching**, or in a list's own row or page, takes it out of that, so a row of films can be filled or emptied by clicking down it;
+  the second click of a double click goes through the page to the title under it instead of closing the page or pressing Play, for the half second
   the page takes to arrive. The banner's own buttons play or save the title it shows, without the page. The big banner picture fades in
   over the previous one once it has loaded, instead of switching. Playing from the library and pressing Back (twice if the controls were
   hidden) or letting it stop comes back to the same title. A title that will not play is said so. A TV that watches
@@ -308,7 +311,8 @@ well as in the page's own status, which can be far above a library that is scrol
   one thing known without trying is that a title with a release date in the future is not out yet, so it is never listed.
 - **Menu, pages, categories, search (TV).** Pressing Left from the first title of any row (or the first tile of a grid) opens a menu down the
   left: **Search**, **Home**, **Movies**, **Series**, **My Lists**, **History**, **Watch party**, **Connect a phone**, **Settings**, and under them the
-  **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles, and
+  **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles (with a
+  mouse, **resting the pointer on the strip opens the menu**, no button held, and leaving it shuts it), and
   choosing any entry (**My Lists**, **History**, a category…) closes the menu over the page it opens. **My Lists** is a button for each list over
   the titles in it, with **New list** (a name typed on the on-screen or real keyboard) and **Edit list** (rename, or delete after a question). **Movies**
   and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard (Space, Delete, and Clear for the whole box) beside the
@@ -321,7 +325,10 @@ well as in the page's own status, which can be far above a library that is scrol
   (`lotr`, `got`, `hp`). The titles already on screen are matched this way on the TV and the phone; on the server the same ranking is applied to what the
   places answer, and when a place finds little (TMDB's search forgives nothing: "strager things" finds nothing there) it is asked again without each
   word (a slip in one leaves the rest to find the title: `better call sual`), and with a long word cut to its first letters or all but its last two
-  (`gladiater`), six questions at most, and the titles that come back are kept only if they match what was typed. A search that cannot be reached says so (it asks again every few seconds) instead of saying nothing matches, and a title
+  (`gladiater`), six questions at most, and the titles that come back are kept only if they match what was typed. **A search lists the likeliest first** (`rankByQuery`):
+  the title that is what was typed, then those that begin with it (`boon` is *Boon* and *The Boondocks* before *Baboon*; a leading The, punctuation and accents do not count), then those with a word that begins
+  with it, then the rest, the order the places gave (the popular first) kept within each, whether a title came from the screen or from the library. TMDB is read up to three pages (sixty titles) when it has
+  that many, so a short word brings a long list to scroll; only the first page is asked about at the video provider, and a title it already said has nothing to play stays out of the others. A search that cannot be reached says so (it asks again every few seconds) instead of saying nothing matches, and a title
   that is part way through says **Resume** on its page wherever it is shown, lists and search included. The menu and search only use the generic
   library endpoints, so they work with whichever `LibrarySource` is configured.
 - `LIBRARY=off` starts the server without a library (the e2e server does); `GET /api/library` is then empty and the phone shows nothing extra.

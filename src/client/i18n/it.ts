@@ -502,6 +502,8 @@ export const it: Dictionary = {
   "party.inviteHelp": "Sull'altro dispositivo apri {host}, scegli Visione condivisa, poi Entra in una visione condivisa e digita questo codice. Su un telefono o un computer puoi anche inquadrare il codice o aprire il link.",
   "party.share": "Condividi il link",
   "party.copied": "Link copiato",
+  "party.copyLink": "Copia il link",
+  "party.copyFailed": "Impossibile copiare: seleziona il link e copialo",
   "party.addTitle": "Aggiungi un dispositivo che mostra un codice",
   "party.watching": "In visione",
   "party.offline": "Offline",
