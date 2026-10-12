@@ -238,6 +238,16 @@ export const SETTING_SCHEMAS = {
   onlySubtitleLanguages: z.boolean(),
   /** Scores and notes for films, shows and seasons (on unless turned off). Turned off, nothing of it shows; what was rated stays. */
   ratings: z.boolean(),
+  /**
+   * Friends (see friends.ts for what each is when it is not set): the master switch, and what a friend may do while it is on. They are
+   * settings of the profile, so the server reads them to know what a friend may be given, and they follow the profile everywhere.
+   */
+  friends: z.boolean(),
+  friendsLists: z.boolean(),
+  friendsRatings: z.boolean(),
+  friendsGive: z.boolean(),
+  friendsGet: z.boolean(),
+  friendsInbox: z.boolean(),
 } as const;
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
 export const SETTING_KEYS = Object.keys(SETTING_SCHEMAS) as SettingKey[];

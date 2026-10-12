@@ -1,0 +1,338 @@
+import { useEffect, useRef, useState } from "react";
+import { friendChoices, friendLink, reachable, type FriendSetting, type Message, type OpenInvite } from "../../shared";
+import { useAccount } from "../account/AccountProvider";
+import { Avatar } from "../account/Avatar";
+import { describeError } from "../account/errors";
+import { useSettings } from "../account/settings";
+import { formatDay } from "../account/time";
+import { nameOf } from "../friends/entries";
+import { useFriends } from "../friends/FriendsProvider";
+import { usePeek } from "../friends/usePeek";
+import { useLanguage, useT, type Key } from "../i18n";
+import { CheckIcon, PlusIcon, UsersIcon } from "../shared/icons";
+import { linkCodeOf, typedLinkCode } from "../shared/launch";
+import { QrCode } from "../shared/QrCode";
+import { Screen } from "./Idle";
+import "./friends.css";
+
+/** The pages friends need besides the library's own: sending to friends, adding one, and choosing what is shared. Each is a page the remote walks (see Idle.tsx). */
+
+/* ------------------------------ sending to friends ------------------------------ */
+
+/**
+ * Choose the friends a title, or an invitation to a watch party, goes to. Only friends who take things are offered, and with just
+ * one she is chosen already; the server has the last word on who gets it.
+ */
+export function FriendPickerTv({ title, lead, build, said, onClose }: { title: string; lead: string; build: () => Message; /** What is said when it has gone. */ said: "friends.sent" | "friends.inviteSent"; onClose: () => void }) {
+  const t = useT();
+  const account = useAccount();
+  const friends = useFriends();
+  const all = friends.state?.friends ?? [];
+  const takers = reachable(all);
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set(takers.length === 1 ? [takers[0]!.id] : []));
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const toggle = (id: string) =>
+    setPicked((now) => {
+      const next = new Set(now);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+
+  const send = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const answer = await friends.send([...picked], build());
+      const names = (ids: readonly string[]) => ids.map((id) => nameOf(all, id)).filter(Boolean).join(", ");
+      if (answer.declined.length > 0) account.say(t("friends.declined", { names: names(answer.declined) }));
+      else account.say(t(said, { names: names(answer.sent) }));
+      onClose();
+    } catch (error) {
+      setProblem(describeError(error));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Screen testId="tv-friend-picker" compact focus onBack={onClose}>
+      <h1 className="tv-headline tv-headline-small">{title}</h1>
+      <p className="tv-lead">{lead}</p>
+      {takers.length === 0 ? (
+        <>
+          <p className="tv-hint" data-testid="tv-friend-picker-none">
+            {all.length === 0 ? t("friends.noFriends") : t("friends.nobody")}
+          </p>
+          <div className="tv-actions">
+            <button className="tv-action tv-action-primary" onClick={onClose} data-nav data-autofocus data-testid="tv-friend-cancel">
+              {t("common.done")}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="tv-list-picks" role="group" aria-label={title}>
+            {takers.map((friend) => (
+              <button key={friend.id} className="tv-action" aria-pressed={picked.has(friend.id)} onClick={() => toggle(friend.id)} data-nav data-testid="tv-friend-pick" data-friend={friend.id}>
+                {picked.has(friend.id) ? <CheckIcon /> : <PlusIcon />} {friend.name}
+              </button>
+            ))}
+          </div>
+          {problem && (
+            <p className="tv-lead tv-signin-status is-problem" role="alert">
+              {problem}
+            </p>
+          )}
+          <div className="tv-actions">
+            <button className="tv-action tv-action-primary" disabled={busy || picked.size === 0} onClick={() => void send()} data-nav data-testid="tv-friend-send">
+              {t("friends.send")}
+            </button>
+            <button className="tv-action" onClick={onClose} data-nav data-testid="tv-friend-cancel">
+              {t("common.cancel")}
+            </button>
+          </div>
+        </>
+      )}
+    </Screen>
+  );
+}
+
+/* ------------------------------ adding a friend ------------------------------ */
+
+/**
+ * A code made for a friend: the code, the QR code that carries its link, and a way to take it back. One is made as the page opens, when
+ * there is none. When the code that was on the page is gone without being taken back here, a friend has used it: that is all it was for.
+ */
+function GiveCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+  const t = useT();
+  const language = useLanguage();
+  const friends = useFriends();
+  const [problem, setProblem] = useState<string | null>(null);
+  const asked = useRef(false);
+  const shown = useRef(false);
+  const takingBack = useRef(false);
+  const invite = (friends.state?.invites ?? []).reduce<OpenInvite | undefined>((newest, each) => (!newest || each.expiresAt > newest.expiresAt ? each : newest), undefined);
+
+  useEffect(() => {
+    if (invite || asked.current || !friends.state) return;
+    asked.current = true;
+    friends.invite().catch((error: unknown) => setProblem(describeError(error)));
+  }, [invite, friends.state]);
+  useEffect(() => {
+    if (invite) shown.current = true;
+    else if (shown.current && !takingBack.current) onDone();
+  }, [invite?.code]);
+
+  return (
+    <Screen key="give" testId="tv-friend-give-page" compact focus onBack={onBack}>
+      <h1 className="tv-headline tv-headline-small">{t("friends.makeCode")}</h1>
+      {invite ? (
+        <div className="tv-pair tv-party-invite">
+          <div className="tv-friend-code">
+            <p className="tv-code tv-link-code" data-testid="tv-friend-code">
+              {typedLinkCode(invite.code)}
+            </p>
+            <p className="tv-hint">{t("friends.codeHelp", { day: formatDay(invite.expiresAt, language) })}</p>
+          </div>
+          <div className="tv-qr">
+            <QrCode value={friendLink(invite.code, location.origin)} label={t("friends.qrLabel")} />
+            <p>{t("friends.qrHint")}</p>
+          </div>
+        </div>
+      ) : problem ? (
+        <p className="tv-lead tv-signin-status is-problem" role="alert">
+          {problem}
+        </p>
+      ) : (
+        <p className="tv-lead" role="status">
+          <span className="spinner" /> {t("common.loading")}
+        </p>
+      )}
+      <div className="tv-actions">
+        <button className="tv-action tv-action-primary" onClick={onBack} data-nav data-autofocus data-testid="tv-friend-give-done">
+          {t("common.done")}
+        </button>
+        {invite && (
+          <button
+            className="tv-action"
+            onClick={() => {
+              takingBack.current = true;
+              void friends.revoke(invite.code).then(onBack, () => (takingBack.current = false));
+            }}
+            data-nav
+            data-testid="tv-friend-revoke"
+          >
+            {t("friends.takeBack")}
+          </button>
+        )}
+      </div>
+    </Screen>
+  );
+}
+
+/** A friend's code that was typed in full: who it is from, and a button that makes the two of them friends. */
+function TypedCode({ code, onDone }: { code: string; onDone: () => void }) {
+  const t = useT();
+  const account = useAccount();
+  const friends = useFriends();
+  const { seen, problem: found } = usePeek(code);
+  const [refused, setRefused] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const problem = refused ?? found;
+
+  const add = async () => {
+    setBusy(true);
+    setRefused(null);
+    try {
+      const friend = await friends.accept(code);
+      account.say(t("friends.added", { name: friend.name }));
+      onDone();
+    } catch (error) {
+      setRefused(describeError(error));
+      setBusy(false);
+    }
+  };
+
+  if (problem) {
+    return (
+      <p className="tv-lead tv-signin-status is-problem" role="alert" data-testid="tv-friend-code-error">
+        {problem}
+      </p>
+    );
+  }
+  if (!seen) {
+    return (
+      <p className="tv-lead" role="status">
+        <span className="spinner" /> {t("friends.linkLooking")}
+      </p>
+    );
+  }
+  return (
+    <div className="tv-friend-found" data-testid="tv-friend-found">
+      <Avatar id={seen.from.avatar} className="tv-friend-avatar" />
+      <p className="tv-friend-ask">
+        <b data-testid="tv-friend-code-name">{seen.from.name}</b>
+        <span>{t("friends.addAsk")}</span>
+      </p>
+      <button className="tv-action tv-action-primary" disabled={busy} onClick={() => void add()} data-nav data-testid="tv-friend-code-add">
+        {t("friends.addButton")}
+      </button>
+    </div>
+  );
+}
+
+/** Typing the code a friend gave: on a keyboard, or the TV's own. Once all of it is there, who it is from is asked. */
+function TypeCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+  const t = useT();
+  const [typed, setTyped] = useState("");
+  const code = linkCodeOf(typed);
+  return (
+    <Screen key="type" testId="tv-friend-type-page" compact focus onBack={onBack}>
+      <h1 className="tv-headline tv-headline-small">{t("friends.typeTitle")}</h1>
+      <form className="auth-form auth-tv" onSubmit={(event) => event.preventDefault()} noValidate>
+        <label className="auth-field">
+          <span>{t("friends.codeLabel")}</span>
+          <input
+            className="tv-link-input"
+            data-testid="tv-friend-code-input"
+            data-nav
+            autoComplete="off"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={9}
+            placeholder="ABCD-2345"
+            value={typed}
+            onChange={(event) => setTyped(typedLinkCode(event.target.value))}
+          />
+        </label>
+      </form>
+      {code && <TypedCode key={code} code={code} onDone={onDone} />}
+      <div className="tv-actions">
+        <button className="tv-action" onClick={onBack} data-nav data-testid="tv-friend-type-back">
+          {t("common.back")}
+        </button>
+      </div>
+    </Screen>
+  );
+}
+
+/** Both ways of becoming friends: make a code to give, or type the one that was given. */
+export function AddFriendTv({ onClose }: { onClose: () => void }) {
+  const t = useT();
+  const [mode, setMode] = useState<"choose" | "give" | "type">("choose");
+  if (mode === "give") return <GiveCode onBack={() => setMode("choose")} onDone={onClose} />;
+  if (mode === "type") return <TypeCode onBack={() => setMode("choose")} onDone={onClose} />;
+  return (
+    <Screen key="choose" testId="tv-add-friend" focus onBack={onClose}>
+      <h1 className="tv-headline">{t("friends.add")}</h1>
+      <div className="tv-party-choices">
+        <button className="tv-party-choice" onClick={() => setMode("give")} data-nav data-testid="tv-friend-give">
+          <UsersIcon />
+          <b>{t("friends.makeCode")}</b>
+          <small>{t("friends.giveHint")}</small>
+        </button>
+        <button className="tv-party-choice" onClick={() => setMode("type")} data-nav data-testid="tv-friend-type">
+          <UsersIcon />
+          <b>{t("friends.typeTitle")}</b>
+          <small>{t("friends.typeHint")}</small>
+        </button>
+      </div>
+      <div className="tv-actions">
+        <button className="tv-action" onClick={onClose} data-nav data-testid="tv-friend-add-back">
+          {t("common.back")}
+        </button>
+      </div>
+    </Screen>
+  );
+}
+
+/* ------------------------------ what is shared ------------------------------ */
+
+/** What a friend may do while friends are on, each its own switch (the one that turns friends on or off is in the settings). */
+const SWITCHES: ReadonlyArray<{ key: FriendSetting; label: Key; testId: string }> = [
+  { key: "friendsLists", label: "friends.switchLists", testId: "tv-friends-lists" },
+  { key: "friendsRatings", label: "friends.switchRatings", testId: "tv-friends-ratings" },
+  { key: "friendsGive", label: "friends.switchGive", testId: "tv-friends-give" },
+  { key: "friendsGet", label: "friends.switchGet", testId: "tv-friends-get" },
+  { key: "friendsInbox", label: "friends.switchInbox", testId: "tv-friends-inbox" },
+];
+
+/** Choosing what friends may see and send, and whether what each watches is told. Each change reaches the server at once: it is what decides what a friend is shown. */
+export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
+  const t = useT();
+  const account = useAccount();
+  const { settings, set } = useSettings();
+  const choices = friendChoices(settings);
+  return (
+    <Screen testId="tv-friend-settings" compact focus onBack={onClose}>
+      <h1 className="tv-headline tv-headline-small">{t("friends.settings")}</h1>
+      <p className="tv-hint tv-friend-help">{t("friends.settingsHelp")}</p>
+      <div className="tv-friend-switches">
+        {SWITCHES.map(({ key, label, testId }) => (
+          <button
+            key={key}
+            className="tv-switch-row"
+            role="switch"
+            aria-checked={choices[key]}
+            onClick={() => {
+              set(key, !choices[key]);
+              account.syncNow();
+            }}
+            data-nav
+            data-testid={testId}
+          >
+            <span>{t(label)}</span>
+            <span className="tv-switch" aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+      <div className="tv-actions">
+        <button className="tv-action tv-action-primary" onClick={onClose} data-nav data-testid="tv-friend-settings-done">
+          {t("common.done")}
+        </button>
+      </div>
+    </Screen>
+  );
+}

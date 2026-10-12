@@ -37,6 +37,7 @@ import { QrCode } from "../shared/QrCode";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { RoleSwitch } from "../shared/RoleSwitch";
 import { captionLabel, captionTitle, statusWords, trackName } from "../shared/words";
+import { InviteFriendsButton } from "./Friends";
 import { codeFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
 import { ChoiceList, Sheet, type Choice } from "./Sheet";
@@ -613,7 +614,7 @@ export function TvsSheet({
 export type PartyInvite = { code: string; endsAt: number } | "asking" | null;
 
 /** The code and link that let a screen in: a TV types the code, a phone or computer scans it or opens the link, which can be copied into a chat (or shared, where the phone has a share sheet). */
-function Invite({ code }: { code: string }) {
+function Invite({ code, endsAt }: { code: string; endsAt: number }) {
   useT();
   const link = partyLink(code);
   const canShare = typeof navigator.share === "function";
@@ -636,6 +637,7 @@ function Invite({ code }: { code: string }) {
           {t("party.share")}
         </button>
       )}
+      <InviteFriendsButton code={code} endsAt={endsAt} />
     </div>
   );
 }
@@ -703,7 +705,7 @@ export function PartySheet({
           <span className="spinner" />
         </div>
       ) : invite ? (
-        <Invite code={invite.code} />
+        <Invite code={invite.code} endsAt={invite.endsAt} />
       ) : (
         <button className="btn btn-block" data-testid="party-invite-open" onClick={onInvite}>
           {t("party.invite")}

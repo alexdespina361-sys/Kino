@@ -45,6 +45,8 @@ export interface AccountContextValue {
   choosing: boolean;
   /** Said once in a while ("Added what you watched here to Alex"), for the screen to show as a toast. */
   message: { id: number; text: string } | null;
+  /** Say something in that same line (what friends are up to, a title that was sent). */
+  say(text: string): void;
 
   signIn(email: string, password: string): Promise<Me>;
   signUp(email: string, password: string): Promise<Me>;
@@ -231,6 +233,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
       profile,
       choosing: me !== null && profile === null,
       message,
+      say,
 
       async signIn(email, password) {
         const signedIn = await api.login(email, password, device);
@@ -282,7 +285,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
         await load();
       },
     }),
-    [status, me, registration, profile, message, device, load],
+    [status, me, registration, profile, message, say, device, load],
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;

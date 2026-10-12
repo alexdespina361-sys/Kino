@@ -376,8 +376,8 @@ test.describe("profiles made and changed on the TV itself", () => {
     await expect(inColumn("who")).toHaveCount(1);
     await tv.keyboard.press("ArrowRight");
     await expect(inColumn("settings")).toHaveCount(1);
-    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown");
-    await expect(tv.getByTestId("tv-ratings-switch")).toBeFocused(); // the last of the settings, and Down from it goes nowhere
+    for (let i = 0; i < 5; i++) await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-friends-switch")).toBeFocused(); // the last of the settings (friends belong to an account), and Down from it goes nowhere
     await tv.keyboard.press("ArrowLeft");
     await expect(inColumn("who")).toHaveCount(1);
 

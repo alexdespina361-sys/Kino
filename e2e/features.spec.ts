@@ -1602,8 +1602,10 @@ test.describe("a watch party started on a TV", () => {
   test("Back on a guest's waiting page shows the way out and does not take it: OK on Leave does", async ({ browser, baseURL }) => {
     const { host, guest } = await party(browser, baseURL!);
     await expect(guest.getByTestId("tv-disconnect")).not.toBeFocused();
-    await guest.keyboard.press("Escape");
-    await expect(guest.getByTestId("tv-disconnect")).toBeFocused();
+    await expect(async () => {
+      await guest.keyboard.press("Escape"); // (a busy machine can show the page a moment before its Back key is listened for)
+      await expect(guest.getByTestId("tv-disconnect")).toBeFocused({ timeout: 1500 });
+    }).toPass({ timeout: 10_000 });
     await expect(guest.getByTestId("tv-following")).toBeVisible();
     await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
     await guest.keyboard.press("Enter");

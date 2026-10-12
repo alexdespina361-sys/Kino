@@ -51,7 +51,7 @@ interface CardProps {
   onHold?: () => void;
 }
 
-function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay, onRemove, testId, toggle, onHold }: CardProps) {
+export function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay, onRemove, testId, toggle, onHold }: CardProps) {
   const hold = useHold(() => (onHold ?? toggle?.onHold)?.());
   return (
     <div className="lib-tile" data-testid={`${testId}-item`}>

@@ -4,12 +4,15 @@ import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { AuthForm } from "../account/AuthForm";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
+import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
-import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, PencilIcon, PhoneIcon, ScanIcon, UserIcon } from "../shared/icons";
+import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, PencilIcon, PhoneIcon, ScanIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
+import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { LinkApprove } from "../account/LinkApprove";
 import { useBackToClose } from "./backButton";
+import { FriendPage, FriendsPage } from "./Friends";
 
 /** A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. */
 export function Page({ title, onBack, children, testId }: { title: string; onBack: () => void; children: ReactNode; testId?: string }) {
@@ -33,7 +36,7 @@ export function Page({ title, onBack, children, testId }: { title: string; onBac
   );
 }
 
-type View = "main" | "picker" | "profiles" | "edit" | "settings" | "devices" | "security" | "link" | "approve";
+type View = "main" | "picker" | "profiles" | "edit" | "settings" | "devices" | "security" | "link" | "approve" | "friends" | "friend";
 
 function MenuRow({ icon, label, onClick, testId, detail }: { icon: ReactNode; label: string; onClick: () => void; testId: string; detail?: string }) {
   return (
@@ -47,14 +50,33 @@ function MenuRow({ icon, label, onClick, testId, detail }: { icon: ReactNode; la
 }
 
 /** Everything about the account on the phone: who is signed in, the profiles, settings, devices, and signing a TV in. */
-export function AccountScreen({ onClose, initial = "main", onSessionsChanged }: { onClose: () => void; initial?: View; onSessionsChanged?: () => void }) {
+export function AccountScreen({
+  onClose,
+  initial = "main",
+  onSessionsChanged,
+  onOpenTitle,
+}: {
+  onClose: () => void;
+  initial?: View;
+  onSessionsChanged?: () => void;
+  /** A title a friend sent, or has in a list, was tapped (not given on a phone that has no TV to play it on). */
+  onOpenTitle?: (entry: Entry) => void;
+}) {
   const t = useT();
   const account = useAccount();
+  const friends = useFriends();
   const [view, setView] = useState<View>(initial);
   const [editing, setEditing] = useState<Profile | "new" | null>(null);
   const [linkCode, setLinkCode] = useState<string | null>(null);
+  /** The friend whose page is open, and the page the friends were opened from (the settings, or the account's menu). */
+  const [friendId, setFriendId] = useState<string | null>(null);
+  const [friendsFrom, setFriendsFrom] = useState<View>("main");
   const { me, profile } = account;
   const back = () => setView("main");
+  const openFriends = (from: View) => {
+    setFriendsFrom(from);
+    setView("friends");
+  };
 
   // Signed in just now: the page for guests (the form) gives way to the page of the account.
   useEffect(() => {
@@ -83,7 +105,27 @@ export function AccountScreen({ onClose, initial = "main", onSessionsChanged }: 
   if (view === "settings") {
     return (
       <Page title={t("settings.title")} onBack={back}>
-        <SettingsPage />
+        <SettingsPage onOpenFriends={() => openFriends("settings")} />
+      </Page>
+    );
+  }
+  if (view === "friend" && friendId) {
+    return (
+      <Page title={t("friends.title")} onBack={() => setView("friends")} testId="friend-screen">
+        <FriendPage friendId={friendId} onOpenTitle={onOpenTitle} onGone={() => setView("friends")} />
+      </Page>
+    );
+  }
+  if (view === "friends") {
+    return (
+      <Page title={t("friends.title")} onBack={() => setView(friendsFrom)} testId="friends-screen">
+        <FriendsPage
+          onOpenFriend={(id) => {
+            setFriendId(id);
+            setView("friend");
+          }}
+          onOpenTitle={onOpenTitle}
+        />
       </Page>
     );
   }
@@ -176,6 +218,7 @@ export function AccountScreen({ onClose, initial = "main", onSessionsChanged }: 
             {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={() => setView("picker")} testId="menu-switch" />}
             <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={() => setView("profiles")} testId="menu-profiles" />
             <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
+            {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.unread > 0 ? String(friends.unread) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
             <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
             <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
             <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
@@ -246,11 +289,13 @@ export function ChooseProfile() {
 export function AccountButton({ onClick }: { onClick: () => void }) {
   const t = useT();
   const { status, profile, me } = useAccount();
+  const { unread } = useFriends();
   if (status !== "ready") return null;
   if (me && profile) {
     return (
-      <button className="avatar-button" onClick={onClick} aria-label={`${t("account.open")}: ${profile.name}`} data-testid="account-button">
+      <button className="avatar-button" onClick={onClick} aria-label={`${t("account.open")}: ${profile.name}${unread > 0 ? ` · ${t("friends.unread", { count: unread })}` : ""}`} data-testid="account-button">
         <Avatar id={profile.avatar} />
+        {unread > 0 && <i className="unread-dot" aria-hidden="true" data-testid="unread-dot" />}
       </button>
     );
   }

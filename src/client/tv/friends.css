@@ -1,0 +1,24 @@
+/* Friends on the TV: the pages besides the library's own (see Friends.tsx). 1em is 1% of the screen's width, as everywhere on the TV (tv.css). */
+
+/* A code made for a friend: the code over its help, the QR code beside it. */
+.tv-friend-code { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6em; max-width: 34em; }
+.tv-friend-code .tv-hint { text-align: left; }
+
+/* Whose code it is, and the button that makes the two of them friends. */
+.tv-friend-found { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 1.2em 1.6em; }
+.tv-friend-ask { display: flex; flex-direction: column; gap: 0.15em; margin: 0; text-align: left; font-size: 1.8em; line-height: 1.25; }
+.tv-friend-ask b { font-size: 1.15em; font-weight: 800; overflow-wrap: anywhere; }
+.tv-friend-ask span { color: var(--muted); font-size: 0.8em; }
+.tv-friend-avatar { flex: none; font-size: 3.6em; }
+
+/* What is shared: the switches, two to a row where there is room for it. */
+.tv-friend-help { max-width: 44em; text-align: center; }
+.tv-friend-switches { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8em 1.2em; width: min(100%, 88em); }
+.tv-friend-switches .tv-switch-row { max-width: none; font-size: 1.5em; }
+.tv-friend-switches .tv-switch-row:last-child:nth-child(odd) { grid-column: 1 / -1; justify-self: center; width: 50%; }
+
+/* A hand-held screen: one to a row. */
+@media (max-width: 899px) {
+  .tv-friend-switches { grid-template-columns: 1fr; }
+  .tv-friend-switches .tv-switch-row:last-child:nth-child(odd) { width: 100%; }
+}

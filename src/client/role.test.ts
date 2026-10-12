@@ -63,6 +63,8 @@ describe("chooseRole", () => {
     expect(chooseRole(page({ search: "?text=look+at+this", storedRole: "tv" }))).toBe("remote");
     // the code on a TV's sign-in screen is meant for a phone, even one that was last used as a TV
     expect(chooseRole(page({ search: "?link=ABCD2345", storedRole: "tv" }))).toBe("remote");
+    // ...and so is a friend's code, on a laptop too (it has no touch screen, which would make it a TV)
+    expect(chooseRole(page({ search: "?friend=ABCD2345", touchPoints: 0 }))).toBe("remote");
   });
 
   it("remembers what the switch chose, over the guess", () => {

@@ -30,6 +30,7 @@ import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
 import { LinkApprove } from "../account/LinkApprove";
 import type { Entry } from "../tv/pages";
+import { FriendInvite, FriendsHome } from "./Friends";
 import { Library } from "./Library";
 import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
@@ -113,9 +114,11 @@ export function Controller() {
   // The account page, and the sign-in request of a TV (from its QR code) waiting for this signed-in phone to say yes or no.
   const [showAccount, setShowAccount] = useState(false);
   const [approveCode, setApproveCode] = useState<string | null>(launchRef.current.link ?? null);
+  /** A friend's code, from the link or the QR code of their invitation: asked about until it is used or sent away. */
+  const [friendCode, setFriendCode] = useState<string | null>(launchRef.current.friend ?? null);
   useEffect(() => {
-    // A sign-in code is for one use: it does not stay in the address (a reload or a bookmark would offer it again).
-    if (launchRef.current.link) window.history.replaceState(null, "", location.pathname);
+    // A sign-in code is for one use: it does not stay in the address (a reload or a bookmark would offer it again). Nor does a friend's.
+    if (launchRef.current.link || launchRef.current.friend) window.history.replaceState(null, "", location.pathname);
   }, []);
 
   /** A video was found: it moves to the front of "Continue watching" (keeping its place if it was left unfinished). */
@@ -353,7 +356,14 @@ export function Controller() {
           <LinkApprove code={approveCode} onClose={closeApprove} />
         </Page>
       ) : (
-        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} />
+        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} {...(tv ? { onOpenTitle: setTitle } : {})} />
+      )}
+      {friendCode && !showAccount && !approveCode && !account.choosing && (
+        <FriendInvite
+          code={friendCode}
+          onClose={() => setFriendCode(null)}
+          onSignIn={() => setShowAccount(true)}
+        />
       )}
       {account.message && (
         <p className="account-toast" key={account.message.id} role="status" data-testid="account-toast">
@@ -452,6 +462,7 @@ export function Controller() {
   const link = (
     <>
       <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} />
+      <FriendsHome onOpenTitle={setTitle} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
       <ListRows lists={lists} items={list} onOpen={setTitle} onPick={pickList} onRemove={(url, id) => profileStore.removeFromList(url, id)} onManage={() => setListSheet({ kind: "manage" })} />
       {ratingsOn && <RatingsRow ratings={ratings} onOpen={setTitle} onAll={() => setRatingsOpen(true)} />}

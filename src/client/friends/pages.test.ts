@@ -1,0 +1,152 @@
+import { describe, expect, it } from "vitest";
+import type { ActivityItem, Friend, FriendLists, FriendRatings, FriendsState, InboxItem } from "../../shared";
+import { formatDay } from "../account/time";
+import { getLanguage, t } from "../i18n";
+import { friendGrid, friendRows } from "./pages";
+
+const NOW = 50_000_000;
+const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1_700_000_000_000, on: true, lists: true, ratings: true, activity: true, inbox: true };
+const robin: Friend = { ...sam, id: "pro_robin", name: "Robin" };
+const recommendation = (id: string, from = "pro_sam", extra: { note?: string } = {}): InboxItem => ({ kind: "recommend", id, from, at: NOW - 60_000, read: false, title: "Dune", url: "https://filmpire.sc/watch/1", ...extra });
+const invitation = (id: string, endsAt = NOW + 3_600_000, from = "pro_sam"): InboxItem => ({ kind: "party", id, from, at: NOW - 60_000, read: false, code: "482731", endsAt });
+const watched = (friend: string, key: string, extra: Partial<ActivityItem> = {}): ActivityItem => ({ friend, key, title: "Alien", url: "https://filmpire.sc/watch/2", at: NOW - 60_000, ...extra });
+const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], ...changes });
+const since = (friend: Friend) => t("friends.since", { day: formatDay(friend.since, getLanguage()) });
+
+describe("the rows of the friends page", () => {
+  it("are only the tiles to add a friend and to choose what is shared, before the server has answered", () => {
+    const rows = friendRows(null, NOW);
+    expect(rows.map((row) => row.id)).toEqual(["friend-people"]);
+    expect(rows[0]?.entries.map((entry) => entry.action)).toEqual(["addFriend", "friendSettings"]);
+  });
+
+  it("are, with nothing sent and nothing watched, the friends row alone", () => {
+    expect(friendRows(state(), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+  });
+
+  it("are the parties, what was sent, what friends watch and the friends, in that order", () => {
+    const rows = friendRows(state({ inbox: [recommendation("r"), invitation("p")], activity: [watched("pro_sam", "k")] }), NOW);
+    expect(rows.map((row) => row.id)).toEqual(["friend-parties", "friend-sent", "friend-activity", "friend-people"]);
+    expect(rows.map((row) => row.layout)).toEqual(["wide", "wide", "wide", "categories"]);
+  });
+
+  it("have a tile for each friend that opens their page, before the tiles to add one and to choose what is shared", () => {
+    const rows = friendRows(state({ friends: [sam, robin] }), NOW);
+    const people = rows.find((row) => row.id === "friend-people");
+    expect(people?.entries.map((entry) => entry.title)).toEqual(["Sam", "Robin", t("friends.add"), t("friends.settingsTile")]);
+    expect(people?.entries[0]).toMatchObject({ id: "friend:pro_sam", url: "", opens: { kind: "friend", id: "pro_sam" } });
+    expect(people?.entries[2]).toMatchObject({ url: "", action: "addFriend" });
+    expect(people?.entries[3]).toMatchObject({ url: "", action: "friendSettings" });
+  });
+
+  it("say under a friend's name what they are watching, else since when they are friends, else that they turned friends off", () => {
+    const people = (changes: Partial<FriendsState>) => friendRows(state(changes), NOW).find((row) => row.id === "friend-people")?.entries ?? [];
+    expect(people({ activity: [watched("pro_sam", "k")] })[0]?.note).toBe(t("friends.line.watching", { title: "Alien" }));
+    expect(people({ activity: [watched("pro_sam", "k", { done: true })] })[0]?.note).toBe(t("friends.line.finished", { title: "Alien" }));
+    expect(people({})[0]?.note).toBe(since(sam));
+    expect(people({ friends: [{ ...sam, on: false }], activity: [watched("pro_sam", "k")] })[0]?.note).toBe(t("friends.paused"));
+  });
+
+  it("show an invitation to a party that is on as a tile that joins it, with the code to read and who invited", () => {
+    const rows = friendRows(state({ inbox: [invitation("p1")] }), NOW);
+    const parties = rows.find((row) => row.id === "friend-parties");
+    expect(parties?.entries).toHaveLength(1);
+    expect(parties?.entries[0]).toMatchObject({ id: "party:p1", title: t("friends.partyOf", { name: "Sam" }), url: "", party: "482731", inboxId: "p1" });
+    expect(parties?.entries[0]?.note).toContain("482 731");
+  });
+
+  it("leave out an invitation to a party that is over, and the row when that was all", () => {
+    expect(friendRows(state({ inbox: [invitation("p1", NOW)] }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+    const rows = friendRows(state({ inbox: [invitation("old", NOW - 1), invitation("p2")] }), NOW);
+    expect(rows.find((row) => row.id === "friend-parties")?.entries.map((entry) => entry.inboxId)).toEqual(["p2"]);
+  });
+
+  it("show a title a friend sent as a card that plays it, says who sent it, and is taken off the row by its item of the inbox", () => {
+    const sent = friendRows(state({ inbox: [recommendation("r1", "pro_sam", { note: "Slow but worth it" })] }), NOW).find((row) => row.id === "friend-sent");
+    expect(sent?.entries).toHaveLength(1);
+    expect(sent?.entries[0]).toMatchObject({ id: "from:r1", title: "Dune", url: "https://filmpire.sc/watch/1", note: t("friends.from", { name: "Sam" }), description: "Slow but worth it", inboxId: "r1" });
+  });
+
+  it("show what friends watched as cards that play it, with who and when", () => {
+    const activity = friendRows(state({ friends: [sam, robin], activity: [watched("pro_sam", "k1"), watched("pro_robin", "k2", { title: "Heat" })] }), NOW).find((row) => row.id === "friend-activity");
+    expect(activity?.entries.map((entry) => entry.title)).toEqual(["Alien", "Heat"]);
+    expect(activity?.entries[0]?.url).toBe("https://filmpire.sc/watch/2");
+    expect(activity?.entries[0]?.note).toMatch(/^Sam · /);
+    expect(activity?.entries[1]?.note).toMatch(/^Robin · /);
+  });
+});
+
+describe("a friend's page", () => {
+  const view = { kind: "friend", id: "pro_sam" } as const;
+  const lists = (): FriendLists => ({
+    listNames: [{ key: "horror", at: 1, name: "Horror" }],
+    list: [
+      { key: "k1", at: 1, id: "k1", title: "Alien", url: "https://x.example/alien" },
+      { key: "k2", at: 2, list: "horror", id: "k2", title: "It", url: "https://x.example/it", image: "poster-it" },
+      { key: "k3", at: 3, deleted: true },
+    ],
+  });
+  const ratings = (): FriendRatings => ({
+    ratings: [
+      { key: "rate:a", at: 1, title: "Alien", url: "https://x.example/alien", score: 9, ratedAt: 100, kind: "movie" },
+      { key: "rate:b", at: 3, title: "Heat", url: "https://x.example/heat", score: 8, ratedAt: 300 },
+      { key: "rate:c|s2", at: 2, title: "Dark", url: "https://x.example/dark", score: 7, ratedAt: 200, season: 2, kind: "series" },
+      { key: "rate:gone", at: 4, deleted: true },
+    ],
+  });
+
+  it("is none for anything that is not a friend's page, and for a friend who is gone", () => {
+    expect(friendGrid({ kind: "home" }, state(), null, null)).toBeNull();
+    expect(friendGrid({ kind: "friend", id: "pro_nobody" }, state(), null, null)).toBeNull();
+    expect(friendGrid(view, null, null, null)).toBeNull();
+  });
+
+  it("is headed by the friend's name and since when they are friends", () => {
+    const grid = friendGrid(view, state(), { data: lists() }, null);
+    expect(grid).toMatchObject({ title: "Sam", meta: since(sam), layout: "wide" });
+  });
+
+  it("shows the titles in the lists they keep, each marked with its list, and none that were taken out", () => {
+    const grid = friendGrid(view, state(), { data: lists() }, null);
+    expect(grid?.entries.map((entry) => entry.title)).toEqual(["Alien", "It"]);
+    expect(grid?.entries.map((entry) => entry.note)).toEqual([t("list.favourites"), "Horror"]);
+    expect(grid?.entries[1]).toMatchObject({ url: "https://x.example/it", image: "poster-it" });
+  });
+
+  it("has lists as its first tab, and says there is nothing when they have no titles", () => {
+    const grid = friendGrid({ kind: "friend", id: "pro_sam", tab: "lists" }, state(), { data: { listNames: [], list: [] } }, null);
+    expect(grid).toMatchObject({ entries: [], empty: t("friends.noLists", { name: "Sam" }) });
+  });
+
+  it("shows what they rated, the latest first, with the score (and the season) under each", () => {
+    const grid = friendGrid({ ...view, tab: "ratings" }, state(), null, { data: ratings() });
+    expect(grid?.entries.map((entry) => entry.title)).toEqual(["Heat", "Dark", "Alien"]);
+    expect(grid?.entries.map((entry) => entry.note)).toEqual(["8/10", `${t("player.season", { n: 2 })} · 7/10`, "9/10"]);
+    expect(grid?.entries[2]).toMatchObject({ url: "https://x.example/alien", kind: "movie" });
+  });
+
+  it("says there is nothing when they have not rated anything", () => {
+    const grid = friendGrid({ ...view, tab: "ratings" }, state(), null, { data: { ratings: [] } });
+    expect(grid).toMatchObject({ entries: [], empty: t("friends.noRatings", { name: "Sam" }) });
+  });
+
+  it("says why there is nothing to see when the friend does not share it", () => {
+    const quiet = state({ friends: [{ ...sam, lists: false, ratings: false }] });
+    expect(friendGrid(view, quiet, { data: lists() }, null)).toMatchObject({ entries: [], empty: t("friends.notSharingLists", { name: "Sam" }) });
+    expect(friendGrid({ ...view, tab: "ratings" }, quiet, null, { data: ratings() })).toMatchObject({ entries: [], empty: t("friends.notSharingRatings", { name: "Sam" }) });
+  });
+
+  it("says friends are off for a friend who turned them off, whichever tab is open", () => {
+    const off = state({ friends: [{ ...sam, on: false }] });
+    const said = { entries: [], empty: t("friends.theirsOff", { name: "Sam" }), meta: t("friends.paused") };
+    expect(friendGrid(view, off, { data: lists() }, null)).toMatchObject(said);
+    expect(friendGrid({ ...view, tab: "ratings" }, off, null, { data: ratings() })).toMatchObject(said);
+  });
+
+  it("says it is loading until the server has answered, and what went wrong if it could not", () => {
+    expect(friendGrid(view, state(), null, null)).toMatchObject({ entries: [], empty: t("common.loading") });
+    expect(friendGrid(view, state(), { problem: "not_shared" }, null)).toMatchObject({ entries: [], empty: "not_shared" });
+    expect(friendGrid({ ...view, tab: "ratings" }, state(), null, null)).toMatchObject({ entries: [], empty: t("common.loading") });
+    expect(friendGrid({ ...view, tab: "ratings" }, state(), null, { problem: "offline" })).toMatchObject({ entries: [], empty: "offline" });
+  });
+});

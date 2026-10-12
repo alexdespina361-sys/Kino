@@ -1,6 +1,7 @@
 export * from "./account";
 export * from "./captions";
 export * from "./feedback";
+export * from "./friends";
 export * from "./lang";
 export * from "./library";
 export * from "./media";

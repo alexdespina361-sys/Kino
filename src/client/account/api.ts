@@ -28,7 +28,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method: string, url: string, body?: unknown): Promise<unknown> {
+export async function request(method: string, url: string, body?: unknown): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(url, {
@@ -55,7 +55,7 @@ async function request(method: string, url: string, body?: unknown): Promise<unk
 }
 
 /** The answer, checked: a server that answers with something else is an older one, and is told apart from one that said no. */
-async function ask<T>(schema: z.ZodType<T>, method: string, url: string, body?: unknown): Promise<T> {
+export async function ask<T>(schema: z.ZodType<T>, method: string, url: string, body?: unknown): Promise<T> {
   const parsed = schema.safeParse(await request(method, url, body));
   if (!parsed.success) throw new ApiError(502, "bad_response");
   return parsed.data;

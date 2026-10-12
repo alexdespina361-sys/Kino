@@ -74,6 +74,16 @@ pnpm build && pnpm start     # http://localhost:8787
   (*See all*: newest first or highest first, with the notes and those facts, and the mean) and an entry in the TV's menu. Ratings are saved to the
   profile and synced like the lists (up to 500; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
   and TV) switches the whole thing off, every sign of it, and keeps what was rated.
+- **Friends** are optional and **off until a profile turns them on** in its settings (phone and TV; they belong to an account, so a guest is told to sign in).
+  Two profiles become friends with a code (`ABCD-2345`, good once and for a week) that one gives and the other types or opens as a link: the phone shows it
+  with a QR code and a link to send, the TV with a QR code (up to 5 codes can be out at once; one can be taken back). A friend can **look at your lists and
+  ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone), **be invited to a
+  watch party** (a button that joins on the phone; on the TV, pressing the invitation on the Friends page joins) and **hear what you watch** ("Sam is watching
+  Alien", from a minute in, the last two weeks). Each of these has a switch of its own: *Friends can see my lists*, *…my ratings*, *Tell friends what I watch*,
+  *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*. They live in the
+  profile's settings, so the server, not the screen, decides what a friend is shown or may send, from the other profile's synced settings; with friends off nothing is
+  shared, sent or received, and the friends are kept for when it is turned on again. What friends sent shows as a row, a dot (phone) or a number on the menu (TV), and a
+  line when it arrives; either friend can remove the other (the button asks twice). Friends: `/api/profiles/:id/friends…`.
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.
@@ -86,10 +96,10 @@ pnpm build && pnpm start     # http://localhost:8787
   until a signed-in person says yes. A screen that is signed in itself can do the asking too (a computer with no phone at hand): its account
   page has **Sign in another device**: type the code the other screen shows, check who is asking, approve.
 - The phone's account page: profiles, settings, devices (sign others out, and give a device a name of its own: "Living room"), password, delete account. The TV has its own: who's watching,
-  **Manage profiles**, and the settings (language, colour, autoplay, ratings). The subtitle languages, the devices, the password and deleting the
+  **Manage profiles**, and the settings (language, colour, autoplay, ratings, friends). The subtitle languages, the devices, the password and deleting the
   account are on the phone's page only.
 - **Settings per profile:** website language, accent colour (the red can be any of several colours), whether the next episode follows by
-  itself, whether titles can be rated, and the subtitle languages (below).
+  itself, whether titles can be rated, friends and what they may do, and the subtitle languages (below).
 
 **Phone**
 - Pair by QR scan (camera) or by code; a QR link opened from the phone's camera app pairs by itself. A phone that already has a TV is asked
@@ -415,7 +425,8 @@ library and its menu, watch parties (from a TV, from a phone, from a link), a se
 several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page whose connections are never answered:
 `sleepingServer` in `e2e/helpers.ts`, with the page's clock skipped ahead), the TV page on a
 phone, a tablet and a phone held sideways, the end card and mute, full screen (at the first press, kept for the next visit, the buttons),
-ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
+ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV), friends (made with a code or a link, what a friend can see,
+what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
 itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`). A Hisense browser is imitated by its user agent
@@ -430,11 +441,12 @@ Android TV remotes, the wake lock, an iPhone's camera and browsers, and the home
 ## Layout
 
 ```
-src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge), rating.ts (what a rating remembers of the watching)
+src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge), rating.ts (what a rating remembers of the watching),
+               friends.ts (the friends' switches, what travels between them)
 src/server/    sessions/ (registry: devices, codes, controllers; pairings: which phone goes with which TV, kept between restarts), websocket/hub.ts,
-               resolvers/, accounts/ (store, routes, persistence), app.ts
+               resolvers/, accounts/ (store, routes, persistence, friends: codes, inboxes, what a friend may see), app.ts
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),
-               i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
+               friends/ (the state both screens share, what is new, the friends' pages of the TV), i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
 public/        copied as it is into the built page: the web app manifest and its icons
 fixtures/      sample.mp4, long.mp4 (40 s, for Up Next), hls/ (VP9, so Playwright's Chromium can decode them)
 e2e/           Playwright specs and helpers

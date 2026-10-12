@@ -1,0 +1,181 @@
+import { z } from "zod";
+import { AvatarIdSchema, ListItemSchema, ListNameItemSchema, ProfileNameSchema, RatingItemSchema, type Settings } from "./account";
+import { isHttpUrl } from "./media";
+
+/**
+ * Friends: two profiles that agreed to be, through a code one gave and the other typed (or a link with it). A friend can look at
+ * the other's lists and ratings, send titles and watch-party invitations to their inbox, and hear what the other watches, each of
+ * those only as far as the other's switches allow. All of it is optional: with `friends` off in the settings of a profile nothing
+ * of it shows, is shared or arrives, and the friends themselves are kept for when it is turned on again.
+ */
+
+export const MAX_FRIENDS = 50;
+/** An invitation (a code to give a friend) is good for this long, and for one friend. */
+export const INVITE_TTL_MS = 7 * 24 * 3600 * 1000;
+/** How many codes a profile can have out at once: making another takes back the oldest. */
+export const MAX_OPEN_INVITES = 5;
+/** Written the way people read it aloud: no 0/O or 1/I. The same letters as the codes that sign a TV in. */
+export const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export const INVITE_CODE_LENGTH = 8;
+/** How many things a friend's inbox keeps (the newest) and for how long. */
+export const INBOX_MAX = 100;
+export const INBOX_KEEP_MS = 30 * 24 * 3600 * 1000;
+/** A watch-party code is no use after the party, so an invitation to one is dropped after this. */
+export const PARTY_INVITE_KEEP_MS = 12 * 3600 * 1000;
+export const FRIEND_NOTE_MAX = 200;
+/** What friends are told of what somebody watched: the last two weeks, from a minute in (a title tried and left is not "watched"). */
+export const ACTIVITY_KEEP_MS = 14 * 24 * 3600 * 1000;
+export const ACTIVITY_MIN_SECONDS = 60;
+export const ACTIVITY_PER_FRIEND = 4;
+export const ACTIVITY_MAX = 30;
+/** "Is watching" for as long as it was last watched less than this ago. */
+export const WATCHING_NOW_MS = 15 * 60 * 1000;
+
+/* ------------------------------ the switches ------------------------------ */
+
+/** Each is a setting of the profile (see SETTING_SCHEMAS), and this is what it is until it is set. Nothing is on until `friends` is. */
+export const FRIEND_DEFAULTS = {
+  friends: false,
+  /** Friends can look at my lists... */
+  friendsLists: true,
+  /** ...and at my ratings. */
+  friendsRatings: true,
+  /** Friends are told what I watch... */
+  friendsGive: false,
+  /** ...and I am told what they watch. */
+  friendsGet: false,
+  /** Friends can send me titles and invitations to a watch party. */
+  friendsInbox: true,
+} as const;
+export type FriendSetting = keyof typeof FRIEND_DEFAULTS;
+export const FRIEND_SETTINGS = Object.keys(FRIEND_DEFAULTS) as FriendSetting[];
+export type FriendChoices = { [K in FriendSetting]: boolean };
+
+/** What a profile has chosen about friends, with the default for each thing it has not. */
+export function friendChoices(settings: Settings): FriendChoices {
+  const choice = (key: FriendSetting): boolean => settings[key] ?? FRIEND_DEFAULTS[key];
+  return {
+    friends: choice("friends"),
+    friendsLists: choice("friendsLists"),
+    friendsRatings: choice("friendsRatings"),
+    friendsGive: choice("friendsGive"),
+    friendsGet: choice("friendsGet"),
+    friendsInbox: choice("friendsInbox"),
+  };
+}
+
+/* ------------------------------ what travels ------------------------------ */
+
+const IdSchema = z.string().min(1).max(60);
+const PictureSchema = z.string().max(2048);
+const LinkSchema = z.string().max(2048).refine(isHttpUrl, "invalid_request");
+/** A picture sent by a friend is shown on the screen of another: a web address, or one of this site's own (the library keeps some of its posters here). */
+const SentPictureSchema = PictureSchema.refine((value) => isHttpUrl(value) || (value.startsWith("/") && !value.startsWith("//")), "invalid_request");
+
+/** A friend, as the profile that has them sees them: who they are, and what they allow right now (all false while they have friends turned off). */
+export const FriendSchema = z.object({
+  id: IdSchema,
+  name: ProfileNameSchema,
+  avatar: AvatarIdSchema,
+  since: z.number(),
+  /** They have friends turned on: when they do not, nothing below is true. */
+  on: z.boolean(),
+  /** Their lists can be looked at. */
+  lists: z.boolean(),
+  /** Their ratings can be looked at. */
+  ratings: z.boolean(),
+  /** What they watch is told (they give it, and this profile gets it). */
+  activity: z.boolean(),
+  /** They take titles and invitations. */
+  inbox: z.boolean(),
+});
+export type Friend = z.infer<typeof FriendSchema>;
+
+/** A title a friend wants this profile to see. */
+export const RecommendationSchema = z.object({
+  kind: z.literal("recommend"),
+  title: z.string().trim().min(1).max(300),
+  url: LinkSchema,
+  image: SentPictureSchema.optional(),
+  backdrop: SentPictureSchema.optional(),
+  year: z.number().int().min(1800).max(2200).optional(),
+  type: z.enum(["movie", "series"]).optional(),
+  /** Why, in a few words. */
+  note: z.string().trim().max(FRIEND_NOTE_MAX).optional(),
+});
+/** The six-digit code of a watch party that is open now (see `partyLink`), and when it stops being one. */
+export const PartyInviteSchema = z.object({
+  kind: z.literal("party"),
+  code: z.string().regex(/^\d{6}$/),
+  endsAt: z.number().finite(),
+});
+/** What one friend sends another. */
+export type Message = z.infer<typeof RecommendationSchema> | z.infer<typeof PartyInviteSchema>;
+
+const To = { to: z.array(IdSchema).min(1).max(MAX_FRIENDS) };
+/** What a profile sends to friends (to each of `to`). */
+export const SendSchema = z.discriminatedUnion("kind", [RecommendationSchema.extend(To), PartyInviteSchema.extend(To)]);
+export type SendRequest = z.infer<typeof SendSchema>;
+/** Who it was delivered to and who is not taking things. */
+export const SentSchema = z.object({ sent: z.array(IdSchema), declined: z.array(IdSchema) });
+export type Sent = z.infer<typeof SentSchema>;
+
+const Delivered = { id: z.string().min(1).max(40), at: z.number(), from: IdSchema, read: z.boolean() };
+export const InboxItemSchema = z.discriminatedUnion("kind", [RecommendationSchema.extend(Delivered), PartyInviteSchema.extend(Delivered)]);
+export type InboxItem = z.infer<typeof InboxItemSchema>;
+
+/** Something a friend watched: a film, or a show (its latest episode). Worked out from what the friend's profile keeps, never kept apart. */
+export const ActivityItemSchema = z.object({
+  friend: IdSchema,
+  key: z.string().max(400),
+  title: z.string().max(300),
+  url: z.string().max(2048),
+  image: PictureSchema.optional(),
+  backdrop: PictureSchema.optional(),
+  year: z.number().int().optional(),
+  at: z.number(),
+  done: z.boolean().optional(),
+  season: z.number().int().optional(),
+  episode: z.number().int().optional(),
+});
+export type ActivityItem = z.infer<typeof ActivityItemSchema>;
+
+/** A code this profile gave out and nobody has used yet. */
+export const OpenInviteSchema = z.object({ code: z.string().max(20), expiresAt: z.number() });
+export type OpenInvite = z.infer<typeof OpenInviteSchema>;
+
+/** Everything a profile with friends turned on asks for, in one answer. */
+export const FriendsStateSchema = z.object({
+  friends: z.array(FriendSchema),
+  inbox: z.array(InboxItemSchema),
+  activity: z.array(ActivityItemSchema),
+  invites: z.array(OpenInviteSchema),
+});
+export type FriendsState = z.infer<typeof FriendsStateSchema>;
+
+/** Who is behind a code, before it is used. */
+export const InviteViewSchema = z.object({ code: z.string().max(20), from: z.object({ name: ProfileNameSchema, avatar: AvatarIdSchema }) });
+export type InviteView = z.infer<typeof InviteViewSchema>;
+export const AcceptSchema = z.object({ code: z.string().min(1).max(40) });
+export const AcceptedSchema = z.object({ friend: FriendSchema });
+export const InvitedSchema = z.object({ code: z.string().max(20), expiresAt: z.number() });
+
+/** What a friend lets be looked at: the lists (with their names) and the ratings. The items are as the friend's profile keeps them. */
+export const FriendListsSchema = z.object({ listNames: z.array(ListNameItemSchema), list: z.array(ListItemSchema) });
+export type FriendLists = z.infer<typeof FriendListsSchema>;
+export const FriendRatingsSchema = z.object({ ratings: z.array(RatingItemSchema) });
+export type FriendRatings = z.infer<typeof FriendRatingsSchema>;
+
+/* ------------------------------ words for the screens ------------------------------ */
+
+/** What a friend's activity says they did, from when it was and whether it was finished. */
+export function activityVerb(item: Pick<ActivityItem, "at" | "done">, now: number): "watching" | "watched" | "finished" {
+  if (item.done) return "finished";
+  return now - item.at < WATCHING_NOW_MS ? "watching" : "watched";
+}
+
+/** The friends that something can be sent to now. */
+export const reachable = (friends: readonly Friend[]): Friend[] => friends.filter((friend) => friend.on && friend.inbox);
+
+/** The address that adds the friend whose code this is (`/?friend=ABCD2345`): what the link in a message holds. */
+export const friendLink = (code: string, origin: string): string => `${origin}/?friend=${code}`;

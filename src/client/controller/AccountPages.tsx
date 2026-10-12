@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ACCENTS, DEVICE_NAME_MAX, preferredLanguages, UI_LANGUAGES, type SessionInfo } from "../../shared";
+import { ACCENTS, DEVICE_NAME_MAX, friendChoices, preferredLanguages, UI_LANGUAGES, type FriendSetting, type SessionInfo } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
 import { describeError } from "../account/errors";
@@ -7,8 +7,9 @@ import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { ago } from "../account/time";
-import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
-import { CheckIcon, CloseIcon, GlobeIcon, PencilIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon } from "../shared/icons";
+import { useFriends } from "../friends/FriendsProvider";
+import { LANGUAGE_NAMES, useLanguage, useT, type Key } from "../i18n";
+import { CheckIcon, CloseIcon, GlobeIcon, PencilIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { linkFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
@@ -100,8 +101,59 @@ function SubtitleLanguages() {
   );
 }
 
+/** What a friend may do while friends are on, each its own switch. */
+const FRIEND_SWITCHES: ReadonlyArray<{ key: FriendSetting; label: Key; testId: string }> = [
+  { key: "friendsLists", label: "friends.switchLists", testId: "friends-lists" },
+  { key: "friendsRatings", label: "friends.switchRatings", testId: "friends-ratings" },
+  { key: "friendsGive", label: "friends.switchGive", testId: "friends-give" },
+  { key: "friendsGet", label: "friends.switchGet", testId: "friends-get" },
+  { key: "friendsInbox", label: "friends.switchInbox", testId: "friends-inbox-switch" },
+];
+
+/**
+ * Friends: the master switch and, once it is on, what friends may see and send and whether what each watches is told. These are
+ * settings of the profile (so they follow it onto every screen), and each change is sent to the server at once: the server is
+ * what decides what a friend is shown, from what the profile has chosen here.
+ */
+function FriendsGroup({ onOpen }: { onOpen: () => void }) {
+  const t = useT();
+  const account = useAccount();
+  const friends = useFriends();
+  const { settings, set } = useSettings();
+  if (!account.me || !account.profile) {
+    return (
+      <Group title={t("friends.settings")}>
+        <p className="muted small" data-testid="friends-sign-in">
+          {t("friends.signInFirst")}
+        </p>
+      </Group>
+    );
+  }
+  const choices = friendChoices(settings);
+  const change = (key: FriendSetting, on: boolean) => {
+    set(key, on);
+    account.syncNow();
+  };
+  return (
+    <Group title={t("friends.settings")} help={t("friends.settingsHelp")}>
+      <Switch label={t("friends.switch")} checked={choices.friends} onChange={(on) => change("friends", on)} testId="friends-switch" />
+      {choices.friends && (
+        <>
+          {FRIEND_SWITCHES.map(({ key, label, testId }) => (
+            <Switch key={key} label={t(label)} checked={choices[key]} onChange={(on) => change(key, on)} testId={testId} />
+          ))}
+          <button className="btn btn-block" onClick={onOpen} data-testid="friends-open">
+            <UsersIcon /> {t("friends.open")}
+            {friends.state && <small>{t("friends.count", { count: friends.state.friends.length })}</small>}
+          </button>
+        </>
+      )}
+    </Group>
+  );
+}
+
 /** What changes how the site looks and plays: language, colour, autoplay, subtitle languages. */
-export function SettingsPage() {
+export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
   const t = useT();
   const language = useLanguage();
   const { settings, set } = useSettings();
@@ -141,6 +193,7 @@ export function SettingsPage() {
       <Group title={t("rating.settings")} help={t("rating.settingsHelp")}>
         <Switch label={t("rating.settingsSwitch")} checked={settings.ratings ?? true} onChange={(on) => set("ratings", on)} testId="ratings-switch" />
       </Group>
+      <FriendsGroup onOpen={onOpenFriends} />
       <SubtitleLanguages />
       {account.me === null && <p className="muted small">{t("settings.signInToSave")}</p>}
     </div>

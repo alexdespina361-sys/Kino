@@ -307,6 +307,13 @@ export const UsersIcon = (props: Props) => (
   </Icon>
 );
 
+/** A heart: friends. */
+export const HeartIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+  </Icon>
+);
+
 export const RefreshIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M20 11a8 8 0 0 0-14-4.5L4 9M4 4v5h5M4 13a8 8 0 0 0 14 4.5L20 15M20 20v-5h-5" />

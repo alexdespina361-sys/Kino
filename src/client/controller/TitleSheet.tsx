@@ -9,6 +9,7 @@ import { CheckIcon, PlayIcon, PlusIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
 import { useSeriesPage, type PageEpisode, type SeriesPage } from "../tv/Episodes";
 import { resumable, type Entry } from "../tv/pages";
+import { RecommendButton } from "./Friends";
 import { RatingBox } from "./RatingBox";
 import { Sheet } from "./Sheet";
 import { Still } from "./Sheets";
@@ -71,6 +72,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
           {kept ? <CheckIcon /> : <PlusIcon />} {listText}
         </button>
       </div>
+      <RecommendButton entry={entry} />
       {ratings && <RatingBox entry={entry} isShow={series.isShow} title={t("rating.yours")} testId="rate-title" />}
       {entry.description && <p className="muted title-about">{entry.description}</p>}
       {series.isShow && (

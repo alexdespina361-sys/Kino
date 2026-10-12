@@ -8,6 +8,9 @@ import { getLanguage, rowTitle, t } from "../i18n";
  * and saved. Pure, so what appears where can be tested without a screen; Browse.tsx draws it and walks it with the remote.
  */
 
+/** What a friend's page shows: the lists they keep, or what they rated. */
+export type FriendTab = "lists" | "ratings";
+
 /** The page that is open. */
 export type View =
   | { kind: "home" }
@@ -21,16 +24,22 @@ export type View =
   | { kind: "category"; rowId: string }
   /** Every category, or only those of films or of shows. */
   | { kind: "categories"; of?: LibraryKind }
-  | { kind: "search" };
+  | { kind: "search" }
+  /** What friends sent and watch, and who they are (see friends/pages.ts). */
+  | { kind: "friends" }
+  /** One friend, with their lists (first) or their ratings. */
+  | { kind: "friend"; id: string; tab?: FriendTab };
 
 export const viewKey = (view: View): string =>
   view.kind === "category"
     ? `category:${view.rowId}`
     : view.kind === "categories"
       ? `categories:${view.of ?? "all"}`
-      : view.kind === "list" && view.list && view.list !== DEFAULT_LIST
-        ? `list:${view.list}`
-        : view.kind;
+      : view.kind === "friend"
+        ? `friend:${view.id}:${view.tab ?? "lists"}`
+        : view.kind === "list" && view.list && view.list !== DEFAULT_LIST
+          ? `list:${view.list}`
+          : view.kind;
 
 /** The list a page of lists shows: the one it names, or the first when it names none or one that is gone. */
 export const shownList = (view: View, lists: readonly ListInfo[]): ListInfo => lists.find((list) => view.kind === "list" && list.id === view.list) ?? lists[0] ?? { id: DEFAULT_LIST };
@@ -38,6 +47,8 @@ export const shownList = (view: View, lists: readonly ListInfo[]): ListInfo => l
 /** The pages made of a banner and rows of titles under it. */
 export type RowsPage = "home" | "movies" | "series";
 export const isRowsPage = (view: View): view is { kind: RowsPage } => view.kind === "home" || view.kind === "movies" || view.kind === "series";
+/** The pages that have a banner and rows under it: those above, and the friends' (whose rows come from friends/pages.ts). */
+export const hasRows = (view: View): boolean => isRowsPage(view) || view.kind === "friends";
 
 /** How a row is laid out: wide tiles, a numbered ranking of posters, wide "continue" cards with a progress bar, or tiles of categories. */
 export type Layout = "wide" | "continue" | "ranked" | "categories";
@@ -69,6 +80,12 @@ export interface Entry {
   opens?: View;
   /** Where a category's titles come from. */
   source?: string;
+  /** What a friend sent: the item of the inbox that dismissing it takes away. */
+  inboxId?: string;
+  /** An invitation to a watch party: the 6-digit code that joins it. */
+  party?: string;
+  /** A tile that opens a page over the library instead of a title or a page of the library. */
+  action?: "addFriend" | "friendSettings";
 }
 
 export interface HomeRow {
@@ -314,17 +331,25 @@ export function freshSimilar(items: readonly LibraryItem[], progress: readonly L
 }
 
 /** What the buttons under the banner can do for a title. */
-export type HeroAction = "play" | "list" | "remove" | "rate";
-export const heroActions = (entry: Entry | undefined): HeroAction[] => (!entry || entry.opens ? [] : entry.progressKey ? ["play", "remove"] : ["play", "list"]);
+export type HeroAction = "play" | "list" | "remove" | "rate" | "recommend" | "dismiss" | "join";
+export const heroActions = (entry: Entry | undefined): HeroAction[] => {
+  if (!entry || entry.opens || entry.action) return [];
+  if (entry.party) return ["join", "dismiss"]; // an invitation to a watch party
+  if (entry.progressKey) return ["play", "remove"];
+  return entry.inboxId ? ["play", "list", "dismiss"] : ["play", "list"]; // (what a friend sent can be sent away)
+};
 /**
  * ...and on a title's own page, which any title can be kept from: play it (or pick it up), keep it in a list, give it a score (unless
- * ratings are turned off), and for one part way through, take it off its row.
+ * ratings are turned off), send it to a friend (when friends are on), and for one part way through, take it off its row (as one a
+ * friend sent is taken off theirs).
  */
-export const overviewActions = (entry: Entry, ratings = true): HeroAction[] => [
+export const overviewActions = (entry: Entry, ratings = true, friends = false): HeroAction[] => [
   "play",
   "list",
   ...(ratings ? (["rate"] as const) : []),
+  ...(friends && entry.url ? (["recommend"] as const) : []),
   ...(entry.progressKey ? (["remove"] as const) : []),
+  ...(entry.inboxId ? (["dismiss"] as const) : []),
 ];
 
 /** Which titles a search shows. */

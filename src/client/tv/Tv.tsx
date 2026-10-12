@@ -105,6 +105,8 @@ export function Tv() {
   const [partyEnds, setPartyEnds] = useState<number | null>(null);
   /** Why the code just typed on the party page was refused. `id` changes with each refusal. */
   const [partyError, setPartyError] = useState<{ id: number; text: string } | null>(null);
+  /** The code of a party a friend invited this TV to, which the party page opens on joining. */
+  const [partyJoinWith, setPartyJoinWith] = useState<string | null>(null);
   /** This TV is leaving a party by choice, so being taken out of it a moment later is not news. */
   const leavingRef = useRef(false);
   const [pairing, setPairing] = useState<Pairing | null>(null);
@@ -1172,12 +1174,16 @@ export function Tv() {
           fullscreen={fullscreen}
           onFullscreen={canFullscreen ? toggleFullscreen : null}
           error={partyError}
+          joinWith={partyJoinWith}
           onStart={startParty}
           onJoin={joinParty}
           onRemove={removeFromParty}
           onEnd={endParty}
           onLeave={leaveParty}
-          onBack={() => setScreen("library")}
+          onBack={() => {
+            setPartyJoinWith(null);
+            setScreen("library");
+          }}
         />
       )}
 
@@ -1189,6 +1195,12 @@ export function Tv() {
           onConnect={() => setScreen("connect")}
           onParty={() => {
             setPartyError(null);
+            setPartyJoinWith(null);
+            setScreen("party");
+          }}
+          onJoinParty={(code) => {
+            setPartyError(null);
+            setPartyJoinWith(code);
             setScreen("party");
           }}
           connected={paired}

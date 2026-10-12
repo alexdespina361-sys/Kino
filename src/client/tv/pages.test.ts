@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { cardOf, freshSimilar, gridOf, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
+import { cardOf, freshSimilar, gridOf, hasRows, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3): LibraryRow => ({
@@ -38,6 +38,21 @@ describe("viewKey", () => {
   it("knows which pages are made of rows", () => {
     expect(["home", "movies", "series"].every((kind) => isRowsPage({ kind } as never))).toBe(true);
     expect(["list", "history", "search", "category", "categories"].some((kind) => isRowsPage({ kind } as never))).toBe(false);
+  });
+
+  it("tells one friend's page from another's, and the lists of a friend from the ratings", () => {
+    expect(viewKey({ kind: "friends" })).toBe("friends");
+    expect(viewKey({ kind: "friend", id: "f1" })).toBe("friend:f1:lists");
+    expect(viewKey({ kind: "friend", id: "f1", tab: "lists" })).toBe("friend:f1:lists");
+    expect(viewKey({ kind: "friend", id: "f1", tab: "ratings" })).toBe("friend:f1:ratings");
+    expect(viewKey({ kind: "friend", id: "f2", tab: "ratings" })).not.toBe(viewKey({ kind: "friend", id: "f1", tab: "ratings" }));
+  });
+
+  it("has rows under a banner for the friends' page, though it is not one of the library's rows pages", () => {
+    expect(hasRows({ kind: "friends" })).toBe(true);
+    expect(isRowsPage({ kind: "friends" })).toBe(false);
+    expect(["home", "movies", "series"].every((kind) => hasRows({ kind } as never))).toBe(true);
+    expect(["list", "history", "ratings", "search", "category", "categories", "friend"].some((kind) => hasRows({ kind } as never))).toBe(false);
   });
 });
 
@@ -342,6 +357,16 @@ describe("heroActions", () => {
     expect(heroActions({ id: "a", title: "A", url: "", opens: { kind: "home" } })).toEqual([]);
     expect(heroActions(undefined)).toEqual([]);
   });
+
+  it("offers Join and Dismiss for an invitation to a watch party, and Dismiss besides for a title a friend sent", () => {
+    expect(heroActions({ id: "p", title: "Ann invites you", url: "", party: "123456", inboxId: "i1" })).toEqual(["join", "dismiss"]);
+    expect(heroActions({ id: "r", title: "A", url: "u", inboxId: "i2" })).toEqual(["play", "list", "dismiss"]);
+  });
+
+  it("offers nothing for a tile that opens a screen over the library", () => {
+    expect(heroActions({ id: "add", title: "Add a friend", url: "", action: "addFriend" })).toEqual([]);
+    expect(heroActions({ id: "set", title: "Friends settings", url: "", action: "friendSettings" })).toEqual([]);
+  });
 });
 
 describe("overviewActions", () => {
@@ -352,6 +377,15 @@ describe("overviewActions", () => {
   it("has no Rate for a profile that turned ratings off", () => {
     expect(overviewActions({ id: "a", title: "A", url: "u" }, false)).toEqual(["play", "list"]);
     expect(overviewActions({ id: "a", title: "A", url: "u", progressKey: "k" }, false)).toEqual(["play", "list", "remove"]);
+  });
+  it("offers Recommend only when friends are on, and only for a title that plays", () => {
+    expect(overviewActions({ id: "a", title: "A", url: "u" }, true, true)).toEqual(["play", "list", "rate", "recommend"]);
+    expect(overviewActions({ id: "a", title: "A", url: "u" }, false, true)).toEqual(["play", "list", "recommend"]);
+    expect(overviewActions({ id: "a", title: "A", url: "u" }, true, false)).toEqual(["play", "list", "rate"]);
+    expect(overviewActions({ id: "a", title: "A", url: "" }, true, true)).toEqual(["play", "list", "rate"]);
+  });
+  it("offers Dismiss besides for a title a friend sent", () => {
+    expect(overviewActions({ id: "a", title: "A", url: "u", inboxId: "i" }, true, true)).toEqual(["play", "list", "rate", "recommend", "dismiss"]);
   });
 });
 
