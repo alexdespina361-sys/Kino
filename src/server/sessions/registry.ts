@@ -3,9 +3,11 @@ import {
   IDLE_STATE,
   MAX_FOLLOWERS,
   PAIRING_CODE_TTL_MS,
+  reachedEnd,
   type NormalizedMedia,
   type PairingCode,
   type PlayerState,
+  type PlayHint,
 } from "../../shared";
 
 export function generatePairingCode(rng: (min: number, max: number) => number = randomInt): string {
@@ -35,6 +37,29 @@ export interface Device {
   /** Last known playback, so a reconnecting phone can resync. */
   media: NormalizedMedia | null;
   state: PlayerState;
+  /** What this TV was last playing and how far it got, to be put back when its page is opened again. Only a TV with a phone or a party has one that outlives a restart. */
+  resume: Resume | null;
+}
+
+/** What it takes to put a TV back where it was: the link that plays it again, with the picture its card had, and the place reached. */
+export interface Resume {
+  url: string;
+  hint: PlayHint | undefined;
+  /** Where it is now, and where it was when last handed to `records` (a few seconds more or less is not worth a write). */
+  time: number;
+  saved: number;
+  /** The day (days since 1970) the place was last written down. */
+  day: number;
+  /** Just put back at `time`: until then, what the picture reports before it has got there is not taken for where it is. */
+  holdUntil: number;
+}
+
+/** The part of a `Resume` that a restart keeps. */
+export interface ResumeRecord {
+  url: string;
+  hint?: PlayHint;
+  time: number;
+  day: number;
 }
 
 export interface Controller {
@@ -75,6 +100,8 @@ export interface DeviceRecord {
   followerIds: string[];
   /** The last day (days since 1970) the TV, or a phone of it, said anything. */
   seenDay: number;
+  /** What it was playing when it was last heard from. */
+  resume?: ResumeRecord;
 }
 
 /** A phone that has a TV. */
@@ -90,8 +117,18 @@ export interface Records {
 }
 
 const DAY_MS = 24 * 3600 * 1000;
-/** A pairing nobody has used for this long is let go when the server starts. */
-export const KEEP_PAIRINGS_DAYS = 90;
+/**
+ * A phone and its TV stay together until one of them lets go. Only a pair that nobody has used for more than a year (a TV in a
+ * drawer, a phone that was replaced) is cleared out when the server starts, so the database does not fill with ghosts.
+ */
+export const KEEP_PAIRINGS_DAYS = 400;
+/** What a TV was playing is put back when its page is opened again, unless that was longer ago than this. */
+export const KEEP_RESUME_DAYS = 30;
+/** The place a TV reached is written down again when it has moved this far (and when the TV goes away). */
+const SAVE_EVERY_S = 30;
+/** A picture that has just been put back at a place is given this long to get there before its reports count again. */
+const HOLD_MS = 45_000;
+const HOLD_SLACK_S = 5;
 
 const newId = (prefix: string) => `${prefix}_${randomBytes(12).toString("hex")}`;
 
@@ -147,6 +184,7 @@ export class Registry {
         leaderId: device.leaderId,
         followerIds: [...device.followerIds],
         seenDay: this.seenDays.get(device.id) ?? today,
+        ...(device.resume ? { resume: resumeRecord(device.resume) } : {}),
       }));
     const controllers = [...this.controllers.values()].flatMap((controller) =>
       controller.deviceId ? [{ id: controller.id, deviceId: controller.deviceId, seenDay: this.seenDays.get(controller.id) ?? today }] : [],
@@ -157,10 +195,21 @@ export class Registry {
   /** Take back what `records` gave before a restart. What is too old is dropped, and so is anything that points at something no longer there. */
   restore({ devices, controllers }: Records): void {
     const horizon = this.today() - KEEP_PAIRINGS_DAYS;
+    const resumeHorizon = this.today() - KEEP_RESUME_DAYS;
     for (const record of devices) {
       if (record.seenDay < horizon || this.devices.has(record.id)) continue;
-      const { seenDay, ...kept } = record;
-      this.devices.set(record.id, { ...kept, controllerIds: [...kept.controllerIds], followerIds: [...kept.followerIds], partyCode: null, code: null, controlCode: null, media: null, state: IDLE_STATE });
+      const { seenDay, resume, ...kept } = record;
+      this.devices.set(record.id, {
+        ...kept,
+        controllerIds: [...kept.controllerIds],
+        followerIds: [...kept.followerIds],
+        partyCode: null,
+        code: null,
+        controlCode: null,
+        media: null,
+        state: IDLE_STATE,
+        resume: resume && resume.day >= resumeHorizon ? { url: resume.url, hint: resume.hint, time: resume.time, saved: resume.time, day: resume.day, holdUntil: 0 } : null,
+      });
       this.seenDays.set(record.id, seenDay);
     }
     for (const record of controllers) {
@@ -204,10 +253,78 @@ export class Registry {
       followerIds: [],
       media: null,
       state: IDLE_STATE,
+      resume: null,
     };
     this.devices.set(id, device);
     this.markSeen(id);
     return device;
+  }
+
+  /* ------------------------------ what was playing ------------------------------ */
+
+  /**
+   * A video is put on a TV, from `at` seconds in. It is remembered in place of whatever was remembered before, if there is a link
+   * that plays it again (the phone is never what the TV fetches from, so a video without one cannot be looked up on another day).
+   * `putBack`: this is the TV being returned to where it was, so the reports of a picture still on its way there do not count.
+   */
+  startedPlaying(device: Device, media: NormalizedMedia, at = 0, putBack = false): void {
+    const before = device.resume;
+    const time = Math.floor(at);
+    device.resume = media.page
+      ? { url: media.page, hint: hintOf(media), time, saved: time, day: this.today(), holdUntil: putBack && time > 0 ? this.now() + HOLD_MS : 0 }
+      : null;
+    if (before || device.resume) this.onChange?.();
+  }
+
+  /**
+   * The TV says how far it has got. Memory follows every report; what a restart keeps follows when the place has moved a while
+   * (or the TV goes away: see `checkpoint`). A video that has played to its end is not put back.
+   */
+  noteProgress(device: Device, state: PlayerState): void {
+    const media = device.media;
+    if (!media?.page || (state.state !== "playing" && state.state !== "paused")) return;
+    if (state.ended || reachedEnd(state)) return this.forgetResume(device);
+    // A server that restarted while this was playing hears about it here, from the report that follows the TV's hello.
+    if (device.resume?.url !== media.page) this.startedPlaying(device, media, state.currentTime);
+    const resume = device.resume;
+    if (!resume) return;
+    if (resume.holdUntil > this.now()) {
+      if (state.currentTime < resume.time - HOLD_SLACK_S) return; // not there yet: the picture reports the start before it has found its place
+      resume.holdUntil = 0;
+    }
+    resume.time = state.currentTime;
+    if (Math.abs(resume.time - resume.saved) < SAVE_EVERY_S) return;
+    resume.saved = resume.time;
+    resume.day = this.today();
+    this.onChange?.();
+  }
+
+  /** The TV went away (its page was closed, its power cut): the place it had reached is written down exactly, not as it was up to half a minute before. */
+  checkpoint(device: Device): void {
+    const resume = device.resume;
+    if (!resume || resume.saved === resume.time) return;
+    resume.saved = resume.time;
+    resume.day = this.today();
+    this.onChange?.();
+  }
+
+  /** The TV was stopped, or got to the end, or lost its phone: there is nothing to put back. */
+  forgetResume(device: Device): void {
+    if (!device.resume) return;
+    device.resume = null;
+    this.onChange?.();
+  }
+
+  /**
+   * What to put on a TV whose page has just been opened: what it was playing, from where. Nothing for a TV without a phone or a
+   * party (it was on its own, and its own Continue watching has the place), for one that watches along (the host decides), or when
+   * it was long ago.
+   */
+  resumeOf(device: Device): { url: string; hint: PlayHint | undefined; time: number } | undefined {
+    const resume = device.resume;
+    if (!resume || device.leaderId || (device.controllerIds.length === 0 && device.followerIds.length === 0)) return undefined;
+    if (this.today() - resume.day > KEEP_RESUME_DAYS) return undefined;
+    return { url: resume.url, hint: resume.hint, time: Math.floor(resume.time) };
   }
 
   getDevice(id: string): Device | undefined {
@@ -336,6 +453,7 @@ export class Registry {
     host.followerIds.push(guest.id);
     guest.media = null;
     guest.state = IDLE_STATE;
+    guest.resume = null;
     this.onChange?.();
   }
 
@@ -499,7 +617,16 @@ export class Registry {
     device.controllerIds = [];
     device.media = null;
     device.state = IDLE_STATE;
+    device.resume = null;
     this.onChange?.();
     return device;
   }
+}
+
+const resumeRecord = ({ url, hint, saved, day }: Resume): ResumeRecord => ({ url, ...(hint ? { hint } : {}), time: Math.min(86_400, Math.floor(saved)), day });
+
+/** The picture and year of a video, as a screen would have asked for it. */
+function hintOf({ poster, backdrop, year }: NormalizedMedia): PlayHint | undefined {
+  if (!poster && !backdrop && !year) return undefined;
+  return { ...(poster ? { poster } : {}), ...(backdrop ? { backdrop } : {}), ...(year ? { year } : {}) };
 }

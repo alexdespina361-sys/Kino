@@ -121,8 +121,86 @@ describe("pairings kept between restarts", () => {
   });
 });
 
+describe("what a TV was playing, kept with its pair", () => {
+  const film = { title: "Film", stream: { url: "https://cdn.example/f.mp4", type: "mp4" as const }, page: "https://site.example/watch/1", poster: "/p.jpg" };
+  const playingAt = (currentTime: number) => ({ state: "playing" as const, currentTime, duration: 7200 });
+
+  function filmOn(registry: Registry) {
+    const { tv } = pairUp(registry);
+    tv.media = film;
+    registry.startedPlaying(tv, film, 0);
+    return tv;
+  }
+
+  it("is put back after a restart, at the place the TV had reached when it went away", async () => {
+    const persistence = new MemoryPersistence();
+    const clock = newClock();
+    const before = await start(persistence, clock);
+    const tv = filmOn(before.registry);
+    before.registry.noteProgress(tv, playingAt(2000));
+    before.registry.checkpoint(tv); // the page was closed
+    await before.store.flush();
+
+    const after = await start(persistence, clock);
+    expect(after.registry.resumeOf(after.registry.tvHello(tv.id))).toEqual({ url: film.page, hint: { poster: "/p.jpg" }, time: 2000 });
+  });
+
+  it("is written again only when the place has moved a while, and is gone from the database once it is cleared", async () => {
+    const persistence = new MemoryPersistence();
+    const clock = newClock();
+    let writes = 0;
+    const save = persistence.save.bind(persistence);
+    persistence.save = async (changes) => {
+      writes++;
+      return save(changes);
+    };
+    const { registry, store } = await start(persistence, clock);
+    const tv = filmOn(registry);
+    await store.flush();
+    const first = writes;
+
+    for (let at = 1; at <= 25; at++) registry.noteProgress(tv, playingAt(at)); // a TV reports every second
+    await store.flush();
+    expect(writes).toBe(first);
+
+    registry.noteProgress(tv, playingAt(40));
+    await store.flush();
+    expect(writes).toBe(first + 1);
+    expect((persistence.docs.get(`tv:${tv.id}`) as { resume: { time: number } }).resume.time).toBe(40);
+
+    registry.forgetResume(tv);
+    await store.flush();
+    expect(persistence.docs.get(`tv:${tv.id}`)).not.toHaveProperty("resume");
+  });
+
+  it("is not kept for a TV without a phone or a party, which is not kept at all", async () => {
+    const persistence = new MemoryPersistence();
+    const clock = newClock();
+    const { registry, store } = await start(persistence, clock);
+    const alone = registry.tvHello();
+    alone.media = film;
+    registry.startedPlaying(alone, film, 500);
+    await store.flush();
+    expect(persistence.docs.size).toBe(0);
+  });
+
+  it("costs a pair nothing when the record of it cannot be read", async () => {
+    const persistence = new MemoryPersistence();
+    const stamp = Math.floor(Date.parse("2026-10-11T12:00:00Z") / DAY);
+    persistence.docs.set("tv:tv_a", {
+      v: 1, id: "tv_a", publicId: "aaaa", name: "TV A", label: null, controllerId: "ctl_a", controllerIds: ["ctl_a"], leaderId: null, followerIds: [], seenDay: stamp,
+      resume: { url: 42, time: "soon" },
+    });
+    persistence.docs.set("phone:ctl_a", { v: 1, id: "ctl_a", deviceId: "tv_a", seenDay: stamp });
+    const { registry } = await start(persistence, newClock());
+    const tv = registry.tvHello("tv_a");
+    expect(tv.controllerId).toBe("ctl_a");
+    expect(registry.resumeOf(tv)).toBeUndefined();
+  });
+});
+
 describe("pairings nobody uses any more", () => {
-  it(`are let go after ${KEEP_PAIRINGS_DAYS} days without being heard from, and cleared out of the database`, async () => {
+  it(`are let go after more than a year (${KEEP_PAIRINGS_DAYS} days) without being heard from, and cleared out of the database`, async () => {
     const persistence = new MemoryPersistence();
     const clock = newClock();
     const before = await start(persistence, clock);

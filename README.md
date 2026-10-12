@@ -38,10 +38,11 @@ pnpm build && pnpm start     # http://localhost:8787
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `PORT`, `HOST` | `8787`, `0.0.0.0` | Where the server listens (a host like Render sets `PORT` itself). |
-| `DATABASE_URL` | – | Keep accounts in Postgres. Without it they are kept in `DATA_DIR`. |
-| `DATA_DIR` | `data` | Folder for the accounts file `kino.json` (git-ignored: it holds password hashes). `memory` keeps nothing. |
+| `DATABASE_URL` | – | Keep accounts, which phone goes with which TV, and what each TV was playing in Postgres. Without it they are kept in `DATA_DIR`. |
+| `DATA_DIR` | `data` | Folder for the file `kino.json` that holds the same (git-ignored: it holds password hashes). `memory` keeps nothing. |
 | `REGISTRATION` | `open` | `closed`: nobody new can make an account (once the people it is for have one). |
 | `MAX_ACCOUNTS` | unlimited | A cap on accounts, for a small server. |
+| `SIGNUPS_PER_HOUR` | `10` | How many accounts one address may make in an hour (a household or a school behind one address may want more). |
 | `TRUST_PROXY` | `1` on Render, else off | How many proxies sit in front (a number, `true` or `false`), so the rate limits see the real address. |
 | `LIBRARY` | on | `off` starts without the browsing library. |
 | `TMDB_API_KEY` | built-in key of the Filmpire source | The library's TMDB key. Set your own; the built-in one is shared by everybody who runs this. |
@@ -50,9 +51,11 @@ pnpm build && pnpm start     # http://localhost:8787
 
 **Accounts and profiles**
 - Register and sign in with a **name and a password, and nothing else asked for**: both can be anything (the password as short as one
-  character; the name only has to be one nobody has taken, upper or lower case alike, and may be an email address if someone prefers).
-  Passwords are hashed with scrypt; the session is an `httpOnly` cookie that lasts half a year, so closing the browser does not sign anyone
-  out. An account has up to **five
+  character, or none at all; the name only has to be one nobody has taken, upper or lower case alike, and may be an email address if someone
+  prefers). **An account with no password is open to anyone who types its name**, and the sign-up page says so. Passwords are hashed with
+  scrypt; the session is an `httpOnly` cookie that lasts 400 days (the longest a browser keeps one) and is renewed every time the app is
+  used, so a signed-in browser stays signed in until the person signs out or the browser's data is cleared. The page also remembers who was
+  signed in, so a screen does not look signed out while the server is slow to answer (a free host waking up). An account has up to **five
   profiles**, each with a name and one of **twelve avatars**; who is watching is asked on every new device, Netflix-style, and a profile
   is switched from the account page (the profile picture in the phone's top bar, and in the library's top corner on the TV). The TV makes,
   renames, re-pictures and removes profiles itself, with the remote's arrow keys: profile picture in the top corner (or the gear in the
@@ -80,7 +83,8 @@ pnpm build && pnpm start     # http://localhost:8787
 
 **Phone**
 - Pair by QR scan (camera) or by code; a QR link opened from the phone's camera app pairs by itself. A phone that already has a TV is asked
-  what the other one is for: join the watch party, or be controlled instead (the first TV is let go). Nothing changes behind its back
+  what the other one is for: join the watch party, or be controlled instead (the first TV is let go). Nothing changes behind its back,
+  except that scanning another TV's QR code moves a phone off a TV that is switched off (offline) at once, since there is nothing to ask about
 - A second phone joins the same TV with the QR code (and code) in the TV menu, scanned off the first phone's screen, or with the code and QR
   code the TV itself shows on its "Connected" page (**Connect a phone** in the TV's side menu): both are remotes, either can
   add TVs to the party, and the menu says how many are connected. The TV flashes "A phone is connected." when one joins. That code stays good
@@ -141,7 +145,8 @@ pnpm build && pnpm start     # http://localhost:8787
   sends it as a key down and up with no typed Enter, which Chromium needs before a focused button counts it (`src/client/tv/okPress.ts`);
   and knows the vendors' extra remote keys (play, pause, stop, rewind, forward, back). **To find out what a TV browser does**, open
   `/tv?debug=1` on it: a small panel in the corner says what the browser is and what it can do, whether the TV's id was kept since the
-  browser was closed (the last four characters, in storage and in the cookie), and, live, each key it sends and where the focus went, the
+  browser was closed (the last four characters, in storage and in the cookie), where the server keeps things and how long it has been up (a
+  short time with `file` or `memory` is why a TV "lost its phone"), and, live, each key it sends and where the focus went, the
   clicks, the video's state and the page's errors. `?debug=0` turns it off. `?fullscreen=off` keeps any browser from being asked for full
   screen (`?fullscreen=on` undoes it); both are kept for the next visits
 - **Subtitle languages.** The menu lists every language the video has. The ones a profile wants come first (a guest gets the website's
@@ -158,6 +163,13 @@ pnpm build && pnpm start     # http://localhost:8787
 - Sources: a video can carry alternates; if the first stream fails the TV tries the next by itself, and either device can pick one. When none of
   them plays, a card takes the place of the controls: what it was and what went wrong, **Try again** (OK, from the first source) and **Back to
   the library** (Back)
+- **A TV stays as it was left.** Quitting the browser, a power cut or a restart of the server does not unpair anything: a phone and its TV
+  stay together until one of them lets go (*Disconnect*, on either), and nothing else does it. A TV that has a phone (or is in a party) and
+  was in the middle of a video is put back on it when its page is opened again: the video is looked up again from the link it came
+  from (the stream's own address may have expired), and it comes up **paused** at the place it had reached, so a press on the phone's play
+  button, or on OK, carries on. That is kept for 30 days and needs a link that plays the video again (the library and a pasted link have
+  one). It is not done after Stop, Back to the library or the end of the film, nor for a TV on its own (its own *Continue watching* has the
+  place). The place is written down every 30 seconds it moves, and exactly when the TV goes away
 - **The library is the front door.** The site opens straight into it, signed in or not (a guest's progress stays on that screen), so a screen can
   pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press. (Only a party link opens a "Press OK" page
   first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
@@ -173,10 +185,13 @@ pnpm build && pnpm start     # http://localhost:8787
 - Resolves a link to a playable stream: the generic resolver plus the site adapters in `src/server/resolvers/adapters/`
 - Pairing codes are single-use and expire after 10 minutes. After 20 wrong codes in a minute (all phones counted together)
   pairing pauses until the minute is over, because the code is only six digits
-- **Accounts and pairings are kept**: written to disk (or Postgres) a moment after every change and again when the server is told to stop.
-  A restart (or a free host sleeping and waking) leaves every phone and TV paired as it was; the TV's and the phone's own ids are also
-  kept in a cookie next to the page's storage, so a browser that wipes one of the two when it closes still finds its way back. The codes
-  on screen and what is playing are in memory only: a TV shows a new code after a restart, and tells its phone what it plays when it reconnects
+- **Accounts, pairings and what each TV was playing are kept**: written to disk (or Postgres) a moment after every change and again when the
+  server is told to stop. A restart (or a free host sleeping and waking) leaves every phone and TV paired as it was, and a TV whose page is
+  opened again is put back on its video (above); the TV's and the phone's own ids are also kept in a cookie next to the page's storage, so a
+  browser that wipes one of the two when it closes still finds its way back. The server never lets a pair go by itself; one that nobody has
+  used for more than a year (400 days) is cleared out when it starts, so the database does not fill with ghosts. The codes on screen are in
+  memory only: a TV shows a new code after a restart. A server that was restarted while a TV played is told by the TV what it has on, as
+  soon as the TV reconnects
 
 ### Languages
 
@@ -330,21 +345,28 @@ The server is one Node process that serves the page, the API and the sockets fro
    Supabase) and set `DATABASE_URL` to its connection string (on Supabase use the **pooler** string, "Connect" → "Session pooler" or
    "Transaction pooler": Render reaches the internet over IPv4 and Supabase's direct host is IPv6 only). Render's own free Postgres is deleted after 30 days, so it is a bad home for
    accounts. The server makes its table by itself (`kino_docs`); there is nothing to migrate. Started on Render without `DATABASE_URL`, it warns
-   about this in its log.
+   about this in its log. (Neon's free database wakes by itself when it is asked; Supabase has paused free projects after a week without
+   use, and one that is paused has to be restored from its dashboard before the server can start.)
 4. Set `TMDB_API_KEY` to your own key, and `REGISTRATION=closed` (or `MAX_ACCOUNTS`) once the people it is for have signed up.
 5. Phones and TVs reach it over `https://<name>.onrender.com`, so camera scanning works. **Which phone goes with which TV is kept in the same
    database as the accounts**, so an instance that sleeps and wakes (or is restarted by a deploy) finds every pair as it was: the TV is
-   "connected" again the moment its page reconnects, with no new code to scan. A code that is on a screen when the server restarts is not
-   kept (the TV shows a new one), and neither is what was playing (the TV tells the phone again when it reconnects). A pair nobody has used
-   for 90 days is let go. Open `https://<name>.onrender.com/api/health` to see where a service keeps things: `"storage":"postgres"` is the
-   good answer; `"file"` or `"memory"` on Render means **nothing** (accounts, sign-ins, pairs) survives the instance sleeping, and
-   `DATABASE_URL` is missing on that service (each service needs it).
+   "connected" again the moment its page reconnects, with no new code to scan, and a TV whose page is opened again is put back on the video
+   it was on (paused, at its place). A code that is on a screen when the server restarts is not kept (the TV shows a new one). A pair
+   nobody has used for more than a year is let go. Open `https://<name>.onrender.com/api/health` to see where a service keeps things:
+   `"storage":"postgres"` is the good answer; `"file"` or `"memory"` on Render means **nothing** (accounts, sign-ins, pairs, what was
+   playing) survives the instance sleeping, and `DATABASE_URL` is missing on that service (each service needs it, and two services must
+   never share one database: each keeps its own copy in memory and would write over the other's). A keep-alive pinger that stops the
+   sleep is not worth it on the free plan: its 750 instance hours a month are shared by all the services of an account, so two services
+   kept awake all month would run out
    Watch parties and the codes live in the memory of **one service**: two services (two `onrender.com` names, even of the same repository)
    do not know each other's codes, so a phone on a different address than the TV answers "Invalid or expired code" however well the code is
    typed. Use the address the TV shows (the party page prints it) on every device, and delete a duplicate service.
 
 Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),
-and the sign-in rate limits are per name and per address, so they are best-effort behind a shared proxy.
+an account with no password can be opened by anyone who types its name (give it one if that matters), and the sign-in rate limits are
+per name and per address, so they are best-effort behind a shared proxy. A browser that wipes **all** of a site's data when it is closed
+(a private window, some TV browsers) forgets which TV or phone it is, and no page can help that: the cookie that backs up the id goes
+too. A TV that is paired when the server's disk is wiped (no database) is paired with nobody afterwards, and shows a new code.
 
 ## Test
 

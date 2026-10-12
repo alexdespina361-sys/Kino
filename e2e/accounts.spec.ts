@@ -97,6 +97,53 @@ test.describe("accounts and profiles", () => {
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Maya/);
   });
 
+  test("a screen that was signed in stays that person while the server cannot be reached as its page opens, and the cookie is renewed when it can", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, account);
+    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
+
+    // The page is opened again while the server does not answer: still Robert, not a guest who has to sign in.
+    await phone.route("**/api/me", (route) => route.abort());
+    await phone.reload();
+    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
+    await phone.unroute("**/api/me");
+
+    // And when it does answer, the cookie has a full term again (the session itself is kept sliding on the server).
+    const answer = await phone.evaluate(async () => {
+      const response = await fetch("/api/me", { cache: "no-store" });
+      return { me: ((await response.json()) as { me: { account: { email: string } } | null }).me?.account.email };
+    });
+    expect(answer.me).toMatch(/^robert /);
+    const header = await phone.context().cookies();
+    const cookie = header.find((entry) => entry.name === "kino_session");
+    expect(cookie).toBeDefined();
+    expect(cookie!.expires - Date.now() / 1000).toBeGreaterThan(399 * 24 * 3600); // (the browser caps a cookie's life at 400 days)
+  });
+
+  test("an account can have no password: the empty field says what that means, and signing in with nothing opens it", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Guest ${Date.now().toString(36)}${++counter}`, password: "" };
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("auth-switch").click();
+    await phone.getByTestId("auth-email").fill(account.email);
+    await expect(phone.getByTestId("auth-password-hint")).toHaveText(en["auth.noPasswordNote"]);
+    await phone.getByTestId("auth-password").fill("1");
+    await expect(phone.getByTestId("auth-password-hint")).toHaveText(en["auth.passwordHint"]);
+    await phone.getByTestId("auth-password").fill("");
+    await phone.getByTestId("auth-submit").click();
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Guest/);
+
+    await phone.getByTestId("sign-out").click();
+    await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
+    await signIn(phone, account);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Guest/);
+  });
+
   test("a wrong password is refused in plain words", async ({ browser }) => {
     const phone = await newPhone(browser);
     await phone.goto("/");

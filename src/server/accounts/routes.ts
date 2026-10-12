@@ -28,6 +28,8 @@ export interface AccountRoutesOptions {
   registration?: Registration;
   /** No new accounts beyond this many: a public server is not a place to store the whole internet's. */
   maxAccounts?: number;
+  /** How many accounts one address may make in an hour (10 unless set). A household or a school behind one address may want more. */
+  signUpsPerHour?: number;
   /** Tests use a cheaper password hash. */
   passwordCost?: PasswordCost;
 }
@@ -35,8 +37,8 @@ export interface AccountRoutesOptions {
 const COOKIE = "kino_session";
 const MINUTE = 60_000;
 
-const PasswordChangeSchema = z.object({ current: z.string().min(1).max(200), next: NewPasswordSchema });
-const ConfirmSchema = z.object({ password: z.string().min(1).max(200) });
+const PasswordChangeSchema = z.object({ current: z.string().max(200), next: NewPasswordSchema });
+const ConfirmSchema = z.object({ password: z.string().max(200) });
 const CreateProfileSchema = NewProfileSchema.partial({ avatar: true });
 
 /** The messages the forms know how to word; anything else the person typed wrong is just "invalid". */
@@ -73,7 +75,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   // from; the per-visitor limits are loose, as behind some hosts every visitor can look like the same address.
   const failedByEmail = new RateLimiter(10, 15 * MINUTE);
   const failedByIp = new RateLimiter(100, 15 * MINUTE);
-  const signUpByIp = new RateLimiter(10, 60 * MINUTE);
+  const signUpByIp = new RateLimiter(options.signUpsPerHour ?? 10, 60 * MINUTE);
   const linkStartByIp = new RateLimiter(60, 5 * MINUTE);
   const linkPollByIp = new RateLimiter(900, MINUTE);
   const linkLookupByAccount = new RateLimiter(30, 5 * MINUTE);
@@ -134,6 +136,9 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
 
   app.get("/api/me", async (request, reply) => {
     const auth = authenticate(request);
+    // A page asking who is signed in is a device in use: its cookie lasts a full term again, as its session does on the server
+    // (see `getSession`). Otherwise the browser would drop it that long after the sign-in even for somebody who comes back every day.
+    if (auth) reply.header("Set-Cookie", setCookie(auth.token, request.protocol === "https", Math.floor(SESSION_TTL_MS / 1000)));
     const state: SessionState = { me: auth ? meOf(auth.accountId) : null, registration: registrationNow() };
     return reply.send(state);
   });

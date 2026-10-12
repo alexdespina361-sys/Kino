@@ -2111,3 +2111,91 @@ test.describe("a film that has ended", () => {
     phone.close();
   });
 });
+
+test.describe("text on the TV is big enough to read from the sofa", () => {
+  /** A TV is read from across the room, so its text is sized by the screen and not by a pixel: this is the share of the screen's width the smallest visible text has. */
+  const smallest = (page: Page) =>
+    page.evaluate(() => {
+      let least: { share: number; text: string; element: string } | null = null;
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.textContent?.trim();
+        const element = node.parentElement;
+        if (!text || !element || element.closest("svg, #kino-debug")) continue; // (the number inside a skip icon is a drawing, not words)
+        const box = element.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0 || box.bottom < 0 || box.top > innerHeight || box.right < 0 || box.left > innerWidth) continue;
+        let seen = true;
+        for (let up: Element | null = element; up; up = up.parentElement) {
+          const style = getComputedStyle(up);
+          if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) seen = false;
+        }
+        if (!seen) continue;
+        const share = (parseFloat(getComputedStyle(element).fontSize) / innerWidth) * 100;
+        if (!least || share < least.share) least = { share, text: text.slice(0, 30), element: `${element.tagName.toLowerCase()}.${String(element.className).split(" ")[0]}` };
+      }
+      return least;
+    });
+  const enough = async (page: Page, where: string) => {
+    const least = await smallest(page);
+    expect(least && least.share, `${where}: "${least?.text}" (${least?.element}) is smaller than the TV's smallest text`).toBeGreaterThanOrEqual(1.15);
+  };
+
+  const films = Array.from({ length: 8 }, (_, i) => ({
+    id: `f${i}`,
+    title: `Film number ${i + 1}`,
+    year: 1930 + i,
+    url: `/fixtures/sample.mp4?n=${i}`,
+    description: "A longer note about the film, which the banner shows while it is selected.",
+  }));
+  const library = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", source: "Test Source", items: films }] };
+  const series = (baseURL: string): NormalizedMedia => ({
+    title: "The Long Night · S1 E2",
+    stream: { url: "/fixtures/sample.mp4", type: "mp4" },
+    alternates: [{ label: "Mirror server", stream: { url: "/fixtures/sample.mp4?b=1", type: "mp4" } }],
+    subtitles: [
+      { id: "en", label: "English", lang: "en", url: "/fixtures/sample.vtt" },
+      { id: "nl", label: "Dutch", lang: "nl", url: "/fixtures/sample.vtt" },
+    ],
+    series: {
+      season: 1,
+      episode: 2,
+      episodes: [
+        { season: 1, episode: 1, title: "A Pilot Episode", url: `${baseURL}/fixtures/pages/video.html` },
+        { season: 1, episode: 2, title: "The Long Night", url: `${baseURL}/fixtures/pages/none.html` },
+        { season: 1, episode: 3, title: "The Following Episode", url: `${baseURL}/fixtures/pages/hls.html` },
+      ],
+      next: { season: 1, episode: 3, title: "The Following Episode", url: `${baseURL}/fixtures/pages/hls.html` },
+    },
+  });
+
+  test("the library, a title's page and the menu", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(library));
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await enough(tv, "the library");
+    await tv.keyboard.press("ArrowRight");
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-detail")).toBeVisible();
+    await enough(tv, "a title's page");
+    await tv.keyboard.press("Escape");
+    await tv.getByTestId("rail-connect").click();
+    await expect(tv.getByTestId("pairing-code")).toBeVisible();
+    await enough(tv, "the page with the code");
+  });
+
+  test("the player's controls and its menus", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: series(baseURL!) });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect(tv.getByTestId("tv-next-btn")).toBeVisible();
+    await enough(tv, "the controls, paused");
+    for (const button of ["tv-audio-sub-btn", "tv-episodes-btn", "tv-source-btn"]) {
+      await tv.getByTestId(button).click();
+      await expect(tv.locator(".tv-menu")).toBeVisible();
+      await enough(tv, `the menu of ${button}`);
+      await tv.keyboard.press("Escape");
+      await expect(tv.locator(".tv-menu")).toHaveCount(0);
+    }
+    phone.close();
+  });
+});

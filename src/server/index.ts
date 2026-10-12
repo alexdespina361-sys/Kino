@@ -33,6 +33,7 @@ const app = await buildApp({
   // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),
+  ...(Number(process.env.SIGNUPS_PER_HOUR) > 0 ? { signUpsPerHour: Number(process.env.SIGNUPS_PER_HOUR) } : {}),
   trustProxy: trustProxy(process.env),
   logger: true,
 });

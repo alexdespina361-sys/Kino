@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Registry, cleanLabel, generatePairingCode } from "./registry";
+import { KEEP_RESUME_DAYS, Registry, cleanLabel, generatePairingCode } from "./registry";
 
 function setup(options: ConstructorParameters<typeof Registry>[0] = {}) {
   let time = 1_000_000;
@@ -416,6 +416,163 @@ describe("Registry: a party started on a TV", () => {
     registry.setLabel(host, "   ");
     expect(registry.displayName(host)).toMatch(/^TV /);
     expect(cleanLabel("\u0000‮")).toBeNull(); // nothing but control and direction marks
+  });
+});
+
+describe("Registry: what a TV was playing", () => {
+  const film = { title: "Film", stream: { url: "https://cdn.example/f.mp4", type: "mp4" as const }, page: "https://site.example/watch/1", poster: "/p.jpg", year: 2001 };
+  const at = (currentTime: number, state: "playing" | "paused" = "playing") => ({ state, currentTime, duration: 7200 });
+  const DAY = 24 * 3600 * 1000;
+
+  /** A TV with a phone, and the video on (the way the hub puts one on). */
+  function playing(registry: Registry, media: typeof film | Omit<typeof film, "page"> = film, startAt = 0) {
+    const tv = registry.tvHello();
+    registry.pair(registry.controllerHello(), registry.ensureCode(tv)!.code);
+    tv.media = media;
+    registry.startedPlaying(tv, media, startAt);
+    return tv;
+  }
+
+  it("remembers the video and the place it has reached, with the picture its card had", () => {
+    const { registry } = setup();
+    const tv = playing(registry);
+    expect(registry.resumeOf(tv)).toEqual({ url: film.page, hint: { poster: "/p.jpg", year: 2001 }, time: 0 });
+    registry.noteProgress(tv, at(600.9));
+    expect(registry.resumeOf(tv)).toEqual({ url: film.page, hint: { poster: "/p.jpg", year: 2001 }, time: 600 });
+  });
+
+  it("has nothing to put back for a TV on its own, one that watches along, or a video with no link that plays it again", () => {
+    const { registry } = setup();
+    const alone = registry.tvHello();
+    alone.media = film;
+    registry.startedPlaying(alone, film, 300);
+    expect(registry.resumeOf(alone)).toBeUndefined(); // it has its own Continue watching
+
+    const host = playing(registry);
+    const guest = registry.tvHello();
+    registry.joinParty(guest, registry.ensurePartyCode(host)!.code);
+    guest.resume = host.resume;
+    expect(registry.resumeOf(guest)).toBeUndefined();
+
+    const { page: _page, ...pasted } = film;
+    const other = playing(registry, pasted);
+    expect(other.resume).toBeNull();
+    expect(registry.resumeOf(other)).toBeUndefined();
+  });
+
+  it("is replaced by the next video, and cleared by a stop, the end of the video, or the phone letting go", () => {
+    const { registry } = setup();
+    const tv = playing(registry);
+    registry.noteProgress(tv, at(100));
+    const next = { ...film, page: "https://site.example/watch/2" };
+    tv.media = next;
+    registry.startedPlaying(tv, next, 0);
+    expect(registry.resumeOf(tv)).toMatchObject({ url: next.page, time: 0 });
+
+    registry.forgetResume(tv);
+    expect(registry.resumeOf(tv)).toBeUndefined();
+
+    registry.startedPlaying(tv, next, 0);
+    registry.noteProgress(tv, at(7190)); // the last minute: as good as seen
+    expect(registry.resumeOf(tv)).toBeUndefined();
+    registry.startedPlaying(tv, next, 0);
+    registry.noteProgress(tv, { ...at(100), state: "paused", ended: true });
+    expect(registry.resumeOf(tv)).toBeUndefined();
+
+    registry.startedPlaying(tv, next, 0);
+    registry.unpair(registry.controllersOf(tv)[0]!);
+    expect(tv.resume).toBeNull();
+  });
+
+  it("takes only a playing or paused picture for a place, and starts over from a report when the server did not know what was on", () => {
+    const { registry } = setup();
+    const tv = playing(registry);
+    registry.noteProgress(tv, at(500));
+    for (const state of ["loading", "idle", "error"] as const) registry.noteProgress(tv, { ...at(0), state });
+    expect(registry.resumeOf(tv)?.time).toBe(500);
+
+    // A server that was restarted while this played: the TV tells it what is on, and the next report is the first it hears of the place.
+    const { registry: fresh } = setup();
+    const tv2 = fresh.tvHello();
+    fresh.pair(fresh.controllerHello(), fresh.ensureCode(tv2)!.code);
+    tv2.media = film;
+    expect(fresh.resumeOf(tv2)).toBeUndefined();
+    fresh.noteProgress(tv2, at(900));
+    expect(fresh.resumeOf(tv2)).toMatchObject({ url: film.page, time: 900 });
+  });
+
+  it("hands a restart the place only when it has moved a while, and exactly when the TV goes away", () => {
+    const { registry } = setup();
+    let changes = 0;
+    registry.onChange = () => changes++;
+    const tv = playing(registry);
+    const saved = () => registry.records().devices.find((record) => record.id === tv.id)?.resume?.time;
+    const base = changes;
+    registry.noteProgress(tv, at(10));
+    registry.noteProgress(tv, at(25));
+    expect(changes).toBe(base);
+    expect(saved()).toBe(0);
+
+    registry.noteProgress(tv, at(31));
+    expect(changes).toBe(base + 1);
+    expect(saved()).toBe(31);
+    registry.noteProgress(tv, at(45));
+    expect(changes).toBe(base + 1);
+    expect(saved()).toBe(31);
+    expect(registry.resumeOf(tv)?.time).toBe(45); // memory is always as far as the TV said
+
+    registry.checkpoint(tv);
+    expect(changes).toBe(base + 2);
+    expect(saved()).toBe(45);
+    registry.checkpoint(tv);
+    expect(changes).toBe(base + 2); // nothing new to write
+  });
+
+  it("does not take what a picture reports on its way to the place it was put back at for the place", () => {
+    const { registry, advance } = setup();
+    const tv = playing(registry);
+    registry.startedPlaying(tv, film, 600, true);
+    registry.noteProgress(tv, at(0, "paused")); // the picture starts at the beginning before it has found its place
+    registry.noteProgress(tv, at(2, "paused"));
+    expect(registry.resumeOf(tv)?.time).toBe(600);
+
+    registry.noteProgress(tv, at(601, "paused")); // got there: from now on a seek back is a real place
+    registry.noteProgress(tv, at(10, "paused"));
+    expect(registry.resumeOf(tv)?.time).toBe(10);
+
+    registry.startedPlaying(tv, film, 600, true);
+    advance(46_000); // a picture that never gets there is believed after a while
+    registry.noteProgress(tv, at(3, "paused"));
+    expect(registry.resumeOf(tv)?.time).toBe(3);
+  });
+
+  it("is not put back when it was more than a month ago, however long the server has been up", () => {
+    const { registry, advance } = setup();
+    const tv = playing(registry);
+    registry.noteProgress(tv, at(800));
+    advance((KEEP_RESUME_DAYS - 1) * DAY);
+    expect(registry.resumeOf(tv)?.time).toBe(800);
+    advance(2 * DAY);
+    expect(registry.resumeOf(tv)).toBeUndefined();
+  });
+
+  it("goes through a restart, and is let go of when it is more than a month old", () => {
+    const clock = { now: Date.parse("2026-10-11T12:00:00Z") };
+    const before = new Registry({ now: () => clock.now });
+    const tv = playing(before);
+    before.noteProgress(tv, at(800));
+    before.checkpoint(tv);
+    const records = before.records();
+
+    const soon = new Registry({ now: () => clock.now + 3 * DAY });
+    soon.restore(records);
+    expect(soon.resumeOf(soon.tvHello(tv.id))).toEqual({ url: film.page, hint: { poster: "/p.jpg", year: 2001 }, time: 800 });
+
+    const later = new Registry({ now: () => clock.now + (KEEP_RESUME_DAYS + 2) * DAY });
+    later.restore(records);
+    const tvAgain = later.tvHello(tv.id);
+    expect(tvAgain.controllerId).not.toBeNull(); // the pair is still there
+    expect(later.resumeOf(tvAgain)).toBeUndefined();
   });
 });
 

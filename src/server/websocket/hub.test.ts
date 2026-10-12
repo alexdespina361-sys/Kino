@@ -1336,6 +1336,204 @@ describe("several phones controlling one TV session", () => {
   });
 });
 
+describe("a TV page that is opened again while a video was on", () => {
+  const film = { title: "Film", stream: { url: "https://cdn.example/f.mp4", type: "mp4" as const }, page: "https://site.example/watch/1", poster: "/p.jpg" };
+  const idle = { state: "idle" as const, currentTime: 0, duration: 0 };
+  const playing = (currentTime: number) => ({ state: "playing" as const, currentTime, duration: 7200 });
+  const loads = (message: ServerMessage) => message.type === "TV_CMD" && message.command.type === "LOAD";
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+  /** A paired TV and phone with the film on at `time`, and the TV's page then closed (as when the browser is quit). `leave` is what happens before it closes. */
+  async function leftMidFilm(time = 1234, leave?: (tv: Client, phone: Client) => Promise<unknown>) {
+    resolveImpl = async () => ({ status: "success", resolver: "test", media: film });
+    const { tv, phone, deviceId } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: film.page });
+    await tv.nextWhere("TV_CMD", (m) => m.command.type === "PLAY");
+    tv.send({ type: "TV_STATE", state: playing(time) });
+    await phone.nextWhere("STATE", (m) => m.state.state === "playing");
+    // (What the phone was told while the film started is read, so that what it is told later is what is looked at.)
+    await phone.next("MEDIA");
+    await phone.nextWhere("STATE", (m) => m.state.state === "loading");
+    await leave?.(tv, phone);
+    tv.close();
+    await settle();
+    return { phone, deviceId };
+  }
+
+  /** The page is opened again (`opened`), or its socket only reconnects: it says hello, and reports what it is doing, which is nothing yet. */
+  async function pageOf(deviceId: string, opened = true) {
+    const tv = await connect();
+    tv.send({ type: "TV_HELLO", deviceId, ...(opened ? { opened } : {}) });
+    await tv.next("TV_WELCOME");
+    tv.send({ type: "TV_STATE", state: idle });
+    return tv;
+  }
+
+  it("is put back on the video, paused where it was, and the phone is shown it", async () => {
+    const { phone, deviceId } = await leftMidFilm(1234);
+    const looked: string[] = [];
+    resolveImpl = async (url) => (looked.push(url), { status: "success", resolver: "test", media: film });
+
+    const tv = await pageOf(deviceId);
+    expect((await tv.next("TV_RESOLVING")).active).toBe(true);
+    expect((await tv.nextWhere("TV_CMD", (m) => m.command.type === "LOAD")).command).toEqual({ type: "LOAD", media: film, startAt: 1234 });
+    expect(looked).toEqual([film.page]); // looked up again, not loaded from what was kept: its own link may have run out
+    await tv.expectNone((m) => m.type === "TV_CMD" && m.command.type === "PLAY");
+
+    expect((await phone.next("MEDIA")).media).toEqual(film);
+    expect((await phone.nextWhere("STATE", (m) => m.state.state === "loading")).state.state).toBe("loading");
+    tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 1234, duration: 7200 } });
+    expect((await phone.nextWhere("STATE", (m) => m.state.state === "paused")).state.currentTime).toBe(1234);
+
+    phone.send({ type: "CMD", command: { type: "PLAY" } }); // and a press on the phone carries on from there
+    expect((await tv.next("TV_CMD")).command.type).toBe("PLAY");
+  });
+
+  it("is put back again if it is closed before anyone presses play, even when its picture first reports the start", async () => {
+    const { deviceId } = await leftMidFilm(1234);
+    const second = await pageOf(deviceId);
+    await second.nextWhere("TV_CMD", loads);
+    second.send({ type: "TV_STATE", state: { state: "paused", currentTime: 0, duration: 7200 } }); // before it has found its place
+    second.send({ type: "TV_STATE", state: { state: "paused", currentTime: 1234, duration: 7200 } });
+    second.close();
+    await settle();
+
+    const third = await pageOf(deviceId);
+    expect((await third.nextWhere("TV_CMD", loads)).command).toMatchObject({ type: "LOAD", startAt: 1234 });
+  });
+
+  it("is not put back when the page only reconnects: it has been on all the time", async () => {
+    const { deviceId } = await leftMidFilm();
+    const tv = await pageOf(deviceId, false);
+    await tv.expectNone((m) => m.type === "TV_CMD" || m.type === "TV_RESOLVING");
+  });
+
+  const leavings: Array<[string, (tv: Client, phone: Client) => Promise<unknown>]> = [
+    [
+      "the phone stopped it",
+      async (tv, phone) => {
+        phone.send({ type: "CMD", command: { type: "STOP" } });
+        await tv.nextWhere("TV_CMD", (m) => m.command.type === "STOP");
+      },
+    ],
+    [
+      "it was left from the TV itself",
+      async (tv, phone) => {
+        tv.send({ type: "TV_STATE", state: idle });
+        await phone.nextWhere("STATE", (m) => m.state.state === "idle");
+      },
+    ],
+    [
+      "it played to its end",
+      async (tv, phone) => {
+        tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 7200, duration: 7200, ended: true } });
+        await phone.nextWhere("STATE", (m) => m.state.ended === true);
+      },
+    ],
+    [
+      "the phone let go of the TV",
+      async (_tv, phone) => {
+        phone.send({ type: "UNPAIR" });
+        await phone.next("CTL_WELCOME");
+      },
+    ],
+  ];
+  it.each(leavings)("is not put back when %s", async (_what, leave) => {
+    const { deviceId } = await leftMidFilm(1234, leave);
+    const tv = await pageOf(deviceId);
+    await tv.expectNone((m) => m.type === "TV_CMD" || m.type === "TV_RESOLVING");
+  });
+
+  it("is not put back on a TV that has no phone", async () => {
+    resolveImpl = async () => ({ status: "success", resolver: "test", media: film });
+    const alone = await connect();
+    alone.send({ type: "TV_HELLO" });
+    const { deviceId } = await alone.next("TV_WELCOME");
+    alone.send({ type: "TV_PLAY_URL", url: film.page });
+    await alone.nextWhere("TV_CMD", (m) => m.command.type === "PLAY");
+    alone.send({ type: "TV_STATE", state: playing(600) });
+    alone.close();
+    await settle();
+
+    const tv = await pageOf(deviceId);
+    await tv.expectNone((m) => m.type === "TV_CMD" || m.type === "TV_RESOLVING");
+  });
+
+  it("tells the phone when the video cannot be found again, and tries once more the next time the page is opened", async () => {
+    const { phone, deviceId } = await leftMidFilm(1234);
+    resolveImpl = async () => ({ status: "temporary_failure", reason: "try later" });
+    const first = await pageOf(deviceId);
+    expect((await phone.nextWhere("RESOLVE_STATUS", (m) => m.status.phase === "failed")).status).toMatchObject({ reason: "temporary_failure" });
+    await first.nextWhere("TV_RESOLVING", (m) => !m.active);
+    await first.expectNone(loads);
+    first.close();
+    await settle();
+
+    resolveImpl = async () => ({ status: "success", resolver: "test", media: film });
+    const second = await pageOf(deviceId);
+    expect((await second.nextWhere("TV_CMD", loads)).command).toMatchObject({ type: "LOAD", startAt: 1234 });
+  });
+
+  it("is put back after the server was restarted too, at the place the TV had reached when it went away", async () => {
+    resolveImpl = async () => ({ status: "success", resolver: "test", media: film });
+    const persistence = new MemoryPersistence();
+    const serverOn = async () => {
+      const registry = new Registry();
+      const pairings = await PairingStore.open({ registry, persistence, flushMs: 0 });
+      const server = await buildApp({ registry, pairings, resolve: (url) => resolveImpl(url) });
+      await server.ready();
+      return server;
+    };
+    const first = await serverOn();
+    const tv = await Client.open(first);
+    tv.send({ type: "TV_HELLO" });
+    const { deviceId, pairing } = await tv.next("TV_WELCOME");
+    const phone = await Client.open(first);
+    phone.send({ type: "CTL_HELLO" });
+    await phone.next("CTL_WELCOME");
+    phone.send({ type: "PAIR", code: pairing!.code });
+    await phone.next("CTL_WELCOME");
+    phone.send({ type: "PLAY_URL", url: film.page });
+    await tv.nextWhere("TV_CMD", (m) => m.command.type === "PLAY");
+    tv.send({ type: "TV_STATE", state: playing(2222) });
+    tv.send({ type: "TV_STATE", state: playing(2230) }); // (a few seconds on: not yet worth a write of its own)
+    await phone.nextWhere("STATE", (m) => m.state.currentTime === 2230);
+    tv.close();
+    phone.close();
+    await settle();
+    await first.close();
+
+    const second = await serverOn();
+    try {
+      const reopened = await Client.open(second);
+      clients.push(reopened);
+      reopened.send({ type: "TV_HELLO", deviceId, opened: true });
+      expect(await reopened.next("TV_WELCOME")).toMatchObject({ deviceId, paired: true });
+      reopened.send({ type: "TV_STATE", state: idle });
+      expect((await reopened.nextWhere("TV_CMD", loads)).command).toMatchObject({ type: "LOAD", media: film, startAt: 2230 });
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("tells a server that has forgotten what is on: the phone is shown it, and the place is kept from then on", async () => {
+    resolveImpl = async () => ({ status: "success", resolver: "test", media: film });
+    const { tv, phone, deviceId } = await pairedSetup(); // (the server knows of no video, as after a restart)
+    tv.send({ type: "TV_STATE", state: playing(50), media: film });
+    expect((await phone.next("MEDIA")).media).toEqual(film);
+
+    // What the server already knows is not replaced by what a TV says: only a server that knows nothing is told.
+    tv.send({ type: "TV_STATE", state: playing(60), media: { ...film, title: "Another", page: "https://site.example/watch/2" } });
+    await phone.expectNone((m) => m.type === "MEDIA");
+
+    tv.send({ type: "TV_STATE", state: playing(777) });
+    tv.close();
+    await phone.nextWhere("TV_STATUS", (m) => !m.online);
+    const reopened = await pageOf(deviceId);
+    expect((await reopened.nextWhere("TV_CMD", loads)).command).toMatchObject({ type: "LOAD", startAt: 777 });
+  });
+});
+
 describe("what playing teaches the library", () => {
   const dead = { id: "dead", title: "Dead Title", url: "https://site.example/watch/9" };
   const alive = { id: "alive", title: "Alive Title", url: "https://site.example/watch/10" };

@@ -4,7 +4,7 @@ import { buildApp } from "../app";
 import { describeDevice } from "./device";
 import { LinkRegistry } from "./links";
 import { MemoryPersistence } from "./persistence";
-import { AccountStore } from "./store";
+import { AccountStore, SESSION_TTL_MS } from "./store";
 
 const apps: FastifyInstance[] = [];
 afterEach(async () => {
@@ -13,13 +13,14 @@ afterEach(async () => {
 
 const cheap = { N: 1024, r: 8, p: 1 } as const;
 
-async function start(options: { registration?: "open" | "closed"; maxAccounts?: number; persistence?: MemoryPersistence } = {}) {
+async function start(options: { registration?: "open" | "closed"; maxAccounts?: number; signUpsPerHour?: number; persistence?: MemoryPersistence } = {}) {
   const store = await AccountStore.open({ persistence: options.persistence ?? new MemoryPersistence(), flushMs: 0 });
   const app = await buildApp({
     accounts: store,
     passwordCost: cheap,
     ...(options.registration ? { registration: options.registration } : {}),
     ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
+    ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
   });
   apps.push(app);
   return { app, store };
@@ -88,6 +89,17 @@ describe("signing up and in", () => {
     expect((await client.get("/api/me")).data.me.account.email).toBe("alex@example.com");
   });
 
+  it("gives the cookie a full term again each time the page asks who is signed in, so a device in use stays signed in; a visitor who is not signed in gets none", async () => {
+    const { app } = await start();
+    const { client } = await signedUp(app);
+    const before = client.cookie;
+    const me = await client.get("/api/me");
+    expect(String(me.headers["set-cookie"])).toContain(`Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`);
+    expect(String(me.headers["set-cookie"])).toMatch(/HttpOnly/);
+    expect(client.cookie).toBe(before); // the same sign-in, with its term started again
+    expect((await new Client(app).get("/api/me")).headers["set-cookie"]).toBeUndefined();
+  });
+
   it("marks the cookie Secure when the visitor came over https through a proxy it trusts", async () => {
     const store = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0 });
     const app = await buildApp({ accounts: store, passwordCost: cheap, trustProxy: 1 });
@@ -110,11 +122,11 @@ describe("signing up and in", () => {
     expect((await other.get("/api/me")).data.me).toBeNull();
   });
 
-  it("asks for a name and a password, whatever they are, and for each name only once", async () => {
+  it("asks for a name, whatever it is, and a password that may be anything or nothing, and for each name only once", async () => {
     const { app } = await start();
     const client = new Client(app);
     expect((await client.post("/api/auth/register", { email: "   ", password: credentials.password })).data).toEqual({ error: "invalid_email" });
-    expect((await client.post("/api/auth/register", { email: "robert", password: "" })).data).toEqual({ error: "weak_password" });
+    expect((await client.post("/api/auth/register", { email: "robert", password: "x".repeat(201) })).data).toEqual({ error: "weak_password" });
     expect((await client.post("/api/auth/register", { nonsense: true })).statusCode).toBe(400);
     await signedUp(app);
     const again = await client.post("/api/auth/register", credentials);
@@ -131,6 +143,29 @@ describe("signing up and in", () => {
     expect((await new Client(app).post("/api/auth/login", { email: "robert", password: "2" })).statusCode).toBe(401);
   });
 
+  it("makes an account with no password at all: only an empty one opens it, and a password can be given to it later and taken away again", async () => {
+    const { app } = await start();
+    const open = await new Client(app).post("/api/auth/register", { email: "guest", password: "" });
+    expect(open.statusCode).toBe(201);
+    expect((await new Client(app).post("/api/auth/login", { email: "guest", password: "" })).statusCode).toBe(200);
+    expect((await new Client(app).post("/api/auth/login", { email: "guest", password: "anything" })).statusCode).toBe(401);
+
+    const client = new Client(app);
+    await client.post("/api/auth/login", { email: "guest", password: "" });
+    expect((await client.post("/api/me/password", { current: "", next: "now there is one" })).statusCode).toBe(204);
+    expect((await new Client(app).post("/api/auth/login", { email: "guest", password: "" })).statusCode).toBe(401);
+    expect((await client.post("/api/me/password", { current: "now there is one", next: "" })).statusCode).toBe(204);
+    expect((await new Client(app).post("/api/auth/login", { email: "guest", password: "" })).statusCode).toBe(200);
+    expect((await client.post("/api/me/delete", { password: "" })).statusCode).toBe(204);
+  });
+
+  it("never lets a password beyond 200 characters through, when it is made or when it is tried", async () => {
+    const { app } = await start();
+    const long = "x".repeat(201);
+    expect((await new Client(app).post("/api/auth/register", { email: "long", password: long })).data).toEqual({ error: "weak_password" });
+    expect((await new Client(app).post("/api/auth/login", { email: "long", password: long })).statusCode).toBe(400);
+  });
+
   it("can be closed to newcomers, or full", async () => {
     const closed = await start({ registration: "closed" });
     expect((await new Client(closed.app).get("/api/me")).data.registration).toBe("closed");
@@ -141,6 +176,20 @@ describe("signing up and in", () => {
     await signedUp(full.app);
     expect((await new Client(full.app).get("/api/me")).data.registration).toBe("closed");
     expect((await new Client(full.app).post("/api/auth/register", { email: "b@example.com", password: credentials.password })).statusCode).toBe(403);
+  });
+
+  it("lets one address make ten accounts in an hour, or as many as the server is set to allow", async () => {
+    const signUp = (app: FastifyInstance, n: number) => new Client(app).post("/api/auth/register", { email: `name ${n}`, password: "x" });
+
+    const usual = await start();
+    for (let n = 0; n < 10; n++) expect((await signUp(usual.app, n)).statusCode).toBe(201);
+    const eleventh = await signUp(usual.app, 10);
+    expect(eleventh).toMatchObject({ statusCode: 429, data: { error: "rate_limited" } });
+    expect(Number(eleventh.headers["retry-after"])).toBeGreaterThan(0);
+
+    const roomy = await start({ signUpsPerHour: 12 });
+    for (let n = 0; n < 12; n++) expect((await signUp(roomy.app, n)).statusCode).toBe(201);
+    expect((await signUp(roomy.app, 12)).statusCode).toBe(429);
   });
 
   it("slows down someone guessing a password, whoever they guess from", async () => {
@@ -170,7 +219,7 @@ describe("the account", () => {
     await tv.post("/api/auth/login", credentials);
 
     expect((await client.post("/api/me/password", { current: "not it", next: "a brand new one" })).statusCode).toBe(401);
-    expect((await client.post("/api/me/password", { current: credentials.password, next: "" })).data).toEqual({ error: "weak_password" });
+    expect((await client.post("/api/me/password", { current: credentials.password, next: "x".repeat(201) })).data).toEqual({ error: "weak_password" });
     expect((await client.post("/api/me/password", { current: credentials.password, next: "a brand new one" })).statusCode).toBe(204);
 
     expect((await client.get("/api/me")).data.me).not.toBeNull();

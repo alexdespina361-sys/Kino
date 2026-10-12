@@ -167,6 +167,49 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
   });
 
+  test("a TV page opened again in the middle of a video is put back on it, paused where it was, and the phone is still connected", async ({ browser, baseURL }) => {
+    test.setTimeout(60_000);
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await phone.getByTestId("pause").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await phone.getByRole("button", { name: "Forward 10 seconds" }).click();
+    await expect.poll(() => tvTime(tv)).toBeGreaterThan(9);
+    const left = await tvTime(tv);
+
+    // The browser is quit and opened again: the TV is paired, and on the video it was on, a press away from carrying on.
+    await tv.reload();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    expect(Math.abs((await tvTime(tv)) - left)).toBeLessThan(2);
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    await expect(phone.getByTestId("player-state")).toHaveAttribute("data-state", "paused");
+
+    await phone.getByTestId("play").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await expect.poll(() => tvTime(tv)).toBeGreaterThan(left + 1);
+  });
+
+  test("a TV page opened again after the video was stopped on the phone, or left on the TV, opens on the library as before", async ({ browser, baseURL }) => {
+    test.setTimeout(60_000);
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await phone.getByTestId("stop").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
+
+    await tv.reload();
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
+    await tv.waitForTimeout(1500); // (a put-back would have started by now)
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
+  });
+
   test("the phone stays paired across a page reload", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);

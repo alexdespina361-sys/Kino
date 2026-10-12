@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { PlayHintSchema } from "../../shared";
 import type { Persistence } from "../accounts/persistence";
 import type { ControllerRecord, DeviceRecord, Records, Registry } from "./registry";
 
 // The order of the fields is the order they are written in: a database that keeps JSON in a form of its own (Postgres does) still reads back as the same text.
+// (A field added later is optional, so a record written before it is read as it was, and an older server that reads a newer one ignores what it does not know.)
 const DeviceDoc = z.object({
   v: z.literal(1),
   id: z.string(),
@@ -14,6 +16,8 @@ const DeviceDoc = z.object({
   leaderId: z.string().nullable(),
   followerIds: z.array(z.string()),
   seenDay: z.number(),
+  /** What the TV was playing: the link that plays it again, its picture, and how far it had got. One that cannot be read is let go of, and the pair with it is not. */
+  resume: z.object({ url: z.string().max(2048), hint: PlayHintSchema.optional(), time: z.number().min(0).max(86_400), day: z.number() }).optional().catch(undefined),
 });
 const ControllerDoc = z.object({ v: z.literal(1), id: z.string(), deviceId: z.string(), seenDay: z.number() });
 
@@ -32,8 +36,9 @@ export interface PairingStoreOptions {
 
 /**
  * Keeps which phone goes with which TV (and which TVs watch along with which) through a `Persistence`, so a server that
- * restarts, or a free host that sleeps and wakes, does not make every pair start over. Codes and what is playing are not kept:
- * a TV asks for a new code when it needs one, and says what it is playing the moment it reconnects.
+ * restarts, or a free host that sleeps and wakes, does not make every pair start over. Codes are not kept (a TV asks for a new one
+ * when it needs one), and neither is what a TV is doing, except the one thing a closed page needs: the video it was on and how far
+ * it had got, so that opening the page again puts it back (see `Registry.resumeOf`).
  */
 export class PairingStore {
   /** What is in the database right now: key -> its JSON. A change is written only if it differs from this. */

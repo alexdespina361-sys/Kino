@@ -72,7 +72,7 @@
   white-space: nowrap;
   transition: transform 0.12s ease, background 0.12s ease;
 }
-.tv-btn small { font-size: 0.8em; font-weight: 500; opacity: 0.85; }
+.tv-btn small { font-size: 0.92em; font-weight: 500; opacity: 0.85; }
 .tv-btn:hover { background: rgba(255, 255, 255, 0.26); }
 .tv-btn-icon { font-size: 2.3em; padding: 0.3em; background: transparent; border-radius: 50%; }
 .tv-btn-icon:hover { background: rgba(255, 255, 255, 0.18); }
@@ -1069,7 +1069,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tv-tile-year { font-size: 1.15em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv-tile-year { font-size: 1.25em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tv-tile:hover { color: #fff; }
 .tv-tile:focus-visible { color: #fff; transform: scale(1.1); outline: none; z-index: 2; }
 .tv-tile:focus-visible .tv-tile-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
@@ -1131,7 +1131,7 @@
 .tv-rail-item[aria-current="page"] { color: #fff; box-shadow: inset 0.14em 0 0 var(--accent); }
 .tv-rail-item:focus-visible { background: #fff; color: #000; outline: none; box-shadow: none; }
 /* A state: a dot on the icon while the menu is shut; once it is open, a count beside the name (the party), or the name says it (a phone is connected). */
-.tv-rail-badge { flex: none; margin-left: auto; padding: 0.1em 0.7em; border-radius: 999px; background: rgb(var(--accent-rgb) / 0.35); color: #fff; font-size: 0.7em; font-style: normal; opacity: 0; transition: opacity 0.15s; }
+.tv-rail-badge { flex: none; margin-left: auto; padding: 0.1em 0.7em; border-radius: 999px; background: rgb(var(--accent-rgb) / 0.35); color: #fff; font-size: 0.78em; font-style: normal; opacity: 0; transition: opacity 0.15s; }
 .tv-rail[data-open="true"] .tv-rail-badge { opacity: 1; }
 .tv-rail-item:focus-visible .tv-rail-badge { background: rgba(0, 0, 0, 0.12); color: #000; }
 .tv-rail-item[data-badged="true"]::after { content: ""; position: absolute; left: 1.7em; top: 0.3em; width: 0.45em; height: 0.45em; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 0.12em #0b0b0c; }
@@ -1512,14 +1512,14 @@
 .tv-party-dot { flex: none; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--ok); }
 .tv-party-member[data-online="false"] .tv-party-dot { background: #8a8a8a; }
 .tv-party-name { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tv-party-member small { font-size: 0.7em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.tv-party-member small { font-size: 0.78em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .tv-party-remove {
   margin-left: auto;
   padding: 0.25em 0.8em;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
   color: #d4d4d4;
-  font-size: 0.75em;
+  font-size: 0.8em;
   font-weight: 600;
   transition: background 0.15s, color 0.15s;
 }

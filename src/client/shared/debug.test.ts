@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { debugOn, describeElement } from "./debug";
+import { debugOn, describeElement, describeServer } from "./debug";
 
 describe("debugOn", () => {
   it("is off unless the address asks, or an earlier visit did", () => {
@@ -16,6 +16,22 @@ describe("debugOn", () => {
     expect(debugOn("?debug=0", "1")).toBe(false);
     expect(debugOn("?debug=off", "1")).toBe(false);
     expect(debugOn("?debug=FALSE", "1")).toBe(false);
+  });
+});
+
+describe("describeServer", () => {
+  it("says whether the server keeps things between restarts, and how long it has been up", () => {
+    expect(describeServer({ ok: true, storage: "postgres", uptime: 41 })).toBe("server: storage postgres (kept)  up 41s");
+    expect(describeServer({ ok: true, storage: "file", uptime: 125 })).toBe("server: storage file (lost when it sleeps or restarts)  up 2m");
+    expect(describeServer({ ok: true, storage: "memory", uptime: 3 * 3600 + 5 * 60 + 9 })).toBe("server: storage memory (lost when it sleeps or restarts)  up 3h 5m");
+    expect(describeServer({ ok: true, storage: "postgres", uptime: 2 * 86_400 + 4 * 3600 })).toBe("server: storage postgres (kept)  up 2d 4h");
+  });
+
+  it("makes no claim about what it was not told", () => {
+    expect(describeServer({ ok: true })).toBe("server: storage unknown (?)  up ?");
+    expect(describeServer(null)).toBe("server: storage unknown (?)  up ?");
+    expect(describeServer("<html>")).toBe("server: storage unknown (?)  up ?");
+    expect(describeServer({ storage: 3, uptime: -1 })).toBe("server: storage unknown (?)  up ?");
   });
 });
 

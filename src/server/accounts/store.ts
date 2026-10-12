@@ -60,7 +60,8 @@ interface ProfileData {
   collections: Record<CollectionName, Map<string, Stamped>>;
 }
 
-export const SESSION_TTL_MS = 180 * 24 * 3600 * 1000;
+/** A sign-in lasts this long after the device was last used (a browser will not keep a cookie longer than about 400 days). Signing out, or clearing the browser's cookies, is what ends it sooner. */
+export const SESSION_TTL_MS = 400 * 24 * 3600 * 1000;
 const SESSION_TOUCH_MS = 3600 * 1000;
 const MAX_SESSIONS = 20;
 /** A clock that runs ahead must not make its items win for ever. */

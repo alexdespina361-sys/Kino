@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { COLLECTIONS, type AvatarId, type DeviceKind, type Me, type Profile, type Registration } from "../../shared";
+import { COLLECTIONS, MeSchema, type AvatarId, type DeviceKind, type Me, type Profile, type Registration } from "../../shared";
 import { readStorage, writeStorage } from "../shared/format";
 import { setLanguage, t } from "../i18n";
 import { ApiError, api, beaconSync } from "./api";
@@ -10,6 +10,22 @@ import { profileStore, useProfileData } from "./store";
 
 /** Which profile this screen uses (each screen remembers its own: the family TV and a phone are rarely the same person). */
 export const PROFILE_KEY = "kino.profile";
+/** Who the server last said was signed in on this screen, for the moments it cannot be asked (see `rememberedMe`). */
+export const ME_KEY = "kino.me";
+
+/**
+ * A screen that was signed in stays that person while the server cannot be reached as the page opens (a network that is not up
+ * yet, a host that is restarting), instead of turning into a guest's until it can. The server's next answer is the truth, and
+ * replaces this: a 401 on the next exchange, or "nobody" from the next look, signs the screen out as before.
+ */
+function rememberedMe(): Me | null {
+  try {
+    const parsed = MeSchema.safeParse(JSON.parse(readStorage(ME_KEY) ?? "null"));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Progress is sent a few seconds after it changes, so a film being watched is one small message every so often, not one per tick. */
 const SYNC_AFTER_CHANGE_MS = 8_000;
@@ -82,11 +98,16 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
       setStatus("ready");
     } catch (error) {
       if (error instanceof ApiError && (error.status === 404 || error.code === "bad_response")) return setStatus("unavailable");
-      setStatus((now) => (now === "loading" ? "ready" : now)); // not reachable just now: carry on as a guest, and look again
+      // Not reachable just now: carry on as whoever was signed in last time (a guest, if nobody), and look again.
+      setMe((now) => now ?? rememberedMe());
+      setStatus((now) => (now === "loading" ? "ready" : now));
       setTimeout(() => void load(), RETRY_MS);
     }
   }, []);
   useEffect(() => void load(), [load]);
+  useEffect(() => {
+    if (status === "ready") writeStorage(ME_KEY, me ? JSON.stringify(me) : null);
+  }, [me, status]);
 
   // A single profile is simply used; with several, the one this screen used last, else the screen asks.
   useEffect(() => {
