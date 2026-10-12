@@ -8,6 +8,7 @@ import {
   type Command,
   type NormalizedMedia,
   type PartyTv,
+  type PhoneTv,
   type PlayHint,
   type PlayerState,
   type ResolveStatus,
@@ -24,6 +25,7 @@ import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { MoreIcon, TvIcon } from "../shared/icons";
 import { partyLink, readLaunchParams } from "../shared/launch";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
+import { useWaking } from "../shared/useSlow";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
 import { LinkApprove } from "../account/LinkApprove";
@@ -47,6 +49,7 @@ import {
   SourcesSheet,
   SpeedSheet,
   TracksSheet,
+  TvsSheet,
   type PartyInvite,
 } from "./Sheets";
 import "./controller.css";
@@ -62,7 +65,11 @@ export function Controller() {
   const account = useAccount();
   const socketRef = useRef<Socket | null>(null);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
+  /** The server has not answered for a while: the header's "Reconnecting…" gets a line that says why that can be. */
+  const waking = useWaking(connection);
   const [tv, setTv] = useState<TvInfo | null>(null);
+  /** Every TV this phone has connected to and not let go of, the one it controls among them (see `TvsSheet`). */
+  const [tvs, setTvs] = useState<PhoneTv[]>([]);
   const [media, setMedia] = useState<NormalizedMedia | null>(null);
   const [player, setPlayer] = useState<PlayerState>(IDLE_STATE);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +103,8 @@ export function Controller() {
   const sentCodeRef = useRef("");
   /** This phone had a TV, and the first screen is showing again without the phone having asked for it. */
   const hadTvRef = useRef(false);
+  /** The list of TVs sent a code for another one: it stays open until the TV answers, and shows what went wrong if it does not. */
+  const addingRef = useRef(false);
   const [lost, setLost] = useState(false);
   // The account page, and the sign-in request of a TV (from its QR code) waiting for this signed-in phone to say yes or no.
   const [showAccount, setShowAccount] = useState(false);
@@ -123,12 +132,17 @@ export function Controller() {
           case "CTL_WELCOME": {
             writeKept(CONTROLLER_KEY, message.controllerId);
             setTv(message.tv);
+            setTvs(message.tvs ?? []);
             setMedia(message.media);
             setPlayer(message.state);
             setParty(message.party ?? []);
             setInvite(null);
             setError(null);
             setPairing(false);
+            if (addingRef.current) {
+              addingRef.current = false; // the TV that was asked for has answered: the list of TVs has done its job
+              setSheet((open) => (open === "tvs" ? null : open));
+            }
             if (message.tv) {
               hadTvRef.current = true;
               setLost(false);
@@ -149,10 +163,10 @@ export function Controller() {
             if (launch.code || launch.control || launch.url) window.history.replaceState(null, "", location.pathname);
             const scanned = launch.code ?? launch.control;
             if (scanned && message.tv && !message.tv.online && message.tv.controlCode !== scanned) {
-              // The TV this phone had is off, so there is nothing to ask: another TV's code is the answer. The phone lets go of the old one
-              // (it has one TV at a time) and the code is sent when the server says it is free (the next welcome, below).
-              hadTvRef.current = false; // (leaving it is the phone's own doing: the first screen has no "lost" line for it)
-              socketRef.current?.send({ type: "UNPAIR" });
+              // The TV this phone had is off, so there is nothing to ask: another TV's code is the answer. The first stays on the list.
+              launchRef.current = { ...launch, code: undefined, control: undefined };
+              sentCodeRef.current = scanned;
+              socketRef.current?.send({ type: "PAIR", code: scanned });
               setPairing(true);
               break;
             }
@@ -191,6 +205,13 @@ export function Controller() {
           case "TV_STATUS":
             setTv((current) => (current ? { ...current, online: message.online } : current));
             break;
+          case "TVS": {
+            // How the list looks now (a TV came or went, was named); the header shows the TV in use, so it is told as well.
+            const now = message.tvs.find((row) => row.current);
+            setTvs(message.tvs);
+            setTv((current) => (current && now ? { ...current, name: now.name, online: now.online } : current));
+            break;
+          }
           case "MEDIA":
             setMedia(message.media);
             break;
@@ -204,6 +225,7 @@ export function Controller() {
             setError(socketError(message.code, message.message));
             if (message.code === "INVALID_CODE") setCode(""); // the digits are of no use again: the field is ready for the next try
             setPairing(false);
+            addingRef.current = false; // (the list of TVs stays open, with the error in it)
             setInvite((current) => (current === "asking" ? null : current)); // no answer is coming
             break;
         }
@@ -307,7 +329,7 @@ export function Controller() {
 
   const active = player.state !== "idle" && media !== null;
   useEffect(() => {
-    if (!active) setSheet((open) => (open && open !== "menu" && open !== "party" ? null : open));
+    if (!active) setSheet((open) => (open && open !== "menu" && open !== "party" && open !== "tvs" ? null : open));
   }, [active]);
 
   /* ------------------------------ views ------------------------------ */
@@ -336,6 +358,34 @@ export function Controller() {
     </>
   );
 
+  // The TVs this phone has: over the remote, and over the first screen when it controls none of them.
+  const tvsSheet = sheet === "tvs" && (
+    <TvsSheet
+      tvs={tvs}
+      error={error}
+      onSwitch={(id) => {
+        setSheet(null);
+        socketRef.current?.send({ type: "SWITCH_TV", id });
+      }}
+      onForget={(id) => {
+        if (tvs.some((row) => row.id === id && row.current)) hadTvRef.current = false; // asked for: not a pairing that was lost
+        socketRef.current?.send({ type: "UNPAIR", id });
+      }}
+      onName={(name) => socketRef.current?.send({ type: "NAME_TV", name })}
+      onAdd={(value) => {
+        setError(null);
+        addingRef.current = true;
+        sentCodeRef.current = value;
+        setPairing(true);
+        socketRef.current?.send({ type: "PAIR", code: value });
+      }}
+      onClose={() => {
+        setError(null); // (what went wrong in there is not for the page behind it)
+        setSheet(null);
+      }}
+    />
+  );
+
   // Signed in on a phone that has not been told who is holding it: the first thing to ask.
   if (account.choosing && !approveCode) {
     return (
@@ -362,6 +412,8 @@ export function Controller() {
           pending={pairing}
           error={error}
           notice={lost ? t("phone.tvGone") : null}
+          tvCount={tvs.length}
+          onTvs={() => setSheet("tvs")}
           corner={
             <>
               {/* This page's own full screen, which hides the browser's bar (the TV's is a button on the remote, in the paired phone's menu there is this one). */}
@@ -370,6 +422,7 @@ export function Controller() {
             </>
           }
         />
+        {tvsSheet}
         {accountLayer}
       </>
     );
@@ -386,7 +439,7 @@ export function Controller() {
     setSheet(null);
   };
   const closeSheet = () => {
-    if (sheet === "party") setError(null); // what went wrong in there (a code that was refused) is not for the page behind it
+    if (sheet === "party" || sheet === "tvs") setError(null); // what went wrong in there (a code that was refused) is not for the page behind it
     setSheet(null);
   };
   const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
@@ -427,13 +480,19 @@ export function Controller() {
         </button>
       </header>
 
+      {waking && (
+        <p className="banner" data-testid="server-waking" role="status">
+          {t("server.waking")}
+        </p>
+      )}
+
       {away && (
         <section className="away" data-testid="tv-away">
           <p className="banner">
             <Rich k="phone.tvOffline" parts={{ host: <b>{location.host}</b> }} />
           </p>
-          <button className="btn btn-block" data-testid="connect-another" onClick={disconnect}>
-            {t("phone.anotherTv")}
+          <button className="btn btn-block" data-testid="connect-another" onClick={() => setSheet("tvs")}>
+            {tvs.length > 1 ? t("phone.switchTv") : t("phone.anotherTv")}
           </button>
         </section>
       )}
@@ -474,7 +533,7 @@ export function Controller() {
         </p>
       )}
 
-      {error && sheet !== "party" && (
+      {error && sheet !== "party" && sheet !== "tvs" && (
         <p className="error banner" data-testid="error" role="alert">
           {error}
         </p>
@@ -490,15 +549,18 @@ export function Controller() {
           tvName={tv.name}
           online={online}
           partySize={party.length}
+          tvCount={tvs.length}
           controlCode={tv.controlCode}
           controllerCount={tv.controllerCount}
           linkBox={linkBox}
           onLinkBox={changeLinkBox}
           onParty={() => setSheet("party")}
+          onTvs={() => setSheet("tvs")}
           onClose={closeSheet}
           onDisconnect={disconnect}
         />
       )}
+      {tvsSheet}
       {sheet === "party" && (
         <PartySheet
           tvName={tv.name}
@@ -518,8 +580,6 @@ export function Controller() {
       {other && (
         <OtherTvSheet
           tvName={tv.name}
-          guests={party.length}
-          phones={tv.controllerCount ?? 1}
           canAdd={!other.control}
           onClose={() => setOther(null)}
           onAdd={() => {
@@ -529,8 +589,9 @@ export function Controller() {
             setSheet("party");
           }}
           onSwitch={() => {
-            hadTvRef.current = false; // asked for: not a pairing that was lost
-            socketRef.current?.send({ type: "UNPAIR" });
+            // The first TV stays on the list, as it was: the code is all it takes.
+            setError(null);
+            sentCodeRef.current = other.code;
             socketRef.current?.send({ type: "PAIR", code: other.code });
             setPairing(true);
             setOther(null);

@@ -43,6 +43,45 @@ describe("pairings kept between restarts", () => {
     expect(sameTv.media).toBeNull();
   });
 
+  it("a phone's list of TVs, and the one it was controlling, are still there when the server starts again", async () => {
+    const persistence = new MemoryPersistence();
+    const clock = newClock();
+    const before = await start(persistence, clock);
+    const { tv: first, phone } = pairUp(before.registry);
+    const second = before.registry.tvHello();
+    before.registry.pair(phone, before.registry.ensureCode(second)!.code);
+    await before.store.flush();
+    expect(persistence.docs.get(`phone:${phone.id}`)).toMatchObject({ deviceId: second.id, deviceIds: [first.id, second.id] });
+
+    const after = await start(persistence, clock);
+    const samePhone = after.registry.controllerHello(phone.id);
+    expect(after.registry.tvsOf(samePhone).map((tv) => tv.id)).toEqual([first.id, second.id]);
+    expect(samePhone.deviceId).toBe(second.id);
+    const sameFirst = after.registry.tvHello(first.id);
+    expect(after.registry.phonesOf(sameFirst)).toEqual([samePhone]);
+    expect(after.registry.controllersOf(sameFirst)).toEqual([]); // it is on the list, not the one in use
+    expect(after.registry.ensureCode(sameFirst)).toBeNull(); // and still paired: no code to show
+    expect(after.registry.switchTo(samePhone, sameFirst.publicId)).toBe(sameFirst);
+  });
+
+  it("a phone that controls none of its TVs any more still has them", async () => {
+    const persistence = new MemoryPersistence();
+    const clock = newClock();
+    const before = await start(persistence, clock);
+    const { tv: first, phone } = pairUp(before.registry);
+    const second = before.registry.tvHello();
+    before.registry.pair(phone, before.registry.ensureCode(second)!.code);
+    before.registry.unpair(phone); // forgets the second, which it controlled
+    await before.store.flush();
+    expect(persistence.docs.get(`phone:${phone.id}`)).toMatchObject({ deviceId: null, deviceIds: [first.id] });
+    expect(persistence.docs.has(`tv:${second.id}`)).toBe(false);
+
+    const after = await start(persistence, clock);
+    const samePhone = after.registry.controllerHello(phone.id);
+    expect(samePhone.deviceId).toBeNull();
+    expect(after.registry.tvsOf(samePhone).map((tv) => tv.id)).toEqual([first.id]);
+  });
+
   it("does not keep a TV nobody paired, nor a phone with no TV", async () => {
     const persistence = new MemoryPersistence();
     const clock = newClock();
@@ -296,6 +335,33 @@ describe("pairings that disagree", () => {
 
     const unlisted = await startWith({ "tv:tv_a": device({ controllerId: null, controllerIds: [], leaderId: "tv_b" }), "phone:ctl_a": phone() });
     expect(unlisted.registry.controllerHello("ctl_a").deviceId).toBeNull();
+  });
+
+  it("reads a phone written before it had a list as a list of the one TV it had", async () => {
+    const { registry } = await startWith({ "tv:tv_a": device(), "phone:ctl_a": phone() });
+    const samePhone = registry.controllerHello("ctl_a");
+    expect(registry.tvsOf(samePhone).map((tv) => tv.id)).toEqual(["tv_a"]);
+    expect(samePhone.deviceId).toBe("tv_a");
+  });
+
+  it("keeps in a phone's list only the TVs that list the phone, and in a TV only the phones that list the TV", async () => {
+    const { registry } = await startWith({
+      "tv:tv_a": device(),
+      "tv:tv_b": device({ id: "tv_b", publicId: "bbbb", controllerId: null, controllerIds: [] }), // does not list the phone
+      "tv:tv_c": device({ id: "tv_c", publicId: "cccc", controllerId: "ctl_a", controllerIds: ["ctl_a"] }), // lists a phone that does not list it
+      "phone:ctl_a": phone({ deviceIds: ["tv_a", "tv_b", "tv_gone"] }),
+    });
+    const samePhone = registry.controllerHello("ctl_a");
+    expect(registry.tvsOf(samePhone).map((tv) => tv.id)).toEqual(["tv_a"]);
+    const orphan = registry.tvHello("tv_c");
+    expect(orphan.controllerIds).toEqual([]);
+    expect(orphan.controllerId).toBeNull();
+  });
+
+  it("lets go of the TV a phone controls when its own list leaves it out", async () => {
+    const { registry } = await startWith({ "tv:tv_a": device(), "phone:ctl_a": phone({ deviceIds: ["tv_b"] }) });
+    expect(registry.controllerHello("ctl_a").deviceId).toBeNull();
+    expect(registry.tvHello("tv_a").controllerId).toBeNull();
   });
 
   it("lets a TV go free whose phone is gone or points somewhere else", async () => {

@@ -49,6 +49,63 @@ export async function openDevice(
   return context.newPage();
 }
 
+/** What `sleepingServer` leaves on the page for the test to switch. */
+type ServerSwitch = { up: boolean; sockets: WebSocket[] };
+
+/**
+ * A page whose server does not answer: the connections it tries stay "connecting", which is what a free host's do while it wakes up,
+ * until the test lets them through (`serverUp`; `up` says whether it starts that way). The page's clock is fake, so the ten seconds
+ * it waits before saying more are skipped with `page.clock.fastForward`.
+ */
+export const sleepingServer =
+  (up = false) =>
+  async (context: BrowserContext): Promise<void> => {
+    await context.clock.install();
+    await context.addInitScript((startUp) => {
+      const Real = window.WebSocket;
+      const server: ServerSwitch = { up: startUp, sockets: [] };
+      (window as unknown as { __server: ServerSwitch }).__server = server;
+      window.WebSocket = new Proxy(Real, {
+        construct(target, args: ConstructorParameters<typeof WebSocket>) {
+          if (server.up) {
+            const socket = new target(...args);
+            server.sockets.push(socket);
+            return socket;
+          }
+          // Never answered: it stays CONNECTING until the page gives up on it, and then closes as a connection that never came up does.
+          const hung = {
+            readyState: Real.CONNECTING as number,
+            onopen: null,
+            onmessage: null,
+            onerror: null,
+            onclose: null as ((event: { code: number }) => void) | null,
+            send() {},
+            close() {
+              if (hung.readyState === Real.CLOSED) return;
+              hung.readyState = Real.CLOSED;
+              queueMicrotask(() => hung.onclose?.({ code: 1006 }));
+            },
+          };
+          return hung as unknown as WebSocket;
+        },
+      });
+    }, up);
+  };
+
+/** The connection the page has is cut, and the ones it tries after that are not answered. */
+export const serverDown = (page: Page) =>
+  page.evaluate(() => {
+    const server = (window as unknown as { __server: ServerSwitch }).__server;
+    server.up = false;
+    server.sockets.forEach((socket) => socket.close());
+  });
+
+/** The next connection the page tries is a real one. */
+export const serverUp = (page: Page) =>
+  page.evaluate(() => {
+    (window as unknown as { __server: ServerSwitch }).__server.up = true;
+  });
+
 /** Answer the library's requests with `library` (and the search with `search`): the server the tests run against has no library of its own. */
 export const withLibrary =
   (library: unknown, search?: (query: string) => unknown) =>

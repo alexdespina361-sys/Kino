@@ -6,6 +6,7 @@ import { switchRole } from "../role";
 import type { SocketStatus } from "../shared/socket";
 import { PlayIcon, ScanIcon, TvIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
+import { useWaking } from "../shared/useSlow";
 import { cameraAvailable, Scanner } from "./Scanner";
 
 interface PairScreenProps {
@@ -19,6 +20,9 @@ interface PairScreenProps {
   error: string | null;
   /** Something to know before trying again (the TV that was connected is gone). */
   notice?: string | null;
+  /** How many TVs this phone still has on its list, and the way to them: choosing one of those takes no code. */
+  tvCount?: number;
+  onTvs?: () => void;
   /** Top right: the way into the account page. */
   corner?: ReactNode;
 }
@@ -26,7 +30,7 @@ interface PairScreenProps {
 /** A connection that has not come in this long is said to be missing, not just "reaching". */
 const OFFLINE_AFTER_MS = 4000;
 
-export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, error, notice, corner }: PairScreenProps) {
+export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, error, notice, tvCount = 0, onTvs, corner }: PairScreenProps) {
   useT();
   const ready = connection === "open" && !pending;
   const [scanning, setScanning] = useState(false);
@@ -38,6 +42,7 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
     const timer = setTimeout(() => setOffline(true), OFFLINE_AFTER_MS);
     return () => clearTimeout(timer);
   }, [connection]);
+  const waking = useWaking(connection);
   // A code that was refused leaves an empty field: the keyboard stays up for the next try.
   useEffect(() => {
     if (error && code === "") input.current?.focus();
@@ -77,9 +82,16 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
           {notice}
         </p>
       )}
-      <p className="muted">
-        <Rich k={canScan ? "pair.introScan" : "pair.introType"} parts={{ host: <b>{location.host}</b>, connect: <b>{t("tv.connectPhone")}</b> }} />
-      </p>
+      {/* A phone that has TVs has done this before: the way to them takes the place of the steps for a new one (the list has them too). */}
+      {tvCount > 0 && onTvs ? (
+        <button type="button" className="btn btn-block" data-testid="tvs-open" onClick={onTvs}>
+          <TvIcon /> {tvCount > 1 ? t("menu.tvsCount", { count: tvCount }) : t("menu.tvs")}
+        </button>
+      ) : (
+        <p className="muted">
+          <Rich k={canScan ? "pair.introScan" : "pair.introType"} parts={{ host: <b>{location.host}</b>, connect: <b>{t("tv.connectPhone")}</b> }} />
+        </p>
+      )}
 
       {canScan && (
         <button type="button" className="btn btn-red btn-block" data-testid="scan" onClick={() => setScanning(true)} disabled={!ready}>
@@ -113,8 +125,8 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
       </form>
 
       {connection !== "open" && (
-        <p className="muted center">
-          <span className="spinner" /> {offline ? t("error.offline") : t("pair.reaching")}
+        <p className="muted center" data-testid={waking ? "server-waking" : undefined} role="status">
+          <span className="spinner" /> {waking ? t("server.waking") : offline ? t("error.offline") : t("pair.reaching")}
         </p>
       )}
       {error && (

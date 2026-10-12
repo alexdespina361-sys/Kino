@@ -83,8 +83,17 @@ pnpm build && pnpm start     # http://localhost:8787
 
 **Phone**
 - Pair by QR scan (camera) or by code; a QR link opened from the phone's camera app pairs by itself. A phone that already has a TV is asked
-  what the other one is for: join the watch party, or be controlled instead (the first TV is let go). Nothing changes behind its back,
-  except that scanning another TV's QR code moves a phone off a TV that is switched off (offline) at once, since there is nothing to ask about
+  what the other one is for: join the watch party, or control it instead (the first TV is not let go: it carries on as it was, on the phone's
+  list, below). Nothing changes behind its back, except that scanning another TV's QR code moves a phone off a TV that is switched off
+  (offline) at once, since there is nothing to ask about
+- **My TVs.** A phone keeps the TVs it has connected to (up to eight, in the order it did): *My TVs* in its menu, and on its first screen once
+  it controls none. A tap on one controls it, **with no code**; the one it leaves is not touched: it keeps playing, stays paired and
+  is still on the list, with a dot for whether it is on. **Forget** lets a TV go (a TV with no phone left shows a new code, as after
+  *Disconnect*, and stops what it was playing); the field below connects another TV with its code, scanned or typed (the list says when it is full), and the
+  TV in use can be **named** there (shown on the list and on the other phones' lists; empty gives it its own name back). A phone only hears
+  what the TV it controls is doing, and the menu's count of phones counts only those controlling that TV now. A TV's own **Disconnect**
+  takes it off every phone's list, the ones that have moved on included. Authority comes only from a code, so "My TVs" never gives a
+  phone a TV it did not connect to itself. The list is kept with the pairings (database or file), so it survives a restart
 - A second phone joins the same TV with the QR code (and code) in the TV menu, scanned off the first phone's screen, or with the code and QR
   code the TV itself shows on its "Connected" page (**Connect a phone** in the TV's side menu): both are remotes, either can
   add TVs to the party, and the menu says how many are connected. The TV flashes "A phone is connected." when one joins. That code stays good
@@ -173,20 +182,25 @@ pnpm build && pnpm start     # http://localhost:8787
 - **The library is the front door.** The site opens straight into it, signed in or not (a guest's progress stays on that screen), so a screen can
   pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press. (Only a party link opens a "Press OK" page
   first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
-  says so, with **Back to the library** and **Disconnect from phone** (unpairs the TV and shows a new code; the phone goes back to the code screen)
+  says so, with **Back to the library** and **Disconnect from phone** (unpairs the TV from every phone and shows a new code; the phone
+  controlling it goes back to the code screen, one that had moved on to another TV just loses it from its list)
 - **Sign in** is the button in the library's top corner (the profile picture once signed in); nobody is made to
 - **Any device can be this screen.** The same page lays itself out for the size of the device: the TV's wide layout from about 900 px
   up, and below that (a phone, a tablet, a narrow window) a compact one with a thin menu, a smaller banner, titles that swipe along, a native
   search field (the phone's own keyboard) and as many columns as fit. Taps press everything, swipes scroll, the first touch on hidden controls only
   brings them up, and every page has a way out for a finger. A phone held sideways gives the banner less height. Volume stays the device's own
-- Keeps the screen awake while playing; reconnects by itself, and notices a dead connection within about 25 s
+- Keeps the screen awake while playing; reconnects by itself, and notices a dead connection within about 25 s. After 10 s without the server
+  the page says why that can be (*The server is waking up. A free server can take up to a minute…*): on the TV in its banner, on the phone's
+  first screen in place of "Reaching the server…", and on the remote under the header. It is not said when the browser knows there is no
+  network at all, which has its own line
 
 **Server**
 - Resolves a link to a playable stream: the generic resolver plus the site adapters in `src/server/resolvers/adapters/`
 - Pairing codes are single-use and expire after 10 minutes. After 20 wrong codes in a minute (all phones counted together)
   pairing pauses until the minute is over, because the code is only six digits
 - **Accounts, pairings and what each TV was playing are kept**: written to disk (or Postgres) a moment after every change and again when the
-  server is told to stop. A restart (or a free host sleeping and waking) leaves every phone and TV paired as it was, and a TV whose page is
+  server is told to stop. A restart (or a free host sleeping and waking) leaves every phone and TV paired as it was (a phone's list of TVs
+  included), and a TV whose page is
   opened again is put back on its video (above); the TV's and the phone's own ids are also kept in a cookie next to the page's storage, so a
   browser that wipes one of the two when it closes still finds its way back. The server never lets a pair go by itself; one that nobody has
   used for more than a year (400 days) is cleared out when it starts, so the database does not fill with ghosts. The codes on screen are in
@@ -380,7 +394,9 @@ pnpm fixtures     # optional: regenerate fixtures/ with ffmpeg (outputs are comm
 Tests never touch the internet; they use `fixtures/` (served at `/fixtures/`) and, for accounts, an in-memory store (`DATA_DIR=memory`) with
 throwaway credentials from `e2e/testAccount.ts`. The e2e suite covers pairing by code and by QR link, camera scanning (Chromium's fake
 webcam shows a generated QR code), disconnect and switching TVs, resume, the D-pad, HUD fading, subtitle memory and the episode lists, the
-library and its menu, watch parties (from a TV, from a phone, from a link), a second phone and a phone that scans another TV, the TV page on a
+library and its menu, watch parties (from a TV, from a phone, from a link), a second phone and a phone that scans another TV, a phone with
+several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page whose connections are never answered:
+`sleepingServer` in `e2e/helpers.ts`, with the page's clock skipped ahead), the TV page on a
 phone, a tablet and a phone held sideways, the end card and mute, full screen (at the first press, kept for the next visit, the buttons), and
 accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these

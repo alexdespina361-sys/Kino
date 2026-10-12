@@ -298,11 +298,15 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
+  width: max-content; /* (a box placed from `left: 50%` would otherwise only get the half of the screen that is left of it) */
+  max-width: 80%;
   padding: 0.6em 1.8em;
-  border-radius: 999px;
+  /* A pill for the short words; the longer explanation that follows a slow server wraps inside it. */
+  border-radius: 1.4em;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(0, 0, 0, 0.82);
   font-size: 1.8em;
+  text-align: center;
 }
 
 /* ------------------------------ player overlay ------------------------------ */

@@ -440,6 +440,10 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .party-state { display: block; font-size: 0.75rem; font-weight: 600; }
 .party-state.ok { color: var(--ok); }
 .party-state.bad { color: var(--bad); }
+/* The TVs of a phone: the row to choose one, and the button that lets one go. */
+.tv-row { display: flex; align-items: stretch; gap: 6px; }
+.tv-row .choice { flex: 1; min-width: 0; }
+.tv-row .btn { flex: none; }
 /* A code that brings another screen in (to the party, or to the TV as a second remote): the digits to read out, the QR code to scan. */
 .code-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: var(--surface-2); }
 .code-card-title { color: var(--muted); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }

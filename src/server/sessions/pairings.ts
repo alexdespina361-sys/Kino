@@ -19,7 +19,15 @@ const DeviceDoc = z.object({
   /** What the TV was playing: the link that plays it again, its picture, and how far it had got. One that cannot be read is let go of, and the pair with it is not. */
   resume: z.object({ url: z.string().max(2048), hint: PlayHintSchema.optional(), time: z.number().min(0).max(86_400), day: z.number() }).optional().catch(undefined),
 });
-const ControllerDoc = z.object({ v: z.literal(1), id: z.string(), deviceId: z.string(), seenDay: z.number() });
+const ControllerDoc = z.object({
+  v: z.literal(1),
+  id: z.string(),
+  /** The TV the phone controls; none when it has moved on from all of its TVs (it keeps them on its list). */
+  deviceId: z.string().nullable(),
+  seenDay: z.number(),
+  /** Every TV the phone has connected to and not let go of. A record from before the list existed has none, and its one TV is the list. */
+  deviceIds: z.array(z.string()).optional(),
+});
 
 const TV = "tv:";
 const PHONE = "phone:";

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import qrcode from "qrcode-generator";
 import { progressKey, type NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, tvRoot, tvTime, withLibrary } from "./helpers";
+import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, tvRoot, tvTime, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -198,6 +198,68 @@ test.describe("pairing", () => {
     await phone.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
     await expect(tv.getByTestId("tv-paired")).toBeVisible();
+  });
+});
+
+test.describe("a server that is slow to answer", () => {
+  // A free host that has slept takes most of a minute to wake: after ten seconds without it the page says why, in the place it already says it is waiting.
+  test("the phone's first screen says the server is waking up after ten seconds, and the line goes when the server answers", async ({ browser }) => {
+    const phone = await openDevice(browser, PHONE, {}, sleepingServer());
+    await phone.goto("/");
+    await expect(phone.getByTestId("code-input")).toBeVisible();
+    await expect(phone.getByText(en["pair.reaching"])).toBeVisible();
+    await expect(phone.getByTestId("server-waking")).toHaveCount(0); // a moment is not a sleeping server
+
+    await phone.clock.fastForward(10_500);
+    await expect(phone.getByTestId("server-waking")).toHaveText(en["server.waking"]);
+
+    await serverUp(phone);
+    await phone.clock.fastForward(10_500); // the connection that was never answered gives up, and the next one is
+    await expect(phone.getByTestId("server-waking")).toHaveCount(0);
+    await phone.getByTestId("code-input").fill("000000");
+    await expect(phone.getByTestId("error")).toBeVisible(); // it is talking to the server again: the code is refused
+  });
+
+  test("a phone that knows it has no network at all does not blame the server", async ({ browser }) => {
+    const phone = await openDevice(browser, PHONE, {}, sleepingServer());
+    await phone.goto("/");
+    await expect(phone.getByTestId("code-input")).toBeVisible();
+    await phone.context().setOffline(true);
+    await phone.clock.fastForward(10_500);
+    await expect(phone.getByText(en["error.offline"])).toBeVisible(); // its own line for that
+    await expect(phone.getByTestId("server-waking")).toHaveCount(0);
+  });
+
+  test("a paired remote that loses the server says Reconnecting first, then that it is waking up, and is back when it answers", async ({ browser }) => {
+    const tv = await openTv(browser);
+    const phone = await openDevice(browser, PHONE, {}, sleepingServer(true));
+    await phone.goto("/");
+    await phone.getByTestId("code-input").fill(await readPairingCode(tv));
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+
+    await serverDown(phone);
+    await expect(phone.getByTestId("tv-online")).toHaveText(en["phone.reconnecting"]);
+    await expect(phone.getByTestId("server-waking")).toHaveCount(0);
+    await phone.clock.fastForward(10_500);
+    await expect(phone.getByTestId("server-waking")).toHaveText(en["server.waking"]);
+    await expect(phone.getByTestId("tv-online")).toHaveText(en["phone.reconnecting"]); // and the header still says what is going on
+
+    await serverUp(phone);
+    await phone.clock.fastForward(10_500);
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    await expect(phone.getByTestId("server-waking")).toHaveCount(0);
+  });
+
+  test("the TV's banner says the same, in place of Connecting, and goes when the server answers", async ({ browser }) => {
+    const tv = await openLibrary(browser, sleepingServer());
+    await expect(tv.getByTestId("tv-banner")).toHaveText(en["tv.connecting"]);
+
+    await tv.clock.fastForward(10_500);
+    await expect(tv.getByTestId("tv-banner")).toHaveText(en["server.waking"]);
+
+    await serverUp(tv);
+    await tv.clock.fastForward(10_500);
+    await expect(tv.getByTestId("tv-banner")).toHaveCount(0);
   });
 });
 

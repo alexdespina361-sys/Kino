@@ -125,6 +125,21 @@ export const MAX_FOLLOWERS = 5;
 export const PartyTvSchema = z.object({ id: z.string().max(100), name: z.string().max(60), online: z.boolean() });
 export type PartyTv = z.infer<typeof PartyTvSchema>;
 
+/** How many TVs one phone can keep on its list. */
+export const MAX_PHONE_TVS = 8;
+
+/** One of the TVs a phone has connected to, as its list shows it. `id` is for choosing it; the TV's own id is its secret and stays on the server. */
+export const PhoneTvSchema = z.object({
+  id: z.string().max(100),
+  name: z.string().max(60),
+  /** What the screen asked to be called (the profile in use there), when it did: another way to tell two TVs apart. */
+  label: z.string().max(60).optional(),
+  online: z.boolean(),
+  /** The one this phone is controlling now. */
+  current: z.boolean(),
+});
+export type PhoneTv = z.infer<typeof PhoneTvSchema>;
+
 /**
  * The party a TV is in, as it shows it: who is in, and (to the host only) the code the others join with. The host is the
  * screen the others watch along with; everyone else is a guest.
@@ -192,8 +207,15 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("CMD"), command: CommandSchema }),
   /** A page or media URL. The server resolves it to media; the phone never tells the TV what to fetch. */
   z.object({ type: z.literal("PLAY_URL"), url: z.string().max(2048), startAt: StartAtSchema.optional(), hint: PlayHintSchema.optional() }),
-  /** Forget this TV: it gets a fresh pairing code and the phone goes back to the code screen. */
-  z.object({ type: z.literal("UNPAIR") }),
+  /**
+   * Forget a TV: the phone is no longer one of its remotes. The one it is controlling when no `id` is given (or one on its list, by an
+   * `id` from TVS). A TV left with no phone shows a fresh pairing code; the phone goes back to the code screen if it was the TV it had.
+   */
+  z.object({ type: z.literal("UNPAIR"), id: z.string().max(100).optional() }),
+  /** Control another TV from the list instead (an `id` from TVS). The one it leaves stays paired with this phone and carries on as it was. */
+  z.object({ type: z.literal("SWITCH_TV"), id: z.string().max(100) }),
+  /** What the TV this phone controls is to be called on the lists (empty: back to its own name). */
+  z.object({ type: z.literal("NAME_TV"), name: z.string().max(60) }),
   /** Have another TV watch along: its pairing code, typed on the phone that controls the first TV. */
   z.object({ type: z.literal("ADD_TV"), code: z.string().max(20) }),
   /** Send a TV that is watching along back to its own pairing screen (an `id` from PARTY). */
@@ -250,7 +272,11 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     state: PlayerStateSchema,
     /** The other TVs watching along. */
     party: z.array(PartyTvSchema).max(MAX_FOLLOWERS).optional(),
+    /** Every TV this phone has connected to, the one it controls now among them. */
+    tvs: z.array(PhoneTvSchema).optional(),
   }),
+  /** The phone's list of TVs, when it changes without the phone having asked (a TV came online or went away, was renamed). */
+  z.object({ type: z.literal("TVS"), tvs: z.array(PhoneTvSchema) }),
   /** The guests of the TV's party, and the code to join it with when one is open. */
   z.object({ type: z.literal("PARTY"), tvs: z.array(PartyTvSchema).max(MAX_FOLLOWERS), code: PairingCodeSchema.optional() }),
   z.object({ type: z.literal("TV_STATUS"), online: z.boolean() }),

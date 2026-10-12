@@ -11,11 +11,13 @@ import {
   groupOf,
   isCurrentEpisode,
   MAX_FOLLOWERS,
+  MAX_PHONE_TVS,
   PLAYBACK_SPEEDS,
   resolveCaptionStyle,
   versionLabel,
   type CaptionStyle,
   type PartyTv,
+  type PhoneTv,
   type PlayerState,
   type PlayerTrack,
   type SeriesInfo,
@@ -412,23 +414,28 @@ export function MenuSheet({
   tvName,
   online,
   partySize,
+  tvCount,
   controlCode,
   controllerCount,
   linkBox,
   onLinkBox,
   onParty,
+  onTvs,
   onDisconnect,
   onClose,
 }: Close & {
   tvName: string;
   online: boolean;
   partySize: number;
+  /** How many TVs this phone has on its list (this one included). */
+  tvCount: number;
   controlCode?: string;
   controllerCount?: number;
   /** Whether the home screen has the box for pasting a link, and a way to turn it on or off. */
   linkBox: boolean;
   onLinkBox: (on: boolean) => void;
   onParty: () => void;
+  onTvs: () => void;
   onDisconnect: () => void;
 }) {
   useT();
@@ -452,6 +459,9 @@ export function MenuSheet({
       <button className="btn btn-block" data-testid="party-open" onClick={onParty}>
         {partySize === 0 ? t("menu.partyOpen") : t("menu.partyActive", { count: partySize + 1 })}
       </button>
+      <button className="btn btn-block" data-testid="tvs-open" onClick={onTvs}>
+        {tvCount > 1 ? t("menu.tvsCount", { count: tvCount }) : t("menu.tvs")}
+      </button>
       <FullscreenToggle className="btn btn-block" labels={{ enter: t("phone.fullscreen"), exit: t("phone.exitFullscreen") }} />
       <button className={`choice${linkBox ? " active" : ""}`} role="switch" aria-checked={linkBox} onClick={() => onLinkBox(!linkBox)} data-testid="link-box-toggle">
         <span>{t("menu.linkBox")}</span>
@@ -463,6 +473,137 @@ export function MenuSheet({
       </button>
       <p className="muted small">{t("menu.disconnectHelp")}</p>
       <RoleSwitch to="tv" />
+    </Sheet>
+  );
+}
+
+/**
+ * The TVs this phone has connected to: choose the one to control (the others carry on as they were, still paired), forget one, name
+ * the one in use, and connect another by its code. A TV can only be got back to from here if it was connected to before, with its code.
+ */
+export function TvsSheet({
+  tvs,
+  error,
+  onSwitch,
+  onForget,
+  onName,
+  onAdd,
+  onClose,
+}: Close & {
+  tvs: PhoneTv[];
+  error: string | null;
+  onSwitch: (id: string) => void;
+  onForget: (id: string) => void;
+  /** Name the TV in use; empty gives it its own name back. */
+  onName: (name: string) => void;
+  /** The code of another TV, typed or scanned. */
+  onAdd: (code: string) => void;
+}) {
+  useT();
+  const current = tvs.find((tv) => tv.current);
+  const [code, setCode] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [name, setName] = useState(current?.name ?? "");
+  const full = tvs.length >= MAX_PHONE_TVS;
+
+  // A code that was refused has been used up; a TV that was named (or switched to) shows its name.
+  useEffect(() => setCode(""), [error, tvs.length]);
+  useEffect(() => setName(current?.name ?? ""), [current?.id, current?.name]);
+
+  const change = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 6);
+    setCode(digits);
+    if (digits.length === 6) onAdd(digits);
+  };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (code.length === 6) onAdd(code);
+  };
+  const rename = () => {
+    if (current && name.trim() !== current.name) onName(name);
+  };
+
+  return (
+    <Sheet title={t("tvs.title")} onClose={onClose} testId="tvs-sheet">
+      {tvs.length > 0 && <p className="muted">{t("tvs.intro")}</p>}
+      <ul className="party-list" data-testid="tv-list">
+        {tvs.map((tv) => (
+          <li className="tv-row" key={tv.id} data-testid="tv-row" data-current={tv.current} data-online={tv.online}>
+            <button className={`choice${tv.current ? " active" : ""}`} data-testid="tv-switch" aria-current={tv.current} onClick={() => !tv.current && onSwitch(tv.id)}>
+              <span>
+                {tv.name}
+                <span className={`party-state ${tv.online ? "ok" : "bad"}`}>
+                  {tv.current ? `${t("tvs.current")} · ` : ""}
+                  {tv.label ? `${tv.label} · ` : ""}
+                  {tv.online ? t("tvs.online") : t("tvs.offline")}
+                </span>
+              </span>
+            </button>
+            <button className="btn btn-danger" data-testid="tv-forget" aria-label={t("tvs.forgetLabel", { tv: tv.name })} onClick={() => onForget(tv.id)}>
+              {t("tvs.forget")}
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {current && (
+        <form
+          className="auth-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            rename();
+          }}
+        >
+          <label className="auth-field">
+            <span>{t("tvs.nameTitle")}</span>
+            <input data-testid="tv-rename" autoComplete="off" maxLength={40} value={name} onChange={(event) => setName(event.target.value)} onBlur={rename} />
+            <small>{t("tvs.nameHelp")}</small>
+          </label>
+        </form>
+      )}
+
+      {full ? (
+        <p className="muted small" data-testid="tvs-full">
+          {t("tvs.full")}
+        </p>
+      ) : (
+        <form onSubmit={submit}>
+          <h3 className="sheet-section">{t("tvs.addTitle")}</h3>
+          <p className="muted small">
+            <Rich k="tvs.help" parts={{ host: <b>{location.host}</b>, connect: <b>{t("tv.connectPhone")}</b> }} />
+          </p>
+          {cameraAvailable() && (
+            <button type="button" className="btn btn-block" data-testid="tvs-scan" onClick={() => setScanning(true)}>
+              <ScanIcon /> {t("pair.scan")}
+            </button>
+          )}
+          <input
+            data-testid="tvs-code"
+            className="code-input"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={6}
+            placeholder="••••••"
+            aria-label={t("pair.codeLabel")}
+            value={code}
+            onChange={(event) => change(event.target.value)}
+          />
+        </form>
+      )}
+      {error && (
+        <p className="error" data-testid="tvs-error" role="alert">
+          {error}
+        </p>
+      )}
+      {scanning && (
+        <Scanner
+          onCode={(digits) => {
+            setScanning(false);
+            onAdd(digits);
+          }}
+          onClose={() => setScanning(false)}
+        />
+      )}
     </Sheet>
   );
 }
@@ -650,16 +791,14 @@ export function PartySheet({
   );
 }
 
-/** A phone that has a TV scanned the code of another one: that TV joins the watch party, or the phone moves over to it. */
+/** A phone that has a TV scanned the code of another one: that TV joins the watch party, or the phone moves over to it (the first stays on its list). */
 export function OtherTvSheet({
   tvName,
-  guests,
-  phones,
   canAdd,
   onAdd,
   onSwitch,
   onClose,
-}: Close & { tvName: string; guests: number; phones: number; canAdd: boolean; onAdd: () => void; onSwitch: () => void }) {
+}: Close & { tvName: string; canAdd: boolean; onAdd: () => void; onSwitch: () => void }) {
   useT();
   return (
     <Sheet title={t("other.title")} onClose={onClose} testId="other-tv-sheet">
@@ -676,7 +815,7 @@ export function OtherTvSheet({
       <button className={`btn btn-block${canAdd ? "" : " btn-red"}`} data-testid="other-switch" onClick={onSwitch}>
         {t("other.switch", { tv: tvName })}
       </button>
-      <p className="muted small">{t(phones > 1 ? "other.switchOthersHelp" : guests > 0 ? "other.switchPartyHelp" : "other.switchHelp", { tv: tvName })}</p>
+      <p className="muted small">{t("other.switchHelp", { tv: tvName })}</p>
       <button className="btn btn-block" data-testid="other-cancel" onClick={onClose}>
         {t("common.cancel")}
       </button>

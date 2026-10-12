@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseServerMessage, type ClientMessage, type Command, type ServerMessage } from "../../shared";
+import { MAX_PHONE_TVS, parseServerMessage, type ClientMessage, type Command, type ServerMessage } from "../../shared";
 import { MemoryPersistence } from "../accounts/persistence";
 import { buildApp } from "../app";
 import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
@@ -1333,6 +1333,198 @@ describe("several phones controlling one TV session", () => {
     await tv.next("TV_UNPAIRED");
     tv.send({ type: "TV_NEW_CODE" });
     expect((await tv.next("TV_CODE")).control).toBeUndefined(); // free again: it is a pairing code that is offered
+  });
+});
+
+describe("a phone with several TVs", () => {
+  /** A TV that has said hello and shows its code. */
+  async function freeTv() {
+    const tv = await connect();
+    tv.send({ type: "TV_HELLO" });
+    const welcome = await tv.next("TV_WELCOME");
+    return { tv, code: welcome.pairing!.code, deviceId: welcome.deviceId };
+  }
+
+  /** A phone that has connected to a TV and then to a second one: the second is the one it controls. */
+  async function twoTvs() {
+    const { tv: first, phone, controllerId, deviceId: firstDeviceId } = await pairedSetup();
+    const next = await freeTv();
+    phone.send({ type: "PAIR", code: next.code });
+    const welcome = await phone.next("CTL_WELCOME");
+    await next.tv.next("TV_PAIRED");
+    const firstId = welcome.tvs!.find((tv) => !tv.current)!.id;
+    return { first, second: next.tv, phone, controllerId, firstDeviceId, firstId, welcome };
+  }
+
+  it("keeps the TV it had when it connects to another one, and that TV is not disturbed", async () => {
+    const { first, second, phone, welcome } = await twoTvs();
+    expect(welcome.tv).toMatchObject({ online: true });
+    expect(welcome.tvs).toEqual([
+      expect.objectContaining({ online: true, current: false }),
+      expect.objectContaining({ online: true, current: true }),
+    ]);
+    await first.expectNone((m) => m.type === "TV_UNPAIRED" || (m.type === "TV_CMD" && m.command.type === "STOP"));
+
+    // What the TV it left reports is not shown on the phone; what the other one reports is.
+    first.send({ type: "TV_STATE", state: { state: "playing", currentTime: 10, duration: 100 } });
+    second.send({ type: "TV_STATE", state: { state: "playing", currentTime: 20, duration: 100 } });
+    expect((await phone.next("STATE")).state.currentTime).toBe(20);
+    await phone.expectNone((m) => m.type === "STATE" && m.state.currentTime === 10);
+  });
+
+  it("goes back to a TV of its list, and finds it as it was left", async () => {
+    const { first, second, phone, firstId } = await twoTvs();
+    first.send({ type: "TV_STATE", state: { state: "playing", currentTime: 42, duration: 300 }, media });
+    await first.expectNone(() => true, 50); // (let the server take it in)
+
+    phone.send({ type: "SWITCH_TV", id: firstId });
+    const back = await phone.next("CTL_WELCOME");
+    expect(back.tv).toMatchObject({ online: true });
+    expect(back.state.currentTime).toBe(42);
+    expect(back.media?.title).toBe("Sample");
+    expect(back.tvs!.map((tv) => tv.current)).toEqual([true, false]);
+    await first.next("TV_PAIRED"); // a phone has come back to it
+
+    phone.send({ type: "CMD", command: { type: "PAUSE" } });
+    expect((await first.next("TV_CMD")).command).toEqual({ type: "PAUSE" });
+    await second.expectNone((m) => m.type === "TV_CMD");
+  });
+
+  it("turns away a TV that is not on its list, and shows the list as it is", async () => {
+    const { second, phone } = await twoTvs();
+    const stranger = await pairedSetup();
+    stranger.phone.send({ type: "CTL_HELLO", controllerId: stranger.controllerId });
+    const theirs = (await stranger.phone.next("CTL_WELCOME")).tvs![0]!.id;
+
+    phone.send({ type: "SWITCH_TV", id: theirs });
+    expect((await phone.next("ERROR")).code).toBe("NOT_YOUR_TV");
+    expect((await phone.next("TVS")).tvs).toHaveLength(2);
+    phone.send({ type: "CMD", command: { type: "PLAY" } }); // it still controls the one it did
+    expect((await second.next("TV_CMD")).command).toEqual({ type: "PLAY" });
+  });
+
+  it("forgets a TV of its list without leaving the one it controls, and the forgotten TV asks to be paired again", async () => {
+    const { first, second, phone, firstId } = await twoTvs();
+    phone.send({ type: "UNPAIR", id: firstId });
+    expect((await first.next("TV_CMD")).command).toEqual({ type: "STOP" });
+    expect((await first.next("TV_UNPAIRED")).pairing?.code).toMatch(/^\d{6}$/);
+
+    const list = await phone.nextWhere("TVS", (m) => m.tvs.length === 1);
+    expect(list.tvs[0]).toMatchObject({ current: true });
+    await phone.expectNone((m) => m.type === "CTL_WELCOME"); // it did not go back to the code screen
+    phone.send({ type: "CMD", command: { type: "PLAY" } });
+    expect((await second.next("TV_CMD")).command).toEqual({ type: "PLAY" });
+  });
+
+  it("goes back to the code screen when the TV it controls is forgotten, with the rest of its list to choose from", async () => {
+    const { first, second, phone } = await twoTvs();
+    phone.send({ type: "UNPAIR" });
+    await second.next("TV_UNPAIRED");
+    const welcome = await phone.next("CTL_WELCOME");
+    expect(welcome.tv).toBeNull();
+    expect(welcome.tvs).toEqual([expect.objectContaining({ current: false, online: true })]);
+    await first.expectNone((m) => m.type === "TV_UNPAIRED");
+
+    phone.send({ type: "SWITCH_TV", id: welcome.tvs![0]!.id });
+    expect((await phone.next("CTL_WELCOME")).tv).toMatchObject({ online: true });
+  });
+
+  it("takes a TV off the list of a phone that had moved on from it when the TV disconnects", async () => {
+    const { first, phone } = await twoTvs();
+    first.send({ type: "TV_UNPAIR" });
+    await first.next("TV_UNPAIRED");
+    expect((await phone.nextWhere("TVS", (m) => m.tvs.length === 1)).tvs[0]).toMatchObject({ current: true });
+    await phone.expectNone((m) => m.type === "CTL_WELCOME"); // (it was not the one in use: nothing changes on the phone's screen)
+  });
+
+  it("keeps a TV that another phone still has when one phone forgets it", async () => {
+    const { first, phone, firstId } = await twoTvs();
+    // A second phone joins the first TV with its control code.
+    phone.send({ type: "SWITCH_TV", id: firstId });
+    const code = (await phone.next("CTL_WELCOME")).tv!.controlCode!;
+    const other = await connect();
+    other.send({ type: "CTL_HELLO" });
+    await other.next("CTL_WELCOME");
+    other.send({ type: "PAIR", code });
+    expect((await other.next("CTL_WELCOME")).tv?.controllerCount).toBe(2);
+    expect((await phone.next("CTL_WELCOME")).tv?.controllerCount).toBe(2); // (the first phone is told one came)
+
+    phone.send({ type: "UNPAIR" }); // the first phone lets go of it
+    expect((await phone.next("CTL_WELCOME")).tv).toBeNull();
+    await first.expectNone((m) => m.type === "TV_UNPAIRED");
+    expect((await other.nextWhere("CTL_WELCOME", (m) => m.tv?.controllerCount === 1)).tv?.online).toBe(true);
+  });
+
+  it("counts only the phones that control a TV now, and tells the others when one moves on", async () => {
+    const { tv: first, phone, controllerId } = await pairedSetup();
+    phone.send({ type: "CTL_HELLO", controllerId });
+    const code = (await phone.next("CTL_WELCOME")).tv!.controlCode!;
+    const other = await connect();
+    other.send({ type: "CTL_HELLO" });
+    await other.next("CTL_WELCOME");
+    other.send({ type: "PAIR", code });
+    expect((await other.next("CTL_WELCOME")).tv?.controllerCount).toBe(2);
+    await first.next("TV_PAIRED");
+
+    const second = await freeTv();
+    phone.send({ type: "PAIR", code: second.code });
+    expect((await other.nextWhere("CTL_WELCOME", (m) => m.tv?.controllerCount === 1)).tv?.online).toBe(true);
+  });
+
+  it("tells a phone when one of its TVs goes offline or comes back, whichever it controls", async () => {
+    const { first, phone, firstDeviceId } = await twoTvs();
+    first.close();
+    expect((await phone.nextWhere("TVS", (m) => m.tvs.some((tv) => !tv.online))).tvs.map((tv) => tv.online)).toEqual([false, true]);
+
+    const again = await connect();
+    again.send({ type: "TV_HELLO", deviceId: firstDeviceId });
+    await again.next("TV_WELCOME");
+    await phone.nextWhere("TVS", (m) => m.tvs.every((tv) => tv.online));
+  });
+
+  it("lets the phone name the TV it controls, for every list, and take the name away again", async () => {
+    const { phone, controllerId } = await twoTvs();
+    phone.send({ type: "NAME_TV", name: "  Living   room " });
+    const named = await phone.nextWhere("TVS", (m) => m.tvs.some((tv) => tv.name === "Living room"));
+    expect(named.tvs.find((tv) => tv.current)?.name).toBe("Living room");
+    phone.send({ type: "CTL_HELLO", controllerId });
+    expect((await phone.next("CTL_WELCOME")).tv?.name).toBe("Living room");
+
+    phone.send({ type: "NAME_TV", name: "" });
+    const back = await phone.nextWhere("TVS", (m) => m.tvs.every((tv) => tv.name !== "Living room"));
+    expect(back.tvs.find((tv) => tv.current)?.name).toMatch(/^TV [0-9A-F]{4}$/);
+  });
+
+  it("will not name a TV when there is none", async () => {
+    const phone = await connect();
+    phone.send({ type: "CTL_HELLO" });
+    await phone.next("CTL_WELCOME");
+    phone.send({ type: "NAME_TV", name: "Kitchen" });
+    expect((await phone.next("ERROR")).code).toBe("NOT_PAIRED");
+  });
+
+  it("has room for a limited list, and a code turned away for that is not used up", async () => {
+    const { phone } = await pairedSetup();
+    for (let count = 2; count <= MAX_PHONE_TVS; count++) {
+      const next = await freeTv();
+      phone.send({ type: "PAIR", code: next.code });
+      await phone.nextWhere("CTL_WELCOME", (m) => m.tvs?.length === count);
+    }
+    const extra = await freeTv();
+    phone.send({ type: "PAIR", code: extra.code });
+    expect((await phone.next("ERROR")).code).toBe("TV_LIST_FULL");
+
+    const other = await connect();
+    other.send({ type: "CTL_HELLO" });
+    await other.next("CTL_WELCOME");
+    other.send({ type: "PAIR", code: extra.code });
+    expect((await other.next("CTL_WELCOME")).tv).toMatchObject({ online: true });
+  });
+
+  it("never gives a phone the id of a TV", async () => {
+    const { phone, controllerId, firstDeviceId } = await twoTvs();
+    phone.send({ type: "CTL_HELLO", controllerId });
+    expect(JSON.stringify(await phone.next("CTL_WELCOME"))).not.toContain(firstDeviceId);
   });
 });
 
