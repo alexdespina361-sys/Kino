@@ -183,6 +183,71 @@ describe("filmpireSource search", () => {
     expect(await source.search!("   ")).toEqual([]);
     expect(await source.search!("error-trigger")).toEqual([]);
   });
+
+  it("drops unplayable titles (404) and keeps playable ones when verifyPlayback is active", async () => {
+    const searchResults = [
+      { id: 101, media_type: "movie", title: "Playable Movie", release_date: "2022-01-01", poster_path: "/p1.jpg" },
+      { id: 102, media_type: "movie", title: "Unplayable Movie", release_date: "2022-01-01", poster_path: "/p2.jpg" },
+      { id: 201, media_type: "tv", name: "Playable Show", first_air_date: "2022-01-01", poster_path: "/p3.jpg" },
+    ];
+
+    const getTmdb = vi.fn(async () => json({ results: searchResults }));
+    const probe = vi.fn(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("tmdb=101")) {
+        return json({ status_code: "200", data: { title: "Playable Movie" } });
+      }
+      if (urlStr.includes("tmdb=102")) {
+        return json({ status_code: 404 });
+      }
+      if (urlStr.includes("tmdb=201")) {
+        return json({ status_code: "200", data: { title: "Playable Show", eps: { "1": ["1", "2"], "2": ["1"] } } });
+      }
+      return json({}, 404);
+    });
+
+    const source = filmpireSource({ fetch: getTmdb as never, probeFetch: probe as never, verifyPlayback: true });
+    const results = await source.search!("query");
+
+    expect(results.map((r) => r.title)).toEqual(["Playable Movie", "Playable Show"]);
+    expect(probe).toHaveBeenCalledTimes(3);
+
+    // Verify seasons was preloaded from the probe response without querying TMDB!
+    const seasons = await source.seasons!("https://filmpire.sc/watch/201?s=1&e=1");
+    expect(seasons).toEqual([1, 2]);
+    // TMDB was only called once for the search, NOT called for seasons!
+    expect(getTmdb).toHaveBeenCalledTimes(1);
+  });
+
+  it("filters out trash entries like podcasts and zero-vote posterless stubs", async () => {
+    const mixedResults = [
+      { id: 1, media_type: "tv", name: "Valid Show", first_air_date: "2022-01-01", poster_path: "/valid.jpg", vote_count: 50 },
+      { id: 2, media_type: "tv", name: "Show Official Podcast", first_air_date: "2022-01-01", poster_path: "/pod.jpg" },
+      { id: 3, media_type: "movie", title: "Zero Vote Stub", release_date: "2022-01-01", vote_count: 0, popularity: 0.2 },
+    ];
+
+    const getTmdb = vi.fn(async () => json({ results: mixedResults }));
+    const probe = vi.fn(async () => json({ status_code: "200", data: { title: "Valid" } }));
+
+    const source = filmpireSource({ fetch: getTmdb as never, probeFetch: probe as never, verifyPlayback: true, filterTrash: true });
+    const results = await source.search!("query");
+
+    expect(results.map((r) => r.title)).toEqual(["Valid Show"]);
+  });
+
+  it("fails open when playback probe times out or has a network glitch", async () => {
+    const searchResults = [
+      { id: 101, media_type: "movie", title: "Glitchy Movie", release_date: "2022-01-01", poster_path: "/p.jpg" },
+    ];
+    const getTmdb = vi.fn(async () => json({ results: searchResults }));
+    const brokenProbe = vi.fn(async () => Promise.reject(new Error("network error")));
+
+    const source = filmpireSource({ fetch: getTmdb as never, probeFetch: brokenProbe as never, verifyPlayback: true });
+    const results = await source.search!("query");
+
+    // Fails open: title is preserved
+    expect(results.map((r) => r.title)).toEqual(["Glitchy Movie"]);
+  });
 });
 
 describe("filmpireSource similar", () => {

@@ -56,7 +56,71 @@ export interface FilmpireSourceOptions {
   apiKey?: string;
   categories?: FilmpireCategory[];
   fetch?: typeof fetch;
+  probeFetch?: typeof fetch;
   timeoutMs?: number;
+  probeTimeoutMs?: number;
+  /** Whether to probe data.vidsrc.sh during search and drop 404/unplayable items. Default: true when no custom fetch is passed or when probeFetch is given. */
+  verifyPlayback?: boolean;
+  filterTrash?: boolean;
+  now?: () => number;
+}
+
+export interface ProbeRecord {
+  status: 200 | 404;
+  seasons?: number[];
+  checkedAt: number;
+}
+
+const MAX_PROBE_CACHE = 2000;
+const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
+
+export async function probePlayback(
+  id: number,
+  type: "movie" | "tv",
+  fetcher: typeof fetch,
+  cache: Map<string, ProbeRecord>,
+  now: () => number = Date.now,
+  timeoutMs = 1500,
+): Promise<{ ok: boolean; seasons?: number[] }> {
+  const key = `${type}:${id}`;
+  const cached = cache.get(key);
+  if (cached && now() - cached.checkedAt < PROBE_TTL_MS) {
+    return { ok: cached.status === 200, seasons: cached.seasons };
+  }
+
+  try {
+    const res = await fetcher(`https://data.vidsrc.sh/api.php?type=${type}&tmdb=${id}`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.status === 404) {
+      if (cache.size >= MAX_PROBE_CACHE) cache.delete(cache.keys().next().value!);
+      cache.set(key, { status: 404, checkedAt: now() });
+      return { ok: false };
+    }
+    if (!res.ok) return { ok: true };
+    const data = (await res.json()) as { status_code?: string | number; data?: { eps?: Record<string, unknown[]> } };
+    const statusCode = String(data?.status_code ?? "");
+    if (statusCode === "404") {
+      if (cache.size >= MAX_PROBE_CACHE) cache.delete(cache.keys().next().value!);
+      cache.set(key, { status: 404, checkedAt: now() });
+      return { ok: false };
+    }
+    if (statusCode === "200") {
+      let seasons: number[] | undefined;
+      if (type === "tv" && data?.data?.eps) {
+        seasons = Object.keys(data.data.eps)
+          .map(Number)
+          .filter((n) => Number.isInteger(n) && n >= 1)
+          .sort((a, b) => a - b);
+      }
+      if (cache.size >= MAX_PROBE_CACHE) cache.delete(cache.keys().next().value!);
+      cache.set(key, { status: 200, seasons, checkedAt: now() });
+      return { ok: true, seasons };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: true };
+  }
 }
 
 const TmdbItemSchema = z.object({
@@ -69,6 +133,8 @@ const TmdbItemSchema = z.object({
   backdrop_path: z.string().nullable().optional(),
   overview: z.string().optional(),
   media_type: z.enum(["movie", "tv", "person"]).optional(),
+  popularity: z.number().optional(),
+  vote_count: z.number().optional(),
 });
 
 const TmdbResponseSchema = z.object({
@@ -140,11 +206,33 @@ function parseWatchLink(link: string): { id: number; type: "movie" | "tv" } | nu
   }
 }
 
+function isTrashItem(raw: unknown): boolean {
+  const parsed = TmdbItemSchema.safeParse(raw);
+  if (!parsed.success) return true;
+  const doc = parsed.data;
+  if (doc.media_type === "person") return true;
+  const title = (doc.title || doc.name)?.trim();
+  if (!title) return true;
+  const lower = title.toLowerCase();
+  if (lower.includes("podcast")) return true;
+  if (!doc.poster_path && !doc.backdrop_path && (doc.vote_count === 0 || (doc.popularity !== undefined && doc.popularity < 1.0))) {
+    return true;
+  }
+  return false;
+}
+
 export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySource {
   const apiKey = options.apiKey ?? FILMPIRE_TMDB_API_KEY;
   const categories = options.categories ?? FILMPIRE_CATEGORIES;
   const get = options.fetch ?? fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
+  const probeCache = new Map<string, ProbeRecord>();
+  const preloadedSeasons = new Map<number, number[]>();
+  const now = options.now ?? Date.now;
+  const shouldVerify = options.verifyPlayback ?? (process.env.FILTER_UNPLAYABLE !== "0" && (!options.fetch || options.probeFetch !== undefined));
+  const shouldFilterTrash = options.filterTrash ?? (process.env.FILTER_TRASH !== "0" && (!options.fetch || options.probeFetch !== undefined));
+  const probeFetcher = options.probeFetch ?? (options.fetch ?? fetch);
+  const probeTimeout = options.probeTimeoutMs ?? 1500;
 
   const loadCategory = async (cat: FilmpireCategory): Promise<LibraryRow> => {
     const separator = cat.path.includes("?") ? "&" : "?";
@@ -185,9 +273,31 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
         if (!res.ok) return [];
         const data = TmdbResponseSchema.parse(await res.json());
-        return data.results
+
+        const candidateResults = shouldFilterTrash
+          ? data.results.filter((item) => !isTrashItem(item))
+          : data.results;
+
+        const items = candidateResults
           .map((item) => toLibraryItem(item))
           .filter((item): item is LibraryItem => item !== null);
+
+        if (!shouldVerify || items.length === 0) return items;
+
+        const probeResults = await Promise.all(
+          items.map(async (item) => {
+            const parsed = parseWatchLink(item.url);
+            if (!parsed) return item;
+            const probe = await probePlayback(parsed.id, parsed.type, probeFetcher, probeCache, now, probeTimeout);
+            if (!probe.ok) return null;
+            if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
+              preloadedSeasons.set(parsed.id, probe.seasons);
+            }
+            return item;
+          }),
+        );
+
+        return probeResults.filter((item): item is LibraryItem => item !== null);
       } catch {
         return [];
       }
@@ -202,9 +312,31 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       if (res.status === 404) return [];
       if (!res.ok) throw new Error(`similar: HTTP ${res.status}`);
       const data = TmdbResponseSchema.parse(await res.json());
-      return data.results
+
+      const candidateResults = shouldFilterTrash
+        ? data.results.filter((item) => !isTrashItem(item))
+        : data.results;
+
+      const items = candidateResults
         .map((item) => toLibraryItem(item, title.type))
         .filter((item): item is LibraryItem => item !== null);
+
+      if (!shouldVerify || items.length === 0) return items;
+
+      const probeResults = await Promise.all(
+        items.map(async (item) => {
+          const parsed = parseWatchLink(item.url);
+          if (!parsed) return item;
+          const probe = await probePlayback(parsed.id, parsed.type, probeFetcher, probeCache, now, probeTimeout);
+          if (!probe.ok) return null;
+          if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
+            preloadedSeasons.set(parsed.id, probe.seasons);
+          }
+          return item;
+        }),
+      );
+
+      return probeResults.filter((item): item is LibraryItem => item !== null);
     },
     async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
       const title = parseWatchLink(link);
@@ -233,6 +365,8 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     async seasons(link: string): Promise<number[]> {
       const title = parseWatchLink(link);
       if (title?.type !== "tv") return [];
+      const preloaded = preloadedSeasons.get(title.id);
+      if (preloaded && preloaded.length > 0) return preloaded;
       // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
       const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
       if (!res.ok) throw new Error(`seasons: HTTP ${res.status}`);

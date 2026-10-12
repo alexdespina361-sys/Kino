@@ -3,7 +3,7 @@ import path from "node:path";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
-import type { Registration } from "../shared";
+import { isHttpUrl, type Registration } from "../shared";
 import type { PasswordCost } from "./accounts/password";
 import { accountRoutes } from "./accounts/routes";
 import type { AccountStore } from "./accounts/store";
@@ -113,6 +113,13 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   app.get<{ Querystring: { q?: string } }>("/api/library/search", async (request, reply) => {
     const q = request.query.q ?? "";
     const items = await library.search(q);
+    const topItem = items[0];
+    if (topItem?.url && process.env.PRELOAD_SEARCH !== "0" && isHttpUrl(topItem.url)) {
+      const timer = setTimeout(() => {
+        resolve(topItem.url, true).catch(() => {});
+      }, 200);
+      timer.unref?.();
+    }
     return reply.send({ items });
   });
   app.get<{ Querystring: { url?: string } }>("/api/library/similar", async (request, reply) => {
