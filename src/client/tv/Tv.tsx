@@ -26,6 +26,7 @@ import { FullscreenIcon, MutedIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from 
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
+import { useSlow, useWaking } from "../shared/useSlow";
 import { friendlyError, noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
@@ -48,7 +49,6 @@ import {
   serializePrefs,
   type Prefs,
 } from "./prefs";
-import { useSlow } from "./useSlow";
 import { useWakeLock } from "./useWakeLock";
 import "./tv.css";
 
@@ -123,6 +123,8 @@ export function Tv() {
   const putOnAtOnceRef = useRef<NormalizedMedia | null>(null);
   /** Waiting for a picture (a lookup, loading, filling up) for too long: a way out is offered. */
   const stuck = useSlow(isBusy(player, resolving));
+  /** The server has not answered for a while: say why that can be, instead of "Reconnecting…" alone. */
+  const waking = useWaking(connection);
 
   // Netflix Up Next Countdown & Preload State
   const [upNextCountdown, setUpNextCountdown] = useState<number | null>(null);
@@ -1355,7 +1357,7 @@ export function Tv() {
 
       {unlocked && connection !== "open" && (
         <div className="tv-banner" data-testid="tv-banner">
-          {connection === "replaced" ? t("tv.bannerReplaced") : connection === "connecting" ? t("tv.connecting") : t("tv.bannerReconnecting")}
+          {connection === "replaced" ? t("tv.bannerReplaced") : waking ? t("server.waking") : connection === "connecting" ? t("tv.connecting") : t("tv.bannerReconnecting")}
         </div>
       )}
 

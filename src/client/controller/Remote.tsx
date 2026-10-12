@@ -19,7 +19,7 @@ import {
 import { friendlyError, trackName } from "../shared/words";
 import { SeekBar } from "./SeekBar";
 
-export type SheetKind = "link" | "menu" | "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes" | "party";
+export type SheetKind = "link" | "menu" | "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes" | "party" | "tvs";
 
 interface RemoteProps {
   tv: TvInfo;

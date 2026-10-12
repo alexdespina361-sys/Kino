@@ -2,12 +2,14 @@ import type { WebSocket } from "ws";
 import {
   IDLE_STATE,
   MAX_FOLLOWERS,
+  MAX_PHONE_TVS,
   parseClientMessage,
   withHint,
   type ClientMessage,
   type Command,
   type PartyTv,
   type PartyView,
+  type PhoneTv,
   type PlayHint,
   type ResolveStatus,
   type ServerMessage,
@@ -88,6 +90,7 @@ export class Hub {
         const device = this.registry.getDevice(conn.deviceId);
         if (device) this.registry.checkpoint(device); // where it had got is written down exactly, in case the page is not opened again for a while
         if (device) this.toControllers(device, { type: "TV_STATUS", online: false });
+        if (device) this.tellPhones(device);
         // The rest of its party sees it go offline.
         const host = device && (this.registry.leaderOf(device) ?? device);
         if (host && this.registry.inParty(host)) this.sendParty(host);
@@ -142,6 +145,7 @@ export class Hub {
       ...(leader ? { following: this.registry.displayName(leader) } : {}),
     });
     this.toControllers(device, { type: "TV_STATUS", online: true });
+    this.tellPhones(device);
     if (leader) {
       this.catchUp(device, leader); // a page that was reloaded mid-film picks up where the others are
       this.sendParty(leader);
@@ -178,6 +182,7 @@ export class Hub {
       if (first) this.restore(device);
     } else if (message.type === "TV_NAME") {
       this.registry.setLabel(device, message.name);
+      this.tellPhones(device);
       const host = this.registry.leaderOf(device) ?? device;
       if (this.registry.inParty(host)) this.sendParty(host);
     } else if (message.type === "TV_PARTY_OPEN") {
@@ -224,11 +229,12 @@ export class Hub {
         return;
       }
       const followers = this.registry.followersOf(device);
-      const controllers = this.registry.controllersOf(device);
+      const phones = this.registry.phonesOf(device);
       this.registry.unpairDevice(device);
       this.resetTv(device);
       followers.forEach((follower) => this.resetTv(follower));
-      controllers.forEach((c) => this.sendWelcome(c));
+      // The phones that were controlling it are back on the code screen; the ones that had moved on to another TV only lose it from their list.
+      phones.forEach((phone) => (phone.deviceId === null ? this.sendWelcome(phone) : this.sendTvs(phone)));
     }
   }
 
@@ -252,20 +258,43 @@ export class Hub {
             name: device.name,
             online: this.tvs.has(device.id),
             controlCode: controlCode?.code,
-            controllerCount: device.controllerIds.length,
+            controllerCount: this.registry.controllersOf(device).length,
           }
         : null,
       media: device?.media ?? null,
       state: device?.state ?? IDLE_STATE,
       party: device ? this.partyOf(device) : [],
+      tvs: this.tvList(controller),
     });
+  }
+
+  /** The TVs a phone has connected to, as its list shows them. */
+  private tvList(controller: Controller): PhoneTv[] {
+    return this.registry.tvsOf(controller).map((device) => ({
+      id: device.publicId,
+      name: device.name,
+      ...(device.label ? { label: device.label } : {}),
+      online: this.tvs.has(device.id),
+      current: device.id === controller.deviceId,
+    }));
+  }
+
+  private sendTvs(controller: Controller): void {
+    this.toController(controller.id, { type: "TVS", tvs: this.tvList(controller) });
+  }
+
+  /** Every phone that has this TV on its list is told how the list looks now: the TV came or went, or was named. */
+  private tellPhones(device: Device): void {
+    for (const phone of this.registry.phonesOf(device)) this.sendTvs(phone);
   }
 
   private fromController(controllerId: string, message: ClientMessage): void {
     const controller = this.registry.controllerHello(controllerId);
     if (message.type === "PAIR") return this.pair(controller, message.code);
     if (message.type === "PLAY_URL") return void this.playUrl(controller, message.url, message.startAt, message.hint);
-    if (message.type === "UNPAIR") return this.unpair(controller);
+    if (message.type === "UNPAIR") return this.unpair(controller, message.id);
+    if (message.type === "SWITCH_TV") return this.switchTv(controller, message.id);
+    if (message.type === "NAME_TV") return this.nameTv(controller, message.name);
     if (message.type === "ADD_TV") return this.addTv(controller, message.code);
     if (message.type === "REMOVE_TV") return this.removeTv(controller, message.id);
     if (message.type === "OPEN_PARTY") return this.openParty(controller);
@@ -297,10 +326,12 @@ export class Hub {
   }
 
   private pair(controller: Controller, code: string): void {
-    if (controller.deviceId) return this.error(controller.id, "ALREADY_PAIRED", "Already connected to a TV.");
+    // A phone that has a TV is not turned away: that TV stays on its list, as it was, and the one this code belongs to is the one it controls now.
+    if (this.registry.isFull(controller)) return this.error(controller.id, "TV_LIST_FULL", `A phone can keep ${MAX_PHONE_TVS} TVs. Forget one first.`);
     // While blocked the code is not even checked, so a right guess gets no answer different from a wrong one.
     if (this.pairingPaused()) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
 
+    const before = this.registry.deviceForController(controller);
     let device = this.registry.pair(controller, code);
     let isNewPair = true;
     if (!device) {
@@ -322,6 +353,43 @@ export class Hub {
         if (other.id !== controller.id) this.sendWelcome(other);
       }
     }
+    this.tellLeftBehind(controller, before, device);
+  }
+
+  /** A phone moved on from `before` to `now`: the phones still controlling `before` have one less with them. */
+  private tellLeftBehind(controller: Controller, before: Device | undefined, now: Device): void {
+    if (!before || before === now) return;
+    for (const other of this.registry.controllersOf(before)) {
+      if (other.id !== controller.id) this.sendWelcome(other);
+    }
+  }
+
+  /** The phone controls another TV of its list. The one it leaves is not touched: it carries on as it was, still paired with this phone. */
+  private switchTv(controller: Controller, id: string): void {
+    const before = this.registry.deviceForController(controller);
+    const device = this.registry.switchTo(controller, id);
+    if (!device) {
+      this.error(controller.id, "NOT_YOUR_TV", "That TV is not on your list any more.");
+      return this.sendTvs(controller); // (what the phone shows may be out of date: the TV disconnected it)
+    }
+    if (device !== before) {
+      this.send(this.tvs.get(device.id), { type: "TV_PAIRED" }); // a phone has come back to it
+      for (const other of this.registry.controllersOf(device)) {
+        if (other.id !== controller.id) this.sendWelcome(other);
+      }
+      this.tellLeftBehind(controller, before, device);
+    }
+    this.sendWelcome(controller);
+  }
+
+  /** The phone names the TV it controls: it is called that on every list from now on (a phone of its own and the others'). */
+  private nameTv(controller: Controller, name: string): void {
+    const device = this.registry.deviceForController(controller);
+    if (!device) return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
+    this.registry.rename(device, name);
+    this.tellPhones(device);
+    const host = this.registry.leaderOf(device) ?? device;
+    if (this.registry.inParty(host)) this.sendParty(host);
   }
 
   /** Wrong codes only count against the limit for so long. True while too many were tried recently. */
@@ -331,20 +399,25 @@ export class Hub {
     return this.failedPairings.length >= this.maxFailedPairings;
   }
 
-  /** The phone forgets its TV: the TV stops, gets a fresh code, and the phone is sent back to the code screen. */
-  private unpair(controller: Controller): void {
-    const leader = this.registry.deviceForController(controller);
+  /**
+   * The phone forgets a TV (the one it controls, or one on its list). A TV that is left with no phone stops, gets a fresh code and
+   * loses its party; the phone is sent back to the code screen if it was the TV it controlled, and is told its shorter list if not.
+   */
+  private unpair(controller: Controller, id?: string): void {
+    const leader = id === undefined ? this.registry.deviceForController(controller) : this.registry.tvsOf(controller).find((tv) => tv.publicId === id);
+    const wasCurrent = leader !== undefined && leader.id === controller.deviceId;
     const followers = leader ? this.registry.followersOf(leader) : [];
-    const device = this.registry.unpair(controller);
+    const device = this.registry.unpair(controller, id);
     if (device) {
       this.resetTv(device);
       followers.forEach((follower) => this.resetTv(follower)); // the TVs watching along lose their party
-    } else if (leader) {
+    } else if (leader && wasCurrent) {
       for (const other of this.registry.controllersOf(leader)) {
         this.sendWelcome(other);
       }
     }
-    this.sendWelcome(controller);
+    if (id === undefined || wasCurrent) this.sendWelcome(controller);
+    else this.sendTvs(controller);
   }
 
   /* ------------------------------ watching together ------------------------------ */

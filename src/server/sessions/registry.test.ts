@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_PHONE_TVS } from "../../shared";
 import { KEEP_RESUME_DAYS, Registry, cleanLabel, generatePairingCode } from "./registry";
 
 function setup(options: ConstructorParameters<typeof Registry>[0] = {}) {
@@ -194,6 +195,131 @@ describe("Registry: unpair", () => {
     expect(device.media).toBeNull();
     expect(registry.ensureCode(device)?.code).toBe("222222");
     expect(registry.unpairDevice(device)).toBeNull(); // nothing left to let go of
+  });
+});
+
+describe("Registry: a phone with several TVs", () => {
+  /** A phone that has connected to `count` TVs one after the other: the last is the one it controls. */
+  function withTvs(count = 2) {
+    const { registry, advance } = setup();
+    const phone = registry.controllerHello();
+    const tvs = Array.from({ length: count }, () => {
+      const tv = registry.tvHello();
+      registry.pair(phone, registry.ensureCode(tv)!.code);
+      return tv;
+    });
+    return { registry, advance, phone, tvs };
+  }
+  const stranger = (registry: Registry) => {
+    const tv = registry.tvHello();
+    registry.pair(registry.controllerHello(), registry.ensureCode(tv)!.code);
+    return tv;
+  };
+
+  it("keeps the TV it moves on from: still paired, showing no code, and on the phone's list", () => {
+    const {
+      registry,
+      phone,
+      tvs: [first, second],
+    } = withTvs();
+    expect(phone.deviceId).toBe(second!.id);
+    expect(registry.tvsOf(phone)).toEqual([first, second]);
+    expect(first!.controllerId).toBe(phone.id);
+    expect(registry.ensureCode(first!)).toBeNull();
+    expect(registry.controllersOf(first!)).toEqual([]); // nobody is controlling it now ...
+    expect(registry.phonesOf(first!)).toEqual([phone]); // ... but it is still this phone's
+  });
+
+  it("goes back to a TV of the list by the id the list gave it, and to no other", () => {
+    const {
+      registry,
+      phone,
+      tvs: [first, second],
+    } = withTvs();
+    expect(registry.switchTo(phone, first!.publicId)).toBe(first);
+    expect(phone.deviceId).toBe(first!.id);
+    expect(registry.controllersOf(first!)).toEqual([phone]);
+    expect(registry.controllersOf(second!)).toEqual([]);
+    expect(registry.tvsOf(phone)).toEqual([first, second]); // the order of the list is the order they were connected in, whichever is in use
+
+    expect(registry.switchTo(phone, stranger(registry).publicId)).toBeNull(); // someone else's TV
+    expect(registry.switchTo(phone, "nothing")).toBeNull();
+    expect(phone.deviceId).toBe(first!.id);
+  });
+
+  it("lets go of one TV of the list, which is then free, and keeps the others", () => {
+    const {
+      registry,
+      phone,
+      tvs: [first, second],
+    } = withTvs();
+    first!.media = { stream: { url: "/x.mp4", type: "mp4" } };
+    expect(registry.unpair(phone, first!.publicId)).toBe(first);
+    expect(first!.media).toBeNull();
+    expect(first!.controllerIds).toEqual([]);
+    expect(registry.ensureCode(first!)).not.toBeNull(); // it asks for a pairing again
+    expect(registry.tvsOf(phone)).toEqual([second]);
+    expect(phone.deviceId).toBe(second!.id); // the one it controls is not the one it forgot
+  });
+
+  it("lets go of the TV it controls, and the list keeps the rest", () => {
+    const {
+      registry,
+      phone,
+      tvs: [first, second],
+    } = withTvs();
+    expect(registry.unpair(phone)).toBe(second);
+    expect(phone.deviceId).toBeNull();
+    expect(registry.tvsOf(phone)).toEqual([first]);
+    expect(registry.ensureCode(first!)).toBeNull(); // (still paired: it was not forgotten)
+    expect(registry.switchTo(phone, first!.publicId)).toBe(first);
+  });
+
+  it("does not free a TV that another phone still has", () => {
+    const { registry, phone, tvs } = withTvs();
+    const [first] = tvs;
+    const other = registry.controllerHello();
+    registry.joinController(other, registry.ensureControlCode(first!).code);
+    expect(registry.unpair(phone, first!.publicId)).toBeNull();
+    expect(first!.controllerIds).toEqual([other.id]);
+    expect(first!.controllerId).toBe(other.id);
+    expect(registry.ensureCode(first!)).toBeNull();
+  });
+
+  it("lets the TV take itself off every list, the phones that had moved on included", () => {
+    const {
+      registry,
+      phone,
+      tvs: [first, second],
+    } = withTvs();
+    registry.unpairDevice(first!);
+    expect(registry.tvsOf(phone)).toEqual([second]);
+    expect(phone.deviceId).toBe(second!.id); // it was not the one in use
+    registry.unpairDevice(second!);
+    expect(registry.tvsOf(phone)).toEqual([]);
+    expect(phone.deviceId).toBeNull();
+  });
+
+  it("counts a list as full at the limit", () => {
+    const { registry, phone } = withTvs(MAX_PHONE_TVS - 1);
+    expect(registry.isFull(phone)).toBe(false);
+    const last = registry.tvHello();
+    registry.pair(phone, registry.ensureCode(last)!.code);
+    expect(registry.isFull(phone)).toBe(true);
+    registry.unpair(phone, last.publicId);
+    expect(registry.isFull(phone)).toBe(false);
+  });
+
+  it("names a TV, cleaned up like a name on any list, and gives it its own name back for an empty one", () => {
+    const { registry, tvs } = withTvs(1);
+    const tv = tvs[0]!;
+    const own = tv.name;
+    expect(own).toMatch(/^TV [0-9A-F]{4}$/);
+    registry.rename(tv, "  Living\u0000   room ");
+    expect(tv.name).toBe("Living room");
+    expect(registry.displayName(tv)).toBe("Living room");
+    registry.rename(tv, "   ");
+    expect(tv.name).toBe(own);
   });
 });
 

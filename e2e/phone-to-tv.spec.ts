@@ -266,9 +266,18 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(phone.getByTestId("tv-away")).toContainText("The TV is offline");
     await expect(phone.getByTestId("player-state")).toHaveCount(0);
 
+    // The way out is the list of TVs, where another one is connected with its code. The one that is off stays on the list: it comes back by itself.
+    const other = await openTv(browser);
     await phone.getByTestId("connect-another").click();
-    await expect(phone.getByTestId("code-input")).toBeVisible();
-    await expect(phone.getByTestId("pair-notice")).toHaveCount(0); // the phone chose to leave: nothing was lost
+    await expect(phone.getByTestId("tvs-sheet")).toBeVisible();
+    await expect(phone.getByTestId("tv-row")).toHaveCount(1);
+    await expect(phone.getByTestId("tv-row")).toHaveAttribute("data-online", "false");
+    await phone.getByTestId("tvs-code").fill(await readPairingCode(other));
+    await expect(phone.getByTestId("tvs-sheet")).toHaveCount(0);
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    await expect(phone.getByTestId("pair-notice")).toHaveCount(0);
+    await phone.getByTestId("menu").click();
+    await expect(phone.getByTestId("tvs-open")).toHaveText("My TVs · 2");
   });
 
   test("the TV's name and its state fit the header of a narrow phone", async ({ browser }) => {

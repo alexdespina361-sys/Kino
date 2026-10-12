@@ -309,23 +309,31 @@ test.describe("a phone that has a TV scans another one", () => {
     await expect(first.getByTestId("tv-paired")).toBeVisible(); // the phone still has its own TV
   });
 
-  test("or the phone can move over to it, and the first TV is let go", async ({ browser }) => {
+  test("or the phone can move over to it, and the first TV stays paired and on its list", async ({ browser }) => {
     const { first, phone, second } = await scanned(browser);
+    await expect(phone.getByTestId("other-tv-sheet")).toContainText("stays on your list");
     await phone.getByTestId("other-switch").click();
     await expect(second.getByTestId("tv-paired")).toBeVisible();
-    await expect(first.getByTestId("pairing-code")).toBeVisible();
+    await expect(first.getByTestId("tv-paired")).toBeVisible(); // not let go: it only has no phone controlling it now
+    await expect(first.getByTestId("pairing-code")).toHaveCount(0);
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    await phone.getByTestId("menu").click();
+    await expect(phone.getByTestId("tvs-open")).toHaveText("My TVs · 2");
   });
 
-  test("moving over says what it costs when the first TV leads a watch party", async ({ browser }) => {
-    const { phone } = await scanned(browser);
-    await expect(phone.getByTestId("other-tv-sheet")).not.toContainText("watch party it leads");
+  test("moving over leaves the watch party the first TV leads running", async ({ browser }) => {
+    const { phone, second } = await scanned(browser);
     await phone.getByTestId("other-add").click();
     await expect(phone.getByTestId("party-tv")).toHaveCount(1);
+    await expect(second.getByTestId("tv-following")).toBeVisible();
 
     const third = await openTv(browser);
     await phone.goto(`/?code=${await readPairingCode(third)}`);
-    await expect(phone.getByTestId("other-tv-sheet")).toContainText("The watch party it leads ends, too.");
+    await expect(phone.getByTestId("other-tv-sheet")).toBeVisible();
+    await phone.getByTestId("other-switch").click();
+    await expect(third.getByTestId("tv-paired")).toBeVisible();
+    await expect(second.getByTestId("tv-following")).toBeVisible(); // still watching along with the first TV
+    await expect(phone.getByTestId("party-count")).toHaveCount(0); // (this phone's TV is the third now, which has no party)
   });
 
   test("or nothing happens at all", async ({ browser }) => {
@@ -374,7 +382,7 @@ test.describe("a phone that has a TV scans another one", () => {
     await expect(phone.getByTestId("other-switch")).toBeVisible();
 
     await phone.getByTestId("other-switch").click();
-    await expect(first.getByTestId("pairing-code")).toBeVisible(); // its only phone left, so it is free again
+    await expect(first.getByTestId("tv-paired")).toBeVisible(); // the phone has only moved on from it: it is still the phone's
     await expect(second.getByTestId("tv-flash")).toHaveText("A phone is connected.");
     await phone.getByTestId("menu").click();
     await expect(phone.getByTestId("control-card")).toContainText("2 connected");

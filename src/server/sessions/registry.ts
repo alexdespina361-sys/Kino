@@ -2,6 +2,7 @@ import { randomBytes, randomInt } from "node:crypto";
 import {
   IDLE_STATE,
   MAX_FOLLOWERS,
+  MAX_PHONE_TVS,
   PAIRING_CODE_TTL_MS,
   reachedEnd,
   type NormalizedMedia,
@@ -64,7 +65,14 @@ export interface ResumeRecord {
 
 export interface Controller {
   id: string;
+  /** The TV this phone is controlling now. */
   deviceId: string | null;
+  /**
+   * Every TV this phone has connected to and has not let go of, in the order it did (`deviceId` is one of them). A phone moving on to
+   * another TV leaves the first one as it was: paired, playing, and on this list, so the phone can come back to it without a code.
+   * Only the phone (forgetting it) or the TV (disconnecting) takes a TV off.
+   */
+  deviceIds: string[];
 }
 
 export type JoinResult =
@@ -81,6 +89,9 @@ export function cleanLabel(name: string): string | null {
   const label = name.replace(/[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 40).trim();
   return label || null;
 }
+
+/** What a TV is called until someone names it. */
+const defaultName = (id: string) => `TV ${id.slice(-4).toUpperCase()}`;
 
 export interface RegistryOptions {
   now?: () => number;
@@ -107,7 +118,10 @@ export interface DeviceRecord {
 /** A phone that has a TV. */
 export interface ControllerRecord {
   id: string;
-  deviceId: string;
+  /** The TV it was controlling; none when it had moved on from all of them (it still has them on its list). */
+  deviceId: string | null;
+  /** Its list of TVs. A record written before there was a list has none: the list is then the one TV it had. */
+  deviceIds?: string[];
   seenDay: number;
 }
 
@@ -187,7 +201,9 @@ export class Registry {
         ...(device.resume ? { resume: resumeRecord(device.resume) } : {}),
       }));
     const controllers = [...this.controllers.values()].flatMap((controller) =>
-      controller.deviceId ? [{ id: controller.id, deviceId: controller.deviceId, seenDay: this.seenDays.get(controller.id) ?? today }] : [],
+      controller.deviceIds.length > 0
+        ? [{ id: controller.id, deviceId: controller.deviceId, deviceIds: [...controller.deviceIds], seenDay: this.seenDays.get(controller.id) ?? today }]
+        : [],
     );
     return { devices, controllers };
   }
@@ -214,16 +230,17 @@ export class Registry {
     }
     for (const record of controllers) {
       if (record.seenDay < horizon || this.controllers.has(record.id)) continue;
-      this.controllers.set(record.id, { id: record.id, deviceId: record.deviceId });
+      const listed = record.deviceIds ?? (record.deviceId ? [record.deviceId] : []);
+      this.controllers.set(record.id, { id: record.id, deviceId: record.deviceId, deviceIds: [...new Set(listed)].slice(0, MAX_PHONE_TVS) });
       this.seenDays.set(record.id, record.seenDay);
     }
-    // A phone and its TV have to agree, and so do a host and its guests: what only one side remembers is let go.
+    // A phone and its TVs have to agree, and so do a host and its guests: what only one side remembers is let go.
     for (const controller of this.controllers.values()) {
-      const device = controller.deviceId ? this.devices.get(controller.deviceId) : undefined;
-      if (!device?.controllerIds.includes(controller.id)) controller.deviceId = null;
+      controller.deviceIds = controller.deviceIds.filter((id) => this.devices.get(id)?.controllerIds.includes(controller.id));
+      if (controller.deviceId && !controller.deviceIds.includes(controller.deviceId)) controller.deviceId = null;
     }
     for (const device of this.devices.values()) {
-      device.controllerIds = device.controllerIds.filter((id) => this.controllers.get(id)?.deviceId === device.id);
+      device.controllerIds = device.controllerIds.filter((id) => this.controllers.get(id)?.deviceIds.includes(device.id));
       if (!device.controllerId || !device.controllerIds.includes(device.controllerId)) device.controllerId = device.controllerIds[0] ?? null;
       const host = device.leaderId ? this.devices.get(device.leaderId) : undefined;
       if (!host?.followerIds.includes(device.id)) device.leaderId = null;
@@ -242,7 +259,7 @@ export class Registry {
     const device: Device = {
       id,
       publicId: randomBytes(6).toString("hex"),
-      name: `TV ${id.slice(-4).toUpperCase()}`,
+      name: defaultName(id),
       label: null,
       partyCode: null,
       code: null,
@@ -363,7 +380,7 @@ export class Registry {
       this.markSeen(existing.id);
       return existing;
     }
-    const controller: Controller = { id: newId("ctl"), deviceId: null };
+    const controller: Controller = { id: newId("ctl"), deviceId: null, deviceIds: [] };
     this.controllers.set(controller.id, controller);
     this.markSeen(controller.id);
     return controller;
@@ -386,14 +403,25 @@ export class Registry {
     return expired ? null : device;
   }
 
+  /** The phone's list has no room for a TV it is not already on (see `MAX_PHONE_TVS`). */
+  isFull(controller: Controller): boolean {
+    return controller.deviceIds.length >= MAX_PHONE_TVS;
+  }
+
+  /** The phone is a remote of `device` and controls it from now on. A TV it controlled before is left as it was, on the phone's list. */
+  private connect(controller: Controller, device: Device): void {
+    if (!device.controllerId) device.controllerId = controller.id;
+    if (!device.controllerIds.includes(controller.id)) device.controllerIds.push(controller.id);
+    if (!controller.deviceIds.includes(device.id)) controller.deviceIds.push(device.id);
+    controller.deviceId = device.id;
+    this.onChange?.();
+  }
+
   /** Consume a pairing code and link controller <-> device. Returns the device, or null if the code is bad. */
   pair(controller: Controller, code: string): Device | null {
     const device = this.takeCode(code);
     if (!device) return null;
-    device.controllerId = controller.id;
-    if (!device.controllerIds.includes(controller.id)) device.controllerIds.push(controller.id);
-    controller.deviceId = device.id;
-    this.onChange?.();
+    this.connect(controller, device);
     return device;
   }
 
@@ -421,15 +449,34 @@ export class Registry {
       device.controlCode = null;
       return null;
     }
-    controller.deviceId = device.id;
-    if (!device.controllerIds.includes(controller.id)) device.controllerIds.push(controller.id);
-    if (!device.controllerId) device.controllerId = controller.id;
-    this.onChange?.();
+    this.connect(controller, device);
     return device;
   }
 
-  controllersOf(device: Device): Controller[] {
+  /** Every phone that is a remote of this TV, the ones that have moved on to another TV included. */
+  phonesOf(device: Device): Controller[] {
     return device.controllerIds.flatMap((id) => this.controllers.get(id) ?? []);
+  }
+
+  /** The phones that are controlling this TV now: the ones that hear what it is doing. */
+  controllersOf(device: Device): Controller[] {
+    return this.phonesOf(device).filter((controller) => controller.deviceId === device.id);
+  }
+
+  /** The TVs a phone has connected to, in the order it did. */
+  tvsOf(controller: Controller): Device[] {
+    return controller.deviceIds.flatMap((id) => this.devices.get(id) ?? []);
+  }
+
+  /** The phone controls another TV of its list (by the id the list gave it). Null when that TV is not on the list. */
+  switchTo(controller: Controller, publicId: string): Device | null {
+    const device = this.tvsOf(controller).find((candidate) => candidate.publicId === publicId);
+    if (!device) return null;
+    if (controller.deviceId !== device.id) {
+      controller.deviceId = device.id;
+      this.onChange?.();
+    }
+    return device;
   }
 
   /** The phone's TV gets company: another TV's code makes that TV watch along. */
@@ -474,6 +521,12 @@ export class Registry {
 
   setLabel(device: Device, name: string): void {
     device.label = cleanLabel(name);
+    this.onChange?.();
+  }
+
+  /** A phone names the TV it controls, cleaned up like any name on a list. Nothing, or only blanks, gives the TV its own name back. */
+  rename(device: Device, name: string): void {
+    device.name = cleanLabel(name) ?? defaultName(device.id);
     this.onChange?.();
   }
 
@@ -571,12 +624,20 @@ export class Registry {
     return controller.deviceId ? this.devices.get(controller.deviceId) : undefined;
   }
 
-  /** The phone lets go of its TV. The TV is unpaired again (ensureCode issues it a fresh code) and idle. */
-  unpair(controller: Controller): Device | null {
-    const device = this.deviceForController(controller);
-    controller.deviceId = null;
+  /**
+   * The phone lets go of a TV: the one it controls, or one on its list (by the id the list gave it). That TV forgets the phone. A TV
+   * left with no phone at all is unpaired again (ensureCode issues it a fresh code) and idle, and is the one returned.
+   */
+  unpair(controller: Controller, publicId?: string): Device | null {
+    const device = publicId === undefined ? this.deviceForController(controller) : this.tvsOf(controller).find((candidate) => candidate.publicId === publicId);
+    if (!device) {
+      if (publicId === undefined) controller.deviceId = null;
+      this.onChange?.();
+      return null;
+    }
+    controller.deviceIds = controller.deviceIds.filter((id) => id !== device.id);
+    if (controller.deviceId === device.id) controller.deviceId = null;
     this.onChange?.();
-    if (!device) return null;
     device.controllerIds = device.controllerIds.filter((id) => id !== controller.id);
     if (device.controllerIds.length > 0) {
       if (device.controllerId === controller.id) {
@@ -587,20 +648,22 @@ export class Registry {
     return this.release(device);
   }
 
-  /** The TV lets go of its phone (the same end state as `unpair`). Returns the phone that was paired, if any. */
+  /** The TV lets go of its phones, the ones that have moved on to another TV included (the same end state as `unpair`). Returns the phone that was paired, if any. */
   unpairDevice(device: Device): Controller | null {
     if (device.leaderId) {
       this.detachFollower(device);
       return null;
     }
-    const controllers = this.controllersOf(device);
-    for (const controller of controllers) controller.deviceId = null;
     const primary = device.controllerId ? this.controllers.get(device.controllerId) : undefined;
     this.release(device);
     return primary ?? null;
   }
 
   private release(device: Device): Device {
+    for (const phone of this.phonesOf(device)) {
+      phone.deviceIds = phone.deviceIds.filter((id) => id !== device.id);
+      if (phone.deviceId === device.id) phone.deviceId = null;
+    }
     // A TV that was being followed takes its followers down with it: they go back to their own pairing screens.
     for (const follower of this.followersOf(device)) {
       follower.leaderId = null;
