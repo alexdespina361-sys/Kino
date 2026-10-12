@@ -42,6 +42,8 @@ export class Hub {
   private readonly resolveSeq = new Map<string, number>();
   /** When each open socket last said anything. A TV that lost power never sends a close frame. */
   private readonly lastSeen = new Map<WebSocket, number>();
+  /** TVs whose page has just been opened and has not reported yet: its first report is when a video it was on is put back. */
+  private readonly opened = new Set<string>();
   private readonly sweeper: ReturnType<typeof setInterval>;
   /** When recent wrong codes were tried. A code is only six digits, so guessing has to be slow once this is on the internet. */
   private failedPairings: number[] = [];
@@ -82,7 +84,9 @@ export class Hub {
       this.lastSeen.delete(socket);
       if (conn.role === "tv" && this.tvs.get(conn.deviceId) === socket) {
         this.tvs.delete(conn.deviceId);
+        this.opened.delete(conn.deviceId);
         const device = this.registry.getDevice(conn.deviceId);
+        if (device) this.registry.checkpoint(device); // where it had got is written down exactly, in case the page is not opened again for a while
         if (device) this.toControllers(device, { type: "TV_STATUS", online: false });
         // The rest of its party sees it go offline.
         const host = device && (this.registry.leaderOf(device) ?? device);
@@ -98,7 +102,7 @@ export class Hub {
   private dispatch(conn: Conn, message: ClientMessage): Conn {
     switch (message.type) {
       case "TV_HELLO":
-        return this.tvHello(conn.socket, message.deviceId);
+        return this.tvHello(conn.socket, message.deviceId, message.opened === true);
       case "CTL_HELLO":
         return this.controllerHello(conn.socket, message.controllerId);
       case "PING":
@@ -116,7 +120,7 @@ export class Hub {
 
   /* ------------------------------ TV ------------------------------ */
 
-  private tvHello(socket: WebSocket, deviceId?: string): Conn {
+  private tvHello(socket: WebSocket, deviceId?: string, opened = false): Conn {
     const device = this.registry.tvHello(deviceId);
 
     // One live page per TV. The old page is told to stand down instead of fighting for the slot.
@@ -125,6 +129,11 @@ export class Hub {
     if (previous && previous !== socket) previous.close(CLOSE_REPLACED, "replaced");
 
     const leader = this.registry.leaderOf(device);
+    // A page that has just been opened is idle, whatever the TV was doing before; its first report says so, and then what it was on is put back.
+    if (opened && !leader) {
+      this.opened.add(device.id);
+      device.state = IDLE_STATE;
+    } else this.opened.delete(device.id);
     this.send(socket, {
       type: "TV_WELCOME",
       deviceId: device.id,
@@ -147,15 +156,26 @@ export class Hub {
     if (!device) return;
 
     if (message.type === "TV_STATE") {
-      const wasOn = device.state.state !== "idle";
+      const first = this.opened.delete(deviceId); // the report that follows a page's first hello
+      const wasOn = device.state.state !== "idle"; // (a page that was just opened has been given an idle state, so its first report is not a stop)
+      if (message.media && !device.media && !device.leaderId && message.state.state !== "idle") {
+        // A server that was restarted while this TV played is told what it has on, and so are the phones that come back to it.
+        device.media = message.media;
+        this.toControllers(device, { type: "MEDIA", media: message.media });
+      }
       device.state = message.state;
       this.toControllers(device, { type: "STATE", state: message.state });
       this.syncFollowers(device);
-      // A host that stops takes the video away from the guests too: they wait for the next one.
-      if (wasOn && message.state.state === "idle" && device.followerIds.length > 0) {
-        this.toFollowers(device, { type: "TV_CMD", command: { type: "STOP" } });
-        this.applyCommand(device, { type: "STOP" });
+      this.registry.noteProgress(device, message.state);
+      if (wasOn && message.state.state === "idle") {
+        this.registry.forgetResume(device); // left on the TV itself (Back, Stop): nothing to put back
+        // A host that stops takes the video away from the guests too: they wait for the next one.
+        if (device.followerIds.length > 0) {
+          this.toFollowers(device, { type: "TV_CMD", command: { type: "STOP" } });
+          this.applyCommand(device, { type: "STOP" });
+        }
       }
+      if (first) this.restore(device);
     } else if (message.type === "TV_NAME") {
       this.registry.setLabel(device, message.name);
       const host = this.registry.leaderOf(device) ?? device;
@@ -503,7 +523,17 @@ export class Hub {
     return this.playUrlForDevice(device, url, controller.id, startAt, hint);
   }
 
-  private async playUrlForDevice(device: Device, url: string, controllerId?: string, startAt?: number, hint?: PlayHint): Promise<void> {
+  /**
+   * A TV page was just opened that had a video on when it was last closed: the video is found again and put back, paused at the
+   * place it had reached, so the phone (or the remote) carries on with a press. It is looked up again rather than reloaded from
+   * what was kept, because the stream's own link may have expired by now.
+   */
+  private restore(device: Device): void {
+    const back = this.registry.resumeOf(device);
+    if (back) void this.playUrlForDevice(device, back.url, undefined, back.time > 5 ? back.time : undefined, back.hint, true);
+  }
+
+  private async playUrlForDevice(device: Device, url: string, controllerId?: string, startAt?: number, hint?: PlayHint, putBack = false): Promise<void> {
     const status = (s: ResolveStatus) => {
       this.toControllers(device, { type: "RESOLVE_STATUS", status: s });
     };
@@ -531,21 +561,24 @@ export class Hub {
     const media = withHint(result.media, hint);
     status({ phase: "found", media });
     this.send(this.tvs.get(device.id), { type: "TV_CMD", command: { type: "LOAD", media, startAt } });
-    this.send(this.tvs.get(device.id), { type: "TV_CMD", command: { type: "PLAY" } });
+    // A TV that is being put back on what it was playing waits there: nobody has asked for it to play, and a browser that has had no press yet would refuse.
+    if (!putBack) this.send(this.tvs.get(device.id), { type: "TV_CMD", command: { type: "PLAY" } });
     this.toFollowers(device, { type: "TV_CMD", command: { type: "LOAD", media, startAt } });
-    this.applyCommand(device, { type: "LOAD", media });
+    this.applyCommand(device, { type: "LOAD", media, ...(startAt === undefined ? {} : { startAt }) }, putBack);
     this.toControllers(device, { type: "MEDIA", media });
     this.toControllers(device, { type: "STATE", state: device.state });
   }
 
   /** Keep the server's memory of the TV roughly right until the TV reports its real state. */
-  private applyCommand(device: Device, command: Command): void {
+  private applyCommand(device: Device, command: Command, putBack = false): void {
     if (command.type === "LOAD") {
       device.media = command.media;
       device.state = { state: "loading", currentTime: 0, duration: 0 };
+      this.registry.startedPlaying(device, command.media, command.startAt, putBack);
     } else if (command.type === "STOP") {
       device.media = null;
       device.state = IDLE_STATE;
+      this.registry.forgetResume(device);
     }
   }
 

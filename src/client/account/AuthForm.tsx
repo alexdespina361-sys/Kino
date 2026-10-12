@@ -16,7 +16,7 @@ interface AuthFormProps {
   autoFocus?: boolean;
 }
 
-/** A name and a password (anything at all, as short as one character), to sign in or to make an account. The same form on the phone and, as a fallback to the QR code, on the TV. */
+/** A name and a password (anything at all, even none), to sign in or to make an account. The same form on the phone and, as a fallback to the QR code, on the TV. */
 export function AuthForm({ initialMode = "signIn", onDone, onMode, tv = false, autoFocus = false }: AuthFormProps) {
   const t = useT();
   const account = useAccount();
@@ -41,7 +41,7 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, tv = false, a
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (busy) return;
-    if (!email.trim() || !password) return setError(t(email.trim() ? "error.weak_password" : "error.invalid_email"));
+    if (!email.trim()) return setError(t("error.invalid_email"));
     setBusy(true);
     setError(null);
     try {
@@ -76,7 +76,7 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, tv = false, a
       <label className="auth-field" htmlFor={`${id}-password`}>
         <span>{t("auth.password")}</span>
         {tv ? <input {...passwordField} type="password" {...nav} /> : <PasswordInput {...passwordField} />}
-        {signingUp && <small>{t("auth.passwordHint")}</small>}
+        {signingUp && <small data-testid="auth-password-hint">{t(password ? "auth.passwordHint" : "auth.noPasswordNote")}</small>}
       </label>
 
       {error && (

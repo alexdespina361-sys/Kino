@@ -34,7 +34,8 @@ export default defineConfig({
     url: `http://127.0.0.1:${PORT}/api/health`,
     // ALLOW_PRIVATE_NETWORK lets the resolver fetch our own localhost fixture pages. Test-only; off by default.
     // DATA_DIR=memory: accounts made by the tests are not kept (and do not end up in a data folder).
-    env: { PORT: String(PORT), HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", DATA_DIR: "memory" },
+    // SIGNUPS_PER_HOUR: every test is the same address, and the limit (10 an hour) is for a public server, not for a suite that makes an account in each of its account tests.
+    env: { PORT: String(PORT), HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", DATA_DIR: "memory", SIGNUPS_PER_HOUR: "1000" },
     reuseExistingServer: false,
     timeout: 120_000,
   },

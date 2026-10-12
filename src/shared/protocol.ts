@@ -157,8 +157,18 @@ export type ResolveStatus = z.infer<typeof ResolveStatusSchema>;
 
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   // TV. deviceId doubles as the TV's secret: it is never sent to phones.
-  z.object({ type: z.literal("TV_HELLO"), deviceId: z.string().max(100).optional() }),
-  z.object({ type: z.literal("TV_STATE"), state: PlayerStateSchema }),
+  z.object({
+    type: z.literal("TV_HELLO"),
+    deviceId: z.string().max(100).optional(),
+    /** The page has just been opened: this is its first hello, not a reconnect of a page that has been on. A TV that was in the middle of a video is put back on it. */
+    opened: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal("TV_STATE"),
+    state: PlayerStateSchema,
+    /** What the TV has on, sent with the report that follows a welcome so that a server which forgot (it was restarted) is told again. */
+    media: NormalizedMediaSchema.optional(),
+  }),
   z.object({ type: z.literal("TV_NEW_CODE") }),
   z.object({ type: z.literal("TV_NEXT_EPISODE") }),
   z.object({ type: z.literal("TV_PLAY_URL"), url: z.string().max(2048), startAt: StartAtSchema.optional(), hint: PlayHintSchema.optional() }),

@@ -24,6 +24,8 @@ export interface AppOptions {
   /** `closed` stops new accounts being made. */
   registration?: Registration;
   maxAccounts?: number;
+  /** How many accounts one address may make in an hour (10 unless set). */
+  signUpsPerHour?: number;
   /** How many proxies sit in front of the server (a host like Render has one), so a visitor's address and https are read from the right place. */
   trustProxy?: boolean | number;
   /** Tests use a cheaper password hash. */
@@ -67,6 +69,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       store: accounts,
       ...(options.registration ? { registration: options.registration } : {}),
       ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
+      ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
       ...(options.passwordCost ? { passwordCost: options.passwordCost } : {}),
     });
   }
@@ -101,7 +104,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     socket.on("close", (code, reason) => request.log.info({ code, reason: reason.toString() }, "ws closed"));
     hub.handleConnection(socket);
   });
-  app.get("/api/health", async () => ({ ok: true, ...(options.storage ? { storage: options.storage } : {}) }));
+  // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.)
+  app.get("/api/health", async () => ({ ok: true, ...(options.storage ? { storage: options.storage } : {}), uptime: Math.round(process.uptime()) }));
   app.get("/api/library", async (_request, reply) => {
     reply.header("Cache-Control", "public, max-age=300");
     return library.get();

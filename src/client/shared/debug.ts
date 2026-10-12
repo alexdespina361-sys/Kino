@@ -71,6 +71,26 @@ function keptIds(): string {
   }
 }
 
+/** A span of seconds in the two largest units that matter: "41s", "12m", "3h 5m", "2d 4h". */
+function spanOf(seconds: number): string {
+  if (seconds < 60) return `${Math.floor(seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+  return `${Math.floor(seconds / 86_400)}d ${Math.floor((seconds % 86_400) / 3600)}h`;
+}
+
+/**
+ * What `/api/health` said, in a line: where the server keeps accounts and pairs, and how long it has been up. Only Postgres keeps them when
+ * a free host sleeps or restarts; a short time up next to a TV that "lost its phone" is that restart. (Asked once when the panel starts and
+ * whenever the page comes back to the front, never on a timer: a page that asked every few seconds would keep a sleeping host awake.)
+ */
+export function describeServer(health: unknown): string {
+  const { storage, uptime } = (health && typeof health === "object" ? health : {}) as { storage?: unknown; uptime?: unknown };
+  const where = typeof storage === "string" ? storage : "unknown";
+  const verdict = where === "postgres" ? "kept" : where === "unknown" ? "?" : "lost when it sleeps or restarts";
+  return `server: storage ${where} (${verdict})  up ${typeof uptime === "number" && uptime >= 0 ? spanOf(uptime) : "?"}`;
+}
+
 /** What the browser can do that the page leans on, each as Y or N. A style it lacks makes a whole rule drop out, so these say what to look at. */
 function abilities(): string {
   const video = document.createElement("video");
@@ -110,6 +130,18 @@ function startDebug(): void {
   };
 
   const can = abilities(); // (once: it makes a box to measure)
+  let server = "server: asking…";
+  const askServer = () => {
+    try {
+      fetch("/api/health", { cache: "no-store" })
+        .then((response) => response.json())
+        .then((health: unknown) => (server = describeServer(health)))
+        .catch((error: unknown) => (server = `server: not answering (${String(error)})`))
+        .then(later);
+    } catch (error) {
+      server = `server: cannot ask (${String(error)})`;
+    }
+  };
   const header = (): string[] => {
     const root = document.querySelector<HTMLElement>("[data-testid='tv']");
     const video = document.querySelector("video");
@@ -123,6 +155,7 @@ function startDebug(): void {
       `fullscreen: enabled ${document.fullscreenEnabled}  now ${describeElement(document.fullscreenElement)}  hisense ${isHisense()}  asked ${canFullscreen()}`,
       can,
       `ids: ${keptIds()}`,
+      server,
       `page: ${root ? `tv state ${root.dataset.state} controls ${root.dataset.hud}` : "no TV screen"}  focus ${describeElement(document.activeElement)}`,
       `video: ${video_}`,
     ];
@@ -179,7 +212,10 @@ function startDebug(): void {
     document.addEventListener(name, (event) => log(`video ${name}${name === "error" ? ` ${(event.target as HTMLMediaElement).error?.code ?? ""}` : ""}`), true);
   }
   document.addEventListener("fullscreenchange", () => log(`fullscreen now ${describeElement(document.fullscreenElement)}`));
-  document.addEventListener("visibilitychange", () => log(`page ${document.visibilityState}`));
+  document.addEventListener("visibilitychange", () => {
+    log(`page ${document.visibilityState}`);
+    if (document.visibilityState === "visible") askServer();
+  });
   addEventListener("resize", later);
   addEventListener("error", (event) => log(`ERROR ${event.message} ${String(event.filename).split("/").pop()}:${event.lineno}`));
   addEventListener("unhandledrejection", (event) => log(`REJECTED ${String(event.reason)}`));
@@ -192,6 +228,7 @@ function startDebug(): void {
   }
 
   setInterval(later, 1000); // the video's time and the focus move without an event of their own
+  askServer();
   log("started");
 }
 

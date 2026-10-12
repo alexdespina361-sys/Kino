@@ -543,8 +543,14 @@ export function Tv() {
     engineRef.current = engine;
     republishRef.current = () => publish(engine.getState());
 
+    // Only the first hello of this page says it has just been opened: a socket that reconnects, or says hello again when the page comes back to the front, belongs to a page that has been on.
+    let justOpened = true;
     const socket = connectSocket({
-      hello: () => ({ type: "TV_HELLO", deviceId: readKept(DEVICE_KEY) }),
+      hello: () => {
+        const opened = justOpened;
+        justOpened = false;
+        return { type: "TV_HELLO", deviceId: readKept(DEVICE_KEY), ...(opened ? { opened } : {}) };
+      },
       onStatus: setConnection,
       onMessage: (message) => {
         switch (message.type) {
@@ -558,7 +564,13 @@ export function Tv() {
             setParty(null); // a party this TV is in is sent right after
             setPartyEnds(null);
             if (!message.following) {
-              socketRef.current?.send({ type: "TV_STATE", state: withTvState(engine.getState(), captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current) });
+              const media = currentMediaRef.current;
+              // (What it has on goes along, for a server that has forgotten: see `TV_STATE.media`.)
+              socketRef.current?.send({
+                type: "TV_STATE",
+                state: withTvState(engine.getState(), captionStyleRef.current, media, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current),
+                ...(media ? { media } : {}),
+              });
             }
             break;
           case "TV_CODE":

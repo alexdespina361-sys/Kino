@@ -337,6 +337,20 @@ test.describe("a phone that has a TV scans another one", () => {
     await expect(second.getByTestId("pairing-code")).toBeVisible();
   });
 
+  test("when the TV it had is off there is nothing to ask: it moves over to the one it scanned at once", async ({ browser }) => {
+    const first = await openTv(browser);
+    const phone = await openPairedPhone(browser, first);
+    const second = await openTv(browser);
+    await first.close();
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV disconnected");
+
+    await phone.goto(`/?code=${await readPairingCode(second)}`);
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    await expect(second.getByTestId("tv-paired")).toBeVisible();
+    await expect(phone.getByTestId("other-tv-sheet")).toHaveCount(0);
+    await expect(phone.getByTestId("pair-notice")).toHaveCount(0); // (leaving the old TV was the phone's doing: no "lost" line)
+  });
+
   test("scanning the QR code of the TV it already has changes nothing", async ({ browser }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);

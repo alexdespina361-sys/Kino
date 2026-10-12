@@ -11,8 +11,8 @@ import { z } from "zod";
 
 export const MAX_PROFILES = 5;
 export const PROFILE_NAME_MAX = 16;
-/** A password can be anything, as short as one character: the only rule is that there is one. */
-export const PASSWORD_MIN = 1;
+/** A password can be anything, as short as one character, or nothing at all (an account with no password is open to anyone who types its name: the sign-up form says so). */
+export const PASSWORD_MIN = 0;
 
 /** The pictures a profile can have: drawn in client/account/Avatar.tsx. */
 export const AVATAR_IDS = ["fox", "cat", "panda", "owl", "bear", "rabbit", "frog", "penguin", "robot", "alien", "ghost", "monster"] as const;
@@ -48,7 +48,7 @@ export const DeviceKindSchema = z.enum(["tv", "remote", "browser"]);
 export type DeviceKind = z.infer<typeof DeviceKindSchema>;
 
 export const RegisterSchema = z.object({ email: LoginNameSchema, password: NewPasswordSchema, device: DeviceKindSchema.optional() });
-export const LoginSchema = z.object({ email: LoginNameSchema, password: z.string().min(1).max(200), device: DeviceKindSchema.optional() });
+export const LoginSchema = z.object({ email: LoginNameSchema, password: z.string().max(200), device: DeviceKindSchema.optional() });
 
 export const ProfileNameSchema = z.string().trim().min(1, "invalid_name").max(PROFILE_NAME_MAX, "invalid_name");
 export const ProfileSchema = z.object({ id: z.string().max(60), name: ProfileNameSchema, avatar: AvatarIdSchema });

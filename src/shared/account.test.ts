@@ -201,14 +201,15 @@ describe("what people type", () => {
     expect(LoginSchema.parse({ email: "ROBERT", password: "1" }).email).toBe("robert"); // signing in finds the same account whatever the capitals
   });
 
-  it("asks for a name and a password, and for nothing about how long or how clever", () => {
+  it("asks for a name, and for nothing about the password: how long, how clever, or whether there is one", () => {
     expect(RegisterSchema.safeParse({ email: "", password: "1" }).success).toBe(false);
     expect(RegisterSchema.safeParse({ email: "   ", password: "1" }).success).toBe(false);
     expect(RegisterSchema.safeParse({ email: "a\nb", password: "1" }).success).toBe(false); // no line breaks or other invisible characters
     expect(RegisterSchema.safeParse({ email: "x".repeat(255), password: "1" }).success).toBe(false);
-    expect(RegisterSchema.safeParse({ email: "robert", password: "" }).success).toBe(false);
-    for (const password of ["1", "a", "  ", "password", "🙂", "x".repeat(200)]) expect(RegisterSchema.safeParse({ email: "robert", password }).success).toBe(true);
+    for (const password of ["", "1", "a", "  ", "password", "🙂", "x".repeat(200)]) expect(RegisterSchema.safeParse({ email: "robert", password }).success).toBe(true);
     expect(RegisterSchema.safeParse({ email: "robert", password: "x".repeat(201) }).success).toBe(false);
+    expect(LoginSchema.safeParse({ email: "robert", password: "" }).success).toBe(true); // (an account with none is signed in to with none)
+    expect(LoginSchema.safeParse({ email: "robert", password: "x".repeat(201) }).success).toBe(false);
   });
 
   it("names a first profile from the account's name, and picks the first picture not in use", () => {

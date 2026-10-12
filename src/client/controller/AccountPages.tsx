@@ -337,7 +337,7 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
         <Group title={t("account.password")}>
           <Password label={t("account.currentPassword")} value={current} onChange={setCurrent} autoComplete="current-password" testId="password-current" />
           <Password label={t("auth.newPassword")} value={next} onChange={setNext} autoComplete="new-password" testId="password-new" />
-          <small className="muted">{t("auth.passwordHint")}</small>
+          <small className="muted">{t(next ? "auth.passwordHint" : "auth.noPasswordNote")}</small>
         </Group>
         {changeProblem && (
           <p className="auth-error" role="alert" data-testid="password-error">
@@ -349,7 +349,7 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
             <CheckIcon /> {t("account.passwordChanged")}
           </p>
         )}
-        <button type="submit" className="btn btn-block" disabled={busy || !current || !next} data-testid="password-save">
+        <button type="submit" className="btn btn-block" disabled={busy || current === next} data-testid="password-save">
           {t("common.save")}
         </button>
       </form>
@@ -365,7 +365,7 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
               </p>
             )}
             <div className="editor-actions">
-              <button type="submit" className="btn btn-danger" disabled={busy || !confirm} data-testid="delete-confirm">
+              <button type="submit" className="btn btn-danger" disabled={busy} data-testid="delete-confirm">
                 <TrashIcon /> {t("account.deleteConfirm")}
               </button>
               <button type="button" className="btn" onClick={() => setDeleting(false)}>

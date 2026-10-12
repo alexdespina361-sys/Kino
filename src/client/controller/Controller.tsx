@@ -148,6 +148,14 @@ export function Controller() {
             const launch = launchRef.current;
             if (launch.code || launch.control || launch.url) window.history.replaceState(null, "", location.pathname);
             const scanned = launch.code ?? launch.control;
+            if (scanned && message.tv && !message.tv.online && message.tv.controlCode !== scanned) {
+              // The TV this phone had is off, so there is nothing to ask: another TV's code is the answer. The phone lets go of the old one
+              // (it has one TV at a time) and the code is sent when the server says it is free (the next welcome, below).
+              hadTvRef.current = false; // (leaving it is the phone's own doing: the first screen has no "lost" line for it)
+              socketRef.current?.send({ type: "UNPAIR" });
+              setPairing(true);
+              break;
+            }
             if (scanned) {
               // Scanned the TV's QR code: connect straight away. A phone that has a TV is asked first (unless this is that TV's own code).
               launchRef.current = { ...launch, code: undefined, control: undefined };
