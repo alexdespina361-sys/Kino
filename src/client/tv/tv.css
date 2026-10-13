@@ -416,9 +416,10 @@
   animation: hud-card-in 0.4s ease both;
 }
 .hud-pause-card small { font-size: 1.3em; font-weight: 600; color: #b3b3b3; text-transform: uppercase; letter-spacing: 0.1em; }
-.hud-pause-card b { font-size: 3.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; text-wrap: balance; }
+/* A very long name is cut by lines, so that the card stays clear of the title bar and the controls whatever it says. */
+.hud-pause-card b { display: -webkit-box; overflow: hidden; font-size: 3.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; text-wrap: balance; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
 .hud-pause-card span { font-size: 1.6em; color: #ddd; }
-.hud-pause-card em { font-size: 1.9em; font-style: normal; font-weight: 700; color: #fff; }
+.hud-pause-card em { display: -webkit-box; overflow: hidden; font-size: 1.9em; font-style: normal; font-weight: 700; color: #fff; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 @keyframes hud-card-in { from { opacity: 0; transform: translateY(-44%); } }
 /*
  * The big button in the middle: play while paused, and for a finger pause while the picture plays. Big enough to be hit without aiming
@@ -1483,7 +1484,8 @@
 .tv-switch::after { content: ""; position: absolute; top: 0.18em; left: 0.18em; width: 1.14em; height: 1.14em; border-radius: 50%; background: #fff; box-shadow: 0 0.05em 0.2em rgba(0, 0, 0, 0.4); transition: transform 0.18s; }
 .tv-switch-row[aria-checked="true"] .tv-switch { background: var(--accent); }
 .tv-switch-row[aria-checked="true"] .tv-switch::after { transform: translateX(1.1em); }
-.tv-panel-settings .tv-switch-row { padding-block: 0.55em; }
+.tv-panel-settings .tv-switch-row { padding: 0.55em 1.2em; }
+.tv-panel-settings .tv-switch-row + .tv-switch-row { margin-top: 0.3em; }
 .tv-panel-settings .tv-hint { margin-top: 0.8em; max-width: 40em; text-align: left; }
 
 /* What the account says in passing (what was brought across at sign-in), over everything. */
@@ -1885,6 +1887,7 @@
 /* A phone held upright has no room for the card of what is paused beside the big button in the middle: it goes above it, over a shade of its own. */
 @media (max-width: 520px) and (orientation: portrait) {
   .hud-pause-card { left: 1.6em; right: 1.6em; top: auto; bottom: calc(50% + 6.5em); max-width: none; align-items: center; text-align: center; transform: none; }
+  .hud-pause-card b { -webkit-line-clamp: 3; }
   .hud-center::before { background: radial-gradient(ellipse 90% 40% at 50% 38%, rgba(0, 0, 0, 0.68), transparent); }
 }
 

@@ -93,6 +93,27 @@ test.describe("a finger on the picture", () => {
     phone.close();
   });
 
+  test("a device with a mouse as well: a click on the big button a finger brought up pauses with it, and a click anywhere else takes the button away", async ({ browser }) => {
+    const phone = await watching(browser);
+    await showControls(phone); // a finger: the big button is up while the picture plays
+    const button = phone.getByTestId("tv-center-btn");
+    await expect(button).toBeVisible();
+    await button.click(); // (a mouse: the button is not pulled out from under its own click)
+    await expect(tvRoot(phone)).toHaveAttribute("data-state", "paused");
+    await button.click();
+    await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
+    await expect(button).toBeVisible();
+
+    await phone.mouse.click(MIDDLE.x, MIDDLE.y); // the picture: the controls go, and what is using the screen is a mouse now
+    await expect(tvRoot(phone)).toHaveAttribute("data-hud", "hidden");
+    await phone.waitForTimeout(700); // (a mouse that is only settling after its click does not bring them back)
+    await phone.mouse.move(120, 200);
+    await phone.mouse.move(180, 260);
+    await expect(tvRoot(phone)).toHaveAttribute("data-hud", "visible");
+    await expect(button).toHaveCount(0); // (a mouse has the bar to pause with)
+    phone.close();
+  });
+
   test("held upright, the card of what is paused sits above the big button, inside the screen", async ({ browser }) => {
     const phone = await watching(browser);
     await showControls(phone);
@@ -332,6 +353,33 @@ test.describe("the episode's name", () => {
     await expect(tv.getByTestId("tv-episode-name")).toHaveText("Known to the library");
     remote.cmd({ type: "LOAD", media: show(baseURL!, 2) }); // (the library has nothing for this one)
     await expect(tv.getByTestId("tv-episode-name")).toHaveText("The Second One");
+    remote.close();
+  });
+
+  test("a very long name is cut to a few lines: the card of what is paused stays clear of the controls on every shape of screen", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const remote = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    const long = show(baseURL!, 2);
+    long.title = "The Extraordinarily Long Adventures of Professor Bartholomew Wigglesworth and the Mystery of the Missing Lighthouse Keeper · S1 E2";
+    long.series!.episodes![1]!.title = "Chapter Seventeen: In Which Everybody Finally Discovers Exactly Where The Treasure Was Hidden All Along";
+    remote.cmd({ type: "LOAD", media: long });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    for (const [width, height] of [[1280, 720], [1920, 1080], [844, 390], [768, 1024], [390, 844], [320, 568]] as const) {
+      await tv.setViewportSize({ width, height });
+      await expect
+        .poll(
+          async () => {
+            const card = (await tv.getByTestId("tv-pause-card").boundingBox())!;
+            const button = (await tv.getByTestId("tv-center-btn").boundingBox())!;
+            const bar = (await tv.getByTestId("tv-elapsed").boundingBox())!;
+            const upright = width <= 520 && height > width; // (the card goes above the button there, and beside it elsewhere)
+            const clear = upright ? card.y + card.height <= button.y : card.x + card.width <= button.x;
+            return clear && card.y >= 0 && card.y + card.height <= bar.y && card.x >= 0 && card.x + card.width <= width;
+          },
+          { message: `${width}x${height}` },
+        )
+        .toBe(true);
+    }
     remote.close();
   });
 });

@@ -143,14 +143,16 @@ export class PictureGestures {
     press.holdTimer = undefined;
     if (this.press !== press || press.moved) return;
     this.dropPending(); // a tap, then a hold: the tap does not count
+    this.chain = undefined; // (nor does a run of skips go on past it)
     press.held = this.actions.hold();
   }
 
-  /** A press that will not be a tap (it dragged, was cancelled, or a second finger came): a hold in progress ends, the rest is dropped. */
+  /** A press that will not be a tap (it dragged, was cancelled, or a second finger came): a hold in progress ends, the rest is dropped, and a run of skips is over. */
   private endPress(): void {
     const press = this.press;
     this.press = undefined;
     if (!press) return;
+    this.chain = undefined;
     if (press.holdTimer) clearTimeout(press.holdTimer);
     if (press.held) this.actions.release();
   }
@@ -176,6 +178,7 @@ export class PictureGestures {
 
   private tapped(press: Press): void {
     if (press.kind === "mouse") {
+      this.chain = undefined; // (a click is not one more tap of a finger's run)
       this.actions.tap("mouse", press.wasVisible);
       return;
     }
@@ -212,6 +215,8 @@ interface PictureOptions {
   actions: PictureActions;
   /** Whether the picture takes taps now: a video is on, and no card or menu of the page's own is over it. */
   enabled: boolean;
+  /** Which video is on: a hand that is busy with one is not busy with the next that takes its place. */
+  source: string;
   /** Whether the controls are up at this moment. */
   controlsUp: () => boolean;
 }
@@ -222,7 +227,7 @@ interface PictureOptions {
  * browser's own double click (which a mouse still means full screen by), and `echoOfTouch` tells a mouse move that is only the
  * browser's imitation of a finger from a real one.
  */
-export function usePictureGestures({ actions, enabled, controlsUp }: PictureOptions) {
+export function usePictureGestures({ actions, enabled, source, controlsUp }: PictureOptions) {
   const latest = useRef({ actions, enabled, controlsUp });
   latest.current = { actions, enabled, controlsUp };
   const [gestures] = useState(
@@ -237,9 +242,10 @@ export function usePictureGestures({ actions, enabled, controlsUp }: PictureOpti
   const kindRef = useRef<PointerKind>("mouse");
   const touchedAtRef = useRef(0);
 
+  // What is under way belongs to the picture it began on: it is forgotten when that stops taking taps, or another video takes its place.
   useEffect(() => {
-    if (!enabled) gestures.reset();
-  }, [enabled, gestures]);
+    gestures.reset();
+  }, [enabled, source, gestures]);
 
   useEffect(() => {
     const move = (event: PointerEvent) => gestures.move(event.pointerId, event.clientX, event.clientY);
@@ -278,12 +284,16 @@ export function usePictureGestures({ actions, enabled, controlsUp }: PictureOpti
 
 /**
  * Whether the last thing that touched the page was a finger, and not a mouse or a key: a finger has no hover and no keys, so the
- * controls that only it needs (the big pause button while the picture plays) are put up for it. A remote's keys, or a mouse, take them away.
+ * controls that only it needs (the big pause button while the picture plays) are put up for it. A remote's keys, or a mouse, take them
+ * away, except a mouse that presses one of those controls (marked `data-for-touch`): it is not pulled from under the click.
  */
 export function useTouchUi(): boolean {
   const [touch, setTouch] = useState(() => matchMedia("(pointer: coarse)").matches && navigator.maxTouchPoints > 0);
   useEffect(() => {
-    const onPointer = (event: PointerEvent) => setTouch(event.pointerType !== "mouse");
+    const onPointer = (event: PointerEvent) => {
+      if (event.pointerType === "mouse" && event.target instanceof Element && event.target.closest("[data-for-touch]")) return;
+      setTouch(event.pointerType !== "mouse");
+    };
     const onKey = () => setTouch(false);
     window.addEventListener("pointerdown", onPointer, true);
     window.addEventListener("keydown", onKey, true);

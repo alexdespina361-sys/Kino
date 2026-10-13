@@ -1175,6 +1175,7 @@ export function Tv() {
   const takesTaps = unlocked && showVideo && !following && !finished && !failed && menu === null;
   const picture = usePictureGestures({
     enabled: takesTaps,
+    source: currentMedia?.stream.url ?? "",
     controlsUp: () => upRef.current,
     actions: { tap: tapPicture, doubleTap: doubleTapPicture, hold: holdPicture, release: releasePicture },
   });

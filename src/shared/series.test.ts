@@ -57,6 +57,15 @@ describe("episode lists", () => {
     expect(playingEpisodeName(media(2, 1, { episodes }).series)).toBe("Return");
   });
 
+  it("tries the source's list when the library's word is only the number, and the other way round", () => {
+    const episodes = [ep(1, 3, "The Pilot"), ep(1, 4, "Episode 4"), ep(1, 5, "S1:E5")];
+    expect(playingEpisodeName(media(1, 3, { episodes }).series, "Episode 3")).toBe("The Pilot");
+    expect(playingEpisodeName(media(1, 3, { episodes }).series, "S1:E3")).toBe("The Pilot");
+    expect(playingEpisodeName(media(1, 4, { episodes }).series, "Cat's in the Bag")).toBe("Cat's in the Bag");
+    expect(playingEpisodeName(media(1, 4, { episodes }).series, "Episode 4")).toBeUndefined();
+    expect(playingEpisodeName(media(1, 5, { episodes }).series, "Episodio 5")).toBeUndefined();
+  });
+
   it("has no name to say for a film, an episode only the number is known of, or a name that is the number", () => {
     const episodes = [ep(1, 2, "S1:E2"), ep(1, 3), ep(1, 4, "Episode 4")];
     expect(playingEpisodeName(undefined, "Whatever")).toBeUndefined();

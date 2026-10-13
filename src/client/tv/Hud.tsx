@@ -269,6 +269,7 @@ export function Hud(p: HudProps) {
             <button
               className="hud-paused"
               data-testid="tv-center-btn"
+              data-for-touch
               data-playing={playing || undefined}
               tabIndex={-1}
               aria-label={playing ? t("hud.pause") : t("hud.play")}

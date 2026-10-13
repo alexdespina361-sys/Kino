@@ -227,6 +227,66 @@ describe("two taps in a row", () => {
   });
 });
 
+describe("a run of skips", () => {
+  // (each of these goes by the time the next tap comes within the run's window: it is the ordinary tap it would be after any pause)
+  it("is over when a finger drags", () => {
+    const { calls, gestures, tap, press } = setup();
+    tap(RIGHT);
+    tap(RIGHT);
+    const id = press(RIGHT);
+    gestures.move(id, RIGHT, 300 + MOVE_PX + 5);
+    gestures.end(id);
+    tap(RIGHT);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["double:forward", "tap:touch:away"]);
+  });
+
+  it("is over when the browser takes a finger away", () => {
+    const { calls, gestures, tap, press } = setup();
+    tap(RIGHT);
+    tap(RIGHT);
+    gestures.cancel(press(RIGHT));
+    tap(RIGHT);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["double:forward", "tap:touch:away"]);
+  });
+
+  it("is over when a second finger makes a pinch of it", () => {
+    const { calls, gestures, tap, press } = setup();
+    tap(RIGHT);
+    tap(RIGHT);
+    const first = press(RIGHT);
+    const second = press(LEFT);
+    gestures.end(first);
+    gestures.end(second);
+    tap(RIGHT);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["double:forward", "tap:touch:away"]);
+  });
+
+  it("is over when a finger is held", () => {
+    const { calls, gestures, tap, press } = setup();
+    tap(RIGHT);
+    tap(RIGHT);
+    const id = press(RIGHT);
+    vi.advanceTimersByTime(HOLD_MS);
+    gestures.end(id);
+    tap(RIGHT);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["double:forward", "hold", "release", "tap:touch:away"]);
+  });
+
+  it("is over when a mouse clicks", () => {
+    const { calls, tap } = setup();
+    tap(RIGHT);
+    tap(RIGHT);
+    tap(RIGHT, { kind: "mouse" });
+    tap(RIGHT);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["double:forward", "tap:mouse:away", "tap:touch:away"]);
+  });
+});
+
 describe("a hold", () => {
   it("starts when a finger has rested long enough, and ends when it lifts, with no tap", () => {
     const { calls, gestures, press } = setup();
