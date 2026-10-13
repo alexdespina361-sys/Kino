@@ -198,6 +198,7 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     const wanted = new Set(urls.map((address) => titleLink(wellFormedText(address))));
     const newest = new Map<string, LiveProgress>();
     for (const card of store.items(friendId, "progress").filter(isLive)) {
+      if (!card.done && card.position < ACTIVITY_MIN_SECONDS) continue; // (a few seconds and away again is not getting anywhere)
       const link = titleLink(wellFormedText(card.url));
       if (wanted.has(link) && (newest.get(link)?.at ?? -1) < card.at) newest.set(link, card);
     }

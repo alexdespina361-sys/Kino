@@ -1,4 +1,4 @@
-import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
+import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { continueNote, listName, unfinished } from "../account/cards";
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
@@ -92,6 +92,9 @@ export interface Entry {
   party?: string;
   /** A tile that opens a page over the library, or the account's own pages, instead of a title or a page of the library. */
   action?: "addFriend" | "friendSettings" | "settings" | "signIn";
+  /** A person's tile (a friend): the picture they chose, and whether they are online now. */
+  avatar?: AvatarId;
+  online?: boolean;
 }
 
 export interface HomeRow {

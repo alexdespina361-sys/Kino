@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityItem, Friend, FriendLists, FriendRatings, FriendsState, InboxItem } from "../../shared";
+import { titleLink, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InboxItem } from "../../shared";
 import { formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
 import { friendGrid, friendRows } from "./pages";
@@ -45,6 +45,14 @@ describe("the rows of the friends page", () => {
     expect(people({ activity: [watched("pro_sam", "k", { done: true })] })[0]?.note).toBe(t("friends.line.finished", { title: "Alien" }));
     expect(people({})[0]?.note).toBe(since(sam));
     expect(people({ friends: [{ ...sam, on: false }], activity: [watched("pro_sam", "k")] })[0]?.note).toBe(t("friends.paused"));
+  });
+
+  it("give a friend's tile their picture, and say they are online when they are (a friend who turned friends off is not)", () => {
+    const people = (friend: Friend) => friendRows(state({ friends: [friend] }), NOW).find((row) => row.id === "friend-people")?.entries[0];
+    expect(people(sam)).toMatchObject({ avatar: "fox" });
+    expect(people(sam)?.online).toBeUndefined();
+    expect(people({ ...sam, online: true })).toMatchObject({ avatar: "fox", online: true, note: t("friends.online") });
+    expect(people({ ...sam, on: false, online: true })?.online).toBeUndefined();
   });
 
   it("show an invitation to a party that is on as a tile that joins it, with the code to read and who invited", () => {
@@ -111,6 +119,16 @@ describe("a friend's page", () => {
     expect(grid?.entries.map((entry) => entry.title)).toEqual(["Alien", "It"]);
     expect(grid?.entries.map((entry) => entry.note)).toEqual([t("list.favourites"), "Horror"]);
     expect(grid?.entries[1]).toMatchObject({ url: "https://x.example/it", image: "poster-it" });
+  });
+
+  it("says that the friend is online, and puts how far they got on the titles they kept and rated", () => {
+    expect(friendGrid(view, state({ friends: [{ ...sam, online: true }] }), { data: lists() }, null)?.meta).toBe(`${t("friends.online")}  ·  ${since(sam)}`);
+    const progress = [{ link: titleLink("https://x.example/alien"), season: 2, episode: 5, percent: 63 }];
+    const kept = friendGrid(view, state(), { data: { ...lists(), progress } }, null);
+    expect(kept?.entries[0]).toMatchObject({ title: "Alien", progress: 0.63, note: `S2:E5 · 63% · ${t("list.favourites")}` });
+    expect(kept?.entries[1]?.progress).toBeUndefined();
+    const rated = friendGrid({ ...view, tab: "ratings" }, state(), null, { data: { ...ratings(), progress } });
+    expect(rated?.entries.find((entry) => entry.title === "Alien")).toMatchObject({ progress: 0.63, note: "S2:E5 · 63% · 9/10" });
   });
 
   it("has lists as its first tab, and says there is nothing when they have no titles", () => {

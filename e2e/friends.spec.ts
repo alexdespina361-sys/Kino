@@ -101,12 +101,13 @@ test.describe("friends are optional", () => {
     await expect(page.getByTestId("friends-open")).toHaveCount(0);
 
     await master.click();
-    const ids = ["friends-lists", "friends-ratings", "friends-give", "friends-get", "friends-inbox-switch"];
+    const ids = ["friends-lists", "friends-ratings", "friends-give", "friends-get", "friends-inbox-switch", "friends-presence"];
     const states = () => Promise.all(ids.map((id) => page.getByTestId(id).getAttribute("aria-checked")));
-    expect(await states()).toEqual(["true", "true", "false", "false", "true"]); // (what a friend may see is on by default; telling what is watched is not)
+    expect(await states()).toEqual(["true", "true", "false", "false", "true", "true"]); // (what a friend may see is on by default, and that one is online; telling what is watched is not)
     await page.getByTestId("friends-give").click();
     await page.getByTestId("friends-lists").click();
-    expect(await states()).toEqual(["false", "true", "true", "false", "true"]);
+    await page.getByTestId("friends-presence").click();
+    expect(await states()).toEqual(["false", "true", "true", "false", "true", "false"]);
 
     // the server keeps them (it decides what a friend is shown from them)
     const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
@@ -115,7 +116,7 @@ test.describe("friends are optional", () => {
         const answer = (await (await page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0 } })).json()) as { settings: Array<{ key: string; value?: unknown }> };
         return Object.fromEntries(answer.settings.map((item) => [item.key, item.value]));
       })
-      .toMatchObject({ friends: true, friendsGive: true, friendsLists: false });
+      .toMatchObject({ friends: true, friendsGive: true, friendsLists: false, friendsPresence: false });
 
     await page.getByTestId("friends-switch").click(); // off again: the rest goes away
     await expect(page.getByTestId("friends-lists")).toHaveCount(0);
@@ -237,12 +238,15 @@ test.describe("making friends", () => {
     await bob.page.getByTestId("friend-code-input").fill(code);
     await expect(bob.page.getByTestId("friend-code-error")).toBeVisible();
 
-    // Ann takes Bob off: it needs a second press, and then neither has the other
+    // Ann takes Bob off: Remove opens a sheet that asks, and only "Yes, remove" does it; then neither has the other
     await ann.page.getByTestId("friend-row").click();
     await expect(ann.page.getByTestId("friend-name")).toHaveText(bob.name);
     await ann.page.getByTestId("friend-remove").click();
-    await expect(ann.page.getByTestId("friend-remove")).toHaveAttribute("data-asking", "true");
+    await expect(ann.page.getByTestId("friend-unfriend")).toContainText(`Remove ${bob.name}?`);
+    await ann.page.getByTestId("friend-unfriend-cancel").click();
+    await expect(ann.page.getByTestId("friend-unfriend")).toHaveCount(0);
     await ann.page.getByTestId("friend-remove").click();
+    await ann.page.getByTestId("friend-unfriend-yes").click();
     await expect(ann.page.getByTestId("friends-none")).toBeVisible();
     await look(bob.page);
     await expect(bob.page.getByTestId("friends-none")).toBeVisible();
@@ -425,7 +429,7 @@ test.describe("making friends", () => {
     await openFriends(bob.page);
     await bob.page.getByTestId("friend-row").click();
     await bob.page.getByTestId("friend-remove").click();
-    await bob.page.getByTestId("friend-remove").click();
+    await bob.page.getByTestId("friend-unfriend-yes").click();
     await expect(bob.page.getByTestId("friends-none")).toBeVisible();
     await look(ann.page);
     await expect(ann.page.getByTestId("friends-none")).toBeVisible();
@@ -515,11 +519,46 @@ test.describe("what a friend can see", () => {
     await expect(bob.page.getByTestId("friends-activity")).toContainText("Alpha Film");
     await expect(bob.page.getByTestId("friends-activity")).toContainText(ann.name);
     await expect(bob.page.getByTestId("friend-row")).toContainText("Watching Alpha Film"); // (just now, and not to the end: "watched" is for what was a while ago)
+    await expect(bob.page.getByTestId("activity-item").locator(".lib-progress i")).toHaveAttribute("style", /width: 11%/); // (600 of 5400 seconds)
+    // ...and on her page, how far she got in the titles she keeps and rates
+    await bob.page.getByTestId("friend-row").click();
+    await expect(bob.page.getByTestId("friend-list-card-item")).toContainText("11%");
+    await bob.page.getByTestId("friend-tab-ratings").click();
+    await expect(bob.page.getByTestId("friend-rating-progress")).toContainText("11%");
+    await bob.page.keyboard.press("Escape"); // (back to the page of friends)
     await bob.page.keyboard.press("Escape");
 
     await setSwitch(ann.page, "friends-give", false); // she stops
     await seen();
     await expect(bob.page.getByTestId("friends-activity")).toHaveCount(0);
+  });
+
+  test("who is online: a friend with the page open has a green dot and 'Online', and one who turned that switch off has neither", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(ann.page, bob.page);
+    await look(ann.page); // (a page that is open tells the server so each time it looks)
+    await bob.page.getByTestId("menu-friends").click();
+    const row = bob.page.getByTestId("friend-row");
+    await expect(async () => {
+      await look(bob.page);
+      await expect(row).toContainText("Online", { timeout: 1500 });
+    }).toPass();
+    await expect(row.locator(".friend-pic")).toHaveAttribute("data-online", "true");
+    await row.click();
+    await expect(bob.page.getByTestId("friend-page")).toContainText("Online");
+    await bob.page.keyboard.press("Escape");
+
+    // Ann turns the switch off: Bob does not see her online any more
+    await ann.page.getByTestId("menu-settings").click();
+    await ann.page.getByTestId("friends-presence").click();
+    await expect(ann.page.getByTestId("friends-presence")).toHaveAttribute("aria-checked", "false");
+    await expect(async () => {
+      await look(bob.page);
+      await expect(row.locator(".friend-pic")).toHaveAttribute("data-online", "false", { timeout: 1500 });
+    }).toPass();
+    await expect(row).not.toContainText("Online");
   });
 });
 

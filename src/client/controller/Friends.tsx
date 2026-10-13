@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FRIEND_NOTE_MAX, friendLink, reachable, type Friend, type FriendLists, type FriendRatings, type InboxItem, type Message, type OpenInvite } from "../../shared";
+import { FRIEND_NOTE_MAX, friendLink, reachable, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type InboxItem, type Message, type OpenInvite } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -7,7 +7,7 @@ import { useScores } from "../account/ratings";
 import { factLines, scoreOf, scoreWord, sortRatings, storedFacts } from "../account/ratingText";
 import { useSettings } from "../account/settings";
 import { ago, formatDay } from "../account/time";
-import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, recommendationOf, type PartyInvitation, type Recommendation } from "../friends/entries";
+import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { usePeek } from "../friends/usePeek";
 import { askLists, askRatings, useShared } from "../friends/useShared";
@@ -226,6 +226,15 @@ function AddFriend() {
 
 /* ------------------------------ the page of friends ------------------------------ */
 
+/** A friend's picture, with a small green dot on it while they are online. */
+function FriendPic({ friend, size }: { friend: Friend; size?: "big" }) {
+  return (
+    <span className={size ? `friend-pic ${size}` : "friend-pic"} data-online={friend.on && friend.online === true}>
+      <Avatar id={friend.avatar} />
+    </span>
+  );
+}
+
 function InboxRow({ item, from, onOpenTitle, onDismiss }: { item: InboxItem; from: string; onOpenTitle: OpenTitle; onDismiss: () => void }) {
   const t = useT();
   const language = useLanguage();
@@ -328,7 +337,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: 
               return (
                 <li key={friend.id}>
                   <button className="friend-row" onClick={() => onOpenFriend(friend.id)} data-testid="friend-row" data-friend={friend.id}>
-                    <Avatar id={friend.avatar} className="friend-avatar" />
+                    <FriendPic friend={friend} />
                     <span className="friend-text">
                       <b>{friend.name}</b>
                       {line && <small>{line}</small>}
@@ -345,7 +354,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: 
         <CardRow title={t("friends.activity")} testId="friends-activity">
           {state.activity.map((item) => {
             const entry = entryOfActivity(item, nameOf(state.friends, item.friend), now);
-            return <Card key={entry.id} testId="activity" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.note} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />;
+            return <Card key={entry.id} testId="activity" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.note} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />;
           })}
         </CardRow>
       )}
@@ -364,17 +373,35 @@ function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: Ope
   if (!answer) return <p className="muted" role="status"><span className="spinner" /> {t("common.loading")}</p>;
   if (answer.problem || !answer.data) return <p className="auth-error" role="alert">{answer.problem}</p>;
   const lists = listsOf(answer.data);
+  const progress = answer.data.progress;
   if (lists.length === 0) return <p className="muted" data-testid="friend-empty">{t("friends.noLists", { name: friend.name })}</p>;
   return (
     <div className="page-stack" data-testid="friend-lists">
       {lists.map((list) => (
         <CardRow key={list.info.id} title={listName(list.info)} testId="friend-list">
-          {entriesOfList(list).map((entry) => (
-            <Card key={entry.id} testId="friend-list-card" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.year ? String(entry.year) : undefined} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />
+          {withProgress(entriesOfList(list), progress).map((entry) => (
+            <Card key={entry.id} testId="friend-list-card" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.note ?? (entry.year ? String(entry.year) : undefined)} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />
           ))}
         </CardRow>
       ))}
     </div>
+  );
+}
+
+/** How far a friend got in a title they rated: the episode they are at and how far into it, with a thin bar. */
+function HowFar({ progress }: { progress: FriendProgress | undefined }) {
+  const how = progress && progressNote(progress);
+  if (!progress || !how) return null;
+  const fraction = progress.done ? 1 : (progress.percent ?? 0) / 100;
+  return (
+    <span className="rating-progress" data-testid="friend-rating-progress">
+      <span>{how}</span>
+      {fraction > 0 && (
+        <i aria-hidden="true">
+          <b style={{ width: `${Math.round(fraction * 100)}%` }} />
+        </i>
+      )}
+    </span>
   );
 }
 
@@ -387,6 +414,7 @@ function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: O
   if (!answer) return <p className="muted" role="status"><span className="spinner" /> {t("common.loading")}</p>;
   if (answer.problem || !answer.data) return <p className="auth-error" role="alert">{answer.problem}</p>;
   const ratings = sortRatings(ratedBy(answer.data), "new");
+  const progress = answer.data.progress;
   if (ratings.length === 0) return <p className="muted" data-testid="friend-empty">{t("friends.noRatings", { name: friend.name })}</p>;
   return (
     <ul className="rating-list" data-testid="friend-ratings">
@@ -402,6 +430,7 @@ function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: O
                 </span>
                 <span className="muted">{scoreWord(t, rating.score)}</span>
               </span>
+              <HowFar progress={progressFor(progress, rating.url)} />
               {rating.note && <span className="rating-quote">{rating.note}</span>}
               <span className="rating-facts">
                 {factLines(t, language, rating.ratedAt, storedFacts(rating)).map((line) => (
@@ -424,15 +453,9 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   const friends = useFriends();
   const friend = friends.state?.friends.find((each) => each.id === friendId);
   const [tab, setTab] = useState<"lists" | "ratings">("lists");
-  const [sure, setSure] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-
-  // The second tap has to come soon; a button left asking goes back to what it was.
-  useEffect(() => {
-    if (!sure) return;
-    const timer = setTimeout(() => setSure(false), 4000);
-    return () => clearTimeout(timer);
-  }, [sure]);
 
   // A friend who is gone (taken off from the other side, or from another screen), or friends turned off from another screen, leave nothing to show.
   useEffect(() => {
@@ -442,24 +465,25 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   if (!friend) return null;
 
   const remove = async () => {
-    if (!sure) return setSure(true);
+    setBusy(true);
+    setProblem(null);
     try {
       await friends.remove(friend.id);
       account.say(t("friends.removed", { name: friend.name }));
       onGone();
     } catch (error) {
       setProblem(describeError(error));
-      setSure(false);
+      setBusy(false);
     }
   };
 
   return (
     <div className="page-stack" data-testid="friend-page" data-friend={friend.id}>
       <section className="account-card">
-        <Avatar id={friend.avatar} className="account-avatar" />
+        <FriendPic friend={friend} size="big" />
         <div className="account-who">
           <h1 data-testid="friend-name">{friend.name}</h1>
-          <p className="muted">{t("friends.since", { day: formatDay(friend.since, language) })}</p>
+          <p className="muted">{[friend.on && friend.online ? t("friends.online") : "", t("friends.since", { day: formatDay(friend.since, language) })].filter(Boolean).join(" · ")}</p>
         </div>
       </section>
       {!friend.on && <p className="banner" data-testid="friend-off">{t("friends.theirsOff", { name: friend.name })}</p>}
@@ -471,13 +495,24 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
         ))}
       </div>
       {tab === "lists" ? <SharedLists friend={friend} onOpenTitle={onOpenTitle} /> : <SharedRatings friend={friend} onOpenTitle={onOpenTitle} />}
-      <button className="btn btn-danger btn-block" onClick={() => void remove()} data-testid="friend-remove" data-asking={sure}>
-        {sure ? t("friends.removeAgain", { name: friend.name }) : t("friends.remove")}
+      <button className="btn btn-danger btn-block" onClick={() => setAsking(true)} data-testid="friend-remove">
+        {t("friends.remove")}
       </button>
-      {problem && (
-        <p className="auth-error" role="alert">
-          {problem}
-        </p>
+      {asking && (
+        <Sheet title={t("friends.removeTitle", { name: friend.name })} onClose={() => setAsking(false)} testId="friend-unfriend">
+          <p className="muted">{t("friends.removeHelp")}</p>
+          <button className="btn btn-danger btn-block" disabled={busy} onClick={() => void remove()} data-testid="friend-unfriend-yes">
+            {t("friends.removeYes")}
+          </button>
+          <button className="btn btn-block" onClick={() => setAsking(false)} data-testid="friend-unfriend-cancel">
+            {t("common.cancel")}
+          </button>
+          {problem && (
+            <p className="auth-error" role="alert">
+              {problem}
+            </p>
+          )}
+        </Sheet>
       )}
     </div>
   );

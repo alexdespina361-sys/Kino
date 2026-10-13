@@ -4,6 +4,15 @@
 
 .friend-avatar { flex: none; font-size: 40px; line-height: 0; }
 .friend-avatar.small { font-size: 28px; }
+/* A friend's picture with a little green dot on it while they are online. */
+.friend-pic { position: relative; flex: none; font-size: 40px; line-height: 0; }
+.friend-pic.big { font-size: 72px; }
+.friend-pic[data-online="true"]::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: max(10px, 0.22em); height: max(10px, 0.22em); border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 2px var(--surface); }
+/* How far a friend got in a title they rated: the episode and the share of it, then a thin bar. */
+.rating-progress { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.8rem; }
+.rating-progress > span { flex: none; }
+.rating-progress i { flex: 1; max-width: 96px; height: 3px; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, 0.18); }
+.rating-progress b { display: block; height: 100%; background: var(--accent); }
 .friend-text { display: flex; flex-direction: column; flex: 1; gap: 2px; min-width: 0; text-align: left; }
 .friend-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .friend-text small { overflow: hidden; color: var(--muted); font-size: 0.8rem; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
 import { DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryItem, type PlayHint } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
+import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
 import { ListEditor } from "../account/Lists";
 import { ratingFor, scoreOf } from "../account/ratingText";
@@ -11,7 +12,7 @@ import { useFriends } from "../friends/FriendsProvider";
 import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
-import { BackspaceIcon, CheckIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { BackspaceIcon, CheckIcon, ChevronIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
@@ -20,7 +21,7 @@ import { ScoreBadge } from "../shared/ScoreBadge";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
-import { AddFriendTv, FriendPickerTv, FriendSettingsTv } from "./Friends";
+import { AddFriendTv, FriendPickerTv, FriendSettingsTv, UnfriendTv } from "./Friends";
 import { AccountChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, typedCharacter } from "./librarySearch";
@@ -127,7 +128,8 @@ type Overlay =
   | { kind: "edit"; id: string | null; back: Target; from?: PickOverlay }
   | { kind: "recommend"; entry: Entry; back: Target }
   | { kind: "addFriend"; back: Target }
-  | { kind: "friendSettings"; back: Target };
+  | { kind: "friendSettings"; back: Target }
+  | { kind: "unfriend"; id: string; name: string; back: Target };
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
 const RAIL: Target = { zone: "rail", row: -1, col: -1 };
@@ -138,13 +140,17 @@ const fresh = (target: Target): Target => (target ? { ...target } : target);
 /** Where the remote can start on a page, in the order they are tried. */
 const CONTENT_ZONES: Zone[] = ["rows", "grid", "keys"];
 /** What it can be put back on when a page is returned to. */
-const RESTORABLE: Zone[] = [...CONTENT_ZONES, "chips", "results"];
+const RESTORABLE: Zone[] = [...CONTENT_ZONES, "chips", "results", "foot"];
 
 const find = (root: ParentNode, pos: Pos) => root.querySelector<HTMLElement>(`[data-zone="${pos.zone}"][data-row="${pos.row}"][data-col="${pos.col}"]`);
 function posOf(element: Element | null): Pos | null {
   if (!(element instanceof HTMLElement) || !element.dataset.zone) return null;
   return { zone: element.dataset.zone as Zone, row: Number(element.dataset.row), col: Number(element.dataset.col) };
 }
+
+/** The buttons over a friend's titles: the way back, then the two halves of the page (the button of the one that is shown is where the remote stands). */
+const FRIEND_TABS = ["lists", "ratings"] as const;
+const friendChip = (tab: FriendTab | undefined): number => 1 + Math.max(0, FRIEND_TABS.indexOf(tab ?? "lists"));
 
 /** Where the remote was on this page, with the row of a page of rows found again by name. */
 function savedPos(view: View, rows: readonly HomeRow[]): Pos | undefined {
@@ -209,7 +215,7 @@ function slideIntoView(button: HTMLElement) {
 export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, onJoinParty, connected, partySize, notice }: BrowseProps) {
   const t = useT();
   const language = useLanguage();
-  const { status: accountStatus, say, me, profile } = useAccount();
+  const { status: accountStatus, me, profile } = useAccount();
   const friends = useFriends();
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
   const ratingsOn = settings.ratings ?? true;
@@ -247,8 +253,6 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   const [deep, setDeep] = useState(false);
   /** The page over the library, when there is one. */
   const [overlay, setOverlay] = useState<Overlay | null>(null);
-  /** The first press on a friend's "Remove" was made: the second one does it (a first press goes stale after a few seconds). */
-  const [removing, setRemoving] = useState(false);
   /** Somewhere to put the focus once the next render has put it on screen. */
   const [pending, setPending] = useState<Target>(null);
   const newest = progress[0];
@@ -436,8 +440,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: gridRows(shownResults.length, resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
-    // A friend's page: their lists, their ratings and the button that takes them off the friends, over the titles.
-    ...(view.kind === "friend" ? { chips: [3] } : {}),
+    // A friend's page: the way back, their lists and their ratings over the titles, and under them the button that takes them off the friends.
+    ...(view.kind === "friend" && friend ? { chips: [3], foot: [1] } : {}),
     ...(detail
       ? {
           close: [1],
@@ -458,9 +462,11 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     if (target.zone === "rail") return { zone: "rail", row: latest.current.railIndex, col: 0 };
     const at = savedPos(latest.current.view, latest.current.homeRows);
     if (at && RESTORABLE.includes(at.zone) && find(root, at)) return at;
-    // (On the lists page the buttons over the titles are somewhere to stand when the list has none.)
-    const zones: Zone[] = latest.current.view.kind === "list" || latest.current.view.kind === "friend" ? [...CONTENT_ZONES, "chips"] : CONTENT_ZONES;
-    return zones.map((zone): Pos => ({ zone, row: 0, col: 0 })).find((pos) => find(root, pos)) ?? null;
+    // (On the lists page the buttons over the titles are somewhere to stand when the list has none; on a friend's page, the button of the half that is shown, not the way back.)
+    const page = latest.current.view;
+    const zones: Zone[] = page.kind === "list" || page.kind === "friend" ? [...CONTENT_ZONES, "chips"] : CONTENT_ZONES;
+    const start = (zone: Zone): Pos => ({ zone, row: 0, col: zone === "chips" && page.kind === "friend" ? friendChip(page.tab) : 0 });
+    return zones.map(start).find((pos) => find(root, pos)) ?? null;
   };
   const focusAt = (target: Target) => {
     const pos = resolve(target);
@@ -522,17 +528,6 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   useEffect(() => {
     if (view.kind === "friends" && friends.unread > 0) void friends.markRead().catch(() => undefined);
   }, [view.kind, friends.unread]);
-  // "Remove friend" asks for a second press, soon, and only for the friend whose page it is.
-  const pageKey = viewKey(view);
-  useEffect(() => {
-    setRemoving(false);
-  }, [pageKey]);
-  useEffect(() => {
-    if (!removing) return;
-    const timer = window.setTimeout(() => setRemoving(false), 4000);
-    return () => window.clearTimeout(timer);
-  }, [removing]);
-
   useEffect(() => () => window.clearTimeout(bannerTimer.current), []);
 
   useEffect(() => {
@@ -632,7 +627,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
       }
       const next = stepFrom(now, at, action);
       // Up from the titles lands on the button of the list (or the half of a friend's page) that is shown, not on the one above whichever title the remote was on.
-      const shownChip = page.kind === "friend" ? (page.tab === "ratings" ? 1 : 0) : Math.max(0, all.findIndex((info) => info.id === shownList(page, all).id));
+      const shownChip = page.kind === "friend" ? friendChip(page.tab) : Math.max(0, all.findIndex((info) => info.id === shownList(page, all).id));
       go(at.zone === "grid" && next?.zone === "chips" ? { ...next, col: shownChip } : next);
     };
     window.addEventListener("keydown", onKey);
@@ -977,7 +972,18 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
           )}
           {view.kind === "friend" && friend && (
             <div className="tv-filters" role="radiogroup" aria-label={friend.name} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
-              {(["lists", "ratings"] as const).map((value, col) => (
+              <button
+                className="tv-choice"
+                data-testid="tv-friend-back"
+                data-zone="chips"
+                data-row={0}
+                data-col={0}
+                onClick={() => choose({ kind: "friends" })}
+                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 0 })}
+              >
+                <ChevronIcon className="flip" /> {t("common.back")}
+              </button>
+              {FRIEND_TABS.map((value, index) => (
                 <button
                   key={value}
                   className="tv-choice"
@@ -986,34 +992,13 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
                   data-testid={`friend-tab-${value}`}
                   data-zone="chips"
                   data-row={0}
-                  data-col={col}
+                  data-col={1 + index}
                   onClick={() => selectTab(friend.id, value)}
-                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col })}
+                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 1 + index })}
                 >
                   {t(value === "lists" ? "friends.tabLists" : "friends.tabRatings")}
                 </button>
               ))}
-              <button
-                className="tv-choice"
-                data-testid="friend-remove"
-                data-asking={removing}
-                data-zone="chips"
-                data-row={0}
-                data-col={2}
-                onClick={() => {
-                  if (!removing) return setRemoving(true);
-                  void friends
-                    .remove(friend.id)
-                    .then(() => {
-                      say(t("friends.removed", { name: friend.name }));
-                      choose({ kind: "friends" });
-                    })
-                    .catch(() => setRemoving(false));
-                }}
-                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 2 })}
-              >
-                <CloseIcon /> {removing ? t("friends.pressAgain", { name: friend.name }) : t("friends.remove")}
-              </button>
             </div>
           )}
           {grid.entries.length > 0 ? (
@@ -1024,6 +1009,21 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
             <p className="tv-view-empty" data-testid="tv-view-empty">
               {grid.empty}
             </p>
+          )}
+          {view.kind === "friend" && friend && (
+            <div className="tv-view-foot">
+              <button
+                className="tv-choice tv-choice-danger"
+                data-testid="friend-remove"
+                data-zone="foot"
+                data-row={0}
+                data-col={0}
+                onClick={() => setOverlay({ kind: "unfriend", id: friend.id, name: friend.name, back: { zone: "foot", row: 0, col: 0 } })}
+                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "foot", row: 0, col: 0 })}
+              >
+                <CloseIcon /> {t("friends.remove")}
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -1193,6 +1193,17 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
       {overlay?.kind === "recommend" && <FriendPickerTv title={t("friends.sendTitle")} lead={overlay.entry.title} build={() => recommendationOf(overlay.entry)} said="friends.sent" onClose={closeOverlay} />}
       {overlay?.kind === "addFriend" && <AddFriendTv onClose={closeOverlay} />}
       {overlay?.kind === "friendSettings" && <FriendSettingsTv onClose={closeOverlay} />}
+      {overlay?.kind === "unfriend" && (
+        <UnfriendTv
+          id={overlay.id}
+          name={overlay.name}
+          onCancel={closeOverlay}
+          onGone={() => {
+            setOverlay(null);
+            choose({ kind: "friends" });
+          }}
+        />
+      )}
 
       {overlay?.kind === "edit" && (
         <Screen testId="tv-list-edit" compact focus onBack={leaveEdit}>
@@ -1331,10 +1342,24 @@ function Tile({ entry, layout, rank, pos, corner, score, onArrive, onPress }: { 
 
   if (layout === "categories") {
     return (
-      <button className="tv-tile tv-tile-category" data-testid="tv-category-tile" {...common} style={{ "--hue": hue } as CSSProperties}>
+      <button className={`tv-tile tv-tile-category${entry.avatar ? " tv-tile-person" : ""}`} data-testid="tv-category-tile" {...common} style={{ "--hue": hue } as CSSProperties}>
         {showPicture && <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} />}
-        <span className="tv-category-name">{entry.title}</span>
-        {entry.note && <span className="tv-category-count">{entry.note}</span>}
+        {entry.avatar ? (
+          <>
+            <span className="tv-person-pic" data-online={entry.online ? "true" : undefined}>
+              <Avatar id={entry.avatar} />
+            </span>
+            <span className="tv-person-text">
+              <span className="tv-category-name">{entry.title}</span>
+              {entry.note && <span className="tv-category-count">{entry.note}</span>}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="tv-category-name">{entry.title}</span>
+            {entry.note && <span className="tv-category-count">{entry.note}</span>}
+          </>
+        )}
       </button>
     );
   }

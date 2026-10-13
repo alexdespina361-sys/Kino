@@ -318,6 +318,50 @@ export function AddFriendTv({ onClose }: { onClose: () => void }) {
   );
 }
 
+/* ------------------------------ taking a friend off ------------------------------ */
+
+/** The question before a friend is taken off the friends. Cancel is where the remote starts, so an OK pressed by mistake keeps them. */
+export function UnfriendTv({ id, name, onCancel, onGone }: { id: string; name: string; onCancel: () => void; onGone: () => void }) {
+  const t = useT();
+  const account = useAccount();
+  const friends = useFriends();
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const remove = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      await friends.remove(id);
+      account.say(t("friends.removed", { name }));
+      onGone();
+    } catch (error) {
+      setProblem(describeError(error));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Screen testId="tv-friend-unfriend" compact focus onBack={onCancel}>
+      <h1 className="tv-headline tv-headline-small">{t("friends.removeTitle", { name })}</h1>
+      <p className="tv-lead tv-friend-help">{t("friends.removeHelp")}</p>
+      {problem && (
+        <p className="tv-lead tv-signin-status is-problem" role="alert">
+          {problem}
+        </p>
+      )}
+      <div className="tv-actions">
+        <button className="tv-action tv-action-primary" onClick={onCancel} data-nav data-autofocus data-testid="tv-friend-unfriend-cancel">
+          {t("common.cancel")}
+        </button>
+        <button className="tv-action tv-action-danger" disabled={busy} onClick={() => void remove()} data-nav data-testid="tv-friend-unfriend-yes">
+          {t("friends.removeYes")}
+        </button>
+      </div>
+    </Screen>
+  );
+}
+
 /* ------------------------------ what is shared ------------------------------ */
 
 /** What a friend may do while friends are on, each its own switch (the one that turns friends on or off is in the settings). */
@@ -327,6 +371,7 @@ const SWITCHES: ReadonlyArray<{ key: FriendSetting; label: Key; testId: string }
   { key: "friendsGive", label: "friends.switchGive", testId: "tv-friends-give" },
   { key: "friendsGet", label: "friends.switchGet", testId: "tv-friends-get" },
   { key: "friendsInbox", label: "friends.switchInbox", testId: "tv-friends-inbox" },
+  { key: "friendsPresence", label: "friends.switchPresence", testId: "tv-friends-presence" },
 ];
 
 /** Choosing what friends may see and send, and whether what each watches is told. Each change reaches the server at once: it is what decides what a friend is shown. */

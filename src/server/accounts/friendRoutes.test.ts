@@ -619,6 +619,19 @@ describe("how far a friend got in the titles they keep and rate", () => {
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.progress).toEqual([{ link: url(1), percent: 100, done: true }]);
   });
 
+  it("is not counted for a few seconds of a title and away again, but a title that was finished is, however short", async () => {
+    const { alex, sam } = await friends({ friendsGive: true, friendsGet: true });
+    await alex.keep({
+      list: [saved(url(1), "Film 1"), saved(url(2), "Film 2"), saved(url(3), "Film 3")],
+      progress: [
+        { ...film, position: 20 }, // (20 seconds of the first film)
+        { ...watched({ key: `url:${url(2)}`, title: "Film 2", url: url(2) }), position: 40, done: true }, // (the second was finished: all of it)
+        { ...watched({ key: `url:${url(3)}`, title: "Film 3", url: url(3) }), position: 30, at: film.at - 1000 }, // (the third: also a few seconds)
+      ],
+    });
+    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.progress).toEqual([{ link: url(2), percent: 100, done: true }]);
+  });
+
   it("is not told unless the friend gives what they watch and this profile gets it: the lists and the ratings come without it", async () => {
     const { alex, sam } = await friends();
     await alex.keep({ list: [saved(url(1), "Film 1")], ratings: [rated(url(1), "Film 1")], progress: [film] });

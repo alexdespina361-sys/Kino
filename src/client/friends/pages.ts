@@ -5,7 +5,7 @@ import { ago, formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
 import { formatCode } from "../shared/format";
 import { entryOfRating, type Entry, type GridPage, type HomeRow, type View } from "../tv/pages";
-import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, type PartyInvitation, type Recommendation } from "./entries";
+import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, withProgress, type PartyInvitation, type Recommendation } from "./entries";
 
 /**
  * What the TV's friends pages are made of, worked out from what the server says of the friends: pure, like tv/pages.ts, so what
@@ -22,12 +22,14 @@ const entryOfParty = (item: PartyInvitation, from: string, now: number): Entry =
   note: `${formatCode(item.code)} · ${ago(item.at, now, getLanguage())}`,
 });
 
-/** A friend, as a tile that opens their page; the line under the name is what they are watching, else since when they are friends. */
+/** A friend, as a tile that opens their page, with the picture they chose; the line under the name is what they are watching, else that they are online, else since when they are friends. */
 const entryOfFriend = (friend: Friend, activity: readonly ActivityItem[], now: number): Entry => ({
   id: `friend:${friend.id}`,
   title: friend.name,
   url: "",
   opens: { kind: "friend", id: friend.id },
+  avatar: friend.avatar,
+  ...(friend.on && friend.online ? { online: true } : {}),
   note: friendLine(friend, activity, now) || t("friends.since", { day: formatDay(friend.since, getLanguage()) }),
 });
 
@@ -68,7 +70,8 @@ export function friendGrid(view: View, state: FriendsState | null, lists: Asked<
   if (view.kind !== "friend") return null;
   const friend = state?.friends.find((each) => each.id === view.id);
   if (!friend) return null;
-  const page = { title: friend.name, meta: friend.on ? t("friends.since", { day: formatDay(friend.since, getLanguage()) }) : t("friends.paused"), layout: "wide" as const };
+  const since = t("friends.since", { day: formatDay(friend.since, getLanguage()) });
+  const page = { title: friend.name, meta: friend.on ? (friend.online ? `${t("friends.online")}  ·  ${since}` : since) : t("friends.paused"), layout: "wide" as const };
   const none = (empty: string): GridPage => ({ ...page, entries: [], empty });
   if (!friend.on) return none(t("friends.theirsOff", { name: friend.name }));
 
@@ -77,11 +80,11 @@ export function friendGrid(view: View, state: FriendsState | null, lists: Asked<
     if (!lists) return none(t("common.loading"));
     if (!lists.data) return none(lists.problem ?? t("common.loading"));
     const entries = listsOf(lists.data).flatMap((list) => entriesOfList(list).map((entry): Entry => ({ ...entry, note: listName(list.info) })));
-    return { ...page, entries, empty: t("friends.noLists", { name: friend.name }) };
+    return { ...page, entries: withProgress(entries, lists.data.progress), empty: t("friends.noLists", { name: friend.name }) };
   }
 
   if (!friend.ratings) return none(t("friends.notSharingRatings", { name: friend.name }));
   if (!ratings) return none(t("common.loading"));
   if (!ratings.data) return none(ratings.problem ?? t("common.loading"));
-  return { ...page, entries: sortRatings(ratedBy(ratings.data), "new").map(entryOfRating), empty: t("friends.noRatings", { name: friend.name }) };
+  return { ...page, entries: withProgress(sortRatings(ratedBy(ratings.data), "new").map(entryOfRating), ratings.data.progress), empty: t("friends.noRatings", { name: friend.name }) };
 }

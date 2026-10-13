@@ -84,13 +84,20 @@ pnpm build && pnpm start     # http://localhost:8787
   ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone), **be invited to a
   watch party** (a button that joins on the phone; on the TV, pressing the invitation on the Friends page joins) and **hear what you watch** ("Sam is watching
   Alien", from a minute in, the last two weeks). Each of these has a switch of its own: *Friends can see my lists*, *…my ratings*, *Tell friends what I watch*,
-  *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*. They live in the
+  *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*, *Friends can see when I'm online*. They live in the
   profile's settings, so the server, not the screen, decides what a friend is shown or may send, from the other profile's synced settings; with friends off nothing is
   shared, sent or received, and the friends are kept for when it is turned on again (turning it on again **resumes sharing with them at once**, so a friend you
   mean to be rid of is removed first: with friends off, *Settings → Friends* on the phone lists the friends you still have, each with a button that removes them,
   and nothing has to be turned on for it). On the TV the friends are a place of the **Profile** page, on the phone a row of the account page. What friends sent shows as a row, a dot (phone) or a number on the menu's Profile line (TV), and a
-  line when it arrives; either friend can remove the other (the button asks twice), which also takes back the codes the one who removed had out, so that a code the
-  other was shown cannot bring them back. Friends: `/api/profiles/:id/friends…`.
+  line when it arrives; either friend can remove the other (a red button of its own under their page, away from the buttons over their titles, which opens a window
+  that asks first, with Cancel under the remote), which also takes back the codes the one who removed had out, so that a code the
+  other was shown cannot bring them back. A friend's tile (and row, on the phone) shows the picture they chose, and a friend's page on the TV has a **Back** button
+  of its own for a mouse (the remote's Back does the same). **Online**: a friend whose Kino page is open somewhere shows a green dot and *Online* (a page in front
+  asks the server how its friends stand every half minute, which is what tells the server it is there: online means heard from in the last 90 seconds, and it is
+  shown only while both profiles have friends and *Friends can see when I'm online* on, so that switch is the way to be seen as offline for a while, or always, and
+  it also hides the others from you). When you tell what you watch and a friend hears it, **how far you got** shows on their page of your lists and ratings: the
+  episode you are at and how far into it ("S2:E5 · 63%", or *Watched*), with a thin bar over the picture; a title left after a few seconds is not counted, and a
+  friend who does not hear what you watch sees none of it. Friends: `/api/profiles/:id/friends…`.
   Things to know: *Friends can see my ratings* does nothing, and is not shown, while ratings themselves are switched off (they stay kept, and are seen by nobody).
   What friends send is made fit to show (no characters that turn text around or hide in it; a friend's picture is shown only if it is the address of some other
   web site, never a path, an address on this site or one that only a private network answers to, such as `localhost` or `192.168.x.x`), and an inbox holds the newest 100 things, at most 20 from one friend; the same title sent again while it is

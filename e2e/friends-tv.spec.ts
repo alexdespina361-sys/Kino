@@ -356,7 +356,7 @@ test.describe("the code a screen shows to a friend can be copied", () => {
 });
 
 test.describe("a friend's page", () => {
-  test("has their lists, then their ratings, says when they are not shared, and a first press on Remove only asks", async ({ browser }) => {
+  test("has their lists, then their ratings, says when they are not shared, and Remove asks first, in a window of its own", async ({ browser }) => {
     test.setTimeout(180_000);
     const ann = await screenWithFriends(browser, "Ann");
     const bob = await screenWithFriends(browser, "Bob");
@@ -388,19 +388,49 @@ test.describe("a friend's page", () => {
     await bob.page.keyboard.press("Escape");
     await expect(view(bob.page)).toHaveAttribute("data-view", "friends");
 
-    // Remove asks for a second press, and then neither has the other
+    // Remove is a button of its own under the titles: it opens a window that asks first, and only "Yes, remove" does it (then neither has the other)
     await tile(bob.page, ann.name).click();
-    const remove = bob.page.getByTestId("friend-remove");
-    await expect(remove).toHaveAttribute("data-asking", "false");
-    await remove.click();
-    await expect(remove).toHaveAttribute("data-asking", "true");
-    await expect(remove).toContainText(`Press again to remove ${ann.name}`);
-    await remove.click();
+    await bob.page.getByTestId("friend-remove").click();
+    await expect(bob.page.getByTestId("tv-friend-unfriend")).toContainText(`Remove ${ann.name}?`);
+    await bob.page.getByTestId("tv-friend-unfriend-cancel").click();
+    await expect(tile(bob.page, "Alpha Film")).toBeVisible(); // (nothing happened)
+    await bob.page.getByTestId("friend-remove").click();
+    await bob.page.getByTestId("tv-friend-unfriend-yes").click();
     await expect(view(bob.page)).toHaveAttribute("data-view", "friends");
     await expect(bob.page.getByTestId("tv-account-toast")).toContainText(`${ann.name} is no longer your friend`);
     await expect(tile(bob.page, ann.name)).toHaveCount(0);
     await look(ann.page);
     await expect(tile(ann.page, bob.name)).toHaveCount(0);
+  });
+
+  test("a friend's tile has their picture with a green dot while they are online, and their page has a Back button and, when they tell what they watch, how far they got on their titles", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await seed(ann.page, { ...filmCards(), progress: [{ key: "alpha", at: Date.now(), title: "Alpha Film", url: FILM, year: 1931, position: 600, duration: 5400 }] });
+    await tile(ann.page, "Friends settings").click(); // (she tells what she watches...)
+    await ann.page.getByTestId("tv-friends-give").click();
+    await ann.page.getByTestId("tv-friend-settings-done").click();
+    await tile(bob.page, "Friends settings").click(); // (...and he wants to hear it)
+    await bob.page.getByTestId("tv-friends-get").click();
+    await bob.page.getByTestId("tv-friend-settings-done").click();
+
+    const her = tile(bob.page, ann.name);
+    await expect(async () => {
+      await look(ann.page);
+      await look(bob.page);
+      await expect(her.locator(".tv-person-pic")).toHaveAttribute("data-online", "true", { timeout: 1500 });
+    }).toPass({ timeout: 20_000 });
+    await expect(her.locator(".avatar")).toBeVisible();
+
+    await her.click();
+    await expect(tile(bob.page, "Alpha Film")).toContainText("11%"); // (600 of 5400 seconds)
+    await expect(tile(bob.page, "Alpha Film").locator(".tv-tile-progress i")).toHaveAttribute("style", /width: 11%/);
+    await bob.page.getByTestId("friend-tab-ratings").click();
+    await expect(tile(bob.page, "Alpha Film")).toContainText("11%");
+    await bob.page.getByTestId("tv-friend-back").click(); // (a button for a mouse; the remote's Back does the same)
+    await expect(view(bob.page)).toHaveAttribute("data-view", "friends");
   });
 
   test("a friend who turned friends off shows nothing, and says so", async ({ browser }) => {
@@ -429,12 +459,13 @@ test.describe("what is shared", () => {
     const ann = await screenWithFriends(browser, "Ann");
     await openFriends(ann.page);
     await tile(ann.page, "Friends settings").click();
-    const ids = ["tv-friends-lists", "tv-friends-ratings", "tv-friends-give", "tv-friends-get", "tv-friends-inbox"];
+    const ids = ["tv-friends-lists", "tv-friends-ratings", "tv-friends-give", "tv-friends-get", "tv-friends-inbox", "tv-friends-presence"];
     const states = () => Promise.all(ids.map((id) => ann.page.getByTestId(id).getAttribute("aria-checked")));
-    expect(await states()).toEqual(["true", "true", "false", "false", "true"]); // (what a friend may see is on by default; telling what is watched is not)
+    expect(await states()).toEqual(["true", "true", "false", "false", "true", "true"]); // (what a friend may see is on by default, and that they are online; telling what is watched is not)
     await ann.page.getByTestId("tv-friends-give").click();
     await ann.page.getByTestId("tv-friends-lists").click();
-    expect(await states()).toEqual(["false", "true", "true", "false", "true"]);
+    await ann.page.getByTestId("tv-friends-presence").click();
+    expect(await states()).toEqual(["false", "true", "true", "false", "true", "false"]);
 
     const profile = await ann.page.evaluate(() => localStorage.getItem("kino.profile"));
     await expect
@@ -442,7 +473,7 @@ test.describe("what is shared", () => {
         const answer = (await (await ann.page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0 } })).json()) as { settings: Array<{ key: string; value?: unknown }> };
         return Object.fromEntries(answer.settings.map((item) => [item.key, item.value]));
       })
-      .toMatchObject({ friends: true, friendsGive: true, friendsLists: false });
+      .toMatchObject({ friends: true, friendsGive: true, friendsLists: false, friendsPresence: false });
 
     // Back from the page lands where it came from
     await ann.page.keyboard.press("Escape");
@@ -712,7 +743,7 @@ test.describe("walking the friends' pages with the remote", () => {
     await expect(tile(page, "Friends settings")).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("tv-friends-lists")).toBeFocused();
-    await page.keyboard.press("ArrowRight"); // two columns of switches: lists | ratings, give | get, inbox
+    await page.keyboard.press("ArrowRight"); // two columns of switches: lists | ratings, give | get, inbox | online
     await expect(page.getByTestId("tv-friends-ratings")).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(page.getByTestId("tv-friends-get")).toBeFocused();
@@ -720,13 +751,15 @@ test.describe("walking the friends' pages with the remote", () => {
     await expect(page.getByTestId("tv-friends-give")).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(page.getByTestId("tv-friends-inbox")).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("tv-friends-presence")).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(tile(page, "Friends settings")).toBeFocused();
   });
 });
 
 test.describe("walking a friend's page with the remote", () => {
-  test("Up from the titles goes to the half that is shown, Right goes along the buttons, and Back goes out one step", async ({ browser }) => {
+  test("Up from the titles goes to the half that is shown, Right goes along the buttons, Remove is alone under the titles, and Back goes out one step", async ({ browser }) => {
     test.setTimeout(150_000);
     const ann = await screenWithFriends(browser, "Ann");
     const bob = await screenWithFriends(browser, "Bob");
@@ -751,8 +784,21 @@ test.describe("walking a friend's page with the remote", () => {
     await expect(tile(page, "Alpha Film")).toBeFocused();
     await page.keyboard.press("ArrowUp");
     await expect(page.getByTestId("friend-tab-ratings")).toBeFocused(); // (the half that is shown, not the one above the title)
-    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.getByTestId("tv-friend-back")).toBeFocused(); // (Back is the first button of the row)
+
+    // Remove is alone under the titles: Down from the last of them gets there, Up leaves; its window starts on Cancel, and Back from the window changes nothing
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
     await expect(page.getByTestId("friend-remove")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("tv-friend-unfriend-cancel")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("tv-friend-unfriend")).toHaveCount(0);
+    await expect(page.getByTestId("friend-remove")).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(tile(page, "Alpha Film")).toBeFocused();
 
     await page.keyboard.press("Escape");
     await expect(view(page)).toHaveAttribute("data-view", "friends");
@@ -766,6 +812,7 @@ test.describe("everything of friends fits the screen", () => {
     { name: "4:3", width: 1024, height: 768 },
     { name: "a small window", width: 800, height: 600 },
     { name: "a phone's width", width: 390, height: 844 },
+    { name: "a phone held sideways", width: 844, height: 390 },
     // (the longest words: the sizes follow the screen's width, so one shape tells for the rest)
     { name: "720p in Romanian", width: 1280, height: 720, language: "ro" as Language },
     { name: "720p in Italian", width: 1280, height: 720, language: "it" as Language },
@@ -798,13 +845,11 @@ test.describe("everything of friends fits the screen", () => {
       expect(row!.y + row!.height, "the friend's tile to the bottom").toBeLessThanOrEqual(screen.height + 0.5);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
-      // a friend's page, with the button asking for a second press
+      // a friend's page: Back and the two halves over the titles, Remove under them, and the window that asks
       await tile(page, bob.name).click();
       await expect(tile(page, "Alpha Film")).toBeVisible();
-      await page.getByTestId("friend-remove").click();
-      await expect(page.getByTestId("friend-remove")).toContainText(words["friends.pressAgain"].split(" {name}")[0]!);
       // (the buttons are one row, like the lists' on a narrow screen: that row slides to the one the remote is on)
-      for (const id of ["friend-tab-lists", "friend-tab-ratings", "friend-remove"]) {
+      for (const id of ["tv-friend-back", "friend-tab-lists", "friend-tab-ratings", "friend-remove"]) {
         await page.getByTestId(id).focus();
         await expect
           .poll(async () => {
@@ -813,6 +858,9 @@ test.describe("everything of friends fits the screen", () => {
           }, { message: `${id} inside the screen` })
           .toBe(true);
       }
+      await page.getByTestId("friend-remove").click();
+      await fits("tv-friend-unfriend", "the question before a friend goes");
+      await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
       await expect(view(page)).toHaveAttribute("data-view", "friends");
 

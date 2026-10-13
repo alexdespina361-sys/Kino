@@ -228,3 +228,31 @@ describe("stepFrom on the lists page (a row of buttons over the grid)", () => {
     expect(stepFrom({ ...shape, chips: [] }, at("grid", 0, 1), "up")).toEqual(at("top", 0, 0));
   });
 });
+
+describe("stepFrom on a friend's page (buttons over the titles, one button under them)", () => {
+  const shape: Shape = { rail: [1, 1, 1], top: [1], chips: [3], grid: [4, 2], foot: [1] };
+
+  it("goes down from the last row of titles to the button under them, and up from it to the last row", () => {
+    expect(stepFrom(shape, at("grid", 0, 2), "down")).toEqual(at("grid", 1, 1)); // (a row below still: the last one has only two)
+    expect(stepFrom(shape, at("grid", 1, 1), "down")).toEqual(at("foot", 0, 0));
+    expect(stepFrom(shape, at("foot", 0, 0), "up")).toEqual(at("grid", 1, 0));
+  });
+
+  it("reaches it from the buttons over the titles when there are no titles, and goes back up to them", () => {
+    const none: Shape = { ...shape, grid: [] };
+    expect(stepFrom(none, at("chips", 0, 1), "down")).toEqual(at("foot", 0, 0));
+    expect(stepFrom(none, at("foot", 0, 0), "up")).toEqual(at("chips", 0, 0));
+    expect(stepFrom({ ...none, chips: [] }, at("foot", 0, 0), "up")).toEqual(at("top", 0, 0));
+  });
+
+  it("has nothing beside or under it but the menu", () => {
+    expect(stepFrom(shape, at("foot", 0, 0), "left")).toEqual({ zone: "rail", row: -1, col: -1 });
+    expect(stepFrom(shape, at("foot", 0, 0), "right")).toBeNull();
+    expect(stepFrom(shape, at("foot", 0, 0), "down")).toBeNull();
+  });
+
+  it("is not a stop on a page without one: the last row of titles leads nowhere down", () => {
+    expect(stepFrom({ ...shape, foot: [] }, at("grid", 1, 1), "down")).toBeNull();
+    expect(stepFrom({ ...shape, grid: [], foot: [] }, at("chips", 0, 1), "down")).toBeNull();
+  });
+});
