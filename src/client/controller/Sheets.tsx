@@ -14,8 +14,10 @@ import {
   MAX_PHONE_TVS,
   PLAYBACK_SPEEDS,
   resolveCaptionStyle,
+  tagLabel,
   versionLabel,
   type CaptionStyle,
+  type PartyProfile,
   type PartyTv,
   type PhoneTv,
   type PlayerState,
@@ -24,13 +26,14 @@ import {
   type WatchedEntry,
 } from "../../shared";
 import { languageNames, useSubtitleLists } from "../account/subtitles";
+import { useAddable, useAddFromParty } from "../friends/useRequests";
 import { t, useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { CopyLink } from "../shared/CopyLink";
 import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatCode, formatLeft } from "../shared/format";
-import { CheckIcon, ScanIcon } from "../shared/icons";
+import { CheckIcon, PlusIcon, ScanIcon } from "../shared/icons";
 import { controlLink, partyLink } from "../shared/launch";
 import { hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
@@ -642,6 +645,34 @@ function Invite({ code, endsAt }: { code: string; endsAt: number }) {
   );
 }
 
+/** The short button beside a guest who is signed in as a profile: asks them to be friends (they have to say yes). Nothing for a friend already. */
+function PartyAdd({ profile }: { profile: PartyProfile | undefined }) {
+  const t = useT();
+  const addable = useAddable(profile);
+  const addFromParty = useAddFromParty();
+  if (!profile || !addable) return null;
+  return (
+    <button
+      className="btn"
+      data-testid="party-add"
+      data-state={addable}
+      disabled={addable === "asked"}
+      aria-label={t("friends.partyAddAria", { name: tagLabel(profile.name, profile.tag) })}
+      onClick={() => void addFromParty(profile)}
+    >
+      {addable === "asked" ? (
+        <>
+          <CheckIcon /> {t("friends.partyRequested")}
+        </>
+      ) : (
+        <>
+          <PlusIcon /> {t("friends.partyAdd")}
+        </>
+      )}
+    </button>
+  );
+}
+
 /**
  * The watch party of this phone's TV: how to bring another screen in (the code and link of the party, or typing the code that a
  * TV shows), who is in, and a way to send a screen away. What plays here plays on all of them.
@@ -733,6 +764,7 @@ export function PartySheet({
               </span>
             </span>
             <span className="party-actions">
+              <PartyAdd profile={tv.profile} />
               <button className="btn" data-testid="party-admin" onClick={() => onAdmin(tv.id, !tv.admin)}>
                 {t(tv.admin ? "party.removeAdmin" : "party.makeAdmin")}
               </button>

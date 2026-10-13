@@ -117,6 +117,13 @@ pnpm build && pnpm start     # http://localhost:8787
   its username, and a friend (or whoever is shown one of your codes) sees that name: with an empty or one-letter password, rename it. A TV left open from before a
   version that adds a setting needs a reload once (an older page does not know the new setting and cannot read the account's answer; newer pages leave such
   settings out instead).
+  **Tags and requests.** Every profile has a **tag**, its name and a number (`Sam#2`: the lowest number that no other profile of that name has, whatever the capitals; it is kept
+  when only the capitals of the name change). The Add a friend page shows yours (on the phone with a **Copy tag** button); typing somebody else's there and pressing **Find**
+  shows who it is and a **Send request** button. Finding only **asks**: the other gets a line, a *Friend requests* row (a tile on the TV, whose window has **Accept** under the remote
+  and **Decline**, and where Back leaves the request waiting) and a number on the badge, and nobody is a friend until they say yes, except that two who have asked each other are
+  friends at once. A profile with friends off cannot be found by tag. A tag is looked up only when **Find** is pressed, so a half-typed one costs no wrong guess, and a
+  wrong tag counts against the same limit as a wrong code (10 per 15 minutes for an account, 100 for an address). A request waits 30 days, a profile keeps the newest 30 it was sent,
+  and 30 can be sent an hour. `GET /api/profiles/:id/friends/tags/:tag`, `POST …/friends/requests` (`{tag}`), `POST …/friends/requests/:from/accept`, `DELETE …/friends/requests/:from`.
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.
@@ -339,6 +346,12 @@ episode and source pickers, and who is in stay the host's: the server only takes
 admin (`TV_PARTY_CMD`), and nothing at all while the host's screen is not there. Everyone in the party sees who is an admin. A guest stops being
 one when it leaves, is sent away or the party ends, and is not one when it joins again.
 
+**Adding someone from a party:** a screen that is signed in as a profile with friends on is listed with that profile, and everybody in the party whose
+own profile has friends on gets a short **Add** button beside it (**Requested** while the request waits for a yes; nothing for yourself, a friend already, or a screen nobody is
+signed in on). It sends the same request as typing a tag does (see Friends). The profile shown is the server's word, not the screen's: a signed-in screen asks for a single-use
+proof of who it is (`POST /api/profiles/:id/screen`, good for two minutes) and sends it with `TV_PROFILE`, so a screen cannot pass for somebody else, and a profile that has
+friends off is not shown at all.
+
 **A phone as a guest** watches in either orientation. The guest's bar (Audio & subtitles, Mute, Watch party, Full screen, Leave) sits along the
 top: held sideways it is one row, held upright "Watching along with …" has a line of its own and the buttons wrap under it. The guest's screen says
 what it is waiting for: a spinner while the video loads, the reason in words when it can't be played (and the code underneath), and
@@ -490,7 +503,7 @@ several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page
 phone, a tablet and a phone held sideways, a finger on the picture (taps, double taps, a hold, the big button, the landscape lock, the episode's name:
 `e2e/player-touch.spec.ts`; the recognizer on its own in `src/client/tv/gestures.test.ts`), the end card and mute, full screen (at the first press, kept for the next visit, the buttons),
 ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV, and the score on a title's picture), the TV's menu and its Profile page (`e2e/profile-hub.spec.ts`, which also checks that what the page says fits its tiles in the three languages at four screen sizes), friends (made with a code or a link, what a friend can see,
-what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
+what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`; tags, requests and the Add button of a party, with the fit of its rows: `e2e/friend-tags.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
 itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`). A Hisense browser is imitated by its user agent

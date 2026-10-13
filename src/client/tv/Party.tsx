@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { Message, PartyView } from "../../shared";
+import { tagLabel, type Message, type PartyTv, type PartyView } from "../../shared";
 import { useFriends } from "../friends/FriendsProvider";
+import { useAddable, useAddFromParty } from "../friends/useRequests";
 import { useT } from "../i18n";
 import { CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
@@ -19,9 +20,53 @@ const PANEL_INVITE_NAV: Nav = { "data-opt": true, "data-col": 0 };
 /** The panel's page for choosing friends is a single column of its own. */
 const PANEL_PICK_NAV: Nav = { "data-opt": true, "data-col": 0 };
 
+/** What can be done to a screen of the party: ask the profile on it to be friends (anybody here, short), and for the host to make it an admin or send it away. Nothing at all leaves no room taken. */
+function MemberActions({ tv, nav, onRemove, onAdmin }: { tv: PartyTv & { host: boolean }; nav: Nav; onRemove?: ((id: string) => void) | undefined; onAdmin?: ((id: string, admin: boolean) => void) | undefined }) {
+  const t = useT();
+  const addable = useAddable(tv.profile);
+  const addFromParty = useAddFromParty();
+  const steering = !tv.host && (onAdmin || onRemove);
+  if (!addable && !steering) return null;
+  return (
+    <span className="tv-party-actions">
+      {tv.profile && addable && (
+        <button
+          className="tv-party-remove tv-party-add"
+          data-testid="tv-party-add"
+          data-state={addable}
+          aria-disabled={addable === "asked"}
+          aria-label={t("friends.partyAddAria", { name: tagLabel(tv.profile.name, tv.profile.tag) })}
+          onClick={() => addable === "add" && void addFromParty(tv.profile!)}
+          {...nav}
+        >
+          {addable === "asked" ? (
+            <>
+              <CheckIcon /> {t("friends.partyRequested")}
+            </>
+          ) : (
+            <>
+              <PlusIcon /> {t("friends.partyAdd")}
+            </>
+          )}
+        </button>
+      )}
+      {steering && onAdmin && (
+        <button className="tv-party-remove" data-testid="tv-party-admin" onClick={() => onAdmin(tv.id, !tv.admin)} {...nav}>
+          {t(tv.admin ? "party.removeAdmin" : "party.makeAdmin")}
+        </button>
+      )}
+      {steering && onRemove && (
+        <button className="tv-party-remove" data-testid="tv-party-remove" onClick={() => onRemove(tv.id)} {...nav}>
+          {t("party.remove")}
+        </button>
+      )}
+    </span>
+  );
+}
+
 /**
  * Who is in the party, the host first. The host can send a guest away, or make it an admin (the film's playback is then its to steer too);
- * a screen that is gone from the network is dimmed.
+ * a screen that is gone from the network is dimmed. A screen signed in as a profile with friends on can be asked to be friends by anyone here.
  */
 function Members({ party, nav, onRemove, onAdmin }: { party: PartyView; nav: Nav; onRemove?: (id: string) => void; onAdmin?: (id: string, admin: boolean) => void }) {
   const t = useT();
@@ -39,20 +84,7 @@ function Members({ party, nav, onRemove, onAdmin }: { party: PartyView; nav: Nav
           {tv.host && <small>{t("party.host")}</small>}
           {tv.admin && <small>{t("party.admin")}</small>}
           {!tv.online && <small>{t("party.offline")}</small>}
-          {(onAdmin || onRemove) && !tv.host && (
-            <span className="tv-party-actions">
-              {onAdmin && (
-                <button className="tv-party-remove" data-testid="tv-party-admin" onClick={() => onAdmin(tv.id, !tv.admin)} {...nav}>
-                  {t(tv.admin ? "party.removeAdmin" : "party.makeAdmin")}
-                </button>
-              )}
-              {onRemove && (
-                <button className="tv-party-remove" data-testid="tv-party-remove" onClick={() => onRemove(tv.id)} {...nav}>
-                  {t("party.remove")}
-                </button>
-              )}
-            </span>
-          )}
+          {tv.id !== party.you && <MemberActions tv={tv} nav={nav} onRemove={onRemove} onAdmin={onAdmin} />}
         </li>
       ))}
     </ul>

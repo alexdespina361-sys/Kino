@@ -1,4 +1,4 @@
-import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
+import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type Person } from "../../shared";
 import { continueNote, listName, unfinished } from "../account/cards";
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
@@ -94,6 +94,8 @@ export interface Entry {
   ask?: string;
   /** A friend's request to watch together: the friend, whom pressing it starts a party for (and invites). */
   wants?: string;
+  /** Somebody's request to be friends: pressing it asks whether to say yes. */
+  request?: Person;
   /** A tile that opens a page over the library, or the account's own pages, instead of a title or a page of the library. */
   action?: "addFriend" | "friendSettings" | "settings" | "signIn";
   /** A person's tile (a friend): the picture they chose, and whether they are online now. */

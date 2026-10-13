@@ -1,10 +1,10 @@
-import { activityVerb, partyOpen, type ActivityItem, type FriendsState } from "../../shared";
+import { activityVerb, partyOpen, tagLabel, type ActivityItem, type FriendsState } from "../../shared";
 import type { Key, Params } from "../i18n";
 
 /**
- * What is new on the Friends page, so a screen can say so in a line when it looks again: a friend was added, a title or an
- * invitation arrived, a friend watched something. It is worked out from two answers of the server and kept as plain facts, which
- * `describeNews` puts into words.
+ * What is new on the Friends page, so a screen can say so in a line when it looks again: a friend was added, somebody asked to be one, a
+ * title or an invitation arrived, a friend watched something. It is worked out from two answers of the server and kept as plain facts,
+ * which `describeNews` puts into words.
  */
 
 /** What a screen has been told of already. */
@@ -12,6 +12,8 @@ export interface Known {
   friends: ReadonlySet<string>;
   inbox: ReadonlySet<string>;
   activity: ReadonlySet<string>;
+  /** The profiles that had asked to be friends. */
+  requests: ReadonlySet<string>;
 }
 
 /** What a friend watched is the same thing until it is another title or episode, or the end: not each time the minute they are in moves. */
@@ -21,11 +23,13 @@ export const known = (state: FriendsState): Known => ({
   friends: new Set(state.friends.map((friend) => friend.id)),
   inbox: new Set(state.inbox.map((item) => item.id)),
   activity: new Set(state.activity.map(activityId)),
+  requests: new Set(state.requests.map((request) => request.from.id)),
 });
 
 export type News =
   | { kind: "party"; name: string }
   | { kind: "together"; name: string }
+  | { kind: "request"; name: string }
   | { kind: "recommend"; name: string; title: string }
   | { kind: "friend"; name: string }
   | { kind: "activity"; name: string; title: string; verb: "watching" | "watched" | "finished" };
@@ -45,6 +49,7 @@ export function whatsNew(before: Known | null, state: FriendsState, now: number)
     // (an invitation to a party that is over is not news: a screen that was asleep for the evening wakes up to it)
     ...fresh.flatMap((item): News[] => (item.kind === "party" && partyOpen(item, now) ? [{ kind: "party", name: name(item.from) }] : [])),
     ...fresh.flatMap((item): News[] => (item.kind === "together" ? [{ kind: "together", name: name(item.from) }] : [])),
+    ...state.requests.filter((request) => !before.requests.has(request.from.id)).map((request): News => ({ kind: "request", name: tagLabel(request.from.name, request.from.tag) })),
     ...fresh.flatMap((item): News[] => (item.kind === "recommend" ? [{ kind: "recommend", name: name(item.from), title: item.title }] : [])),
     ...state.friends.filter((friend) => !before.friends.has(friend.id)).map((friend): News => ({ kind: "friend", name: friend.name })),
     ...state.activity
@@ -55,16 +60,19 @@ export function whatsNew(before: Known | null, state: FriendsState, now: number)
 
 export type Translate = (key: Key, params?: Params) => string;
 
-/** One line for the news: an invitation or a request for a party if there is one, else the one thing that happened, else how many things. */
+/** One line for the news: an invitation or a request (for a party, to be friends) if there is one, else the one thing that happened, else how many things. */
 export function describeNews(news: readonly News[], t: Translate): string | undefined {
-  const first = news.find((item) => item.kind === "party") ?? news.find((item) => item.kind === "together") ?? news[0];
+  const asked = (item: News) => item.kind === "party" || item.kind === "together" || item.kind === "request";
+  const first = news.find((item) => item.kind === "party") ?? news.find((item) => item.kind === "together") ?? news.find((item) => item.kind === "request") ?? news[0];
   if (!first) return undefined;
-  if (first.kind !== "party" && first.kind !== "together" && news.length > 1) return t("friends.news.many", { count: news.length });
+  if (!asked(first) && news.length > 1) return t("friends.news.many", { count: news.length });
   switch (first.kind) {
     case "party":
       return t("friends.news.party", { name: first.name });
     case "together":
       return t("friends.news.together", { name: first.name });
+    case "request":
+      return t("friends.news.request", { name: first.name });
     case "recommend":
       return t("friends.news.recommend", { name: first.name, title: first.title });
     case "friend":

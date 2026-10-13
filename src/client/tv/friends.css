@@ -13,6 +13,19 @@
 .tv-friend-ask span { color: var(--muted); font-size: 0.8em; }
 .tv-friend-avatar { flex: none; font-size: 3.6em; }
 
+/* Three ways of adding a friend side by side: a little narrower than the two of a party's (tv.css), so that all three fit. (A hand-held screen has them one to a row, as tv.css says.) */
+@media (min-width: 900px) {
+  .tv-friend-choices { gap: 1.8em; }
+  .tv-friend-choices .tv-party-choice { width: 21em; }
+}
+/* The box a tag is typed in: as typed (the box for codes shouts them). */
+.tv .auth-tv .tv-tag-input { text-align: center; }
+
+/* The short button beside a guest of a party who can be asked to be friends: "Add", then "Requested" once asked. */
+.tv-party-add { display: inline-flex; align-items: center; gap: 0.3em; }
+.tv-party-add svg { flex: none; width: 0.9em; height: 0.9em; }
+.tv-party-add[aria-disabled="true"] { opacity: 0.7; cursor: default; }
+
 /* What is shared: the switches, two to a row where there is room for it. */
 .tv-friend-help { max-width: 44em; text-align: center; }
 .tv-friend-switches { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8em 1.2em; width: min(100%, 88em); }

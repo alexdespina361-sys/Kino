@@ -231,7 +231,7 @@ export function AccountScreen({
             {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={() => setView("picker")} testId="menu-switch" />}
             <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={() => setView("profiles")} testId="menu-profiles" />
             <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
-            {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.unread > 0 ? String(friends.unread) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
+            {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.attention > 0 ? String(friends.attention) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
             {ratingsRow}
             <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
             <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
@@ -305,7 +305,7 @@ export function ChooseProfile() {
 export function AccountButton({ onClick }: { onClick: () => void }) {
   const t = useT();
   const { status, profile, me } = useAccount();
-  const { unread } = useFriends();
+  const { attention: unread } = useFriends();
   if (status !== "ready") return null;
   if (me && profile) {
     return (

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { canAskTogether, FRIEND_NOTE_MAX, friendLink, partyOpen, reachable, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type InboxItem, type Message, type OpenInvite } from "../../shared";
+import { canAskTogether, FRIEND_NOTE_MAX, friendLink, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -10,6 +10,7 @@ import { ago, formatDay } from "../account/time";
 import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { usePeek } from "../friends/usePeek";
+import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { CopyCode, CopyLink } from "../shared/CopyLink";
@@ -76,6 +77,39 @@ function CodeCard({ code, onDone }: { code: string; onDone: () => void }) {
       </span>
       <button className="btn btn-red" disabled={busy} onClick={() => void add()} data-testid="friend-code-add">
         {t("friends.addButton")}
+      </button>
+    </div>
+  );
+}
+
+/** A tag that was looked for: who has it, and the button that asks them to be friends (they have to say yes). */
+function TagCard({ text, onDone }: { text: string; onDone: () => void }) {
+  const t = useT();
+  const { seen, problem, waiting, busy, send } = useTagAsk(text, onDone);
+
+  if (problem) {
+    return (
+      <p className="auth-error" role="alert" data-testid="friend-tag-error">
+        {problem}
+      </p>
+    );
+  }
+  if (!seen) {
+    return (
+      <p className="muted" role="status">
+        <span className="spinner" /> {t("friends.linkLooking")}
+      </p>
+    );
+  }
+  return (
+    <div className="friend-code-card" data-testid="friend-tag-card">
+      <Avatar id={seen.avatar} className="friend-avatar" />
+      <span className="friend-text">
+        <b data-testid="friend-tag-name">{tagLabel(seen.name, seen.tag)}</b>
+        <small>{t("friends.tagAsk")}</small>
+      </span>
+      <button className="btn btn-red" disabled={busy || waiting} onClick={() => void send()} data-testid="friend-tag-send">
+        {waiting ? t("friends.requestPending") : t("friends.requestButton")}
       </button>
     </div>
   );
@@ -168,14 +202,37 @@ function InviteCard({ invite }: { invite: OpenInvite }) {
   );
 }
 
-/** Both ways of becoming friends: make a code to give, or type the one you were given. */
+/** This profile's own tag, with the button that copies it: what a friend types to find them. */
+function YourTag({ label }: { label: string }) {
+  const t = useT();
+  const shown = useRef<HTMLElement>(null);
+  return (
+    <div className="your-tag" data-testid="friend-your-tag">
+      <span className="your-tag-line">
+        <span className="muted small">{t("friends.yourTag")}</span>
+        <b className="copy-code-text" ref={shown} data-testid="friend-your-tag-text">
+          {label}
+        </b>
+      </span>
+      <CopyCode code={label} shown={shown} testId="friend-your-tag-copy" buttonClass="btn" words="tag" />
+      <p className="muted small">{t("friends.yourTagHelp")}</p>
+    </div>
+  );
+}
+
+/** Ways of becoming friends: make a code to give, type the one you were given, or find somebody by their tag (they have to say yes). */
 function AddFriend() {
   const t = useT();
+  const account = useAccount();
   const friends = useFriends();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
   const code = linkCodeOf(typed);
+  /** What was typed to find a tag, and what was looked for (only when asked to: a tag has no length that says it is complete). */
+  const [tagTyped, setTagTyped] = useState("");
+  const [looked, setLooked] = useState("");
+  const mine = account.profile?.tag !== undefined ? tagLabel(account.profile.name, account.profile.tag) : undefined;
 
   const make = async () => {
     setBusy(true);
@@ -220,7 +277,68 @@ function AddFriend() {
         />
       </label>
       {code && <CodeCard key={code} code={code} onDone={() => setTyped("")} />}
+      <form
+        className="tag-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (parseTag(tagTyped)) setLooked(tagTyped.trim());
+        }}
+        noValidate
+      >
+        <label className="auth-field">
+          <span>{t("friends.tagTitle")}</span>
+          <span className="tag-row">
+            <input
+              data-testid="friend-tag-input"
+              autoCapitalize="off"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              maxLength={30}
+              placeholder={t("friends.tagPlaceholder")}
+              aria-label={t("friends.tagLabel")}
+              value={tagTyped}
+              onChange={(event) => {
+                setTagTyped(event.target.value);
+                setLooked("");
+              }}
+            />
+            <button className="btn" type="submit" disabled={!parseTag(tagTyped)} data-testid="friend-tag-find">
+              {t("friends.tagFind")}
+            </button>
+          </span>
+        </label>
+      </form>
+      {looked && <TagCard key={looked} text={looked} onDone={() => { setTagTyped(""); setLooked(""); }} />}
+      {mine && <YourTag label={mine} />}
     </Group>
+  );
+}
+
+/** Somebody who asked to be friends: who it is, and the buttons that say yes or no. */
+function RequestRow({ request }: { request: FriendRequest }) {
+  const t = useT();
+  const answer = useAnswerRequests();
+  const [busy, setBusy] = useState(false);
+  const name = tagLabel(request.from.name, request.from.tag);
+  const answered = (work: Promise<void>) => {
+    setBusy(true);
+    void work.finally(() => setBusy(false));
+  };
+  return (
+    <li className="inbox-item" data-testid="friend-request" data-from={request.from.id}>
+      <Avatar id={request.from.avatar} className="friend-avatar" />
+      <span className="inbox-text">
+        <b data-testid="friend-request-name">{name}</b>
+        <small>{t("friends.requestWants")}</small>
+      </span>
+      <button className="btn btn-red" disabled={busy} onClick={() => answered(answer.accept(request.from))} data-testid="friend-request-accept">
+        {t("friends.accept")}
+      </button>
+      <button className="mini" disabled={busy} onClick={() => answered(answer.decline(request.from))} aria-label={t("friends.decline")} title={t("friends.decline")} data-testid="friend-request-decline">
+        <CloseIcon />
+      </button>
+    </li>
   );
 }
 
@@ -360,6 +478,15 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty }: { onOpe
   return (
     <div className="page-stack" data-testid="friends-page">
       {friends.status === "offline" && <p className="muted small">{t("friends.offline")}</p>}
+      {state.requests.length > 0 && (
+        <Group title={t("friends.requests")}>
+          <ul className="inbox-list" data-testid="friends-requests">
+            {state.requests.map((request) => (
+              <RequestRow key={request.from.id} request={request} />
+            ))}
+          </ul>
+        </Group>
+      )}
       {state.inbox.length > 0 && (
         <Group title={t("friends.inbox")}>
           <ul className="inbox-list" data-testid="friends-inbox">

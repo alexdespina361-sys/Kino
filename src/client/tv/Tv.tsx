@@ -22,6 +22,7 @@ import {
 import { useAccount } from "../account/AccountProvider";
 import { describeError } from "../account/errors";
 import { profileStore, useProfileData } from "../account/store";
+import { friendsApi } from "../friends/api";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { t, useT } from "../i18n";
@@ -893,6 +894,24 @@ export function Tv() {
   useEffect(() => {
     if (connection === "open") socketRef.current?.send({ type: "TV_NAME", name: profileName });
   }, [connection, profileName]);
+
+  // And who it is: a party shows the picture, name and tag of the profile that is signed in here (when it has friends on), so that the others
+  // can ask it to be friends. The party cannot see the cookie, so the server gives this screen a proof, once, and the party asks the server
+  // about it. Said again with every connection and every change of profile; with nobody signed in, or friends off, the message is empty.
+  const profileId = account.me && account.profile ? account.profile.id : undefined;
+  const friendsOn = settings.friends === true;
+  useEffect(() => {
+    if (connection !== "open") return;
+    if (!profileId || !friendsOn) return void socketRef.current?.send({ type: "TV_PROFILE" });
+    let stopped = false;
+    friendsApi.screen(profileId).then(
+      ({ proof }) => !stopped && socketRef.current?.send({ type: "TV_PROFILE", proof }),
+      () => !stopped && socketRef.current?.send({ type: "TV_PROFILE" }),
+    );
+    return () => {
+      stopped = true;
+    };
+  }, [connection, profileId, friendsOn]);
 
   const linkTriedRef = useRef(false);
   useEffect(() => {

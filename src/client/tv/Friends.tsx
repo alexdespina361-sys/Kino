@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { friendChoices, friendLink, reachable, type FriendSetting, type Message, type OpenInvite } from "../../shared";
+import { friendChoices, friendLink, parseTag, reachable, tagLabel, type FriendSetting, type Message, type OpenInvite, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -7,10 +7,11 @@ import { useSettings } from "../account/settings";
 import { formatDay } from "../account/time";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
+import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
 import { usePeek } from "../friends/usePeek";
 import { useLanguage, useT, type Key } from "../i18n";
 import { CopyCode } from "../shared/CopyLink";
-import { CheckIcon, PlusIcon, UsersIcon } from "../shared/icons";
+import { CheckIcon, PlusIcon, SearchIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { Screen } from "./Idle";
@@ -288,16 +289,102 @@ function TypeCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }
   );
 }
 
-/** Both ways of becoming friends: make a code to give, or type the one that was given. */
+/** Somebody found by their tag: who it is, and the button that asks them to be friends (they have to say yes). */
+function TaggedFriend({ text, onDone }: { text: string; onDone: () => void }) {
+  const t = useT();
+  const { seen, problem, waiting, busy, send } = useTagAsk(text, onDone);
+  if (problem) {
+    return (
+      <p className="tv-lead tv-signin-status is-problem" role="alert" data-testid="tv-friend-tag-error">
+        {problem}
+      </p>
+    );
+  }
+  if (!seen) {
+    return (
+      <p className="tv-lead" role="status">
+        <span className="spinner" /> {t("friends.linkLooking")}
+      </p>
+    );
+  }
+  return (
+    <div className="tv-friend-found" data-testid="tv-friend-tag-found">
+      <Avatar id={seen.avatar} className="tv-friend-avatar" />
+      <p className="tv-friend-ask">
+        <b data-testid="tv-friend-tag-name">{tagLabel(seen.name, seen.tag)}</b>
+        <span>{t("friends.tagAsk")}</span>
+      </p>
+      <button className="tv-action tv-action-primary" disabled={busy || waiting} onClick={() => void send()} data-nav data-testid="tv-friend-tag-send">
+        {waiting ? t("friends.requestPending") : t("friends.requestButton")}
+      </button>
+    </div>
+  );
+}
+
+/** Typing the tag of a friend ("Sam#2"), on a keyboard or the TV's own. It is looked for when asked to (a tag is complete only when its owner says so). */
+function TypeTag({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
+  const t = useT();
+  const [typed, setTyped] = useState("");
+  const [looked, setLooked] = useState("");
+  const wanted = parseTag(typed);
+  const find = () => wanted && setLooked(typed.trim());
+  return (
+    <Screen key="tag" testId="tv-friend-tag-page" compact focus onBack={onBack}>
+      <h1 className="tv-headline tv-headline-small">{t("friends.tagTitle")}</h1>
+      <form
+        className="auth-form auth-tv"
+        onSubmit={(event) => {
+          event.preventDefault();
+          find();
+        }}
+        noValidate
+      >
+        <label className="auth-field">
+          <span>{t("friends.tagLabel")}</span>
+          <input
+            className="tv-tag-input"
+            data-testid="tv-friend-tag-input"
+            data-nav
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={30}
+            placeholder={t("friends.tagPlaceholder")}
+            value={typed}
+            onChange={(event) => {
+              setTyped(event.target.value);
+              setLooked("");
+            }}
+          />
+        </label>
+      </form>
+      {looked && <TaggedFriend key={looked} text={looked} onDone={onDone} />}
+      <div className="tv-actions">
+        <button className="tv-action tv-action-primary" disabled={!wanted} onClick={find} data-nav data-testid="tv-friend-tag-find">
+          {t("friends.tagFind")}
+        </button>
+        <button className="tv-action" onClick={onBack} data-nav data-testid="tv-friend-tag-back">
+          {t("common.back")}
+        </button>
+      </div>
+    </Screen>
+  );
+}
+
+/** The ways of becoming friends: make a code to give, type the one that was given, or find somebody by their tag. */
 export function AddFriendTv({ onClose }: { onClose: () => void }) {
   const t = useT();
-  const [mode, setMode] = useState<"choose" | "give" | "type">("choose");
+  const account = useAccount();
+  const [mode, setMode] = useState<"choose" | "give" | "type" | "tag">("choose");
   if (mode === "give") return <GiveCode onBack={() => setMode("choose")} onDone={onClose} />;
   if (mode === "type") return <TypeCode onBack={() => setMode("choose")} onDone={onClose} />;
+  if (mode === "tag") return <TypeTag onBack={() => setMode("choose")} onDone={onClose} />;
+  const mine = account.profile?.tag !== undefined ? tagLabel(account.profile.name, account.profile.tag) : undefined;
   return (
     <Screen key="choose" testId="tv-add-friend" focus onBack={onClose}>
       <h1 className="tv-headline">{t("friends.add")}</h1>
-      <div className="tv-party-choices">
+      <div className="tv-party-choices tv-friend-choices">
         <button className="tv-party-choice" onClick={() => setMode("give")} data-nav data-testid="tv-friend-give">
           <UsersIcon />
           <b>{t("friends.makeCode")}</b>
@@ -308,9 +395,55 @@ export function AddFriendTv({ onClose }: { onClose: () => void }) {
           <b>{t("friends.typeTitle")}</b>
           <small>{t("friends.typeHint")}</small>
         </button>
+        <button className="tv-party-choice" onClick={() => setMode("tag")} data-nav data-testid="tv-friend-tag">
+          <SearchIcon />
+          <b>{t("friends.tagTitle")}</b>
+          <small>{t("friends.tagHint")}</small>
+        </button>
       </div>
+      {mine && (
+        <p className="tv-hint" data-testid="tv-your-tag">
+          {t("friends.yourTag")}: <b>{mine}</b>
+        </p>
+      )}
       <div className="tv-actions">
         <button className="tv-action" onClick={onClose} data-nav data-testid="tv-friend-add-back">
+          {t("common.back")}
+        </button>
+      </div>
+    </Screen>
+  );
+}
+
+/* ------------------------------ a request to be friends ------------------------------ */
+
+/** Somebody asked to be friends (a tile of the friends page): who, and the buttons that say yes or no. Back keeps it waiting. */
+export function FriendRequestTv({ person, onClose }: { person: Person; onClose: () => void }) {
+  const t = useT();
+  const answer = useAnswerRequests();
+  const [busy, setBusy] = useState(false);
+  const respond = async (work: Promise<void>) => {
+    setBusy(true);
+    await work;
+    onClose();
+  };
+  return (
+    <Screen testId="tv-friend-request" compact focus onBack={onClose}>
+      <div className="tv-friend-found">
+        <Avatar id={person.avatar} className="tv-friend-avatar" />
+        <p className="tv-friend-ask">
+          <b data-testid="tv-friend-request-name">{tagLabel(person.name, person.tag)}</b>
+          <span>{t("friends.requestWants")}</span>
+        </p>
+      </div>
+      <div className="tv-actions">
+        <button className="tv-action tv-action-primary" disabled={busy} onClick={() => void respond(answer.accept(person))} data-nav data-autofocus data-testid="tv-friend-request-accept">
+          {t("friends.accept")}
+        </button>
+        <button className="tv-action" disabled={busy} onClick={() => void respond(answer.decline(person))} data-nav data-testid="tv-friend-request-decline">
+          {t("friends.decline")}
+        </button>
+        <button className="tv-action" onClick={onClose} data-nav data-testid="tv-friend-request-back">
           {t("common.back")}
         </button>
       </div>

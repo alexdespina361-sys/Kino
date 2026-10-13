@@ -851,6 +851,9 @@ test.describe("walking the friends' pages with the remote", () => {
     await expect(page.getByTestId("tv-friend-give")).toBeFocused();
     await page.keyboard.press("ArrowRight");
     await expect(page.getByTestId("tv-friend-type")).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("tv-friend-tag")).toBeFocused(); // (the third way: by a tag)
+    await page.keyboard.press("ArrowLeft");
     await page.keyboard.press("ArrowLeft");
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("tv-friend-code")).toBeVisible();

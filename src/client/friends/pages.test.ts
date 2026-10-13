@@ -31,6 +31,15 @@ describe("the rows of the friends page", () => {
     expect(rows.map((row) => row.layout)).toEqual(["wide", "wide", "wide", "categories"]);
   });
 
+  it("start with the requests to be friends that wait for an answer: a tile for each, with the tag and the picture, that asks yes or no", () => {
+    const kim = { id: "pro_kim", name: "Kim", avatar: "cat" as const, tag: 2 };
+    const rows = friendRows(state({ requests: [{ from: kim, at: NOW - 1000 }], inbox: [invitation("p")] }), NOW);
+    expect(rows.map((row) => row.id)).toEqual(["friend-requests", "friend-parties", "friend-people"]);
+    expect(rows[0]).toMatchObject({ layout: "categories", title: t("friends.requests") });
+    expect(rows[0]?.entries).toEqual([{ id: "request:pro_kim", title: "Kim#2", url: "", request: kim, avatar: "cat", note: t("friends.requestWants") }]);
+    expect(friendRows(state(), NOW).some((row) => row.id === "friend-requests")).toBe(false);
+  });
+
   it("have a tile for each friend that opens their page, before the tiles to add one and to choose what is shared", () => {
     const rows = friendRows(state({ friends: [sam, robin] }), NOW);
     const people = rows.find((row) => row.id === "friend-people");

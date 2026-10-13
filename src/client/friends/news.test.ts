@@ -43,6 +43,16 @@ describe("what is new", () => {
     ]);
   });
 
+  it("is somebody who asked to be friends and has not been told of before, by their tag, after a request for a party and before the rest", () => {
+    const ask = (id: string, tag: number) => ({ from: { id, name: "Kim", avatar: "cat" as const, tag }, at: NOW });
+    const before = known(state({ requests: [ask("pro_old", 1)] }));
+    expect(before.requests.has("pro_old")).toBe(true);
+    expect(whatsNew(before, state({ requests: [ask("pro_old", 1), ask("pro_kim", 2)], inbox: [recommendation("a")] }), NOW)).toEqual([
+      { kind: "request", name: "Kim#2" },
+      { kind: "recommend", name: "Sam", title: "Dune" },
+    ]);
+  });
+
   it("is a new friend, whoever added whom", () => {
     expect(whatsNew(known(state()), state({ friends: [sam, robin] }), NOW)).toEqual([{ kind: "friend", name: "Robin" }]);
   });
@@ -86,5 +96,8 @@ describe("saying it", () => {
     expect(describeNews([...news, { kind: "party", name: "Sam" }], t)).toBe('friends.news.party {"name":"Sam"}');
     expect(describeNews([...news, { kind: "together", name: "Sam" }], t)).toBe('friends.news.together {"name":"Sam"}'); // (a request for a party too, but an invitation first)
     expect(describeNews([{ kind: "together", name: "Sam" }, { kind: "party", name: "Robin" }], t)).toBe('friends.news.party {"name":"Robin"}');
+    // A request to be friends is always said too, after the two above.
+    expect(describeNews([...news, { kind: "request", name: "Kim#2" }], t)).toBe('friends.news.request {"name":"Kim#2"}');
+    expect(describeNews([{ kind: "request", name: "Kim#2" }, { kind: "together", name: "Sam" }], t)).toBe('friends.news.together {"name":"Sam"}');
   });
 });

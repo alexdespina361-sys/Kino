@@ -1,4 +1,4 @@
-import { canAskTogether, partyOpen, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendsState } from "../../shared";
+import { canAskTogether, partyOpen, tagLabel, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendRequest, type FriendsState } from "../../shared";
 import { listName } from "../account/cards";
 import { sortRatings } from "../account/ratingText";
 import { ago, formatDay } from "../account/time";
@@ -42,6 +42,16 @@ const entryOfRequest = (item: TogetherRequest, from: string, now: number): Entry
   note: ago(item.at, now, getLanguage()),
 });
 
+/** Somebody who asked to be friends, as a tile with the picture they chose: pressing it asks whether to say yes. */
+const entryOfFriendRequest = (item: FriendRequest): Entry => ({
+  id: `request:${item.from.id}`,
+  title: tagLabel(item.from.name, item.from.tag),
+  url: "",
+  request: item.from,
+  avatar: item.from.avatar,
+  note: t("friends.requestWants"),
+});
+
 /** A friend, as a tile that opens their page, with the picture they chose; the line under the name is what they are watching, else that they are online, else since when they are friends. */
 const entryOfFriend = (friend: Friend, activity: readonly ActivityItem[], now: number): Entry => ({
   id: `friend:${friend.id}`,
@@ -58,15 +68,18 @@ const addTile = (): Entry => ({ id: "add-friend", title: t("friends.add"), url: 
 const settingsTile = (): Entry => ({ id: "friend-settings", title: t("friends.settingsTile"), url: "", action: "friendSettings" });
 
 /**
- * The rows of the friends page: invitations to the watch parties that are on (and the ones that are over, from a friend who can be asked
- * for another), requests to watch together, what friends sent, what they watch, and the friends themselves (with the tiles to add one and
- * to choose what is shared). Before the server has answered there are only the last two.
+ * The rows of the friends page: the requests to be friends that wait for an answer, invitations to the watch parties that are on (and the
+ * ones that are over, from a friend who can be asked for another), requests to watch together, what friends sent, what they watch, and the
+ * friends themselves (with the tiles to add one and to choose what is shared). Before the server has answered there are only the last two.
  */
 export function friendRows(state: FriendsState | null, now: number): HomeRow[] {
   const friends = state?.friends ?? [];
   const inbox = state?.inbox ?? [];
   const activity = state?.activity ?? [];
+  const requests = state?.requests ?? [];
   const rows: HomeRow[] = [];
+
+  if (requests.length > 0) rows.push({ id: "friend-requests", layout: "categories", title: t("friends.requests"), entries: requests.map(entryOfFriendRequest) });
 
   const parties = inbox.flatMap((item): Entry[] => {
     if (item.kind === "together") return [entryOfRequest(item, nameOf(friends, item.from), now)];

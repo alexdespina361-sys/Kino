@@ -70,9 +70,9 @@ export function CopyLink({ link, testId, buttonClass, nav }: { link: string; tes
 /**
  * The same for a code a person gives to somebody: the code itself is on the page already, big, wherever the screen shows it (`shown`
  * is that element, which is selected when the browser would not copy), and this is the small button beside it that copies it and says so.
- * `testId` is the button's.
+ * `testId` is the button's. What is copied may be called something other than a code (`words`: a tag).
  */
-export function CopyCode({ code, shown, testId, buttonClass, nav }: { code: string; shown: RefObject<HTMLElement | null>; testId: string; buttonClass: string; nav?: Nav }) {
+export function CopyCode({ code, shown, testId, buttonClass, nav, words = "code" }: { code: string; shown: RefObject<HTMLElement | null>; testId: string; buttonClass: string; nav?: Nav; words?: "code" | "tag" }) {
   const t = useT();
   const [state, copy] = useCopy(code, shown);
 
@@ -81,17 +81,17 @@ export function CopyCode({ code, shown, testId, buttonClass, nav }: { code: stri
       <button className={`${buttonClass} copy-link-button`} data-testid={testId} data-state={state} onClick={copy} {...nav}>
         {state === "copied" ? (
           <>
-            <CheckIcon /> {t("friends.codeCopied")}
+            <CheckIcon /> {t(words === "tag" ? "friends.tagCopied" : "friends.codeCopied")}
           </>
         ) : (
           <>
-            <CopyIcon /> {t("friends.copyCode")}
+            <CopyIcon /> {t(words === "tag" ? "friends.copyTag" : "friends.copyCode")}
           </>
         )}
       </button>
       {state === "failed" && (
         <p className="copy-link-note" role="status">
-          {t("friends.codeCopyFailed")}
+          {t(words === "tag" ? "friends.tagCopyFailed" : "friends.codeCopyFailed")}
         </p>
       )}
     </div>

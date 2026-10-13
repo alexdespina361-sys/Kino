@@ -47,6 +47,17 @@
 .inbox-text small { color: var(--muted); font-size: 0.8rem; }
 .inbox-item .btn, .friend-party .btn { flex: none; margin-left: auto; min-height: 40px; padding: 0 14px; font-size: 0.9rem; } /* (where the words need the room, as in a long language on a narrow phone, the button goes under them, at the right) */
 
+/* Finding a friend by tag: the box and its button on one line; and this profile's own tag, to give to a friend. */
+.tag-row { display: flex; gap: 8px; }
+.tag-row input { flex: 1; min-width: 0; }
+.tag-row .btn { flex: none; min-height: 44px; }
+.your-tag { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); }
+.your-tag-line { display: flex; flex-direction: column; flex: 1 1 8rem; gap: 2px; min-width: 0; }
+.your-tag-line b { overflow-wrap: anywhere; font-size: 1.15rem; }
+.your-tag .copy-code { flex: none; }
+.your-tag .copy-link-button { min-height: 38px; padding: 0 12px; font-size: 0.85rem; white-space: nowrap; }
+.your-tag > p { flex: 1 0 100%; margin: 0; }
+
 /* An invitation to a watch party, or a request for one, over the home screen, until it is answered or sent away. */
 .friend-party { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .friend-party > span { flex: 1 1 11rem; min-width: 0; }

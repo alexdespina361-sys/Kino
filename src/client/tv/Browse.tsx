@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { canAskTogether, DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryItem, type PlayHint } from "../../shared";
+import { canAskTogether, DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryItem, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
@@ -22,7 +22,7 @@ import { ScoreBadge } from "../shared/ScoreBadge";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
-import { AddFriendTv, FriendPickerTv, FriendSettingsTv, UnfriendTv } from "./Friends";
+import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, UnfriendTv } from "./Friends";
 import { AccountChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, typedCharacter } from "./librarySearch";
@@ -132,7 +132,8 @@ type Overlay =
   | { kind: "recommend"; entry: Entry; back: Target }
   | { kind: "addFriend"; back: Target }
   | { kind: "friendSettings"; back: Target }
-  | { kind: "unfriend"; id: string; name: string; back: Target };
+  | { kind: "unfriend"; id: string; name: string; back: Target }
+  | { kind: "friendRequest"; person: Person; back: Target };
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
 const RAIL: Target = { zone: "rail", row: -1, col: -1 };
@@ -326,8 +327,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     if (isRowsPage(view)) return rowsOfPage(view.kind, data);
     if (view.kind === "friends") return friendRows(friends.state, Date.now());
     if (view.kind !== "profile") return [];
-    return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings, friendsOn: friends.on, friends: friends.state, unread: friends.unread, watched: progress.length });
-  }, [view, data, language, friends.state, friends.on, friends.unread, me, profile, ratingsOn, ratings, progress.length]);
+    return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: progress.length });
+  }, [view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, ratings, progress.length]);
   const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings), [view, data, language, friends.state, sharedLists, sharedRatings]);
   /* eslint-enable react-hooks/exhaustive-deps */
   const shownResults = useMemo(() => ofKind(results, filter), [results, filter]);
@@ -421,7 +422,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
       label: t("tv.profile"),
       icon: <UserIcon />,
       current: isProfilePage(view),
-      ...(friends.on && friends.unread > 0 ? { badge: String(friends.unread) } : {}),
+      ...(friends.on && friends.attention > 0 ? { badge: String(friends.attention) } : {}),
       testId: "rail-profile",
       onPress: () => choose({ kind: "profile" }),
     },
@@ -527,6 +528,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   // The question about taking a friend off is no use once they are gone (the other side took them off while it was open): it closes with the page behind it.
   useEffect(() => {
     if (overlay?.kind === "unfriend" && friends.state && !friends.state.friends.some((each) => each.id === overlay.id)) setOverlay(null);
+    // (Likewise a request that was answered on a phone, or taken back, while its question was on the screen.)
+    if (overlay?.kind === "friendRequest" && friends.state && !friends.state.requests.some((each) => each.from.id === overlay.person.id)) closeOverlay();
   }, [overlay, friends.state]);
   // The friends page shows how things stand now, and opening it is seeing what is in the inbox.
   useEffect(() => {
@@ -703,6 +706,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     if (entry.action === "settings") return onSettings();
     if (entry.action === "signIn") return onAccount();
     if (entry.action) return setOverlay({ kind: entry.action, back: from });
+    if (entry.request) return setOverlay({ kind: "friendRequest", person: entry.request, back: from });
     if (entry.party) return onJoinParty(entry.party);
     if (entry.wants) return onStartTogether(entry.wants);
     if (entry.ask) return void askToWatch(entry.ask, entry.inboxId);
@@ -1245,6 +1249,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
       {overlay?.kind === "recommend" && <FriendPickerTv title={t("friends.sendTitle")} lead={overlay.entry.title} build={() => recommendationOf(overlay.entry)} said="friends.sent" onClose={closeOverlay} />}
       {overlay?.kind === "addFriend" && <AddFriendTv onClose={closeOverlay} />}
       {overlay?.kind === "friendSettings" && <FriendSettingsTv onClose={closeOverlay} />}
+      {overlay?.kind === "friendRequest" && <FriendRequestTv person={overlay.person} onClose={closeOverlay} />}
       {overlay?.kind === "unfriend" && (
         <UnfriendTv
           id={overlay.id}

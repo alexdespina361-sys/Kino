@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ONLINE_MS, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InviteView, type Message, type OpenInvite, type Sent } from "../../shared";
+import { ONLINE_MS, type AskOutcome, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InviteView, type Message, type OpenInvite, type Sent, type TagView } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { ApiError } from "../account/api";
 import { useProfileData } from "../account/store";
@@ -22,6 +22,8 @@ export interface FriendsValue {
   state: FriendsState | null;
   /** How many things in the inbox have not been seen. */
   unread: number;
+  /** How many things wait for this profile: what is new in the inbox and the requests to be friends that are not answered (what a badge counts). */
+  attention: number;
   refresh(): Promise<void>;
   /** A new code to give to a friend. */
   invite(): Promise<OpenInvite>;
@@ -30,6 +32,14 @@ export interface FriendsValue {
   peek(code: string): Promise<InviteView>;
   /** Use a friend's code. */
   accept(code: string): Promise<Friend>;
+  /** Who has this tag ("Sam#2"), before anybody is asked. */
+  peekTag(text: string): Promise<TagView>;
+  /** Ask the profile with this tag to be friends: they have to say yes, unless they had asked first (then the two are friends). */
+  askByTag(tag: string): Promise<AskOutcome>;
+  /** Say yes to somebody who asked this profile. */
+  acceptRequest(fromId: string): Promise<Friend>;
+  /** Say no (the one who asked is not told). */
+  declineRequest(fromId: string): Promise<void>;
   remove(friendId: string): Promise<void>;
   /** Send a title, or the invitation to a party, to these friends. Says who it reached and who is not taking things. */
   send(to: readonly string[], message: Message): Promise<Sent>;
@@ -132,6 +142,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
   }, [on, profileId]);
 
   const value = useMemo<FriendsValue>(() => {
+    const unread = state?.inbox.filter((item) => !item.read).length ?? 0;
     const id = (): string => {
       if (!profileId) throw new ApiError(0, "signed_out");
       return profileId;
@@ -146,12 +157,17 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       on,
       status,
       state,
-      unread: state?.inbox.filter((item) => !item.read).length ?? 0,
+      unread,
+      attention: unread + (state?.requests.length ?? 0),
       refresh: () => lookRef.current(),
       invite: () => then(friendsApi.invite(id())),
       revoke: (code) => then(friendsApi.revoke(id(), code)),
       peek: (code) => friendsApi.peek(id(), code),
       accept: async (code) => (await then(friendsApi.accept(id(), code))).friend,
+      peekTag: (text) => friendsApi.tag(id(), text),
+      askByTag: (tag) => then(friendsApi.askFriend(id(), tag)),
+      acceptRequest: async (fromId) => (await then(friendsApi.acceptRequest(id(), fromId))).friend,
+      declineRequest: (fromId) => then(friendsApi.declineRequest(id(), fromId)),
       remove: (friendId) => then(friendsApi.remove(id(), friendId)),
       send: (to, message) => friendsApi.send(id(), { ...message, to: [...to] }),
       markRead: () => then(friendsApi.read(id())),
