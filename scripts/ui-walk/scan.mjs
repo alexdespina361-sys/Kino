@@ -134,6 +134,9 @@ function inPage(limit) {
       record.fs = num(style.fontSize);
       record.stroke = element.getAttribute("stroke") || style.stroke || undefined;
       record.fg = hex(colour(style.color));
+      // what it sits in (the control or the box whose rule sizes it)
+      const owner = element.parentElement;
+      if (owner) record.in = [owner.tagName.toLowerCase(), owner.getAttribute("data-testid") || undefined, (typeof owner.className === "string" ? owner.className : "").split(/\s+/).filter(Boolean).slice(0, 2).join(".") || undefined].filter(Boolean).join(" ");
     }
     const padding = [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft].map(num);
     if (padding.some((v) => v)) record.pad = padding.join(" ");

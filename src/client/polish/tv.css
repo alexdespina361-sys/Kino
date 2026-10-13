@@ -50,6 +50,7 @@
   --fill-1: rgba(255, 255, 255, 0.08);
   --fill-2: rgba(255, 255, 255, 0.14);
   --fill-3: rgba(255, 255, 255, 0.22);
+  --fill-track: rgba(255, 255, 255, 0.28); /* the groove of anything that fills up or turns on: a progress bar, a switch */
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --t-fast: 0.12s;
   --t-base: 0.18s;
@@ -94,7 +95,7 @@
   color: var(--text-3);
   font-size: var(--fs-3);
   font-weight: 600;
-  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), margin-right 0.2s var(--ease);
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), margin-right var(--t-base) var(--ease);
 }
 :root[data-ui="polish"] .tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: calc(var(--em) * 1.2); }
 :root[data-ui="polish"] .tv-rail-item[data-apart="true"] { margin-top: calc(var(--em) * 1.4); }
@@ -189,7 +190,7 @@
 :root[data-ui="polish"] .tv-tile:hover { color: var(--text-1); }
 :root[data-ui="polish"] .tv-tile:focus-visible { color: var(--text-1); transform: scale(1.06); outline: none; }
 :root[data-ui="polish"] .tv-tile:focus-visible .tv-tile-art { box-shadow: var(--focus-ring), var(--lift); }
-:root[data-ui="polish"] .tv-tile-progress { height: calc(var(--em) * 0.32); background: rgba(255, 255, 255, 0.3); }
+:root[data-ui="polish"] .tv-tile-progress { height: calc(var(--em) * 0.32); background: var(--fill-track); }
 
 /* For a mouse: the round buttons in a picture's corner. Quiet while nobody is on the tile; the accent shows only in the mark of a kept title, not as a red disc. */
 :root[data-ui="polish"] .tv-tile-corner {
@@ -343,7 +344,7 @@
 /* A switch row: the words on the left, the switch on the right. */
 :root[data-ui="polish"] .tv-switch-row { border-radius: var(--r-2); background: var(--surf-1); color: var(--text-1); font-size: var(--fs-3); }
 :root[data-ui="polish"] .tv-switch-row:hover { background: var(--surf-2); }
-:root[data-ui="polish"] .tv-switch { background: rgba(255, 255, 255, 0.24); transition: background var(--t-base) var(--ease); }
+:root[data-ui="polish"] .tv-switch { background: var(--fill-track); transition: background var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-switch::after { transition: transform var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-switch-row[aria-checked="true"] .tv-switch { background: var(--accent); }
 :root[data-ui="polish"] .tv-switch-row:focus-visible .tv-switch { background: rgba(11, 11, 12, 0.3); }
@@ -376,7 +377,7 @@
 :root[data-ui="polish"] .tv-ep-meta[data-state="watched"] { color: var(--ok); }
 :root[data-ui="polish"] .tv-opt-heading,
 :root[data-ui="polish"] .tv-menu-col h3 { color: var(--text-3); font-size: var(--fs-1); font-weight: 600; letter-spacing: 0; text-transform: none; }
-:root[data-ui="polish"] .tv-menu { border-radius: var(--r-3); border-color: rgba(255, 255, 255, 0.1); background: #161618; }
+:root[data-ui="polish"] .tv-menu { border-radius: var(--r-3); border-color: rgba(255, 255, 255, 0.1); background: var(--surf-1); }
 :root[data-ui="polish"] .tv-menu-top h2 { font-size: var(--fs-5); font-weight: 700; }
 :root[data-ui="polish"] .tv-menu[data-kind="captions"] .tv-menu-top h2 { font-size: var(--fs-4); }
 
@@ -397,7 +398,7 @@
 /* Signed in, the page has six headings and four switches: close enough to fit inside the safe margins of a 16:9 screen (a pass of the scanner says so). */
 :root[data-ui="polish"] .tv-panel-settings .tv-switch-row { padding-block: calc(var(--em) * 0.6); }
 :root[data-ui="polish"] .tv-category-name { font-size: var(--fs-3); font-weight: 700; letter-spacing: -0.005em; }
-:root[data-ui="polish"] .tv-category-count { font-size: var(--fs-1); font-weight: 500; color: var(--text-2); }
+:root[data-ui="polish"] .tv-category-count { font-size: var(--fs-1); font-weight: 400; color: var(--text-2); }
 :root[data-ui="polish"] .tv-tile-category { border-radius: var(--r-2); padding: calc(var(--em) * 1) calc(var(--em) * 1.2); transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-tile-category:focus-visible { transform: scale(1.06); box-shadow: var(--focus-ring), var(--lift); }
 :root[data-ui="polish"] .tv-qr { border-radius: var(--r-3); }
@@ -431,7 +432,7 @@
 :root[data-ui="polish"] .hud-pause-card em { font-size: var(--fs-4); font-weight: 600; }
 :root[data-ui="polish"] .hud-paused { border-width: calc(var(--em) * 0.16); }
 :root[data-ui="polish"] .hud-toast { font-weight: 700; border-radius: var(--r-2); }
-:root[data-ui="polish"] .hud-upnext { border-radius: var(--r-3); border-color: rgba(255, 255, 255, 0.12); background: rgba(22, 22, 24, 0.96); }
+:root[data-ui="polish"] .hud-upnext { border-radius: var(--r-3); border-color: rgba(255, 255, 255, 0.12); background: rgba(24, 24, 27, 0.96); }
 :root[data-ui="polish"] .hud-upnext-head { font-size: var(--fs-1); letter-spacing: 0; text-transform: none; color: var(--text-3); }
 :root[data-ui="polish"] .hud-upnext p { font-size: var(--fs-4); font-weight: 700; }
 :root[data-ui="polish"] .hud-upnext-actions .tv-btn-red:focus-visible { outline: none; }
@@ -484,6 +485,59 @@
 :root[data-ui="polish"] .tv-step-no { background: var(--accent); color: var(--accent-ink); }
 :root[data-ui="polish"] .tv-party-start p { font-size: var(--fs-3); color: var(--text-2); }
 :root[data-ui="polish"] .tv-party-error { font-size: var(--fs-3); }
+
+/* ------------------------------ what the classic sheet sized by itself ------------------------------ */
+
+/*
+ * Found by the drift scan (scripts/ui-walk/drift.mjs): sizes, corners, greys and timings a few percent away from a token with nothing to say why,
+ * said in the tokens here. What is left that is not a token is on purpose: the keyboard's keys (their boxes grow with their letters), the numerals of
+ * the rating row and of the ranked rows, the codes to type (the biggest thing on their pages), the wordmark, and thin bars (a corner of half their height).
+ */
+:root[data-ui="polish"] .tv-step-no { font-size: var(--fs-2); }
+:root[data-ui="polish"] .tv-friend-ask b { font-size: inherit; }
+:root[data-ui="polish"] .tv-friend-ask span { font-size: var(--fs-2); }
+:root[data-ui="polish"] .tv-party-choice b { font-size: var(--fs-4); }
+:root[data-ui="polish"] .tv-party-choice small { font-size: var(--fs-2); }
+:root[data-ui="polish"] .tv-rate-word,
+:root[data-ui="polish"] .profile-tv .profile-name { font-size: var(--fs-4); }
+:root[data-ui="polish"] .tv-tile-initial { font-size: var(--fs-7); }
+:root[data-ui="polish"] .tv .copy-link-url,
+:root[data-ui="polish"] .tv-party-member small { font-size: var(--fs-1); }
+:root[data-ui="polish"] .tv .copy-link-url { border-radius: var(--r-1); background: var(--fill-1); color: var(--text-2); }
+:root[data-ui="polish"] .tv-ep-no { color: var(--text-3); }
+:root[data-ui="polish"] .profile-tv .profile-tile { color: var(--text-3); transition: color var(--t-base) var(--ease); }
+/* a box to type in: a button's corner, the page's grey, the same ease as the rest */
+:root[data-ui="polish"] .tv .auth-field input {
+  border-radius: var(--r-2);
+  background: var(--surf-1);
+  transition: border-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
+}
+/* timings: the base time and the one ease (the classic look has six times and a few eases) */
+:root[data-ui="polish"] .tv-tile-corner { transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-base) var(--ease); }
+:root[data-ui="polish"] .tv-rail { transition: width var(--t-base) var(--ease); }
+:root[data-ui="polish"] .tv-rail-item span,
+:root[data-ui="polish"] .tv-swatch svg { transition: opacity var(--t-base) var(--ease); }
+:root[data-ui="polish"] .tv-ep-play { transition: opacity var(--t-fast) var(--ease); }
+:root[data-ui="polish"] .hud-bar-track { transition: height var(--t-fast) var(--ease); }
+:root[data-ui="polish"] .tv-rank b { transition: -webkit-text-stroke-color var(--t-base) var(--ease); }
+:root[data-ui="polish"] .tv .profile-editor-tv .avatar-choice { transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
+
+/* ------------------------------ reduced motion ------------------------------ */
+
+/*
+ * The classic look names, one by one, what stops moving for someone who asked for less; this one has more things that move (its own transitions
+ * are more specific than those names), so here it is everything: nothing eases, and a picture the remote is on stays its size (the ring says it).
+ * A countdown is not decoration: the bar of the next episode still fills.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ui="polish"] .tv *,
+  :root[data-ui="polish"] .tv *::before,
+  :root[data-ui="polish"] .tv *::after { transition-duration: 0.01ms !important; transition-delay: 0s !important; }
+  :root[data-ui="polish"] .tv .hud-upnext-bar div { transition-duration: 1s !important; }
+  :root[data-ui="polish"] .tv-tile:focus-visible,
+  :root[data-ui="polish"] .tv-tile-category:focus-visible,
+  :root[data-ui="polish"] .tv-end-tile:focus-visible { transform: none; }
+}
 
 /* ------------------------------ small screens ------------------------------ */
 
