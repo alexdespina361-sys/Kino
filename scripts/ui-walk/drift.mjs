@@ -114,7 +114,7 @@ for (const page of pages) {
       if (element.fs < floor - 0.01) problems.smallText.push({ picture: where, element: describe(element), size: element.fs, floor: Math.round(floor * 10) / 10 });
     }
     // contrast: 4.5 (3 for large text: 24 px, or 18.66 px bold)
-    if (text && element.contrast != null) {
+    if (text && element.contrast != null && !element.textStroke) {
       const large = element.fs >= 24 || (element.fs >= 18.66 && Number(element.fw) >= 700);
       const need = large ? 3 : 4.5;
       if (element.contrast < need) problems.contrast.push({ picture: where, element: describe(element), ratio: element.contrast, need, fg: element.fg, bg: element.bg });
@@ -137,6 +137,7 @@ for (const page of pages) {
       }
     }
     if (text && element.clipped && !element.ellipsis) problems.cutText.push({ picture: where, element: describe(element), size: `${element.w}x${element.h}` });
+    if (text && element.clippedTall) problems.cutText.push({ picture: where, element: `${describe(element)} (cut off at the bottom)`, size: `${element.w}x${element.h}` });
   }
   const targets = page.elements.filter((element) => element.inView && element.kinds.includes("control") && element.tabbable).length;
   if (targets === 0 && !page.device.includes("player")) problems.fewTargets.push(`${page.device}/${page.name}`);

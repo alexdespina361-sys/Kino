@@ -111,9 +111,17 @@ function inPage(limit) {
         }
       }
       record.tt = style.textTransform !== "none" ? style.textTransform : undefined;
+      // outlined digits (the rank numerals): the letters are the stroke, not the fill, so the fill's contrast says nothing about them
+      if (num(style.webkitTextStrokeWidth) > 0) record.textStroke = `${num(style.webkitTextStrokeWidth)} ${hex(colour(style.webkitTextStrokeColor))}`;
       if (kinds.includes("text") && (style.overflow === "hidden" || style.overflowX === "hidden" || style.textOverflow === "ellipsis")) {
         record.clipped = element.scrollWidth > element.clientWidth + 1 || undefined;
         record.ellipsis = style.textOverflow === "ellipsis" || undefined;
+        // letters cut off at the bottom: a box squeezed shorter than its text. A line clamp hides the rest of the text on purpose, so it only counts when the box is shorter than the lines it was meant to show.
+        const clampLines = Number(style.webkitLineClamp);
+        const lineHeight = style.lineHeight === "normal" ? num(style.fontSize) * 1.2 : num(style.lineHeight);
+        record.clippedTall = (clampLines > 0
+          ? element.scrollHeight > element.clientHeight + 2 && element.clientHeight < clampLines * lineHeight - 2
+          : element.scrollHeight > element.clientHeight + Math.max(3, num(style.fontSize) * 0.25)) || undefined;
       }
     }
     if (kinds.includes("surface")) {

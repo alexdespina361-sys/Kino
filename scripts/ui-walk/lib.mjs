@@ -187,7 +187,10 @@ export const guestData = (data) => ({
 /* ------------------------------ the walk ------------------------------ */
 
 export const log = [];
+/** With STEPS=02-home,04-rail-open only those steps run (the others are skipped, not failed): for looking at one screen while a stylesheet is being written. */
+const onlySteps = process.env.STEPS ? process.env.STEPS.split(",").filter(Boolean) : null;
 export async function step(device, name, fn) {
+  if (onlySteps && !onlySteps.some((want) => name === want || name.startsWith(want))) return;
   const started = Date.now();
   try {
     await fn();

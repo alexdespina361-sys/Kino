@@ -1,9 +1,11 @@
 // Runs the whole screenshot walk for one look: builds the client, starts a fresh test server for each part (accounts live in the server's
 // memory, so a part that signs people up gets a server of its own), runs the part against it, stops the server.
 //
-//   node scripts/ui-walk/run.mjs [--ui=classic|polish] [--only=tv-hd,phone] [--out=<dir>] [--port=8810] [--no-build] [--scan]
+//   node scripts/ui-walk/run.mjs [--ui=classic|polish] [--only=tv-hd,phone] [--steps=02-home,04-rail-open] [--out=<dir>] [--port=8810] [--no-build] [--scan]
 //
 // The pictures go to .ui-polish/shots/<look>/<device>/<name>.png (not committed). scripts/ui-walk/compare.mjs says what differs between two looks.
+// With CLIENT_DIR=<folder> (and --no-build) the server serves that build instead of dist/client: `vite build --outDir .ui-polish/dist-iter` is a
+// private build to look at a stylesheet while something else is using dist/client. --steps=a,b runs only the steps whose names start so.
 // With --scan every picture is also measured (live computed styles, scan.mjs) into .ui-polish/scan/<look>/; scripts/ui-walk/drift.mjs adds them up.
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -19,6 +21,7 @@ const out = option("out", `.ui-polish/shots/${look}`);
 const only = option("only", "")
   .split(",")
   .filter(Boolean);
+const steps = option("steps", "");
 const base = `http://127.0.0.1:${port}`;
 const here = (name) => fileURLToPath(new URL(name, import.meta.url));
 
@@ -40,6 +43,9 @@ function stop(child) {
 }
 
 async function startServer() {
+  // something else (another walk, a test server) already answering here would be walked instead of this build: refuse rather than take its pictures
+  const taken = await fetch(`${base}/api/health`).then(() => true, () => false);
+  if (taken) throw new Error(`port ${port} is already in use (pass --port=<another>)`);
   const child = spawn(process.execPath, ["node_modules/tsx/dist/cli.mjs", "src/server/index.ts"], {
     env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", ALLOW_PRIVATE_NETWORK: "1", LIBRARY: "off", DATA_DIR: "memory", SIGNUPS_PER_HOUR: "1000" },
     stdio: "ignore",
@@ -74,7 +80,7 @@ for (const part of PARTS.filter((one) => only.length === 0 || only.includes(one.
   const server = await startServer();
   try {
     const run = spawnSync(process.execPath, [here(part.script), ...part.args], {
-      env: { ...process.env, UI: look, BASE: base, OUT: out, ...(flag("scan") ? { SCAN: "1" } : {}) },
+      env: { ...process.env, UI: look, BASE: base, OUT: out, ...(flag("scan") ? { SCAN: "1" } : {}), ...(steps ? { STEPS: steps } : {}) },
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
     });

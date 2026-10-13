@@ -60,6 +60,7 @@ import {
 } from "./prefs";
 import { useWakeLock } from "./useWakeLock";
 import "./tv.css";
+import "../polish/tv.css"; // (last of this chunk's sheets: the refined look's rules sit on top of the classic ones, and are all under :root[data-ui="polish"])
 
 const DEVICE_KEY = "tv.deviceId";
 /** The overlay fades out this long after the last key press, but only while a video is actually playing. */
