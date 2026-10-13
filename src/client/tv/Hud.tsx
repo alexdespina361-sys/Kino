@@ -230,7 +230,7 @@ export function Hud(p: HudProps) {
       {isBlocked(player) && <TapToPlay onPlay={p.onToggle} />}
 
       {/* The overlay sits on top of the video, so its empty part is the picture as far as a hand can tell (data-picture: see gestures.ts). */}
-      <div className={`tv-overlay ${p.visible ? "visible" : "hidden"}`} data-picture data-paused={(paused && !p.upNext) || undefined}>
+      <div className={`tv-overlay ${p.visible ? "visible" : "hidden"}`} data-picture data-paused={(paused && !p.upNext) || undefined} data-boosting={p.boosting || undefined}>
         <header className="hud-top">
           <div className="hud-titles">
             <h1 className="hud-title" data-testid="tv-title">

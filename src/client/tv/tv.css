@@ -394,6 +394,8 @@
 /* While the picture is held, what you are watching is said once, big, on the left (the corner title steps aside), over a soft shade. */
 .hud-titles { transition: opacity 0.25s ease; }
 .tv-overlay[data-paused] .hud-titles { opacity: 0; }
+/* The same while a finger holds it at 2x: the pill that says so takes the top of the picture, over the title when the controls are up. */
+.tv-overlay[data-boosting] .hud-titles { opacity: 0; }
 .hud-center::before {
   content: "";
   position: absolute;
@@ -520,8 +522,8 @@
 /* A sentence ("Speed 1.5×") rather than a number: smaller, and up under the title so it doesn't cover the picture. */
 .hud-toast.notice { top: 24%; font-size: 2.4em; font-weight: 700; white-space: nowrap; animation-duration: 1.8s; }
 /* A skip is flashed on the half of the picture it went towards, the way a double tap does on a phone. */
-.hud-toast.side-back { left: 22%; }
-.hud-toast.side-forward { left: 78%; }
+.hud-toast.side-back { left: max(22%, 2.6em); } /* (the least a long total of skips, "−120s", needs on a narrow phone to stay on the screen) */
+.hud-toast.side-forward { left: min(78%, calc(100% - 2.6em)); }
 @keyframes hud-toast {
   0% { opacity: 0; transform: translate(-50%, -40%) scale(0.9); }
   15% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -1732,7 +1734,7 @@
   .tv-panel-who h1 { font-size: 2.4em; }
   .tv-panel-who p { font-size: 1.4em; }
   .tv-panel-settings { align-items: stretch; }
-  .tv-panel-settings h2 { font-size: 1.2em; }
+  .tv-panel-settings h2 { margin: 1.4em 0 0.5em; font-size: 1.2em; }
   .tv-choices { flex-wrap: wrap; }
   .tv-choice { font-size: 1.5em; }
   .tv-rate-scopes .tv-choice { font-size: 1.3em; }
@@ -1743,6 +1745,9 @@
   .tv-rate-facts li { font-size: 1.2em; }
   .tv-swatch { font-size: 1.4em; }
   .tv-switch-row { max-width: none; font-size: 1.5em; }
+  /* (Here the page scrolls: the rows keep the room a finger wants, which the 16:9 page above has to take back.) */
+  .tv-panel-settings .tv-switch-row { padding: 0.7em 1.2em; }
+  .tv-panel-settings .tv-hint { margin-top: 1.2em; }
   .tv .auth-tv { width: 100%; }
   .tv .auth-tv .auth-field input, .tv .profile-editor-tv .auth-field input { font-size: 1.8em; }
   .tv .profile-editor-tv { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 1.2em; }

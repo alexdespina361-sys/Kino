@@ -159,6 +159,20 @@ test.describe("a finger on the picture", () => {
     phone.close();
   });
 
+  test("a long run of skips keeps its total on the screen, on the narrowest phone", async ({ browser }) => {
+    const phone = await watching(browser);
+    await phone.setViewportSize({ width: 320, height: 568 });
+    await seekTo(phone, 30);
+    for (let taps = 0; taps < 13; taps++) await phone.touchscreen.tap(60, 300); // (the first two are the double tap; each one after it adds ten more)
+    const toast = phone.getByTestId("tv-toast");
+    await expect(toast).toHaveText("−120s");
+    await phone.waitForTimeout(250); // (it grows into its size as it appears)
+    const box = (await toast.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(320);
+    phone.close();
+  });
+
   test("a single tap on a side is only a tap, and two taps on different sides skip nowhere", async ({ browser }) => {
     const phone = await watching(browser);
     await seekTo(phone, 8);
@@ -210,6 +224,49 @@ test.describe("a finger on the picture", () => {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await expect.poll(() => rate(phone)).toBe(1.5);
     phone.close();
+  });
+
+  test("with the controls up, a hold puts the title aside for the pill that says 2×, and gives it back", async ({ browser }) => {
+    const phone = await watching(browser);
+    await showControls(phone);
+    const titles = phone.locator(".hud-titles");
+    await expect(titles).toHaveCSS("opacity", "1");
+    const cdp = await phone.context().newCDPSession(phone);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: MIDDLE.x, y: MIDDLE.y }] });
+    await expect(phone.getByTestId("tv-boost")).toBeVisible({ timeout: 3_000 });
+    expect(await hud(phone)).toBe("visible"); // (a hold does not take the controls away; the title steps aside instead of lying under the pill)
+    await expect(titles).toHaveCSS("opacity", "0");
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect(phone.getByTestId("tv-boost")).toHaveCount(0);
+    await expect(titles).toHaveCSS("opacity", "1");
+    phone.close();
+  });
+
+  test("a screen that leads a party does not play faster under a held finger: the others are told the speed that was chosen and would fall behind", async ({ browser }) => {
+    const host = await openFilms(browser);
+    await host.getByTestId("rail-party").tap();
+    await host.getByTestId("tv-party-start").tap();
+    const code = (await host.getByTestId("tv-party-code").innerText()).replace(/\s/g, "");
+    const guest = await openLibrary(browser, withFilms);
+    await guest.getByTestId("rail-party").click();
+    await guest.getByTestId("tv-party-join").click();
+    await guest.keyboard.type(code);
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+    await host.getByTestId("tv-back-to-library").tap();
+    await startFilm(host);
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+
+    const cdp = await host.context().newCDPSession(host);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: MIDDLE.x, y: MIDDLE.y }] });
+    await host.waitForTimeout(1_200); // (a good while longer than a hold takes)
+    await expect(host.getByTestId("tv-boost")).toHaveCount(0);
+    expect(await rate(host)).toBe(1);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    expect(await rate(host)).toBe(1);
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "playing");
+    host.close();
+    guest.close();
   });
 
   test("two taps in the middle go full screen", async ({ browser }) => {
@@ -269,6 +326,22 @@ test.describe("a phone turned sideways", () => {
     await phone.getByTestId("tv-fullscreen-btn").tap();
     await expect.poll(() => isFullScreen(phone)).toBe(false);
     await expect.poll(() => calls(phone)).toEqual(["lock:landscape", "unlock"]);
+    phone.close();
+  });
+
+  test("a film that ends lets go of the phone for its end card, and Watch again turns it once more", async ({ browser }) => {
+    const phone = await watching(browser, { setup: recordOrientation });
+    await showControls(phone);
+    await phone.getByTestId("tv-fullscreen-btn").tap();
+    await expect.poll(() => calls(phone)).toEqual(["lock:landscape"]);
+
+    await phone.evaluate(() => void (document.querySelector("video")!.currentTime = document.querySelector("video")!.duration - 1.2));
+    await expect(phone.getByTestId("tv-end")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(() => calls(phone)).toEqual(["lock:landscape", "unlock"]);
+
+    await phone.getByTestId("end-again").tap();
+    await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
+    await expect.poll(() => calls(phone)).toEqual(["lock:landscape", "unlock", "lock:landscape"]);
     phone.close();
   });
 

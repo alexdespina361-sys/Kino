@@ -1144,6 +1144,7 @@ export function Tv() {
   const holdPicture = (): boolean => {
     const engine = engineRef.current;
     if (!engine || playerRef.current.state !== "playing") return false; // (a hold means nothing to a picture that is not moving)
+    if (party?.role === "host" && party.guests.length > 0) return false; // (nor to one that others follow: they would be told the speed that was chosen, and fall behind)
     engine.boost(HOLD_SPEED);
     setBoosting(true);
     return true;
@@ -1181,8 +1182,8 @@ export function Tv() {
   });
   const touch = useTouchUi();
 
-  // Full screen on a phone is landscape for as long as a video is on, and the phone is let go of the moment it is not.
-  useLandscapeWhile(fullscreen && showVideo);
+  // Full screen on a phone is landscape for as long as a video is on, and the phone is let go of the moment it is not (nor is it held for the card at a film's end).
+  useLandscapeWhile(fullscreen && showVideo && !finished);
 
   // Series details
   const series = currentMedia?.series;

@@ -166,7 +166,8 @@ pnpm build && pnpm start     # http://localhost:8787
   side** of the picture (the left and the right two fifths of it) to skip 10 s back or forward, with no controls brought up and "+10s" flashed on that
   side; each further tap on the same side within 0.8 s skips again, and the flashes add up ("+30s"); **double-tap the middle**, or double-click with a
   mouse, for full screen; and **hold a finger on the picture**
-  for 2× speed for as long as it is held (a pill at the top says so; nobody is told it is a change of speed, and the speed goes back to what was chosen)
+  for 2× speed for as long as it is held (a pill at the top says so, with the corner title stepping aside for it; nobody is told it is a change of speed, and the
+  speed goes back to what was chosen). A screen that leads a watch party with guests in it does not do the hold: its guests are told the speed that was chosen, and would fall behind
 - D-pad remote support: ←/→ seek 10 s, ↓ wakes the controls (even faded) and lands on Play, Enter presses. Among the controls the arrows walk
   the rows as they are laid out and stop at the ends; the bar waits a little longer while the remote rests on a button. Back closes a menu and
   hands the focus back to the button that opened it (the subtitle style is a page of the audio and subtitles menu, so Back goes one page back).
@@ -186,7 +187,8 @@ pnpm build && pnpm start     # http://localhost:8787
   remembered in that browser, so the next visit stays as it was; going in again with the button makes it open full screen once more
   (`src/client/shared/fullscreen.ts`). Safari is left out of the automatic part, as it takes no typed letters in a full-screen page. **A touch screen that
   goes full screen with a video on is turned sideways** (Android's Chrome; the page asks the browser to hold the landscape orientation) **and let go of
-  when it stops** (full screen left, the video stopped), so it turns back upright by itself; an iPhone, which has no full screen for pages and does not
+  when it stops** (full screen left, the video stopped, the film ended and its end card is up; Watch again turns it once more), so it turns back upright
+  by itself; an iPhone, which has no full screen for pages and does not
   hold an orientation, and a computer are left alone. The phone's
   remote doesn't do it by itself (it is where codes get typed) but has the same button on its first screen and in its menu (*Full screen on this
   phone*). The phone's button for the TV's full screen works while the TV has had a press lately: the TV asks

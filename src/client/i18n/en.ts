@@ -141,7 +141,7 @@ export const en = {
   "settings.accent": "Colour",
   "settings.autoplayNext": "Play the next episode automatically",
   "settings.tapToPause": "Tap or click the picture to pause and play",
-  "settings.tapToPauseHelp": "Off: a tap or click on the picture only shows or hides the controls. The big button in the middle and the OK key of a remote pause and play either way.",
+  "settings.tapToPauseHelp": "Off: a tap or click on the picture only shows or hides the controls. On: it pauses and plays (a touch while the controls are hidden only brings them up first). The big button in the middle and the OK key of a remote pause and play either way.",
   "settings.playbackHelp": "On a touch screen: double-tap the left or right side of the picture to skip back or forward, and hold a finger on it for 2× speed.",
   "settings.pasteLink": "Paste a link",
   "settings.pasteLinkSwitch": "Show the box for pasting a link on the home screen",
