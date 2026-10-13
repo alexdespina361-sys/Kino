@@ -35,6 +35,8 @@ export interface Device {
   leaderId: string | null;
   /** The TVs watching along with this one, in the order they joined. */
   followerIds: string[];
+  /** A TV that watches along and that its host has made an admin: what it asks of the film (play, pause, move, stop) is done for everyone. */
+  admin: boolean;
   /** Last known playback, so a reconnecting phone can resync. */
   media: NormalizedMedia | null;
   state: PlayerState;
@@ -109,6 +111,8 @@ export interface DeviceRecord {
   controllerIds: string[];
   leaderId: string | null;
   followerIds: string[];
+  /** Only written when true. */
+  admin?: boolean;
   /** The last day (days since 1970) the TV, or a phone of it, said anything. */
   seenDay: number;
   /** What it was playing when it was last heard from. */
@@ -197,6 +201,7 @@ export class Registry {
         controllerIds: [...device.controllerIds],
         leaderId: device.leaderId,
         followerIds: [...device.followerIds],
+        ...(device.admin ? { admin: true } : {}),
         seenDay: this.seenDays.get(device.id) ?? today,
         ...(device.resume ? { resume: resumeRecord(device.resume) } : {}),
       }));
@@ -219,6 +224,7 @@ export class Registry {
         ...kept,
         controllerIds: [...kept.controllerIds],
         followerIds: [...kept.followerIds],
+        admin: kept.admin === true,
         partyCode: null,
         code: null,
         controlCode: null,
@@ -244,6 +250,7 @@ export class Registry {
       if (!device.controllerId || !device.controllerIds.includes(device.controllerId)) device.controllerId = device.controllerIds[0] ?? null;
       const host = device.leaderId ? this.devices.get(device.leaderId) : undefined;
       if (!host?.followerIds.includes(device.id)) device.leaderId = null;
+      if (!device.leaderId) device.admin = false; // (only a guest can be one)
     }
     for (const device of this.devices.values()) device.followerIds = device.followerIds.filter((id) => this.devices.get(id)?.leaderId === device.id);
   }
@@ -268,6 +275,7 @@ export class Registry {
       controlCode: null,
       leaderId: null,
       followerIds: [],
+      admin: false,
       media: null,
       state: IDLE_STATE,
       resume: null,
@@ -607,6 +615,18 @@ export class Registry {
     return { ok: true, host };
   }
 
+  /**
+   * The host makes a guest an admin, or takes that back (by the id the lists give it). Returns the guest when something changed, and null when there is
+   * no such guest in the party or it was that already.
+   */
+  setAdmin(host: Device, publicId: string, admin: boolean): Device | null {
+    const guest = this.followersOf(host).find((candidate) => candidate.publicId === publicId);
+    if (!guest || guest.admin === admin) return null;
+    guest.admin = admin;
+    this.onChange?.();
+    return guest;
+  }
+
   /** The host sends one guest away (by the id the lists give it): that TV is on its own again. */
   removeGuest(host: Device, publicId: string): Device | null {
     const guest = this.followersOf(host).find((candidate) => candidate.publicId === publicId);
@@ -637,7 +657,7 @@ export class Registry {
     const leader = this.leaderOf(follower);
     if (leader) leader.followerIds = leader.followerIds.filter((id) => id !== follower.id);
     follower.leaderId = null;
-    this.release(follower);
+    this.release(follower); // (which also ends its being an admin)
   }
 
   deviceForController(controller: Controller): Device | undefined {
@@ -696,6 +716,7 @@ export class Registry {
     this.dropPartyCode(device);
     this.dropCode(device);
     device.followerIds = [];
+    device.admin = false;
     device.controllerId = null;
     device.controllerIds = [];
     device.media = null;

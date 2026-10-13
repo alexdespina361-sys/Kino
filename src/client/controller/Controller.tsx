@@ -636,6 +636,7 @@ export function Controller() {
             socketRef.current?.send({ type: "ADD_TV", code });
           }}
           onRemove={(id) => socketRef.current?.send({ type: "REMOVE_TV", id })}
+          onAdmin={(id, admin) => socketRef.current?.send({ type: "PARTY_ADMIN", id, admin })}
           onEnd={() => socketRef.current?.send({ type: "END_PARTY" })}
         />
       )}

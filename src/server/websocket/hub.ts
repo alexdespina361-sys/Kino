@@ -201,6 +201,13 @@ export class Hub {
       const guests = this.registry.closeParty(device);
       guests.forEach((guest) => this.resetTv(guest));
       this.sendParty(device);
+    } else if (message.type === "TV_PARTY_ADMIN") {
+      this.setAdmin(device, message.id, message.admin);
+    } else if (message.type === "TV_PARTY_CMD") {
+      // Only a guest that the host has made an admin steers the film, and only while the host's own screen is there to do what it asks.
+      const host = this.registry.leaderOf(device);
+      if (!host || !device.admin || !this.tvs.has(host.id)) return;
+      this.command(host, message.command);
     } else if (message.type === "TV_NEW_CODE") {
       // A free TV is given a pairing code. One that has a phone gets the code that lets another phone in; asking is what keeps
       // that one good, so a TV asks while it shows it and not otherwise.
@@ -299,28 +306,33 @@ export class Hub {
     if (message.type === "REMOVE_TV") return this.removeTv(controller, message.id);
     if (message.type === "OPEN_PARTY") return this.openParty(controller);
     if (message.type === "END_PARTY") return this.endParty(controller);
+    if (message.type === "PARTY_ADMIN") return this.partyAdmin(controller, message.id, message.admin);
     if (message.type !== "CMD") return;
 
     const device = this.registry.deviceForController(controller);
     if (!device) return this.error(controllerId, "NOT_PAIRED", "Connect to a TV first.");
     if (!this.tvs.has(device.id)) return this.error(controllerId, "TV_OFFLINE", "The TV is offline.");
+    this.command(device, message.command, controllerId);
+  }
 
-    if (message.command.type === "NEXT_EPISODE") {
+  /** What a command does to the TV it is for and the screens watching along with it: asked by the phone that controls it, or by a guest the host made an admin. */
+  private command(device: Device, command: Command, controllerId?: string): void {
+    if (command.type === "NEXT_EPISODE") {
       if (device.media?.series?.next?.url) {
-        return void this.playUrlForDevice(device, device.media.series.next.url, controllerId);
+        void this.playUrlForDevice(device, device.media.series.next.url, controllerId);
       }
       return;
     }
 
-    if (message.command.type === "LOAD" || message.command.type === "STOP") this.bumpResolveSeq(device.id);
-    this.send(this.tvs.get(device.id), { type: "TV_CMD", command: message.command });
+    if (command.type === "LOAD" || command.type === "STOP") this.bumpResolveSeq(device.id);
+    this.send(this.tvs.get(device.id), { type: "TV_CMD", command });
     // The TVs watching along load and stop with this one; play, pause and seeks reach them as the position it reports.
-    if (message.command.type === "LOAD" || message.command.type === "STOP") {
-      this.toFollowers(device, { type: "TV_CMD", command: message.command });
+    if (command.type === "LOAD" || command.type === "STOP") {
+      this.toFollowers(device, { type: "TV_CMD", command });
     }
     // The phone always renders what the TV reports; only LOAD/STOP need an immediate placeholder.
-    if (message.command.type === "LOAD" || message.command.type === "STOP") {
-      this.applyCommand(device, message.command);
+    if (command.type === "LOAD" || command.type === "STOP") {
+      this.applyCommand(device, command);
       this.toControllers(device, { type: "STATE", state: device.state });
     }
   }
@@ -464,6 +476,18 @@ export class Hub {
     this.sendParty(device);
   }
 
+  /** The host (its screen, or the phone that controls it) makes a guest an admin, or takes that back: everyone in the party hears how it stands now. */
+  private setAdmin(host: Device, publicId: string, admin: boolean): void {
+    if (!this.registry.setAdmin(host, publicId, admin)) return; // (a guest has no guests to make one of)
+    this.sendParty(host);
+  }
+
+  private partyAdmin(controller: Controller, publicId: string, admin: boolean): void {
+    const device = this.registry.deviceForController(controller);
+    if (!device) return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
+    this.setAdmin(device, publicId, admin);
+  }
+
   /** The phone ends the party its TV hosts, as the TV itself can: the code is no good any more and every guest is on its own again. */
   private endParty(controller: Controller): void {
     const device = this.registry.deviceForController(controller);
@@ -500,7 +524,7 @@ export class Hub {
   }
 
   private partyTv(device: Device): PartyTv {
-    return { id: device.publicId, name: this.registry.displayName(device), online: this.tvs.has(device.id) };
+    return { id: device.publicId, name: this.registry.displayName(device), online: this.tvs.has(device.id), ...(device.admin ? { admin: true } : {}) };
   }
 
   private partyOf(host: Device): PartyTv[] {

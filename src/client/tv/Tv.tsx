@@ -14,6 +14,7 @@ import {
   stateIsFor,
   type CaptionStyle,
   type NormalizedMedia,
+  type PartyCommand,
   type PartyView,
   type PlayableSource,
   type PlayerState,
@@ -28,7 +29,7 @@ import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
-import { FullscreenIcon, MutedIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
+import { Back10Icon, Forward10Icon, FullscreenIcon, MutedIcon, NextIcon, PauseIcon, PlayIcon, StopIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
@@ -42,7 +43,7 @@ import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, type PointerKind
 import { EndCard, ErrorCard, FollowStatus, hasTracks, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
 import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
 import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
-import { actionForKey, SKIP_SECONDS } from "./keys";
+import { actionForKey, partyCommandForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
 import { keepNativePlayerOut } from "./nativePlayer";
 import { pressWhatOkPresses } from "./okPress";
@@ -111,6 +112,8 @@ export function Tv() {
   followingRef.current = following;
   /** The watch party this TV is in, as host or as guest, and when the code that lets others in stops working. */
   const [party, setParty] = useState<PartyView | null>(null);
+  /** The host made this screen an admin: the film's playback is its to steer too (the host's screen carries it out for everyone, see TV_PARTY_CMD). */
+  const admin = party?.role === "guest" && party.guests.some((guest) => guest.id === party.you && guest.admin === true);
   const [partyEnds, setPartyEnds] = useState<number | null>(null);
   /** Why the code just typed on the party page was refused. `id` changes with each refusal. */
   const [partyError, setPartyError] = useState<{ id: number; text: string } | null>(null);
@@ -948,7 +951,13 @@ export function Tv() {
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code });
   };
   const removeFromParty = (id: string) => void socketRef.current?.send({ type: "TV_PARTY_REMOVE", id });
+  const setAdmin = (id: string, on: boolean) => void socketRef.current?.send({ type: "TV_PARTY_ADMIN", id, admin: on });
+  const steer = (command: PartyCommand) => void socketRef.current?.send({ type: "TV_PARTY_CMD", command });
   const endParty = () => void socketRef.current?.send({ type: "TV_PARTY_CLOSE" });
+  // Being made an admin shows the buttons that come with it.
+  useEffect(() => {
+    if (admin) wake();
+  }, [admin]);
 
   /* --------------------------- remote control --------------------------- */
 
@@ -1116,8 +1125,11 @@ export function Tv() {
       if (following) {
         // Watching along: no playback keys (the host has them), just the buttons on the bar (Down, then OK), subtitles and full screen.
         // The one exception is the press the browser wants before it plays: OK is that, and starts the video.
+        // An admin has the playback keys too: they ask the host's screen, which does it for everyone.
+        const steering = admin ? partyCommandForKey(action, player.state === "playing", Boolean(currentMedia?.series?.next)) : null;
         if (isBlocked(player) && (action === "select" || action === "playpause" || action === "play")) engine.play();
-        else if (action === "up" || action === "down") controlsRef.current?.querySelector<HTMLElement>("button")?.focus(); // the bar is at the top, yet Down was always the way in
+        else if (steering) steer(steering);
+        else if (action === "up" || action === "down") (controlsRef.current?.querySelector<HTMLElement>("[data-autofocus]") ?? controlsRef.current?.querySelector<HTMLElement>("button"))?.focus(); // the bar is at the top, yet Down was always the way in
         else if (action === "captions") cycleSubtitles();
         else if (action === "mute") toggleMute();
         else if (action === "fullscreen") toggleFullscreen();
@@ -1178,7 +1190,7 @@ export function Tv() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, accountPage, stuck, finished, failed]);
+  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, admin, accountPage, stuck, finished, failed]);
 
   // The welcome belongs to the library: whatever takes the screen over (a phone sent something to play, a party, a page) ends it.
   const libraryShows = player.state === "idle" && !accountPage && !resolving && !following && screen === "library";
@@ -1307,6 +1319,7 @@ export function Tv() {
           onStart={startParty}
           onJoin={joinParty}
           onRemove={removeFromParty}
+          onAdmin={setAdmin}
           onEnd={endParty}
           onLeave={leaveParty}
           onBack={() => {
@@ -1358,30 +1371,60 @@ export function Tv() {
       {unlocked && showVideo && following && <FollowStatus player={player} onPlay={() => engineRef.current?.play()} />}
 
       {unlocked && showVideo && following && (
-        <div className="tv-follow-bar" data-testid="tv-follow-bar" ref={controlsRef}>
-          <span>
-            {t("tv.following", { name: following })}
-            {player.state === "paused" && !(player.duration > 0 && player.currentTime >= player.duration - 1.5) && ` · ${t("hud.paused")}`}
-          </span>
-          {hasTracks(player) && (
-            <button onClick={() => openMenu("tracks")} data-testid="tv-audio-sub-btn">
-              <SubtitlesIcon /> {t("player.audioSubtitles")}
+        <div className="tv-follow" ref={controlsRef}>
+          <div className="tv-follow-bar" data-testid="tv-follow-bar">
+            <span>
+              {t("tv.following", { name: following })}
+              {player.state === "paused" && !(player.duration > 0 && player.currentTime >= player.duration - 1.5) && ` · ${t("hud.paused")}`}
+            </span>
+            {hasTracks(player) && (
+              <button onClick={() => openMenu("tracks")} data-testid="tv-audio-sub-btn">
+                <SubtitlesIcon /> {t("player.audioSubtitles")}
+              </button>
+            )}
+            <button onClick={toggleMute} aria-pressed={muted} data-testid="tv-mute-btn">
+              {muted ? <MutedIcon /> : <VolumeIcon />} {t(muted ? "hud.unmute" : "hud.mute")}
             </button>
-          )}
-          <button onClick={toggleMute} aria-pressed={muted} data-testid="tv-mute-btn">
-            {muted ? <MutedIcon /> : <VolumeIcon />} {t(muted ? "hud.unmute" : "hud.mute")}
-          </button>
-          <button onClick={() => openMenu("party")} data-testid="tv-party-btn">
-            <UsersIcon /> {party ? t("party.size", { count: party.guests.length + 1 }) : t("party.rail")}
-          </button>
-          {canFullscreen && (
-            <button onClick={toggleFullscreen} data-testid="tv-fullscreen-btn">
-              <FullscreenIcon /> {t(fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
+            <button onClick={() => openMenu("party")} data-testid="tv-party-btn">
+              <UsersIcon /> {party ? t("party.size", { count: party.guests.length + 1 }) : t("party.rail")}
             </button>
+            {canFullscreen && (
+              <button onClick={toggleFullscreen} data-testid="tv-fullscreen-btn">
+                <FullscreenIcon /> {t(fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
+              </button>
+            )}
+            <button onClick={leaveParty} data-testid="tv-leave">
+              {t("tv.leave")}
+            </button>
+          </div>
+          {/* An admin steers the film: these ask the host's screen, which does it for everyone (this one follows it, as always). */}
+          {admin && (
+            <div className="tv-follow-bar tv-follow-admin" data-testid="tv-admin-bar" role="group" aria-label={t("party.admin")}>
+              <button onClick={() => steer({ type: "SKIP", seconds: -SKIP_SECONDS })} title={t("hud.backTip", { n: SKIP_SECONDS })} aria-label={t("hud.back", { n: SKIP_SECONDS })} data-testid="tv-admin-back">
+                <Back10Icon />
+              </button>
+              <button
+                onClick={() => steer({ type: player.state === "playing" ? "PAUSE" : "PLAY" })}
+                title={t("hud.playTip")}
+                aria-label={t(player.state === "playing" ? "hud.pause" : "hud.play")}
+                data-testid="tv-admin-play"
+                data-autofocus
+              >
+                {player.state === "playing" ? <PauseIcon /> : <PlayIcon />}
+              </button>
+              <button onClick={() => steer({ type: "SKIP", seconds: SKIP_SECONDS })} title={t("hud.forwardTip", { n: SKIP_SECONDS })} aria-label={t("hud.forward", { n: SKIP_SECONDS })} data-testid="tv-admin-forward">
+                <Forward10Icon />
+              </button>
+              {next && (
+                <button onClick={() => steer({ type: "NEXT_EPISODE" })} title={t("hud.nextTip")} aria-label={`${t("hud.nextEpisode")}: ${episodeLabel(next)}`} data-testid="tv-admin-next">
+                  <NextIcon />
+                </button>
+              )}
+              <button onClick={() => steer({ type: "STOP" })} title={t("hud.stopTip")} aria-label={t("hud.stop")} data-testid="tv-admin-stop">
+                <StopIcon />
+              </button>
+            </div>
           )}
-          <button onClick={leaveParty} data-testid="tv-leave">
-            {t("tv.leave")}
-          </button>
         </div>
       )}
 
@@ -1468,6 +1511,7 @@ export function Tv() {
           onClose={() => setMenu(null)}
           onStart={startParty}
           onRemove={removeFromParty}
+          onAdmin={setAdmin}
           onEnd={endParty}
           onLeave={leaveParty}
         />

@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { actionForKey } from "./keys";
+import { actionForKey, partyCommandForKey } from "./keys";
+
+describe("partyCommandForKey (what an admin of a watch party asks of the film)", () => {
+  it("plays and pauses with OK and the media keys, whichever way the film is going now", () => {
+    expect(partyCommandForKey("select", true, false)).toEqual({ type: "PAUSE" });
+    expect(partyCommandForKey("playpause", false, false)).toEqual({ type: "PLAY" });
+    expect(partyCommandForKey("play", true, false)).toEqual({ type: "PLAY" });
+    expect(partyCommandForKey("pause", false, false)).toEqual({ type: "PAUSE" });
+  });
+
+  it("jumps ten seconds either way, goes on to the next episode when there is one, and stops", () => {
+    expect(partyCommandForKey("left", true, false)).toEqual({ type: "SKIP", seconds: -10 });
+    expect(partyCommandForKey("rewind", true, false)).toEqual({ type: "SKIP", seconds: -10 });
+    expect(partyCommandForKey("right", true, false)).toEqual({ type: "SKIP", seconds: 10 });
+    expect(partyCommandForKey("forward", true, false)).toEqual({ type: "SKIP", seconds: 10 });
+    expect(partyCommandForKey("next", true, true)).toEqual({ type: "NEXT_EPISODE" });
+    expect(partyCommandForKey("next", true, false)).toBeNull();
+    expect(partyCommandForKey("stop", true, false)).toEqual({ type: "STOP" });
+  });
+
+  it("leaves everything else to the screen's own: its sound, its subtitles, its full screen, the way around the buttons", () => {
+    for (const action of ["up", "down", "back", "captions", "fullscreen", "mute", "previous", "browse"] as const) expect(partyCommandForKey(action, true, true)).toBeNull();
+  });
+});
 
 describe("actionForKey", () => {
   it.each([

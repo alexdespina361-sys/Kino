@@ -441,6 +441,12 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .party-state { display: block; font-size: 0.75rem; font-weight: 600; }
 .party-state.ok { color: var(--ok); }
 .party-state.bad { color: var(--bad); }
+/* A screen of the party: its name and state, and what the host can do about it (admin, remove). They go under the name where they do not fit beside it. */
+.party-row { flex-wrap: wrap; }
+.party-who { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
+.party-actions { display: flex; flex: 0 1 auto; gap: 6px; margin-left: auto; }
+.party-actions .btn { min-height: 44px; padding: 0 14px; font-size: 0.92rem; }
+.party-actions .btn:not(.btn-danger) { background: rgba(255, 255, 255, 0.1); } /* (a row is the colour a plain button is) */
 /* The TVs of a phone: the row to choose one, and the button that lets one go. */
 .tv-row { display: flex; align-items: stretch; gap: 6px; }
 .tv-row .choice { flex: 1; min-width: 0; }

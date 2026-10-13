@@ -331,6 +331,14 @@ reports its position, the server relays it, and each guest nudges its speed by a
 a second or more off (`src/client/tv/sync.ts`). **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
 from the guest's *Audio & subtitles* button; volume is the device's own.
 
+**Admins:** next to each guest's name the host (on the TV, or on its phone) has a **Make admin** button, which turns into **Remove admin**. An
+admin guest gets a bar of its own under the guest's bar (jump back 10 seconds, play / pause, jump forward 10, the next episode where there is
+one, stop) and the same keys on the remote (OK / Space, the arrows, `N`, `S`), and **Down** lands on Play. What it asks is done by the host's
+screen, so every guest follows it as they follow the host, and **Stop** is for everyone, the admin's own screen included. Speed, the
+episode and source pickers, and who is in stay the host's: the server only takes `PLAY`, `PAUSE`, `SEEK`, `SKIP`, `STOP` and `NEXT_EPISODE` from an
+admin (`TV_PARTY_CMD`), and nothing at all while the host's screen is not there. Everyone in the party sees who is an admin. A guest stops being
+one when it leaves, is sent away or the party ends, and is not one when it joins again.
+
 **A phone as a guest** watches in either orientation. The guest's bar (Audio & subtitles, Mute, Watch party, Full screen, Leave) sits along the
 top: held sideways it is one row, held upright "Watching along with …" has a line of its own and the buttons wrap under it. The guest's screen says
 what it is waiting for: a spinner while the video loads, the reason in words when it can't be played (and the code underneath), and

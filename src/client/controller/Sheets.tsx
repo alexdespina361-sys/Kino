@@ -654,6 +654,7 @@ export function PartySheet({
   onInvite,
   onAdd,
   onRemove,
+  onAdmin,
   onEnd,
   onClose,
 }: Close & {
@@ -665,6 +666,8 @@ export function PartySheet({
   onInvite: () => void;
   onAdd: (code: string) => void;
   onRemove: (id: string) => void;
+  /** Make a screen of the party an admin (it can then play, pause, move and stop the film for everyone), or take that back. */
+  onAdmin: (id: string, admin: boolean) => void;
   /** End the party for everyone: the code stops working too. */
   onEnd: () => void;
 }) {
@@ -721,14 +724,22 @@ export function PartySheet({
           </span>
         </li>
         {party.map((tv) => (
-          <li className="choice" key={tv.id} data-testid="party-tv">
-            <span>
+          <li className="choice party-row" key={tv.id} data-testid="party-tv" data-admin={tv.admin || undefined}>
+            <span className="party-who">
               {tv.name}
-              <span className={`party-state ${tv.online ? "ok" : "bad"}`}>{tv.online ? t("party.watching") : t("party.offline")}</span>
+              <span className={`party-state ${tv.online ? "ok" : "bad"}`}>
+                {tv.online ? t("party.watching") : t("party.offline")}
+                {tv.admin && ` · ${t("party.admin")}`}
+              </span>
             </span>
-            <button className="btn btn-danger" data-testid="party-remove" onClick={() => onRemove(tv.id)}>
-              {t("party.remove")}
-            </button>
+            <span className="party-actions">
+              <button className="btn" data-testid="party-admin" onClick={() => onAdmin(tv.id, !tv.admin)}>
+                {t(tv.admin ? "party.removeAdmin" : "party.makeAdmin")}
+              </button>
+              <button className="btn btn-danger" data-testid="party-remove" onClick={() => onRemove(tv.id)}>
+                {t("party.remove")}
+              </button>
+            </span>
           </li>
         ))}
       </ul>

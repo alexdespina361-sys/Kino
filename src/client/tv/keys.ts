@@ -1,3 +1,5 @@
+import type { PartyCommand } from "../../shared";
+
 /** What a press on the TV remote (or a keyboard, when testing on a PC) means. */
 export type RemoteAction =
   | "left"
@@ -107,3 +109,31 @@ export function actionForKey(event: { key: string; keyCode?: number; target?: Ev
 
 /** How far the arrow keys, rewind and fast-forward jump. */
 export const SKIP_SECONDS = 10;
+
+/**
+ * What a press asks of the film from an admin of a watch party, whose host's screen does it for everyone: play and pause, a jump either
+ * way, the next episode, stopping. Null for a key that is not about the playback.
+ */
+export function partyCommandForKey(action: RemoteAction, playing: boolean, hasNext: boolean): PartyCommand | null {
+  switch (action) {
+    case "select":
+    case "playpause":
+      return { type: playing ? "PAUSE" : "PLAY" };
+    case "play":
+      return { type: "PLAY" };
+    case "pause":
+      return { type: "PAUSE" };
+    case "left":
+    case "rewind":
+      return { type: "SKIP", seconds: -SKIP_SECONDS };
+    case "right":
+    case "forward":
+      return { type: "SKIP", seconds: SKIP_SECONDS };
+    case "next":
+      return hasNext ? { type: "NEXT_EPISODE" } : null;
+    case "stop":
+      return { type: "STOP" };
+    default:
+      return null;
+  }
+}

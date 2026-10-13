@@ -66,6 +66,12 @@ class Client {
     expect(this.queue.filter(predicate)).toEqual([]);
   }
 
+  /** Wait a moment for what is on its way, then let go of everything that has arrived: for looking only at what a next step brings. */
+  async forget(waitMs = 100): Promise<void> {
+    await new Promise((r) => setTimeout(r, waitMs));
+    this.queue.length = 0;
+  }
+
   async closed(timeoutMs = 2000): Promise<number | undefined> {
     const deadline = Date.now() + timeoutMs;
     while (this.closeCode === undefined && Date.now() < deadline) {
@@ -1252,6 +1258,168 @@ describe("a watch party started on a TV", () => {
     await loner.next("CTL_WELCOME");
     loner.send({ type: "END_PARTY" });
     expect((await loner.next("ERROR")).code).toBe("NOT_PAIRED");
+  });
+
+  describe("with admins among the guests", () => {
+    /** The id a screen has in the party's lists, as it is told it ("you"). */
+    const idOf = async (guest: { tv: Client }) => (await guest.tv.next("TV_PARTY")).party!.you;
+    const isAdminIn = (id: string) => (message: { party: { guests: { id: string; admin?: boolean }[] } | null }) => message.party?.guests.find((guest) => guest.id === id)?.admin === true;
+    const aCommand = (command: Command["type"]) => (message: { command: Command }) => message.command.type === command;
+    /** The `admin` of every guest in the party view that comes next, in the order they joined. */
+    const adminsNext = async (screen: { tv: Client }) => (await screen.tv.next("TV_PARTY")).party!.guests.map((guest) => guest.admin);
+
+    it("is told to everyone in the party when the host makes a guest an admin, and takes that back", async () => {
+      const host = await openParty();
+      const guest = await joinWith(host.code);
+      const other = await joinWith(host.code);
+      const guestId = await idOf(guest);
+      const everyone = [host, guest, other];
+      await Promise.all(everyone.map((screen) => screen.tv.forget()));
+
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
+      for (const screen of everyone) expect(await adminsNext(screen)).toEqual([true, undefined]);
+
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true }); // (already one: nothing to say)
+      await Promise.all(everyone.map((screen) => screen.tv.expectNone((m) => m.type === "TV_PARTY")));
+
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: false });
+      for (const screen of everyone) expect(await adminsNext(screen)).toEqual([undefined, undefined]);
+    });
+
+    it("has the host's screen do what an admin guest asks of the film, and the other guests follow the host", async () => {
+      resolveImpl = async () => ({ status: "success", resolver: "test", media });
+      const host = await openParty();
+      const admin = await joinWith(host.code);
+      const other = await joinWith(host.code);
+      const adminId = await idOf(admin);
+      host.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" });
+      for (const screen of [host, admin, other]) await screen.tv.nextWhere("TV_CMD", aCommand("LOAD"));
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: adminId, admin: true });
+      await admin.tv.nextWhere("TV_PARTY", isAdminIn(adminId));
+
+      // Play, pause and moving are done by the host's screen, and reach the others as the place it reports.
+      for (const command of [{ type: "PAUSE" }, { type: "PLAY" }, { type: "SEEK", time: 120 }, { type: "SKIP", seconds: -10 }] as const) {
+        admin.tv.send({ type: "TV_PARTY_CMD", command });
+        expect((await host.tv.nextWhere("TV_CMD", aCommand(command.type))).command).toEqual(command);
+      }
+      await other.tv.expectNone((m) => m.type === "TV_CMD");
+
+      // Stopping is for everyone: the guest that asked is stopped too.
+      admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "STOP" } });
+      for (const screen of [host, admin, other]) expect((await screen.tv.nextWhere("TV_CMD", aCommand("STOP"))).command).toEqual({ type: "STOP" });
+    });
+
+    it("starts the next episode for everyone when an admin asks for it", async () => {
+      const episode = { ...media, series: { season: 1, episode: 1, next: { title: "Two", season: 1, episode: 2, url: "https://s.example/two" } } };
+      const two = { ...media, title: "Two", stream: { url: "/fixtures/two.mp4", type: "mp4" as const } };
+      resolveImpl = async (url) => ({ status: "success", resolver: "test", media: url.endsWith("two") ? two : episode });
+      const host = await openParty();
+      const admin = await joinWith(host.code);
+      const adminId = await idOf(admin);
+      host.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/one" });
+      await admin.tv.nextWhere("TV_CMD", aCommand("LOAD"));
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: adminId, admin: true });
+      await admin.tv.nextWhere("TV_PARTY", isAdminIn(adminId));
+
+      admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "NEXT_EPISODE" } });
+      expect(((await admin.tv.nextWhere("TV_CMD", aCommand("LOAD"))).command as { media: { title: string } }).media.title).toBe("Two");
+      expect(((await host.tv.nextWhere("TV_CMD", (m) => m.command.type === "LOAD" && m.command.media.title === "Two")).command as { type: string }).type).toBe("LOAD");
+    });
+
+    it("takes nothing from a guest that is not an admin, one that was one, or a screen that is not a guest; and nothing but the playback from an admin", async () => {
+      resolveImpl = async () => ({ status: "success", resolver: "test", media });
+      const host = await openParty();
+      const guest = await joinWith(host.code);
+      const guestId = await idOf(guest);
+      host.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" });
+      await host.tv.nextWhere("TV_CMD", aCommand("LOAD"));
+      const toHost = (type: string) => host.tv.expectNone((m) => m.type === "TV_CMD" && m.command.type === type);
+
+      // Not an admin (yet): ignored, and so is its trying to make itself one.
+      guest.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
+      await toHost("PAUSE");
+      guest.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
+      await host.tv.expectNone((m) => m.type === "TV_PARTY" && m.party?.guests.some((g) => g.admin === true) === true);
+
+      // An admin: the playback only. What else is on a phone's remote is not for a guest, and the message is refused as it is read.
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
+      await guest.tv.nextWhere("TV_PARTY", isAdminIn(guestId));
+      const sendRaw = (command: object) => guest.tv.send({ type: "TV_PARTY_CMD", command } as { type: string });
+      sendRaw({ type: "SET_SPEED", rate: 2 });
+      expect((await guest.tv.next("ERROR")).code).toBe("BAD_MESSAGE");
+      sendRaw({ type: "LOAD", media });
+      expect((await guest.tv.next("ERROR")).code).toBe("BAD_MESSAGE");
+      await toHost("SET_SPEED");
+      await toHost("LOAD");
+
+      // Taken back: ignored again.
+      await guest.tv.forget();
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: false });
+      expect(await adminsNext(guest)).toEqual([undefined]);
+      guest.tv.send({ type: "TV_PARTY_CMD", command: { type: "STOP" } });
+      await toHost("STOP");
+
+      // A screen that is nobody's guest has no film of anyone's to steer.
+      const alone = await newTv();
+      alone.tv.send({ type: "TV_PARTY_CMD", command: { type: "STOP" } });
+      await toHost("STOP");
+      // And a host that is not there to do it is not asked.
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
+      await guest.tv.nextWhere("TV_PARTY", isAdminIn(guestId));
+      host.tv.close();
+      await guest.tv.nextWhere("TV_PARTY", (m) => m.party?.host.online === false);
+      guest.tv.send({ type: "TV_PARTY_CMD", command: { type: "STOP" } });
+      await guest.tv.expectNone((m) => m.type === "TV_CMD" && m.command.type === "STOP");
+    });
+
+    it("is no longer one once it leaves or is sent away, and does not come back as one", async () => {
+      const host = await openParty();
+      const guest = await joinWith(host.code);
+      const guestId = await idOf(guest);
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
+      await guest.tv.nextWhere("TV_PARTY", isAdminIn(guestId));
+
+      guest.tv.send({ type: "TV_UNPAIR" }); // leaves
+      await guest.tv.next("TV_UNPAIRED");
+      await guest.tv.forget();
+      guest.tv.send({ type: "TV_PARTY_JOIN", code: host.code });
+      await guest.tv.next("TV_FOLLOWING");
+      expect(await adminsNext(guest)).toEqual([undefined]);
+
+      host.tv.send({ type: "TV_PARTY_ADMIN", id: guestId, admin: true });
+      await guest.tv.nextWhere("TV_PARTY", isAdminIn(guestId));
+      host.tv.send({ type: "TV_PARTY_REMOVE", id: guestId }); // sent away
+      await guest.tv.next("TV_UNPAIRED");
+      await guest.tv.forget();
+      guest.tv.send({ type: "TV_PARTY_JOIN", code: host.code });
+      await guest.tv.next("TV_FOLLOWING");
+      expect(await adminsNext(guest)).toEqual([undefined]);
+    });
+
+    it("is made and taken back from the phone of the host's TV too, which is told who is one", async () => {
+      const { tv, phone } = await pairedSetup();
+      phone.send({ type: "OPEN_PARTY" });
+      const opened = await phone.next("PARTY");
+      await tv.next("TV_PARTY");
+      const guest = await joinWith(opened.code!.code);
+      const guestId = await idOf(guest);
+      await phone.forget();
+
+      phone.send({ type: "PARTY_ADMIN", id: guestId, admin: true });
+      expect((await phone.next("PARTY")).tvs).toEqual([{ id: guestId, name: expect.stringMatching(/^TV /), online: true, admin: true }]);
+      await guest.tv.nextWhere("TV_PARTY", isAdminIn(guestId));
+      guest.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
+      expect((await tv.nextWhere("TV_CMD", aCommand("PAUSE"))).command).toEqual({ type: "PAUSE" });
+
+      phone.send({ type: "PARTY_ADMIN", id: guestId, admin: false });
+      expect((await phone.next("PARTY")).tvs).toEqual([{ id: guestId, name: expect.stringMatching(/^TV /), online: true }]);
+
+      const loner = await connect();
+      loner.send({ type: "CTL_HELLO" });
+      await loner.next("CTL_WELCOME");
+      loner.send({ type: "PARTY_ADMIN", id: guestId, admin: true });
+      expect((await loner.next("ERROR")).code).toBe("NOT_PAIRED");
+    });
   });
 });
 

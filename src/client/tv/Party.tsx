@@ -19,8 +19,11 @@ const PANEL_INVITE_NAV: Nav = { "data-opt": true, "data-col": 0 };
 /** The panel's page for choosing friends is a single column of its own. */
 const PANEL_PICK_NAV: Nav = { "data-opt": true, "data-col": 0 };
 
-/** Who is in the party, the host first. The host can send a guest away; a screen that is gone from the network is dimmed. */
-function Members({ party, nav, onRemove }: { party: PartyView; nav: Nav; onRemove?: (id: string) => void }) {
+/**
+ * Who is in the party, the host first. The host can send a guest away, or make it an admin (the film's playback is then its to steer too);
+ * a screen that is gone from the network is dimmed.
+ */
+function Members({ party, nav, onRemove, onAdmin }: { party: PartyView; nav: Nav; onRemove?: (id: string) => void; onAdmin?: (id: string, admin: boolean) => void }) {
   const t = useT();
   const all = [
     { ...party.host, host: true },
@@ -29,16 +32,26 @@ function Members({ party, nav, onRemove }: { party: PartyView; nav: Nav; onRemov
   return (
     <ul className="tv-party-members" data-testid="tv-party-members" aria-label={t("party.members")}>
       {all.map((tv) => (
-        <li className="tv-party-member" key={tv.id} data-testid="tv-party-member" data-online={tv.online} data-host={tv.host}>
+        <li className="tv-party-member" key={tv.id} data-testid="tv-party-member" data-online={tv.online} data-host={tv.host} data-admin={tv.admin || undefined}>
           <i className="tv-party-dot" aria-hidden="true" />
           <span className="tv-party-name">{tv.name}</span>
           {tv.id === party.you && <small>{t("party.you")}</small>}
           {tv.host && <small>{t("party.host")}</small>}
+          {tv.admin && <small>{t("party.admin")}</small>}
           {!tv.online && <small>{t("party.offline")}</small>}
-          {onRemove && !tv.host && (
-            <button className="tv-party-remove" data-testid="tv-party-remove" onClick={() => onRemove(tv.id)} {...nav}>
-              {t("party.remove")}
-            </button>
+          {(onAdmin || onRemove) && !tv.host && (
+            <span className="tv-party-actions">
+              {onAdmin && (
+                <button className="tv-party-remove" data-testid="tv-party-admin" onClick={() => onAdmin(tv.id, !tv.admin)} {...nav}>
+                  {t(tv.admin ? "party.removeAdmin" : "party.makeAdmin")}
+                </button>
+              )}
+              {onRemove && (
+                <button className="tv-party-remove" data-testid="tv-party-remove" onClick={() => onRemove(tv.id)} {...nav}>
+                  {t("party.remove")}
+                </button>
+              )}
+            </span>
           )}
         </li>
       ))}
@@ -105,6 +118,8 @@ interface PageProps {
   onStart: () => void;
   onJoin: (code: string) => void;
   onRemove: (id: string) => void;
+  /** Make a guest an admin, or take that back. */
+  onAdmin: (id: string, admin: boolean) => void;
   onEnd: () => void;
   onLeave: () => void;
   onBack: () => void;
@@ -168,7 +183,7 @@ export function PartyPage(p: PageProps) {
       <Screen key="host" testId="tv-party" compact focus onBack={p.onBack}>
         <h1 className="tv-headline tv-headline-small">{t("party.rail")}</h1>
         <Invite code={invite?.code} nav={PAGE_NAV} />
-        <Members party={p.party} nav={PAGE_NAV} onRemove={p.onRemove} />
+        <Members party={p.party} nav={PAGE_NAV} onRemove={p.onRemove} onAdmin={p.onAdmin} />
         {p.party.guests.length === 0 && <p className="tv-hint">{t("party.waiting")}</p>}
         <div className="tv-actions">
           <button className="tv-action tv-action-primary" onClick={p.onBack} data-testid="tv-back-to-library" data-nav data-autofocus>
@@ -361,6 +376,7 @@ interface PanelProps {
   onClose: () => void;
   onStart: () => void;
   onRemove: (id: string) => void;
+  onAdmin: (id: string, admin: boolean) => void;
   onEnd: () => void;
   onLeave: () => void;
 }
@@ -437,7 +453,7 @@ export function PartyPanel(p: PanelProps) {
             )}
             <div className="tv-menu-col tv-party-side">
               <h3>{t("party.members")}</h3>
-              <Members party={p.party} nav={PANEL_NAV} {...(host ? { onRemove: p.onRemove } : {})} />
+              <Members party={p.party} nav={PANEL_NAV} {...(host ? { onRemove: p.onRemove, onAdmin: p.onAdmin } : {})} />
               {host && p.party.guests.length === 0 && <p className="tv-hint">{t("party.waiting")}</p>}
               <button className="tv-opt" onClick={p.onClose} data-testid="tv-party-done" data-autofocus {...PANEL_NAV}>
                 <span>{t("common.done")}</span>

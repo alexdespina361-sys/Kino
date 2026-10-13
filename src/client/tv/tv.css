@@ -851,16 +851,26 @@
   color: #b5b5b5;
 }
 
-/* A TV that watches along has no controls of its own, only a way out. */
-.tv-follow-bar {
+/* A TV that watches along has no controls of its own, only a way out; one that the host made an admin has the playback's buttons as well, under that. */
+.tv-follow {
   position: absolute;
-  top: 2em;
+  top: 3em;
   left: 0;
   right: 0;
-  width: max-content; /* centred, and as wide as its buttons need up to the screen's width (left: 50% would give it half the screen to wrap in) */
-  max-width: calc(100% - 2em);
-  margin: 0 auto;
   z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6em;
+  pointer-events: none; /* only the bars take the pointer: the picture between and around them stays the picture's */
+  transition: opacity 0.25s;
+}
+.tv-follow > * { pointer-events: auto; }
+.tv[data-hud="hidden"] .tv-follow { opacity: 0; }
+.tv[data-hud="hidden"] .tv-follow > * { pointer-events: none; }
+.tv-follow-bar {
+  width: max-content; /* as wide as its buttons need up to the screen's width (centred by the column it is in) */
+  max-width: calc(100% - 2em);
   display: flex;
   align-items: center;
   gap: 1em;
@@ -869,9 +879,9 @@
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(0, 0, 0, 0.72);
   font-size: 1.5em;
-  transition: opacity 0.25s;
 }
-.tv[data-hud="hidden"] .tv-follow-bar { opacity: 0; pointer-events: none; }
+.tv-follow-admin { gap: 0.4em; padding: 0.4em 0.5em; }
+.tv-follow-admin button svg { font-size: 1.3em; }
 .tv-follow-bar button {
   display: inline-flex;
   align-items: center;
@@ -1654,10 +1664,11 @@
 .tv-party-members { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6em 0.8em; max-width: 80em; margin: 0; padding: 0; list-style: none; }
 .tv-party-member {
   display: inline-flex;
+  flex-wrap: wrap; /* (what the host can do to a guest goes under its name where it does not fit beside it) */
   align-items: center;
   gap: 0.5em;
   padding: 0.35em 0.8em 0.35em 1em;
-  border-radius: 999px;
+  border-radius: 1.2em; /* (a pill on one line) */
   background: rgba(255, 255, 255, 0.1);
   font-size: 1.7em;
   font-weight: 600;
@@ -1667,8 +1678,8 @@
 .tv-party-member[data-online="false"] .tv-party-dot { background: #8a8a8a; }
 .tv-party-name { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tv-party-member small { font-size: 0.78em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.tv-party-actions { display: inline-flex; gap: 0.4em; margin-left: auto; } /* (both go under the name together where they do not fit beside it) */
 .tv-party-remove {
-  margin-left: auto;
   padding: 0.25em 0.8em;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
@@ -1893,7 +1904,8 @@
   .tv-end-tile { flex: 1 1 0; max-width: 11.5em; }
   .tv-end-name { font-size: 1.1em; }
   .tv-end-art .poster-initial { font-size: 2.6em; }
-  .tv-follow-bar { top: 1em; flex-wrap: wrap; justify-content: center; gap: 0.6em; padding: 0.6em; border-radius: 1.4em; font-size: 1.2em; }
+  .tv-follow { top: 1.2em; gap: 0.5em; }
+  .tv-follow-bar { flex-wrap: wrap; justify-content: center; gap: 0.6em; padding: 0.6em; border-radius: 1.4em; font-size: 1.2em; }
   .tv-follow-bar > span { flex: 1 1 100%; text-align: center; }
   .tv-follow-bar button { padding: 0.5em 0.9em; }
   .tv-tap b { font-size: 1.7em; }
