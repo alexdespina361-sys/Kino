@@ -4,15 +4,17 @@ import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { AuthForm } from "../account/AuthForm";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
+import { useProfileData } from "../account/store";
 import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
-import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, PencilIcon, PhoneIcon, ScanIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, PencilIcon, PhoneIcon, ScanIcon, StarIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
 import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { LinkApprove } from "../account/LinkApprove";
 import { useBackToClose } from "./backButton";
 import { FriendPage, FriendsPage } from "./Friends";
+import { RatingsSheet } from "./RatingsSheet";
 import { sheetIsOpen } from "./Sheet";
 
 /** A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. */
@@ -66,6 +68,10 @@ export function AccountScreen({
   const t = useT();
   const account = useAccount();
   const friends = useFriends();
+  const { ratings, settings } = useProfileData();
+  const ratingsOn = settings.ratings ?? true;
+  /** What this profile rated, over the account's page: it is the profile's, so it is kept here with the friends and the settings. */
+  const [ratingsOpen, setRatingsOpen] = useState(false);
   const [view, setView] = useState<View>(initial);
   const [editing, setEditing] = useState<Profile | "new" | null>(null);
   const [linkCode, setLinkCode] = useState<string | null>(null);
@@ -204,6 +210,8 @@ export function AccountScreen({
     );
   }
 
+  /** What this profile rated is there for a guest too: a guest rates, and keeps it, until it signs in. */
+  const ratingsRow = ratingsOn && <MenuRow icon={<StarIcon />} label={t("rating.mine")} detail={ratings.length > 0 ? String(ratings.length) : undefined} onClick={() => setRatingsOpen(true)} testId="menu-ratings" />;
   return (
     <Page title={t("account.title")} onBack={onClose} testId="account-screen">
       {me && profile ? (
@@ -220,6 +228,7 @@ export function AccountScreen({
             <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={() => setView("profiles")} testId="menu-profiles" />
             <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
             {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.unread > 0 ? String(friends.unread) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
+            {ratingsRow}
             <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
             <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
             <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
@@ -246,11 +255,13 @@ export function AccountScreen({
           </section>
           <AuthForm onDone={() => undefined} />
           <nav className="menu">
+            {ratingsRow}
             <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
           </nav>
           <p className="muted small center">{t("account.guestNote")}</p>
         </div>
       )}
+      {ratingsOpen && ratingsOn && <RatingsSheet ratings={ratings} onOpen={(entry) => onOpenTitle?.(entry)} onClose={() => setRatingsOpen(false)} />}
     </Page>
   );
 }

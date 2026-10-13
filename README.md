@@ -58,8 +58,8 @@ pnpm build && pnpm start     # http://localhost:8787
   signed in, so a screen does not look signed out while the server is slow to answer (a free host waking up). An account has up to **five
   profiles**, each with a name and one of **twelve avatars**; who is watching is asked on every new device, Netflix-style, and a profile
   is switched from the account page (the profile picture in the phone's top bar, and in the library's top corner on the TV). The TV makes,
-  renames, re-pictures and removes profiles itself, with the remote's arrow keys: profile picture in the top corner (or the gear in the
-  menu) → **Manage profiles**; the "Who's watching?" page that follows a sign-in has the same tile for a new profile and the same button.
+  renames, re-pictures and removes profiles itself, with the remote's arrow keys: profile picture in the top corner (or **Settings** on the
+  menu's **Profile** page) → **Manage profiles**; the "Who's watching?" page that follows a sign-in has the same tile for a new profile and the same button.
 - **Watching is saved to the profile**, wherever it is watched: **Continue watching** (the place in every unfinished film or episode, and the
   next episode of a show once one is finished), **lists** (every profile has one called **Favourites**, and can make others and name them,
   up to twelve in all; a title can be in several), the watched marks on episode lists, and the profile's settings. Open the app
@@ -71,7 +71,10 @@ pnpm build && pnpm start     # http://localhost:8787
   work from the person: *when it was rated*, *how much was watched* (**from 95% on it counts as all of it**, since the credits are often skipped; a
   show or a season is counted in episodes, "2 of 3 episodes watched") and *when it was finished* (or last watched). Watching it again later adds to that;
   rating it again changes the day it was rated only when the score changes. **My ratings** is a row on the phone's home screen with a page of its own
-  (*See all*: newest first or highest first, with the notes and those facts, and the mean) and an entry in the TV's menu. Ratings are saved to the
+  (*See all*: newest first or highest first, with the notes and those facts, and the mean; it is also a row of the phone's account page) and a place on
+  the TV's **Profile** page. **A title that was rated shows its score** (a star and the number) in the corner of its picture wherever it is shown, in the rows, a
+  grid, a search, Continue watching and the lists, on the phone and the TV, so what was rated is seen while scrolling the library (a season's score is the
+  season's: the show shows none of its own). Ratings are saved to the
   profile and synced like the lists (up to 500; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
   and TV) switches the whole thing off, every sign of it, and keeps what was rated.
 - **Friends** are optional and **off until a profile turns them on** in its settings (phone and TV; they belong to an account, so a guest is told to sign in).
@@ -84,7 +87,7 @@ pnpm build && pnpm start     # http://localhost:8787
   profile's settings, so the server, not the screen, decides what a friend is shown or may send, from the other profile's synced settings; with friends off nothing is
   shared, sent or received, and the friends are kept for when it is turned on again (turning it on again **resumes sharing with them at once**, so a friend you
   mean to be rid of is removed first: with friends off, *Settings → Friends* on the phone lists the friends you still have, each with a button that removes them,
-  and nothing has to be turned on for it). What friends sent shows as a row, a dot (phone) or a number on the menu (TV), and a
+  and nothing has to be turned on for it). On the TV the friends are a place of the **Profile** page, on the phone a row of the account page. What friends sent shows as a row, a dot (phone) or a number on the menu's Profile line (TV), and a
   line when it arrives; either friend can remove the other (the button asks twice), which also takes back the codes the one who removed had out, so that a code the
   other was shown cannot bring them back. Friends: `/api/profiles/:id/friends…`.
   Things to know: *Friends can see my ratings* does nothing, and is not shown, while ratings themselves are switched off (they stay kept, and are seen by nobody).
@@ -359,10 +362,14 @@ well as in the page's own status, which can be far above a library that is scrol
   is missing is left out as a whole, one whose later episode is missing is not. Nothing here asks a place about a title ahead of time; the
   one thing known without trying is that a title with a release date in the future is not out yet, so it is never listed.
 - **Menu, pages, categories, search (TV).** Pressing Left from the first title of any row (or the first tile of a grid) opens a menu down the
-  left: **Search**, **Home**, **Movies**, **Series**, **My Lists**, **History**, **Watch party**, **Connect a phone**, **Settings**, and under them the
-  **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles (with a
+  left, nine lines: **Search**, **Home**, **Movies**, **Series**, **Categories**, **My Lists**, and, set apart, **Watch party**, **Connect a phone** and
+  **Profile**. What belongs to whoever is watching is behind that last line, not in lines of its own: **Profile** is a page of one row of places, each
+  saying how it stands: **My ratings** ("12 ratings · average 7.4"), **Friends** (a profile that is signed in and has friends on: "3 friends", "2 new"),
+  **History**, **Sign in** (for a guest) and **Settings**; Back from any of them returns to it, and its line in the menu carries the number of unread things
+  from friends. **Categories** is one page of all of them, films first, then shows, each saying which it is and how many titles it has; a category opens as a
+  grid, and Back returns to the list. Right or Back returns to the titles (with a
   mouse, **resting the pointer on the strip opens the menu**, no button held, and leaving it shuts it), and
-  choosing any entry (**My Lists**, **History**, a category…) closes the menu over the page it opens. **My Lists** is a button for each list over
+  choosing any entry (**My Lists**, **Profile**, a category…) closes the menu over the page it opens. **My Lists** is a button for each list over
   the titles in it, with **New list** (a name typed on the on-screen or real keyboard) and **Edit list** (rename, or delete after a question). **Movies**
   and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard (Space, Delete, and Clear for the whole box) beside the
   results (a physical keyboard types too, and Backspace deletes before it means Back) with **All / Movies / Series** filters. Titles already loaded
@@ -455,7 +462,7 @@ several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page
 `sleepingServer` in `e2e/helpers.ts`, with the page's clock skipped ahead), the TV page on a
 phone, a tablet and a phone held sideways, a finger on the picture (taps, double taps, a hold, the big button, the landscape lock, the episode's name:
 `e2e/player-touch.spec.ts`; the recognizer on its own in `src/client/tv/gestures.test.ts`), the end card and mute, full screen (at the first press, kept for the next visit, the buttons),
-ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV), friends (made with a code or a link, what a friend can see,
+ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV, and the score on a title's picture), the TV's menu and its Profile page (`e2e/profile-hub.spec.ts`, which also checks that what the page says fits its tiles in the three languages at four screen sizes), friends (made with a code or a link, what a friend can see,
 what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by

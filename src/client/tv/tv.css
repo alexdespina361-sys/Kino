@@ -1144,6 +1144,26 @@
 }
 .tv-tile-corner svg { width: 1.2em; height: 1.2em; }
 .tv-tile-corner[data-corner="kept"] { background: var(--accent); box-shadow: none; color: var(--accent-ink); }
+
+/* The score this profile gave a title, in the corner opposite the button (so a mouse's buttons never cover it): a star and a number. */
+.tv-tile-art .score-badge {
+  position: absolute;
+  top: 0.5em;
+  left: 0.5em;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.1em 0.55em 0.1em 0.4em;
+  border-radius: 1em;
+  background: rgba(0, 0, 0, 0.68);
+  box-shadow: 0 0 0 0.08em rgba(255, 255, 255, 0.3);
+  color: #fff;
+  font-size: 1.15em;
+  font-weight: 800;
+  line-height: 1.5;
+}
+.tv-tile-art .score-badge svg { width: 1em; height: 1em; color: var(--accent); }
 @media (hover: hover) and (pointer: fine) {
   .tv-tile-corner { display: grid; }
   .tv-tile-corner:hover { background: #fff; box-shadow: none; color: #000; transform: scale(1.14); }
@@ -1201,6 +1221,7 @@
  */
 .tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: 0.68em; }
 .tv-rail-item { position: relative; }
+.tv-rail-item[data-apart="true"] { margin-top: 0.9em; }
 /* (A name that is longer than the menu is wide ends in dots inside the lit box, rather than running out of it.) */
 .tv-rail-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.15s; }
 .tv-rail[data-open="true"] .tv-rail-item span { opacity: 1; }
@@ -1573,7 +1594,8 @@
 .tv-tile-category::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0, 0, 0, 0.55), transparent 65%); }
 .tv-category-name, .tv-category-count { position: relative; z-index: 1; }
 .tv-category-name { font-size: 1.6em; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tv-category-count { font-size: 1.1em; font-weight: 600; color: rgba(255, 255, 255, 0.78); }
+/* (What a place of the profile's page says under its name is a line or two, and the banner says all of it; a third line would push the name out of the tile.) */
+.tv-category-count { font-size: 1.1em; font-weight: 600; color: rgba(255, 255, 255, 0.78); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tv-tile-category:focus-visible { transform: scale(1.1); box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
 
 /* ------------------------------ watch party ------------------------------ */
@@ -1742,6 +1764,9 @@
   .tv-panel-settings { align-items: stretch; }
   .tv-panel-settings h2 { margin: 1.4em 0 0.5em; font-size: 1.2em; }
   .tv-choices { flex-wrap: wrap; }
+  /* A few short choices (the languages) stay on one line however narrow the page is: they share its width. */
+  .tv-choices-fit { flex-wrap: nowrap; gap: 0.5em; }
+  .tv-choices-fit .tv-choice { flex: 1 1 0; min-width: 0; justify-content: center; padding-inline: 0.3em; }
   .tv-choice { font-size: 1.5em; }
   .tv-rate-scopes .tv-choice { font-size: 1.3em; }
   .tv-scores { flex-wrap: wrap; gap: 0.6em; padding: 0.2em; }
@@ -1750,6 +1775,8 @@
   .tv-rate-note { font-size: 1.3em; }
   .tv-rate-facts li { font-size: 1.2em; }
   .tv-swatch { font-size: 1.4em; }
+  /* (Six round buttons in a row are wider than the page where the text is set larger: the page is clipped at its edge, not scrolled, so the row wraps.) */
+  .tv-swatches { flex-wrap: wrap; row-gap: 0.7em; }
   .tv-switch-row { max-width: none; font-size: 1.5em; }
   /* (Here the page scrolls: the rows keep the room a finger wants, which the 16:9 page above has to take back.) */
   .tv-panel-settings .tv-switch-row { padding: 0.7em 1.2em; }

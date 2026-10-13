@@ -61,7 +61,8 @@ test.describe("a phone used as the screen", () => {
   test("the pages that only a remote's arrow keys could leave have a Back button for a finger", async ({ browser }) => {
     const phone = await openDevice(browser, PHONE, {}, withFilms);
     await phone.goto("/tv");
-    await phone.getByTestId("rail-settings").tap();
+    await phone.getByTestId("rail-profile").tap();
+    await phone.locator('[data-entry="profile:settings"]').tap(); // (the settings are a place of the profile's page)
     await expect(phone.getByTestId("tv-account")).toBeVisible();
     await phone.getByTestId("tv-account-back").tap();
     await expect(phone.getByTestId("tv-browse")).toBeVisible();

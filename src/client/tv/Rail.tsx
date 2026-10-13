@@ -9,6 +9,8 @@ export interface RailEntry {
   icon?: ReactNode;
   /** A heading above this line, for the first of a group (only shown while the menu is open). */
   group?: string;
+  /** A space above this line, to set what follows (the party, a phone, the profile) apart from the places above it. */
+  apart?: boolean;
   /** The page that is open. */
   current?: boolean;
   /** A short count beside the name (how many are in the party). */
@@ -67,6 +69,7 @@ export function Rail({
               data-col={0}
               data-testid={entry.testId}
               data-badged={entry.badge || entry.lit ? "true" : undefined}
+              data-apart={entry.apart ? "true" : undefined}
               aria-current={entry.current ? "page" : undefined}
               onClick={() => {
                 setResting(false);

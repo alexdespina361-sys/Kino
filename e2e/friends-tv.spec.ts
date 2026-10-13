@@ -3,10 +3,10 @@ import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
-import { openLibrary, test, tvRoot, withLibrary } from "./helpers";
+import { openLibrary, openProfilePage, openProfilePlace, test, tvRoot, withLibrary, type ProfilePlace } from "./helpers";
 
 /**
- * Friends, on the TV: switched on in the settings of the account, then a menu line of their own with the friends' page (invitations to
+ * Friends, on the TV: switched on in the settings of the account, then a place on the profile's page for them: the friends' page (invitations to
  * watch parties, what friends sent, what they watch, who they are), a page for each friend with their lists and ratings, the pages to
  * add a friend, to choose what is shared and to send a title or a party to friends. Each test makes its own accounts and screens (the
  * server keeps accounts in memory), and the screens are signed in with the email form, which is how a screen with a keyboard does it.
@@ -51,14 +51,17 @@ async function signedInScreen(browser: Browser, name: string, options: { viewpor
   return { page, name: nameOf(account) };
 }
 
+/** A place on the profile's page (what it rated, its friends, History, the settings): the tile that opens it. */
+const place = (page: Page, where: ProfilePlace) => page.locator(`[data-entry="profile:${where}"]`);
+
 /** A signed-in screen, with the switch in the settings of the account turned on. */
 async function screenWithFriends(browser: Browser, name: string, options: Parameters<typeof signedInScreen>[2] = {}): Promise<Screen> {
   const screen = await signedInScreen(browser, name, options);
-  await screen.page.getByTestId("rail-settings").click();
+  await openProfilePlace(screen.page, "settings");
   await screen.page.getByTestId("tv-friends-switch").click();
   await expect(screen.page.getByTestId("tv-friends-switch")).toHaveAttribute("aria-checked", "true");
   await screen.page.getByTestId("tv-account-back").click();
-  await expect(screen.page.getByTestId("rail-friends")).toBeVisible();
+  await expect(place(screen.page, "friends")).toBeVisible(); // (back on the profile's page, which has its friends now)
   return screen;
 }
 
@@ -71,7 +74,7 @@ const tile = (page: Page, title: string) => page.locator(`.tv-tile[title="${titl
 const view = (page: Page) => page.getByTestId("tv-browse");
 
 async function openFriends(page: Page) {
-  await page.getByTestId("rail-friends").click();
+  await openProfilePlace(page, "friends");
   await expect(view(page)).toHaveAttribute("data-view", "friends");
 }
 
@@ -136,34 +139,39 @@ const outsideTheScreen = (page: Page, root: string, whole = true) =>
   );
 
 test.describe("friends are optional on the TV", () => {
-  test("a screen that is signed out has no switch for them; a signed-in one has it off, and its menu has Friends only once it is on; the friends are kept while it is off", async ({ browser }) => {
+  test("a screen that is signed out has no switch for them; a signed-in one has it off, and its profile page has Friends only once it is on; the friends are kept while it is off", async ({ browser }) => {
     test.setTimeout(150_000);
     const guest = await openLibrary(browser, undefined, HD);
-    await guest.getByTestId("rail-settings").click();
+    await openProfilePlace(guest, "settings");
     await expect(guest.getByTestId("tv-ratings-switch")).toBeVisible();
     await expect(guest.getByTestId("tv-friends-switch")).toHaveCount(0);
     await guest.getByTestId("tv-account-back").click();
-    await expect(guest.getByTestId("rail-friends")).toHaveCount(0);
+    await expect(view(guest)).toHaveAttribute("data-view", "profile");
+    await expect(place(guest, "friends")).toHaveCount(0); // (a guest has no friends: it is offered the way to sign in instead)
+    await expect(place(guest, "signin")).toHaveCount(1);
 
     const ann = await signedInScreen(browser, "Ann");
-    await expect(ann.page.getByTestId("rail-friends")).toHaveCount(0);
-    await ann.page.getByTestId("rail-settings").click();
+    await openProfilePage(ann.page);
+    await expect(place(ann.page, "friends")).toHaveCount(0);
+    await expect(place(ann.page, "signin")).toHaveCount(0); // (signed in, the way to sign in is gone)
+    await place(ann.page, "settings").click();
     await expect(ann.page.getByTestId("tv-friends-switch")).toHaveAttribute("aria-checked", "false");
     await ann.page.getByTestId("tv-friends-switch").click();
     await expect(ann.page.getByTestId("tv-friends-switch")).toHaveAttribute("aria-checked", "true");
     await ann.page.getByTestId("tv-account-back").click();
+    await expect(place(ann.page, "friends")).toHaveCount(1);
 
-    // with a friend, then off: the menu line goes, and the friend is there when it is back
+    // with a friend, then off: the page goes, and the friend is there when it is back
     const bob = await screenWithFriends(browser, "Bob");
     await meet(ann, bob);
-    await ann.page.getByTestId("rail-settings").click();
+    await ann.page.getByTestId("tv-account-chip").click(); // (the account's page, from the corner, with the friends' page open under it)
     await ann.page.getByTestId("tv-friends-switch").click();
     await expect(ann.page.getByTestId("tv-friends-switch")).toHaveAttribute("aria-checked", "false");
     await ann.page.getByTestId("tv-account-back").click();
-    await expect(ann.page.getByTestId("rail-friends")).toHaveCount(0);
-    await expect(view(ann.page)).toHaveAttribute("data-view", "home"); // (the page of friends was open: it goes with them)
+    await expect(view(ann.page)).toHaveAttribute("data-view", "profile"); // (the page of friends was open: it goes with them, to the page they belong to)
+    await expect(place(ann.page, "friends")).toHaveCount(0);
 
-    await ann.page.getByTestId("rail-settings").click();
+    await place(ann.page, "settings").click();
     await ann.page.getByTestId("tv-friends-switch").click();
     await ann.page.getByTestId("tv-account-back").click();
     await openFriends(ann.page);
@@ -347,7 +355,7 @@ test.describe("a friend's page", () => {
     await meet(ann, bob);
     await seed(ann.page, filmCards());
 
-    await ann.page.getByTestId("rail-settings").click();
+    await openProfilePlace(ann.page, "settings");
     await ann.page.getByTestId("tv-friends-switch").click();
     await expect(ann.page.getByTestId("tv-friends-switch")).toHaveAttribute("aria-checked", "false");
     await expect(async () => {
@@ -389,7 +397,7 @@ test.describe("what is shared", () => {
   test("the switch that shares ratings is not there while ratings are turned off, and comes back with them", async ({ browser }) => {
     test.setTimeout(120_000);
     const ann = await screenWithFriends(browser, "Ann");
-    await ann.page.getByTestId("rail-settings").click();
+    await openProfilePlace(ann.page, "settings");
     await ann.page.getByTestId("tv-ratings-switch").click();
     await expect(ann.page.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "false");
     await ann.page.getByTestId("tv-account-back").click();
@@ -399,7 +407,7 @@ test.describe("what is shared", () => {
     await expect(ann.page.getByTestId("tv-friends-ratings")).toHaveCount(0);
     await ann.page.keyboard.press("Escape");
 
-    await ann.page.getByTestId("rail-settings").click();
+    await openProfilePlace(ann.page, "settings");
     await ann.page.getByTestId("tv-ratings-switch").click();
     await expect(ann.page.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "true");
     await ann.page.getByTestId("tv-account-back").click();
@@ -431,13 +439,15 @@ test.describe("sending things to friends from the TV", () => {
     await bob.page.getByTestId("rail-home").click();
     await look(bob.page);
     await expect(bob.page.getByTestId("tv-account-toast")).toContainText(`${ann.name} sent you Alpha Film`);
-    await expect(bob.page.getByTestId("rail-friends")).toHaveAttribute("data-badged", "true");
-    await expect(bob.page.getByTestId("rail-friends")).toContainText("1");
+    await expect(bob.page.getByTestId("rail-profile")).toHaveAttribute("data-badged", "true"); // (the friends are the profile's: it carries the number)
+    await expect(bob.page.getByTestId("rail-profile")).toContainText("1");
+    await openProfilePage(bob.page);
+    await expect(place(bob.page, "friends")).toContainText("1 new"); // (and the page says where it is)
     await openFriends(bob.page);
     const sent = bob.page.locator(`.tv-row[aria-label="From your friends"]`);
     await expect(sent.locator(".tv-tile")).toHaveCount(1);
     await expect(sent.locator(".tv-tile").first()).toContainText(`From ${ann.name}`);
-    await expect(bob.page.getByTestId("rail-friends")).not.toHaveAttribute("data-badged", "true"); // (opening the page is seeing it)
+    await expect(bob.page.getByTestId("rail-profile")).not.toHaveAttribute("data-badged", "true"); // (opening the page is seeing it)
 
     // the banner offers what can be done with it (the page opens where the remote was last, so it goes to the new row), and the last of them sends it away
     await sent.locator(".tv-tile").first().focus();
@@ -720,7 +730,7 @@ test.describe("everything of friends fits the screen", () => {
       const fits = async (root: string, what: string) => expect(await outsideTheScreen(page, root, wide), what).toEqual([]);
 
       // the account page, signed in, with the friends switch among the settings
-      await page.getByTestId("rail-settings").click();
+      await openProfilePlace(page, "settings");
       await expect(page.getByTestId("tv-friends-switch")).toBeVisible();
       await fits("tv-account", "the account page");
       await page.getByTestId("tv-account-back").click();

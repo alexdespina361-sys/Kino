@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LiveRating } from "../../shared";
 import { translate } from "../i18n";
-import { averageText, factLines, mergeFacts, ratingFor, ratingNote, ratingSummary, scoreWord, SCORES, sortRatings, storedFacts } from "./ratingText";
+import { averageText, factLines, mergeFacts, ratingFor, ratingNote, ratingSummary, scoreOf, scoresOf, scoreWord, SCORES, sortRatings, storedFacts } from "./ratingText";
 
 const en = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate("en", key, params);
 const ro = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate("ro", key, params);
@@ -31,6 +31,26 @@ describe("ratingFor", () => {
     expect(ratingFor(ratings, "https://x.example/show?s=1&e=1", 2)?.score).toBe(6);
     expect(ratingFor(ratings, "https://x.example/show?s=1&e=1", 3)).toBeUndefined();
     expect(ratingFor(ratings, "https://x.example/other")).toBeUndefined();
+  });
+});
+
+describe("scoresOf and scoreOf", () => {
+  const ratings = [rated("rate:https://x.example/show?s=1&e=1", 8), rated("rate:https://x.example/show?s=1&e=1|s2", 3, 1, { season: 2 }), rated("rate:https://x.example/film", 9)];
+  const scores = scoresOf(ratings);
+  it("give each title the score it was given as a whole, a season's own score left out", () => {
+    expect(scores.size).toBe(2);
+    expect(scoreOf(scores, "https://x.example/film")).toBe(9);
+    expect(scoreOf(scores, "https://x.example/show?s=1&e=1")).toBe(8);
+  });
+  it("find a show by any of its episodes' links, and nothing for a title without a score or a link", () => {
+    expect(scoreOf(scores, "https://x.example/show?s=4&e=7")).toBe(8);
+    expect(scoreOf(scores, "https://x.example/film#t=60")).toBe(9);
+    expect(scoreOf(scores, "https://x.example/other")).toBeUndefined();
+    expect(scoreOf(scores, "")).toBeUndefined();
+    expect(scoreOf(scoresOf([]), "https://x.example/film")).toBeUndefined();
+  });
+  it("agree with ratingFor on which rating a title has", () => {
+    for (const url of ["https://x.example/film", "https://x.example/show?s=2&e=2", "https://x.example/other"]) expect(scoreOf(scores, url)).toBe(ratingFor(ratings, url)?.score);
   });
 });
 

@@ -3,7 +3,7 @@ import { AVATAR_IDS, type NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { guestStorage, openDevice, openLibrary, openTv, PHONE, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
 import { TEST_ACCOUNT, TEST_ACCOUNT_B } from "./testAccount";
 
 /**
@@ -504,7 +504,7 @@ test.describe("English, Romanian and Italian", () => {
 
   test("the TV's own account page changes it too, and the player speaks it", async ({ browser, baseURL }) => {
     const tv = await openLibrary(browser);
-    await tv.getByTestId("rail-settings").click(); // settings are in the menu, for a guest too
+    await openProfilePlace(tv, "settings"); // settings are on the profile's page, for a guest too
     await expect(tv.getByTestId("tv-account-name")).toHaveText(en["tv.notSignedIn"]);
     await tv.getByTestId("tv-lang-it").click();
     await expect(tv.getByTestId("tv-account-name")).toHaveText(italian["tv.notSignedIn"]);
@@ -517,6 +517,22 @@ test.describe("English, Romanian and Italian", () => {
     await expect(tv.getByTestId("tv-pause-card")).toContainText(italian["hud.watching"]);
     phone.close();
   });
+
+  // (A phone used as the screen is 360 to 412 pixels wide: the third language used to wrap onto a line of its own there. The page's unit is 9px on
+  // such a screen, and 12 or 14 stands for one whose text is set larger, which is how it was seen: the buttons were 115px wide each, in 413.)
+  for (const [width, unit] of [[320, 9], [360, 9], [390, 9], [412, 9], [320, 12], [360, 12], [412, 12], [412, 14], [600, 9], [899, 9], [1280, 9]] as const) {
+    test(`the three languages share one line on the TV's settings page, ${width}px wide, text ${unit}px`, async ({ browser }) => {
+      const tv = await openLibrary(browser, undefined, { width, height: 800 });
+      if (unit !== 9) await tv.addStyleTag({ content: `.tv { --em: ${unit}px !important; }` });
+      await openProfilePlace(tv, "settings");
+      await expect(tv.getByTestId("tv-account")).toBeVisible();
+      const boxes = await Promise.all(["en", "ro", "it"].map(async (code) => (await tv.getByTestId(`tv-lang-${code}`).boundingBox())!));
+      for (const box of boxes) expect(Math.abs(box.y - boxes[0]!.y)).toBeLessThan(1); // the same line
+      expect(boxes[0]!.x).toBeGreaterThanOrEqual(0);
+      expect(boxes[2]!.x + boxes[2]!.width).toBeLessThanOrEqual(width); // and all of it on the screen
+      expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    });
+  }
 });
 
 /** A video with subtitles in four languages, for the lists a profile arranges. */

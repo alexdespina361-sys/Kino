@@ -21,10 +21,13 @@ export type View =
   | { kind: "history" }
   /** The titles this profile gave a score, and the seasons it scored. */
   | { kind: "ratings" }
-  | { kind: "category"; rowId: string }
+  /** One category's titles; `from` is the list of every category when it was opened from there (Back goes back to it). */
+  | { kind: "category"; rowId: string; from?: "categories" }
   /** Every category, or only those of films or of shows. */
   | { kind: "categories"; of?: LibraryKind }
   | { kind: "search" }
+  /** The profile's own places: what it rated, its friends, what it watched, the settings (see profile.ts). */
+  | { kind: "profile" }
   /** What friends sent and watch, and who they are (see friends/pages.ts). */
   | { kind: "friends" }
   /** One friend, with their lists (first) or their ratings. */
@@ -47,8 +50,11 @@ export const shownList = (view: View, lists: readonly ListInfo[]): ListInfo => l
 /** The pages made of a banner and rows of titles under it. */
 export type RowsPage = "home" | "movies" | "series";
 export const isRowsPage = (view: View): view is { kind: RowsPage } => view.kind === "home" || view.kind === "movies" || view.kind === "series";
-/** The pages that have a banner and rows under it: those above, and the friends' (whose rows come from friends/pages.ts). */
-export const hasRows = (view: View): boolean => isRowsPage(view) || view.kind === "friends";
+/** The pages that have a banner and rows under it: those above, the profile's (profile.ts) and the friends' (whose rows come from friends/pages.ts). */
+export const hasRows = (view: View): boolean => isRowsPage(view) || view.kind === "profile" || view.kind === "friends";
+
+/** The pages that belong to the profile: the menu's Profile line stands for them all, and Back from any but the first goes to the first. */
+export const isProfilePage = (view: View): boolean => view.kind === "profile" || view.kind === "ratings" || view.kind === "history" || view.kind === "friends" || view.kind === "friend";
 
 /** How a row is laid out: wide tiles, a numbered ranking of posters, wide "continue" cards with a progress bar, or tiles of categories. */
 export type Layout = "wide" | "continue" | "ranked" | "categories";
@@ -84,8 +90,8 @@ export interface Entry {
   inboxId?: string;
   /** An invitation to a watch party: the 6-digit code that joins it. */
   party?: string;
-  /** A tile that opens a page over the library instead of a title or a page of the library. */
-  action?: "addFriend" | "friendSettings";
+  /** A tile that opens a page over the library, or the account's own pages, instead of a title or a page of the library. */
+  action?: "addFriend" | "friendSettings" | "settings" | "signIn";
 }
 
 export interface HomeRow {
@@ -246,11 +252,24 @@ export const entryOfRating = (rating: LiveRating): Entry => ({
 /** Where a row's titles come from, said only when the library has more than one source (with one, every title would carry the same word). */
 const sourceOf = (rows: readonly LibraryRow[], row: LibraryRow): { source?: string } => (row.source && new Set(rows.map((each) => each.source)).size > 1 ? { source: row.source } : {});
 
-const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[]): Entry => {
+/** `withKind` says whether the category is of films or of shows too (the list of every category, where the two sit together). */
+const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[], withKind = false): Entry => {
   const first = row.items[0];
   const picture = first?.backdrop ?? first?.image;
-  return { id: row.id, title: rowTitle(row), url: "", opens: { kind: "category", rowId: row.id }, ...sourceOf(rows, row), note: t("tv.titles", { count: row.items.length }), ...(picture ? { image: picture } : {}) };
+  const kind = withKind && row.kind ? t(row.kind === "movie" ? "tv.movies" : "tv.series") : "";
+  return {
+    id: row.id,
+    title: rowTitle(row),
+    url: "",
+    opens: { kind: "category", rowId: row.id },
+    ...sourceOf(rows, row),
+    note: [kind, t("tv.titles", { count: row.items.length })].filter(Boolean).join(" · "),
+    ...(picture ? { image: picture } : {}),
+  };
 };
+
+/** The order every category is listed in: those of films, then of shows, then the others (each keeps the library's order). */
+const KIND_ORDER: ReadonlyArray<LibraryKind | undefined> = ["movie", "series", undefined];
 
 /** A card of a show has an episode; a film's has none. */
 const isShowCard = (card: LiveProgress) => card.season !== undefined;
@@ -317,7 +336,8 @@ export function gridOf(view: View, data: PageData): GridPage | null {
     case "categories": {
       const rows = data.rows.filter((row) => !view.of || row.kind === view.of);
       const title = view.of === "movie" ? t("tv.movieCategories") : view.of === "series" ? t("tv.seriesCategories") : t("tv.allCategories");
-      return { title, meta: "", layout: "categories", entries: rows.map((row) => categoryEntry(row, data.rows)), empty: "" };
+      const ordered = view.of ? rows : KIND_ORDER.flatMap((kind) => rows.filter((row) => row.kind === kind));
+      return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, data.rows, !view.of)), empty: "" };
     }
     default:
       return null;

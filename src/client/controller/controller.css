@@ -497,6 +497,10 @@ html.sheet-open { overscroll-behavior-y: contain; }
 /* How far a started title got: a thin bar across the foot of its picture. */
 .lib-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.55); }
 .lib-progress i { display: block; height: 100%; background: var(--accent); }
+/* The score this profile gave a title: a star and a number in the picture's top-left corner, opposite the round buttons. */
+.lib-art .score-badge, .lib-result-art .score-badge { position: absolute; top: 6px; left: 6px; z-index: 1; display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px 1px 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.68); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28); color: #fff; font-size: 0.78rem; font-weight: 800; line-height: 1.5; }
+.lib-result-art .score-badge { top: 4px; left: 4px; }
+.lib-art .score-badge svg, .lib-result-art .score-badge svg { width: 0.95em; height: 0.95em; color: var(--accent); }
 /* The round buttons in the corner of a picture: put the title in a list (a tick once it is in one), take it off the row. Big enough for a thumb. */
 .lib-corner { position: absolute; top: 6px; right: 6px; z-index: 1; display: flex; gap: 6px; }
 .lib-round { position: relative; display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 1.1rem; backdrop-filter: blur(4px); transition: background 0.15s ease, transform 0.1s ease; }

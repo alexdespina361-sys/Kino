@@ -2,8 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import { itemsOf, LibrarySchema, rankByQuery, searchItems, type Library as LibraryData, type LibraryItem } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
+import { scoreOf, useScores } from "../account/ratings";
 import { rowTitle, useT } from "../i18n";
 import { Poster } from "../shared/Poster";
+import { ScoreBadge } from "../shared/ScoreBadge";
 import { entryOfItem, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
 import { ListButton, useListToggle, type ListToggle } from "./Round";
@@ -41,6 +43,7 @@ const onThePage = (library: LibraryData | null, q: string): LibraryItem[] => ran
 export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpen: (entry: Entry) => void; onPick: (entry: ListEntry) => void; failedLookups?: number; fallback?: ReactNode }) {
   const t = useT();
   const toggleFor = useListToggle(onPick);
+  const scores = useScores();
   const [library, setLibrary] = useState<LibraryData | null>(remembered);
   const [status, setStatus] = useState<Status>(remembered ? "ready" : "loading");
   const [query, setQuery] = useState(kept.query);
@@ -246,7 +249,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
             <ul className="lib-list">
               {searchResults.map((item) => (
                 <li key={item.id}>
-                  <Result item={item} toggle={toggleOf(item)} onOpen={open(item)} />
+                  <Result item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
                 </li>
               ))}
             </ul>
@@ -258,7 +261,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
             <h3>{rowTitle(row)}</h3>
             <div className="lib-scroller">
               {row.items.map((item) => (
-                <Tile key={item.id} item={item} toggle={toggleOf(item)} onOpen={open(item)} />
+                <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
               ))}
             </div>
           </div>
@@ -269,13 +272,15 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
   );
 }
 
-/** A title in a row: its picture, the round + on it, and a hold that does what the + does. */
-function Tile({ item, toggle, onOpen }: { item: LibraryItem; toggle: ListToggle; onOpen: () => void }) {
+/** A title in a row: its picture (with the score this profile gave it, if it did), the round + on it, and a hold that does what the + does. */
+function Tile({ item, score, toggle, onOpen }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void }) {
   const hold = useHold(toggle.onHold);
   return (
     <div className="lib-tile" data-in-list={toggle.inList}>
       <button className="lib-card" data-testid="library-tile" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
-        <Poster className="lib-art" title={item.title} image={item.backdrop ?? item.image} seed={item.id} />
+        <Poster className="lib-art" title={item.title} image={item.backdrop ?? item.image} seed={item.id}>
+          {score !== undefined && <ScoreBadge score={score} />}
+        </Poster>
         <span className="lib-title">{item.title}</span>
         {item.year && <span className="lib-year">{item.year}</span>}
       </button>
@@ -287,7 +292,7 @@ function Tile({ item, toggle, onOpen }: { item: LibraryItem; toggle: ListToggle;
 }
 
 /** A title found by the search: one line in a list that scrolls with the page. */
-function Result({ item, toggle, onOpen }: { item: LibraryItem; toggle: ListToggle; onOpen: () => void }) {
+function Result({ item, score, toggle, onOpen }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void }) {
   const t = useT();
   const hold = useHold(toggle.onHold);
   const kind = item.kind === "movie" ? t("library.kindMovie") : item.kind === "series" ? t("library.kindSeries") : undefined;
@@ -295,7 +300,9 @@ function Result({ item, toggle, onOpen }: { item: LibraryItem; toggle: ListToggl
   return (
     <div className="lib-result" data-in-list={toggle.inList}>
       <button className="lib-result-main" data-testid="library-result" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
-        <Poster className="lib-result-art" title={item.title} image={item.backdrop ?? item.image} seed={item.id} />
+        <Poster className="lib-result-art" title={item.title} image={item.backdrop ?? item.image} seed={item.id}>
+          {score !== undefined && <ScoreBadge score={score} />}
+        </Poster>
         <span className="lib-result-text">
           <span className="lib-title">{item.title}</span>
           {meta && <span className="lib-year">{meta}</span>}

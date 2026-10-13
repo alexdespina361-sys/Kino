@@ -1,4 +1,4 @@
-import { chromium, expect, type Browser, type Page } from "@playwright/test";
+import { chromium, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -2687,6 +2687,98 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(phone.getByTestId("ratings-row")).toContainText("Film number 1");
       await tile(phone, "Film number 1").click();
       await expect(phone.getByTestId("rate-title-value")).toHaveText("8/10");
+    });
+
+    test("a rated title shows its score in the corner of its picture, in the rows, a search, Continue watching and a list; one not rated shows none, and with ratings off nothing does", async ({ browser, baseURL }) => {
+      const url = baseURL!;
+      const link = (n: number) => `${url}/fixtures/sample.mp4?n=${n}`;
+      const started = { key: `url:${link(4)}`, at: day(5), title: "Film number 5", url: link(4), position: 1500, duration: 6000 };
+      const kept = { key: `url:${link(6)}`, at: day(6), id: "f6", title: "Film number 7", url: link(6) };
+      const ratings = [given(url, 0, 8, 2), given(url, 4, 6, 3), given(url, 6, 9, 4), given(url, 1, 3, 5, { key: `rate:${link(1)}|s2`, season: 2 })];
+      const whole = films.map((film) => ({ ...film, url: `${url}${film.url}` }));
+      const { phone } = await connect(browser, url, {
+        library: wholeLibrary(url),
+        find: (query) => whole.filter((film) => film.title.toLowerCase().includes(query.toLowerCase())),
+        seed: guestStorage({ ratings, progress: [started], list: [kept] }),
+      });
+      const badge = (where: Locator) => where.getByTestId("score-badge");
+
+      // The rows of the library: the score is in the picture's corner, worded for a screen reader by its tooltip; a season's score is no score of the title's own.
+      await expect(badge(tile(phone, "Film number 1"))).toHaveText("8");
+      await expect(badge(tile(phone, "Film number 1"))).toHaveAttribute("title", "Your rating: 8/10");
+      await expect(badge(tile(phone, "Film number 2"))).toHaveCount(0);
+      await expect(badge(tile(phone, "Film number 3"))).toHaveCount(0);
+      // The cards of Continue watching and of a list; the row of what was rated has its scores under the titles already.
+      await expect(badge(phone.getByTestId("continue-item"))).toHaveText("6");
+      await expect(badge(phone.getByTestId("list-item"))).toHaveText("9");
+      await expect(badge(phone.getByTestId("ratings-row"))).toHaveCount(0);
+
+      // It is in the corner opposite the round button, so the two do not cover each other (and the button is still what a tap there reaches).
+      const score = (await badge(tile(phone, "Film number 1")).boundingBox())!;
+      const round = (await tile(phone, "Film number 1").locator("xpath=..").locator(".lib-round").boundingBox())!;
+      expect(score.x + score.width).toBeLessThan(round.x);
+
+      // A search: the same on the line of each title.
+      await phone.getByTestId("library-search-input").fill("film number 1");
+      const found = (title: string) => phone.locator(`[data-testid="library-result"][title="${title}"]`);
+      await expect(found("Film number 1")).toBeVisible();
+      await expect(badge(found("Film number 1"))).toHaveText("8");
+      await expect(found("Film number 10")).toBeVisible();
+      await expect(badge(found("Film number 10"))).toHaveCount(0);
+      await phone.getByTestId("library-search-input").fill("");
+
+      // A score given on the title's page is on its picture when the page is closed, and gone when the rating is taken back.
+      await tile(phone, "Film number 3").click();
+      await open(phone);
+      await phone.getByTestId("rate-title-score-4").click();
+      await phone.getByTestId("sheet-close").click();
+      await expect(badge(tile(phone, "Film number 3"))).toHaveText("4");
+      await tile(phone, "Film number 3").click();
+      await open(phone);
+      await phone.getByTestId("rate-title-remove").click();
+      await phone.getByTestId("sheet-close").click();
+      await expect(badge(tile(phone, "Film number 3"))).toHaveCount(0);
+
+      // With ratings off in the settings there is none anywhere.
+      await phone.getByTestId("account-button").click();
+      await phone.getByTestId("menu-settings").click();
+      await phone.getByTestId("ratings-switch").click();
+      await expect(phone.getByTestId("ratings-switch")).toHaveAttribute("aria-checked", "false");
+      await phone.getByTestId("page-back").click();
+      await phone.getByTestId("page-back").click();
+      await expect(phone.getByTestId("account-screen")).toHaveCount(0);
+      await expect(tile(phone, "Film number 1")).toBeVisible();
+      await expect(phone.getByTestId("score-badge")).toHaveCount(0);
+    });
+
+    test("the account page has My ratings among the profile's places, for a guest too, saying how many; it opens the list over the page, and a title opened from it shows over the list", async ({ browser, baseURL }) => {
+      const url = baseURL!;
+      const { phone } = await connect(browser, url, { library: wholeLibrary(url), seed: guestStorage({ ratings: [given(url, 0, 8, 2), given(url, 1, 5, 3)] }) });
+      await phone.getByTestId("account-button").click(); // (nobody is signed in)
+      const row = phone.getByTestId("menu-ratings");
+      await expect(row).toContainText("My ratings");
+      await expect(row).toContainText("2");
+      await row.click();
+      const sheet = phone.getByTestId("ratings-sheet");
+      await expect(sheet.getByTestId("ratings-summary")).toHaveText("2 ratings · average 6.5");
+      await expect(sheet.getByTestId("rating-entry").locator(".rating-name")).toHaveText(["Film number 2", "Film number 1"]);
+
+      await sheet.getByTestId("rating-entry").first().click(); // (the library's page is under the account page: the title opens over both)
+      const page = phone.getByTestId("title-sheet");
+      await expect(page).toContainText("Film number 2");
+      await expect(page.getByTestId("rate-title-value")).toHaveText("5/10");
+      await page.getByTestId("sheet-close").click();
+      await expect(sheet).toBeVisible(); // (back to the list it was opened from)
+      await sheet.getByTestId("sheet-close").click();
+      await expect(sheet).toHaveCount(0);
+      await expect(phone.getByTestId("account-screen")).toBeVisible();
+
+      // Off in the settings, the place is gone from the page; what was rated is kept.
+      await phone.getByTestId("menu-settings").click();
+      await phone.getByTestId("ratings-switch").click();
+      await phone.getByTestId("page-back").click();
+      await expect(phone.getByTestId("account-screen")).toBeVisible();
+      await expect(phone.getByTestId("menu-ratings")).toHaveCount(0);
     });
   });
 });

@@ -426,7 +426,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
 
         <section className="tv-panel-settings" data-nav-column>
           <h2>{t("settings.language")}</h2>
-          <div className="tv-choices" role="radiogroup" aria-label={t("settings.language")}>
+          <div className="tv-choices tv-choices-fit" role="radiogroup" aria-label={t("settings.language")}>
             {UI_LANGUAGES.map((code) => (
               <button key={code} className="tv-choice" role="radio" aria-checked={language === code} onClick={() => chooseLanguage(code)} data-nav data-testid={`tv-lang-${code}`}>
                 {LANGUAGE_NAMES[code]}
