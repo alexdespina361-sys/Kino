@@ -13,10 +13,12 @@ import {
   plainText,
   sharesLists,
   sharesRatings,
+  titleLink,
   wellFormedText,
   type ActivityItem,
   type Friend,
   type FriendLists,
+  type FriendProgress,
   type FriendRatings,
   type FriendsState,
   type InviteView,
@@ -26,6 +28,7 @@ import {
   type Sent,
 } from "../../shared";
 import { normalise } from "./links";
+import { Presence } from "./presence";
 import { RateLimiter } from "./rateLimit";
 import type { FriendError } from "./friends";
 import type { StoreError, AccountStore } from "./store";
@@ -73,6 +76,12 @@ function fitToShow<T extends object>(item: T, ownHost: string | undefined): T {
   return out as T;
 }
 
+/** How far into it a card says somebody is, in whole percent: all of it for one that was finished, nothing known when its length is not. */
+function percentOf(card: { position: number; duration: number; done?: boolean | undefined }): number | undefined {
+  if (card.done) return 100;
+  return card.duration > 0 ? Math.max(0, Math.min(100, Math.round((100 * card.position) / card.duration))) : undefined;
+}
+
 /**
  * Friends, under /api/profiles/:id/friends: the profile in the address is the one asking, and has to be one of the signed-in
  * account's, with friends turned on in its settings (those are kept on the server like everything else of a profile, so they
@@ -83,6 +92,7 @@ function fitToShow<T extends object>(item: T, ownHost: string | undefined): T {
 export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers): void {
   const { store } = helpers;
   const book = store.friends;
+  const presence = new Presence(() => store.clock());
 
   // Looking is cheap and happens every half minute on each screen; making things and guessing codes is slowed down.
   const readsByAccount = new RateLimiter(240, MINUTE);
@@ -114,14 +124,17 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     const mine = friendChoices(store.settingsOf(profileId));
     const theirSettings = store.settingsOf(friend.id);
     const theirs = friendChoices(theirSettings);
+    // (Seen as online only by a profile that lets itself be seen: nobody sees what they do not show.)
+    const online = mine.friends && mine.friendsPresence && theirs.friends && theirs.friendsPresence && presence.online(friend.id);
     return {
       ...card,
       since: friend.since,
       on: theirs.friends,
       lists: sharesLists(theirSettings),
       ratings: sharesRatings(theirSettings),
-      activity: theirs.friends && theirs.friendsGive && mine.friendsGet,
+      activity: tellsWhatTheyWatch(profileId, friend.id),
       inbox: theirs.friends && theirs.friendsInbox,
+      ...(online ? { online: true } : {}),
     };
   }
 
@@ -155,8 +168,9 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
       .filter((card: LiveProgress) => now - card.at < ACTIVITY_KEEP_MS && (card.done === true || card.position >= ACTIVITY_MIN_SECONDS))
       .sort((a: LiveProgress, b: LiveProgress) => b.at - a.at)
       .slice(0, ACTIVITY_PER_FRIEND)
-      .map((card: LiveProgress) =>
-        fitToShow<ActivityItem>(
+      .map((card: LiveProgress) => {
+        const percent = percentOf(card);
+        return fitToShow<ActivityItem>(
           {
             friend: friendId,
             key: card.key,
@@ -169,10 +183,40 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
             ...(card.done ? { done: true } : {}),
             ...(card.season !== undefined ? { season: card.season } : {}),
             ...(card.episode !== undefined ? { episode: card.episode } : {}),
+            ...(percent !== undefined ? { percent } : {}),
           },
           ownHost,
-        ),
-      );
+        );
+      });
+  }
+
+  /**
+   * How far a friend got in the titles of an answer (the ones in their lists, or that they rated): the latest episode of a show and how
+   * far into it, from the cards their profile keeps. Only for a friend who tells what they watch, and only for the titles the answer has.
+   */
+  function progressIn(friendId: string, urls: readonly string[]): FriendProgress[] {
+    const wanted = new Set(urls.map((address) => titleLink(wellFormedText(address))));
+    const newest = new Map<string, LiveProgress>();
+    for (const card of store.items(friendId, "progress").filter(isLive)) {
+      const link = titleLink(wellFormedText(card.url));
+      if (wanted.has(link) && (newest.get(link)?.at ?? -1) < card.at) newest.set(link, card);
+    }
+    return [...newest].map(([link, card]) => {
+      const percent = percentOf(card);
+      return {
+        link,
+        ...(card.season !== undefined ? { season: card.season } : {}),
+        ...(card.episode !== undefined ? { episode: card.episode } : {}),
+        ...(percent !== undefined ? { percent } : {}),
+        ...(card.done ? { done: true } : {}),
+      };
+    });
+  }
+
+  /** Whether `friendId` tells `profileId` what they watch (they give it and this profile gets it): the same as `activity` on a friend. */
+  function tellsWhatTheyWatch(profileId: string, friendId: string): boolean {
+    const theirs = friendChoices(store.settingsOf(friendId));
+    return theirs.friends && theirs.friendsGive && friendChoices(store.settingsOf(profileId)).friendsGet;
   }
 
   function stateFor(profileId: string, ownHost: string | undefined): FriendsState {
@@ -201,6 +245,9 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
   app.get<{ Params: { id: string } }>(base, async (request, reply) => {
     const me = asker(request, reply);
     if (!me) return reply;
+    // A screen that looks is a screen that is open: that is how friends know a profile is online (unless it chose not to be seen).
+    if (friendChoices(store.settingsOf(me.profileId)).friendsPresence) presence.heartbeat(me.profileId);
+    else presence.forget(me.profileId);
     return reply.send(stateFor(me.profileId, request.headers.host));
   });
 
@@ -274,29 +321,32 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
   /* ------------------------------ looking at a friend ------------------------------ */
 
   /** A friend whose lists or ratings may be looked at, or the answer that tells why not. */
-  function sharer(request: Asked, reply: FastifyReply, shares: "lists" | "ratings"): { friendId: string } | undefined {
+  function sharer(request: Asked, reply: FastifyReply, shares: "lists" | "ratings"): { friendId: string; watching: boolean } | undefined {
     const me = asker(request, reply);
     if (!me) return undefined;
     const friendId = request.params.fid ?? "";
     if (!book.areFriends(me.profileId, friendId)) return void refuse(reply, "not_friends");
     const theirs = store.settingsOf(friendId);
     if (!(shares === "lists" ? sharesLists(theirs) : sharesRatings(theirs))) return void refuse(reply, "not_shared");
-    return { friendId };
+    return { friendId, watching: tellsWhatTheyWatch(me.profileId, friendId) };
   }
 
   app.get<{ Params: { id: string; fid: string } }>(`${base}/:fid/lists`, async (request, reply) => {
     const shared = sharer(request, reply, "lists");
     if (!shared) return reply;
     const host = request.headers.host;
+    const list = store
+      .items(shared.friendId, "list")
+      .filter(isLive)
+      .map((item) => fitToShow(item, host));
     const lists: FriendLists = {
       listNames: store
         .items(shared.friendId, "listNames")
         .filter(isLive)
-        .map((list) => fitToShow(list, host)),
-      list: store
-        .items(shared.friendId, "list")
-        .filter(isLive)
-        .map((item) => fitToShow(item, host)),
+        .map((name) => fitToShow(name, host)),
+      list,
+      // (How far they got in these titles is part of what they tell of what they watch.)
+      ...(shared.watching ? { progress: progressIn(shared.friendId, list.map((item) => item.url)) } : {}),
     };
     return reply.send(lists);
   });
@@ -305,12 +355,14 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     const shared = sharer(request, reply, "ratings");
     if (!shared) return reply;
     const host = request.headers.host;
+    const rated = store
+      .items(shared.friendId, "ratings")
+      .filter(isLive)
+      .sort((a, b) => b.ratedAt - a.ratedAt)
+      .map((rating) => fitToShow(rating, host));
     const ratings: FriendRatings = {
-      ratings: store
-        .items(shared.friendId, "ratings")
-        .filter(isLive)
-        .sort((a, b) => b.ratedAt - a.ratedAt)
-        .map((rating) => fitToShow(rating, host)),
+      ratings: rated,
+      ...(shared.watching ? { progress: progressIn(shared.friendId, rated.map((rating) => rating.url)) } : {}),
     };
     return reply.send(ratings);
   });

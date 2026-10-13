@@ -1,6 +1,6 @@
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
-import { ACTIVITY_KEEP_MS, INVITE_TTL_MS, MAX_OPEN_INVITES, type FriendsState } from "../../shared";
+import { ACTIVITY_KEEP_MS, INVITE_TTL_MS, MAX_OPEN_INVITES, ONLINE_MS, type FriendsState } from "../../shared";
 import { buildApp } from "../app";
 import { MemoryPersistence } from "./persistence";
 import { AccountStore } from "./store";
@@ -576,6 +576,113 @@ describe("what friends watch", () => {
     const { alex, sam } = await friends({ friendsGive: true, friendsGet: true });
     await alex.keep({ progress: [card(1, 600), card(2, 600, { at: clock.now - ACTIVITY_KEEP_MS - 1000 })] });
     expect((await sam.state()).activity.map((item) => item.title)).toEqual(["Film 1"]);
+  });
+
+  it("says how far into it they are, in whole percent: all of it for what was finished, nothing for a length that is not known", async () => {
+    const { alex, sam } = await friends({ friendsGive: true, friendsGet: true });
+    const episode = card(3, 1500, { key: "show:The Long Night", title: "The Long Night", url: "https://shows.example/watch/7?s=2&e=5", season: 2, episode: 5, duration: 2400 });
+    await alex.keep({ progress: [card(1, 600), card(2, 900, { done: true }), episode, card(4, 100, { duration: 0 })] });
+    const byTitle = Object.fromEntries((await sam.state()).activity.map((item) => [item.title, item]));
+    expect(byTitle["Film 1"]).toMatchObject({ percent: 8 }); // (600 of 7200 seconds)
+    expect(byTitle["Film 2"]).toMatchObject({ percent: 100, done: true });
+    expect(byTitle["The Long Night"]).toMatchObject({ percent: 63, season: 2, episode: 5 });
+    expect(byTitle["Film 4"]).not.toHaveProperty("percent");
+  });
+});
+
+describe("how far a friend got in the titles they keep and rate", () => {
+  const SHOW = "https://shows.example/watch/7";
+  const first = `${SHOW}?s=1&e=1`;
+  const saved = (link: string, title: string) => ({ key: `url:${link}`, at: 5000, id: title, title, url: link });
+  const rated = (link: string, title: string) => ({ key: `rate:${link}`, at: 7000, title, url: link, score: 9, ratedAt: 7000 });
+  const watched = (extra: Record<string, unknown>) => ({ at: clock.now - 60_000, position: 600, duration: 7200, ...extra });
+  const film = watched({ key: `url:${url(1)}`, title: "Film 1", url: url(1) });
+  const episode = watched({ key: "show:The Long Night", title: "The Long Night", url: `${SHOW}?s=2&e=5`, season: 2, episode: 5, position: 1500, duration: 2400 });
+  const stranger = watched({ key: `url:${url(9)}`, title: "Film 9", url: url(9) });
+
+  it("is told with the lists and the ratings of a friend who tells what they watch: the latest episode of a show, how far into it, and only for the titles that are there", async () => {
+    const { alex, sam } = await friends({ friendsGive: true, friendsGet: true });
+    await alex.keep({ list: [saved(url(1), "Film 1"), saved(first, "The Long Night")], ratings: [rated(first, "The Long Night")], progress: [film, episode, stranger] });
+
+    const lists = (await sam.client.get(mine(sam, `/${alex.id}/lists`))).data;
+    expect(lists.progress).toHaveLength(2);
+    expect(lists.progress).toContainEqual({ link: url(1), percent: 8 });
+    expect(lists.progress).toContainEqual({ link: first, season: 2, episode: 5, percent: 63 }); // (the show is found by its first episode's address, whichever episode the card is of)
+    const ratings = (await sam.client.get(mine(sam, `/${alex.id}/ratings`))).data;
+    expect(ratings.progress).toEqual([{ link: first, season: 2, episode: 5, percent: 63 }]);
+  });
+
+  it("is a finished title as finished, and the newest card when two are of the same title", async () => {
+    const { alex, sam } = await friends({ friendsGive: true, friendsGet: true });
+    const older = { ...film, key: `url:${url(1)}#older`, at: film.at - 60_000, position: 7000 };
+    await alex.keep({ list: [saved(url(1), "Film 1")], progress: [older, { ...film, done: true }] });
+    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.progress).toEqual([{ link: url(1), percent: 100, done: true }]);
+  });
+
+  it("is not told unless the friend gives what they watch and this profile gets it: the lists and the ratings come without it", async () => {
+    const { alex, sam } = await friends();
+    await alex.keep({ list: [saved(url(1), "Film 1")], ratings: [rated(url(1), "Film 1")], progress: [film] });
+    for (const path of ["lists", "ratings"]) expect((await sam.client.get(mine(sam, `/${alex.id}/${path}`))).data, path).not.toHaveProperty("progress");
+
+    await alex.choose({ friendsGive: true });
+    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data).not.toHaveProperty("progress"); // (given, but not got)
+    await sam.choose({ friendsGet: true });
+    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.progress).toHaveLength(1);
+    await alex.choose({ friendsGive: false });
+    expect((await sam.client.get(mine(sam, `/${alex.id}/ratings`))).data).not.toHaveProperty("progress");
+  });
+});
+
+describe("who is online", () => {
+  const onlineIn = async (who: Person) => (await who.state()).friends.map((friend) => Boolean(friend.online));
+
+  it("is a friend whose screen has looked at its friends lately, and not before it has, or once it has not for a while", async () => {
+    const { alex, sam } = await friends();
+    expect(await onlineIn(sam)).toEqual([false]); // (alex has not looked yet; sam's own look is no sign of alex)
+    await alex.state();
+    expect(await onlineIn(sam)).toEqual([true]);
+    expect(await onlineIn(alex)).toEqual([true]); // (sam looked a moment ago)
+
+    clock.now += ONLINE_MS - 1000;
+    expect(await onlineIn(sam)).toEqual([true]);
+    clock.now += 2000; // (alex's last look is past ONLINE_MS now; sam's own was just made)
+    expect(await onlineIn(sam)).toEqual([false]);
+    await alex.state();
+    expect(await onlineIn(sam)).toEqual([true]);
+  });
+
+  it("is never shown by a profile that chose not to be, and nobody is shown to it", async () => {
+    const { alex, sam } = await friends();
+    await alex.choose({ friendsPresence: false });
+    await alex.state();
+    await sam.state();
+    expect(await onlineIn(sam)).toEqual([false]); // alex looks, but does not show
+    expect(await onlineIn(alex)).toEqual([false]); // sam is there, but alex does not see
+    await alex.choose({ friendsPresence: true });
+    await alex.state();
+    expect(await onlineIn(sam)).toEqual([true]);
+    expect(await onlineIn(alex)).toEqual([true]);
+  });
+
+  it("is hidden at once when a profile turns it off, before its screen has looked again, and a look made before does not count after it is turned back on", async () => {
+    const { alex, sam } = await friends();
+    await alex.state();
+    expect(await onlineIn(sam)).toEqual([true]);
+    await alex.choose({ friendsPresence: false });
+    expect(await onlineIn(sam)).toEqual([false]); // (the switch alone hides it)
+    await alex.state(); // (the first look after it is off drops what was known)
+    await alex.choose({ friendsPresence: true });
+    expect(await onlineIn(sam)).toEqual([false]); // (not a screen of alex's has looked since)
+    await alex.state();
+    expect(await onlineIn(sam)).toEqual([true]);
+  });
+
+  it("is nobody who has friends turned off altogether, though they looked a moment ago", async () => {
+    const { alex, sam } = await friends();
+    await alex.state();
+    await alex.choose({ friends: false });
+    expect((await sam.state()).friends[0]).toMatchObject({ on: false });
+    expect((await sam.state()).friends[0]).not.toHaveProperty("online");
   });
 });
 

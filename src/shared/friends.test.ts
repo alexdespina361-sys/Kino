@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  ActivityItemSchema,
   FRIEND_DEFAULTS,
   FRIEND_SETTINGS,
+  FriendListsSchema,
+  FriendRatingsSchema,
+  FriendSchema,
   FriendsStateSchema,
   InboxItemSchema,
   KeptFriendsSchema,
@@ -26,7 +30,7 @@ const friend = (changes: Partial<Friend> = {}): Friend => ({ id: "pro_1", name: 
 describe("the switches", () => {
   it("are all settings of a profile, and are all off or on as the defaults say until they are set", () => {
     for (const key of FRIEND_SETTINGS) expect(SETTING_SCHEMAS[key]).toBeDefined();
-    expect(friendChoices({})).toEqual({ friends: false, friendsLists: true, friendsRatings: true, friendsGive: false, friendsGet: false, friendsInbox: true });
+    expect(friendChoices({})).toEqual({ friends: false, friendsLists: true, friendsRatings: true, friendsGive: false, friendsGet: false, friendsInbox: true, friendsPresence: true });
     expect(FRIEND_DEFAULTS.friends).toBe(false);
   });
 
@@ -38,7 +42,9 @@ describe("the switches", () => {
       friendsGive: true,
       friendsGet: false,
       friendsInbox: true,
+      friendsPresence: true,
     });
+    expect(friendChoices({ friendsPresence: false })).toMatchObject({ friendsPresence: false, friends: false }); // (being seen as online is its own switch, on until it is turned off)
   });
 
   it("only take true or false", () => {
@@ -185,6 +191,30 @@ describe("what is sent", () => {
     expect(InboxItemSchema.safeParse(item).success).toBe(true);
     expect(InboxItemSchema.safeParse({ ...item, read: undefined }).success).toBe(false);
     expect(FriendsStateSchema.safeParse({ friends: [friend()], inbox: [item], activity: [], invites: [{ code: "ABCD2345", expiresAt: 9 }] }).success).toBe(true);
+  });
+});
+
+describe("how far a friend got", () => {
+  const watched = { friend: "pro_1", key: "url:x", title: "Dune", url: "https://filmpire.sc/watch/1", at: 5 };
+  const progress = [{ link: "https://shows.example/watch/7?s=1&e=1", season: 2, episode: 5, percent: 63 }, { link: "https://filmpire.sc/watch/1", percent: 100, done: true }];
+
+  it("is a whole number of percent on something a friend watched, and nothing when the length is not known", () => {
+    expect(ActivityItemSchema.safeParse({ ...watched, percent: 63 }).success).toBe(true);
+    expect(ActivityItemSchema.safeParse(watched).success).toBe(true);
+    for (const bad of [-1, 101, 62.5, "63"]) expect(ActivityItemSchema.safeParse({ ...watched, percent: bad }).success, String(bad)).toBe(false);
+  });
+
+  it("comes with the lists and the ratings of a friend who tells what they watch, and may be left out", () => {
+    expect(FriendListsSchema.safeParse({ listNames: [], list: [], progress }).success).toBe(true);
+    expect(FriendListsSchema.safeParse({ listNames: [], list: [] }).success).toBe(true);
+    expect(FriendRatingsSchema.safeParse({ ratings: [], progress }).success).toBe(true);
+    expect(FriendRatingsSchema.safeParse({ ratings: [] }).success).toBe(true);
+    expect(FriendRatingsSchema.safeParse({ ratings: [], progress: [{ link: "x", percent: 101 }] }).success).toBe(false);
+  });
+
+  it("is shown as online only when the answer says so", () => {
+    expect(FriendSchema.parse(friend()).online).toBeUndefined();
+    expect(FriendSchema.parse(friend({ online: true })).online).toBe(true);
   });
 });
 

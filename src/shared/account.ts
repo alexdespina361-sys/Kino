@@ -253,6 +253,7 @@ export const SETTING_SCHEMAS = {
   friendsGive: z.boolean(),
   friendsGet: z.boolean(),
   friendsInbox: z.boolean(),
+  friendsPresence: z.boolean(),
 } as const;
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
 export const SETTING_KEYS = Object.keys(SETTING_SCHEMAS) as SettingKey[];

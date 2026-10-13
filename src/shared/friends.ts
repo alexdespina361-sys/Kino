@@ -32,6 +32,11 @@ export const ACTIVITY_PER_FRIEND = 4;
 export const ACTIVITY_MAX = 30;
 /** "Is watching" for as long as it was last watched less than this ago. */
 export const WATCHING_NOW_MS = 15 * 60 * 1000;
+/**
+ * "Online" for as long as a screen of the profile asked after its friends less than this ago. (A screen that is open and in view asks every
+ * half minute, and not at all once it is out of view, so this is two missed looks.)
+ */
+export const ONLINE_MS = 90_000;
 
 /* ------------------------------ the switches ------------------------------ */
 
@@ -48,6 +53,8 @@ export const FRIEND_DEFAULTS = {
   friendsGet: false,
   /** Friends can send me titles and invitations to a watch party. */
   friendsInbox: true,
+  /** Friends can see when I am online (and I can see when they are). Off, I am never shown as online: the one switch for "appear offline" and "always offline". */
+  friendsPresence: true,
 } as const;
 export type FriendSetting = keyof typeof FRIEND_DEFAULTS;
 export const FRIEND_SETTINGS = Object.keys(FRIEND_DEFAULTS) as FriendSetting[];
@@ -63,6 +70,7 @@ export function friendChoices(settings: Settings): FriendChoices {
     friendsGive: choice("friendsGive"),
     friendsGet: choice("friendsGet"),
     friendsInbox: choice("friendsInbox"),
+    friendsPresence: choice("friendsPresence"),
   };
 }
 
@@ -197,6 +205,8 @@ export const FriendSchema = z.object({
   activity: z.boolean(),
   /** They take titles and invitations. */
   inbox: z.boolean(),
+  /** A screen of theirs is open right now, and both of you let friends see that (see `ONLINE_MS`). Absent: not online, or not told. */
+  online: z.boolean().optional(),
 });
 export type Friend = z.infer<typeof FriendSchema>;
 
@@ -246,8 +256,23 @@ export const ActivityItemSchema = z.object({
   done: z.boolean().optional(),
   season: z.number().int().optional(),
   episode: z.number().int().optional(),
+  /** How far into the film, or into that episode, they are (0..100). */
+  percent: z.number().int().min(0).max(100).optional(),
 });
 export type ActivityItem = z.infer<typeof ActivityItemSchema>;
+
+/**
+ * How far a friend got in a title that is in their lists or ratings: the latest episode of a show, and how far into it (or into the film).
+ * `link` is the title's address as `titleLink` names it, which is how a list item or a rating of it is found.
+ */
+export const FriendProgressSchema = z.object({
+  link: z.string().max(2048),
+  season: z.number().int().optional(),
+  episode: z.number().int().optional(),
+  percent: z.number().int().min(0).max(100).optional(),
+  done: z.boolean().optional(),
+});
+export type FriendProgress = z.infer<typeof FriendProgressSchema>;
 
 /** A code this profile gave out and nobody has used yet. */
 export const OpenInviteSchema = z.object({ code: z.string().max(20), expiresAt: z.number() });
@@ -277,9 +302,9 @@ export const AcceptedSchema = z.object({ friend: FriendSchema });
 export const InvitedSchema = z.object({ code: z.string().max(20), expiresAt: z.number() });
 
 /** What a friend lets be looked at: the lists (with their names) and the ratings. The items are as the friend's profile keeps them. */
-export const FriendListsSchema = z.object({ listNames: z.array(ListNameItemSchema), list: z.array(ListItemSchema) });
+export const FriendListsSchema = z.object({ listNames: z.array(ListNameItemSchema), list: z.array(ListItemSchema), progress: z.array(FriendProgressSchema).optional() });
 export type FriendLists = z.infer<typeof FriendListsSchema>;
-export const FriendRatingsSchema = z.object({ ratings: z.array(RatingItemSchema) });
+export const FriendRatingsSchema = z.object({ ratings: z.array(RatingItemSchema), progress: z.array(FriendProgressSchema).optional() });
 export type FriendRatings = z.infer<typeof FriendRatingsSchema>;
 
 /* ------------------------------ words for the screens ------------------------------ */
