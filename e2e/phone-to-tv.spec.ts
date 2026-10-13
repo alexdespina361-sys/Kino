@@ -1,5 +1,5 @@
-import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
-import { openPairedPhone, openTv, PHONE, RawPhone, readPairingCode, tvRoot, tvTime } from "./helpers";
+import { expect, type Browser, type Locator, type Page } from "@playwright/test";
+import { openPairedPhone, openTv, PHONE, RawPhone, readPairingCode, test, tvRoot, tvTime } from "./helpers";
 
 test.describe("phone UI -> server -> TV player", () => {
   test("MP4: pair, load, play, pause, seek, stop", async ({ browser, baseURL }) => {

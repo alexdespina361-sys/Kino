@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, RawPhone, readPairingCode, tvRoot, withLibrary } from "./helpers";
+import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, RawPhone, readPairingCode, test, tvRoot, withLibrary } from "./helpers";
 
 /** What the screens look like on a TV: the remote walks them, the buttons match, and everything fits. */
 

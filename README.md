@@ -459,7 +459,7 @@ what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, 
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
 itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`). A Hisense browser is imitated by its user agent
-(`e2e/hisense.spec.ts`), and a TV's OK key by a raw key down and up with no typed Enter.
+(`e2e/hisense.spec.ts`), and a TV's OK key by a raw key down and up with no typed Enter. Every device a test opens (`openDevice` and the others in `e2e/helpers.ts`) is closed when the test ends: the specs take `test` from there, which adds that clean-up, since Playwright does not close a device made with `browser.newContext()` and a run that left them all open ended with hundreds of browser processes.
 
 Browsers that refuse a video until it has been pressed (Brave's strict setting, iPhones) are tested with a browser started with
 `--autoplay-policy=user-gesture-required` (`strictBrowser` in `e2e/helpers.ts`). Playwright's own click lets go of the button within a few milliseconds,

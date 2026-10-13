@@ -1,5 +1,20 @@
-import { chromium, expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { chromium, expect, test as base, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type ServerMessage } from "../src/shared";
+
+/**
+ * The tests' `test`: Playwright's, and every device a test opened is closed when the test is over. A device made with
+ * `browser.newContext()` (see `openDevice`) is no fixture of Playwright's, so nothing closes it before the worker's browser does, at the end
+ * of the whole run: every test left its browsers behind, and a full run ended with hundreds of browser processes and tens of gigabytes.
+ */
+export const test = base.extend<{ closeDevices: void }>({
+  closeDevices: [
+    async ({ browser }, use) => {
+      await use();
+      await Promise.all(browser.contexts().map((context) => context.close().catch(() => undefined)));
+    },
+    { auto: true },
+  ],
+});
 
 /** A phone: a narrow touch screen, which is how the page tells a remote from a TV. */
 /** (The screen is the phone's own: the project's desktop browser would otherwise say 1920 by 1080 whatever the window is.) */

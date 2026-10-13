@@ -1,11 +1,11 @@
-import { chromium, expect, test, type Browser, type Page } from "@playwright/test";
+import { chromium, expect, type Browser, type Page } from "@playwright/test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import qrcode from "qrcode-generator";
 import { progressKey, type NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, tvRoot, tvTime, withLibrary } from "./helpers";
+import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 

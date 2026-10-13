@@ -1,6 +1,6 @@
-import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
-import { guestStorage, openDevice, openLibrary, openTv, PHONE, RawPhone, readPairingCode, tvRoot, tvTime, withLibrary } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openTv, PHONE, RawPhone, readPairingCode, test, tvRoot, tvTime, withLibrary } from "./helpers";
 
 /** The picture under a hand: what a tap, two taps and a held finger do, the big button in the middle, the episode's name, and a phone turned sideways. */
 

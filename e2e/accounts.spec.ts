@@ -1,9 +1,9 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 import { AVATAR_IDS, type NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { guestStorage, openDevice, openLibrary, openTv, PHONE, RawPhone, readPairingCode, tvRoot } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openTv, PHONE, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
 import { TEST_ACCOUNT, TEST_ACCOUNT_B } from "./testAccount";
 
 /**

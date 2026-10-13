@@ -1,9 +1,9 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
-import { openLibrary, withLibrary } from "./helpers";
+import { openLibrary, test, withLibrary } from "./helpers";
 
 /**
  * Friends, on the TV: switched on in the settings of the account, then a menu line of their own with the friends' page (invitations to

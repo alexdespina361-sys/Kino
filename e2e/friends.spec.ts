@@ -1,6 +1,6 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 import { listKey, ratingKey } from "../src/shared";
-import { openDevice, openTv, PHONE, readPairingCode, withLibrary } from "./helpers";
+import { openDevice, openTv, PHONE, readPairingCode, test, withLibrary } from "./helpers";
 
 /**
  * Friends, on the phone: switched on in the settings, made with a code that one profile gives and another types (or a link), and then
