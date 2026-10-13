@@ -232,6 +232,11 @@ export const SETTING_SCHEMAS = {
   lang: UiLanguageSchema,
   accent: AccentSchema,
   autoplayNext: z.boolean(),
+  /**
+   * A tap or click on the picture pauses and plays it. Off (until turned on) it only shows or hides the controls: the big button in the
+   * middle, the bar's own and the remote's OK key pause either way. (A remote that points and clicks like a mouse is the one that notices.)
+   */
+  tapToPause: z.boolean(),
   /** The subtitle languages that matter to this profile, in order: the subtitle lists show them first. */
   subtitleLanguages: z.array(z.string().regex(/^[a-z]{2,3}$/)).max(12),
   /** Leave every other subtitle language out of the lists. */

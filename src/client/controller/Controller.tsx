@@ -19,11 +19,11 @@ import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
-import { readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { MoreIcon, TvIcon } from "../shared/icons";
 import { partyLink, readLaunchParams } from "../shared/launch";
+import { useLinkBox } from "../shared/linkBox";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
 import { useWaking } from "../shared/useSlow";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
@@ -57,8 +57,6 @@ import {
 import "./controller.css";
 
 const CONTROLLER_KEY = "controller.id";
-/** Whether this phone's home screen has the box for pasting a link (off until the menu turns it on: most people play from the library). */
-const LINK_BOX_KEY = "kino.linkbox";
 /** A lookup that has not answered by now is reported as failed instead of spinning forever. */
 const RESOLVE_TIMEOUT_MS = 40_000;
 
@@ -90,11 +88,8 @@ export function Controller() {
   const [listSheet, setListSheet] = useState<{ kind: "manage" } | { kind: "pick"; entry: ListEntry } | null>(null);
   /** The page of a title that was tapped in the library or a list: where it is played, or put in a list. */
   const [title, setTitle] = useState<Entry | null>(null);
-  const [linkBox, setLinkBox] = useState(() => readStorage(LINK_BOX_KEY) === "1");
-  const changeLinkBox = (on: boolean) => {
-    setLinkBox(on);
-    writeStorage(LINK_BOX_KEY, on ? "1" : null);
-  };
+  /** Whether the home screen has the box for pasting a link (also turned on and off in the settings: see linkBox.ts). */
+  const [linkBox, changeLinkBox] = useLinkBox();
   // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
   const ratingsOn = settings.ratings ?? true;

@@ -14,6 +14,8 @@
   font-size: var(--em);
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none; /* (a finger held on the picture plays it faster: no menu for the long press) */
+  touch-action: manipulation; /* (a double tap skips: the page does not zoom to it) */
 }
 .tv[data-hud="hidden"][data-state="playing"] { cursor: none; }
 
@@ -25,6 +27,8 @@
   object-fit: contain;
   background: #000;
 }
+/* The picture takes taps, double taps and holds (gestures.ts) and nothing of it scrolls, so a touch on it is left to the page: the browser starts no pan of its own. */
+.tv-video, .tv-overlay { touch-action: none; -webkit-tap-highlight-color: transparent; }
 /* The controls are the page's own (Hud.tsx). If a browser draws its player's anyway (see nativePlayer.ts), they are kept out of sight; one rule each, as a browser drops a whole rule for a name it does not know. */
 .tv-video::-webkit-media-controls { display: none !important; }
 .tv-video::-webkit-media-controls-enclosure { display: none !important; }
@@ -345,6 +349,17 @@
   max-width: 70em;
 }
 .hud-episode { display: flex; align-items: center; gap: 0.9em; font-size: 1.5em; color: #ddd; }
+/* What the episode is called, under its numbers. */
+.hud-ep-name {
+  max-width: 70em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.6em;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.8);
+}
 .hud-badge {
   padding: 0.15em 0.6em;
   border-radius: 0.35em;
@@ -403,13 +418,19 @@
 .hud-pause-card small { font-size: 1.3em; font-weight: 600; color: #b3b3b3; text-transform: uppercase; letter-spacing: 0.1em; }
 .hud-pause-card b { font-size: 3.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; text-wrap: balance; }
 .hud-pause-card span { font-size: 1.6em; color: #ddd; }
+.hud-pause-card em { font-size: 1.9em; font-style: normal; font-weight: 700; color: #fff; }
 @keyframes hud-card-in { from { opacity: 0; transform: translateY(-44%); } }
-/* The big play button in the middle while paused. The row around it lets clicks through; the button itself takes them. */
+/*
+ * The big button in the middle: play while paused, and for a finger pause while the picture plays. Big enough to be hit without aiming
+ * (a tap that misses it only shows or hides the controls, which is why it is as big as it is). The row around it lets clicks through;
+ * the button itself takes them.
+ */
 .hud-paused {
+  --size: 15em;
   display: grid;
   place-items: center;
-  width: 7em;
-  height: 7em;
+  width: var(--size);
+  height: var(--size);
   border-radius: 50%;
   border: 0.2em solid rgba(255, 255, 255, 0.85);
   background: rgba(0, 0, 0, 0.55);
@@ -420,7 +441,27 @@
   transition: transform 0.12s ease, background 0.12s ease;
 }
 .hud-paused:hover { transform: scale(1.06); background: rgba(0, 0, 0, 0.7); }
-.hud-paused svg { font-size: 3.6em; }
+.hud-paused:active { transform: scale(0.96); }
+.hud-paused svg { font-size: calc(var(--size) * 0.5); }
+/* A finger held on the picture plays it faster for as long as it stays: said at the top, whether or not the controls are up. */
+.hud-boost {
+  position: absolute;
+  top: 2.4em;
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.3em 0.9em;
+  border-radius: 2em;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.72);
+  font-size: 2em;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.hud-boost svg { font-size: 1.1em; }
+.hud-boost b { font-weight: 800; font-variant-numeric: tabular-nums; }
 /* The browser wants a press before it plays video with sound (a phone, a TV nobody has touched yet): the whole screen is the button. */
 .tv-tap {
   position: absolute;
@@ -1393,8 +1434,9 @@
 .tv-panel-who p { margin: 0; font-size: 1.6em; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
 .tv-panel-actions { align-self: stretch; display: flex; flex-direction: column; gap: 0.6em; margin-top: 0.8em; }
 .tv-panel-actions .tv-action { width: 100%; min-width: 0; padding-block: 0.55em; }
+/* Five headings and four switches, signed in, on a screen that is 56.25em tall at its shortest (16:9): the spacing is close, so they all fit. */
 .tv-panel-settings { display: flex; flex-direction: column; align-items: flex-start; }
-.tv-panel-settings h2 { margin: 1.4em 0 0.5em; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.tv-panel-settings h2 { margin: 0.9em 0 0.4em; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .tv-panel-settings h2:first-child { margin-top: 0; }
 .tv-choices { display: flex; gap: 0.8em; }
 .tv-choice {
@@ -1441,7 +1483,8 @@
 .tv-switch::after { content: ""; position: absolute; top: 0.18em; left: 0.18em; width: 1.14em; height: 1.14em; border-radius: 50%; background: #fff; box-shadow: 0 0.05em 0.2em rgba(0, 0, 0, 0.4); transition: transform 0.18s; }
 .tv-switch-row[aria-checked="true"] .tv-switch { background: var(--accent); }
 .tv-switch-row[aria-checked="true"] .tv-switch::after { transform: translateX(1.1em); }
-.tv-panel-settings .tv-hint { margin-top: 1.2em; max-width: 40em; text-align: left; }
+.tv-panel-settings .tv-switch-row { padding-block: 0.55em; }
+.tv-panel-settings .tv-hint { margin-top: 0.8em; max-width: 40em; text-align: left; }
 
 /* What the account says in passing (what was brought across at sign-in), over everything. */
 .tv-toast {
@@ -1763,6 +1806,7 @@
   .hud-top { padding: 1.4em 1.6em 3.6em; }
   .hud-title { max-width: 100%; font-size: 1.9em; }
   .hud-episode { font-size: 1.3em; }
+  .hud-ep-name { max-width: 100%; font-size: 1.4em; }
   .hud-clock { font-size: 1.3em; }
   .hud-ends { font-size: 1.1em; }
   .hud-bottom { padding: 4em 1.6em 1.4em; }
@@ -1774,7 +1818,9 @@
   .hud-pause-card { left: 1.6em; max-width: 20em; }
   .hud-pause-card b { font-size: 2.6em; }
   .hud-pause-card span { font-size: 1.3em; }
-  .hud-paused { width: 5.6em; height: 5.6em; }
+  .hud-pause-card em { font-size: 1.5em; }
+  .hud-paused { --size: 9.5em; }
+  .hud-boost { top: 1.4em; font-size: 1.6em; }
   .hud-toast { font-size: 3.2em; }
   .hud-toast.notice { font-size: 1.8em; }
   .hud-error { max-width: calc(100% - 3em); padding: 1.6em; }
@@ -1834,6 +1880,12 @@
   .tv-party-error { font-size: 1.4em; }
   .tv-pad { grid-template-columns: repeat(3, 4.6em); }
   .tv-key { font-size: 1.6em; }
+}
+
+/* A phone held upright has no room for the card of what is paused beside the big button in the middle: it goes above it, over a shade of its own. */
+@media (max-width: 520px) and (orientation: portrait) {
+  .hud-pause-card { left: 1.6em; right: 1.6em; top: auto; bottom: calc(50% + 6.5em); max-width: none; align-items: center; text-align: center; transform: none; }
+  .hud-center::before { background: radial-gradient(ellipse 90% 40% at 50% 38%, rgba(0, 0, 0, 0.68), transparent); }
 }
 
 /* A phone held sideways, or a window as flat as one: the same pages, with whatever takes height giving some back. */

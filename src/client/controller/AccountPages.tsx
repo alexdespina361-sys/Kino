@@ -13,6 +13,7 @@ import { useFriends } from "../friends/FriendsProvider";
 import { LANGUAGE_NAMES, useLanguage, useT, type Key } from "../i18n";
 import { CheckIcon, CloseIcon, GlobeIcon, PencilIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
+import { useLinkBox } from "../shared/linkBox";
 import { linkFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
 
@@ -235,6 +236,7 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
   const language = useLanguage();
   const { settings, set } = useSettings();
   const account = useAccount();
+  const [linkBox, setLinkBox] = useLinkBox();
   return (
     <div className="page-stack" data-testid="settings-page">
       <Group title={t("settings.language")}>
@@ -264,8 +266,13 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
           ))}
         </div>
       </Group>
-      <Group title={t("settings.playback")}>
+      <Group title={t("settings.playback")} help={t("settings.playbackHelp")}>
         <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
+        <Switch label={t("settings.tapToPause")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
+        <p className="muted small">{t("settings.tapToPauseHelp")}</p>
+      </Group>
+      <Group title={t("settings.pasteLink")} help={t("settings.linkBoxHelp")}>
+        <Switch label={t("settings.pasteLinkSwitch")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />
       </Group>
       <Group title={t("rating.settings")} help={t("rating.settingsHelp")}>
         <Switch label={t("rating.settingsSwitch")} checked={settings.ratings ?? true} onChange={(on) => set("ratings", on)} testId="ratings-switch" />

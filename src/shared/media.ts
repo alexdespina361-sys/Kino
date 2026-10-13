@@ -145,6 +145,18 @@ export function episodeName(episode: EpisodeRef, unnamed: string): string {
   return title && !/^S\d+\s*:?\s*E\d+$/i.test(title) ? title : unnamed;
 }
 
+/**
+ * What the episode that is playing is called, when it has a name besides its number: the one the library knows it by (`known`), or else
+ * the one the source listed it with. `undefined` for a film, and for an episode of which only the number is known ("Episode 3" is that).
+ */
+export function playingEpisodeName(series: SeriesInfo | undefined, known?: string): string | undefined {
+  if (!series) return undefined;
+  const listed = series.episodes?.find((episode) => isCurrentEpisode(series, episode));
+  const title = known?.trim() || listed?.title;
+  const name = episodeName({ season: series.season, episode: series.episode, url: "", ...(title ? { title } : {}) }, "");
+  return name && !/^(?:episode|episodio|episodul|ep\.?)\s*\d+$/i.test(name) ? name : undefined;
+}
+
 /** Same show, whatever the episode: "Show · S1 E3" -> "Show". Lets lists keep one entry per show. */
 export function seriesKeyOf(media: NormalizedMedia): string | undefined {
   return media.series ? media.title?.split("·")[0]?.trim() || undefined : undefined;

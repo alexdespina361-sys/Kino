@@ -375,6 +375,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const { settings, set } = useSettings();
   const { me, profile } = account;
   const autoplay = settings.autoplayNext ?? true;
+  const tapToPause = settings.tapToPause ?? false;
   const ratingsOn = settings.ratings ?? true;
   const friendsOn = friendChoices(settings).friends;
   return (
@@ -455,6 +456,10 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
           <h2>{t("settings.playback")}</h2>
           <button className="tv-switch-row" role="switch" aria-checked={autoplay} onClick={() => set("autoplayNext", !autoplay)} data-nav data-testid="tv-autoplay">
             <span>{t("settings.autoplayNext")}</span>
+            <span className="tv-switch" aria-hidden="true" />
+          </button>
+          <button className="tv-switch-row" role="switch" aria-checked={tapToPause} onClick={() => set("tapToPause", !tapToPause)} data-nav data-testid="tv-tap-to-pause">
+            <span>{t("settings.tapToPause")}</span>
             <span className="tv-switch" aria-hidden="true" />
           </button>
 

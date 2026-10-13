@@ -422,20 +422,95 @@ test.describe("the TV player", () => {
     phone.close();
   });
 
-  test("the controls fade away while playing, stay while paused, and the big play button works", async ({ browser, baseURL }) => {
+  test("the controls fade away while playing, stay while paused, and the big button in the middle plays", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
     phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
 
-    await tv.getByTestId("tv-paused-play").click(); // the big button in the middle
+    await tv.getByTestId("tv-center-btn").click(); // the big button in the middle
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 5_000 });
+    phone.close();
+  });
 
-    await tv.mouse.click(640, 360); // a click on the picture pauses, and brings the controls back
+  test("a click on the picture only shows or hides the controls: the button on the bar pauses, and the one in the middle plays", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
+
+    // (The mouse coming to the picture brings the controls up; the click that follows puts them away. Neither stops the film.)
+    await tv.mouse.click(640, 360);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden");
+    await tv.waitForTimeout(800);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+
+    await tv.waitForTimeout(700); // (the mouse settling after the click does not bring them back; a move later does)
+    await tv.mouse.move(500, 300);
+    await tv.mouse.move(520, 320);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await expect(tv.getByTestId("tv-center-btn")).toHaveCount(0); // (a mouse has the bar; the big button is for a finger, and for a picture that is held)
+    await tv.getByTestId("tv-play-btn").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+
+    await tv.mouse.click(1000, 250); // the picture beside the big button is not a play button either: held, the controls go too, and the picture is left clean
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden");
+    await tv.waitForTimeout(500);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect(tv.getByTestId("tv-pause-card")).toBeHidden();
+    await tv.waitForTimeout(700);
+    await tv.mouse.move(500, 300);
+    await tv.mouse.move(520, 320);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await tv.getByTestId("tv-center-btn").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    phone.close();
+  });
+
+  test("OK on the remote still pauses and plays, whatever a click does", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await tv.keyboard.press("Enter");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await tv.keyboard.press("Enter");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.close();
+  });
+
+  test("a profile that wants the picture to be a button gets one: a click pauses and plays, as it always did", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser, undefined, guestStorage({ settings: [{ key: "tapToPause", at: Date.now(), value: true }] }));
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
+
+    await tv.mouse.click(1000, 250); // a click on the picture pauses, and brings the controls back
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await tv.mouse.click(1000, 250);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    phone.close();
+  });
+
+  test("the big button in the middle is big enough to hit, and leaves room for the card beside it", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    const button = (await tv.getByTestId("tv-center-btn").boundingBox())!;
+    const card = (await tv.getByTestId("tv-pause-card").boundingBox())!;
+    expect(button.width).toBeGreaterThanOrEqual(1280 * 0.14); // (it was 7% of the width)
+    expect(button.width).toBeLessThanOrEqual(1280 * 0.2); // (and a third of it would cover the picture)
+    expect(Math.abs(button.x + button.width / 2 - 640)).toBeLessThan(2);
+    expect(card.x + card.width).toBeLessThan(button.x);
     phone.close();
   });
 
@@ -2276,6 +2351,33 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await phone.getByTestId("link-box-toggle").click();
     await phone.getByTestId("sheet-close").click();
     await expect(phone.getByTestId("url-input")).toHaveCount(0);
+  });
+
+  test("the box is a switch in Settings too (\"Paste a link\"), the same one as the TV menu's", async ({ browser, baseURL }) => {
+    const { phone } = await connect(browser, baseURL!, { device: { storageState: withoutLinkBox(baseURL!) } });
+    await expect(phone.getByTestId("library")).toBeVisible();
+    await expect(phone.getByTestId("url-input")).toHaveCount(0);
+
+    const inSettings = async () => {
+      await phone.getByTestId("account-button").click();
+      await phone.getByTestId("menu-settings").click();
+      return phone.getByTestId("link-box-setting");
+    };
+    const box = await inSettings();
+    await expect(box).toHaveAttribute("aria-checked", "false");
+    await box.click();
+    await expect(box).toHaveAttribute("aria-checked", "true");
+    await phone.getByTestId("page-back").click(); // (the settings, then the account)
+    await phone.getByTestId("page-back").click();
+    await expect(phone.getByTestId("account-screen")).toHaveCount(0);
+    await expect(phone.getByTestId("url-input")).toBeVisible();
+
+    await phone.getByTestId("menu").click(); // the TV's menu says the same, and turns it off from there
+    await expect(phone.getByTestId("link-box-toggle")).toHaveAttribute("aria-checked", "true");
+    await phone.getByTestId("link-box-toggle").click();
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByTestId("url-input")).toHaveCount(0);
+    await expect(await inSettings()).toHaveAttribute("aria-checked", "false");
   });
 
   test("without the box, a title that cannot be played still says so", async ({ browser, baseURL }) => {

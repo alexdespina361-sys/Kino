@@ -61,6 +61,14 @@ export const Forward10Icon = (props: Props) => (
   </Icon>
 );
 
+/** Two triangles pointing on: faster. */
+export const FastForwardIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M3 5.5v13l8.5-6.5z" fill="currentColor" />
+    <path d="M12.5 5.5v13L21 12z" fill="currentColor" />
+  </Icon>
+);
+
 export const NextIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M5 5v14l10-7z" fill="currentColor" />

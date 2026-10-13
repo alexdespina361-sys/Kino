@@ -7,6 +7,7 @@ import {
   groupBySeason,
   isSameEpisode,
   NormalizedMediaSchema,
+  playingEpisodeName,
   previousEpisode,
   seriesKeyOf,
   sortEpisodes,
@@ -46,6 +47,25 @@ describe("episode lists", () => {
     expect(episodeName(ep(1, 3, "S1:E3"), "Episode 3")).toBe("Episode 3");
     expect(episodeName(ep(1, 3, "S1 E3"), "Episodio 3")).toBe("Episodio 3");
     expect(episodeName(ep(1, 3), "Episode 3")).toBe("Episode 3");
+  });
+
+  it("says what the episode that is playing is called, from the library first and then from the source's list", () => {
+    const episodes = [ep(1, 2, "S1:E2"), ep(1, 3, "The Pilot"), ep(2, 1, "Return")];
+    expect(playingEpisodeName(media(1, 3, { episodes }).series, "Cat's in the Bag")).toBe("Cat's in the Bag");
+    expect(playingEpisodeName(media(1, 3, { episodes }).series)).toBe("The Pilot");
+    expect(playingEpisodeName(media(1, 3, { episodes }).series, "  ")).toBe("The Pilot");
+    expect(playingEpisodeName(media(2, 1, { episodes }).series)).toBe("Return");
+  });
+
+  it("has no name to say for a film, an episode only the number is known of, or a name that is the number", () => {
+    const episodes = [ep(1, 2, "S1:E2"), ep(1, 3), ep(1, 4, "Episode 4")];
+    expect(playingEpisodeName(undefined, "Whatever")).toBeUndefined();
+    expect(playingEpisodeName(media(1, 2, { episodes }).series)).toBeUndefined();
+    expect(playingEpisodeName(media(1, 3, { episodes }).series)).toBeUndefined();
+    expect(playingEpisodeName(media(1, 4, { episodes }).series)).toBeUndefined();
+    expect(playingEpisodeName(media(1, 5).series, "Episodio 5")).toBeUndefined();
+    expect(playingEpisodeName(media(1, 5).series, "S1 E5")).toBeUndefined();
+    expect(playingEpisodeName(media(1, 5).series, "Finale")).toBe("Finale"); // (the list may be missing: the library's word is enough)
   });
 
   it("labels an episode by its title, or by its numbers when it has none", () => {

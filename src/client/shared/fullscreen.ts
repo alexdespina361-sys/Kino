@@ -51,6 +51,39 @@ export function useFullscreen(): boolean {
   return on;
 }
 
+/** What a browser that can hold a screen's orientation has to offer (not all of them do; the lock is not in every copy of the DOM typings). */
+type Orientation = { lock?: (to: "landscape") => Promise<void>; unlock?: () => void };
+
+/** A touch screen (a phone, a tablet) whose browser can hold its orientation: anything else has nothing to turn, or no way to. */
+const canTurn = (): boolean => {
+  const orientation = typeof screen === "undefined" ? undefined : (screen.orientation as Orientation | undefined);
+  return typeof orientation?.lock === "function" && matchMedia("(pointer: coarse)").matches && navigator.maxTouchPoints > 0;
+};
+
+/**
+ * A film is small on a phone held upright. For as long as `on` (the page is full screen with a video playing), a touch screen is kept
+ * sideways, and it is let go the moment that is over, so it turns back by itself, upright if that is how it is held. A browser that
+ * can't hold the orientation (an iPhone's, a desktop's) refuses, and nothing changes.
+ */
+export function useLandscapeWhile(on: boolean): void {
+  useEffect(() => {
+    if (!on || !canTurn()) return;
+    const orientation = screen.orientation as Orientation;
+    try {
+      orientation.lock!("landscape").catch(() => {}); // (refused outside full screen, and where the device has no say)
+    } catch {
+      // refused at once
+    }
+    return () => {
+      try {
+        orientation.unlock?.(); // (a lock that has not been granted yet is cancelled by this)
+      } catch {
+        // nothing was held
+      }
+    };
+  }, [on]);
+}
+
 /** Safari takes no typed letters in a full-screen page (so that a page there can't pose as a sign-in), so it never goes there by itself. */
 const takesTyping = (): boolean => !navigator.vendor.startsWith("Apple");
 

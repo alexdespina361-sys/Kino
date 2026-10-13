@@ -36,7 +36,8 @@ test.describe("a phone used as the screen", () => {
     expect(await columns(phone)).toBe(2);
     expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
 
-    // A tap opens a title's own page and Play there plays it; the first touch on hidden controls only brings them up, the next one pauses.
+    // A tap opens a title's own page and Play there plays it; a touch on the picture brings the controls up, the next one puts them away, and
+    // neither pauses the film: the big button in the middle does.
     await phone.getByTestId("tv-browse-tile").first().tap();
     await expect(phone.getByTestId("tv-detail")).toBeVisible();
     expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
@@ -46,8 +47,15 @@ test.describe("a phone used as the screen", () => {
     await phone.touchscreen.tap(195, 420);
     await expect(tvRoot(phone)).toHaveAttribute("data-hud", "visible");
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
-    await phone.touchscreen.tap(195, 420);
+    await phone.touchscreen.tap(195, 300); // (beside the button, which is where a thumb lands when it misses)
+    await expect(tvRoot(phone)).toHaveAttribute("data-hud", "hidden");
+    await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
+    await phone.touchscreen.tap(195, 300);
+    await expect(tvRoot(phone)).toHaveAttribute("data-hud", "visible");
+    await phone.getByTestId("tv-center-btn").tap();
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "paused");
+    await phone.getByTestId("tv-center-btn").tap();
+    await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
   });
 
   test("the pages that only a remote's arrow keys could leave have a Back button for a finger", async ({ browser }) => {

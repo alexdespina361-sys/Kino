@@ -43,6 +43,8 @@ export class PlayerEngine {
   /** Resume point for a plain (non-hls.js) source; applied once the duration is known. */
   private startAt: number | undefined;
   private generation = 0;
+  /** The speed that was chosen, while a hold on the picture plays faster (see `boost`); null when nothing is held. */
+  private boostedFrom: number | null = null;
   /** The last state handed to `onChange`, as JSON, to skip repeats. */
   private lastEmitted = "";
   private readonly ticker: ReturnType<typeof setInterval>;
@@ -246,8 +248,28 @@ export class PlayerEngine {
   }
 
   setPlaybackRate(rate: number): void {
-    this.video.playbackRate = Math.max(0.25, Math.min(rate, 4));
+    const chosen = Math.max(0.25, Math.min(rate, 4));
+    if (this.boostedFrom !== null) this.boostedFrom = chosen; // held down: the new speed comes when the hold ends
+    else this.video.playbackRate = chosen;
     this.emit();
+  }
+
+  /**
+   * Plays at `rate` for as long as a hand holds the picture. The speed that was chosen stays the one that is reported meanwhile, so a
+   * hold is no news to the phone, the speed menu, or the line that says a speed changed; `unboost` goes back to it.
+   */
+  boost(rate: number): void {
+    if (this.boostedFrom !== null || !this.hasSource) return;
+    this.boostedFrom = this.video.playbackRate || 1;
+    this.video.playbackRate = rate;
+  }
+
+  /** The hold is over: back to the speed that was chosen. */
+  unboost(): void {
+    if (this.boostedFrom === null) return;
+    const chosen = this.boostedFrom;
+    this.boostedFrom = null;
+    this.video.playbackRate = chosen;
   }
 
   setAudio(trackIndex: number): void {
@@ -274,7 +296,7 @@ export class PlayerEngine {
       duration,
       buffering: this.video.seeking || (!this.video.paused && this.video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA),
       bufferedEnd: this.getBufferedEnd(),
-      playbackRate: this.video.playbackRate || 1,
+      playbackRate: this.boostedFrom ?? (this.video.playbackRate || 1),
       quality: this.getQualityState(),
       subtitles: this.getSubtitleState(),
       audio: this.getAudioState(),
@@ -373,6 +395,7 @@ export class PlayerEngine {
     this.loading = false;
     this.errorCode = undefined;
     this.video.pause();
+    this.boostedFrom = null;
     this.video.playbackRate = 1;
 
     // Remove any attached text tracks

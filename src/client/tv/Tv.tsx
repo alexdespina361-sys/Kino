@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   describeChange,
   episodeLabel,
   formatDelay,
+  groupBySeason,
   IDLE_STATE,
   isSameEpisode,
+  playingEpisodeName,
   previousEpisode,
   resolveCaptionStyle,
   seriesKeyOf,
@@ -19,9 +21,10 @@ import {
 import { useAccount } from "../account/AccountProvider";
 import { profileStore, useProfileData } from "../account/store";
 import { t, useT } from "../i18n";
+import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
-import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen } from "../shared/fullscreen";
+import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
 import { FullscreenIcon, MutedIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
@@ -32,6 +35,7 @@ import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
 import { PlayerEngine } from "./engine";
 import { pickInRows } from "./dpad";
+import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, type PointerKind, type Side } from "./gestures";
 import { EndCard, ErrorCard, FollowStatus, hasTracks, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
 import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
 import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
@@ -65,6 +69,8 @@ const NO_VIDEO_AFTER_LOOKUP_MS = 1500;
 const LOOKUP_END_GRACE_MS = 250;
 /** Skips pressed within this long of each other count as one run in the "+30s" flash. */
 const SKIP_RUN_MS = 1200;
+/** A click that puts the controls away is not undone by the mouse settling for this long. */
+const PUT_AWAY_QUIET_MS = 600;
 
 export function Tv() {
   useT();
@@ -187,6 +193,8 @@ export function Tv() {
   const { watched, settings } = useProfileData();
   /** Whether the next episode follows by itself (the profile's choice); off, the Up Next card waits for OK. */
   const autoplay = settings.autoplayNext ?? true;
+  /** Whether a tap or click on the picture pauses it (the profile's choice); off, it only shows or hides the controls. */
+  const tapToPause = settings.tapToPause ?? false;
   useEffect(() => {
     // (A screen that watches along shows the host's video: it is the host's to continue, not an entry in this profile's row, with a place and an address that are the host's.)
     if (following || !currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
@@ -326,33 +334,43 @@ export function Tv() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const visibleRef = useRef(true);
   visibleRef.current = controlsVisible;
+  /** Whether the controls are up or on their way up or down: what a tap should take them to be, a moment after the change (`visibleRef` is what has been drawn). */
+  const upRef = useRef(true);
+  const setUp = (up: boolean) => {
+    upRef.current = up;
+    setControlsVisible(up);
+  };
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Paused, loading, failed, or a menu open: the overlay stays put.
   const stickyRef = useRef(false);
   stickyRef.current = player.state !== "playing" || menu !== null;
 
-  // A finger on a hidden overlay brings the controls up and goes no further, so reaching for them does not pause the film.
-  const touchWokeRef = useRef(false);
-  const tapVideo = () => {
-    if (touchWokeRef.current) touchWokeRef.current = false;
-    else togglePlay();
-  };
+  /** When a tap last put the controls away: a mouse that is only settling after the click does not bring them straight back. */
+  const putAwayAtRef = useRef(0);
 
   /** Show the overlay and start the countdown to hiding it again. */
   const wake = () => {
-    setControlsVisible(true);
+    setUp(true);
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
       if (stickyRef.current) return;
       if (controlsRef.current?.contains(document.activeElement)) {
         // The remote is resting on a button: whoever is choosing gets a little longer than whoever is just watching.
         hideTimerRef.current = setTimeout(() => {
-          if (!stickyRef.current) setControlsVisible(false);
+          if (!stickyRef.current) setUp(false);
         }, HUD_HOLD_MS);
       } else {
-        setControlsVisible(false);
+        setUp(false);
       }
     }, HUD_HIDE_MS);
+  };
+
+  /** Put the overlay away now (a tap on the picture), unless something needs it: a menu is open, or the picture is neither playing nor held. */
+  const hideControls = () => {
+    if (menu !== null || (player.state !== "playing" && player.state !== "paused")) return;
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    putAwayAtRef.current = Date.now();
+    setUp(false);
   };
 
   useEffect(() => {
@@ -360,7 +378,7 @@ export function Tv() {
       wake();
     } else {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      setControlsVisible(true);
+      setUp(true);
     }
   }, [player.state, menu]);
 
@@ -1117,9 +1135,53 @@ export function Tv() {
     if (!libraryShows) setWelcoming(false);
   }, [libraryShows]);
 
-  /* ------------------------------ render ------------------------------ */
+  /* ------------------------------ the picture under a hand ------------------------------ */
 
   const showVideo = player.state !== "idle";
+
+  /** A finger is held on the picture and it plays faster for as long as it stays. */
+  const [boosting, setBoosting] = useState(false);
+  const holdPicture = (): boolean => {
+    const engine = engineRef.current;
+    if (!engine || playerRef.current.state !== "playing") return false; // (a hold means nothing to a picture that is not moving)
+    engine.boost(HOLD_SPEED);
+    setBoosting(true);
+    return true;
+  };
+  const releasePicture = () => {
+    engineRef.current?.unboost();
+    setBoosting(false);
+  };
+  useEffect(() => {
+    if (boosting && player.state !== "playing") releasePicture(); // the picture stopped, or ended, under the finger
+  }, [boosting, player.state]);
+
+  /**
+   * One tap or click on the picture: it shows or hides the controls. (With the profile's choice it pauses and plays instead, as a click
+   * always did; then a finger on controls that are away only brings them up, so reaching for them does not pause the film.)
+   */
+  const tapPicture = (kind: PointerKind, wasVisible: boolean) => {
+    if (!tapToPause) return wasVisible ? hideControls() : wake();
+    wake();
+    if (kind === "mouse" || wasVisible) togglePlay();
+  };
+  /** Two taps in a row: a side skips that way (and shows nothing of the controls, as the two buttons under it would), the middle goes full screen. */
+  const doubleTapPicture = (side: Side) => {
+    if (side !== "middle") skip(side === "back" ? -SKIP_SECONDS : SKIP_SECONDS);
+    else if (canFullscreen) toggleFullscreen();
+  };
+
+  /** Whether a hand's taps on the picture are the picture's: a video, with nobody's card or menu over it, and nobody else's to control. */
+  const takesTaps = unlocked && showVideo && !following && !finished && !failed && menu === null;
+  const picture = usePictureGestures({
+    enabled: takesTaps,
+    controlsUp: () => upRef.current,
+    actions: { tap: tapPicture, doubleTap: doubleTapPicture, hold: holdPicture, release: releasePicture },
+  });
+  const touch = useTouchUi();
+
+  // Full screen on a phone is landscape for as long as a video is on, and the phone is let go of the moment it is not.
+  useLandscapeWhile(fullscreen && showVideo);
 
   // Series details
   const series = currentMedia?.series;
@@ -1127,6 +1189,13 @@ export function Tv() {
   const previous = previousEpisode(series);
   const rawTitle = currentMedia?.title || APP_NAME;
   const mainTitle = series && rawTitle.includes("·") ? rawTitle.split("·")[0]!.trim() : rawTitle;
+  // What the episode is called, asked of the library the way the Episodes list asks (by the first episode of its season), so the two share one answer.
+  const seasonLink = useMemo(
+    () => (series ? (groupBySeason(series.episodes ?? []).find((group) => group.season === series.season)?.episodes[0]?.url ?? currentMedia?.page) : undefined),
+    [series, currentMedia?.page],
+  );
+  const episodeDetails = useEpisodeDetails(seasonLink, series?.season);
+  const episodeTitle = playingEpisodeName(series, series ? episodeDetails?.get(series.episode)?.title : undefined);
 
   return (
     <main
@@ -1136,21 +1205,24 @@ export function Tv() {
       data-time={player.currentTime.toFixed(1)}
       data-error={player.error ?? ""}
       data-hud={controlsVisible ? "visible" : "hidden"}
-      onMouseMove={wake}
-      onClick={wake}
-      onPointerDown={(event) => {
-        touchWokeRef.current = event.pointerType === "touch" && !visibleRef.current;
+      onMouseMove={() => {
+        // (The browser's echo of a finger is no mouse, and nor is one that is only settling after the click that put the controls away.)
+        if (picture.echoOfTouch() || Date.now() - putAwayAtRef.current < PUT_AWAY_QUIET_MS) return;
+        wake();
+      }}
+      onClick={(event) => {
+        if (!(takesTaps && isPicture(event.target))) return wake();
+        if (typeof PointerEvent === "undefined") tapPicture("mouse", upRef.current); // (a browser from before pointer events sends the click and nothing else)
+      }}
+      onPointerDown={picture.onPointerDown}
+      onDoubleClick={(event) => {
+        if (isPicture(event.target) && picture.kindRef.current === "mouse") toggleFullscreen(); // (a finger's double tap was dealt with already)
+      }}
+      onContextMenu={(event) => {
+        if (isPicture(event.target) && picture.kindRef.current === "touch") event.preventDefault(); // (a hold is no request for a menu)
       }}
     >
-      <video
-        ref={videoRef}
-        className="tv-video"
-        preload="auto"
-        style={{ display: showVideo ? "block" : "none" }}
-        playsInline
-        onClick={following ? undefined : tapVideo}
-        onDoubleClick={toggleFullscreen}
-      />
+      <video ref={videoRef} className="tv-video" data-picture preload="auto" style={{ display: showVideo ? "block" : "none" }} playsInline />
 
       {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
@@ -1292,6 +1364,7 @@ export function Tv() {
           title={mainTitle}
           subTitle={series ? t("player.seasonEpisode", { season: series.season, episode: series.episode }) : ""}
           badge={series ? `S${series.season}:E${series.episode}` : ""}
+          episodeName={episodeTitle}
           clock={clock}
           nextLabel={next ? episodeLabel(next) : null}
           prevLabel={previous ? episodeLabel(previous) : null}
@@ -1323,6 +1396,8 @@ export function Tv() {
           onStop={stopPlayback}
           stuck={stuck}
           onCancel={cancelLoad}
+          touch={touch}
+          boosting={boosting}
         />
       )}
 

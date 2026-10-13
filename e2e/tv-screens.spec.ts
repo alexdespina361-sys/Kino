@@ -2620,7 +2620,7 @@ test.describe("ratings on the TV", () => {
       const tv = await openLibrary(browser, withLibrary(library), { width: screen.width, height: screen.height });
       await tv.getByTestId("rail-settings").click();
       await expect(tv.getByTestId("tv-ratings-switch")).toBeVisible();
-      for (const id of ["tv-lang-en", "tv-autoplay", "tv-ratings-switch", "tv-account-back"]) {
+      for (const id of ["tv-lang-en", "tv-autoplay", "tv-tap-to-pause", "tv-ratings-switch", "tv-account-back"]) {
         const at = (await tv.getByTestId(id).boundingBox())!;
         expect(at.x, `${id} from the left`).toBeGreaterThanOrEqual(0);
         expect(at.y, `${id} from the top`).toBeGreaterThanOrEqual(0);
