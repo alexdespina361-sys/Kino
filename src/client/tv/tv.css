@@ -963,6 +963,10 @@
 .tv-corner-button svg { width: 1.2em; height: 1.2em; }
 .tv-corner-button:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
 .tv-corner-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
+/* The bell: a number on it while something waits for an answer, a quieter dot when friends only watched something. */
+.tv-bell { position: relative; }
+.tv-bell-badge { position: absolute; top: -0.2em; right: -0.25em; box-sizing: border-box; min-width: 1.5em; height: 1.5em; padding: 0 0.35em; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 0.75em; font-style: normal; font-weight: 800; line-height: 1.5em; text-align: center; pointer-events: none; }
+.tv-bell-dot { position: absolute; top: 0.4em; right: 0.4em; width: 0.45em; height: 0.45em; border-radius: 50%; background: currentColor; opacity: 0.85; pointer-events: none; }
 
 /* The banner takes the top third; moving down to the rows below the first lets it shrink to a line or two, so the rows get the room. */
 .tv-hero {

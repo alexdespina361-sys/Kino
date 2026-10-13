@@ -31,6 +31,7 @@ import { connectSocket, type Socket, type SocketStatus } from "../shared/socket"
 import { useWaking } from "../shared/useSlow";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
+import { BellButton, NotificationsSheet } from "./Bell";
 import { LinkApprove } from "../account/LinkApprove";
 import type { Entry } from "../tv/pages";
 import { FriendInvite, FriendsHome } from "./Friends";
@@ -112,6 +113,13 @@ export function Controller() {
   const [lost, setLost] = useState(false);
   // The account page, and the sign-in request of a TV (from its QR code) waiting for this signed-in phone to say yes or no.
   const [showAccount, setShowAccount] = useState(false);
+  /** The account page opens on its menu, or on the friends when the bell sent it there. */
+  const [accountAt, setAccountAt] = useState<"main" | "friends">("main");
+  const [showBell, setShowBell] = useState(false);
+  const closeAccount = () => {
+    setShowAccount(false);
+    setAccountAt("main");
+  };
   const [approveCode, setApproveCode] = useState<string | null>(launchRef.current.link ?? null);
   /** A friend's code, from the link or the QR code of their invitation: asked about until it is used or sent away. */
   const [friendCode, setFriendCode] = useState<string | null>(launchRef.current.friend ?? null);
@@ -277,7 +285,7 @@ export function Controller() {
       (error: unknown) => account.say(describeError(error)),
     );
     // The party is what the person asked for: they see its code, and who comes.
-    setShowAccount(false);
+    closeAccount();
     setSheet("party");
   }, [together, invite]);
 
@@ -369,7 +377,12 @@ export function Controller() {
   const tellTvToLookAgain = () => {
     if (tv?.online) socketRef.current?.send({ type: "CMD", command: { type: "REFRESH_ACCOUNT" } });
   };
-  const accountButton = <AccountButton onClick={() => setShowAccount(true)} />
+  const accountButton = (
+    <>
+      <BellButton onClick={() => setShowBell(true)} />
+      <AccountButton onClick={() => setShowAccount(true)} />
+    </>
+  );
   const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
   // A title's page, and the lists it can go in: over the remote, and over the account too (My ratings, a friend's lists), which a phone with no TV has as well. It then has no Play.
   const titleSheets = (
@@ -401,7 +414,18 @@ export function Controller() {
           <LinkApprove code={approveCode} onClose={closeApprove} />
         </Page>
       ) : (
-        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} {...(tv ? { onStartParty: startTogether } : {})} />
+        showAccount && <AccountScreen key={accountAt} initial={accountAt} onClose={closeAccount} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} {...(tv ? { onStartParty: startTogether } : {})} />
+      )}
+      {showBell && !showAccount && !approveCode && (
+        <NotificationsSheet
+          onClose={() => setShowBell(false)}
+          onOpenTitle={setTitle}
+          {...(tv ? { onStartParty: startTogether } : {})}
+          onOpenFriends={() => {
+            setAccountAt("friends");
+            setShowAccount(true);
+          }}
+        />
       )}
       {friendCode && !showAccount && !approveCode && !account.choosing && (
         <FriendInvite

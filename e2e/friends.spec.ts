@@ -635,10 +635,10 @@ test.describe("sending things to friends", () => {
     await expect(ann.page.getByTestId("account-toast")).toContainText(`Sent to ${bob.name}`);
     await expect(ann.page.getByTestId("friend-picker")).toHaveCount(0);
 
-    // Bob: told in a line, a dot on his picture, a row on his home screen with the title
+    // Bob: told in a line, a number on his bell, a row on his home screen with the title
     await look(bob.page);
     await expect(bob.page.getByTestId("account-toast")).toContainText(`${ann.name} sent you Alpha Film`);
-    await expect(bob.page.getByTestId("unread-dot")).toBeVisible();
+    await expect(bob.page.getByTestId("bell-badge")).toHaveText("1");
     const row = bob.page.getByTestId("friends-row");
     await expect(row).toContainText("Alpha Film");
     await expect(row).toContainText(`From ${ann.name}`);
@@ -649,11 +649,11 @@ test.describe("sending things to friends", () => {
     await bob.page.getByTestId("sheet-close").click();
     await expect(row.getByTestId("score-badge")).toHaveText("7");
 
-    // opening the Friends page is seeing it: the dot goes, the title is in the inbox
+    // opening the Friends page is seeing it: the number goes, the title is in the inbox
     await bob.page.getByTestId("account-button").click();
     await openFriends(bob.page);
     await expect(bob.page.getByTestId("inbox-recommendation")).toContainText("Alpha Film");
-    await expect(bob.page.getByTestId("unread-dot")).toHaveCount(0);
+    await expect(bob.page.getByTestId("bell-badge")).toHaveCount(0);
     // (a title opened from the inbox is a sheet over the page: Escape closes the sheet, and the page stays)
     await bob.page.getByTestId("inbox-open").click();
     await expect(bob.page.getByTestId("title-sheet")).toBeVisible();

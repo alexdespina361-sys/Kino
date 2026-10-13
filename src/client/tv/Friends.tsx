@@ -7,14 +7,17 @@ import { useSettings } from "../account/settings";
 import { formatDay } from "../account/time";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
+import { bellRows, type BellRow } from "../friends/pages";
 import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
+import { useBell } from "../friends/useBell";
 import { usePeek } from "../friends/usePeek";
 import { useLanguage, useT, type Key } from "../i18n";
 import { CopyCode } from "../shared/CopyLink";
-import { CheckIcon, PlusIcon, SearchIcon, UsersIcon } from "../shared/icons";
+import { CheckIcon, PlayIcon, PlusIcon, SearchIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { Screen } from "./Idle";
+import type { Entry } from "./pages";
 import "./friends.css";
 
 /** The pages friends need besides the library's own: sending to friends, adding one, and choosing what is shared. Each is a page the remote walks (see Idle.tsx). */
@@ -444,6 +447,94 @@ export function FriendRequestTv({ person, onClose }: { person: Person; onClose: 
           {t("friends.decline")}
         </button>
         <button className="tv-action" onClick={onClose} data-nav data-testid="tv-friend-request-back">
+          {t("common.back")}
+        </button>
+      </div>
+    </Screen>
+  );
+}
+
+/* ------------------------------ the bell ------------------------------ */
+
+/** A line of the bell's list: pressing it does what pressing the same tile of the friends page does. */
+function BellLine({ row, onPress }: { row: BellRow; onPress: (entry: Entry) => void }) {
+  const { entry } = row;
+  return (
+    <li>
+      <button className="tv-bell-line" onClick={() => onPress(entry)} data-nav data-testid="tv-bell-item" data-entry={entry.id}>
+        <span className="tv-bell-icon">{row.avatar ? <Avatar id={row.avatar} className="tv-bell-avatar" /> : entry.party || entry.wants || entry.ask ? <UsersIcon /> : <PlayIcon />}</span>
+        <span className="tv-bell-text">
+          <b>{row.heading}</b>
+          {row.detail && <small>{row.detail}</small>}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+/**
+ * What the bell opens on a TV: what waits for an answer, then what friends watch lately, a few of each, and a way on to the Friends page for the
+ * rest. Pressing a line does what the same tile of the Friends page does (`onPress` is that); Back shuts the list. Opening it is looking.
+ */
+export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (entry: Entry) => void; onFriends: () => void; onClose: () => void }) {
+  const t = useT();
+  const friends = useFriends();
+  const { markSeen } = useBell();
+  const { waiting, lately, more } = bellRows(friends.state, Date.now());
+
+  useEffect(() => {
+    void friends.refresh();
+    markSeen();
+  }, []);
+  useEffect(() => {
+    if (friends.unread > 0) void friends.markRead().catch(() => undefined);
+  }, [friends.unread]);
+
+  return (
+    <Screen testId="tv-bell-page" compact focus onBack={onClose}>
+      <h1 className="tv-headline tv-headline-small">{t("bell.title")}</h1>
+      {!friends.state ? (
+        <p className="tv-lead" role="status">
+          <span className="spinner" /> {friends.status === "offline" ? t("friends.offline") : t("common.loading")}
+        </p>
+      ) : waiting.length === 0 && lately.length === 0 ? (
+        <p className="tv-lead" data-testid="tv-bell-empty">
+          {t("bell.empty")}
+        </p>
+      ) : (
+        <div className="tv-bell-lists">
+          {waiting.length > 0 && (
+            <section>
+              <h2 className="tv-bell-heading">{t("bell.waiting")}</h2>
+              <ul className="tv-bell-list" data-testid="tv-bell-waiting">
+                {waiting.map((row) => (
+                  <BellLine key={row.entry.id} row={row} onPress={onPress} />
+                ))}
+              </ul>
+              {more > 0 && (
+                <p className="tv-hint" data-testid="tv-bell-more">
+                  {t("bell.more", { count: more })}
+                </p>
+              )}
+            </section>
+          )}
+          {lately.length > 0 && (
+            <section>
+              <h2 className="tv-bell-heading">{t("friends.activity")}</h2>
+              <ul className="tv-bell-list" data-testid="tv-bell-lately">
+                {lately.map((row) => (
+                  <BellLine key={row.entry.id} row={row} onPress={onPress} />
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      )}
+      <div className="tv-actions">
+        <button className="tv-action tv-action-primary" onClick={onFriends} data-nav data-testid="tv-bell-friends">
+          {t("bell.openFriends")}
+        </button>
+        <button className="tv-action" onClick={onClose} data-nav data-testid="tv-bell-back">
           {t("common.back")}
         </button>
       </div>

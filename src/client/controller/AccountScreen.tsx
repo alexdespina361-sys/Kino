@@ -80,7 +80,7 @@ export function AccountScreen({
   const [linkCode, setLinkCode] = useState<string | null>(null);
   /** The friend whose page is open, and the page the friends were opened from (the settings, or the account's menu). */
   const [friendId, setFriendId] = useState<string | null>(null);
-  const [friendsFrom, setFriendsFrom] = useState<View>("main");
+  const [friendsFrom, setFriendsFrom] = useState<View | "close">(initial === "friends" ? "close" : "main"); // (opened on the friends from the bell: Back leaves the account)
   const { me, profile } = account;
   const back = () => setView("main");
   const openFriends = (from: View) => {
@@ -128,7 +128,7 @@ export function AccountScreen({
   }
   if (view === "friends") {
     return (
-      <Page title={t("friends.title")} onBack={() => setView(friendsFrom)} testId="friends-screen">
+      <Page title={t("friends.title")} onBack={() => (friendsFrom === "close" ? onClose() : setView(friendsFrom))} testId="friends-screen">
         <FriendsPage
           onOpenFriend={(id) => {
             setFriendId(id);
@@ -301,17 +301,15 @@ export function ChooseProfile() {
   );
 }
 
-/** The corner button of the phone's pages: the picture of the profile in use, or a way in for someone not signed in. */
+/** The corner button of the phone's pages: the picture of the profile in use, or a way in for someone not signed in. (What waits for the profile is on the bell beside it.) */
 export function AccountButton({ onClick }: { onClick: () => void }) {
   const t = useT();
   const { status, profile, me } = useAccount();
-  const { attention: unread } = useFriends();
   if (status !== "ready") return null;
   if (me && profile) {
     return (
-      <button className="avatar-button" onClick={onClick} aria-label={`${t("account.open")}: ${profile.name}${unread > 0 ? ` · ${t("friends.unread", { count: unread })}` : ""}`} data-testid="account-button">
+      <button className="avatar-button" onClick={onClick} aria-label={`${t("account.open")}: ${profile.name}`} data-testid="account-button">
         <Avatar id={profile.avatar} />
-        {unread > 0 && <i className="unread-dot" aria-hidden="true" data-testid="unread-dot" />}
       </button>
     );
   }

@@ -228,6 +228,12 @@ export const UserIcon = (props: Props) => (
   </Icon>
 );
 
+export const BellIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" />
+  </Icon>
+);
+
 export const PencilIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4zM13.5 6.5l4 4" />

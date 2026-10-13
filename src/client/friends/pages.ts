@@ -1,10 +1,11 @@
-import { canAskTogether, partyOpen, tagLabel, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendRequest, type FriendsState } from "../../shared";
+import { activityVerb, canAskTogether, partyOpen, tagLabel, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendRequest, type FriendsState } from "../../shared";
 import { listName } from "../account/cards";
 import { sortRatings } from "../account/ratingText";
 import { ago, formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
 import { formatCode } from "../shared/format";
 import { entryOfRating, type Entry, type GridPage, type HomeRow, type View } from "../tv/pages";
+import { BELL_WAITING, bellView } from "./bell";
 import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
 
 /**
@@ -97,6 +98,35 @@ export function friendRows(state: FriendsState | null, now: number): HomeRow[] {
 
   rows.push({ id: "friend-people", layout: "categories", title: t("friends.yours"), entries: [...friends.map((friend) => entryOfFriend(friend, activity, now)), addTile(), settingsTile()] });
   return rows;
+}
+
+/** A line of the TV's bell: the entry that pressing it acts on (the friends page's own), and what the line says. */
+export interface BellRow {
+  entry: Entry;
+  heading: string;
+  detail?: string | undefined;
+  /** The picture of the friend it is about, where there is one. */
+  avatar?: Entry["avatar"];
+}
+
+/**
+ * What the bell lists on a TV: what waits for an answer (the friends page's own entries for requests to be friends, invitations, requests to watch
+ * together and titles friends sent, a few of them) and what friends watch lately, with how many waiting things are left for the friends page.
+ */
+export function bellRows(state: FriendsState | null, now: number): { waiting: BellRow[]; lately: BellRow[]; more: number } {
+  if (!state) return { waiting: [], lately: [], more: 0 };
+  const rows = friendRows(state, now);
+  const waiting = rows.filter((row) => row.id === "friend-requests" || row.id === "friend-parties" || row.id === "friend-sent").flatMap((row) => row.entries);
+  const lately = bellView(state, now).lately.flatMap((item): BellRow[] => {
+    const friend = state.friends.find((each) => each.id === item.friend);
+    if (!friend) return [];
+    return [{ entry: entryOfActivity(item, friend.name, now), heading: friend.name, detail: `${t(`friends.line.${activityVerb(item, now)}`, { title: item.title })} · ${ago(item.at, now, getLanguage())}`, avatar: friend.avatar }];
+  });
+  return {
+    waiting: waiting.slice(0, BELL_WAITING).map((entry) => ({ entry, heading: entry.title, detail: entry.note, ...(entry.avatar ? { avatar: entry.avatar } : {}) })),
+    lately,
+    more: Math.max(0, waiting.length - BELL_WAITING),
+  };
 }
 
 /** What was asked of the server for a friend's page: nothing yet (null), the answer, or why there is none. */

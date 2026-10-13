@@ -124,6 +124,15 @@ pnpm build && pnpm start     # http://localhost:8787
   friends at once. A profile with friends off cannot be found by tag. A tag is looked up only when **Find** is pressed, so a half-typed one costs no wrong guess, and a
   wrong tag counts against the same limit as a wrong code (10 per 15 minutes for an account, 100 for an address). A request waits 30 days, a profile keeps the newest 30 it was sent,
   and 30 can be sent an hour. `GET /api/profiles/:id/friends/tags/:tag`, `POST …/friends/requests` (`{tag}`), `POST …/friends/requests/:from/accept`, `DELETE …/friends/requests/:from`.
+  **The bell.** A profile with friends on has a small bell beside its picture, in the phone's header and in the corner of the TV's library (the first button of the corner for the remote:
+  Up from the titles reaches it, Right goes on to the picture, and OK opens its list). A **number** on it is what waits for an answer from this profile, the same count the Profile
+  line of the TV's menu carries (requests to be friends, invitations, requests to watch together, titles friends sent); a **quiet dot** only says that a friend watched something since
+  this device last opened the bell. The list shows up to 8 of what waits (requests first, then open invitations, requests to watch together, titles sent, and invitations that are over),
+  with the buttons they have on the Friends page (on the TV a line does what the same tile of that page does, so a request opens its question, an invitation joins, a title opens its page),
+  then up to 4 things friends watched lately, a line saying how many more wait on the Friends page, and an **Open Friends** button; Back from the Friends page it was opened from goes
+  home, not to the account page it was never on. Opening the list is looking: it marks the inbox read and puts the dot out (when it was put out is kept per profile on each device, in
+  `kino.bellSeen.<profile>`). The unread dot that the profile's picture used to carry moved to the bell. Nothing is added to the server for it: the bell reads the state that the Friends
+  page already polls every 30 seconds.
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.
@@ -503,7 +512,7 @@ several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page
 phone, a tablet and a phone held sideways, a finger on the picture (taps, double taps, a hold, the big button, the landscape lock, the episode's name:
 `e2e/player-touch.spec.ts`; the recognizer on its own in `src/client/tv/gestures.test.ts`), the end card and mute, full screen (at the first press, kept for the next visit, the buttons),
 ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV, and the score on a title's picture), the TV's menu and its Profile page (`e2e/profile-hub.spec.ts`, which also checks that what the page says fits its tiles in the three languages at four screen sizes), friends (made with a code or a link, what a friend can see,
-what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`; tags, requests and the Add button of a party, with the fit of its rows: `e2e/friend-tags.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
+what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`; tags, requests and the Add button of a party, with the fit of its rows: `e2e/friend-tags.spec.ts`; the bell on the phone and the TV, with the fit of the header, the corner and the list: `e2e/bell.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
 itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`). A Hisense browser is imitated by its user agent

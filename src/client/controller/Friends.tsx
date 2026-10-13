@@ -316,7 +316,7 @@ function AddFriend() {
 }
 
 /** Somebody who asked to be friends: who it is, and the buttons that say yes or no. */
-function RequestRow({ request }: { request: FriendRequest }) {
+export function RequestRow({ request }: { request: FriendRequest }) {
   const t = useT();
   const answer = useAnswerRequests();
   const [busy, setBusy] = useState(false);
@@ -332,12 +332,14 @@ function RequestRow({ request }: { request: FriendRequest }) {
         <b data-testid="friend-request-name">{name}</b>
         <small>{t("friends.requestWants")}</small>
       </span>
-      <button className="btn btn-red" disabled={busy} onClick={() => answered(answer.accept(request.from))} data-testid="friend-request-accept">
-        {t("friends.accept")}
-      </button>
-      <button className="mini" disabled={busy} onClick={() => answered(answer.decline(request.from))} aria-label={t("friends.decline")} title={t("friends.decline")} data-testid="friend-request-decline">
-        <CloseIcon />
-      </button>
+      <span className="inbox-actions">
+        <button className="btn btn-red" disabled={busy} onClick={() => answered(answer.accept(request.from))} data-testid="friend-request-accept">
+          {t("friends.accept")}
+        </button>
+        <button className="mini" disabled={busy} onClick={() => answered(answer.decline(request.from))} aria-label={t("friends.decline")} title={t("friends.decline")} data-testid="friend-request-decline">
+          <CloseIcon />
+        </button>
+      </span>
     </li>
   );
 }
@@ -373,7 +375,7 @@ function useAskTogether(): (friendId: string, ended?: string) => Promise<void> {
   };
 }
 
-function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }: { item: InboxItem; friend: Friend | undefined; onOpenTitle: OpenTitle; onStartParty: ((friendId: string) => void) | undefined; onDismiss: () => void }) {
+export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }: { item: InboxItem; friend: Friend | undefined; onOpenTitle: OpenTitle; onStartParty: ((friendId: string) => void) | undefined; onDismiss: () => void }) {
   const t = useT();
   const language = useLanguage();
   const ask = useAskTogether();
@@ -393,18 +395,20 @@ function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }: { item
           <b>{t("friends.partyInvite", { name: from })}</b>
           <small>{live ? `${formatCode(item.code)} · ${ago(item.at, now, language)}` : t("friends.partyOver")}</small>
         </span>
-        {live && (
-          <a className="btn btn-red" href={partyLink(item.code)} data-testid="inbox-join">
-            {t("friends.join")}
-          </a>
-        )}
-        {/* (A party that is over becomes a question: can they start another, for the two of them?) */}
-        {!live && friend && canAskTogether(friend) && (
-          <button className="btn btn-red" onClick={() => void ask(friend.id, item.id)} data-testid="inbox-ask">
-            {t("friends.askTogether")}
-          </button>
-        )}
-        {dismiss}
+        <span className="inbox-actions">
+          {live && (
+            <a className="btn btn-red" href={partyLink(item.code)} data-testid="inbox-join">
+              {t("friends.join")}
+            </a>
+          )}
+          {/* (A party that is over becomes a question: can they start another, for the two of them?) */}
+          {!live && friend && canAskTogether(friend) && (
+            <button className="btn btn-red" onClick={() => void ask(friend.id, item.id)} data-testid="inbox-ask">
+              {t("friends.askTogether")}
+            </button>
+          )}
+          {dismiss}
+        </span>
       </li>
     );
   }
@@ -415,12 +419,14 @@ function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }: { item
           <b>{t("friends.togetherOf", { name: from })}</b>
           <small>{ago(item.at, now, language)}</small>
         </span>
-        {onStartParty && (
-          <button className="btn btn-red" onClick={() => onStartParty(item.from)} data-testid="inbox-start">
-            {t("friends.startParty")}
-          </button>
-        )}
-        {dismiss}
+        <span className="inbox-actions">
+          {onStartParty && (
+            <button className="btn btn-red" onClick={() => onStartParty(item.from)} data-testid="inbox-start">
+              {t("friends.startParty")}
+            </button>
+          )}
+          {dismiss}
+        </span>
       </li>
     );
   }

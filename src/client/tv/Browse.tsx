@@ -10,6 +10,7 @@ import { useScores } from "../account/ratings";
 import { profileStore, useProfileData } from "../account/store";
 import { nameOf, recommendationOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
+import { useBell } from "../friends/useBell";
 import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
@@ -22,8 +23,8 @@ import { ScoreBadge } from "../shared/ScoreBadge";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
-import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, UnfriendTv } from "./Friends";
-import { AccountChip, Screen } from "./Idle";
+import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, UnfriendTv } from "./Friends";
+import { AccountChip, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, typedCharacter } from "./librarySearch";
 import { asOpened, entryOfItem, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, listOfRow, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
@@ -133,7 +134,8 @@ type Overlay =
   | { kind: "addFriend"; back: Target }
   | { kind: "friendSettings"; back: Target }
   | { kind: "unfriend"; id: string; name: string; back: Target }
-  | { kind: "friendRequest"; person: Person; back: Target };
+  | { kind: "friendRequest"; person: Person; back: Target }
+  | { kind: "bell"; back: Target };
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
 const RAIL: Target = { zone: "rail", row: -1, col: -1 };
@@ -221,6 +223,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   const language = useLanguage();
   const { status: accountStatus, me, profile, say } = useAccount();
   const friends = useFriends();
+  const bell = useBell();
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
   const ratingsOn = settings.ratings ?? true;
   const narrowColumns = useNarrowColumns();
@@ -432,7 +435,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
 
   // What the arrow keys can reach, row by row: the key handler below reads it through a ref.
   const showAccount = accountStatus === "ready";
-  const topButtons = (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the account button, then the full screen one beside it
+  const showBell = showAccount && bell.on;
+  const topButtons = (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the bell, the account button, then the full screen one
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   // Movies or Series of a library that has titles, none of them of that kind (a source that does not say which): not "nothing yet", which Retry could not mend.
   const kindEmpty = showRetry && hasTiles && (view.kind === "movies" || view.kind === "series");
@@ -530,7 +534,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     if (overlay?.kind === "unfriend" && friends.state && !friends.state.friends.some((each) => each.id === overlay.id)) setOverlay(null);
     // (Likewise a request that was answered on a phone, or taken back, while its question was on the screen.)
     if (overlay?.kind === "friendRequest" && friends.state && !friends.state.requests.some((each) => each.from.id === overlay.person.id)) closeOverlay();
-  }, [overlay, friends.state]);
+    // (And the bell once friends are turned off from another device: there is nothing left for it to list.)
+    if (overlay?.kind === "bell" && !bell.on) closeOverlay();
+  }, [overlay, friends.state, bell.on]);
   // The friends page shows how things stand now, and opening it is seeing what is in the inbox.
   useEffect(() => {
     if (view.kind === "friends") void friends.refresh();
@@ -883,8 +889,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
           </p>
         )}
         <div className="tv-browse-corner">
-          {showAccount && <AccountChip onOpen={onAccount} zone />}
-          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": showAccount ? 1 : 0 }} />
+          {showBell && <BellChip onOpen={() => setOverlay({ kind: "bell", back: { zone: "top", row: 0, col: 0 } })} col={0} />}
+          {showAccount && <AccountChip onOpen={onAccount} zone col={showBell ? 1 : 0} />}
+          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": (showBell ? 1 : 0) + (showAccount ? 1 : 0) }} />
         </div>
       </header>
 
@@ -1250,6 +1257,20 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
       {overlay?.kind === "addFriend" && <AddFriendTv onClose={closeOverlay} />}
       {overlay?.kind === "friendSettings" && <FriendSettingsTv onClose={closeOverlay} />}
       {overlay?.kind === "friendRequest" && <FriendRequestTv person={overlay.person} onClose={closeOverlay} />}
+      {overlay?.kind === "bell" && (
+        <NotificationsTv
+          onPress={(entry) => {
+            // (What a line does is what the same tile of the friends page does; the list is gone behind it, and a request's window or a title's page comes up in its place.)
+            setOverlay(null);
+            press({ entry: resumable(entry, progress), label: t("bell.title") }, overlay.back);
+          }}
+          onFriends={() => {
+            setOverlay(null);
+            choose({ kind: "friends" });
+          }}
+          onClose={closeOverlay}
+        />
+      )}
       {overlay?.kind === "unfriend" && (
         <UnfriendTv
           id={overlay.id}
