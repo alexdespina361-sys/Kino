@@ -639,7 +639,14 @@ export function Tv() {
             const rate = local.playbackRate ?? 1;
             const step = syncStep(
               { playing: message.playing, time: message.time, rate: message.rate },
-              { playing: local.state === "playing", time: local.currentTime, rate, buffering: Boolean(local.buffering) },
+              {
+                playing: local.state === "playing",
+                time: local.currentTime,
+                rate,
+                buffering: Boolean(local.buffering),
+                ahead: Math.max(0, (local.bufferedEnd ?? local.currentTime) - local.currentTime),
+                targetBuffered: engine.hasBuffered(message.time),
+              },
               Date.now() - lastSeekAt,
             );
             if (step.seek !== undefined) {
