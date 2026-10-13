@@ -57,7 +57,7 @@ export function assertAllowedUrl(url: URL, isAllowedAddress: (a: string) => bool
  * DNS lookup that refuses to hand out disallowed addresses. It runs at connect time for every hop,
  * so a hostname that resolves to a private IP (or flips there later, "DNS rebinding") never connects.
  */
-function guardedLookup(isAllowedAddress: (a: string) => boolean): net_lookup {
+export function guardedLookup(isAllowedAddress: (a: string) => boolean): net_lookup {
   return (hostname, options, callback) => {
     dns.lookup(hostname, { ...options, all: true }, (error, addresses) => {
       if (error) return callback(error, "", 4);
@@ -69,7 +69,7 @@ function guardedLookup(isAllowedAddress: (a: string) => boolean): net_lookup {
     });
   };
 }
-type net_lookup = (
+export type net_lookup = (
   hostname: string,
   options: dns.LookupOptions,
   callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void,

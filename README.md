@@ -5,7 +5,7 @@ address, and each device becomes the screen or the remote (`/tv` always plays) a
 Accounts with profiles keep what you watched on every phone, TV and browser; the whole site speaks English, Romanian and Italian.
 
 ```
-phone ──WS──▶ server ──WS──▶ TV player ──▶ media (directly, no proxy)
+phone ──WS──▶ server ──WS──▶ TV player ──▶ media (through the server's /api/proxy for the sites that need it)
         (paste a link: the server finds the video, the TV plays it without the page)
 ```
 
@@ -244,6 +244,9 @@ pnpm build && pnpm start     # http://localhost:8787
 
 **Server**
 - Resolves a link to a playable stream: the generic resolver plus the site adapters in `src/server/resolvers/adapters/`
+- The media proxy (`/api/proxy`, which the adapters' streams go through so that a site's referer and CORS rules do not stop the player) only
+  connects to public addresses. The address is checked where a connection is made, not in the text of the link, so `localhost`, or a name
+  anyone can point at a machine on the server's own network, is refused (403) like a number; every redirect is checked the same way
 - Pairing codes are single-use and expire after 10 minutes. After 20 wrong codes in a minute (all phones counted together)
   pairing pauses until the minute is over, because the code is only six digits
 - **Accounts, pairings and what each TV was playing are kept**: written to disk (or Postgres) a moment after every change and again when the

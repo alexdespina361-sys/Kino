@@ -1,7 +1,8 @@
 import { Readable } from "node:stream";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { Agent, fetch, type Response } from "undici";
 import { isPublicAddress } from "./resolvers/ip";
-import { assertAllowedUrl } from "./resolvers/safe-fetch";
+import { SafeFetchError, assertAllowedUrl, guardedLookup } from "./resolvers/safe-fetch";
 
 export function srtToVtt(srt: string): string {
   let clean = srt.replace(/^\uFEFF/, "").trim();
@@ -55,6 +56,54 @@ export function rewriteM3u8(content: string, playlistUrl: string, referer?: stri
 
 export interface ProxyOptions {
   allowPrivateNetwork?: boolean;
+  /** Which addresses may be gone to (a test narrows it to one that is on this machine); without it, any public one, or any at all with `allowPrivateNetwork`. */
+  isAllowedAddress?: (address: string) => boolean;
+}
+
+const ANYWHERE = () => true;
+const REDIRECTS = 5;
+
+/**
+ * One pool of connections for each rule about addresses. The pool looks at the address a name leads to when it connects (see `guardedLookup`),
+ * which is the only place a name can be told from a private address: `localhost`, or a name that anyone can point at 127.0.0.1 or at a machine
+ * on the host's own network, passes a look at the text of the address.
+ */
+const pools = new WeakMap<(address: string) => boolean, Agent>();
+function poolFor(isAllowedAddress: (address: string) => boolean): Agent {
+  let pool = pools.get(isAllowedAddress);
+  if (!pool) {
+    pool = new Agent({ connect: { lookup: guardedLookup(isAllowedAddress) } });
+    pools.set(isAllowedAddress, pool);
+  }
+  return pool;
+}
+
+/** The answer to a GET of `target`. Redirects are followed here, not by `fetch`, so that each address on the way is looked at as the first one was. */
+async function openUpstream(
+  target: URL,
+  headers: Record<string, string>,
+  isAllowedAddress: (address: string) => boolean,
+  signal: AbortSignal,
+): Promise<{ response: Response; url: URL }> {
+  let url = target;
+  for (let hop = 0; ; hop++) {
+    assertAllowedUrl(url, isAllowedAddress);
+    const response = await fetch(url.href, { method: "GET", headers, signal, redirect: "manual", dispatcher: poolFor(isAllowedAddress) });
+    const location = response.headers.get("location");
+    if (response.status < 300 || response.status >= 400 || !location) return { response, url };
+    await response.body?.cancel();
+    if (hop >= REDIRECTS) throw new SafeFetchError("too_many_redirects", "too many redirects");
+    url = new URL(location, url);
+  }
+}
+
+/** Whether this is the refusal of an address (it may be wrapped: `fetch` reports a refused connection as a failed fetch, with the reason as its cause). */
+function isRefusal(error: unknown): boolean {
+  for (let wrapped = error, depth = 0; wrapped && depth < 5; depth++) {
+    if (wrapped instanceof SafeFetchError) return wrapped.code === "blocked" || wrapped.code === "invalid_url";
+    wrapped = (wrapped as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 export async function handleStreamProxy(
@@ -74,7 +123,7 @@ export async function handleStreamProxy(
     return reply.code(400).send({ error: "Invalid URL" });
   }
 
-  const isAllowedAddress = options.allowPrivateNetwork ? () => true : isPublicAddress;
+  const isAllowedAddress = options.isAllowedAddress ?? (options.allowPrivateNetwork ? ANYWHERE : isPublicAddress);
   try {
     assertAllowedUrl(targetUrl, isAllowedAddress);
   } catch {
@@ -101,13 +150,11 @@ export async function handleStreamProxy(
   });
 
   let upstreamResponse: Response;
+  let upstreamUrl: URL;
   try {
-    upstreamResponse = await fetch(targetUrl.href, {
-      method: "GET",
-      headers,
-      signal: abortController.signal,
-    });
+    ({ response: upstreamResponse, url: upstreamUrl } = await openUpstream(targetUrl, headers, isAllowedAddress, abortController.signal));
   } catch (err: unknown) {
+    if (isRefusal(err)) return reply.code(403).send({ error: "URL not allowed" });
     const message = err instanceof Error ? err.message : "Upstream error";
     return reply.code(502).send({ error: "Upstream fetch failed", message });
   }
@@ -127,7 +174,7 @@ export async function handleStreamProxy(
     const text = await upstreamResponse.text();
     // Verify it actually looks like an m3u8
     if (text.includes("#EXTM3U")) {
-      const rewritten = rewriteM3u8(text, upstreamResponse.url || targetUrl.href, referer);
+      const rewritten = rewriteM3u8(text, upstreamUrl.href, referer);
       reply.header("Content-Type", "application/vnd.apple.mpegurl");
       return reply.code(upstreamResponse.status).send(rewritten);
     }
