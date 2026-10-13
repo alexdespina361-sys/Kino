@@ -365,13 +365,13 @@ well as in the page's own status, which can be far above a library that is scrol
   left, nine lines: **Search**, **Home**, **Movies**, **Series**, **Categories**, **My Lists**, and, set apart, **Watch party**, **Connect a phone** and
   **Profile**. What belongs to whoever is watching is behind that last line, not in lines of its own: **Profile** is a page of one row of places, each
   saying how it stands: **My ratings** ("12 ratings · average 7.4"), **Friends** (a profile that is signed in and has friends on: "3 friends", "2 new"),
-  **History**, **Sign in** (for a guest) and **Settings**; Back from any of them returns to it, and its line in the menu carries the number of unread things
+  **History**, **Sign in** (for a guest) and **Settings**; Back from any of them returns to it with the remote on the place it left (found again by what it is: Friends coming or going moves the others; if the place the remote is on goes, it stands where that was), the banner above says how the place under the remote stands now, and its line in the menu carries the number of unread things
   from friends. **Categories** is one page of all of them, films first, then shows, each saying which it is and how many titles it has; a category opens as a
   grid, and Back returns to the list. Right or Back returns to the titles (with a
   mouse, **resting the pointer on the strip opens the menu**, no button held, and leaving it shuts it), and
   choosing any entry (**My Lists**, **Profile**, a category…) closes the menu over the page it opens. **My Lists** is a button for each list over
   the titles in it, with **New list** (a name typed on the on-screen or real keyboard) and **Edit list** (rename, or delete after a question). **Movies**
-  and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard (Space, Delete, and Clear for the whole box) beside the
+  and **Series** are home pages of only that kind (a library whose titles do not say which they are, as the Internet Archive's do not, says "No movies here" or "No series here" and leads Home, instead of "Nothing in the library yet"); a category opens as a grid of its titles. **Search** shows an on-screen keyboard (Space, Delete, and Clear for the whole box) beside the
   results (a physical keyboard types too, and Backspace deletes before it means Back) with **All / Movies / Series** filters. Titles already loaded
   answer at once; after a short pause the source's search (`GET /api/library/search?q=`) adds more, and a library whose rows could not be loaded
   can still be searched. **A search forgives the fingers** (`src/shared/search.ts`, on [MiniSearch](https://github.com/lucaong/MiniSearch)): every word of the

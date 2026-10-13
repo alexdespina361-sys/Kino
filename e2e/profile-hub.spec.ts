@@ -81,14 +81,14 @@ test.describe("the profile's page", () => {
     await expect(tv.getByTestId("rail-home")).toBeFocused();
   });
 
-  test("has no place for ratings once they are off in the settings, and no sign-in once somebody has signed in (checked with the friends, in friends-tv)", async ({ browser }) => {
+  test("has no place for ratings once they are off in the settings, and the remote comes back to Settings, which has moved up a place (no sign-in once somebody has signed in: checked with the friends, in friends-tv)", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await openProfilePlace(tv, "settings");
     await tv.getByTestId("tv-ratings-switch").click();
     await expect(tv.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "false");
     await tv.getByTestId("tv-account-back").click();
     expect(await places(tv)).toEqual(["profile:history", "profile:signin", "profile:settings"]);
-    await expect(place(tv, "history")).toBeFocused();
+    await expect(place(tv, "settings")).toBeFocused(); // (the place it left from, not whatever is now in the column it was in)
   });
 
   for (const language of [
@@ -101,11 +101,16 @@ test.describe("the profile's page", () => {
       { name: "1080p", width: 1920, height: 1080 },
       { name: "4:3", width: 1024, height: 768 },
       { name: "a phone's width", width: 390, height: 844 },
+      { name: "a phone held sideways", width: 844, height: 390 },
+      { name: "a small phone held sideways", width: 568, height: 320 },
     ]) {
       test(`its places and what they say fit their tiles, and the page fits the screen: ${language.name}, ${screen.name}`, async ({ browser }) => {
         const tv = await openDevice(browser, { viewport: { width: screen.width, height: screen.height }, locale: language.locale }, seed, withLibrary(library));
         await tv.goto("/tv");
         await expect(tv.getByTestId("tv-browse")).toBeVisible();
+        // The menu's nine lines are all on the screen without scrolling it (a click on a line below the edge scrolls the menu to it, which would hide the fault).
+        const room = await tv.getByTestId("tv-rail").evaluate((rail) => ({ needed: rail.scrollHeight, given: rail.clientHeight }));
+        expect(room.needed).toBeLessThanOrEqual(room.given);
         await tv.getByTestId("rail-profile").click();
         await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
         await expect(tv.getByTestId("tv-category-tile")).toHaveCount(4);

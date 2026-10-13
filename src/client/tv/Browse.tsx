@@ -68,6 +68,8 @@ const remembered = {
   focus: {} as Record<string, Pos>,
   /** The row of a page of rows the remote was on (rows come and go as things are watched and saved, so a number is not enough). */
   row: {} as Record<string, string>,
+  /** The title in that row (tiles come and go as well: the profile's, with friends turned on or off, move along). */
+  tile: {} as Record<string, string>,
   /** The titles like what a card is about, by the card's key. Nothing found is remembered too. */
   similar: {} as Record<string, LibraryItem[]>,
   /** The page of a show that an episode was started from, and the season it was showing: the library comes back to it, to pick the next one (or another, when that one would not play). */
@@ -152,8 +154,12 @@ function savedPos(view: View, rows: readonly HomeRow[]): Pos | undefined {
   if (!hasRows(view) || saved.zone !== "rows") return saved;
   const id = remembered.row[key];
   const row = rows.findIndex((candidate) => candidate.id === id);
-  // A card that was watched moves to the front of "Continue watching", so its place there is the first.
-  return row === -1 ? undefined : { zone: "rows", row, col: id === "continue" ? 0 : saved.col };
+  if (row === -1) return undefined;
+  // The title is found again by name, wherever it has moved to (a card that was watched moves to the front of "Continue watching"). One
+  // that has gone leaves the one that is where it was, or the last.
+  const entries = rows[row]!.entries;
+  const at = entries.findIndex((entry) => entry.id === remembered.tile[key]);
+  return { zone: "rows", row, col: at !== -1 ? at : id === "continue" ? 0 : Math.min(saved.col, Math.max(0, entries.length - 1)) };
 }
 
 /** The buttons of a title's own page, the zones its arrow keys walk. */
@@ -324,7 +330,15 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   const startRow = Math.min(homeFocus?.row ?? 0, Math.max(0, homeRows.length - 1));
   const startCol = Math.min(homeFocus?.col ?? 0, Math.max(0, (homeRows[startRow]?.entries.length ?? 1) - 1));
   const start = homeRows[startRow]?.entries[startCol];
-  const shown: Focused | null = focused ?? (rowsPage && start ? { entry: start, label: homeRows[startRow]!.title, ...(homeRows[startRow]!.source ? { source: homeRows[startRow]!.source! } : {}) } : null);
+  // What the banner says is read from the page as it is now: a tile's own line (how many friends, what is new) changes while the remote rests on it.
+  const onNow = focused && rowsPage ? homeRows.find((row) => row.title === focused.label)?.entries.find((entry) => entry.id === focused.entry.id) : undefined;
+  const shown: Focused | null = focused
+    ? onNow
+      ? { ...focused, entry: resumable(onNow, progress) }
+      : focused
+    : rowsPage && start
+      ? { entry: start, label: homeRows[startRow]!.title, ...(homeRows[startRow]!.source ? { source: homeRows[startRow]!.source! } : {}) }
+      : null;
   const actions = rowsPage ? heroActions(shown?.entry) : [];
   const saved = useMemo(() => savedKeys(list), [list]);
   const scores = useScores();
@@ -412,6 +426,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   const showAccount = accountStatus === "ready";
   const topButtons = (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the account button, then the full screen one beside it
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
+  // Movies or Series of a library that has titles, none of them of that kind (a source that does not say which): not "nothing yet", which Retry could not mend.
+  const kindEmpty = showRetry && hasTiles && (view.kind === "movies" || view.kind === "series");
   const shape: Shape = {
     rail: entries.map(() => 1),
     top: topButtons > 0 ? [topButtons] : [],
@@ -463,6 +479,16 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     setPending(null);
     focusAt(pending);
   }, [pending]);
+
+  // A title that goes while the remote is on it (friends turned off from another device, a card removed) takes the focus with it, and then
+  // nothing answers OK: the remote goes to the title that is where it was.
+  const standingOn = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const gone = standingOn.current;
+    if (!gone || gone.isConnected || (document.activeElement && document.activeElement !== document.body)) return;
+    standingOn.current = null;
+    setPending(fresh(latest.current.detail ? DETAIL : CONTENT));
+  }, [homeRows, grid]);
 
   // Keys pressed while it loaded may have landed on the account button, or nowhere; once there is something to see, the remote goes to it.
   // (Also when the list changed under the remote: a title the server stopped offering takes its button with it.)
@@ -617,8 +643,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   const arrived = (element: HTMLElement, pos: Pos, now: Focused) => {
     const key = viewKey(latest.current.view);
     remembered.focus[key] = pos;
+    standingOn.current = element;
     if (pos.zone === "rows") {
       remembered.row[key] = latest.current.homeRows[pos.row]?.id ?? "";
+      remembered.tile[key] = latest.current.homeRows[pos.row]?.entries[pos.col]?.id ?? "";
       setDeep(pos.row > 0);
       const scroller = element.parentElement!;
       const edge = element.getBoundingClientRect();
@@ -852,6 +880,16 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
               </div>
             ) : status === "loading" ? (
               <p className="tv-hero-eyebrow">{t("tv.loadingLibrary")}</p>
+            ) : kindEmpty ? (
+              <>
+                <h1 className="tv-hero-title tv-hero-status">{t(view.kind === "movies" ? "tv.kindEmptyMovies" : "tv.kindEmptySeries")}</h1>
+                <p className="tv-hero-about">{t("tv.kindEmptyHelp")}</p>
+                <div className="tv-actions tv-actions-start">
+                  <button className="tv-action tv-action-primary" onClick={() => choose({ kind: "home" })} autoFocus data-testid="tv-browse-home" data-zone="rows" data-row={0} data-col={0}>
+                    {t("tv.home")}
+                  </button>
+                </div>
+              </>
             ) : (
               <>
                 <h1 className="tv-hero-title tv-hero-status">{status === "failed" ? t("tv.libraryFailed") : t("tv.libraryEmpty")}</h1>
@@ -1209,7 +1247,7 @@ function Backdrop({ image }: { image: string | undefined }) {
   const counter = useRef(0);
   useEffect(() => {
     let live = true;
-    const show = (picture: string | undefined) => live && setLayers((now) => (now.at(-1)?.image === picture ? now : [...now.slice(-3), { id: ++counter.current, image: picture }]));
+    const show = (picture: string | undefined) => live && setLayers((now) => (now[now.length - 1]?.image === picture ? now : [...now.slice(-3), { id: ++counter.current, image: picture }]));
     if (!image) show(undefined);
     else {
       const loader = new Image();

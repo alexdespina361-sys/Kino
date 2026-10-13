@@ -24,6 +24,22 @@ test.describe("the start screens", () => {
     await expect(page.getByTestId("tv-hero-title")).toHaveText("Film number 1");
   });
 
+  test("a screen of an older engine, which has no Array.prototype.at, opens on the library all the same", async ({ browser }) => {
+    const library = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", source: "Test Source", items: [{ id: "f0", title: "Film number 1", url: "/fixtures/sample.mp4" }] }] };
+    const page = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, async (context) => {
+      await context.addInitScript(() => {
+        for (const kind of [Array, String]) Object.defineProperty(kind.prototype, "at", { value: undefined, configurable: true, writable: true });
+      });
+      await withLibrary(library)(context);
+    });
+    const crashed: string[] = [];
+    page.on("pageerror", (error) => crashed.push(error.message));
+    await page.goto("/tv");
+    await expect(page.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await expect(page.getByTestId("tv-hero-title")).toHaveText("Film number 1");
+    expect(crashed).toEqual([]);
+  });
+
   test("the welcome goes by itself too, when nobody presses anything", async ({ browser }) => {
     const page = await openDevice(browser, { viewport: { width: 1280, height: 720 } });
     await page.goto("/tv");
@@ -1462,6 +1478,30 @@ test.describe("movies, series, and the rest of the menu", () => {
     const shows = await titlesOnScreen(tv);
     expect(shows.length).toBeGreaterThan(0);
     expect(shows.every((title) => title?.startsWith("Show"))).toBe(true);
+  });
+
+  test("Movies and Series of a library whose titles do not say which they are say there are none there, and lead Home: the library is not empty, and trying again would not change it", async ({ browser }) => {
+    const unlabelled = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Old reels", source: "Test Source", items: [1, 2, 3].map((n) => ({ id: `u${n}`, title: `Reel ${n}`, url: `/fixtures/sample.mp4?u=${n}` })) }] };
+    const tv = await openLibrary(browser, withLibrary(unlabelled));
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+
+    await choose(tv, "rail-movies");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "movies");
+    await expect(tv.getByTestId("tv-browse")).toContainText("No movies here");
+    await expect(tv.getByTestId("tv-browse")).toContainText("Everything the library has is on Home.");
+    await expect(tv.getByTestId("tv-browse")).not.toContainText("Nothing in the library yet");
+    await expect(tv.getByTestId("tv-browse-retry")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-browse-home")).toBeFocused();
+
+    await choose(tv, "rail-series");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "series");
+    await expect(tv.getByTestId("tv-browse")).toContainText("No series here");
+    await expect(tv.getByTestId("tv-browse-home")).toBeFocused();
+
+    await tv.keyboard.press("Enter"); // Home, where the titles are
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await expect(tv.getByTestId("tv-hero-title")).toHaveText("Reel 1");
   });
 
   test("Categories lists every one, those of films first and then those of series, each saying which; one opens as a grid, and Back returns to the list", async ({ browser }) => {

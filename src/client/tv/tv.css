@@ -1935,7 +1935,9 @@
   .tv-screen::before, .tv-screen::after { content: ""; margin: auto; }
   .tv-brand { top: 1.4em; font-size: 1.8em; }
   .tv-browse-top { padding-top: 0.8em; }
-  .tv-rail { padding-top: 4.2em; padding-bottom: 1.4em; }
+  /* (The menu's nine lines in the height of a phone held sideways: closer together, so that the last of them is on the screen too.) */
+  .tv-rail { gap: 0.2em; padding-top: 2.4em; padding-bottom: 1.2em; }
+  .tv-rail-item { padding-top: 0.35em; padding-bottom: 0.35em; }
   .tv-hero { height: 13em; }
   .tv-hero-about { display: none; }
   .tv-detail-text { padding-bottom: 1.6em; }
@@ -1956,6 +1958,12 @@
   .tv-key-wide { font-size: 1.3em; }
   .tv-end { padding-top: 3em; padding-bottom: 1.4em; gap: 1em; }
   .tv-end-tile { max-width: 8em; }
+}
+
+/* ...and a smaller phone held sideways (320 high): the menu's lines closer still. */
+@media (max-height: 360px) {
+  .tv-rail { gap: 0; padding-top: 1.2em; padding-bottom: 0.8em; }
+  .tv-rail-item { padding-top: 0.2em; padding-bottom: 0.2em; font-size: 1.45em; }
 }
 
 /* ...and a short screen that is also wide (a phone sideways) still has the room for things to sit side by side. */

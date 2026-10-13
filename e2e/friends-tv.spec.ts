@@ -179,6 +179,61 @@ test.describe("friends are optional on the TV", () => {
   });
 });
 
+test.describe("the profile's page, as what is on it changes under the remote", () => {
+  /** What another screen of the profile does: it puts a setting on the server, as a screen does, and this one takes it in when it looks. */
+  const elsewhere = async (page: Page, friends: boolean) => {
+    await seed(page, { settings: [{ key: "friends", at: Date.now(), value: friends }] });
+    await look(page);
+  };
+  const places = (page: Page) => page.getByTestId("tv-category-tile").evaluateAll((all) => all.map((one) => one.getAttribute("data-entry")));
+  const meta = (page: Page) => page.getByTestId("tv-hero").locator(".tv-hero-meta");
+
+  test("the remote comes back from the settings to Settings, though a place has appeared before it in the meantime", async ({ browser }) => {
+    const ann = await signedInScreen(browser, "Ann");
+    await openProfilePage(ann.page);
+    expect(await places(ann.page)).toEqual(["profile:ratings", "profile:history", "profile:settings"]);
+    await ann.page.keyboard.press("ArrowRight");
+    await ann.page.keyboard.press("ArrowRight");
+    await expect(place(ann.page, "settings")).toBeFocused();
+    await ann.page.keyboard.press("Enter");
+    await expect(ann.page.getByTestId("tv-account")).toBeVisible();
+
+    await elsewhere(ann.page, true); // (a phone of Ann's switches them on: Friends comes in before History and Settings)
+    await expect(ann.page.getByTestId("tv-friends-switch")).toHaveAttribute("aria-checked", "true");
+    await ann.page.keyboard.press("Escape");
+    await expect(view(ann.page)).toHaveAttribute("data-view", "profile");
+    expect(await places(ann.page)).toEqual(["profile:ratings", "profile:friends", "profile:history", "profile:settings"]);
+    await expect(place(ann.page, "settings")).toBeFocused(); // (not History, which is in the column Settings was in)
+  });
+
+  test("the remote is not lost when the place it is on goes: it stands where that was, and OK answers", async ({ browser }) => {
+    const ann = await screenWithFriends(browser, "Ann");
+    await expect(place(ann.page, "settings")).toBeFocused(); // (back from the settings it was chosen in)
+    await ann.page.keyboard.press("ArrowLeft");
+    await ann.page.keyboard.press("ArrowLeft");
+    await expect(place(ann.page, "friends")).toBeFocused();
+
+    await elsewhere(ann.page, false); // (switched off on a phone, with the remote on Friends)
+    await expect(place(ann.page, "friends")).toHaveCount(0);
+    await expect(place(ann.page, "history")).toBeFocused(); // (the place that is now where Friends was)
+    await ann.page.keyboard.press("Enter");
+    await expect(view(ann.page)).toHaveAttribute("data-view", "history");
+  });
+
+  test("the banner says how the place under the remote stands now, not as it stood when the remote came to it", async ({ browser }) => {
+    const ann = await signedInScreen(browser, "Ann");
+    await openProfilePage(ann.page);
+    await expect(place(ann.page, "ratings")).toBeFocused();
+    await expect(meta(ann.page)).toHaveText("The titles and seasons you gave a score.");
+
+    await seed(ann.page, { ratings: filmCards().ratings }); // (a score given on another screen)
+    await look(ann.page);
+    await expect(place(ann.page, "ratings")).toContainText("1 rating · average 8");
+    await expect(meta(ann.page)).toHaveText("1 rating · average 8");
+    await expect(place(ann.page, "ratings")).toBeFocused(); // (and the remote has not moved)
+  });
+});
+
 test.describe("making friends on the TV", () => {
   test("a code one screen shows and another types makes them friends; the page that showed it closes by itself, and a code works once", async ({ browser }) => {
     test.setTimeout(150_000);
