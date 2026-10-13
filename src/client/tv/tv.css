@@ -1686,6 +1686,12 @@
 .tv-party-side .tv-party-members { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 0.5em; }
 .tv-party-side .tv-party-member { font-size: 1.5em; }
 .tv-party-side .tv-hint { font-size: 1.3em; }
+/* Choosing the friends to invite, inside the panel: the friends in a list that scrolls, then Send and Cancel (Send says it cannot with its looks, since a disabled button would stop the remote). */
+.tv-party-pick { display: flex; flex-direction: column; gap: 1em; }
+.tv-party-pick .tv-opts { max-height: min(24em, 34vh); }
+.tv-party-pick-problem { color: #ffb4b4; }
+.tv-opt[aria-disabled="true"] { opacity: 0.4; }
+.tv-opt[aria-disabled="true"]:hover { background: rgba(255, 255, 255, 0.06); }
 
 /* A press is felt: whatever answers a click sinks a little while it is held (after every focus rule, so it wins over the focus ring's growth). */
 .tv-tile:active, .tv-tile-category:active, .tv-end-tile:active, .tv-ep:active, .tv-rail-item:active, .tv-btn:active, .tv-action:active, .tv-hero-button:active, .tv-choice:active,

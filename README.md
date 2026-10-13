@@ -288,7 +288,8 @@ is watching on it, or else by its own name ("TV 3F2A"). Ways in:
   on the button that ends the party). The screen shows a
   6-digit code, a QR code and the address, and the invitation as a **link with a Copy link button beside it** (a click, or OK from the remote: it says *Link copied*),
   to paste into somebody's chat; on another screen choose **Watch party → Join a party** and type the code with the remote's
-  number keys (the on-screen pad works too).
+  number keys (the on-screen pad works too). With friends on, the party's page and the panel over a film both have **Invite friends**, which tells
+  the friends chosen (a friend who is the only one is chosen already; Back from the list of friends goes back to the party).
 - **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with the link and a **Copy link** button (and a **Share link** button where the browser can share), and
   lists who is in (the host's phone can send any guest away, or end the party). Typing the pairing code that another TV shows into the phone
   still works; a party's own code typed there is told apart from a wrong one (`ADD_PARTY_CODE`: the phone is told what the code is for, and it

@@ -3,7 +3,7 @@ import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
-import { openLibrary, test, withLibrary } from "./helpers";
+import { openLibrary, test, tvRoot, withLibrary } from "./helpers";
 
 /**
  * Friends, on the TV: switched on in the settings of the account, then a menu line of their own with the friends' page (invitations to
@@ -479,6 +479,124 @@ test.describe("sending things to friends from the TV", () => {
     await expect(bob.page.getByTestId("tv-party-digits")).toBeVisible();
     await expect(bob.page.getByTestId("tv-party-digits").locator('[data-filled="true"]')).toHaveCount(0);
     await expect(ann.page.getByTestId("tv-party-member")).toHaveCount(1);
+  });
+
+  /** A screen that plays the first film of its library and has the party's panel open over it (Start is not pressed yet). */
+  async function panelOverFilm(screen: Screen) {
+    const page = screen.page;
+    await page.getByTestId("rail-home").click();
+    await tile(page, "Alpha Film").click();
+    await page.getByTestId("tv-detail-play").click();
+    await expect(tvRoot(page)).toHaveAttribute("data-state", "playing");
+    await page.mouse.move(60, 60); // wakes the controls
+    await page.getByTestId("tv-party-btn").click();
+    await expect(page.getByTestId("tv-party-panel")).toBeVisible();
+  }
+
+  test("the panel over a film has Invite friends too: it opens a page of the friends in the panel, Back goes to the panel, and a friend's screen joins from the invitation", async ({ browser, baseURL }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann", { library: films(baseURL!) });
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    const page = ann.page;
+    const panel = page.getByTestId("tv-party-panel");
+    const invite = page.getByTestId("tv-party-invite-friends");
+
+    // (a party has no code to tell before it is started)
+    await panelOverFilm(ann);
+    await expect(invite).toHaveCount(0);
+    await page.getByTestId("tv-party-start").click();
+    await expect(page.getByTestId("tv-party-code")).toBeVisible();
+    await expect(page.getByTestId("tv-party-done")).toBeFocused();
+
+    // The remote: Down from Done, OK; she is the only friend, so she is picked already. Back is the panel's, with the remote on the button that went.
+    await page.keyboard.press("ArrowDown");
+    await expect(invite).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("tv-friend-picker")).toBeVisible();
+    await expect(panel.locator("h2")).toHaveText("Invite friends");
+    await expect(page.getByTestId("tv-party-code")).toHaveCount(0);
+    await expect(page.getByTestId("tv-friend-pick")).toBeFocused();
+    await expect(page.getByTestId("tv-friend-pick")).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("tv-friend-picker")).toHaveCount(0);
+    await expect(panel.locator("h2")).toHaveText("Watch party");
+    await expect(invite).toBeFocused();
+    await page.keyboard.press("Escape"); // and the next Back closes the panel itself
+    await expect(panel).toHaveCount(0);
+
+    // Send: the panel is back, over the toast that says who was told, and the remote is on Invite friends again.
+    await page.mouse.move(80, 80);
+    await page.getByTestId("tv-party-btn").click();
+    await invite.click();
+    await page.getByTestId("tv-friend-send").click();
+    await expect(page.getByTestId("tv-account-toast")).toContainText(`Invited ${bob.name}`);
+    await expect(page.getByTestId("tv-friend-picker")).toHaveCount(0);
+    await expect(panel).toBeVisible();
+    await expect(page.getByTestId("tv-party-code")).toBeVisible();
+    await expect(invite).toBeFocused();
+
+    // Bob's page of friends has a row for it, and pressing it joins the party the film plays in
+    await look(bob.page);
+    const invitation = tile(bob.page, `${ann.name}'s party`);
+    await expect(invitation).toBeVisible();
+    await invitation.click();
+    await expect(tvRoot(bob.page)).toHaveAttribute("data-state", /playing|paused/, { timeout: 15_000 });
+    await expect(bob.page.getByTestId("tv-follow-bar")).toBeVisible();
+    await expect(page.getByTestId("tv-party-member")).toHaveCount(2);
+  });
+
+  test("with several friends none is picked yet: Send does nothing until one is, and only the ones picked are told", async ({ browser, baseURL }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { library: films(baseURL!) });
+    const bob = await screenWithFriends(browser, "Bob");
+    const cy = await screenWithFriends(browser, "Cy");
+    await meet(ann, bob);
+    await meet(ann, cy);
+    const page = ann.page;
+
+    await panelOverFilm(ann);
+    await page.getByTestId("tv-party-start").click();
+    await expect(page.getByTestId("tv-party-code")).toBeVisible();
+    await page.getByTestId("tv-party-invite-friends").click();
+    const picks = page.getByTestId("tv-friend-pick");
+    const send = page.getByTestId("tv-friend-send");
+    await expect(picks).toHaveCount(2);
+    await expect(picks.first()).toBeFocused();
+    await expect(page.locator('[data-testid="tv-friend-pick"][aria-pressed="true"]')).toHaveCount(0);
+    await expect(send).toHaveAttribute("aria-disabled", "true");
+    expect(await outsideTheScreen(page, "tv-party-panel")).toEqual([]);
+
+    // The remote walks the friends, then Send, then Cancel; OK on Send with nobody picked does nothing, and does not lose the remote's place.
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(send).toBeFocused();
+    const askedServer = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/friends/send"), { timeout: 1500 }).then(
+      () => true,
+      () => false,
+    );
+    await page.keyboard.press("Enter");
+    expect(await askedServer).toBe(false); // (the server would refuse an empty list with a line of its own: it is not even asked)
+    await expect(page.getByTestId("tv-friend-picker")).toBeVisible();
+    await expect(page.getByTestId("tv-account-toast")).toHaveCount(0);
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("tv-friend-cancel")).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+
+    // Cy is picked (a press picks, another takes the pick back), and only Cy gets the invitation
+    const cyPick = picks.filter({ hasText: cy.name });
+    await cyPick.click();
+    await expect(cyPick).toHaveAttribute("aria-pressed", "true");
+    await expect(send).toHaveAttribute("aria-disabled", "false");
+    await cyPick.click();
+    await expect(send).toHaveAttribute("aria-disabled", "true");
+    await cyPick.click();
+    await send.click();
+    await expect(page.getByTestId("tv-account-toast")).toContainText(`Invited ${cy.name}`);
+    await look(cy.page);
+    await expect(tile(cy.page, `${ann.name}'s party`)).toBeVisible();
+    await look(bob.page);
+    await expect(tile(bob.page, `${ann.name}'s party`)).toHaveCount(0);
   });
 
   test("a friend who is not taking things is not offered, and the page says why", async ({ browser, baseURL }) => {

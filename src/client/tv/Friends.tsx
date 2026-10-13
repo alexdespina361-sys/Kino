@@ -21,10 +21,11 @@ import "./friends.css";
 /* ------------------------------ sending to friends ------------------------------ */
 
 /**
- * Choose the friends a title, or an invitation to a watch party, goes to. Only friends who take things are offered, and with just
- * one she is chosen already; the server has the last word on who gets it.
+ * Choosing the friends a title, or an invitation to a watch party, goes to, and sending it: what the page below and the panel over a film
+ * (Party.tsx) share. Only friends who take things are offered, and with just one she is chosen already; the server has the last word on
+ * who gets it. `said` is what is told when it has gone.
  */
-export function FriendPickerTv({ title, lead, build, said, onClose }: { title: string; lead: string; build: () => Message; /** What is said when it has gone. */ said: "friends.sent" | "friends.inviteSent"; onClose: () => void }) {
+export function useFriendPicker({ build, said, onClose }: { build: () => Message; said: "friends.sent" | "friends.inviteSent"; onClose: () => void }) {
   const t = useT();
   const account = useAccount();
   const friends = useFriends();
@@ -58,6 +59,14 @@ export function FriendPickerTv({ title, lead, build, said, onClose }: { title: s
       setBusy(false);
     }
   };
+
+  return { all, takers, picked, busy, problem, toggle, send };
+}
+
+/** The page that chooses the friends a title, or an invitation to a watch party, goes to. */
+export function FriendPickerTv({ title, lead, build, said, onClose }: { title: string; lead: string; build: () => Message; said: "friends.sent" | "friends.inviteSent"; onClose: () => void }) {
+  const t = useT();
+  const { all, takers, picked, busy, problem, toggle, send } = useFriendPicker({ build, said, onClose });
 
   return (
     <Screen testId="tv-friend-picker" compact focus onBack={onClose}>

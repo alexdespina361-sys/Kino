@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { PartyView } from "../../shared";
+import type { Message, PartyView } from "../../shared";
 import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
 import { CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
-import { BackspaceIcon, CheckIcon, CloseIcon, FullscreenIcon, UsersIcon } from "../shared/icons";
+import { BackspaceIcon, CheckIcon, CloseIcon, FullscreenIcon, PlusIcon, UsersIcon } from "../shared/icons";
 import { partyLink } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
-import { FriendPickerTv } from "./Friends";
+import { FriendPickerTv, useFriendPicker } from "./Friends";
 import { Screen } from "./Idle";
 
 /** How a button joins the remote's arrow keys: the pages use `data-nav`, the panel over a film `data-opt` in a column (see dpad.ts and Menu.tsx). */
@@ -16,6 +16,8 @@ const PAGE_NAV: Nav = { "data-nav": true };
 const PANEL_NAV: Nav = { "data-opt": true, "data-col": 1 };
 /** The panel's left column, where the invite is, comes before the one with the members and the way out. */
 const PANEL_INVITE_NAV: Nav = { "data-opt": true, "data-col": 0 };
+/** The panel's page for choosing friends is a single column of its own. */
+const PANEL_PICK_NAV: Nav = { "data-opt": true, "data-col": 0 };
 
 /** Who is in the party, the host first. The host can send a guest away; a screen that is gone from the network is dimmed. */
 function Members({ party, nav, onRemove }: { party: PartyView; nav: Nav; onRemove?: (id: string) => void }) {
@@ -290,10 +292,72 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
   );
 }
 
+/**
+ * The panel's page for choosing the friends to tell about the party: the friends are options of one column, which the remote walks like the
+ * rest of the panel (a button that is `disabled` would stop it, so Send only says `aria-disabled`), then Send and Cancel.
+ */
+function InvitePicker({ build, onClose }: { build: () => Message; onClose: () => void }) {
+  const t = useT();
+  const { all, takers, picked, busy, problem, toggle, send } = useFriendPicker({ build, said: "friends.inviteSent", onClose });
+  const cannotSend = busy || picked.size === 0;
+
+  if (takers.length === 0) {
+    return (
+      <div className="tv-party-pick" data-testid="tv-friend-picker">
+        <p className="tv-hint" data-testid="tv-friend-picker-none">
+          {all.length === 0 ? t("friends.noFriends") : t("friends.nobody")}
+        </p>
+        <button className="tv-opt" onClick={onClose} data-testid="tv-friend-cancel" data-autofocus {...PANEL_PICK_NAV}>
+          <span>{t("common.done")}</span>
+          <CheckIcon />
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="tv-party-pick" data-testid="tv-friend-picker">
+      <div className="tv-opts" role="group" aria-label={t("friends.inviteFriends")}>
+        {takers.map((friend, index) => (
+          <button
+            key={friend.id}
+            className="tv-opt"
+            aria-pressed={picked.has(friend.id)}
+            data-active={picked.has(friend.id)}
+            onClick={() => toggle(friend.id)}
+            data-testid="tv-friend-pick"
+            data-friend={friend.id}
+            {...(index === 0 ? { "data-autofocus": true } : {})}
+            {...PANEL_PICK_NAV}
+          >
+            <span>{friend.name}</span>
+            {picked.has(friend.id) ? <CheckIcon /> : <PlusIcon />}
+          </button>
+        ))}
+      </div>
+      {problem && (
+        <p className="tv-hint tv-party-pick-problem" role="alert">
+          {problem}
+        </p>
+      )}
+      <button className="tv-opt" aria-disabled={cannotSend} onClick={() => !cannotSend && void send()} data-testid="tv-friend-send" {...PANEL_PICK_NAV}>
+        <span>{t("friends.send")}</span>
+      </button>
+      <button className="tv-opt" onClick={onClose} data-testid="tv-friend-cancel" {...PANEL_PICK_NAV}>
+        <span>{t("common.cancel")}</span>
+      </button>
+    </div>
+  );
+}
+
 interface PanelProps {
   party: PartyView | null;
   following: string | null;
   rootRef: RefObject<HTMLDivElement | null>;
+  /** Whether the panel is on its page for choosing the friends to invite (Back from there is the party's, see Tv.tsx). */
+  inviting: boolean;
+  /** The moment the code of the party this screen hosts stops working (see PageProps). */
+  codeEndsAt?: number | null;
+  onInviting: (on: boolean) => void;
   onClose: () => void;
   onStart: () => void;
   onRemove: (id: string) => void;
@@ -301,10 +365,23 @@ interface PanelProps {
   onLeave: () => void;
 }
 
-/** The watch party over a film: start one, see who is in it and how to join, end it or leave it. Looks and walks like the other pickers (Menu.tsx). */
+/** The watch party over a film: start one, see who is in it and how to join, invite friends, end it or leave it. Looks and walks like the other pickers (Menu.tsx). */
 export function PartyPanel(p: PanelProps) {
   const t = useT();
+  const friends = useFriends();
   const host = p.party?.role === "host";
+  const code = p.party?.code;
+  /** Friends can be told while the party has a code to join with, which only the host's screen knows. */
+  const canInvite = host && friends.on && Boolean(code);
+  const picking = p.inviting && canInvite;
+
+  // Back from choosing friends lands on the button that went there.
+  const inviteRef = useRef<HTMLButtonElement>(null);
+  const wasPicking = useRef(false);
+  useEffect(() => {
+    if (wasPicking.current && !picking) inviteRef.current?.focus();
+    wasPicking.current = picking;
+  }, [picking]);
 
   // What was focused may be gone (Start becomes the code, a guest left): land on Done, or on the first thing that is there.
   // Never on a button that ends the party or sends somebody away: OK on a panel that has only just opened must not do that.
@@ -327,17 +404,21 @@ export function PartyPanel(p: PanelProps) {
         aria-label={t("party.rail")}
         data-testid="tv-party-panel"
         data-kind="party"
-        data-cols={host ? 2 : 1}
+        data-cols={host && !picking ? 2 : 1}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="tv-menu-top">
-          <h2>{t("party.rail")}</h2>
+          <h2>{picking ? t("friends.inviteFriends") : t("party.rail")}</h2>
           <button className="tv-btn tv-btn-icon" data-menu-close onClick={p.onClose} aria-label={t("common.close")} title={t("common.close")}>
             <CloseIcon />
           </button>
         </div>
 
-        {!p.party && !p.following && (
+        {picking && code && (
+          <InvitePicker build={() => ({ kind: "party", code: code.code, endsAt: p.codeEndsAt ?? Date.now() + code.expiresInMs })} onClose={() => p.onInviting(false)} />
+        )}
+
+        {!picking && !p.party && !p.following && (
           <div className="tv-party-start">
             <p>{t("party.overlayLead")}</p>
             <button className="tv-opt" onClick={p.onStart} data-testid="tv-party-start" {...PANEL_NAV}>
@@ -347,7 +428,7 @@ export function PartyPanel(p: PanelProps) {
           </div>
         )}
 
-        {p.party && (
+        {!picking && p.party && (
           <div className="tv-menu-cols">
             {host && (
               <div className="tv-menu-col tv-party-invite-col">
@@ -362,6 +443,12 @@ export function PartyPanel(p: PanelProps) {
                 <span>{t("common.done")}</span>
                 <CheckIcon />
               </button>
+              {canInvite && (
+                <button ref={inviteRef} className="tv-opt" onClick={() => p.onInviting(true)} data-testid="tv-party-invite-friends" {...PANEL_NAV}>
+                  <span>{t("friends.inviteFriends")}</span>
+                  <UsersIcon />
+                </button>
+              )}
               <button className="tv-opt" onClick={host ? p.onEnd : p.onLeave} data-testid={host ? "tv-party-end" : "tv-party-leave"} {...PANEL_NAV}>
                 <span>{host ? t("party.end") : t("party.leave")}</span>
               </button>

@@ -141,8 +141,8 @@ export function Tv() {
   /** The video played to its end (anything that moves the picture on clears it). With nothing following by itself, the end card is shown. */
   const [ended, setEnded] = useState(false);
 
-  // Audio / subtitles / speed / quality / episodes picker, and the watch party over a film
-  const [menu, setMenu] = useState<MenuKind | "party" | null>(null);
+  // Audio / subtitles / speed / quality / episodes picker, and the watch party over a film (with its page for choosing the friends to invite)
+  const [menu, setMenu] = useState<MenuKind | "party" | "partyInvite" | null>(null);
   /** The control that opened the menu, which gets the focus back when it closes, so Back never leaves the remote with nothing selected. */
   const openerRef = useRef<HTMLElement | null>(null);
   const openMenu = (kind: MenuKind | "party") => {
@@ -878,7 +878,11 @@ export function Tv() {
   }, [linkCode, unlocked, connection]);
 
   // The code that lets others into a party lasts ten minutes. While it is on screen it is renewed; a party nobody came to goes away with it.
-  const partyShown = menu === "party" || (screen === "party" && player.state === "idle");
+  const partyShown = menu === "party" || menu === "partyInvite" || (screen === "party" && player.state === "idle");
+  // The page for choosing friends belongs to a party this screen hosts, with a code to tell them: without that (the party ended) it is the panel again.
+  useEffect(() => {
+    if (menu === "partyInvite" && !(party?.role === "host" && party.code)) setMenu("party");
+  }, [menu, party]);
   useEffect(() => {
     if (party?.role !== "host") return;
     const left = partyEnds === null ? 0 : partyEnds - Date.now();
@@ -1013,7 +1017,7 @@ export function Tv() {
 
       if (menu) {
         // The picker owns the keys; OK presses the focused option itself.
-        if (action === "back") setMenu(menu === "captions" ? "tracks" : null); // the caption style is a page of the audio and subtitles menu
+        if (action === "back") setMenu(menu === "captions" ? "tracks" : menu === "partyInvite" ? "party" : null); // the caption style is a page of the audio and subtitles menu, the friends to invite a page of the party's
         else if (action === "up" || action === "down" || action === "left" || action === "right") moveInMenu(menuRef.current, action);
         else return;
         event.preventDefault();
@@ -1403,11 +1407,14 @@ export function Tv() {
         />
       )}
 
-      {unlocked && showVideo && menu === "party" && (
+      {unlocked && showVideo && (menu === "party" || menu === "partyInvite") && (
         <PartyPanel
           party={party}
           following={following}
           rootRef={menuRef}
+          inviting={menu === "partyInvite"}
+          codeEndsAt={partyEnds}
+          onInviting={(on) => setMenu(on ? "partyInvite" : "party")}
           onClose={() => setMenu(null)}
           onStart={startParty}
           onRemove={removeFromParty}
@@ -1416,7 +1423,7 @@ export function Tv() {
         />
       )}
 
-      {unlocked && showVideo && menu && menu !== "party" && (
+      {unlocked && showVideo && menu && menu !== "party" && menu !== "partyInvite" && (
         <TvMenu
           kind={menu}
           player={player}
