@@ -120,7 +120,7 @@ for (const page of pages) {
       if (element.contrast < need) problems.contrast.push({ picture: where, element: describe(element), ratio: element.contrast, need, fg: element.fg, bg: element.bg });
     }
     if (control) {
-      const side = Math.min(element.w, element.h);
+      const side = Math.min(...(element.hit ?? [element.w, element.h])); // (a halo past the drawing counts: it is what a finger lands on)
       if (element.named === false) problems.unnamed.push({ picture: where, element: describe(element), size: `${element.w}x${element.h}` });
       if (side < 24) problems.tinyTarget.push({ picture: where, element: describe(element), size: `${element.w}x${element.h}` });
       else if (kind === "phone" && side < 44 && element.tag !== "a") problems.smallTarget.push({ picture: where, element: describe(element), size: `${element.w}x${element.h}` });

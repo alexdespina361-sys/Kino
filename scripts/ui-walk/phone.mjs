@@ -172,6 +172,39 @@ if (parts.has("guest")) {
     await snap(phone, device, "p15-menu-while-playing");
     await back(phone);
   });
+  await step(device, "p16-subtitles", async () => {
+    // (the made-up film has no subtitles: a title that has some is put on, as the TV says it, and the page is opened again on it)
+    await phone.evaluate(async () => {
+      const media = {
+        title: "The Long Night",
+        stream: { url: "/fixtures/sample.mp4", type: "mp4" },
+        subtitles: [
+          { id: "en", label: "English", lang: "en", url: "/fixtures/sample.vtt" },
+          { id: "nl", label: "Dutch", lang: "nl", url: "/fixtures/sample.vtt" },
+          { id: "ro", label: "Romanian", lang: "ro", url: "/fixtures/sample.vtt" },
+        ],
+      };
+      const socket = new WebSocket(`ws://${location.host}/ws`);
+      await new Promise((resolve) => (socket.onopen = resolve));
+      socket.send(JSON.stringify({ type: "CTL_HELLO", controllerId: localStorage.getItem("controller.id") }));
+      socket.send(JSON.stringify({ type: "CMD", command: { type: "LOAD", media } }));
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      socket.close();
+    });
+    await phone.reload();
+    await phone.getByTestId("media-title").waitFor({ timeout: 15_000 });
+    await wait(800);
+    await phone.getByTestId("chip-tracks").click({ timeout: 5_000 });
+    await phone.getByTestId("tracks-sheet").waitFor();
+    await snap(phone, device, "p16-tracks-sheet");
+    await phone.getByTestId("subtitle-0").click();
+    await wait(300);
+    await phone.getByTestId("open-caption-style").click();
+    await phone.getByTestId("captions-sheet").waitFor();
+    await snapScrolled(phone, '[data-testid="captions-sheet"]', device, "p17-caption-style");
+    await back(phone);
+    await back(phone);
+  });
 }
 
 /* ------------------------------ signed in, with friends ------------------------------ */

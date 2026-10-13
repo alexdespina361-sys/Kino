@@ -476,7 +476,7 @@ export function Controller() {
     return (
       <>
         <ChooseProfile />
-        {accountLayer}
+        <div className="phone-ui layers">{accountLayer}</div>
       </>
     );
   }
@@ -507,9 +507,11 @@ export function Controller() {
             </>
           }
         />
-        {tvsSheet}
-        {accountLayer}
-        {titleSheets}
+        <div className="phone-ui layers">
+          {tvsSheet}
+          {accountLayer}
+          {titleSheets}
+        </div>
       </>
     );
   }
@@ -541,7 +543,7 @@ export function Controller() {
   );
 
   return (
-    <main className="phone">
+    <main className="phone phone-ui">
       {accountLayer}
       <header className="top">
         <div className="top-tv">

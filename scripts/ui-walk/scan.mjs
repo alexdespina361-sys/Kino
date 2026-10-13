@@ -147,6 +147,18 @@ function inPage(limit) {
     if (style.position === "fixed" || style.position === "sticky") record.position = style.position;
     if (style.zIndex !== "auto") record.z = style.zIndex;
     if (kinds.includes("control")) {
+      // a hit area that reaches past the drawing (a ::before or ::after with negative insets: the halo of a small button) is what a finger can land on
+      const reach = { l: 0, r: 0, t: 0, b: 0 };
+      for (const which of ["::before", "::after"]) {
+        const pseudo = getComputedStyle(element, which);
+        if (pseudo.content === "none" || pseudo.position !== "absolute") continue;
+        const past = (value) => Math.max(0, -(parseFloat(value) || 0)); // (auto is no reach)
+        reach.l = Math.max(reach.l, past(pseudo.left));
+        reach.r = Math.max(reach.r, past(pseudo.right));
+        reach.t = Math.max(reach.t, past(pseudo.top));
+        reach.b = Math.max(reach.b, past(pseudo.bottom));
+      }
+      if (reach.l + reach.r + reach.t + reach.b > 0.5) record.hit = [Math.round(rect.width + reach.l + reach.r), Math.round(rect.height + reach.t + reach.b)];
       record.cursor = style.cursor !== "auto" ? style.cursor : undefined;
       record.named = !!(element.getAttribute("aria-label") || element.getAttribute("aria-labelledby") || (element.textContent || "").trim() || element.getAttribute("title") || element.getAttribute("alt"));
       const tabindex = element.getAttribute("tabindex");

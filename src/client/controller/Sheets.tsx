@@ -273,33 +273,38 @@ export function CaptionStyleSheet({
   const current = resolveCaptionStyle(style);
   return (
     <Sheet title={t("player.captionStyle")} onClose={onClose} testId="captions-sheet">
-      <div className="cap-frame" aria-hidden="true" data-testid="caption-preview">
-        <span className="cap-sample" style={{ ...captionTextStyle(current, "cqh"), bottom: captionBottom(current, "cqh") }}>
-          {t("player.sample")}
-        </span>
+      {/* (held sideways, the picture stays on one side while the choices scroll on the other: see the style sheets) */}
+      <div className="cap-layout">
+        <div className="cap-frame" aria-hidden="true" data-testid="caption-preview">
+          <span className="cap-sample" style={{ ...captionTextStyle(current, "cqh"), bottom: captionBottom(current, "cqh") }}>
+            {t("player.sample")}
+          </span>
+        </div>
+        <div className="cap-controls">
+          {CAPTION_SETTINGS.map((setting) => (
+            <section key={setting} className="cap-setting">
+              <h3 className="sheet-section">{captionTitle(setting)}</h3>
+              <div className="cap-choices" role="radiogroup" aria-label={captionTitle(setting)}>
+                {CAPTION_VALUES[setting].map((value) => (
+                  <button
+                    key={value}
+                    role="radio"
+                    aria-checked={current[setting] === value}
+                    className={`cap-choice ${current[setting] === value ? "active" : ""}`}
+                    data-testid={`caption-${setting}-${value}`}
+                    onClick={() => onChange({ [setting]: value })}
+                  >
+                    {captionLabel(setting, value as never)}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+          <button className="btn btn-block" data-testid="caption-reset" onClick={() => onChange(DEFAULT_CAPTION_STYLE)}>
+            {t("player.styleDefault")}
+          </button>
+        </div>
       </div>
-      {CAPTION_SETTINGS.map((setting) => (
-        <section key={setting} className="cap-setting">
-          <h3 className="sheet-section">{captionTitle(setting)}</h3>
-          <div className="cap-choices" role="radiogroup" aria-label={captionTitle(setting)}>
-            {CAPTION_VALUES[setting].map((value) => (
-              <button
-                key={value}
-                role="radio"
-                aria-checked={current[setting] === value}
-                className={`cap-choice ${current[setting] === value ? "active" : ""}`}
-                data-testid={`caption-${setting}-${value}`}
-                onClick={() => onChange({ [setting]: value })}
-              >
-                {captionLabel(setting, value as never)}
-              </button>
-            ))}
-          </div>
-        </section>
-      ))}
-      <button className="btn btn-block" data-testid="caption-reset" onClick={() => onChange(DEFAULT_CAPTION_STYLE)}>
-        {t("player.styleDefault")}
-      </button>
     </Sheet>
   );
 }

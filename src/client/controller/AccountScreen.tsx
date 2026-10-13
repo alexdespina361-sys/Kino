@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -20,7 +20,12 @@ import { sheetIsOpen } from "./Sheet";
 /** A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. */
 export function Page({ title, onBack, children, testId }: { title: string; onBack: () => void; children: ReactNode; testId?: string }) {
   const t = useT();
+  const body = useRef<HTMLDivElement>(null);
   useBackToClose(onBack); // (the phone's own Back goes back a page too, instead of leaving the site)
+  // (one page is the next one in the same place: what was scrolled in the one before is not where the next begins)
+  useLayoutEffect(() => {
+    body.current?.scrollTo(0, 0);
+  }, [title]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => event.key === "Escape" && !sheetIsOpen() && onBack();
     window.addEventListener("keydown", onKey);
@@ -34,7 +39,9 @@ export function Page({ title, onBack, children, testId }: { title: string; onBac
         </button>
         <h2>{title}</h2>
       </header>
-      <div className="page-body">{children}</div>
+      <div className="page-body" ref={body}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -219,7 +226,7 @@ export function AccountScreen({
   return (
     <Page title={t("account.title")} onBack={onClose} testId="account-screen">
       {me && profile ? (
-        <div className="page-stack">
+        <div className="page-stack account-hub">
           <section className="account-card" data-testid="account-card">
             <Avatar id={profile.avatar} className="account-avatar" />
             <div className="account-who">
@@ -251,7 +258,7 @@ export function AccountScreen({
       ) : me ? (
         <ProfileGrid profiles={me.profiles} onPick={(picked) => account.choose(picked.id)} />
       ) : (
-        <div className="page-stack">
+        <div className="page-stack account-guest">
           <section className="account-pitch">
             <Logo />
             <h1>{t("auth.pitch")}</h1>
@@ -277,7 +284,7 @@ export function ChooseProfile() {
   const [adding, setAdding] = useState(false);
   if (!account.me) return null;
   return (
-    <main className="phone choose" data-testid="choose-profile">
+    <main className="phone choose phone-ui" data-testid="choose-profile">
       <div className="brand">
         <Logo />
       </div>

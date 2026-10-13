@@ -12,6 +12,8 @@
   .phone { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 }
 .phone h1, .phone h2, .phone h3, .phone p { margin: 0; }
+/* Groups that exist for the refined look's layouts (polish/phone.css, a phone held sideways): here they are not boxes at all, their children are the page's own. */
+.remote, .remote-controls, .remote-extras, .pair-copy, .pair-actions, .title-top, .title-main, .cap-layout, .cap-controls, .layers { display: contents; }
 .muted { color: var(--muted); font-size: 0.95rem; line-height: 1.45; }
 .muted.small { font-size: 0.8rem; }
 .center { text-align: center; }
