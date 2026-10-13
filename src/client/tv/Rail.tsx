@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 
 /** One line of the library's menu. */
@@ -19,7 +19,11 @@ export interface RailEntry {
   onPress: () => void;
 }
 
-/** The menu down the left: a strip of icons that opens into names while the remote is on it. */
+/**
+ * The menu down the left: a strip of icons that opens into names while the remote is on it, or while a mouse rests on it (a press with
+ * the mouse takes no focus, so focus alone would open it only for as long as the button is held down). A click on a line goes there and
+ * shuts the menu, as a press of OK does; it opens again once the pointer has left and come back.
+ */
 export function Rail({
   open,
   onOpen,
@@ -32,21 +36,26 @@ export function Rail({
   onArrive: (element: HTMLElement) => void;
 }) {
   const t = useT();
+  const [resting, setResting] = useState(false);
+  const wide = open || resting;
   return (
     <nav
       className="tv-rail"
-      data-open={open}
+      data-open={wide}
       data-testid="tv-rail"
       aria-label={t("tv.menu")}
       onFocus={() => onOpen(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onOpen(false);
       }}
+      // (A finger on a touch screen is no pointer that rests: its tap takes the focus, and that opens the menu.)
+      onPointerEnter={(event) => event.pointerType !== "touch" && setResting(true)}
+      onPointerLeave={() => setResting(false)}
     >
       {entries.map((entry, row) =>
-        !open && !entry.icon ? null : (
+        !wide && !entry.icon ? null : (
           <Fragment key={entry.id}>
-            {open && entry.group && (
+            {wide && entry.group && (
               <p className="tv-rail-group" aria-hidden="true">
                 {entry.group}
               </p>
@@ -59,7 +68,10 @@ export function Rail({
               data-testid={entry.testId}
               data-badged={entry.badge || entry.lit ? "true" : undefined}
               aria-current={entry.current ? "page" : undefined}
-              onClick={entry.onPress}
+              onClick={() => {
+                setResting(false);
+                entry.onPress();
+              }}
               onFocus={(event) => onArrive(event.currentTarget)}
             >
               {entry.icon}

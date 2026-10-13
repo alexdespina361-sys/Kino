@@ -36,7 +36,8 @@ test.describe("a phone used as the screen", () => {
     expect(await columns(phone)).toBe(2);
     expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
 
-    // A tap opens a title's own page and Play there plays it; the first touch on hidden controls only brings them up, the next one pauses.
+    // A tap opens a title's own page and Play there plays it; a touch on the picture brings the controls up, the next one puts them away, and
+    // neither pauses the film: the big button in the middle does.
     await phone.getByTestId("tv-browse-tile").first().tap();
     await expect(phone.getByTestId("tv-detail")).toBeVisible();
     expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
@@ -46,8 +47,15 @@ test.describe("a phone used as the screen", () => {
     await phone.touchscreen.tap(195, 420);
     await expect(tvRoot(phone)).toHaveAttribute("data-hud", "visible");
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
-    await phone.touchscreen.tap(195, 420);
+    await phone.touchscreen.tap(195, 300); // (beside the button, which is where a thumb lands when it misses)
+    await expect(tvRoot(phone)).toHaveAttribute("data-hud", "hidden");
+    await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
+    await phone.touchscreen.tap(195, 300);
+    await expect(tvRoot(phone)).toHaveAttribute("data-hud", "visible");
+    await phone.getByTestId("tv-center-btn").tap();
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "paused");
+    await phone.getByTestId("tv-center-btn").tap();
+    await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
   });
 
   test("the pages that only a remote's arrow keys could leave have a Back button for a finger", async ({ browser }) => {
@@ -57,6 +65,18 @@ test.describe("a phone used as the screen", () => {
     await expect(phone.getByTestId("tv-account")).toBeVisible();
     await phone.getByTestId("tv-account-back").tap();
     await expect(phone.getByTestId("tv-browse")).toBeVisible();
+  });
+
+  test("a finger gets no corner buttons on the titles (a title's own page keeps and clears them), and a tap on the menu's icons still goes there", async ({ browser }) => {
+    const phone = await openDevice(browser, PHONE, {}, withFilms);
+    await phone.goto("/tv");
+    await expect(phone.getByTestId("tv-browse-tile").first()).toBeVisible();
+    await expect(phone.getByTestId("tv-tile-corner")).not.toHaveCount(0); // they are on the page, for a mouse...
+    await expect(phone.getByTestId("tv-tile-corner").first()).toBeHidden(); // ...and not on a touch screen
+
+    await phone.getByTestId("rail-search").tap();
+    await expect(phone.getByTestId("tv-browse")).toHaveAttribute("data-view", "search");
+    await expect(phone.getByTestId("tv-rail")).toHaveAttribute("data-open", "false");
   });
 
   test("the menu's phone entry makes a phone the remote, where a TV's would show the code to type on one", async ({ browser }) => {

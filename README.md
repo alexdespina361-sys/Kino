@@ -64,6 +64,38 @@ pnpm build && pnpm start     # http://localhost:8787
   next episode of a show once one is finished), **lists** (every profile has one called **Favourites**, and can make others and name them,
   up to twelve in all; a title can be in several), the watched marks on episode lists, and the profile's settings. Open the app
   on another phone, TV or browser, sign in, pick the profile, and it carries on from the same second.
+- **Ratings.** A film, a show or **one season of a show** can be given a score from 1 to 10, each with a word (1 *Appalling*, 5 *Average*, 8 *Very
+  good*, 10 *Masterpiece*), and **a score is all it takes**: one tap on the phone (the *Your rating* line on a title's page, and under a show's season tabs a
+  line for the season shown), or OK on a number on the TV (**Rate** on a title's page, with the remote already on 7). A note saying why is optional: typed
+  on the phone (kept as it is typed), and on the TV with the keys of a page of its own. The rating also **writes down the watching behind it**, with no
+  work from the person: *when it was rated*, *how much was watched* (**from 95% on it counts as all of it**, since the credits are often skipped; a
+  show or a season is counted in episodes, "2 of 3 episodes watched") and *when it was finished* (or last watched). Watching it again later adds to that;
+  rating it again changes the day it was rated only when the score changes. **My ratings** is a row on the phone's home screen with a page of its own
+  (*See all*: newest first or highest first, with the notes and those facts, and the mean) and an entry in the TV's menu. Ratings are saved to the
+  profile and synced like the lists (up to 500; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
+  and TV) switches the whole thing off, every sign of it, and keeps what was rated.
+- **Friends** are optional and **off until a profile turns them on** in its settings (phone and TV; they belong to an account, so a guest is told to sign in).
+  Two profiles become friends with a code (`ABCD-2345`, good once and for a week) that one gives and the other types or opens as a link: the phone shows it
+  with a QR code and a link to send, the TV with a QR code (up to 5 codes can be out at once; one can be taken back). A friend can **look at your lists and
+  ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone), **be invited to a
+  watch party** (a button that joins on the phone; on the TV, pressing the invitation on the Friends page joins) and **hear what you watch** ("Sam is watching
+  Alien", from a minute in, the last two weeks). Each of these has a switch of its own: *Friends can see my lists*, *…my ratings*, *Tell friends what I watch*,
+  *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*. They live in the
+  profile's settings, so the server, not the screen, decides what a friend is shown or may send, from the other profile's synced settings; with friends off nothing is
+  shared, sent or received, and the friends are kept for when it is turned on again (turning it on again **resumes sharing with them at once**, so a friend you
+  mean to be rid of is removed first: with friends off, *Settings → Friends* on the phone lists the friends you still have, each with a button that removes them,
+  and nothing has to be turned on for it). What friends sent shows as a row, a dot (phone) or a number on the menu (TV), and a
+  line when it arrives; either friend can remove the other (the button asks twice), which also takes back the codes the one who removed had out, so that a code the
+  other was shown cannot bring them back. Friends: `/api/profiles/:id/friends…`.
+  Things to know: *Friends can see my ratings* does nothing, and is not shown, while ratings themselves are switched off (they stay kept, and are seen by nobody).
+  What friends send is made fit to show (no characters that turn text around or hide in it; a friend's picture is shown only if it is the address of some other
+  web site, never a path, an address on this site or one that only a private network answers to, such as `localhost` or `192.168.x.x`), and an inbox holds the newest 100 things, at most 20 from one friend; the same title sent again while it is
+  unread is not announced again. **Pictures are loaded by the browser of whoever looks, from wherever the sender says**, so the site that serves one can tell that
+  somebody opened it, as with any picture on the web. **What you watch, when you tell it, includes the address of the video** (a link pasted on the phone is the
+  address a friend would open): leave *Tell friends what I watch* off if you play links that carry a secret. The first profile of an account is named after
+  its username, and a friend (or whoever is shown one of your codes) sees that name: with an empty or one-letter password, rename it. A TV left open from before a
+  version that adds a setting needs a reload once (an older page does not know the new setting and cannot read the account's answer; newer pages leave such
+  settings out instead).
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.
@@ -76,10 +108,10 @@ pnpm build && pnpm start     # http://localhost:8787
   until a signed-in person says yes. A screen that is signed in itself can do the asking too (a computer with no phone at hand): its account
   page has **Sign in another device**: type the code the other screen shows, check who is asking, approve.
 - The phone's account page: profiles, settings, devices (sign others out, and give a device a name of its own: "Living room"), password, delete account. The TV has its own: who's watching,
-  **Manage profiles**, and the settings (language, colour, autoplay). The subtitle languages, the devices, the password and deleting the
-  account are on the phone's page only.
+  **Manage profiles**, and the settings (language, colour, autoplay, what a tap on the picture does, ratings, friends). The subtitle languages, the devices, the password and deleting the
+  account, and the box for pasting a link, are on the phone's page only.
 - **Settings per profile:** website language, accent colour (the red can be any of several colours), whether the next episode follows by
-  itself, and the subtitle languages (below).
+  itself, whether a tap or click on the picture pauses it (below), whether titles can be rated, friends and what they may do, and the subtitle languages (below).
 
 **Phone**
 - Pair by QR scan (camera) or by code; a QR link opened from the phone's camera app pairs by itself. A phone that already has a TV is asked
@@ -105,8 +137,9 @@ pnpm build && pnpm start     # http://localhost:8787
   time with the next one showing at the edge: a tap picks one up where it stopped, the **+** on it puts the title in a list and the **×** takes it off the
   row. (One card per show and per profile. A guest's cards stay on the screen they were made on; signed in on both, the phone and the TV show the same ones.)
   The search lists what it finds one under another, and is still there (the words, the filter, the list, the place in it) after something is played and stopped
-- **The box for pasting a link is off** on a new phone, since most of what is played comes from the library. The phone's menu has a switch that brings
-  it back (kept on that phone); it is there whatever the switch says while the library has nothing to show, as the only way to start anything.
+- **The box for pasting a link is off** on a new phone, since most of what is played comes from the library. A switch brings it back, in the phone's
+  menu and in **Settings → Paste a link** (one choice with two places, kept on that phone); it is there whatever the switch says while the library has
+  nothing to show, as the only way to start anything.
   Opening the phone page as `/?url=<link>` plays that link once connected (the hook for a share button)
 - **Lists on the phone.** The round **+** on a title saves it in Favourites (and takes it out again), and so does holding the title (a line at
   the bottom says "Added to Favourites", the + being a corner away from the finger); once there
@@ -120,10 +153,21 @@ pnpm build && pnpm start     # http://localhost:8787
   subtitle style, full screen, stop, disconnect (volume is the TV's own). It confirms what the TV did ("Speed 1.5×") in a line at the bottom
 
 **TV**
-- Clean player with a fading HUD (title, clock, "ends at", seek bar with a time tooltip on hover, buffering spinner, big play/pause). Paused, the
-  title steps out of the corner and is said once, large, on the left ("You're watching …"); a skip flashes on the side it went towards; and
+- Clean player with a fading HUD (title, and for an episode its numbers and **its name** when the library or the source has one besides the number,
+  clock, "ends at", seek bar with a time tooltip on hover, buffering spinner, a big play/pause button in the middle). Paused, the
+  title steps out of the corner and is said once, large, on the left ("You're watching …", the episode's name under it); a skip flashes on the side it went towards; and
   the Up Next card comes with 15 seconds left of an episode of more than 30 seconds. It counts down only for a profile that plays the next
   episode by itself, the count waits while the picture is held, and winding back takes the card away
+- **The picture under a hand or a mouse** (`src/client/tv/gestures.ts`). **A tap or a click on the picture only shows or hides the controls**; it does
+  not pause. What pauses is the bar's button, the big one in the middle (about a seventh of the screen's width, shown while paused, and for a finger while
+  the picture plays), and OK on a remote, which is a key and is not changed by any of this. A remote that points (an LG Magic Remote) clicks like a mouse,
+  so the profile has a switch, **Tap or click the picture to pause and play** (Settings, phone and TV; off to begin with), that gives the old behaviour
+  back: then a click pauses and plays, and a finger on controls that are away only brings them up. For a finger, besides: **double-tap the left or right
+  side** of the picture (the left and the right two fifths of it) to skip 10 s back or forward, with no controls brought up and "+10s" flashed on that
+  side; each further tap on the same side within 0.8 s skips again, and the flashes add up ("+30s"); **double-tap the middle**, or double-click with a
+  mouse, for full screen; and **hold a finger on the picture**
+  for 2× speed for as long as it is held (a pill at the top says so, with the corner title stepping aside for it; nobody is told it is a change of speed, and the
+  speed goes back to what was chosen). A screen that leads a watch party with guests in it does not do the hold: its guests are told the speed that was chosen, and would fall behind
 - D-pad remote support: ←/→ seek 10 s, ↓ wakes the controls (even faded) and lands on Play, Enter presses. Among the controls the arrows walk
   the rows as they are laid out and stop at the ends; the bar waits a little longer while the remote rests on a button. Back closes a menu and
   hands the focus back to the button that opened it (the subtitle style is a page of the audio and subtitles menu, so Back goes one page back).
@@ -141,7 +185,11 @@ pnpm build && pnpm start     # http://localhost:8787
   (and play with sound) after a press on that page, so a screen goes full screen at its first key press or click, once, and is left alone after
   that. Leaving it (Esc, `F`, or the round button in the library's corner, beside the account button, which the arrow keys reach too) is
   remembered in that browser, so the next visit stays as it was; going in again with the button makes it open full screen once more
-  (`src/client/shared/fullscreen.ts`). Safari is left out of the automatic part, as it takes no typed letters in a full-screen page. The phone's
+  (`src/client/shared/fullscreen.ts`). Safari is left out of the automatic part, as it takes no typed letters in a full-screen page. **A touch screen that
+  goes full screen with a video on is turned sideways** (Android's Chrome; the page asks the browser to hold the landscape orientation) **and let go of
+  when it stops** (full screen left, the video stopped, the film ended and its end card is up; Watch again turns it once more), so it turns back upright
+  by itself; an iPhone, which has no full screen for pages and does not
+  hold an orientation, and a computer are left alone. The phone's
   remote doesn't do it by itself (it is where codes get typed) but has the same button on its first screen and in its menu (*Full screen on this
   phone*). The phone's button for the TV's full screen works while the TV has had a press lately: the TV asks
   for an OK press when it hasn't. If the browser still refuses to start a video, a **Tap / press OK to play** button says so instead of a blank screen
@@ -187,8 +235,8 @@ pnpm build && pnpm start     # http://localhost:8787
 - **Sign in** is the button in the library's top corner (the profile picture once signed in); nobody is made to
 - **Any device can be this screen.** The same page lays itself out for the size of the device: the TV's wide layout from about 900 px
   up, and below that (a phone, a tablet, a narrow window) a compact one with a thin menu, a smaller banner, titles that swipe along, a native
-  search field (the phone's own keyboard) and as many columns as fit. Taps press everything, swipes scroll, the first touch on hidden controls only
-  brings them up, and every page has a way out for a finger. A phone held sideways gives the banner less height. Volume stays the device's own
+  search field (the phone's own keyboard) and as many columns as fit. Taps press everything, swipes scroll, a tap on the picture brings the controls
+  up and the next puts them away (two taps on a side skip, a held finger plays at 2×: see above), and every page has a way out for a finger. A phone held sideways gives the banner less height. Volume stays the device's own
 - Keeps the screen awake while playing; reconnects by itself, and notices a dead connection within about 25 s. After 10 s without the server
   the page says why that can be (*The server is waking up. A free server can take up to a minute…*): on the TV in its banner, on the phone's
   first screen in place of "Reaching the server…", and on the remote under the header. It is not said when the browser knows there is no
@@ -238,9 +286,10 @@ is watching on it, or else by its own name ("TV 3F2A"). Ways in:
 
 - **From a TV:** menu → **Watch party** → *Start a party* (or the **Watch party** button in a film's controls, whose panel rests on **Done**, not
   on the button that ends the party). The screen shows a
-  6-digit code, a QR code and the address; on another screen choose **Watch party → Join a party** and type the code with the remote's
+  6-digit code, a QR code and the address, and the invitation as a **link with a Copy link button beside it** (a click, or OK from the remote: it says *Link copied*),
+  to paste into somebody's chat; on another screen choose **Watch party → Join a party** and type the code with the remote's
   number keys (the on-screen pad works too).
-- **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with a **Share link** button, and
+- **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with the link and a **Copy link** button (and a **Share link** button where the browser can share), and
   lists who is in (the host's phone can send any guest away, or end the party). Typing the pairing code that another TV shows into the phone
   still works; a party's own code typed there is told apart from a wrong one (`ADD_PARTY_CODE`: the phone is told what the code is for, and it
   does not count against the limit).
@@ -289,8 +338,10 @@ well as in the page's own status, which can be far above a library that is scrol
   or a click beside it closes the page. **A show's page continues below its buttons** with its seasons (when there are several) and the episodes
   of the one that is shown, as cards with a picture, a line about the episode, its length and what this profile has done with it (watched, or
   how long is left, with a bar). **Play** says which episode it starts, *Play S1:E1*, or *Resume S2:E3* for a show part way through, and the
-  page opens on that season with the remote on that episode; OK on any episode plays it, from where it was left if it was begun. With a mouse it is a click on the title (hovering shows nothing; the title's name is the tooltip), on any row; the
-  second click of a double click goes through the page to the title under it instead of closing the page or pressing Play, for the half second
+  page opens on that season with the remote on that episode; OK on any episode plays it, from where it was left if it was begun. With a mouse it is a click on the title (its name is the tooltip), on any row; **hovering a title
+  shows a round button in its top corner** (a screen with a mouse only, not a touch screen): **+** puts the title in the profile's first list at once (once it is there the button turns into a filled **×**, and a click on that
+  takes it out), and **×** on a title of **Continue watching**, or in a list's own row or page, takes it out of that, so a row of films can be filled or emptied by clicking down it;
+  the second click of a double click goes through the page to the title under it instead of closing the page or pressing Play, for the half second
   the page takes to arrive. The banner's own buttons play or save the title it shows, without the page. The big banner picture fades in
   over the previous one once it has loaded, instead of switching. Playing from the library and pressing Back (twice if the controls were
   hidden) or letting it stop comes back to the same title. A title that will not play is said so. A TV that watches
@@ -308,7 +359,8 @@ well as in the page's own status, which can be far above a library that is scrol
   one thing known without trying is that a title with a release date in the future is not out yet, so it is never listed.
 - **Menu, pages, categories, search (TV).** Pressing Left from the first title of any row (or the first tile of a grid) opens a menu down the
   left: **Search**, **Home**, **Movies**, **Series**, **My Lists**, **History**, **Watch party**, **Connect a phone**, **Settings**, and under them the
-  **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles, and
+  **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles (with a
+  mouse, **resting the pointer on the strip opens the menu**, no button held, and leaving it shuts it), and
   choosing any entry (**My Lists**, **History**, a category…) closes the menu over the page it opens. **My Lists** is a button for each list over
   the titles in it, with **New list** (a name typed on the on-screen or real keyboard) and **Edit list** (rename, or delete after a question). **Movies**
   and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard (Space, Delete, and Clear for the whole box) beside the
@@ -321,7 +373,10 @@ well as in the page's own status, which can be far above a library that is scrol
   (`lotr`, `got`, `hp`). The titles already on screen are matched this way on the TV and the phone; on the server the same ranking is applied to what the
   places answer, and when a place finds little (TMDB's search forgives nothing: "strager things" finds nothing there) it is asked again without each
   word (a slip in one leaves the rest to find the title: `better call sual`), and with a long word cut to its first letters or all but its last two
-  (`gladiater`), six questions at most, and the titles that come back are kept only if they match what was typed. A search that cannot be reached says so (it asks again every few seconds) instead of saying nothing matches, and a title
+  (`gladiater`), six questions at most, and the titles that come back are kept only if they match what was typed. **A search lists the likeliest first** (`rankByQuery`):
+  the title that is what was typed, then those that begin with it (`boon` is *Boon* and *The Boondocks* before *Baboon*; a leading The, punctuation and accents do not count), then those with a word that begins
+  with it, then the rest, the order the places gave (the popular first) kept within each, whether a title came from the screen or from the library. TMDB is read up to three pages (sixty titles) when it has
+  that many, so a short word brings a long list to scroll; only the first page is asked about at the video provider, and a title it already said has nothing to play stays out of the others. A search that cannot be reached says so (it asks again every few seconds) instead of saying nothing matches, and a title
   that is part way through says **Resume** on its page wherever it is shown, lists and search included. The menu and search only use the generic
   library endpoints, so they work with whichever `LibrarySource` is configured.
 - `LIBRARY=off` starts the server without a library (the e2e server does); `GET /api/library` is then empty and the phone shows nothing extra.
@@ -397,8 +452,10 @@ webcam shows a generated QR code), disconnect and switching TVs, resume, the D-p
 library and its menu, watch parties (from a TV, from a phone, from a link), a second phone and a phone that scans another TV, a phone with
 several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page whose connections are never answered:
 `sleepingServer` in `e2e/helpers.ts`, with the page's clock skipped ahead), the TV page on a
-phone, a tablet and a phone held sideways, the end card and mute, full screen (at the first press, kept for the next visit, the buttons), and
-accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
+phone, a tablet and a phone held sideways, a finger on the picture (taps, double taps, a hold, the big button, the landscape lock, the episode's name:
+`e2e/player-touch.spec.ts`; the recognizer on its own in `src/client/tv/gestures.test.ts`), the end card and mute, full screen (at the first press, kept for the next visit, the buttons),
+ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV), friends (made with a code or a link, what a friend can see,
+what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
 itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`). A Hisense browser is imitated by its user agent
@@ -413,11 +470,12 @@ Android TV remotes, the wake lock, an iPhone's camera and browsers, and the home
 ## Layout
 
 ```
-src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge)
+src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge), rating.ts (what a rating remembers of the watching),
+               friends.ts (the friends' switches, what travels between them)
 src/server/    sessions/ (registry: devices, codes, controllers; pairings: which phone goes with which TV, kept between restarts), websocket/hub.ts,
-               resolvers/, accounts/ (store, routes, persistence), app.ts
+               resolvers/, accounts/ (store, routes, persistence, friends: codes, inboxes, what a friend may see), app.ts
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),
-               i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
+               friends/ (the state both screens share, what is new, the friends' pages of the TV), i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
 public/        copied as it is into the built page: the web app manifest and its icons
 fixtures/      sample.mp4, long.mp4 (40 s, for Up Next), hls/ (VP9, so Playwright's Chromium can decode them)
 e2e/           Playwright specs and helpers

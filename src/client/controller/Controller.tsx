@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   IDLE_STATE,
   describeChange,
@@ -19,24 +19,26 @@ import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
-import { readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { MoreIcon, TvIcon } from "../shared/icons";
 import { partyLink, readLaunchParams } from "../shared/launch";
+import { useLinkBox } from "../shared/linkBox";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
 import { useWaking } from "../shared/useSlow";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
 import { LinkApprove } from "../account/LinkApprove";
 import type { Entry } from "../tv/pages";
+import { FriendInvite, FriendsHome } from "./Friends";
 import { Library } from "./Library";
 import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
 import { PlayLink } from "./PlayLink";
 import { Remote, type SheetKind } from "./Remote";
 import { LINE_EVENT } from "./Round";
-import { ContinueRow, ListRows } from "./Rows";
+import { RatingsSheet } from "./RatingsSheet";
+import { ContinueRow, ListRows, RatingsRow } from "./Rows";
 import { Sheet } from "./Sheet";
 import { TitleSheet } from "./TitleSheet";
 import {
@@ -55,8 +57,6 @@ import {
 import "./controller.css";
 
 const CONTROLLER_KEY = "controller.id";
-/** Whether this phone's home screen has the box for pasting a link (off until the menu turns it on: most people play from the library). */
-const LINK_BOX_KEY = "kino.linkbox";
 /** A lookup that has not answered by now is reported as failed instead of spinning forever. */
 const RESOLVE_TIMEOUT_MS = 40_000;
 
@@ -88,13 +88,13 @@ export function Controller() {
   const [listSheet, setListSheet] = useState<{ kind: "manage" } | { kind: "pick"; entry: ListEntry } | null>(null);
   /** The page of a title that was tapped in the library or a list: where it is played, or put in a list. */
   const [title, setTitle] = useState<Entry | null>(null);
-  const [linkBox, setLinkBox] = useState(() => readStorage(LINK_BOX_KEY) === "1");
-  const changeLinkBox = (on: boolean) => {
-    setLinkBox(on);
-    writeStorage(LINK_BOX_KEY, on ? "1" : null);
-  };
+  /** Whether the home screen has the box for pasting a link (also turned on and off in the settings: see linkBox.ts). */
+  const [linkBox, changeLinkBox] = useLinkBox();
   // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
-  const { progress, watched, lists, list } = useProfileData();
+  const { progress, watched, lists, list, ratings, settings } = useProfileData();
+  const ratingsOn = settings.ratings ?? true;
+  /** The page that lists everything this profile rated. */
+  const [ratingsOpen, setRatingsOpen] = useState(false);
 
   // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
   const launchRef = useRef(readLaunchParams(location.search));
@@ -109,9 +109,12 @@ export function Controller() {
   // The account page, and the sign-in request of a TV (from its QR code) waiting for this signed-in phone to say yes or no.
   const [showAccount, setShowAccount] = useState(false);
   const [approveCode, setApproveCode] = useState<string | null>(launchRef.current.link ?? null);
-  useEffect(() => {
-    // A sign-in code is for one use: it does not stay in the address (a reload or a bookmark would offer it again).
-    if (launchRef.current.link) window.history.replaceState(null, "", location.pathname);
+  /** A friend's code, from the link or the QR code of their invitation: asked about until it is used or sent away. */
+  const [friendCode, setFriendCode] = useState<string | null>(launchRef.current.friend ?? null);
+  useLayoutEffect(() => {
+    // A sign-in code is for one use: it does not stay in the address (a reload or a bookmark would offer it again). Nor does a friend's.
+    // (Before the sheet that asks about it adds its own step to the history: that one would be changed, and the first would keep the code.)
+    if (launchRef.current.link || launchRef.current.friend) window.history.replaceState(null, "", location.pathname);
   }, []);
 
   /** A video was found: it moves to the front of "Continue watching" (keeping its place if it was left unfinished). */
@@ -154,6 +157,7 @@ export function Controller() {
             if (!message.tv) {
               setSheet(null);
               setListSheet(null);
+              setRatingsOpen(false);
               setTitle(null);
               setResolve(null);
               setOther(null);
@@ -348,7 +352,14 @@ export function Controller() {
           <LinkApprove code={approveCode} onClose={closeApprove} />
         </Page>
       ) : (
-        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} />
+        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} {...(tv ? { onOpenTitle: setTitle } : {})} />
+      )}
+      {friendCode && !showAccount && !approveCode && !account.choosing && (
+        <FriendInvite
+          code={friendCode}
+          onClose={() => setFriendCode(null)}
+          onSignIn={() => setShowAccount(true)}
+        />
       )}
       {account.message && (
         <p className="account-toast" key={account.message.id} role="status" data-testid="account-toast">
@@ -447,8 +458,10 @@ export function Controller() {
   const link = (
     <>
       <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} />
+      <FriendsHome onOpenTitle={setTitle} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
       <ListRows lists={lists} items={list} onOpen={setTitle} onPick={pickList} onRemove={(url, id) => profileStore.removeFromList(url, id)} onManage={() => setListSheet({ kind: "manage" })} />
+      {ratingsOn && <RatingsRow ratings={ratings} onOpen={setTitle} onAll={() => setRatingsOpen(true)} />}
       <Library onOpen={setTitle} onPick={pickList} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} status={false} />} />
     </>
   );
@@ -627,6 +640,7 @@ export function Controller() {
       {sheet === "episodes" && media?.series?.episodes && (
         <EpisodesSheet series={media.series} show={seriesKeyOf(media)} watched={watched} onClose={closeSheet} onPlay={playLink} />
       )}
+      {ratingsOpen && ratingsOn && <RatingsSheet ratings={ratings} onOpen={setTitle} onClose={() => setRatingsOpen(false)} />}
       {title && (
         <TitleSheet
           entry={title}

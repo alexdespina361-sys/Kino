@@ -27,6 +27,7 @@ import { languageNames, useSubtitleLists } from "../account/subtitles";
 import { t, useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { captionBottom, captionTextStyle } from "../shared/captionCss";
+import { CopyLink } from "../shared/CopyLink";
 import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatCode, formatLeft } from "../shared/format";
 import { CheckIcon, ScanIcon } from "../shared/icons";
@@ -36,6 +37,7 @@ import { QrCode } from "../shared/QrCode";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { RoleSwitch } from "../shared/RoleSwitch";
 import { captionLabel, captionTitle, statusWords, trackName } from "../shared/words";
+import { InviteFriendsButton } from "./Friends";
 import { codeFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
 import { ChoiceList, Sheet, type Choice } from "./Sheet";
@@ -611,28 +613,12 @@ export function TvsSheet({
 /** The code that brings another screen into this phone's party, and when it runs out: "asking" until the TV has answered, null when none is open. */
 export type PartyInvite = { code: string; endsAt: number } | "asking" | null;
 
-/** The code and link that let a screen in: a TV types the code, a phone or computer scans it or opens the link. */
-function Invite({ code }: { code: string }) {
+/** The code and link that let a screen in: a TV types the code, a phone or computer scans it or opens the link, which can be copied into a chat (or shared, where the phone has a share sheet). */
+function Invite({ code, endsAt }: { code: string; endsAt: number }) {
   useT();
   const link = partyLink(code);
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 2000);
-    return () => clearTimeout(timer);
-  }, [copied]);
-
-  const share = async () => {
-    try {
-      if (navigator.share) await navigator.share({ title: t("party.title"), url: link });
-      else {
-        await navigator.clipboard.writeText(link);
-        setCopied(true);
-      }
-    } catch {
-      /* the share sheet was closed, or this page may not copy here */
-    }
-  };
+  const canShare = typeof navigator.share === "function";
+  const share = () => navigator.share({ title: t("party.title"), url: link }).catch(() => undefined); // (a share sheet that was closed is no error)
 
   return (
     <div className="code-card" data-testid="party-invite">
@@ -645,9 +631,13 @@ function Invite({ code }: { code: string }) {
       <p className="muted small">
         <Rich k="party.inviteHelp" parts={{ host: <b>{location.host}</b> }} />
       </p>
-      <button className="btn btn-red btn-block" data-testid="party-share" onClick={share}>
-        {copied ? t("party.copied") : t("party.share")}
-      </button>
+      <CopyLink link={link} testId="party-link" buttonClass={canShare ? "btn" : "btn btn-red"} />
+      {canShare && (
+        <button className="btn btn-red btn-block" data-testid="party-share" onClick={share}>
+          {t("party.share")}
+        </button>
+      )}
+      <InviteFriendsButton code={code} endsAt={endsAt} />
     </div>
   );
 }
@@ -715,7 +705,7 @@ export function PartySheet({
           <span className="spinner" />
         </div>
       ) : invite ? (
-        <Invite code={invite.code} />
+        <Invite code={invite.code} endsAt={invite.endsAt} />
       ) : (
         <button className="btn btn-block" data-testid="party-invite-open" onClick={onInvite}>
           {t("party.invite")}

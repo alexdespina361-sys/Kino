@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ACCENTS, MAX_PROFILES, UI_LANGUAGES, type Profile } from "../../shared";
+import { ACCENTS, friendChoices, MAX_PROFILES, UI_LANGUAGES, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
@@ -375,6 +375,9 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const { settings, set } = useSettings();
   const { me, profile } = account;
   const autoplay = settings.autoplayNext ?? true;
+  const tapToPause = settings.tapToPause ?? false;
+  const ratingsOn = settings.ratings ?? true;
+  const friendsOn = friendChoices(settings).friends;
   return (
     <Screen testId="tv-account" focus onBack={onClose}>
       <div className="tv-panel">
@@ -455,6 +458,36 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
             <span>{t("settings.autoplayNext")}</span>
             <span className="tv-switch" aria-hidden="true" />
           </button>
+          <button className="tv-switch-row" role="switch" aria-checked={tapToPause} onClick={() => set("tapToPause", !tapToPause)} data-nav data-testid="tv-tap-to-pause">
+            <span>{t("settings.tapToPause")}</span>
+            <span className="tv-switch" aria-hidden="true" />
+          </button>
+
+          <h2>{t("rating.settings")}</h2>
+          <button className="tv-switch-row" role="switch" aria-checked={ratingsOn} onClick={() => set("ratings", !ratingsOn)} data-nav data-testid="tv-ratings-switch">
+            <span>{t("rating.settingsSwitch")}</span>
+            <span className="tv-switch" aria-hidden="true" />
+          </button>
+
+          {me && profile && (
+            <>
+              <h2>{t("friends.settings")}</h2>
+              <button
+                className="tv-switch-row"
+                role="switch"
+                aria-checked={friendsOn}
+                onClick={() => {
+                  set("friends", !friendsOn);
+                  account.syncNow(); // (the server hears of it now: it is what decides what a friend is shown)
+                }}
+                data-nav
+                data-testid="tv-friends-switch"
+              >
+                <span>{t("friends.switch")}</span>
+                <span className="tv-switch" aria-hidden="true" />
+              </button>
+            </>
+          )}
           {me && <p className="tv-hint">{t("tv.subtitlesHint")}</p>}
         </section>
       </div>

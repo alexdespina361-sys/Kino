@@ -139,10 +139,28 @@ export function groupBySeason(episodes: readonly EpisodeRef[]): SeasonGroup[] {
 export const isCurrentEpisode = (series: SeriesInfo, episode: EpisodeRef) =>
   series.season === episode.season && series.episode === episode.episode;
 
+/** "S1:E3": what a source calls an episode it has no name for. */
+const PLACEHOLDER_TITLE = /^S\d+\s*:?\s*E\d+$/i;
+
 /** "S1:E3" titles are placeholders from the source; anything else is a real episode name. `unnamed` (in the screen's language) is what the rest are called. */
 export function episodeName(episode: EpisodeRef, unnamed: string): string {
   const title = episode.title?.trim();
-  return title && !/^S\d+\s*:?\s*E\d+$/i.test(title) ? title : unnamed;
+  return title && !PLACEHOLDER_TITLE.test(title) ? title : unnamed;
+}
+
+/**
+ * What the episode that is playing is called, when it has a name besides its number: the one the library knows it by (`known`), or else
+ * the one the source listed it with; a name that is only the number ("S1:E3", "Episode 3") is not one, in either, and the other is tried.
+ * `undefined` for a film, and for an episode of which only the number is known.
+ */
+export function playingEpisodeName(series: SeriesInfo | undefined, known?: string): string | undefined {
+  if (!series) return undefined;
+  const listed = series.episodes?.find((episode) => isCurrentEpisode(series, episode))?.title;
+  for (const title of [known, listed]) {
+    const name = title?.trim();
+    if (name && !PLACEHOLDER_TITLE.test(name) && !/^(?:episode|episodio|episodul|ep\.?)\s*\d+$/i.test(name)) return name;
+  }
+  return undefined;
 }
 
 /** Same show, whatever the episode: "Show · S1 E3" -> "Show". Lets lists keep one entry per show. */

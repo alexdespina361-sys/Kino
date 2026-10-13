@@ -230,6 +230,29 @@ describe("sync", () => {
     expect(store.snapshot(profile.id)!.listNames).toEqual([{ key: "l1", at: clock, deleted: true }]);
   });
 
+  it("keeps ratings, hands them to another screen, and lets a removal and a later rating settle in order", async () => {
+    const { store, profile } = await withAccount();
+    const rating = (at: number, extra: Record<string, unknown> = {}) => ({ key: "rate:u", at, title: "T", url: "u", score: 8, ratedAt: at, ...extra });
+    store.sync(profile.id, request(0, { ratings: [rating(clock, { note: "Big", percent: 100, watchedAt: clock - 1000 })] }));
+    expect(store.sync(profile.id, request(0))!.ratings).toMatchObject([{ key: "rate:u", score: 8, note: "Big", percent: 100 }]);
+
+    advance(1000);
+    store.sync(profile.id, request(1, { ratings: [{ key: "rate:u", at: clock, deleted: true }] }));
+    store.sync(profile.id, request(2, { ratings: [rating(clock - 5000)] })); // a copy that never heard of the removal
+    expect(store.snapshot(profile.id)!.ratings).toEqual([{ key: "rate:u", at: clock, deleted: true }]);
+    advance(1000);
+    store.sync(profile.id, request(2, { ratings: [rating(clock, { score: 3 })] }));
+    expect(store.snapshot(profile.id)!.ratings).toMatchObject([{ key: "rate:u", score: 3 }]);
+  });
+
+  it("accepts a setting that turns ratings off, and nothing but a yes or a no", async () => {
+    const { store, profile } = await withAccount();
+    store.sync(profile.id, request(0, { settings: [{ key: "ratings", at: clock, value: false }] }));
+    expect(store.snapshot(profile.id)!.settings).toMatchObject([{ key: "ratings", value: false }]);
+    store.sync(profile.id, request(1, { settings: [{ key: "ratings", at: clock + 1, value: "maybe" }] }));
+    expect(store.snapshot(profile.id)!.settings).toMatchObject([{ key: "ratings", value: false }]);
+  });
+
   it("lets the newest copy borrow the picture only the older one had", async () => {
     const { store, profile } = await withAccount();
     store.sync(profile.id, request(0, { progress: [progress("film", clock - 5000, { image: "/poster.jpg", year: 1999 })] }));
@@ -346,6 +369,35 @@ describe("keeping it between runs", () => {
       await first.flush();
       const { rows } = await db.query("select count(*)::int as n from kino_docs");
       expect(rows[0]).toEqual({ n: 0 });
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("writes and forgets in one statement to Postgres, so that stopping between the two cannot keep one and lose the other", async () => {
+    const db = new PGlite();
+    try {
+      const statements: string[] = [];
+      const persistence = new PostgresPersistence({
+        query: (text, params) => {
+          statements.push(text);
+          return db.query(text, params);
+        },
+      });
+      await persistence.load();
+      await persistence.save({ put: new Map<string, unknown>([["a", { n: 1 }], ["b", { n: 2 }]]), remove: new Set() });
+      statements.length = 0;
+
+      await persistence.save({ put: new Map<string, unknown>([["c", { n: 3 }], ["b", { n: 22 }]]), remove: new Set(["a"]) });
+      expect(statements).toHaveLength(1);
+      expect(Object.fromEntries((await persistence.load()).entries())).toEqual({ b: { n: 22 }, c: { n: 3 } });
+      statements.length = 0; // (the load above asked the database too)
+
+      await persistence.save({ put: new Map(), remove: new Set(["b", "nothing"]) }); // (only to forget)
+      await persistence.save({ put: new Map<string, unknown>([["d", { n: 4 }]]), remove: new Set() }); // (only to write)
+      await persistence.save({ put: new Map(), remove: new Set() }); // (nothing: nothing is asked of the database)
+      expect(statements).toHaveLength(2);
+      expect(Object.fromEntries((await persistence.load()).entries())).toEqual({ c: { n: 3 }, d: { n: 4 } });
     } finally {
       await db.close();
     }

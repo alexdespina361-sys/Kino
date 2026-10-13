@@ -1,0 +1,51 @@
+/* Friends on the phone: the page of friends, one friend's page, what they sent, and the sheet that sends things. */
+
+.friend-list, .inbox-list { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+
+.friend-avatar { flex: none; font-size: 40px; line-height: 0; }
+.friend-avatar.small { font-size: 28px; }
+.friend-text { display: flex; flex-direction: column; flex: 1; gap: 2px; min-width: 0; text-align: left; }
+.friend-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend-text small { overflow: hidden; color: var(--muted); font-size: 0.8rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.friend-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 14px; border-radius: 12px; background: var(--surface); text-align: left; transition: background 0.15s ease, transform 0.08s ease; }
+.friend-row > svg:last-child { flex: none; color: var(--muted); }
+.friend-row:focus-visible { background: var(--surface-2); }
+.friend-row:active { background: rgba(255, 255, 255, 0.14); transform: scale(0.99); }
+@media (hover: hover) {
+  .friend-row:hover { background: var(--surface-2); }
+}
+
+/* Friends turned off in the settings: who is still a friend, a row (not a button) with the button that ends it. */
+.kept-friends { display: flex; flex-direction: column; gap: 10px; }
+.friend-row.kept { flex-wrap: wrap; cursor: default; }
+.friend-row.kept:active { background: var(--surface); transform: none; }
+.friend-row.kept .btn { flex: none; min-height: 40px; padding: 0 14px; font-size: 0.9rem; }
+@media (hover: hover) {
+  .friend-row.kept:hover { background: var(--surface); }
+}
+
+/* A code somebody gave, looked up: who it is from, and the button that makes them a friend. */
+.friend-code-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); }
+.friend-code-card .btn { flex: none; min-height: 44px; }
+.friend-code { font-size: 1.7rem; }
+
+/* What friends sent. A title is a row like a rating's, with its cross beside it; an invitation has the button that joins. */
+.inbox-item { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: 12px; background: var(--surface); }
+.inbox-item > .mini { align-self: center; }
+.inbox-open { flex: 1; min-width: 0; align-items: center; }
+.inbox-text { display: flex; flex-direction: column; flex: 1; gap: 2px; min-width: 0; padding: 8px 4px 8px 8px; }
+.inbox-text small { color: var(--muted); font-size: 0.8rem; }
+.inbox-item .btn { flex: none; min-height: 40px; padding: 0 14px; font-size: 0.9rem; }
+
+/* An invitation to a watch party over the home screen, until it is joined or sent away. */
+.friend-party { display: flex; align-items: center; gap: 10px; }
+.friend-party > span { flex: 1; min-width: 0; }
+.friend-party .btn { flex: none; min-height: 40px; padding: 0 14px; font-size: 0.9rem; }
+
+/* The little dot on the picture of the profile when friends have something new. */
+.avatar-button { position: relative; }
+.unread-dot { position: absolute; top: -1px; right: -1px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
+
+/* The button that asks a second time before a friend goes. */
+.btn-danger[data-asking="true"] { background: var(--bad); color: #0b0b0c; }

@@ -1,8 +1,8 @@
-import { itemsOf, searchItems, type LibraryItem, type LibraryRow } from "../../shared";
+import { itemsOf, rankByQuery, searchItems, type LibraryItem, type LibraryRow } from "../../shared";
 
 /** Titles already on screen that match what was typed (a slip of a letter or an unfinished word included), best first: instant, before the server is asked. Each title once. */
 export function matchLocal(rows: readonly LibraryRow[], query: string): LibraryItem[] {
-  return searchItems(itemsOf(rows), query);
+  return rankByQuery(searchItems(itemsOf(rows), query), query);
 }
 
 /** What is shown, as far as it still matches the words as they are now: while the server is asked again, the list does not empty and fill up with every letter. */
@@ -14,6 +14,11 @@ export function keepMatching(shown: readonly LibraryItem[], query: string): Libr
 export function mergeItems(first: readonly LibraryItem[], more: readonly LibraryItem[]): LibraryItem[] {
   const seen = new Set(first.map((item) => item.id));
   return [...first, ...more.filter((item) => !seen.has(item.id) && seen.add(item.id))];
+}
+
+/** What was found on screen and what the server found, each title once, the likeliest to be what was typed first. */
+export function mergeAnswers(first: readonly LibraryItem[], more: readonly LibraryItem[], query: string): LibraryItem[] {
+  return rankByQuery(mergeItems(first, more), query);
 }
 
 /** The letters, then the digits: six keys to a row, which is what the TV's keyboard is laid out in. */

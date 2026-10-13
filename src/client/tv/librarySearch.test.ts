@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendTo, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeItems, typedCharacter } from "./librarySearch";
+import { appendTo, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, mergeItems, typedCharacter } from "./librarySearch";
 
 const item = (id: string, title: string) => ({ id, title, url: `/${id}` });
 const rows = [
@@ -36,6 +36,14 @@ describe("keepMatching", () => {
 describe("mergeItems", () => {
   it("puts what the server found after what was on screen, without repeating a title", () => {
     expect(mergeItems([item("a", "A"), item("b", "B")], [item("b", "B"), item("c", "C"), item("c", "C")]).map((found) => found.id)).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("mergeAnswers", () => {
+  it("merges the screen's titles and the server's the same way, and puts the likeliest first whichever found it", () => {
+    const screen = [item("w", "Welcome to the Boondocks"), item("n", "Boonie Bears")];
+    const server = [item("w", "Welcome to the Boondocks"), item("b", "Boon"), item("d", "The Boondocks"), item("x", "Baboon")];
+    expect(mergeAnswers(screen, server, "boon").map((found) => found.id)).toEqual(["b", "n", "d", "w", "x"]);
   });
 });
 

@@ -16,6 +16,7 @@ import {
   type SessionState,
 } from "../../shared";
 import { describeDevice } from "./device";
+import { friendRoutes } from "./friendRoutes";
 import { LinkRegistry } from "./links";
 import { decoyHash, hashPassword, verifyPassword, type PasswordCost } from "./password";
 import { RateLimiter } from "./rateLimit";
@@ -331,4 +332,8 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     if (!lookedUp(request, reply)) return reply;
     return links.deny(request.params.code) ? reply.code(204).send() : reply.code(404).send({ error: "link_gone" });
   });
+
+  /* ------------------------------ friends ------------------------------ */
+
+  friendRoutes(app, { store, authenticate, signedOut, tooMany, invalid, refused });
 };

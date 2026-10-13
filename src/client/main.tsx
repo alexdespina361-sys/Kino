@@ -2,6 +2,7 @@ import "./shared/debug"; // first: with ?debug in the address it shows what the 
 import { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AccountProvider } from "./account/AccountProvider";
+import { FriendsProvider } from "./friends/FriendsProvider";
 import { roleOfThisPage } from "./role";
 import { setUpFullscreen } from "./shared/fullscreen";
 import "./styles.css";
@@ -16,6 +17,8 @@ const role = roleOfThisPage();
 setUpFullscreen({ byItself: role === "tv" });
 createRoot(document.getElementById("root")!).render(
   <AccountProvider device={role === "tv" ? "tv" : "remote"}>
-    <Suspense fallback={null}>{role === "tv" ? <Tv /> : <Controller />}</Suspense>
+    <FriendsProvider>
+      <Suspense fallback={null}>{role === "tv" ? <Tv /> : <Controller />}</Suspense>
+    </FriendsProvider>
   </AccountProvider>,
 );

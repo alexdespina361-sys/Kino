@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LibraryItem } from "./library";
-import { guessesFor, itemsOf, normalizeQuery, searchItems, spelledOut } from "./search";
+import { guessesFor, itemsOf, normalizeQuery, rankByQuery, searchItems, spelledOut } from "./search";
 
 const titles = [
   "Stranger Things",
@@ -111,6 +111,52 @@ describe("searchItems", () => {
     expect(find("   ")).toEqual([]);
     expect(searchItems([], "dune")).toEqual([]);
     expect(searchItems([...items, ...items], "dune")).toHaveLength(2);
+  });
+});
+
+describe("rankByQuery", () => {
+  const pool = (...names: string[]): LibraryItem[] => names.map((title, index) => ({ id: `p${index}`, title, url: `/${index}` }));
+  const order = (names: string[], query: string) => rankByQuery(pool(...names), query).map((item) => item.title);
+
+  it("puts the title that is what was typed first, then titles that begin with it, then a word that does, then the rest", () => {
+    expect(order(["Welcome to the Boondocks", "Baboon", "Boonie Bears", "The Boondocks", "Boon", "Zorro"], "boon")).toEqual([
+      "Boon",
+      "Boonie Bears",
+      "The Boondocks",
+      "Welcome to the Boondocks",
+      "Baboon",
+      "Zorro",
+    ]);
+  });
+  it("keeps the order the places gave within each of those", () => {
+    expect(order(["Boonies", "Boondocks", "Boone", "Boon Two"], "boon")).toEqual(["Boonies", "Boondocks", "Boone", "Boon Two"]);
+  });
+  it("does not count a leading The, A or An, nor punctuation, accents or spaces", () => {
+    expect(order(["The Boondocks Special", "Boondocks"], "the boondocks")).toEqual(["Boondocks", "The Boondocks Special"]);
+    expect(order(["Spider-Man: No Way Home", "Spider-Man"], "spiderman")).toEqual(["Spider-Man", "Spider-Man: No Way Home"]);
+    expect(order(["Amélie Again", "Amélie"], "AMELIE")).toEqual(["Amélie", "Amélie Again"]);
+    expect(order(["Marvel's Daredevil", "Daredevil"], "marvels")).toEqual(["Marvel's Daredevil", "Daredevil"]);
+  });
+  it("finds the words typed in any order at the start of the title's words, and a short name for what it stands for", () => {
+    expect(order(["Things We Lost in the Fire", "Stranger Things Again", "Stranger Things"], "things stranger")).toEqual([
+      "Stranger Things Again",
+      "Stranger Things",
+      "Things We Lost in the Fire",
+    ]);
+    expect(order(["The Lord of the Rings: The Two Towers", "Lord of the Rings"], "lotr")).toEqual(["Lord of the Rings", "The Lord of the Rings: The Two Towers"]);
+  });
+  it("lets a year in the words say which title, not what its name is", () => {
+    const dunes: LibraryItem[] = [
+      { id: "a", title: "Dune: Part Two", year: 2021, url: "/a" },
+      { id: "b", title: "Dune", year: 2021, url: "/b" },
+    ];
+    expect(rankByQuery(dunes, "dune 2021").map((item) => item.id)).toEqual(["b", "a"]);
+  });
+  it("leaves the answers alone when nothing was typed, and does not change the list it was given", () => {
+    const given = pool("B", "A");
+    expect(rankByQuery(given, "  ").map((item) => item.title)).toEqual(["B", "A"]);
+    rankByQuery(given, "a");
+    expect(given.map((item) => item.title)).toEqual(["B", "A"]);
   });
 });
 

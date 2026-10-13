@@ -10,6 +10,8 @@ import {
   nameFromEmail,
   newerOf,
   nextAvatar,
+  plainText,
+  resolveSettings,
   SETTING_SCHEMAS,
   type AvatarId,
   type CollectionName,
@@ -19,10 +21,12 @@ import {
   type Profile,
   type SessionInfo,
   type SettingKey,
+  type Settings,
   type SyncItem,
   type SyncRequest,
   type SyncResponse,
 } from "../../shared";
+import { FriendBook } from "./friends";
 import type { Persistence } from "./persistence";
 
 /* ------------------------------ what is kept ------------------------------ */
@@ -100,6 +104,8 @@ export class AccountStore {
   private readonly data = new Map<string, ProfileData>();
   private readonly profileOwner = new Map<string, string>();
   private readonly sessions = new Map<string, SessionDoc>();
+  /** Who is whose friend, the codes that make friends and the inboxes (see friends.ts); kept and written like the rest. */
+  private readonly book = new FriendBook({ touch: (key) => this.touch(key), drop: (key) => this.drop(key), now: () => this.now() });
 
   private readonly dirty = new Set<string>();
   private readonly removed = new Set<string>();
@@ -137,6 +143,8 @@ export class AccountStore {
         } else if (key.startsWith("session:")) {
           const doc = value as SessionDoc;
           if (doc.expiresAt > this.now()) this.sessions.set(doc.id, doc);
+        } else if (FriendBook.owns(key)) {
+          this.book.load(key, value);
         }
       } catch {
         this.options.log?.warn(`Skipped an unreadable record (${key}).`);
@@ -164,6 +172,7 @@ export class AccountStore {
   private docFor(key: string): unknown {
     if (key.startsWith("account:")) return this.accounts.get(key.slice("account:".length));
     if (key.startsWith("session:")) return this.sessions.get(key.slice("session:".length));
+    if (FriendBook.owns(key)) return this.book.docFor(key);
     if (key.startsWith("pdata:")) {
       const profileData = this.data.get(key.slice("pdata:".length));
       if (!profileData) return undefined;
@@ -251,6 +260,7 @@ export class AccountStore {
       this.data.delete(profile.id);
       this.profileOwner.delete(profile.id);
       this.drop(`pdata:${profile.id}`);
+      this.book.forget(profile.id);
     }
     this.emails.delete(account.email);
     this.accounts.delete(accountId);
@@ -301,11 +311,28 @@ export class AccountStore {
     this.profileOwner.delete(profileId);
     this.touch(`account:${accountId}`);
     this.drop(`pdata:${profileId}`);
+    this.book.forget(profileId);
     return ok(null);
   }
 
   ownsProfile(accountId: string, profileId: string) {
     return this.profileOwner.get(profileId) === accountId;
+  }
+
+  /** Friendships, the codes that make them and the inboxes (see friends.ts). */
+  get friends(): FriendBook {
+    return this.book;
+  }
+
+  /** The time as the store keeps it (what tests move). */
+  clock(): number {
+    return this.now();
+  }
+
+  /** Who a profile is, as a friend sees them (the name made fit to show to somebody else: see `plainText`); nothing for a profile that is gone. */
+  profileCard(profileId: string): Profile | undefined {
+    const profile = this.accounts.get(this.profileOwner.get(profileId) ?? "")?.profiles.find((candidate) => candidate.id === profileId);
+    return profile && { id: profile.id, name: plainText(profile.name) || "?", avatar: profile.avatar };
   }
 
   /** The first picture nobody on this account is using, for a profile made without choosing one. */
@@ -428,6 +455,7 @@ export class AccountStore {
       watched: answer("watched") as SyncResponse["watched"],
       list: answer("list") as SyncResponse["list"],
       listNames: answer("listNames") as SyncResponse["listNames"],
+      ratings: answer("ratings") as SyncResponse["ratings"],
       settings: answer("settings") as SyncResponse["settings"],
     };
   }
@@ -439,6 +467,17 @@ export class AccountStore {
     const keep = new Set(kept.map((item) => item.key));
     for (const key of [...map.keys()]) if (!keep.has(key)) map.delete(key);
     return true;
+  }
+
+  /** One part of what a profile keeps, as the server has it, removals included (what a friend is shown is picked from this). */
+  items<K extends CollectionName>(profileId: string, name: K): SyncResponse[K] {
+    const collection = this.data.get(profileId)?.collections[name];
+    return [...(collection?.values() ?? [])].map((entry) => entry.item) as SyncResponse[K];
+  }
+
+  /** What a profile has chosen in its settings. */
+  settingsOf(profileId: string): Settings {
+    return resolveSettings(this.items(profileId, "settings"));
   }
 
   /** Everything a profile keeps, as the server has it (for tests and for exporting). */

@@ -97,6 +97,48 @@ export function searchItems(items: readonly LibraryItem[], query: string): Libra
     .map((hit) => byId.get(hit.id)!);
 }
 
+/** Words as they are compared: folded, nothing but letters and digits, and without "The" in front (when it is not all there is). */
+function comparable(words: string): string[] {
+  const list = words.split(" ").filter(Boolean);
+  return list.length > 1 && (list[0] === "the" || list[0] === "a" || list[0] === "an") ? list.slice(1) : list;
+}
+
+/** How near a title is to what was typed: 0 it is that, 1 it begins with it, 2 every word typed begins one of its words, 3 it has it inside a word, 4 only a place's own matching brought it. */
+function nearness(item: LibraryItem, typed: readonly string[]): number {
+  const words = typed.filter((word) => word !== String(item.year)); // ("dune 2021": the year says which Dune, it is not part of the name)
+  if (words.length === 0) return 4;
+  const title = comparable(fold(item.title).replace(/[^\p{L}\p{N}]+/gu, " ").trim());
+  const said = words.join(" ");
+  const is = title.join(" ");
+  const joinedTitle = title.join("");
+  const joinedSaid = words.join("");
+  if (is === said || joinedTitle === joinedSaid) return 0;
+  if (is.startsWith(said) || joinedTitle.startsWith(joinedSaid)) return 1;
+  const free = [...title];
+  const begun = words.every((word) => {
+    const at = free.findIndex((own) => own.startsWith(word));
+    if (at < 0) return false;
+    free.splice(at, 1);
+    return true;
+  });
+  if (begun) return 2;
+  return joinedTitle.includes(joinedSaid) ? 3 : 4;
+}
+
+/**
+ * The answers to a search put in the order they are likely what was meant: the title that is what was typed, then the titles that begin
+ * with it ("boon" is The Boondocks before Baboon), then those with a word that does, then the rest. Within each the order the places gave
+ * (the popular ones first) is kept. The same list is returned when nothing was typed.
+ */
+export function rankByQuery(items: readonly LibraryItem[], query: string): LibraryItem[] {
+  const words = comparable(normalizeQuery(query));
+  if (words.length === 0) return [...items];
+  return items
+    .map((item, at) => ({ item, at, near: nearness(item, words) }))
+    .sort((a, b) => a.near - b.near || a.at - b.at)
+    .map(({ item }) => item);
+}
+
 /** No more than this many other questions are put to a place for one search. */
 const MAX_GUESSES = 6;
 

@@ -6,6 +6,7 @@ import { t, useT } from "../i18n";
 import { formatEndsAt, formatRemaining, formatTime } from "../shared/format";
 import {
   Back10Icon,
+  FastForwardIcon,
   Forward10Icon,
   FullscreenIcon,
   HomeIcon,
@@ -27,6 +28,7 @@ import type { PlayOptions } from "./Browse";
 import { useBack, useDpad } from "./dpad";
 import { PlayerError } from "./engine";
 import { useOneLine } from "./fit";
+import { HOLD_SPEED } from "./gestures";
 import type { MenuKind } from "./Menu";
 import { SKIP_SECONDS } from "./keys";
 import { freshSimilar } from "./pages";
@@ -42,6 +44,8 @@ export interface HudProps {
   subTitle: string;
   /** "S1:E3" */
   badge: string;
+  /** What this episode is called, when it is known and is more than its number. */
+  episodeName?: string | undefined;
   clock: string;
   /** Label of the next episode, when there is one. */
   nextLabel: string | null;
@@ -81,6 +85,10 @@ export interface HudProps {
   /** The wait for the picture has gone on too long: a way out is offered. */
   stuck: boolean;
   onCancel: () => void;
+  /** A finger is what is using the screen: the big button in the middle is there to pause with while the picture plays too (paused, it is there whoever is using the screen). */
+  touch: boolean;
+  /** A finger is held on the picture and it plays faster for as long as it stays. */
+  boosting: boolean;
 }
 
 /** The picture is not there yet: a link is being looked up, the video is loading, or it stopped to fill up. */
@@ -146,6 +154,8 @@ export function Hud(p: HudProps) {
   const playing = player.state === "playing";
   const busy = isBusy(player, p.resolving);
   const paused = !busy && player.state === "paused";
+  /** The big button in the middle: to play when paused, and for a finger to pause with while the picture plays (the Up Next card, or the wait for the picture, take its place). */
+  const centre = !p.upNext && !busy && (paused || (p.touch && playing));
   const qualityLabel =
     player.quality && player.quality.current !== -1
       ? (player.quality.levels.find((level) => level.id === player.quality?.current)?.label ?? "HD")
@@ -158,6 +168,14 @@ export function Hud(p: HudProps) {
 
   return (
     <>
+      {/* Outside the overlay: a hold shows whether or not the controls are up. */}
+      {p.boosting && (
+        <div className="hud-boost" data-testid="tv-boost" role="status" aria-label={t("hud.boost")}>
+          <FastForwardIcon />
+          <b>{HOLD_SPEED}×</b>
+        </div>
+      )}
+
       {p.toast && (
         <div
           className={`hud-toast ${p.toast.notice ? "notice" : ""} ${p.toast.side ? `side-${p.toast.side}` : ""}`}
@@ -211,13 +229,8 @@ export function Hud(p: HudProps) {
       {/* Outside the overlay as well: it is what the picture is waiting for, so it stays up whether or not the controls are. */}
       {isBlocked(player) && <TapToPlay onPlay={p.onToggle} />}
 
-      {/* The overlay sits on top of the video, so a click on the empty part of it has to do what a click on the video does. */}
-      <div
-        className={`tv-overlay ${p.visible ? "visible" : "hidden"}`}
-        data-paused={(paused && !p.upNext) || undefined}
-        onClick={(event) => event.target === event.currentTarget && p.onToggle()}
-        onDoubleClick={(event) => event.target === event.currentTarget && p.onFullscreen?.()}
-      >
+      {/* The overlay sits on top of the video, so its empty part is the picture as far as a hand can tell (data-picture: see gestures.ts). */}
+      <div className={`tv-overlay ${p.visible ? "visible" : "hidden"}`} data-picture data-paused={(paused && !p.upNext) || undefined} data-boosting={p.boosting || undefined}>
         <header className="hud-top">
           <div className="hud-titles">
             <h1 className="hud-title" data-testid="tv-title">
@@ -229,6 +242,11 @@ export function Hud(p: HudProps) {
                 <span>{p.subTitle}</span>
               </div>
             )}
+            {p.episodeName && (
+              <div className="hud-ep-name" data-testid="tv-episode-name">
+                {p.episodeName}
+              </div>
+            )}
           </div>
           <div className="hud-time-of-day">
             <div className="hud-clock">{p.clock}</div>
@@ -238,18 +256,27 @@ export function Hud(p: HudProps) {
 
         <div className="hud-center">
           {paused && !p.upNext && (
-            <>
-              {/* Where the title in the top corner goes while the picture is held: what you are watching, said once, big. */}
-              <div className="hud-pause-card" data-testid="tv-pause-card">
-                <small>{t("hud.watching")}</small>
-                <b>{p.title}</b>
-                {p.subTitle && <span>{p.subTitle}</span>}
-              </div>
-              {/* Mouse and touch only: the remote's OK already resumes, so this stays out of the D-pad's way (tabIndex -1). */}
-              <button className="hud-paused" data-testid="tv-paused-play" tabIndex={-1} aria-label={t("hud.play")} onClick={p.onToggle}>
-                <PlayIcon />
-              </button>
-            </>
+            /* Where the title in the top corner goes while the picture is held: what you are watching, said once, big. */
+            <div className="hud-pause-card" data-testid="tv-pause-card">
+              <small>{t("hud.watching")}</small>
+              <b>{p.title}</b>
+              {p.subTitle && <span>{p.subTitle}</span>}
+              {p.episodeName && <em>{p.episodeName}</em>}
+            </div>
+          )}
+          {centre && (
+            /* Mouse and touch only: the remote's OK already pauses and resumes, so this stays out of the D-pad's way (tabIndex -1). */
+            <button
+              className="hud-paused"
+              data-testid="tv-center-btn"
+              data-for-touch
+              data-playing={playing || undefined}
+              tabIndex={-1}
+              aria-label={playing ? t("hud.pause") : t("hud.play")}
+              onClick={p.onToggle}
+            >
+              {playing ? <PauseIcon /> : <PlayIcon />}
+            </button>
           )}
         </div>
 

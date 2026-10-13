@@ -14,6 +14,8 @@
   font-size: var(--em);
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none; /* (a finger held on the picture plays it faster: no menu for the long press) */
+  touch-action: manipulation; /* (a double tap skips: the page does not zoom to it) */
 }
 .tv[data-hud="hidden"][data-state="playing"] { cursor: none; }
 
@@ -25,6 +27,8 @@
   object-fit: contain;
   background: #000;
 }
+/* The picture takes taps, double taps and holds (gestures.ts) and nothing of it scrolls, so a touch on it is left to the page: the browser starts no pan of its own. */
+.tv-video, .tv-overlay { touch-action: none; -webkit-tap-highlight-color: transparent; }
 /* The controls are the page's own (Hud.tsx). If a browser draws its player's anyway (see nativePlayer.ts), they are kept out of sight; one rule each, as a browser drops a whole rule for a name it does not know. */
 .tv-video::-webkit-media-controls { display: none !important; }
 .tv-video::-webkit-media-controls-enclosure { display: none !important; }
@@ -345,6 +349,17 @@
   max-width: 70em;
 }
 .hud-episode { display: flex; align-items: center; gap: 0.9em; font-size: 1.5em; color: #ddd; }
+/* What the episode is called, under its numbers. */
+.hud-ep-name {
+  max-width: 70em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.6em;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.8);
+}
 .hud-badge {
   padding: 0.15em 0.6em;
   border-radius: 0.35em;
@@ -379,6 +394,8 @@
 /* While the picture is held, what you are watching is said once, big, on the left (the corner title steps aside), over a soft shade. */
 .hud-titles { transition: opacity 0.25s ease; }
 .tv-overlay[data-paused] .hud-titles { opacity: 0; }
+/* The same while a finger holds it at 2x: the pill that says so takes the top of the picture, over the title when the controls are up. */
+.tv-overlay[data-boosting] .hud-titles { opacity: 0; }
 .hud-center::before {
   content: "";
   position: absolute;
@@ -401,15 +418,22 @@
   animation: hud-card-in 0.4s ease both;
 }
 .hud-pause-card small { font-size: 1.3em; font-weight: 600; color: #b3b3b3; text-transform: uppercase; letter-spacing: 0.1em; }
-.hud-pause-card b { font-size: 3.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; text-wrap: balance; }
+/* A very long name is cut by lines, so that the card stays clear of the title bar and the controls whatever it says. */
+.hud-pause-card b { display: -webkit-box; overflow: hidden; font-size: 3.4em; font-weight: 800; line-height: 1.05; letter-spacing: -0.01em; text-wrap: balance; -webkit-line-clamp: 4; -webkit-box-orient: vertical; }
 .hud-pause-card span { font-size: 1.6em; color: #ddd; }
+.hud-pause-card em { display: -webkit-box; overflow: hidden; font-size: 1.9em; font-style: normal; font-weight: 700; color: #fff; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 @keyframes hud-card-in { from { opacity: 0; transform: translateY(-44%); } }
-/* The big play button in the middle while paused. The row around it lets clicks through; the button itself takes them. */
+/*
+ * The big button in the middle: play while paused, and for a finger pause while the picture plays. Big enough to be hit without aiming
+ * (a tap that misses it only shows or hides the controls, which is why it is as big as it is). The row around it lets clicks through;
+ * the button itself takes them.
+ */
 .hud-paused {
+  --size: 15em;
   display: grid;
   place-items: center;
-  width: 7em;
-  height: 7em;
+  width: var(--size);
+  height: var(--size);
   border-radius: 50%;
   border: 0.2em solid rgba(255, 255, 255, 0.85);
   background: rgba(0, 0, 0, 0.55);
@@ -420,7 +444,27 @@
   transition: transform 0.12s ease, background 0.12s ease;
 }
 .hud-paused:hover { transform: scale(1.06); background: rgba(0, 0, 0, 0.7); }
-.hud-paused svg { font-size: 3.6em; }
+.hud-paused:active { transform: scale(0.96); }
+.hud-paused svg { font-size: calc(var(--size) * 0.5); }
+/* A finger held on the picture plays it faster for as long as it stays: said at the top, whether or not the controls are up. */
+.hud-boost {
+  position: absolute;
+  top: 2.4em;
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.3em 0.9em;
+  border-radius: 2em;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.72);
+  font-size: 2em;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.hud-boost svg { font-size: 1.1em; }
+.hud-boost b { font-weight: 800; font-variant-numeric: tabular-nums; }
 /* The browser wants a press before it plays video with sound (a phone, a TV nobody has touched yet): the whole screen is the button. */
 .tv-tap {
   position: absolute;
@@ -478,8 +522,8 @@
 /* A sentence ("Speed 1.5×") rather than a number: smaller, and up under the title so it doesn't cover the picture. */
 .hud-toast.notice { top: 24%; font-size: 2.4em; font-weight: 700; white-space: nowrap; animation-duration: 1.8s; }
 /* A skip is flashed on the half of the picture it went towards, the way a double tap does on a phone. */
-.hud-toast.side-back { left: 22%; }
-.hud-toast.side-forward { left: 78%; }
+.hud-toast.side-back { left: max(22%, 2.6em); } /* (the least a long total of skips, "−120s", needs on a narrow phone to stay on the screen) */
+.hud-toast.side-forward { left: min(78%, calc(100% - 2.6em)); }
 @keyframes hud-toast {
   0% { opacity: 0; transform: translate(-50%, -40%) scale(0.9); }
   15% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -1078,6 +1122,36 @@
 .tv-tile:focus-visible { color: #fff; transform: scale(1.1); outline: none; z-index: 2; }
 .tv-tile:focus-visible .tv-tile-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
 
+/*
+ * For a mouse: a small round button in the corner of a picture keeps the title (＋), lets it go (× in the accent colour, once it is
+ * kept), or clears a card off Continue watching (× in grey), without opening it. A remote has the banner's buttons and the title's
+ * page for the same, and a finger has its own page, so only a pointer that can hover is shown them.
+ */
+.tv-tile-corner {
+  position: absolute;
+  top: 0.5em;
+  right: 0.5em;
+  z-index: 1;
+  display: none;
+  place-items: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  box-shadow: 0 0 0 0.08em rgba(255, 255, 255, 0.4);
+  color: #fff;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.tv-tile-corner svg { width: 1.2em; height: 1.2em; }
+.tv-tile-corner[data-corner="kept"] { background: var(--accent); box-shadow: none; color: var(--accent-ink); }
+@media (hover: hover) and (pointer: fine) {
+  .tv-tile-corner { display: grid; }
+  .tv-tile-corner:hover { background: #fff; box-shadow: none; color: #000; transform: scale(1.14); }
+  .tv-tile-corner:active { transform: scale(0.9); }
+  /* (The corner is part of the tile, so pressing it presses the tile too; only the corner should sink.) */
+  .tv-tile:has(.tv-tile-corner:active):not(:focus-visible) { transform: none; }
+}
+
 .tv-skeleton { height: 8.44em; border-radius: 0.6em; background: linear-gradient(90deg, #17171a, #232328, #17171a); background-size: 200% 100%; animation: tv-shimmer 1.4s linear infinite; }
 .tv-skeleton-title { width: 12em; height: 1.4em; border-radius: 0.3em; background: #17171a; }
 @keyframes tv-shimmer { to { background-position: -200% 0; } }
@@ -1318,6 +1392,35 @@
   .tv .list-editor-tv .auth-field input { font-size: 1.8em; }
   .tv .list-editor-tv .tv-action { font-size: 1.5em; }
 }
+/* Rating a title: the ten scores in a row, the word for the one chosen, what the note says, and the few lines about the watching. */
+.tv-rate-scopes { flex-wrap: wrap; justify-content: center; }
+.tv-rate-scopes .tv-choice { padding: 0.4em 1.1em; font-size: 1.5em; }
+.tv-scores { display: flex; justify-content: center; gap: 0.8em; padding: 0.5em; }
+.tv-score {
+  display: grid;
+  place-items: center;
+  width: 1.55em;
+  height: 1.55em;
+  border-radius: 0.35em;
+  background: rgba(255, 255, 255, 0.11);
+  color: #e6e6ea;
+  font-size: 3em;
+  font-weight: 700;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+}
+.tv-score:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+.tv-score[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
+.tv-score:focus-visible { background: #fff; color: #000; outline: 0.05em solid var(--accent); outline-offset: 0.05em; transform: scale(1.12); }
+.tv-rate-word { min-height: 1.2em; margin: 0; font-size: 2.2em; font-weight: 700; }
+.tv-rate-note { display: -webkit-box; max-width: 42em; margin: 0; overflow: hidden; color: #d8d8dc; font-size: 1.7em; line-height: 1.35; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.tv-rate-note::before { content: "“"; }
+.tv-rate-note::after { content: "”"; }
+.tv-rate-facts { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6em; margin: 0; padding: 0; list-style: none; }
+.tv-rate-facts li { padding: 0.3em 0.9em; border-radius: 999px; background: rgba(255, 255, 255, 0.1); color: #cfcfd4; font-size: 1.5em; }
+.tv .rating-editor-tv.list-editor-tv { grid-template-columns: minmax(0, 70em); }
+.tv-action:disabled { opacity: 0.4; }
+
 /* A list already at the end has nowhere to move: its button stays, so the remote does not lose its place. */
 .tv-action[aria-disabled="true"] { opacity: 0.4; }
 .tv-action-danger { background: rgba(255, 107, 107, 0.2); color: #ffb4b4; }
@@ -1334,8 +1437,9 @@
 .tv-panel-who p { margin: 0; font-size: 1.6em; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
 .tv-panel-actions { align-self: stretch; display: flex; flex-direction: column; gap: 0.6em; margin-top: 0.8em; }
 .tv-panel-actions .tv-action { width: 100%; min-width: 0; padding-block: 0.55em; }
+/* Five headings and four switches, signed in, on a screen that is 56.25em tall at its shortest (16:9): the spacing is close, so they all fit. */
 .tv-panel-settings { display: flex; flex-direction: column; align-items: flex-start; }
-.tv-panel-settings h2 { margin: 1.4em 0 0.5em; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.tv-panel-settings h2 { margin: 0.9em 0 0.4em; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .tv-panel-settings h2:first-child { margin-top: 0; }
 .tv-choices { display: flex; gap: 0.8em; }
 .tv-choice {
@@ -1382,7 +1486,9 @@
 .tv-switch::after { content: ""; position: absolute; top: 0.18em; left: 0.18em; width: 1.14em; height: 1.14em; border-radius: 50%; background: #fff; box-shadow: 0 0.05em 0.2em rgba(0, 0, 0, 0.4); transition: transform 0.18s; }
 .tv-switch-row[aria-checked="true"] .tv-switch { background: var(--accent); }
 .tv-switch-row[aria-checked="true"] .tv-switch::after { transform: translateX(1.1em); }
-.tv-panel-settings .tv-hint { margin-top: 1.2em; max-width: 40em; text-align: left; }
+.tv-panel-settings .tv-switch-row { padding: 0.55em 1.2em; }
+.tv-panel-settings .tv-switch-row + .tv-switch-row { margin-top: 0.3em; }
+.tv-panel-settings .tv-hint { margin-top: 0.8em; max-width: 40em; text-align: left; }
 
 /* What the account says in passing (what was brought across at sign-in), over everything. */
 .tv-toast {
@@ -1499,6 +1605,18 @@
 .tv-screen-compact .tv-party-invite { gap: 4em; }
 .tv-screen-compact .tv-party-invite .tv-qr { width: 15em; padding: 0.8em; }
 .tv-screen-compact .tv-party-invite .tv-qr p { font-size: 1.1em; }
+/*
+ * The link the QR code holds, to copy into a chat: under the code, in line with it, the whole of it with a button beside it. Its text
+ * is as big as the TV's small text goes (1.3em of the screen: the steps it sits in are 1.8em on the page and 1.35em in the panel).
+ */
+.tv-link-row { padding-left: 2.1em; }
+.tv-link-row .copy-link { flex: 1 1 auto; font-size: 0.72em; }
+.tv-menu .tv-link-row .copy-link { font-size: 0.97em; }
+.tv .copy-link-row { gap: 0.6em; }
+.tv .copy-link-url { padding: 0.45em 0.8em; border-radius: 0.4em; background: rgba(255, 255, 255, 0.1); color: #e0e0e4; font-size: 0.92em; font-weight: 600; }
+.tv .copy-link-button { min-width: 0; padding: 0.45em 0.9em; font-size: 1em; white-space: nowrap; }
+.tv .copy-link-button[data-state="copied"]:not(:focus-visible) { background: var(--ok); color: #0b0b0c; }
+.tv .copy-link-note { margin: 0.4em 0 0; color: #ffb4b4; font-size: 0.92em; font-weight: 600; }
 
 /* Who is in: a chip each, the host first. */
 .tv-party-members { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6em 0.8em; max-width: 80em; margin: 0; padding: 0; list-style: none; }
@@ -1616,11 +1734,20 @@
   .tv-panel-who h1 { font-size: 2.4em; }
   .tv-panel-who p { font-size: 1.4em; }
   .tv-panel-settings { align-items: stretch; }
-  .tv-panel-settings h2 { font-size: 1.2em; }
+  .tv-panel-settings h2 { margin: 1.4em 0 0.5em; font-size: 1.2em; }
   .tv-choices { flex-wrap: wrap; }
   .tv-choice { font-size: 1.5em; }
+  .tv-rate-scopes .tv-choice { font-size: 1.3em; }
+  .tv-scores { flex-wrap: wrap; gap: 0.6em; padding: 0.2em; }
+  .tv-score { font-size: 2em; }
+  .tv-rate-word { font-size: 1.7em; }
+  .tv-rate-note { font-size: 1.3em; }
+  .tv-rate-facts li { font-size: 1.2em; }
   .tv-swatch { font-size: 1.4em; }
   .tv-switch-row { max-width: none; font-size: 1.5em; }
+  /* (Here the page scrolls: the rows keep the room a finger wants, which the 16:9 page above has to take back.) */
+  .tv-panel-settings .tv-switch-row { padding: 0.7em 1.2em; }
+  .tv-panel-settings .tv-hint { margin-top: 1.2em; }
   .tv .auth-tv { width: 100%; }
   .tv .auth-tv .auth-field input, .tv .profile-editor-tv .auth-field input { font-size: 1.8em; }
   .tv .profile-editor-tv { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 1.2em; }
@@ -1686,6 +1813,7 @@
   .hud-top { padding: 1.4em 1.6em 3.6em; }
   .hud-title { max-width: 100%; font-size: 1.9em; }
   .hud-episode { font-size: 1.3em; }
+  .hud-ep-name { max-width: 100%; font-size: 1.4em; }
   .hud-clock { font-size: 1.3em; }
   .hud-ends { font-size: 1.1em; }
   .hud-bottom { padding: 4em 1.6em 1.4em; }
@@ -1697,7 +1825,9 @@
   .hud-pause-card { left: 1.6em; max-width: 20em; }
   .hud-pause-card b { font-size: 2.6em; }
   .hud-pause-card span { font-size: 1.3em; }
-  .hud-paused { width: 5.6em; height: 5.6em; }
+  .hud-pause-card em { font-size: 1.5em; }
+  .hud-paused { --size: 9.5em; }
+  .hud-boost { top: 1.4em; font-size: 1.6em; }
   .hud-toast { font-size: 3.2em; }
   .hud-toast.notice { font-size: 1.8em; }
   .hud-error { max-width: calc(100% - 3em); padding: 1.6em; }
@@ -1759,6 +1889,13 @@
   .tv-key { font-size: 1.6em; }
 }
 
+/* A phone held upright has no room for the card of what is paused beside the big button in the middle: it goes above it, over a shade of its own. */
+@media (max-width: 520px) and (orientation: portrait) {
+  .hud-pause-card { left: 1.6em; right: 1.6em; top: auto; bottom: calc(50% + 6.5em); max-width: none; align-items: center; text-align: center; transform: none; }
+  .hud-pause-card b { -webkit-line-clamp: 3; }
+  .hud-center::before { background: radial-gradient(ellipse 90% 40% at 50% 38%, rgba(0, 0, 0, 0.68), transparent); }
+}
+
 /* A phone held sideways, or a window as flat as one: the same pages, with whatever takes height giving some back. */
 @media (max-height: 520px) {
   .tv-screen { justify-content: flex-start; gap: 1.2em; padding-top: 4.4em; padding-bottom: 1.6em; overflow-y: auto; }
@@ -1803,6 +1940,6 @@
   .tv-welcome { transition-duration: 0.01s; }
   .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }
   .tv-hero { transition: none; }
-  .tv-tile, .tv-tile-category, .tv-end-tile, .tv-action, .tv-hero-button, .tv-choice, .tv-swatch, .tv-switch-row, .tv-key { transition: none; }
+  .tv-tile, .tv-tile-category, .tv-end-tile, .tv-action, .tv-hero-button, .tv-choice, .tv-swatch, .tv-switch-row, .tv-key, .tv-tile-corner { transition: none; }
   .tv-tile:focus-visible, .tv-tile-category:focus-visible, .tv-end-tile:focus-visible { transform: none; }
 }

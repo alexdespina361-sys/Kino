@@ -191,15 +191,68 @@ export const ListNameItemSchema = orRemoved(ListNameLive);
 export type ListNameItem = z.infer<typeof ListNameItemSchema>;
 export type LiveListName = z.infer<typeof ListNameLive>;
 
+/** What a profile thought of a film, of a show, or of one season of a show. */
+export const RATING_NOTE_MAX = 400;
+export const MAX_SCORE = 10;
+const RatingLive = z.object({
+  key: KeySchema,
+  /** The last change of any kind: what the copies settle by. */
+  at: AtSchema,
+  title: z.string().max(300),
+  /** The link that plays the title (a show's first episode's), to open it again from the list of ratings. */
+  url: z.string().max(2048),
+  image: z.string().max(2048).optional(),
+  backdrop: z.string().max(2048).optional(),
+  year: z.number().int().optional(),
+  kind: z.enum(["movie", "series"]).optional(),
+  /** Absent: the whole title (a film, or a show as a whole). */
+  season: z.number().int().min(1).max(200).optional(),
+  score: z.number().int().min(1).max(MAX_SCORE),
+  /** Why, in the person's words. */
+  note: z.string().max(RATING_NOTE_MAX).optional(),
+  /** When the score was given (a change of the note alone does not move it). */
+  ratedAt: AtSchema,
+  /** What had been watched when it was rated, worked out by the screen from what the profile watched (see rating.ts): when it was last watched... */
+  watchedAt: AtSchema.optional(),
+  /** ...how much of a film (the last 5% counts as watched, since credits get skipped)... */
+  percent: z.number().int().min(0).max(100).optional(),
+  /** ...and for a show or a season how many episodes were watched, out of how many there are when that is known. */
+  seen: z.number().int().min(0).max(5000).optional(),
+  of: z.number().int().min(1).max(5000).optional(),
+});
+export const RatingItemSchema = orRemoved(RatingLive);
+export type RatingItem = z.infer<typeof RatingItemSchema>;
+export type LiveRating = z.infer<typeof RatingLive>;
+
+/** A rating is told apart by the title it is for (a show by its first episode's link, whichever episode it was found by) and, for one season of a show, which. */
+export const ratingKey = (url: string, season?: number): string => `rate:${titleLink(url)}${season ? `|s${season}` : ""}`;
+
 /** How a profile likes the website. Each setting is its own item, so changing one on the phone never undoes another changed on the TV. */
 export const SETTING_SCHEMAS = {
   lang: UiLanguageSchema,
   accent: AccentSchema,
   autoplayNext: z.boolean(),
+  /**
+   * A tap or click on the picture pauses and plays it. Off (until turned on) it only shows or hides the controls: the big button in the
+   * middle, the bar's own and the remote's OK key pause either way. (A remote that points and clicks like a mouse is the one that notices.)
+   */
+  tapToPause: z.boolean(),
   /** The subtitle languages that matter to this profile, in order: the subtitle lists show them first. */
   subtitleLanguages: z.array(z.string().regex(/^[a-z]{2,3}$/)).max(12),
   /** Leave every other subtitle language out of the lists. */
   onlySubtitleLanguages: z.boolean(),
+  /** Scores and notes for films, shows and seasons (on unless turned off). Turned off, nothing of it shows; what was rated stays. */
+  ratings: z.boolean(),
+  /**
+   * Friends (see friends.ts for what each is when it is not set): the master switch, and what a friend may do while it is on. They are
+   * settings of the profile, so the server reads them to know what a friend may be given, and they follow the profile everywhere.
+   */
+  friends: z.boolean(),
+  friendsLists: z.boolean(),
+  friendsRatings: z.boolean(),
+  friendsGive: z.boolean(),
+  friendsGet: z.boolean(),
+  friendsInbox: z.boolean(),
 } as const;
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
 export const SETTING_KEYS = Object.keys(SETTING_SCHEMAS) as SettingKey[];
@@ -220,7 +273,7 @@ export function resolveSettings(items: readonly SettingItem[]): Settings {
   return settings as Settings;
 }
 
-export const LIMITS = { progress: 60, watched: 600, list: 400, listNames: MAX_LISTS, settings: SETTING_KEYS.length } as const;
+export const LIMITS = { progress: 60, watched: 600, list: 400, listNames: MAX_LISTS, ratings: 500, settings: SETTING_KEYS.length } as const;
 
 /** Everything one profile keeps, as the two screens hold it and as it travels. */
 export interface ProfileData {
@@ -228,11 +281,12 @@ export interface ProfileData {
   watched: WatchedItem[];
   list: ListItem[];
   listNames: ListNameItem[];
+  ratings: RatingItem[];
   settings: SettingItem[];
 }
-export const emptyData = (): ProfileData => ({ progress: [], watched: [], list: [], listNames: [], settings: [] });
+export const emptyData = (): ProfileData => ({ progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [] });
 /** The parts of `ProfileData`, which is what a sync goes through one by one. */
-export const COLLECTIONS = ["progress", "watched", "list", "listNames", "settings"] as const satisfies readonly (keyof ProfileData)[];
+export const COLLECTIONS = ["progress", "watched", "list", "listNames", "ratings", "settings"] as const satisfies readonly (keyof ProfileData)[];
 export type CollectionName = (typeof COLLECTIONS)[number];
 
 /** What a screen sends to bring the server up to date and ask what it missed. `since` is the last `rev` it was told of. */
@@ -242,6 +296,7 @@ export const SyncRequestSchema = z.object({
   watched: z.array(WatchedItemSchema).max(LIMITS.watched + 100).default([]),
   list: z.array(ListItemSchema).max(LIMITS.list + 160).default([]),
   listNames: z.array(ListNameItemSchema).max(LIMITS.listNames + 160).default([]),
+  ratings: z.array(RatingItemSchema).max(LIMITS.ratings + 160).default([]),
   settings: z.array(SettingItemSchema).max(40).default([]),
 });
 export type SyncRequest = z.input<typeof SyncRequestSchema>;
@@ -256,7 +311,15 @@ export const SyncResponseSchema = z.object({
   list: z.array(ListItemSchema),
   /** (A server older than the screen has no lists to tell of.) */
   listNames: z.array(ListNameItemSchema).default([]),
-  settings: z.array(SettingItemSchema),
+  /** (...nor ratings.) */
+  ratings: z.array(RatingItemSchema).default([]),
+  /** (A server newer than the screen may keep settings the screen has never heard of: those are left out, rather than the whole answer being refused and the screen never syncing again until it is reloaded.) */
+  settings: z
+    .array(z.unknown())
+    .transform((items) => items.flatMap((item) => {
+      const known = SettingItemSchema.safeParse(item);
+      return known.success ? [known.data] : [];
+    })),
 });
 export type SyncResponse = z.infer<typeof SyncResponseSchema>;
 
@@ -348,6 +411,7 @@ export function mergeData(a: ProfileData, b: ProfileData, now = Date.now()): Pro
     watched: mergeCollection(a.watched, b.watched, { limit: LIMITS.watched, now }),
     list: mergeCollection(a.list, b.list, { limit: LIMITS.list, now, fill: (w, l) => fillListItem(w as LiveListItem, l as LiveListItem) as ListItem }),
     listNames: mergeCollection(a.listNames, b.listNames, { limit: LIMITS.listNames, now }),
+    ratings: mergeCollection(a.ratings, b.ratings, { limit: LIMITS.ratings, now }),
     settings: mergeCollection(a.settings, b.settings, { limit: LIMITS.settings, now }),
   };
 }

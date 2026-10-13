@@ -284,6 +284,118 @@ describe("named lists", () => {
   });
 });
 
+describe("ratings", () => {
+  const dune = { title: "Dune", url: "https://filmpire.sc/watch/438631", year: 2021, kind: "movie" as const, image: "/dune.jpg" };
+  const show = { title: "The Boondocks", url: "https://filmpire.sc/watch/6591?s=1&e=1", kind: "series" as const };
+
+  it("gives a title a score on its own, and remembers when and what was watched", () => {
+    const d = device(1_000_000);
+    d.store.setRating(dune, undefined, { score: 8 }, { percent: 100, watchedAt: 900_000 });
+    expect(d.store.getSnapshot().ratings).toEqual([
+      { key: "rate:https://filmpire.sc/watch/438631", at: 1_000_000, title: "Dune", url: "https://filmpire.sc/watch/438631", image: "/dune.jpg", year: 2021, kind: "movie", score: 8, ratedAt: 1_000_000, watchedAt: 900_000, percent: 100 },
+    ]);
+  });
+
+  it("keeps a note with the score, and a change of the note alone leaves the date of the score where it was", () => {
+    const d = device(1_000_000);
+    d.store.setRating(dune, undefined, { score: 7 }, { percent: 60 });
+    d.advance(5000);
+    d.store.setRating(dune, undefined, { note: "  Slow, but the sound is huge.  " });
+    expect(d.store.getSnapshot().ratings[0]).toMatchObject({ score: 7, note: "Slow, but the sound is huge.", at: 1_005_000, ratedAt: 1_000_000, percent: 60 });
+    d.advance(5000);
+    d.store.setRating(dune, undefined, { score: 9 }, { percent: 100 });
+    expect(d.store.getSnapshot().ratings[0]).toMatchObject({ score: 9, note: "Slow, but the sound is huge.", ratedAt: 1_010_000, percent: 100 });
+    d.store.setRating(dune, undefined, { note: "" });
+    expect(d.store.getSnapshot().ratings[0]?.note).toBeUndefined();
+  });
+
+  it("does not make a rating out of a note, nor out of a score that is not one", () => {
+    const d = device(1_000_000);
+    d.store.setRating(dune, undefined, { note: "Good" });
+    d.store.setRating(dune, undefined, { score: 0 });
+    d.store.setRating(dune, undefined, { score: 11 });
+    d.store.setRating(dune, undefined, { score: 5.5 });
+    expect(d.store.getSnapshot().ratings).toEqual([]);
+  });
+
+  it("rates a show as a whole and each of its seasons on their own", () => {
+    const d = device(1_000_000);
+    d.store.setRating(show, undefined, { score: 9 }, { seen: 12 });
+    d.advance(10);
+    d.store.setRating(show, 2, { score: 6, note: "Slower" }, { seen: 5, of: 10 });
+    d.advance(10);
+    d.store.setRating(show, 1, { score: 10 });
+    const rated = d.store.getSnapshot().ratings;
+    expect(rated.map((each) => [each.season, each.score])).toEqual([[1, 10], [2, 6], [undefined, 9]]);
+    expect(rated.map((each) => each.key)).toEqual([
+      "rate:https://filmpire.sc/watch/6591?s=1&e=1|s1",
+      "rate:https://filmpire.sc/watch/6591?s=1&e=1|s2",
+      "rate:https://filmpire.sc/watch/6591?s=1&e=1",
+    ]);
+    expect(rated[1]).toMatchObject({ seen: 5, of: 10, note: "Slower" });
+  });
+
+  it("is the same title whichever episode it was found by", () => {
+    const d = device(1_000_000);
+    d.store.setRating({ ...show, url: "https://filmpire.sc/watch/6591?s=3&e=5" }, undefined, { score: 8 });
+    d.advance(10);
+    d.store.setRating(show, undefined, { score: 9 });
+    expect(d.store.getSnapshot().ratings).toMatchObject([{ score: 9, url: "https://filmpire.sc/watch/6591?s=1&e=1" }]);
+  });
+
+  it("takes a rating back, and rating again brings it back", () => {
+    const d = device(1_000_000);
+    d.store.setRating(dune, undefined, { score: 8, note: "x" });
+    d.advance(10);
+    d.store.removeRating(dune.url);
+    expect(d.store.getSnapshot().ratings).toEqual([]);
+    d.advance(10);
+    d.store.setRating(dune, undefined, { score: 5 });
+    expect(d.store.getSnapshot().ratings).toMatchObject([{ score: 5 }]);
+    expect(d.store.getSnapshot().ratings[0]?.note).toBeUndefined();
+  });
+
+  it("goes along to another screen of the same profile, with a removal, and into the profile from a guest's screen", async () => {
+    const accounts = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => Date.now() });
+    const created = accounts.createAccount("r@example.com", "hash");
+    if (!created.ok) throw new Error("no account");
+    const profile = accounts.profilesOf(created.value.id)[0]!;
+    const sync = (d: ReturnType<typeof device>) => {
+      const { request, sent } = d.store.pending();
+      d.store.accept(accounts.sync(profile.id, request)!, sent);
+    };
+    const tv = device(Date.now() - 100_000);
+    const phone = device(Date.now() - 100_000);
+    tv.store.openScope(profile.id);
+    phone.store.openScope(profile.id);
+
+    tv.store.setRating(dune, undefined, { score: 8, note: "Big" }, { percent: 100 });
+    sync(tv);
+    sync(phone);
+    expect(phone.store.getSnapshot().ratings).toMatchObject([{ title: "Dune", score: 8, note: "Big", percent: 100 }]);
+
+    phone.advance(2000);
+    phone.store.removeRating(dune.url);
+    sync(phone);
+    sync(tv);
+    expect(tv.store.getSnapshot().ratings).toEqual([]);
+
+    // A guest's rating comes into the profile when the guest signs in.
+    const guest = device(Date.now() - 50_000);
+    guest.store.setRating(show, 1, { score: 7 });
+    guest.store.openScope(profile.id);
+    sync(guest);
+    expect(guest.store.getSnapshot().ratings).toEqual([]);
+    guest.store.openScope(GUEST);
+    expect(guest.store.getSnapshot().ratings).toMatchObject([{ season: 1, score: 7 }]);
+    guest.store.openScope(profile.id);
+    expect(guest.store.adoptGuest()).toBe(true);
+    sync(guest);
+    sync(tv);
+    expect(tv.store.getSnapshot().ratings).toMatchObject([{ title: "The Boondocks", season: 1, score: 7 }]);
+  });
+});
+
 describe("keeping it on the device", () => {
   it("is still there after the page is opened again, and each place has its own copy", () => {
     const first = device(1_000_000);
@@ -365,7 +477,7 @@ describe("signing in on a screen that was used as a guest", () => {
     const d = device(10_000_000);
     d.store.playbackStarted(film(1));
     d.store.openScope("pro_a");
-    d.store.accept({ rev: 4, progress: [], watched: [], list: [], listNames: [], settings: [] }, new Map());
+    d.store.accept({ rev: 4, progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [] }, new Map());
     d.advance(60_000);
     d.store.adoptGuest();
     expect(d.store.pending().request.progress).toHaveLength(1);
@@ -444,6 +556,56 @@ describe("staying in step with the server", () => {
       expect(screen.store.getSnapshot().list.map((item) => item.title).sort()).toEqual(["A", "B"]);
       expect(screen.store.getSnapshot().settings).toEqual({ accent: "green" });
     }
+  });
+
+  it("keeps a screen's change over what it had seen of the thing, even when its clock runs behind the screen that made that", async () => {
+    const { accounts, profile } = await server();
+    const phone = device(Date.now() - 100_000);
+    const tv = device(Date.now() - 100_000 - 180_000); // three minutes behind
+    tv.store.openScope(profile.id);
+    phone.store.openScope(profile.id);
+    phone.store.setSetting("friends", true);
+    sync(phone, accounts, profile.id);
+    sync(tv, accounts, profile.id);
+    expect(tv.store.getSnapshot().settings).toEqual({ friends: true });
+
+    tv.advance(60_000); // a minute later by its own clock, and still earlier than the phone's change
+    tv.store.setSetting("friends", false);
+    sync(tv, accounts, profile.id);
+    sync(phone, accounts, profile.id);
+    for (const screen of [tv, phone]) expect(screen.store.getSnapshot().settings).toEqual({ friends: false });
+  });
+
+  it("takes the server's word on a change it held back because the clock that made it runs ahead, so that later changes from other screens are not ignored for ever", async () => {
+    const { accounts, profile } = await server();
+    const phone = device(Date.now() - 100_000);
+    const tv = device(Date.now() + 10 * 60_000); // ten minutes ahead
+    tv.store.openScope(profile.id);
+    phone.store.openScope(profile.id);
+
+    tv.store.setSetting("friends", false);
+    sync(tv, accounts, profile.id); // (the server keeps it, but not as far ahead as the TV's clock says)
+    expect(tv.store.pending().request.settings).toEqual([]); // ...and there is nothing left to send
+
+    phone.advance(100_000 + 2 * 60_000); // two minutes after that, by a clock that is right
+    phone.store.setSetting("friends", true);
+    sync(phone, accounts, profile.id);
+    sync(tv, accounts, profile.id);
+    for (const screen of [tv, phone]) expect(screen.store.getSnapshot().settings).toEqual({ friends: true });
+  });
+
+  it("keeps a change made again here while the answer to the one before was on its way, whatever the answer was", async () => {
+    const { accounts, profile } = await server();
+    const tv = device(Date.now() + 10 * 60_000);
+    tv.store.openScope(profile.id);
+    tv.store.setSetting("friends", true);
+    const { request, sent } = tv.store.pending();
+    const response = accounts.sync(profile.id, request)!;
+    tv.advance(1000);
+    tv.store.setSetting("friends", false); // changed again before the answer came
+    tv.store.accept(response, sent);
+    expect(tv.store.getSnapshot().settings).toEqual({ friends: false });
+    expect(tv.store.pending().request.settings).toMatchObject([{ key: "friends", value: false }]);
   });
 
   it("carries a removal to the screen that still shows the title", async () => {

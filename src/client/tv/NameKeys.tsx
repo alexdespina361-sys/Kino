@@ -9,15 +9,17 @@ interface Props {
   onKey: (char: string) => void;
   onDelete: () => void;
   onClear: () => void;
+  /** More keys after the letters: a sentence wants a few marks. */
+  more?: readonly string[];
 }
 
 /** The keys for typing the name of a list with the remote: the letters and digits of the search, twelve to a row, then Space, Delete and Clear. */
-export function NameKeys({ onKey, onDelete, onClear }: Props) {
+export function NameKeys({ onKey, onDelete, onClear, more = [] }: Props) {
   const t = useT();
   const language = useLanguage();
   return (
     <div className="tv-keys tv-name-keys" role="group" aria-label={t("tv.keyboard")}>
-      {[...KEYBOARD_KEYS, ...(EXTRA_LETTERS[language] ?? [])].map((key) => (
+      {[...KEYBOARD_KEYS, ...(EXTRA_LETTERS[language] ?? []), ...more].map((key) => (
         <button key={key} type="button" className="tv-key" data-testid={`name-key-${key}`} onClick={() => onKey(key)} data-nav>
           {key}
         </button>

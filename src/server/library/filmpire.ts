@@ -141,6 +141,11 @@ const TmdbResponseSchema = z.object({
   results: z.array(z.unknown()),
 });
 
+const TmdbSearchSchema = TmdbResponseSchema.extend({ total_pages: z.number().int().optional() });
+
+/** A search reads this many pages of TMDB's answers at most (twenty titles to a page): a word that begins many titles has more to show than the first twenty. */
+const SEARCH_PAGES = 3;
+
 const TmdbSeasonSchema = z.object({
   episodes: z.array(
     z.object({
@@ -269,20 +274,30 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       const q = queryText.trim();
       if (!q) return [];
       try {
-        const fullUrl = `${BASE_URL}/search/multi?api_key=${apiKey}&query=${encodeURIComponent(q)}`;
-        const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-        if (!res.ok) return [];
-        const data = TmdbResponseSchema.parse(await res.json());
+        const askPage = async (page: number) => {
+          const fullUrl = `${BASE_URL}/search/multi?api_key=${apiKey}&query=${encodeURIComponent(q)}&page=${page}`;
+          const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+          return res.ok ? TmdbSearchSchema.parse(await res.json()) : null;
+        };
+        const first = await askPage(1);
+        if (!first) return [];
+        // The rest of the pages are asked together once the first says there are any; one that cannot be had is left out.
+        const rest = await Promise.all(Array.from({ length: Math.min(first.total_pages ?? 1, SEARCH_PAGES) - 1 }, (_, at) => askPage(at + 2).catch(() => null)));
 
-        const candidateResults = shouldFilterTrash
-          ? data.results.filter((item) => !isTrashItem(item))
-          : data.results;
+        const toItems = (results: unknown[]) =>
+          (shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results)
+            .map((item) => toLibraryItem(item))
+            .filter((item): item is LibraryItem => item !== null);
+        const items = toItems(first.results);
+        const seen = new Set(items.map((item) => item.id));
+        // (Only the first page is asked about at the provider, as before; for the others, what it was already found to lack stays out.)
+        const further = toItems(rest.flatMap((page) => page?.results ?? [])).filter((item) => {
+          const parsed = parseWatchLink(item.url);
+          const record = shouldVerify && parsed ? probeCache.get(`${parsed.type}:${parsed.id}`) : undefined;
+          return !seen.has(item.id) && seen.add(item.id) && !(record?.status === 404 && now() - record.checkedAt < PROBE_TTL_MS);
+        });
 
-        const items = candidateResults
-          .map((item) => toLibraryItem(item))
-          .filter((item): item is LibraryItem => item !== null);
-
-        if (!shouldVerify || items.length === 0) return items;
+        if (!shouldVerify || items.length === 0) return [...items, ...further];
 
         const probeResults = await Promise.all(
           items.map(async (item) => {
@@ -297,7 +312,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
           }),
         );
 
-        return probeResults.filter((item): item is LibraryItem => item !== null);
+        return [...probeResults.filter((item): item is LibraryItem => item !== null), ...further];
       } catch {
         return [];
       }

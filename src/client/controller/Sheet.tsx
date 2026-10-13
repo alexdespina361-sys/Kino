@@ -6,6 +6,9 @@ import { useBackToClose } from "./backButton";
 /** The sheets that are open, the one on top last: Escape closes that one, not all of them. */
 const open: object[] = [];
 
+/** Whether a sheet is open (over a page, say): Escape then belongs to the sheet, and the page under it is left as it is. */
+export const sheetIsOpen = () => open.length > 0;
+
 /** How far a sheet has to be pulled down, or how fast (pixels per millisecond), for the let-go to close it. */
 const CLOSE_DISTANCE = 120;
 const CLOSE_SPEED = 0.6;

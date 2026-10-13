@@ -1,12 +1,16 @@
+import type { ReactNode } from "react";
 import { listKey, savedKeys, type PlayHint } from "../../shared";
 import { hintOf, listEntryOf, listName } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
+import { useRatingsOn } from "../account/ratings";
 import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { CheckIcon, PlayIcon, PlusIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
 import { useSeriesPage, type PageEpisode, type SeriesPage } from "../tv/Episodes";
 import { resumable, type Entry } from "../tv/pages";
+import { RecommendButton } from "./Friends";
+import { RatingBox } from "./RatingBox";
 import { Sheet } from "./Sheet";
 import { Still } from "./Sheets";
 
@@ -27,6 +31,7 @@ interface TitleSheetProps {
 export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheetProps) {
   const t = useT();
   const { progress, watched, lists, list } = useProfileData();
+  const ratings = useRatingsOn();
   const entry = resumable(given, progress);
   const series = useSeriesPage(given, progress, watched);
   const hint = hintOf(entry);
@@ -67,14 +72,26 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
           {kept ? <CheckIcon /> : <PlusIcon />} {listText}
         </button>
       </div>
+      <RecommendButton entry={entry} />
+      {ratings && <RatingBox entry={entry} isShow={series.isShow} title={t("rating.yours")} testId="rate-title" />}
       {entry.description && <p className="muted title-about">{entry.description}</p>}
-      {series.isShow && <Episodes page={series} onPlay={(episode) => play(episode.url, episode.startAt)} />}
+      {series.isShow && (
+        <Episodes
+          page={series}
+          onPlay={(episode) => play(episode.url, episode.startAt)}
+          seasonRating={
+            ratings && series.season !== undefined ? (
+              <RatingBox key={series.season} entry={entry} isShow season={series.season} total={series.episodes?.length} title={t("rating.seasonRating", { n: series.season })} testId="rate-season" />
+            ) : undefined
+          }
+        />
+      )}
     </Sheet>
   );
 }
 
 /** A show's seasons (when there is a choice) and the episodes of the one that is shown, each a card the way the episode sheet lists them. */
-function Episodes({ page, onPlay }: { page: SeriesPage; onPlay: (episode: PageEpisode) => void }) {
+function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; onPlay: (episode: PageEpisode) => void; /** The rating box of the season that is shown. */ seasonRating?: ReactNode }) {
   const t = useT();
   const { seasons, season, episodes } = page;
   return (
@@ -96,6 +113,7 @@ function Episodes({ page, onPlay }: { page: SeriesPage; onPlay: (episode: PageEp
           ))}
         </div>
       )}
+      {seasonRating}
       {episodes ? (
         <ul className="episodes">
           {episodes.map((episode) => {

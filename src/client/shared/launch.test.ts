@@ -19,6 +19,12 @@ describe("readLaunchParams", () => {
     expect(readLaunchParams("?link=ABCD0123")).toEqual({}); // 0 and 1 are not in the alphabet
   });
 
+  it("reads the code in a friend's link the same way", () => {
+    expect(readLaunchParams("?friend=ABCD2345")).toEqual({ friend: "ABCD2345" });
+    expect(readLaunchParams("?friend=abcd-2345")).toEqual({ friend: "ABCD2345" });
+    expect(readLaunchParams("?friend=ABCD234")).toEqual({});
+  });
+
   it("reads a shared link from `url`", () => {
     expect(readLaunchParams("?url=https%3A%2F%2Fsite.example%2Fwatch%2F1")).toEqual({ url: "https://site.example/watch/1" });
   });

@@ -61,6 +61,14 @@ export const Forward10Icon = (props: Props) => (
   </Icon>
 );
 
+/** Two triangles pointing on: faster. */
+export const FastForwardIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M3 5.5v13l8.5-6.5z" fill="currentColor" />
+    <path d="M12.5 5.5v13L21 12z" fill="currentColor" />
+  </Icon>
+);
+
 export const NextIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M5 5v14l10-7z" fill="currentColor" />
@@ -144,6 +152,14 @@ export const ClipboardIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
     <rect x="8" y="2" width="8" height="4" rx="1" />
+  </Icon>
+);
+
+/** Two sheets, one over the other: copy. */
+export const CopyIcon = (props: Props) => (
+  <Icon {...props}>
+    <rect x="9" y="9" width="12" height="12" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
   </Icon>
 );
 
@@ -299,8 +315,22 @@ export const UsersIcon = (props: Props) => (
   </Icon>
 );
 
+/** A heart: friends. */
+export const HeartIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+  </Icon>
+);
+
 export const RefreshIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M20 11a8 8 0 0 0-14-4.5L4 9M4 4v5h5M4 13a8 8 0 0 0 14 4.5L20 15M20 20v-5h-5" />
+  </Icon>
+);
+
+/** A star: an outline, or filled in for a title that has a rating. */
+export const StarIcon = ({ filled, ...props }: Props & { filled?: boolean }) => (
+  <Icon {...props}>
+    <polygon points="12 2.5 15.1 8.8 22 9.8 17 14.6 18.2 21.5 12 18.2 5.8 21.5 7 14.6 2 9.8 8.9 8.8" {...(filled ? { fill: "currentColor" } : {})} />
   </Icon>
 );

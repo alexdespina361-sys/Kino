@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import { fractionOf, listOf, resumeAt, type ListInfo, type LiveListItem, type LiveProgress, type PlayHint } from "../../shared";
+import { fractionOf, listOf, resumeAt, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type PlayHint } from "../../shared";
 import { continueNote, hintOf, listEntryOf, listName, unfinished } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
+import { ratingNote, sortRatings } from "../account/ratingText";
 import { useT } from "../i18n";
 import { Poster } from "../shared/Poster";
-import { entryOfSaved, type Entry } from "../tv/pages";
+import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
 import { ListButton, RemoveButton, useListToggle, type ListToggle } from "./Round";
 
@@ -39,9 +40,10 @@ interface CardProps {
   /** 0..1: a thin bar across the foot of the picture. */
   progress?: number;
   playLabel: string;
-  removeLabel: string;
+  /** The cross in the corner: a card that cannot be taken off its row (a rated title's) has neither of these. */
+  removeLabel?: string;
   onPlay: () => void;
-  onRemove: () => void;
+  onRemove?: () => void;
   testId: string;
   /** The round + beside the cross, which a hold on the card does as well. */
   toggle?: ListToggle;
@@ -49,7 +51,7 @@ interface CardProps {
   onHold?: () => void;
 }
 
-function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay, onRemove, testId, toggle, onHold }: CardProps) {
+export function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay, onRemove, testId, toggle, onHold }: CardProps) {
   const hold = useHold(() => (onHold ?? toggle?.onHold)?.());
   return (
     <div className="lib-tile" data-testid={`${testId}-item`}>
@@ -64,10 +66,12 @@ function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay
         <span className="lib-title">{title}</span>
         {note && <span className="lib-year">{note}</span>}
       </button>
-      <span className="lib-corner">
-        {toggle && <ListButton toggle={toggle} title={title} testId={`${testId}-list-toggle`} />}
-        <RemoveButton label={removeLabel} onClick={onRemove} testId={`${testId}-remove`} />
-      </span>
+      {(toggle || onRemove) && (
+        <span className="lib-corner">
+          {toggle && <ListButton toggle={toggle} title={title} testId={`${testId}-list-toggle`} />}
+          {onRemove && <RemoveButton label={removeLabel ?? ""} onClick={onRemove} testId={`${testId}-remove`} />}
+        </span>
+      )}
     </div>
   );
 }
@@ -175,5 +179,26 @@ export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: L
         );
       })}
     </>
+  );
+}
+
+/**
+ * What this profile rated: a row of the titles and seasons it gave a score, the newest first, with the score under each. A tap opens
+ * the title (where its rating, note and stats are); "See all" opens the whole list. There is no row until something is rated.
+ */
+export function RatingsRow({ ratings, onOpen, onAll }: { ratings: readonly LiveRating[]; onOpen: (entry: Entry) => void; onAll: () => void }) {
+  const t = useT();
+  if (ratings.length === 0) return null;
+  const all = (
+    <button type="button" className="row-link" onClick={onAll} data-testid="ratings-all">
+      {t("rating.all")}
+    </button>
+  );
+  return (
+    <CardRow title={t("rating.mine")} testId="ratings-row" aside={all}>
+      {sortRatings(ratings, "new").map((rating) => (
+        <Card key={rating.key} testId="rating" title={rating.title} image={rating.backdrop ?? rating.image} note={ratingNote(t, rating)} playLabel={`${t("rows.open")} ${rating.title}`} onPlay={() => onOpen(entryOfRating(rating))} />
+      ))}
+    </CardRow>
   );
 }

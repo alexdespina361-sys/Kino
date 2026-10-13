@@ -1,16 +1,21 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { PartyView } from "../../shared";
+import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
+import { CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
 import { BackspaceIcon, CheckIcon, CloseIcon, FullscreenIcon, UsersIcon } from "../shared/icons";
 import { partyLink } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
+import { FriendPickerTv } from "./Friends";
 import { Screen } from "./Idle";
 
-/** How a button joins the remote's arrow keys: the pages use `data-nav`, the panel over a film `data-opt` (see dpad.ts and Menu.tsx). */
+/** How a button joins the remote's arrow keys: the pages use `data-nav`, the panel over a film `data-opt` in a column (see dpad.ts and Menu.tsx). */
 type Nav = Record<string, string | number | boolean>;
 const PAGE_NAV: Nav = { "data-nav": true };
 const PANEL_NAV: Nav = { "data-opt": true, "data-col": 1 };
+/** The panel's left column, where the invite is, comes before the one with the members and the way out. */
+const PANEL_INVITE_NAV: Nav = { "data-opt": true, "data-col": 0 };
 
 /** Who is in the party, the host first. The host can send a guest away; a screen that is gone from the network is dimmed. */
 function Members({ party, nav, onRemove }: { party: PartyView; nav: Nav; onRemove?: (id: string) => void }) {
@@ -39,8 +44,11 @@ function Members({ party, nav, onRemove }: { party: PartyView; nav: Nav; onRemov
   );
 }
 
-/** How to get in: the steps, the code and the QR code that carries it. The code is renewed while it is on screen, so it can be a moment late. */
-function Invite({ code }: { code: string | undefined }) {
+/**
+ * How to get in: the steps, the code and the QR code that carries it, and the link the QR code holds, to copy into somebody's chat.
+ * The code is renewed while it is on screen, so it can be a moment late.
+ */
+function Invite({ code, nav }: { code: string | undefined; nav: Nav }) {
   const t = useT();
   return (
     <div className="tv-pair tv-party-invite">
@@ -64,6 +72,11 @@ function Invite({ code }: { code: string | undefined }) {
             {code ? formatCode(code) : "…"}
           </p>
         </li>
+        {code && (
+          <li className="tv-link-row">
+            <CopyLink link={partyLink(code)} testId="tv-party-link" buttonClass="tv-action" nav={nav} />
+          </li>
+        )}
       </ol>
       <div className="tv-qr">
         {code ? <QrCode value={partyLink(code)} label={t("party.qrLabel")} /> : <div className="spinner tv-qr-wait" />}
@@ -83,6 +96,10 @@ interface PageProps {
   onFullscreen: (() => void) | null;
   /** Why the code that was typed was refused. `id` changes with every refusal. */
   error: { id: number; text: string } | null;
+  /** The code of a party a friend invited this screen to: the page opens on joining it. */
+  joinWith?: string | null;
+  /** The moment the code of the party this screen hosts stops working, worked out when it was reported (not when a friend is told, which is later). */
+  codeEndsAt?: number | null;
   onStart: () => void;
   onJoin: (code: string) => void;
   onRemove: (id: string) => void;
@@ -94,7 +111,9 @@ interface PageProps {
 /** What the TV shows for a watch party while nothing plays: starting or joining one, inviting the others, or waiting for the host. */
 export function PartyPage(p: PageProps) {
   const t = useT();
-  const [joining, setJoining] = useState(false);
+  const friends = useFriends();
+  const [joining, setJoining] = useState(Boolean(p.joinWith));
+  const [inviting, setInviting] = useState(false);
   const leaveRef = useRef<HTMLButtonElement>(null);
   // Back from a party that was joined: the question again, not the number pad.
   useEffect(() => {
@@ -130,16 +149,34 @@ export function PartyPage(p: PageProps) {
   }
 
   if (p.party?.role === "host") {
+    const invite = p.party.code;
+    // Friends are told the code of the party, and have a button that joins it (see friends/).
+    if (inviting && invite) {
+      return (
+        <FriendPickerTv
+          title={t("friends.inviteFriends")}
+          lead={formatCode(invite.code)}
+          said="friends.inviteSent"
+          build={() => ({ kind: "party", code: invite.code, endsAt: p.codeEndsAt ?? Date.now() + invite.expiresInMs })}
+          onClose={() => setInviting(false)}
+        />
+      );
+    }
     return (
       <Screen key="host" testId="tv-party" compact focus onBack={p.onBack}>
         <h1 className="tv-headline tv-headline-small">{t("party.rail")}</h1>
-        <Invite code={p.party.code?.code} />
+        <Invite code={invite?.code} nav={PAGE_NAV} />
         <Members party={p.party} nav={PAGE_NAV} onRemove={p.onRemove} />
         {p.party.guests.length === 0 && <p className="tv-hint">{t("party.waiting")}</p>}
         <div className="tv-actions">
           <button className="tv-action tv-action-primary" onClick={p.onBack} data-testid="tv-back-to-library" data-nav data-autofocus>
             {t("tv.backToLibrary")}
           </button>
+          {friends.on && invite && (
+            <button className="tv-action" onClick={() => setInviting(true)} data-testid="tv-party-invite-friends" data-nav>
+              <UsersIcon /> {t("friends.inviteFriends")}
+            </button>
+          )}
           <button className="tv-action" onClick={p.onEnd} data-testid="tv-party-end" data-nav>
             {t("party.end")}
           </button>
@@ -148,7 +185,7 @@ export function PartyPage(p: PageProps) {
     );
   }
 
-  if (joining) return <JoinPage error={p.error} onJoin={p.onJoin} onBack={() => setJoining(false)} />;
+  if (joining) return <JoinPage error={p.error} {...(p.joinWith ? { initial: p.joinWith } : {})} onJoin={p.onJoin} onBack={() => setJoining(false)} />;
 
   return (
     // (Its own key: Start turns this page into the host's, and the remote must land on that page's button, not stay on the one that went.)
@@ -179,14 +216,17 @@ export function PartyPage(p: PageProps) {
 const DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 
 /** Typing the 6-digit code of a party: the digits of the remote or keyboard, or the number pad on screen. The sixth digit sends it. */
-function JoinPage({ error, onJoin, onBack }: { error: PageProps["error"]; onJoin: (code: string) => void; onBack: () => void }) {
+function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"]; /** A code that came with the page: it is sent as the page opens. */ initial?: string; onJoin: (code: string) => void; onBack: () => void }) {
   const t = useT();
-  const [digits, setDigits] = useState("");
+  const [digits, setDigits] = useState(initial ?? "");
   // The key listener below lives as long as the page, so what it reads is kept where it always finds the latest.
   const latest = useRef(digits);
   latest.current = digits;
   const submit = useRef(onJoin);
   submit.current = onJoin;
+  useEffect(() => {
+    if (initial?.length === 6) submit.current(initial);
+  }, []);
 
   const add = (digit: string) => {
     const now = latest.current;
@@ -311,7 +351,7 @@ export function PartyPanel(p: PanelProps) {
           <div className="tv-menu-cols">
             {host && (
               <div className="tv-menu-col tv-party-invite-col">
-                <Invite code={p.party.code?.code} />
+                <Invite code={p.party.code?.code} nav={PANEL_INVITE_NAV} />
               </div>
             )}
             <div className="tv-menu-col tv-party-side">

@@ -25,8 +25,8 @@ export const PAGE_LEFT_ALONE_MS = 2000;
  * What a screen has kept about its guest (nobody signed in): the same place the page itself writes, for a test that needs the
  * screen to have watched or chosen something before it opens.
  */
-export function guestStorage(data: { progress?: unknown[]; watched?: unknown[]; list?: unknown[]; listNames?: unknown[]; settings?: unknown[] }): Record<string, string> {
-  return { "kino.data.guest": JSON.stringify({ v: 1, data: { progress: [], watched: [], list: [], listNames: [], settings: [], ...data }, rev: 0, dirty: [] }) };
+export function guestStorage(data: { progress?: unknown[]; watched?: unknown[]; list?: unknown[]; listNames?: unknown[]; ratings?: unknown[]; settings?: unknown[] }): Record<string, string> {
+  return { "kino.data.guest": JSON.stringify({ v: 1, data: { progress: [], watched: [], list: [], listNames: [], ratings: [], settings: [], ...data }, rev: 0, dirty: [] }) };
 }
 
 /**

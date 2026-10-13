@@ -422,20 +422,95 @@ test.describe("the TV player", () => {
     phone.close();
   });
 
-  test("the controls fade away while playing, stay while paused, and the big play button works", async ({ browser, baseURL }) => {
+  test("the controls fade away while playing, stay while paused, and the big button in the middle plays", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
     phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
 
-    await tv.getByTestId("tv-paused-play").click(); // the big button in the middle
+    await tv.getByTestId("tv-center-btn").click(); // the big button in the middle
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 5_000 });
+    phone.close();
+  });
 
-    await tv.mouse.click(640, 360); // a click on the picture pauses, and brings the controls back
+  test("a click on the picture only shows or hides the controls: the button on the bar pauses, and the one in the middle plays", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
+
+    // (The mouse coming to the picture brings the controls up; the click that follows puts them away. Neither stops the film.)
+    await tv.mouse.click(640, 360);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden");
+    await tv.waitForTimeout(800);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+
+    await tv.waitForTimeout(700); // (the mouse settling after the click does not bring them back; a move later does)
+    await tv.mouse.move(500, 300);
+    await tv.mouse.move(520, 320);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await expect(tv.getByTestId("tv-center-btn")).toHaveCount(0); // (a mouse has the bar; the big button is for a finger, and for a picture that is held)
+    await tv.getByTestId("tv-play-btn").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
     await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+
+    await tv.mouse.click(1000, 250); // the picture beside the big button is not a play button either: held, the controls go too, and the picture is left clean
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden");
+    await tv.waitForTimeout(500);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect(tv.getByTestId("tv-pause-card")).toBeHidden();
+    await tv.waitForTimeout(700);
+    await tv.mouse.move(500, 300);
+    await tv.mouse.move(520, 320);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await tv.getByTestId("tv-center-btn").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    phone.close();
+  });
+
+  test("OK on the remote still pauses and plays, whatever a click does", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await tv.keyboard.press("Enter");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await tv.keyboard.press("Enter");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.close();
+  });
+
+  test("a profile that wants the picture to be a button gets one: a click pauses and plays, as it always did", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser, undefined, guestStorage({ settings: [{ key: "tapToPause", at: Date.now(), value: true }] }));
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
+
+    await tv.mouse.click(1000, 250); // a click on the picture pauses, and brings the controls back
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    await tv.mouse.click(1000, 250);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    phone.close();
+  });
+
+  test("the big button in the middle is big enough to hit, and leaves room for the card beside it", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/sample.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    const button = (await tv.getByTestId("tv-center-btn").boundingBox())!;
+    const card = (await tv.getByTestId("tv-pause-card").boundingBox())!;
+    expect(button.width).toBeGreaterThanOrEqual(1280 * 0.14); // (it was 7% of the width)
+    expect(button.width).toBeLessThanOrEqual(1280 * 0.2); // (and a third of it would cover the picture)
+    expect(Math.abs(button.x + button.width / 2 - 640)).toBeLessThan(2);
+    expect(card.x + card.width).toBeLessThan(button.x);
     phone.close();
   });
 
@@ -1429,6 +1504,60 @@ test.describe("a watch party started on a TV", () => {
     await expect(host.getByTestId("tv-party-btn")).toContainText("2 devices");
   });
 
+  test("the invite has the party's link with a button that copies it, on the page and in the panel over a film, and the remote reaches it", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    await host.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const clipboard = () => host.evaluate(() => navigator.clipboard.readText());
+    const copy = host.getByTestId("tv-party-link-copy");
+    const code = await startParty(host);
+    const link = new URL(`/?party=${code}`, host.url()).href;
+
+    // The page: the whole link under the code, and OK on its button puts it on the clipboard and says so, then it says Copy link again.
+    await expect(host.getByTestId("tv-party-link-url")).toHaveText(link);
+    await expect(host.getByTestId("tv-back-to-library")).toBeFocused();
+    await host.keyboard.press("ArrowUp");
+    await expect(copy).toBeFocused();
+    await host.keyboard.press("Enter");
+    await expect(copy).toHaveText("Link copied");
+    expect(await clipboard()).toBe(link);
+    await expect(copy).toBeFocused(); // the remote kept its place
+    await expect(copy).toHaveText("Copy link"); // and the button is ready for the next time by itself
+
+    // Over a film: the left column of the panel, which the arrow keys cross over to from Done and back.
+    await host.getByTestId("tv-back-to-library").click();
+    await playFirst(host);
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "playing");
+    await host.mouse.move(60, 60);
+    await host.getByTestId("tv-party-btn").click();
+    await expect(host.getByTestId("tv-party-done")).toBeFocused();
+    await expect(host.getByTestId("tv-party-link-url")).toHaveText(link);
+    await host.keyboard.press("ArrowLeft");
+    await expect(copy).toBeFocused();
+    await host.evaluate(() => navigator.clipboard.writeText("something else"));
+    await host.keyboard.press("Enter");
+    await expect(copy).toHaveText("Link copied");
+    expect(await clipboard()).toBe(link);
+    await host.keyboard.press("ArrowRight");
+    await expect(host.getByTestId("tv-party-done")).toBeFocused();
+  });
+
+  test("there is no link before a party is started, and a browser that refuses to copy it says so and selects it instead", async ({ browser, baseURL }) => {
+    const host = await screen(browser, baseURL!);
+    await host.getByTestId("rail-party").click();
+    await expect(host.getByTestId("tv-party-link")).toHaveCount(0); // nothing is shown before there is a party (the question comes first)
+
+    await host.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined }); // no clipboard of its own...
+      document.execCommand = () => false; // ...and the old way refused
+    });
+    await host.reload();
+    await host.getByTestId("rail-party").click();
+    await host.getByTestId("tv-party-start").click();
+    await host.getByTestId("tv-party-link-copy").click();
+    await expect(host.getByTestId("tv-party-link").getByRole("status")).toHaveText("Could not copy: select the link and copy it");
+    expect(await host.evaluate(() => window.getSelection()?.toString())).toBe(await host.getByTestId("tv-party-link-url").innerText()); // it is selected, for the keys
+  });
+
   test("a guest keeps its own subtitles: the host's stay as they are", async ({ browser, baseURL }) => {
     const host = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(host));
@@ -1548,8 +1677,10 @@ test.describe("a watch party started on a TV", () => {
   test("Back on a guest's waiting page shows the way out and does not take it: OK on Leave does", async ({ browser, baseURL }) => {
     const { host, guest } = await party(browser, baseURL!);
     await expect(guest.getByTestId("tv-disconnect")).not.toBeFocused();
-    await guest.keyboard.press("Escape");
-    await expect(guest.getByTestId("tv-disconnect")).toBeFocused();
+    await expect(async () => {
+      await guest.keyboard.press("Escape"); // (a busy machine can show the page a moment before its Back key is listened for)
+      await expect(guest.getByTestId("tv-disconnect")).toBeFocused({ timeout: 1500 });
+    }).toPass({ timeout: 10_000 });
     await expect(guest.getByTestId("tv-following")).toBeVisible();
     await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
     await guest.keyboard.press("Enter");
@@ -1611,26 +1742,41 @@ test.describe("a watch party started on a TV", () => {
     await expect(phone.getByTestId("party-count")).toHaveText("+1");
   });
 
-  test("the phone shares the party's link, or copies it where sharing isn't there", async ({ browser }) => {
+  test("the phone shows the party's link with a button that copies it, and shares it too where it has a share sheet", async ({ browser }) => {
     const host = await openTv(browser);
     const phone = await openPairedPhone(browser, host);
     await phone.context().grantPermissions(["clipboard-read", "clipboard-write"]);
-    const defineShare = (share: unknown) =>
+    const defineShare = (share: boolean) =>
       phone.evaluate((value) => {
-        Object.defineProperty(navigator, "share", { configurable: true, value: value ? (data: ShareData) => ((window as unknown as { shared: ShareData }).shared = data) : undefined });
+        Object.defineProperty(navigator, "share", { configurable: true, value: value ? (data: ShareData) => Promise.resolve(((window as unknown as { shared: ShareData }).shared = data)) : undefined });
       }, share);
-    await phone.getByTestId("menu").click();
-    await phone.getByTestId("party-open").click();
-    const code = (await phone.getByTestId("party-join-code").innerText()).replace(/\s/g, "");
-    const link = new URL(`/?party=${code}`, phone.url()).href;
+    const openSheet = async () => {
+      await phone.getByTestId("menu").click();
+      await phone.getByTestId("party-open").click();
+      await expect(phone.getByTestId("party-join-code")).toBeVisible();
+      return new URL(`/?party=${(await phone.getByTestId("party-join-code").innerText()).replace(/\s/g, "")}`, phone.url()).href;
+    };
+    const copy = phone.getByTestId("party-link-copy");
 
+    // A phone has a share sheet: Share link is there beside the link and its button.
     await defineShare(true);
+    let link = await openSheet();
+    await expect(phone.getByTestId("party-link-url")).toHaveText(link);
     await phone.getByTestId("party-share").click();
     await expect.poll(() => phone.evaluate(() => (window as unknown as { shared?: ShareData }).shared?.url)).toBe(link);
+    await copy.click();
+    await expect(copy).toHaveText("Link copied");
+    expect(await phone.evaluate(() => navigator.clipboard.readText())).toBe(link);
+    await expect(copy).toHaveText("Copy link"); // ready for the next time by itself
 
+    // Where there is none, the link and its button are the way.
+    await phone.getByTestId("sheet-close").click();
     await defineShare(false);
-    await phone.getByTestId("party-share").click();
-    await expect(phone.getByTestId("party-share")).toHaveText("Link copied");
+    link = await openSheet();
+    await expect(phone.getByTestId("party-share")).toHaveCount(0);
+    await phone.evaluate(() => navigator.clipboard.writeText("something else"));
+    await copy.click();
+    await expect(copy).toHaveText("Link copied");
     expect(await phone.evaluate(() => navigator.clipboard.readText())).toBe(link);
   });
 
@@ -1954,14 +2100,19 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
   async function connect(
     browser: Browser,
     baseURL: string,
-    { device = {}, seed = {}, library = libraryOf(baseURL) }: { device?: Parameters<Browser["newContext"]>[0]; seed?: Record<string, string>; library?: unknown } = {},
+    {
+      device = {},
+      seed = {},
+      library = libraryOf(baseURL),
+      find = (query) => films.filter((film) => film.title.toLowerCase().includes(query.toLowerCase())),
+    }: { device?: Parameters<Browser["newContext"]>[0]; seed?: Record<string, string>; library?: unknown; find?: (query: string) => unknown[] } = {},
   ) {
     searches = 0;
     const tv = await openTv(browser);
     const phone = await openDevice(browser, { ...PHONE, ...device }, seed, async (context) => {
       await withLibrary(library, (query) => {
         searches += 1;
-        return films.filter((film) => film.title.toLowerCase().includes(query.toLowerCase()));
+        return find(query);
       })(context);
       await context.route(/\/api\/library\/seasons/, (route) => route.fulfill({ json: { seasons: [1, 2] } }));
       await context.route(/\/api\/library\/episodes/, (route) => {
@@ -2117,6 +2268,26 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(results.first()).toContainText("The Long Night");
   });
 
+  test("a short word brings a long list, the likeliest titles first (what the page has and what the library knows together), down to its end", async ({ browser, baseURL }) => {
+    const rows = [{ id: "r", title: "Classics", source: "Test Source", kind: "movie", items: [{ id: "w", title: "Welcome to the Boondocks", url: "/fixtures/sample.mp4?w=1" }, { id: "n", title: "Boonie Bears", url: "/fixtures/sample.mp4?n=1" }] }];
+    const server = [
+      { id: "far", title: "Baboon", url: "/fixtures/sample.mp4?far=1" }, // (the word is inside another)
+      ...Array.from({ length: 40 }, (_, i) => ({ id: `s${i}`, title: `Zed ${i + 1} Boone Story`, url: `/fixtures/sample.mp4?s=${i}` })), // (a word of the title begins with it)
+      { id: "d", title: "The Boondocks", url: "/fixtures/sample.mp4?d=1" }, // (the title begins with it)
+      { id: "b", title: "Boon", url: "/fixtures/sample.mp4?b=1" }, // (it is the title)
+    ];
+    const { phone } = await connect(browser, baseURL!, { library: { updatedAt: Date.now(), rows }, find: (query) => (query.includes("boon") ? server : []) });
+    await phone.getByTestId("library-search-input").fill("boon");
+    const results = phone.getByTestId("library-result");
+    await expect(results).toHaveCount(45);
+    const titles = await results.evaluateAll((all) => all.map((one) => one.getAttribute("title")));
+    expect(titles.slice(0, 4)).toEqual(["Boon", "Boonie Bears", "The Boondocks", "Welcome to the Boondocks"]);
+    expect(titles.at(-1)).toBe("Baboon");
+
+    await results.last().scrollIntoViewIfNeeded();
+    await expect(results.last()).toBeInViewport();
+  });
+
   test("the rows of the library are named in the language of the phone, and a row the app does not know keeps its place's name", async ({ browser, baseURL }) => {
     const rows = [
       { id: "filmpire-trending-movies", title: "Trending Movies", source: "Filmpire", kind: "movie", items: films },
@@ -2182,6 +2353,33 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("url-input")).toHaveCount(0);
   });
 
+  test("the box is a switch in Settings too (\"Paste a link\"), the same one as the TV menu's", async ({ browser, baseURL }) => {
+    const { phone } = await connect(browser, baseURL!, { device: { storageState: withoutLinkBox(baseURL!) } });
+    await expect(phone.getByTestId("library")).toBeVisible();
+    await expect(phone.getByTestId("url-input")).toHaveCount(0);
+
+    const inSettings = async () => {
+      await phone.getByTestId("account-button").click();
+      await phone.getByTestId("menu-settings").click();
+      return phone.getByTestId("link-box-setting");
+    };
+    const box = await inSettings();
+    await expect(box).toHaveAttribute("aria-checked", "false");
+    await box.click();
+    await expect(box).toHaveAttribute("aria-checked", "true");
+    await phone.getByTestId("page-back").click(); // (the settings, then the account)
+    await phone.getByTestId("page-back").click();
+    await expect(phone.getByTestId("account-screen")).toHaveCount(0);
+    await expect(phone.getByTestId("url-input")).toBeVisible();
+
+    await phone.getByTestId("menu").click(); // the TV's menu says the same, and turns it off from there
+    await expect(phone.getByTestId("link-box-toggle")).toHaveAttribute("aria-checked", "true");
+    await phone.getByTestId("link-box-toggle").click();
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByTestId("url-input")).toHaveCount(0);
+    await expect(await inSettings()).toHaveAttribute("aria-checked", "false");
+  });
+
   test("without the box, a title that cannot be played still says so", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!, { device: { storageState: withoutLinkBox(baseURL!) } });
     await tile(phone, "No video here").click();
@@ -2215,5 +2413,280 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(phone.getByTestId("url-input")).toBeVisible();
       await expect(phone.getByTestId("play-url")).toBeVisible();
     }
+  });
+
+  test.describe("ratings", () => {
+    /** Noon in October, the same day in any time zone (and a month whose short name is the same in every English). */
+    const day = (date: number) => Date.UTC(2026, 9, date, 12);
+    const RATED_TODAY = /^Rated \d{1,2} [A-Za-z]{3,4} \d{4}$/;
+    const facts = (phone: Page, id = "rate-title") => phone.getByTestId(`${id}-facts`).locator("li");
+
+    /** A rating box, opened if it was folded. */
+    async function open(phone: Page, id = "rate-title") {
+      const toggle = phone.getByTestId(`${id}-toggle`);
+      if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    }
+    /** What the phone has kept of its ratings: the notes, in the order they were rated. */
+    const notesKept = (phone: Page) =>
+      phone.evaluate(() => {
+        const kept = JSON.parse(localStorage.getItem("kino.data.guest") ?? "{}") as { data?: { ratings?: Array<{ note?: string; deleted?: boolean }> } };
+        return (kept.data?.ratings ?? []).filter((rating) => !rating.deleted).map((rating) => rating.note ?? "");
+      });
+    /** A rating a phone already had, as it is kept. */
+    const given = (baseURL: string, n: number, score: number, date: number, extra: Record<string, unknown> = {}) => ({
+      key: `rate:${baseURL}/fixtures/sample.mp4?n=${n}`,
+      at: day(date),
+      title: `Film number ${n + 1}`,
+      url: `${baseURL}/fixtures/sample.mp4?n=${n}`,
+      score,
+      ratedAt: day(date),
+      ...extra,
+    });
+    /** Films with links that are whole (a title's watching is found by its link, which a relative one cannot be matched with). */
+    const wholeLibrary = (baseURL: string) => ({
+      updatedAt: Date.now(),
+      rows: [{ id: "r", title: "Classics", source: "Test Source", kind: "movie", items: films.map((film) => ({ ...film, url: `${baseURL}${film.url}` })) }],
+    });
+
+    test("one tap on a score is a rating, with the word for it and the day; another tap changes it, and it is still there when the page is opened again", async ({ browser, baseURL }) => {
+      const { phone } = await connect(browser, baseURL!);
+      await tile(phone, "Film number 1").click();
+      const box = phone.getByTestId("rate-title");
+      await expect(box).toHaveAttribute("data-rated", "false");
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("Rate");
+      await expect(phone.getByTestId("rate-title-score-8")).toHaveCount(0); // (folded: one line until it is wanted)
+
+      await open(phone);
+      await expect(phone.getByTestId("rate-title-word")).toHaveText("Pick a score out of 10");
+      await expect(phone.getByTestId("rate-title-note")).toBeDisabled(); // (a note is for a score that is there)
+      await expect(phone.getByTestId("rate-title-facts")).toHaveCount(0);
+      await expect(phone.getByTestId("rate-title-remove")).toHaveCount(0);
+      await expect(phone.getByTestId("ratings-row")).toHaveCount(0);
+
+      await phone.getByTestId("rate-title-score-8").click(); // (that is all it takes)
+      await expect(box).toHaveAttribute("data-rated", "true");
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("8/10");
+      await expect(phone.getByTestId("rate-title-score-8")).toHaveAttribute("aria-checked", "true");
+      await expect(phone.getByTestId("rate-title-score-7")).toHaveAttribute("aria-checked", "false");
+      await expect(phone.getByTestId("rate-title-word")).toHaveText("Very good");
+      await expect(facts(phone)).toHaveText([RATED_TODAY]); // (a title never played here has no watching to tell of)
+      await expect(phone.getByTestId("rate-title-note")).toBeEnabled();
+
+      await phone.getByTestId("rate-title-score-3").click();
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("3/10");
+      await expect(phone.getByTestId("rate-title-word")).toHaveText("Very bad");
+      await expect(phone.getByTestId("rate-title-score-8")).toHaveAttribute("aria-checked", "false");
+
+      // The one score in ten is a short way down the hand's reach: each is a thumb-sized press.
+      for (const score of [1, 5, 10]) {
+        const press = (await phone.getByTestId(`rate-title-score-${score}`).boundingBox())!;
+        expect(press.width).toBeGreaterThanOrEqual(36);
+        expect(press.height).toBeGreaterThanOrEqual(36);
+      }
+
+      await phone.getByTestId("sheet-close").click();
+      await expect(phone.getByTestId("ratings-row")).toContainText("Film number 1");
+      await expect(phone.getByTestId("ratings-row").getByTestId("rating-item").locator(".lib-year")).toHaveText(["3/10"]);
+      await phone.reload();
+      await expect(phone.getByTestId("ratings-row")).toContainText("Film number 1");
+      await tile(phone, "Film number 1").click();
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("3/10");
+    });
+
+    test("a note says why: it waits for a score, is kept as it is typed (even when the page is closed at once), and goes when the rating does", async ({ browser, baseURL }) => {
+      const { phone } = await connect(browser, baseURL!);
+      await tile(phone, "Film number 2").click();
+      await open(phone);
+      const note = phone.getByTestId("rate-title-note");
+      await expect(note).toBeDisabled();
+      await expect(note).toHaveAttribute("placeholder", "Pick a score first, then say why (optional)");
+      await phone.getByTestId("rate-title-score-6").click();
+      await expect(note).toBeEnabled();
+      await expect(note).toHaveAttribute("placeholder", "Why? (optional)");
+
+      await note.fill("Too long, but the ending paid off.");
+      await expect.poll(() => notesKept(phone)).toEqual(["Too long, but the ending paid off."]); // (kept a moment after the last letter, the box still open)
+      await expect(facts(phone)).toHaveText([RATED_TODAY]); // (a note does not make it rated again)
+
+      await note.fill("Too long, but the ending paid off. Twice.");
+      await phone.getByTestId("sheet-close").click(); // (straight away: what was just typed is not lost)
+      await expect(phone.getByTestId("ratings-row")).toBeVisible();
+      await tile(phone, "Film number 2").click();
+      await open(phone);
+      await expect(phone.getByTestId("rate-title-note")).toHaveValue("Too long, but the ending paid off. Twice.");
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("6/10");
+
+      // Near the end of what a note can hold, the field counts.
+      await expect(phone.locator(".rating-count")).toHaveCount(0);
+      await phone.getByTestId("rate-title-note").fill("x".repeat(320));
+      await expect(phone.locator(".rating-count")).toHaveText("320/400");
+
+      // Taking the rating back takes the note with it, and a new one starts clean.
+      await phone.getByTestId("rate-title-remove").click();
+      await expect(phone.getByTestId("rate-title")).toHaveAttribute("data-rated", "false");
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("Rate");
+      await expect(phone.getByTestId("rate-title-note")).toBeDisabled();
+      await expect(phone.getByTestId("rate-title-note")).toHaveValue("");
+      await expect.poll(() => notesKept(phone)).toEqual([]);
+      await expect(phone.getByTestId("ratings-row")).toHaveCount(0);
+      await phone.getByTestId("rate-title-score-4").click();
+      await expect(phone.getByTestId("rate-title-note")).toHaveValue("");
+    });
+
+    test("the watching is told with the rating: all of a film once 95% of it was seen, else how much, and when", async ({ browser, baseURL }) => {
+      const card = (n: number, position: number, at: number) => ({
+        key: `url:${baseURL}/fixtures/sample.mp4?n=${n}`,
+        at,
+        title: `Film number ${n + 1}`,
+        url: `${baseURL}/fixtures/sample.mp4?n=${n}`,
+        position,
+        duration: 6000,
+      });
+      const progress = [card(0, 5800, day(3)), card(1, 3720, day(4))]; // 96.7% and 62%
+      const { phone } = await connect(browser, baseURL!, { library: wholeLibrary(baseURL!), seed: guestStorage({ progress }) });
+
+      await tile(phone, "Film number 1").click();
+      await open(phone);
+      await phone.getByTestId("rate-title-score-9").click();
+      await expect(facts(phone)).toHaveText([RATED_TODAY, "Watched all of it", "Finished 3 Oct 2026"]);
+      await phone.getByTestId("sheet-close").click();
+
+      await tile(phone, "Film number 2").click();
+      await open(phone);
+      await phone.getByTestId("rate-title-score-7").click();
+      await expect(facts(phone)).toHaveText([RATED_TODAY, "62% watched", "Last watched 4 Oct 2026"]);
+      await phone.getByTestId("sheet-close").click();
+
+      await tile(phone, "Film number 3").click(); // never played here
+      await open(phone);
+      await phone.getByTestId("rate-title-score-5").click();
+      await expect(facts(phone)).toHaveText([RATED_TODAY]);
+    });
+
+    test("each season of a show is rated on its own, apart from the show; the episodes seen are counted out of the season's", async ({ browser, baseURL }) => {
+      const seen = (episode: number, season: number) => ({ key: `The Long Night|${season}x${episode}`, at: day(episode + (season - 1) * 3), show: "The Long Night", season, episode, position: 2400, duration: 2400, done: true });
+      const { phone } = await connect(browser, baseURL!, { seed: guestStorage({ watched: [seen(1, 1), seen(2, 1), seen(1, 2)] }) });
+      await tile(phone, "The Long Night").click();
+
+      await open(phone); // the show as a whole
+      await expect(phone.getByTestId("rate-title-toggle")).toContainText("Your rating");
+      await phone.getByTestId("rate-title-score-9").click();
+      await expect(facts(phone)).toHaveText([RATED_TODAY, "3 episodes watched", "Last watched 4 Oct 2026"]);
+
+      await expect(phone.getByTestId("rate-season-toggle")).toContainText("Season 1 rating");
+      await expect(phone.getByTestId("rate-season-value")).toHaveText("Rate"); // (not rated just because the show is)
+      await open(phone, "rate-season");
+      await phone.getByTestId("rate-season-score-7").click();
+      await expect(phone.getByTestId("rate-season-value")).toHaveText("7/10");
+      await expect(facts(phone, "rate-season")).toHaveText([RATED_TODAY, "2 of 3 episodes watched", "Last watched 2 Oct 2026"]);
+
+      await phone.getByTestId("title-season-2").click();
+      await expect(phone.getByTestId("rate-season-toggle")).toContainText("Season 2 rating");
+      await expect(phone.getByTestId("rate-season")).toHaveAttribute("data-rated", "false");
+      await expect(phone.getByTestId("rate-season-value")).toHaveText("Rate");
+      await open(phone, "rate-season");
+      await phone.getByTestId("rate-season-score-5").click();
+      await expect(facts(phone, "rate-season")).toHaveText([RATED_TODAY, "1 of 3 episodes watched", "Last watched 4 Oct 2026"]);
+
+      await phone.getByTestId("title-season-1").click();
+      await expect(phone.getByTestId("rate-season-value")).toHaveText("7/10");
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("9/10");
+      await open(phone, "rate-season");
+      await phone.getByTestId("rate-season-remove").click(); // (taking back a season's rating leaves the others)
+      await expect(phone.getByTestId("rate-season-value")).toHaveText("Rate");
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("9/10");
+      await phone.getByTestId("title-season-2").click();
+      await expect(phone.getByTestId("rate-season-value")).toHaveText("5/10");
+
+      await phone.getByTestId("sheet-close").click();
+      await expect(phone.getByTestId("ratings-row").getByTestId("rating-item").locator(".lib-year")).toHaveText(["Season 2 · 5/10", "9/10"]); // (the newest first)
+    });
+
+    test("My ratings is a row of what was rated, and a page with all of it: newest or best first, with the notes and the watching; a tap opens the title", async ({ browser, baseURL }) => {
+      const url = baseURL!;
+      const ratings = [
+        given(url, 0, 6, 1),
+        given(url, 1, 9, 5, { note: "Rewatched it twice.", percent: 100, watchedAt: day(4) }),
+        {
+          key: `rate:${episodeLink(1)}|s2`,
+          at: day(9),
+          title: "The Long Night",
+          url: episodeLink(1),
+          kind: "series",
+          season: 2,
+          score: 8,
+          ratedAt: day(9),
+          seen: 2,
+          of: 3,
+          watchedAt: day(8),
+        },
+      ];
+      const { phone } = await connect(browser, url, { seed: guestStorage({ ratings }) });
+      const row = phone.getByTestId("ratings-row");
+      await expect(row.getByTestId("rating-item")).toHaveCount(3);
+      await expect(row.getByTestId("rating-item").locator(".lib-title")).toHaveText(["The Long Night", "Film number 2", "Film number 1"]);
+      await expect(row.getByTestId("rating-item").locator(".lib-year")).toHaveText(["Season 2 · 8/10", "9/10", "6/10"]);
+
+      await phone.getByTestId("ratings-all").click();
+      const sheet = phone.getByTestId("ratings-sheet");
+      await expect(sheet.getByTestId("ratings-summary")).toHaveText("3 ratings · average 7.7");
+      const entries = sheet.getByTestId("rating-entry");
+      await expect(entries.locator(".rating-name")).toHaveText(["The Long Night · Season 2", "Film number 2", "Film number 1"]);
+      await expect(sheet.getByTestId("ratings-sort-new")).toHaveAttribute("aria-pressed", "true");
+      await expect(entries.nth(1)).toContainText("9/10");
+      await expect(entries.nth(1)).toContainText("Great");
+      await expect(entries.nth(1)).toContainText("Rewatched it twice.");
+      await expect(entries.nth(1).locator(".rating-facts span")).toHaveText(["Rated 5 Oct 2026", "Watched all of it", "Finished 4 Oct 2026"]);
+      await expect(entries.nth(0).locator(".rating-facts span")).toHaveText(["Rated 9 Oct 2026", "2 of 3 episodes watched", "Last watched 8 Oct 2026"]);
+
+      await sheet.getByTestId("ratings-sort-high").click();
+      await expect(sheet.getByTestId("ratings-sort-high")).toHaveAttribute("aria-pressed", "true");
+      await expect(entries.locator(".rating-name")).toHaveText(["Film number 2", "The Long Night · Season 2", "Film number 1"]);
+
+      await entries.first().click(); // a tap opens the title, where the score can be changed
+      const page = phone.getByTestId("title-sheet");
+      await expect(page).toContainText("Film number 2");
+      await expect(page.getByTestId("rate-title-value")).toHaveText("9/10");
+      await page.getByTestId("sheet-close").click();
+      await expect(phone.getByTestId("ratings-sheet")).toBeVisible(); // (back to the list it was opened from)
+      await sheet.getByTestId("sheet-close").click();
+      await expect(phone.getByTestId("ratings-sheet")).toHaveCount(0);
+    });
+
+    test("Settings has a switch for ratings: off, every sign of them is gone and what was rated is kept; on again, it is all back", async ({ browser, baseURL }) => {
+      const { phone } = await connect(browser, baseURL!, { library: wholeLibrary(baseURL!), seed: guestStorage({ ratings: [given(baseURL!, 0, 8, 2)] }) });
+      await expect(phone.getByTestId("ratings-row")).toBeVisible();
+      await tile(phone, "Film number 2").click();
+      await expect(phone.getByTestId("rate-title")).toBeVisible();
+      await phone.getByTestId("sheet-close").click();
+
+      const toggle = async (to: "true" | "false") => {
+        await phone.getByTestId("account-button").click();
+        await phone.getByTestId("menu-settings").click();
+        const rate = phone.getByTestId("ratings-switch");
+        await expect(rate).toHaveAttribute("aria-checked", to === "true" ? "false" : "true");
+        await rate.click();
+        await expect(rate).toHaveAttribute("aria-checked", to);
+        await phone.getByTestId("page-back").click();
+        await phone.getByTestId("page-back").click();
+        await expect(phone.getByTestId("account-screen")).toHaveCount(0);
+      };
+
+      await toggle("false");
+      await expect(phone.getByTestId("ratings-row")).toHaveCount(0);
+      await tile(phone, "Film number 2").click();
+      await expect(phone.getByTestId("title-sheet")).toBeVisible();
+      await expect(phone.getByTestId("rate-title")).toHaveCount(0);
+      await phone.getByTestId("sheet-close").click();
+      await phone.reload();
+      await expect(phone.getByTestId("library")).toBeVisible();
+      await expect(phone.getByTestId("ratings-row")).toHaveCount(0); // (kept off)
+
+      await toggle("true");
+      await expect(phone.getByTestId("ratings-row")).toContainText("Film number 1");
+      await tile(phone, "Film number 1").click();
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("8/10");
+    });
   });
 });

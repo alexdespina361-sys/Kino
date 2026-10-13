@@ -7,6 +7,8 @@ export interface LaunchParams {
   control?: string;
   /** The code on a TV's sign-in screen (`/?link=ABCD2345`): the phone is asked whether to sign that TV in. */
   link?: string;
+  /** The code a friend gave (`/?friend=ABCD2345`, what the link and the QR code of a friend's invitation hold): the phone is asked whether to add them. */
+  friend?: string;
   /** A link to play, from the phone's share sheet (`/?url=...` or `/?text=...`). */
   url?: string;
 }
@@ -62,10 +64,12 @@ export function readLaunchParams(search: string): LaunchParams {
   const shared = params.get("url")?.trim() ?? "";
   const url = isHttpUrl(shared) ? shared : firstLink(params.get("text") ?? "") ?? firstLink(shared);
   const link = linkCodeOf(params.get("link"));
+  const friend = linkCodeOf(params.get("friend"));
   return {
     ...(code && /^\d{6}$/.test(code) ? { code } : {}),
     ...(control && /^\d{6}$/.test(control) ? { control } : {}),
     ...(link ? { link } : {}),
+    ...(friend ? { friend } : {}),
     ...(url ? { url } : {}),
   };
 }
