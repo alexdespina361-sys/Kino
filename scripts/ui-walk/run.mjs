@@ -32,6 +32,7 @@ const PARTS = [
   { name: "tv-wide", script: "tv.mjs", args: ["qhd,desktop,laptop"] },
   { name: "tv-in-hd", script: "tv-signed-in.mjs", args: ["hd"] },
   { name: "tv-in-full", script: "tv-signed-in.mjs", args: ["full"] },
+  { name: "tv-keys", script: "tv-keys.mjs", args: ["hd"] },
   { name: "phone", script: "phone.mjs", args: ["guest,in"] },
 ];
 

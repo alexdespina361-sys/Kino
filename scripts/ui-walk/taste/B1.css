@@ -1,0 +1,15 @@
+/* B1: what the remote is on. B leaves the thing as it is and puts a white ring round it, lifted (A turns the thing light, with dark words, inside the same ring). */
+:root[data-ui="polish"] .tv-hero-button:focus-visible,
+:root[data-ui="polish"] .tv-action:focus-visible,
+:root[data-ui="polish"] .tv-choice:focus-visible,
+:root[data-ui="polish"] .tv-key:focus-visible,
+:root[data-ui="polish"] .tv-score:focus-visible,
+:root[data-ui="polish"] .tv-btn:focus-visible { background: var(--surf-2); color: var(--text-1); box-shadow: var(--focus-ring), var(--lift); }
+:root[data-ui="polish"] .tv-hero-button.is-primary:focus-visible,
+:root[data-ui="polish"] .tv-action-primary:focus-visible { background: var(--accent); color: var(--accent-ink); box-shadow: var(--focus-ring), var(--lift); }
+:root[data-ui="polish"] .tv-choice[aria-checked="true"]:focus-visible,
+:root[data-ui="polish"] .tv-list-picks .tv-action[aria-pressed="true"]:focus-visible { background: rgb(var(--accent-rgb) / 0.22); color: var(--text-1); box-shadow: var(--focus-ring), var(--lift); }
+:root[data-ui="polish"] .tv-switch-row:focus-visible { background: var(--surf-1); color: var(--text-1); box-shadow: var(--focus-ring), var(--lift); }
+:root[data-ui="polish"] .tv-switch-row:focus-visible .tv-switch { background: var(--fill-track); }
+:root[data-ui="polish"] .tv-switch-row[aria-checked="true"]:focus-visible .tv-switch { background: var(--accent); }
+:root[data-ui="polish"] .tv-rail-item:focus-visible { background: var(--fill-2); color: var(--text-1); box-shadow: var(--focus-ring); }

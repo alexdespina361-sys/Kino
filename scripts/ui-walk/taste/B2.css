@@ -1,0 +1,2 @@
+/* B2: what is behind the open menu. B dims it less (A: to 32%). */
+:root[data-ui="polish"] .tv-rail[data-open="true"] ~ * { opacity: 0.6; }

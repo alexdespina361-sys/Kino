@@ -1,0 +1,3 @@
+/* A3: how round things are. B is tighter: TV 0.25 / 0.4 / 0.7 (A: 0.45 / 0.7 / 1.1), phone 4 / 8 / 14 px (A: 8 / 12 / 22). */
+:root[data-ui="polish"] .tv { --r-1: calc(var(--em) * 0.25); --r-2: calc(var(--em) * 0.4); --r-3: calc(var(--em) * 0.7); }
+:root[data-ui="polish"] { --p-r-1: 4px; --p-r-2: 8px; --p-r-3: 14px; }

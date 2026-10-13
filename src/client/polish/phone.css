@@ -8,9 +8,9 @@
 /* ------------------------------ tokens ------------------------------ */
 
 :root[data-ui="polish"] {
-  --p-fs-1: 12px; /* a count, a caption, the label over a group */
-  --p-fs-2: 14px; /* secondary text, a chip, a link's name */
-  --p-fs-3: 16px; /* body (also what stops a phone zooming into a field) */
+  --p-fs-1: 13px; /* a count, a caption, a note under a field */
+  --p-fs-2: 14px; /* a chip, a link's name, a line in a row */
+  --p-fs-3: 16px; /* body, in any colour (also what stops a phone zooming into a field) */
   --p-fs-4: 18px; /* a heading of a sheet, a page or a row of pictures */
   --p-fs-5: 24px; /* a title */
   --p-fs-6: 32px; /* a code */
@@ -19,6 +19,7 @@
   --p-r-3: 22px; /* what comes up from the edge: a sheet, a toast, a profile's card */
   --surface-3: #2e2e34; /* pressed, and what the finger is on */
   --overlay: #1c1c20;
+  --p-label: #d2d2d9; /* the heading of a group: lighter than the words it heads, never louder than a heading of the page */
   --p-line: rgba(255, 255, 255, 0.1);
   --p-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -38,7 +39,7 @@
 
 /* ------------------------------ writing ------------------------------ */
 
-:root[data-ui="polish"] .phone-ui .muted { font-size: var(--p-fs-2); }
+:root[data-ui="polish"] .phone-ui .muted { font-size: var(--p-fs-3); }
 :root[data-ui="polish"] .phone-ui .muted.small { font-size: var(--p-fs-1); }
 :root[data-ui="polish"] .phone.pair h1,
 :root[data-ui="polish"] .phone-ui .home h2,
@@ -50,15 +51,15 @@
 :root[data-ui="polish"] .phone-ui .top-tv h1,
 :root[data-ui="polish"] .phone-ui .page-head h2,
 :root[data-ui="polish"] .phone-ui .lib-row h3 { font-size: var(--p-fs-4); font-weight: 700; }
-:root[data-ui="polish"] .phone-ui .friend-code,
+:root[data-ui="polish"] .phone-ui .friend-code { font-size: var(--p-fs-4); }
 :root[data-ui="polish"] .phone-ui .link-code-input { font-size: var(--p-fs-5); }
 :root[data-ui="polish"] .phone-ui .your-tag-line b { font-size: var(--p-fs-4); }
 :root[data-ui="polish"] .phone-ui .brand { font-size: var(--p-fs-3); }
 :root[data-ui="polish"] .phone-ui .poster-initial { font-size: var(--p-fs-6); }
-:root[data-ui="polish"] .phone-ui small,
-:root[data-ui="polish"] .phone-ui .choice-note { font-size: var(--p-fs-1); }
-:root[data-ui="polish"] .phone-ui .segmented button,
+:root[data-ui="polish"] .phone-ui small { font-size: var(--p-fs-1); }
 :root[data-ui="polish"] .phone-ui .copy-link-button,
+:root[data-ui="polish"] .phone-ui .choice-note,
+:root[data-ui="polish"] .phone-ui .rating-badge,
 :root[data-ui="polish"] .phone-ui .episode-no,
 :root[data-ui="polish"] .phone-ui .rating-head-value,
 :root[data-ui="polish"] .phone-ui .profile-name,
@@ -102,25 +103,28 @@
 :root[data-ui="polish"] .phone-ui .code-card .copy-link-note { font-size: var(--p-fs-1); }
 :root[data-ui="polish"] .phone-ui .auth-field > span:first-child { font-size: var(--p-fs-2); letter-spacing: 0; }
 :root[data-ui="polish"] .phone-ui .badge { letter-spacing: 0; }
-:root[data-ui="polish"] .phone-ui .rating-badge,
 :root[data-ui="polish"] .phone-ui .lib-art .score-badge,
 :root[data-ui="polish"] .phone-ui .lib-result-art .score-badge { font-size: var(--p-fs-1); }
 
-/* Over a group of things, one way of saying what the group is: quiet, in words, not capitals. */
+/* Over a group of things, one way of saying what the group is: in words, not capitals (a capital label wraps into an orphan the moment it has a count in it). A heading of a group is as large as the body and bold, in a lighter grey than the words it heads, so that it is told from the label of a field (smaller, quiet) without a capital's help. */
 :root[data-ui="polish"] .phone-ui .group h3,
-:root[data-ui="polish"] .phone-ui .sheet-section,
+:root[data-ui="polish"] .phone-ui .sheet-section {
+  color: var(--p-label);
+  font-size: var(--p-fs-3);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
 :root[data-ui="polish"] .phone-ui .cap-label,
 :root[data-ui="polish"] .phone-ui .code-card-title,
 :root[data-ui="polish"] .phone-ui .chip-text small,
 :root[data-ui="polish"] .phone-ui .avatar-picker legend {
-  color: var(--muted);
+  color: var(--p-label);
   font-size: var(--p-fs-1);
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
 }
-:root[data-ui="polish"] .phone-ui .group h3,
-:root[data-ui="polish"] .phone-ui .sheet-section { font-size: var(--p-fs-2); }
 
 /* ------------------------------ buttons, chips, rows ------------------------------ */
 
@@ -181,9 +185,12 @@
   color: var(--text);
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
+:root[data-ui="polish"] .phone-ui .cap-count { color: var(--text); }
 :root[data-ui="polish"] .phone-ui .cap-choice.active .cap-count { background: rgb(var(--accent-rgb) / 0.3); }
 :root[data-ui="polish"] .phone-ui .segmented { background: var(--surface); }
 :root[data-ui="polish"] .phone-ui .segmented button { border-radius: var(--p-r-1); }
+:root[data-ui="polish"] .phone-ui .segmented:not(.compact) button { font-size: var(--p-fs-3); }
+:root[data-ui="polish"] .phone-ui .segmented.compact button { font-size: var(--p-fs-2); }
 
 /* Small things to press are 44 px tall: a thumb's size, whatever the words in them. */
 :root[data-ui="polish"] .phone-ui .lib-pill,
@@ -211,6 +218,7 @@
 :root[data-ui="polish"] .phone-ui .field-btn { min-width: 36px; min-height: 36px; justify-content: center; }
 :root[data-ui="polish"] .phone-ui .field-btn::after { content: ""; position: absolute; inset: -4px; }
 :root[data-ui="polish"] .phone-ui .lib-corner { gap: 8px; }
+:root[data-ui="polish"] .phone-ui .lib-card .lib-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-ui="polish"] .phone-ui .lib-round::after { inset: -4px; }
 :root[data-ui="polish"] .phone-ui .row-link { margin-block: -13px; padding: 13px 0 13px 12px; }
 :root[data-ui="polish"] .phone-ui .device-name-button { margin: -12px 0; padding: 12px 0; }
@@ -303,6 +311,8 @@
 :root[data-ui="polish"] .phone-ui .friend-pic[data-online="true"]::after { background: var(--ok); }
 :root[data-ui="polish"] .phone-ui .friend-row:focus-visible { background: var(--surface-2); }
 :root[data-ui="polish"] .phone-ui .bell-badge { font-size: var(--p-fs-1); }
+/* A friend's card: the line under the name (online, and since when) wraps rather than being cut with an ellipsis: the date is the point of it (and "Friends since 13 Oct 2026" is longer in another language). */
+:root[data-ui="polish"] .phone-ui [data-testid="friend-page"] .account-who .muted { font-size: var(--p-fs-2); white-space: normal; }
 
 /* ------------------------------ held sideways ------------------------------ */
 
@@ -356,6 +366,13 @@
   :root[data-ui="polish"] .phone-ui .sheet-grip { margin: 2px auto 2px; }
   :root[data-ui="polish"] .phone-ui .sheet-head { min-height: 44px; }
   :root[data-ui="polish"] .phone-ui .sheet-body { gap: 10px; padding-top: 4px; }
+  /* a short list of short words (the speeds, the qualities) is two columns: all of it in view, and a row no longer a hand's length from its own dot; a few rows with a count and a pencil (the lists, the bell) are not as wide as a title's sheet */
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="speed-sheet"],
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="quality-sheet"] { max-width: 560px; }
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="speed-sheet"] .choices,
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="quality-sheet"] .choices { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="lists-sheet"],
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="bell-sheet"] { max-width: 520px; }
 
   /* the subtitle style: the little TV stays on the left while the choices scroll on the right (a picture that is taller than what it sits in is no help) */
   :root[data-ui="polish"] .phone-ui .sheet[data-testid="captions-sheet"] { max-width: 780px; }

@@ -586,9 +586,9 @@ The comfortable thumb target. Links inside running text are left out.
 
 ...and 41 more in the json.
 
-## Text or controls outside the TV's safe margin (558)
+## Text or controls outside the TV's safe margin (183)
 
-Inside 2.5% of the left/right edge or 5% of the top/bottom. Rows that scroll past the edge are not counted.
+Inside 2.5% of the left/right edge or 5% of the top/bottom. What crosses an edge (a row that scrolls past it, the page under its fade) and the pictures of such a row with the words under them are not counted.
 
 | element | edges | count | pictures |
 |---|---|---|---|
@@ -605,35 +605,35 @@ Inside 2.5% of the left/right edge or 5% of the top/bottom. Rows that scroll pas
 | button[tv-account-chip] (Sign in) | 80.7% .. 91.1% / 3.2% .. 9.6% | 34 | 34 |
 | span "Sign in" | 84.8% .. 89.5% / 4.6% .. 8.2% | 20 | 20 |
 | button[fullscreen-toggle] (Full screen) | 92.0% .. 95.6% / 3.2% .. 9.6% | 62 | 62 |
-| button[tv-browse-tile] (Midwinter Parade) | 87.4% .. 99.5% / 46.0% .. 68.9% | 4 | 4 |
-| button[tv-browse-tile] (The Long Night) | 7.0% .. 22.0% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2022" | 7.0% .. 22.0% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Harbour Lights) | 23.3% .. 38.3% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2019" | 23.3% .. 38.3% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Brightwater) | 39.6% .. 54.6% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2024" | 39.6% .. 54.6% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Quiet Hours) | 55.9% .. 70.9% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2017" | 55.9% .. 70.9% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (The Understudies) | 72.2% .. 87.2% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2021" | 72.2% .. 87.2% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Field Notes) | 88.5% .. 103.5% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-name "Field Notes" | 88.5% .. 103.5% / 91.9% .. 94.9% | 4 | 4 |
-| span.tv-tile-year "2023" | 88.5% .. 103.5% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Harvest Moon Motel) | 7.0% .. 22.0% / 77.4% .. 99.2% | 3 | 3 |
-| span.tv-tile-name "Harvest Moon Motel" | 7.0% .. 22.0% / 92.9% .. 95.8% | 3 | 3 |
-| span.tv-tile-year "1996" | 7.0% .. 22.0% / 96.3% .. 99.2% | 3 | 3 |
-| button[tv-browse-tile] (Midwinter Parade) | 23.3% .. 38.3% / 77.4% .. 99.2% | 3 | 3 |
-| span.tv-tile-name "Midwinter Parade" | 23.3% .. 38.3% / 92.9% .. 95.8% | 3 | 3 |
-| span.tv-tile-year "1999" | 23.3% .. 38.3% / 96.3% .. 99.2% | 3 | 3 |
-| button[tv-browse-tile] (Velvet Static) | 39.6% .. 54.6% / 77.4% .. 99.2% | 2 | 2 |
-| span.tv-tile-name "Velvet Static" | 39.6% .. 54.6% / 92.9% .. 95.8% | 2 | 2 |
-| span.tv-tile-year "2020" | 39.6% .. 54.6% / 96.3% .. 99.2% | 2 | 2 |
-| button[tv-browse-tile] (Letters from Nowhere) | 55.9% .. 70.9% / 77.4% .. 99.2% | 3 | 3 |
-| span.tv-tile-name "Letters from Nowhere" | 55.9% .. 70.9% / 92.9% .. 95.8% | 3 | 3 |
-| span.tv-tile-year "2005" | 55.9% .. 70.9% / 96.3% .. 99.2% | 3 | 3 |
-| button[tv-browse-tile] (Driftwood) | 72.2% .. 87.2% / 77.4% .. 99.2% | 2 | 2 |
+| button[rail-search] | 1.2% .. 24.3% / 10.7% .. 17.9% | 1 | 1 |
+| button[rail-home] | 1.2% .. 24.3% / 18.5% .. 25.7% | 1 | 1 |
+| button[rail-movies] | 1.2% .. 24.3% / 26.1% .. 33.3% | 1 | 1 |
+| button[rail-series] | 1.2% .. 24.3% / 33.9% .. 41.1% | 1 | 1 |
+| button[rail-categories] | 1.2% .. 24.3% / 41.7% .. 48.9% | 1 | 1 |
+| button[rail-list] | 1.2% .. 24.3% / 49.3% .. 56.5% | 1 | 1 |
+| button[rail-party] | 1.2% .. 24.3% / 59.9% .. 67.1% | 1 | 1 |
+| button[rail-connect] | 1.2% .. 24.3% / 67.6% .. 74.9% | 1 | 1 |
+| button[rail-profile] | 1.2% .. 24.3% / 75.3% .. 82.5% | 1 | 1 |
+| button[tv-detail-close] "Close" | 87.3% .. 95.5% / 4.2% .. 9.0% | 7 | 7 |
+| button[tv-season-1] "Season 1" | 7.3% .. 19.3% / 89.7% .. 97.9% | 1 | 1 |
+| button[tv-season-2] "Season 2" | 20.2% .. 32.5% / 89.7% .. 97.9% | 1 | 1 |
+| button[tv-season-3] "Season 3" | 33.3% .. 45.6% / 89.7% .. 97.9% | 1 | 1 |
+| h1[tv-title] "long" | 3.2% .. 8.4% / 3.9% .. 9.6% | 7 | 7 |
+| div.hud-clock "19:35" | 89.2% .. 96.8% / 3.9% .. 7.8% | 4 | 4 |
+| button[tv-play-btn] (Pause) | 3.2% .. 6.9% / 89.6% .. 96.1% | 6 | 6 |
+| button.tv-btn (Back 10 seconds) | 7.7% .. 10.7% / 90.1% .. 95.4% | 6 | 6 |
+| button.tv-btn (Forward 10 seconds) | 11.3% .. 14.2% / 90.1% .. 95.4% | 5 | 5 |
+| button[tv-speed-btn] "1×" | 71.3% .. 74.8% / 90.6% .. 95.1% | 5 | 5 |
+| button[tv-party-btn] (Watch party) | 75.2% .. 86.3% / 90.6% .. 95.1% | 5 | 5 |
+| button[tv-mute-btn] (Mute) | 86.8% .. 89.8% / 90.1% .. 95.4% | 6 | 6 |
+| button[tv-fullscreen-btn] (Fullscreen) | 90.3% .. 93.3% / 90.1% .. 95.4% | 6 | 6 |
+| button[tv-stop-btn] (Stop) | 93.8% .. 96.8% / 90.1% .. 95.4% | 6 | 6 |
+| button[tv-bell] (Notifications, 2 waiting) | 78.2% .. 81.8% / 3.2% .. 9.6% | 6 | 6 |
+| b[tv-bell-badge] "2" | 80.5% .. 82.2% / 2.8% .. 5.8% | 3 | 3 |
+| button[tv-account-chip] (Account and profiles: Ana) | 82.7% .. 91.1% / 3.2% .. 9.6% | 14 | 14 |
+| span "Ana" | 86.8% .. 89.5% / 4.6% .. 8.2% | 14 | 14 |
 
-...and 518 more in the json.
+...and 143 more in the json.
 
 ## Text that is cut without an ellipsis (0)
 

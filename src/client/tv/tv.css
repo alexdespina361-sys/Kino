@@ -586,12 +586,13 @@
 .hud-controls[data-fit~="tight"] .hud-group { gap: 0.3em; }
 .hud-controls[data-fit~="tight"] .tv-btn:not(.tv-btn-icon):not(.tv-btn-play) { padding-inline: 0.55em; gap: 0.3em; }
 .hud-controls[data-fit~="names"] .tv-btn-sub { display: none; }
-/* A control that is only an icon says what it is while the remote is on it (a mouse has the tooltip). It is drawn above the button, at a size of its own. */
+/* A control that is only an icon says what it is while the remote is on it (a mouse has the tooltip). It is drawn above the button, at a size of its own,
+   and above the progress row too: the times are at the ends of that row, right over the first and the last buttons, and a caption must not cover them. */
 .hud-controls .tv-btn:is(.tv-btn-icon, .tv-btn-play, [data-folded]):focus-visible { position: relative; }
 .hud-controls .tv-btn:is(.tv-btn-icon, .tv-btn-play, [data-folded]):focus-visible::after {
   content: attr(aria-label);
   position: absolute;
-  bottom: calc(100% + var(--em) * 0.7);
+  bottom: calc(100% + var(--em) * 3.8);
   left: 50%;
   width: max-content;
   max-width: calc(var(--em) * 26);

@@ -25,10 +25,12 @@
   --ring: calc(var(--em) * 0.2);
   --ring-gap: calc(var(--em) * 0.1);
   --focus-ring: 0 0 0 var(--ring-gap) var(--bg), 0 0 0 calc(var(--ring-gap) + var(--ring)) #fff;
+  --focus-ring-accent: 0 0 0 var(--ring-gap) var(--bg), 0 0 0 calc(var(--ring-gap) + var(--ring) * 1.5) var(--accent);
   --lift: 0 calc(var(--em) * 0.7) calc(var(--em) * 1.8) rgba(0, 0, 0, 0.6);
   /* the page's edges: where the words start, and the least a thing is from an edge of the screen */
   --gutter: calc(var(--em) * 7);
   --edge: calc(var(--em) * 2.6);
+  --edge-r: calc(var(--em) * 5); /* the least a button is from the right edge (the top bar's corner buttons, a title page's Close, the player's controls): 5%, inside what a TV with overscan shows */
   --page-r: calc(var(--em) * 4); /* the least between the end of a row and the right edge */
   --tile-gap: calc(var(--em) * 1.3);
   --top: calc(var(--em) * 2.9); /* from the top edge to the first line of the top bar (and to a title page's Close) */
@@ -47,6 +49,7 @@
   --surf-1: #18181b;
   --surf-2: #232327;
   --surf-3: #313136;
+  --surf-4: #3f3f46; /* a wide row the remote is on: lighter than any row beside it, still dark enough for its own small words */
   --fill-1: rgba(255, 255, 255, 0.08);
   --fill-2: rgba(255, 255, 255, 0.14);
   --fill-3: rgba(255, 255, 255, 0.22);
@@ -58,7 +61,7 @@
 
 /* ------------------------------ the top of the library ------------------------------ */
 
-:root[data-ui="polish"] .tv-browse-top { padding: var(--top) var(--edge) 0 var(--gutter); }
+:root[data-ui="polish"] .tv-browse-top { padding: var(--top) var(--edge-r) 0 var(--gutter); }
 :root[data-ui="polish"] .tv-browse-corner { font-size: var(--fs-2); }
 :root[data-ui="polish"] .tv-browse-corner .tv-account-chip,
 :root[data-ui="polish"] .tv-corner-button {
@@ -73,7 +76,7 @@
   background: #fff;
   color: #0b0b0c;
   outline: none;
-  box-shadow: var(--lift);
+  box-shadow: var(--focus-ring), var(--lift);
   transform: scale(1.05);
 }
 
@@ -89,7 +92,7 @@
 :root[data-ui="polish"] .tv-rail ~ * { transition: opacity 0.25s var(--ease); }
 :root[data-ui="polish"] .tv-rail[data-open="true"] ~ * { opacity: 0.32; }
 :root[data-ui="polish"] .tv-rail-item {
-  margin: 0 calc(var(--em) * 1.6) 0 var(--edge);
+  margin: 0 var(--edge);
   padding: calc(var(--em) * 0.9) calc(var(--em) * 0.8);
   border-radius: var(--r-2);
   color: var(--text-3);
@@ -171,7 +174,7 @@
   background: #fff;
   color: #0b0b0c;
   outline: none;
-  box-shadow: var(--lift);
+  box-shadow: var(--focus-ring), var(--lift);
   transform: scale(1.04);
 }
 
@@ -179,6 +182,16 @@
 
 :root[data-ui="polish"] .tv-row-title { margin: 0 var(--page-r) calc(var(--em) * 0.1) var(--gutter); font-size: var(--fs-3); font-weight: 600; color: var(--text-1); }
 :root[data-ui="polish"] .tv-row-tiles { gap: var(--tile-gap); padding: calc(var(--em) * 0.6) var(--page-r) calc(var(--em) * 1) var(--gutter); }
+/* What runs off the bottom fades out instead of being cut through a line of words (sticky: it stays at the bottom of what is shown; at the end of the page it is the room under the last row). */
+:root[data-ui="polish"] .tv-rows::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  display: block;
+  height: calc(var(--em) * 4);
+  background: linear-gradient(to bottom, rgba(11, 11, 12, 0), var(--bg));
+  pointer-events: none;
+}
 :root[data-ui="polish"] .tv-tile {
   color: var(--text-2);
   transition: transform var(--t-base) var(--ease), color var(--t-base) var(--ease);
@@ -192,7 +205,7 @@
 :root[data-ui="polish"] .tv-tile:focus-visible .tv-tile-art { box-shadow: var(--focus-ring), var(--lift); }
 :root[data-ui="polish"] .tv-tile-progress { height: calc(var(--em) * 0.32); background: var(--fill-track); }
 
-/* For a mouse: the round buttons in a picture's corner. Quiet while nobody is on the tile; the accent shows only in the mark of a kept title, not as a red disc. */
+/* For a mouse: the round buttons in a picture's corner. Quiet while nobody is on the tile, and one look for all of them: the glyph (＋ keeps a title, × lets it go or clears it off Continue watching) says which, not a colour. */
 :root[data-ui="polish"] .tv-tile-corner {
   top: calc(var(--em) * 0.6);
   right: calc(var(--em) * 0.6);
@@ -202,7 +215,6 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
   color: var(--text-1);
 }
-:root[data-ui="polish"] .tv-tile-corner[data-corner="kept"] { background: rgba(11, 11, 12, 0.72); box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.8); color: var(--accent-hover); }
 :root[data-ui="polish"] .tv-tile-art .score-badge {
   top: calc(var(--em) * 0.6);
   left: calc(var(--em) * 0.6);
@@ -224,7 +236,7 @@
 :root[data-ui="polish"] .tv-detail .tv-hero-actions { margin-top: calc(var(--em) * 1); }
 :root[data-ui="polish"] .tv-detail .tv-hero-button { font-size: var(--fs-3); }
 /* Close is a corner button like the library's, at the same distance from the edges. */
-:root[data-ui="polish"] .tv-detail .tv-detail-close { top: var(--top); right: var(--edge); font-size: var(--fs-2); }
+:root[data-ui="polish"] .tv-detail .tv-detail-close { top: var(--top); right: var(--edge-r); font-size: var(--fs-2); }
 :root[data-ui="polish"] .tv-detail-eps { padding: var(--eps-t) var(--page-r) var(--eps-b) var(--gutter); }
 :root[data-ui="polish"] .tv-detail-eps-title { font-size: var(--fs-4); font-weight: 700; letter-spacing: -0.01em; }
 :root[data-ui="polish"] .tv-detail-eps-note { font-size: var(--fs-2); }
@@ -238,11 +250,11 @@
 :root[data-ui="polish"] .tv-view-title { font-size: var(--fs-6); font-weight: 700; letter-spacing: -0.015em; }
 :root[data-ui="polish"] .tv-view-meta { font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
 :root[data-ui="polish"] .tv-view-empty { font-size: var(--fs-4); color: var(--text-3); }
-:root[data-ui="polish"] .tv-welcome p { font-weight: 600; letter-spacing: 0.04em; text-transform: none; font-size: var(--fs-4); }
+:root[data-ui="polish"] .tv-welcome p { font-weight: 600; letter-spacing: 0.04em; text-transform: none; font-size: var(--fs-4); color: var(--text-2); }
 
 /* ------------------------------ buttons, and everything that is a button for a remote ------------------------------ */
 
-/* One way of being on: the control turns light (white, dark words) and rises a little. A picture has its own (a ring); see the tiles. */
+/* Three ways of being on. Anything that is a button for the remote (a button, a chip, a key, a score, a switch, a choice of the party) turns light (white, dark words), rises a little and takes the ring a picture has (a gap of the page's colour, then white): the ring is what is seen from the sofa, the light is what is read. A picture is a ring and a lift (see the tiles). A line of a list or a menu (an option, an episode, a line of the bell) stays dark, one step lighter, with a thick ring inside its edge: it is one of many lines, and a white slab on every one of them would be glare, and would hide the small words under the name. (A blind jury found the dark version of a switch and of the party card clearly weaker than the old look's white one, three critics in two rounds; the lines of a list won.) */
 :root[data-ui="polish"] .tv-btn,
 :root[data-ui="polish"] .tv-action,
 :root[data-ui="polish"] .tv-choice,
@@ -263,18 +275,35 @@
 :root[data-ui="polish"] .tv-party-choice:focus-visible,
 :root[data-ui="polish"] .tv-key:focus-visible,
 :root[data-ui="polish"] .tv-score:focus-visible,
-:root[data-ui="polish"] .tv-opt:focus-visible,
 :root[data-ui="polish"] .tv-party-remove:focus-visible,
 :root[data-ui="polish"] .tv-follow-bar button:focus-visible {
   background: #fff;
   color: #0b0b0c;
   outline: none;
-  box-shadow: var(--lift);
+  box-shadow: var(--focus-ring), var(--lift);
   transform: scale(1.04);
 }
-:root[data-ui="polish"] .tv-opt:focus-visible { transform: none; box-shadow: none; }
+/* The main action keeps its colour in the ring (light fill alone would make it any other button). */
+:root[data-ui="polish"] .tv-action-primary:focus-visible,
+:root[data-ui="polish"] .tv-btn-red:focus-visible,
+:root[data-ui="polish"] .tv-hero-button.is-primary:focus-visible { box-shadow: var(--focus-ring-accent), var(--lift); }
 :root[data-ui="polish"] .tv-key:focus-visible { z-index: 2; }
+:root[data-ui="polish"] .tv-switch-row:focus-visible { transform: scale(1.02); }
+:root[data-ui="polish"] .tv-party-choice:focus-visible { transform: scale(1.03); }
 :root[data-ui="polish"] .tv-party-choice:focus-visible small { color: #55555c; }
+/* (a switch that is off is a groove the light row would swallow; on, it is the accent as always) */
+:root[data-ui="polish"] .tv-switch-row:focus-visible:not([aria-checked="true"]) .tv-switch { background: #8d8d97; }
+:root[data-ui="polish"] .tv-opt:focus-visible,
+:root[data-ui="polish"] .tv-bell-line:focus-visible {
+  background: var(--surf-4);
+  color: var(--text-1);
+  outline: none;
+  box-shadow: inset 0 0 0 calc(var(--em) * 0.3) #fff;
+  transform: none;
+}
+:root[data-ui="polish"] .tv-bell-line:focus-visible .tv-bell-text small,
+:root[data-ui="polish"] .tv-opt:focus-visible .tv-ep-meta,
+:root[data-ui="polish"] .tv-opt:focus-visible .tv-ep-about { color: var(--text-2); }
 /* A press is felt (after the focus rules, as in the classic look). */
 :root[data-ui="polish"] .tv-btn:active,
 :root[data-ui="polish"] .tv-action:active,
@@ -296,8 +325,9 @@
 :root[data-ui="polish"] .tv-btn-icon:hover { background: var(--fill-2); }
 :root[data-ui="polish"] .tv-btn-play { background: #fff; color: #0b0b0c; }
 :root[data-ui="polish"] .tv-btn-play:hover { background: #e8e8ec; }
-/* The play button is already light: what the remote is on shows as the ring. */
-:root[data-ui="polish"] .tv-btn-play:focus-visible { background: #fff; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.08); }
+/* The play button is already light, and round like the other buttons of the controls: what the remote is on shows as a heavier ring. */
+:root[data-ui="polish"] .tv-btn-play { border-radius: 50%; }
+:root[data-ui="polish"] .tv-btn-play:focus-visible { background: #fff; box-shadow: 0 0 0 calc(var(--ring-gap) * 1.3) var(--bg), 0 0 0 calc(var(--ring-gap) * 1.3 + var(--ring) * 1.5) #fff, var(--lift); transform: scale(1.08); }
 :root[data-ui="polish"] .tv-btn-red { background: var(--accent); color: var(--accent-ink); }
 :root[data-ui="polish"] .tv-btn-red:hover { background: var(--accent-hover); }
 :root[data-ui="polish"] .tv-btn-ghost { background: var(--fill-2); }
@@ -317,9 +347,13 @@
 :root[data-ui="polish"] .tv-action-danger:hover { background: rgba(255, 107, 107, 0.3); color: #fff; }
 :root[data-ui="polish"] .tv-action-danger:focus-visible { background: #fff; color: #b3261e; }
 :root[data-ui="polish"] .tv-notice { font-size: var(--fs-3); }
+:root[data-ui="polish"] .tv-action:disabled,
+:root[data-ui="polish"] .tv-action[aria-disabled="true"],
+:root[data-ui="polish"] .tv-opt[aria-disabled="true"] { opacity: 0.55; }
 :root[data-ui="polish"] .tv .role-switch:focus-visible { outline: none; }
-/* The welcome's one button is the chosen one from the start (OK can only mean it): it looks like it. */
-:root[data-ui="polish"] .tv-welcome .tv-action { outline: none; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.04); }
+/* The welcome's one button is the chosen one from the start (OK can only mean it): it looks as a button the remote is on looks everywhere. */
+:root[data-ui="polish"] .tv-welcome .tv-action,
+:root[data-ui="polish"] .tv-welcome .tv-action:hover { background: #fff; color: #0b0b0c; outline: none; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.04); }
 
 /* Choosing one of a few (the language, the look, the lists a title is in, a filter): what is chosen has the accent as a ring, what the remote is on is light. */
 :root[data-ui="polish"] .tv-choice {
@@ -333,10 +367,11 @@
 :root[data-ui="polish"] .tv-list-picks .tv-action[aria-pressed="true"]:not(:focus-visible) {
   background: rgb(var(--accent-rgb) / 0.22);
   color: var(--text-1);
-  box-shadow: inset 0 0 0 calc(var(--em) * 0.1) var(--accent);
+  box-shadow: inset 0 0 0 calc(var(--em) * 0.14) var(--accent);
 }
+/* Chosen and the remote on it: both show (light, as on anything the remote is on, and the accent ring of what is chosen, heavier). */
 :root[data-ui="polish"] .tv-choice[aria-checked="true"]:focus-visible,
-:root[data-ui="polish"] .tv-list-picks .tv-action[aria-pressed="true"]:focus-visible { box-shadow: inset 0 0 0 calc(var(--em) * 0.16) var(--accent), var(--lift); }
+:root[data-ui="polish"] .tv-list-picks .tv-action[aria-pressed="true"]:focus-visible { background: #fff; color: #0b0b0c; box-shadow: inset 0 0 0 calc(var(--em) * 0.2) var(--accent), var(--focus-ring), var(--lift); }
 :root[data-ui="polish"] .tv-choice-danger { background: rgba(255, 107, 107, 0.16); color: #ffb4b4; }
 :root[data-ui="polish"] .tv-choice-danger:hover { background: rgba(255, 107, 107, 0.3); color: #fff; }
 :root[data-ui="polish"] .tv-choice-danger:focus-visible { background: #fff; color: #b3261e; }
@@ -347,8 +382,6 @@
 :root[data-ui="polish"] .tv-switch { background: var(--fill-track); transition: background var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-switch::after { transition: transform var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-switch-row[aria-checked="true"] .tv-switch { background: var(--accent); }
-:root[data-ui="polish"] .tv-switch-row:focus-visible .tv-switch { background: rgba(11, 11, 12, 0.3); }
-:root[data-ui="polish"] .tv-switch-row[aria-checked="true"]:focus-visible .tv-switch { background: var(--accent); }
 
 :root[data-ui="polish"] .tv-swatch { transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-swatch[aria-checked="true"] { box-shadow: 0 0 0 var(--ring-gap) var(--bg), 0 0 0 calc(var(--ring-gap) + var(--ring) * 0.8) var(--text-2); }
@@ -360,6 +393,7 @@
 :root[data-ui="polish"] .tv-score:hover { background: var(--surf-3); }
 :root[data-ui="polish"] .tv-score[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
 :root[data-ui="polish"] .tv-score:focus-visible { transform: scale(1.1); }
+:root[data-ui="polish"] .tv-score[aria-checked="true"]:focus-visible { background: #fff; color: #0b0b0c; box-shadow: inset 0 0 0 calc(var(--em) * 0.2) var(--accent), var(--focus-ring); }
 
 /* ------------------------------ lists of options (the player's menus) ------------------------------ */
 
@@ -367,10 +401,9 @@
 :root[data-ui="polish"] .tv-opt { border-radius: var(--r-2); background: var(--fill-1); color: var(--text-1); }
 :root[data-ui="polish"] .tv-opt:hover { background: var(--fill-2); }
 :root[data-ui="polish"] .tv-opt[data-active="true"] { background: rgb(var(--accent-rgb) / 0.22); color: var(--text-1); }
-:root[data-ui="polish"] .tv-opt[data-active="true"]:focus-visible { background: #fff; color: #0b0b0c; }
-/* An episode is a picture and three lines: the remote is on it as a ring inside its edge, not as a white row (white words would vanish). */
-:root[data-ui="polish"] .tv-opt.tv-ep:focus-visible,
-:root[data-ui="polish"] .tv-opt.tv-ep[data-active="true"]:focus-visible { background: var(--surf-3); color: var(--text-1); box-shadow: inset 0 0 0 calc(var(--em) * 0.2) #fff; }
+/* Chosen and the remote on it: the tint of what is chosen stays (a little stronger), with the ring inside. An episode (a picture and three lines) is a row like the others. */
+:root[data-ui="polish"] .tv-opt[data-active="true"]:focus-visible { background: rgb(var(--accent-rgb) / 0.34); }
+:root[data-ui="polish"] .tv-opt.tv-ep[data-active="true"]:focus-visible { background: var(--surf-4); }
 :root[data-ui="polish"] .tv-ep-about { font-size: var(--fs-1); color: var(--text-3); }
 :root[data-ui="polish"] .tv-ep-meta { font-size: var(--fs-1); color: var(--text-3); }
 :root[data-ui="polish"] .tv-ep-meta[data-state="now"] { color: var(--text-1); }
@@ -412,8 +445,8 @@
 
 /* ------------------------------ the player ------------------------------ */
 
-:root[data-ui="polish"] .hud-top { padding-top: calc(var(--em) * 2.8); }
-:root[data-ui="polish"] .hud-bottom { padding-bottom: calc(var(--em) * 2.8); }
+:root[data-ui="polish"] .hud-top { padding-top: calc(var(--em) * 2.8); padding-left: var(--edge-r); padding-right: var(--edge-r); }
+:root[data-ui="polish"] .hud-bottom { padding-bottom: calc(var(--em) * 2.8); padding-left: var(--edge-r); padding-right: var(--edge-r); }
 :root[data-ui="polish"] .hud-title { font-size: var(--fs-5); font-weight: 700; letter-spacing: -0.01em; }
 :root[data-ui="polish"] .hud-episode { font-size: var(--fs-2); color: var(--text-2); }
 :root[data-ui="polish"] .hud-ep-name { font-size: var(--fs-3); font-weight: 600; }
@@ -463,10 +496,8 @@
 :root[data-ui="polish"] .tv-bell-heading { font-size: var(--fs-2); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-2); }
 :root[data-ui="polish"] .tv-bell-line { border-radius: var(--r-2); background: var(--fill-1); color: var(--text-1); font-size: var(--fs-3); transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-bell-line:hover { background: var(--fill-2); color: var(--text-1); }
-:root[data-ui="polish"] .tv-bell-line:focus-visible { background: #fff; color: #0b0b0c; outline: none; box-shadow: var(--lift); transform: scale(1.02); }
 :root[data-ui="polish"] .tv-bell-icon { background: var(--fill-2); }
 :root[data-ui="polish"] .tv-bell-text small { font-size: var(--fs-1); color: var(--text-3); }
-:root[data-ui="polish"] .tv-bell-line:focus-visible .tv-bell-text small { color: #55555c; }
 :root[data-ui="polish"] .tv-bell-badge { font-size: var(--fs-1); }
 :root[data-ui="polish"] .tv-friend-ask { font-size: var(--fs-4); }
 :root[data-ui="polish"] .tv-friend-ask b { font-weight: 700; }
@@ -557,6 +588,7 @@
     --fs-deep: calc(var(--em) * 2.2);
     --gutter: calc(var(--em) * 6.4);
     --edge: calc(var(--em) * 1.4);
+    --edge-r: calc(var(--em) * 1.6);
     --page-r: calc(var(--em) * 1.4);
     --tile-gap: calc(var(--em) * 1);
     --top: calc(var(--em) * 1.2);

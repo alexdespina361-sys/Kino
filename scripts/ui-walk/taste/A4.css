@@ -1,0 +1,13 @@
+/* A4: what a group is called. B is small capitals in the accent (A is quiet words). */
+:root[data-ui="polish"] .tv-hero-eyebrow,
+:root[data-ui="polish"] .tv-panel-settings h2,
+:root[data-ui="polish"] .tv-bell-heading,
+:root[data-ui="polish"] .tv-opt-heading,
+:root[data-ui="polish"] .tv-menu-col h3,
+:root[data-ui="polish"] .hud-upnext-head,
+:root[data-ui="polish"] .tv-end-kicker { color: var(--accent); font-size: var(--fs-1); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+:root[data-ui="polish"] .phone-ui .group h3,
+:root[data-ui="polish"] .phone-ui .sheet-section,
+:root[data-ui="polish"] .phone-ui .cap-label,
+:root[data-ui="polish"] .phone-ui .code-card-title,
+:root[data-ui="polish"] .phone-ui .avatar-picker legend { color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }

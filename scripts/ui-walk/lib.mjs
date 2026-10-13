@@ -1,7 +1,7 @@
 // Shared pieces of the screenshot walk: a made-up catalogue with drawn posters, the way each device is opened, the step/snap helpers.
 // Run by run.mjs against a server on its own (accounts live in the server's memory), with UI=classic|polish choosing the look the pages wear.
 import { chromium, devices } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { saveScan } from "./scan.mjs";
 
 export { chromium };
@@ -271,11 +271,33 @@ const unsteady = (page) =>
     window.__steady = undefined;
   });
 
+/**
+ * With TASTE_CSS=<file> every picture is taken with that style sheet added to the page, and with TASTE_ATTR=data-accent=blue with that attribute on
+ * <html> (taste.mjs: one thing changed on the refined look, for the owner to choose between).
+ */
+const tasteCss = process.env.TASTE_CSS ? readFileSync(process.env.TASTE_CSS, "utf8") : "";
+const tasteAttr = (process.env.TASTE_ATTR ?? "").split("=");
+const tasted = (page) =>
+  tasteCss || tasteAttr[0]
+    ? page.evaluate(
+        ([css, [name, value]]) => {
+          if (name) document.documentElement.setAttribute(name, value ?? "");
+          if (!css || document.getElementById("taste-css")) return;
+          const style = document.createElement("style");
+          style.id = "taste-css";
+          style.textContent = css;
+          document.head.append(style);
+        },
+        [tasteCss, tasteAttr],
+      )
+    : null;
+
 /** A picture of what the page shows, after the things that fade and slide have settled. */
 export async function snap(page, device, name, { settle = 500, keepToast = false, live = false, ...shot } = {}) {
   mkdirSync(`${out}/${device}`, { recursive: true });
   if (!keepToast) await quiet(page);
   await wait(settle);
+  await tasted(page);
   await steady(page, live);
   await page.screenshot({ path: `${out}/${device}/${name}.png`, animations: "disabled", ...shot });
   if (scanning && !shot.fullPage) await saveScan(page, `${scanOut}/${device}`, name);
@@ -306,6 +328,7 @@ export async function snapScrolled(page, inside, device, name, { max = 4, settle
     if (sizes) await page.evaluate(([n, step]) => { document.querySelector("[data-l-scroll]").scrollTop = n * step; }, [part, sizes.height - 80]);
     await wait(part === 0 ? settle : 350);
     const suffix = parts > 1 ? `-${part + 1}of${parts}` : "";
+    await tasted(page);
     await steady(page, false);
     await page.screenshot({ path: `${out}/${device}/${name}${suffix}.png`, animations: "disabled" });
     if (scanning) await saveScan(page, `${scanOut}/${device}`, `${name}${suffix}`);

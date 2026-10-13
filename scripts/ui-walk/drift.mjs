@@ -131,7 +131,9 @@ for (const page of pages) {
       const right = (element.x + element.w) / width;
       const top = element.y / height;
       const bottom = (element.y + element.h) / height;
-      if (left < 0.025 || right > 0.975 || top < 0.05 || bottom > 0.95) {
+      // what crosses an edge is being scrolled by it (a row of pictures, the page under its fade), and so are the pictures of such a row and the words under them: only what sits whole inside the margin is about the margin
+      const scrolled = left < 0 || right > 1 || top < 0 || bottom > 1 || /tile|row-title|score-badge/.test(`${element.id ?? ""} ${element.cls ?? ""}`);
+      if (!scrolled && (left < 0.025 || right > 0.975 || top < 0.05 || bottom > 0.95)) {
         // an element wider than the screen (a row that scrolls) is not about the margin
         if (element.w < width * 0.95) problems.safeMargin.push({ picture: where, element: describe(element), edges: `${(left * 100).toFixed(1)}% .. ${(right * 100).toFixed(1)}% / ${(top * 100).toFixed(1)}% .. ${(bottom * 100).toFixed(1)}%` });
       }
@@ -214,7 +216,7 @@ section("Text with too little contrast", grouped.contrast, ["element", "ratio", 
 section("Controls with no name", grouped.unnamed, ["element", "size", "count", "pictures"], "A control with no text, aria-label or title cannot be told apart by a screen reader.");
 section("Controls under 24 px", grouped.tinyTarget, ["element", "size", "count", "pictures"], "WCAG 2.2 target size (minimum), AA.");
 section("Phone controls under 44 px", grouped.smallTarget, ["element", "size", "count", "pictures"], "The comfortable thumb target. Links inside running text are left out.");
-section("Text or controls outside the TV's safe margin", grouped.safeMargin, ["element", "edges", "count", "pictures"], "Inside 2.5% of the left/right edge or 5% of the top/bottom. Rows that scroll past the edge are not counted.");
+section("Text or controls outside the TV's safe margin", grouped.safeMargin, ["element", "edges", "count", "pictures"], "Inside 2.5% of the left/right edge or 5% of the top/bottom. What crosses an edge (a row that scrolls past it, the page under its fade) and the pictures of such a row with the words under them are not counted.");
 section("Text that is cut without an ellipsis", grouped.cutText, ["element", "size", "count", "pictures"]);
 lines.push(`## Screens that scroll sideways (${problems.sideways.length})`, "", problems.sideways.length ? md(problems.sideways, ["picture", "scrollWidth", "width"]) : "None.", "");
 lines.push(`## TV screens with nothing focused (${problems.noFocus.length})`, "", problems.noFocus.length ? problems.noFocus.map((one) => `- ${one}`).join("\n") : "None.", "");

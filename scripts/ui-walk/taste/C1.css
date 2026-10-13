@@ -1,0 +1,13 @@
+/* C1: how big what is pressed looks. B draws it smaller (about 40 px) and keeps a 44 px reach round it (A draws it at the 44-48 px it is). */
+:root[data-ui="polish"] .phone-ui .btn { min-height: 40px; }
+:root[data-ui="polish"] .phone-ui .lib-pill,
+:root[data-ui="polish"] .phone-ui .cap-choice,
+:root[data-ui="polish"] .phone-ui .season,
+:root[data-ui="polish"] .phone-ui .chip-pill,
+:root[data-ui="polish"] .phone-ui .signin-pill,
+:root[data-ui="polish"] .phone-ui .segmented button { min-height: 34px; position: relative; }
+:root[data-ui="polish"] .phone-ui .icon-btn { width: 36px; height: 36px; }
+:root[data-ui="polish"] .phone-ui .menu-row { min-height: 44px; padding: 10px 16px; }
+:root[data-ui="polish"] .phone-ui .choice { padding-block: 10px; }
+:root[data-ui="polish"] .phone-ui .round { width: 52px; height: 52px; }
+:root[data-ui="polish"] .phone-ui .round.big { width: 72px; height: 72px; }

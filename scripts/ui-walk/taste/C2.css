@@ -1,0 +1,2 @@
+/* C2: where the remote's buttons are. B keeps them under the title, high on the screen (A sinks them to the bottom, under the thumb). */
+:root[data-ui="polish"] .phone-ui .remote-controls { margin-top: 0; }

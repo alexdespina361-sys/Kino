@@ -1,0 +1,7 @@
+/* B3: the main button of a page. B is white with dark words (A is the profile's accent). */
+:root[data-ui="polish"] .tv-hero-button.is-primary,
+:root[data-ui="polish"] .tv-action-primary { background: #fff; color: #0b0b0c; }
+:root[data-ui="polish"] .tv-hero-button.is-primary:hover,
+:root[data-ui="polish"] .tv-action-primary:hover { background: #e8e8ec; color: #0b0b0c; }
+:root[data-ui="polish"] .tv-hero-button.is-primary:focus-visible,
+:root[data-ui="polish"] .tv-action-primary:focus-visible { background: #fff; color: #0b0b0c; box-shadow: var(--focus-ring), var(--lift); }

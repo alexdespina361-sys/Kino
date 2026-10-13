@@ -1,6 +1,6 @@
-# Design drift: the classic look
+# Design drift: the polish look
 
-152 screens scanned, 32127 elements measured (2026-10-13). Made by `scripts/ui-walk/drift.mjs` from the walk's live-DOM scans.
+373 screens scanned, 108097 elements measured (2026-10-13). Made by `scripts/ui-walk/drift.mjs` from the walk's live-DOM scans.
 
 ## What the pages use
 
@@ -8,185 +8,164 @@ TV sizes are in em (what the CSS wrote; 1em = the TV's own scale), the phone's i
 
 ### TV / desktop screen
 
-31 distinct type sizes, 5 weights, 15 radii, 31 surface colours, 28 text colours, 45 shadows, 16 transitions.
+21 distinct type sizes, 6 weights, 6 radii, 25 surface colours, 12 text colours, 52 shadows, 17 transitions.
 
 **Type sizes**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 1.7em | 971 | 88 | button[rail-search] |
-| 1em | 962 | 84 | button[tv-browse-tile] (The Long Harbour) |
-| 1.3em | 617 | 93 | p[tv-hero-eyebrow] "Popular this week" |
-| 1.5em | 497 | 96 | button[tv-account-chip] (Sign in) |
-| 1.25em | 463 | 67 | span.tv-tile-year "2022" |
-| 8.7em | 231 | 33 | b "1" |
-| 1.8em | 188 | 62 | button[welcome-enter] "Start watching" |
-| 1.15em | 169 | 65 | span[score-badge] "7" |
-| 2.2em | 146 | 104 | span "Kin" |
-| 1.6em | 134 | 52 | span.tv-category-name "Popular this week" |
-| 1.4em | 100 | 62 | p.tv-hero-meta "2019" |
-| 2em | 90 | 35 | p "Welcome" |
-| 1.1em | 68 | 27 | span.tv-category-count "Movies · 12 titles" |
-| 1.9em | 58 | 12 | button[key-a] "a" |
-| 3em | 51 | 42 | h1[tv-hero-title] "The Long Harbour" |
-| 2.4em | 46 | 44 | h1[tv-hero-title] "Blue Hour" |
-| 3.4em | 29 | 27 | h1.tv-headline "Your rating" |
-| 4em | 27 | 21 | h1.tv-headline "Watch party" |
-| 4.4em | 19 | 19 | h1[tv-detail-title] "Paper Moons" |
-| 2.1em | 16 | 7 | b "Start a party" |
-| 1.2em | 14 | 8 | button[name-key-space] "Space" |
-| 1.75em | 13 | 6 | span.tv-step-no "1" |
-| 2.3em | 12 | 10 | button[tv-play-btn] (Pause) |
-| 1.45em | 8 | 4 | span "Wants to be friends" |
-| 9.25em | 5 | 5 | p[pairing-code] "123 456" |
-| 1.35em | 4 | 2 | small "you" |
-| 3.2em | 3 | 3 | h1[tv-account-name] "Not signed in" |
-| 2.05em | 2 | 2 | b[tv-friend-request-name] "Ben#1" |
-| 6.1em | 2 | 2 | p[tv-party-code] "123 456" |
+| 1.7em | 1603 | 132 | button[rail-search] |
+| 1.3em | 1397 | 107 | span.tv-tile-name "The Long Night" |
+| 1em | 1059 | 96 | button[tv-browse-tile] (The Long Harbour) |
+| 1.5em | 768 | 120 | button[tv-account-chip] (Sign in) |
+| 8.7em | 238 | 34 | b "1" |
+| 2em | 172 | 61 | p "Welcome" |
+| 2.2em | 144 | 122 | span "Kin" |
+| 3.2em | 88 | 84 | h1[tv-hero-title] "The Long Harbour" |
+| 1.9em | 84 | 3 | button[key-a] "a" |
+| 4.2em | 51 | 45 | h1[tv-detail-title] "Paper Moons" |
+| 2.6em | 47 | 45 | h1[tv-hero-title] "Blue Hour" |
+| 1.6em | 42 | 7 | button[tv-accent-red] (Red) |
+| 3em | 30 | 3 | button[rate-score-1] "1" |
+| 2.3em | 13 | 11 | button[tv-play-btn] (Pause) |
+| 1.4em | 6 | 2 | button[key-space] "Space" |
+| 1.2em | 6 | 2 | button[name-key-space] "Space" |
+| 8.4em | 6 | 6 | p[pairing-code] "123 456" |
+| 6.8em | 3 | 3 | p[tv-link-code] "ABCD-2345" |
+| 1.8em | 2 | 2 | input[rate-note-input] |
+| 3.4em | 2 | 2 | p[tv-friend-code] "ABCD-2345" |
 | 7em | 1 | 1 | span "Kin" |
-| 7.5em | 1 | 1 | p[tv-link-code] "ABCD-2345" |
 
 **Weights**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 600 | 1830 | 113 | button[rail-search] |
-| 400 | 1740 | 114 | button[fullscreen-toggle] (Full screen) |
-| 700 | 654 | 94 | p[tv-hero-eyebrow] "Popular this week" |
-| 800 | 492 | 114 | span "Kin" |
-| 900 | 231 | 33 | b "1" |
+| 600 | 2600 | 132 | button[rail-search] |
+| 400 | 2031 | 133 | button[fullscreen-toggle] (Full screen) |
+| 700 | 703 | 133 | h1[tv-hero-title] "The Long Harbour" |
+| 900 | 238 | 34 | b "1" |
+| 800 | 189 | 122 | span "Kin" |
+| 500 | 1 | 1 | span.tv-query-hint "Search titles" |
 
 **Line heights**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| normal | 3249 | 114 | button[rail-search] |
-| 1.65em | 506 | 63 | button[tv-hero-play] "Play" |
-| 6.8em | 231 | 33 | b "1" |
-| 1.75em | 192 | 59 | span[score-badge] "7" |
-| 2em | 135 | 54 | button[welcome-enter] "Start watching" |
-| 2.2em | 122 | 104 | span "Kin" |
-| 1.6em | 81 | 6 | span.tv-tile-name "The Glass Orchard" |
-| 1.85em | 57 | 19 | button[tv-detail-play] "Play" |
-| 2.1em | 48 | 2 | button[key-a] "a" |
-| 3.3em | 41 | 41 | h1[tv-hero-title] "The Long Harbour" |
-| 1.3em | 36 | 12 | button[name-key-space] "Space" |
-| 2.65em | 34 | 34 | h1[tv-hero-title] "Blue Hour" |
+| normal | 3786 | 133 | button[rail-search] |
+| 1.7em | 560 | 77 | span.tv-tile-name "The Long Night" |
+| 1.85em | 321 | 104 | button[tv-hero-play] "Play" |
+| 6.8em | 238 | 34 | b "1" |
+| 1.95em | 173 | 80 | span[score-badge] "7" |
+| 2.2em | 142 | 122 | span "Kin" |
+| 1.65em | 102 | 24 | button[tv-detail-close] "Close" |
+| 2.1em | 91 | 10 | p.tv-hero-about "A dockworker's last winter in a town tha" |
+| 2em | 55 | 11 | button.tv-btn (Back 10 seconds) |
+| 3.6em | 41 | 41 | h1[tv-hero-title] "The Long Harbour" |
+| 1.3em | 39 | 13 | button[name-key-space] "Space" |
+| 2.3em | 39 | 26 | p "Sign in and what you watch on your phone" |
 
 **Radii**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| pill / circle | 1378 | 114 | span.logo-o |
-| 0.9em | 165 | 59 | button[welcome-enter] "Start watching" |
-| 0.85em | 140 | 78 | button[rail-home] |
-| 0.75em | 106 | 29 | button[tv-hero-play] "Play" |
-| 0.6em | 95 | 19 | span.tv-tile-art |
-| 0.65em | 43 | 33 | button[tv-detail-close] "Close" |
-| 0.5em | 28 | 14 | button[tv-episode] |
-| 1em | 18 | 9 | button[tv-party-start] |
-| 1.1em | 15 | 5 | button[tv-autoplay] |
-| 0.8em | 12 | 9 | input[auth-email] |
-| 1.05em | 10 | 1 | button[rate-score-1] "1" |
-| 1.2em | 10 | 10 | div.tv-qr |
-| 0.7em | 8 | 3 | input[rate-note-input] |
-| 0.55em | 3 | 1 | button[key-space] "Space" |
+| pill / circle | 1582 | 133 | span.logo-o |
+| 0.7em | 500 | 121 | button[tv-hero-play] "Play" |
+| 0.45em | 212 | 10 | button[key-a] "a" |
+| 1.1em | 35 | 23 | div.tv-qr |
+| 0.75em | 4 | 2 | span.profile-picture |
 | 3.9em | 1 | 1 | span.logo-o |
 
 **Icon sizes**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 1.15em | 480 | 49 | svg |
-| 1.95em | 432 | 48 | svg |
-| 1.2em | 376 | 31 | svg |
+| 1.95em | 540 | 60 | svg |
+| 1.15em | 472 | 46 | svg |
+| 1.2em | 353 | 31 | svg |
 | 2em | 277 | 33 | svg |
-| 1.8em | 119 | 73 | svg |
-| 1.5em | 95 | 56 | svg |
-| 1.45em | 68 | 57 | svg |
-| 1.7em | 46 | 18 | svg |
+| 1.7em | 140 | 57 | svg |
+| 1.8em | 113 | 81 | svg |
+| 1.5em | 103 | 72 | svg |
+| 2.6em | 78 | 23 | svg |
+| 1.3em | 72 | 30 | svg |
+| 1.45em | 67 | 57 | svg |
+| 1.35em | 63 | 31 | svg |
+| 2.75em | 52 | 48 | svg |
 | 2.7em | 42 | 42 | svg |
-| 2.6em | 39 | 13 | svg |
-| 2.75em | 34 | 34 | svg |
-| 1.3em | 27 | 27 | svg |
-| 2.05em | 25 | 5 | svg |
-| 1.35em | 23 | 23 | svg |
+| 2.05em | 30 | 6 | svg |
 | 4.6em | 23 | 13 | svg |
 
 **Gaps**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 1.35em | 692 | 76 | button[rail-search] |
-| 0.9em | 195 | 113 | button[tv-account-chip] (Sign in) |
-| 0.3em | 118 | 39 | span[score-badge] "7" |
-| 0.75em | 94 | 25 | button[tv-hero-play] "Play" |
-| 0.6em | 78 | 2 | button[name-key-a] "a" |
-| 0.7em | 68 | 18 | button[filter-all] "All" |
-| 0.85em | 59 | 21 | button[tv-detail-play] "Play" |
-| 0.2em | 56 | 20 | button[tv-category-tile] (Popular this week) |
-| 0.8em | 50 | 10 | button.tv-btn (Back 10 seconds) |
-| 0.5em | 42 | 19 | button[name-key-space] "Space" |
-| 1.1em | 24 | 12 | button[tv-episode] |
-| 0.65em | 23 | 23 | button[tv-detail-close] "Close" |
-| 0.35em | 15 | 5 | span.tv-ep-meta "38 min" |
+| 1.35em | 792 | 88 | button[rail-search] |
+| 0.6em | 238 | 50 | button[tv-hero-play] "Play" |
+| 0.9em | 122 | 99 | button[tv-account-chip] (Sign in) |
+| 0.85em | 109 | 54 | button[welcome-enter] "Start watching" |
+| 0.35em | 108 | 42 | span[score-badge] "7" |
+| 0.7em | 94 | 24 | button[filter-all] "All" |
+| 0.75em | 84 | 3 | button[key-a] "a" |
+| 0.2em | 58 | 20 | button[tv-category-tile] (Popular this week) |
+| 0.8em | 55 | 11 | button.tv-btn (Back 10 seconds) |
+| 0.5em | 46 | 21 | button[name-key-space] "Space" |
+| 1.1em | 29 | 13 | button[tv-episode] |
+| 0.3em | 25 | 11 | nav[tv-rail] (Library menu) |
+| 3.4em | 23 | 7 | button[tv-autoplay] |
+| 0.4em | 20 | 6 | span.tv-ep-meta "38 min" |
 | 3em | 12 | 2 | button[tv-friends-lists] |
-| 3.6em | 11 | 3 | button[tv-autoplay] |
 
 **Text colours**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| #bdbdc4 | 1235 | 67 | button[tv-browse-tile] (Paper Moons) |
-| #ffffff | 943 | 114 | button[rail-home] |
-| #b4b4bb | 659 | 76 | button[rail-search] |
-| #9b9ba3 | 562 | 96 | span.tv-tile-year "2022" |
-| #e6e6e6 | 342 | 84 | button[tv-account-chip] (Sign in) |
-| #0b0b0c | 231 | 33 | b "1" |
-| #e8e8ec | 159 | 64 | h2.tv-row-title "Popular this week" |
-| #e6e6ea | 144 | 5 | button[key-b] "b" |
-| #f5f5f7 | 137 | 104 | span "Kin" |
-| #d4d4d4 | 100 | 51 | button[filter-movie] "Movies" |
-| #e50914 | 89 | 64 | p[tv-hero-eyebrow] "Popular this week" |
-| #cfcfd4 | 74 | 55 | p.tv-hero-meta "2019" |
-| #ffffff78% | 54 | 20 | span.tv-category-count "Movies · 12 titles" |
-| #dddddd | 42 | 15 | button[tv-episode] |
-| #000000 | 38 | 29 | button[welcome-enter] "Start watching" |
+| #c9c9d1 | 2175 | 101 | button[tv-account-chip] (Sign in) |
+| #9b9ba3 | 1487 | 133 | button[rail-search] |
+| #f5f5f7 | 1207 | 133 | button[rail-home] |
+| #ffffff | 550 | 132 | h1[tv-hero-title] "The Long Harbour" |
+| #0b0b0c | 286 | 67 | b "1" |
+| #111111 | 21 | 7 | button[tv-accent-green] (Green) |
+| #ffffff50% | 18 | 14 | span.tv-tile-initial "H" |
+| #222222 | 10 | 10 | p "Or scan this with your camera" |
+| #cfcfd4 | 4 | 2 | li "40% watched" |
+| #ffb4b4 | 2 | 2 | button[friend-remove] "Remove friend" |
+| #55555c | 1 | 1 | small "This screen plays, and the ones you invi" |
+| #6f6f78 | 1 | 1 | span.tv-query-hint "Search titles" |
 
 **Surface colours**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| #00000062% | 588 | 66 | span[tv-tile-corner] (Add to Favourites) |
-| #e50914 | 396 | 99 | button[tv-hero-play] "Play" |
-| #0b0b0c | 309 | 119 | div |
-| #ffffff12% | 234 | 96 | button[tv-account-chip] (Sign in) |
-| #ffffff11% | 143 | 5 | button[key-b] "b" |
-| #000000 | 120 | 119 | main[tv] |
-| #00000068% | 118 | 39 | span[score-badge] "7" |
-| #0b0b0c45% | 95 | 76 | div.tv-browse-shade |
-| #ffffff28% | 82 | 39 | span.tv-tile-progress |
-| #ffffff16% | 78 | 40 | button[tv-hero-list] "Favourites" |
-| #ffffff10% | 78 | 32 | button[filter-movie] "Movies" |
-| #ffffff14% | 76 | 62 | svg |
-| #ffffff | 39 | 37 | button[welcome-enter] "Start watching" |
-| #e5091430% | 23 | 20 | button[filter-all] "All" |
-| #ffffff9% | 21 | 5 | button[tv-autoplay] |
-| #ffffff6% | 16 | 7 | button[tv-episode] |
-| #17171a | 14 | 11 | input[rate-note-input] |
-| #e5091425% | 11 | 11 | button[tv-episode] |
-| #ffffff38% | 10 | 10 | div.hud-bar-buffered |
-| #00000045% | 7 | 7 | span.tv-ep-play |
+| #0b0b0c72% | 974 | 77 | span[tv-tile-corner] (Add to Favourites) |
+| #0b0b0c | 368 | 138 | div |
+| #232327 | 321 | 61 | button[key-b] "b" |
+| #e50914 | 297 | 104 | button[tv-hero-play] "Play" |
+| #ffffff8% | 255 | 101 | button[tv-account-chip] (Sign in) |
+| #ffffff14% | 173 | 70 | svg |
+| #000000 | 139 | 138 | main[tv] |
+| #ffffff28% | 129 | 57 | span.tv-tile-progress |
+| #0b0b0c45% | 112 | 88 | div.tv-browse-shade |
+| #18181b | 76 | 33 | input[rate-note-input] |
+| #ffffff | 50 | 47 | button[welcome-enter] "Start watching" |
+| #e5091422% | 38 | 27 | button[filter-all] "All" |
+| #ffffff38% | 11 | 11 | div.hud-bar-buffered |
+| #3f3f46 | 9 | 9 | button[tv-episode] |
+| #00000045% | 8 | 8 | span.tv-ep-play |
+| #2b7fff | 7 | 7 | button[tv-accent-blue] (Blue) |
+| #9b5cff | 7 | 7 | button[tv-accent-purple] (Purple) |
+| #1fb86a | 7 | 7 | button[tv-accent-green] (Green) |
+| #ff8a1f | 7 | 7 | button[tv-accent-orange] (Orange) |
+| #ff4f9a | 7 | 7 | button[tv-accent-pink] (Pink) |
 
 **Borders**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 2 solid #e50914 | 6 | 6 | span.spinner |
-| 3 solid #e50914 | 4 | 4 | input[auth-password] |
+| 3 solid #e50914 | 5 | 5 | span.spinner |
+| 2 solid #e50914 | 5 | 5 | input[auth-email] |
 | 1 solid #e50914 | 2 | 2 | input[rate-note-input] |
 | 2 solid #ffffff10% | 2 | 2 | input[auth-password] |
-| 1 solid #ffffff14% | 2 | 2 | div[audio-subtitles-modal] (Playback speed) |
+| 1 solid #ffffff10% | 2 | 2 | div[audio-subtitles-modal] (Playback speed) |
 | 2 dashed #ffffff28% | 2 | 2 | span.profile-picture |
 | 3 solid #ffffff10% | 1 | 1 | input[auth-email] |
 
@@ -194,328 +173,296 @@ TV sizes are in em (what the CSS wrote; 1em = the TV's own scale), the phone's i
 
 | value | count | pages | sample |
 |---|---|---|---|
-| rgba(255, 255, 255, 0.4) 0px 0px 0px 1.024px | 236 | 29 | span[tv-tile-corner] (Add to Favourites) |
-| rgba(255, 255, 255, 0.4) 0px 0px 0px 1.536px | 130 | 19 | span[tv-tile-corner] (Remove from Continue watching) |
-| rgba(255, 255, 255, 0.4) 0px 0px 0px 1.09228px | 74 | 6 | span[tv-tile-corner] (Remove from Continue watching) |
-| rgba(255, 255, 255, 0.4) 0px 0px 0px 1.152px | 74 | 6 | span[tv-tile-corner] (Remove from Continue watching) |
-| rgba(255, 255, 255, 0.4) 0px 0px 0px 2.048px | 74 | 6 | span[tv-tile-corner] (Remove from Continue watching) |
-| rgba(229, 9, 20, 0.5) 0px 2.816px 19.712px 0px, rgba(255, 255, 255, 0.3) 0px 1.9712px 0px 0px inset | 58 | 47 | span.logo-o |
-| rgba(255, 255, 255, 0.3) 0px 0px 0px 1.1776px | 47 | 14 | span[score-badge] "7" |
+| rgba(255, 255, 255, 0.22) 0px 0px 0px 1px | 974 | 77 | span[tv-tile-corner] (Add to Favourites) |
+| rgba(229, 9, 20, 0.5) 0px 2.816px 19.712px 0px, rgba(255, 255, 255, 0.3) 0px 1.9712px 0px 0px inset | 78 | 65 | span.logo-o |
 | rgba(229, 9, 20, 0.5) 0px 4.224px 29.568px 0px, rgba(255, 255, 255, 0.3) 0px 2.9568px 0px 0px inset | 37 | 30 | span.logo-o |
+| rgb(229, 9, 20) 0px 0px 0px 1.792px inset | 20 | 15 | button[filter-all] "All" |
+| rgb(11, 11, 12) 0px 0px 0px 1.28px, rgb(255, 255, 255) 0px 0px 0px 3.84px, rgba(0, 0, 0, 0.6) 0px 8.96px 23.04px 0px | 13 | 12 | span.tv-tile-art |
+| rgba(0, 0, 0, 0.6) 0px 8.96px 23.04px 0px | 11 | 11 | button[tv-back-to-library] "Back to the library" |
+| rgba(229, 9, 20, 0.5) 0px 3.00377px 21.0264px 0px, rgba(255, 255, 255, 0.3) 0px 2.10264px 0px 0px inset | 9 | 9 | span.logo-o |
+| rgba(229, 9, 20, 0.5) 0px 3.168px 22.176px 0px, rgba(255, 255, 255, 0.3) 0px 2.2176px 0px 0px inset | 9 | 9 | span.logo-o |
 
 **Transitions**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| background, color, transform 0.15s, 0.15s, 0.15s ease, ease, ease | 2740 | 103 | button[tv-account-chip] (Sign in) |
-| transform, color 0.18s, 0.18s ease, ease | 2302 | 67 | button[tv-browse-tile] (The Long Harbour) |
-| background, color, margin-right 0.15s, 0.15s, 0.2s ease, ease, ease | 684 | 76 | button[rail-search] |
-| -webkit-text-stroke-color 0.18s ease | 448 | 45 | b "1" |
-| transform, background 0.12s, 0.12s ease, ease | 149 | 20 | button[tv-episode] |
-| background, color, transform 0.12s, 0.12s, 0.12s ease, ease, ease | 145 | 5 | button[key-a] "a" |
-| transform, box-shadow 0.18s, 0.18s ease, ease | 84 | 22 | button[tv-category-tile] (Popular this week) |
-| background, color, transform, box-shadow 0.15s, 0.15s, 0.15s, 0.15s ease, ease, ease, ease | 68 | 18 | button[filter-all] "All" |
-| opacity 0.15s ease | 48 | 8 | span "Search" |
-| transform, box-shadow 0.15s, 0.15s ease, ease | 42 | 5 | button[tv-accent-red] (Red) |
-| background 0.18s ease | 23 | 5 | span.tv-switch |
-| box-shadow 0.18s ease | 18 | 18 | span.tv-tile-art |
-| border-color, box-shadow 0.15s, 0.15s ease, ease | 14 | 11 | input[rate-note-input] |
-| height 0.12s ease | 10 | 10 | div.hud-bar-track |
-| opacity 0.12s ease | 5 | 5 | span.tv-ep-play |
+| background, color, transform 0.18s, 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be | 2992 | 88 | button[tv-account-chip] (Sign in) |
+| transform, color 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be | 2788 | 77 | button[tv-browse-tile] (The Long Harbour) |
+| background, color, margin-right 0.18s, 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be | 792 | 88 | button[rail-search] |
+| transform, background, color, box-shadow 0.18s, 0.18s, 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be | 621 | 83 | button[welcome-enter] "Start watching" |
+| -webkit-text-stroke-color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) | 546 | 55 | b "1" |
+| background, color, transform, box-shadow 0.18s, 0.18s, 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be | 171 | 52 | button[tv-hero-play] "Play" |
+| transform, box-shadow 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be | 150 | 30 | button[tv-category-tile] (Popular this week) |
+| opacity 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) | 61 | 13 | span "Search" |
+| background 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) | 35 | 9 | span.tv-switch |
+| opacity 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) | 24 | 24 | div[tv-detail] (Paper Moons) |
+| box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) | 20 | 20 | span.tv-tile-art |
+| border-color, box-shadow 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be | 14 | 11 | input[rate-note-input] |
+| height 0.12s cubic-bezier(0.2, 0.8, 0.2, 1) | 11 | 11 | div.hud-bar-track |
+| width 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) | 6 | 6 | nav[tv-rail] (Library menu) |
+| opacity 0.12s cubic-bezier(0.2, 0.8, 0.2, 1) | 6 | 6 | span.tv-ep-play |
 
 **Animations**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| tv-fade-in 1s | 95 | 76 | div.tv-hero-bg |
-| tv-fade, tv-arrive 0.25s, 0.5s | 19 | 19 | div[tv-detail] (Paper Moons) |
+| tv-fade-in 1s | 112 | 88 | div.tv-hero-bg |
+| tv-fade, tv-arrive 0.25s, 0.5s | 24 | 24 | div[tv-detail] (Paper Moons) |
 | tv-welcome-in 0.9s | 2 | 1 | p "Welcome" |
+| tv-blink 1s | 2 | 2 | i.tv-caret |
 | tv-fade 0.2s | 2 | 2 | div.tv-menu-backdrop |
-| tv-blink 1s | 1 | 1 | i.tv-caret |
 | spin 0.9s | 1 | 1 | span.spinner |
 
 ### Phone
 
-26 distinct type sizes, 5 weights, 7 radii, 21 surface colours, 8 text colours, 8 shadows, 19 transitions.
+20 distinct type sizes, 5 weights, 10 radii, 27 surface colours, 10 text colours, 13 shadows, 17 transitions.
 
 **Type sizes**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 16px | 506 | 33 | button[scan] "Scan the TV's QR code" |
-| 13.6px | 386 | 33 | button[account-button] "Sign in" |
-| 12px | 200 | 32 | span[tv-online] "TV connected" |
-| 17.6px | 168 | 32 | h1[tv-name] "TV 4F2A" |
-| 16.8px | 96 | 30 | span "Kin" |
-| 12.8px | 87 | 25 | p[title-meta] "2011 · Movie" |
-| 20px | 79 | 32 | button[fullscreen-toggle] (Full screen) |
-| 12.48px | 68 | 22 | span[score-badge] "7" |
-| 15.2px | 52 | 32 | p.muted "Open on your TV and choose in its menu. " |
-| 18.4px | 32 | 28 | h2 "Paper Moons" |
-| 24px | 26 | 25 | h2 "What do you want to watch?" |
-| 14.4px | 17 | 10 | span[rate-title-value] "Rate" |
-| 11.2px | 17 | 17 | b[bell-badge] "2" |
-| 36px | 17 | 17 | button[account-button] (Account and profiles: Dana) |
-| 19.2px | 12 | 2 | button[accent-red] (Red) |
-| 32px | 10 | 6 | span[control-code] "123 456" |
-| 13.33px | 6 | 4 | small "4" |
-| 13.12px | 4 | 4 | span.code-card-title "Control with more phones (1 connected)" |
-| 33.6px | 3 | 3 | input[code-input] (6-digit code from the TV) |
-| 24.8px | 3 | 3 | h2[media-title] "long" |
-| 40px | 3 | 3 | button[pause] (Pause) |
-| 10.88px | 3 | 3 | small "Speed" |
-| 22.4px | 3 | 3 | h1[account-profile-name] "Dana" |
-| 35.2px | 3 | 3 | span.poster-initial "H" |
-| 14.72px | 2 | 2 | button[party-link-copy] "Copy link" |
-| 25.6px | 1 | 1 | h1 "Connect to your TV" |
+| 16px | 3083 | 235 | span "Kin" |
+| 14px | 2522 | 235 | button[account-button] "Sign in" |
+| 13px | 1250 | 153 | span[tv-online] "TV connected" |
+| 17.6px | 1020 | 195 | button[continue-list-toggle] (Add to a list: The Glass Orchard) |
+| 18px | 807 | 229 | h1[tv-name] "TV 4F2A" |
+| 20px | 568 | 229 | button[fullscreen-toggle] (Full screen) |
+| 12px | 461 | 76 | span[tv-online] "TV connected" |
+| 24px | 255 | 209 | h1 "Connect to your TV" |
+| 36px | 118 | 118 | button[account-button] (Account and profiles: Dana) |
+| 32px | 105 | 65 | span[control-code] "123 456" |
+| 19.2px | 84 | 14 | button[accent-red] (Red) |
+| 40px | 34 | 34 | button[pause] (Pause) |
+| 12.8px | 28 | 22 | button[friend-request-decline] (Decline) |
+| 16.8px | 6 | 6 | span "Kin" |
+| 28.8px | 5 | 5 | input[code-input] (6-digit code from the TV) |
+| 33.6px | 5 | 5 | input[code-input] (6-digit code from the TV) |
+| 7.45px | 4 | 4 | span.cap-sample "This is how your subtitles will look" |
+| 8.56px | 4 | 4 | span.cap-sample "This is how your subtitles will look" |
+| 8.49px | 2 | 2 | span.cap-sample "This is how your subtitles will look" |
+| 9.26px | 2 | 2 | span.cap-sample "This is how your subtitles will look" |
 
 **Weights**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 400 | 876 | 33 | button[fullscreen-toggle] (Full screen) |
-| 600 | 595 | 33 | button[scan] "Scan the TV's QR code" |
-| 700 | 295 | 33 | button[account-button] "Sign in" |
-| 800 | 36 | 17 | span "Kin" |
-| 500 | 2 | 2 | small "1 friend" |
+| 400 | 5064 | 235 | button[fullscreen-toggle] (Full screen) |
+| 600 | 3530 | 235 | button[scan] "Scan the TV's QR code" |
+| 700 | 1647 | 235 | button[account-button] "Sign in" |
+| 800 | 112 | 70 | span "Kin" |
+| 500 | 10 | 10 | small "1 friend" |
 
 **Line heights**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| normal | 1415 | 33 | button[fullscreen-toggle] (Full screen) |
-| 17px | 165 | 29 | span.lib-title "The Glass Orchard" |
-| 18.56px | 52 | 20 | p[title-meta] "2011 · Movie" |
-| 22.04px | 41 | 28 | p.muted "Open on your TV and choose in its menu. " |
-| 22px | 28 | 28 | h1[tv-name] "TV 4F2A" |
-| 18.72px | 27 | 12 | span[score-badge] "7" |
-| 28.8px | 26 | 25 | h2 "What do you want to watch?" |
-| 18px | 17 | 17 | b[bell-badge] "2" |
-| 0px | 17 | 17 | button[account-button] (Account and profiles: Dana) |
-| 22.8px | 3 | 3 | p.muted "Two sisters run a failing cinema and dec" |
-| 29.76px | 3 | 3 | h2[media-title] "long" |
-| 19.72px | 3 | 3 | p.muted "Signed in as dana" |
+| normal | 8286 | 235 | button[fullscreen-toggle] (Full screen) |
+| 17.5px | 737 | 169 | span.lib-title "The Glass Orchard" |
+| 28.8px | 209 | 203 | h2 "What do you want to watch?" |
+| 22.5px | 203 | 203 | h1[tv-name] "TV 4F2A" |
+| 18.85px | 193 | 83 | p[title-meta] "2011 · Movie" |
+| 23.2px | 187 | 120 | p.muted "Open on your TV and choose in its menu. " |
+| 18px | 118 | 118 | b[bell-badge] "2" |
+| 0px | 118 | 118 | button[account-button] (Account and profiles: Dana) |
+| 20.3px | 104 | 67 | p.muted "Open on your TV and choose in its menu. " |
+| 17.4px | 96 | 38 | p[title-meta] "2011 · Movie" |
+| 19.5px | 56 | 26 | span[score-badge] "10" |
+| 24px | 12 | 12 | p.muted "Two sisters run a failing cinema and dec" |
 
 **Radii**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| pill / circle | 400 | 33 | span.logo-o |
-| 12px | 191 | 33 | button[scan] "Scan the TV's QR code" |
-| 8px | 32 | 26 | button[paste] "Paste" |
-| 22px | 13 | 12 | div[title-sheet] (Paper Moons) |
-| 14px | 9 | 7 | input[code-input] (6-digit code from the TV) |
-| 9px | 6 | 4 | button[switch-lang-en] "English" |
-| 10px | 2 | 2 | span[party-link-url] "http://127.0.0.1:8810/?party=562409" |
+| pill / circle | 2707 | 235 | span.logo-o |
+| 12px | 1290 | 235 | button[scan] "Scan the TV's QR code" |
+| 8px | 248 | 181 | button[switch-lang-en] "English" |
+| 22px | 94 | 88 | div[title-sheet] (Paper Moons) |
+| 14px | 18 | 6 | span.profile-picture |
+| 10px | 12 | 12 | span[party-link-url] "http://127.0.0.1:9641/?party=349801" |
+| 0.89px | 4 | 4 | span.cap-sample "This is how your subtitles will look" |
+| 1.03px | 4 | 4 | span.cap-sample "This is how your subtitles will look" |
+| 1.02px | 2 | 2 | span.cap-sample "This is how your subtitles will look" |
+| 1.11px | 2 | 2 | span.cap-sample "This is how your subtitles will look" |
 
 **Icon sizes**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 18px | 159 | 32 | svg |
-| 14px | 146 | 29 | svg |
-| 20px | 95 | 32 | svg |
-| 19px | 45 | 30 | svg |
-| 21px | 30 | 28 | svg |
-| 16px | 29 | 11 | svg |
-| 12px | 27 | 12 | svg |
-| 36px | 17 | 17 | svg.avatar (Fox) |
-| 40px | 12 | 8 | svg |
-| 32px | 7 | 4 | svg |
-| 13px | 6 | 5 | svg |
-| 104px | 4 | 4 | svg[pairing-qr] (QR code that lets another phone control this TV) |
-| 72px | 3 | 3 | svg.avatar (Fox) |
-| 11px | 2 | 2 | svg |
-| 84px | 1 | 1 | svg.avatar (Fox) |
+| 18px | 1138 | 222 | svg |
+| 14px | 725 | 210 | svg |
+| 20px | 696 | 229 | svg |
+| 19px | 288 | 197 | svg |
+| 21px | 225 | 203 | svg |
+| 16px | 192 | 66 | svg |
+| 36px | 118 | 118 | svg.avatar (Fox) |
+| 40px | 75 | 59 | svg |
+| 32px | 70 | 36 | svg |
+| 12px | 63 | 30 | svg |
+| 17px | 46 | 28 | svg |
+| 13px | 28 | 22 | svg |
+| 72px | 25 | 25 | svg.avatar (Fox) |
+| 104px | 24 | 24 | svg[pairing-qr] (QR code that lets another phone control this TV) |
+| 11px | 13 | 13 | svg |
 
 **Gaps**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 6px | 411 | 33 | button[account-button] "Sign in" |
-| 8px | 83 | 32 | button[scan] "Scan the TV's QR code" |
-| 12px | 69 | 22 | p.or "or type the 6-digit code" |
-| 3px | 27 | 12 | span[score-badge] "7" |
-| 10px | 19 | 11 | button[rate-title-toggle] |
-| 4px | 16 | 8 | div[language-switch] (Language) |
-| 5px | 4 | 1 | span.rating-badge "9/10" |
+| 6px | 1950 | 235 | button[account-button] "Sign in" |
+| 8px | 516 | 229 | button[scan] "Scan the TV's QR code" |
+| 12px | 440 | 135 | p.or "or type the 6-digit code" |
+| 4px | 149 | 69 | div[language-switch] (Language) |
+| 10px | 114 | 70 | button[rate-title-toggle] |
+| 3px | 57 | 27 | span[score-badge] "10" |
+| 5px | 19 | 6 | span.rating-badge "9/10" |
 
 **Text colours**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| #f5f5f7 | 1016 | 33 | span "Kin" |
-| #9b9ba3 | 498 | 33 | button[fullscreen-toggle] (Full screen) |
-| #ffffff | 228 | 30 | button[scan] "Scan the TV's QR code" |
-| #46d369 | 31 | 28 | span[tv-online] "TV connected" |
-| #000000 | 14 | 11 | button[switch-lang-en] "English" |
-| #ff6b6b | 8 | 7 | button[disconnect] "Disconnect from this TV" |
-| #111111 | 6 | 2 | button[accent-green] (Green) |
-| #ffffff50% | 3 | 3 | span.poster-initial "H" |
+| #f5f5f7 | 5710 | 235 | span "Kin" |
+| #9b9ba3 | 2709 | 235 | button[fullscreen-toggle] (Full screen) |
+| #ffffff | 1311 | 213 | button[scan] "Scan the TV's QR code" |
+| #d2d2d9 | 255 | 100 | span.code-card-title "Control with more phones (1 connected)" |
+| #46d369 | 218 | 203 | span[tv-online] "TV connected" |
+| #ff6b6b | 59 | 57 | button[tv-forget] "Forget" |
+| #111111 | 42 | 14 | button[accent-green] (Green) |
+| #0b0b0c | 34 | 34 | button[pause] (Pause) |
+| #ffffff50% | 19 | 19 | span.poster-initial "H" |
+| #f6121d | 6 | 6 | button[library-list-toggle] (In your lists: Velvet Static) |
 
 **Surface colours**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| #232328 | 209 | 33 | button[account-button] "Sign in" |
-| #00000062% | 150 | 31 | button[continue-list-toggle] (Add to a list: The Glass Orchard) |
-| #e50914 | 144 | 33 | button[scan] "Scan the TV's QR code" |
-| #17171a | 95 | 33 | input[code-input] (6-digit code from the TV) |
-| #00000055% | 55 | 26 | span.lib-progress |
-| #0b0b0c | 47 | 30 | div |
-| #00000068% | 27 | 12 | span[score-badge] "7" |
-| #ffffff20% | 25 | 19 | div.sheet-grip |
-| #ffffff | 14 | 11 | button[switch-lang-en] "English" |
-| #1c1c20 | 13 | 12 | div[title-sheet] (Paper Moons) |
-| #ff6b6b14% | 8 | 7 | button[disconnect] "Disconnect from this TV" |
-| #e5091420% | 4 | 4 | button[link-box-toggle] |
-| #ffffff7% | 2 | 2 | span[party-link-url] "http://127.0.0.1:8810/?party=562409" |
-| #2b7fff | 2 | 2 | button[accent-blue] (Blue) |
-| #9b5cff | 2 | 2 | button[accent-purple] (Purple) |
-| #1fb86a | 2 | 2 | button[accent-green] (Green) |
-| #ff8a1f | 2 | 2 | button[accent-orange] (Orange) |
-| #ff4f9a | 2 | 2 | button[accent-pink] (Pink) |
-| #e5091414% | 1 | 1 | div.pair-icon |
-| #ffffff10% | 1 | 1 | button[friend-invite-code-copy] "Copy code" |
+| #232328 | 1213 | 231 | button[account-button] "Sign in" |
+| #00000062% | 1114 | 223 | button[continue-list-toggle] (Add to a list: The Glass Orchard) |
+| #e50914 | 834 | 231 | button[scan] "Scan the TV's QR code" |
+| #17171a | 563 | 228 | input[code-input] (6-digit code from the TV) |
+| #00000055% | 456 | 173 | span.lib-progress |
+| #2e2e34 | 392 | 88 | button[title-list] "My Lists" |
+| #0b0b0c | 336 | 213 | div |
+| #e5091422% | 131 | 69 | button[switch-lang-en] "English" |
+| #1c1c20 | 94 | 88 | div[title-sheet] (Paper Moons) |
+| #ffffff24% | 94 | 88 | div.sheet-grip |
+| #ffffff20% | 71 | 65 | span.switch |
+| #00000068% | 57 | 27 | span[score-badge] "10" |
+| #25252a | 51 | 37 | section[rate-title] (Your rating) |
+| #ffffff18% | 34 | 34 | div.seek-track |
+| #ffffff | 34 | 34 | button[pause] (Pause) |
+| #e5091420% | 20 | 20 | button[tv-switch] |
+| #2b7fff | 14 | 14 | button[accent-blue] (Blue) |
+| #9b5cff | 14 | 14 | button[accent-purple] (Purple) |
+| #1fb86a | 14 | 14 | button[accent-green] (Green) |
+| #ff8a1f | 14 | 14 | button[accent-orange] (Orange) |
 
 **Borders**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| 1 solid #ffffff10% | 47 | 30 | input[code-input] (6-digit code from the TV) |
-| 2 solid #ffffff30% | 5 | 1 | span.choice-dot |
-| 2 solid #e50914 | 3 | 3 | span.choice-dot |
-| 2 dashed #ffffff28% | 1 | 1 | span.profile-picture |
+| 1 solid #ffffff10% | 287 | 194 | input[code-input] (6-digit code from the TV) |
+| 2 solid #ffffff30% | 37 | 10 | span.choice-dot |
+| 2 solid #e50914 | 14 | 14 | span.choice-dot |
+| 2 dashed #ffffff28% | 6 | 6 | span.profile-picture |
 
 **Shadows**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| rgba(255, 255, 255, 0.28) 0px 0px 0px 1px | 27 | 12 | span[score-badge] "7" |
-| rgb(11, 11, 12) 0px 0px 0px 2px | 17 | 17 | b[bell-badge] "2" |
-| rgb(229, 9, 20) 0px 0px 0px 1.5px inset | 4 | 4 | button[link-box-toggle] |
-| rgba(229, 9, 20, 0.5) 0px 1.68px 11.76px 0px, rgba(255, 255, 255, 0.3) 0px 1.176px 0px 0px inset | 2 | 2 | span.logo-o |
-| rgba(255, 255, 255, 0.16) 0px 0px 0px 1.5px inset | 2 | 2 | button[pick-new] |
-| rgb(11, 11, 12) 0px 0px 0px 3px, rgb(255, 255, 255) 0px 0px 0px 5px | 2 | 2 | button[accent-red] (Red) |
-| rgba(229, 9, 20, 0.55) 0px 0px 0px 1.5px inset | 1 | 1 | button[title-episode] |
-| rgb(229, 9, 20) 0px 0px 0px 3px | 1 | 1 | span.profile-picture |
+| rgb(229, 9, 20) 0px 0px 0px 1.5px inset | 151 | 89 | button[switch-lang-en] "English" |
+| rgb(11, 11, 12) 0px 0px 0px 2px | 117 | 117 | b[bell-badge] "2" |
+| rgba(0, 0, 0, 0.5) 0px -12px 40px 0px | 94 | 88 | div[title-sheet] (Paper Moons) |
+| rgba(255, 255, 255, 0.28) 0px 0px 0px 1px | 57 | 27 | span[score-badge] "10" |
+| rgb(11, 11, 12) 0px 0px 0px 3px, rgb(255, 255, 255) 0px 0px 0px 5px | 14 | 14 | button[accent-red] (Red) |
+| rgba(255, 255, 255, 0.16) 0px 0px 0px 1.5px inset | 12 | 12 | button[pick-new] |
+| rgba(0, 0, 0, 0.45) 0px 6px 14px 0px | 12 | 12 | div[caption-preview] |
+| rgba(229, 9, 20, 0.5) 0px 1.6px 11.2px 0px, rgba(255, 255, 255, 0.3) 0px 1.12px 0px 0px inset | 6 | 6 | span.logo-o |
 
 **Transitions**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| background, transform 0.15s, 0.1s ease, ease | 1563 | 29 | button[continue-list-toggle] (Add to a list: The Glass Orchard) |
-| background, color 0.15s, 0.15s ease, ease | 126 | 29 | button[switch-lang-en] "English" |
-| transform, background 0.08s, 0.15s ease, ease | 90 | 33 | button[scan] "Scan the TV's QR code" |
-| background 0.18s ease | 63 | 7 | span.switch |
-| color, opacity 0.15s, 0.1s ease, ease | 58 | 29 | button[lists-manage] "Manage lists" |
-| transform, box-shadow 0.12s, 0.12s ease, ease | 42 | 7 | button[accent-red] (Red) |
-| background, transform 0.15s, 0.08s ease, ease | 27 | 12 | button[library-result] (Harvest Moon Motel) |
-| transform, box-shadow 0.15s, 0.15s ease, ease | 17 | 17 | button[account-button] (Account and profiles: Dana) |
-| background 0.12s ease | 16 | 3 | button[menu-ratings] |
-| border-color, box-shadow 0.15s, 0.15s ease, ease | 11 | 6 | input[tv-rename] |
-| color 0.15s ease | 10 | 4 | svg |
-| transform 0.08s ease | 9 | 3 | button.round (Back 10 seconds) |
-| opacity 0.12s ease | 7 | 7 | svg |
-| background 0.15s ease | 4 | 3 | button[rate-title-toggle] |
-| color, background 0.15s, 0.15s ease, ease | 3 | 2 | button[password-eye] (Show password) |
+| background, transform 0.15s, 0.1s ease, ease | 10521 | 195 | button[continue-list-toggle] (Add to a list: The Glass Orchard) |
+| transform, background, color 0.08s, 0.15s, 0.15s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be | 1880 | 235 | button[switch-lang-en] "English" |
+| transform, background 0.08s, 0.15s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be | 667 | 235 | button[scan] "Scan the TV's QR code" |
+| background 0.18s ease | 393 | 45 | span.switch |
+| color, opacity 0.15s, 0.1s ease, ease | 390 | 195 | button[lists-manage] "Manage lists" |
+| background, transform 0.15s, 0.08s ease, ease | 180 | 82 | button[library-result] (Harvest Moon Motel) |
+| background 0.12s ease | 138 | 24 | button[menu-ratings] |
+| transform, box-shadow 0.15s, 0.15s ease, ease | 120 | 120 | button[account-button] (Account and profiles: Dana) |
+| transform 0.08s ease | 102 | 34 | button.round (Back 10 seconds) |
+| border-color, box-shadow 0.15s, 0.15s ease, ease | 84 | 45 | input[tv-rename] |
+| color 0.15s ease | 60 | 24 | svg |
+| opacity 0.12s ease | 45 | 45 | svg |
+| height 0.1s ease | 34 | 34 | div.seek-track |
+| width, height 0.1s, 0.1s ease, ease | 34 | 34 | div.seek-thumb |
+| background 0.15s ease | 24 | 18 | button[rate-title-toggle] |
 
 **Animations**
 
 | value | count | pages | sample |
 |---|---|---|---|
-| page-in 0.22s | 17 | 17 | div[account-screen] (Account) |
-| fade-in 0.18s | 13 | 12 | div.sheet-backdrop |
-| sheet-up 0.24s | 13 | 12 | div[title-sheet] (Paper Moons) |
+| page-in 0.22s | 123 | 123 | div[account-screen] (Account) |
+| fade-in 0.18s | 94 | 88 | div.sheet-backdrop |
+| sheet-up 0.24s | 94 | 88 | div[title-sheet] (Paper Moons) |
 
 # Rule breaks
 
-## Text smaller than the floor (52)
+## Text smaller than the floor (4)
 
 TV: 1.15% of the screen width (the test suite's rule). Phone: 12 px.
 
 | element | size | floor | count | pictures |
 |---|---|---|---|---|
-| small "Speed" | 10.88 | 12 | 3 | 3 |
-| b[bell-badge] "2" | 11.2 | 12 | 2 | 2 |
-| b[bell-badge] "1" | 11.2 | 12 | 15 | 15 |
-| span.tv-category-count "Movies · 12 titles" | 14.08 | 14.7 | 3 | 1 |
-| span.tv-category-count "Series · 8 titles" | 14.08 | 14.7 | 1 | 1 |
-| span.tv-ep-about "The harbour wakes late, and everyone pre" | 14.08 | 14.7 | 2 | 1 |
-| span.tv-category-count "6 ratings · average 8" | 14.08 | 14.7 | 1 | 1 |
-| span.tv-category-count "8 titles" | 14.08 | 14.7 | 1 | 1 |
-| span.tv-category-count "Keep your lists and ratings on every scr" | 14.08 | 14.7 | 1 | 1 |
-| span.tv-category-count "Account, language, playback and more" | 14.08 | 14.7 | 2 | 2 |
-| span.tv-category-count "4 ratings · average 8.5" | 14.08 | 14.7 | 1 | 1 |
-| span.tv-category-count "1 friend · 1 unread" | 14.08 | 14.7 | 1 | 1 |
-| span.tv-category-count "6 titles" | 14.08 | 14.7 | 1 | 1 |
-| span.tv-category-count "Wants to be friends" | 14.08 | 14.7 | 6 | 6 |
-| span.tv-category-count "Watching Harbour Lights" | 14.08 | 14.7 | 5 | 5 |
-| p "A friend can scan this with a phone" | 14.08 | 14.7 | 1 | 1 |
-| p "On a phone: scan this, or open the addre" | 14.08 | 14.7 | 1 | 1 |
-| b[tv-bell-badge] "2" | 14.4 | 14.7 | 3 | 3 |
-| b[tv-bell-badge] "1" | 14.4 | 14.7 | 11 | 11 |
-| small "Wants to be friends" | 14.4 | 14.7 | 3 | 2 |
-| small "Watching Harbour Lights · now" | 14.4 | 14.7 | 1 | 1 |
-| span.tv-ep-about "The harbour wakes late, and everyone pre" | 15.02 | 15.7 | 2 | 1 |
-| span.tv-category-count "5 ratings · average 8" | 15.02 | 15.7 | 1 | 1 |
-| span.tv-category-count "8 titles" | 15.02 | 15.7 | 1 | 1 |
-| span.tv-category-count "Keep your lists and ratings on every scr" | 15.02 | 15.7 | 1 | 1 |
-| span.tv-category-count "Account, language, playback and more" | 15.02 | 15.7 | 1 | 1 |
-| span.tv-ep-about "The harbour wakes late, and everyone pre" | 15.84 | 16.6 | 2 | 1 |
-| span.tv-category-count "5 ratings · average 8" | 15.84 | 16.6 | 1 | 1 |
-| span.tv-category-count "8 titles" | 15.84 | 16.6 | 1 | 1 |
-| span.tv-category-count "Keep your lists and ratings on every scr" | 15.84 | 16.6 | 1 | 1 |
-| span.tv-category-count "Account, language, playback and more" | 15.84 | 16.6 | 1 | 1 |
-| span.tv-ep-about "The harbour wakes late, and everyone pre" | 21.12 | 22.1 | 2 | 1 |
-| span.tv-category-count "5 ratings · average 8" | 21.12 | 22.1 | 1 | 1 |
-| span.tv-category-count "8 titles" | 21.12 | 22.1 | 1 | 1 |
-| span.tv-category-count "Keep your lists and ratings on every scr" | 21.12 | 22.1 | 1 | 1 |
-| span.tv-category-count "Account, language, playback and more" | 21.12 | 22.1 | 2 | 2 |
-| span.tv-category-count "4 ratings · average 8.5" | 21.12 | 22.1 | 1 | 1 |
-| span.tv-category-count "1 friend · 1 unread" | 21.12 | 22.1 | 1 | 1 |
-| span.tv-category-count "6 titles" | 21.12 | 22.1 | 1 | 1 |
-| span.tv-category-count "Wants to be friends" | 21.12 | 22.1 | 6 | 6 |
+| span.cap-sample "This is how your subtitles will look" | 7.45 | 12 | 4 | 4 |
+| span.cap-sample "This is how your subtitles will look" | 8.49 | 12 | 2 | 2 |
+| span.cap-sample "This is how your subtitles will look" | 8.56 | 12 | 4 | 4 |
+| span.cap-sample "This is how your subtitles will look" | 9.26 | 12 | 2 | 2 |
 
-...and 12 more in the json.
 
-## Text with too little contrast (17)
+
+## Text with too little contrast (3)
 
 4.5:1 (3:1 for large text). Text over a picture is not measured.
 
 | element | ratio | need | fg | bg | count | pictures |
 |---|---|---|---|---|---|---|
-| b "1" | 1 | 3 | #0b0b0c | #0b0b0c | 33 | 33 |
-| b "2" | 1 | 3 | #0b0b0c | #0b0b0c | 33 | 33 |
-| b "3" | 1 | 3 | #0b0b0c | #0b0b0c | 33 | 33 |
-| b "4" | 1 | 3 | #0b0b0c | #0b0b0c | 33 | 33 |
-| b "5" | 1 | 3 | #0b0b0c | #0b0b0c | 33 | 33 |
-| b "6" | 1 | 3 | #0b0b0c | #0b0b0c | 33 | 33 |
-| b "7" | 1 | 3 | #0b0b0c | #0b0b0c | 33 | 33 |
-| p[tv-hero-eyebrow] "Popular this week" | 4.1 | 4.5 | #e50914 | #0b0b0c | 10 | 10 |
-| p[tv-hero-eyebrow] "Continue watching" | 4.1 | 4.5 | #e50914 | #0b0b0c | 7 | 7 |
-| p[tv-hero-eyebrow] "Weekend" | 4.1 | 4.5 | #e50914 | #0b0b0c | 2 | 2 |
-| p.tv-hero-eyebrow "Popular this week" | 4.1 | 4.5 | #e50914 | #0b0b0c | 6 | 6 |
-| p[tv-hero-eyebrow] "Series to binge" | 4.1 | 4.5 | #e50914 | #0b0b0c | 4 | 4 |
-| p.tv-hero-eyebrow "Series to binge" | 4.1 | 4.5 | #e50914 | #0b0b0c | 4 | 4 |
-| p[tv-hero-eyebrow] "Guest" | 4.1 | 4.5 | #e50914 | #0b0b0c | 2 | 2 |
-| p[tv-hero-eyebrow] "Ana" | 4.1 | 4.5 | #e50914 | #0b0b0c | 1 | 1 |
-| p[tv-hero-eyebrow] "Friend requests" | 4.1 | 4.5 | #e50914 | #0b0b0c | 1 | 1 |
-| p[tv-hero-eyebrow] "Your friends" | 4.1 | 4.5 | #e50914 | #0b0b0c | 5 | 5 |
+| small.cap-count "1" | 3.72 | 4.5 | #9b9ba3 | #404044 | 4 | 4 |
+| span.tv-ep-meta "38 min" | 3.79 | 4.5 | #9b9ba3 | #3f3f46 | 3 | 3 |
+| span.tv-ep-about "The harbour wakes late, and everyone pre" | 3.79 | 4.5 | #9b9ba3 | #3f3f46 | 3 | 3 |
 
 
 
-## Controls with no name (17)
+## Controls with no name (36)
 
 A control with no text, aria-label or title cannot be told apart by a screen reader.
 
 | element | size | count | pictures |
 |---|---|---|---|
+| input[tv-rename] | 288x48 | 1 | 1 |
+| input[auth-email] | 288x48 | 1 | 1 |
+| input[auth-password] | 288x48 | 1 | 1 |
+| input[password-current] | 288x48 | 1 | 1 |
+| input[password-new] | 288x48 | 1 | 1 |
+| input[tv-rename] | 328x48 | 1 | 1 |
+| input[auth-email] | 328x48 | 1 | 1 |
+| input[auth-password] | 328x48 | 1 | 1 |
+| input[password-current] | 328x48 | 1 | 1 |
+| input[password-new] | 328x48 | 1 | 1 |
 | input[tv-rename] | 358x48 | 1 | 1 |
 | input[auth-email] | 358x48 | 1 | 1 |
 | input[auth-password] | 358x48 | 1 | 1 |
 | input[password-current] | 358x48 | 1 | 1 |
 | input[password-new] | 358x48 | 1 | 1 |
+| input[tv-rename] | 648x48 | 3 | 3 |
+| input[auth-email] | 520x48 | 1 | 1 |
+| input[auth-password] | 520x48 | 1 | 1 |
+| input[password-current] | 520x48 | 6 | 6 |
+| input[password-new] | 520x48 | 6 | 6 |
+| input[auth-email] | 386x48 | 1 | 1 |
+| input[auth-password] | 386x48 | 1 | 1 |
+| input[auth-email] | 430x48 | 1 | 1 |
+| input[auth-password] | 430x48 | 1 | 1 |
 | input[rate-note-input] | 896x54 | 1 | 1 |
 | input[list-name-input] | 589x54 | 1 | 1 |
 | input[auth-email] | 640x61 | 2 | 2 |
@@ -537,107 +484,86 @@ WCAG 2.2 target size (minimum), AA.
 
 None.
 
-## Phone controls under 44 px (81)
+## Phone controls under 44 px (5)
 
 The comfortable thumb target. Links inside running text are left out.
 
 | element | size | count | pictures |
 |---|---|---|---|
-| button[fullscreen-toggle] (Full screen) | 40x40 | 1 | 1 |
-| button[account-button] "Sign in" | 92x34 | 12 | 12 |
-| button[switch-lang-en] "English" | 95x34 | 1 | 1 |
-| button[switch-lang-ro] "Română" | 95x34 | 1 | 1 |
-| button[switch-lang-it] "Italiano" | 95x34 | 1 | 1 |
-| button[menu] (TV menu) | 40x40 | 28 | 28 |
-| button[paste] "Paste" | 72x34 | 25 | 25 |
-| button[continue-list-toggle] (Add to a list: The Glass Orchard) | 36x36 | 9 | 9 |
-| button[continue-remove] (Remove from Continue watching: The Glass Orchard) | 36x36 | 26 | 26 |
-| button[lists-manage] "Manage lists" | 88x26 | 26 | 26 |
-| button[list-remove] (Remove from Favourites: Harvest Moon Motel) | 36x36 | 26 | 26 |
-| button[list-remove] (Remove from Favourites: Midwinter Parade) | 36x36 | 26 | 26 |
-| button[list-remove] (Remove from Weekend: Blue Hour) | 36x36 | 9 | 9 |
-| button[list-remove] (Remove from Weekend: Sundown Protocol) | 36x36 | 9 | 9 |
-| button[ratings-all] "See all" | 50x26 | 21 | 21 |
-| button.field-btn "✕" | 29x37 | 1 | 1 |
-| button[filter-all] "All" | 46x32 | 3 | 3 |
-| button[filter-movies] "Movies" | 74x32 | 3 | 3 |
-| button[filter-series] "Series" | 66x32 | 3 | 3 |
-| button[library-list-toggle] (Add to a list: The Long Harbour) | 36x36 | 3 | 3 |
-| button[library-list-toggle] (Add to a list: Paper Moons) | 36x36 | 3 | 3 |
-| button[library-list-toggle] (Add to a list: The Long Night) | 36x36 | 3 | 3 |
-| button[library-list-toggle] (Add to a list: Harbour Lights) | 36x36 | 3 | 3 |
-| button[library-list-toggle] (In your lists: Velvet Static) | 36x36 | 3 | 3 |
-| button[library-list-toggle] (Add to a list: The Orchard Year) | 36x36 | 3 | 3 |
-| button[sheet-close] (Close) | 40x40 | 13 | 12 |
-| button[title-season-1] "Season 1" | 83x36 | 1 | 1 |
-| button[title-season-2] "Season 2" | 85x36 | 1 | 1 |
-| button[title-season-3] "Season 3" | 85x36 | 1 | 1 |
-| button[page-back] (Back) | 40x40 | 17 | 17 |
-| button[auth-switch] "New here? Create an account" | 218x40 | 1 | 1 |
-| button[lang-en] "English" | 114x43 | 2 | 2 |
-| button[lang-ro] "Română" | 114x43 | 2 | 2 |
-| button[lang-it] "Italiano" | 114x43 | 2 | 2 |
-| button[accent-blue] (Blue) | 42x42 | 2 | 2 |
-| button[accent-purple] (Purple) | 42x42 | 2 | 2 |
-| button[accent-green] (Green) | 42x42 | 2 | 2 |
-| button[accent-orange] (Orange) | 42x42 | 2 | 2 |
-| button[accent-pink] (Pink) | 42x42 | 2 | 2 |
-| button[look-classic] "Classic" | 114x43 | 2 | 2 |
+| button[accent-blue] (Blue) | 41x41 | 2 | 2 |
+| button[accent-purple] (Purple) | 41x41 | 2 | 2 |
+| button[accent-green] (Green) | 41x41 | 2 | 2 |
+| button[accent-orange] (Orange) | 41x41 | 2 | 2 |
+| button[accent-pink] (Pink) | 41x41 | 2 | 2 |
 
-...and 41 more in the json.
 
-## Text or controls outside the TV's safe margin (558)
 
-Inside 2.5% of the left/right edge or 5% of the top/bottom. Rows that scroll past the edge are not counted.
+## Text or controls outside the TV's safe margin (38)
+
+Inside 2.5% of the left/right edge or 5% of the top/bottom. What crosses an edge (a row that scrolls past it, the page under its fade) and the pictures of such a row with the words under them are not counted.
 
 | element | edges | count | pictures |
 |---|---|---|---|
-| button[rail-search] | 1.2% .. 4.8% / 10.7% .. 17.9% | 33 | 33 |
-| button[rail-home] | 1.2% .. 4.8% / 18.5% .. 25.7% | 33 | 33 |
-| button[rail-movies] | 1.2% .. 4.8% / 26.1% .. 33.3% | 33 | 33 |
-| button[rail-series] | 1.2% .. 4.8% / 33.9% .. 41.1% | 33 | 33 |
-| button[rail-categories] | 1.2% .. 4.8% / 41.7% .. 48.9% | 33 | 33 |
-| button[rail-list] | 1.2% .. 4.8% / 49.3% .. 56.5% | 33 | 33 |
-| button[rail-party] | 1.2% .. 4.8% / 59.9% .. 67.1% | 33 | 33 |
-| button[rail-connect] | 1.2% .. 4.8% / 67.6% .. 74.9% | 33 | 33 |
-| button[rail-profile] | 1.2% .. 4.8% / 75.3% .. 82.5% | 33 | 33 |
-| span "Kin" | 7.0% .. 12.6% / 4.6% .. 8.5% | 34 | 34 |
-| button[tv-account-chip] (Sign in) | 80.7% .. 91.1% / 3.2% .. 9.6% | 34 | 34 |
-| span "Sign in" | 84.8% .. 89.5% / 4.6% .. 8.2% | 20 | 20 |
-| button[fullscreen-toggle] (Full screen) | 92.0% .. 95.6% / 3.2% .. 9.6% | 62 | 62 |
-| button[tv-browse-tile] (Midwinter Parade) | 87.4% .. 99.5% / 46.0% .. 68.9% | 4 | 4 |
-| button[tv-browse-tile] (The Long Night) | 7.0% .. 22.0% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2022" | 7.0% .. 22.0% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Harbour Lights) | 23.3% .. 38.3% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2019" | 23.3% .. 38.3% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Brightwater) | 39.6% .. 54.6% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2024" | 39.6% .. 54.6% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Quiet Hours) | 55.9% .. 70.9% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2017" | 55.9% .. 70.9% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (The Understudies) | 72.2% .. 87.2% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-year "2021" | 72.2% .. 87.2% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Field Notes) | 88.5% .. 103.5% / 76.4% .. 98.2% | 4 | 4 |
-| span.tv-tile-name "Field Notes" | 88.5% .. 103.5% / 91.9% .. 94.9% | 4 | 4 |
-| span.tv-tile-year "2023" | 88.5% .. 103.5% / 95.3% .. 98.2% | 4 | 4 |
-| button[tv-browse-tile] (Harvest Moon Motel) | 7.0% .. 22.0% / 77.4% .. 99.2% | 3 | 3 |
-| span.tv-tile-name "Harvest Moon Motel" | 7.0% .. 22.0% / 92.9% .. 95.8% | 3 | 3 |
-| span.tv-tile-year "1996" | 7.0% .. 22.0% / 96.3% .. 99.2% | 3 | 3 |
-| button[tv-browse-tile] (Midwinter Parade) | 23.3% .. 38.3% / 77.4% .. 99.2% | 3 | 3 |
-| span.tv-tile-name "Midwinter Parade" | 23.3% .. 38.3% / 92.9% .. 95.8% | 3 | 3 |
-| span.tv-tile-year "1999" | 23.3% .. 38.3% / 96.3% .. 99.2% | 3 | 3 |
-| button[tv-browse-tile] (Velvet Static) | 39.6% .. 54.6% / 77.4% .. 99.2% | 2 | 2 |
-| span.tv-tile-name "Velvet Static" | 39.6% .. 54.6% / 92.9% .. 95.8% | 2 | 2 |
-| span.tv-tile-year "2020" | 39.6% .. 54.6% / 96.3% .. 99.2% | 2 | 2 |
-| button[tv-browse-tile] (Letters from Nowhere) | 55.9% .. 70.9% / 77.4% .. 99.2% | 3 | 3 |
-| span.tv-tile-name "Letters from Nowhere" | 55.9% .. 70.9% / 92.9% .. 95.8% | 3 | 3 |
-| span.tv-tile-year "2005" | 55.9% .. 70.9% / 96.3% .. 99.2% | 3 | 3 |
-| button[tv-browse-tile] (Driftwood) | 72.2% .. 87.2% / 77.4% .. 99.2% | 2 | 2 |
+| button[tv-season-1] "Season 1" | 7.3% .. 18.6% / 90.1% .. 97.6% | 1 | 1 |
+| button[tv-season-2] "Season 2" | 19.5% .. 31.1% / 90.1% .. 97.6% | 1 | 1 |
+| button[tv-season-3] "Season 3" | 31.9% .. 43.5% / 90.1% .. 97.6% | 1 | 1 |
+| p.tv-hero-eyebrow "Series to binge" | 7.0% .. 58.0% / 4.6% .. 8.2% | 1 | 1 |
+| button[tv-detail-remove] "Remove from Continue watching" | 7.0% .. 37.9% / 0.3% .. 6.1% | 1 | 1 |
+| button[tv-play-btn] (Pause) | 4.8% .. 8.8% / 88.2% .. 95.3% | 1 | 1 |
+| b[tv-bell-badge] "2" | 79.6% .. 81.6% / 4.7% .. 8.2% | 3 | 3 |
+| b[tv-bell-badge] "1" | 79.6% .. 81.6% / 4.7% .. 8.2% | 11 | 11 |
+| button[friend-remove] "Remove friend" | 7.0% .. 25.4% / 89.3% .. 96.8% | 1 | 1 |
+| p.tv-hint "Pick which subtitle languages are listed" | 41.0% .. 87.6% / 94.7% .. 98.3% | 1 | 1 |
+| button[tv-season-1] "Season 1" | 7.3% .. 18.7% / 90.1% .. 97.8% | 2 | 2 |
+| button[tv-season-2] "Season 2" | 19.5% .. 31.1% / 90.1% .. 97.8% | 2 | 2 |
+| button[tv-season-3] "Season 3" | 31.8% .. 43.5% / 90.1% .. 97.8% | 1 | 1 |
+| p.tv-hero-eyebrow "Series to binge" | 7.0% .. 58.0% / 4.6% .. 8.1% | 1 | 1 |
+| h1[tv-title] "long" | 5.0% .. 10.4% / 4.9% .. 11.1% | 1 | 1 |
+| div.hud-clock "00:02" | 87.4% .. 95.0% / 4.9% .. 9.0% | 1 | 1 |
+| button[tv-play-btn] (Pause) | 5.0% .. 8.6% / 88.5% .. 95.1% | 1 | 1 |
+| button[tv-account-chip] (Sign in) | 80.1% .. 90.5% / 4.7% .. 10.4% | 7 | 7 |
+| button[fullscreen-toggle] (Full screen) | 91.4% .. 95.0% / 4.7% .. 10.4% | 7 | 7 |
+| button[tv-detail-close] "Close" | 86.0% .. 95.0% / 4.7% .. 9.6% | 3 | 3 |
+| button[tv-season-1] "Season 1" | 7.3% .. 18.7% / 91.1% .. 97.9% | 1 | 1 |
+| button[tv-season-2] "Season 2" | 19.4% .. 31.0% / 91.1% .. 97.9% | 1 | 1 |
+| button[tv-season-3] "Season 3" | 31.9% .. 43.5% / 91.1% .. 97.9% | 1 | 1 |
+| span.tv-ep-name "Salt" | 24.7% .. 27.4% / 96.2% .. 99.3% | 1 | 1 |
+| span.tv-ep-meta "44 min" | 63.1% .. 67.0% / 96.6% .. 99.3% | 1 | 1 |
+| h1[tv-title] "long" | 5.0% .. 10.4% / 4.4% .. 9.9% | 1 | 1 |
+| div.hud-clock "00:02" | 87.4% .. 95.0% / 4.4% .. 8.0% | 1 | 1 |
+| button[tv-play-btn] (Pause) | 5.0% .. 8.7% / 89.7% .. 95.6% | 1 | 1 |
+| button[tv-season-1] "Season 1" | 7.3% .. 18.6% / 90.2% .. 97.8% | 1 | 1 |
+| button[tv-season-2] "Season 2" | 19.5% .. 31.1% / 90.2% .. 97.8% | 1 | 1 |
+| button[tv-season-3] "Season 3" | 31.9% .. 43.5% / 90.2% .. 97.8% | 1 | 1 |
+| p.tv-hero-eyebrow "Series to binge" | 7.0% .. 58.0% / 4.5% .. 8.1% | 2 | 2 |
+| button[tv-play-btn] (Pause) | 5.0% .. 8.7% / 88.5% .. 95.1% | 2 | 2 |
+| b[tv-bell-badge] "2" | 79.6% .. 81.6% / 4.7% .. 8.1% | 3 | 3 |
+| b[tv-bell-badge] "1" | 79.6% .. 81.6% / 4.7% .. 8.1% | 11 | 11 |
+| button[friend-remove] "Remove friend" | 7.0% .. 25.4% / 89.2% .. 96.8% | 1 | 1 |
+| p.tv-hint "Pick which subtitle languages are listed" | 41.0% .. 87.6% / 94.6% .. 98.1% | 1 | 1 |
+| button[tv-season-3] "Season 3" | 31.9% .. 43.5% / 90.1% .. 97.8% | 1 | 1 |
 
-...and 518 more in the json.
 
-## Text that is cut without an ellipsis (0)
 
-None.
+## Text that is cut without an ellipsis (13)
+
+| element | size | count | pictures |
+|---|---|---|---|
+| span.tv-category-name "My ratings" (cut off at the bottom) | 242x36 | 2 | 2 |
+| span.tv-category-name "History" (cut off at the bottom) | 242x36 | 2 | 2 |
+| span.tv-category-name "Sign in" (cut off at the bottom) | 242x36 | 1 | 1 |
+| span.tv-category-name "Settings" (cut off at the bottom) | 242x36 | 2 | 2 |
+| span.tv-category-name "Friends" (cut off at the bottom) | 242x36 | 1 | 1 |
+| span.tv-category-name "Cy#1" (cut off at the bottom) | 252x36 | 6 | 6 |
+| span.tv-category-name "Ben" (cut off at the bottom) | 252x36 | 5 | 5 |
+| span.tv-category-name "Add a friend" (cut off at the bottom) | 242x36 | 5 | 5 |
+| span.tv-category-name "Friends settings" (cut off at the bottom) | 242x36 | 5 | 5 |
+| span.tv-category-name "My ratings" (cut off at the bottom) | 323x48 | 1 | 1 |
+| span.tv-category-name "History" (cut off at the bottom) | 323x48 | 1 | 1 |
+| span.tv-category-name "Sign in" (cut off at the bottom) | 323x48 | 1 | 1 |
+| span.tv-category-name "Settings" (cut off at the bottom) | 323x48 | 1 | 1 |
+
+
 
 ## Screens that scroll sideways (0)
 
