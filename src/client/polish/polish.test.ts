@@ -70,6 +70,11 @@ describe("the stylesheets of the refined look", () => {
       expect(offenders).toEqual([]);
     });
 
+    it(`${name}: names its @keyframes polish-..., since keyframes are global and one of the same name as the classic look's would change the classic look`, () => {
+      const names = [...css.matchAll(/@keyframes\s+([^\s{]+)/g)].map((match) => match[1] ?? "");
+      expect(names.filter((one) => !one.startsWith("polish-"))).toEqual([]);
+    });
+
     it(`${name}: keeps to what the oldest TV browsers understand`, () => {
       const found = TOO_NEW.filter(([pattern]) => pattern.test(css)).map(([, label]) => label);
       expect(found).toEqual([]);
