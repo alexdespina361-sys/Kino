@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { type Friend, type FriendLists, type FriendRatings, type FriendsState, type InviteView, type Message, type OpenInvite, type Sent } from "../../shared";
+import { ONLINE_MS, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InviteView, type Message, type OpenInvite, type Sent } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { ApiError } from "../account/api";
 import { useProfileData } from "../account/store";
 import { t } from "../i18n";
 import { friendsApi } from "./api";
 import { describeNews, known, whatsNew, type Known } from "./news";
+import { withoutOnline } from "./stale";
 
 /** A screen looks at its friends this often while it is on screen. */
 const POLL_MS = 30_000;
@@ -80,6 +81,8 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
     /** Looks that were started, and the newest one whose answer was taken: a slow answer to an older look must not replace a newer one. */
     let asked = 0;
     let taken = 0;
+    /** When the server last answered: what is kept of it is only as good as that. */
+    let lastAnswer = Date.now();
     setStatus("loading");
 
     const look = async (attempt = 0): Promise<void> => {
@@ -88,6 +91,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
         const next = await friendsApi.state(id);
         if (stopped || mine < taken) return;
         taken = mine;
+        lastAnswer = Date.now();
         const line = describeNews(whatsNew(seen.current, next, Date.now()), t);
         seen.current = known(next);
         setState(next);
@@ -102,7 +106,12 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
           retry = setTimeout(() => void look(attempt + 1), SETTING_WAIT_MS[attempt]);
           return;
         }
-        setStatus((now) => (now === "ready" ? now : "offline"));
+        // (What is kept is what the server last said, which is fine for a while. "Online" is a fact of the last minute and a half, though: with no
+        // answer for that long it is not said any more, and the page says the server cannot be reached.)
+        if (Date.now() - lastAnswer >= ONLINE_MS) {
+          setStatus("offline");
+          setState((kept) => (kept ? withoutOnline(kept) : kept));
+        } else setStatus((now) => (now === "ready" ? now : "offline"));
       }
     };
     lookRef.current = () => look();

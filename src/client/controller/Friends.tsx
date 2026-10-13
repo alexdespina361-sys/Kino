@@ -367,7 +367,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: 
 
 function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: OpenTitle }) {
   const t = useT();
-  const answer = useShared<FriendLists>(friend.id, friend.lists, askLists);
+  const answer = useShared<FriendLists>(friend.id, friend.lists, askLists, friend.activity);
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   if (!friend.lists) return <p className="muted" data-testid="friend-not-sharing">{friend.on ? t("friends.notSharingLists", { name: friend.name }) : t("friends.theirsOff", { name: friend.name })}</p>;
   if (!answer) return <p className="muted" role="status"><span className="spinner" /> {t("common.loading")}</p>;
@@ -408,7 +408,7 @@ function HowFar({ progress }: { progress: FriendProgress | undefined }) {
 function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: OpenTitle }) {
   const t = useT();
   const language = useLanguage();
-  const answer = useShared<FriendRatings>(friend.id, friend.ratings, askRatings);
+  const answer = useShared<FriendRatings>(friend.id, friend.ratings, askRatings, friend.activity);
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   if (!friend.ratings) return <p className="muted" data-testid="friend-not-sharing">{friend.on ? t("friends.notSharingRatings", { name: friend.name }) : t("friends.theirsOff", { name: friend.name })}</p>;
   if (!answer) return <p className="muted" role="status"><span className="spinner" /> {t("common.loading")}</p>;

@@ -429,8 +429,42 @@ test.describe("a friend's page", () => {
     await expect(tile(bob.page, "Alpha Film").locator(".tv-tile-progress i")).toHaveAttribute("style", /width: 11%/);
     await bob.page.getByTestId("friend-tab-ratings").click();
     await expect(tile(bob.page, "Alpha Film")).toContainText("11%");
+
+    // She stops telling what she watches while his page of her stays open: the progress goes with the next look, with no change of tab
+    await tile(ann.page, "Friends settings").click();
+    await ann.page.getByTestId("tv-friends-give").click();
+    await ann.page.getByTestId("tv-friend-settings-done").click();
+    await expect(async () => {
+      await look(bob.page);
+      await expect(tile(bob.page, "Alpha Film")).not.toContainText("11%", { timeout: 1500 });
+    }).toPass({ timeout: 20_000 });
+    await expect(tile(bob.page, "Alpha Film").locator(".tv-tile-progress")).toHaveCount(0);
+    await expect(tile(bob.page, "Alpha Film")).toContainText("8/10"); // (what she rated is still there)
+
     await bob.page.getByTestId("tv-friend-back").click(); // (a button for a mouse; the remote's Back does the same)
     await expect(view(bob.page)).toHaveAttribute("data-view", "friends");
+  });
+
+  test("the window that asks about removing a friend closes by itself when the friend is gone already", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await seed(ann.page, filmCards());
+    await tile(bob.page, ann.name).click();
+    await bob.page.getByTestId("friend-remove").click();
+    await expect(bob.page.getByTestId("tv-friend-unfriend")).toBeVisible();
+
+    // Ann takes Bob off first, from her own screen
+    await tile(ann.page, bob.name).click();
+    await ann.page.getByTestId("friend-remove").click();
+    await ann.page.getByTestId("tv-friend-unfriend-yes").click();
+    await expect(async () => {
+      await look(bob.page);
+      await expect(bob.page.getByTestId("tv-friend-unfriend")).toHaveCount(0, { timeout: 1500 });
+    }).toPass({ timeout: 20_000 });
+    await expect(view(bob.page)).toHaveAttribute("data-view", "friends");
+    await expect(tile(bob.page, ann.name)).toHaveCount(0);
   });
 
   test("a friend who turned friends off shows nothing, and says so", async ({ browser }) => {

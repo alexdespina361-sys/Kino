@@ -315,8 +315,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   const friendId = view.kind === "friend" ? view.id : "";
   const friendTab: FriendTab = view.kind === "friend" ? (view.tab ?? "lists") : "lists";
   const friend = friends.state?.friends.find((each) => each.id === friendId);
-  const sharedLists = useShared(friendId, Boolean(friendTab === "lists" && friend?.on && friend.lists), askLists);
-  const sharedRatings = useShared(friendId, Boolean(friendTab === "ratings" && friend?.on && friend.ratings), askRatings);
+  const sharedLists = useShared(friendId, Boolean(friendTab === "lists" && friend?.on && friend.lists), askLists, friend?.activity);
+  const sharedRatings = useShared(friendId, Boolean(friendTab === "ratings" && friend?.on && friend.ratings), askRatings, friend?.activity);
   // `language` is not read, but the rows' titles and notes are words in it
   /* eslint-disable react-hooks/exhaustive-deps */
   const homeRows = useMemo<HomeRow[]>(() => {
@@ -521,6 +521,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     if ((view.kind === "friends" || view.kind === "friend") && !friends.on) choose({ kind: "profile" });
     else if (view.kind === "friend" && friends.state && !friend) choose({ kind: "friends" });
   }, [view.kind, friends.on, friends.state, friend]);
+  // The question about taking a friend off is no use once they are gone (the other side took them off while it was open): it closes with the page behind it.
+  useEffect(() => {
+    if (overlay?.kind === "unfriend" && friends.state && !friends.state.friends.some((each) => each.id === overlay.id)) setOverlay(null);
+  }, [overlay, friends.state]);
   // The friends page shows how things stand now, and opening it is seeing what is in the inbox.
   useEffect(() => {
     if (view.kind === "friends") void friends.refresh();
