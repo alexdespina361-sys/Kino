@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_LIST, type ActivityItem, type Friend, type FriendLists, type FriendRatings } from "../../shared";
+import { DEFAULT_LIST, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendProgress, type FriendRatings } from "../../shared";
 import { t } from "../i18n";
 import type { Entry } from "../tv/pages";
-import { entriesOfList, entriesOfRatings, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, recommendationOf, type Recommendation } from "./entries";
+import { entriesOfList, entriesOfRatings, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type Recommendation } from "./entries";
 
 const NOW = 50_000_000;
 const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1_700_000_000_000, on: true, lists: true, ratings: true, activity: true, inbox: true };
@@ -34,8 +34,39 @@ describe("the line under a friend's name", () => {
     expect(friendLine({ ...sam, on: false }, [watched("pro_sam", "k")], NOW)).toBe(t("friends.paused"));
   });
 
-  it("is nothing for a friend who watched nothing", () => {
+  it("is nothing for a friend who watched nothing, and that they are online when they are", () => {
     expect(friendLine(sam, [], NOW)).toBe("");
+    expect(friendLine({ ...sam, online: true }, [], NOW)).toBe(t("friends.online"));
+    expect(friendLine({ ...sam, online: true }, [watched("pro_sam", "k")], NOW)).toBe(t("friends.line.watching", { title: "Alien" })); // (what they watch says more)
+    expect(friendLine({ ...sam, on: false, online: true }, [], NOW)).toBe(t("friends.paused"));
+  });
+});
+
+describe("how far a friend got", () => {
+  const film = "https://films.example/watch/17";
+  const got = (extra: Partial<FriendProgress> = {}): FriendProgress => ({ link: titleLink(film), ...extra });
+  const entry = (extra: Partial<Entry> = {}): Entry => ({ id: "e", title: "Alpha", url: film, ...extra });
+
+  it("is said as the episode they are at and how far into it, or that it is watched", () => {
+    expect(progressNote(got({ season: 2, episode: 5, percent: 63 }))).toBe("S2:E5 · 63%");
+    expect(progressNote(got({ percent: 11 }))).toBe("11%");
+    expect(progressNote(got({ season: 1, episode: 3, done: true }))).toBe(`S1:E3 · ${t("card.watched")}`);
+    expect(progressNote(got())).toBeUndefined();
+  });
+
+  it("goes on the cards of the titles they started, as a bar and first in the line under the title, and leaves the others as they are", () => {
+    const other = entry({ id: "o", url: "https://films.example/watch/99", note: "Horror" });
+    const [started, untouched] = withProgress([entry({ note: "Favourites" }), other], [got({ season: 2, episode: 5, percent: 63 })]);
+    expect(started).toMatchObject({ progress: 0.63, note: "S2:E5 · 63% · Favourites" });
+    expect(untouched).toBe(other);
+    expect(withProgress([entry()], [got({ done: true })])[0]).toMatchObject({ progress: 1, note: t("card.watched") });
+    expect(withProgress([entry({ note: "Favourites" })], undefined)[0]).toEqual(entry({ note: "Favourites" }));
+  });
+
+  it("is found by the title's link, a show's episodes being one title", () => {
+    expect(progressFor([got({ percent: 5 })], film)?.percent).toBe(5);
+    expect(progressFor([got({ percent: 5 })], "https://films.example/watch/18")).toBeUndefined();
+    expect(progressFor(undefined, film)).toBeUndefined();
   });
 });
 
@@ -81,6 +112,13 @@ describe("something a friend watched", () => {
 
   it("is a show when it has a season", () => {
     expect(entryOfActivity(watched("pro_sam", "show", { season: 1, episode: 3, image: "poster", year: 2016 }), "Sam", NOW)).toMatchObject({ kind: "series", image: "poster", year: 2016 });
+  });
+
+  it("says the episode in the line and how far in with the bar", () => {
+    const entry = entryOfActivity(watched("pro_sam", "show", { season: 2, episode: 5, percent: 63 }), "Sam", NOW);
+    expect(entry.note).toMatch(/^Sam · S2:E5 · /);
+    expect(entry.progress).toBe(0.63);
+    expect(entryOfActivity(watched("pro_sam", "k1"), "Sam", NOW).progress).toBeUndefined();
   });
 });
 

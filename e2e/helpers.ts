@@ -1,5 +1,20 @@
-import { chromium, expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { chromium, expect, test as base, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type ServerMessage } from "../src/shared";
+
+/**
+ * The tests' `test`: Playwright's, and every device a test opened is closed when the test is over. A device made with
+ * `browser.newContext()` (see `openDevice`) is no fixture of Playwright's, so nothing closes it before the worker's browser does, at the end
+ * of the whole run: every test left its browsers behind, and a full run ended with hundreds of browser processes and tens of gigabytes.
+ */
+export const test = base.extend<{ closeDevices: void }>({
+  closeDevices: [
+    async ({ browser }, use) => {
+      await use();
+      await Promise.all(browser.contexts().map((context) => context.close().catch(() => undefined)));
+    },
+    { auto: true },
+  ],
+});
 
 /** A phone: a narrow touch screen, which is how the page tells a remote from a TV. */
 /** (The screen is the phone's own: the project's desktop browser would otherwise say 1920 by 1080 whatever the window is.) */
@@ -144,6 +159,30 @@ export async function clickAsAHand(page: Page, target: Locator): Promise<void> {
   await page.mouse.down();
   await page.waitForTimeout(150);
   await page.mouse.up();
+}
+
+/** The places on a TV's profile page (what the profile rated, its friends, History, signing in for a guest, the settings). */
+export type ProfilePlace = "ratings" | "friends" | "history" | "signin" | "settings";
+
+/** The profile's page, opened by a click on its line in the menu (which shuts, and the page's first tile has the remote). */
+export async function openProfilePage(tv: Page): Promise<void> {
+  await tv.getByTestId("rail-profile").click();
+  await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
+}
+
+/** A place on the profile's page, clicked as a mouse does it (the profile's page is opened first unless it is open). */
+export async function openProfilePlace(tv: Page, place: ProfilePlace): Promise<void> {
+  if ((await tv.getByTestId("tv-browse").getAttribute("data-view")) !== "profile") await openProfilePage(tv);
+  await tv.locator(`[data-entry="profile:${place}"]`).click();
+}
+
+/** The same with a remote: Right along the tiles of the profile's page to the place, and OK. */
+export async function pressProfilePlace(tv: Page, place: ProfilePlace): Promise<void> {
+  const tile = tv.locator(`[data-entry="profile:${place}"]`);
+  await expect(tile).toBeVisible();
+  for (let step = 0; step < 6 && !(await tile.evaluate((element) => element === document.activeElement)); step++) await tv.keyboard.press("ArrowRight");
+  await expect(tile).toBeFocused();
+  await tv.keyboard.press("Enter");
 }
 
 /** The first title of a library, played with OK: its own page opens, and OK on Play starts it. */

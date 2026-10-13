@@ -8,6 +8,7 @@ import {
   MAX_PROFILES,
   mergeCollection,
   nameFromEmail,
+  nameKey,
   newerOf,
   nextAvatar,
   plainText,
@@ -77,6 +78,8 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString("base64url")}`;
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const canonicalName = (name: string) => name.normalize("NFC").trim().toLowerCase();
+/** A profile as it is told to others: who it is, and the tag that names it (kept apart from `createdAt`, which is the server's). */
+const publicProfile = ({ id, name, avatar, tag }: ProfileMeta): Profile => ({ id, name, avatar, ...(tag !== undefined ? { tag } : {}) });
 /** The part of a session id that is shown and used to ask for it to be ended: enough to tell sessions apart, and no use as a token. */
 const shortId = (id: string) => id.slice(0, 16);
 
@@ -104,6 +107,8 @@ export class AccountStore {
   private readonly data = new Map<string, ProfileData>();
   private readonly profileOwner = new Map<string, string>();
   private readonly sessions = new Map<string, SessionDoc>();
+  /** What a profile is called by name -> the tags in use with it -> whose they are (see `takeTag`). */
+  private readonly tags = new Map<string, Map<number, string>>();
   /** Who is whose friend, the codes that make friends and the inboxes (see friends.ts); kept and written like the rest. */
   private readonly book = new FriendBook({ touch: (key) => this.touch(key), drop: (key) => this.drop(key), now: () => this.now() });
 
@@ -150,6 +155,52 @@ export class AccountStore {
         this.options.log?.warn(`Skipped an unreadable record (${key}).`);
       }
     }
+    this.indexTags();
+  }
+
+  /** Every profile has a tag. The ones made before there were tags (or whose tag somebody else has) are given theirs now, the older first. */
+  private indexTags(): void {
+    const missing: Array<{ account: AccountDoc; profile: ProfileMeta }> = [];
+    for (const account of this.accounts.values()) {
+      for (const profile of account.profiles) {
+        const key = nameKey(profile.name);
+        const used = this.tags.get(key) ?? new Map<number, string>();
+        if (profile.tag !== undefined && !used.has(profile.tag)) {
+          used.set(profile.tag, profile.id);
+          this.tags.set(key, used);
+        } else missing.push({ account, profile });
+      }
+    }
+    for (const { account, profile } of missing.sort((a, b) => a.profile.createdAt - b.profile.createdAt)) {
+      this.takeTag(profile);
+      this.touch(`account:${account.id}`);
+    }
+  }
+
+  /** The tag a profile has (see `tagLabel`): the number it has (`keep`) if that is free, else the lowest number nobody with that name has. */
+  private takeTag(profile: ProfileMeta, keep?: number): void {
+    const key = nameKey(profile.name);
+    const used = this.tags.get(key) ?? new Map<number, string>();
+    let tag = keep !== undefined && !used.has(keep) ? keep : 1;
+    while (used.has(tag)) tag++;
+    used.set(tag, profile.id);
+    this.tags.set(key, used);
+    profile.tag = tag;
+  }
+
+  /** Give a profile's tag back (its name is about to change, or it is going). */
+  private freeTag(profile: ProfileMeta): void {
+    if (profile.tag === undefined) return;
+    const key = nameKey(profile.name);
+    const used = this.tags.get(key);
+    if (used?.get(profile.tag) !== profile.id) return;
+    used.delete(profile.tag);
+    if (used.size === 0) this.tags.delete(key);
+  }
+
+  /** The profile with this name and this tag (names are compared as `nameKey` does). */
+  profileByTag(name: string, tag: number): string | undefined {
+    return this.tags.get(nameKey(name))?.get(tag);
   }
 
   /** Something changed: write it soon. (`flushMs: 0` leaves the writing to whoever calls `flush`, which is what tests do.) */
@@ -231,6 +282,7 @@ export class AccountStore {
   createAccount(email: string, hash: string): Result<AccountDoc> {
     if (this.emails.has(email)) return fail("email_taken");
     const first = this.newProfile(nameFromEmail(email), AVATAR_IDS[0]);
+    this.takeTag(first);
     const account: AccountDoc = { v: 1, id: newId("acc"), email, hash, createdAt: this.now(), profiles: [first] };
     this.accounts.set(account.id, account);
     this.emails.set(email, account.id);
@@ -257,6 +309,7 @@ export class AccountStore {
     if (!account) return;
     this.revokeAll(accountId);
     for (const profile of account.profiles) {
+      this.freeTag(profile);
       this.data.delete(profile.id);
       this.profileOwner.delete(profile.id);
       this.drop(`pdata:${profile.id}`);
@@ -270,7 +323,7 @@ export class AccountStore {
   /* ------------------------------ profiles ------------------------------ */
 
   profilesOf(accountId: string): Profile[] {
-    return (this.accounts.get(accountId)?.profiles ?? []).map(({ id, name, avatar }) => ({ id, name, avatar }));
+    return (this.accounts.get(accountId)?.profiles ?? []).map(publicProfile);
   }
 
   private nameTaken(account: AccountDoc, name: string, exceptId?: string) {
@@ -283,12 +336,13 @@ export class AccountStore {
     if (account.profiles.length >= MAX_PROFILES) return fail("profile_limit");
     if (this.nameTaken(account, name)) return fail("name_taken");
     const profile = this.newProfile(name.trim(), avatar);
+    this.takeTag(profile);
     account.profiles.push(profile);
     this.profileOwner.set(profile.id, accountId);
     this.data.set(profile.id, emptyProfileData());
     this.touch(`account:${accountId}`);
     this.touch(`pdata:${profile.id}`);
-    return ok({ id: profile.id, name: profile.name, avatar: profile.avatar });
+    return ok(publicProfile(profile));
   }
 
   updateProfile(accountId: string, profileId: string, patch: { name?: string | undefined; avatar?: AvatarId | undefined }): Result<Profile> {
@@ -296,16 +350,24 @@ export class AccountStore {
     const profile = account?.profiles.find((candidate) => candidate.id === profileId);
     if (!account || !profile) return fail("not_found");
     if (patch.name !== undefined && this.nameTaken(account, patch.name, profileId)) return fail("name_taken");
-    if (patch.name !== undefined) profile.name = patch.name.trim();
+    if (patch.name !== undefined) {
+      // (A new name starts at the lowest free number as any other would, so the first "Trebert" is Trebert#1 whatever the profile was called before;
+      // the same name in other capitals is still the same name, and keeps its number.)
+      const sameName = nameKey(patch.name) === nameKey(profile.name);
+      this.freeTag(profile);
+      profile.name = patch.name.trim();
+      this.takeTag(profile, sameName ? profile.tag : undefined);
+    }
     if (patch.avatar !== undefined) profile.avatar = patch.avatar;
     this.touch(`account:${accountId}`);
-    return ok({ id: profile.id, name: profile.name, avatar: profile.avatar });
+    return ok(publicProfile(profile));
   }
 
   deleteProfile(accountId: string, profileId: string): Result<null> {
     const account = this.accounts.get(accountId);
     if (!account || !account.profiles.some((profile) => profile.id === profileId)) return fail("not_found");
     if (account.profiles.length <= 1) return fail("last_profile");
+    for (const profile of account.profiles) if (profile.id === profileId) this.freeTag(profile);
     account.profiles = account.profiles.filter((profile) => profile.id !== profileId);
     this.data.delete(profileId);
     this.profileOwner.delete(profileId);
@@ -332,7 +394,7 @@ export class AccountStore {
   /** Who a profile is, as a friend sees them (the name made fit to show to somebody else: see `plainText`); nothing for a profile that is gone. */
   profileCard(profileId: string): Profile | undefined {
     const profile = this.accounts.get(this.profileOwner.get(profileId) ?? "")?.profiles.find((candidate) => candidate.id === profileId);
-    return profile && { id: profile.id, name: plainText(profile.name) || "?", avatar: profile.avatar };
+    return profile && { ...publicProfile(profile), name: plainText(profile.name) || "?" };
   }
 
   /** The first picture nobody on this account is using, for a profile made without choosing one. */

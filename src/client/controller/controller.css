@@ -270,6 +270,7 @@ html.sheet-open { overscroll-behavior-y: contain; }
   overscroll-behavior: contain;
   animation: sheet-up 0.24s ease;
 }
+.sheet:focus { outline: none; } /* (the keyboard is put on the sheet when it opens: the sheet itself needs no ring) */
 .sheet-grip { width: 40px; height: 4px; margin: 4px auto 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; }
 .sheet-head h2 { font-size: 1.15rem; }
@@ -440,6 +441,12 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .party-state { display: block; font-size: 0.75rem; font-weight: 600; }
 .party-state.ok { color: var(--ok); }
 .party-state.bad { color: var(--bad); }
+/* A screen of the party: its name and state, and what the host can do about it (admin, remove). They go under the name where they do not fit beside it. */
+.party-row { flex-wrap: wrap; }
+.party-who { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
+.party-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; } /* (where the three do not fit side by side, the last goes under) */
+.party-actions .btn { min-height: 44px; padding: 0 14px; font-size: 0.92rem; }
+.party-actions .btn:not(.btn-danger) { background: rgba(255, 255, 255, 0.1); } /* (a row is the colour a plain button is) */
 /* The TVs of a phone: the row to choose one, and the button that lets one go. */
 .tv-row { display: flex; align-items: stretch; gap: 6px; }
 .tv-row .choice { flex: 1; min-width: 0; }
@@ -447,15 +454,19 @@ html.sheet-open { overscroll-behavior-y: contain; }
 /* A code that brings another screen in (to the party, or to the TV as a second remote): the digits to read out, the QR code to scan. */
 .code-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: var(--surface-2); }
 .code-card-title { color: var(--muted); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-.code-card-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.code-card-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 14px; } /* (the QR code goes under the code where they do not fit side by side: a narrow phone, a wide code) */
 .code-card-code { font-size: 2rem; font-weight: 800; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.code-card-top svg { flex: none; width: 104px; height: 104px; border-radius: 8px; }
+.code-card-top > svg { flex: none; width: 104px; height: 104px; border-radius: 8px; }
 .code-card-wait { align-items: center; padding: 28px; }
 /* The link that the QR code holds, to paste into a chat: the whole of it, with its own button beside it. */
 .code-card .copy-link { display: flex; flex-direction: column; gap: 6px; }
 .code-card .copy-link-row { gap: 8px; }
 .code-card .copy-link-url { padding: 13px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.07); font-size: 0.82rem; line-height: 1.2; }
 .code-card .copy-link-button { min-height: 46px; padding: 0 14px; font-size: 0.92rem; white-space: nowrap; }
+/* The code a friend is given: its own small button under it (filled, to be seen on the card), beside the QR code or above it. */
+.friend-code-side { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.code-card .copy-code { align-items: flex-start; } /* (the button keeps its size when the note about a copy that failed is under it) */
+.code-card .copy-code .copy-link-button { min-height: 38px; padding: 0 12px; background: rgba(255, 255, 255, 0.1); font-size: 0.85rem; }
 .code-card .copy-link-button[data-state="copied"] { background: var(--ok); color: #0b0b0c; }
 .code-card .copy-link-note { color: var(--bad); font-size: 0.8rem; }
 .sheet-body form { display: flex; flex-direction: column; gap: 8px; }
@@ -493,6 +504,10 @@ html.sheet-open { overscroll-behavior-y: contain; }
 /* How far a started title got: a thin bar across the foot of its picture. */
 .lib-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, 0.55); }
 .lib-progress i { display: block; height: 100%; background: var(--accent); }
+/* The score this profile gave a title: a star and a number in the picture's top-left corner, opposite the round buttons. */
+.lib-art .score-badge, .lib-result-art .score-badge { position: absolute; top: 6px; left: 6px; z-index: 1; display: inline-flex; align-items: center; gap: 3px; padding: 1px 8px 1px 6px; border-radius: 999px; background: rgba(0, 0, 0, 0.68); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.28); color: #fff; font-size: 0.78rem; font-weight: 800; line-height: 1.5; }
+.lib-result-art .score-badge { top: 4px; left: 4px; }
+.lib-art .score-badge svg, .lib-result-art .score-badge svg { width: 0.95em; height: 0.95em; color: var(--accent); }
 /* The round buttons in the corner of a picture: put the title in a list (a tick once it is in one), take it off the row. Big enough for a thumb. */
 .lib-corner { position: absolute; top: 6px; right: 6px; z-index: 1; display: flex; gap: 6px; }
 .lib-round { position: relative; display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 50%; background: rgba(0, 0, 0, 0.62); color: #fff; font-size: 1.1rem; backdrop-filter: blur(4px); transition: background 0.15s ease, transform 0.1s ease; }

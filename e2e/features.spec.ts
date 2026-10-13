@@ -1,11 +1,13 @@
-import { chromium, expect, test, type Browser, type Page } from "@playwright/test";
+import { chromium, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import qrcode from "qrcode-generator";
 import { progressKey, type NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, tvRoot, tvTime, withLibrary } from "./helpers";
+import { it as italian } from "../src/client/i18n/it";
+import { ro } from "../src/client/i18n/ro";
+import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -1325,6 +1327,59 @@ test.describe("watching together", () => {
       .toBeLessThan(1.5);
   });
 
+  test("a screen tells the server how long its round trip takes, from the moment it connects", async ({ browser }) => {
+    const pings: string[] = [];
+    const tv = await openLibrary(browser, async (context) => {
+      context.on("page", (page) =>
+        page.on("websocket", (socket) =>
+          socket.on("framesent", (frame) => {
+            if (typeof frame.payload === "string" && frame.payload.includes('"PING"')) pings.push(frame.payload);
+          }),
+        ),
+      );
+    });
+    await expect.poll(() => pings.length).toBeGreaterThan(0); // (the first is sent as soon as the page has said hello, not 15 s later)
+    // (The page checks the link again when it comes back to the front: that PING carries what the first one took.)
+    await expect
+      .poll(async () => {
+        await tv.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+        return pings.some((ping) => /"rtt":\d+/.test(ping));
+      })
+      .toBe(true);
+  });
+
+  test("a guest aims where the host is now: it plays ahead of the position it is sent by the age it is told that has", async ({ browser, baseURL }) => {
+    const leader = await openTv(browser);
+    const phone = await openPairedPhone(browser, leader);
+    // (A server that says every report took 1.5 s to arrive: the guest should be that far ahead of the host's last position, which is the host's now.)
+    const follower = await openLibrary(browser, async (context) => {
+      await context.routeWebSocket(/\/ws$/, (page) => {
+        const server = page.connectToServer();
+        page.onMessage((message) => server.send(message));
+        server.onMessage((message) => {
+          const report = typeof message === "string" ? (JSON.parse(message) as { type?: string }) : null;
+          page.send(report?.type === "TV_SYNC" ? JSON.stringify({ ...report, lag: 1.5 }) : message);
+        });
+        page.onClose((code, reason) => void server.close({ code, reason }));
+        server.onClose((code, reason) => void page.close({ code, reason }));
+      });
+    });
+    await follower.getByTestId("rail-connect").click();
+    await phone.getByTestId("menu").click();
+    await phone.getByTestId("party-open").click();
+    await phone.getByTestId("party-code").fill(await readPairingCode(follower));
+    await expect(phone.getByTestId("party-tv")).toHaveCount(1);
+    await phone.getByTestId("sheet-close").click();
+
+    await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/long.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
+    await expect
+      .poll(async () => (await video(follower)).time - (await video(leader)).time, { timeout: 15_000, message: "the guest settles about 1.5 s ahead of the host" })
+      .toBeGreaterThan(1.1);
+    expect((await video(follower)).time - (await video(leader)).time).toBeLessThan(2.1);
+  });
+
   test("a follower has no controls of its own: keys do nothing, and the phone's stop ends it for both", async ({ browser, baseURL }) => {
     const { leader, phone, follower } = await party(browser);
     await phone.getByTestId("sheet-close").click();
@@ -1397,6 +1452,31 @@ test.describe("watching together", () => {
     await expect(follower.getByTestId("pairing-code")).toBeVisible();
     await expect(tvRoot(leader)).toHaveAttribute("data-state", "playing"); // the leader carries on
     await expect(phone.getByTestId("party-count")).toHaveCount(0);
+  });
+
+  test("the phone makes a TV of its party an admin, which then steers the film, and takes that back", async ({ browser, baseURL }) => {
+    const { leader, phone, follower } = await party(browser);
+    await expect(phone.getByTestId("party-tv")).toHaveCount(1);
+    await expect(phone.getByTestId("party-admin")).toHaveText("Make admin");
+    await phone.getByTestId("party-admin").click();
+    await expect(phone.getByTestId("party-admin")).toHaveText("Remove admin");
+    await expect(phone.getByTestId("party-tv")).toContainText("Admin");
+    await phone.getByTestId("sheet-close").click();
+
+    await phone.getByTestId("url-input").fill(sample(baseURL!));
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
+    await follower.mouse.move(60, 60);
+    await follower.getByTestId("tv-admin-play").click();
+    await expect(tvRoot(leader)).toHaveAttribute("data-state", "paused"); // the phone's TV did it
+    await expect(phone.getByTestId("play")).toBeVisible(); // and the phone knows
+
+    await phone.getByTestId("menu").click();
+    await phone.getByTestId("party-open").click();
+    await phone.getByTestId("party-admin").click();
+    await expect(phone.getByTestId("party-admin")).toHaveText("Make admin");
+    await expect(phone.getByTestId("party-tv")).not.toContainText("Admin");
+    await expect(follower.getByTestId("tv-admin-bar")).toHaveCount(0);
   });
 
   test("End party sends every TV away at once", async ({ browser }) => {
@@ -1665,6 +1745,133 @@ test.describe("a watch party started on a TV", () => {
     await expect(guest.getByTestId("tv-following")).toBeVisible();
     await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
   });
+
+  test("the host makes a guest an admin: its buttons and keys steer the film for everyone, and taking that back puts them away", async ({ browser, baseURL }) => {
+    const { host, guest } = await party(browser, baseURL!);
+    await expect(guest.getByTestId("tv-party-admin")).toHaveCount(0); // a guest has no say in who is one
+    await host.getByTestId("tv-party-admin").click();
+    await expect(host.getByTestId("tv-party-member").nth(1)).toContainText("Admin");
+    await expect(host.getByTestId("tv-party-admin")).toHaveText("Remove admin");
+    await expect(guest.getByTestId("tv-party-member").nth(1)).toContainText("Admin"); // everyone sees who is one
+
+    await host.getByTestId("tv-back-to-library").click();
+    await playFirst(host);
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await expect(guest.getByTestId("tv-play-btn")).toHaveCount(0); // (still a screen that watches along)
+
+    // Its buttons ask the host's screen, which does it, and the guest follows it.
+    await guest.mouse.move(60, 60); // brings the bars up
+    await guest.getByTestId("tv-admin-play").click();
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "paused");
+    await expect.poll(async () => (await video(guest)).paused).toBe(true);
+    const paused = await tvTime(host);
+    await guest.getByTestId("tv-admin-forward").click();
+    await expect.poll(() => tvTime(host)).toBeGreaterThan(paused + 8);
+    await expect.poll(async () => Math.abs((await video(guest)).time - (await tvTime(host))), { timeout: 10_000 }).toBeLessThan(1.5);
+
+    // Its keys do the same, with nothing on the bar focused (a click leaves the focus alone).
+    await guest.keyboard.press("Space");
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "playing");
+    await expect.poll(async () => (await video(guest)).paused).toBe(false);
+    const playing = await tvTime(host);
+    await guest.keyboard.press("ArrowLeft");
+    await expect.poll(() => tvTime(host), { timeout: 10_000 }).toBeLessThan(playing - 6);
+
+    // Down lands on Play.
+    await guest.keyboard.press("ArrowDown");
+    await expect(guest.getByTestId("tv-admin-play")).toBeFocused();
+
+    // Taken back from the panel over the film, the bar is gone and the keys are the host's alone again.
+    await host.mouse.move(60, 60);
+    await host.getByTestId("tv-party-btn").click();
+    await host.getByTestId("tv-party-admin").click();
+    await expect(host.getByTestId("tv-party-admin")).toHaveText("Make admin");
+    await expect(guest.getByTestId("tv-admin-bar")).toHaveCount(0);
+    await expect(guest.getByTestId("tv-follow-bar")).toBeVisible();
+    await guest.keyboard.press("Space");
+    await guest.waitForTimeout(1500);
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "playing");
+
+    // Given again, Stop is for everyone: the guest that asked is stopped too.
+    await host.getByTestId("tv-party-admin").click();
+    await guest.mouse.move(60, 60);
+    await guest.getByTestId("tv-admin-stop").click();
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "idle");
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "idle");
+    await expect(guest.getByTestId("tv-following")).toBeVisible(); // still in the party, waiting
+  });
+
+  // The buttons that came with the admin (on a member of the list, and a bar of their own on a guest's film) go where there is room for them.
+  for (const size of [
+    { name: "a TV (1280×720) in Italian", width: 1280, height: 720, language: "it" },
+    { name: "a phone in Romanian", width: 390, height: 844, language: "ro" },
+    { name: "a small phone in Romanian", width: 320, height: 568, language: "ro" },
+  ]) {
+    test(`with an admin in the party, the list and the bars fit ${size.name}`, async ({ browser, baseURL }) => {
+      const viewport = { width: size.width, height: size.height };
+      const seed = { "kino.lang": size.language };
+      const words = size.language === "ro" ? ro : italian;
+      /** Of the party's list: what sticks out of the screen or out of its own row, the buttons that lie over one another, and a name cut short. */
+      const misfits = (page: Page) =>
+        page.evaluate(() => {
+          const touching = (a: DOMRect, b: DOMRect) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+          let wrong = 0;
+          for (const member of document.querySelectorAll(".tv-party-member")) {
+            const row = member.getBoundingClientRect();
+            if (row.left < -1 || row.right > innerWidth + 1) wrong++;
+            for (const part of member.children) {
+              const box = part.getBoundingClientRect();
+              if (box.width > 0 && (box.left < row.left - 1 || box.right > row.right + 1)) wrong++;
+            }
+            const buttons = [...member.querySelectorAll("button")].map((button) => button.getBoundingClientRect());
+            buttons.forEach((a, i) => buttons.slice(i + 1).forEach((b) => touching(a, b) && wrong++));
+            for (const name of member.querySelectorAll<HTMLElement>(".tv-party-name")) if (name.scrollWidth > name.clientWidth + 1) wrong++; // (a short name is whole: the buttons go under it, not over it)
+          }
+          return wrong;
+        });
+      const sideways = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+
+      // The host's list, on the page and in the panel over a film: the admin's button is beside Remove, and the row takes two lines where it must.
+      const host = await openLibrary(browser, withLibrary(films(baseURL!)), viewport, seed);
+      const code = await startParty(host);
+      const admin = await openLibrary(browser, withLibrary(films(baseURL!)), viewport, seed);
+      await joinWith(admin, code);
+      await expect(admin.getByTestId("tv-following")).toBeVisible();
+      expect(await misfits(admin)).toBe(0);
+      await host.getByTestId("tv-party-admin").click();
+      await expect(host.getByTestId("tv-party-admin")).toHaveText(words["party.removeAdmin"]);
+      await expect(host.getByTestId("tv-party-member").nth(1)).toContainText(words["party.admin"]);
+      await expect(admin.getByTestId("tv-party-member").nth(1)).toContainText(words["party.admin"]);
+      for (const page of [host, admin]) {
+        expect(await misfits(page)).toBe(0);
+        expect(await sideways(page)).toBeLessThanOrEqual(0);
+      }
+      await host.getByTestId("tv-back-to-library").click();
+      await host.getByTestId("tv-browse-tile").first().click();
+      await host.getByTestId("tv-detail-play").click();
+      await expect(tvRoot(host)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+      await host.mouse.move(60, 60);
+      await host.getByTestId("tv-party-btn").click();
+      await expect(host.getByTestId("tv-party-admin")).toBeAttached();
+      expect(await misfits(host)).toBe(0);
+      const panel = (await host.getByTestId("tv-party-panel").boundingBox())!;
+      expect(panel.x).toBeGreaterThanOrEqual(0);
+      expect(panel.x + panel.width).toBeLessThanOrEqual(size.width + 1);
+
+      // The guest: the film, and two bars under each other, all of their buttons on the screen.
+      await expect(tvRoot(admin)).toHaveAttribute("data-state", /playing|paused/, { timeout: 15_000 });
+      await admin.mouse.move(60, 60);
+      await expect(admin.getByTestId("tv-admin-bar")).toBeInViewport();
+      const bars = await admin.evaluate(() => {
+        const inside = (box: DOMRect) => box.left >= -1 && box.top >= -1 && box.right <= innerWidth + 1 && box.bottom <= innerHeight + 1;
+        const elements = [...document.querySelectorAll<HTMLElement>(".tv-follow-bar, .tv-follow-bar button")];
+        const bars = [...document.querySelectorAll(".tv-follow-bar")].map((bar) => bar.getBoundingClientRect());
+        return { outside: elements.filter((element) => !inside(element.getBoundingClientRect())).length, stacked: bars.length === 2 && bars[0]!.bottom <= bars[1]!.top + 1, count: bars.length };
+      });
+      expect(bars).toEqual({ outside: 0, stacked: true, count: 2 });
+      expect(await sideways(admin)).toBeLessThanOrEqual(0);
+    });
+  }
 
   test("a guest that leaves by choice is not told it has left", async ({ browser, baseURL }) => {
     const { host, guest } = await party(browser, baseURL!);
@@ -2687,6 +2894,127 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(phone.getByTestId("ratings-row")).toContainText("Film number 1");
       await tile(phone, "Film number 1").click();
       await expect(phone.getByTestId("rate-title-value")).toHaveText("8/10");
+    });
+
+    test("a rated title shows its score in the corner of its picture, in the rows, a search, Continue watching and a list; one not rated shows none, and with ratings off nothing does", async ({ browser, baseURL }) => {
+      const url = baseURL!;
+      const link = (n: number) => `${url}/fixtures/sample.mp4?n=${n}`;
+      const started = { key: `url:${link(4)}`, at: day(5), title: "Film number 5", url: link(4), position: 1500, duration: 6000 };
+      const kept = { key: `url:${link(6)}`, at: day(6), id: "f6", title: "Film number 7", url: link(6) };
+      const ratings = [given(url, 0, 8, 2), given(url, 4, 6, 3), given(url, 6, 9, 4), given(url, 1, 3, 5, { key: `rate:${link(1)}|s2`, season: 2 })];
+      const whole = films.map((film) => ({ ...film, url: `${url}${film.url}` }));
+      const { phone } = await connect(browser, url, {
+        library: wholeLibrary(url),
+        find: (query) => whole.filter((film) => film.title.toLowerCase().includes(query.toLowerCase())),
+        seed: guestStorage({ ratings, progress: [started], list: [kept] }),
+      });
+      const badge = (where: Locator) => where.getByTestId("score-badge");
+
+      // The rows of the library: the score is in the picture's corner, worded by its tooltip; a season's score is no score of the title's own.
+      await expect(badge(tile(phone, "Film number 1"))).toHaveText("8");
+      await expect(badge(tile(phone, "Film number 1"))).toHaveAttribute("title", "Your rating: 8/10");
+      // A screen reader says it once, with the title (in the name of the button the picture is in: a card's own name gets it added).
+      await expect(tile(phone, "Film number 1")).toHaveAccessibleName(/Your rating: 8\/10/);
+      await expect(tile(phone, "Film number 2")).not.toHaveAccessibleName(/Your rating/);
+      await expect(phone.getByTestId("continue-play")).toHaveAccessibleName(/Your rating: 6\/10/);
+      await expect(badge(tile(phone, "Film number 2"))).toHaveCount(0);
+      await expect(badge(tile(phone, "Film number 3"))).toHaveCount(0);
+      // The cards of Continue watching and of a list; the row of what was rated has its scores under the titles already.
+      await expect(badge(phone.getByTestId("continue-item"))).toHaveText("6");
+      await expect(badge(phone.getByTestId("list-item"))).toHaveText("9");
+      await expect(badge(phone.getByTestId("ratings-row"))).toHaveCount(0);
+
+      // It is in the corner opposite the round button, so the two do not cover each other (and the button is still what a tap there reaches).
+      const score = (await badge(tile(phone, "Film number 1")).boundingBox())!;
+      const round = (await tile(phone, "Film number 1").locator("xpath=..").locator(".lib-round").boundingBox())!;
+      expect(score.x + score.width).toBeLessThan(round.x);
+
+      // A search: the same on the line of each title.
+      await phone.getByTestId("library-search-input").fill("film number 1");
+      const found = (title: string) => phone.locator(`[data-testid="library-result"][title="${title}"]`);
+      await expect(found("Film number 1")).toBeVisible();
+      await expect(badge(found("Film number 1"))).toHaveText("8");
+      await expect(found("Film number 10")).toBeVisible();
+      await expect(badge(found("Film number 10"))).toHaveCount(0);
+      await phone.getByTestId("library-search-input").fill("");
+
+      // A score given on the title's page is on its picture when the page is closed, and gone when the rating is taken back.
+      await tile(phone, "Film number 3").click();
+      await open(phone);
+      await phone.getByTestId("rate-title-score-4").click();
+      await phone.getByTestId("sheet-close").click();
+      await expect(badge(tile(phone, "Film number 3"))).toHaveText("4");
+      await tile(phone, "Film number 3").click();
+      await open(phone);
+      await phone.getByTestId("rate-title-remove").click();
+      await phone.getByTestId("sheet-close").click();
+      await expect(badge(tile(phone, "Film number 3"))).toHaveCount(0);
+
+      // With ratings off in the settings there is none anywhere.
+      await phone.getByTestId("account-button").click();
+      await phone.getByTestId("menu-settings").click();
+      await phone.getByTestId("ratings-switch").click();
+      await expect(phone.getByTestId("ratings-switch")).toHaveAttribute("aria-checked", "false");
+      await phone.getByTestId("page-back").click();
+      await phone.getByTestId("page-back").click();
+      await expect(phone.getByTestId("account-screen")).toHaveCount(0);
+      await expect(tile(phone, "Film number 1")).toBeVisible();
+      await expect(phone.getByTestId("score-badge")).toHaveCount(0);
+    });
+
+    test("the account page has My ratings among the profile's places, for a guest too, saying how many; it opens the list over the page, and a title opened from it shows over the list", async ({ browser, baseURL }) => {
+      const url = baseURL!;
+      const { phone } = await connect(browser, url, { library: wholeLibrary(url), seed: guestStorage({ ratings: [given(url, 0, 8, 2), given(url, 1, 5, 3)] }) });
+      await phone.getByTestId("account-button").click(); // (nobody is signed in)
+      const row = phone.getByTestId("menu-ratings");
+      await expect(row).toContainText("My ratings");
+      await expect(row).toContainText("2");
+      await row.click();
+      const sheet = phone.getByTestId("ratings-sheet");
+      await expect(sheet.getByTestId("ratings-summary")).toHaveText("2 ratings · average 6.5");
+      await expect(sheet.getByTestId("rating-entry").locator(".rating-name")).toHaveText(["Film number 2", "Film number 1"]);
+
+      await sheet.getByTestId("rating-entry").first().click(); // (the library's page is under the account page: the title opens over both)
+      const page = phone.getByTestId("title-sheet");
+      await expect(page).toContainText("Film number 2");
+      await expect(page.getByTestId("rate-title-value")).toHaveText("5/10");
+      await page.getByTestId("sheet-close").click();
+      await expect(sheet).toBeVisible(); // (back to the list it was opened from)
+      await sheet.getByTestId("sheet-close").click();
+      await expect(sheet).toHaveCount(0);
+      await expect(phone.getByTestId("account-screen")).toBeVisible();
+
+      // Off in the settings, the place is gone from the page; what was rated is kept.
+      await phone.getByTestId("menu-settings").click();
+      await phone.getByTestId("ratings-switch").click();
+      await phone.getByTestId("page-back").click();
+      await expect(phone.getByTestId("account-screen")).toBeVisible();
+      await expect(phone.getByTestId("menu-ratings")).toHaveCount(0);
+    });
+
+    test("My ratings works on a phone with no TV: the keyboard is in the sheet, a title opens from it (with no Play), its rating can be taken back, and with none the sheet says what to do", async ({ browser, baseURL }) => {
+      const url = baseURL!;
+      const phone = await openDevice(browser, PHONE, guestStorage({ ratings: [given(url, 0, 8, 2)] }), withLibrary(wholeLibrary(url), () => []));
+      await phone.goto("/");
+      await expect(phone.getByTestId("code-input")).toBeVisible(); // (no TV: the first screen)
+      await phone.getByTestId("account-button").click();
+      const row = phone.getByTestId("menu-ratings");
+      await row.click();
+      const sheet = phone.getByTestId("ratings-sheet");
+      await expect(sheet).toBeFocused(); // (not left on the row behind it, where the next Tab would carry on under the sheet)
+
+      await sheet.getByTestId("rating-entry").click();
+      const page = phone.getByTestId("title-sheet");
+      await expect(page).toContainText("Film number 1");
+      await expect(page.getByTestId("title-play")).toHaveCount(0); // (nothing to play it on)
+      await expect(page.getByTestId("rate-title-value")).toHaveText("8/10");
+      await open(phone);
+      await page.getByTestId("rate-title-remove").click();
+      await page.getByTestId("sheet-close").click();
+      await expect(sheet.getByTestId("ratings-empty")).toBeVisible();
+      await expect(sheet.getByTestId("ratings-sort-new")).toHaveCount(0);
+      await sheet.getByTestId("sheet-close").click();
+      await expect(row).toBeFocused(); // (and back on the row it was opened from)
     });
   });
 });

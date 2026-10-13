@@ -458,6 +458,35 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.isPartyCode(reopened)).toBe(false); // it ran out
   });
 
+  it("finds the screen a code is open on, and keeps a party with guests joinable after its code ran out (until it is over), for the friends invited to it", () => {
+    const { registry, advance, host, code, arrive } = hosted();
+    expect(registry.hostOfPartyCode(code)).toBe(host);
+    expect(registry.hostOfPartyCode("000000")).toBeUndefined();
+    expect(registry.deviceByPublicId(host.publicId)).toBe(host);
+    expect(registry.deviceByPublicId("nobody")).toBeUndefined();
+
+    // Nobody came: the code is the party, and when it runs out the party is over.
+    expect(registry.runningParty(host)?.code).toBe(code);
+    advance(10 * 60 * 1000);
+    expect(registry.hostOfPartyCode(code)).toBeUndefined();
+    expect(registry.runningParty(host)).toBeNull();
+
+    // Somebody came: the party goes on without its code, and is given a new one when a friend who was invited asks.
+    const again = registry.ensurePartyCode(host)!.code;
+    expect(registry.joinParty(arrive(), again).ok).toBe(true);
+    advance(10 * 60 * 1000);
+    expect(registry.partyCodeOf(host)).toBeNull();
+    const renewed = registry.runningParty(host)!;
+    expect(renewed.code).not.toBe(again);
+    expect(registry.hostOfPartyCode(renewed.code)).toBe(host);
+    expect(registry.runningParty(host)?.code).toBe(renewed.code); // (the same one, until it runs out)
+
+    // A guest has no party of its own, and a party that was ended is over.
+    expect(registry.runningParty(registry.followersOf(host)[0]!)).toBeNull();
+    registry.closeParty(host);
+    expect(registry.runningParty(host)).toBeNull();
+  });
+
   it("makes every TV that types the code a guest: the code is not used up", () => {
     const { registry, host, code, arrive } = hosted();
     const [first, second] = [arrive(), arrive()];
@@ -515,6 +544,36 @@ describe("Registry: a party started on a TV", () => {
     expect([second!.leaderId, host.followerIds, registry.partyCodeOf(host)]).toEqual([null, [], null]);
     expect(registry.joinParty(arrive(), code)).toEqual({ ok: false, reason: "INVALID_CODE" });
     expect(registry.inParty(host)).toBe(false);
+  });
+
+  it("lets the host make a guest an admin by its public id, and take that back: nobody else is one, and it lasts only as long as the guest's place in the party", () => {
+    const { registry, host, code, arrive } = hosted();
+    const [first, second] = [arrive(), arrive()];
+    registry.joinParty(first!, code);
+    registry.joinParty(second!, code);
+    expect([first!.admin, second!.admin, host.admin]).toEqual([false, false, false]);
+
+    expect(registry.setAdmin(host, "nobody", true)).toBeNull(); // no such guest
+    expect(registry.setAdmin(host, host.publicId, true)).toBeNull(); // the host is not its own guest
+    expect(registry.setAdmin(arrive(), first!.publicId, true)).toBeNull(); // a screen with no guests has none to make one
+    expect(registry.setAdmin(host, first!.publicId, true)).toBe(first);
+    expect([first!.admin, second!.admin]).toEqual([true, false]);
+    expect(registry.setAdmin(host, first!.publicId, true)).toBeNull(); // already one: nothing changed
+    expect(registry.setAdmin(host, first!.publicId, false)).toBe(first);
+    expect(first!.admin).toBe(false);
+
+    // Sent away, leaving, or the end of the party: a guest that comes back comes back as an ordinary one.
+    registry.setAdmin(host, first!.publicId, true);
+    registry.setAdmin(host, second!.publicId, true);
+    registry.removeGuest(host, first!.publicId);
+    expect(first!.admin).toBe(false);
+    registry.joinParty(first!, code);
+    expect(first!.admin).toBe(false);
+    registry.detachFollower(second!);
+    expect(second!.admin).toBe(false);
+    registry.setAdmin(host, first!.publicId, true);
+    registry.closeParty(host);
+    expect(first!.admin).toBe(false);
   });
 
   it("takes the guests down with a host that lets go, and never hands a party code to someone else's code", () => {

@@ -8,9 +8,11 @@ export const askRatings = (friends: FriendsValue, id: string): Promise<FriendRat
 
 /**
  * What a friend shares, asked for when a page opens (and again when they start sharing it, or the page is for another friend):
- * null while it is being asked, and nothing is asked while `allowed` is false.
+ * null while it is being asked, and nothing is asked while `allowed` is false. `kind` is what else the answer depends on (whether the
+ * friend tells what they watch, which is what its progress is made of): asked again when it changes, so a page that stays open does
+ * not go on showing what is no longer to be shown.
  */
-export function useShared<T>(friendId: string, allowed: boolean, ask: (friends: FriendsValue, id: string) => Promise<T>): { data?: T; problem?: string } | null {
+export function useShared<T>(friendId: string, allowed: boolean, ask: (friends: FriendsValue, id: string) => Promise<T>, kind?: boolean): { data?: T; problem?: string } | null {
   const friends = useFriends();
   const latest = useRef(friends);
   latest.current = friends;
@@ -26,6 +28,6 @@ export function useShared<T>(friendId: string, allowed: boolean, ask: (friends: 
     return () => {
       stopped = true;
     };
-  }, [friendId, allowed, ask]);
+  }, [friendId, allowed, ask, kind]);
   return answer;
 }

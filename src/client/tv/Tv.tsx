@@ -14,18 +14,23 @@ import {
   stateIsFor,
   type CaptionStyle,
   type NormalizedMedia,
+  type PartyCommand,
   type PartyView,
   type PlayableSource,
   type PlayerState,
 } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
+import { describeError } from "../account/errors";
 import { profileStore, useProfileData } from "../account/store";
+import { friendsApi } from "../friends/api";
+import { nameOf } from "../friends/entries";
+import { useFriends } from "../friends/FriendsProvider";
 import { t, useT } from "../i18n";
 import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
-import { FullscreenIcon, MutedIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
+import { Back10Icon, Forward10Icon, FullscreenIcon, MutedIcon, NextIcon, PauseIcon, PlayIcon, StopIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
@@ -39,12 +44,12 @@ import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, type PointerKind
 import { EndCard, ErrorCard, FollowStatus, hasTracks, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
 import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
 import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
-import { actionForKey, SKIP_SECONDS } from "./keys";
+import { actionForKey, partyCommandForKey, SKIP_SECONDS } from "./keys";
 import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
 import { keepNativePlayerOut } from "./nativePlayer";
 import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
-import { syncStep } from "./sync";
+import { leaderNow, syncStep } from "./sync";
 import {
   describeTrack,
   parsePrefs,
@@ -78,6 +83,8 @@ export function Tv() {
   const engineRef = useRef<PlayerEngine | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
+  /** The follower's way out of the party, which Back points at (see the key handler). */
+  const leaveRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   /** The link of a watch party (its QR code) was opened on this screen: its code is tried once the page is unlocked, then taken out of the address. */
@@ -108,11 +115,17 @@ export function Tv() {
   followingRef.current = following;
   /** The watch party this TV is in, as host or as guest, and when the code that lets others in stops working. */
   const [party, setParty] = useState<PartyView | null>(null);
+  /** The host made this screen an admin: the film's playback is its to steer too (the host's screen carries it out for everyone, see TV_PARTY_CMD). */
+  const admin = party?.role === "guest" && party.guests.some((guest) => guest.id === party.you && guest.admin === true);
   const [partyEnds, setPartyEnds] = useState<number | null>(null);
   /** Why the code just typed on the party page was refused. `id` changes with each refusal. */
   const [partyError, setPartyError] = useState<{ id: number; text: string } | null>(null);
   /** The code of a party a friend invited this TV to, which the party page opens on joining. */
   const [partyJoinWith, setPartyJoinWith] = useState<string | null>(null);
+  /** The code an invitation or a link sent this TV to join with: if that is refused it is not a mistyped code but a party that is over. */
+  const invitedWithRef = useRef<string | null>(null);
+  /** A friend who asked to watch together: they are invited once the party this TV starts has a code. */
+  const [together, setTogether] = useState<string | null>(null);
   /** This TV is leaving a party by choice, so being taken out of it a moment later is not news. */
   const leavingRef = useRef(false);
   const [pairing, setPairing] = useState<Pairing | null>(null);
@@ -141,8 +154,8 @@ export function Tv() {
   /** The video played to its end (anything that moves the picture on clears it). With nothing following by itself, the end card is shown. */
   const [ended, setEnded] = useState(false);
 
-  // Audio / subtitles / speed / quality / episodes picker, and the watch party over a film
-  const [menu, setMenu] = useState<MenuKind | "party" | null>(null);
+  // Audio / subtitles / speed / quality / episodes picker, and the watch party over a film (with its page for choosing the friends to invite)
+  const [menu, setMenu] = useState<MenuKind | "party" | "partyInvite" | null>(null);
   /** The control that opened the menu, which gets the focus back when it closes, so Back never leaves the remote with nothing selected. */
   const openerRef = useRef<HTMLElement | null>(null);
   const openMenu = (kind: MenuKind | "party") => {
@@ -184,6 +197,9 @@ export function Tv() {
   const account = useAccount();
   const syncNowRef = useRef(account.syncNow);
   syncNowRef.current = account.syncNow; // (the phone can ask for it: devices of the account were signed out)
+  const friends = useFriends();
+  const friendsRef = useRef(friends);
+  friendsRef.current = friends;
   const [accountView, setAccountView] = useState<AccountView | null>(null);
   /** Signed in, and nobody has been picked on this TV yet: that question comes first. */
   const choosing = account.status === "ready" && account.choosing;
@@ -608,6 +624,7 @@ export function Tv() {
           case "TV_FOLLOWING":
             // A party took this TV in (a phone added it, or its code was typed here): what this TV was doing stops, and the video comes from the host.
             followingRef.current = message.leader;
+            invitedWithRef.current = null;
             setPaired(true);
             setPairing(null);
             setFollowing(message.leader);
@@ -626,6 +643,17 @@ export function Tv() {
             break;
           case "ERROR": {
             // Mostly a party code that would not do (wrong, out of date, a full party): said on the party page, or over the library.
+            // (One that an invitation or a link brought was good when the friend made it: that it is refused now means the party is over. That is said over the friends' page,
+            // which is looked at again: the invitation is a question there now, whether to ask for another.)
+            const over = message.code === "INVALID_CODE" && invitedWithRef.current !== null;
+            invitedWithRef.current = null;
+            if (over) {
+              void friendsRef.current.refresh();
+              setPartyJoinWith(null);
+              if (screenRef.current === "party") setScreen("library");
+              setFlash({ id: ++flashIdRef.current, text: t("friends.partyGone") });
+              break;
+            }
             const text = socketError(message.code, message.message);
             if (screenRef.current === "party") setPartyError({ id: ++flashIdRef.current, text });
             else setFlash({ id: ++flashIdRef.current, text });
@@ -637,9 +665,17 @@ export function Tv() {
             const local = engine.getState();
             if (local.state !== "playing" && local.state !== "paused") break;
             const rate = local.playbackRate ?? 1;
+            const hostAt = leaderNow(message); // (the report is a little old by now)
             const step = syncStep(
-              { playing: message.playing, time: message.time, rate: message.rate },
-              { playing: local.state === "playing", time: local.currentTime, rate, buffering: Boolean(local.buffering) },
+              { playing: message.playing, time: hostAt, rate: message.rate },
+              {
+                playing: local.state === "playing",
+                time: local.currentTime,
+                rate,
+                buffering: Boolean(local.buffering),
+                ahead: Math.max(0, (local.bufferedEnd ?? local.currentTime) - local.currentTime),
+                targetBuffered: engine.hasBuffered(hostAt),
+              },
               Date.now() - lastSeekAt,
             );
             if (step.seek !== undefined) {
@@ -869,16 +905,39 @@ export function Tv() {
     if (connection === "open") socketRef.current?.send({ type: "TV_NAME", name: profileName });
   }, [connection, profileName]);
 
+  // And who it is: a party shows the picture, name and tag of the profile that is signed in here (when it has friends on), so that the others
+  // can ask it to be friends. The party cannot see the cookie, so the server gives this screen a proof, once, and the party asks the server
+  // about it. Said again with every connection and every change of profile; with nobody signed in, or friends off, the message is empty.
+  const profileId = account.me && account.profile ? account.profile.id : undefined;
+  const friendsOn = settings.friends === true;
+  useEffect(() => {
+    if (connection !== "open") return;
+    if (!profileId || !friendsOn) return void socketRef.current?.send({ type: "TV_PROFILE" });
+    let stopped = false;
+    friendsApi.screen(profileId).then(
+      ({ proof }) => !stopped && socketRef.current?.send({ type: "TV_PROFILE", proof }),
+      () => !stopped && socketRef.current?.send({ type: "TV_PROFILE" }),
+    );
+    return () => {
+      stopped = true;
+    };
+  }, [connection, profileId, friendsOn]);
+
   const linkTriedRef = useRef(false);
   useEffect(() => {
     if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current) return;
     linkTriedRef.current = true;
     history.replaceState(null, "", location.pathname);
+    invitedWithRef.current = linkCode;
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code: linkCode });
   }, [linkCode, unlocked, connection]);
 
   // The code that lets others into a party lasts ten minutes. While it is on screen it is renewed; a party nobody came to goes away with it.
-  const partyShown = menu === "party" || (screen === "party" && player.state === "idle");
+  const partyShown = menu === "party" || menu === "partyInvite" || (screen === "party" && player.state === "idle");
+  // The page for choosing friends belongs to a party this screen hosts, with a code to tell them: without that (the party ended) it is the panel again.
+  useEffect(() => {
+    if (menu === "partyInvite" && !(party?.role === "host" && party.code)) setMenu("party");
+  }, [menu, party]);
   useEffect(() => {
     if (party?.role !== "host") return;
     const left = partyEnds === null ? 0 : partyEnds - Date.now();
@@ -892,12 +951,42 @@ export function Tv() {
   }, [party, partyEnds, partyShown]);
 
   const startParty = () => void socketRef.current?.send({ type: "TV_PARTY_OPEN" });
+  /** A friend asked to watch together: a party is started (the one that is on carries on) and they are invited to it as soon as it has a code. */
+  const startTogether = (friend: string) => {
+    setPartyError(null);
+    setPartyJoinWith(null);
+    invitedWithRef.current = null;
+    setTogether(friend);
+    setScreen("party");
+    startParty();
+  };
+  useEffect(() => {
+    // (A code this screen still shows but that has run out is not used: the renewal that is on its way brings a new one, and this looks again.)
+    if (!together || party?.role !== "host" || !party.code || (partyEnds ?? 0) <= Date.now()) return;
+    setTogether(null);
+    const code = party.code;
+    const current = friendsRef.current;
+    const name = nameOf(current.state?.friends ?? [], together);
+    void current.send([together], { kind: "party", code: code.code, endsAt: partyEnds ?? Date.now() + code.expiresInMs }).then(
+      async (answer) => {
+        account.say(answer.sent.length > 0 ? t("friends.inviteSent", { names: name }) : t("friends.declined", { names: name }));
+        await friendsRef.current.refresh(); // (the server takes the request away once they are invited)
+      },
+      (error: unknown) => account.say(describeError(error)),
+    );
+  }, [together, party, partyEnds]);
   const joinParty = (code: string) => {
     setPartyJoinWith(null); // (an invitation's code is used once: the next time the page asks for a code it starts empty)
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code });
   };
   const removeFromParty = (id: string) => void socketRef.current?.send({ type: "TV_PARTY_REMOVE", id });
+  const setAdmin = (id: string, on: boolean) => void socketRef.current?.send({ type: "TV_PARTY_ADMIN", id, admin: on });
+  const steer = (command: PartyCommand) => void socketRef.current?.send({ type: "TV_PARTY_CMD", command });
   const endParty = () => void socketRef.current?.send({ type: "TV_PARTY_CLOSE" });
+  // Being made an admin shows the buttons that come with it.
+  useEffect(() => {
+    if (admin) wake();
+  }, [admin]);
 
   /* --------------------------- remote control --------------------------- */
 
@@ -1013,7 +1102,7 @@ export function Tv() {
 
       if (menu) {
         // The picker owns the keys; OK presses the focused option itself.
-        if (action === "back") setMenu(menu === "captions" ? "tracks" : null); // the caption style is a page of the audio and subtitles menu
+        if (action === "back") setMenu(menu === "captions" ? "tracks" : menu === "partyInvite" ? "party" : null); // the caption style is a page of the audio and subtitles menu, the friends to invite a page of the party's
         else if (action === "up" || action === "down" || action === "left" || action === "right") moveInMenu(menuRef.current, action);
         else return;
         event.preventDefault();
@@ -1065,8 +1154,12 @@ export function Tv() {
       if (following) {
         // Watching along: no playback keys (the host has them), just the buttons on the bar (Down, then OK), subtitles and full screen.
         // The one exception is the press the browser wants before it plays: OK is that, and starts the video.
+        // An admin has the playback keys too: they ask the host's screen, which does it for everyone.
+        const steering = admin ? partyCommandForKey(action, player.state === "playing", Boolean(currentMedia?.series?.next)) : null;
         if (isBlocked(player) && (action === "select" || action === "playpause" || action === "play")) engine.play();
-        else if (action === "up" || action === "down") controlsRef.current?.querySelector<HTMLElement>("button")?.focus(); // the bar is at the top, yet Down was always the way in
+        else if (steering) steer(steering);
+        else if (action === "up" || action === "down") (controlsRef.current?.querySelector<HTMLElement>("[data-autofocus]") ?? controlsRef.current?.querySelector<HTMLElement>("button"))?.focus(); // the bar is at the top, yet Down was always the way in
+        else if (action === "back") leaveRef.current?.focus(); // a screen that watches along has nowhere to go back to: Back points at the way out, and leaving stays a press of OK (as on the page that waits for the host)
         else if (action === "captions") cycleSubtitles();
         else if (action === "mute") toggleMute();
         else if (action === "fullscreen") toggleFullscreen();
@@ -1127,7 +1220,7 @@ export function Tv() {
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, accountPage, stuck, finished, failed]);
+  }, [unlocked, player, upNextCountdown, currentMedia?.series?.next, menu, paired, resolving, fsPrompt, following, admin, accountPage, stuck, finished, failed]);
 
   // The welcome belongs to the library: whatever takes the screen over (a phone sent something to play, a party, a page) ends it.
   const libraryShows = player.state === "idle" && !accountPage && !resolving && !following && screen === "library";
@@ -1256,6 +1349,7 @@ export function Tv() {
           onStart={startParty}
           onJoin={joinParty}
           onRemove={removeFromParty}
+          onAdmin={setAdmin}
           onEnd={endParty}
           onLeave={leaveParty}
           onBack={() => {
@@ -1274,13 +1368,16 @@ export function Tv() {
           onParty={() => {
             setPartyError(null);
             setPartyJoinWith(null);
+            invitedWithRef.current = null;
             setScreen("party");
           }}
           onJoinParty={(code) => {
             setPartyError(null);
             setPartyJoinWith(code);
+            invitedWithRef.current = code;
             setScreen("party");
           }}
+          onStartTogether={startTogether}
           connected={paired}
           partySize={party ? party.guests.length + 1 : 0}
           notice={notice}
@@ -1304,30 +1401,60 @@ export function Tv() {
       {unlocked && showVideo && following && <FollowStatus player={player} onPlay={() => engineRef.current?.play()} />}
 
       {unlocked && showVideo && following && (
-        <div className="tv-follow-bar" data-testid="tv-follow-bar" ref={controlsRef}>
-          <span>
-            {t("tv.following", { name: following })}
-            {player.state === "paused" && !(player.duration > 0 && player.currentTime >= player.duration - 1.5) && ` · ${t("hud.paused")}`}
-          </span>
-          {hasTracks(player) && (
-            <button onClick={() => openMenu("tracks")} data-testid="tv-audio-sub-btn">
-              <SubtitlesIcon /> {t("player.audioSubtitles")}
+        <div className="tv-follow" ref={controlsRef}>
+          <div className="tv-follow-bar" data-testid="tv-follow-bar">
+            <span>
+              {t("tv.following", { name: following })}
+              {player.state === "paused" && !(player.duration > 0 && player.currentTime >= player.duration - 1.5) && ` · ${t("hud.paused")}`}
+            </span>
+            {hasTracks(player) && (
+              <button onClick={() => openMenu("tracks")} data-testid="tv-audio-sub-btn">
+                <SubtitlesIcon /> {t("player.audioSubtitles")}
+              </button>
+            )}
+            <button onClick={toggleMute} aria-pressed={muted} data-testid="tv-mute-btn">
+              {muted ? <MutedIcon /> : <VolumeIcon />} {t(muted ? "hud.unmute" : "hud.mute")}
             </button>
-          )}
-          <button onClick={toggleMute} aria-pressed={muted} data-testid="tv-mute-btn">
-            {muted ? <MutedIcon /> : <VolumeIcon />} {t(muted ? "hud.unmute" : "hud.mute")}
-          </button>
-          <button onClick={() => openMenu("party")} data-testid="tv-party-btn">
-            <UsersIcon /> {party ? t("party.size", { count: party.guests.length + 1 }) : t("party.rail")}
-          </button>
-          {canFullscreen && (
-            <button onClick={toggleFullscreen} data-testid="tv-fullscreen-btn">
-              <FullscreenIcon /> {t(fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
+            <button onClick={() => openMenu("party")} data-testid="tv-party-btn">
+              <UsersIcon /> {party ? t("party.size", { count: party.guests.length + 1 }) : t("party.rail")}
             </button>
+            {canFullscreen && (
+              <button onClick={toggleFullscreen} data-testid="tv-fullscreen-btn">
+                <FullscreenIcon /> {t(fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
+              </button>
+            )}
+            <button ref={leaveRef} onClick={leaveParty} data-testid="tv-leave">
+              {t("tv.leave")}
+            </button>
+          </div>
+          {/* An admin steers the film: these ask the host's screen, which does it for everyone (this one follows it, as always). */}
+          {admin && (
+            <div className="tv-follow-bar tv-follow-admin" data-testid="tv-admin-bar" role="group" aria-label={t("party.admin")}>
+              <button onClick={() => steer({ type: "SKIP", seconds: -SKIP_SECONDS })} title={t("hud.backTip", { n: SKIP_SECONDS })} aria-label={t("hud.back", { n: SKIP_SECONDS })} data-testid="tv-admin-back">
+                <Back10Icon />
+              </button>
+              <button
+                onClick={() => steer({ type: player.state === "playing" ? "PAUSE" : "PLAY" })}
+                title={t("hud.playTip")}
+                aria-label={t(player.state === "playing" ? "hud.pause" : "hud.play")}
+                data-testid="tv-admin-play"
+                data-autofocus
+              >
+                {player.state === "playing" ? <PauseIcon /> : <PlayIcon />}
+              </button>
+              <button onClick={() => steer({ type: "SKIP", seconds: SKIP_SECONDS })} title={t("hud.forwardTip", { n: SKIP_SECONDS })} aria-label={t("hud.forward", { n: SKIP_SECONDS })} data-testid="tv-admin-forward">
+                <Forward10Icon />
+              </button>
+              {next && (
+                <button onClick={() => steer({ type: "NEXT_EPISODE" })} title={t("hud.nextTip")} aria-label={`${t("hud.nextEpisode")}: ${episodeLabel(next)}`} data-testid="tv-admin-next">
+                  <NextIcon />
+                </button>
+              )}
+              <button onClick={() => steer({ type: "STOP" })} title={t("hud.stopTip")} aria-label={t("hud.stop")} data-testid="tv-admin-stop">
+                <StopIcon />
+              </button>
+            </div>
           )}
-          <button onClick={leaveParty} data-testid="tv-leave">
-            {t("tv.leave")}
-          </button>
         </div>
       )}
 
@@ -1403,20 +1530,24 @@ export function Tv() {
         />
       )}
 
-      {unlocked && showVideo && menu === "party" && (
+      {unlocked && showVideo && (menu === "party" || menu === "partyInvite") && (
         <PartyPanel
           party={party}
           following={following}
           rootRef={menuRef}
+          inviting={menu === "partyInvite"}
+          codeEndsAt={partyEnds}
+          onInviting={(on) => setMenu(on ? "partyInvite" : "party")}
           onClose={() => setMenu(null)}
           onStart={startParty}
           onRemove={removeFromParty}
+          onAdmin={setAdmin}
           onEnd={endParty}
           onLeave={leaveParty}
         />
       )}
 
-      {unlocked && showVideo && menu && menu !== "party" && (
+      {unlocked && showVideo && menu && menu !== "party" && menu !== "partyInvite" && (
         <TvMenu
           kind={menu}
           player={player}

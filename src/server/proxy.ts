@@ -1,7 +1,9 @@
 import { Readable } from "node:stream";
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { Agent, fetch, type Response } from "undici";
 import { isPublicAddress } from "./resolvers/ip";
-import { assertAllowedUrl } from "./resolvers/safe-fetch";
+import { SafeFetchError, assertAllowedUrl, guardedLookup } from "./resolvers/safe-fetch";
+import type { Opened, Piece, SegmentCache } from "./segmentCache";
 
 export function srtToVtt(srt: string): string {
   let clean = srt.replace(/^\uFEFF/, "").trim();
@@ -55,6 +57,131 @@ export function rewriteM3u8(content: string, playlistUrl: string, referer?: stri
 
 export interface ProxyOptions {
   allowPrivateNetwork?: boolean;
+  /** Which addresses may be gone to (a test narrows it to one that is on this machine); without it, any public one, or any at all with `allowPrivateNetwork`. */
+  isAllowedAddress?: (address: string) => boolean;
+  /** The pieces of a film that screens watching together ask for: each is fetched once and shared (see `SegmentCache`). Without it every request is its own fetch. */
+  segments?: SegmentCache;
+}
+
+const ANYWHERE = () => true;
+const REDIRECTS = 5;
+/** A piece that has not arrived whole by then is given up on (it is shared, so it is not tied to the screen that asked first). */
+const PIECE_DEADLINE_MS = 60_000;
+
+/** Whether the address says it is a piece of a film (the other way to tell is by the type the other end gives, which is known only after asking). */
+const isSegmentPath = (pathname: string): boolean => pathname.endsWith(".ts") || pathname.endsWith(".m4s") || pathname.includes("page-");
+
+const corsHeaders = (reply: FastifyReply): void => {
+  reply.header("Access-Control-Allow-Origin", "*");
+  reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  reply.header("Access-Control-Allow-Headers", "*");
+};
+
+/** Some sites send a piece of a film as a page or as plain bytes; a player wants to be told it is video. */
+const pieceType = (contentType: string): string =>
+  !contentType || contentType.includes("text/html") || contentType.includes("application/octet-stream") ? "video/mp2t" : contentType;
+
+/**
+ * One pool of connections for each rule about addresses. The pool looks at the address a name leads to when it connects (see `guardedLookup`),
+ * which is the only place a name can be told from a private address: `localhost`, or a name that anyone can point at 127.0.0.1 or at a machine
+ * on the host's own network, passes a look at the text of the address.
+ */
+const pools = new WeakMap<(address: string) => boolean, Agent>();
+function poolFor(isAllowedAddress: (address: string) => boolean): Agent {
+  let pool = pools.get(isAllowedAddress);
+  if (!pool) {
+    pool = new Agent({ connect: { lookup: guardedLookup(isAllowedAddress) } });
+    pools.set(isAllowedAddress, pool);
+  }
+  return pool;
+}
+
+/** The answer to a GET of `target`. Redirects are followed here, not by `fetch`, so that each address on the way is looked at as the first one was. */
+async function openUpstream(
+  target: URL,
+  headers: Record<string, string>,
+  isAllowedAddress: (address: string) => boolean,
+  signal: AbortSignal,
+): Promise<{ response: Response; url: URL }> {
+  let url = target;
+  for (let hop = 0; ; hop++) {
+    assertAllowedUrl(url, isAllowedAddress);
+    const response = await fetch(url.href, { method: "GET", headers, signal, redirect: "manual", dispatcher: poolFor(isAllowedAddress) });
+    const location = response.headers.get("location");
+    if (response.status < 300 || response.status >= 400 || !location) return { response, url };
+    await response.body?.cancel();
+    if (hop >= REDIRECTS) throw new SafeFetchError("too_many_redirects", "too many redirects");
+    url = new URL(location, url);
+  }
+}
+
+/** Whether this is the refusal of an address (it may be wrapped: `fetch` reports a refused connection as a failed fetch, with the reason as its cause). */
+function isRefusal(error: unknown): boolean {
+  for (let wrapped = error, depth = 0; wrapped && depth < 5; depth++) {
+    if (wrapped instanceof SafeFetchError) return wrapped.code === "blocked" || wrapped.code === "invalid_url";
+    wrapped = (wrapped as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** What the other end answered when it is not one to share: the ordinary way carries on with that answer, instead of asking again. */
+interface Handover {
+  response: Response;
+  url: URL;
+  /** Ends the request to the other end. */
+  control: AbortController;
+}
+
+/** The bytes of a body as they come; `done` is called when they have all come or whoever reads them has let go. */
+async function* untilDone(body: AsyncIterable<Uint8Array>, done: () => void): AsyncGenerator<Uint8Array> {
+  try {
+    yield* body;
+  } finally {
+    done();
+  }
+}
+
+/**
+ * A piece of a film, opened to be shared: only one that says how long it is (within `limit`), is not compressed (so that the length is the
+ * length of what is passed on) and is not part of a file. Any other is handed over with `handOver`, as it is, for the ordinary way to carry on
+ * with. The request to the other end belongs to the piece, not to the screen that asked first: it ends when the piece has come or has taken too long.
+ */
+async function openPiece(
+  target: URL,
+  headers: Record<string, string>,
+  isAllowedAddress: (address: string) => boolean,
+  limit: number,
+  handOver: (answer: Handover) => void,
+): Promise<Opened | null> {
+  const control = new AbortController();
+  const deadline = setTimeout(() => control.abort(), PIECE_DEADLINE_MS);
+  let answer: { response: Response; url: URL };
+  try {
+    answer = await openUpstream(target, headers, isAllowedAddress, control.signal);
+  } catch (error) {
+    clearTimeout(deadline);
+    throw error;
+  }
+  const { response } = answer;
+  const length = Number(response.headers.get("content-length"));
+  const encoding = response.headers.get("content-encoding");
+  const shared =
+    response.body !== null && response.headers.has("content-length") && Number.isInteger(length) && length <= limit && (!encoding || encoding === "identity") && response.status !== 206;
+  if (!shared || !response.body) {
+    clearTimeout(deadline);
+    handOver({ ...answer, control });
+    return null;
+  }
+  return { status: response.status, contentType: response.headers.get("content-type") ?? "", length, stream: untilDone(response.body, () => clearTimeout(deadline)) };
+}
+
+/** A shared piece, to whoever asked: from its first byte, as far as it has come. */
+function sendPiece(reply: FastifyReply, piece: Piece): FastifyReply {
+  corsHeaders(reply);
+  // (Only a piece that came is for keeping: an answer that said no, or that the site gave up on, is asked for again next time.)
+  if (piece.status >= 200 && piece.status < 300) reply.header("Cache-Control", "public, max-age=86400, immutable");
+  reply.code(piece.status).header("Content-Type", pieceType(piece.contentType)).header("Content-Length", String(piece.length));
+  return reply.send(Readable.from(piece.read(), { objectMode: false }));
 }
 
 export async function handleStreamProxy(
@@ -74,7 +201,7 @@ export async function handleStreamProxy(
     return reply.code(400).send({ error: "Invalid URL" });
   }
 
-  const isAllowedAddress = options.allowPrivateNetwork ? () => true : isPublicAddress;
+  const isAllowedAddress = options.isAllowedAddress ?? (options.allowPrivateNetwork ? ANYWHERE : isPublicAddress);
   try {
     assertAllowedUrl(targetUrl, isAllowedAddress);
   } catch {
@@ -93,7 +220,21 @@ export async function handleStreamProxy(
     headers.range = request.headers.range;
   }
 
-  const abortController = new AbortController();
+  // Screens watching together ask for the same pieces of a film a few seconds apart: the place they come from is asked once.
+  // (A part of a file, asked for with a range, is not a piece to share.)
+  const handed: { answer?: Handover } = {};
+  if (options.segments && !request.headers.range && isSegmentPath(targetUrl.pathname)) {
+    const segments = options.segments;
+    const piece = await segments.get(targetUrl.href, () =>
+      openPiece(targetUrl, headers, isAllowedAddress, segments.maxPiece, (answer) => {
+        handed.answer = answer;
+      }),
+    );
+    if (piece) return sendPiece(reply, piece);
+  }
+
+  // (An answer that was looked at and found not to be one to share is carried on with, not asked for again.)
+  const abortController = handed.answer?.control ?? new AbortController();
   request.raw.socket?.on("close", () => {
     if (!reply.raw.writableEnded) {
       abortController.abort();
@@ -101,21 +242,16 @@ export async function handleStreamProxy(
   });
 
   let upstreamResponse: Response;
+  let upstreamUrl: URL;
   try {
-    upstreamResponse = await fetch(targetUrl.href, {
-      method: "GET",
-      headers,
-      signal: abortController.signal,
-    });
+    ({ response: upstreamResponse, url: upstreamUrl } = handed.answer ?? (await openUpstream(targetUrl, headers, isAllowedAddress, abortController.signal)));
   } catch (err: unknown) {
+    if (isRefusal(err)) return reply.code(403).send({ error: "URL not allowed" });
     const message = err instanceof Error ? err.message : "Upstream error";
     return reply.code(502).send({ error: "Upstream fetch failed", message });
   }
 
-  // Set CORS headers
-  reply.header("Access-Control-Allow-Origin", "*");
-  reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-  reply.header("Access-Control-Allow-Headers", "*");
+  corsHeaders(reply);
 
   const contentType = upstreamResponse.headers.get("content-type") || "";
   const isM3u8 =
@@ -127,7 +263,7 @@ export async function handleStreamProxy(
     const text = await upstreamResponse.text();
     // Verify it actually looks like an m3u8
     if (text.includes("#EXTM3U")) {
-      const rewritten = rewriteM3u8(text, upstreamResponse.url || targetUrl.href, referer);
+      const rewritten = rewriteM3u8(text, upstreamUrl.href, referer);
       reply.header("Content-Type", "application/vnd.apple.mpegurl");
       return reply.code(upstreamResponse.status).send(rewritten);
     }
@@ -151,23 +287,15 @@ export async function handleStreamProxy(
     return reply.code(200).send(vtt);
   }
 
-  // Immutable cache for video chunks to enable smooth browser buffering
-  const isSegment =
-    targetUrl.pathname.endsWith(".ts") ||
-    targetUrl.pathname.endsWith(".m4s") ||
-    targetUrl.pathname.includes("page-") ||
-    contentType.includes("video/mp2t") ||
-    contentType.includes("video/iso.segment");
+  // Immutable cache for video chunks to enable smooth browser buffering (not for an answer that said no: a player asking again must be told again)
+  const isSegment = isSegmentPath(targetUrl.pathname) || contentType.includes("video/mp2t") || contentType.includes("video/iso.segment");
 
-  if (isSegment) {
+  if (isSegment && upstreamResponse.ok) {
     reply.header("Cache-Control", "public, max-age=86400, immutable");
   }
 
   // If the upstream content-type is text/html or generic, but this is a segment, override to video/mp2t
-  let finalContentType = contentType;
-  if (isSegment && (contentType.includes("text/html") || !contentType || contentType.includes("application/octet-stream"))) {
-    finalContentType = "video/mp2t";
-  }
+  const finalContentType = isSegment ? pieceType(contentType) : contentType;
 
   reply.code(upstreamResponse.status);
   if (finalContentType) {

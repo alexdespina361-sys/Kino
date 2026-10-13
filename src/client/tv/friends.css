@@ -3,6 +3,8 @@
 /* A code made for a friend: the code over its help, the QR code beside it. */
 .tv-friend-code { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6em; max-width: 34em; }
 .tv-friend-code .tv-hint { text-align: left; }
+/* The small button under it that copies the code (CopyLink.tsx), the size of the party link's. */
+.tv-friend-code .copy-link { font-size: 1.3em; text-align: left; } /* (the button stays at the left when the note about a copy that failed is wider than it) */
 
 /* Whose code it is, and the button that makes the two of them friends. */
 .tv-friend-found { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 1.2em 1.6em; }
@@ -10,6 +12,34 @@
 .tv-friend-ask b { font-size: 1.15em; font-weight: 800; overflow-wrap: anywhere; }
 .tv-friend-ask span { color: var(--muted); font-size: 0.8em; }
 .tv-friend-avatar { flex: none; font-size: 3.6em; }
+
+/* Three ways of adding a friend side by side: a little narrower than the two of a party's (tv.css), so that all three fit. (A hand-held screen has them one to a row, as tv.css says.) */
+@media (min-width: 900px) {
+  .tv-friend-choices { gap: 1.8em; }
+  .tv-friend-choices .tv-party-choice { width: 21em; }
+}
+/* The box a tag is typed in: as typed (the box for codes shouts them). */
+.tv .auth-tv .tv-tag-input { text-align: center; }
+
+/* The short button beside a guest of a party who can be asked to be friends: "Add", then "Requested" once asked. */
+.tv-party-add { display: inline-flex; align-items: center; gap: 0.3em; }
+.tv-party-add svg { flex: none; width: 0.9em; height: 0.9em; }
+.tv-party-add[aria-disabled="true"] { opacity: 0.7; cursor: default; }
+
+/* The bell's list (see Friends.tsx): what waits for an answer, then what friends watch lately. A line is a button that does what the same tile of the friends page does. */
+.tv-bell-lists { display: flex; flex-direction: column; gap: 1.2em; width: min(100%, 58em); max-height: 46vh; overflow-y: auto; padding: 0.4em; text-align: left; }
+.tv-bell-heading { margin: 0 0 0.5em; font-size: 1.2em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.tv-bell-list { display: flex; flex-direction: column; gap: 0.5em; margin: 0; padding: 0; list-style: none; }
+.tv-bell-line { display: flex; align-items: center; gap: 0.9em; width: 100%; padding: 0.5em 1em; border-radius: 0.5em; background: rgba(255, 255, 255, 0.1); color: #e6e6e6; font-size: 1.5em; text-align: left; transition: background 0.15s, color 0.15s, transform 0.15s; }
+.tv-bell-line:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
+.tv-bell-line:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.02); }
+.tv-bell-icon { display: grid; flex: none; place-items: center; width: 2.2em; height: 2.2em; border-radius: 50%; background: rgba(255, 255, 255, 0.14); }
+.tv-bell-icon svg { width: 1.2em; height: 1.2em; }
+.tv-bell-icon .avatar { width: 100%; height: 100%; border-radius: 50%; }
+.tv-bell-text { display: flex; flex-direction: column; flex: 1; gap: 0.1em; min-width: 0; }
+.tv-bell-text b, .tv-bell-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-bell-text small { color: var(--muted); font-size: 0.75em; }
+.tv-bell-line:focus-visible .tv-bell-text small { color: #333; }
 
 /* What is shared: the switches, two to a row where there is room for it. */
 .tv-friend-help { max-width: 44em; text-align: center; }
@@ -19,6 +49,9 @@
 
 /* A hand-held screen: one to a row. */
 @media (max-width: 899px) {
+  .tv-bell-lists { width: 100%; max-height: none; overflow: visible; padding: 0; } /* (the page itself scrolls there) */
+  .tv-bell-line { font-size: 1.4em; }
   .tv-friend-switches { grid-template-columns: 1fr; }
   .tv-friend-switches .tv-switch-row:last-child:nth-child(odd) { width: 100%; }
+  .tv-friend-code .copy-link { font-size: 1.7em; }
 }

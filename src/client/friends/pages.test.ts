@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityItem, Friend, FriendLists, FriendRatings, FriendsState, InboxItem } from "../../shared";
+import { titleLink, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InboxItem } from "../../shared";
 import { formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
 import { friendGrid, friendRows } from "./pages";
@@ -8,9 +8,10 @@ const NOW = 50_000_000;
 const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1_700_000_000_000, on: true, lists: true, ratings: true, activity: true, inbox: true };
 const robin: Friend = { ...sam, id: "pro_robin", name: "Robin" };
 const recommendation = (id: string, from = "pro_sam", extra: { note?: string } = {}): InboxItem => ({ kind: "recommend", id, from, at: NOW - 60_000, read: false, title: "Dune", url: "https://filmpire.sc/watch/1", ...extra });
-const invitation = (id: string, endsAt = NOW + 3_600_000, from = "pro_sam"): InboxItem => ({ kind: "party", id, from, at: NOW - 60_000, read: false, code: "482731", endsAt });
+const invitation = (id: string, endsAt = NOW + 3_600_000, from = "pro_sam", open?: boolean): InboxItem => ({ kind: "party", id, from, at: NOW - 60_000, read: false, code: "482731", endsAt, ...(open === undefined ? {} : { open }) });
+const request = (id: string, from = "pro_sam"): InboxItem => ({ kind: "together", id, from, at: NOW - 120_000, read: false });
 const watched = (friend: string, key: string, extra: Partial<ActivityItem> = {}): ActivityItem => ({ friend, key, title: "Alien", url: "https://filmpire.sc/watch/2", at: NOW - 60_000, ...extra });
-const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], ...changes });
+const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], requests: [], sent: [], ...changes });
 const since = (friend: Friend) => t("friends.since", { day: formatDay(friend.since, getLanguage()) });
 
 describe("the rows of the friends page", () => {
@@ -30,6 +31,15 @@ describe("the rows of the friends page", () => {
     expect(rows.map((row) => row.layout)).toEqual(["wide", "wide", "wide", "categories"]);
   });
 
+  it("start with the requests to be friends that wait for an answer: a tile for each, with the tag and the picture, that asks yes or no", () => {
+    const kim = { id: "pro_kim", name: "Kim", avatar: "cat" as const, tag: 2 };
+    const rows = friendRows(state({ requests: [{ from: kim, at: NOW - 1000 }], inbox: [invitation("p")] }), NOW);
+    expect(rows.map((row) => row.id)).toEqual(["friend-requests", "friend-parties", "friend-people"]);
+    expect(rows[0]).toMatchObject({ layout: "categories", title: t("friends.requests") });
+    expect(rows[0]?.entries).toEqual([{ id: "request:pro_kim", title: "Kim#2", url: "", request: kim, avatar: "cat", note: t("friends.requestWants") }]);
+    expect(friendRows(state(), NOW).some((row) => row.id === "friend-requests")).toBe(false);
+  });
+
   it("have a tile for each friend that opens their page, before the tiles to add one and to choose what is shared", () => {
     const rows = friendRows(state({ friends: [sam, robin] }), NOW);
     const people = rows.find((row) => row.id === "friend-people");
@@ -47,6 +57,14 @@ describe("the rows of the friends page", () => {
     expect(people({ friends: [{ ...sam, on: false }], activity: [watched("pro_sam", "k")] })[0]?.note).toBe(t("friends.paused"));
   });
 
+  it("give a friend's tile their picture, and say they are online when they are (a friend who turned friends off is not)", () => {
+    const people = (friend: Friend) => friendRows(state({ friends: [friend] }), NOW).find((row) => row.id === "friend-people")?.entries[0];
+    expect(people(sam)).toMatchObject({ avatar: "fox" });
+    expect(people(sam)?.online).toBeUndefined();
+    expect(people({ ...sam, online: true })).toMatchObject({ avatar: "fox", online: true, note: t("friends.online") });
+    expect(people({ ...sam, on: false, online: true })?.online).toBeUndefined();
+  });
+
   it("show an invitation to a party that is on as a tile that joins it, with the code to read and who invited", () => {
     const rows = friendRows(state({ inbox: [invitation("p1")] }), NOW);
     const parties = rows.find((row) => row.id === "friend-parties");
@@ -55,10 +73,35 @@ describe("the rows of the friends page", () => {
     expect(parties?.entries[0]?.note).toContain("482 731");
   });
 
-  it("leave out an invitation to a party that is over, and the row when that was all", () => {
-    expect(friendRows(state({ inbox: [invitation("p1", NOW)] }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+  it("turn an invitation to a party that is over into a tile that asks the friend to watch together instead", () => {
     const rows = friendRows(state({ inbox: [invitation("old", NOW - 1), invitation("p2")] }), NOW);
-    expect(rows.find((row) => row.id === "friend-parties")?.entries.map((entry) => entry.inboxId)).toEqual(["p2"]);
+    const entries = rows.find((row) => row.id === "friend-parties")?.entries ?? [];
+    expect(entries.map((entry) => entry.inboxId)).toEqual(["old", "p2"]);
+    expect(entries[0]).toMatchObject({ id: "party:old", title: t("friends.partyOf", { name: "Sam" }), url: "", ask: "pro_sam", inboxId: "old" });
+    expect(entries[0]).not.toHaveProperty("party"); // (there is nothing to join)
+    expect(entries[0]?.note).toContain(t("friends.partyOver"));
+    expect(entries[1]).toMatchObject({ party: "482731" });
+  });
+
+  it("leave out an invitation to a party that is over when the friend cannot be asked: they do not tell what they watch, or do not take things", () => {
+    const over = [invitation("old", NOW - 1)];
+    for (const friend of [{ ...sam, activity: false }, { ...sam, inbox: false }, { ...sam, on: false }]) {
+      expect(friendRows(state({ friends: [friend], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+    }
+    expect(friendRows(state({ friends: [], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+  });
+
+  it("go by what the server says of a party, when it says: open is open whatever the clock, and over is over", () => {
+    const entries = (item: InboxItem) => friendRows(state({ inbox: [item] }), NOW).find((row) => row.id === "friend-parties")?.entries ?? [];
+    expect(entries(invitation("a", NOW - 1, "pro_sam", true))[0]).toMatchObject({ party: "482731" });
+    expect(entries(invitation("b", NOW + 3_600_000, "pro_sam", false))[0]).toMatchObject({ ask: "pro_sam" });
+    expect(entries(invitation("b", NOW + 3_600_000, "pro_sam", false))[0]).not.toHaveProperty("party");
+  });
+
+  it("show a friend's request to watch together as a tile that starts a party for them, with who and when", () => {
+    const parties = friendRows(state({ inbox: [request("t1")] }), NOW).find((row) => row.id === "friend-parties");
+    expect(parties?.entries).toHaveLength(1);
+    expect(parties?.entries[0]).toMatchObject({ id: "together:t1", title: t("friends.togetherOf", { name: "Sam" }), url: "", wants: "pro_sam", inboxId: "t1" });
   });
 
   it("show a title a friend sent as a card that plays it, says who sent it, and is taken off the row by its item of the inbox", () => {
@@ -111,6 +154,16 @@ describe("a friend's page", () => {
     expect(grid?.entries.map((entry) => entry.title)).toEqual(["Alien", "It"]);
     expect(grid?.entries.map((entry) => entry.note)).toEqual([t("list.favourites"), "Horror"]);
     expect(grid?.entries[1]).toMatchObject({ url: "https://x.example/it", image: "poster-it" });
+  });
+
+  it("says that the friend is online, and puts how far they got on the titles they kept and rated", () => {
+    expect(friendGrid(view, state({ friends: [{ ...sam, online: true }] }), { data: lists() }, null)?.meta).toBe(`${t("friends.online")}  ·  ${since(sam)}`);
+    const progress = [{ link: titleLink("https://x.example/alien"), season: 2, episode: 5, percent: 63 }];
+    const kept = friendGrid(view, state(), { data: { ...lists(), progress } }, null);
+    expect(kept?.entries[0]).toMatchObject({ title: "Alien", progress: 0.63, note: `S2:E5 · 63% · ${t("list.favourites")}` });
+    expect(kept?.entries[1]?.progress).toBeUndefined();
+    const rated = friendGrid({ ...view, tab: "ratings" }, state(), null, { data: { ...ratings(), progress } });
+    expect(rated?.entries.find((entry) => entry.title === "Alien")).toMatchObject({ progress: 0.63, note: "S2:E5 · 63% · 9/10" });
   });
 
   it("has lists as its first tab, and says there is nothing when they have no titles", () => {

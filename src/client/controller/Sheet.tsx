@@ -101,6 +101,21 @@ function usePullToClose(backdrop: RefObject<HTMLDivElement | null>, sheet: RefOb
   }, [backdrop, sheet, close]);
 }
 
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Tab goes round the sheet (from its last control to its first, and back with Shift), not out of it to the page under it. */
+function keepFocusIn(panel: HTMLElement, event: KeyboardEvent) {
+  const items = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((item) => item.offsetParent !== null);
+  const first = items[0];
+  const last = items[items.length - 1];
+  if (!first || !last) return void event.preventDefault();
+  const at = document.activeElement;
+  if (!panel.contains(at) || (event.shiftKey ? at === first || at === panel : at === last)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  }
+}
+
 /** A bottom sheet: the phone's way of showing a short list of choices without leaving the remote. */
 export function Sheet({
   title,
@@ -122,12 +137,20 @@ export function Sheet({
     const me = {};
     open.push(me);
     document.documentElement.classList.add("sheet-open"); // (no pull to refresh behind a sheet, see controller.css)
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && open[open.length - 1] === me && close.current();
+    // The keyboard goes into the sheet (not left on the button behind it, where the next Tab would carry on under the sheet), and back to that button when it closes.
+    const opener = document.activeElement;
+    if (panel.current && !panel.current.contains(opener)) panel.current.focus({ preventScroll: true });
+    const onKey = (event: KeyboardEvent) => {
+      if (open[open.length - 1] !== me) return;
+      if (event.key === "Escape") close.current();
+      else if (event.key === "Tab" && panel.current) keepFocusIn(panel.current, event);
+    };
     window.addEventListener("keydown", onKey);
     return () => {
       open.splice(open.indexOf(me), 1);
       if (open.length === 0) document.documentElement.classList.remove("sheet-open");
       window.removeEventListener("keydown", onKey);
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus({ preventScroll: true });
     };
   }, []);
   usePullToClose(backdrop, panel, close);
@@ -141,6 +164,7 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        tabIndex={-1}
         data-testid={testId}
         onClick={(event) => event.stopPropagation()}
       >

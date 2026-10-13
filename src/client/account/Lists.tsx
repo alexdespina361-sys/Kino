@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { LIST_NAME_MAX, type ListInfo } from "../../shared";
 import { useT } from "../i18n";
 import { ChevronIcon, TrashIcon } from "../shared/icons";
+import { useBackFirst } from "../tv/dpad";
 import { appendTo } from "../tv/librarySearch";
 import { NameKeys } from "../tv/NameKeys";
 import { listName } from "./cards";
@@ -29,6 +30,7 @@ export function ListEditor({ list, taken = [], onSave, onCancel, onDelete, onMov
   const t = useT();
   const [name, setName] = useState(list ? listName(list) : "");
   const [confirming, setConfirming] = useState(false);
+  useBackFirst(tv && confirming ? () => setConfirming(false) : undefined); // (the remote's Back says no to the question, and leaves the page only the next time)
   const [clash, setClash] = useState(false);
   const nav = tv ? { "data-nav": true } : {};
   const buttonClass = (kind: "main" | "plain" | "danger") =>

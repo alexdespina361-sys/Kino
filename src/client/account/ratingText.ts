@@ -22,6 +22,13 @@ export function ratingFor(ratings: readonly LiveRating[], url: string, season?: 
   return ratings.find((rating) => rating.key === key);
 }
 
+/** The score given to each title as a whole, by the key of its rating: what a picture in a row or a grid shows. (A season's own score is on the title's page.) */
+export const scoresOf = (ratings: readonly Pick<LiveRating, "key" | "score" | "season">[]): ReadonlyMap<string, number> =>
+  new Map(ratings.filter((rating) => rating.season === undefined).map((rating) => [rating.key, rating.score] as const));
+
+/** The score given to a title, found by any of its links: nothing when it has none. */
+export const scoreOf = (scores: ReadonlyMap<string, number>, url: string): number | undefined => (url ? scores.get(ratingKey(url)) : undefined);
+
 /** The ratings, newest rated first, or the best first (the newest first among equals). */
 export type RatingOrder = "new" | "high";
 export function sortRatings(ratings: readonly LiveRating[], order: RatingOrder): LiveRating[] {

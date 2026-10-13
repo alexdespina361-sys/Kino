@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CODE_ALPHABET, INBOX_KEEP_MS, INBOX_MAX, INBOX_PER_SENDER, INVITE_TTL_MS, MAX_FRIENDS, MAX_OPEN_INVITES, PARTY_INVITE_KEEP_MS, type Message } from "../../shared";
+import { CODE_ALPHABET, INBOX_KEEP_MS, INBOX_MAX, INBOX_PER_SENDER, INVITE_TTL_MS, MAX_FRIENDS, MAX_OPEN_INVITES, MAX_REQUESTS, PARTY_INVITE_KEEP_MS, REQUEST_KEEP_MS, type Message } from "../../shared";
 import { FriendBook } from "./friends";
 
 /** A book with a clock to move, and a record of what it asked the store to write down. */
@@ -24,6 +24,7 @@ function book() {
 const dune: Message = { kind: "recommend", title: "Dune", url: "https://filmpire.sc/watch/438631", year: 2021, note: "The sound!" };
 const alien: Message = { kind: "recommend", title: "Alien", url: "https://filmpire.sc/watch/348" };
 const party: Message = { kind: "party", code: "482731", endsAt: 2_000_000 };
+const together: Message = { kind: "together" };
 
 /** Two profiles that are friends already. */
 function befriended() {
@@ -151,6 +152,134 @@ describe("making friends with a code", () => {
   });
 });
 
+describe("asking to be friends", () => {
+  it("waits for an answer: the one asked sees who asked, the one who asked sees who they asked, and nobody is a friend yet", () => {
+    const { friends, clock } = book();
+    clock.now += 1000;
+    expect(friends.request("alex", "sam")).toEqual({ ok: true, value: { friends: false, at: clock.now } });
+    clock.now += 1000;
+    expect(friends.request("robin", "sam")).toEqual({ ok: true, value: { friends: false, at: clock.now } });
+    expect(friends.requestsTo("sam")).toEqual([
+      { from: "robin", at: clock.now },
+      { from: "alex", at: clock.now - 1000 },
+    ]);
+    expect(friends.requestsBy("alex")).toEqual([{ to: "sam", at: clock.now - 1000 }]);
+    expect(friends.requestsTo("alex")).toEqual([]);
+    expect(friends.areFriends("alex", "sam")).toBe(false);
+  });
+
+  it("asks anew, not twice, when it is asked again", () => {
+    const { friends, clock } = book();
+    friends.request("alex", "sam");
+    clock.now += 5000;
+    friends.request("alex", "sam");
+    expect(friends.requestsTo("sam")).toEqual([{ from: "alex", at: clock.now }]);
+  });
+
+  it("makes friends of the two on both sides when the one asked says yes, and the request is gone", () => {
+    const { friends, clock } = book();
+    friends.request("alex", "sam");
+    clock.now += 3000;
+    expect(friends.acceptRequest("sam", "alex")).toEqual({ ok: true, value: { since: clock.now } });
+    expect(friends.areFriends("alex", "sam") && friends.areFriends("sam", "alex")).toBe(true);
+    expect(friends.requestsTo("sam")).toEqual([]);
+    expect(friends.requestsBy("alex")).toEqual([]);
+    expect(friends.acceptRequest("sam", "alex")).toEqual({ ok: false, error: "request_gone" });
+  });
+
+  it("lets the one asked turn it down, and says nothing to the one who asked", () => {
+    const { friends } = book();
+    friends.request("alex", "sam");
+    expect(friends.declineRequest("sam", "alex")).toBe(true);
+    expect(friends.declineRequest("sam", "alex")).toBe(false);
+    expect(friends.requestsTo("sam")).toEqual([]);
+    expect(friends.acceptRequest("sam", "alex")).toEqual({ ok: false, error: "request_gone" });
+    expect(friends.areFriends("alex", "sam")).toBe(false);
+  });
+
+  it("takes two who ask each other as a yes from both: they are friends at once", () => {
+    const { friends, clock } = book();
+    friends.request("alex", "sam");
+    clock.now += 2000;
+    expect(friends.request("sam", "alex")).toEqual({ ok: true, value: { friends: true, at: clock.now } });
+    expect(friends.areFriends("alex", "sam")).toBe(true);
+    expect(friends.requestsTo("sam")).toEqual([]);
+    expect(friends.requestsTo("alex")).toEqual([]);
+  });
+
+  it("is not a way to ask oneself, or a friend, or anybody when either has as many friends as it holds", () => {
+    const { friends } = book();
+    expect(friends.request("alex", "alex")).toEqual({ ok: false, error: "own_request" });
+    const pair = befriended().friends;
+    expect(pair.request("alex", "sam")).toEqual({ ok: false, error: "already_friends" });
+
+    for (let i = 0; i < MAX_FRIENDS; i++) expect(friends.redeem(`p${i}`, friends.createInvite("alex").code).ok).toBe(true);
+    expect(friends.request("late", "alex")).toEqual({ ok: false, error: "friends_full" });
+    expect(friends.request("alex", "late")).toEqual({ ok: false, error: "friends_full" });
+    // A yes that would go over is refused too (somebody asked before the friends were full).
+    const open = book();
+    open.friends.request("late", "alex");
+    for (let i = 0; i < MAX_FRIENDS; i++) open.friends.redeem(`p${i}`, open.friends.createInvite("alex").code);
+    expect(open.friends.acceptRequest("alex", "late")).toEqual({ ok: false, error: "friends_full" });
+  });
+
+  it("keeps the newest requests a profile is sent, so nobody can fill it, and lets go of one that has waited too long", () => {
+    const { friends, clock } = book();
+    for (let i = 0; i < MAX_REQUESTS + 5; i++) {
+      friends.request(`p${i}`, "sam");
+      clock.now += 1000;
+    }
+    const waiting = friends.requestsTo("sam");
+    expect(waiting).toHaveLength(MAX_REQUESTS);
+    expect(waiting[0]!.from).toBe(`p${MAX_REQUESTS + 4}`);
+    expect(waiting.some((request) => request.from === "p0")).toBe(false);
+
+    const newest = clock.now - 1000; // (when the last was asked)
+    clock.now = newest + REQUEST_KEEP_MS - 500;
+    expect(friends.requestsTo("sam").map((request) => request.from)).toEqual([`p${MAX_REQUESTS + 4}`]); // (the one before it has waited too long, the last has not)
+    clock.now += 1000;
+    expect(friends.requestsTo("sam")).toEqual([]);
+  });
+
+  it("is answered by a code that makes the same two friends", () => {
+    const { friends } = book();
+    friends.request("alex", "sam");
+    expect(friends.redeem("alex", friends.createInvite("sam").code).ok).toBe(true);
+    expect(friends.requestsTo("sam")).toEqual([]);
+  });
+
+  it("goes with a profile that goes, whichever way it was asked", () => {
+    const { friends, dropped } = book();
+    friends.request("alex", "sam");
+    friends.request("robin", "alex");
+    friends.forget("alex");
+    expect(friends.requestsTo("sam")).toEqual([]);
+    expect(friends.requestsTo("alex")).toEqual([]);
+    expect(friends.requestsBy("robin")).toEqual([]);
+    expect(dropped.has("frequests:sam") && dropped.has("frequests:alex")).toBe(true);
+  });
+
+  it("is written down, comes back as it was, and lets go of what was too old while the server was off", () => {
+    const first = book();
+    first.friends.request("alex", "sam");
+    first.clock.now += 1000;
+    first.friends.request("robin", "sam");
+    expect([...first.written].sort()).toEqual(["frequests:sam"]);
+    expect(FriendBook.owns("frequests:sam")).toBe(true);
+
+    const second = book();
+    second.clock.now = first.clock.now + 1000;
+    second.friends.load("frequests:sam", JSON.parse(JSON.stringify(first.friends.docFor("frequests:sam"))));
+    expect(second.friends.requestsTo("sam")).toEqual(first.friends.requestsTo("sam"));
+
+    const later = book();
+    later.clock.now = first.clock.now + REQUEST_KEEP_MS + 1;
+    later.friends.load("frequests:sam", JSON.parse(JSON.stringify(first.friends.docFor("frequests:sam"))));
+    expect(later.friends.requestsTo("sam")).toEqual([]);
+    expect(later.dropped.has("frequests:sam")).toBe(true);
+  });
+});
+
 describe("the inbox", () => {
   it("holds what friends sent, the newest first and unread", () => {
     const { friends, clock } = befriended();
@@ -175,7 +304,7 @@ describe("the inbox", () => {
     friends.deliver("sam", "alex", party);
     friends.deliver("sam", "alex", { ...party, code: "111222" });
     const items = friends.inboxOf("sam");
-    expect(items.map((item) => (item.kind === "party" ? item.code : item.title))).toEqual(["111222", "Dune", "Alien"]);
+    expect(items.map((item) => (item.kind === "party" ? item.code : item.kind === "recommend" ? item.title : ""))).toEqual(["111222", "Dune", "Alien"]);
     expect(items.map((item) => item.read)).toEqual([false, false, true]);
     expect(items[1]).toMatchObject({ note: "Seriously." });
   });
@@ -248,6 +377,29 @@ describe("the inbox", () => {
     expect(friends.inboxOf("sam").map((item) => item.kind)).toEqual(["recommend"]);
     clock.now += INBOX_KEEP_MS;
     expect(friends.inboxOf("sam")).toEqual([]);
+  });
+
+  it("keeps a friend's request to watch together once, and a request is let go when it is answered or when the party's time is up", () => {
+    const { friends, clock } = befriended();
+    const first = friends.deliver("sam", "alex", together);
+    expect(friends.deliver("sam", "alex", together).id).toBe(first.id);
+    expect(friends.inboxOf("sam").map((item) => item.kind)).toEqual(["together"]);
+    expect(friends.answerTogether("sam", "robin")).toBe(false); // (somebody else's request is not this one)
+    expect(friends.answerTogether("sam", "alex")).toBe(true);
+    expect(friends.inboxOf("sam")).toEqual([]);
+    expect(friends.answerTogether("sam", "alex")).toBe(false);
+
+    friends.deliver("sam", "alex", together);
+    clock.now += PARTY_INVITE_KEEP_MS;
+    expect(friends.inboxOf("sam")).toEqual([]);
+  });
+
+  it("remembers which screen an invitation's party is on, for the server only", () => {
+    const { friends } = befriended();
+    friends.deliver("sam", "alex", party, "tv_host");
+    friends.deliver("sam", "alex", dune);
+    expect(friends.inboxOf("sam").find((item) => item.kind === "party")).toMatchObject({ code: "482731", host: "tv_host" });
+    expect(friends.inboxOf("sam").find((item) => item.kind === "recommend")).not.toHaveProperty("host");
   });
 
   it("keeps the newest hundred, whoever sent them", () => {

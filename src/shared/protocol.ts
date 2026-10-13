@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AvatarIdSchema, TagNumberSchema } from "./account";
 import { CaptionStyleSchema } from "./captions";
 import { MAX_ALTERNATES, NormalizedMediaSchema, PlayHintSchema } from "./media";
 
@@ -24,15 +25,23 @@ const StartAtSchema = z.number().finite().min(0).max(86_400);
 /** The speeds offered on the phone and on the TV. The TV accepts anything from 0.25× to 4×. */
 export const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
+/** What a guest of a watch party can do to the film once the host has made it an admin: the playback, for everyone. */
+const PlayCommand = z.object({ type: z.literal("PLAY") });
+const PauseCommand = z.object({ type: z.literal("PAUSE") });
+const SeekCommand = z.object({ type: z.literal("SEEK"), time: StartAtSchema });
+/** Relative jump from wherever the TV really is, so quick repeated taps on the phone add up. */
+const SkipCommand = z.object({ type: z.literal("SKIP"), seconds: z.number().finite().min(-3600).max(3600) });
+const StopCommand = z.object({ type: z.literal("STOP") });
+const NextEpisodeCommand = z.object({ type: z.literal("NEXT_EPISODE") });
+
 export const CommandSchema = z.discriminatedUnion("type", [
   /** `startAt` resumes a video where it was left off; the TV seeks there as soon as it can. */
   z.object({ type: z.literal("LOAD"), media: NormalizedMediaSchema, startAt: StartAtSchema.optional() }),
-  z.object({ type: z.literal("PLAY") }),
-  z.object({ type: z.literal("PAUSE") }),
-  z.object({ type: z.literal("SEEK"), time: StartAtSchema }),
-  /** Relative jump from wherever the TV really is, so quick repeated taps on the phone add up. */
-  z.object({ type: z.literal("SKIP"), seconds: z.number().finite().min(-3600).max(3600) }),
-  z.object({ type: z.literal("STOP") }),
+  PlayCommand,
+  PauseCommand,
+  SeekCommand,
+  SkipCommand,
+  StopCommand,
   z.object({ type: z.literal("SET_QUALITY"), level: z.number().int() }),
   z.object({ type: z.literal("SET_SUBTITLE"), track: z.number().int() }),
   /** Any of the caption look settings; what isn't mentioned stays as it is. */
@@ -42,7 +51,7 @@ export const CommandSchema = z.discriminatedUnion("type", [
   /** Play the video from another of its sources (0 is the main one). It carries on from where it was. */
   z.object({ type: z.literal("SET_SOURCE"), index: z.number().int().min(0).max(MAX_ALTERNATES) }),
   z.object({ type: z.literal("TOGGLE_FULLSCREEN") }),
-  z.object({ type: z.literal("NEXT_EPISODE") }),
+  NextEpisodeCommand,
   /** Turn the Up Next card down: the next episode does not start by itself this time (the same as Cancel on the TV). */
   z.object({ type: z.literal("DISMISS_UP_NEXT") }),
   /** The phone signed devices out of the account: the TV looks at its own sign-in now, not at its next regular exchange with the server. */
@@ -50,6 +59,10 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("SET_SUBTITLE_DELAY"), delay: z.number().finite().min(-60).max(60) }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;
+
+/** The commands an admin guest of a watch party may give (see TV_PARTY_CMD): the film's playback, nothing else of the host's screen. */
+export const PartyCommandSchema = z.discriminatedUnion("type", [PlayCommand, PauseCommand, SeekCommand, SkipCommand, StopCommand, NextEpisodeCommand]);
+export type PartyCommand = z.infer<typeof PartyCommandSchema>;
 
 export const PlayerStateSchema = z.object({
   state: z.enum(["idle", "loading", "playing", "paused", "error"]),
@@ -121,8 +134,18 @@ export type TvInfo = z.infer<typeof TvInfoSchema>;
 /** How many other TVs can watch along with one: a party is the TV the phone controls plus up to this many. */
 export const MAX_FOLLOWERS = 5;
 
-/** A screen in a party, as the lists show it. `id` is for removing it; the screen's own id is its secret and stays on the server. */
-export const PartyTvSchema = z.object({ id: z.string().max(100), name: z.string().max(60), online: z.boolean() });
+/** The longest a report of the host's position is taken to have been on its way to a guest, in seconds (a longer one is a bad link, not something to correct for). */
+export const MAX_LAG_S = 2;
+
+/** Who is signed in on a screen, as the party sees them: the profile's name, picture and tag. Only what the server has checked (see TV_PROFILE), and only for a profile that lets friends find it. */
+export const PartyProfileSchema = z.object({ name: z.string().max(60), avatar: AvatarIdSchema, tag: TagNumberSchema });
+export type PartyProfile = z.infer<typeof PartyProfileSchema>;
+
+/**
+ * A screen in a party, as the lists show it. `id` is for removing it; the screen's own id is its secret and stays on the server.
+ * `admin`: a guest whose screen the host has given the playback to, as its own (see TV_PARTY_CMD). The host is always one, and is not marked.
+ */
+export const PartyTvSchema = z.object({ id: z.string().max(100), name: z.string().max(60), online: z.boolean(), admin: z.boolean().optional(), profile: PartyProfileSchema.optional() });
 export type PartyTv = z.infer<typeof PartyTvSchema>;
 
 /** How many TVs one phone can keep on its list. */
@@ -193,6 +216,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("TV_CANCEL") }),
   /** What this screen is called on the others' lists: the profile in use, or nothing for the TV's own name. */
   z.object({ type: z.literal("TV_NAME"), name: z.string().max(60) }),
+  /** Whose screen this is: the proof (from `POST /api/profiles/:id/screen`, which only that profile's signed-in account gets) for the profile in use here, or none when nobody is. */
+  z.object({ type: z.literal("TV_PROFILE"), proof: z.string().max(100).optional() }),
   /** Start a watch party on this TV: what it plays, the others play along with. Answered with TV_PARTY, which carries the code to join with. */
   z.object({ type: z.literal("TV_PARTY_OPEN") }),
   /** Join the party that a code from its host belongs to. The TV then plays what the host plays. Leaving is TV_UNPAIR. */
@@ -201,6 +226,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("TV_PARTY_REMOVE"), id: z.string().max(100) }),
   /** The host ends the party: every guest is back on its own. */
   z.object({ type: z.literal("TV_PARTY_CLOSE") }),
+  /** The host makes a guest an admin (it can then play, pause, move and stop the film for everyone), or takes that back (an `id` from TV_PARTY). */
+  z.object({ type: z.literal("TV_PARTY_ADMIN"), id: z.string().max(100), admin: z.boolean() }),
+  /** A guest that is an admin steers the film: the host's screen does what a phone would have it do, and the guests follow it. Taken from no one else. */
+  z.object({ type: z.literal("TV_PARTY_CMD"), command: PartyCommandSchema }),
   // Phone
   z.object({ type: z.literal("CTL_HELLO"), controllerId: z.string().max(100).optional() }),
   z.object({ type: z.literal("PAIR"), code: z.string().max(20) }),
@@ -224,8 +253,14 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("OPEN_PARTY") }),
   /** End the party this phone's TV hosts: the code stops working and every guest is back on its own. */
   z.object({ type: z.literal("END_PARTY") }),
+  /** Make a guest of the party this phone's TV hosts an admin, or take that back (an `id` from PARTY): see TV_PARTY_ADMIN. */
+  z.object({ type: z.literal("PARTY_ADMIN"), id: z.string().max(100), admin: z.boolean() }),
   // Keepalive from either kind of client. Answered with PONG, so a silently dead connection is noticed.
-  z.object({ type: z.literal("PING") }),
+  z.object({
+    type: z.literal("PING"),
+    /** How long the answer to the last PINGs took to come, in milliseconds (the best of the last few). A party uses it to tell how old the position of its host is by the time it gets to a guest. */
+    rtt: z.number().finite().min(0).max(60_000).optional(),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -251,6 +286,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     rate: z.number().finite().min(0.25).max(4),
     /** Which stream that position is in (the leader's `PlayerState.stream`). */
     stream: z.string().max(2048).optional(),
+    /** About how long this report took to get here, in seconds: half of the leader's round trip to the server and half of this screen's, as each last measured them. A leader that plays has moved on by that much. */
+    lag: z.number().finite().min(0).max(MAX_LAG_S).optional(),
   }),
   /** The party this TV is in has changed (or it has left it: null). Sent again whenever someone joins, leaves or goes offline. */
   z.object({ type: z.literal("TV_PARTY"), party: PartyViewSchema.nullable() }),

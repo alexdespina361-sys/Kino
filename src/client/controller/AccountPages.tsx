@@ -111,6 +111,7 @@ const FRIEND_SWITCHES: ReadonlyArray<{ key: FriendSetting; label: Key; testId: s
   { key: "friendsGive", label: "friends.switchGive", testId: "friends-give" },
   { key: "friendsGet", label: "friends.switchGet", testId: "friends-get" },
   { key: "friendsInbox", label: "friends.switchInbox", testId: "friends-inbox-switch" },
+  { key: "friendsPresence", label: "friends.switchPresence", testId: "friends-presence" },
 ];
 
 /** How long to wait before looking again for the friends that are kept when the first look failed, and how many more tries there are. */

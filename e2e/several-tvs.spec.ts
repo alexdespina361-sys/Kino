@@ -1,5 +1,5 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
-import { openPairedPhone, openTv, PHONE, readPairingCode, tvRoot, tvTime } from "./helpers";
+import { expect, type Browser, type Page } from "@playwright/test";
+import { openPairedPhone, openTv, PHONE, readPairingCode, test, tvRoot, tvTime } from "./helpers";
 
 const sample = (baseURL: string | undefined) => `${baseURL}/fixtures/sample.mp4`;
 

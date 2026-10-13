@@ -1,9 +1,9 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, RawPhone, readPairingCode, tvRoot, withLibrary } from "./helpers";
+import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openProfilePage, openProfilePlace, openTv, pressProfilePlace, RawPhone, readPairingCode, test, tvRoot, withLibrary } from "./helpers";
 
 /** What the screens look like on a TV: the remote walks them, the buttons match, and everything fits. */
 
@@ -22,6 +22,22 @@ test.describe("the start screens", () => {
     await page.keyboard.press("ArrowRight"); // a press goes to the library, and lets the welcome go
     await expect(page.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
     await expect(page.getByTestId("tv-hero-title")).toHaveText("Film number 1");
+  });
+
+  test("a screen of an older engine, which has no Array.prototype.at, opens on the library all the same", async ({ browser }) => {
+    const library = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", source: "Test Source", items: [{ id: "f0", title: "Film number 1", url: "/fixtures/sample.mp4" }] }] };
+    const page = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, async (context) => {
+      await context.addInitScript(() => {
+        for (const kind of [Array, String]) Object.defineProperty(kind.prototype, "at", { value: undefined, configurable: true, writable: true });
+      });
+      await withLibrary(library)(context);
+    });
+    const crashed: string[] = [];
+    page.on("pageerror", (error) => crashed.push(error.message));
+    await page.goto("/tv");
+    await expect(page.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await expect(page.getByTestId("tv-hero-title")).toHaveText("Film number 1");
+    expect(crashed).toEqual([]);
   });
 
   test("the welcome goes by itself too, when nobody presses anything", async ({ browser }) => {
@@ -1423,17 +1439,26 @@ test.describe("movies, series, and the rest of the menu", () => {
     await tv.keyboard.press("Enter");
   };
 
-  test("the menu keeps the categories of films and of series apart, a few of each, with More… after them", async ({ browser }) => {
+  test("the menu is a few lines however many categories there are: the places, the party and a phone, and the profile that holds the rest", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
     await tv.keyboard.press("ArrowLeft");
     await expect(rail(tv)).toHaveAttribute("data-open", "true");
-    await expect(rail(tv)).toContainText("Movie categories");
-    await expect(rail(tv)).toContainText("Series categories");
-    for (const shown of ["m0", "m1", "m2", "m3", "s0", "s1"]) await expect(tv.getByTestId(`rail-category-${shown}`)).toBeVisible();
-    for (const hidden of ["m4", "m5"]) await expect(tv.getByTestId(`rail-category-${hidden}`)).toHaveCount(0); // not all six
-    await expect(tv.getByTestId("rail-more-movie")).toBeVisible();
-    await expect(tv.getByTestId("rail-more-series")).toHaveCount(0); // two is not more than fit
+    const order = await rail(tv).locator("button").evaluateAll((buttons) => buttons.map((button) => (button as HTMLElement).dataset.testid));
+    expect(order).toEqual(["rail-search", "rail-home", "rail-movies", "rail-series", "rail-categories", "rail-list", "rail-party", "rail-connect", "rail-profile"]);
+    await expect(tv.locator('[data-testid^="rail-category-"]')).toHaveCount(0); // (no line for a category, not for six of them either)
+    await expect(rail(tv)).not.toContainText("Movie categories");
+    // What is not a place of the library is not a line of the menu: History, ratings, friends and the settings are the profile's.
+    for (const gone of ["rail-history", "rail-ratings", "rail-friends", "rail-settings"]) await expect(tv.getByTestId(gone)).toHaveCount(0);
+    await expect(tv.getByTestId("rail-party")).toHaveAttribute("data-apart", "true"); // (set apart from the places above it)
+    // Every line is on the screen at once, with nothing to scroll to.
+    const strip = (await rail(tv).boundingBox())!;
+    for (const id of order) {
+      const at = (await tv.getByTestId(id!).boundingBox())!;
+      expect(at.y, id).toBeGreaterThanOrEqual(strip.y - 0.5);
+      expect(at.y + at.height, id).toBeLessThanOrEqual(strip.y + strip.height + 0.5);
+    }
+    expect(await rail(tv).evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
   });
 
   test("Movies and Series are pages of their own, each with only its kind", async ({ browser }) => {
@@ -1455,19 +1480,54 @@ test.describe("movies, series, and the rest of the menu", () => {
     expect(shows.every((title) => title?.startsWith("Show"))).toBe(true);
   });
 
-  test("More… lists all the categories of a kind, and one opens as a grid", async ({ browser }) => {
+  test("Movies and Series of a library whose titles do not say which they are say there are none there, and lead Home: the library is not empty, and trying again would not change it", async ({ browser }) => {
+    const unlabelled = { updatedAt: Date.now(), rows: [{ id: "r1", title: "Old reels", source: "Test Source", items: [1, 2, 3].map((n) => ({ id: `u${n}`, title: `Reel ${n}`, url: `/fixtures/sample.mp4?u=${n}` })) }] };
+    const tv = await openLibrary(browser, withLibrary(unlabelled));
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+
+    await choose(tv, "rail-movies");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "movies");
+    await expect(tv.getByTestId("tv-browse")).toContainText("No movies here");
+    await expect(tv.getByTestId("tv-browse")).toContainText("Everything the library has is on Home.");
+    await expect(tv.getByTestId("tv-browse")).not.toContainText("Nothing in the library yet");
+    await expect(tv.getByTestId("tv-browse-retry")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-browse-home")).toBeFocused();
+
+    await choose(tv, "rail-series");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "series");
+    await expect(tv.getByTestId("tv-browse")).toContainText("No series here");
+    await expect(tv.getByTestId("tv-browse-home")).toBeFocused();
+
+    await tv.keyboard.press("Enter"); // Home, where the titles are
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await expect(tv.getByTestId("tv-hero-title")).toHaveText("Reel 1");
+  });
+
+  test("Categories lists every one, those of films first and then those of series, each saying which; one opens as a grid, and Back returns to the list", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
-    await choose(tv, "rail-more-movie");
-    await expect(tv.getByTestId("tv-view-title")).toHaveText("Movie categories");
-    await expect(tv.getByTestId("tv-category-tile")).toHaveCount(6);
+    await choose(tv, "rail-categories");
+    await expect(tv.getByTestId("rail-categories")).toHaveAttribute("aria-current", "page");
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("All categories");
+    const names = () => tv.getByTestId("tv-category-tile").evaluateAll((all) => all.map((tile) => tile.getAttribute("title")));
+    expect(await names()).toEqual(["Action", "Comedy", "Horror", "Romance", "Thriller", "Western", "Crime", "Drama"]); // (the library lists them as films and series alternate)
     await expect(tv.getByTestId("tv-category-tile").first()).toBeFocused();
+    await expect(tv.getByTestId("tv-category-tile").first()).toContainText("Movies");
+    await expect(tv.getByTestId("tv-category-tile").nth(6)).toContainText("Series");
     for (let i = 0; i < 5; i++) await tv.keyboard.press("ArrowRight"); // five to a row
     await tv.keyboard.press("ArrowDown");
-    await expect(tv.getByTestId("tv-category-tile").nth(5)).toBeFocused();
+    await expect(tv.getByTestId("tv-category-tile").nth(7)).toBeFocused(); // (the second row has three)
     await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("tv-view-title")).toHaveText("Western");
-    expect(await titlesOnScreen(tv)).toEqual(["Movie Western 1", "Movie Western 2"]);
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("Drama");
+    expect(await titlesOnScreen(tv)).toEqual(["Show Drama 1", "Show Drama 2"]);
+    await expect(tv.getByTestId("rail-categories")).toHaveAttribute("aria-current", "page"); // (a category is a place under Categories)
+
+    await tv.keyboard.press("Escape"); // Back: the list it was chosen from, with the remote on the category it chose
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("All categories");
+    await expect(tv.getByTestId("tv-category-tile").nth(7)).toBeFocused();
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
   });
 
   test("Home has a row of categories among its rows, and a category from it opens", async ({ browser }) => {
@@ -1480,6 +1540,8 @@ test.describe("movies, series, and the rest of the menu", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-category")).toBeVisible();
     await expect(tv.getByTestId("tv-view-title")).toHaveText("Action");
+    await tv.keyboard.press("Escape"); // Back goes to where it was chosen: home, here
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
   });
 
   test("History is everything watched, newest first and the finished ones marked; Favourites is what was saved", async ({ browser }) => {
@@ -1494,8 +1556,12 @@ test.describe("movies, series, and the rest of the menu", () => {
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
 
-    await choose(tv, "rail-history");
+    await choose(tv, "rail-profile"); // History is a place of the profile's page
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
+    await expect(tv.locator('[data-entry="profile:history"]')).toContainText("2 titles");
+    await pressProfilePlace(tv, "history");
     await expect(tv.getByTestId("tv-view-title")).toHaveText("History");
+    await expect(tv.getByTestId("rail-profile")).toHaveAttribute("aria-current", "page"); // (the menu still says whose page it is)
     expect(await titlesOnScreen(tv)).toEqual(["Night Train", "Old One"]);
     await expect(tv.getByTestId("tv-history")).toContainText("Watched");
 
@@ -1504,15 +1570,18 @@ test.describe("movies, series, and the rest of the menu", () => {
     expect(await titlesOnScreen(tv)).toEqual(["Saved For Later"]);
   });
 
-  test("a profile with nothing watched or saved gets a plain line, the menu shuts, and an arrow key brings it back", async ({ browser }) => {
+  test("a profile with nothing watched or saved gets a plain line; Back goes to the profile's page, and Left brings the menu back", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
-    await choose(tv, "rail-history");
+    await choose(tv, "rail-profile");
+    await expect(tv.locator('[data-entry="profile:history"]')).toContainText("Everything you've watched");
+    await pressProfilePlace(tv, "history");
     await expect(tv.getByTestId("tv-view-empty")).toHaveText("Nothing watched yet.");
     await expect(rail(tv)).toHaveAttribute("data-open", "false"); // there is no title to move to, but the menu is not left open over the page
-    await expect(tv.getByTestId("rail-history")).toBeFocused(); // the remote is still on its line
-    await tv.keyboard.press("ArrowUp");
+    await tv.keyboard.press("ArrowLeft");
     await expect(rail(tv)).toHaveAttribute("data-open", "true");
+    await expect(tv.getByTestId("rail-profile")).toBeFocused(); // the line of the page that is open
+    for (let i = 0; i < 3; i++) await tv.keyboard.press("ArrowUp"); // a phone, the party, the lists
     await expect(tv.getByTestId("rail-list")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing here yet");
@@ -1520,60 +1589,72 @@ test.describe("movies, series, and the rest of the menu", () => {
     await expect(tv.getByTestId("list-chip-favourites")).toBeFocused(); // an empty list still has its buttons: that is where the remote goes
     await tv.keyboard.press("Escape"); // Back is home
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
+
+    await openProfilePlace(tv, "history");
+    await expect(tv.getByTestId("tv-view-empty")).toHaveText("Nothing watched yet.");
+    await tv.keyboard.press("Escape"); // Back: one step out, to the page it was chosen on
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
+    await expect(tv.locator('[data-entry="profile:history"]')).toBeFocused(); // with the remote on the place it came from
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home"); // and another goes home, as from any page
   });
 
   for (const shape of [
     { where: "on a TV", viewport: { width: 1280, height: 720 } },
     { where: "at a phone's width", viewport: { width: 390, height: 844 } },
   ]) {
-    test(`the entry the remote is on is a square around its icon, in the middle of the closed menu, and holds its icon when the menu is open: ${shape.where}`, async ({ browser }) => {
+    test(`a line of the closed menu is a square around its icon, in the middle of the menu, and the one the remote is on holds its icon when the menu is open: ${shape.where}`, async ({ browser }) => {
       const tv = await openLibrary(browser, withLibrary(library), shape.viewport);
       await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
-      await choose(tv, "rail-history"); // nothing watched: the menu shuts with the remote still on this entry
 
-      /** Where the entry, its icon and the menu lie from left to right. */
-      const across = () =>
-        tv.evaluate(() => {
-          const entry = document.querySelector('[data-testid="rail-history"]')!;
+      /** Where a line, its icon and the menu lie from left to right. */
+      const across = (id: string) =>
+        tv.evaluate((testId) => {
+          const entry = document.querySelector(`[data-testid="${testId}"]`)!;
           const strip = document.querySelector('[data-testid="tv-rail"]')!.getBoundingClientRect();
           const box = entry.getBoundingClientRect();
           const icon = entry.querySelector("svg")!.getBoundingClientRect();
           return { strip: [strip.left, strip.right], box: [box.left, box.right], icon: [icon.left, icon.right] };
-        });
+        }, id);
       const middle = ([from, to]: number[]) => (from! + to!) / 2;
 
       await expect(rail(tv)).toHaveAttribute("data-open", "false");
-      await expect(tv.getByTestId("rail-history")).toBeFocused();
       // (the box takes a moment to settle: it narrows as the menu closes)
-      await expect
-        .poll(async () => {
-          const { strip, box, icon } = await across();
-          return {
-            iconInsideBox: icon[0]! >= box[0]! && icon[1]! <= box[1]!,
-            iconInMiddleOfBox: Math.abs(middle(icon) - middle(box)) <= 1,
-            boxInMiddleOfMenu: Math.abs(middle(box) - middle(strip)) <= 1,
-          };
-        })
-        .toEqual({ iconInsideBox: true, iconInMiddleOfBox: true, boxInMiddleOfMenu: true });
+      for (const id of ["rail-home", "rail-profile"]) {
+        await expect
+          .poll(async () => {
+            const { strip, box, icon } = await across(id);
+            return {
+              iconInsideBox: icon[0]! >= box[0]! && icon[1]! <= box[1]!,
+              iconInMiddleOfBox: Math.abs(middle(icon) - middle(box)) <= 1,
+              boxInMiddleOfMenu: Math.abs(middle(box) - middle(strip)) <= 1,
+            };
+          })
+          .toEqual({ iconInsideBox: true, iconInMiddleOfBox: true, boxInMiddleOfMenu: true });
+      }
 
-      await tv.keyboard.press("ArrowUp"); // brings the menu back, on the entry above
-      await tv.keyboard.press("ArrowDown");
+      await tv.keyboard.press("ArrowLeft"); // the menu opens on the page that is open...
+      for (let i = 0; i < 7; i++) await tv.keyboard.press("ArrowDown"); // ...and the remote goes down it to the last line
       await expect(rail(tv)).toHaveAttribute("data-open", "true");
-      await expect(tv.getByTestId("rail-history")).toBeFocused();
+      await expect(tv.getByTestId("rail-profile")).toBeFocused();
       await expect
         .poll(async () => {
-          const { strip, box, icon } = await across();
+          const { strip, box, icon } = await across("rail-profile");
           return { iconInsideBox: icon[0]! >= box[0]! && icon[1]! <= box[1]!, boxInsideMenu: box[0]! >= strip[0]! && box[1]! <= strip[1]! };
         })
         .toEqual({ iconInsideBox: true, boxInsideMenu: true });
     });
   }
 
-  test("clicking the lists or History shuts the menu, whether or not they have anything in them", async ({ browser }) => {
+  test("clicking a line of the menu shuts the menu, whether the page has titles to stand on or not", async ({ browser }) => {
     const seed = guestStorage({ list: [{ key: "url:https://films.example/saved", at: Date.now() - 1000, id: "s1", title: "Saved For Later", url: "https://films.example/saved" }] });
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
 
-    await tv.getByTestId("rail-history").click(); // nothing watched: an empty page
+    await tv.getByTestId("rail-profile").click(); // tiles to stand on
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
+    await expect(rail(tv)).toHaveAttribute("data-open", "false");
+
+    await openProfilePlace(tv, "history"); // nothing watched: an empty page
     await expect(tv.getByTestId("tv-view-empty")).toHaveText("Nothing watched yet.");
     await expect(rail(tv)).toHaveAttribute("data-open", "false");
 
@@ -1644,15 +1725,15 @@ test.describe("categories and search on the TV", () => {
     await expect(tv.getByTestId("tv-rail")).toHaveAttribute("data-open", "true");
     await expect(tv.getByTestId("rail-home")).toBeFocused();
     await expect(tv.getByTestId("rail-home")).toHaveAttribute("aria-current", "page");
-    await expect(tv.getByTestId("rail-category-r1")).toHaveText("Classics");
-    await expect(tv.getByTestId("rail-category-r2")).toHaveText("More films");
 
     await tv.keyboard.press("ArrowUp");
     await expect(tv.getByTestId("rail-search")).toBeFocused();
-    for (const entry of ["rail-home", "rail-movies", "rail-series", "rail-list", "rail-history", "rail-ratings", "rail-party", "rail-connect", "rail-settings", "rail-category-r1"]) {
+    for (const entry of ["rail-home", "rail-movies", "rail-series", "rail-categories", "rail-list", "rail-party", "rail-connect", "rail-profile"]) {
       await tv.keyboard.press("ArrowDown");
       await expect(tv.getByTestId(entry)).toBeFocused();
     }
+    await tv.keyboard.press("ArrowDown"); // the last line is as far as the menu goes
+    await expect(tv.getByTestId("rail-profile")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-rail")).toHaveAttribute("data-open", "false");
     await expect(tiles(tv).first()).toBeFocused();
@@ -1680,9 +1761,12 @@ test.describe("categories and search on the TV", () => {
     await expect(rail).toHaveAttribute("data-open", "true");
   });
 
-  test("a category opens as a grid of all its titles; Back goes home, and Back again opens the menu", async ({ browser }) => {
+  test("a category opens as a grid of all its titles; Back goes to the list of categories, then home, and Back again opens the menu", async ({ browser }) => {
     const tv = await open(browser);
-    await choose(tv, "rail-category-r1");
+    await choose(tv, "rail-categories");
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("All categories");
+    await expect(tv.getByTestId("tv-category-tile")).toHaveText([/Classics/, /More films/]);
+    await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-view-title")).toHaveText("Classics");
     await expect(tiles(tv)).toHaveCount(10);
     await expect(tiles(tv).first()).toBeFocused();
@@ -1694,6 +1778,9 @@ test.describe("categories and search on the TV", () => {
     await tv.keyboard.press("ArrowUp");
     await expect(tiles(tv).nth(4)).toBeFocused();
 
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-view-title")).toHaveText("All categories"); // one step out: the list it was chosen from
+    await expect(tv.getByTestId("tv-category-tile").first()).toBeFocused();
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-hero")).toBeVisible();
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
@@ -1791,7 +1878,7 @@ test.describe("categories and search on the TV", () => {
     await expect(tiles(tv).last()).toBeInViewport();
   });
 
-  test("the rows are named in the language of the screen: on the home page, in the menu and on a category's page", async ({ browser }) => {
+  test("the rows are named in the language of the screen: on the home page, in the list of categories and on a category's page", async ({ browser }) => {
     const rows = [
       { id: "filmpire-trending-movies", title: "Trending Movies", source: "Filmpire", kind: "movie", items: films },
       { id: "filmpire-comedy-movies", title: "Comedy Movies", source: "Filmpire", kind: "movie", items: films.slice(0, 5) },
@@ -1802,7 +1889,10 @@ test.describe("categories and search on the TV", () => {
     await expect(tiles(tv).first()).toBeFocused();
     await expect(tv.locator(".tv-row-title")).toHaveText(["Filme în tendințe", "Filme de comedie", "Staff Picks"]);
 
-    await choose(tv, "rail-category-filmpire-comedy-movies"); // (the menu names it the same way)
+    await choose(tv, "rail-categories");
+    await expect(tv.getByTestId("tv-category-tile").nth(1)).toHaveAttribute("title", "Filme de comedie"); // (the list names it the same way)
+    await expect(tv.getByTestId("tv-category-tile").nth(1)).toContainText("Filme"); // ...and says it is of films
+    await tv.getByTestId("tv-category-tile").nth(1).click();
     await expect(tv.getByTestId("tv-view-title")).toHaveText("Filme de comedie");
     await expect(tiles(tv)).toHaveCount(5);
   });
@@ -2543,7 +2633,7 @@ test.describe("ratings on the TV", () => {
     await expect(tv.getByTestId("tv-detail-rate")).toHaveText("9/10"); // the page's button is the show's
   });
 
-  test("My ratings is a page in the menu: what was rated, newest first, with the score under each and the mean on top; OK on one opens its page", async ({ browser }) => {
+  test("My ratings is a page of the profile: what was rated, newest first, with the score under each and the mean on top; OK on one opens its page", async ({ browser }) => {
     const rated = (n: number, score: number, date: number, extra: Record<string, unknown> = {}) => ({
       key: `rate:https://films.example/${n}`,
       at: day(date),
@@ -2556,9 +2646,11 @@ test.describe("ratings on the TV", () => {
     const seed = guestStorage({ ratings: [rated(1, 6, 1), rated(2, 9, 5, { note: "Twice." }), rated(3, 8, 9, { season: 2, kind: "series", url: link(1), key: `rate:${link(1)}|s2`, title: "The Long Night" })] });
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await expect(tiles(tv).first()).toBeFocused();
-    await choose(tv, "rail-ratings");
+    await choose(tv, "rail-profile");
+    await expect(tv.locator('[data-entry="profile:ratings"]')).toContainText("3 ratings · average 7.7"); // (the profile's page says how it stands)
+    await pressProfilePlace(tv, "ratings");
 
-    await expect(tv.getByTestId("rail-ratings")).toHaveAttribute("aria-current", "page");
+    await expect(tv.getByTestId("rail-profile")).toHaveAttribute("aria-current", "page");
     await expect(tv.getByTestId("tv-view-title")).toHaveText("My ratings");
     await expect(tv.getByTestId("tv-ratings")).toContainText("3 ratings · average 7.7");
     await expect(tiles(tv)).toHaveCount(3);
@@ -2579,34 +2671,37 @@ test.describe("ratings on the TV", () => {
 
   test("with nothing rated the page says how to start", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
-    await tv.getByTestId("rail-ratings").click();
+    await openProfilePlace(tv, "ratings");
     await expect(tv.getByTestId("tv-view-title")).toHaveText("My ratings");
     await expect(tv.getByTestId("tv-view-empty")).toHaveText("Nothing rated yet. Open a title and give it a score.");
     await expect(tv.getByTestId("tv-ratings")).toContainText("The titles and seasons you gave a score.");
   });
 
-  test("the switch on the account page hides ratings from the menu and the pages, and what was rated is kept", async ({ browser }) => {
+  test("the switch on the account page hides ratings from the profile's page and the titles, and what was rated is kept", async ({ browser }) => {
     const seed = guestStorage({ ratings: [{ key: "rate:https://films.example/1", at: day(2), title: "Rated 1", url: "https://films.example/1", score: 8, ratedAt: day(2) }] });
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
-    await expect(tv.getByTestId("rail-ratings")).toHaveCount(1);
+    await openProfilePage(tv);
+    await expect(tv.locator('[data-entry="profile:ratings"]')).toHaveCount(1);
 
-    await tv.getByTestId("rail-settings").click(); // (a guest's settings are in the menu; the corner button is the way to sign in)
+    await tv.locator('[data-entry="profile:settings"]').click(); // (a guest's settings are on the profile's page; the corner button is the way to sign in)
     const rate = tv.getByTestId("tv-ratings-switch");
     await expect(rate).toHaveAttribute("aria-checked", "true");
     await rate.click();
     await expect(rate).toHaveAttribute("aria-checked", "false");
     await tv.getByTestId("tv-account-back").click();
-    await expect(tv.getByTestId("rail-ratings")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile"); // (back where it was)
+    await expect(tv.locator('[data-entry="profile:ratings"]')).toHaveCount(0);
+    await tv.getByTestId("rail-home").click();
     await tiles(tv).first().click();
     await expect(tv.getByTestId("tv-detail")).toBeVisible();
     await expect(tv.getByTestId("tv-detail-rate")).toHaveCount(0);
     await tv.getByTestId("tv-detail-close").click();
 
-    await tv.getByTestId("rail-settings").click();
+    await openProfilePlace(tv, "settings");
     await tv.getByTestId("tv-ratings-switch").click();
     await expect(tv.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "true");
     await tv.getByTestId("tv-account-back").click();
-    await tv.getByTestId("rail-ratings").click();
+    await openProfilePlace(tv, "ratings");
     await expect(tiles(tv)).toHaveCount(1); // kept
     await expect(tiles(tv).first()).toContainText("8/10");
   });
@@ -2618,7 +2713,7 @@ test.describe("ratings on the TV", () => {
   ]) {
     test(`the account page, with the ratings switch among its settings, is all on the screen: ${screen.name}`, async ({ browser }) => {
       const tv = await openLibrary(browser, withLibrary(library), { width: screen.width, height: screen.height });
-      await tv.getByTestId("rail-settings").click();
+      await openProfilePlace(tv, "settings");
       await expect(tv.getByTestId("tv-ratings-switch")).toBeVisible();
       for (const id of ["tv-lang-en", "tv-autoplay", "tv-tap-to-pause", "tv-ratings-switch", "tv-account-back"]) {
         const at = (await tv.getByTestId(id).boundingBox())!;
@@ -2630,12 +2725,15 @@ test.describe("ratings on the TV", () => {
     });
   }
 
-  test("Back from a page with ratings goes home, as from the other pages", async ({ browser }) => {
+  test("Back from the page of ratings goes to the profile's page, and from there home, as from the other pages", async ({ browser }) => {
     const seed = guestStorage({ ratings: [{ key: "rate:https://films.example/1", at: day(2), title: "Rated 1", url: "https://films.example/1", score: 8, ratedAt: day(2) }] });
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
-    await tv.getByTestId("rail-ratings").click();
+    await openProfilePlace(tv, "ratings");
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "ratings");
     await expect(tiles(tv).first()).toBeFocused();
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
+    await expect(tv.locator('[data-entry="profile:ratings"]')).toBeFocused(); // (the remote is on the place it came from)
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
   });

@@ -13,6 +13,13 @@ const CONNECT_TIMEOUT_MS = 10_000;
 /** Keepalive. Anything heard from the server counts as an answer; silence for this long means the link is dead. */
 const PING_INTERVAL_MS = 15_000;
 const PONG_TIMEOUT_MS = 8_000;
+/**
+ * The answer to each PING also says how long the round trip to the server is, and the last few are kept: the shortest is the one to go
+ * by (a longer one waited in some queue on the way), and it is sent with the next PING. A party uses it to tell how old its host's position
+ * is when it gets there. A round trip this long is a link that is failing, not a measure.
+ */
+const ROUND_TRIPS_KEPT = 4;
+const ROUND_TRIP_LONGEST_MS = 5_000;
 
 export interface SocketOptions {
   /** First message sent on every (re)connect. Evaluated each time so it can read fresh storage. */
@@ -50,6 +57,9 @@ export function connectSocket(options: SocketOptions): Socket {
     let lastHeard = Date.now();
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let pongTimer: ReturnType<typeof setTimeout> | undefined;
+    const roundTrips: number[] = [];
+    /** When the PING that has not been answered yet was sent (0: none). */
+    let pingedAt = 0;
     const connectTimer = setTimeout(() => {
       if (socket.readyState !== WebSocket.CONNECTING) return;
       socket.close(); // fires onclose (1006) and lets the normal retry run
@@ -79,7 +89,9 @@ export function connectSocket(options: SocketOptions): Socket {
       probe = () => {
         if (socket.readyState !== WebSocket.OPEN) return;
         const sentAt = Date.now();
-        socket.send('{"type":"PING"}');
+        const rtt = roundTrips.length > 0 ? Math.round(Math.min(...roundTrips)) : undefined;
+        socket.send(JSON.stringify(rtt === undefined ? { type: "PING" } : { type: "PING", rtt }));
+        if (pingedAt === 0) pingedAt = performance.now(); // (an answer is timed against the PING it answers: a second one sent before it came is not what it is for)
         clearTimeout(pongTimer);
         pongTimer = setTimeout(() => {
           if (lastHeard >= sentAt || ws !== socket) return;
@@ -89,10 +101,17 @@ export function connectSocket(options: SocketOptions): Socket {
         }, PONG_TIMEOUT_MS);
       };
       heartbeat = setInterval(probe, PING_INTERVAL_MS);
+      probe(); // (the first round trip is known at once, not 15 s from now)
     };
     socket.onmessage = (event) => {
       lastHeard = Date.now();
       const message = parseServerMessage(event.data);
+      if (message?.type === "PONG" && pingedAt > 0) {
+        const took = performance.now() - pingedAt;
+        pingedAt = 0;
+        if (took <= ROUND_TRIP_LONGEST_MS) roundTrips.push(took);
+        if (roundTrips.length > ROUND_TRIPS_KEPT) roundTrips.shift();
+      }
       if (message && message.type !== "PONG") options.onMessage(message);
     };
     // No onerror: browsers expose no detail there, and the close event that always follows is what triggers the retry.

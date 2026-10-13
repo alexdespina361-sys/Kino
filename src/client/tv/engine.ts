@@ -312,6 +312,18 @@ export class PlayerEngine {
     return currentTime || 0;
   }
 
+  /** Whether the picture from `time` on for the next few seconds is already downloaded, so that going there needs nothing from the network. */
+  hasBuffered(time: number, seconds = 3): boolean {
+    if (!this.hasSource) return false;
+    const { buffered, duration } = this.video;
+    const to = Number.isFinite(duration) ? Math.min(time + seconds, duration - 0.1) : time + seconds;
+    for (let i = 0; i < buffered.length; i++) {
+      // (A little give at the start: the ranges of a stream put together in pieces do not always begin on the exact second.)
+      if (buffered.start(i) <= time + 0.25 && buffered.end(i) >= to) return true;
+    }
+    return false;
+  }
+
   private getQualityState(): { levels: PlayerQualityLevel[]; current: number } | undefined {
     if (!this.hls?.levels || this.hls.levels.length <= 1) return undefined;
     const levels: PlayerQualityLevel[] = this.hls.levels.map((lvl, index) => {

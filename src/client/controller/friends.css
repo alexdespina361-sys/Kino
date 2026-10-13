@@ -4,6 +4,15 @@
 
 .friend-avatar { flex: none; font-size: 40px; line-height: 0; }
 .friend-avatar.small { font-size: 28px; }
+/* A friend's picture with a little green dot on it while they are online. */
+.friend-pic { position: relative; flex: none; font-size: 40px; line-height: 0; }
+.friend-pic.big { font-size: 72px; }
+.friend-pic[data-online="true"]::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: max(10px, 0.22em); height: max(10px, 0.22em); border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 2px var(--surface); }
+/* How far a friend got in a title they rated: the episode and the share of it, then a thin bar. */
+.rating-progress { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.8rem; }
+.rating-progress > span { flex: none; }
+.rating-progress i { flex: 1; max-width: 96px; height: 3px; overflow: hidden; border-radius: 2px; background: rgba(255, 255, 255, 0.18); }
+.rating-progress b { display: block; height: 100%; background: var(--accent); }
 .friend-text { display: flex; flex-direction: column; flex: 1; gap: 2px; min-width: 0; text-align: left; }
 .friend-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .friend-text small { overflow: hidden; color: var(--muted); font-size: 0.8rem; text-overflow: ellipsis; white-space: nowrap; }
@@ -31,21 +40,35 @@
 .friend-code { font-size: 1.7rem; }
 
 /* What friends sent. A title is a row like a rating's, with its cross beside it; an invitation has the button that joins. */
-.inbox-item { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: 12px; background: var(--surface); }
+.inbox-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: 12px; background: var(--surface); }
 .inbox-item > .mini { align-self: center; }
 .inbox-open { flex: 1; min-width: 0; align-items: center; }
-.inbox-text { display: flex; flex-direction: column; flex: 1; gap: 2px; min-width: 0; padding: 8px 4px 8px 8px; }
+.inbox-text { display: flex; flex-direction: column; flex: 1 1 11rem; gap: 2px; min-width: 0; padding: 8px 4px 8px 8px; }
 .inbox-text small { color: var(--muted); font-size: 0.8rem; }
-.inbox-item .btn { flex: none; min-height: 40px; padding: 0 14px; font-size: 0.9rem; }
+.inbox-actions { display: flex; flex: none; align-items: center; gap: 8px; margin-left: auto; } /* (the answer and the cross under it wrap together, at the right, not one of them alone) */
+.inbox-item .btn, .friend-party .btn { flex: none; margin-left: auto; min-height: 40px; padding: 0 14px; font-size: 0.9rem; } /* (where the words need the room, as in a long language on a narrow phone, the button goes under them, at the right) */
 
-/* An invitation to a watch party over the home screen, until it is joined or sent away. */
-.friend-party { display: flex; align-items: center; gap: 10px; }
-.friend-party > span { flex: 1; min-width: 0; }
-.friend-party .btn { flex: none; min-height: 40px; padding: 0 14px; font-size: 0.9rem; }
+/* Finding a friend by tag: the box and its button on one line; and this profile's own tag, to give to a friend. */
+.tag-row { display: flex; gap: 8px; }
+.tag-row input { flex: 1; min-width: 0; }
+.tag-row .btn { flex: none; min-height: 44px; }
+.your-tag { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface); }
+.your-tag-line { display: flex; flex-direction: column; flex: 1 1 8rem; gap: 2px; min-width: 0; }
+.your-tag-line b { overflow-wrap: anywhere; font-size: 1.15rem; }
+.your-tag .copy-code { flex: none; }
+.your-tag .copy-link-button { min-height: 38px; padding: 0 12px; font-size: 0.85rem; white-space: nowrap; }
+.your-tag > p { flex: 1 0 100%; margin: 0; }
 
-/* The little dot on the picture of the profile when friends have something new. */
-.avatar-button { position: relative; }
-.unread-dot { position: absolute; top: -1px; right: -1px; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
+/* An invitation to a watch party, or a request for one, over the home screen, until it is answered or sent away. */
+.friend-party { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.friend-party > span { flex: 1 1 11rem; min-width: 0; }
+
+/* The bell beside the profile's picture: a number on it while something waits for an answer, a quieter dot when friends only watched something. */
+.bell-button { position: relative; }
+.bell-badge { position: absolute; top: 1px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 0.7rem; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
+.bell-dot { position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
+/* What a friend watched, in the bell's list: the whole row opens the title. */
+.bell-lately { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; padding: 4px 0 4px 4px; text-align: left; }
 
 /* The button that asks a second time before a friend goes. */
 .btn-danger[data-asking="true"] { background: var(--bad); color: #0b0b0c; }

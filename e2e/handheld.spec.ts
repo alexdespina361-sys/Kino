@@ -1,6 +1,6 @@
-import { expect, test, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { FIRST_VISIT, openDevice, openLibrary, openPairedPhone, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, tvRoot, tvTime, withLibrary } from "./helpers";
+import { FIRST_VISIT, openDevice, openLibrary, openPairedPhone, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, test, tvRoot, tvTime, withLibrary } from "./helpers";
 
 /** Any device is a screen, and any phone can bring another screen in: the TV page on a phone or a tablet, and the QR codes between devices. */
 
@@ -61,7 +61,8 @@ test.describe("a phone used as the screen", () => {
   test("the pages that only a remote's arrow keys could leave have a Back button for a finger", async ({ browser }) => {
     const phone = await openDevice(browser, PHONE, {}, withFilms);
     await phone.goto("/tv");
-    await phone.getByTestId("rail-settings").tap();
+    await phone.getByTestId("rail-profile").tap();
+    await phone.locator('[data-entry="profile:settings"]').tap(); // (the settings are a place of the profile's page)
     await expect(phone.getByTestId("tv-account")).toBeVisible();
     await phone.getByTestId("tv-account-back").tap();
     await expect(phone.getByTestId("tv-browse")).toBeVisible();

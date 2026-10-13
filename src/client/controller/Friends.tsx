@@ -1,17 +1,19 @@
-import { useEffect, useState } from "react";
-import { FRIEND_NOTE_MAX, friendLink, reachable, type Friend, type FriendLists, type FriendRatings, type InboxItem, type Message, type OpenInvite } from "../../shared";
+import { useEffect, useRef, useState } from "react";
+import { canAskTogether, FRIEND_NOTE_MAX, friendLink, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
-import { factLines, scoreWord, sortRatings, storedFacts } from "../account/ratingText";
+import { useScores } from "../account/ratings";
+import { factLines, scoreOf, scoreWord, sortRatings, storedFacts } from "../account/ratingText";
 import { useSettings } from "../account/settings";
 import { ago, formatDay } from "../account/time";
-import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, recommendationOf, type PartyInvitation, type Recommendation } from "../friends/entries";
+import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { usePeek } from "../friends/usePeek";
+import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
-import { CopyLink } from "../shared/CopyLink";
+import { CopyCode, CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
 import { ChevronIcon, CloseIcon, PlusIcon, StarIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, partyLink, typedLinkCode } from "../shared/launch";
@@ -80,6 +82,39 @@ function CodeCard({ code, onDone }: { code: string; onDone: () => void }) {
   );
 }
 
+/** A tag that was looked for: who has it, and the button that asks them to be friends (they have to say yes). */
+function TagCard({ text, onDone }: { text: string; onDone: () => void }) {
+  const t = useT();
+  const { seen, problem, waiting, busy, send } = useTagAsk(text, onDone);
+
+  if (problem) {
+    return (
+      <p className="auth-error" role="alert" data-testid="friend-tag-error">
+        {problem}
+      </p>
+    );
+  }
+  if (!seen) {
+    return (
+      <p className="muted" role="status">
+        <span className="spinner" /> {t("friends.linkLooking")}
+      </p>
+    );
+  }
+  return (
+    <div className="friend-code-card" data-testid="friend-tag-card">
+      <Avatar id={seen.avatar} className="friend-avatar" />
+      <span className="friend-text">
+        <b data-testid="friend-tag-name">{tagLabel(seen.name, seen.tag)}</b>
+        <small>{t("friends.tagAsk")}</small>
+      </span>
+      <button className="btn btn-red" disabled={busy || waiting} onClick={() => void send()} data-testid="friend-tag-send">
+        {waiting ? t("friends.requestPending") : t("friends.requestButton")}
+      </button>
+    </div>
+  );
+}
+
 /** The sheet a friend's link opens (`/?friend=ABCD2345`): sign in if need be, turn friends on if need be, then who it is from and a button to add them. */
 export function FriendInvite({ code, onClose, onSignIn }: { code: string; onClose: () => void; onSignIn: () => void }) {
   const t = useT();
@@ -137,15 +172,20 @@ function InviteCard({ invite }: { invite: OpenInvite }) {
   const language = useLanguage();
   const friends = useFriends();
   const link = friendLink(invite.code, location.origin);
+  const code = typedLinkCode(invite.code);
+  const codeText = useRef<HTMLSpanElement>(null);
   const canShare = typeof navigator.share === "function";
   const share = () => navigator.share({ title: t("friends.shareTitle"), url: link }).catch(() => undefined); // (a share sheet that was closed is no error)
 
   return (
     <div className="code-card" data-testid="friend-invite">
       <div className="code-card-top">
-        <span className="code-card-code friend-code" data-testid="friend-invite-code">
-          {typedLinkCode(invite.code)}
-        </span>
+        <div className="friend-code-side">
+          <span className="code-card-code friend-code copy-code-text" ref={codeText} data-testid="friend-invite-code">
+            {code}
+          </span>
+          <CopyCode code={code} shown={codeText} testId="friend-invite-code-copy" buttonClass="btn" />
+        </div>
         <QrCode value={link} label={t("friends.qrLabel")} />
       </div>
       <p className="muted small">{t("friends.codeHelp", { day: formatDay(invite.expiresAt, language) })}</p>
@@ -162,14 +202,37 @@ function InviteCard({ invite }: { invite: OpenInvite }) {
   );
 }
 
-/** Both ways of becoming friends: make a code to give, or type the one you were given. */
+/** This profile's own tag, with the button that copies it: what a friend types to find them. */
+function YourTag({ label }: { label: string }) {
+  const t = useT();
+  const shown = useRef<HTMLElement>(null);
+  return (
+    <div className="your-tag" data-testid="friend-your-tag">
+      <span className="your-tag-line">
+        <span className="muted small">{t("friends.yourTag")}</span>
+        <b className="copy-code-text" ref={shown} data-testid="friend-your-tag-text">
+          {label}
+        </b>
+      </span>
+      <CopyCode code={label} shown={shown} testId="friend-your-tag-copy" buttonClass="btn" words="tag" />
+      <p className="muted small">{t("friends.yourTagHelp")}</p>
+    </div>
+  );
+}
+
+/** Ways of becoming friends: make a code to give, type the one you were given, or find somebody by their tag (they have to say yes). */
 function AddFriend() {
   const t = useT();
+  const account = useAccount();
   const friends = useFriends();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [typed, setTyped] = useState("");
   const code = linkCodeOf(typed);
+  /** What was typed to find a tag, and what was looked for (only when asked to: a tag has no length that says it is complete). */
+  const [tagTyped, setTagTyped] = useState("");
+  const [looked, setLooked] = useState("");
+  const mine = account.profile?.tag !== undefined ? tagLabel(account.profile.name, account.profile.tag) : undefined;
 
   const make = async () => {
     setBusy(true);
@@ -214,16 +277,110 @@ function AddFriend() {
         />
       </label>
       {code && <CodeCard key={code} code={code} onDone={() => setTyped("")} />}
+      <form
+        className="tag-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (parseTag(tagTyped)) setLooked(tagTyped.trim());
+        }}
+        noValidate
+      >
+        <label className="auth-field">
+          <span>{t("friends.tagTitle")}</span>
+          <span className="tag-row">
+            <input
+              data-testid="friend-tag-input"
+              autoCapitalize="off"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              maxLength={30}
+              placeholder={t("friends.tagPlaceholder")}
+              aria-label={t("friends.tagLabel")}
+              value={tagTyped}
+              onChange={(event) => {
+                setTagTyped(event.target.value);
+                setLooked("");
+              }}
+            />
+            <button className="btn" type="submit" disabled={!parseTag(tagTyped)} data-testid="friend-tag-find">
+              {t("friends.tagFind")}
+            </button>
+          </span>
+        </label>
+      </form>
+      {looked && <TagCard key={looked} text={looked} onDone={() => { setTagTyped(""); setLooked(""); }} />}
+      {mine && <YourTag label={mine} />}
     </Group>
+  );
+}
+
+/** Somebody who asked to be friends: who it is, and the buttons that say yes or no. */
+export function RequestRow({ request }: { request: FriendRequest }) {
+  const t = useT();
+  const answer = useAnswerRequests();
+  const [busy, setBusy] = useState(false);
+  const name = tagLabel(request.from.name, request.from.tag);
+  const answered = (work: Promise<void>) => {
+    setBusy(true);
+    void work.finally(() => setBusy(false));
+  };
+  return (
+    <li className="inbox-item" data-testid="friend-request" data-from={request.from.id}>
+      <Avatar id={request.from.avatar} className="friend-avatar" />
+      <span className="inbox-text">
+        <b data-testid="friend-request-name">{name}</b>
+        <small>{t("friends.requestWants")}</small>
+      </span>
+      <span className="inbox-actions">
+        <button className="btn btn-red" disabled={busy} onClick={() => answered(answer.accept(request.from))} data-testid="friend-request-accept">
+          {t("friends.accept")}
+        </button>
+        <button className="mini" disabled={busy} onClick={() => answered(answer.decline(request.from))} aria-label={t("friends.decline")} title={t("friends.decline")} data-testid="friend-request-decline">
+          <CloseIcon />
+        </button>
+      </span>
+    </li>
   );
 }
 
 /* ------------------------------ the page of friends ------------------------------ */
 
-function InboxRow({ item, from, onOpenTitle, onDismiss }: { item: InboxItem; from: string; onOpenTitle: OpenTitle; onDismiss: () => void }) {
+/** A friend's picture, with a small green dot on it while they are online. */
+function FriendPic({ friend, size }: { friend: Friend; size?: "big" }) {
+  return (
+    <span className={size ? `friend-pic ${size}` : "friend-pic"} data-online={friend.on && friend.online === true}>
+      <Avatar id={friend.avatar} />
+    </span>
+  );
+}
+
+/**
+ * Asks a friend to watch together: they get a request with a button that starts a party and invites this profile to it. `ended` is the
+ * invitation to a party that is over, if that is where this was pressed: once the friend is asked it is of no more use.
+ */
+function useAskTogether(): (friendId: string, ended?: string) => Promise<void> {
+  const t = useT();
+  const account = useAccount();
+  const friends = useFriends();
+  return async (friendId, ended) => {
+    const name = nameOf(friends.state?.friends ?? [], friendId);
+    try {
+      const answer = await friends.send([friendId], { kind: "together" });
+      account.say(answer.sent.length > 0 ? t("friends.askSent", { name }) : t("friends.declined", { names: name }));
+      if (answer.sent.length > 0 && ended) await friends.dismiss(ended);
+    } catch (error) {
+      account.say(describeError(error));
+    }
+  };
+}
+
+export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }: { item: InboxItem; friend: Friend | undefined; onOpenTitle: OpenTitle; onStartParty: ((friendId: string) => void) | undefined; onDismiss: () => void }) {
   const t = useT();
   const language = useLanguage();
+  const ask = useAskTogether();
   const now = Date.now();
+  const from = friend?.name ?? "";
   const dismiss = (
     <button className="mini" onClick={onDismiss} aria-label={t("friends.dismiss")} data-testid="inbox-dismiss">
       <CloseIcon />
@@ -231,19 +388,45 @@ function InboxRow({ item, from, onOpenTitle, onDismiss }: { item: InboxItem; fro
   );
 
   if (item.kind === "party") {
-    const live = item.endsAt > now;
+    const live = partyOpen(item, now);
     return (
       <li className="inbox-item" data-testid="inbox-party">
         <span className="inbox-text">
           <b>{t("friends.partyInvite", { name: from })}</b>
           <small>{live ? `${formatCode(item.code)} · ${ago(item.at, now, language)}` : t("friends.partyOver")}</small>
         </span>
-        {live && (
-          <a className="btn btn-red" href={partyLink(item.code)} data-testid="inbox-join">
-            {t("friends.join")}
-          </a>
-        )}
-        {dismiss}
+        <span className="inbox-actions">
+          {live && (
+            <a className="btn btn-red" href={partyLink(item.code)} data-testid="inbox-join">
+              {t("friends.join")}
+            </a>
+          )}
+          {/* (A party that is over becomes a question: can they start another, for the two of them?) */}
+          {!live && friend && canAskTogether(friend) && (
+            <button className="btn btn-red" onClick={() => void ask(friend.id, item.id)} data-testid="inbox-ask">
+              {t("friends.askTogether")}
+            </button>
+          )}
+          {dismiss}
+        </span>
+      </li>
+    );
+  }
+  if (item.kind === "together") {
+    return (
+      <li className="inbox-item" data-testid="inbox-together">
+        <span className="inbox-text">
+          <b>{t("friends.togetherOf", { name: from })}</b>
+          <small>{ago(item.at, now, language)}</small>
+        </span>
+        <span className="inbox-actions">
+          {onStartParty && (
+            <button className="btn btn-red" onClick={() => onStartParty(item.from)} data-testid="inbox-start">
+              {t("friends.startParty")}
+            </button>
+          )}
+          {dismiss}
+        </span>
       </li>
     );
   }
@@ -264,7 +447,7 @@ function InboxRow({ item, from, onOpenTitle, onDismiss }: { item: InboxItem; fro
 }
 
 /** Everything friends: what they sent, who they are, what they are watching, and how to add another. */
-export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: string) => void; onOpenTitle: OpenTitle }) {
+export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty }: { onOpenFriend: (id: string) => void; onOpenTitle: OpenTitle; onStartParty?: (friendId: string) => void }) {
   const t = useT();
   const friends = useFriends();
   const { state } = friends;
@@ -301,11 +484,20 @@ export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: 
   return (
     <div className="page-stack" data-testid="friends-page">
       {friends.status === "offline" && <p className="muted small">{t("friends.offline")}</p>}
+      {state.requests.length > 0 && (
+        <Group title={t("friends.requests")}>
+          <ul className="inbox-list" data-testid="friends-requests">
+            {state.requests.map((request) => (
+              <RequestRow key={request.from.id} request={request} />
+            ))}
+          </ul>
+        </Group>
+      )}
       {state.inbox.length > 0 && (
         <Group title={t("friends.inbox")}>
           <ul className="inbox-list" data-testid="friends-inbox">
             {state.inbox.map((item) => (
-              <InboxRow key={item.id} item={item} from={nameOf(state.friends, item.from)} onOpenTitle={onOpenTitle} onDismiss={() => void friends.dismiss(item.id).catch(() => undefined)} />
+              <InboxRow key={item.id} item={item} friend={state.friends.find((each) => each.id === item.from)} onOpenTitle={onOpenTitle} onStartParty={onStartParty} onDismiss={() => void friends.dismiss(item.id).catch(() => undefined)} />
             ))}
           </ul>
         </Group>
@@ -322,7 +514,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: 
               return (
                 <li key={friend.id}>
                   <button className="friend-row" onClick={() => onOpenFriend(friend.id)} data-testid="friend-row" data-friend={friend.id}>
-                    <Avatar id={friend.avatar} className="friend-avatar" />
+                    <FriendPic friend={friend} />
                     <span className="friend-text">
                       <b>{friend.name}</b>
                       {line && <small>{line}</small>}
@@ -339,7 +531,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: 
         <CardRow title={t("friends.activity")} testId="friends-activity">
           {state.activity.map((item) => {
             const entry = entryOfActivity(item, nameOf(state.friends, item.friend), now);
-            return <Card key={entry.id} testId="activity" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.note} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />;
+            return <Card key={entry.id} testId="activity" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.note} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />;
           })}
         </CardRow>
       )}
@@ -352,19 +544,20 @@ export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: 
 
 function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: OpenTitle }) {
   const t = useT();
-  const answer = useShared<FriendLists>(friend.id, friend.lists, askLists);
+  const answer = useShared<FriendLists>(friend.id, friend.lists, askLists, friend.activity);
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   if (!friend.lists) return <p className="muted" data-testid="friend-not-sharing">{friend.on ? t("friends.notSharingLists", { name: friend.name }) : t("friends.theirsOff", { name: friend.name })}</p>;
   if (!answer) return <p className="muted" role="status"><span className="spinner" /> {t("common.loading")}</p>;
   if (answer.problem || !answer.data) return <p className="auth-error" role="alert">{answer.problem}</p>;
   const lists = listsOf(answer.data);
+  const progress = answer.data.progress;
   if (lists.length === 0) return <p className="muted" data-testid="friend-empty">{t("friends.noLists", { name: friend.name })}</p>;
   return (
     <div className="page-stack" data-testid="friend-lists">
       {lists.map((list) => (
         <CardRow key={list.info.id} title={listName(list.info)} testId="friend-list">
-          {entriesOfList(list).map((entry) => (
-            <Card key={entry.id} testId="friend-list-card" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.year ? String(entry.year) : undefined} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />
+          {withProgress(entriesOfList(list), progress).map((entry) => (
+            <Card key={entry.id} testId="friend-list-card" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.note ?? (entry.year ? String(entry.year) : undefined)} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />
           ))}
         </CardRow>
       ))}
@@ -372,15 +565,33 @@ function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: Ope
   );
 }
 
+/** How far a friend got in a title they rated: the episode they are at and how far into it, with a thin bar. */
+function HowFar({ progress }: { progress: FriendProgress | undefined }) {
+  const how = progress && progressNote(progress);
+  if (!progress || !how) return null;
+  const fraction = progress.done ? 1 : (progress.percent ?? 0) / 100;
+  return (
+    <span className="rating-progress" data-testid="friend-rating-progress">
+      <span>{how}</span>
+      {fraction > 0 && (
+        <i aria-hidden="true">
+          <b style={{ width: `${Math.round(fraction * 100)}%` }} />
+        </i>
+      )}
+    </span>
+  );
+}
+
 function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: OpenTitle }) {
   const t = useT();
   const language = useLanguage();
-  const answer = useShared<FriendRatings>(friend.id, friend.ratings, askRatings);
+  const answer = useShared<FriendRatings>(friend.id, friend.ratings, askRatings, friend.activity);
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   if (!friend.ratings) return <p className="muted" data-testid="friend-not-sharing">{friend.on ? t("friends.notSharingRatings", { name: friend.name }) : t("friends.theirsOff", { name: friend.name })}</p>;
   if (!answer) return <p className="muted" role="status"><span className="spinner" /> {t("common.loading")}</p>;
   if (answer.problem || !answer.data) return <p className="auth-error" role="alert">{answer.problem}</p>;
   const ratings = sortRatings(ratedBy(answer.data), "new");
+  const progress = answer.data.progress;
   if (ratings.length === 0) return <p className="muted" data-testid="friend-empty">{t("friends.noRatings", { name: friend.name })}</p>;
   return (
     <ul className="rating-list" data-testid="friend-ratings">
@@ -396,6 +607,7 @@ function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: O
                 </span>
                 <span className="muted">{scoreWord(t, rating.score)}</span>
               </span>
+              <HowFar progress={progressFor(progress, rating.url)} />
               {rating.note && <span className="rating-quote">{rating.note}</span>}
               <span className="rating-facts">
                 {factLines(t, language, rating.ratedAt, storedFacts(rating)).map((line) => (
@@ -417,16 +629,11 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   const account = useAccount();
   const friends = useFriends();
   const friend = friends.state?.friends.find((each) => each.id === friendId);
+  const ask = useAskTogether();
   const [tab, setTab] = useState<"lists" | "ratings">("lists");
-  const [sure, setSure] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-
-  // The second tap has to come soon; a button left asking goes back to what it was.
-  useEffect(() => {
-    if (!sure) return;
-    const timer = setTimeout(() => setSure(false), 4000);
-    return () => clearTimeout(timer);
-  }, [sure]);
 
   // A friend who is gone (taken off from the other side, or from another screen), or friends turned off from another screen, leave nothing to show.
   useEffect(() => {
@@ -436,27 +643,33 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   if (!friend) return null;
 
   const remove = async () => {
-    if (!sure) return setSure(true);
+    setBusy(true);
+    setProblem(null);
     try {
       await friends.remove(friend.id);
       account.say(t("friends.removed", { name: friend.name }));
       onGone();
     } catch (error) {
       setProblem(describeError(error));
-      setSure(false);
+      setBusy(false);
     }
   };
 
   return (
     <div className="page-stack" data-testid="friend-page" data-friend={friend.id}>
       <section className="account-card">
-        <Avatar id={friend.avatar} className="account-avatar" />
+        <FriendPic friend={friend} size="big" />
         <div className="account-who">
           <h1 data-testid="friend-name">{friend.name}</h1>
-          <p className="muted">{t("friends.since", { day: formatDay(friend.since, language) })}</p>
+          <p className="muted">{[friend.on && friend.online ? t("friends.online") : "", t("friends.since", { day: formatDay(friend.since, language) })].filter(Boolean).join(" · ")}</p>
         </div>
       </section>
       {!friend.on && <p className="banner" data-testid="friend-off">{t("friends.theirsOff", { name: friend.name })}</p>}
+      {canAskTogether(friend) && (
+        <button className="btn btn-block" onClick={() => void ask(friend.id)} data-testid="friend-together">
+          <UsersIcon /> {t("friends.askTogether")}
+        </button>
+      )}
       <div className="segmented compact" role="radiogroup" aria-label={friend.name}>
         {(["lists", "ratings"] as const).map((value) => (
           <button key={value} role="radio" aria-checked={tab === value} onClick={() => setTab(value)} data-testid={`friend-tab-${value}`}>
@@ -465,13 +678,24 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
         ))}
       </div>
       {tab === "lists" ? <SharedLists friend={friend} onOpenTitle={onOpenTitle} /> : <SharedRatings friend={friend} onOpenTitle={onOpenTitle} />}
-      <button className="btn btn-danger btn-block" onClick={() => void remove()} data-testid="friend-remove" data-asking={sure}>
-        {sure ? t("friends.removeAgain", { name: friend.name }) : t("friends.remove")}
+      <button className="btn btn-danger btn-block" onClick={() => setAsking(true)} data-testid="friend-remove">
+        {t("friends.remove")}
       </button>
-      {problem && (
-        <p className="auth-error" role="alert">
-          {problem}
-        </p>
+      {asking && (
+        <Sheet title={t("friends.removeTitle", { name: friend.name })} onClose={() => setAsking(false)} testId="friend-unfriend">
+          <p className="muted">{t("friends.removeHelp")}</p>
+          <button className="btn btn-danger btn-block" disabled={busy} onClick={() => void remove()} data-testid="friend-unfriend-yes">
+            {t("friends.removeYes")}
+          </button>
+          <button className="btn btn-block" onClick={() => setAsking(false)} data-testid="friend-unfriend-cancel">
+            {t("common.cancel")}
+          </button>
+          {problem && (
+            <p className="auth-error" role="alert">
+              {problem}
+            </p>
+          )}
+        </Sheet>
       )}
     </div>
   );
@@ -598,14 +822,16 @@ export function InviteFriendsButton({ code, endsAt }: { code: string; endsAt: nu
 
 /* ------------------------------ on the home screen ------------------------------ */
 
-/** What friends have sent, where the library is: an invitation to a watch party that is on now, and the titles they recommended. */
-export function FriendsHome({ onOpenTitle }: { onOpenTitle: OpenTitle }) {
+/** What friends have sent, where the library is: an invitation to a watch party that is on now, a request for one, and the titles they recommended. */
+export function FriendsHome({ onOpenTitle, onStartParty }: { onOpenTitle: OpenTitle; onStartParty: (friendId: string) => void }) {
   const t = useT();
   const friends = useFriends();
+  const scores = useScores();
   const now = Date.now();
   if (!friends.on || !friends.state) return null;
   const { state } = friends;
-  const parties = state.inbox.filter((item): item is PartyInvitation => item.kind === "party" && item.endsAt > now);
+  const parties = state.inbox.filter((item): item is PartyInvitation => item.kind === "party" && partyOpen(item, now));
+  const requests = state.inbox.filter((item): item is TogetherRequest => item.kind === "together");
   const recommended = state.inbox.filter((item): item is Recommendation => item.kind === "recommend");
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   const dismiss = (id: string) => void friends.dismiss(id).catch(() => undefined);
@@ -622,6 +848,17 @@ export function FriendsHome({ onOpenTitle }: { onOpenTitle: OpenTitle }) {
           </button>
         </div>
       ))}
+      {requests.map((item) => (
+        <div className="banner friend-party" key={item.id} data-testid="friend-together-banner">
+          <span>{t("friends.togetherOf", { name: nameOf(state.friends, item.from) })}</span>
+          <button className="btn btn-red" onClick={() => onStartParty(item.from)} data-testid="friend-together-start">
+            {t("friends.startParty")}
+          </button>
+          <button className="mini" onClick={() => dismiss(item.id)} aria-label={t("friends.dismiss")} data-testid="friend-together-dismiss">
+            <CloseIcon />
+          </button>
+        </div>
+      ))}
       {recommended.length > 0 && (
         <CardRow title={t("friends.inbox")} testId="friends-row">
           {recommended.map((item) => {
@@ -633,6 +870,7 @@ export function FriendsHome({ onOpenTitle }: { onOpenTitle: OpenTitle }) {
                 title={entry.title}
                 image={entry.backdrop ?? entry.image}
                 note={entry.note}
+                score={scoreOf(scores, entry.url)}
                 playLabel={`${t("rows.open")} ${entry.title}`}
                 removeLabel={`${t("friends.dismiss")}: ${entry.title}`}
                 onPlay={() => open(entry)}

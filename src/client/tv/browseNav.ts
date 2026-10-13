@@ -3,12 +3,12 @@ import type { Direction } from "./dpad";
 /**
  * Where the arrow keys lead on the library screen. The screen is a few blocks ("zones") of buttons laid out in rows: the menu
  * on the left, the account button on top (with the full screen one beside it), the banner's buttons (Play, the list) under it on the pages with rows, and in the middle
- * either rows of titles, a grid (the lists have a row of buttons over theirs), or the search keyboard with its filter and results. A title's own page lies over all of these
+ * either rows of titles, a grid (the lists have a row of buttons over theirs, a friend's page one button under it), or the search keyboard with its filter and results. A title's own page lies over all of these
  * while it is open, and the arrow keys do not leave it: its Close button in the corner, under it its row of buttons (`detail`), and for a show,
  * under those, a row of seasons and the episodes of the one that is shown, one under the other.
  * Pure, so the walking can be tested without a screen.
  */
-export type Zone = "rail" | "top" | "hero" | "rows" | "grid" | "keys" | "chips" | "results" | "detail" | "close" | "seasons" | "episodes";
+export type Zone = "rail" | "top" | "hero" | "rows" | "grid" | "keys" | "chips" | "results" | "foot" | "detail" | "close" | "seasons" | "episodes";
 
 export interface Pos {
   zone: Zone;
@@ -59,6 +59,16 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     return direction === "down" && at.row < lengths.length - 1 ? { ...at, row: at.row + 1 } : null;
   }
 
+  if (at.zone === "foot") {
+    // The one button under a page's titles (a friend's Remove): up leads to the last row of the titles, else to the buttons over them; nothing is beside it but the menu.
+    if (direction === "up") {
+      const rows = shape.grid ?? [];
+      if (rows.length > 0) return { zone: "grid", row: rows.length - 1, col: 0 };
+      return shape.chips?.length ? { zone: "chips", row: 0, col: 0 } : shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
+    }
+    return direction === "left" ? RAIL : null;
+  }
+
   if (at.zone === "top") {
     // The account button and, beside it, the full screen one.
     if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
@@ -105,10 +115,11 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
       return shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
     case "down":
       if (at.zone === "chips") {
-        const below = shape.results?.length ? "results" : shape.grid?.length ? "grid" : null;
+        const below = shape.results?.length ? "results" : shape.grid?.length ? "grid" : shape.foot?.length ? "foot" : null;
         return below ? { zone: below, row: 0, col: Math.min(at.col, (shape[below]?.[0] ?? 1) - 1) } : null;
       }
-      return at.row < lengths.length - 1 ? into(at.row + 1) : null;
+      if (at.row < lengths.length - 1) return into(at.row + 1);
+      return at.zone === "grid" && shape.foot?.length ? { zone: "foot", row: 0, col: 0 } : null;
   }
 }
 

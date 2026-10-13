@@ -2,9 +2,11 @@ import type { ReactNode } from "react";
 import { fractionOf, listOf, resumeAt, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type PlayHint } from "../../shared";
 import { continueNote, hintOf, listEntryOf, listName, unfinished } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
-import { ratingNote, sortRatings } from "../account/ratingText";
+import { ratingNote, scoreOf, sortRatings } from "../account/ratingText";
+import { useScores } from "../account/ratings";
 import { useT } from "../i18n";
 import { Poster } from "../shared/Poster";
+import { ScoreBadge, useScoreWords } from "../shared/ScoreBadge";
 import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
 import { ListButton, RemoveButton, useListToggle, type ListToggle } from "./Round";
@@ -39,6 +41,8 @@ interface CardProps {
   note?: string | undefined;
   /** 0..1: a thin bar across the foot of the picture. */
   progress?: number;
+  /** The score this profile gave the title, in the picture's corner. */
+  score?: number | undefined;
   playLabel: string;
   /** The cross in the corner: a card that cannot be taken off its row (a rated title's) has neither of these. */
   removeLabel?: string;
@@ -51,12 +55,15 @@ interface CardProps {
   onHold?: () => void;
 }
 
-export function Card({ title, image, note, progress = 0, playLabel, removeLabel, onPlay, onRemove, testId, toggle, onHold }: CardProps) {
+export function Card({ title, image, note, progress = 0, score, playLabel, removeLabel, onPlay, onRemove, testId, toggle, onHold }: CardProps) {
   const hold = useHold(() => (onHold ?? toggle?.onHold)?.());
+  const scoreWords = useScoreWords();
   return (
     <div className="lib-tile" data-testid={`${testId}-item`}>
-      <button className="lib-card" onClick={hold.tap(onPlay)} {...hold.props} aria-label={playLabel} data-testid={`${testId}-play`}>
+      {/* (The button's name is its own words, which leave out what is inside it: the score is added to them.) */}
+      <button className="lib-card" onClick={hold.tap(onPlay)} {...hold.props} aria-label={score === undefined ? playLabel : `${playLabel}. ${scoreWords(score)}`} data-testid={`${testId}-play`}>
         <Poster className="lib-art" title={title} image={image}>
+          {score !== undefined && <ScoreBadge score={score} />}
           {progress > 0 && (
             <span className="lib-progress" aria-hidden="true">
               <i style={{ width: `${Math.round(progress * 100)}%` }} />
@@ -93,6 +100,7 @@ export function ContinueRow({
 }) {
   const t = useT();
   const toggleFor = useListToggle(onPick);
+  const scores = useScores();
   const shown = unfinished(items);
   if (shown.length === 0) return null;
   return (
@@ -107,6 +115,7 @@ export function ContinueRow({
             image={item.backdrop ?? item.image}
             note={continueNote(item)}
             progress={fractionOf(item)}
+            score={scoreOf(scores, item.url)}
             playLabel={`${resume === undefined ? t("rows.play") : t("rows.resume")} ${item.title}`}
             removeLabel={`${t("rows.remove")}: ${item.title}`}
             onPlay={() => onPlay(item.url, resume, hintOf(item))}
@@ -138,6 +147,7 @@ interface ListRowsProps {
  */
 export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: ListRowsProps) {
   const t = useT();
+  const scores = useScores();
   const filled = lists.filter((info) => items.some((item) => listOf(item) === info.id));
   if (filled.length === 0 && lists.length < 2) return null;
   const manage = (
@@ -168,6 +178,7 @@ export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: L
                   title={item.title}
                   image={item.backdrop ?? item.image}
                   note={item.year ? String(item.year) : undefined}
+                  score={scoreOf(scores, item.url)}
                   playLabel={`${t("rows.open")} ${item.title}`}
                   removeLabel={`${t("rows.removeFromList", { list: name })}: ${item.title}`}
                   onPlay={() => onOpen(entryOfSaved(item))}

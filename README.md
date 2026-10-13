@@ -5,7 +5,7 @@ address, and each device becomes the screen or the remote (`/tv` always plays) a
 Accounts with profiles keep what you watched on every phone, TV and browser; the whole site speaks English, Romanian and Italian.
 
 ```
-phone ──WS──▶ server ──WS──▶ TV player ──▶ media (directly, no proxy)
+phone ──WS──▶ server ──WS──▶ TV player ──▶ media (through the server's /api/proxy for the sites that need it)
         (paste a link: the server finds the video, the TV plays it without the page)
 ```
 
@@ -52,14 +52,18 @@ pnpm build && pnpm start     # http://localhost:8787
 **Accounts and profiles**
 - Register and sign in with a **name and a password, and nothing else asked for**: both can be anything (the password as short as one
   character, or none at all; the name only has to be one nobody has taken, upper or lower case alike, and may be an email address if someone
-  prefers). **An account with no password is open to anyone who types its name**, and the sign-up page says so. Passwords are hashed with
+  prefers). **An account with no password is open to anyone who types its name**, and the sign-up page says so. A password that is none,
+  shorter than six characters, the name itself, one character over and over, or one of the first things anybody tries (`123456`,
+  `password`, ...) is **asked about before the account is made**: a page in the form's place says what it means (no password: it can be shared
+  very easily; a poor one: it is easy to guess) and offers "Change the password" (the form again, as it was left) or "I agree"; on a TV Back
+  is "Change the password". It is a question and not a rule, the server takes any password (`src/client/account/password.ts`). Passwords are hashed with
   scrypt; the session is an `httpOnly` cookie that lasts 400 days (the longest a browser keeps one) and is renewed every time the app is
   used, so a signed-in browser stays signed in until the person signs out or the browser's data is cleared. The page also remembers who was
   signed in, so a screen does not look signed out while the server is slow to answer (a free host waking up). An account has up to **five
   profiles**, each with a name and one of **twelve avatars**; who is watching is asked on every new device, Netflix-style, and a profile
   is switched from the account page (the profile picture in the phone's top bar, and in the library's top corner on the TV). The TV makes,
-  renames, re-pictures and removes profiles itself, with the remote's arrow keys: profile picture in the top corner (or the gear in the
-  menu) → **Manage profiles**; the "Who's watching?" page that follows a sign-in has the same tile for a new profile and the same button.
+  renames, re-pictures and removes profiles itself, with the remote's arrow keys: profile picture in the top corner (or **Settings** on the
+  menu's **Profile** page) → **Manage profiles**; the "Who's watching?" page that follows a sign-in has the same tile for a new profile and the same button.
 - **Watching is saved to the profile**, wherever it is watched: **Continue watching** (the place in every unfinished film or episode, and the
   next episode of a show once one is finished), **lists** (every profile has one called **Favourites**, and can make others and name them,
   up to twelve in all; a title can be in several), the watched marks on episode lists, and the profile's settings. Open the app
@@ -71,22 +75,39 @@ pnpm build && pnpm start     # http://localhost:8787
   work from the person: *when it was rated*, *how much was watched* (**from 95% on it counts as all of it**, since the credits are often skipped; a
   show or a season is counted in episodes, "2 of 3 episodes watched") and *when it was finished* (or last watched). Watching it again later adds to that;
   rating it again changes the day it was rated only when the score changes. **My ratings** is a row on the phone's home screen with a page of its own
-  (*See all*: newest first or highest first, with the notes and those facts, and the mean) and an entry in the TV's menu. Ratings are saved to the
+  (*See all*: newest first or highest first, with the notes and those facts, and the mean; it is also a row of the phone's account page, which works with no TV paired too: a title opens from it without Play, and with
+  nothing rated the page says what to do) and a place on
+  the TV's **Profile** page. **A title that was rated shows its score** (a star and the number) in the corner of its picture wherever it is shown, in the rows, a
+  grid, a search, Continue watching, the lists and what friends recommended, on the phone and the TV, so what was rated is seen while scrolling the library
+  (a screen reader says it with the title; a season's score is the season's: the show shows none of its own). Ratings are saved to the
   profile and synced like the lists (up to 500; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
   and TV) switches the whole thing off, every sign of it, and keeps what was rated.
 - **Friends** are optional and **off until a profile turns them on** in its settings (phone and TV; they belong to an account, so a guest is told to sign in).
   Two profiles become friends with a code (`ABCD-2345`, good once and for a week) that one gives and the other types or opens as a link: the phone shows it
-  with a QR code and a link to send, the TV with a QR code (up to 5 codes can be out at once; one can be taken back). A friend can **look at your lists and
+  with a QR code, a **Copy code** button and a link to send (with a **Copy link** button of its own); the TV shows it with a QR code and the same **Copy code** button, which the remote or a mouse presses; where a browser will not copy, the code is selected instead, to be copied by hand. Up to 5 codes can be out at once; one can be taken back. A friend can **look at your lists and
   ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone), **be invited to a
   watch party** (a button that joins on the phone; on the TV, pressing the invitation on the Friends page joins) and **hear what you watch** ("Sam is watching
   Alien", from a minute in, the last two weeks). Each of these has a switch of its own: *Friends can see my lists*, *…my ratings*, *Tell friends what I watch*,
-  *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*. They live in the
+  *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*, *Friends can see when I'm online*. They live in the
   profile's settings, so the server, not the screen, decides what a friend is shown or may send, from the other profile's synced settings; with friends off nothing is
   shared, sent or received, and the friends are kept for when it is turned on again (turning it on again **resumes sharing with them at once**, so a friend you
   mean to be rid of is removed first: with friends off, *Settings → Friends* on the phone lists the friends you still have, each with a button that removes them,
-  and nothing has to be turned on for it). What friends sent shows as a row, a dot (phone) or a number on the menu (TV), and a
-  line when it arrives; either friend can remove the other (the button asks twice), which also takes back the codes the one who removed had out, so that a code the
-  other was shown cannot bring them back. Friends: `/api/profiles/:id/friends…`.
+  and nothing has to be turned on for it). On the TV the friends are a place of the **Profile** page, on the phone a row of the account page. What friends sent shows as a row, a dot (phone) or a number on the menu's Profile line (TV), and a
+  line when it arrives; either friend can remove the other (a red button of its own under their page, away from the buttons over their titles, which opens a window
+  that asks first, with Cancel under the remote), which also takes back the codes the one who removed had out, so that a code the
+  other was shown cannot bring them back. A friend's tile (and row, on the phone) shows the picture they chose, and a friend's page on the TV has a **Back** button
+  of its own for a mouse (the remote's Back does the same). **Online**: a friend whose Kino page is open somewhere shows a green dot and *Online* (a page in front
+  asks the server how its friends stand every half minute, which is what tells the server it is there: online means heard from in the last 90 seconds, and it is
+  shown only while both profiles have friends and *Friends can see when I'm online* on, so that switch is the way to be seen as offline for a while, or always, and
+  it also hides the others from you). When you tell what you watch and a friend hears it, **how far you got** shows on their page of your lists and ratings: the
+  episode you are at and how far into it ("S2:E5 · 63%", or *Watched*), with a thin bar over the picture; a title left after a few seconds is not counted, and a
+  friend who does not hear what you watch sees none of it. **Watching together**: an invitation to a watch party is worked out when a friend reads it, not when it is
+  sent: it carries the host's code *as it is now* (a party's code lasts ten minutes and is renewed only while the host's screen shows it, so the one an invitation was
+  sent with would be refused after a while) and says whether the party is still open. Pressing one that is not says *That party is not open any more*, and the
+  invitation becomes **Ask to watch together** (a button on that friend's page too) when that friend tells what they watch to you: they get *"Sam wants to watch
+  together"* with a **Start a party** button, which starts a party on their screen (the TV, or the TV their phone controls) and invites the one who asked, which takes
+  the request away. The server sends a request (`kind: "together"`, a newer one replaces an older, gone after 12 hours) only to a friend who takes things and gives
+  what they watch to the one asking, and refuses an invitation to a party that is not open (`409 party_closed`). Friends: `/api/profiles/:id/friends…`.
   Things to know: *Friends can see my ratings* does nothing, and is not shown, while ratings themselves are switched off (they stay kept, and are seen by nobody).
   What friends send is made fit to show (no characters that turn text around or hide in it; a friend's picture is shown only if it is the address of some other
   web site, never a path, an address on this site or one that only a private network answers to, such as `localhost` or `192.168.x.x`), and an inbox holds the newest 100 things, at most 20 from one friend; the same title sent again while it is
@@ -96,6 +117,22 @@ pnpm build && pnpm start     # http://localhost:8787
   its username, and a friend (or whoever is shown one of your codes) sees that name: with an empty or one-letter password, rename it. A TV left open from before a
   version that adds a setting needs a reload once (an older page does not know the new setting and cannot read the account's answer; newer pages leave such
   settings out instead).
+  **Tags and requests.** Every profile has a **tag**, its name and a number (`Sam#2`: the lowest number that no other profile of that name has, whatever the capitals; it is kept
+  when only the capitals of the name change). The Add a friend page shows yours (on the phone with a **Copy tag** button); typing somebody else's there and pressing **Find**
+  shows who it is and a **Send request** button. Finding only **asks**: the other gets a line, a *Friend requests* row (a tile on the TV, whose window has **Accept** under the remote
+  and **Decline**, and where Back leaves the request waiting) and a number on the badge, and nobody is a friend until they say yes, except that two who have asked each other are
+  friends at once. A profile with friends off cannot be found by tag. A tag is looked up only when **Find** is pressed, so a half-typed one costs no wrong guess, and a
+  wrong tag counts against the same limit as a wrong code (10 per 15 minutes for an account, 100 for an address). A request waits 30 days, a profile keeps the newest 30 it was sent,
+  and 30 can be sent an hour. `GET /api/profiles/:id/friends/tags/:tag`, `POST …/friends/requests` (`{tag}`), `POST …/friends/requests/:from/accept`, `DELETE …/friends/requests/:from`.
+  **The bell.** A profile with friends on has a small bell beside its picture, in the phone's header and in the corner of the TV's library (the first button of the corner for the remote:
+  Up from the titles reaches it, Right goes on to the picture, and OK opens its list). A **number** on it is what waits for an answer from this profile, the same count the Profile
+  line of the TV's menu carries (requests to be friends, invitations, requests to watch together, titles friends sent); a **quiet dot** only says that a friend watched something since
+  this device last opened the bell. The list shows up to 8 of what waits (requests first, then open invitations, requests to watch together, titles sent, and invitations that are over),
+  with the buttons they have on the Friends page (on the TV a line does what the same tile of that page does, so a request opens its question, an invitation joins, a title opens its page),
+  then up to 4 things friends watched lately, a line saying how many more wait on the Friends page, and an **Open Friends** button; Back from the Friends page it was opened from goes
+  home, not to the account page it was never on. Opening the list is looking: it marks the inbox read and puts the dot out (when it was put out is kept per profile on each device, in
+  `kino.bellSeen.<profile>`). The unread dot that the profile's picture used to carry moved to the bell. Nothing is added to the server for it: the bell reads the state that the Friends
+  page already polls every 30 seconds.
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.
@@ -173,7 +210,11 @@ pnpm build && pnpm start     # http://localhost:8787
   hands the focus back to the button that opened it (the subtitle style is a page of the audio and subtitles menu, so Back goes one page back).
   Every screen before the video (the library, a title's page, the pairing code, the connected screen, the account pages, the "Press OK" page of a
   party link) is walked with the arrow keys: the first press only lands on a button, so a stray OK never presses one, and a page of columns keeps
-  Up and Down to the column the remote is in (`src/client/tv/dpad.ts`)
+  Up and Down to the column the remote is in (`src/client/tv/dpad.ts`). **Back goes one step out of every one of them**, to the page it was opened from: out of
+  a window on a window, out of the question inside an editor before a list or a profile is removed (that says no first, and leaves the page the next time), out of
+  a sign-in that was opened from the settings and back to the settings, out of the code that is still on its way. A screen that watches a party along has nowhere to
+  go back to, so Back lands on its **Leave** button and leaving stays a press of OK. The Close and Back buttons stay for those with a mouse
+  (`e2e/remote-back.spec.ts` opens each of them and presses Back)
 - The controls are one line on any screen, in any language, with every button present (series, subtitles, sources, quality, party). The row
   measures itself (`src/client/tv/fit.ts`) and gives up only as much as it must, in this order: the room between the buttons, the labels of Watch
   party and Audio & subtitles, the episode names under Previous / Next, the labels of Previous / Next, the label of Episodes (each label becomes its
@@ -244,6 +285,12 @@ pnpm build && pnpm start     # http://localhost:8787
 
 **Server**
 - Resolves a link to a playable stream: the generic resolver plus the site adapters in `src/server/resolvers/adapters/`
+- The media proxy (`/api/proxy`, which the adapters' streams go through so that a site's referer and CORS rules do not stop the player) only
+  connects to public addresses. The address is checked where a connection is made, not in the text of the link, so `localhost`, or a name
+  anyone can point at a machine on the server's own network, is refused (403) like a number; every redirect is checked the same way.
+  The pieces of a film that the screens of a party ask for a few seconds apart are fetched from the site once and handed to each of them
+  (`src/server/segmentCache.ts`: only whole answers that say how long they are, at most 64 MB kept for 3 minutes), so five screens do not
+  look like five viewers to the site; what the server sends on to the screens is still one copy each
 - Pairing codes are single-use and expire after 10 minutes. After 20 wrong codes in a minute (all phones counted together)
   pairing pauses until the minute is over, because the code is only six digits
 - **Accounts, pairings and what each TV was playing are kept**: written to disk (or Postgres) a moment after every change and again when the
@@ -288,7 +335,9 @@ is watching on it, or else by its own name ("TV 3F2A"). Ways in:
   on the button that ends the party). The screen shows a
   6-digit code, a QR code and the address, and the invitation as a **link with a Copy link button beside it** (a click, or OK from the remote: it says *Link copied*),
   to paste into somebody's chat; on another screen choose **Watch party → Join a party** and type the code with the remote's
-  number keys (the on-screen pad works too).
+  number keys (the on-screen pad works too). With friends on, the party's page and the panel over a film both have **Invite friends**, which tells
+  the friends chosen (a friend who is the only one is chosen already; Back from the list of friends goes back to the party). A party that has ended
+  before a friend answers is not a dead end: the invitation turns into *Ask to watch together* (see Friends).
 - **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with the link and a **Copy link** button (and a **Share link** button where the browser can share), and
   lists who is in (the host's phone can send any guest away, or end the party). Typing the pairing code that another TV shows into the phone
   still works; a party's own code typed there is told apart from a wrong one (`ADD_PARTY_CODE`: the phone is told what the code is for, and it
@@ -304,9 +353,29 @@ limit as pairing. A TV with a phone connected can host a party but not join one.
 or on its phone) can remove a guest or end the party, and a guest can leave from its own bar.
 
 **What the host decides:** what plays, a guest that joins mid-film starts at the host's place, pause, skipping, speed and stop. The host
-reports its position, the server relays it, and each guest nudges its speed by a few percent when it drifts a fraction of a second, or jumps when it is
-a second or more off (`src/client/tv/sync.ts`). **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
+reports its position and the server relays it, saying how old it is by then (half of the host's round trip to the server plus half of the
+guest's: every screen times the answers to its keepalive PINGs and sends the shortest of the last few along, and the server puts the sum
+on the `TV_SYNC` as `lag`), so each guest aims at where the host is now, not where it was; guests used to sit behind it by about that
+much. A guest nudges its speed by a few percent when it is more than 0.15 s off (and goes on until it is within 0.05 s, instead of starting
+and stopping with every report), jumps when it is a second or more off, shows the host's frame when paused (within 0.1 s), and jumps to
+the host's place at once when the host starts again, if it has that place (`src/client/tv/sync.ts`). A guest that is still waiting for
+data does not chase the host: it does not speed up on a thin buffer, and it jumps only to a place it has already downloaded (after 15 s
+behind, anywhere), so a slow screen is not sent back and forth. **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
 from the guest's *Audio & subtitles* button; volume is the device's own.
+
+**Admins:** next to each guest's name the host (on the TV, or on its phone) has a **Make admin** button, which turns into **Remove admin**. An
+admin guest gets a bar of its own under the guest's bar (jump back 10 seconds, play / pause, jump forward 10, the next episode where there is
+one, stop) and the same keys on the remote (OK / Space, the arrows, `N`, `S`), and **Down** lands on Play. What it asks is done by the host's
+screen, so every guest follows it as they follow the host, and **Stop** is for everyone, the admin's own screen included. Speed, the
+episode and source pickers, and who is in stay the host's: the server only takes `PLAY`, `PAUSE`, `SEEK`, `SKIP`, `STOP` and `NEXT_EPISODE` from an
+admin (`TV_PARTY_CMD`), and nothing at all while the host's screen is not there. Everyone in the party sees who is an admin. A guest stops being
+one when it leaves, is sent away or the party ends, and is not one when it joins again.
+
+**Adding someone from a party:** a screen that is signed in as a profile with friends on is listed with that profile, and everybody in the party whose
+own profile has friends on gets a short **Add** button beside it (**Requested** while the request waits for a yes; nothing for yourself, a friend already, or a screen nobody is
+signed in on). It sends the same request as typing a tag does (see Friends). The profile shown is the server's word, not the screen's: a signed-in screen asks for a single-use
+proof of who it is (`POST /api/profiles/:id/screen`, good for two minutes) and sends it with `TV_PROFILE`, so a screen cannot pass for somebody else, and a profile that has
+friends off is not shown at all.
 
 **A phone as a guest** watches in either orientation. The guest's bar (Audio & subtitles, Mute, Watch party, Full screen, Leave) sits along the
 top: held sideways it is one row, held upright "Watching along with …" has a line of its own and the buttons wrap under it. The guest's screen says
@@ -358,12 +427,16 @@ well as in the page's own status, which can be far above a library that is scrol
   is missing is left out as a whole, one whose later episode is missing is not. Nothing here asks a place about a title ahead of time; the
   one thing known without trying is that a title with a release date in the future is not out yet, so it is never listed.
 - **Menu, pages, categories, search (TV).** Pressing Left from the first title of any row (or the first tile of a grid) opens a menu down the
-  left: **Search**, **Home**, **Movies**, **Series**, **My Lists**, **History**, **Watch party**, **Connect a phone**, **Settings**, and under them the
-  **categories**, films and shows apart, four of each with **More…** opening the page of all of them. Right or Back returns to the titles (with a
+  left, nine lines: **Search**, **Home**, **Movies**, **Series**, **Categories**, **My Lists**, and, set apart, **Watch party**, **Connect a phone** and
+  **Profile**. What belongs to whoever is watching is behind that last line, not in lines of its own: **Profile** is a page of one row of places, each
+  saying how it stands: **My ratings** ("12 ratings · average 7.4"), **Friends** (a profile that is signed in and has friends on: "3 friends", "2 unread"),
+  **History**, **Sign in** (for a guest) and **Settings**; Back from any of them returns to it with the remote on the place it left (found again by what it is: Friends coming or going moves the others; if the place the remote is on goes, it stands where that was), the banner above says how the place under the remote stands now, and its line in the menu carries the number of unread things
+  from friends. **Categories** is one page of all of them, films first, then shows, each saying which it is and how many titles it has; a category opens as a
+  grid, and Back returns to the list. Right or Back returns to the titles (with a
   mouse, **resting the pointer on the strip opens the menu**, no button held, and leaving it shuts it), and
-  choosing any entry (**My Lists**, **History**, a category…) closes the menu over the page it opens. **My Lists** is a button for each list over
+  choosing any entry (**My Lists**, **Profile**, a category…) closes the menu over the page it opens. **My Lists** is a button for each list over
   the titles in it, with **New list** (a name typed on the on-screen or real keyboard) and **Edit list** (rename, or delete after a question). **Movies**
-  and **Series** are home pages of only that kind; a category opens as a grid of its titles. **Search** shows an on-screen keyboard (Space, Delete, and Clear for the whole box) beside the
+  and **Series** are home pages of only that kind (a library whose titles do not say which they are, as the Internet Archive's do not, says "No movies here" or "No series here" and leads Home, instead of "Nothing in the library yet"); a category opens as a grid of its titles. **Search** shows an on-screen keyboard (Space, Delete, and Clear for the whole box) beside the
   results (a physical keyboard types too, and Backspace deletes before it means Back) with **All / Movies / Series** filters. Titles already loaded
   answer at once; after a short pause the source's search (`GET /api/library/search?q=`) adds more, and a library whose rows could not be loaded
   can still be searched. **A search forgives the fingers** (`src/shared/search.ts`, on [MiniSearch](https://github.com/lucaong/MiniSearch)): every word of the
@@ -448,18 +521,18 @@ pnpm fixtures     # optional: regenerate fixtures/ with ffmpeg (outputs are comm
 
 Tests never touch the internet; they use `fixtures/` (served at `/fixtures/`) and, for accounts, an in-memory store (`DATA_DIR=memory`) with
 throwaway credentials from `e2e/testAccount.ts`. The e2e suite covers pairing by code and by QR link, camera scanning (Chromium's fake
-webcam shows a generated QR code), disconnect and switching TVs, resume, the D-pad, HUD fading, subtitle memory and the episode lists, the
+webcam shows a generated QR code), disconnect and switching TVs, resume, the D-pad and its Back key (one step out of every page, menu and window: `e2e/remote-back.spec.ts`), HUD fading, subtitle memory and the episode lists, the
 library and its menu, watch parties (from a TV, from a phone, from a link), a second phone and a phone that scans another TV, a phone with
 several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page whose connections are never answered:
 `sleepingServer` in `e2e/helpers.ts`, with the page's clock skipped ahead), the TV page on a
 phone, a tablet and a phone held sideways, a finger on the picture (taps, double taps, a hold, the big button, the landscape lock, the episode's name:
 `e2e/player-touch.spec.ts`; the recognizer on its own in `src/client/tv/gestures.test.ts`), the end card and mute, full screen (at the first press, kept for the next visit, the buttons),
-ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV), friends (made with a code or a link, what a friend can see,
-what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
+ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV, and the score on a title's picture), the TV's menu and its Profile page (`e2e/profile-hub.spec.ts`, which also checks that what the page says fits its tiles in the three languages at four screen sizes), friends (made with a code or a link, what a friend can see,
+what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`; tags, requests and the Add button of a party, with the fit of its rows: `e2e/friend-tags.spec.ts`; the bell on the phone and the TV, with the fit of the header, the corner and the list: `e2e/bell.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
 itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`). A Hisense browser is imitated by its user agent
-(`e2e/hisense.spec.ts`), and a TV's OK key by a raw key down and up with no typed Enter.
+(`e2e/hisense.spec.ts`), and a TV's OK key by a raw key down and up with no typed Enter. Every device a test opens (`openDevice` and the others in `e2e/helpers.ts`) is closed when the test ends: the specs take `test` from there, which adds that clean-up, since Playwright does not close a device made with `browser.newContext()` and a run that left them all open ended with hundreds of browser processes.
 
 Browsers that refuse a video until it has been pressed (Brave's strict setting, iPhones) are tested with a browser started with
 `--autoplay-policy=user-gesture-required` (`strictBrowser` in `e2e/helpers.ts`). Playwright's own click lets go of the button within a few milliseconds,

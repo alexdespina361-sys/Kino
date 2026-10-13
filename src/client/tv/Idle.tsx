@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
+import { useBell } from "../friends/useBell";
 import { useT } from "../i18n";
 import { formatCode } from "../shared/format";
 import { enterFullscreen, useFullscreen } from "../shared/fullscreen";
-import { CheckIcon, UserIcon } from "../shared/icons";
+import { BellIcon, CheckIcon, UserIcon } from "../shared/icons";
 import { controlLink, pairLink } from "../shared/launch";
 import { Logo } from "../shared/Logo";
 import { RoleSwitch } from "../shared/RoleSwitch";
@@ -54,8 +55,38 @@ export function Screen({ children, testId, compact = false, focus = false, onBac
   );
 }
 
-/** Top right of the library: who is watching on this TV, or a way to sign in. `zone`: the library's own arrow keys walk to it, not the screen's. */
-export function AccountChip({ onOpen, zone = false }: { onOpen: () => void; zone?: boolean }) {
+/**
+ * The bell beside the account chip: a number on it while something waits for an answer, a quieter dot when friends only watched something.
+ * Not there while friends are off. `col` is its place among the corner's buttons, for the library's arrow keys.
+ */
+export function BellChip({ onOpen, col }: { onOpen: () => void; col: number }) {
+  const t = useT();
+  const bell = useBell();
+  if (!bell.on) return null;
+  return (
+    <button
+      className="tv-corner-button tv-bell"
+      onClick={onOpen}
+      data-zone="top"
+      data-row={0}
+      data-col={col}
+      data-testid="tv-bell"
+      aria-label={bell.badge > 0 ? t("bell.ariaCount", { count: bell.badge }) : t("bell.title")}
+    >
+      <BellIcon />
+      {bell.badge > 0 ? (
+        <b className="tv-bell-badge" data-testid="tv-bell-badge">
+          {bell.badge > 9 ? "9+" : bell.badge}
+        </b>
+      ) : (
+        bell.fresh && <i className="tv-bell-dot" aria-hidden="true" data-testid="tv-bell-dot" />
+      )}
+    </button>
+  );
+}
+
+/** Top right of the library: who is watching on this TV, or a way to sign in. `zone`: the library's own arrow keys walk to it, not the screen's; `col` is its place among the corner's buttons. */
+export function AccountChip({ onOpen, zone = false, col = 0 }: { onOpen: () => void; zone?: boolean; col?: number }) {
   const t = useT();
   const { status, me, profile } = useAccount();
   if (status !== "ready") return null;
@@ -63,7 +94,7 @@ export function AccountChip({ onOpen, zone = false }: { onOpen: () => void; zone
     <button
       className="tv-account-chip"
       onClick={onOpen}
-      {...(zone ? { "data-zone": "top", "data-row": 0, "data-col": 0 } : { "data-nav": true })}
+      {...(zone ? { "data-zone": "top", "data-row": 0, "data-col": col } : { "data-nav": true })}
       data-testid="tv-account-chip"
       aria-label={me && profile ? `${t("account.open")}: ${profile.name}` : t("account.signInPrompt")}
     >
@@ -292,7 +323,8 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
   }
 
   return (
-    <Screen>
+    // (Waiting for a code that may be a while coming: Back is the way out to the library, as it is from the code itself.)
+    <Screen testId="tv-connecting" onBack={onBack}>
       <div className="spinner tv-spinner" />
       <h1 className="tv-headline">{t("tv.connecting")}</h1>
     </Screen>

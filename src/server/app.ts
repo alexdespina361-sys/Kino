@@ -6,10 +6,12 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { isHttpUrl, type Registration } from "../shared";
 import type { PasswordCost } from "./accounts/password";
 import { accountRoutes } from "./accounts/routes";
+import { ScreenProofs, screenProfiles } from "./accounts/screens";
 import type { AccountStore } from "./accounts/store";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
+import { SegmentCache } from "./segmentCache";
 import { Hub, type HubOptions } from "./websocket/hub";
 import type { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
@@ -62,8 +64,11 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const proxies = options.trustProxy;
   const trustProxy = typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies;
   const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
-  if (options.accounts) {
-    const accounts = options.accounts;
+  const registry = options.registry ?? new Registry();
+  const accounts = options.accounts;
+  // (A screen that is signed in tells the watch party whose it is by a proof the accounts give it: see accounts/screens.ts.)
+  const screens = accounts && new ScreenProofs(() => accounts.clock());
+  if (accounts) {
     app.addHook("onClose", async () => accounts.close());
     await app.register(accountRoutes, {
       store: accounts,
@@ -71,6 +76,15 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
       ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
       ...(options.passwordCost ? { passwordCost: options.passwordCost } : {}),
+      ...(screens ? { screens } : {}),
+      // (What friends are invited to: the screen whose party a code is open with, and the code a party is joined with now.)
+      parties: {
+        hostOf: (code) => registry.hostOfPartyCode(code)?.publicId,
+        running: (host) => {
+          const device = registry.deviceByPublicId(host);
+          return (device && registry.runningParty(device)) || undefined;
+        },
+      },
     });
   }
   const resolve =
@@ -88,7 +102,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     else if (result.status === "temporary_failure") library.played(url, "failed");
     return result;
   };
-  const hub = new Hub(options.registry ?? new Registry(), resolveForPlay, options.hub);
+  const hub = new Hub(registry, resolveForPlay, { ...options.hub, ...(accounts && screens ? { profiles: screenProfiles(accounts, screens) } : {}) });
   // Hooks run last-registered first: the pairs are written before the accounts close the database they share.
   if (options.pairings) {
     const pairings = options.pairings;
@@ -158,9 +172,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const result = await resolve(rawUrl);
     return reply.send(result);
   });
+  // Screens watching a film together ask for the same pieces of it: the proxy fetches each once and shares it (see `SegmentCache`).
+  const segments = new SegmentCache();
   app.get<{ Querystring: { url?: string; referer?: string } }>("/api/proxy", async (request, reply) => {
     return handleStreamProxy(request, reply, {
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",
+      segments,
     });
   });
 

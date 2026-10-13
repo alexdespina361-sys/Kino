@@ -4,15 +4,17 @@ import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { AuthForm } from "../account/AuthForm";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
+import { useProfileData } from "../account/store";
 import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
-import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, PencilIcon, PhoneIcon, ScanIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, PencilIcon, PhoneIcon, ScanIcon, StarIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
 import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { LinkApprove } from "../account/LinkApprove";
 import { useBackToClose } from "./backButton";
 import { FriendPage, FriendsPage } from "./Friends";
+import { RatingsSheet } from "./RatingsSheet";
 import { sheetIsOpen } from "./Sheet";
 
 /** A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. */
@@ -56,22 +58,29 @@ export function AccountScreen({
   initial = "main",
   onSessionsChanged,
   onOpenTitle,
+  onStartParty,
 }: {
   onClose: () => void;
   initial?: View;
   onSessionsChanged?: () => void;
   /** A title a friend sent, or has in a list, was tapped (not given on a phone that has no TV to play it on). */
   onOpenTitle?: (entry: Entry) => void;
+  /** A friend's request to watch together was answered with "Start a party" (not given on a phone that has no TV to host one). */
+  onStartParty?: (friendId: string) => void;
 }) {
   const t = useT();
   const account = useAccount();
   const friends = useFriends();
+  const { ratings, settings } = useProfileData();
+  const ratingsOn = settings.ratings ?? true;
+  /** What this profile rated, over the account's page: it is the profile's, so it is kept here with the friends and the settings. */
+  const [ratingsOpen, setRatingsOpen] = useState(false);
   const [view, setView] = useState<View>(initial);
   const [editing, setEditing] = useState<Profile | "new" | null>(null);
   const [linkCode, setLinkCode] = useState<string | null>(null);
   /** The friend whose page is open, and the page the friends were opened from (the settings, or the account's menu). */
   const [friendId, setFriendId] = useState<string | null>(null);
-  const [friendsFrom, setFriendsFrom] = useState<View>("main");
+  const [friendsFrom, setFriendsFrom] = useState<View | "close">(initial === "friends" ? "close" : "main"); // (opened on the friends from the bell: Back leaves the account)
   const { me, profile } = account;
   const back = () => setView("main");
   const openFriends = (from: View) => {
@@ -119,13 +128,14 @@ export function AccountScreen({
   }
   if (view === "friends") {
     return (
-      <Page title={t("friends.title")} onBack={() => setView(friendsFrom)} testId="friends-screen">
+      <Page title={t("friends.title")} onBack={() => (friendsFrom === "close" ? onClose() : setView(friendsFrom))} testId="friends-screen">
         <FriendsPage
           onOpenFriend={(id) => {
             setFriendId(id);
             setView("friend");
           }}
           onOpenTitle={onOpenTitle}
+          {...(onStartParty ? { onStartParty } : {})}
         />
       </Page>
     );
@@ -204,6 +214,8 @@ export function AccountScreen({
     );
   }
 
+  /** What this profile rated is there for a guest too: a guest rates, and keeps it, until it signs in. */
+  const ratingsRow = ratingsOn && <MenuRow icon={<StarIcon />} label={t("rating.mine")} detail={ratings.length > 0 ? String(ratings.length) : undefined} onClick={() => setRatingsOpen(true)} testId="menu-ratings" />;
   return (
     <Page title={t("account.title")} onBack={onClose} testId="account-screen">
       {me && profile ? (
@@ -219,7 +231,8 @@ export function AccountScreen({
             {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={() => setView("picker")} testId="menu-switch" />}
             <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={() => setView("profiles")} testId="menu-profiles" />
             <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
-            {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.unread > 0 ? String(friends.unread) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
+            {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.attention > 0 ? String(friends.attention) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
+            {ratingsRow}
             <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
             <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
             <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
@@ -246,11 +259,13 @@ export function AccountScreen({
           </section>
           <AuthForm onDone={() => undefined} />
           <nav className="menu">
+            {ratingsRow}
             <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
           </nav>
           <p className="muted small center">{t("account.guestNote")}</p>
         </div>
       )}
+      {ratingsOpen && ratingsOn && <RatingsSheet ratings={ratings} onOpen={(entry) => onOpenTitle?.(entry)} onClose={() => setRatingsOpen(false)} />}
     </Page>
   );
 }
@@ -286,17 +301,15 @@ export function ChooseProfile() {
   );
 }
 
-/** The corner button of the phone's pages: the picture of the profile in use, or a way in for someone not signed in. */
+/** The corner button of the phone's pages: the picture of the profile in use, or a way in for someone not signed in. (What waits for the profile is on the bell beside it.) */
 export function AccountButton({ onClick }: { onClick: () => void }) {
   const t = useT();
   const { status, profile, me } = useAccount();
-  const { unread } = useFriends();
   if (status !== "ready") return null;
   if (me && profile) {
     return (
-      <button className="avatar-button" onClick={onClick} aria-label={`${t("account.open")}: ${profile.name}${unread > 0 ? ` · ${t("friends.unread", { count: unread })}` : ""}`} data-testid="account-button">
+      <button className="avatar-button" onClick={onClick} aria-label={`${t("account.open")}: ${profile.name}`} data-testid="account-button">
         <Avatar id={profile.avatar} />
-        {unread > 0 && <i className="unread-dot" aria-hidden="true" data-testid="unread-dot" />}
       </button>
     );
   }

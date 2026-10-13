@@ -15,8 +15,11 @@ import {
   type TvInfo,
 } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
+import { describeError } from "../account/errors";
 import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
+import { nameOf } from "../friends/entries";
+import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { readKept, writeKept } from "../shared/kept";
@@ -28,6 +31,7 @@ import { connectSocket, type Socket, type SocketStatus } from "../shared/socket"
 import { useWaking } from "../shared/useSlow";
 import { noticeText, resolveFailure, socketError } from "../shared/words";
 import { AccountButton, AccountScreen, ChooseProfile, Page } from "./AccountScreen";
+import { BellButton, NotificationsSheet } from "./Bell";
 import { LinkApprove } from "../account/LinkApprove";
 import type { Entry } from "../tv/pages";
 import { FriendInvite, FriendsHome } from "./Friends";
@@ -63,6 +67,7 @@ const RESOLVE_TIMEOUT_MS = 40_000;
 export function Controller() {
   const t = useT();
   const account = useAccount();
+  const friends = useFriends();
   const socketRef = useRef<Socket | null>(null);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
   /** The server has not answered for a while: the header's "Reconnecting…" gets a line that says why that can be. */
@@ -108,6 +113,13 @@ export function Controller() {
   const [lost, setLost] = useState(false);
   // The account page, and the sign-in request of a TV (from its QR code) waiting for this signed-in phone to say yes or no.
   const [showAccount, setShowAccount] = useState(false);
+  /** The account page opens on its menu, or on the friends when the bell sent it there. */
+  const [accountAt, setAccountAt] = useState<"main" | "friends">("main");
+  const [showBell, setShowBell] = useState(false);
+  const closeAccount = () => {
+    setShowAccount(false);
+    setAccountAt("main");
+  };
   const [approveCode, setApproveCode] = useState<string | null>(launchRef.current.link ?? null);
   /** A friend's code, from the link or the QR code of their invitation: asked about until it is used or sent away. */
   const [friendCode, setFriendCode] = useState<string | null>(launchRef.current.friend ?? null);
@@ -255,6 +267,28 @@ export function Controller() {
     socketRef.current?.send({ type: "OPEN_PARTY" });
   };
 
+  /** A friend asked to watch together: this phone's TV starts a party (asking for its code does that), and the friend is invited as soon as the code is here. */
+  const [together, setTogether] = useState<string | null>(null);
+  const startTogether = (friend: string) => {
+    setTogether(friend);
+    openParty();
+  };
+  useEffect(() => {
+    if (!together || !invite || invite === "asking") return;
+    setTogether(null);
+    const name = nameOf(friends.state?.friends ?? [], together);
+    void friends.send([together], { kind: "party", code: invite.code, endsAt: invite.endsAt }).then(
+      async (answer) => {
+        account.say(answer.sent.length > 0 ? t("friends.inviteSent", { names: name }) : t("friends.declined", { names: name }));
+        await friends.refresh(); // (the server takes the request away once they are invited)
+      },
+      (error: unknown) => account.say(describeError(error)),
+    );
+    // The party is what the person asked for: they see its code, and who comes.
+    closeAccount();
+    setSheet("party");
+  }, [together, invite]);
+
   /** The menu shows the code a second phone joins with: opening it asks again, which gives the current code and keeps it good for a while. */
   const openMenu = () => {
     socketRef.current?.send({ type: "CTL_HELLO", controllerId: readKept(CONTROLLER_KEY) });
@@ -343,7 +377,35 @@ export function Controller() {
   const tellTvToLookAgain = () => {
     if (tv?.online) socketRef.current?.send({ type: "CMD", command: { type: "REFRESH_ACCOUNT" } });
   };
-  const accountButton = <AccountButton onClick={() => setShowAccount(true)} />
+  const accountButton = (
+    <>
+      <BellButton onClick={() => setShowBell(true)} />
+      <AccountButton onClick={() => setShowAccount(true)} />
+    </>
+  );
+  const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
+  // A title's page, and the lists it can go in: over the remote, and over the account too (My ratings, a friend's lists), which a phone with no TV has as well. It then has no Play.
+  const titleSheets = (
+    <>
+      {title && (
+        <TitleSheet
+          entry={title}
+          {...(tv
+            ? {
+                onPlay: (url: string, startAt: number | undefined, hint: PlayHint) => {
+                  setTitle(null);
+                  playLink(url, startAt, hint);
+                },
+              }
+            : {})}
+          onPick={pickList}
+          onClose={() => setTitle(null)}
+        />
+      )}
+      {listSheet?.kind === "manage" && <ListsSheet onClose={() => setListSheet(null)} />}
+      {listSheet?.kind === "pick" && <ListPickerSheet entry={listSheet.entry} onClose={() => setListSheet(null)} />}
+    </>
+  );
   // On top of whichever screen is showing: the account, a TV asking to be signed in, and what the account has to say.
   const accountLayer = (
     <>
@@ -352,7 +414,18 @@ export function Controller() {
           <LinkApprove code={approveCode} onClose={closeApprove} />
         </Page>
       ) : (
-        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} {...(tv ? { onOpenTitle: setTitle } : {})} />
+        showAccount && <AccountScreen key={accountAt} initial={accountAt} onClose={closeAccount} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} {...(tv ? { onStartParty: startTogether } : {})} />
+      )}
+      {showBell && !showAccount && !approveCode && (
+        <NotificationsSheet
+          onClose={() => setShowBell(false)}
+          onOpenTitle={setTitle}
+          {...(tv ? { onStartParty: startTogether } : {})}
+          onOpenFriends={() => {
+            setAccountAt("friends");
+            setShowAccount(true);
+          }}
+        />
       )}
       {friendCode && !showAccount && !approveCode && !account.choosing && (
         <FriendInvite
@@ -435,6 +508,7 @@ export function Controller() {
         />
         {tvsSheet}
         {accountLayer}
+        {titleSheets}
       </>
     );
   }
@@ -453,12 +527,11 @@ export function Controller() {
     if (sheet === "party" || sheet === "tvs") setError(null); // what went wrong in there (a code that was refused) is not for the page behind it
     setSheet(null);
   };
-  const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
   // The box for pasting a link is there when it is turned on, and when the library has nothing to play instead (it would be the only way to start anything).
   const link = (
     <>
       <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} />
-      <FriendsHome onOpenTitle={setTitle} />
+      <FriendsHome onOpenTitle={setTitle} onStartParty={startTogether} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
       <ListRows lists={lists} items={list} onOpen={setTitle} onPick={pickList} onRemove={(url, id) => profileStore.removeFromList(url, id)} onManage={() => setListSheet({ kind: "manage" })} />
       {ratingsOn && <RatingsRow ratings={ratings} onOpen={setTitle} onAll={() => setRatingsOpen(true)} />}
@@ -587,6 +660,7 @@ export function Controller() {
             socketRef.current?.send({ type: "ADD_TV", code });
           }}
           onRemove={(id) => socketRef.current?.send({ type: "REMOVE_TV", id })}
+          onAdmin={(id, admin) => socketRef.current?.send({ type: "PARTY_ADMIN", id, admin })}
           onEnd={() => socketRef.current?.send({ type: "END_PARTY" })}
         />
       )}
@@ -641,19 +715,7 @@ export function Controller() {
         <EpisodesSheet series={media.series} show={seriesKeyOf(media)} watched={watched} onClose={closeSheet} onPlay={playLink} />
       )}
       {ratingsOpen && ratingsOn && <RatingsSheet ratings={ratings} onOpen={setTitle} onClose={() => setRatingsOpen(false)} />}
-      {title && (
-        <TitleSheet
-          entry={title}
-          onPlay={(url, startAt, hint) => {
-            setTitle(null);
-            playLink(url, startAt, hint);
-          }}
-          onPick={pickList}
-          onClose={() => setTitle(null)}
-        />
-      )}
-      {listSheet?.kind === "manage" && <ListsSheet onClose={() => setListSheet(null)} />}
-      {listSheet?.kind === "pick" && <ListPickerSheet entry={listSheet.entry} onClose={() => setListSheet(null)} />}
+      {titleSheets}
 
       {toast && (
         <p className="toast" key={toast.id} data-testid="toast" role="status">

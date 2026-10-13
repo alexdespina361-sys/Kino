@@ -851,16 +851,26 @@
   color: #b5b5b5;
 }
 
-/* A TV that watches along has no controls of its own, only a way out. */
-.tv-follow-bar {
+/* A TV that watches along has no controls of its own, only a way out; one that the host made an admin has the playback's buttons as well, under that. */
+.tv-follow {
   position: absolute;
-  top: 2em;
+  top: 3em;
   left: 0;
   right: 0;
-  width: max-content; /* centred, and as wide as its buttons need up to the screen's width (left: 50% would give it half the screen to wrap in) */
-  max-width: calc(100% - 2em);
-  margin: 0 auto;
   z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6em;
+  pointer-events: none; /* only the bars take the pointer: the picture between and around them stays the picture's */
+  transition: opacity 0.25s;
+}
+.tv-follow > * { pointer-events: auto; }
+.tv[data-hud="hidden"] .tv-follow { opacity: 0; }
+.tv[data-hud="hidden"] .tv-follow > * { pointer-events: none; }
+.tv-follow-bar {
+  width: max-content; /* as wide as its buttons need up to the screen's width (centred by the column it is in) */
+  max-width: calc(100% - 2em);
   display: flex;
   align-items: center;
   gap: 1em;
@@ -869,9 +879,9 @@
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(0, 0, 0, 0.72);
   font-size: 1.5em;
-  transition: opacity 0.25s;
 }
-.tv[data-hud="hidden"] .tv-follow-bar { opacity: 0; pointer-events: none; }
+.tv-follow-admin { gap: 0.4em; padding: 0.4em 0.5em; }
+.tv-follow-admin button svg { font-size: 1.3em; }
 .tv-follow-bar button {
   display: inline-flex;
   align-items: center;
@@ -953,6 +963,10 @@
 .tv-corner-button svg { width: 1.2em; height: 1.2em; }
 .tv-corner-button:hover { background: rgba(255, 255, 255, 0.22); color: #fff; }
 .tv-corner-button:focus-visible { background: #fff; color: #000; outline: 0.14em solid var(--accent); outline-offset: 0.14em; transform: scale(1.06); }
+/* The bell: a number on it while something waits for an answer, a quieter dot when friends only watched something. */
+.tv-bell { position: relative; }
+.tv-bell-badge { position: absolute; top: -0.2em; right: -0.25em; box-sizing: border-box; min-width: 1.5em; height: 1.5em; padding: 0 0.35em; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 0.75em; font-style: normal; font-weight: 800; line-height: 1.5em; text-align: center; pointer-events: none; }
+.tv-bell-dot { position: absolute; top: 0.4em; right: 0.4em; width: 0.45em; height: 0.45em; border-radius: 50%; background: currentColor; opacity: 0.85; pointer-events: none; }
 
 /* The banner takes the top third; moving down to the rows below the first lets it shrink to a line or two, so the rows get the room. */
 .tv-hero {
@@ -1144,6 +1158,26 @@
 }
 .tv-tile-corner svg { width: 1.2em; height: 1.2em; }
 .tv-tile-corner[data-corner="kept"] { background: var(--accent); box-shadow: none; color: var(--accent-ink); }
+
+/* The score this profile gave a title, in the corner opposite the button (so a mouse's buttons never cover it): a star and a number. */
+.tv-tile-art .score-badge {
+  position: absolute;
+  top: 0.5em;
+  left: 0.5em;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.1em 0.55em 0.1em 0.4em;
+  border-radius: 1em;
+  background: rgba(0, 0, 0, 0.68);
+  box-shadow: 0 0 0 0.08em rgba(255, 255, 255, 0.3);
+  color: #fff;
+  font-size: 1.15em;
+  font-weight: 800;
+  line-height: 1.5;
+}
+.tv-tile-art .score-badge svg { width: 1em; height: 1em; color: var(--accent); }
 @media (hover: hover) and (pointer: fine) {
   .tv-tile-corner { display: grid; }
   .tv-tile-corner:hover { background: #fff; box-shadow: none; color: #000; transform: scale(1.14); }
@@ -1201,6 +1235,7 @@
  */
 .tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: 0.68em; }
 .tv-rail-item { position: relative; }
+.tv-rail-item[data-apart="true"] { margin-top: 0.9em; }
 /* (A name that is longer than the menu is wide ends in dots inside the lit box, rather than running out of it.) */
 .tv-rail-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.15s; }
 .tv-rail[data-open="true"] .tv-rail-item span { opacity: 1; }
@@ -1573,8 +1608,19 @@
 .tv-tile-category::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0, 0, 0, 0.55), transparent 65%); }
 .tv-category-name, .tv-category-count { position: relative; z-index: 1; }
 .tv-category-name { font-size: 1.6em; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tv-category-count { font-size: 1.1em; font-weight: 600; color: rgba(255, 255, 255, 0.78); }
+/* (What a place of the profile's page says under its name is a line or two, and the banner says all of it; a third line would push the name out of the tile.) */
+.tv-category-count { font-size: 1.1em; font-weight: 600; color: rgba(255, 255, 255, 0.78); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tv-tile-category:focus-visible { transform: scale(1.1); box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
+/* A friend: the picture they chose beside their name, with a green dot on it while they are online. The tile is wider than a category's, to keep as much room for the words. */
+.tv-tile-person { width: 21em; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0.9em; }
+.tv-person-pic { position: relative; z-index: 1; flex: none; font-size: 4.6em; line-height: 0; }
+.tv-person-pic[data-online="true"]::after { content: ""; position: absolute; right: -0.04em; bottom: -0.04em; width: 0.28em; height: 0.28em; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 0.06em #101012; }
+.tv-person-text { position: relative; z-index: 1; display: flex; flex: 1 1 0; flex-direction: column; justify-content: center; gap: 0.2em; min-width: 0; }
+/* The button under a friend's titles: apart from the buttons over them, and red. */
+.tv-view-foot { flex: none; padding: 0.4em 0 1.8em; }
+.tv-choice-danger { background: rgba(255, 107, 107, 0.2); color: #ffb4b4; }
+.tv-choice-danger:hover { background: rgba(255, 107, 107, 0.34); color: #fff; }
+.tv-choice-danger:focus-visible { background: #fff; color: #b3261e; }
 
 /* ------------------------------ watch party ------------------------------ */
 
@@ -1622,10 +1668,11 @@
 .tv-party-members { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6em 0.8em; max-width: 80em; margin: 0; padding: 0; list-style: none; }
 .tv-party-member {
   display: inline-flex;
+  flex-wrap: wrap; /* (what the host can do to a guest goes under its name where it does not fit beside it) */
   align-items: center;
   gap: 0.5em;
   padding: 0.35em 0.8em 0.35em 1em;
-  border-radius: 999px;
+  border-radius: 1.2em; /* (a pill on one line) */
   background: rgba(255, 255, 255, 0.1);
   font-size: 1.7em;
   font-weight: 600;
@@ -1635,8 +1682,8 @@
 .tv-party-member[data-online="false"] .tv-party-dot { background: #8a8a8a; }
 .tv-party-name { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tv-party-member small { font-size: 0.78em; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.tv-party-actions { display: inline-flex; gap: 0.4em; margin-left: auto; } /* (both go under the name together where they do not fit beside it) */
 .tv-party-remove {
-  margin-left: auto;
   padding: 0.25em 0.8em;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
@@ -1686,6 +1733,12 @@
 .tv-party-side .tv-party-members { flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start; gap: 0.5em; }
 .tv-party-side .tv-party-member { font-size: 1.5em; }
 .tv-party-side .tv-hint { font-size: 1.3em; }
+/* Choosing the friends to invite, inside the panel: the friends in a list that scrolls, then Send and Cancel (Send says it cannot with its looks, since a disabled button would stop the remote). */
+.tv-party-pick { display: flex; flex-direction: column; gap: 1em; }
+.tv-party-pick .tv-opts { max-height: min(24em, 34vh); }
+.tv-party-pick-problem { color: #ffb4b4; }
+.tv-opt[aria-disabled="true"] { opacity: 0.4; }
+.tv-opt[aria-disabled="true"]:hover { background: rgba(255, 255, 255, 0.06); }
 
 /* A press is felt: whatever answers a click sinks a little while it is held (after every focus rule, so it wins over the focus ring's growth). */
 .tv-tile:active, .tv-tile-category:active, .tv-end-tile:active, .tv-ep:active, .tv-rail-item:active, .tv-btn:active, .tv-action:active, .tv-hero-button:active, .tv-choice:active,
@@ -1736,6 +1789,9 @@
   .tv-panel-settings { align-items: stretch; }
   .tv-panel-settings h2 { margin: 1.4em 0 0.5em; font-size: 1.2em; }
   .tv-choices { flex-wrap: wrap; }
+  /* A few short choices (the languages) stay on one line however narrow the page is: they share its width. */
+  .tv-choices-fit { flex-wrap: nowrap; gap: 0.5em; }
+  .tv-choices-fit .tv-choice { flex: 1 1 0; min-width: 0; justify-content: center; padding-inline: 0.3em; }
   .tv-choice { font-size: 1.5em; }
   .tv-rate-scopes .tv-choice { font-size: 1.3em; }
   .tv-scores { flex-wrap: wrap; gap: 0.6em; padding: 0.2em; }
@@ -1744,6 +1800,8 @@
   .tv-rate-note { font-size: 1.3em; }
   .tv-rate-facts li { font-size: 1.2em; }
   .tv-swatch { font-size: 1.4em; }
+  /* (Six round buttons in a row are wider than the page where the text is set larger: the page is clipped at its edge, not scrolled, so the row wraps.) */
+  .tv-swatches { flex-wrap: wrap; row-gap: 0.7em; }
   .tv-switch-row { max-width: none; font-size: 1.5em; }
   /* (Here the page scrolls: the rows keep the room a finger wants, which the 16:9 page above has to take back.) */
   .tv-panel-settings .tv-switch-row { padding: 0.7em 1.2em; }
@@ -1789,6 +1847,8 @@
   .tv-tile { width: 13em; }
   .tv-tile-continue { width: 14em; }
   .tv-tile-category { width: 13em; height: 7.3em; }
+  .tv-tile-person { width: 18em; }
+  .tv-person-pic { font-size: 3.8em; }
   .tv-tile-ranked { width: auto; }
   .tv-tile-ranked .tv-tile-body { width: 7.2em; }
   .tv-rank { width: 3.8em; height: 10.8em; }
@@ -1848,7 +1908,8 @@
   .tv-end-tile { flex: 1 1 0; max-width: 11.5em; }
   .tv-end-name { font-size: 1.1em; }
   .tv-end-art .poster-initial { font-size: 2.6em; }
-  .tv-follow-bar { top: 1em; flex-wrap: wrap; justify-content: center; gap: 0.6em; padding: 0.6em; border-radius: 1.4em; font-size: 1.2em; }
+  .tv-follow { top: 1.2em; gap: 0.5em; }
+  .tv-follow-bar { flex-wrap: wrap; justify-content: center; gap: 0.6em; padding: 0.6em; border-radius: 1.4em; font-size: 1.2em; }
   .tv-follow-bar > span { flex: 1 1 100%; text-align: center; }
   .tv-follow-bar button { padding: 0.5em 0.9em; }
   .tv-tap b { font-size: 1.7em; }
@@ -1902,7 +1963,9 @@
   .tv-screen::before, .tv-screen::after { content: ""; margin: auto; }
   .tv-brand { top: 1.4em; font-size: 1.8em; }
   .tv-browse-top { padding-top: 0.8em; }
-  .tv-rail { padding-top: 4.2em; padding-bottom: 1.4em; }
+  /* (The menu's nine lines in the height of a phone held sideways: closer together, so that the last of them is on the screen too.) */
+  .tv-rail { gap: 0.2em; padding-top: 2.4em; padding-bottom: 1.2em; }
+  .tv-rail-item { padding-top: 0.35em; padding-bottom: 0.35em; }
   .tv-hero { height: 13em; }
   .tv-hero-about { display: none; }
   .tv-detail-text { padding-bottom: 1.6em; }
@@ -1923,6 +1986,12 @@
   .tv-key-wide { font-size: 1.3em; }
   .tv-end { padding-top: 3em; padding-bottom: 1.4em; gap: 1em; }
   .tv-end-tile { max-width: 8em; }
+}
+
+/* ...and a smaller phone held sideways (320 high): the menu's lines closer still. */
+@media (max-height: 360px) {
+  .tv-rail { gap: 0; padding-top: 1.2em; padding-bottom: 0.8em; }
+  .tv-rail-item { padding-top: 0.2em; padding-bottom: 0.2em; font-size: 1.45em; }
 }
 
 /* ...and a short screen that is also wide (a phone sideways) still has the room for things to sit side by side. */

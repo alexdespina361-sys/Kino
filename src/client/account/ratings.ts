@@ -1,7 +1,8 @@
+import { useMemo } from "react";
 import { filmFacts, showFacts, type LiveProgress, type LiveWatched, type WatchFacts } from "../../shared";
 import { cardOf, showKeyOf, type Entry } from "../tv/pages";
 import type { RatedTitle } from "./profileStore";
-import { mergeFacts, ratingFor, storedFacts } from "./ratingText";
+import { mergeFacts, ratingFor, scoresOf, storedFacts } from "./ratingText";
 import { profileStore, useProfileData } from "./store";
 
 /** What the rating boxes of the phone and the TV's rating page are made with: the pure words (ratingText.ts) and the hooks that bring a title's rating to a screen. */
@@ -28,6 +29,15 @@ export function watchFacts(entry: Entry, isShow: boolean, season: number | undef
 
 /** Whether ratings are on for this profile: they are, unless it turned them off in the settings. */
 export const useRatingsOn = (): boolean => useProfileData().settings.ratings ?? true;
+
+const NO_SCORES: ReadonlyMap<string, number> = new Map();
+
+/** The score given to each title (see `scoresOf`), for the badge on its picture in a row or a grid; none while ratings are off. */
+export function useScores(): ReadonlyMap<string, number> {
+  const { ratings, settings } = useProfileData();
+  const on = settings.ratings ?? true;
+  return useMemo(() => (on ? scoresOf(ratings) : NO_SCORES), [ratings, on]);
+}
 
 /** One title's (or one season's) rating, what is known of the watching behind it, and what changes it. */
 export function useRatingFor(entry: Entry, isShow: boolean, season: number | undefined, total: number | undefined) {

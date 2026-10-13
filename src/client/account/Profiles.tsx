@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { AVATAR_IDS, MAX_PROFILES, PROFILE_NAME_MAX, type AvatarId, type Profile } from "../../shared";
 import { useT } from "../i18n";
 import { PencilIcon, PlusIcon, TrashIcon } from "../shared/icons";
+import { useBackFirst } from "../tv/dpad";
 import { Avatar } from "./Avatar";
 import { describeError } from "./errors";
 
@@ -84,6 +85,7 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete,
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  useBackFirst(tv && confirming ? () => setConfirming(false) : undefined); // (the remote's Back says no to the question, and leaves the page only the next time)
   const nav = tv ? { "data-nav": true } : {};
   const buttonClass = (kind: "main" | "plain" | "danger") =>
     tv ? `tv-action${kind === "main" ? " tv-action-primary" : kind === "danger" ? " tv-action-danger" : ""}` : `btn${kind === "main" ? " btn-red" : kind === "danger" ? " btn-danger" : ""}`;

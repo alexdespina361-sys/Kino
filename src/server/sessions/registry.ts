@@ -22,6 +22,8 @@ export interface Device {
   name: string;
   /** What the screen asked to be called on the others' lists (the profile in use), instead of `name`. */
   label: string | null;
+  /** The profile that is signed in on this screen, as the accounts proved it (see TV_PROFILE). Not kept: a screen says it again each time it connects. */
+  profileId: string | null;
   /** On a TV hosting a watch party: the code the others join with. Valid for a while, asked for again when it runs out. */
   partyCode: { value: string; expiresAt: number } | null;
   /** Present only while unpaired. Single use: consumed by a successful pairing. */
@@ -35,6 +37,8 @@ export interface Device {
   leaderId: string | null;
   /** The TVs watching along with this one, in the order they joined. */
   followerIds: string[];
+  /** A TV that watches along and that its host has made an admin: what it asks of the film (play, pause, move, stop) is done for everyone. */
+  admin: boolean;
   /** Last known playback, so a reconnecting phone can resync. */
   media: NormalizedMedia | null;
   state: PlayerState;
@@ -109,6 +113,8 @@ export interface DeviceRecord {
   controllerIds: string[];
   leaderId: string | null;
   followerIds: string[];
+  /** Only written when true. */
+  admin?: boolean;
   /** The last day (days since 1970) the TV, or a phone of it, said anything. */
   seenDay: number;
   /** What it was playing when it was last heard from. */
@@ -197,6 +203,7 @@ export class Registry {
         controllerIds: [...device.controllerIds],
         leaderId: device.leaderId,
         followerIds: [...device.followerIds],
+        ...(device.admin ? { admin: true } : {}),
         seenDay: this.seenDays.get(device.id) ?? today,
         ...(device.resume ? { resume: resumeRecord(device.resume) } : {}),
       }));
@@ -219,6 +226,8 @@ export class Registry {
         ...kept,
         controllerIds: [...kept.controllerIds],
         followerIds: [...kept.followerIds],
+        admin: kept.admin === true,
+        profileId: null,
         partyCode: null,
         code: null,
         controlCode: null,
@@ -244,6 +253,7 @@ export class Registry {
       if (!device.controllerId || !device.controllerIds.includes(device.controllerId)) device.controllerId = device.controllerIds[0] ?? null;
       const host = device.leaderId ? this.devices.get(device.leaderId) : undefined;
       if (!host?.followerIds.includes(device.id)) device.leaderId = null;
+      if (!device.leaderId) device.admin = false; // (only a guest can be one)
     }
     for (const device of this.devices.values()) device.followerIds = device.followerIds.filter((id) => this.devices.get(id)?.leaderId === device.id);
   }
@@ -261,6 +271,7 @@ export class Registry {
       publicId: randomBytes(6).toString("hex"),
       name: defaultName(id),
       label: null,
+      profileId: null,
       partyCode: null,
       code: null,
       controllerId: null,
@@ -268,6 +279,7 @@ export class Registry {
       controlCode: null,
       leaderId: null,
       followerIds: [],
+      admin: false,
       media: null,
       state: IDLE_STATE,
       resume: null,
@@ -524,6 +536,11 @@ export class Registry {
     this.onChange?.();
   }
 
+  /** Whose a screen is (the profile signed in on it, as the accounts proved), or nobody's. Nothing of it is kept: the screen says it again whenever it connects. */
+  setProfile(device: Device, profileId: string | null): void {
+    device.profileId = profileId;
+  }
+
   /** A phone names the TV it controls, cleaned up like any name on a list. Nothing, or only blanks, gives the TV its own name back. */
   rename(device: Device, name: string): void {
     device.name = cleanLabel(name) ?? defaultName(device.id);
@@ -542,11 +559,31 @@ export class Registry {
     return open && left > 0 ? { code: open.value, expiresInMs: left } : null;
   }
 
-  /** Whether a code is one a party is open with now: what a phone is told when it types such a code where a TV's pairing code goes. */
-  isPartyCode(code: string): boolean {
+  /** The TV a party is open with this code on now, if there is one. */
+  hostOfPartyCode(code: string): Device | undefined {
     const hostId = this.deviceByPartyCode.get(code);
     const host = hostId ? this.devices.get(hostId) : undefined;
-    return host !== undefined && host.partyCode?.value === code && this.partyCodeOf(host) !== null;
+    return host && host.partyCode?.value === code && this.partyCodeOf(host) ? host : undefined;
+  }
+
+  /** Whether a code is one a party is open with now: what a phone is told when it types such a code where a TV's pairing code goes. */
+  isPartyCode(code: string): boolean {
+    return this.hostOfPartyCode(code) !== undefined;
+  }
+
+  /** A TV by the id the lists (and the invitations of friends) know it by. */
+  deviceByPublicId(publicId: string): Device | undefined {
+    for (const device of this.devices.values()) if (device.publicId === publicId) return device;
+    return undefined;
+  }
+
+  /**
+   * The code to join the party of a TV with, for a friend who was invited to it: the one open now or, for a party that has guests in it
+   * but whose code ran out (a code stays good only while the host's screen shows it), a new one. Null when the party is over: nobody in
+   * it and no code open (or the TV is a guest itself).
+   */
+  runningParty(host: Device): PairingCode | null {
+    return host.followerIds.length > 0 || this.partyCodeOf(host) ? this.ensurePartyCode(host) : null;
   }
 
   /** The code others join this TV's party with (a new one if none is open): having one is what makes a TV a host. Null for a TV that is itself a guest. */
@@ -587,6 +624,18 @@ export class Registry {
     return { ok: true, host };
   }
 
+  /**
+   * The host makes a guest an admin, or takes that back (by the id the lists give it). Returns the guest when something changed, and null when there is
+   * no such guest in the party or it was that already.
+   */
+  setAdmin(host: Device, publicId: string, admin: boolean): Device | null {
+    const guest = this.followersOf(host).find((candidate) => candidate.publicId === publicId);
+    if (!guest || guest.admin === admin) return null;
+    guest.admin = admin;
+    this.onChange?.();
+    return guest;
+  }
+
   /** The host sends one guest away (by the id the lists give it): that TV is on its own again. */
   removeGuest(host: Device, publicId: string): Device | null {
     const guest = this.followersOf(host).find((candidate) => candidate.publicId === publicId);
@@ -617,7 +666,7 @@ export class Registry {
     const leader = this.leaderOf(follower);
     if (leader) leader.followerIds = leader.followerIds.filter((id) => id !== follower.id);
     follower.leaderId = null;
-    this.release(follower);
+    this.release(follower); // (which also ends its being an admin)
   }
 
   deviceForController(controller: Controller): Device | undefined {
@@ -676,6 +725,7 @@ export class Registry {
     this.dropPartyCode(device);
     this.dropCode(device);
     device.followerIds = [];
+    device.admin = false;
     device.controllerId = null;
     device.controllerIds = [];
     device.media = null;

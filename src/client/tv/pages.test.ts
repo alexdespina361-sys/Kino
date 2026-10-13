@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { cardOf, freshSimilar, gridOf, hasRows, heroActions, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
+import { cardOf, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3): LibraryRow => ({
@@ -48,11 +48,19 @@ describe("viewKey", () => {
     expect(viewKey({ kind: "friend", id: "f2", tab: "ratings" })).not.toBe(viewKey({ kind: "friend", id: "f1", tab: "ratings" }));
   });
 
-  it("has rows under a banner for the friends' page, though it is not one of the library's rows pages", () => {
+  it("has rows under a banner for the friends' and the profile's pages, though they are not among the library's rows pages", () => {
     expect(hasRows({ kind: "friends" })).toBe(true);
+    expect(hasRows({ kind: "profile" })).toBe(true);
     expect(isRowsPage({ kind: "friends" })).toBe(false);
+    expect(isRowsPage({ kind: "profile" })).toBe(false);
     expect(["home", "movies", "series"].every((kind) => hasRows({ kind } as never))).toBe(true);
     expect(["list", "history", "ratings", "search", "category", "categories", "friend"].some((kind) => hasRows({ kind } as never))).toBe(false);
+  });
+
+  it("names the profile's page, and counts it and the pages it holds as the profile's", () => {
+    expect(viewKey({ kind: "profile" })).toBe("profile");
+    expect(["profile", "ratings", "history", "friends", "friend"].every((kind) => isProfilePage({ kind } as never))).toBe(true);
+    expect(["home", "movies", "series", "list", "search", "category", "categories"].some((kind) => isProfilePage({ kind } as never))).toBe(false);
   });
 });
 
@@ -197,6 +205,22 @@ describe("gridOf", () => {
     expect(rowsOfPage("home", two).find((each) => each.id === "s3")?.source).toBe("Archive");
     expect(gridOf({ kind: "category", rowId: "s3" }, two)!.meta).toBe(`${t("tv.titles", { count: 3 })} · Archive`);
     expect(gridOf({ kind: "categories" }, two)!.entries.map((each) => each.source)).toEqual(["Test", "Test", "Test", "Test", "Test", "Archive"]);
+  });
+
+  it("lists every category with those of films first and then those of shows, each saying which it is", () => {
+    const all = gridOf({ kind: "categories" }, data({ rows: library }))!;
+    expect(all.title).toBe(t("tv.allCategories"));
+    expect(all.entries.map((e) => e.id)).toEqual(["m1", "m2", "m3", "s1", "s2", "s3"]);
+    expect(all.entries[0]?.note).toBe(`${t("tv.movies")} · ${t("tv.titles", { count: 3 })}`);
+    expect(all.entries[3]?.note).toBe(`${t("tv.series")} · ${t("tv.titles", { count: 3 })}`);
+    // (a category of one kind has no need to say it, and one with no kind follows the others)
+    const mixed = data({ rows: [row("x1", undefined), row("s1", "series"), row("m1", "movie")] });
+    expect(gridOf({ kind: "categories" }, mixed)!.entries.map((e) => [e.id, e.note])).toEqual([
+      ["m1", `${t("tv.movies")} · ${t("tv.titles", { count: 3 })}`],
+      ["s1", `${t("tv.series")} · ${t("tv.titles", { count: 3 })}`],
+      ["x1", t("tv.titles", { count: 3 })],
+    ]);
+    expect(gridOf({ kind: "categories", of: "movie" }, data({ rows: library }))!.entries[0]?.note).toBe(t("tv.titles", { count: 3 }));
   });
 
   it("lists the categories, all of them or those of one kind", () => {
@@ -363,9 +387,18 @@ describe("heroActions", () => {
     expect(heroActions({ id: "r", title: "A", url: "u", inboxId: "i2" })).toEqual(["play", "list", "dismiss"]);
   });
 
+  it("offers Ask to watch together for an invitation to a party that is over, and Start a party for a friend's request", () => {
+    expect(heroActions({ id: "p", title: "Ann's party", url: "", ask: "pro_ann", inboxId: "i1" })).toEqual(["ask", "dismiss"]);
+    expect(heroActions({ id: "t", title: "Ann wants to watch together", url: "", wants: "pro_ann", inboxId: "i3" })).toEqual(["start", "dismiss"]);
+  });
+
   it("offers nothing for a tile that opens a screen over the library", () => {
     expect(heroActions({ id: "add", title: "Add a friend", url: "", action: "addFriend" })).toEqual([]);
     expect(heroActions({ id: "set", title: "Friends settings", url: "", action: "friendSettings" })).toEqual([]);
+  });
+
+  it("offers nothing for somebody who asks to be friends: they are no film to play or keep, and pressing the tile answers", () => {
+    expect(heroActions({ id: "request:pro_bob", title: "Bob#1", url: "", request: { id: "pro_bob", name: "Bob", avatar: "cat", tag: 1 } })).toEqual([]);
   });
 });
 

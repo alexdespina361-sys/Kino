@@ -75,6 +75,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .copy-link-row { display: flex; align-items: center; min-width: 0; }
 .copy-link-url { display: block; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; -webkit-user-select: all; user-select: all; } /* (all of it, on as many lines as it takes: the end of it is the code) */
 .copy-link-button { flex: none; }
+/* A code that is given to somebody (CopyCode in CopyLink.tsx): a tap or a long press selects the whole of it, the dash too, and it is what is selected when the browser would not copy. */
+.copy-code-text { -webkit-user-select: all; user-select: all; }
 
 /* "Use this screen as ...": a quiet text button for the screen the page guessed wrong about. */
 .role-switch {

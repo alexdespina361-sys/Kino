@@ -135,6 +135,28 @@ describe("pairings kept between restarts", () => {
     expect(hostAgain.partyCode).toBeNull();
   });
 
+  it("keeps which of the TVs that watch along is an admin, written only for the one that is", async () => {
+    const persistence = new MemoryPersistence();
+    const clock = newClock();
+    const before = await start(persistence, clock);
+    const { tv: host, phone } = pairUp(before.registry);
+    const [admin, ordinary] = [before.registry.tvHello(), before.registry.tvHello()];
+    for (const guest of [admin, ordinary]) expect(before.registry.addFollower(phone, before.registry.ensureCode(guest)!.code).ok).toBe(true);
+    before.registry.setAdmin(host, admin.publicId, true);
+    await before.store.flush();
+    expect(persistence.docs.get(`tv:${admin.id}`)).toMatchObject({ admin: true });
+    expect(persistence.docs.get(`tv:${ordinary.id}`)).not.toHaveProperty("admin");
+    expect(persistence.docs.get(`tv:${host.id}`)).not.toHaveProperty("admin");
+
+    const after = await start(persistence, clock);
+    expect([after.registry.tvHello(admin.id).admin, after.registry.tvHello(ordinary.id).admin]).toEqual([true, false]);
+
+    // Taken back, it is not written any more.
+    after.registry.setAdmin(after.registry.tvHello(host.id), admin.publicId, false);
+    await after.store.flush();
+    expect(persistence.docs.get(`tv:${admin.id}`)).not.toHaveProperty("admin");
+  });
+
   it("writes only what changed", async () => {
     const saves: Array<{ put: string[]; remove: string[] }> = [];
     const persistence = new MemoryPersistence();
@@ -395,6 +417,16 @@ describe("pairings that disagree", () => {
     expect(host.followerIds).toEqual(["tv_g"]);
     expect(registry.tvHello("tv_g").leaderId).toBe("tv_a");
     expect(registry.tvHello("tv_y").leaderId).toBeNull();
+  });
+
+  it("lets only a guest be an admin: a record that says so for a TV that watches along with nobody is read as an ordinary one", async () => {
+    const { registry } = await startWith({
+      "tv:tv_a": device({ controllerId: null, controllerIds: [], followerIds: ["tv_g"] }),
+      "tv:tv_g": device({ id: "tv_g", controllerId: null, controllerIds: [], leaderId: "tv_a", admin: true }),
+      "tv:tv_x": device({ id: "tv_x", controllerId: null, controllerIds: [], leaderId: "tv_gone", admin: true }),
+    });
+    expect(registry.tvHello("tv_g").admin).toBe(true);
+    expect(registry.tvHello("tv_x").admin).toBe(false);
   });
 });
 

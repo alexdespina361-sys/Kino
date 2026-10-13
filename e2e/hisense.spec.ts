@@ -1,5 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-import { FIRST_VISIT, openDevice, openLibrary, RawPhone, readPairingCode, tvRoot, withLibrary } from "./helpers";
+import { expect, type Page } from "@playwright/test";
+import { FIRST_VISIT, openDevice, openLibrary, RawPhone, readPairingCode, test, tvRoot, withLibrary } from "./helpers";
 
 /** What a Hisense set's browser (VIDAA) says it is: the page knows it by the "VIDAA" in it. */
 const VIDAA = "Mozilla/5.0 (Linux; U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.31 Safari/537.36 VIDAA/6.0";

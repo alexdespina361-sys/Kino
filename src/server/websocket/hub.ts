@@ -2,6 +2,7 @@ import type { WebSocket } from "ws";
 import {
   IDLE_STATE,
   MAX_FOLLOWERS,
+  MAX_LAG_S,
   MAX_PHONE_TVS,
   parseClientMessage,
   withHint,
@@ -14,6 +15,7 @@ import {
   type ResolveStatus,
   type ServerMessage,
 } from "../../shared";
+import type { ScreenProfiles } from "../accounts/screens";
 import type { ResolveFn, ResolveResult } from "../resolvers";
 import type { Controller, Device, Registry } from "../sessions/registry";
 
@@ -34,6 +36,8 @@ export interface HubOptions {
   maxFailedPairings?: number;
   /** Length of that window. Default 60 s. */
   failedPairingWindowMs?: number;
+  /** Whose a screen is, as the accounts prove it (see TV_PROFILE). Without it a watch party shows no profiles. */
+  profiles?: ScreenProfiles;
 }
 
 /** Relays between phones and TVs. Holds no state of its own beyond who is connected right now. */
@@ -46,11 +50,14 @@ export class Hub {
   private readonly lastSeen = new Map<WebSocket, number>();
   /** TVs whose page has just been opened and has not reported yet: its first report is when a video it was on is put back. */
   private readonly opened = new Set<string>();
+  /** How long each TV last said its answers take to come (a PING's `rtt`, in milliseconds), which is how a guest is told how old the host's position is. */
+  private readonly roundTrips = new Map<string, number>(); // deviceId -> ms
   private readonly sweeper: ReturnType<typeof setInterval>;
   /** When recent wrong codes were tried. A code is only six digits, so guessing has to be slow once this is on the internet. */
   private failedPairings: number[] = [];
   private readonly maxFailedPairings: number;
   private readonly failedPairingWindowMs: number;
+  private readonly profiles: ScreenProfiles | undefined;
 
   constructor(
     private readonly registry: Registry,
@@ -58,6 +65,7 @@ export class Hub {
     options: HubOptions = {},
   ) {
     const staleAfterMs = options.staleAfterMs ?? 60_000;
+    this.profiles = options.profiles;
     this.maxFailedPairings = options.maxFailedPairings ?? 20;
     this.failedPairingWindowMs = options.failedPairingWindowMs ?? 60_000;
     this.sweeper = setInterval(() => {
@@ -87,6 +95,7 @@ export class Hub {
       if (conn.role === "tv" && this.tvs.get(conn.deviceId) === socket) {
         this.tvs.delete(conn.deviceId);
         this.opened.delete(conn.deviceId);
+        this.roundTrips.delete(conn.deviceId);
         const device = this.registry.getDevice(conn.deviceId);
         if (device) this.registry.checkpoint(device); // where it had got is written down exactly, in case the page is not opened again for a while
         if (device) this.toControllers(device, { type: "TV_STATUS", online: false });
@@ -111,6 +120,7 @@ export class Hub {
       case "PING":
         // A TV that stays on for weeks says hello once; the pings are how the registry knows it is still in use.
         if (conn.role !== "none") this.registry.markSeen(conn.role === "tv" ? conn.deviceId : conn.controllerId);
+        if (conn.role === "tv" && message.rtt !== undefined) this.roundTrips.set(conn.deviceId, message.rtt);
         this.send(conn.socket, { type: "PONG" });
         return conn;
     }
@@ -173,16 +183,20 @@ export class Hub {
       this.registry.noteProgress(device, message.state);
       if (wasOn && message.state.state === "idle") {
         this.registry.forgetResume(device); // left on the TV itself (Back, Stop): nothing to put back
-        // A host that stops takes the video away from the guests too: they wait for the next one.
-        if (device.followerIds.length > 0) {
-          this.toFollowers(device, { type: "TV_CMD", command: { type: "STOP" } });
-          this.applyCommand(device, { type: "STOP" });
-        }
+        // A host that stops takes the video away from the guests too: they wait for the next one. And what it had on is gone from the server's
+        // memory with or without guests, so that a screen that joins its party later (or a phone that comes back to it) is not given a film it left.
+        if (device.followerIds.length > 0) this.toFollowers(device, { type: "TV_CMD", command: { type: "STOP" } });
+        this.applyCommand(device, { type: "STOP" });
       }
       if (first) this.restore(device);
     } else if (message.type === "TV_NAME") {
       this.registry.setLabel(device, message.name);
       this.tellPhones(device);
+      const host = this.registry.leaderOf(device) ?? device;
+      if (this.registry.inParty(host)) this.sendParty(host);
+    } else if (message.type === "TV_PROFILE") {
+      // A proof the accounts gave is the only way to be known as a profile; a bad or spent one is no profile at all.
+      this.registry.setProfile(device, (message.proof && this.profiles?.redeem(message.proof)) || null);
       const host = this.registry.leaderOf(device) ?? device;
       if (this.registry.inParty(host)) this.sendParty(host);
     } else if (message.type === "TV_PARTY_OPEN") {
@@ -201,6 +215,13 @@ export class Hub {
       const guests = this.registry.closeParty(device);
       guests.forEach((guest) => this.resetTv(guest));
       this.sendParty(device);
+    } else if (message.type === "TV_PARTY_ADMIN") {
+      this.setAdmin(device, message.id, message.admin);
+    } else if (message.type === "TV_PARTY_CMD") {
+      // Only a guest that the host has made an admin steers the film, and only while the host's own screen is there to do what it asks.
+      const host = this.registry.leaderOf(device);
+      if (!host || !device.admin || !this.tvs.has(host.id)) return;
+      this.command(host, message.command);
     } else if (message.type === "TV_NEW_CODE") {
       // A free TV is given a pairing code. One that has a phone gets the code that lets another phone in; asking is what keeps
       // that one good, so a TV asks while it shows it and not otherwise.
@@ -299,28 +320,33 @@ export class Hub {
     if (message.type === "REMOVE_TV") return this.removeTv(controller, message.id);
     if (message.type === "OPEN_PARTY") return this.openParty(controller);
     if (message.type === "END_PARTY") return this.endParty(controller);
+    if (message.type === "PARTY_ADMIN") return this.partyAdmin(controller, message.id, message.admin);
     if (message.type !== "CMD") return;
 
     const device = this.registry.deviceForController(controller);
     if (!device) return this.error(controllerId, "NOT_PAIRED", "Connect to a TV first.");
     if (!this.tvs.has(device.id)) return this.error(controllerId, "TV_OFFLINE", "The TV is offline.");
+    this.command(device, message.command, controllerId);
+  }
 
-    if (message.command.type === "NEXT_EPISODE") {
+  /** What a command does to the TV it is for and the screens watching along with it: asked by the phone that controls it, or by a guest the host made an admin. */
+  private command(device: Device, command: Command, controllerId?: string): void {
+    if (command.type === "NEXT_EPISODE") {
       if (device.media?.series?.next?.url) {
-        return void this.playUrlForDevice(device, device.media.series.next.url, controllerId);
+        void this.playUrlForDevice(device, device.media.series.next.url, controllerId);
       }
       return;
     }
 
-    if (message.command.type === "LOAD" || message.command.type === "STOP") this.bumpResolveSeq(device.id);
-    this.send(this.tvs.get(device.id), { type: "TV_CMD", command: message.command });
+    if (command.type === "LOAD" || command.type === "STOP") this.bumpResolveSeq(device.id);
+    this.send(this.tvs.get(device.id), { type: "TV_CMD", command });
     // The TVs watching along load and stop with this one; play, pause and seeks reach them as the position it reports.
-    if (message.command.type === "LOAD" || message.command.type === "STOP") {
-      this.toFollowers(device, { type: "TV_CMD", command: message.command });
+    if (command.type === "LOAD" || command.type === "STOP") {
+      this.toFollowers(device, { type: "TV_CMD", command });
     }
     // The phone always renders what the TV reports; only LOAD/STOP need an immediate placeholder.
-    if (message.command.type === "LOAD" || message.command.type === "STOP") {
-      this.applyCommand(device, message.command);
+    if (command.type === "LOAD" || command.type === "STOP") {
+      this.applyCommand(device, command);
       this.toControllers(device, { type: "STATE", state: device.state });
     }
   }
@@ -464,6 +490,18 @@ export class Hub {
     this.sendParty(device);
   }
 
+  /** The host (its screen, or the phone that controls it) makes a guest an admin, or takes that back: everyone in the party hears how it stands now. */
+  private setAdmin(host: Device, publicId: string, admin: boolean): void {
+    if (!this.registry.setAdmin(host, publicId, admin)) return; // (a guest has no guests to make one of)
+    this.sendParty(host);
+  }
+
+  private partyAdmin(controller: Controller, publicId: string, admin: boolean): void {
+    const device = this.registry.deviceForController(controller);
+    if (!device) return this.error(controller.id, "NOT_PAIRED", "Connect to a TV first.");
+    this.setAdmin(device, publicId, admin);
+  }
+
   /** The phone ends the party its TV hosts, as the TV itself can: the code is no good any more and every guest is on its own again. */
   private endParty(controller: Controller): void {
     const device = this.registry.deviceForController(controller);
@@ -500,7 +538,15 @@ export class Hub {
   }
 
   private partyTv(device: Device): PartyTv {
-    return { id: device.publicId, name: this.registry.displayName(device), online: this.tvs.has(device.id) };
+    // (Who is signed in on a screen is shown to the party only as far as the accounts say: a profile that keeps friends off is not shown by name.)
+    const profile = device.profileId ? this.profiles?.card(device.profileId) : undefined;
+    return {
+      id: device.publicId,
+      name: this.registry.displayName(device),
+      online: this.tvs.has(device.id),
+      ...(device.admin ? { admin: true } : {}),
+      ...(profile ? { profile } : {}),
+    };
   }
 
   private partyOf(host: Device): PartyTv[] {
@@ -548,14 +594,30 @@ export class Hub {
   private syncFollowers(leader: Device): void {
     const { state } = leader;
     if (leader.followerIds.length === 0 || (state.state !== "playing" && state.state !== "paused")) return;
-    this.toFollowers(leader, {
-      type: "TV_SYNC",
+    const report = {
+      type: "TV_SYNC" as const,
       // A leader that is waiting for data holds the others too, so nobody runs ahead of it.
       playing: state.state === "playing" && !state.buffering,
       time: state.currentTime,
       rate: state.playbackRate ?? 1,
       ...(state.stream ? { stream: state.stream } : {}),
-    });
+    };
+    for (const follower of this.registry.followersOf(leader)) {
+      const lag = this.lagBetween(leader, follower);
+      this.send(this.tvs.get(follower.id), lag === undefined ? report : { ...report, lag });
+    }
+  }
+
+  /**
+   * About how long a report of `leader` takes to get to `follower`, in seconds: half of each one's round trip to this server, as each last
+   * said it (if only one has, the other is taken to be the same). A guest that adds it to the position it is told sees where the host is
+   * now, not where it was; without it every guest is behind by about that much. Not said at all before either has measured.
+   */
+  private lagBetween(leader: Device, follower: Device): number | undefined {
+    const there = this.roundTrips.get(leader.id);
+    const here = this.roundTrips.get(follower.id);
+    if (there === undefined && here === undefined) return undefined;
+    return Math.min(MAX_LAG_S, ((there ?? here ?? 0) + (here ?? there ?? 0)) / 2000);
   }
 
   /** After a pairing ended from either side: the TV stops and shows a fresh code. */

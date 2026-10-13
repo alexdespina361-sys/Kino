@@ -18,6 +18,8 @@ const DeviceDoc = z.object({
   seenDay: z.number(),
   /** What the TV was playing: the link that plays it again, its picture, and how far it had got. One that cannot be read is let go of, and the pair with it is not. */
   resume: z.object({ url: z.string().max(2048), hint: PlayHintSchema.optional(), time: z.number().min(0).max(86_400), day: z.number() }).optional().catch(undefined),
+  /** A TV that watches along and that its host made an admin (written only when it is one). */
+  admin: z.boolean().optional(),
 });
 const ControllerDoc = z.object({
   v: z.literal(1),

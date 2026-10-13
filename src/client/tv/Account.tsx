@@ -32,11 +32,12 @@ interface Request {
  * Sign this TV in without typing: it shows a code and a QR code, a phone that is already signed in opens the code and approves it,
  * and the answer to the TV's next question carries the session. A name and password typed here is the way for a TV with a keyboard.
  */
-export function TvSignIn({ onClose }: { onClose: () => void }) {
+export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /** Where Back goes, when that is not where signing in ends up (the panel it was opened from). */ onBack?: () => void }) {
   const t = useT();
   const account = useAccount();
   const [mode, setMode] = useState<"phone" | "email">("phone");
   const [creating, setCreating] = useState(false); // the typed form is making an account, not signing in
+  const [asking, setAsking] = useState(false); // ...and is asking whether to, with the password it was given
   const [request, setRequest] = useState<Request | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -94,9 +95,10 @@ export function TvSignIn({ onClose }: { onClose: () => void }) {
 
   if (mode === "email") {
     return (
-      <Screen key="email" testId="tv-signin" compact focus onBack={() => setMode("phone")}>
+      // (While the form asks whether to make an account with a poor password, Back is the form's: it goes back to the password.)
+      <Screen key="email" testId="tv-signin" compact focus onBack={asking ? undefined : () => setMode("phone")}>
         <h1 className="tv-headline tv-headline-small">{t(creating ? "auth.signUp" : "auth.signIn")}</h1>
-        <AuthForm tv onDone={onClose} onMode={(next) => setCreating(next === "signUp")} />
+        <AuthForm tv onDone={onClose} onMode={(next) => setCreating(next === "signUp")} onWarning={setAsking} />
         <button className="tv-action" onClick={() => setMode("phone")} data-nav data-testid="tv-signin-phone">
           {t("link.codeInstead")}
         </button>
@@ -105,7 +107,7 @@ export function TvSignIn({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Screen key="phone" testId="tv-signin" compact onBack={onClose}>
+    <Screen key="phone" testId="tv-signin" compact onBack={onBack}>
       <h1 className="tv-headline tv-headline-small">{t("link.title")}</h1>
       <div className="tv-pair">
         <ol className="tv-steps">
@@ -142,7 +144,7 @@ export function TvSignIn({ onClose }: { onClose: () => void }) {
         <button className="tv-action" onClick={() => setMode("email")} data-nav data-testid="tv-signin-email">
           {t("link.emailInstead")}
         </button>
-        <button className="tv-action" onClick={onClose} data-nav data-testid="tv-signin-back">
+        <button className="tv-action" onClick={onBack} data-nav data-testid="tv-signin-back">
           {t("common.back")}
         </button>
       </div>
@@ -426,7 +428,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
 
         <section className="tv-panel-settings" data-nav-column>
           <h2>{t("settings.language")}</h2>
-          <div className="tv-choices" role="radiogroup" aria-label={t("settings.language")}>
+          <div className="tv-choices tv-choices-fit" role="radiogroup" aria-label={t("settings.language")}>
             {UI_LANGUAGES.map((code) => (
               <button key={code} className="tv-choice" role="radio" aria-checked={language === code} onClick={() => chooseLanguage(code)} data-nav data-testid={`tv-lang-${code}`}>
                 {LANGUAGE_NAMES[code]}
@@ -497,13 +499,17 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
 
 /** Whichever page of the account is open. `forced`: signed in with nobody chosen yet, which can't be skipped. */
 export function TvAccount({ view, onView, forced }: { view: AccountView; onView: (view: AccountView | null) => void; forced: boolean }) {
-  if (view === "signin") return <TvSignIn onClose={() => onView(null)} />;
+  const [fromPanel, setFromPanel] = useState(false); // (signing in was opened from the panel: Back goes there, not out to the library)
+  if (view === "signin") return <TvSignIn onClose={() => onView(null)} onBack={() => onView(fromPanel ? "panel" : null)} />;
   if (view === "approve") return <TvApprove onClose={() => onView("panel")} />;
   if (view === "profiles" || view === "manage") return <TvProfiles forced={forced} manage={view === "manage"} onDone={() => onView(null)} onBack={() => onView("panel")} />;
   return (
     <TvAccountPanel
       onClose={() => onView(null)}
-      onSignIn={() => onView("signin")}
+      onSignIn={() => {
+        setFromPanel(true);
+        onView("signin");
+      }}
       onApprove={() => onView("approve")}
       onSwitch={() => onView("profiles")}
       onManage={() => onView("manage")}
