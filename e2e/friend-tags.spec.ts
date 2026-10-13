@@ -262,6 +262,10 @@ test.describe("finding a friend by tag on the TV", () => {
     await look(ann.page);
     await expect(ann.page.getByTestId("tv-account-toast")).toHaveText(say(en["friends.news.request"], { name: bobTag }));
     await expect(tile(ann.page, bobTag)).toBeVisible();
+    await tile(ann.page, bobTag).focus();
+    await expect(ann.page.getByTestId("tv-hero-title")).toHaveText(bobTag);
+    await expect(ann.page.getByTestId("tv-hero-play")).toHaveCount(0); // (the banner has nothing to play or keep for somebody who asks)
+    await expect(ann.page.getByTestId("tv-hero-list")).toHaveCount(0);
     await tile(ann.page, bobTag).click();
     await expect(ann.page.getByTestId("tv-friend-request-name")).toHaveText(bobTag);
     await expect(ann.page.getByTestId("tv-friend-request-accept")).toBeFocused(); // (where the remote starts: OK says yes)

@@ -362,7 +362,7 @@ export function freshSimilar(items: readonly LibraryItem[], progress: readonly L
 /** What the buttons under the banner can do for a title. */
 export type HeroAction = "play" | "list" | "remove" | "rate" | "recommend" | "dismiss" | "join" | "ask" | "start";
 export const heroActions = (entry: Entry | undefined): HeroAction[] => {
-  if (!entry || entry.opens || entry.action) return [];
+  if (!entry || entry.opens || entry.action || entry.request) return []; // (somebody who asks to be friends is no film: pressing the tile answers)
   if (entry.party) return ["join", "dismiss"]; // an invitation to a watch party
   if (entry.ask) return ["ask", "dismiss"]; // ...one that has ended: the friend can be asked for another
   if (entry.wants) return ["start", "dismiss"]; // a friend asks for a party

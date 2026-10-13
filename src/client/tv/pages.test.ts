@@ -396,6 +396,10 @@ describe("heroActions", () => {
     expect(heroActions({ id: "add", title: "Add a friend", url: "", action: "addFriend" })).toEqual([]);
     expect(heroActions({ id: "set", title: "Friends settings", url: "", action: "friendSettings" })).toEqual([]);
   });
+
+  it("offers nothing for somebody who asks to be friends: they are no film to play or keep, and pressing the tile answers", () => {
+    expect(heroActions({ id: "request:pro_bob", title: "Bob#1", url: "", request: { id: "pro_bob", name: "Bob", avatar: "cat", tag: 1 } })).toEqual([]);
+  });
 });
 
 describe("overviewActions", () => {
