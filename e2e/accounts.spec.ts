@@ -1,5 +1,6 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { AVATAR_IDS, type NormalizedMedia } from "../src/shared";
+import { weakness } from "../src/client/account/password";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
@@ -23,6 +24,7 @@ async function signUp(page: Page, account: { email: string; password: string }) 
   await page.getByTestId("auth-email").fill(account.email);
   await page.getByTestId("auth-password").fill(account.password);
   await page.getByTestId("auth-submit").click();
+  if (weakness(account.email, account.password)) await page.getByTestId("auth-agree").click(); // (a poor password is asked about first: this person agrees)
 }
 
 async function signIn(page: Page, account: { email: string; password: string }) {
@@ -123,7 +125,7 @@ test.describe("accounts and profiles", () => {
     expect(cookie!.expires - Date.now() / 1000).toBeGreaterThan(399 * 24 * 3600); // (the browser caps a cookie's life at 400 days)
   });
 
-  test("an account can have no password: the empty field says what that means, and signing in with nothing opens it", async ({ browser }) => {
+  test("an account can have no password: the empty field says what that means, the sign-up says it again and asks, and signing in with nothing opens it", async ({ browser }) => {
     test.setTimeout(60_000);
     const account = { email: `Guest ${Date.now().toString(36)}${++counter}`, password: "" };
     const phone = await newPhone(browser);
@@ -136,12 +138,52 @@ test.describe("accounts and profiles", () => {
     await expect(phone.getByTestId("auth-password-hint")).toHaveText(en["auth.passwordHint"]);
     await phone.getByTestId("auth-password").fill("");
     await phone.getByTestId("auth-submit").click();
+
+    // Not made yet: anyone who types the name could open it, and the person is told so before it is.
+    const asking = phone.getByTestId("auth-warning");
+    await expect(asking).toHaveAttribute("data-kind", "none");
+    await expect(asking).toContainText(en["auth.warnNone"]);
+    await expect(asking).toContainText(en["auth.warnAsk"]);
+    await phone.getByTestId("auth-agree").click();
     await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Guest/);
 
     await phone.getByTestId("sign-out").click();
     await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
     await signIn(phone, account);
     await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Guest/);
+  });
+
+  test("a poor password is asked about before the account is made: changing it goes back to the form as it was, a good one needs no question", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Weak ${Date.now().toString(36)}${++counter}`, password: "abc" };
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("auth-switch").click();
+    await phone.getByTestId("auth-email").fill(account.email);
+    await phone.getByTestId("auth-password").fill(account.password);
+    await phone.getByTestId("auth-submit").click();
+
+    // A page of its own in the form's place, on the safe button; nothing has been made.
+    const asking = phone.getByTestId("auth-warning");
+    await expect(asking).toHaveAttribute("data-kind", "weak");
+    await expect(asking).toContainText(en["auth.warnWeak"]);
+    await expect(phone.getByTestId("auth-form")).toHaveCount(0);
+    await expect(phone.getByTestId("auth-change")).toBeFocused();
+    expect(((await (await phone.request.get("/api/me")).json()) as { me: unknown }).me).toBeNull();
+
+    // "Change the password": the form as it was left, with the cursor on the password.
+    await phone.getByTestId("auth-change").click();
+    await expect(phone.getByTestId("auth-warning")).toHaveCount(0);
+    await expect(phone.getByTestId("auth-email")).toHaveValue(account.email);
+    await expect(phone.getByTestId("auth-password")).toHaveValue(account.password);
+    await expect(phone.getByTestId("auth-password")).toBeFocused();
+
+    // One that is not quick to guess goes straight through.
+    await phone.getByTestId("auth-password").fill("kino-test-pass-1");
+    await phone.getByTestId("auth-submit").click();
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Weak/);
+    await expect(phone.getByTestId("auth-warning")).toHaveCount(0);
   });
 
   test("a wrong password is refused in plain words", async ({ browser }) => {
@@ -355,6 +397,39 @@ test.describe("signing a screen in from another screen", () => {
     await screen.getByTestId("tv-approve-no").click();
     await expect(screen.getByTestId("tv-approve-done")).toContainText(en["link.denied"]);
     await expect(other.getByTestId("tv-signin-status")).toContainText(en["link.denied"], { timeout: 10_000 });
+  });
+});
+
+test.describe("a poor password on the TV's own form", () => {
+  test("the question comes before the account, the remote's Back is 'change the password', and OK on 'I agree' makes it", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Tvguest ${Date.now().toString(36)}${++counter}`, password: "12" };
+    const tv = await openLibrary(browser);
+    await tv.getByTestId("tv-account-chip").click();
+    await tv.getByTestId("tv-signin-email").click();
+    await tv.getByTestId("auth-switch").click();
+    await tv.getByTestId("auth-email").fill(account.email);
+    await tv.getByTestId("auth-password").fill(account.password);
+    await tv.getByTestId("auth-submit").click();
+
+    // The question takes the form's place, with the remote on the safe button.
+    await expect(tv.getByTestId("auth-warning")).toHaveAttribute("data-kind", "weak");
+    await expect(tv.getByTestId("auth-change")).toBeFocused();
+
+    // Back is "change the password": the form again, as it was left, not the page before it.
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("auth-warning")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-signin")).toBeVisible();
+    await expect(tv.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
+    await expect(tv.getByTestId("auth-password")).toHaveValue(account.password);
+
+    // Asked again; Down to "I agree", OK.
+    await tv.getByTestId("auth-submit").click();
+    await expect(tv.getByTestId("auth-warning")).toBeVisible();
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("auth-agree")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Tvguest/);
   });
 });
 

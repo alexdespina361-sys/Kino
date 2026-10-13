@@ -12,7 +12,7 @@ test.use({ actionTimeout: 15_000 }); // (a wrong id fails in seconds, not when t
 
 let counter = 0;
 /** A name short enough to be a profile's name as it is (a profile is named after the username, 16 letters at most). */
-const fresh = (name: string) => ({ email: `${name}${++counter}x${Date.now().toString(36).slice(-4)}`, password: "1" });
+const fresh = (name: string) => ({ email: `${name}${++counter}x${Date.now().toString(36).slice(-4)}`, password: "kino-test-pass-1" }); // (a password that is not asked about)
 type Account = ReturnType<typeof fresh>;
 const nameOf = (account: Account) => account.email.charAt(0).toUpperCase() + account.email.slice(1);
 

@@ -52,7 +52,11 @@ pnpm build && pnpm start     # http://localhost:8787
 **Accounts and profiles**
 - Register and sign in with a **name and a password, and nothing else asked for**: both can be anything (the password as short as one
   character, or none at all; the name only has to be one nobody has taken, upper or lower case alike, and may be an email address if someone
-  prefers). **An account with no password is open to anyone who types its name**, and the sign-up page says so. Passwords are hashed with
+  prefers). **An account with no password is open to anyone who types its name**, and the sign-up page says so. A password that is none,
+  shorter than six characters, the name itself, one character over and over, or one of the first things anybody tries (`123456`,
+  `password`, ...) is **asked about before the account is made**: a page in the form's place says what it means (no password: it can be shared
+  very easily; a poor one: it is easy to guess) and offers "Change the password" (the form again, as it was left) or "I agree"; on a TV Back
+  is "Change the password". It is a question and not a rule, the server takes any password (`src/client/account/password.ts`). Passwords are hashed with
   scrypt; the session is an `httpOnly` cookie that lasts 400 days (the longest a browser keeps one) and is renewed every time the app is
   used, so a signed-in browser stays signed in until the person signs out or the browser's data is cleared. The page also remembers who was
   signed in, so a screen does not look signed out while the server is slow to answer (a free host waking up). An account has up to **five

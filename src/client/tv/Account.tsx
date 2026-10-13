@@ -37,6 +37,7 @@ export function TvSignIn({ onClose }: { onClose: () => void }) {
   const account = useAccount();
   const [mode, setMode] = useState<"phone" | "email">("phone");
   const [creating, setCreating] = useState(false); // the typed form is making an account, not signing in
+  const [asking, setAsking] = useState(false); // ...and is asking whether to, with the password it was given
   const [request, setRequest] = useState<Request | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -94,9 +95,10 @@ export function TvSignIn({ onClose }: { onClose: () => void }) {
 
   if (mode === "email") {
     return (
-      <Screen key="email" testId="tv-signin" compact focus onBack={() => setMode("phone")}>
+      // (While the form asks whether to make an account with a poor password, Back is the form's: it goes back to the password.)
+      <Screen key="email" testId="tv-signin" compact focus onBack={asking ? undefined : () => setMode("phone")}>
         <h1 className="tv-headline tv-headline-small">{t(creating ? "auth.signUp" : "auth.signIn")}</h1>
-        <AuthForm tv onDone={onClose} onMode={(next) => setCreating(next === "signUp")} />
+        <AuthForm tv onDone={onClose} onMode={(next) => setCreating(next === "signUp")} onWarning={setAsking} />
         <button className="tv-action" onClick={() => setMode("phone")} data-nav data-testid="tv-signin-phone">
           {t("link.codeInstead")}
         </button>
