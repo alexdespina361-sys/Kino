@@ -11,6 +11,7 @@ import type { AccountStore } from "./accounts/store";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
+import { SegmentCache } from "./segmentCache";
 import { Hub, type HubOptions } from "./websocket/hub";
 import type { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
@@ -171,9 +172,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const result = await resolve(rawUrl);
     return reply.send(result);
   });
+  // Screens watching a film together ask for the same pieces of it: the proxy fetches each once and shares it (see `SegmentCache`).
+  const segments = new SegmentCache();
   app.get<{ Querystring: { url?: string; referer?: string } }>("/api/proxy", async (request, reply) => {
     return handleStreamProxy(request, reply, {
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",
+      segments,
     });
   });
 

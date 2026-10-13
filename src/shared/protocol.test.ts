@@ -96,6 +96,15 @@ describe("newer protocol pieces", () => {
     expect(parseServerMessage(msg({ type: "TV_UNPAIRED", pairing: null }))).not.toBeNull();
   });
 
+  it("a PING may say how long the round trip took, and a TV_SYNC how old its position is; neither may be nonsense", () => {
+    expect(parseClientMessage(msg({ type: "PING", rtt: 83 }))).toEqual({ type: "PING", rtt: 83 });
+    for (const rtt of [-1, 60_001, "83", null]) expect(parseClientMessage(msg({ type: "PING", rtt }))).toBeNull();
+    const sync = { type: "TV_SYNC", playing: true, time: 10, rate: 1 };
+    expect(parseServerMessage(msg(sync))).toEqual(sync);
+    expect(parseServerMessage(msg({ ...sync, lag: 0.08 }))).toEqual({ ...sync, lag: 0.08 });
+    for (const lag of [-0.1, 2.5, "0.1"]) expect(parseServerMessage(msg({ ...sync, lag }))).toBeNull();
+  });
+
   it("player state carries optional buffering info", () => {
     const state = { state: "playing", currentTime: 5, duration: 60, buffering: true, bufferedEnd: 42 };
     expect(parseClientMessage(msg({ type: "TV_STATE", state }))).not.toBeNull();

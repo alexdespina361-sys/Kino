@@ -1078,6 +1078,29 @@ describe("a watch party started on a TV", () => {
     await late.tv.expectNone((m) => m.type === "TV_CMD");
   });
 
+  it("tells a guest how old the host's position is when it gets there: half of each one's round trip to the server", async () => {
+    resolveImpl = async () => ({ status: "success", resolver: "test", media });
+    const host = await openParty();
+    const guest = await joinWith(host.code);
+    const report = async (time: number) => {
+      host.tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: time, duration: 600, stream: media.stream.url } });
+      return guest.tv.next("TV_SYNC");
+    };
+    expect((await report(1)).lag).toBeUndefined(); // nobody has measured anything yet
+
+    host.tv.send({ type: "PING", rtt: 100 });
+    await host.tv.next("PONG");
+    expect((await report(2)).lag).toBeCloseTo(0.1); // (only one has: the other is taken to be the same)
+
+    guest.tv.send({ type: "PING", rtt: 60 });
+    await guest.tv.next("PONG");
+    expect((await report(3)).lag).toBeCloseTo(0.08);
+
+    guest.tv.send({ type: "PING", rtt: 59_000 }); // a link that is failing is not a measure to correct by
+    await guest.tv.next("PONG");
+    expect((await report(4)).lag).toBe(2);
+  });
+
   it("brings a guest that joins in the middle of a film to where the host is", async () => {
     resolveImpl = async () => ({ status: "success", resolver: "test", media });
     const host = await openParty();

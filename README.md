@@ -5,7 +5,7 @@ address, and each device becomes the screen or the remote (`/tv` always plays) a
 Accounts with profiles keep what you watched on every phone, TV and browser; the whole site speaks English, Romanian and Italian.
 
 ```
-phone ──WS──▶ server ──WS──▶ TV player ──▶ media (directly, no proxy)
+phone ──WS──▶ server ──WS──▶ TV player ──▶ media (through the server's /api/proxy for the sites that need it)
         (paste a link: the server finds the video, the TV plays it without the page)
 ```
 
@@ -285,6 +285,12 @@ pnpm build && pnpm start     # http://localhost:8787
 
 **Server**
 - Resolves a link to a playable stream: the generic resolver plus the site adapters in `src/server/resolvers/adapters/`
+- The media proxy (`/api/proxy`, which the adapters' streams go through so that a site's referer and CORS rules do not stop the player) only
+  connects to public addresses. The address is checked where a connection is made, not in the text of the link, so `localhost`, or a name
+  anyone can point at a machine on the server's own network, is refused (403) like a number; every redirect is checked the same way.
+  The pieces of a film that the screens of a party ask for a few seconds apart are fetched from the site once and handed to each of them
+  (`src/server/segmentCache.ts`: only whole answers that say how long they are, at most 64 MB kept for 3 minutes), so five screens do not
+  look like five viewers to the site; what the server sends on to the screens is still one copy each
 - Pairing codes are single-use and expire after 10 minutes. After 20 wrong codes in a minute (all phones counted together)
   pairing pauses until the minute is over, because the code is only six digits
 - **Accounts, pairings and what each TV was playing are kept**: written to disk (or Postgres) a moment after every change and again when the
@@ -347,8 +353,14 @@ limit as pairing. A TV with a phone connected can host a party but not join one.
 or on its phone) can remove a guest or end the party, and a guest can leave from its own bar.
 
 **What the host decides:** what plays, a guest that joins mid-film starts at the host's place, pause, skipping, speed and stop. The host
-reports its position, the server relays it, and each guest nudges its speed by a few percent when it drifts a fraction of a second, or jumps when it is
-a second or more off (`src/client/tv/sync.ts`). **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
+reports its position and the server relays it, saying how old it is by then (half of the host's round trip to the server plus half of the
+guest's: every screen times the answers to its keepalive PINGs and sends the shortest of the last few along, and the server puts the sum
+on the `TV_SYNC` as `lag`), so each guest aims at where the host is now, not where it was; guests used to sit behind it by about that
+much. A guest nudges its speed by a few percent when it is more than 0.15 s off (and goes on until it is within 0.05 s, instead of starting
+and stopping with every report), jumps when it is a second or more off, shows the host's frame when paused (within 0.1 s), and jumps to
+the host's place at once when the host starts again, if it has that place (`src/client/tv/sync.ts`). A guest that is still waiting for
+data does not chase the host: it does not speed up on a thin buffer, and it jumps only to a place it has already downloaded (after 15 s
+behind, anywhere), so a slow screen is not sent back and forth. **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
 from the guest's *Audio & subtitles* button; volume is the device's own.
 
 **Admins:** next to each guest's name the host (on the TV, or on its phone) has a **Make admin** button, which turns into **Remove admin**. An

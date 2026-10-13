@@ -1327,6 +1327,59 @@ test.describe("watching together", () => {
       .toBeLessThan(1.5);
   });
 
+  test("a screen tells the server how long its round trip takes, from the moment it connects", async ({ browser }) => {
+    const pings: string[] = [];
+    const tv = await openLibrary(browser, async (context) => {
+      context.on("page", (page) =>
+        page.on("websocket", (socket) =>
+          socket.on("framesent", (frame) => {
+            if (typeof frame.payload === "string" && frame.payload.includes('"PING"')) pings.push(frame.payload);
+          }),
+        ),
+      );
+    });
+    await expect.poll(() => pings.length).toBeGreaterThan(0); // (the first is sent as soon as the page has said hello, not 15 s later)
+    // (The page checks the link again when it comes back to the front: that PING carries what the first one took.)
+    await expect
+      .poll(async () => {
+        await tv.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+        return pings.some((ping) => /"rtt":\d+/.test(ping));
+      })
+      .toBe(true);
+  });
+
+  test("a guest aims where the host is now: it plays ahead of the position it is sent by the age it is told that has", async ({ browser, baseURL }) => {
+    const leader = await openTv(browser);
+    const phone = await openPairedPhone(browser, leader);
+    // (A server that says every report took 1.5 s to arrive: the guest should be that far ahead of the host's last position, which is the host's now.)
+    const follower = await openLibrary(browser, async (context) => {
+      await context.routeWebSocket(/\/ws$/, (page) => {
+        const server = page.connectToServer();
+        page.onMessage((message) => server.send(message));
+        server.onMessage((message) => {
+          const report = typeof message === "string" ? (JSON.parse(message) as { type?: string }) : null;
+          page.send(report?.type === "TV_SYNC" ? JSON.stringify({ ...report, lag: 1.5 }) : message);
+        });
+        page.onClose((code, reason) => void server.close({ code, reason }));
+        server.onClose((code, reason) => void page.close({ code, reason }));
+      });
+    });
+    await follower.getByTestId("rail-connect").click();
+    await phone.getByTestId("menu").click();
+    await phone.getByTestId("party-open").click();
+    await phone.getByTestId("party-code").fill(await readPairingCode(follower));
+    await expect(phone.getByTestId("party-tv")).toHaveCount(1);
+    await phone.getByTestId("sheet-close").click();
+
+    await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/long.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
+    await expect
+      .poll(async () => (await video(follower)).time - (await video(leader)).time, { timeout: 15_000, message: "the guest settles about 1.5 s ahead of the host" })
+      .toBeGreaterThan(1.1);
+    expect((await video(follower)).time - (await video(leader)).time).toBeLessThan(2.1);
+  });
+
   test("a follower has no controls of its own: keys do nothing, and the phone's stop ends it for both", async ({ browser, baseURL }) => {
     const { leader, phone, follower } = await party(browser);
     await phone.getByTestId("sheet-close").click();
