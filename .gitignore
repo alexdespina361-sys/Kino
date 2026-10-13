@@ -11,3 +11,5 @@ test-results/
 # accounts (password hashes!) when kept in a file next to the server
 data/
 .claude/
+# the screenshot walk's pictures and comparisons (scripts/ui-walk)
+.ui-polish/
