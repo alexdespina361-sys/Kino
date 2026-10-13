@@ -310,10 +310,14 @@ limit as pairing. A TV with a phone connected can host a party but not join one.
 or on its phone) can remove a guest or end the party, and a guest can leave from its own bar.
 
 **What the host decides:** what plays, a guest that joins mid-film starts at the host's place, pause, skipping, speed and stop. The host
-reports its position, the server relays it, and each guest nudges its speed by a few percent when it is some tenths of a second off (and goes
-on until it is close, instead of starting and stopping with every report), or jumps when it is a second or more off (`src/client/tv/sync.ts`).
-A guest that is still waiting for data does not chase the host: it does not speed up on a thin buffer, and it jumps only to a place it has
-already downloaded (after 15 s behind, anywhere), so a slow screen is not sent back and forth. **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
+reports its position and the server relays it, saying how old it is by then (half of the host's round trip to the server plus half of the
+guest's: every screen times the answers to its keepalive PINGs and sends the shortest of the last few along, and the server puts the sum
+on the `TV_SYNC` as `lag`), so each guest aims at where the host is now, not where it was; guests used to sit behind it by about that
+much. A guest nudges its speed by a few percent when it is more than 0.15 s off (and goes on until it is within 0.05 s, instead of starting
+and stopping with every report), jumps when it is a second or more off, shows the host's frame when paused (within 0.1 s), and jumps to
+the host's place at once when the host starts again, if it has that place (`src/client/tv/sync.ts`). A guest that is still waiting for
+data does not chase the host: it does not speed up on a thin buffer, and it jumps only to a place it has already downloaded (after 15 s
+behind, anywhere), so a slow screen is not sent back and forth. **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
 from the guest's *Audio & subtitles* button; volume is the device's own.
 
 **A phone as a guest** watches in either orientation. The guest's bar (Audio & subtitles, Mute, Watch party, Full screen, Leave) sits along the

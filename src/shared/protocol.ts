@@ -121,6 +121,9 @@ export type TvInfo = z.infer<typeof TvInfoSchema>;
 /** How many other TVs can watch along with one: a party is the TV the phone controls plus up to this many. */
 export const MAX_FOLLOWERS = 5;
 
+/** The longest a report of the host's position is taken to have been on its way to a guest, in seconds (a longer one is a bad link, not something to correct for). */
+export const MAX_LAG_S = 2;
+
 /** A screen in a party, as the lists show it. `id` is for removing it; the screen's own id is its secret and stays on the server. */
 export const PartyTvSchema = z.object({ id: z.string().max(100), name: z.string().max(60), online: z.boolean() });
 export type PartyTv = z.infer<typeof PartyTvSchema>;
@@ -225,7 +228,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   /** End the party this phone's TV hosts: the code stops working and every guest is back on its own. */
   z.object({ type: z.literal("END_PARTY") }),
   // Keepalive from either kind of client. Answered with PONG, so a silently dead connection is noticed.
-  z.object({ type: z.literal("PING") }),
+  z.object({
+    type: z.literal("PING"),
+    /** How long the answer to the last PINGs took to come, in milliseconds (the best of the last few). A party uses it to tell how old the position of its host is by the time it gets to a guest. */
+    rtt: z.number().finite().min(0).max(60_000).optional(),
+  }),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -251,6 +258,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     rate: z.number().finite().min(0.25).max(4),
     /** Which stream that position is in (the leader's `PlayerState.stream`). */
     stream: z.string().max(2048).optional(),
+    /** About how long this report took to get here, in seconds: half of the leader's round trip to the server and half of this screen's, as each last measured them. A leader that plays has moved on by that much. */
+    lag: z.number().finite().min(0).max(MAX_LAG_S).optional(),
   }),
   /** The party this TV is in has changed (or it has left it: null). Sent again whenever someone joins, leaves or goes offline. */
   z.object({ type: z.literal("TV_PARTY"), party: PartyViewSchema.nullable() }),

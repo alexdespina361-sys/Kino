@@ -25,18 +25,33 @@ export interface SyncStep {
   rate: number;
 }
 
+/**
+ * Where the leader is now, from a report of where it was. The report took `lag` seconds to get here (the server says how long, from the
+ * round trips of the two screens), and a leader that plays has moved on by that much; aiming at the position as reported would keep
+ * every guest behind the host by about that.
+ */
+export function leaderNow(report: { playing: boolean; time: number; rate: number; lag?: number | undefined }): number {
+  return report.playing ? report.time + (report.lag ?? 0) * report.rate : report.time;
+}
+
 /** Further apart than this, playing faster or slower would take too long: jump. */
 export const HARD_SEEK_S = 1;
 /**
- * Between this and a jump, catch up by playing a little faster or slower. A report takes a moment to arrive, and that moment shows as
- * a picture a little ahead on every one of them; so a nudge starts well beyond that, and then goes on until the pictures are close
- * (`NUDGE_UNTIL_S`), instead of starting and stopping with every report.
+ * Between this and a jump, catch up by playing a little faster or slower. What is left of a report's age once `leaderNow` has added it is
+ * the guess being a little off, so a nudge starts a little beyond that, and then goes on until the pictures are close (`NUDGE_UNTIL_S`),
+ * instead of starting and stopping with every report.
  */
-export const NUDGE_FROM_S = 0.4;
-export const NUDGE_UNTIL_S = 0.1;
+export const NUDGE_FROM_S = 0.15;
+export const NUDGE_UNTIL_S = 0.05;
 export const NUDGE = 0.08;
-/** A paused picture only needs to be near, since nothing moves. */
-export const PAUSED_TOLERANCE_S = 0.5;
+/** A paused picture only needs to be near, since nothing moves (but near enough to show the same frame). */
+export const PAUSED_TOLERANCE_S = 0.1;
+/**
+ * A picture that is not playing when the leader is (a guest whose host has just started again) goes to the place at once if it is this
+ * far from it and already has it: nothing to download, and nothing moving that the jump would disturb. Otherwise it would start about
+ * a report's age behind and spend seconds catching up.
+ */
+export const RESUME_SEEK_S = 0.1;
 /** After a jump the picture needs a moment to fill; a second jump before then would only chase it. */
 export const SEEK_COOLDOWN_MS = 3000;
 /**
@@ -58,6 +73,9 @@ export function syncStep(target: SyncTarget, local: SyncLocal, msSinceSeek: numb
   // (A picture that is not playing yet has nothing to run dry: it goes straight to the place, as a screen that has just joined must.)
   const thin = local.playing && (local.buffering || local.ahead < THIN_BUFFER_S);
   if (apart > HARD_SEEK_S && msSinceSeek > SEEK_COOLDOWN_MS && (!thin || local.targetBuffered || apart > GIVE_UP_S)) {
+    return { play: true, seek: target.time, rate: target.rate };
+  }
+  if (!local.playing && apart > RESUME_SEEK_S && local.targetBuffered && msSinceSeek > SEEK_COOLDOWN_MS) {
     return { play: true, seek: target.time, rate: target.rate };
   }
   const behind = drift < 0;

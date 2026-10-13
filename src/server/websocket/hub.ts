@@ -2,6 +2,7 @@ import type { WebSocket } from "ws";
 import {
   IDLE_STATE,
   MAX_FOLLOWERS,
+  MAX_LAG_S,
   MAX_PHONE_TVS,
   parseClientMessage,
   withHint,
@@ -46,6 +47,8 @@ export class Hub {
   private readonly lastSeen = new Map<WebSocket, number>();
   /** TVs whose page has just been opened and has not reported yet: its first report is when a video it was on is put back. */
   private readonly opened = new Set<string>();
+  /** How long each TV last said its answers take to come (a PING's `rtt`, in milliseconds), which is how a guest is told how old the host's position is. */
+  private readonly roundTrips = new Map<string, number>(); // deviceId -> ms
   private readonly sweeper: ReturnType<typeof setInterval>;
   /** When recent wrong codes were tried. A code is only six digits, so guessing has to be slow once this is on the internet. */
   private failedPairings: number[] = [];
@@ -87,6 +90,7 @@ export class Hub {
       if (conn.role === "tv" && this.tvs.get(conn.deviceId) === socket) {
         this.tvs.delete(conn.deviceId);
         this.opened.delete(conn.deviceId);
+        this.roundTrips.delete(conn.deviceId);
         const device = this.registry.getDevice(conn.deviceId);
         if (device) this.registry.checkpoint(device); // where it had got is written down exactly, in case the page is not opened again for a while
         if (device) this.toControllers(device, { type: "TV_STATUS", online: false });
@@ -111,6 +115,7 @@ export class Hub {
       case "PING":
         // A TV that stays on for weeks says hello once; the pings are how the registry knows it is still in use.
         if (conn.role !== "none") this.registry.markSeen(conn.role === "tv" ? conn.deviceId : conn.controllerId);
+        if (conn.role === "tv" && message.rtt !== undefined) this.roundTrips.set(conn.deviceId, message.rtt);
         this.send(conn.socket, { type: "PONG" });
         return conn;
     }
@@ -548,14 +553,30 @@ export class Hub {
   private syncFollowers(leader: Device): void {
     const { state } = leader;
     if (leader.followerIds.length === 0 || (state.state !== "playing" && state.state !== "paused")) return;
-    this.toFollowers(leader, {
-      type: "TV_SYNC",
+    const report = {
+      type: "TV_SYNC" as const,
       // A leader that is waiting for data holds the others too, so nobody runs ahead of it.
       playing: state.state === "playing" && !state.buffering,
       time: state.currentTime,
       rate: state.playbackRate ?? 1,
       ...(state.stream ? { stream: state.stream } : {}),
-    });
+    };
+    for (const follower of this.registry.followersOf(leader)) {
+      const lag = this.lagBetween(leader, follower);
+      this.send(this.tvs.get(follower.id), lag === undefined ? report : { ...report, lag });
+    }
+  }
+
+  /**
+   * About how long a report of `leader` takes to get to `follower`, in seconds: half of each one's round trip to this server, as each last
+   * said it (if only one has, the other is taken to be the same). A guest that adds it to the position it is told sees where the host is
+   * now, not where it was; without it every guest is behind by about that much. Not said at all before either has measured.
+   */
+  private lagBetween(leader: Device, follower: Device): number | undefined {
+    const there = this.roundTrips.get(leader.id);
+    const here = this.roundTrips.get(follower.id);
+    if (there === undefined && here === undefined) return undefined;
+    return Math.min(MAX_LAG_S, ((there ?? here ?? 0) + (here ?? there ?? 0)) / 2000);
   }
 
   /** After a pairing ended from either side: the TV stops and shows a fresh code. */

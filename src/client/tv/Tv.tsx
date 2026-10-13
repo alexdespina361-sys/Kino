@@ -44,7 +44,7 @@ import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
 import { keepNativePlayerOut } from "./nativePlayer";
 import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
-import { syncStep } from "./sync";
+import { leaderNow, syncStep } from "./sync";
 import {
   describeTrack,
   parsePrefs,
@@ -637,15 +637,16 @@ export function Tv() {
             const local = engine.getState();
             if (local.state !== "playing" && local.state !== "paused") break;
             const rate = local.playbackRate ?? 1;
+            const hostAt = leaderNow(message); // (the report is a little old by now)
             const step = syncStep(
-              { playing: message.playing, time: message.time, rate: message.rate },
+              { playing: message.playing, time: hostAt, rate: message.rate },
               {
                 playing: local.state === "playing",
                 time: local.currentTime,
                 rate,
                 buffering: Boolean(local.buffering),
                 ahead: Math.max(0, (local.bufferedEnd ?? local.currentTime) - local.currentTime),
-                targetBuffered: engine.hasBuffered(message.time),
+                targetBuffered: engine.hasBuffered(hostAt),
               },
               Date.now() - lastSeekAt,
             );
