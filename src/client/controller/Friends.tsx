@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FRIEND_NOTE_MAX, friendLink, reachable, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type InboxItem, type Message, type OpenInvite } from "../../shared";
+import { canAskTogether, FRIEND_NOTE_MAX, friendLink, partyOpen, reachable, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type InboxItem, type Message, type OpenInvite } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -7,7 +7,7 @@ import { useScores } from "../account/ratings";
 import { factLines, scoreOf, scoreWord, sortRatings, storedFacts } from "../account/ratingText";
 import { useSettings } from "../account/settings";
 import { ago, formatDay } from "../account/time";
-import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation } from "../friends/entries";
+import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { usePeek } from "../friends/usePeek";
 import { askLists, askRatings, useShared } from "../friends/useShared";
@@ -235,10 +235,32 @@ function FriendPic({ friend, size }: { friend: Friend; size?: "big" }) {
   );
 }
 
-function InboxRow({ item, from, onOpenTitle, onDismiss }: { item: InboxItem; from: string; onOpenTitle: OpenTitle; onDismiss: () => void }) {
+/**
+ * Asks a friend to watch together: they get a request with a button that starts a party and invites this profile to it. `ended` is the
+ * invitation to a party that is over, if that is where this was pressed: once the friend is asked it is of no more use.
+ */
+function useAskTogether(): (friendId: string, ended?: string) => Promise<void> {
+  const t = useT();
+  const account = useAccount();
+  const friends = useFriends();
+  return async (friendId, ended) => {
+    const name = nameOf(friends.state?.friends ?? [], friendId);
+    try {
+      const answer = await friends.send([friendId], { kind: "together" });
+      account.say(answer.sent.length > 0 ? t("friends.askSent", { name }) : t("friends.declined", { names: name }));
+      if (answer.sent.length > 0 && ended) await friends.dismiss(ended);
+    } catch (error) {
+      account.say(describeError(error));
+    }
+  };
+}
+
+function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }: { item: InboxItem; friend: Friend | undefined; onOpenTitle: OpenTitle; onStartParty: ((friendId: string) => void) | undefined; onDismiss: () => void }) {
   const t = useT();
   const language = useLanguage();
+  const ask = useAskTogether();
   const now = Date.now();
+  const from = friend?.name ?? "";
   const dismiss = (
     <button className="mini" onClick={onDismiss} aria-label={t("friends.dismiss")} data-testid="inbox-dismiss">
       <CloseIcon />
@@ -246,7 +268,7 @@ function InboxRow({ item, from, onOpenTitle, onDismiss }: { item: InboxItem; fro
   );
 
   if (item.kind === "party") {
-    const live = item.endsAt > now;
+    const live = partyOpen(item, now);
     return (
       <li className="inbox-item" data-testid="inbox-party">
         <span className="inbox-text">
@@ -257,6 +279,28 @@ function InboxRow({ item, from, onOpenTitle, onDismiss }: { item: InboxItem; fro
           <a className="btn btn-red" href={partyLink(item.code)} data-testid="inbox-join">
             {t("friends.join")}
           </a>
+        )}
+        {/* (A party that is over becomes a question: can they start another, for the two of them?) */}
+        {!live && friend && canAskTogether(friend) && (
+          <button className="btn btn-red" onClick={() => void ask(friend.id, item.id)} data-testid="inbox-ask">
+            {t("friends.askTogether")}
+          </button>
+        )}
+        {dismiss}
+      </li>
+    );
+  }
+  if (item.kind === "together") {
+    return (
+      <li className="inbox-item" data-testid="inbox-together">
+        <span className="inbox-text">
+          <b>{t("friends.togetherOf", { name: from })}</b>
+          <small>{ago(item.at, now, language)}</small>
+        </span>
+        {onStartParty && (
+          <button className="btn btn-red" onClick={() => onStartParty(item.from)} data-testid="inbox-start">
+            {t("friends.startParty")}
+          </button>
         )}
         {dismiss}
       </li>
@@ -279,7 +323,7 @@ function InboxRow({ item, from, onOpenTitle, onDismiss }: { item: InboxItem; fro
 }
 
 /** Everything friends: what they sent, who they are, what they are watching, and how to add another. */
-export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: string) => void; onOpenTitle: OpenTitle }) {
+export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty }: { onOpenFriend: (id: string) => void; onOpenTitle: OpenTitle; onStartParty?: (friendId: string) => void }) {
   const t = useT();
   const friends = useFriends();
   const { state } = friends;
@@ -320,7 +364,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle }: { onOpenFriend: (id: 
         <Group title={t("friends.inbox")}>
           <ul className="inbox-list" data-testid="friends-inbox">
             {state.inbox.map((item) => (
-              <InboxRow key={item.id} item={item} from={nameOf(state.friends, item.from)} onOpenTitle={onOpenTitle} onDismiss={() => void friends.dismiss(item.id).catch(() => undefined)} />
+              <InboxRow key={item.id} item={item} friend={state.friends.find((each) => each.id === item.from)} onOpenTitle={onOpenTitle} onStartParty={onStartParty} onDismiss={() => void friends.dismiss(item.id).catch(() => undefined)} />
             ))}
           </ul>
         </Group>
@@ -452,6 +496,7 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   const account = useAccount();
   const friends = useFriends();
   const friend = friends.state?.friends.find((each) => each.id === friendId);
+  const ask = useAskTogether();
   const [tab, setTab] = useState<"lists" | "ratings">("lists");
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -487,6 +532,11 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
         </div>
       </section>
       {!friend.on && <p className="banner" data-testid="friend-off">{t("friends.theirsOff", { name: friend.name })}</p>}
+      {canAskTogether(friend) && (
+        <button className="btn btn-block" onClick={() => void ask(friend.id)} data-testid="friend-together">
+          <UsersIcon /> {t("friends.askTogether")}
+        </button>
+      )}
       <div className="segmented compact" role="radiogroup" aria-label={friend.name}>
         {(["lists", "ratings"] as const).map((value) => (
           <button key={value} role="radio" aria-checked={tab === value} onClick={() => setTab(value)} data-testid={`friend-tab-${value}`}>
@@ -639,15 +689,16 @@ export function InviteFriendsButton({ code, endsAt }: { code: string; endsAt: nu
 
 /* ------------------------------ on the home screen ------------------------------ */
 
-/** What friends have sent, where the library is: an invitation to a watch party that is on now, and the titles they recommended. */
-export function FriendsHome({ onOpenTitle }: { onOpenTitle: OpenTitle }) {
+/** What friends have sent, where the library is: an invitation to a watch party that is on now, a request for one, and the titles they recommended. */
+export function FriendsHome({ onOpenTitle, onStartParty }: { onOpenTitle: OpenTitle; onStartParty: (friendId: string) => void }) {
   const t = useT();
   const friends = useFriends();
   const scores = useScores();
   const now = Date.now();
   if (!friends.on || !friends.state) return null;
   const { state } = friends;
-  const parties =state.inbox.filter((item): item is PartyInvitation => item.kind === "party" && item.endsAt > now);
+  const parties = state.inbox.filter((item): item is PartyInvitation => item.kind === "party" && partyOpen(item, now));
+  const requests = state.inbox.filter((item): item is TogetherRequest => item.kind === "together");
   const recommended = state.inbox.filter((item): item is Recommendation => item.kind === "recommend");
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   const dismiss = (id: string) => void friends.dismiss(id).catch(() => undefined);
@@ -660,6 +711,17 @@ export function FriendsHome({ onOpenTitle }: { onOpenTitle: OpenTitle }) {
             {t("friends.join")}
           </a>
           <button className="mini" onClick={() => dismiss(item.id)} aria-label={t("friends.dismiss")} data-testid="friend-party-dismiss">
+            <CloseIcon />
+          </button>
+        </div>
+      ))}
+      {requests.map((item) => (
+        <div className="banner friend-party" key={item.id} data-testid="friend-together-banner">
+          <span>{t("friends.togetherOf", { name: nameOf(state.friends, item.from) })}</span>
+          <button className="btn btn-red" onClick={() => onStartParty(item.from)} data-testid="friend-together-start">
+            {t("friends.startParty")}
+          </button>
+          <button className="mini" onClick={() => dismiss(item.id)} aria-label={t("friends.dismiss")} data-testid="friend-together-dismiss">
             <CloseIcon />
           </button>
         </div>

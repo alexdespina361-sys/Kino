@@ -16,7 +16,7 @@ import {
   type SessionState,
 } from "../../shared";
 import { describeDevice } from "./device";
-import { friendRoutes } from "./friendRoutes";
+import { friendRoutes, type PartyLookup } from "./friendRoutes";
 import { LinkRegistry } from "./links";
 import { decoyHash, hashPassword, verifyPassword, type PasswordCost } from "./password";
 import { RateLimiter } from "./rateLimit";
@@ -33,6 +33,8 @@ export interface AccountRoutesOptions {
   signUpsPerHour?: number;
   /** Tests use a cheaper password hash. */
   passwordCost?: PasswordCost;
+  /** The watch parties that are on, for the invitations of friends to them. */
+  parties?: PartyLookup;
 }
 
 const COOKIE = "kino_session";
@@ -335,5 +337,5 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
 
   /* ------------------------------ friends ------------------------------ */
 
-  friendRoutes(app, { store, authenticate, signedOut, tooMany, invalid, refused });
+  friendRoutes(app, { store, authenticate, signedOut, tooMany, invalid, refused, ...(options.parties ? { parties: options.parties } : {}) });
 };

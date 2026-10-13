@@ -2,6 +2,7 @@ import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { ACTIVITY_KEEP_MS, INVITE_TTL_MS, MAX_OPEN_INVITES, ONLINE_MS, type FriendsState } from "../../shared";
 import { buildApp } from "../app";
+import { Registry } from "../sessions/registry";
 import { MemoryPersistence } from "./persistence";
 import { AccountStore } from "./store";
 
@@ -15,9 +16,17 @@ const clock = { now: Date.now() };
 
 async function start(persistence = new MemoryPersistence()) {
   const store = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now });
-  const app = await buildApp({ accounts: store, passwordCost: cheap });
+  // (The watch parties keep the same time as the accounts, so a code can be made to run out.)
+  const registry = new Registry({ now: () => clock.now });
+  const app = await buildApp({ accounts: store, passwordCost: cheap, registry });
   apps.push(app);
-  return { app, store, persistence };
+  return { app, store, persistence, registry };
+}
+
+/** A TV with a party open: the screen, and the code that brings others in. */
+function openParty(registry: Registry) {
+  const host = registry.tvHello();
+  return { host, code: registry.ensurePartyCode(host)!.code };
 }
 
 /** One browser: it keeps its cookie, and sends it back. */
@@ -267,9 +276,9 @@ describe("making friends", () => {
 
   it("does not count sending to friends against adding one: each has its own allowance", async () => {
     const { app, alex, sam } = await friends();
-    const invitation = { to: [sam.id], kind: "party", code: "123456", endsAt: clock.now + 600_000 };
-    for (let i = 0; i < 60; i++) expect((await alex.client.post(mine(alex, "/send"), invitation)).statusCode).toBe(200);
-    expect((await alex.client.post(mine(alex, "/send"), invitation)).statusCode).toBe(429);
+    const title = { to: [sam.id], kind: "recommend", title: "Dune", url: url(1) };
+    for (let i = 0; i < 60; i++) expect((await alex.client.post(mine(alex, "/send"), title)).statusCode).toBe(200);
+    expect((await alex.client.post(mine(alex, "/send"), title)).statusCode).toBe(429);
 
     const robin = await person(app, "robin");
     await robin.choose({ friends: true });
@@ -462,11 +471,89 @@ describe("recommendations and invitations to a party", () => {
     expect((await sam.state()).inbox).toEqual([]);
   });
 
-  it("invites to a watch party with its code", async () => {
-    const { alex, sam } = await friends();
-    const invited = await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code: "482731", endsAt: clock.now + 600_000 });
+  it("invites to a watch party with its code, and says the party is open", async () => {
+    const { alex, sam, registry } = await friends();
+    const { code } = openParty(registry);
+    const invited = await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code, endsAt: clock.now + 600_000 });
     expect(invited.data.sent).toEqual([sam.id]);
-    expect((await sam.state()).inbox).toMatchObject([{ kind: "party", from: alex.id, code: "482731", read: false }]);
+    const [item] = (await sam.state()).inbox;
+    expect(item).toMatchObject({ kind: "party", from: alex.id, code, open: true, endsAt: clock.now + 600_000, read: false });
+    expect(item).not.toHaveProperty("host"); // (which screen it is on is for the server)
+  });
+
+  it("refuses an invitation to a code no party is open with, and delivers nothing", async () => {
+    const { alex, sam, registry } = await friends();
+    const { host, code } = openParty(registry);
+    registry.closeParty(host);
+    const refused = await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code, endsAt: clock.now + 600_000 });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.data).toEqual({ error: "party_closed" });
+    expect((await sam.state()).inbox).toEqual([]);
+  });
+
+  it("keeps an invitation good when the party's code is renewed: it carries the code the party has now, for as long as the party has guests", async () => {
+    const { alex, sam, registry } = await friends();
+    const { host, code } = openParty(registry);
+    expect(registry.joinParty(registry.tvHello(), code).ok).toBe(true);
+    await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code, endsAt: clock.now + 600_000 });
+
+    clock.now += 11 * 60_000; // (the code ran out; the party did not)
+    expect(registry.partyCodeOf(host)).toBeNull();
+    const [item] = (await sam.state()).inbox;
+    expect(item).toMatchObject({ kind: "party", open: true });
+    expect(item).toMatchObject({ code: registry.partyCodeOf(host)!.code, endsAt: clock.now + 600_000 });
+    expect((item as { code: string }).code).not.toBe(code);
+    expect(registry.hostOfPartyCode((item as { code: string }).code)).toBe(host);
+  });
+
+  it("says an invitation's party is over once nobody is in it and its code has run out (or it was ended), and keeps what was sent", async () => {
+    const { alex, sam, registry } = await friends();
+    const { host, code } = openParty(registry);
+    await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code, endsAt: clock.now + 600_000 });
+    expect(((await sam.state()).inbox[0] as { open: boolean }).open).toBe(true);
+
+    clock.now += 11 * 60_000;
+    const [over] = (await sam.state()).inbox;
+    expect(over).toMatchObject({ kind: "party", open: false, code, from: alex.id });
+    expect(registry.hostOfPartyCode(code)).toBeUndefined();
+    expect(registry.partyCodeOf(host)).toBeNull(); // (looking at the invitation did not open the party again)
+
+    // An ended party is over too, even with the code still in date.
+    const second = openParty(registry);
+    await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code: second.code, endsAt: clock.now + 600_000 });
+    registry.closeParty(second.host);
+    expect(((await sam.state()).inbox[0] as { open: boolean }).open).toBe(false);
+  });
+
+  it("asks a friend who tells what they watch to watch together, and takes the request away once they invite back", async () => {
+    const { alex, sam, registry } = await friends({ friendsGive: true, friendsGet: true });
+    const asked = await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" });
+    expect(asked.data).toEqual({ sent: [sam.id], declined: [] });
+    expect((await sam.state()).inbox).toMatchObject([{ kind: "together", from: alex.id, read: false }]);
+    expect((await sam.state()).friends[0]).toMatchObject({ activity: true, inbox: true });
+
+    // Asking again does not pile requests up.
+    await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" });
+    expect((await sam.state()).inbox).toHaveLength(1);
+
+    // Sam answers by inviting Alex to a party: Alex has the invitation and Sam no longer has the request.
+    const { code } = openParty(registry);
+    const invited = await sam.client.post(mine(sam, "/send"), { to: [alex.id], kind: "party", code, endsAt: clock.now + 600_000 });
+    expect(invited.data.sent).toEqual([alex.id]);
+    expect((await sam.state()).inbox).toEqual([]);
+    expect((await alex.state()).inbox).toMatchObject([{ kind: "party", from: sam.id, code, open: true }]);
+  });
+
+  it("does not take a request to watch together to a friend who does not tell what they watch, or does not take things", async () => {
+    const { alex, sam } = await friends(); // (what they watch is not told by default)
+    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" })).data).toEqual({ sent: [], declined: [sam.id] });
+    await sam.choose({ friendsGive: true });
+    await alex.choose({ friendsGet: true });
+    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" })).data).toEqual({ sent: [sam.id], declined: [] });
+    await sam.client.delete(mine(sam, `/inbox/${(await sam.state()).inbox[0]!.id}`));
+    await sam.choose({ friendsInbox: false });
+    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" })).data).toEqual({ sent: [], declined: [sam.id] });
+    expect((await sam.state()).inbox).toEqual([]);
   });
 
   it("sends to several friends at once, and tells who is not taking things", async () => {

@@ -21,6 +21,7 @@ import {
   type FriendProgress,
   type FriendRatings,
   type FriendsState,
+  type InboxItem,
   type InviteView,
   type KeptFriend,
   type KeptFriends,
@@ -30,8 +31,16 @@ import {
 import { normalise } from "./links";
 import { Presence } from "./presence";
 import { RateLimiter } from "./rateLimit";
-import type { FriendError } from "./friends";
+import type { FriendError, StoredItem } from "./friends";
 import type { StoreError, AccountStore } from "./store";
+
+/** The watch parties, as far as the friends need to know of them (the sessions keep them: see Registry). Screens are named by the id the lists give them. */
+export interface PartyLookup {
+  /** The screen whose party this code is open with now. */
+  hostOf(code: string): string | undefined;
+  /** The code the party of a screen is joined with now and how long that stays good: a party with guests whose code ran out is given a new one. Nothing when the party is over. */
+  running(host: string): { code: string; expiresInMs: number } | undefined;
+}
 
 /** What the routes of the accounts hand over for these to do their part in the same way. */
 export interface FriendRouteHelpers {
@@ -41,10 +50,12 @@ export interface FriendRouteHelpers {
   tooMany(reply: FastifyReply, waitMs: number): FastifyReply;
   invalid(reply: FastifyReply, error: ZodError): FastifyReply;
   refused(reply: FastifyReply, error: StoreError): FastifyReply;
+  /** Without it (the accounts on their own) an invitation is believed: any code, for as long as it says. */
+  parties?: PartyLookup;
 }
 
 const MINUTE = 60_000;
-const STATUS: Record<FriendError | "friends_off" | "not_shared" | "not_friends", number> = {
+const STATUS: Record<FriendError | "friends_off" | "not_shared" | "not_friends" | "party_closed", number> = {
   invite_gone: 404,
   own_invite: 409,
   already_friends: 409,
@@ -52,6 +63,7 @@ const STATUS: Record<FriendError | "friends_off" | "not_shared" | "not_friends",
   friends_off: 403,
   not_shared: 403,
   not_friends: 404,
+  party_closed: 409,
 };
 
 type Asked = FastifyRequest & { params: { id: string; fid?: string } };
@@ -90,7 +102,7 @@ function percentOf(card: { position: number; duration: number; done?: boolean | 
  * friendship without turning on, for a moment, everything it shares.
  */
 export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers): void {
-  const { store } = helpers;
+  const { store, parties } = helpers;
   const book = store.friends;
   const presence = new Presence(() => store.clock());
 
@@ -220,6 +232,20 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     return theirs.friends && theirs.friendsGive && friendChoices(store.settingsOf(profileId)).friendsGet;
   }
 
+  /**
+   * A thing in the inbox as the one it is for is told of it. An invitation says what its party is now: the code it can be joined with
+   * (renewed since it was sent, if the host's screen has moved on) and for how long, or that the party is over. Which screen hosts it is
+   * for the server alone.
+   */
+  function told(stored: StoredItem, now: number): InboxItem {
+    const item = { ...stored };
+    delete item.host;
+    if (item.kind !== "party" || !parties) return item;
+    const host = stored.host ?? parties.hostOf(item.code);
+    const running = host === undefined ? undefined : parties.running(host);
+    return running ? { ...item, code: running.code, endsAt: now + running.expiresInMs, open: true } : { ...item, open: false };
+  }
+
   function stateFor(profileId: string, ownHost: string | undefined): FriendsState {
     const now = store.clock();
     const friends = friendList(profileId);
@@ -234,7 +260,7 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
       inbox: book
         .inboxOf(profileId)
         .filter((item) => known.has(item.from))
-        .map((item) => fitToShow(item, ownHost)),
+        .map((item) => fitToShow(told(item, now), ownHost)),
       activity,
       invites: book.invitesOf(profileId).map(({ code, expiresAt }) => ({ code, expiresAt })),
     };
@@ -376,15 +402,21 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     const parsed = SendSchema.safeParse(request.body);
     if (!parsed.success) return helpers.invalid(reply, parsed.error);
     const { to, ...message } = parsed.data;
+    // An invitation is to a party that is open now, and keeps the screen that hosts it: the code is renewed, the screen is what the invitation goes by.
+    const host = message.kind === "party" ? parties?.hostOf(message.code) : undefined;
+    if (message.kind === "party" && parties && host === undefined) return refuse(reply, "party_closed");
     const answer: Sent = { sent: [], declined: [] };
     for (const id of new Set(to)) {
       const theirs = friendChoices(store.settingsOf(id));
-      // (Somebody who is not a friend is told apart from nobody no more than a friend who is not taking things.)
-      if (!book.areFriends(me.profileId, id) || !theirs.friends || !theirs.friendsInbox) {
+      // (Somebody who is not a friend is told apart from nobody no more than a friend who is not taking things. Asking to watch together is asking somebody
+      // who tells what they watch: that is what makes them somebody to ask.)
+      if (!book.areFriends(me.profileId, id) || !theirs.friends || !theirs.friendsInbox || (message.kind === "together" && !tellsWhatTheyWatch(me.profileId, id))) {
         answer.declined.push(id);
         continue;
       }
-      book.deliver(id, me.profileId, message);
+      book.deliver(id, me.profileId, message, host);
+      // (An invitation answers a request for a party that came the other way.)
+      if (message.kind === "party") book.answerTogether(me.profileId, id);
       answer.sent.push(id);
     }
     return reply.send(answer);

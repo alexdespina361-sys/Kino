@@ -1,11 +1,11 @@
-import type { ActivityItem, Friend, FriendLists, FriendRatings, FriendsState } from "../../shared";
+import { canAskTogether, partyOpen, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendsState } from "../../shared";
 import { listName } from "../account/cards";
 import { sortRatings } from "../account/ratingText";
 import { ago, formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
 import { formatCode } from "../shared/format";
 import { entryOfRating, type Entry, type GridPage, type HomeRow, type View } from "../tv/pages";
-import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, withProgress, type PartyInvitation, type Recommendation } from "./entries";
+import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
 
 /**
  * What the TV's friends pages are made of, worked out from what the server says of the friends: pure, like tv/pages.ts, so what
@@ -20,6 +20,26 @@ const entryOfParty = (item: PartyInvitation, from: string, now: number): Entry =
   party: item.code,
   inboxId: item.id,
   note: `${formatCode(item.code)} · ${ago(item.at, now, getLanguage())}`,
+});
+
+/** ...one that has ended: pressing it asks the friend to watch together instead (only offered for a friend who tells what they watch). */
+const entryOfEndedParty = (item: PartyInvitation, from: Friend, now: number): Entry => ({
+  id: `party:${item.id}`,
+  title: t("friends.partyOf", { name: from.name }),
+  url: "",
+  ask: from.id,
+  inboxId: item.id,
+  note: `${t("friends.partyOver")} · ${ago(item.at, now, getLanguage())}`,
+});
+
+/** A friend's request to watch together: pressing it starts a party, and invites them to it. */
+const entryOfRequest = (item: TogetherRequest, from: string, now: number): Entry => ({
+  id: `together:${item.id}`,
+  title: t("friends.togetherOf", { name: from }),
+  url: "",
+  wants: item.from,
+  inboxId: item.id,
+  note: ago(item.at, now, getLanguage()),
 });
 
 /** A friend, as a tile that opens their page, with the picture they chose; the line under the name is what they are watching, else that they are online, else since when they are friends. */
@@ -38,8 +58,9 @@ const addTile = (): Entry => ({ id: "add-friend", title: t("friends.add"), url: 
 const settingsTile = (): Entry => ({ id: "friend-settings", title: t("friends.settingsTile"), url: "", action: "friendSettings" });
 
 /**
- * The rows of the friends page: invitations to the watch parties that are on, what friends sent, what they watch, and the friends
- * themselves (with the tiles to add one and to choose what is shared). Before the server has answered there are only the last two.
+ * The rows of the friends page: invitations to the watch parties that are on (and the ones that are over, from a friend who can be asked
+ * for another), requests to watch together, what friends sent, what they watch, and the friends themselves (with the tiles to add one and
+ * to choose what is shared). Before the server has answered there are only the last two.
  */
 export function friendRows(state: FriendsState | null, now: number): HomeRow[] {
   const friends = state?.friends ?? [];
@@ -47,8 +68,14 @@ export function friendRows(state: FriendsState | null, now: number): HomeRow[] {
   const activity = state?.activity ?? [];
   const rows: HomeRow[] = [];
 
-  const parties = inbox.filter((item): item is PartyInvitation => item.kind === "party" && item.endsAt > now);
-  if (parties.length > 0) rows.push({ id: "friend-parties", layout: "wide", title: t("friends.partiesRow"), entries: parties.map((item) => entryOfParty(item, nameOf(friends, item.from), now)) });
+  const parties = inbox.flatMap((item): Entry[] => {
+    if (item.kind === "together") return [entryOfRequest(item, nameOf(friends, item.from), now)];
+    if (item.kind !== "party") return [];
+    if (partyOpen(item, now)) return [entryOfParty(item, nameOf(friends, item.from), now)];
+    const from = friends.find((friend) => friend.id === item.from);
+    return from && canAskTogether(from) ? [entryOfEndedParty(item, from, now)] : [];
+  });
+  if (parties.length > 0) rows.push({ id: "friend-parties", layout: "wide", title: t("friends.partiesRow"), entries: parties });
 
   const sent = inbox.filter((item): item is Recommendation => item.kind === "recommend");
   if (sent.length > 0) rows.push({ id: "friend-sent", layout: "wide", title: t("friends.inbox"), entries: sent.map((item) => ({ ...entryOfRecommendation(item, nameOf(friends, item.from)), inboxId: item.id })) });

@@ -12,11 +12,13 @@ import {
   SendSchema,
   WATCHING_NOW_MS,
   activityVerb,
+  canAskTogether,
   foreignPicture,
   friendChoices,
   isWellFormedText,
   wellFormedText,
   friendLink,
+  partyOpen,
   plainText,
   reachable,
   sharesLists,
@@ -191,6 +193,34 @@ describe("what is sent", () => {
     expect(InboxItemSchema.safeParse(item).success).toBe(true);
     expect(InboxItemSchema.safeParse({ ...item, read: undefined }).success).toBe(false);
     expect(FriendsStateSchema.safeParse({ friends: [friend()], inbox: [item], activity: [], invites: [{ code: "ABCD2345", expiresAt: 9 }] }).success).toBe(true);
+  });
+
+  it("takes a request to watch together, which is nothing but who it is for, and holds it in an inbox", () => {
+    expect(SendSchema.parse({ to: ["pro_2"], kind: "together" })).toEqual({ to: ["pro_2"], kind: "together" });
+    expect(SendSchema.parse({ to: ["pro_2"], kind: "together", code: "482731", host: "tv_x" })).toEqual({ to: ["pro_2"], kind: "together" }); // (nothing else gets through)
+    expect(InboxItemSchema.safeParse({ kind: "together", id: "m_abc", at: 5, from: "pro_1", read: false }).success).toBe(true);
+  });
+
+  it("takes an invitation to a party as the server answers it: whether the party is open, but never which screen hosts it, and never as a thing to send", () => {
+    const invitation = { kind: "party", code: "482731", endsAt: 5, id: "m_abc", at: 5, from: "pro_1", read: false };
+    expect(InboxItemSchema.parse({ ...invitation, open: false })).toMatchObject({ open: false });
+    expect(InboxItemSchema.parse(invitation)).not.toHaveProperty("open");
+    expect(InboxItemSchema.parse({ ...invitation, host: "tv_x" })).not.toHaveProperty("host");
+    expect(SendSchema.parse({ to: ["pro_2"], kind: "party", code: "482731", endsAt: 5, open: true, host: "tv_x" })).toEqual({ to: ["pro_2"], kind: "party", code: "482731", endsAt: 5 });
+  });
+
+  it("says a party can be joined by the server's word, else by the clock", () => {
+    expect(partyOpen({ endsAt: 10 }, 9)).toBe(true);
+    expect(partyOpen({ endsAt: 10 }, 10)).toBe(false);
+    expect(partyOpen({ endsAt: 10, open: true }, 99)).toBe(true);
+    expect(partyOpen({ endsAt: 10, open: false }, 9)).toBe(false);
+  });
+
+  it("offers asking to watch together to a friend who takes things and tells what they watch, and no other", () => {
+    expect(canAskTogether(friend({ activity: true }))).toBe(true);
+    expect(canAskTogether(friend())).toBe(false); // (they do not tell what they watch)
+    expect(canAskTogether(friend({ activity: true, inbox: false }))).toBe(false);
+    expect(canAskTogether(friend({ activity: true, on: false }))).toBe(false);
   });
 });
 

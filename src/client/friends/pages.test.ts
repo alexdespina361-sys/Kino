@@ -8,7 +8,8 @@ const NOW = 50_000_000;
 const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1_700_000_000_000, on: true, lists: true, ratings: true, activity: true, inbox: true };
 const robin: Friend = { ...sam, id: "pro_robin", name: "Robin" };
 const recommendation = (id: string, from = "pro_sam", extra: { note?: string } = {}): InboxItem => ({ kind: "recommend", id, from, at: NOW - 60_000, read: false, title: "Dune", url: "https://filmpire.sc/watch/1", ...extra });
-const invitation = (id: string, endsAt = NOW + 3_600_000, from = "pro_sam"): InboxItem => ({ kind: "party", id, from, at: NOW - 60_000, read: false, code: "482731", endsAt });
+const invitation = (id: string, endsAt = NOW + 3_600_000, from = "pro_sam", open?: boolean): InboxItem => ({ kind: "party", id, from, at: NOW - 60_000, read: false, code: "482731", endsAt, ...(open === undefined ? {} : { open }) });
+const request = (id: string, from = "pro_sam"): InboxItem => ({ kind: "together", id, from, at: NOW - 120_000, read: false });
 const watched = (friend: string, key: string, extra: Partial<ActivityItem> = {}): ActivityItem => ({ friend, key, title: "Alien", url: "https://filmpire.sc/watch/2", at: NOW - 60_000, ...extra });
 const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], ...changes });
 const since = (friend: Friend) => t("friends.since", { day: formatDay(friend.since, getLanguage()) });
@@ -63,10 +64,35 @@ describe("the rows of the friends page", () => {
     expect(parties?.entries[0]?.note).toContain("482 731");
   });
 
-  it("leave out an invitation to a party that is over, and the row when that was all", () => {
-    expect(friendRows(state({ inbox: [invitation("p1", NOW)] }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+  it("turn an invitation to a party that is over into a tile that asks the friend to watch together instead", () => {
     const rows = friendRows(state({ inbox: [invitation("old", NOW - 1), invitation("p2")] }), NOW);
-    expect(rows.find((row) => row.id === "friend-parties")?.entries.map((entry) => entry.inboxId)).toEqual(["p2"]);
+    const entries = rows.find((row) => row.id === "friend-parties")?.entries ?? [];
+    expect(entries.map((entry) => entry.inboxId)).toEqual(["old", "p2"]);
+    expect(entries[0]).toMatchObject({ id: "party:old", title: t("friends.partyOf", { name: "Sam" }), url: "", ask: "pro_sam", inboxId: "old" });
+    expect(entries[0]).not.toHaveProperty("party"); // (there is nothing to join)
+    expect(entries[0]?.note).toContain(t("friends.partyOver"));
+    expect(entries[1]).toMatchObject({ party: "482731" });
+  });
+
+  it("leave out an invitation to a party that is over when the friend cannot be asked: they do not tell what they watch, or do not take things", () => {
+    const over = [invitation("old", NOW - 1)];
+    for (const friend of [{ ...sam, activity: false }, { ...sam, inbox: false }, { ...sam, on: false }]) {
+      expect(friendRows(state({ friends: [friend], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+    }
+    expect(friendRows(state({ friends: [], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+  });
+
+  it("go by what the server says of a party, when it says: open is open whatever the clock, and over is over", () => {
+    const entries = (item: InboxItem) => friendRows(state({ inbox: [item] }), NOW).find((row) => row.id === "friend-parties")?.entries ?? [];
+    expect(entries(invitation("a", NOW - 1, "pro_sam", true))[0]).toMatchObject({ party: "482731" });
+    expect(entries(invitation("b", NOW + 3_600_000, "pro_sam", false))[0]).toMatchObject({ ask: "pro_sam" });
+    expect(entries(invitation("b", NOW + 3_600_000, "pro_sam", false))[0]).not.toHaveProperty("party");
+  });
+
+  it("show a friend's request to watch together as a tile that starts a party for them, with who and when", () => {
+    const parties = friendRows(state({ inbox: [request("t1")] }), NOW).find((row) => row.id === "friend-parties");
+    expect(parties?.entries).toHaveLength(1);
+    expect(parties?.entries[0]).toMatchObject({ id: "together:t1", title: t("friends.togetherOf", { name: "Sam" }), url: "", wants: "pro_sam", inboxId: "t1" });
   });
 
   it("show a title a friend sent as a card that plays it, says who sent it, and is taken off the row by its item of the inbox", () => {

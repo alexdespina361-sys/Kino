@@ -749,6 +749,12 @@ export const en = {
   "friends.finished": "{name} finished {title}",
   "friends.partiesRow": "Watch parties",
   "friends.partyOf": "{name}'s party",
+  "friends.partyGone": "That party is not open any more.",
+  "friends.askTogether": "Ask to watch together",
+  "friends.askSent": "Asked {name} to watch together",
+  "friends.togetherOf": "{name} wants to watch together",
+  "friends.startParty": "Start a party",
+  "friends.news.together": "{name} wants to watch together",
   "friends.settingsTile": "Friends settings",
   "friends.giveHint": "One friend types it, or opens its link",
   "friends.typeTitle": "Type a friend's code",
@@ -761,6 +767,7 @@ export const en = {
   "error.friends_full": "One of you already has as many friends as there can be (50).",
   "error.not_shared": "They are not sharing that right now.",
   "error.not_friends": "You are not friends any more.",
+  "error.party_closed": "That party is not open any more.",
 } as const;
 
 export type Dictionary = Record<keyof typeof en, string> & Record<string, string>;

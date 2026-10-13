@@ -228,19 +228,30 @@ export const PartyInviteSchema = z.object({
   code: z.string().regex(/^\d{6}$/),
   endsAt: z.number().finite(),
 });
+/** "Let's watch together": a friend asks for a party (nothing more; the answer is an invitation to one). */
+export const TogetherSchema = z.object({ kind: z.literal("together") });
 /** What one friend sends another. */
-export type Message = z.infer<typeof RecommendationSchema> | z.infer<typeof PartyInviteSchema>;
+export type Message = z.infer<typeof RecommendationSchema> | z.infer<typeof PartyInviteSchema> | z.infer<typeof TogetherSchema>;
 
 const To = { to: z.array(IdSchema).min(1).max(MAX_FRIENDS) };
 /** What a profile sends to friends (to each of `to`). */
-export const SendSchema = z.discriminatedUnion("kind", [RecommendationSchema.extend(To), PartyInviteSchema.extend(To)]);
+export const SendSchema = z.discriminatedUnion("kind", [RecommendationSchema.extend(To), PartyInviteSchema.extend(To), TogetherSchema.extend(To)]);
 export type SendRequest = z.infer<typeof SendSchema>;
 /** Who it was delivered to and who is not taking things. */
 export const SentSchema = z.object({ sent: z.array(IdSchema), declined: z.array(IdSchema) });
 export type Sent = z.infer<typeof SentSchema>;
 
 const Delivered = { id: z.string().min(1).max(40), at: z.number(), from: IdSchema, read: z.boolean() };
-export const InboxItemSchema = z.discriminatedUnion("kind", [RecommendationSchema.extend(Delivered), PartyInviteSchema.extend(Delivered)]);
+/**
+ * What is in an inbox. An invitation says whether its party is `open` (the server looks, each time: the code and the time it ends are
+ * those of the party as it is now, which can differ from what was sent when the code was renewed). An answer without it comes from a
+ * server that does not look, and then the time `endsAt` is all there is to go by (see `partyOpen`).
+ */
+export const InboxItemSchema = z.discriminatedUnion("kind", [
+  RecommendationSchema.extend(Delivered),
+  PartyInviteSchema.extend(Delivered).extend({ open: z.boolean().optional() }),
+  TogetherSchema.extend(Delivered),
+]);
 export type InboxItem = z.infer<typeof InboxItemSchema>;
 
 /** Something a friend watched: a film, or a show (its latest episode). Worked out from what the friend's profile keeps, never kept apart. */
@@ -317,6 +328,12 @@ export function activityVerb(item: Pick<ActivityItem, "at" | "done">, now: numbe
 
 /** The friends that something can be sent to now. */
 export const reachable = (friends: readonly Friend[]): Friend[] => friends.filter((friend) => friend.on && friend.inbox);
+
+/** Whether the party an invitation is to can be joined: what the server said of it, else by the clock. */
+export const partyOpen = (invitation: { open?: boolean | undefined; endsAt: number }, now: number): boolean => invitation.open ?? invitation.endsAt > now;
+
+/** Whether asking a friend to watch together makes sense: they take things in the inbox, and tell this profile what they watch (so they are somebody to ask). */
+export const canAskTogether = (friend: Friend): boolean => friend.on && friend.inbox && friend.activity;
 
 /** The address that adds the friend whose code this is (`/?friend=ABCD2345`): what the link in a message holds. */
 export const friendLink = (code: string, origin: string): string => `${origin}/?friend=${code}`;

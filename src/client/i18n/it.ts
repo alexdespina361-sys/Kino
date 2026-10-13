@@ -749,6 +749,12 @@ export const it: Dictionary = {
   "friends.finished": "{name} ha finito {title}",
   "friends.partiesRow": "Visioni condivise",
   "friends.partyOf": "Visione di {name}",
+  "friends.partyGone": "Questa visione condivisa non è più aperta.",
+  "friends.askTogether": "Chiedi di guardare insieme",
+  "friends.askSent": "Hai chiesto a {name} di guardare insieme",
+  "friends.togetherOf": "{name} vuole guardare insieme",
+  "friends.startParty": "Avvia una visione condivisa",
+  "friends.news.together": "{name} vuole guardare insieme",
   "friends.settingsTile": "Impostazioni amici",
   "friends.giveHint": "Un amico lo digita o apre il suo indirizzo",
   "friends.typeTitle": "Scrivi il codice di un amico",
@@ -761,4 +767,5 @@ export const it: Dictionary = {
   "error.friends_full": "Uno di voi ha già il numero massimo di amici (50).",
   "error.not_shared": "Non lo condivide in questo momento.",
   "error.not_friends": "Non siete più amici.",
+  "error.party_closed": "Questa visione condivisa non è più aperta.",
 };

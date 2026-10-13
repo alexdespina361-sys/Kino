@@ -10,6 +10,7 @@ import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
 
 export type Recommendation = Extract<InboxItem, { kind: "recommend" }>;
 export type PartyInvitation = Extract<InboxItem, { kind: "party" }>;
+export type TogetherRequest = Extract<InboxItem, { kind: "together" }>;
 
 /** The name to show for a friend id: the friend's, else nothing. */
 export const nameOf = (friends: readonly Friend[], id: string): string => friends.find((friend) => friend.id === id)?.name ?? "";

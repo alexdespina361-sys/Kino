@@ -387,6 +387,11 @@ describe("heroActions", () => {
     expect(heroActions({ id: "r", title: "A", url: "u", inboxId: "i2" })).toEqual(["play", "list", "dismiss"]);
   });
 
+  it("offers Ask to watch together for an invitation to a party that is over, and Start a party for a friend's request", () => {
+    expect(heroActions({ id: "p", title: "Ann's party", url: "", ask: "pro_ann", inboxId: "i1" })).toEqual(["ask", "dismiss"]);
+    expect(heroActions({ id: "t", title: "Ann wants to watch together", url: "", wants: "pro_ann", inboxId: "i3" })).toEqual(["start", "dismiss"]);
+  });
+
   it("offers nothing for a tile that opens a screen over the library", () => {
     expect(heroActions({ id: "add", title: "Add a friend", url: "", action: "addFriend" })).toEqual([]);
     expect(heroActions({ id: "set", title: "Friends settings", url: "", action: "friendSettings" })).toEqual([]);

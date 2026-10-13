@@ -100,6 +100,28 @@ async function meet(giver: Screen, taker: Screen, add: string = WORDS.en["friend
   return code;
 }
 
+/**
+ * `giver` tells what it watches and `taker` hears it (that is what lets the one ask the other to watch together). Both are on the page of
+ * their friends, and are left there.
+ */
+async function tellsWhatItWatches(giver: Screen, taker: Screen, words: (typeof WORDS)[Language] = WORDS.en) {
+  await tile(giver.page, words["friends.settingsTile"]).click();
+  await giver.page.getByTestId("tv-friends-give").click();
+  await giver.page.getByTestId("tv-friend-settings-done").click();
+  await tile(taker.page, words["friends.settingsTile"]).click();
+  await taker.page.getByTestId("tv-friends-get").click();
+  await taker.page.getByTestId("tv-friend-settings-done").click();
+  // (the switches reach the server a moment after they are turned: the one who takes has it said of the friend before this goes on)
+  const profile = await taker.page.evaluate(() => localStorage.getItem("kino.profile"));
+  await expect
+    .poll(async () => {
+      const state = (await (await taker.page.request.get(`/api/profiles/${profile}/friends`)).json()) as { friends: Array<{ activity?: boolean }> };
+      return state.friends.some((friend) => friend.activity);
+    })
+    .toBe(true);
+  await look(taker.page);
+}
+
 /** What a profile keeps on the server, put there the way a screen does (a film in a list, a score, what it is part way through). */
 async function seed(page: Page, data: Record<string, unknown[]>) {
   const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
@@ -611,6 +633,72 @@ test.describe("sending things to friends from the TV", () => {
     await expect(ann.page.getByTestId("tv-party-member")).toHaveCount(1);
   });
 
+  test("an invitation to a party that has ended is a question: ask to watch together; the friend asked starts a party, and the one who asked is invited to it", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await tellsWhatItWatches(ann, bob);
+
+    await ann.page.getByTestId("rail-party").click();
+    await ann.page.getByTestId("tv-party-start").click();
+    await ann.page.getByTestId("tv-party-invite-friends").click();
+    await ann.page.getByTestId("tv-friend-send").click();
+    await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`Invited ${bob.name}`);
+    await look(bob.page);
+    const card = tile(bob.page, `${ann.name}'s party`);
+    await expect(card).toBeVisible();
+    await expect(card).not.toContainText("That party has ended");
+
+    // The party ends before Bob has looked again. Pressing its card says so over his page of friends, where it is a question now.
+    await ann.page.getByTestId("tv-party-end").click();
+    await expect(ann.page.getByTestId("tv-party-start")).toBeVisible();
+    await card.click();
+    await expect(bob.page.getByTestId("tv-flash")).toHaveText("That party is not open any more.");
+    await expect(view(bob.page)).toHaveAttribute("data-view", "friends");
+    await expect(card).toContainText("That party has ended");
+    await card.click();
+    await expect(bob.page.getByTestId("tv-account-toast")).toContainText(`Asked ${ann.name} to watch together`);
+    await expect(card).toHaveCount(0); // (asked: the card has done its work)
+
+    // Ann's page of friends has the request, and its button starts a party that Bob is invited to at once
+    await ann.page.getByTestId("tv-back-to-library").click();
+    await expect(view(ann.page)).toHaveAttribute("data-view", "friends");
+    await look(ann.page);
+    const asked = tile(ann.page, `${bob.name} wants to watch together`);
+    await expect(asked).toBeVisible();
+    await asked.click();
+    await expect(ann.page.getByTestId("tv-party-code")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`Invited ${bob.name}`);
+
+    await look(bob.page);
+    await expect(card).toBeVisible();
+    await expect(card).not.toContainText("That party has ended");
+    await card.click();
+    await expect(bob.page.getByTestId("tv-party-guest")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-party-member")).toHaveCount(2);
+  });
+
+  test("a friend who does not tell what they watch is not asked: the ended party's card is gone, not a question", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+
+    await ann.page.getByTestId("rail-party").click();
+    await ann.page.getByTestId("tv-party-start").click();
+    await ann.page.getByTestId("tv-party-invite-friends").click();
+    await ann.page.getByTestId("tv-friend-send").click();
+    await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`Invited ${bob.name}`);
+    await look(bob.page);
+    await expect(tile(bob.page, `${ann.name}'s party`)).toBeVisible();
+
+    await ann.page.getByTestId("tv-party-end").click();
+    await expect(ann.page.getByTestId("tv-party-start")).toBeVisible();
+    await look(bob.page);
+    await expect(tile(bob.page, `${ann.name}'s party`)).toHaveCount(0);
+  });
+
   /** A screen that plays the first film of its library and has the party's panel open over it (Start is not pressed yet). */
   async function panelOverFilm(screen: Screen) {
     const page = screen.page;
@@ -861,6 +949,7 @@ test.describe("everything of friends fits the screen", () => {
       const cy = await screenWithFriends(browser, "Cy", { viewport, ...language });
       await meet(ann, bob, words["friends.add"]);
       await seed(bob.page, filmCards());
+      await tellsWhatItWatches(bob, ann, words); // (so Ann is offered to ask Bob to watch together: one more button on his page)
       const page = ann.page;
       const wide = screen.width >= 900; // (a narrower screen has one column, and a page that is longer than it scrolls)
       const fits = async (root: string, what: string) => expect(await outsideTheScreen(page, root, wide), what).toEqual([]);
@@ -883,7 +972,7 @@ test.describe("everything of friends fits the screen", () => {
       await tile(page, bob.name).click();
       await expect(tile(page, "Alpha Film")).toBeVisible();
       // (the buttons are one row, like the lists' on a narrow screen: that row slides to the one the remote is on)
-      for (const id of ["tv-friend-back", "friend-tab-lists", "friend-tab-ratings", "friend-remove"]) {
+      for (const id of ["tv-friend-back", "friend-tab-lists", "friend-tab-ratings", "friend-together", "friend-remove"]) {
         await page.getByTestId(id).focus();
         await expect
           .poll(async () => {

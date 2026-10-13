@@ -761,6 +761,12 @@ export const ro: Dictionary = {
   "friends.finished": "{name} a terminat {title}",
   "friends.partiesRow": "Vizionări comune",
   "friends.partyOf": "Vizionarea lui {name}",
+  "friends.partyGone": "Vizionarea comună nu mai este deschisă.",
+  "friends.askTogether": "Cere o vizionare comună",
+  "friends.askSent": "Ai cerut o vizionare comună lui {name}",
+  "friends.togetherOf": "{name} vrea o vizionare comună",
+  "friends.startParty": "Începe o vizionare comună",
+  "friends.news.together": "{name} vrea o vizionare comună",
   "friends.settingsTile": "Setări pentru prieteni",
   "friends.giveHint": "Un prieten îl scrie sau deschide adresa lui",
   "friends.typeTitle": "Scrie codul unui prieten",
@@ -773,4 +779,5 @@ export const ro: Dictionary = {
   "error.friends_full": "Unul dintre voi are deja numărul maxim de prieteni (50).",
   "error.not_shared": "Nu împărtășește asta acum.",
   "error.not_friends": "Nu mai sunteți prieteni.",
+  "error.party_closed": "Vizionarea comună nu mai este deschisă.",
 };

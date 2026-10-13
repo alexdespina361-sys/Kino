@@ -1,4 +1,4 @@
-import { activityVerb, type ActivityItem, type FriendsState } from "../../shared";
+import { activityVerb, partyOpen, type ActivityItem, type FriendsState } from "../../shared";
 import type { Key, Params } from "../i18n";
 
 /**
@@ -25,6 +25,7 @@ export const known = (state: FriendsState): Known => ({
 
 export type News =
   | { kind: "party"; name: string }
+  | { kind: "together"; name: string }
   | { kind: "recommend"; name: string; title: string }
   | { kind: "friend"; name: string }
   | { kind: "activity"; name: string; title: string; verb: "watching" | "watched" | "finished" };
@@ -42,7 +43,8 @@ export function whatsNew(before: Known | null, state: FriendsState, now: number)
   const fresh = state.inbox.filter((item) => !item.read && !before.inbox.has(item.id));
   return [
     // (an invitation to a party that is over is not news: a screen that was asleep for the evening wakes up to it)
-    ...fresh.flatMap((item): News[] => (item.kind === "party" && item.endsAt > now ? [{ kind: "party", name: name(item.from) }] : [])),
+    ...fresh.flatMap((item): News[] => (item.kind === "party" && partyOpen(item, now) ? [{ kind: "party", name: name(item.from) }] : [])),
+    ...fresh.flatMap((item): News[] => (item.kind === "together" ? [{ kind: "together", name: name(item.from) }] : [])),
     ...fresh.flatMap((item): News[] => (item.kind === "recommend" ? [{ kind: "recommend", name: name(item.from), title: item.title }] : [])),
     ...state.friends.filter((friend) => !before.friends.has(friend.id)).map((friend): News => ({ kind: "friend", name: friend.name })),
     ...state.activity
@@ -53,14 +55,16 @@ export function whatsNew(before: Known | null, state: FriendsState, now: number)
 
 export type Translate = (key: Key, params?: Params) => string;
 
-/** One line for the news: the invitation if there is one, else the one thing that happened, else how many things. */
+/** One line for the news: an invitation or a request for a party if there is one, else the one thing that happened, else how many things. */
 export function describeNews(news: readonly News[], t: Translate): string | undefined {
-  const first = news.find((item) => item.kind === "party") ?? news[0];
+  const first = news.find((item) => item.kind === "party") ?? news.find((item) => item.kind === "together") ?? news[0];
   if (!first) return undefined;
-  if (first.kind !== "party" && news.length > 1) return t("friends.news.many", { count: news.length });
+  if (first.kind !== "party" && first.kind !== "together" && news.length > 1) return t("friends.news.many", { count: news.length });
   switch (first.kind) {
     case "party":
       return t("friends.news.party", { name: first.name });
+    case "together":
+      return t("friends.news.together", { name: first.name });
     case "recommend":
       return t("friends.news.recommend", { name: first.name, title: first.title });
     case "friend":

@@ -62,6 +62,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const proxies = options.trustProxy;
   const trustProxy = typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies;
   const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
+  const registry = options.registry ?? new Registry();
   if (options.accounts) {
     const accounts = options.accounts;
     app.addHook("onClose", async () => accounts.close());
@@ -71,6 +72,14 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
       ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
       ...(options.passwordCost ? { passwordCost: options.passwordCost } : {}),
+      // (What friends are invited to: the screen whose party a code is open with, and the code a party is joined with now.)
+      parties: {
+        hostOf: (code) => registry.hostOfPartyCode(code)?.publicId,
+        running: (host) => {
+          const device = registry.deviceByPublicId(host);
+          return (device && registry.runningParty(device)) || undefined;
+        },
+      },
     });
   }
   const resolve =
@@ -88,7 +97,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     else if (result.status === "temporary_failure") library.played(url, "failed");
     return result;
   };
-  const hub = new Hub(options.registry ?? new Registry(), resolveForPlay, options.hub);
+  const hub = new Hub(registry, resolveForPlay, options.hub);
   // Hooks run last-registered first: the pairs are written before the accounts close the database they share.
   if (options.pairings) {
     const pairings = options.pairings;

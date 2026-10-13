@@ -1,4 +1,5 @@
-import { expect, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type Locator, type Page } from "@playwright/test";
+import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
 import { openDevice, openTv, PHONE, readPairingCode, test, withLibrary } from "./helpers";
 
@@ -44,6 +45,35 @@ async function openFriends(page: Page) {
 
 /** The page looks at its friends now, as it does when it comes back to the front (and every half minute). */
 const look = (page: Page) => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+
+/** A line of the words of a language with its blanks filled in: `{name}` and the like. */
+const say = (text: string, params: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_, key: string) => params[key] ?? "");
+
+type Box = { x: number; y: number; width: number; height: number };
+const where = async (target: { boundingBox(): Promise<Box | null> }) => (await target.boundingBox())!;
+const apart = (a: Box, b: Box) => a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
+const inside = (a: Box, around: Box) => a.x >= around.x - 0.5 && a.y >= around.y - 0.5 && a.x + a.width <= around.x + around.width + 0.5 && a.y + a.height <= around.y + around.height + 0.5;
+
+/**
+ * Whether the `parts` of a `card` keep clear of each other and inside it, the first of them (the words) is at least `room` wide, and the card is inside a screen `width`
+ * wide: held until it is so (a page takes a moment to settle after a resize). When it is not, what was measured is in the failure.
+ */
+const keepClear = (card: Locator, parts: Locator[], width: number, room: number) =>
+  expect
+    .poll(
+      async () => {
+        const around = await where(card);
+        const boxes = await Promise.all(parts.map(where));
+        const fits =
+          around.x >= 0 &&
+          around.x + around.width <= width + 0.5 &&
+          boxes[0]!.width >= room &&
+          boxes.every((box, at) => inside(box, around) && boxes.slice(at + 1).every((other) => apart(box, other)));
+        return fits ? "fits" : JSON.stringify({ around, boxes });
+      },
+      { message: `${width} wide` },
+    )
+    .toBe("fits");
 
 /** A new phone, signed up, with friends on: left on the account page. */
 async function phoneWithFriends(browser: Browser, name: string) {
@@ -314,10 +344,6 @@ test.describe("making friends", () => {
     await ann.page.getByTestId("friend-make-code").click();
     const card = ann.page.getByTestId("friend-invite");
     await expect(card).toBeVisible();
-    type Box = { x: number; y: number; width: number; height: number };
-    const where = async (target: { boundingBox(): Promise<Box | null> }) => (await target.boundingBox())!;
-    const apart = (a: Box, b: Box) => a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
-    const inside = (a: Box, around: Box) => a.x >= around.x - 0.5 && a.y >= around.y - 0.5 && a.x + a.width <= around.x + around.width + 0.5 && a.y + a.height <= around.y + around.height + 0.5;
     for (const width of [320, 360, 375, 390, 430]) {
       await ann.page.setViewportSize({ width, height: 800 });
       await expect
@@ -568,11 +594,11 @@ test.describe("sending things to friends", () => {
     rows: [{ id: "r", title: "Classics", source: "Test Source", kind: "movie", items: [{ id: "a", title: "Alpha Film", year: 1931, kind: "movie", url: `${baseURL}/fixtures/sample.mp4?n=1` }] }],
   });
 
-  /** A phone paired to a TV, showing a one-film library, signed up with friends on. */
-  async function pairedPhone(browser: Browser, baseURL: string, name: string) {
+  /** A phone paired to a TV, showing a one-film library, signed up with friends on (in English, unless its language is given). */
+  async function pairedPhone(browser: Browser, baseURL: string, name: string, locale = "en-US") {
     const account = fresh(name);
     const tv = await openTv(browser);
-    const page = await openDevice(browser, { ...PHONE, locale: "en-US" }, {}, withLibrary(films(baseURL)));
+    const page = await openDevice(browser, { ...PHONE, locale }, {}, withLibrary(films(baseURL)));
     await page.goto("/");
     await page.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(page.getByTestId("tv-online")).toHaveClass(/\bok\b/);
@@ -662,6 +688,69 @@ test.describe("sending things to friends", () => {
     await expect(bob.page.getByTestId("friend-party-join")).toHaveAttribute("href", new RegExp(`/\\?party=${code}$`));
     await bob.page.getByTestId("friend-party-dismiss").click();
     await expect(banner).toHaveCount(0);
+  });
+
+  /** A switch of the settings, from the home screen: the account page is opened, the switch put right, and the phone is back at the home screen. */
+  async function setting(page: Page, id: string, on: boolean) {
+    await page.getByTestId("account-button").click();
+    await page.getByTestId("menu-settings").click();
+    const toggle = page.getByTestId(id);
+    if ((await toggle.getAttribute("aria-checked")) !== String(on)) await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", String(on));
+    for (let back = 0; back < 2; back++) await page.keyboard.press("Escape");
+    await expect(page.getByTestId("account-screen")).toHaveCount(0);
+  }
+
+  test("a friend who tells what they watch can be asked to watch together; the one asked has a button that starts a party and invites the one who asked, and it fits the narrowest phone in Romanian", async ({ browser, baseURL }) => {
+    test.setTimeout(180_000);
+    const ann = await pairedPhone(browser, baseURL!, "Ann", "ro-RO"); // (the longest words)
+    const bob = await pairedPhone(browser, baseURL!, "Bob");
+    await meet(bob.page, ann.page);
+    await setting(ann.page, "friends-give", true); // she tells what she watches and he hears it: that is what lets him ask
+    await setting(bob.page, "friends-get", true);
+
+    // Bob asks, from her page (which is looked at again until the server's word on the two switches has reached him)
+    await bob.page.getByTestId("account-button").click();
+    await openFriends(bob.page);
+    await bob.page.getByTestId("friend-row").click();
+    await expect(async () => {
+      await look(bob.page);
+      await expect(bob.page.getByTestId("friend-together")).toBeVisible({ timeout: 1500 });
+    }).toPass();
+    await bob.page.getByTestId("friend-together").click();
+    await expect(bob.page.getByTestId("account-toast")).toContainText(`Asked ${ann.name} to watch together`);
+    for (let back = 0; back < 3; back++) await bob.page.keyboard.press("Escape"); // (the friend's page, the friends, the account page)
+    await expect(bob.page.getByTestId("account-screen")).toHaveCount(0);
+
+    // Ann has it as a banner on her home screen and a row on her page of friends; each keeps its words and its buttons inside it, on any phone
+    await look(ann.page);
+    const asks = say(ro["friends.togetherOf"], { name: bob.name });
+    const banner = ann.page.getByTestId("friend-together-banner");
+    const start = ann.page.getByTestId("friend-together-start");
+    await expect(banner).toContainText(asks);
+    for (const width of [320, 360, 390]) {
+      await ann.page.setViewportSize({ width, height: 800 });
+      await keepClear(banner, [banner.locator("span").first(), start, ann.page.getByTestId("friend-together-dismiss")], width, 150);
+    }
+    await ann.page.getByTestId("account-button").click();
+    await openFriends(ann.page);
+    const row = ann.page.getByTestId("inbox-together");
+    await expect(row).toContainText(asks);
+    for (const width of [320, 360, 390]) {
+      await ann.page.setViewportSize({ width, height: 800 });
+      await keepClear(row, [row.locator(".inbox-text"), row.getByTestId("inbox-start"), row.getByTestId("inbox-dismiss")], width, 150);
+    }
+    for (let back = 0; back < 2; back++) await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("account-screen")).toHaveCount(0);
+
+    // Her button opens the party of her TV and invites Bob to it; the request is gone from her page, and Bob has the invitation
+    await start.click();
+    await expect(ann.page.getByTestId("party-sheet")).toBeVisible();
+    await expect(ann.page.getByTestId("party-join-code")).toBeVisible();
+    await expect(ann.page.getByTestId("account-toast")).toContainText(say(ro["friends.inviteSent"], { names: bob.name }));
+    await expect(banner).toHaveCount(0);
+    await look(bob.page);
+    await expect(bob.page.getByTestId("friend-party-banner")).toContainText(`${ann.name} invited you to a watch party`);
   });
 
   test("a friend who is not taking things is told apart: they are not offered, and the page says why", async ({ browser, baseURL }) => {

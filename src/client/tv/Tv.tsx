@@ -19,7 +19,10 @@ import {
   type PlayerState,
 } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
+import { describeError } from "../account/errors";
 import { profileStore, useProfileData } from "../account/store";
+import { nameOf } from "../friends/entries";
+import { useFriends } from "../friends/FriendsProvider";
 import { t, useT } from "../i18n";
 import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
@@ -113,6 +116,10 @@ export function Tv() {
   const [partyError, setPartyError] = useState<{ id: number; text: string } | null>(null);
   /** The code of a party a friend invited this TV to, which the party page opens on joining. */
   const [partyJoinWith, setPartyJoinWith] = useState<string | null>(null);
+  /** The code an invitation or a link sent this TV to join with: if that is refused it is not a mistyped code but a party that is over. */
+  const invitedWithRef = useRef<string | null>(null);
+  /** A friend who asked to watch together: they are invited once the party this TV starts has a code. */
+  const [together, setTogether] = useState<string | null>(null);
   /** This TV is leaving a party by choice, so being taken out of it a moment later is not news. */
   const leavingRef = useRef(false);
   const [pairing, setPairing] = useState<Pairing | null>(null);
@@ -184,6 +191,9 @@ export function Tv() {
   const account = useAccount();
   const syncNowRef = useRef(account.syncNow);
   syncNowRef.current = account.syncNow; // (the phone can ask for it: devices of the account were signed out)
+  const friends = useFriends();
+  const friendsRef = useRef(friends);
+  friendsRef.current = friends;
   const [accountView, setAccountView] = useState<AccountView | null>(null);
   /** Signed in, and nobody has been picked on this TV yet: that question comes first. */
   const choosing = account.status === "ready" && account.choosing;
@@ -608,6 +618,7 @@ export function Tv() {
           case "TV_FOLLOWING":
             // A party took this TV in (a phone added it, or its code was typed here): what this TV was doing stops, and the video comes from the host.
             followingRef.current = message.leader;
+            invitedWithRef.current = null;
             setPaired(true);
             setPairing(null);
             setFollowing(message.leader);
@@ -626,6 +637,17 @@ export function Tv() {
             break;
           case "ERROR": {
             // Mostly a party code that would not do (wrong, out of date, a full party): said on the party page, or over the library.
+            // (One that an invitation or a link brought was good when the friend made it: that it is refused now means the party is over. That is said over the friends' page,
+            // which is looked at again: the invitation is a question there now, whether to ask for another.)
+            const over = message.code === "INVALID_CODE" && invitedWithRef.current !== null;
+            invitedWithRef.current = null;
+            if (over) {
+              void friendsRef.current.refresh();
+              setPartyJoinWith(null);
+              if (screenRef.current === "party") setScreen("library");
+              setFlash({ id: ++flashIdRef.current, text: t("friends.partyGone") });
+              break;
+            }
             const text = socketError(message.code, message.message);
             if (screenRef.current === "party") setPartyError({ id: ++flashIdRef.current, text });
             else setFlash({ id: ++flashIdRef.current, text });
@@ -874,6 +896,7 @@ export function Tv() {
     if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current) return;
     linkTriedRef.current = true;
     history.replaceState(null, "", location.pathname);
+    invitedWithRef.current = linkCode;
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code: linkCode });
   }, [linkCode, unlocked, connection]);
 
@@ -896,6 +919,30 @@ export function Tv() {
   }, [party, partyEnds, partyShown]);
 
   const startParty = () => void socketRef.current?.send({ type: "TV_PARTY_OPEN" });
+  /** A friend asked to watch together: a party is started (the one that is on carries on) and they are invited to it as soon as it has a code. */
+  const startTogether = (friend: string) => {
+    setPartyError(null);
+    setPartyJoinWith(null);
+    invitedWithRef.current = null;
+    setTogether(friend);
+    setScreen("party");
+    startParty();
+  };
+  useEffect(() => {
+    // (A code this screen still shows but that has run out is not used: the renewal that is on its way brings a new one, and this looks again.)
+    if (!together || party?.role !== "host" || !party.code || (partyEnds ?? 0) <= Date.now()) return;
+    setTogether(null);
+    const code = party.code;
+    const current = friendsRef.current;
+    const name = nameOf(current.state?.friends ?? [], together);
+    void current.send([together], { kind: "party", code: code.code, endsAt: partyEnds ?? Date.now() + code.expiresInMs }).then(
+      async (answer) => {
+        account.say(answer.sent.length > 0 ? t("friends.inviteSent", { names: name }) : t("friends.declined", { names: name }));
+        await friendsRef.current.refresh(); // (the server takes the request away once they are invited)
+      },
+      (error: unknown) => account.say(describeError(error)),
+    );
+  }, [together, party, partyEnds]);
   const joinParty = (code: string) => {
     setPartyJoinWith(null); // (an invitation's code is used once: the next time the page asks for a code it starts empty)
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code });
@@ -1278,13 +1325,16 @@ export function Tv() {
           onParty={() => {
             setPartyError(null);
             setPartyJoinWith(null);
+            invitedWithRef.current = null;
             setScreen("party");
           }}
           onJoinParty={(code) => {
             setPartyError(null);
             setPartyJoinWith(code);
+            invitedWithRef.current = code;
             setScreen("party");
           }}
+          onStartTogether={startTogether}
           connected={paired}
           partySize={party ? party.guests.length + 1 : 0}
           notice={notice}

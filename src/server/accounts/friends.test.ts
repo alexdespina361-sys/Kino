@@ -24,6 +24,7 @@ function book() {
 const dune: Message = { kind: "recommend", title: "Dune", url: "https://filmpire.sc/watch/438631", year: 2021, note: "The sound!" };
 const alien: Message = { kind: "recommend", title: "Alien", url: "https://filmpire.sc/watch/348" };
 const party: Message = { kind: "party", code: "482731", endsAt: 2_000_000 };
+const together: Message = { kind: "together" };
 
 /** Two profiles that are friends already. */
 function befriended() {
@@ -175,7 +176,7 @@ describe("the inbox", () => {
     friends.deliver("sam", "alex", party);
     friends.deliver("sam", "alex", { ...party, code: "111222" });
     const items = friends.inboxOf("sam");
-    expect(items.map((item) => (item.kind === "party" ? item.code : item.title))).toEqual(["111222", "Dune", "Alien"]);
+    expect(items.map((item) => (item.kind === "party" ? item.code : item.kind === "recommend" ? item.title : ""))).toEqual(["111222", "Dune", "Alien"]);
     expect(items.map((item) => item.read)).toEqual([false, false, true]);
     expect(items[1]).toMatchObject({ note: "Seriously." });
   });
@@ -248,6 +249,29 @@ describe("the inbox", () => {
     expect(friends.inboxOf("sam").map((item) => item.kind)).toEqual(["recommend"]);
     clock.now += INBOX_KEEP_MS;
     expect(friends.inboxOf("sam")).toEqual([]);
+  });
+
+  it("keeps a friend's request to watch together once, and a request is let go when it is answered or when the party's time is up", () => {
+    const { friends, clock } = befriended();
+    const first = friends.deliver("sam", "alex", together);
+    expect(friends.deliver("sam", "alex", together).id).toBe(first.id);
+    expect(friends.inboxOf("sam").map((item) => item.kind)).toEqual(["together"]);
+    expect(friends.answerTogether("sam", "robin")).toBe(false); // (somebody else's request is not this one)
+    expect(friends.answerTogether("sam", "alex")).toBe(true);
+    expect(friends.inboxOf("sam")).toEqual([]);
+    expect(friends.answerTogether("sam", "alex")).toBe(false);
+
+    friends.deliver("sam", "alex", together);
+    clock.now += PARTY_INVITE_KEEP_MS;
+    expect(friends.inboxOf("sam")).toEqual([]);
+  });
+
+  it("remembers which screen an invitation's party is on, for the server only", () => {
+    const { friends } = befriended();
+    friends.deliver("sam", "alex", party, "tv_host");
+    friends.deliver("sam", "alex", dune);
+    expect(friends.inboxOf("sam").find((item) => item.kind === "party")).toMatchObject({ code: "482731", host: "tv_host" });
+    expect(friends.inboxOf("sam").find((item) => item.kind === "recommend")).not.toHaveProperty("host");
   });
 
   it("keeps the newest hundred, whoever sent them", () => {

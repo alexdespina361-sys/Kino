@@ -542,11 +542,31 @@ export class Registry {
     return open && left > 0 ? { code: open.value, expiresInMs: left } : null;
   }
 
-  /** Whether a code is one a party is open with now: what a phone is told when it types such a code where a TV's pairing code goes. */
-  isPartyCode(code: string): boolean {
+  /** The TV a party is open with this code on now, if there is one. */
+  hostOfPartyCode(code: string): Device | undefined {
     const hostId = this.deviceByPartyCode.get(code);
     const host = hostId ? this.devices.get(hostId) : undefined;
-    return host !== undefined && host.partyCode?.value === code && this.partyCodeOf(host) !== null;
+    return host && host.partyCode?.value === code && this.partyCodeOf(host) ? host : undefined;
+  }
+
+  /** Whether a code is one a party is open with now: what a phone is told when it types such a code where a TV's pairing code goes. */
+  isPartyCode(code: string): boolean {
+    return this.hostOfPartyCode(code) !== undefined;
+  }
+
+  /** A TV by the id the lists (and the invitations of friends) know it by. */
+  deviceByPublicId(publicId: string): Device | undefined {
+    for (const device of this.devices.values()) if (device.publicId === publicId) return device;
+    return undefined;
+  }
+
+  /**
+   * The code to join the party of a TV with, for a friend who was invited to it: the one open now or, for a party that has guests in it
+   * but whose code ran out (a code stays good only while the host's screen shows it), a new one. Null when the party is over: nobody in
+   * it and no code open (or the TV is a guest itself).
+   */
+  runningParty(host: Device): PairingCode | null {
+    return host.followerIds.length > 0 || this.partyCodeOf(host) ? this.ensurePartyCode(host) : null;
   }
 
   /** The code others join this TV's party with (a new one if none is open): having one is what makes a TV a host. Null for a TV that is itself a guest. */

@@ -15,8 +15,11 @@ import {
   type TvInfo,
 } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
+import { describeError } from "../account/errors";
 import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
+import { nameOf } from "../friends/entries";
+import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { readKept, writeKept } from "../shared/kept";
@@ -63,6 +66,7 @@ const RESOLVE_TIMEOUT_MS = 40_000;
 export function Controller() {
   const t = useT();
   const account = useAccount();
+  const friends = useFriends();
   const socketRef = useRef<Socket | null>(null);
   const [connection, setConnection] = useState<SocketStatus>("connecting");
   /** The server has not answered for a while: the header's "Reconnecting…" gets a line that says why that can be. */
@@ -255,6 +259,28 @@ export function Controller() {
     socketRef.current?.send({ type: "OPEN_PARTY" });
   };
 
+  /** A friend asked to watch together: this phone's TV starts a party (asking for its code does that), and the friend is invited as soon as the code is here. */
+  const [together, setTogether] = useState<string | null>(null);
+  const startTogether = (friend: string) => {
+    setTogether(friend);
+    openParty();
+  };
+  useEffect(() => {
+    if (!together || !invite || invite === "asking") return;
+    setTogether(null);
+    const name = nameOf(friends.state?.friends ?? [], together);
+    void friends.send([together], { kind: "party", code: invite.code, endsAt: invite.endsAt }).then(
+      async (answer) => {
+        account.say(answer.sent.length > 0 ? t("friends.inviteSent", { names: name }) : t("friends.declined", { names: name }));
+        await friends.refresh(); // (the server takes the request away once they are invited)
+      },
+      (error: unknown) => account.say(describeError(error)),
+    );
+    // The party is what the person asked for: they see its code, and who comes.
+    setShowAccount(false);
+    setSheet("party");
+  }, [together, invite]);
+
   /** The menu shows the code a second phone joins with: opening it asks again, which gives the current code and keeps it good for a while. */
   const openMenu = () => {
     socketRef.current?.send({ type: "CTL_HELLO", controllerId: readKept(CONTROLLER_KEY) });
@@ -375,7 +401,7 @@ export function Controller() {
           <LinkApprove code={approveCode} onClose={closeApprove} />
         </Page>
       ) : (
-        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} />
+        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} {...(tv ? { onStartParty: startTogether } : {})} />
       )}
       {friendCode && !showAccount && !approveCode && !account.choosing && (
         <FriendInvite
@@ -481,7 +507,7 @@ export function Controller() {
   const link = (
     <>
       <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} />
-      <FriendsHome onOpenTitle={setTitle} />
+      <FriendsHome onOpenTitle={setTitle} onStartParty={startTogether} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
       <ListRows lists={lists} items={list} onOpen={setTitle} onPick={pickList} onRemove={(url, id) => profileStore.removeFromList(url, id)} onManage={() => setListSheet({ kind: "manage" })} />
       {ratingsOn && <RatingsRow ratings={ratings} onOpen={setTitle} onAll={() => setRatingsOpen(true)} />}

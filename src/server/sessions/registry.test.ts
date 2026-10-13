@@ -458,6 +458,35 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.isPartyCode(reopened)).toBe(false); // it ran out
   });
 
+  it("finds the screen a code is open on, and keeps a party with guests joinable after its code ran out (until it is over), for the friends invited to it", () => {
+    const { registry, advance, host, code, arrive } = hosted();
+    expect(registry.hostOfPartyCode(code)).toBe(host);
+    expect(registry.hostOfPartyCode("000000")).toBeUndefined();
+    expect(registry.deviceByPublicId(host.publicId)).toBe(host);
+    expect(registry.deviceByPublicId("nobody")).toBeUndefined();
+
+    // Nobody came: the code is the party, and when it runs out the party is over.
+    expect(registry.runningParty(host)?.code).toBe(code);
+    advance(10 * 60 * 1000);
+    expect(registry.hostOfPartyCode(code)).toBeUndefined();
+    expect(registry.runningParty(host)).toBeNull();
+
+    // Somebody came: the party goes on without its code, and is given a new one when a friend who was invited asks.
+    const again = registry.ensurePartyCode(host)!.code;
+    expect(registry.joinParty(arrive(), again).ok).toBe(true);
+    advance(10 * 60 * 1000);
+    expect(registry.partyCodeOf(host)).toBeNull();
+    const renewed = registry.runningParty(host)!;
+    expect(renewed.code).not.toBe(again);
+    expect(registry.hostOfPartyCode(renewed.code)).toBe(host);
+    expect(registry.runningParty(host)?.code).toBe(renewed.code); // (the same one, until it runs out)
+
+    // A guest has no party of its own, and a party that was ended is over.
+    expect(registry.runningParty(registry.followersOf(host)[0]!)).toBeNull();
+    registry.closeParty(host);
+    expect(registry.runningParty(host)).toBeNull();
+  });
+
   it("makes every TV that types the code a guest: the code is not used up", () => {
     const { registry, host, code, arrive } = hosted();
     const [first, second] = [arrive(), arrive()];

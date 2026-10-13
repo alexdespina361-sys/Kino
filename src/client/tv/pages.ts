@@ -90,6 +90,10 @@ export interface Entry {
   inboxId?: string;
   /** An invitation to a watch party: the 6-digit code that joins it. */
   party?: string;
+  /** An invitation to a party that has ended: the friend whom pressing it asks to watch together instead. */
+  ask?: string;
+  /** A friend's request to watch together: the friend, whom pressing it starts a party for (and invites). */
+  wants?: string;
   /** A tile that opens a page over the library, or the account's own pages, instead of a title or a page of the library. */
   action?: "addFriend" | "friendSettings" | "settings" | "signIn";
   /** A person's tile (a friend): the picture they chose, and whether they are online now. */
@@ -354,10 +358,12 @@ export function freshSimilar(items: readonly LibraryItem[], progress: readonly L
 }
 
 /** What the buttons under the banner can do for a title. */
-export type HeroAction = "play" | "list" | "remove" | "rate" | "recommend" | "dismiss" | "join";
+export type HeroAction = "play" | "list" | "remove" | "rate" | "recommend" | "dismiss" | "join" | "ask" | "start";
 export const heroActions = (entry: Entry | undefined): HeroAction[] => {
   if (!entry || entry.opens || entry.action) return [];
   if (entry.party) return ["join", "dismiss"]; // an invitation to a watch party
+  if (entry.ask) return ["ask", "dismiss"]; // ...one that has ended: the friend can be asked for another
+  if (entry.wants) return ["start", "dismiss"]; // a friend asks for a party
   if (entry.progressKey) return ["play", "remove"];
   return entry.inboxId ? ["play", "list", "dismiss"] : ["play", "list"]; // (what a friend sent can be sent away)
 };

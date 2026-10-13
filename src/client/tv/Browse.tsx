@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryItem, type PlayHint } from "../../shared";
+import { canAskTogether, DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryItem, type PlayHint } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
+import { describeError } from "../account/errors";
 import { ListEditor } from "../account/Lists";
 import { ratingFor, scoreOf } from "../account/ratingText";
 import { useScores } from "../account/ratings";
 import { profileStore, useProfileData } from "../account/store";
-import { recommendationOf } from "../friends/entries";
+import { nameOf, recommendationOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
@@ -46,6 +47,8 @@ interface BrowseProps {
   onParty: () => void;
   /** Join the watch party a friend invited this TV to (by its code). */
   onJoinParty: (code: string) => void;
+  /** A friend asked to watch together: start a party and invite them (their request is taken away by the server once they are invited). */
+  onStartTogether: (friend: string) => void;
   /** A phone is connected to this TV. */
   connected: boolean;
   /** How many screens are in the watch party this TV hosts (itself included); 0 when there is none. */
@@ -212,10 +215,10 @@ function slideIntoView(button: HTMLElement) {
  * the menu, OK on a title opens its own page (play it, keep it in a list), and Back steps out: of that page, of the menu, then to
  * the home page, and from there into the menu.
  */
-export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, onJoinParty, connected, partySize, notice }: BrowseProps) {
+export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice }: BrowseProps) {
   const t = useT();
   const language = useLanguage();
-  const { status: accountStatus, me, profile } = useAccount();
+  const { status: accountStatus, me, profile, say } = useAccount();
   const friends = useFriends();
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
   const ratingsOn = settings.ratings ?? true;
@@ -441,7 +444,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
     // A friend's page: the way back, their lists and their ratings over the titles, and under them the button that takes them off the friends.
-    ...(view.kind === "friend" && friend ? { chips: [3], foot: [1] } : {}),
+    ...(view.kind === "friend" && friend ? { chips: [canAskTogether(friend) ? 4 : 3], foot: [1] } : {}),
     ...(detail
       ? {
           close: [1],
@@ -674,14 +677,35 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     const startAt = at ? at.startAt : entry.startAt;
     onPlay(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(startAt ? { startAt } : {}) });
   };
+  /**
+   * Asks a friend to watch together: they get a request with a button that starts a party and invites us. `ended` is the invitation to a party
+   * that is over, if that is where this was pressed: once the friend is asked it is of no more use.
+   */
+  const askToWatch = async (friendId: string, ended?: string) => {
+    const name = nameOf(friends.state?.friends ?? [], friendId);
+    try {
+      const answer = await friends.send([friendId], { kind: "together" });
+      say(answer.sent.length > 0 ? t("friends.askSent", { name }) : t("friends.declined", { names: name }));
+      if (answer.sent.length > 0 && ended) {
+        await friends.dismiss(ended);
+        setFocused(null); // (the card the remote was on is gone)
+        go(CONTENT);
+      }
+    } catch (error) {
+      say(describeError(error));
+    }
+  };
+
   // A category opens its page; a title opens its own page, where it is played or kept in a list (the banner's buttons do the same without it).
-  // A tile of the friends page may instead join the party it stands for, or open a page of its own over the library.
+  // A tile of the friends page may instead join the party it stands for, start one a friend asked for, ask for one, or open a page of its own over the library.
   const press = (title: Focused, from: Target) => {
     const { entry } = title;
     if (entry.action === "settings") return onSettings();
     if (entry.action === "signIn") return onAccount();
     if (entry.action) return setOverlay({ kind: entry.action, back: from });
     if (entry.party) return onJoinParty(entry.party);
+    if (entry.wants) return onStartTogether(entry.wants);
+    if (entry.ask) return void askToWatch(entry.ask, entry.inboxId);
     if (!entry.opens) return openDetail(title);
     // (A category opened from the list of every category goes back to that list, not home.)
     return choose(entry.opens.kind === "category" && view.kind === "categories" ? { ...entry.opens, from: "categories" } : entry.opens);
@@ -747,6 +771,10 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     else if (action === "recommend") setOverlay({ kind: "recommend", entry, back: from });
     else if (action === "join") {
       if (entry.party) onJoinParty(entry.party);
+    } else if (action === "start") {
+      if (entry.wants) onStartTogether(entry.wants);
+    } else if (action === "ask") {
+      if (entry.ask) void askToWatch(entry.ask, entry.inboxId);
     } else if (action === "dismiss") {
       if (!entry.inboxId) return;
       void friends.dismiss(entry.inboxId).catch(() => undefined);
@@ -808,6 +836,13 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
       return (
         <>
           <PlayIcon /> {t("friends.join")}
+        </>
+      );
+    }
+    if (action === "ask" || action === "start") {
+      return (
+        <>
+          <UsersIcon /> {t(action === "ask" ? "friends.askTogether" : "friends.startParty")}
         </>
       );
     }
@@ -1003,6 +1038,19 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
                   {t(value === "lists" ? "friends.tabLists" : "friends.tabRatings")}
                 </button>
               ))}
+              {canAskTogether(friend) && (
+                <button
+                  className="tv-choice"
+                  data-testid="friend-together"
+                  data-zone="chips"
+                  data-row={0}
+                  data-col={1 + FRIEND_TABS.length}
+                  onClick={() => void askToWatch(friend.id)}
+                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 1 + FRIEND_TABS.length })}
+                >
+                  <UsersIcon /> {t("friends.askTogether")}
+                </button>
+              )}
             </div>
           )}
           {grid.entries.length > 0 ? (

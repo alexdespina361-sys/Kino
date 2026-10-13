@@ -29,8 +29,18 @@ describe("what is new", () => {
     ]);
   });
 
-  it("leaves out an invitation to a party that is over by the time the screen looks", () => {
+  it("leaves out an invitation to a party that is over by the time the screen looks, by the server's word or else by the clock", () => {
     expect(whatsNew(known(state()), state({ inbox: [invitation("late", "pro_sam", NOW), recommendation("a")] }), NOW)).toEqual([{ kind: "recommend", name: "Sam", title: "Dune" }]);
+    expect(whatsNew(known(state()), state({ inbox: [{ ...invitation("over", "pro_sam", NOW + 1_000_000), open: false } as InboxItem] }), NOW)).toEqual([]);
+    expect(whatsNew(known(state()), state({ inbox: [{ ...invitation("on", "pro_sam", NOW - 1), open: true } as InboxItem] }), NOW)).toEqual([{ kind: "party", name: "Sam" }]);
+  });
+
+  it("is a friend's request to watch together, after an invitation and before the rest", () => {
+    const ask: InboxItem = { kind: "together", id: "w", from: "pro_sam", at: NOW, read: false };
+    expect(whatsNew(known(state()), state({ inbox: [recommendation("a"), ask] }), NOW)).toEqual([
+      { kind: "together", name: "Sam" },
+      { kind: "recommend", name: "Sam", title: "Dune" },
+    ]);
   });
 
   it("is a new friend, whoever added whom", () => {
@@ -74,5 +84,7 @@ describe("saying it", () => {
     ];
     expect(describeNews(news, t)).toBe('friends.news.many {"count":2}');
     expect(describeNews([...news, { kind: "party", name: "Sam" }], t)).toBe('friends.news.party {"name":"Sam"}');
+    expect(describeNews([...news, { kind: "together", name: "Sam" }], t)).toBe('friends.news.together {"name":"Sam"}'); // (a request for a party too, but an invitation first)
+    expect(describeNews([{ kind: "together", name: "Sam" }, { kind: "party", name: "Robin" }], t)).toBe('friends.news.party {"name":"Robin"}');
   });
 });

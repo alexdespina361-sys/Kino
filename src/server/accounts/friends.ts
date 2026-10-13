@@ -37,9 +37,11 @@ interface FriendsDoc {
   v: 1;
   friends: Array<{ id: string; since: number }>;
 }
+/** What an inbox keeps of a thing: what was sent, and for an invitation to a party, the screen (by its public id) that hosts it, which is how it is found again when the code is renewed. */
+export type StoredItem = InboxItem & { host?: string };
 interface InboxDoc {
   v: 1;
-  items: InboxItem[];
+  items: StoredItem[];
 }
 export interface Invite {
   v: 1;
@@ -57,7 +59,7 @@ const newCode = () => Array.from({ length: INVITE_CODE_LENGTH }, () => CODE_ALPH
 export class FriendBook {
   /** profile -> its friends -> since when. Always both ways. */
   private readonly friends = new Map<string, Map<string, number>>();
-  private readonly inboxes = new Map<string, InboxItem[]>();
+  private readonly inboxes = new Map<string, StoredItem[]>();
   private readonly invites = new Map<string, Invite>();
 
   constructor(private readonly host: FriendHost) {}
@@ -216,7 +218,7 @@ export class FriendBook {
 
   /* ------------------------------ the inbox ------------------------------ */
 
-  private setInbox(owner: string, items: InboxItem[]): void {
+  private setInbox(owner: string, items: StoredItem[]): void {
     if (items.length === 0) {
       this.inboxes.delete(owner);
       this.host.drop(`inbox:${owner}`);
@@ -226,31 +228,40 @@ export class FriendBook {
     }
   }
 
-  /** What is in a profile's inbox, newest first, with what has gone stale (old things, and invitations to parties that are over) let go. */
-  inboxOf(profileId: string): InboxItem[] {
+  /** What is in a profile's inbox, newest first, with what has gone stale (old things, and invitations and requests that are for the moment) let go. */
+  inboxOf(profileId: string): StoredItem[] {
     const items = this.inboxes.get(profileId);
     if (!items) return [];
     const now = this.host.now();
-    const fresh = items.filter((item) => now - item.at < (item.kind === "party" ? PARTY_INVITE_KEEP_MS : INBOX_KEEP_MS));
+    const fresh = items.filter((item) => now - item.at < (item.kind === "recommend" ? INBOX_KEEP_MS : PARTY_INVITE_KEEP_MS));
     if (fresh.length !== items.length) this.setInbox(profileId, fresh);
     return fresh;
   }
 
   /**
-   * Put something in an inbox. The same title from the same friend, or a newer invitation from them to a party, replaces the old one and
-   * is new again; but one that has not been looked at yet keeps its id, so that sending it over and over is not announced over and over
-   * (a screen announces what it has not seen the id of). A friend has only so many things in an inbox (the newest): they cannot fill it
-   * and push out what the others sent.
+   * Put something in an inbox. The same title from the same friend, or a newer invitation or request from them for a party, replaces the old
+   * one and is new again; but one that has not been looked at yet keeps its id, so that sending it over and over is not announced over and
+   * over (a screen announces what it has not seen the id of). A friend has only so many things in an inbox (the newest): they cannot fill it
+   * and push out what the others sent. `host` is the screen an invitation's party is on (see `StoredItem`).
    */
-  deliver(to: string, from: string, message: Message): InboxItem {
-    const sameThing = (old: InboxItem) => old.from === from && old.kind === message.kind && (message.kind === "party" || (old.kind === "recommend" && old.url === message.url));
+  deliver(to: string, from: string, message: Message, host?: string): StoredItem {
+    const sameThing = (old: InboxItem) => old.from === from && old.kind === message.kind && (message.kind !== "recommend" || (old.kind === "recommend" && old.url === message.url));
     const items = this.inboxOf(to);
     const before = items.find(sameThing);
-    const item = { ...message, id: before && !before.read ? before.id : newItemId(), at: this.host.now(), from, read: false } as InboxItem;
+    const item = { ...message, ...(host ? { host } : {}), id: before && !before.read ? before.id : newItemId(), at: this.host.now(), from, read: false } as StoredItem;
     let theirs = 1; // (this one is the first of the friend's)
     const kept = items.filter((old) => !sameThing(old) && (old.from !== from || ++theirs <= INBOX_PER_SENDER));
     this.setInbox(to, [item, ...kept].slice(0, INBOX_MAX));
     return item;
+  }
+
+  /** Take back what a friend asked of `owner` for a party (they have been answered). Whether there was a request. */
+  answerTogether(owner: string, asker: string): boolean {
+    const items = this.inboxOf(owner);
+    const kept = items.filter((item) => !(item.kind === "together" && item.from === asker));
+    if (kept.length === items.length) return false;
+    this.setInbox(owner, kept);
+    return true;
   }
 
   /** Everything in the inbox has been seen. How many were not. */

@@ -40,17 +40,16 @@
 .friend-code { font-size: 1.7rem; }
 
 /* What friends sent. A title is a row like a rating's, with its cross beside it; an invitation has the button that joins. */
-.inbox-item { display: flex; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: 12px; background: var(--surface); }
+.inbox-item { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; border-radius: 12px; background: var(--surface); }
 .inbox-item > .mini { align-self: center; }
 .inbox-open { flex: 1; min-width: 0; align-items: center; }
-.inbox-text { display: flex; flex-direction: column; flex: 1; gap: 2px; min-width: 0; padding: 8px 4px 8px 8px; }
+.inbox-text { display: flex; flex-direction: column; flex: 1 1 11rem; gap: 2px; min-width: 0; padding: 8px 4px 8px 8px; }
 .inbox-text small { color: var(--muted); font-size: 0.8rem; }
-.inbox-item .btn { flex: none; min-height: 40px; padding: 0 14px; font-size: 0.9rem; }
+.inbox-item .btn, .friend-party .btn { flex: none; margin-left: auto; min-height: 40px; padding: 0 14px; font-size: 0.9rem; } /* (where the words need the room, as in a long language on a narrow phone, the button goes under them, at the right) */
 
-/* An invitation to a watch party over the home screen, until it is joined or sent away. */
-.friend-party { display: flex; align-items: center; gap: 10px; }
-.friend-party > span { flex: 1; min-width: 0; }
-.friend-party .btn { flex: none; min-height: 40px; padding: 0 14px; font-size: 0.9rem; }
+/* An invitation to a watch party, or a request for one, over the home screen, until it is answered or sent away. */
+.friend-party { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.friend-party > span { flex: 1 1 11rem; min-width: 0; }
 
 /* The little dot on the picture of the profile when friends have something new. */
 .avatar-button { position: relative; }

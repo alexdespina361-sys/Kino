@@ -97,7 +97,13 @@ pnpm build && pnpm start     # http://localhost:8787
   shown only while both profiles have friends and *Friends can see when I'm online* on, so that switch is the way to be seen as offline for a while, or always, and
   it also hides the others from you). When you tell what you watch and a friend hears it, **how far you got** shows on their page of your lists and ratings: the
   episode you are at and how far into it ("S2:E5 · 63%", or *Watched*), with a thin bar over the picture; a title left after a few seconds is not counted, and a
-  friend who does not hear what you watch sees none of it. Friends: `/api/profiles/:id/friends…`.
+  friend who does not hear what you watch sees none of it. **Watching together**: an invitation to a watch party is worked out when a friend reads it, not when it is
+  sent: it carries the host's code *as it is now* (a party's code lasts ten minutes and is renewed only while the host's screen shows it, so the one an invitation was
+  sent with would be refused after a while) and says whether the party is still open. Pressing one that is not says *That party is not open any more*, and the
+  invitation becomes **Ask to watch together** (a button on that friend's page too) when that friend tells what they watch to you: they get *"Sam wants to watch
+  together"* with a **Start a party** button, which starts a party on their screen (the TV, or the TV their phone controls) and invites the one who asked, which takes
+  the request away. The server sends a request (`kind: "together"`, a newer one replaces an older, gone after 12 hours) only to a friend who takes things and gives
+  what they watch to the one asking, and refuses an invitation to a party that is not open (`409 party_closed`). Friends: `/api/profiles/:id/friends…`.
   Things to know: *Friends can see my ratings* does nothing, and is not shown, while ratings themselves are switched off (they stay kept, and are seen by nobody).
   What friends send is made fit to show (no characters that turn text around or hide in it; a friend's picture is shown only if it is the address of some other
   web site, never a path, an address on this site or one that only a private network answers to, such as `localhost` or `192.168.x.x`), and an inbox holds the newest 100 things, at most 20 from one friend; the same title sent again while it is
@@ -300,7 +306,8 @@ is watching on it, or else by its own name ("TV 3F2A"). Ways in:
   6-digit code, a QR code and the address, and the invitation as a **link with a Copy link button beside it** (a click, or OK from the remote: it says *Link copied*),
   to paste into somebody's chat; on another screen choose **Watch party → Join a party** and type the code with the remote's
   number keys (the on-screen pad works too). With friends on, the party's page and the panel over a film both have **Invite friends**, which tells
-  the friends chosen (a friend who is the only one is chosen already; Back from the list of friends goes back to the party).
+  the friends chosen (a friend who is the only one is chosen already; Back from the list of friends goes back to the party). A party that has ended
+  before a friend answers is not a dead end: the invitation turns into *Ask to watch together* (see Friends).
 - **From the phone that controls the TV:** its menu → **Watch party** shows the same code and QR code with the link and a **Copy link** button (and a **Share link** button where the browser can share), and
   lists who is in (the host's phone can send any guest away, or end the party). Typing the pairing code that another TV shows into the phone
   still works; a party's own code typed there is told apart from a wrong one (`ADD_PARTY_CODE`: the phone is told what the code is for, and it

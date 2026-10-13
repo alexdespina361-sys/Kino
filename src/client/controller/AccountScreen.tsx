@@ -58,12 +58,15 @@ export function AccountScreen({
   initial = "main",
   onSessionsChanged,
   onOpenTitle,
+  onStartParty,
 }: {
   onClose: () => void;
   initial?: View;
   onSessionsChanged?: () => void;
   /** A title a friend sent, or has in a list, was tapped (not given on a phone that has no TV to play it on). */
   onOpenTitle?: (entry: Entry) => void;
+  /** A friend's request to watch together was answered with "Start a party" (not given on a phone that has no TV to host one). */
+  onStartParty?: (friendId: string) => void;
 }) {
   const t = useT();
   const account = useAccount();
@@ -132,6 +135,7 @@ export function AccountScreen({
             setView("friend");
           }}
           onOpenTitle={onOpenTitle}
+          {...(onStartParty ? { onStartParty } : {})}
         />
       </Page>
     );
