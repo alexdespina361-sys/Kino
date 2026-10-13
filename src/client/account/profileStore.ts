@@ -467,7 +467,33 @@ export class ProfileStore {
 
   /** The server answered: take in what other screens did, and note that what was sent is safe (unless it changed again meanwhile). */
   accept(response: SyncResponse, sent: ReadonlyMap<string, number>): void {
-    const merged = mergeData(this.data, { progress: response.progress, watched: response.watched, list: response.list, listNames: response.listNames, ratings: response.ratings, settings: response.settings }, this.now());
+    const incoming: ProfileData = { progress: response.progress, watched: response.watched, list: response.list, listNames: response.listNames, ratings: response.ratings, settings: response.settings };
+    // What the server answers about a thing this screen has just sent is the server's word, even when its copy is the older: it holds back
+    // the time of a clock that runs ahead (this screen would otherwise keep its copy over every later change made on another screen, and
+    // show a switch that is not the one the server acts on), and it may have preferred another screen's copy. So a thing that was sent and
+    // is answered with an older copy takes that one, unless it has been changed here again since.
+    const overruled = new Set<string>();
+    for (const [id, at] of sent) {
+      const split = id.indexOf(":");
+      const name = id.slice(0, split) as keyof ProfileData;
+      const key = id.slice(split + 1);
+      const mine = (this.data[name] as SyncItem[]).find((item) => item.key === key);
+      const theirs = (incoming[name] as SyncItem[]).find((item) => item.key === key);
+      if (mine && theirs && mine.at === at && theirs.at < at) overruled.add(id);
+    }
+    const without = <T extends SyncItem>(name: keyof ProfileData, items: readonly T[]): T[] => items.filter((item) => !overruled.has(`${name}:${item.key}`));
+    const kept: ProfileData =
+      overruled.size === 0
+        ? this.data
+        : {
+            progress: without("progress", this.data.progress),
+            watched: without("watched", this.data.watched),
+            list: without("list", this.data.list),
+            listNames: without("listNames", this.data.listNames),
+            ratings: without("ratings", this.data.ratings),
+            settings: without("settings", this.data.settings),
+          };
+    const merged = mergeData(kept, incoming, this.now());
     const different = JSON.stringify(merged) !== JSON.stringify(this.data);
     this.data = merged;
     this.revision = response.rev;
@@ -475,7 +501,7 @@ export class ProfileStore {
       const split = id.indexOf(":");
       const list = this.data[id.slice(0, split) as keyof ProfileData] as SyncItem[];
       const now = list.find((item) => item.key === id.slice(split + 1));
-      if (!now || now.at === at) this.dirty.delete(id);
+      if (!now || now.at === at || overruled.has(id)) this.dirty.delete(id);
     }
     // The server lost what it had: it needs all of it again.
     if (response.reset) this.markAllDirty();

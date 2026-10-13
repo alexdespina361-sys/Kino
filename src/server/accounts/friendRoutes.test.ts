@@ -377,7 +377,8 @@ describe("what comes from a friend is made fit to show", () => {
     const rated = { key: `rate:${url(1)}`, at: 7000, title: "Dune", url: url(1), score: 9, note: "Huge.‮\n\n", ratedAt: 7000, image: pictures.oursAgain, backdrop: pictures.fine };
     const watched = { key: `url:${url(3)}`, at: clock.now - 1000, title: `x${"́".repeat(8)} film`, url: url(3), position: 600, duration: 7200, image: pictures.ours, backdrop: pictures.fine };
     const names = [{ key: "scary", at: 5500, name: "‮Scary​" }, { key: "blank", at: 5501, name: "‮​" }];
-    await alex.keep({ list: [dune, alien], listNames: names, ratings: [rated], progress: [watched] });
+    const hollow = { key: `url:${url(4)}`, at: 5002, id: "4", title: "‮​‌", url: url(4) };
+    await alex.keep({ list: [dune, alien, hollow], listNames: names, ratings: [rated], progress: [watched] });
 
     const shown = (await sam.client.get(mine(sam, `/${alex.id}/lists`))).data;
     expect(shown.listNames.map((list: { name: string }) => list.name).sort()).toEqual(["?", "Scary"]); // (a name that is nothing to see is still a name)
@@ -387,8 +388,9 @@ describe("what comes from a friend is made fit to show", () => {
     expect(byTitle("enuD")).not.toHaveProperty("image");
     expect(byTitle("Alien")).not.toHaveProperty("image");
     expect(byTitle("Alien")).not.toHaveProperty("backdrop");
+    expect(byTitle("?")).toMatchObject({ id: "4" }); // (a title that is nothing to see is still a title)
 
-    const rating = (await sam.client.get(mine(sam, `/${alex.id}/ratings`))).data.ratings[0];
+    const rating =(await sam.client.get(mine(sam, `/${alex.id}/ratings`))).data.ratings[0];
     expect(rating).toMatchObject({ note: "Huge.", backdrop: pictures.fine });
     expect(rating).not.toHaveProperty("image");
 
@@ -399,6 +401,17 @@ describe("what comes from a friend is made fit to show", () => {
     // (What Alex keeps of his own is his: he is shown it as it is.)
     const alexsOwn = (await alex.client.post(`/api/profiles/${alex.id}/sync`, { since: 0 })).data;
     expect(alexsOwn.list.find((item: { key: string }) => item.key === dune.key)).toMatchObject({ title: "‮enuD​", image: pictures.ours });
+  });
+
+  it("makes addresses well formed: half of a pair in one would make a page throw when the title is opened", async () => {
+    const { alex, sam } = await friends();
+    const bad = "https://example.com/\ud800";
+    await alex.keep({ list: [{ key: "url:half", at: 5000, id: "1", title: "Dune", url: bad }] });
+    const shown = (await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.list as Array<{ url: string }>;
+    expect(shown.map((item) => item.url)).toEqual(["https://example.com/�"]);
+    expect(() => encodeURIComponent(shown[0]!.url)).not.toThrow();
+    // (and one cannot be sent to a friend in the first place)
+    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "recommend", title: "Dune", url: bad })).statusCode).toBe(400);
   });
 
   it("does the same to what is in the inbox, and cleans the name of a friend", async () => {

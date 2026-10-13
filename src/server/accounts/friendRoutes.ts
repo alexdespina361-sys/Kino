@@ -13,6 +13,7 @@ import {
   plainText,
   sharesLists,
   sharesRatings,
+  wellFormedText,
   type ActivityItem,
   type Friend,
   type FriendLists,
@@ -59,14 +60,16 @@ function fitToShow<T extends object>(item: T, ownHost: string | undefined): T {
   const out = { ...item } as Record<string, unknown>;
   for (const key of WORDS) {
     if (typeof out[key] !== "string") continue;
-    // (a name is never empty on a screen: one made of nothing that can be seen is shown as a question mark)
-    out[key] = plainText(out[key]) || (key === "name" ? "?" : "");
+    // (a name or a title is never empty on a screen: one made of nothing that can be seen is shown as a question mark)
+    out[key] = plainText(out[key]) || (key === "name" || key === "title" ? "?" : "");
   }
   for (const key of PICTURES) {
-    const picture = typeof out[key] === "string" ? foreignPicture(out[key], ownHost) : undefined;
+    const picture = typeof out[key] === "string" ? foreignPicture(wellFormedText(out[key]), ownHost) : undefined;
     if (picture) out[key] = picture;
     else delete out[key];
   }
+  // (An address with half a pair in it makes a page throw when it puts the address in a request: see `wellFormedText`.)
+  if (typeof out.url === "string") out.url = wellFormedText(out.url);
   return out as T;
 }
 

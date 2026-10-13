@@ -703,6 +703,7 @@ export const it: Dictionary = {
   "friends.send": "Manda",
   "friends.sent": "Mandato a {names}",
   "friends.declined": "{names}: non riceve niente ora",
+  "friends.declinedMany": "{names}: non ricevono niente ora",
   "friends.nobody": "Nessun amico riceve titoli al momento.",
   "friends.noFriends": "Aggiungi prima un amico, nelle impostazioni.",
   "friends.inviteFriends": "Invita amici",

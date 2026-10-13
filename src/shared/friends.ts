@@ -90,7 +90,7 @@ export function sharesRatings(settings: Settings): boolean {
  * what went in, so a name that fitted its limit still does.)
  */
 export function plainText(value: string): string {
-  const cleaned = value
+  const cleaned = wellFormedText(value)
     .replace(/[\t-\r]/g, " ") // (line breaks and tabs read as spaces)
     .replace(/[­ᅟᅠ⠀ㅤﾠ]/gu, "") // (a soft hyphen and the blank fillers of Hangul and Braille: nothing to see)
     .replace(/[\p{Cc}؜​‎‏‪-‮⁠-⁯﻿]/gu, "")
@@ -99,6 +99,37 @@ export function plainText(value: string): string {
     .trim();
   // (Joiners and marks on their own are nothing to look at: a name or a title made only of them is no name or title.)
   return /[\p{L}\p{N}\p{P}\p{S}]/u.test(cleaned) ? cleaned : "";
+}
+
+/**
+ * Whether a string has no lone surrogate (half of a pair, which JSON can carry): `encodeURIComponent` throws on one, so a page that puts a
+ * friend's address in a request would fall over when its title is opened. (Written out rather than `isWellFormed`, which an older TV browser lacks.)
+ */
+export function isWellFormedText(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false; // (at the end of the text `next` is NaN: no pair)
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return false;
+  }
+  return true;
+}
+
+/** The same text with each lone surrogate replaced by U+FFFD (never longer, and the same text when there was none). */
+export function wellFormedText(value: string): string {
+  if (isWellFormedText(value)) return value;
+  let out = "";
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    const next = value.charCodeAt(i + 1);
+    if (code >= 0xd800 && code <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+      out += value[i]! + value[i + 1]!;
+      i++;
+    } else out += code >= 0xd800 && code <= 0xdfff ? "�" : value[i]!;
+  }
+  return out;
 }
 
 /**
@@ -144,7 +175,7 @@ function isPrivateHost(hostname: string): boolean {
 
 const IdSchema = z.string().min(1).max(60);
 const PictureSchema = z.string().max(2048);
-const LinkSchema = z.string().max(2048).refine(isHttpUrl, "invalid_request");
+const LinkSchema = z.string().max(2048).refine(isHttpUrl, "invalid_request").refine(isWellFormedText, "invalid_request");
 /** A picture sent by a friend is shown on the screen of another: a web address, never a path (see `foreignPicture`). */
 const SentPictureSchema = LinkSchema;
 /** Text that is shown to others: cleaned (see `plainText`) before it is measured. */

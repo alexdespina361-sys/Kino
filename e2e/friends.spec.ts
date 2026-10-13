@@ -152,6 +152,22 @@ test.describe("friends are optional", () => {
     await expect(bob.page.getByTestId("friends-none")).toBeVisible();
   });
 
+  test("a look at the kept friends that failed is tried again, so that they can still be removed once the connection is back", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(ann.page, bob.page);
+
+    let asked = 0;
+    await ann.page.route("**/friends/kept", (route) => (++asked === 1 ? route.abort("connectionfailed") : route.continue()));
+    await ann.page.getByTestId("menu-settings").click();
+    await ann.page.getByTestId("friends-switch").click();
+    const kept = ann.page.getByTestId("kept-friend");
+    await expect(kept).toHaveCount(1, { timeout: 30_000 });
+    await expect(kept).toContainText(bob.name);
+    expect(asked).toBeGreaterThan(1);
+  });
+
   test("when ratings are turned off, the switch that shares them with friends goes, and friends are shown none until they are back on", async ({ browser }) => {
     test.setTimeout(90_000);
     const ann = await phoneWithFriends(browser, "Ann");

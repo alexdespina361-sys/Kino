@@ -703,6 +703,7 @@ export const en = {
   "friends.send": "Send",
   "friends.sent": "Sent to {names}",
   "friends.declined": "{names}: not taking things right now",
+  "friends.declinedMany": "{names}: not taking things right now",
   "friends.nobody": "None of your friends is taking titles at the moment.",
   "friends.noFriends": "Add a friend first, in the settings.",
   "friends.inviteFriends": "Invite friends",

@@ -10,6 +10,8 @@ import {
   activityVerb,
   foreignPicture,
   friendChoices,
+  isWellFormedText,
+  wellFormedText,
   friendLink,
   plainText,
   reachable,
@@ -85,6 +87,22 @@ describe("what other people typed", () => {
     }
     expect(plainText("می‌خواهم")).toBe("می‌خواهم"); // (a joiner between letters is how Persian is written)
     expect(plainText("Du­ne")).toBe("Dune"); // (a soft hyphen is gone)
+  });
+
+  it("has no half of a pair in it, which would make a page throw when it puts the text in an address", () => {
+    for (const bad of ["\ud800", "a\ud800", "\ud800b", "\udc00", "x\udc00y", "\udc00\ud800", "\ud83d"]) {
+      expect(isWellFormedText(bad), JSON.stringify(bad)).toBe(false);
+      expect(isWellFormedText(wellFormedText(bad)), JSON.stringify(bad)).toBe(true);
+      expect(() => encodeURIComponent(wellFormedText(bad))).not.toThrow();
+      expect(wellFormedText(bad)).toHaveLength(bad.length); // (one for one: never longer)
+    }
+    for (const good of ["", "plain", "😀", "a😀b", "😀", "👨‍👩‍👧", "é"]) {
+      expect(isWellFormedText(good), good).toBe(true);
+      expect(wellFormedText(good)).toBe(good);
+    }
+    expect(wellFormedText("a\ud800b😀")).toBe("a�b😀");
+    expect(plainText("Du\ud800ne")).toBe("Du�ne");
+    expect(SendSchema.safeParse({ to: ["pro_2"], kind: "recommend", title: "Dune", url: "https://example.com/\ud800" }).success).toBe(false);
   });
 
   it("never makes a word longer, so what fitted a limit still does", () => {

@@ -98,6 +98,8 @@ interface PageProps {
   error: { id: number; text: string } | null;
   /** The code of a party a friend invited this screen to: the page opens on joining it. */
   joinWith?: string | null;
+  /** The moment the code of the party this screen hosts stops working, worked out when it was reported (not when a friend is told, which is later). */
+  codeEndsAt?: number | null;
   onStart: () => void;
   onJoin: (code: string) => void;
   onRemove: (id: string) => void;
@@ -155,7 +157,7 @@ export function PartyPage(p: PageProps) {
           title={t("friends.inviteFriends")}
           lead={formatCode(invite.code)}
           said="friends.inviteSent"
-          build={() => ({ kind: "party", code: invite.code, endsAt: Date.now() + invite.expiresInMs })}
+          build={() => ({ kind: "party", code: invite.code, endsAt: p.codeEndsAt ?? Date.now() + invite.expiresInMs })}
           onClose={() => setInviting(false)}
         />
       );

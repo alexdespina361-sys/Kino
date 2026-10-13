@@ -576,6 +576,38 @@ describe("staying in step with the server", () => {
     for (const screen of [tv, phone]) expect(screen.store.getSnapshot().settings).toEqual({ friends: false });
   });
 
+  it("takes the server's word on a change it held back because the clock that made it runs ahead, so that later changes from other screens are not ignored for ever", async () => {
+    const { accounts, profile } = await server();
+    const phone = device(Date.now() - 100_000);
+    const tv = device(Date.now() + 10 * 60_000); // ten minutes ahead
+    tv.store.openScope(profile.id);
+    phone.store.openScope(profile.id);
+
+    tv.store.setSetting("friends", false);
+    sync(tv, accounts, profile.id); // (the server keeps it, but not as far ahead as the TV's clock says)
+    expect(tv.store.pending().request.settings).toEqual([]); // ...and there is nothing left to send
+
+    phone.advance(100_000 + 2 * 60_000); // two minutes after that, by a clock that is right
+    phone.store.setSetting("friends", true);
+    sync(phone, accounts, profile.id);
+    sync(tv, accounts, profile.id);
+    for (const screen of [tv, phone]) expect(screen.store.getSnapshot().settings).toEqual({ friends: true });
+  });
+
+  it("keeps a change made again here while the answer to the one before was on its way, whatever the answer was", async () => {
+    const { accounts, profile } = await server();
+    const tv = device(Date.now() + 10 * 60_000);
+    tv.store.openScope(profile.id);
+    tv.store.setSetting("friends", true);
+    const { request, sent } = tv.store.pending();
+    const response = accounts.sync(profile.id, request)!;
+    tv.advance(1000);
+    tv.store.setSetting("friends", false); // changed again before the answer came
+    tv.store.accept(response, sent);
+    expect(tv.store.getSnapshot().settings).toEqual({ friends: false });
+    expect(tv.store.pending().request.settings).toMatchObject([{ key: "friends", value: false }]);
+  });
+
   it("carries a removal to the screen that still shows the title", async () => {
     const { accounts, profile } = await server();
     const tv = device(Date.now() - 100_000);

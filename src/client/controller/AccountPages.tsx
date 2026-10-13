@@ -112,6 +112,10 @@ const FRIEND_SWITCHES: ReadonlyArray<{ key: FriendSetting; label: Key; testId: s
   { key: "friendsInbox", label: "friends.switchInbox", testId: "friends-inbox-switch" },
 ];
 
+/** How long to wait before looking again for the friends that are kept when the first look failed, and how many more tries there are. */
+const KEPT_RETRY_MS = 5000;
+const KEPT_RETRIES = 4;
+
 /**
  * Friends turned off, but not gone: who they still are, with a way to end a friendship from here, so that nobody has to turn on (if
  * only for a moment) everything that is shared with all of them just to remove one. Only for a profile that has turned friends on
@@ -126,12 +130,20 @@ function KeptFriends({ profileId }: { profileId: string }) {
 
   useEffect(() => {
     let stopped = false;
-    friendsApi.kept(profileId).then(
-      (answer) => !stopped && setKept(answer.friends),
-      () => undefined, // (the server cannot be reached, or does not know: there is nothing to offer then)
-    );
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    // (A look that failed, because the connection blinked or the server asked to slow down, is tried again a few times: nothing else would ask.)
+    const ask = (retries: number): void => {
+      friendsApi.kept(profileId).then(
+        (answer) => !stopped && setKept(answer.friends),
+        () => {
+          if (!stopped && retries > 0) retry = setTimeout(() => ask(retries - 1), KEPT_RETRY_MS);
+        },
+      );
+    };
+    ask(KEPT_RETRIES);
     return () => {
       stopped = true;
+      clearTimeout(retry);
     };
   }, [profileId]);
 

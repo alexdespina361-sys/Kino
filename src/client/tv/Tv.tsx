@@ -1178,6 +1178,7 @@ export function Tv() {
           onFullscreen={canFullscreen ? toggleFullscreen : null}
           error={partyError}
           joinWith={partyJoinWith}
+          codeEndsAt={partyEnds}
           onStart={startParty}
           onJoin={joinParty}
           onRemove={removeFromParty}

@@ -46,8 +46,11 @@ export function FriendPickerTv({ title, lead, build, said, onClose }: { title: s
     try {
       const answer = await friends.send([...picked], build());
       const names = (ids: readonly string[]) => ids.map((id) => nameOf(all, id)).filter(Boolean).join(", ");
-      if (answer.declined.length > 0) account.say(t("friends.declined", { names: names(answer.declined) }));
-      else account.say(t(said, { names: names(answer.sent) }));
+      // (Both are told when some took it and some did not: the ones who did must not be sent it again.)
+      const told: string[] = [];
+      if (answer.sent.length > 0) told.push(t(said, { names: names(answer.sent) }));
+      if (answer.declined.length > 0) told.push(t(answer.declined.length > 1 ? "friends.declinedMany" : "friends.declined", { names: names(answer.declined) }));
+      if (told.length > 0) account.say(told.join(". "));
       onClose();
     } catch (error) {
       setProblem(describeError(error));

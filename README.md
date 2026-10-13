@@ -89,7 +89,7 @@ pnpm build && pnpm start     # http://localhost:8787
   other was shown cannot bring them back. Friends: `/api/profiles/:id/friends…`.
   Things to know: *Friends can see my ratings* does nothing, and is not shown, while ratings themselves are switched off (they stay kept, and are seen by nobody).
   What friends send is made fit to show (no characters that turn text around or hide in it; a friend's picture is shown only if it is the address of some other
-  web site, never a path or an address on this site), and an inbox holds the newest 100 things, at most 20 from one friend; the same title sent again while it is
+  web site, never a path, an address on this site or one that only a private network answers to, such as `localhost` or `192.168.x.x`), and an inbox holds the newest 100 things, at most 20 from one friend; the same title sent again while it is
   unread is not announced again. **Pictures are loaded by the browser of whoever looks, from wherever the sender says**, so the site that serves one can tell that
   somebody opened it, as with any picture on the web. **What you watch, when you tell it, includes the address of the video** (a link pasted on the phone is the
   address a friend would open): leave *Tell friends what I watch* off if you play links that carry a secret. The first profile of an account is named after
