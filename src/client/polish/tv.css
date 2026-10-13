@@ -32,7 +32,7 @@
   --page-r: calc(var(--em) * 4); /* the least between the end of a row and the right edge */
   --tile-gap: calc(var(--em) * 1.3);
   --top: calc(var(--em) * 2.9); /* from the top edge to the first line of the top bar (and to a title page's Close) */
-  --hero-h: calc(var(--em) * 18.4); /* the banner is as tall as its fullest state: eyebrow, title, facts, two lines of synopsis, buttons */
+  --hero-h: calc(var(--em) * 17.6); /* the banner is as tall as its fullest state: eyebrow, title, facts, two lines of synopsis, buttons */
   --hero-h-deep: calc(var(--em) * 8.8); /* ...and this tall once the page is scrolled and the banner is down to three lines */
   --fs-deep: calc(var(--em) * 2.6);
   --rail-w: calc(var(--em) * 7.2);
@@ -58,7 +58,7 @@
 /* ------------------------------ the top of the library ------------------------------ */
 
 :root[data-ui="polish"] .tv-browse-top { padding: var(--top) var(--edge) 0 var(--gutter); }
-:root[data-ui="polish"] .tv-browse-corner { font-size: var(--fs-3); }
+:root[data-ui="polish"] .tv-browse-corner { font-size: var(--fs-2); }
 :root[data-ui="polish"] .tv-browse-corner .tv-account-chip,
 :root[data-ui="polish"] .tv-corner-button {
   background: var(--fill-1);
@@ -138,7 +138,7 @@
 /* As tall as its fullest state, so that a title is never squeezed and the rows below never jump (the scanner flags text cut off at the bottom). */
 :root[data-ui="polish"] .tv-hero { height: var(--hero-h); padding: 0 var(--page-r) calc(var(--em) * 0.6) var(--gutter); }
 :root[data-ui="polish"] .tv-browse[data-deep="true"] .tv-hero { height: var(--hero-h-deep); }
-:root[data-ui="polish"] .tv-hero-text { gap: calc(var(--em) * 0.4); }
+:root[data-ui="polish"] .tv-hero-text { gap: calc(var(--em) * 0.3); }
 /* What the banner is showing, said quietly: no capitals and no accent (the accent is for what can be pressed and where you are). */
 :root[data-ui="polish"] .tv-hero-eyebrow {
   font-size: var(--fs-2);
@@ -151,11 +151,11 @@
 :root[data-ui="polish"] .tv-browse[data-deep="true"] .tv-hero-title { font-size: var(--fs-deep); }
 :root[data-ui="polish"] .tv-hero .tv-hero-status { font-size: var(--fs-5); }
 :root[data-ui="polish"] .tv-hero-meta { font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
-:root[data-ui="polish"] .tv-hero-about { font-size: var(--fs-2); line-height: 1.45; color: var(--text-2); }
-:root[data-ui="polish"] .tv-hero-actions { gap: calc(var(--em) * 1); margin-top: calc(var(--em) * 0.4); }
+:root[data-ui="polish"] .tv-hero-about { font-size: var(--fs-2); line-height: 1.4; color: var(--text-2); }
+:root[data-ui="polish"] .tv-hero-actions { gap: calc(var(--em) * 1); margin-top: calc(var(--em) * 0.3); }
 :root[data-ui="polish"] .tv-hero-button {
   gap: calc(var(--em) * 0.6);
-  padding: calc(var(--em) * 0.8) calc(var(--em) * 1.7);
+  padding: calc(var(--em) * 0.7) calc(var(--em) * 1.6);
   border-radius: var(--r-2);
   background: var(--fill-2);
   color: var(--text-1);
@@ -177,7 +177,7 @@
 /* ------------------------------ rows of pictures ------------------------------ */
 
 :root[data-ui="polish"] .tv-row-title { margin: 0 var(--page-r) calc(var(--em) * 0.1) var(--gutter); font-size: var(--fs-3); font-weight: 600; color: var(--text-1); }
-:root[data-ui="polish"] .tv-row-tiles { gap: var(--tile-gap); padding: calc(var(--em) * 0.9) var(--page-r) calc(var(--em) * 1) var(--gutter); }
+:root[data-ui="polish"] .tv-row-tiles { gap: var(--tile-gap); padding: calc(var(--em) * 0.6) var(--page-r) calc(var(--em) * 1) var(--gutter); }
 :root[data-ui="polish"] .tv-tile {
   color: var(--text-2);
   transition: transform var(--t-base) var(--ease), color var(--t-base) var(--ease);

@@ -59,6 +59,7 @@ import {
   type PartyInvite,
 } from "./Sheets";
 import "./controller.css";
+import "../polish/phone.css";
 
 const CONTROLLER_KEY = "controller.id";
 /** A lookup that has not answered by now is reported as failed instead of spinning forever. */

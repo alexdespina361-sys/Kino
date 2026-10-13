@@ -1,5 +1,5 @@
 // the phone (390x844) as a remote for a TV: signed out, then signed in with friends.
-import { chromium, base, wait, HD, PHONE, openContext, guestData, step, snap, snapScrolled, movies, series, log } from "./lib.mjs";
+import { chromium, base, wait, HD, PHONE, phoneName, openContext, guestData, step, snap, snapScrolled, movies, series, log } from "./lib.mjs";
 
 const PASSWORD = "kino-test-pass-1"; // (a made-up password for accounts that live in the memory of a test server)
 const at = Date.now();
@@ -81,11 +81,11 @@ async function sync(page, data) {
 }
 
 const browser = await chromium.launch();
-const parts = new Set((process.argv[2] ?? "guest,in").split(","));
+const parts = new Set((process.env.PHONE_PARTS ?? process.argv[2] ?? "guest,in").split(",")); // (PHONE_PARTS=guest: only the signed-out half, which is quicker)
 
 /* ------------------------------ signed out ------------------------------ */
 if (parts.has("guest")) {
-  const device = "phone-390";
+  const device = phoneName;
   const { tv, code } = await tvWithCode(browser);
   const { page: phone } = await newPhone(browser, guestSeed);
   await step(device, "p01-pair", async () => {
@@ -176,7 +176,7 @@ if (parts.has("guest")) {
 
 /* ------------------------------ signed in, with friends ------------------------------ */
 if (parts.has("in")) {
-  const device = "phone-390-signed-in";
+  const device = `${phoneName}-signed-in`;
   let dana;
   let eli;
   let fay;

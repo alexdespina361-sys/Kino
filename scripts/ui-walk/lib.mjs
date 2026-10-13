@@ -159,7 +159,10 @@ export const FULL_HD = { width: 1920, height: 1080 };
 export const QHD = { width: 2560, height: 1440 };
 export const DESKTOP = { width: 1440, height: 900 };
 export const LAPTOP = { width: 1366, height: 768 };
-export const PHONE = { width: 390, height: 844 };
+// PHONE_SIZE=844x390 walks a phone of that size (held sideways, say) instead of the usual 390x844; its pictures go to phone-844x390/.
+const sized = (process.env.PHONE_SIZE ?? "").match(/^(\d+)x(\d+)$/);
+export const PHONE = sized ? { width: Number(sized[1]), height: Number(sized[2]) } : { width: 390, height: 844 };
+export const phoneName = sized ? `phone-${PHONE.width}x${PHONE.height}` : "phone-390";
 export const PHONE_SMALL = { width: 360, height: 800 };
 
 /** What a device that came back after leaving full screen once and turned the link box on looks like (the pages start like this in the tests too). */

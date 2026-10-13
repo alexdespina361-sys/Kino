@@ -1,0 +1,244 @@
+/*
+ * The phone (the remote and the account pages around it) in the refined look (docs/ui-polish). Loaded after controller.css; every rule starts
+ * with :root[data-ui="polish"] (polish.test.ts), and all but the tokens go on to say .phone, so that the TV page (which loads the same bundle) is never touched. The classic sheets write sizes as rem that are a hair apart (13 of them between 12 and 18 px);
+ * this one says six sizes, three corners, and what a surface is, once.
+ */
+
+/* ------------------------------ tokens ------------------------------ */
+
+:root[data-ui="polish"] {
+  --p-fs-1: 12px; /* a count, a caption, the label over a group */
+  --p-fs-2: 14px; /* secondary text, a chip, a link's name */
+  --p-fs-3: 16px; /* body (also what stops a phone zooming into a field) */
+  --p-fs-4: 18px; /* a heading of a sheet, a page or a row of pictures */
+  --p-fs-5: 24px; /* a title */
+  --p-fs-6: 32px; /* a code */
+  --p-r-1: 8px; /* small things: a picture of an episode, a mini button */
+  --p-r-2: 12px; /* controls, rows, cards, pictures */
+  --p-r-3: 22px; /* what comes up from the edge: a sheet, a toast, a profile's card */
+  --surface-3: #2e2e34; /* pressed, and what the finger is on */
+  --overlay: #1c1c20;
+  --p-line: rgba(255, 255, 255, 0.1);
+  --p-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* A sheet is a surface of its own: what lies on it is one step lighter than it (the classic look has some of it darker, some lighter). */
+:root[data-ui="polish"] .phone .sheet {
+  --surface: #25252a;
+  --surface-2: #2e2e34;
+  --surface-3: #3a3a42;
+  background: var(--overlay);
+  border-radius: var(--p-r-3) var(--p-r-3) 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+}
+:root[data-ui="polish"] .phone .sheet-grip { width: 36px; background: rgba(255, 255, 255, 0.24); }
+:root[data-ui="polish"] .phone .sheet-head h2 { font-size: var(--p-fs-4); font-weight: 700; }
+
+/* ------------------------------ writing ------------------------------ */
+
+:root[data-ui="polish"] .phone .muted { font-size: var(--p-fs-2); }
+:root[data-ui="polish"] .phone .muted.small { font-size: var(--p-fs-1); }
+:root[data-ui="polish"] .phone.pair h1,
+:root[data-ui="polish"] .phone .home h2,
+:root[data-ui="polish"] .phone .now-playing h2,
+:root[data-ui="polish"] .phone .account-who h1,
+:root[data-ui="polish"] .phone .account-pitch h1,
+:root[data-ui="polish"] .phone.choose h1,
+:root[data-ui="polish"] .phone .link-approve h2 { font-size: var(--p-fs-5); font-weight: 700; letter-spacing: -0.01em; }
+:root[data-ui="polish"] .phone .top-tv h1,
+:root[data-ui="polish"] .phone .page-head h2,
+:root[data-ui="polish"] .phone .lib-row h3 { font-size: var(--p-fs-4); font-weight: 700; }
+:root[data-ui="polish"] .phone .friend-code,
+:root[data-ui="polish"] .phone .link-code-input { font-size: var(--p-fs-5); }
+:root[data-ui="polish"] .phone .banner,
+:root[data-ui="polish"] .phone .status,
+:root[data-ui="polish"] .phone .state,
+:root[data-ui="polish"] .phone .seek-times,
+:root[data-ui="polish"] .phone .field-btn,
+:root[data-ui="polish"] .phone .row-link,
+:root[data-ui="polish"] .phone .lib-title,
+:root[data-ui="polish"] .phone .chip-text b,
+:root[data-ui="polish"] .phone .rating-line,
+:root[data-ui="polish"] .phone .rating-quote,
+:root[data-ui="polish"] .phone .auth-note,
+:root[data-ui="polish"] .phone .auth-switch,
+:root[data-ui="polish"] .phone .auth-error,
+:root[data-ui="polish"] .phone .auth-ok,
+:root[data-ui="polish"] .phone .or,
+:root[data-ui="polish"] .phone .role-switch { font-size: var(--p-fs-2); }
+:root[data-ui="polish"] .phone .tv-status,
+:root[data-ui="polish"] .phone .badge,
+:root[data-ui="polish"] .phone .lib-year,
+:root[data-ui="polish"] .phone .episode-note,
+:root[data-ui="polish"] .phone .episode-now,
+:root[data-ui="polish"] .phone .episode-about,
+:root[data-ui="polish"] .phone .cap-count,
+:root[data-ui="polish"] .phone .party-state,
+:root[data-ui="polish"] .phone .party-count,
+:root[data-ui="polish"] .phone .rating-count,
+:root[data-ui="polish"] .phone .rating-facts > *,
+:root[data-ui="polish"] .phone .rating-item .rating-facts > *,
+:root[data-ui="polish"] .phone .rating-progress,
+:root[data-ui="polish"] .phone .friend-text small,
+:root[data-ui="polish"] .phone .inbox-text small,
+:root[data-ui="polish"] .phone .language-rank,
+:root[data-ui="polish"] .phone .auth-field > small,
+:root[data-ui="polish"] .phone .code-card .copy-link-url,
+:root[data-ui="polish"] .phone .code-card .copy-link-note { font-size: var(--p-fs-1); }
+:root[data-ui="polish"] .phone .auth-field > span:first-child { font-size: var(--p-fs-2); letter-spacing: 0; }
+:root[data-ui="polish"] .phone .badge { letter-spacing: 0; }
+:root[data-ui="polish"] .phone .rating-badge,
+:root[data-ui="polish"] .phone .lib-art .score-badge,
+:root[data-ui="polish"] .phone .lib-result-art .score-badge { font-size: var(--p-fs-1); }
+
+/* Over a group of things, one way of saying what the group is: quiet, in words, not capitals. */
+:root[data-ui="polish"] .phone .group h3,
+:root[data-ui="polish"] .phone .sheet-section,
+:root[data-ui="polish"] .phone .cap-label,
+:root[data-ui="polish"] .phone .code-card-title,
+:root[data-ui="polish"] .phone .chip-text small,
+:root[data-ui="polish"] .phone .avatar-picker legend {
+  color: var(--muted);
+  font-size: var(--p-fs-1);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+:root[data-ui="polish"] .phone .group h3,
+:root[data-ui="polish"] .phone .sheet-section { font-size: var(--p-fs-2); }
+
+/* ------------------------------ buttons, chips, rows ------------------------------ */
+
+:root[data-ui="polish"] .phone .btn { border-radius: var(--p-r-2); transition: transform 0.08s var(--p-ease), background 0.15s var(--p-ease); }
+:root[data-ui="polish"] .phone .btn-red:active:not(:disabled) { background: var(--accent-hover); }
+/* What cannot be pressed yet is not an error: grey, not the accent at half strength (that is what a failure looks like). */
+:root[data-ui="polish"] .phone .btn-red:disabled { opacity: 1; background: var(--surface-2); color: var(--muted); }
+/* Taking something away is told by its words and its colour, on a plain surface: red as a fill is what is chosen. */
+:root[data-ui="polish"] .phone .btn-danger { background: var(--surface-2); color: var(--bad); }
+:root[data-ui="polish"] .phone .btn-danger[data-asking="true"] { background: var(--bad); color: #0b0b0c; }
+:root[data-ui="polish"] .phone .icon-btn { width: 44px; height: 44px; }
+:root[data-ui="polish"] .phone .icon-btn:active { background: var(--surface-2); }
+:root[data-ui="polish"] .phone .code-input { border-radius: var(--p-r-2); }
+
+:root[data-ui="polish"] .phone .chip,
+:root[data-ui="polish"] .phone .choice,
+:root[data-ui="polish"] .phone .switch-row,
+:root[data-ui="polish"] .phone .menu,
+:root[data-ui="polish"] .phone .banner,
+:root[data-ui="polish"] .phone .code-card,
+:root[data-ui="polish"] .phone .rating-box,
+:root[data-ui="polish"] .phone .friend-row,
+:root[data-ui="polish"] .phone .friend-code-card,
+:root[data-ui="polish"] .phone .inbox-item,
+:root[data-ui="polish"] .phone .your-tag,
+:root[data-ui="polish"] .phone .language-list li,
+:root[data-ui="polish"] .phone .device-list li,
+:root[data-ui="polish"] .phone .delay-row,
+:root[data-ui="polish"] .phone .episode,
+:root[data-ui="polish"] .phone .editor-confirm,
+:root[data-ui="polish"] .phone .title-art,
+:root[data-ui="polish"] .phone .cap-frame { border-radius: var(--p-r-2); }
+:root[data-ui="polish"] .phone .field input,
+:root[data-ui="polish"] .phone .auth-field input,
+:root[data-ui="polish"] .phone .rating-note { border-radius: var(--p-r-2); }
+:root[data-ui="polish"] .phone .lib-art,
+:root[data-ui="polish"] .phone .lib-result-main { border-radius: var(--p-r-2); }
+:root[data-ui="polish"] .phone .episode-still,
+:root[data-ui="polish"] .phone .lib-result-art,
+:root[data-ui="polish"] .phone .code-card-top > svg,
+:root[data-ui="polish"] .phone .mini { border-radius: var(--p-r-1); }
+:root[data-ui="polish"] .phone .account-card { border-radius: var(--p-r-3); }
+:root[data-ui="polish"] .phone .scanner-frame { border-radius: var(--p-r-3); }
+
+/* Chosen: the accent as a tint with a ring (and the dot, where a row has one); white is for nothing on the phone. */
+:root[data-ui="polish"] .phone .choice.active,
+:root[data-ui="polish"] .phone .episode.now { background: rgb(var(--accent-rgb) / 0.2); box-shadow: inset 0 0 0 1.5px var(--accent); }
+:root[data-ui="polish"] .phone .lib-pill[aria-pressed="true"],
+:root[data-ui="polish"] .phone .cap-choice.active,
+:root[data-ui="polish"] .phone .season.active,
+:root[data-ui="polish"] .phone .segmented button[aria-checked="true"] {
+  background: rgb(var(--accent-rgb) / 0.22);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+:root[data-ui="polish"] .phone .cap-choice.active .cap-count { background: rgb(var(--accent-rgb) / 0.3); }
+:root[data-ui="polish"] .phone .segmented { background: var(--surface); }
+:root[data-ui="polish"] .phone .segmented button { border-radius: var(--p-r-1); }
+
+/* Small things to press are 44 px tall: a thumb's size, whatever the words in them. */
+:root[data-ui="polish"] .phone .lib-pill,
+:root[data-ui="polish"] .phone .cap-choice,
+:root[data-ui="polish"] .phone .season,
+:root[data-ui="polish"] .phone .chip-pill,
+:root[data-ui="polish"] .phone .signin-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding-block: 0;
+  font-size: var(--p-fs-2);
+}
+:root[data-ui="polish"] .phone .segmented.compact button { min-height: 44px; padding-block: 0; }
+:root[data-ui="polish"] .phone .state-action { min-height: 44px; margin-block: -10px; display: inline-flex; align-items: center; font-size: var(--p-fs-2); }
+:root[data-ui="polish"] .phone .mini { min-width: 44px; min-height: 44px; }
+:root[data-ui="polish"] .phone .menu-row { min-height: 52px; padding: 14px 16px; }
+:root[data-ui="polish"] .phone .field-btn { min-height: 36px; }
+:root[data-ui="polish"] .phone .lib-round { width: 40px; height: 40px; }
+
+:root[data-ui="polish"] .phone .menu { background: var(--surface); }
+:root[data-ui="polish"] .phone .menu-row { border-bottom-color: var(--p-line); }
+:root[data-ui="polish"] .phone .menu-row:active,
+:root[data-ui="polish"] .phone .choice:active:not(.active),
+:root[data-ui="polish"] .phone .friend-row:active { background: var(--surface-3); }
+
+/* ------------------------------ remote ------------------------------ */
+
+:root[data-ui="polish"] .phone .now-playing { gap: 4px; }
+:root[data-ui="polish"] .phone .round { background: var(--surface-2); }
+:root[data-ui="polish"] .phone .round:active:not(:disabled) { background: var(--surface-3); }
+:root[data-ui="polish"] .phone .round.big { background: #fff; color: #0b0b0c; }
+:root[data-ui="polish"] .phone .round.big:active:not(:disabled) { background: #e6e6ea; }
+:root[data-ui="polish"] .phone .seek-track { background: rgba(255, 255, 255, 0.18); }
+:root[data-ui="polish"] .phone .chip { background: var(--surface); }
+:root[data-ui="polish"] .phone .chip:active { background: var(--surface-2); }
+:root[data-ui="polish"] .phone .actions .btn { font-size: var(--p-fs-1); }
+:root[data-ui="polish"] .phone .state-action { background: var(--surface-2); }
+
+/* ------------------------------ pictures ------------------------------ */
+
+:root[data-ui="polish"] .phone .lib-card:focus-visible .lib-art { box-shadow: 0 0 0 2px #fff; }
+:root[data-ui="polish"] .phone .lib-card:active .lib-art { transform: scale(0.97); box-shadow: 0 0 0 2px #fff; }
+:root[data-ui="polish"] .phone .lib-round.lib-add[aria-pressed="true"] { background: rgba(0, 0, 0, 0.62); color: var(--accent-hover); box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.8); }
+:root[data-ui="polish"] .phone .lib-result > .lib-round.lib-add[aria-pressed="true"] { background: var(--surface-2); color: var(--accent-hover); box-shadow: inset 0 0 0 1.5px var(--accent); }
+:root[data-ui="polish"] .phone .rating-box { background: var(--surface); }
+:root[data-ui="polish"] .phone .rating-score { border-radius: var(--p-r-2); }
+
+/* ------------------------------ the phone's pages ------------------------------ */
+
+:root[data-ui="polish"] .phone .page-head { padding-bottom: 8px; }
+:root[data-ui="polish"] .phone .group { gap: 8px; }
+:root[data-ui="polish"] .phone .swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--text); }
+:root[data-ui="polish"] .phone .profile-tile:focus-visible .profile-picture,
+:root[data-ui="polish"] .phone .avatar-choice[aria-checked="true"] { box-shadow: 0 0 0 3px #fff; }
+:root[data-ui="polish"] .phone .avatar-button { width: 44px; height: 44px; display: grid; place-items: center; font-size: 36px; }
+:root[data-ui="polish"] .phone .editor-confirm { background: rgba(255, 107, 107, 0.1); }
+
+/* ------------------------------ one message, one look ------------------------------ */
+
+:root[data-ui="polish"] .phone .toast,
+:root[data-ui="polish"] .phone .account-toast {
+  border-radius: var(--p-r-3);
+  background: rgba(245, 245, 247, 0.97);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  font-size: var(--p-fs-2);
+  font-weight: 600;
+}
+:root[data-ui="polish"] .phone .toast { animation-duration: 3.5s; }
+:root[data-ui="polish"] .phone .error.banner,
+:root[data-ui="polish"] .phone .auth-error { border-radius: var(--p-r-2); background: rgba(255, 107, 107, 0.12); }
+
+/* ------------------------------ friends ------------------------------ */
+
+:root[data-ui="polish"] .phone .friend-pic[data-online="true"]::after { background: var(--ok); }
+:root[data-ui="polish"] .phone .friend-row:focus-visible { background: var(--surface-2); }
+:root[data-ui="polish"] .phone .bell-badge { font-size: var(--p-fs-1); }

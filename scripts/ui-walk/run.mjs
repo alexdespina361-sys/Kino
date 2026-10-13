@@ -1,7 +1,7 @@
 // Runs the whole screenshot walk for one look: builds the client, starts a fresh test server for each part (accounts live in the server's
 // memory, so a part that signs people up gets a server of its own), runs the part against it, stops the server.
 //
-//   node scripts/ui-walk/run.mjs [--ui=classic|polish] [--only=tv-hd,phone] [--steps=02-home,04-rail-open] [--out=<dir>] [--port=8810] [--no-build] [--scan]
+//   node scripts/ui-walk/run.mjs [--ui=classic|polish] [--only=tv-hd,phone] [--steps=02-home,04-rail-open] [--size=844x390] [--out=<dir>] [--port=8810] [--no-build] [--scan]
 //
 // The pictures go to .ui-polish/shots/<look>/<device>/<name>.png (not committed). scripts/ui-walk/compare.mjs says what differs between two looks.
 // With CLIENT_DIR=<folder> (and --no-build) the server serves that build instead of dist/client: `vite build --outDir .ui-polish/dist-iter` is a
@@ -22,6 +22,7 @@ const only = option("only", "")
   .split(",")
   .filter(Boolean);
 const steps = option("steps", "");
+const size = option("size", ""); // (the phone part only: a phone of this size, 844x390 for one held sideways)
 const base = `http://127.0.0.1:${port}`;
 const here = (name) => fileURLToPath(new URL(name, import.meta.url));
 
@@ -80,7 +81,7 @@ for (const part of PARTS.filter((one) => only.length === 0 || only.includes(one.
   const server = await startServer();
   try {
     const run = spawnSync(process.execPath, [here(part.script), ...part.args], {
-      env: { ...process.env, UI: look, BASE: base, OUT: out, ...(flag("scan") ? { SCAN: "1" } : {}), ...(steps ? { STEPS: steps } : {}) },
+      env: { ...process.env, UI: look, BASE: base, OUT: out, ...(flag("scan") ? { SCAN: "1" } : {}), ...(steps ? { STEPS: steps } : {}), ...(size ? { PHONE_SIZE: size } : {}) },
       encoding: "utf8",
       maxBuffer: 64 * 1024 * 1024,
     });
