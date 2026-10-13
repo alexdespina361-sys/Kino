@@ -3,7 +3,7 @@ import type { Friend, FriendsState } from "../../shared";
 import { withoutOnline } from "./stale";
 
 const friend = (id: string, changes: Partial<Friend> = {}): Friend => ({ id, name: id, avatar: "fox", since: 1, on: true, lists: true, ratings: true, activity: true, inbox: true, ...changes });
-const state = (...friends: Friend[]): FriendsState => ({ friends, inbox: [], activity: [], invites: [] });
+const state = (...friends: Friend[]): FriendsState => ({ friends, inbox: [], activity: [], invites: [], requests: [], sent: [] });
 
 describe("what is kept of the friends when the server has not answered for a while", () => {
   it("is the same, but with nobody online", () => {

@@ -6,6 +6,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { isHttpUrl, type Registration } from "../shared";
 import type { PasswordCost } from "./accounts/password";
 import { accountRoutes } from "./accounts/routes";
+import { ScreenProofs, screenProfiles } from "./accounts/screens";
 import type { AccountStore } from "./accounts/store";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy } from "./proxy";
@@ -63,8 +64,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const trustProxy = typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies;
   const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
   const registry = options.registry ?? new Registry();
-  if (options.accounts) {
-    const accounts = options.accounts;
+  const accounts = options.accounts;
+  // (A screen that is signed in tells the watch party whose it is by a proof the accounts give it: see accounts/screens.ts.)
+  const screens = accounts && new ScreenProofs(() => accounts.clock());
+  if (accounts) {
     app.addHook("onClose", async () => accounts.close());
     await app.register(accountRoutes, {
       store: accounts,
@@ -72,6 +75,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
       ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
       ...(options.passwordCost ? { passwordCost: options.passwordCost } : {}),
+      ...(screens ? { screens } : {}),
       // (What friends are invited to: the screen whose party a code is open with, and the code a party is joined with now.)
       parties: {
         hostOf: (code) => registry.hostOfPartyCode(code)?.publicId,
@@ -97,7 +101,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     else if (result.status === "temporary_failure") library.played(url, "failed");
     return result;
   };
-  const hub = new Hub(registry, resolveForPlay, options.hub);
+  const hub = new Hub(registry, resolveForPlay, { ...options.hub, ...(accounts && screens ? { profiles: screenProfiles(accounts, screens) } : {}) });
   // Hooks run last-registered first: the pairs are written before the accounts close the database they share.
   if (options.pairings) {
     const pairings = options.pairings;

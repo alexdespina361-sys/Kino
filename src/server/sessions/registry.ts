@@ -22,6 +22,8 @@ export interface Device {
   name: string;
   /** What the screen asked to be called on the others' lists (the profile in use), instead of `name`. */
   label: string | null;
+  /** The profile that is signed in on this screen, as the accounts proved it (see TV_PROFILE). Not kept: a screen says it again each time it connects. */
+  profileId: string | null;
   /** On a TV hosting a watch party: the code the others join with. Valid for a while, asked for again when it runs out. */
   partyCode: { value: string; expiresAt: number } | null;
   /** Present only while unpaired. Single use: consumed by a successful pairing. */
@@ -225,6 +227,7 @@ export class Registry {
         controllerIds: [...kept.controllerIds],
         followerIds: [...kept.followerIds],
         admin: kept.admin === true,
+        profileId: null,
         partyCode: null,
         code: null,
         controlCode: null,
@@ -268,6 +271,7 @@ export class Registry {
       publicId: randomBytes(6).toString("hex"),
       name: defaultName(id),
       label: null,
+      profileId: null,
       partyCode: null,
       code: null,
       controllerId: null,
@@ -530,6 +534,11 @@ export class Registry {
   setLabel(device: Device, name: string): void {
     device.label = cleanLabel(name);
     this.onChange?.();
+  }
+
+  /** Whose a screen is (the profile signed in on it, as the accounts proved), or nobody's. Nothing of it is kept: the screen says it again whenever it connects. */
+  setProfile(device: Device, profileId: string | null): void {
+    device.profileId = profileId;
   }
 
   /** A phone names the TV it controls, cleaned up like any name on a list. Nothing, or only blanks, gives the TV its own name back. */

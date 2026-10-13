@@ -8,7 +8,7 @@ const robin: Friend = { ...sam, id: "pro_robin", name: "Robin" };
 const recommendation = (id: string, from = "pro_sam", read = false): InboxItem => ({ kind: "recommend", id, from, at: NOW, read, title: "Dune", url: "https://filmpire.sc/watch/1" });
 const invitation = (id: string, from = "pro_sam", endsAt = NOW + 1): InboxItem => ({ kind: "party", id, from, at: NOW, read: false, code: "482731", endsAt });
 const watched = (friend: string, key: string, extra: Partial<ActivityItem> = {}): ActivityItem => ({ friend, key, title: "Alien", url: "https://filmpire.sc/watch/2", at: NOW - 60_000, ...extra });
-const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], ...changes });
+const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], requests: [], sent: [], ...changes });
 
 describe("what is new", () => {
   it("is nothing the first time a screen looks, whatever there is", () => {

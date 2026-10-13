@@ -20,6 +20,7 @@ import { friendRoutes, type PartyLookup } from "./friendRoutes";
 import { LinkRegistry } from "./links";
 import { decoyHash, hashPassword, verifyPassword, type PasswordCost } from "./password";
 import { RateLimiter } from "./rateLimit";
+import type { ScreenProofs } from "./screens";
 import { SESSION_TTL_MS, type AccountStore, type StoreError } from "./store";
 
 export interface AccountRoutesOptions {
@@ -35,6 +36,8 @@ export interface AccountRoutesOptions {
   passwordCost?: PasswordCost;
   /** The watch parties that are on, for the invitations of friends to them. */
   parties?: PartyLookup;
+  /** The proofs a screen gives a watch party to say whose it is. */
+  screens?: ScreenProofs;
 }
 
 const COOKIE = "kino_session";
@@ -337,5 +340,14 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
 
   /* ------------------------------ friends ------------------------------ */
 
-  friendRoutes(app, { store, authenticate, signedOut, tooMany, invalid, refused, ...(options.parties ? { parties: options.parties } : {}) });
+  friendRoutes(app, {
+    store,
+    authenticate,
+    signedOut,
+    tooMany,
+    invalid,
+    refused,
+    ...(options.parties ? { parties: options.parties } : {}),
+    ...(options.screens ? { screens: options.screens } : {}),
+  });
 };

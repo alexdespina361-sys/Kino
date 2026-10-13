@@ -88,6 +88,102 @@ describe("profiles", () => {
   });
 });
 
+describe("tags", () => {
+  const made = (store: AccountStore, login: string) => {
+    const created = store.createAccount(login, "hash");
+    if (!created.ok) throw new Error("no account");
+    return created.value;
+  };
+  const tagOf = (store: AccountStore, accountId: string, index = 0) => store.profilesOf(accountId)[index]!.tag;
+
+  it("gives each profile the lowest number nobody with the same name has, whoever has the name and however it is spelled", async () => {
+    const store = await open();
+    const first = made(store, "sam");
+    const second = made(store, "SAM@example.com");
+    const third = made(store, "sam.smith@example.com");
+    const other = made(store, "robin");
+    expect([first, second, third].map((account) => tagOf(store, account.id))).toEqual([1, 2, 3]);
+    expect(tagOf(store, other.id)).toBe(1);
+    expect(store.profileByTag("Sam", 2)).toBe(store.profilesOf(second.id)[0]!.id);
+    expect(store.profileByTag(" SAM ", 3)).toBe(store.profilesOf(third.id)[0]!.id);
+    expect(store.profileByTag("Sam", 4)).toBeUndefined();
+    expect(store.profileByTag("Nobody", 1)).toBeUndefined();
+    expect(store.profileCard(store.profilesOf(second.id)[0]!.id)).toMatchObject({ name: "SAM", tag: 2 });
+  });
+
+  it("gives a number back when its profile goes, to the next that asks", async () => {
+    const store = await open();
+    made(store, "sam");
+    const second = made(store, "sam.two@example.com");
+    made(store, "sam.three@example.com");
+    store.deleteAccount(second.id);
+    expect(store.profileByTag("Sam", 2)).toBeUndefined();
+    expect(tagOf(store, made(store, "sam.four@example.com").id)).toBe(2);
+
+    const account = made(store, "kim");
+    const extra = store.addProfile(account.id, "Sam", "cat");
+    expect(extra).toMatchObject({ ok: true, value: { tag: 4 } });
+    if (!extra.ok) throw new Error("no profile");
+    store.deleteProfile(account.id, extra.value.id);
+    expect(store.profileByTag("Sam", 4)).toBeUndefined();
+  });
+
+  it("starts a new name at the lowest free number, and keeps the number for the same name in other capitals", async () => {
+    const store = await open();
+    made(store, "sam");
+    const second = made(store, "sam.two@example.com");
+    const third = made(store, "sam.three@example.com");
+    const profile = store.profilesOf(third.id)[0]!;
+    expect(profile.tag).toBe(3);
+
+    expect(store.updateProfile(third.id, profile.id, { name: "Trebert" })).toMatchObject({ ok: true, value: { name: "Trebert", tag: 1 } });
+    expect(store.profileByTag("Sam", 3)).toBeUndefined();
+    expect(store.profileByTag("trebert", 1)).toBe(profile.id);
+    expect(store.updateProfile(third.id, profile.id, { name: "TREBERT" })).toMatchObject({ ok: true, value: { tag: 1 } });
+
+    const taken = store.profilesOf(second.id)[0]!;
+    expect(store.updateProfile(second.id, taken.id, { name: "trebert" })).toMatchObject({ ok: true, value: { tag: 2 } });
+    // (a number held by somebody else is not taken from them, a number that is free again is the lowest again)
+    expect(store.updateProfile(third.id, profile.id, { name: "Ana" })).toMatchObject({ ok: true, value: { tag: 1 } });
+    expect(store.profileByTag("trebert", 1)).toBeUndefined();
+    expect(store.profileByTag("trebert", 2)).toBe(taken.id);
+  });
+
+  it("is kept between runs, and a profile that was made before there were tags gets its own, the older first, without taking one that is taken", async () => {
+    const persistence = new MemoryPersistence();
+    const store = await open(persistence);
+    const early = made(store, "sam");
+    clock += 1000;
+    const late = made(store, "sam.late@example.com");
+    await store.flush();
+    const reopened = await open(persistence);
+    expect(tagOf(reopened, early.id)).toBe(1);
+    expect(tagOf(reopened, late.id)).toBe(2);
+
+    // Old records: no tags at all, or two that were given the same.
+    const old = new MemoryPersistence();
+    for (const [key, value] of persistence.docs) {
+      if (!key.startsWith("account:")) {
+        old.docs.set(key, value);
+        continue;
+      }
+      const doc = structuredClone(value) as { profiles: Array<{ tag?: number }> };
+      for (const profile of doc.profiles) delete profile.tag;
+      old.docs.set(key, doc);
+    }
+    const migrated = await open(old);
+    expect(tagOf(migrated, early.id)).toBe(1); // (the older profile)
+    expect(tagOf(migrated, late.id)).toBe(2);
+    await migrated.flush();
+    expect(tagOf(await open(old), late.id)).toBe(2); // (and written down: the next run finds them)
+
+    const clash = new MemoryPersistence();
+    for (const [key, value] of persistence.docs) clash.docs.set(key, key.startsWith("account:") ? { ...(value as object), profiles: (value as { profiles: object[] }).profiles.map((profile) => ({ ...profile, tag: 1 })) } : value);
+    const settled = await open(clash);
+    expect([tagOf(settled, early.id), tagOf(settled, late.id)].sort()).toEqual([1, 2]);
+  });
+});
+
 describe("sessions", () => {
   it("knows a device by its token, only keeps the token's hash, and ends it on request", async () => {
     const persistence = new MemoryPersistence();

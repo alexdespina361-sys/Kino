@@ -9,7 +9,11 @@ import {
   FriendsStateSchema,
   InboxItemSchema,
   KeptFriendsSchema,
+  AskedSchema,
+  RequestSchema,
   SendSchema,
+  SentRequestSchema,
+  TagViewSchema,
   WATCHING_NOW_MS,
   activityVerb,
   canAskTogether,
@@ -18,11 +22,14 @@ import {
   isWellFormedText,
   wellFormedText,
   friendLink,
+  parseTag,
   partyOpen,
   plainText,
   reachable,
+  sameTag,
   sharesLists,
   sharesRatings,
+  tagLabel,
   type Friend,
 } from "./friends";
 import { SETTING_SCHEMAS } from "./account";
@@ -192,7 +199,7 @@ describe("what is sent", () => {
     const item = { kind: "recommend", title: "Dune", url: "https://filmpire.sc/watch/1", id: "m_abc", at: 5, from: "pro_1", read: false };
     expect(InboxItemSchema.safeParse(item).success).toBe(true);
     expect(InboxItemSchema.safeParse({ ...item, read: undefined }).success).toBe(false);
-    expect(FriendsStateSchema.safeParse({ friends: [friend()], inbox: [item], activity: [], invites: [{ code: "ABCD2345", expiresAt: 9 }] }).success).toBe(true);
+    expect(FriendsStateSchema.safeParse({ friends: [friend()], inbox: [item], activity: [], invites: [{ code: "ABCD2345", expiresAt: 9 }], requests: [], sent: [] }).success).toBe(true);
   });
 
   it("takes a request to watch together, which is nothing but who it is for, and holds it in an inbox", () => {
@@ -245,6 +252,45 @@ describe("how far a friend got", () => {
   it("is shown as online only when the answer says so", () => {
     expect(FriendSchema.parse(friend()).online).toBeUndefined();
     expect(FriendSchema.parse(friend({ online: true })).online).toBe(true);
+  });
+});
+
+describe("tags", () => {
+  it("read what somebody typed: a name, a #, and the number after the last #", () => {
+    expect(parseTag("Sam#2")).toEqual({ name: "Sam", tag: 2 });
+    expect(parseTag("  Sam # 2 ")).toEqual({ name: "Sam", tag: 2 });
+    expect(parseTag("Sam#7#12")).toEqual({ name: "Sam#7", tag: 12 }); // (a name may have a # in it)
+    expect(parseTag("Alex Smith#999999")).toEqual({ name: "Alex Smith", tag: 999_999 });
+  });
+
+  it("are not read from anything else: no name, no number, a number of zero or too many digits, other characters after it", () => {
+    for (const text of ["", "Sam", "#2", " #2", "Sam#", "Sam#0", "Sam#00", "Sam#1234567", "Sam#2x", "Sam#-2", "Sam#2.5", "Sam# 2 3"]) {
+      expect(parseTag(text), text).toBeUndefined();
+    }
+  });
+
+  it("name the same profile when the name is the same however it is typed and the number is", () => {
+    expect(sameTag({ name: "Sam", tag: 2 }, { name: "sam", tag: 2 })).toBe(true);
+    expect(sameTag({ name: "Zoë", tag: 1 }, { name: "Zoë", tag: 1 })).toBe(true); // (one letter, written two ways)
+    expect(sameTag({ name: "Sam", tag: 2 }, { name: "Sam", tag: 3 })).toBe(false);
+    expect(sameTag({ name: "Sam", tag: 2 }, { name: "Sami", tag: 2 })).toBe(false);
+    expect(sameTag({ name: "Sam" }, { name: "Sam" })).toBe(false); // (nothing to name by)
+    expect(sameTag({ name: "Sam", tag: 2 }, { name: "Sam" })).toBe(false);
+  });
+
+  it("are shown as the name, a #, and the number", () => {
+    expect(tagLabel("Sam", 2)).toBe("Sam#2");
+    expect(parseTag(tagLabel("Alex Smith", 41))).toEqual({ name: "Alex Smith", tag: 41 });
+  });
+
+  it("come with a request as the one who asked, and a friend answer only as one of two things", () => {
+    const person = { id: "pro_2", name: "Robin", avatar: "fox", tag: 3 };
+    expect(RequestSchema.safeParse({ from: person, at: 5 }).success).toBe(true);
+    expect(RequestSchema.safeParse({ from: { ...person, tag: undefined }, at: 5 }).success).toBe(false);
+    expect(SentRequestSchema.safeParse({ to: person, at: 5 }).success).toBe(true);
+    expect(TagViewSchema.parse(person)).toEqual({ name: "Robin", avatar: "fox", tag: 3 }); // (no id: whoever looks cannot ask for anything else of them)
+    expect(AskedSchema.safeParse({ status: "sent" }).success).toBe(true);
+    expect(AskedSchema.safeParse({ status: "accepted" }).success).toBe(false);
   });
 });
 

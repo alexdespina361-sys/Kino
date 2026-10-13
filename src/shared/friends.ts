@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AvatarIdSchema, ListItemSchema, ListNameItemSchema, ProfileNameSchema, RatingItemSchema, type Settings } from "./account";
+import { AvatarIdSchema, ListItemSchema, ListNameItemSchema, ProfileNameSchema, RatingItemSchema, TagNumberSchema, type Settings } from "./account";
 import { isHttpUrl } from "./media";
 
 /**
@@ -22,6 +22,9 @@ export const INBOX_MAX = 100;
 export const INBOX_KEEP_MS = 30 * 24 * 3600 * 1000;
 /** ...and how many of those can be from one friend, so that one friend cannot fill it and push out what the others sent. */
 export const INBOX_PER_SENDER = 20;
+/** A request to be friends waits this long for an answer, and a profile keeps at most this many (the newest) from the others. */
+export const REQUEST_KEEP_MS = 30 * 24 * 3600 * 1000;
+export const MAX_REQUESTS = 30;
 /** A watch-party code is no use after the party, so an invitation to one is dropped after this. */
 export const PARTY_INVITE_KEEP_MS = 12 * 3600 * 1000;
 export const FRIEND_NOTE_MAX = 200;
@@ -88,6 +91,32 @@ export function sharesRatings(settings: Settings): boolean {
   const choices = friendChoices(settings);
   return choices.friends && choices.friendsRatings && settings.ratings !== false;
 }
+
+/* ------------------------------ tags ------------------------------ */
+
+/**
+ * What tells two profiles of one name apart, wherever they are: the first "Sam" is Sam#1, the next Sam#2 (the lowest number nobody with that
+ * name has). It is how somebody is found by name, and what a profile in a watch party is added by.
+ */
+export const tagLabel = (name: string, tag: number): string => `${name}#${tag}`;
+
+/** A name as tags compare it: the way it is shown, in one spelling, without capitals ("SAM" and "sam" are one name). */
+export const nameKey = (name: string): string => plainText(name).normalize("NFC").toLowerCase();
+
+/** What somebody typed to find a profile ("Sam#2", "sam # 2"): the name is whatever comes before the last #. Nothing when it is not a tag. */
+export function parseTag(text: string): { name: string; tag: number } | undefined {
+  const at = text.lastIndexOf("#");
+  if (at < 1) return undefined;
+  const digits = text.slice(at + 1).trim();
+  const name = plainText(text.slice(0, at));
+  if (!name || !/^\d{1,6}$/.test(digits)) return undefined;
+  const tag = Number(digits);
+  return tag >= 1 ? { name, tag } : undefined;
+}
+
+/** Whether two ways of naming a profile (a name and its tag) name the same one. */
+export const sameTag = (a: { name: string; tag?: number | undefined }, b: { name: string; tag?: number | undefined }): boolean =>
+  a.tag !== undefined && a.tag === b.tag && nameKey(a.name) === nameKey(b.name);
 
 /* ------------------------------ text and pictures from friends ------------------------------ */
 
@@ -194,6 +223,8 @@ export const FriendSchema = z.object({
   id: IdSchema,
   name: ProfileNameSchema,
   avatar: AvatarIdSchema,
+  /** The number that goes with the name (see `tagLabel`). */
+  tag: TagNumberSchema.optional(),
   since: z.number(),
   /** They have friends turned on: when they do not, nothing below is true. */
   on: z.boolean(),
@@ -289,12 +320,27 @@ export type FriendProgress = z.infer<typeof FriendProgressSchema>;
 export const OpenInviteSchema = z.object({ code: z.string().max(20), expiresAt: z.number() });
 export type OpenInvite = z.infer<typeof OpenInviteSchema>;
 
-/** Everything a profile with friends turned on asks for, in one answer. */
+/** Somebody who is not (yet) a friend, as a profile is shown them: who, with the tag that names them. */
+export const PersonSchema = z.object({ id: IdSchema, name: ProfileNameSchema, avatar: AvatarIdSchema, tag: TagNumberSchema });
+export type Person = z.infer<typeof PersonSchema>;
+/** Somebody asking to be friends, and since when. */
+export const RequestSchema = z.object({ from: PersonSchema, at: z.number() });
+export type FriendRequest = z.infer<typeof RequestSchema>;
+/** Somebody this profile has asked and has not heard from. */
+export const SentRequestSchema = z.object({ to: PersonSchema, at: z.number() });
+export type SentRequest = z.infer<typeof SentRequestSchema>;
+
+/**
+ * Everything a profile with friends turned on asks for, in one answer. `requests` are the ones who asked this profile to be friends and wait
+ * for an answer; `sent` are the ones this profile asked.
+ */
 export const FriendsStateSchema = z.object({
   friends: z.array(FriendSchema),
   inbox: z.array(InboxItemSchema),
   activity: z.array(ActivityItemSchema),
   invites: z.array(OpenInviteSchema),
+  requests: z.array(RequestSchema),
+  sent: z.array(SentRequestSchema),
 });
 export type FriendsState = z.infer<typeof FriendsStateSchema>;
 
@@ -311,6 +357,17 @@ export type InviteView = z.infer<typeof InviteViewSchema>;
 export const AcceptSchema = z.object({ code: z.string().min(1).max(40) });
 export const AcceptedSchema = z.object({ friend: FriendSchema });
 export const InvitedSchema = z.object({ code: z.string().max(20), expiresAt: z.number() });
+
+/** Who is behind a tag, before anybody is asked: the picture, the name and the tag as they are shown. */
+export const TagViewSchema = PersonSchema.omit({ id: true });
+export type TagView = z.infer<typeof TagViewSchema>;
+/** Asking the profile with this tag to be friends. */
+export const AskSchema = z.object({ tag: z.string().min(1).max(60) });
+/** What came of it: the request is waiting (`sent`), or the other had asked already and the two are friends now. */
+export const AskedSchema = z.object({ status: z.enum(["sent", "friends"]), friend: FriendSchema.optional() });
+export type AskOutcome = z.infer<typeof AskedSchema>;
+/** A screen that says whose it is (see `ScreenProfiles`): what it asks of the server to prove it, and the proof. */
+export const ScreenProofSchema = z.object({ proof: z.string().min(1).max(100) });
 
 /** What a friend lets be looked at: the lists (with their names) and the ratings. The items are as the friend's profile keeps them. */
 export const FriendListsSchema = z.object({ listNames: z.array(ListNameItemSchema), list: z.array(ListItemSchema), progress: z.array(FriendProgressSchema).optional() });

@@ -6,10 +6,12 @@ import {
   ACTIVITY_MIN_SECONDS,
   ACTIVITY_PER_FRIEND,
   AcceptSchema,
+  AskSchema,
   SendSchema,
   foreignPicture,
   friendChoices,
   isLive,
+  parseTag,
   plainText,
   sharesLists,
   sharesRatings,
@@ -26,11 +28,14 @@ import {
   type KeptFriend,
   type KeptFriends,
   type LiveProgress,
+  type Person,
   type Sent,
+  type TagView,
 } from "../../shared";
 import { normalise } from "./links";
 import { Presence } from "./presence";
 import { RateLimiter } from "./rateLimit";
+import type { ScreenProofs } from "./screens";
 import type { FriendError, StoredItem } from "./friends";
 import type { StoreError, AccountStore } from "./store";
 
@@ -52,14 +57,19 @@ export interface FriendRouteHelpers {
   refused(reply: FastifyReply, error: StoreError): FastifyReply;
   /** Without it (the accounts on their own) an invitation is believed: any code, for as long as it says. */
   parties?: PartyLookup;
+  /** The proofs a screen gives to a watch party to say whose it is (without them a screen cannot be known as a profile). */
+  screens?: ScreenProofs;
 }
 
 const MINUTE = 60_000;
-const STATUS: Record<FriendError | "friends_off" | "not_shared" | "not_friends" | "party_closed", number> = {
+const STATUS: Record<FriendError | "friends_off" | "not_shared" | "not_friends" | "party_closed" | "tag_gone", number> = {
   invite_gone: 404,
   own_invite: 409,
   already_friends: 409,
   friends_full: 409,
+  own_request: 409,
+  request_gone: 404,
+  tag_gone: 404,
   friends_off: 403,
   not_shared: 403,
   not_friends: 404,
@@ -111,6 +121,7 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
   const sendsByAccount = new RateLimiter(60, 10 * MINUTE);
   const acceptsByAccount = new RateLimiter(60, 10 * MINUTE);
   const invitesByAccount = new RateLimiter(20, 60 * MINUTE);
+  const requestsByAccount = new RateLimiter(30, 60 * MINUTE);
   const wrongByAccount = new RateLimiter(10, 15 * MINUTE);
   const wrongByIp = new RateLimiter(100, 15 * MINUTE);
 
@@ -167,7 +178,7 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
       .friendsOf(profileId)
       .flatMap((friend) => {
         const card = store.profileCard(friend.id);
-        return card ? [{ ...card, since: friend.since }] : [];
+        return card ? [{ id: card.id, name: card.name, avatar: card.avatar, since: friend.since }] : [];
       })
       .sort(byName);
   }
@@ -246,6 +257,19 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     return running ? { ...item, code: running.code, endsAt: now + running.expiresInMs, open: true } : { ...item, open: false };
   }
 
+  /** A profile as somebody who is not a friend is shown it: with the tag that names it. Nothing for one that is gone. */
+  function personOf(profileId: string): Person | undefined {
+    const card = store.profileCard(profileId);
+    return card && card.tag !== undefined ? { id: card.id, name: card.name, avatar: card.avatar, tag: card.tag } : undefined;
+  }
+
+  /** The profile a tag names, when it can be asked: a profile that has turned friends off is not found by anybody, so it cannot be asked. */
+  function findable(text: string): Person | undefined {
+    const wanted = parseTag(text);
+    const id = wanted && store.profileByTag(wanted.name, wanted.tag);
+    return id && friendChoices(store.settingsOf(id)).friends ? personOf(id) : undefined;
+  }
+
   function stateFor(profileId: string, ownHost: string | undefined): FriendsState {
     const now = store.clock();
     const friends = friendList(profileId);
@@ -263,6 +287,15 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
         .map((item) => fitToShow(told(item, now), ownHost)),
       activity,
       invites: book.invitesOf(profileId).map(({ code, expiresAt }) => ({ code, expiresAt })),
+      // (Somebody who has turned friends off since asking is not shown: they cannot be answered.)
+      requests: book.requestsTo(profileId).flatMap(({ from, at }) => {
+        const person = friendChoices(store.settingsOf(from)).friends ? personOf(from) : undefined;
+        return person ? [{ from: person, at }] : [];
+      }),
+      sent: book.requestsBy(profileId).flatMap(({ to, at }) => {
+        const person = personOf(to);
+        return person ? [{ to: person, at }] : [];
+      }),
     };
   }
 
@@ -276,6 +309,14 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     if (friendChoices(store.settingsOf(me.profileId)).friendsPresence) presence.heartbeat(me.profileId);
     else presence.forget(me.profileId);
     return reply.send(stateFor(me.profileId, request.headers.host));
+  });
+
+  /** A screen signed in as this profile asks for the proof it gives a watch party, to be known there as the profile (see TV_PROFILE). Friends need not be on: whether it is shown is for the party to say. */
+  app.post<{ Params: { id: string } }>("/api/profiles/:id/screen", async (request, reply) => {
+    const me = asker(request, reply, readsByAccount, true);
+    if (!me) return reply;
+    if (!helpers.screens) return helpers.refused(reply, "not_found");
+    return reply.send({ proof: helpers.screens.issue(me.profileId) });
   });
 
   /** Who a profile that has friends turned off still has as friends, and nothing more: so that one of them can be taken off without turning anything on first. */
@@ -337,6 +378,71 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     if (!joined.ok) return refuse(reply, joined.error);
     const friend = friendView(me.profileId, { id: joined.value.friend, since: joined.value.since });
     return friend ? reply.code(201).send({ friend }) : refuse(reply, "invite_gone");
+  });
+
+  /* ------------------------------ asking by tag ------------------------------ */
+
+  /** Whether a profile may look for tags: a few wrong ones in a row, from one account or one address, and it waits (a tag is short, so guessing has to be slow). */
+  const guessWait = (me: { accountId: string }, request: { ip: string }) => Math.max(wrongByAccount.wait(me.accountId), wrongByIp.wait(request.ip));
+  const guessedWrong = (me: { accountId: string }, request: { ip: string }) => {
+    wrongByAccount.hit(me.accountId);
+    wrongByIp.hit(request.ip);
+  };
+
+  /** Who has this tag, so a screen can say "ask Sam#2?" before it does. One nobody has counts as a wrong guess (as a wrong code does). */
+  app.get<{ Params: { id: string; tag: string } }>(`${base}/tags/:tag`, async (request, reply) => {
+    const me = asker(request, reply);
+    if (!me) return reply;
+    const wait = guessWait(me, request);
+    if (wait > 0) return helpers.tooMany(reply, wait);
+    const found = findable(request.params.tag);
+    if (!found) {
+      guessedWrong(me, request);
+      return refuse(reply, "tag_gone");
+    }
+    if (found.id === me.profileId) return refuse(reply, "own_request");
+    if (book.areFriends(me.profileId, found.id)) return refuse(reply, "already_friends");
+    const view: TagView = { name: found.name, avatar: found.avatar, tag: found.tag };
+    return reply.send(view);
+  });
+
+  /** Ask the profile with this tag to be friends. Nobody is added to anybody by this: it waits for a yes (unless they had asked first, which is that yes). */
+  app.post<{ Params: { id: string } }>(`${base}/requests`, async (request, reply) => {
+    const me = asker(request, reply, requestsByAccount);
+    if (!me) return reply;
+    const wait = guessWait(me, request);
+    if (wait > 0) return helpers.tooMany(reply, wait);
+    const parsed = AskSchema.safeParse(request.body);
+    if (!parsed.success) return helpers.invalid(reply, parsed.error);
+    const found = findable(parsed.data.tag);
+    if (!found) {
+      guessedWrong(me, request);
+      return refuse(reply, "tag_gone");
+    }
+    const asked = book.request(me.profileId, found.id);
+    if (!asked.ok) return refuse(reply, asked.error);
+    if (!asked.value.friends) return reply.code(201).send({ status: "sent" });
+    const friend = friendView(me.profileId, { id: found.id, since: asked.value.at });
+    return friend ? reply.code(201).send({ status: "friends", friend }) : refuse(reply, "tag_gone");
+  });
+
+  app.post<{ Params: { id: string; fid: string } }>(`${base}/requests/:fid/accept`, async (request, reply) => {
+    const me = asker(request, reply, acceptsByAccount);
+    if (!me) return reply;
+    const from = request.params.fid;
+    // A request from somebody who is gone, or has turned friends off since, is as good as none.
+    if (!store.profileCard(from) || !friendChoices(store.settingsOf(from)).friends) return refuse(reply, "request_gone");
+    const accepted = book.acceptRequest(me.profileId, from);
+    if (!accepted.ok) return refuse(reply, accepted.error);
+    const friend = friendView(me.profileId, { id: from, since: accepted.value.since });
+    return friend ? reply.code(201).send({ friend }) : refuse(reply, "request_gone");
+  });
+
+  /** Turn a request down (the one who asked is not told). Needs no more than that the profile is one's own, as taking a friend off does. */
+  app.delete<{ Params: { id: string; fid: string } }>(`${base}/requests/:fid`, async (request, reply) => {
+    const me = asker(request, reply, readsByAccount, true);
+    if (!me) return reply;
+    return book.declineRequest(me.profileId, request.params.fid) ? reply.code(204).send() : refuse(reply, "request_gone");
   });
 
   app.delete<{ Params: { id: string; fid: string } }>(`${base}/:fid`, async (request, reply) => {

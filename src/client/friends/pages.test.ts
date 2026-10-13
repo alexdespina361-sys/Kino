@@ -11,7 +11,7 @@ const recommendation = (id: string, from = "pro_sam", extra: { note?: string } =
 const invitation = (id: string, endsAt = NOW + 3_600_000, from = "pro_sam", open?: boolean): InboxItem => ({ kind: "party", id, from, at: NOW - 60_000, read: false, code: "482731", endsAt, ...(open === undefined ? {} : { open }) });
 const request = (id: string, from = "pro_sam"): InboxItem => ({ kind: "together", id, from, at: NOW - 120_000, read: false });
 const watched = (friend: string, key: string, extra: Partial<ActivityItem> = {}): ActivityItem => ({ friend, key, title: "Alien", url: "https://filmpire.sc/watch/2", at: NOW - 60_000, ...extra });
-const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], ...changes });
+const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], requests: [], sent: [], ...changes });
 const since = (friend: Friend) => t("friends.since", { day: formatDay(friend.since, getLanguage()) });
 
 describe("the rows of the friends page", () => {

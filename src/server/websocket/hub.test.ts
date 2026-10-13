@@ -1421,6 +1421,81 @@ describe("a watch party started on a TV", () => {
       expect((await loner.next("ERROR")).code).toBe("NOT_PAIRED");
     });
   });
+
+  describe("when a screen says whose it is (TV_PROFILE)", () => {
+    const alex = { name: "Alex", avatar: "fox", tag: 1 } as const;
+    const sam = { name: "Sam", avatar: "fox", tag: 2 } as const;
+    const cards: Record<string, typeof alex | typeof sam> = { alexId: alex, samId: sam };
+    /** What the accounts have given out and not yet been asked about: each proof is good once. */
+    let proofs: Map<string, string>;
+
+    beforeEach(async () => {
+      proofs = new Map([
+        ["proof-alex", "alexId"],
+        ["proof-sam", "samId"],
+        ["proof-gone", "goneId"],
+      ]);
+      await app.close();
+      app = await buildApp({
+        resolve: (url) => resolveImpl(url),
+        hub: {
+          profiles: {
+            redeem(proof) {
+              const id = proofs.get(proof);
+              proofs.delete(proof);
+              return id;
+            },
+            card: (id) => cards[id],
+          },
+        },
+      });
+      await app.ready();
+    });
+
+    it("shows a screen as the profile the accounts vouched for, to everyone in the party: the host as well as the guests", async () => {
+      const host = await openParty();
+      const guest = await joinWith(host.code);
+      await host.tv.next("TV_PARTY"); // the guest joining
+      guest.tv.send({ type: "TV_PROFILE", proof: "proof-sam" });
+      const seenByHost = await host.tv.nextWhere("TV_PARTY", (m) => m.party?.guests[0]?.profile !== undefined);
+      expect(seenByHost.party!.guests[0]!.profile).toEqual(sam);
+
+      host.tv.send({ type: "TV_PROFILE", proof: "proof-alex" });
+      const seenByGuest = await guest.tv.nextWhere("TV_PARTY", (m) => m.party?.host.profile !== undefined);
+      expect(seenByGuest.party).toMatchObject({ host: { profile: alex }, guests: [{ profile: sam }] });
+    });
+
+    it("shows nobody for a proof that is wrong, was used already, or is of a profile the accounts do not show; and nobody once a screen signs out", async () => {
+      const host = await openParty();
+      const guest = await joinWith(host.code);
+      await host.tv.next("TV_PARTY");
+      /** What the party says of the guest right after the guest says something. */
+      const said = async (proof?: string) => {
+        await host.tv.forget();
+        guest.tv.send(proof === undefined ? { type: "TV_PROFILE" } : { type: "TV_PROFILE", proof });
+        return (await host.tv.next("TV_PARTY")).party!.guests[0]!.profile;
+      };
+
+      expect(await said("nonsense")).toBeUndefined();
+      expect(await said("proof-gone")).toBeUndefined(); // (a profile that is gone, or keeps friends off, is not shown by name)
+      expect(await said("proof-sam")).toEqual(sam);
+      expect(await said("proof-sam")).toBeUndefined(); // (spent: the screen is nobody's again until it proves it)
+      expect(await said("proof-alex")).toEqual(alex);
+      expect(await said()).toBeUndefined(); // (signed out)
+    });
+
+    it("tells a phone that controls the host's screen too", async () => {
+      const { tv, phone } = await pairedSetup();
+      phone.send({ type: "OPEN_PARTY" });
+      const opened = await phone.next("PARTY");
+      await tv.next("TV_PARTY");
+      const guest = await joinWith(opened.code!.code);
+      await phone.nextWhere("PARTY", (m) => m.tvs.length === 1);
+
+      guest.tv.send({ type: "TV_PROFILE", proof: "proof-sam" });
+      expect((await phone.nextWhere("PARTY", (m) => m.tvs[0]?.profile !== undefined)).tvs[0]!.profile).toEqual(sam);
+    });
+  });
 });
 
 describe("several phones controlling one TV session", () => {

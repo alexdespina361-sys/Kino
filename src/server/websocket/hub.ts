@@ -14,6 +14,7 @@ import {
   type ResolveStatus,
   type ServerMessage,
 } from "../../shared";
+import type { ScreenProfiles } from "../accounts/screens";
 import type { ResolveFn, ResolveResult } from "../resolvers";
 import type { Controller, Device, Registry } from "../sessions/registry";
 
@@ -34,6 +35,8 @@ export interface HubOptions {
   maxFailedPairings?: number;
   /** Length of that window. Default 60 s. */
   failedPairingWindowMs?: number;
+  /** Whose a screen is, as the accounts prove it (see TV_PROFILE). Without it a watch party shows no profiles. */
+  profiles?: ScreenProfiles;
 }
 
 /** Relays between phones and TVs. Holds no state of its own beyond who is connected right now. */
@@ -51,6 +54,7 @@ export class Hub {
   private failedPairings: number[] = [];
   private readonly maxFailedPairings: number;
   private readonly failedPairingWindowMs: number;
+  private readonly profiles: ScreenProfiles | undefined;
 
   constructor(
     private readonly registry: Registry,
@@ -58,6 +62,7 @@ export class Hub {
     options: HubOptions = {},
   ) {
     const staleAfterMs = options.staleAfterMs ?? 60_000;
+    this.profiles = options.profiles;
     this.maxFailedPairings = options.maxFailedPairings ?? 20;
     this.failedPairingWindowMs = options.failedPairingWindowMs ?? 60_000;
     this.sweeper = setInterval(() => {
@@ -183,6 +188,11 @@ export class Hub {
     } else if (message.type === "TV_NAME") {
       this.registry.setLabel(device, message.name);
       this.tellPhones(device);
+      const host = this.registry.leaderOf(device) ?? device;
+      if (this.registry.inParty(host)) this.sendParty(host);
+    } else if (message.type === "TV_PROFILE") {
+      // A proof the accounts gave is the only way to be known as a profile; a bad or spent one is no profile at all.
+      this.registry.setProfile(device, (message.proof && this.profiles?.redeem(message.proof)) || null);
       const host = this.registry.leaderOf(device) ?? device;
       if (this.registry.inParty(host)) this.sendParty(host);
     } else if (message.type === "TV_PARTY_OPEN") {
@@ -524,7 +534,15 @@ export class Hub {
   }
 
   private partyTv(device: Device): PartyTv {
-    return { id: device.publicId, name: this.registry.displayName(device), online: this.tvs.has(device.id), ...(device.admin ? { admin: true } : {}) };
+    // (Who is signed in on a screen is shown to the party only as far as the accounts say: a profile that keeps friends off is not shown by name.)
+    const profile = device.profileId ? this.profiles?.card(device.profileId) : undefined;
+    return {
+      id: device.publicId,
+      name: this.registry.displayName(device),
+      online: this.tvs.has(device.id),
+      ...(device.admin ? { admin: true } : {}),
+      ...(profile ? { profile } : {}),
+    };
   }
 
   private partyOf(host: Device): PartyTv[] {

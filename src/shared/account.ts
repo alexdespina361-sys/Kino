@@ -51,7 +51,9 @@ export const RegisterSchema = z.object({ email: LoginNameSchema, password: NewPa
 export const LoginSchema = z.object({ email: LoginNameSchema, password: z.string().max(200), device: DeviceKindSchema.optional() });
 
 export const ProfileNameSchema = z.string().trim().min(1, "invalid_name").max(PROFILE_NAME_MAX, "invalid_name");
-export const ProfileSchema = z.object({ id: z.string().max(60), name: ProfileNameSchema, avatar: AvatarIdSchema });
+/** The number that goes with a name, "Sam#2", to tell the profiles of one name apart wherever they are (see `tagLabel`). */
+export const TagNumberSchema = z.number().int().min(1).max(999_999);
+export const ProfileSchema = z.object({ id: z.string().max(60), name: ProfileNameSchema, avatar: AvatarIdSchema, tag: TagNumberSchema.optional() });
 export type Profile = z.infer<typeof ProfileSchema>;
 export const NewProfileSchema = z.object({ name: ProfileNameSchema, avatar: AvatarIdSchema });
 export const ProfilePatchSchema = NewProfileSchema.partial();

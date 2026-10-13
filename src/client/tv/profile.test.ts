@@ -5,7 +5,7 @@ import { ratingSummary } from "../account/ratingText";
 import { profileRows, type ProfileFacts } from "./profile";
 
 const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1_700_000_000_000, on: true, lists: true, ratings: true, activity: true, inbox: true };
-const friendsOf = (...people: Friend[]): FriendsState => ({ friends: people, inbox: [], activity: [], invites: [] });
+const friendsOf = (...people: Friend[]): FriendsState => ({ friends: people, inbox: [], activity: [], invites: [], requests: [], sent: [] });
 const rated = (key: string, score: number): LiveRating => ({ key: `rate:${key}`, at: 1, title: key, url: `https://x.example/${key}`, score, ratedAt: 1 });
 
 /** A signed-in profile with everything on and nothing in it yet. */

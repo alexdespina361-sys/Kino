@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AvatarIdSchema, TagNumberSchema } from "./account";
 import { CaptionStyleSchema } from "./captions";
 import { MAX_ALTERNATES, NormalizedMediaSchema, PlayHintSchema } from "./media";
 
@@ -137,7 +138,10 @@ export const MAX_FOLLOWERS = 5;
  * A screen in a party, as the lists show it. `id` is for removing it; the screen's own id is its secret and stays on the server.
  * `admin`: a guest whose screen the host has given the playback to, as its own (see TV_PARTY_CMD). The host is always one, and is not marked.
  */
-export const PartyTvSchema = z.object({ id: z.string().max(100), name: z.string().max(60), online: z.boolean(), admin: z.boolean().optional() });
+/** Who is signed in on a screen, as the party sees them: the profile's name, picture and tag. Only what the server has checked (see TV_PROFILE), and only for a profile that lets friends find it. */
+export const PartyProfileSchema = z.object({ name: z.string().max(60), avatar: AvatarIdSchema, tag: TagNumberSchema });
+export type PartyProfile = z.infer<typeof PartyProfileSchema>;
+export const PartyTvSchema = z.object({ id: z.string().max(100), name: z.string().max(60), online: z.boolean(), admin: z.boolean().optional(), profile: PartyProfileSchema.optional() });
 export type PartyTv = z.infer<typeof PartyTvSchema>;
 
 /** How many TVs one phone can keep on its list. */
@@ -208,6 +212,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("TV_CANCEL") }),
   /** What this screen is called on the others' lists: the profile in use, or nothing for the TV's own name. */
   z.object({ type: z.literal("TV_NAME"), name: z.string().max(60) }),
+  /** Whose screen this is: the proof (from `POST /api/profiles/:id/screen`, which only that profile's signed-in account gets) for the profile in use here, or none when nobody is. */
+  z.object({ type: z.literal("TV_PROFILE"), proof: z.string().max(100).optional() }),
   /** Start a watch party on this TV: what it plays, the others play along with. Answered with TV_PARTY, which carries the code to join with. */
   z.object({ type: z.literal("TV_PARTY_OPEN") }),
   /** Join the party that a code from its host belongs to. The TV then plays what the host plays. Leaving is TV_UNPAIR. */
