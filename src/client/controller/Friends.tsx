@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FRIEND_NOTE_MAX, friendLink, reachable, type Friend, type FriendLists, type FriendRatings, type InboxItem, type Message, type OpenInvite } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -11,7 +11,7 @@ import { useFriends } from "../friends/FriendsProvider";
 import { usePeek } from "../friends/usePeek";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
-import { CopyLink } from "../shared/CopyLink";
+import { CopyCode, CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
 import { ChevronIcon, CloseIcon, PlusIcon, StarIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, partyLink, typedLinkCode } from "../shared/launch";
@@ -137,15 +137,20 @@ function InviteCard({ invite }: { invite: OpenInvite }) {
   const language = useLanguage();
   const friends = useFriends();
   const link = friendLink(invite.code, location.origin);
+  const code = typedLinkCode(invite.code);
+  const codeText = useRef<HTMLSpanElement>(null);
   const canShare = typeof navigator.share === "function";
   const share = () => navigator.share({ title: t("friends.shareTitle"), url: link }).catch(() => undefined); // (a share sheet that was closed is no error)
 
   return (
     <div className="code-card" data-testid="friend-invite">
       <div className="code-card-top">
-        <span className="code-card-code friend-code" data-testid="friend-invite-code">
-          {typedLinkCode(invite.code)}
-        </span>
+        <div className="friend-code-side">
+          <span className="code-card-code friend-code copy-code-text" ref={codeText} data-testid="friend-invite-code">
+            {code}
+          </span>
+          <CopyCode code={code} shown={codeText} testId="friend-invite-code-copy" buttonClass="btn" />
+        </div>
         <QrCode value={link} label={t("friends.qrLabel")} />
       </div>
       <p className="muted small">{t("friends.codeHelp", { day: formatDay(invite.expiresAt, language) })}</p>

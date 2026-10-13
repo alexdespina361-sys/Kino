@@ -248,6 +248,99 @@ test.describe("making friends", () => {
     await expect(bob.page.getByTestId("friends-none")).toBeVisible();
   });
 
+  test("the code that is given has a small button that copies it, and what it copies is what a friend types", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await ann.page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const clipboard = () => ann.page.evaluate(() => navigator.clipboard.readText());
+
+    await openFriends(ann.page);
+    await ann.page.getByTestId("friend-make-code").click();
+    const code = (await ann.page.getByTestId("friend-invite-code").textContent())!;
+    const copy = ann.page.getByTestId("friend-invite-code-copy");
+    await expect(copy).toHaveText("Copy code");
+    await ann.page.evaluate(() => navigator.clipboard.writeText("something else"));
+    await copy.click();
+    await expect(copy).toHaveText("Code copied");
+    expect(await clipboard()).toBe(code);
+    await expect(copy).toHaveText("Copy code"); // (ready for the next time by itself)
+
+    // a press on the code itself selects the whole of it, the dash too (a long press would take one half of it, the dash being a word's end)
+    await ann.page.getByTestId("friend-invite-code").click();
+    expect(await ann.page.evaluate(() => window.getSelection()?.toString())).toBe(code);
+
+    // the link under it still copies the link, and not the code
+    const copyLink = ann.page.getByTestId("friend-link-copy");
+    await copyLink.click();
+    await expect(copyLink).toHaveText("Link copied");
+    expect(await clipboard()).toBe(await ann.page.getByTestId("friend-link-url").innerText());
+
+    // what the code's button put on the clipboard is what a friend pastes into the field
+    await copy.click();
+    await expect(copy).toHaveText("Code copied");
+    await openFriends(bob.page);
+    await bob.page.getByTestId("friend-code-input").fill(await clipboard());
+    await expect(bob.page.getByTestId("friend-code-name")).toHaveText(ann.name);
+  });
+
+  test("a phone that will not copy says so and selects the code, to be copied by hand", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const account = fresh("Ann");
+    const page = await newPhone(browser);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined }); // no clipboard of its own...
+      document.execCommand = () => false; // ...and the old way refused
+    });
+    await page.goto("/");
+    await signUp(page, account);
+    await turnOnFriends(page);
+    await openFriends(page);
+    await page.getByTestId("friend-make-code").click();
+    const code = (await page.getByTestId("friend-invite-code").textContent())!;
+    await page.getByTestId("friend-invite-code-copy").click();
+    await expect(page.getByTestId("friend-invite").getByRole("status")).toHaveText("Could not copy: select the code and copy it");
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(code); // (the whole of it, the dash too: ready for a long press)
+  });
+
+  test("the button sits under the code, and the code, the button and the QR code keep clear of each other and inside the card, on the narrowest phone as on any", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    await openFriends(ann.page);
+    await ann.page.getByTestId("friend-make-code").click();
+    const card = ann.page.getByTestId("friend-invite");
+    await expect(card).toBeVisible();
+    type Box = { x: number; y: number; width: number; height: number };
+    const where = async (target: { boundingBox(): Promise<Box | null> }) => (await target.boundingBox())!;
+    const apart = (a: Box, b: Box) => a.x + a.width <= b.x + 0.5 || b.x + b.width <= a.x + 0.5 || a.y + a.height <= b.y + 0.5 || b.y + b.height <= a.y + 0.5;
+    const inside = (a: Box, around: Box) => a.x >= around.x - 0.5 && a.y >= around.y - 0.5 && a.x + a.width <= around.x + around.width + 0.5 && a.y + a.height <= around.y + around.height + 0.5;
+    for (const width of [320, 360, 375, 390, 430]) {
+      await ann.page.setViewportSize({ width, height: 800 });
+      await expect
+        .poll(
+          async () => {
+            const [around, code, copy, qr] = await Promise.all([
+              where(card),
+              where(ann.page.getByTestId("friend-invite-code")),
+              where(ann.page.getByTestId("friend-invite-code-copy")),
+              where(card.getByTestId("pairing-qr")),
+            ]);
+            return (
+              copy.y >= code.y + code.height - 0.5 && // under the code
+              copy.height <= 44 && // (a small button: its icon is not the size of the QR code's)
+              apart(code, qr) && // (the QR code is beside them, or under them where there is no room: never over them)
+              apart(copy, qr) &&
+              [code, copy, qr].every((box) => inside(box, around)) &&
+              around.x >= 0 &&
+              around.x + around.width <= width + 0.5 // (and the card is inside the screen)
+            );
+          },
+          { message: `${width} wide` },
+        )
+        .toBe(true);
+    }
+  });
+
   test("a friend's link asks 'add them?' when the phone is signed in with friends on, and the code is used once", async ({ browser }) => {
     test.setTimeout(90_000);
     const ann = await phoneWithFriends(browser, "Ann");

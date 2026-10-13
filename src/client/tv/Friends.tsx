@@ -9,6 +9,7 @@ import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { usePeek } from "../friends/usePeek";
 import { useLanguage, useT, type Key } from "../i18n";
+import { CopyCode } from "../shared/CopyLink";
 import { CheckIcon, PlusIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
@@ -103,6 +104,9 @@ export function FriendPickerTv({ title, lead, build, said, onClose }: { title: s
 
 /* ------------------------------ adding a friend ------------------------------ */
 
+/** How the copy button joins the remote's arrow keys, as the page's other buttons do (`data-nav`: see dpad.ts). */
+const PAGE_NAV = { "data-nav": true };
+
 /**
  * A code made for a friend: the code, the QR code that carries its link, and a way to take it back. One is made as the page opens, when
  * there is none. When the code that was on the page is gone and there is a friend more than when it came up, a friend has used it: that
@@ -116,6 +120,7 @@ function GiveCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }
   const asked = useRef(false);
   const shown = useRef(false);
   const takingBack = useRef(false);
+  const codeText = useRef<HTMLParagraphElement>(null);
   /** How many friends there were when the first code came up. */
   const friendsThen = useRef(0);
   const friendCount = friends.state?.friends.length ?? 0;
@@ -145,9 +150,10 @@ function GiveCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }
       {invite ? (
         <div className="tv-pair tv-party-invite">
           <div className="tv-friend-code">
-            <p className="tv-code tv-link-code" data-testid="tv-friend-code">
+            <p className="tv-code tv-link-code copy-code-text" ref={codeText} data-testid="tv-friend-code">
               {typedLinkCode(invite.code)}
             </p>
+            <CopyCode code={typedLinkCode(invite.code)} shown={codeText} testId="tv-friend-code-copy" buttonClass="tv-action" nav={PAGE_NAV} />
             <p className="tv-hint">{t("friends.codeHelp", { day: formatDay(invite.expiresAt, language) })}</p>
           </div>
           <div className="tv-qr">

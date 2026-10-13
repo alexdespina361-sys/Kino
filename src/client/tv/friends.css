@@ -3,6 +3,8 @@
 /* A code made for a friend: the code over its help, the QR code beside it. */
 .tv-friend-code { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6em; max-width: 34em; }
 .tv-friend-code .tv-hint { text-align: left; }
+/* The small button under it that copies the code (CopyLink.tsx), the size of the party link's. */
+.tv-friend-code .copy-link { font-size: 1.3em; text-align: left; } /* (the button stays at the left when the note about a copy that failed is wider than it) */
 
 /* Whose code it is, and the button that makes the two of them friends. */
 .tv-friend-found { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 1.2em 1.6em; }
@@ -21,4 +23,5 @@
 @media (max-width: 899px) {
   .tv-friend-switches { grid-template-columns: 1fr; }
   .tv-friend-switches .tv-switch-row:last-child:nth-child(odd) { width: 100%; }
+  .tv-friend-code .copy-link { font-size: 1.7em; }
 }

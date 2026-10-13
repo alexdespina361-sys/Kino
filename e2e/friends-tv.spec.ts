@@ -220,6 +220,78 @@ test.describe("making friends on the TV", () => {
   });
 });
 
+test.describe("the code a screen shows to a friend can be copied", () => {
+  /** A signed-in screen on the page that shows a code it made. */
+  async function showingACode(browser: Browser, name: string) {
+    const screen = await screenWithFriends(browser, name);
+    await openFriends(screen.page);
+    await tile(screen.page, "Add a friend").click();
+    await screen.page.getByTestId("tv-friend-give").click();
+    await expect(screen.page.getByTestId("tv-friend-code")).toBeVisible();
+    return screen;
+  }
+
+  test("a small button under it copies it: OK on it from the remote, or a click, and it says so", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await showingACode(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    const page = ann.page;
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+    const code = (await page.getByTestId("tv-friend-code").textContent())!.trim();
+    const copy = page.getByTestId("tv-friend-code-copy");
+
+    await expect(copy).toHaveText("Copy code");
+    await expect(page.getByTestId("tv-friend-give-done")).toBeFocused();
+    await page.keyboard.press("ArrowUp"); // the remote reaches it from the button the page starts on
+    await expect(copy).toBeFocused();
+    await page.evaluate(() => navigator.clipboard.writeText("something else"));
+    await page.keyboard.press("Enter");
+    await expect(copy).toHaveText("Code copied");
+    expect(await clipboard()).toBe(code);
+    await expect(copy).toBeFocused(); // (the remote kept its place)
+    await expect(copy).toHaveText("Copy code"); // (and the button is ready for the next time by itself)
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("tv-friend-give-done")).toBeFocused();
+
+    await page.evaluate(() => navigator.clipboard.writeText("something else"));
+    await copy.click(); // a mouse
+    await expect(copy).toHaveText("Code copied");
+    expect(await clipboard()).toBe(code);
+
+    // and a click on the code itself selects the whole of it, the dash too (the screen's own text is not selectable, this is)
+    await page.getByTestId("tv-friend-code").click();
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(code);
+
+    // what it copied is what another screen types
+    await openFriends(bob.page);
+    await tile(bob.page, "Add a friend").click();
+    await bob.page.getByTestId("tv-friend-type").click();
+    await bob.page.getByTestId("tv-friend-code-input").fill(await clipboard());
+    await expect(bob.page.getByTestId("tv-friend-code-name")).toHaveText(ann.name);
+  });
+
+  test("a browser that will not copy says so, and selects the code for the keys", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const page = ann.page;
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined }); // no clipboard of its own...
+      document.execCommand = () => false; // ...and the old way refused
+    });
+    await page.reload();
+    await openFriends(page);
+    await tile(page, "Add a friend").click();
+    await page.getByTestId("tv-friend-give").click();
+    const code = (await page.getByTestId("tv-friend-code").textContent())!.trim();
+    await page.getByTestId("tv-friend-code-copy").click();
+    await expect(page.getByTestId("tv-friend-give-page").getByRole("status")).toHaveText("Could not copy: select the code and copy it");
+    expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(code);
+    // (the page keeps to the screen with the note on it, too)
+    expect(await outsideTheScreen(page, "tv-friend-give-page")).toEqual([]);
+  });
+});
+
 test.describe("a friend's page", () => {
   test("has their lists, then their ratings, says when they are not shared, and a first press on Remove only asks", async ({ browser }) => {
     test.setTimeout(180_000);
