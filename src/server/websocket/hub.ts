@@ -178,11 +178,10 @@ export class Hub {
       this.registry.noteProgress(device, message.state);
       if (wasOn && message.state.state === "idle") {
         this.registry.forgetResume(device); // left on the TV itself (Back, Stop): nothing to put back
-        // A host that stops takes the video away from the guests too: they wait for the next one.
-        if (device.followerIds.length > 0) {
-          this.toFollowers(device, { type: "TV_CMD", command: { type: "STOP" } });
-          this.applyCommand(device, { type: "STOP" });
-        }
+        // A host that stops takes the video away from the guests too: they wait for the next one. And what it had on is gone from the server's
+        // memory with or without guests, so that a screen that joins its party later (or a phone that comes back to it) is not given a film it left.
+        if (device.followerIds.length > 0) this.toFollowers(device, { type: "TV_CMD", command: { type: "STOP" } });
+        this.applyCommand(device, { type: "STOP" });
       }
       if (first) this.restore(device);
     } else if (message.type === "TV_NAME") {

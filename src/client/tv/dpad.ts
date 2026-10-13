@@ -125,6 +125,27 @@ export function useBack(onBack: (() => void) | undefined): void {
 }
 
 /**
+ * Back on a question that is asked inside a page which has a Back of its own ("Delete this list?"): it answers the question, and the page's
+ * Back, which would leave the page altogether, never hears of it. Pass nothing while there is no question.
+ */
+export function useBackFirst(onBack: (() => void) | undefined): void {
+  const latest = useRef(onBack);
+  latest.current = onBack;
+  const active = onBack !== undefined;
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || actionForKey(event) !== "back") return;
+      event.preventDefault();
+      event.stopPropagation(); // (in the capture phase: it is over before the page's own listener, which is on the way back up)
+      latest.current?.();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [active]);
+}
+
+/**
  * A screen the remote can walk around: the arrow keys move between its `[data-nav]` things, and OK on a screen where nothing
  * has the focus yet only lands on the first one, instead of pressing it. OK on a focused one is a normal press.
  */

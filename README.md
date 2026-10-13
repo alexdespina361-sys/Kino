@@ -210,7 +210,11 @@ pnpm build && pnpm start     # http://localhost:8787
   hands the focus back to the button that opened it (the subtitle style is a page of the audio and subtitles menu, so Back goes one page back).
   Every screen before the video (the library, a title's page, the pairing code, the connected screen, the account pages, the "Press OK" page of a
   party link) is walked with the arrow keys: the first press only lands on a button, so a stray OK never presses one, and a page of columns keeps
-  Up and Down to the column the remote is in (`src/client/tv/dpad.ts`)
+  Up and Down to the column the remote is in (`src/client/tv/dpad.ts`). **Back goes one step out of every one of them**, to the page it was opened from: out of
+  a window on a window, out of the question inside an editor before a list or a profile is removed (that says no first, and leaves the page the next time), out of
+  a sign-in that was opened from the settings and back to the settings, out of the code that is still on its way. A screen that watches a party along has nowhere to
+  go back to, so Back lands on its **Leave** button and leaving stays a press of OK. The Close and Back buttons stay for those with a mouse
+  (`e2e/remote-back.spec.ts` opens each of them and presses Back)
 - The controls are one line on any screen, in any language, with every button present (series, subtitles, sources, quality, party). The row
   measures itself (`src/client/tv/fit.ts`) and gives up only as much as it must, in this order: the room between the buttons, the labels of Watch
   party and Audio & subtitles, the episode names under Previous / Next, the labels of Previous / Next, the label of Episodes (each label becomes its
@@ -505,7 +509,7 @@ pnpm fixtures     # optional: regenerate fixtures/ with ffmpeg (outputs are comm
 
 Tests never touch the internet; they use `fixtures/` (served at `/fixtures/`) and, for accounts, an in-memory store (`DATA_DIR=memory`) with
 throwaway credentials from `e2e/testAccount.ts`. The e2e suite covers pairing by code and by QR link, camera scanning (Chromium's fake
-webcam shows a generated QR code), disconnect and switching TVs, resume, the D-pad, HUD fading, subtitle memory and the episode lists, the
+webcam shows a generated QR code), disconnect and switching TVs, resume, the D-pad and its Back key (one step out of every page, menu and window: `e2e/remote-back.spec.ts`), HUD fading, subtitle memory and the episode lists, the
 library and its menu, watch parties (from a TV, from a phone, from a link), a second phone and a phone that scans another TV, a phone with
 several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page whose connections are never answered:
 `sleepingServer` in `e2e/helpers.ts`, with the page's clock skipped ahead), the TV page on a

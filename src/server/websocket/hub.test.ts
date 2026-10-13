@@ -1066,6 +1066,18 @@ describe("a watch party started on a TV", () => {
     await late.tv.expectNone((m) => m.type === "TV_CMD");
   });
 
+  it("gives a guest that joins after the host stopped on its own screen nothing to play, though nobody was in the party to be told", async () => {
+    resolveImpl = async () => ({ status: "success", resolver: "test", media });
+    const host = await openParty();
+    host.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" });
+    await host.tv.next("TV_CMD");
+    host.tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 61, duration: 600, stream: media.stream.url } });
+    host.tv.send({ type: "TV_STATE", state: { state: "idle", currentTime: 0, duration: 0 } }); // Back on the host's own remote
+
+    const late = await joinWith(host.code);
+    await late.tv.expectNone((m) => m.type === "TV_CMD");
+  });
+
   it("brings a guest that joins in the middle of a film to where the host is", async () => {
     resolveImpl = async () => ({ status: "success", resolver: "test", media });
     const host = await openParty();

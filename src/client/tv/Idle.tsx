@@ -323,7 +323,8 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
   }
 
   return (
-    <Screen>
+    // (Waiting for a code that may be a while coming: Back is the way out to the library, as it is from the code itself.)
+    <Screen testId="tv-connecting" onBack={onBack}>
       <div className="spinner tv-spinner" />
       <h1 className="tv-headline">{t("tv.connecting")}</h1>
     </Screen>

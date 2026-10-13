@@ -83,6 +83,8 @@ export function Tv() {
   const engineRef = useRef<PlayerEngine | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
+  /** The follower's way out of the party, which Back points at (see the key handler). */
+  const leaveRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   /** The link of a watch party (its QR code) was opened on this screen: its code is tried once the page is unlocked, then taken out of the address. */
@@ -1149,6 +1151,7 @@ export function Tv() {
         if (isBlocked(player) && (action === "select" || action === "playpause" || action === "play")) engine.play();
         else if (steering) steer(steering);
         else if (action === "up" || action === "down") (controlsRef.current?.querySelector<HTMLElement>("[data-autofocus]") ?? controlsRef.current?.querySelector<HTMLElement>("button"))?.focus(); // the bar is at the top, yet Down was always the way in
+        else if (action === "back") leaveRef.current?.focus(); // a screen that watches along has nowhere to go back to: Back points at the way out, and leaving stays a press of OK (as on the page that waits for the host)
         else if (action === "captions") cycleSubtitles();
         else if (action === "mute") toggleMute();
         else if (action === "fullscreen") toggleFullscreen();
@@ -1412,7 +1415,7 @@ export function Tv() {
                 <FullscreenIcon /> {t(fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
               </button>
             )}
-            <button onClick={leaveParty} data-testid="tv-leave">
+            <button ref={leaveRef} onClick={leaveParty} data-testid="tv-leave">
               {t("tv.leave")}
             </button>
           </div>
