@@ -14,6 +14,7 @@ import { LANGUAGE_NAMES, useLanguage, useT, type Key } from "../i18n";
 import { CheckIcon, CloseIcon, GlobeIcon, PencilIcon, PhoneIcon, PlusIcon, ScanIcon, TrashIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { useLinkBox } from "../shared/linkBox";
+import { LOOKS, useLook } from "../shared/look";
 import { linkFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
 
@@ -238,6 +239,7 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
   const { settings, set } = useSettings();
   const account = useAccount();
   const [linkBox, setLinkBox] = useLinkBox();
+  const [look, setLook] = useLook();
   return (
     <div className="page-stack" data-testid="settings-page">
       <Group title={t("settings.language")}>
@@ -263,6 +265,15 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
               data-testid={`accent-${accent}`}
             >
               <CheckIcon />
+            </button>
+          ))}
+        </div>
+      </Group>
+      <Group title={t("settings.look")} help={t("settings.lookHelp")}>
+        <div className="segmented" role="radiogroup" aria-label={t("settings.look")}>
+          {LOOKS.map((value) => (
+            <button key={value} role="radio" aria-checked={look === value} onClick={() => setLook(value)} data-testid={`look-${value}`}>
+              {t(value === "polish" ? "settings.lookPolish" : "settings.lookClassic")}
             </button>
           ))}
         </div>

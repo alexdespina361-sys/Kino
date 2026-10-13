@@ -1,0 +1,11 @@
+/*
+ * The refined look (docs/ui-polish). Everything in src/client/polish starts with :root[data-ui="polish"], so while the look is "classic"
+ * (shared/look.ts) none of it matches and the page is what it always was. The stylesheets of the two looks are never merged: a rule of the
+ * refined look that needs to win over the classic one raises its own specificity, it does not touch the classic rule.
+ *
+ * Only what the oldest TV browsers of the project already understand (custom properties, min()/max(), :focus-visible, flex gap): no @layer,
+ * :has(), @container, color-mix(), dvh. src/client/polish/polish.test.ts keeps that list.
+ */
+:root[data-ui="polish"] {
+  --ui-look: polish; /* (what a test, or a person in the devtools, reads to know the refined stylesheet is here) */
+}

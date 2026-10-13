@@ -1,6 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT) || 8788; // not the dev port, so `pnpm dev` and e2e can run side by side
+// E2E_UI=polish runs the whole suite as if every page had been asked for the refined look (see src/client/shared/look.ts).
+const LOOK = process.env.E2E_UI === "polish" ? [{ name: "kino.ui", value: "polish" }] : [];
 
 export default defineConfig({
   testDir: "e2e",
@@ -22,6 +24,7 @@ export default defineConfig({
           localStorage: [
             { name: "kino.fullscreen.left", value: "1" },
             { name: "kino.linkbox", value: "1" },
+            ...LOOK,
           ],
         },
       ],

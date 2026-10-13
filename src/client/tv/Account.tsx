@@ -13,6 +13,7 @@ import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
 import { formatLinkCode } from "../shared/format";
 import { CheckIcon, TvIcon, UserIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
+import { LOOKS, useLook } from "../shared/look";
 import { QrCode } from "../shared/QrCode";
 import { Screen } from "./Idle";
 
@@ -375,6 +376,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const language = useLanguage();
   const account = useAccount();
   const { settings, set } = useSettings();
+  const [look, setLook] = useLook();
   const { me, profile } = account;
   const autoplay = settings.autoplayNext ?? true;
   const tapToPause = settings.tapToPause ?? false;
@@ -451,6 +453,15 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
                 data-testid={`tv-accent-${accent}`}
               >
                 <CheckIcon />
+              </button>
+            ))}
+          </div>
+
+          <h2>{t("settings.look")}</h2>
+          <div className="tv-choices tv-choices-fit" role="radiogroup" aria-label={t("settings.look")}>
+            {LOOKS.map((value) => (
+              <button key={value} className="tv-choice" role="radio" aria-checked={look === value} onClick={() => setLook(value)} data-nav data-testid={`tv-look-${value}`}>
+                {t(value === "polish" ? "settings.lookPolish" : "settings.lookClassic")}
               </button>
             ))}
           </div>
