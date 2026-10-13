@@ -2703,9 +2703,13 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       });
       const badge = (where: Locator) => where.getByTestId("score-badge");
 
-      // The rows of the library: the score is in the picture's corner, worded for a screen reader by its tooltip; a season's score is no score of the title's own.
+      // The rows of the library: the score is in the picture's corner, worded by its tooltip; a season's score is no score of the title's own.
       await expect(badge(tile(phone, "Film number 1"))).toHaveText("8");
       await expect(badge(tile(phone, "Film number 1"))).toHaveAttribute("title", "Your rating: 8/10");
+      // A screen reader says it once, with the title (in the name of the button the picture is in: a card's own name gets it added).
+      await expect(tile(phone, "Film number 1")).toHaveAccessibleName(/Your rating: 8\/10/);
+      await expect(tile(phone, "Film number 2")).not.toHaveAccessibleName(/Your rating/);
+      await expect(phone.getByTestId("continue-play")).toHaveAccessibleName(/Your rating: 6\/10/);
       await expect(badge(tile(phone, "Film number 2"))).toHaveCount(0);
       await expect(badge(tile(phone, "Film number 3"))).toHaveCount(0);
       // The cards of Continue watching and of a list; the row of what was rated has its scores under the titles already.
@@ -2779,6 +2783,31 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await phone.getByTestId("page-back").click();
       await expect(phone.getByTestId("account-screen")).toBeVisible();
       await expect(phone.getByTestId("menu-ratings")).toHaveCount(0);
+    });
+
+    test("My ratings works on a phone with no TV: the keyboard is in the sheet, a title opens from it (with no Play), its rating can be taken back, and with none the sheet says what to do", async ({ browser, baseURL }) => {
+      const url = baseURL!;
+      const phone = await openDevice(browser, PHONE, guestStorage({ ratings: [given(url, 0, 8, 2)] }), withLibrary(wholeLibrary(url), () => []));
+      await phone.goto("/");
+      await expect(phone.getByTestId("code-input")).toBeVisible(); // (no TV: the first screen)
+      await phone.getByTestId("account-button").click();
+      const row = phone.getByTestId("menu-ratings");
+      await row.click();
+      const sheet = phone.getByTestId("ratings-sheet");
+      await expect(sheet).toBeFocused(); // (not left on the row behind it, where the next Tab would carry on under the sheet)
+
+      await sheet.getByTestId("rating-entry").click();
+      const page = phone.getByTestId("title-sheet");
+      await expect(page).toContainText("Film number 1");
+      await expect(page.getByTestId("title-play")).toHaveCount(0); // (nothing to play it on)
+      await expect(page.getByTestId("rate-title-value")).toHaveText("8/10");
+      await open(phone);
+      await page.getByTestId("rate-title-remove").click();
+      await page.getByTestId("sheet-close").click();
+      await expect(sheet.getByTestId("ratings-empty")).toBeVisible();
+      await expect(sheet.getByTestId("ratings-sort-new")).toHaveCount(0);
+      await sheet.getByTestId("sheet-close").click();
+      await expect(row).toBeFocused(); // (and back on the row it was opened from)
     });
   });
 });

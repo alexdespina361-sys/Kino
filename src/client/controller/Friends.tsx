@@ -3,7 +3,8 @@ import { FRIEND_NOTE_MAX, friendLink, reachable, type Friend, type FriendLists, 
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
-import { factLines, scoreWord, sortRatings, storedFacts } from "../account/ratingText";
+import { useScores } from "../account/ratings";
+import { factLines, scoreOf, scoreWord, sortRatings, storedFacts } from "../account/ratingText";
 import { useSettings } from "../account/settings";
 import { ago, formatDay } from "../account/time";
 import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, recommendationOf, type PartyInvitation, type Recommendation } from "../friends/entries";
@@ -607,10 +608,11 @@ export function InviteFriendsButton({ code, endsAt }: { code: string; endsAt: nu
 export function FriendsHome({ onOpenTitle }: { onOpenTitle: OpenTitle }) {
   const t = useT();
   const friends = useFriends();
+  const scores = useScores();
   const now = Date.now();
   if (!friends.on || !friends.state) return null;
   const { state } = friends;
-  const parties = state.inbox.filter((item): item is PartyInvitation => item.kind === "party" && item.endsAt > now);
+  const parties =state.inbox.filter((item): item is PartyInvitation => item.kind === "party" && item.endsAt > now);
   const recommended = state.inbox.filter((item): item is Recommendation => item.kind === "recommend");
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   const dismiss = (id: string) => void friends.dismiss(id).catch(() => undefined);
@@ -638,6 +640,7 @@ export function FriendsHome({ onOpenTitle }: { onOpenTitle: OpenTitle }) {
                 title={entry.title}
                 image={entry.backdrop ?? entry.image}
                 note={entry.note}
+                score={scoreOf(scores, entry.url)}
                 playLabel={`${t("rows.open")} ${entry.title}`}
                 removeLabel={`${t("friends.dismiss")}: ${entry.title}`}
                 onPlay={() => open(entry)}

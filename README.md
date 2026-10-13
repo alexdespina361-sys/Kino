@@ -71,10 +71,11 @@ pnpm build && pnpm start     # http://localhost:8787
   work from the person: *when it was rated*, *how much was watched* (**from 95% on it counts as all of it**, since the credits are often skipped; a
   show or a season is counted in episodes, "2 of 3 episodes watched") and *when it was finished* (or last watched). Watching it again later adds to that;
   rating it again changes the day it was rated only when the score changes. **My ratings** is a row on the phone's home screen with a page of its own
-  (*See all*: newest first or highest first, with the notes and those facts, and the mean; it is also a row of the phone's account page) and a place on
+  (*See all*: newest first or highest first, with the notes and those facts, and the mean; it is also a row of the phone's account page, which works with no TV paired too: a title opens from it without Play, and with
+  nothing rated the page says what to do) and a place on
   the TV's **Profile** page. **A title that was rated shows its score** (a star and the number) in the corner of its picture wherever it is shown, in the rows, a
-  grid, a search, Continue watching and the lists, on the phone and the TV, so what was rated is seen while scrolling the library (a season's score is the
-  season's: the show shows none of its own). Ratings are saved to the
+  grid, a search, Continue watching, the lists and what friends recommended, on the phone and the TV, so what was rated is seen while scrolling the library
+  (a screen reader says it with the title; a season's score is the season's: the show shows none of its own). Ratings are saved to the
   profile and synced like the lists (up to 500; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
   and TV) switches the whole thing off, every sign of it, and keeps what was rated.
 - **Friends** are optional and **off until a profile turns them on** in its settings (phone and TV; they belong to an account, so a guest is told to sign in).
@@ -364,7 +365,7 @@ well as in the page's own status, which can be far above a library that is scrol
 - **Menu, pages, categories, search (TV).** Pressing Left from the first title of any row (or the first tile of a grid) opens a menu down the
   left, nine lines: **Search**, **Home**, **Movies**, **Series**, **Categories**, **My Lists**, and, set apart, **Watch party**, **Connect a phone** and
   **Profile**. What belongs to whoever is watching is behind that last line, not in lines of its own: **Profile** is a page of one row of places, each
-  saying how it stands: **My ratings** ("12 ratings · average 7.4"), **Friends** (a profile that is signed in and has friends on: "3 friends", "2 new"),
+  saying how it stands: **My ratings** ("12 ratings · average 7.4"), **Friends** (a profile that is signed in and has friends on: "3 friends", "2 unread"),
   **History**, **Sign in** (for a guest) and **Settings**; Back from any of them returns to it with the remote on the place it left (found again by what it is: Friends coming or going moves the others; if the place the remote is on goes, it stands where that was), the banner above says how the place under the remote stands now, and its line in the menu carries the number of unread things
   from friends. **Categories** is one page of all of them, films first, then shows, each saying which it is and how many titles it has; a category opens as a
   grid, and Back returns to the list. Right or Back returns to the titles (with a

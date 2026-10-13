@@ -45,7 +45,7 @@ test.describe("the profile's page", () => {
     await expect(place(tv, "ratings")).toContainText("2 ratings · average 7.5");
     await expect(place(tv, "history")).toContainText("1 title");
     await expect(place(tv, "signin")).toContainText("Keep your lists and ratings on every screen");
-    await expect(place(tv, "settings")).toContainText("Account, language, subtitles and more");
+    await expect(place(tv, "settings")).toContainText("Account, language, playback and more");
 
     await tv.keyboard.press("ArrowRight");
     await expect(place(tv, "history")).toBeFocused();

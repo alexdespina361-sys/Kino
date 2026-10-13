@@ -17,8 +17,8 @@ import { Still } from "./Sheets";
 interface TitleSheetProps {
   /** The title as the library, a list or a card has it. */
   entry: Entry;
-  /** Start something on the TV: a link, where to pick it up, and the picture and year the title is known by. */
-  onPlay: (url: string, startAt: number | undefined, hint: PlayHint) => void;
+  /** Start something on the TV: a link, where to pick it up, and the picture and year the title is known by. A phone with no TV has none: the page is for the list, the rating and the rest. */
+  onPlay?: (url: string, startAt: number | undefined, hint: PlayHint) => void;
   /** With more than one list: ask which one the title goes in. */
   onPick: (entry: ListEntry) => void;
   onClose: () => void;
@@ -35,7 +35,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
   const entry = resumable(given, progress);
   const series = useSeriesPage(given, progress, watched);
   const hint = hintOf(entry);
-  const play = (url: string, startAt?: number) => onPlay(new URL(url, location.href).href, startAt, hint);
+  const play = onPlay ? (url: string, startAt?: number) => onPlay(new URL(url, location.href).href, startAt, hint) : undefined;
 
   const saved = savedKeys(list);
   const kept = lists.some((info) => saved.has(listKey(entry.url, info.id)));
@@ -58,9 +58,11 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
         </p>
       )}
       <div className="title-actions">
-        <button className="btn btn-red" data-testid="title-play" onClick={() => (at ? play(at.url, at.startAt) : play(entry.resumeUrl ?? entry.url, entry.startAt))}>
-          <PlayIcon /> {playLabel}
-        </button>
+        {play && (
+          <button className="btn btn-red" data-testid="title-play" onClick={() => (at ? play(at.url, at.startAt) : play(entry.resumeUrl ?? entry.url, entry.startAt))}>
+            <PlayIcon /> {playLabel}
+          </button>
+        )}
         <button
           className="btn"
           data-testid="title-list"
@@ -78,7 +80,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
       {series.isShow && (
         <Episodes
           page={series}
-          onPlay={(episode) => play(episode.url, episode.startAt)}
+          {...(play ? { onPlay: (episode: PageEpisode) => play(episode.url, episode.startAt) } : {})}
           seasonRating={
             ratings && series.season !== undefined ? (
               <RatingBox key={series.season} entry={entry} isShow season={series.season} total={series.episodes?.length} title={t("rating.seasonRating", { n: series.season })} testId="rate-season" />
@@ -91,9 +93,10 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
 }
 
 /** A show's seasons (when there is a choice) and the episodes of the one that is shown, each a card the way the episode sheet lists them. */
-function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; onPlay: (episode: PageEpisode) => void; /** The rating box of the season that is shown. */ seasonRating?: ReactNode }) {
+function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; /** None on a phone with no TV: the episodes are then only to read. */ onPlay?: (episode: PageEpisode) => void; /** The rating box of the season that is shown. */ seasonRating?: ReactNode }) {
   const t = useT();
   const { seasons, season, episodes } = page;
+  const Row = onPlay ? "button" : "div";
   return (
     <section className="title-episodes" aria-label={t("player.episodes")} data-testid="title-episodes">
       <h3 className="sheet-section">{t("player.episodes")}</h3>
@@ -120,14 +123,14 @@ function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; onPlay: (e
             const card = episode.card;
             return (
               <li key={`${episode.season}-${episode.episode}`}>
-                <button
+                <Row
                   className="episode rich"
                   data-testid="title-episode"
                   data-season={episode.season}
                   data-episode={episode.episode}
                   data-target={episode.target}
                   data-status={card.state}
-                  onClick={() => onPlay(episode)}
+                  {...(onPlay ? { onClick: () => onPlay(episode) } : {})}
                 >
                   <span className="episode-no">{card.number}</span>
                   <Still src={card.still} name={card.name} />
@@ -147,7 +150,7 @@ function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; onPlay: (e
                       <i style={{ width: `${Math.round(card.fraction * 100)}%` }} />
                     </span>
                   )}
-                </button>
+                </Row>
               </li>
             );
           })}

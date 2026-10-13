@@ -344,6 +344,29 @@ export function Controller() {
     if (tv?.online) socketRef.current?.send({ type: "CMD", command: { type: "REFRESH_ACCOUNT" } });
   };
   const accountButton = <AccountButton onClick={() => setShowAccount(true)} />
+  const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
+  // A title's page, and the lists it can go in: over the remote, and over the account too (My ratings, a friend's lists), which a phone with no TV has as well. It then has no Play.
+  const titleSheets = (
+    <>
+      {title && (
+        <TitleSheet
+          entry={title}
+          {...(tv
+            ? {
+                onPlay: (url: string, startAt: number | undefined, hint: PlayHint) => {
+                  setTitle(null);
+                  playLink(url, startAt, hint);
+                },
+              }
+            : {})}
+          onPick={pickList}
+          onClose={() => setTitle(null)}
+        />
+      )}
+      {listSheet?.kind === "manage" && <ListsSheet onClose={() => setListSheet(null)} />}
+      {listSheet?.kind === "pick" && <ListPickerSheet entry={listSheet.entry} onClose={() => setListSheet(null)} />}
+    </>
+  );
   // On top of whichever screen is showing: the account, a TV asking to be signed in, and what the account has to say.
   const accountLayer = (
     <>
@@ -352,7 +375,7 @@ export function Controller() {
           <LinkApprove code={approveCode} onClose={closeApprove} />
         </Page>
       ) : (
-        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} {...(tv ? { onOpenTitle: setTitle } : {})} />
+        showAccount && <AccountScreen onClose={() => setShowAccount(false)} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} />
       )}
       {friendCode && !showAccount && !approveCode && !account.choosing && (
         <FriendInvite
@@ -435,6 +458,7 @@ export function Controller() {
         />
         {tvsSheet}
         {accountLayer}
+        {titleSheets}
       </>
     );
   }
@@ -453,7 +477,6 @@ export function Controller() {
     if (sheet === "party" || sheet === "tvs") setError(null); // what went wrong in there (a code that was refused) is not for the page behind it
     setSheet(null);
   };
-  const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
   // The box for pasting a link is there when it is turned on, and when the library has nothing to play instead (it would be the only way to start anything).
   const link = (
     <>
@@ -641,19 +664,7 @@ export function Controller() {
         <EpisodesSheet series={media.series} show={seriesKeyOf(media)} watched={watched} onClose={closeSheet} onPlay={playLink} />
       )}
       {ratingsOpen && ratingsOn && <RatingsSheet ratings={ratings} onOpen={setTitle} onClose={() => setRatingsOpen(false)} />}
-      {title && (
-        <TitleSheet
-          entry={title}
-          onPlay={(url, startAt, hint) => {
-            setTitle(null);
-            playLink(url, startAt, hint);
-          }}
-          onPick={pickList}
-          onClose={() => setTitle(null)}
-        />
-      )}
-      {listSheet?.kind === "manage" && <ListsSheet onClose={() => setListSheet(null)} />}
-      {listSheet?.kind === "pick" && <ListPickerSheet entry={listSheet.entry} onClose={() => setListSheet(null)} />}
+      {titleSheets}
 
       {toast && (
         <p className="toast" key={toast.id} data-testid="toast" role="status">

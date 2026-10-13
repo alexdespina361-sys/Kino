@@ -19,6 +19,17 @@ export function RatingsSheet({ ratings, onOpen, onClose }: { ratings: readonly L
   const [order, setOrder] = useState<RatingOrder>("new");
   const sorted = useMemo(() => sortRatings(ratings, order), [ratings, order]);
 
+  // (The first time here, or after the last one was taken back: what to do, not sorting buttons for nothing.)
+  if (ratings.length === 0) {
+    return (
+      <Sheet title={t("rating.mine")} onClose={onClose} testId="ratings-sheet">
+        <p className="muted" data-testid="ratings-empty">
+          {t("rating.empty")}
+        </p>
+      </Sheet>
+    );
+  }
+
   return (
     <Sheet title={t("rating.mine")} onClose={onClose} testId="ratings-sheet">
       <p className="muted small" data-testid="ratings-summary">

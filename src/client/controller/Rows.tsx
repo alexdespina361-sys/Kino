@@ -6,7 +6,7 @@ import { ratingNote, scoreOf, sortRatings } from "../account/ratingText";
 import { useScores } from "../account/ratings";
 import { useT } from "../i18n";
 import { Poster } from "../shared/Poster";
-import { ScoreBadge } from "../shared/ScoreBadge";
+import { ScoreBadge, useScoreWords } from "../shared/ScoreBadge";
 import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
 import { ListButton, RemoveButton, useListToggle, type ListToggle } from "./Round";
@@ -57,9 +57,11 @@ interface CardProps {
 
 export function Card({ title, image, note, progress = 0, score, playLabel, removeLabel, onPlay, onRemove, testId, toggle, onHold }: CardProps) {
   const hold = useHold(() => (onHold ?? toggle?.onHold)?.());
+  const scoreWords = useScoreWords();
   return (
     <div className="lib-tile" data-testid={`${testId}-item`}>
-      <button className="lib-card" onClick={hold.tap(onPlay)} {...hold.props} aria-label={playLabel} data-testid={`${testId}-play`}>
+      {/* (The button's name is its own words, which leave out what is inside it: the score is added to them.) */}
+      <button className="lib-card" onClick={hold.tap(onPlay)} {...hold.props} aria-label={score === undefined ? playLabel : `${playLabel}. ${scoreWords(score)}`} data-testid={`${testId}-play`}>
         <Poster className="lib-art" title={title} image={image}>
           {score !== undefined && <ScoreBadge score={score} />}
           {progress > 0 && (

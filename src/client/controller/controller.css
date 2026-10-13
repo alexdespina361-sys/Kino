@@ -270,6 +270,7 @@ html.sheet-open { overscroll-behavior-y: contain; }
   overscroll-behavior: contain;
   animation: sheet-up 0.24s ease;
 }
+.sheet:focus { outline: none; } /* (the keyboard is put on the sheet when it opens: the sheet itself needs no ring) */
 .sheet-grip { width: 40px; height: 4px; margin: 4px auto 8px; border-radius: 2px; background: rgba(255, 255, 255, 0.2); }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; }
 .sheet-head h2 { font-size: 1.15rem; }

@@ -579,7 +579,10 @@ test.describe("sending things to friends", () => {
     await expect(row).toContainText(`From ${ann.name}`);
     await bob.page.getByTestId("friends-play").click(); // a tap opens the title's page, with the note
     await expect(bob.page.getByTestId("title-sheet")).toContainText("You will like the ending");
+    await bob.page.getByTestId("rate-title-toggle").click(); // (Bob rates it: the score is on its card in the row, as it is on every card)
+    await bob.page.getByTestId("rate-title-score-7").click();
     await bob.page.getByTestId("sheet-close").click();
+    await expect(row.getByTestId("score-badge")).toHaveText("7");
 
     // opening the Friends page is seeing it: the dot goes, the title is in the inbox
     await bob.page.getByTestId("account-button").click();

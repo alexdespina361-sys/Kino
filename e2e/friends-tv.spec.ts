@@ -497,7 +497,7 @@ test.describe("sending things to friends from the TV", () => {
     await expect(bob.page.getByTestId("rail-profile")).toHaveAttribute("data-badged", "true"); // (the friends are the profile's: it carries the number)
     await expect(bob.page.getByTestId("rail-profile")).toContainText("1");
     await openProfilePage(bob.page);
-    await expect(place(bob.page, "friends")).toContainText("1 new"); // (and the page says where it is)
+    await expect(place(bob.page, "friends")).toContainText("1 unread"); // (and the page says where it is)
     await openFriends(bob.page);
     const sent = bob.page.locator(`.tv-row[aria-label="From your friends"]`);
     await expect(sent.locator(".tv-tile")).toHaveCount(1);
