@@ -2574,6 +2574,31 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("title-episode").nth(2)).toHaveAttribute("data-target", "true");
   });
 
+  test("at twelve lists there is no New list, and the sheets say why; a list deleted gives the button back", async ({ browser, baseURL }) => {
+    const now = Date.now();
+    const listNames = Array.from({ length: 11 }, (_, i) => ({ key: `l${String(i).padStart(3, "0")}`, at: now - 10_000 + i, name: `List ${i + 1}` }));
+    const { phone } = await connect(browser, baseURL!, { seed: guestStorage({ listNames }) });
+    const words = "You have reached the limit of 12 lists. Delete one to make a new one.";
+
+    // The round button on a title asks which list; there is no way to make a thirteenth there.
+    await phone.getByTestId("library-list-toggle").first().click();
+    await expect(phone.getByTestId("list-picker")).toBeVisible();
+    await expect(phone.getByTestId("pick-new")).toHaveCount(0);
+    await expect(phone.getByTestId("lists-full")).toHaveText(words);
+    await phone.getByTestId("pick-favourites").click(); // (a saved title is what gives the row its button for the lists)
+    await phone.getByTestId("sheet-close").click();
+
+    await phone.getByTestId("lists-manage").click();
+    await expect(phone.getByTestId("list-new")).toHaveCount(0);
+    await expect(phone.getByTestId("lists-full")).toHaveText(words);
+
+    await phone.getByTestId("manage-l010").click();
+    await phone.getByTestId("list-delete").click();
+    await phone.getByTestId("list-delete-confirm").click();
+    await expect(phone.getByTestId("list-new")).toBeVisible();
+    await expect(phone.getByTestId("lists-full")).toHaveCount(0);
+  });
+
   test("a title's page keeps the title in a list, and its Close puts it away", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!);
     await tile(phone, "Film number 1").click();

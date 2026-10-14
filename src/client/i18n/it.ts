@@ -624,6 +624,7 @@ export const it: Dictionary = {
   "lists.delete": "Elimina lista",
   "lists.deleteAsk": "Eliminare la lista “{name}”? I titoli al suo interno non sono più salvati lì.",
   "lists.manage": "Gestisci le liste",
+  "lists.full": "Hai raggiunto il limite di {count} liste. Elimina una per crearne una nuova.",
   "lists.place": "Posto tra le tue liste",
   "lists.moveLeft": "Sposta a sinistra",
   "lists.moveRight": "Sposta a destra",

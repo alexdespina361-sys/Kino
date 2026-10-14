@@ -631,6 +631,7 @@ export const ro: Dictionary = {
   "lists.delete": "Șterge lista",
   "lists.deleteAsk": "Ștergi lista „{name}”? Titlurile din ea nu mai sunt salvate acolo.",
   "lists.manage": "Gestionează listele",
+  "lists.full": "Ai ajuns la limita de {count} liste. Șterge una ca să faci alta nouă.",
   "lists.place": "Locul printre listele tale",
   "lists.moveLeft": "Mută la stânga",
   "lists.moveRight": "Mută la dreapta",

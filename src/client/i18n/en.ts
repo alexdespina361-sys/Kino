@@ -624,6 +624,7 @@ export const en = {
   "lists.delete": "Delete list",
   "lists.deleteAsk": "Delete “{name}”? The titles in it are no longer saved there.",
   "lists.manage": "Manage lists",
+  "lists.full": "You have reached the limit of {count} lists. Delete one to make a new one.",
   "lists.place": "Place among your lists",
   "lists.moveLeft": "Move left",
   "lists.moveRight": "Move right",
