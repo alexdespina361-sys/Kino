@@ -5,6 +5,7 @@ import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
 import { rowTitle, useT } from "../i18n";
 import { Poster } from "../shared/Poster";
+import { getCachedLibrary, setCachedLibrary } from "../shared/libraryCache";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { entryOfItem, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
@@ -44,12 +45,12 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
   const t = useT();
   const toggleFor = useListToggle(onPick);
   const scores = useScores();
-  const [library, setLibrary] = useState<LibraryData | null>(remembered);
-  const [status, setStatus] = useState<Status>(remembered ? "ready" : "loading");
+  const [library, setLibrary] = useState<LibraryData | null>(() => remembered ?? getCachedLibrary());
+  const [status, setStatus] = useState<Status>(() => (remembered ?? getCachedLibrary()) ? "ready" : "loading");
   const [query, setQuery] = useState(kept.query);
   const [searchResults, setSearchResults] = useState<LibraryItem[] | null>(() => {
     const q = wanted(kept.query);
-    return !q ? null : kept.found?.query === q ? kept.found.items : onThePage(remembered, q);
+    return !q ? null : kept.found?.query === q ? kept.found.items : onThePage(remembered ?? getCachedLibrary(), q);
   });
   const [searching, setSearching] = useState(() => Boolean(wanted(kept.query)) && kept.found?.query !== wanted(kept.query));
   const [filter, setFilter] = useState<Filter>(kept.filter);
@@ -97,6 +98,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
         if (!live) return;
         if (parsed.success) {
           remembered = parsed.data;
+          setCachedLibrary(parsed.data);
           if (attempt > 0) kept.found = null; // what a search found is asked for again against the new list
           setLibrary(parsed.data);
           setStatus("ready");

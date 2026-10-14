@@ -510,6 +510,7 @@ export function createFilmpireAdapter(): SiteAdapter {
             stream: {
               url: altProxied,
               type: "hls",
+              directUrl: altFinalUrl,
             },
           });
         } catch {
@@ -525,6 +526,7 @@ export function createFilmpireAdapter(): SiteAdapter {
           stream: {
             url: proxiedUrl,
             type: "hls",
+            directUrl: finalStreamUrl,
           },
           subtitles: subtitles.length ? subtitles : undefined,
           series: seriesInfo,

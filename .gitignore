@@ -11,3 +11,4 @@ test-results/
 # accounts (password hashes!) when kept in a file next to the server
 data/
 .claude/
+.ui-polish/
