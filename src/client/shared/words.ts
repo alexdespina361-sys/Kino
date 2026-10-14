@@ -1,4 +1,4 @@
-import { MAX_FOLLOWERS, localTrackLabel, type CaptionSetting, type CaptionStyle, type ChangeNotice, type ResolveStatus, type StatusWords } from "../../shared";
+import { MAX_FOLLOWERS, localTrackLabel, type CaptionSetting, type CaptionStyle, type ChangeNotice, type PlayerState, type ResolveStatus, type StatusWords } from "../../shared";
 import { getLanguage, hasKey, t, type Key } from "../i18n";
 
 /**
@@ -30,6 +30,15 @@ export function noticeText(notice: ChangeNotice): string {
     case "quality":
       return t("notice.quality", { label: notice.label });
   }
+}
+
+/** What the quality button says: the quality that was picked, or "Auto" with the one the player has chosen for itself after it once that is known ("Auto · 720p"). */
+export function qualityName(quality: PlayerState["quality"]): string {
+  if (!quality) return t("player.auto");
+  const label = (id: number | undefined) => quality.levels.find((level) => level.id === id)?.label;
+  if (quality.current !== -1) return label(quality.current) ?? "HD";
+  const active = label(quality.active);
+  return active ? `${t("player.auto")} · ${active}` : t("player.auto");
 }
 
 /** The words of "Watched" and "12 min left" on an episode list. */

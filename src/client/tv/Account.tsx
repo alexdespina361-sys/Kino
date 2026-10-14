@@ -378,6 +378,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const { me, profile } = account;
   const autoplay = settings.autoplayNext ?? true;
   const tapToPause = settings.tapToPause ?? false;
+  const adaptiveQuality = settings.adaptiveQuality ?? true;
   const ratingsOn = settings.ratings ?? true;
   const friendsOn = friendChoices(settings).friends;
   return (
@@ -462,6 +463,17 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
           </button>
           <button className="tv-switch-row" role="switch" aria-checked={tapToPause} onClick={() => set("tapToPause", !tapToPause)} data-nav data-testid="tv-tap-to-pause">
             <span>{t("settings.tapToPause")}</span>
+            <span className="tv-switch" aria-hidden="true" />
+          </button>
+          <button
+            className="tv-switch-row"
+            role="switch"
+            aria-checked={adaptiveQuality}
+            onClick={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)}
+            data-nav
+            data-testid="tv-adaptive-quality"
+          >
+            <span>{t("settings.adaptiveQuality")}</span>
             <span className="tv-switch" aria-hidden="true" />
           </button>
 

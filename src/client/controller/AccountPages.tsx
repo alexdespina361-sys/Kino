@@ -273,6 +273,8 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
         <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
         <Switch label={t("settings.tapToPause")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
         <p className="muted small">{t("settings.tapToPauseHelp")}</p>
+        <Switch label={t("settings.adaptiveQuality")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
+        <p className="muted small">{t("settings.adaptiveQualityHelp")}</p>
       </Group>
       <Group title={t("settings.pasteLink")} help={t("settings.linkBoxHelp")}>
         <Switch label={t("settings.pasteLinkSwitch")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />

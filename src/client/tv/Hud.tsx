@@ -26,7 +26,7 @@ import {
   VolumeIcon,
 } from "../shared/icons";
 import { Poster } from "../shared/Poster";
-import { friendlyError } from "../shared/words";
+import { friendlyError, qualityName } from "../shared/words";
 import type { PlayOptions } from "./Browse";
 import { useBack, useDpad } from "./dpad";
 import { PlayerError } from "./engine";
@@ -210,6 +210,16 @@ function TracksButton({ p, player }: { p: HudProps; player: PlayerState }) {
   );
 }
 
+/** The quality, when the video comes in more than one: a guest picks its own too (it is its own picture that is downloaded, whatever the host's). */
+function QualityButton({ p, player, label }: { p: HudProps; player: PlayerState; label: string }) {
+  if (!player.quality || player.quality.levels.length <= 1) return null;
+  return (
+    <button className="tv-btn" data-testid="tv-quality-btn" onClick={() => p.onOpenMenu("quality")} title={t("player.quality")}>
+      {label}
+    </button>
+  );
+}
+
 function PartyButton({ p, partyLabel }: { p: HudProps; partyLabel: string }) {
   return (
     <button
@@ -257,10 +267,11 @@ interface ButtonsProps {
   player: PlayerState;
   playing: boolean;
   partyLabel: string;
+  qualityLabel: string;
 }
 
 /** The buttons of a screen with a picture of its own: playback, what is on it, the party, sound, full screen and the way out of the film. */
-function PlayerButtons({ p, player, playing, partyLabel, qualityLabel }: ButtonsProps & { qualityLabel: string }) {
+function PlayerButtons({ p, player, playing, partyLabel, qualityLabel }: ButtonsProps) {
   return (
     <>
       <div className="hud-group">
@@ -346,11 +357,7 @@ function PlayerButtons({ p, player, playing, partyLabel, qualityLabel }: Buttons
         <button className="tv-btn" data-testid="tv-speed-btn" onClick={() => p.onOpenMenu("speed")} title={t("player.speed")}>
           {player.playbackRate ?? 1}×
         </button>
-        {player.quality && player.quality.levels.length > 1 && (
-          <button className="tv-btn" data-testid="tv-quality-btn" onClick={() => p.onOpenMenu("quality")} title={t("player.quality")}>
-            {qualityLabel}
-          </button>
-        )}
+        <QualityButton p={p} player={player} label={qualityLabel} />
         <PartyButton p={p} partyLabel={partyLabel} />
         <MuteButton p={p} />
         <FullscreenButton p={p} />
@@ -372,7 +379,7 @@ function PlayerButtons({ p, player, playing, partyLabel, qualityLabel }: Buttons
  * The buttons of a screen that watches along. Its picture is the host's, so the playback is not its to move, unless the host made it an admin:
  * then the play button, the skips, the next episode and stop lead the row, and each asks the host's screen, which does it for everyone.
  */
-function FollowButtons({ p, follow, player, playing, partyLabel }: ButtonsProps & { follow: FollowProps }) {
+function FollowButtons({ p, follow, player, playing, partyLabel, qualityLabel }: ButtonsProps & { follow: FollowProps }) {
   return (
     <>
       {follow.admin && (
@@ -429,6 +436,7 @@ function FollowButtons({ p, follow, player, playing, partyLabel }: ButtonsProps 
 
       <div className="hud-group">
         <TracksButton p={p} player={player} />
+        <QualityButton p={p} player={player} label={qualityLabel} />
         <PartyButton p={p} partyLabel={partyLabel} />
         <MuteButton p={p} />
         <FullscreenButton p={p} />
@@ -456,10 +464,7 @@ export function Hud(p: HudProps) {
   const steers = !follow || follow.admin;
   /** The big button in the middle: to play when paused, and for a finger to pause with while the picture plays (the Up Next card, or the wait for the picture, take its place). */
   const centre = steers && !p.upNext && !busy && (paused || (p.touch && playing));
-  const qualityLabel =
-    player.quality && player.quality.current !== -1
-      ? (player.quality.levels.find((level) => level.id === player.quality?.current)?.label ?? "HD")
-      : t("player.auto");
+  const qualityLabel = qualityName(player.quality);
   const endsAt = formatEndsAt(player.currentTime, duration, player.playbackRate ?? 1, new Date());
   const partyLabel = p.partySize > 1 ? t("party.size", { count: p.partySize }) : t("party.rail");
   /** What a screen that watches along is told about the held film: who held it when that is known, else only that it is held (the host's own pause card says nothing: it knows). */
@@ -628,7 +633,7 @@ export function Hud(p: HudProps) {
 
           <div className="hud-controls" ref={p.controlsRef}>
             {follow ? (
-              <FollowButtons p={p} follow={follow} player={player} playing={playing} partyLabel={partyLabel} />
+              <FollowButtons p={p} follow={follow} player={player} playing={playing} partyLabel={partyLabel} qualityLabel={qualityLabel} />
             ) : (
               <PlayerButtons p={p} player={player} playing={playing} partyLabel={partyLabel} qualityLabel={qualityLabel} />
             )}

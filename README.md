@@ -223,6 +223,15 @@ pnpm build && pnpm start     # http://localhost:8787
   party and Audio & subtitles, the episode names under Previous / Next, the labels of Previous / Next, the label of Episodes (each label becomes its
   icon, still named for screen readers and in its tooltip), then the size of the buttons. Only a phone held upright is too narrow for that, and its
   controls wrap on two lines
+- **Quality follows the connection** (`src/client/tv/engine.ts`; the profile's switch **Match the picture quality to the connection**, in Settings on the
+  phone and on the TV, on unless turned off). A film starts with its first piece in the lowest quality, which arrives at once whatever the link (a piece
+  is as long as the film's pieces are, 2 to 10 seconds), and hls.js then asks for each next piece in the best quality that the link carries, as it
+  measures it: lower when the link cannot keep up (a weak or unsteady one, a phone on mobile data), higher again when it can. A change applies to the
+  pieces still to come, after what is downloaded already, with no stop. The quality button says what the player has chosen ("Auto · 720p") and lists
+  the film's qualities; one picked there stays, and applies from the next piece (what was downloaded beyond it is replaced, or a pick could take
+  minutes to show). **A guest of a party has the button too:** its picture is its own download, so it can take a lower quality without anyone else's
+  changing. Off, every film is in the highest quality there is, as before (a change of the switch applies from the next film). What it does not do:
+  look at the machine, so a screen that cannot decode the quality its link carries is not stepped down
 - Subtitles and audio like a streaming app: the language you chose is remembered. Tracks the file labels only with a code (`eng`) are
   named by their language. Subtitles are drawn by the page, so size, font, colour, opacity, background, edge, height and word spacing
   all work on any TV browser; change them from the TV's menu or the phone, with a live preview. A browser only lets a page go full screen
@@ -363,8 +372,11 @@ guest's: every screen times the answers to its keepalive PINGs and sends the sho
 on the `TV_SYNC` as `lag`), so each guest aims at where the host is now, not where it was; guests used to sit behind it by about that
 much. A guest does not take the last report at its word (a report held up on the way makes the host look behind, by a different amount each
 time on a mobile network): it reads the host's place from the reports of the last twelve seconds, going by the least delayed of them, and
-a report that is well behind the rest counts only when a second one, a little later, says the same (the host went back in the film).
-From that place a guest nudges its speed by a few percent when it is more than 0.15 s off (and goes on until it is within 0.05 s, instead of
+a report that is well behind the rest counts only when a second one, a little later, says the same (the host went back in the film). The
+first report of a host that was told to play again is used for the place to start from and left out of that reading: the host's picture takes a
+moment to start moving, so that report is ahead of the host's clock by that moment, and kept for twelve seconds it would have every guest play
+ahead of the host and then slow down when it was forgotten.
+From that place a guest nudges its speed by 6% when it is more than a quarter of a second off (and goes on until it is within 0.08 s, instead of
 starting and stopping with every report), jumps ahead when it is a second or more behind, goes back in time only when the reports agree on it
 (or when it is 8 s ahead, which no late report explains), shows the host's frame when paused (within 0.1 s; a host that only waits for data
 is waited for where the guest is, unless that is 2 s away), and jumps to the host's place at once when the host starts again, if it has that
@@ -372,7 +384,7 @@ place (`src/client/tv/sync.ts`). A guest that is still waiting for data does not
 and it jumps only to a place it has already downloaded (after 15 s behind, anywhere), so a slow screen is not sent back and forth. The
 waiting wheel does not show for a wait shorter than 0.4 s, so the jumps of a guest do not flash it. The screens of a party also download
 only about 40 seconds ahead of their picture (see *What a watch party costs the server*). **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
-from the guest's *Audio & subtitles* button; volume is the device's own.
+from the guest's *Audio & subtitles* button; the picture's quality, from the guest's quality button (see *Quality follows the connection*); volume is the device's own.
 
 **Admins:** next to each guest's name the host (on the TV, or on its phone) has a **Make admin** button, which turns into **Remove admin**. An
 admin guest gets a bar of its own under the guest's bar (jump back 10 seconds, play / pause, jump forward 10, the next episode where there is
@@ -528,7 +540,8 @@ The server is one Node process that serves the page, the API and the sockets fro
    party download only about 40 seconds ahead of their picture (a lone screen takes minutes in), which is what that memory holds. Open
    `/api/health`: `segments.hits` are the pieces the server gave from memory and `segments.misses` the ones it had to fetch; a party that
    watches together shows about as many hits as misses with two screens, and about twice as many with three. The same two numbers are on the
-   `?debug` panel, next to how a guest's picture keeps with the host's.
+   `?debug` panel, next to how a guest's picture keeps with the host's. A screen on a weak link brings its own quality down (*Quality follows
+   the connection*), so it asks the server for fewer bytes, not more.
 
 Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),
 an account with no password can be opened by anyone who types its name (give it one if that matters), and the sign-in rate limits are

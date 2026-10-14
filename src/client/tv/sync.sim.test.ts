@@ -81,15 +81,22 @@ interface Outcome {
   follow: Record<string, number>;
 }
 
-function watch(link: Link, events: Event[], answer: Answer, seed = 1, seconds = 600): Outcome {
+/** How long a picture takes to start moving once it is told to play (seconds): the host's after a pause, and the guest's after it is told to play or to jump. Screens differ in it. */
+interface Start {
+  host: number;
+  guest: number;
+}
+
+function watch(link: Link, events: Event[], answer: Answer, seed = 1, seconds = 600, start: Start = { host: 0, guest: 0 }): Outcome {
   const random = rng(seed);
   const exponential = (mean: number) => -mean * Math.log(1 - random());
   const leg = (rtt: number) => rtt / 2 + exponential(link.jitter) + (random() < link.burstP ? 0.5 + random() * link.burstS : 0);
   const STEP = 0.01;
   const lag = (link.hostRtt + link.guestRtt) / 2;
 
-  const host = { time: 100, stalledUntil: -1, pausedUntil: -1 };
-  const guest = { time: 100, rate: 1, playing: true, seekingUntil: -1 };
+  const host = { time: 100, stalledUntil: -1, pausedUntil: -1, movesAt: 0 };
+  const guest = { time: 100, rate: 1, playing: true, seekingUntil: -1, movesAt: 0 };
+  let wasPaused = false;
   let lastSent = "";
   let hubAt = 0;
   let guestAt = 0;
@@ -126,14 +133,16 @@ function watch(link: Link, events: Event[], answer: Answer, seed = 1, seconds = 
     }
     const waiting = now < host.stalledUntil;
     const paused = now < host.pausedUntil;
+    if (wasPaused && !paused) host.movesAt = now + start.host; // (told to play: the report goes out at once, the picture moves a moment later)
+    wasPaused = paused;
     const before = lastSent.split("|");
-    if (!waiting && !paused) host.time += STEP;
+    if (!waiting && !paused && now >= host.movesAt) host.time += STEP;
     const changed = before[0] !== String(waiting) || before[1] !== String(paused);
     if (changed || event) emit(now, true, waiting, paused);
     else if (Math.abs(now - Math.round(now)) < STEP / 2) emit(now, false, waiting, paused);
 
     const seeking = now < guest.seekingUntil;
-    if (guest.playing && !seeking) guest.time += STEP * guest.rate;
+    if (guest.playing && !seeking && now >= guest.movesAt) guest.time += STEP * guest.rate;
 
     while (onTheWay.length && onTheWay[0]!.at <= now) {
       const { report } = onTheWay.shift()!;
@@ -152,6 +161,7 @@ function watch(link: Link, events: Event[], answer: Answer, seed = 1, seconds = 
         count.speedChanges += 1;
         guest.rate = step.rate;
       }
+      if (step.play && !guest.playing && start.guest > 0) guest.movesAt = now + start.guest * (0.7 + 0.6 * random());
       guest.playing = step.play;
       catching = report.playing && (step.seek !== undefined || Math.abs(step.rate - report.rate) > 0.001);
     }
@@ -192,14 +202,29 @@ const STALLS = [...every(40, (at) => ({ at, stall: 0.3 })), ...every(90, (at) =>
 /** Somebody at the host's end steers: back 30 s, a pause of ten, forward a minute, a pause of three, forward 4 s, back 5 s. */
 const STEERING: Event[] = [{ at: 100, jump: -30 }, { at: 200, pause: 10 }, { at: 300, jump: 60 }, { at: 400, pause: 3 }, { at: 450, jump: 4 }, { at: 500, jump: -5 }];
 
+/** Somebody at the host's end pauses now and then, for a few seconds at a time: eleven pauses in ten minutes. */
+const PAUSES: Event[] = [
+  [10, 10],
+  [30, 3],
+  [70, 20],
+  [130, 5],
+  [170, 2],
+  [230, 8],
+  [290, 4],
+  [350, 15],
+  [410, 3],
+  [470, 6],
+  [530, 12],
+].map(([at, pause]) => ({ at: at!, pause: pause! }));
+
 const SEEDS = [1, 2, 3];
 
 describe("a guest following a host over a link that is not perfect", () => {
   it("(reading only the last report, a guest on a poor link jumped and changed speed all the time: this is what the sync is measured against)", () => {
     const old = watch(LINKS.jittery, [], lastReportOnly());
     expect(old.jumps).toBeGreaterThanOrEqual(5);
-    expect(old.speedChanges).toBeGreaterThanOrEqual(50);
-    expect(old.catchingShare).toBeGreaterThan(0.1);
+    expect(old.speedChanges).toBeGreaterThanOrEqual(40);
+    expect(old.catchingShare).toBeGreaterThan(0.05);
     const worse = watch(LINKS.bad, [], lastReportOnly());
     expect(worse.jumps).toBeGreaterThanOrEqual(20);
     expect(worse.catchingShare).toBeGreaterThan(0.4);
@@ -257,6 +282,24 @@ describe("a guest following a host over a link that is not perfect", () => {
     it("is stopped for little more than the host is (the time that the host's go-ahead takes to arrive)", () => {
       expect(watch(LINKS.ordinary, STALLS, production()).frozenShare).toBeLessThan(0.01);
       expect(watch(LINKS.jittery, STALLS, production()).frozenShare).toBeLessThan(0.015);
+    });
+  });
+
+  describe("when the screens take a moment to start moving after they are told to play", () => {
+    // The host's report goes out the moment it is told to play, but its picture moves a little later, and how much later depends on the screen (a TV is slower than a phone).
+    // The report said where the host starts from, which is not where its clock is: read as if it were, every guest was ahead of the host by that moment, and slowed down for it.
+    const STARTS: Array<[string, Start]> = [
+      ["a slow host and a quick guest", { host: 0.3, guest: 0.1 }],
+      ["two screens that take the same", { host: 0.12, guest: 0.12 }],
+    ];
+
+    it("does not make a guest speed up or slow down after every pause of the host's (the way it was, it did after most of them)", () => {
+      for (const [name, start] of STARTS) {
+        for (const seed of SEEDS) {
+          expect(watch(LINKS.ordinary, PAUSES, production(), seed, 600, start).speedChanges, `${name}, ordinary link, seed ${seed}`).toBeLessThanOrEqual(2);
+          expect(watch(LINKS.jittery, PAUSES, production(), seed, 600, start).speedChanges, `${name}, mobile link, seed ${seed}`).toBeLessThanOrEqual(12);
+        }
+      }
     });
   });
 

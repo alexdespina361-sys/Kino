@@ -93,7 +93,7 @@ describe("syncStep", () => {
     });
 
     it("does not go back in time when it is ahead: it plays on, a little slower, until the host is where it is", () => {
-      expect(syncStep(leader(), me({ playing: false, time: 100 + RESUME_SEEK_S + 0.1 }), LONG_AGO)).toEqual({ play: true, rate: 1 - NUDGE });
+      expect(syncStep(leader(), me({ playing: false, time: 100 + NUDGE_FROM_S + 0.1 }), LONG_AGO)).toEqual({ play: true, rate: 1 - NUDGE });
       expect(syncStep(leader(), me({ playing: false, time: 100.8 }), LONG_AGO)).toEqual({ play: true, rate: 1 - NUDGE });
     });
 
@@ -300,6 +300,37 @@ describe("HostClock", () => {
     expect(clock.settled).toBe(false);
     expect(clock.read({ playing: true, time: 50, rate: 1, lag: 0.05 }, 3)).toBeCloseTo(50.05); // (the old reports are of no use for a host that was somewhere else)
     expect(clock.read({ playing: true, time: 60, rate: 1.5, lag: 0 }, 4)).toBeCloseTo(60);
+  });
+
+  describe("a host that was told to play again", () => {
+    // The host presses play at 3.0 on the guest's clock; its picture starts moving at 3.3. Its report goes out at once, with the place it was stopped at.
+    const stopped = { playing: false, time: 50, rate: 1, lag: 0.05 } as const;
+    const first = { playing: true, time: 50, rate: 1, lag: 0.05 } as const;
+    const later = (at: number): HostReport => ({ playing: true, time: 50 + (at - 0.05 - 3.3), rate: 1, lag: 0.05 });
+
+    it("is read at the place it starts from by its first report, but that report is left out of the clock: the picture has not moved yet", () => {
+      const clock = new HostClock();
+      clock.read(stopped, 2);
+      expect(clock.read(first, 3)).toBeCloseTo(50.05);
+      expect(clock.read(later(4), 4)).toBeCloseTo(50.65 + 0.05);
+      // Kept in the clock, the first report would be the furthest on for as long as it was kept, and the host would be read to be a third of a second ahead of where it is.
+      expect(clock.read(later(5), 5)).toBeCloseTo(51.7);
+      expect(clock.read(later(9), 9)).toBeCloseTo(55.7);
+    });
+
+    it("counts its first report like any other when it only waited for data: its picture goes on at once", () => {
+      const clock = new HostClock();
+      clock.read({ ...stopped, waiting: true }, 2);
+      expect(clock.read({ ...first, time: 50 }, 3)).toBeCloseTo(50.05);
+      // (This one was held up by 0.3 s, which is not enough to be in doubt: the first report is the least late, and is read from.)
+      expect(clock.read({ playing: true, time: 50.75, rate: 1, lag: 0.05 }, 4)).toBeCloseTo(51.05);
+    });
+
+    it("takes the first report a guest ever gets as any other: a host that is already playing has a clock", () => {
+      const clock = new HostClock();
+      expect(clock.read({ playing: true, time: 80, rate: 1, lag: 0.05 }, 1)).toBeCloseTo(80.05);
+      expect(clock.read({ playing: true, time: 80.75, rate: 1, lag: 0.05 }, 2)).toBeCloseTo(81.05); // (read from the first, which was less late)
+    });
   });
 
   it("is settled only when reports from different moments agree", () => {

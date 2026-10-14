@@ -42,12 +42,13 @@ export function leaderNow(report: { playing: boolean; time: number; rate: number
 export const HARD_SEEK_S = 1;
 /**
  * Between this and a jump, catch up by playing a little faster or slower. What is left of a report's age once `leaderNow` has added it is
- * the guess being a little off, so a nudge starts a little beyond that, and then goes on until the pictures are close (`NUDGE_UNTIL_S`),
- * instead of starting and stopping with every report.
+ * the guess being a little off, and a picture that has just started needs a moment to move, so a nudge starts well beyond that (a quarter
+ * of a second apart is not something two screens in two rooms show), and then goes on until the pictures are close (`NUDGE_UNTIL_S`),
+ * instead of starting and stopping with every report. The speed is changed as little as will do: a change of speed is what a viewer notices.
  */
-export const NUDGE_FROM_S = 0.15;
-export const NUDGE_UNTIL_S = 0.05;
-export const NUDGE = 0.08;
+export const NUDGE_FROM_S = 0.25;
+export const NUDGE_UNTIL_S = 0.08;
+export const NUDGE = 0.06;
 /** A paused picture only needs to be near, since nothing moves (but near enough to show the same frame). */
 export const PAUSED_TOLERANCE_S = 0.1;
 /**
@@ -137,6 +138,8 @@ export class HostClock {
   private samples: Array<{ anchor: number; at: number }> = [];
   private doubt: { anchor: number; at: number } | null = null;
   private rate = 1;
+  /** The last report was of a host that holds still: the next one that says it plays is the moment it was told to, not yet a place on its clock. */
+  private starting = false;
 
   /** What was read is of no use any more (another film, another speed). */
   reset(): void {
@@ -155,6 +158,7 @@ export class HostClock {
   read(report: HostReport, now: number): number {
     if (!report.playing) {
       this.reset(); // a host that holds still has a place, not a clock to read
+      this.starting = !report.waiting; // (one that only waits for data starts again at once, with nothing to wait for first)
       return report.time;
     }
     if (report.rate !== this.rate) {
@@ -164,6 +168,14 @@ export class HostClock {
     // The anchor of a report is where the host would have been when this page's clock read zero, had it played at that speed all along:
     // reports of a host that plays have the same anchor, whatever time they came at, except for what held each of them up.
     const anchor = report.time + (report.lag ?? 0) * report.rate - report.rate * now;
+    if (this.starting) {
+      // The host was told to play and says so at once, but its picture takes a moment to start moving (more on some screens than on others): this
+      // report is ahead of the host's clock by that moment, and the furthest report is the one that is read from, for as long as it is kept.
+      // Read from, it would have every guest play ahead of the host by that much, and then slow down when it was forgotten. It is used for what
+      // it says (the place to start from) and left out of the clock, which the reports after it make.
+      this.starting = false;
+      return anchor + report.rate * now;
+    }
     this.samples = this.samples.filter((sample) => now - sample.at < CLOCK_WINDOW_S);
     // (How far a late report is behind the rest has to be more than how much they differ among themselves: on a link whose reports are
     // all late by something different, a report that is merely later than most is no sign of anything.)

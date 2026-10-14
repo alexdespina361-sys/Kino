@@ -198,6 +198,13 @@ describe("resolveSettings", () => {
     expect(resolveSettings([{ key: "newsPopups", at: 1, value: "off" }])).toEqual({});
     expect(resolveSettings([{ key: "newsPopups", at: 2, deleted: true }])).toEqual({}); // (turned back on = the default again)
   });
+
+  it("keeps whether the picture's quality follows the connection, which it does until it is turned off, and ignores anything else said of it", () => {
+    expect(resolveSettings([{ key: "adaptiveQuality", at: 1, value: false }])).toEqual({ adaptiveQuality: false });
+    expect(resolveSettings([{ key: "adaptiveQuality", at: 1, value: true }])).toEqual({ adaptiveQuality: true });
+    expect(resolveSettings([{ key: "adaptiveQuality", at: 1, value: "off" }])).toEqual({});
+    expect(resolveSettings([{ key: "adaptiveQuality", at: 2, deleted: true }])).toEqual({}); // (turned back on = the default again)
+  });
 });
 
 describe("what people type", () => {

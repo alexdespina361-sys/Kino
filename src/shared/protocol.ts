@@ -92,7 +92,10 @@ export const PlayerStateSchema = z.object({
   quality: z
     .object({
       levels: z.array(PlayerQualityLevelSchema),
+      /** The quality that was picked, or -1 while the player chooses by itself (what it has chosen is `active`). */
       current: z.number().int(),
+      /** The quality the picture is in right now, when it is known. */
+      active: z.number().int().optional(),
     })
     .optional(),
   subtitles: z

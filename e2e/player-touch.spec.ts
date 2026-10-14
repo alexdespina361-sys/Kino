@@ -1,6 +1,6 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
-import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, playFirst, RawPhone, readPairingCode, test, tvRoot, tvTime, withLibrary } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, playFirst, RawPhone, readPairingCode, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
 
 /** The picture under a hand: what a tap, two taps and a held finger do, the big button in the middle, the episode's name, and a phone turned sideways. */
 
@@ -572,5 +572,67 @@ test.describe("the profile's choice of what a tap does", () => {
     await tap.click();
     await expect(tap).toHaveAttribute("aria-checked", "true");
     tv.close();
+  });
+});
+
+test.describe("the profile's choice of letting the picture's quality follow the connection", () => {
+  test("is a switch in the phone's Settings, on to begin with, and the choice to turn it off is kept", async ({ browser }) => {
+    const phone = await openDevice(browser, PHONE);
+    await phone.goto("/");
+    const open = async () => {
+      await phone.getByTestId("account-button").click();
+      await phone.getByTestId("menu-settings").click();
+      return phone.getByTestId("adaptive-quality");
+    };
+    const adaptive = await open();
+    await expect(adaptive).toHaveAttribute("aria-checked", "true");
+    await adaptive.click();
+    await expect(adaptive).toHaveAttribute("aria-checked", "false");
+
+    await phone.reload();
+    await expect(await open()).toHaveAttribute("aria-checked", "false");
+    phone.close();
+  });
+
+  test("is a switch on the TV's own account page too", async ({ browser }) => {
+    const tv = await openLibrary(browser, withFilms);
+    await openProfilePlace(tv, "settings");
+    const adaptive = tv.getByTestId("tv-adaptive-quality");
+    await expect(adaptive).toHaveAttribute("aria-checked", "true");
+    await adaptive.click();
+    await expect(adaptive).toHaveAttribute("aria-checked", "false");
+    tv.close();
+  });
+
+  /** A screen that is told, by a phone, to play a film that comes in two sizes (the bigger one listed first); the phone has every state the screen reported. */
+  async function playTwoSizes(browser: Browser, baseURL: string, seed: Record<string, string>) {
+    const tv = await openLibrary(browser, twoSizes, undefined, seed);
+    await tv.getByTestId("rail-connect").click();
+    const phone = await RawPhone.connect(baseURL, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Two sizes", stream: { url: "/fixtures/hls/multi.m3u8", type: "hls" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    return { tv, phone };
+  }
+  /** What the screen said of the quality when the first piece was playing. */
+  const firstPiece = (phone: RawPhone) => phone.states.find((state) => state.quality?.active !== undefined)?.quality;
+
+  test("on: the first piece of a film is the smallest size, though the film lists a bigger one first, and the button says what it has chosen", async ({ browser, baseURL }) => {
+    const { tv, phone } = await playTwoSizes(browser, baseURL!, {});
+    await expect.poll(() => firstPiece(phone)).toBeTruthy();
+    expect(firstPiece(phone)).toMatchObject({ current: -1, active: 0 }); // (the connection's to choose, and the smallest of the two is the first in the list the screen shows)
+    await tv.mouse.move(60, 60);
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveText(/^Auto · (180p|720p)$/);
+    phone.close();
+  });
+
+  test("off: every piece is the biggest size, as it was before the choice", async ({ browser, baseURL }) => {
+    const { tv, phone } = await playTwoSizes(browser, baseURL!, guestStorage({ settings: [{ key: "adaptiveQuality", at: Date.now(), value: false }] }));
+    await expect.poll(() => firstPiece(phone)).toBeTruthy();
+    expect(firstPiece(phone)).toMatchObject({ current: 1, active: 1 });
+    await tv.mouse.move(60, 60);
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveText("720p");
+    phone.close();
   });
 });

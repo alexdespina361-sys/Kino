@@ -7,7 +7,7 @@ import { progressKey, type NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, withLibrary } from "./helpers";
+import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -1657,6 +1657,32 @@ test.describe("a watch party started on a TV", () => {
     await expect(guest.getByRole("option", { name: "English" })).toHaveAttribute("aria-selected", "true");
     await guest.waitForTimeout(800);
     expect(phone.states.at(-1)?.subtitles?.current).toBe(-1); // what the host shows did not change
+    phone.close();
+  });
+
+  test("a guest picks the quality of its own picture, from its own controls: the host's is left as it was", async ({ browser, baseURL }) => {
+    const host = await openLibrary(browser, twoSizes);
+    await host.getByTestId("rail-connect").click();
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(host));
+    await expect(host.getByTestId("tv-paired")).toBeVisible();
+    await host.getByTestId("tv-back-to-library").click();
+    const code = await startParty(host);
+    const guest = await openLibrary(browser, twoSizes);
+    await joinWith(guest, code);
+    await expect(guest.getByTestId("tv-following")).toBeVisible();
+
+    phone.cmd({ type: "LOAD", media: { title: "Two sizes", stream: { url: "/fixtures/hls/multi.m3u8", type: "hls" } } });
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "paused", { timeout: 15_000 });
+    await guest.mouse.move(60, 60);
+    const quality = guest.getByTestId("tv-quality-btn");
+    await expect(quality).toHaveText(/^Auto/); // (its own picture chooses until it is told otherwise)
+    await quality.click();
+    await guest.getByRole("option", { name: "720p" }).click();
+    await expect(quality).toHaveText("720p");
+    await expect.poll(() => phone.states.at(-1)?.quality?.current).toBe(-1); // what the host shows is still on Auto
+
+    await guest.getByRole("option", { name: "Auto" }).click(); // (the list stays up for another pick)
+    await expect(quality).toHaveText(/^Auto/);
     phone.close();
   });
 

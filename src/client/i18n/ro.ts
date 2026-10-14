@@ -146,6 +146,8 @@ export const ro: Dictionary = {
   "settings.autoplayNext": "Redă automat episodul următor",
   "settings.tapToPause": "Atinge imaginea pentru pauză și redare",
   "settings.tapToPauseHelp": "Dezactivat: o atingere sau un clic pe imagine doar arată sau ascunde butoanele. Activat: pune filmul pe pauză și îl reia (o atingere cât timp butoanele sunt ascunse doar le arată mai întâi). Pauza și redarea merg oricum cu butonul mare din mijloc și cu tasta OK a telecomenzii.",
+  "settings.adaptiveQuality": "Adaptează calitatea imaginii la conexiune",
+  "settings.adaptiveQualityHelp": "Activat: filmul pornește în cea mai joasă calitate, ca să înceapă imediat, și continuă în cea mai bună pe care o duce conexiunea: mai jos când nu ține pasul, mai sus când poate. Dezactivat: mereu cea mai înaltă calitate disponibilă. Se aplică de la următorul film; o calitate aleasă în player rămâne.",
   "settings.playbackHelp": "Pe un ecran tactil: atinge de două ori partea stângă sau dreaptă a imaginii ca să sari înapoi sau înainte, iar dacă ții degetul apăsat pe imagine, filmul rulează cu viteză dublă.",
   "settings.pasteLink": "Lipește un link",
   "settings.pasteLinkSwitch": "Arată pe ecranul principal caseta pentru lipit un link",
