@@ -454,6 +454,7 @@ export const en = {
   "phone.homeTitle": "What do you want to watch?",
   "phone.homeHelp": "Paste a link to a video, or to a page that has one. It plays on {tv}, without the page.",
   "phone.outdatedServer": "The server doesn't understand this app version. Restart the server, then reload this page.",
+  "phone.linkTooLong": "That link is too long to play. Try the address of the page it comes from.",
   "phone.tooSlow": "This is taking too long. Try again in a moment.",
   "phone.anotherTv": "Connect another TV",
   "phone.tvGone": "This phone is no longer connected to the TV. Enter the code on the TV to connect again.",

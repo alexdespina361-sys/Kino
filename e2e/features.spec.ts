@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import qrcode from "qrcode-generator";
-import { progressKey, type NormalizedMedia } from "../src/shared";
+import { MAX_LINK_LENGTH, progressKey, type NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
@@ -266,6 +266,19 @@ test.describe("a server that is slow to answer", () => {
 });
 
 test.describe("playing links", () => {
+  test("a link that is too long for the server to read is said to be too long, not blamed on the server's version", async ({ browser }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.getByTestId("url-input").fill(`http://example.com/${"a".repeat(MAX_LINK_LENGTH)}`); // (a signed link of a file host can be that long)
+    await phone.getByTestId("play-url").click();
+    await expect(phone.getByTestId("error")).toHaveText(en["phone.linkTooLong"]);
+    await expect(phone.getByTestId("resolve-status")).toHaveCount(0); // nothing was asked of the server
+    await phone.getByTestId("url-input").fill("http://example.com/short"); // and a link that fits goes on as before
+    await phone.getByTestId("play-url").click();
+    await expect(phone.getByTestId("error")).toHaveCount(0);
+    await expect(phone.getByTestId("resolve-status")).toBeVisible();
+  });
+
   test("a link shared to the app (?url=) plays as soon as a TV is paired", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);

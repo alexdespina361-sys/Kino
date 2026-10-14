@@ -456,6 +456,7 @@ export const ro: Dictionary = {
   "phone.homeTitle": "Ce vrei să vezi?",
   "phone.homeHelp": "Lipește un link către un videoclip sau către o pagină care are unul. Rulează pe {tv}, fără pagină.",
   "phone.outdatedServer": "Serverul nu înțelege această versiune a aplicației. Repornește serverul, apoi reîncarcă pagina.",
+  "phone.linkTooLong": "Linkul este prea lung ca să fie redat. Încearcă adresa paginii din care provine.",
   "phone.tooSlow": "Durează prea mult. Încearcă din nou peste un moment.",
   "phone.anotherTv": "Conectează alt televizor",
   "phone.tvGone": "Telefonul nu mai este conectat la televizor. Introdu codul de pe televizor ca să te conectezi din nou.",

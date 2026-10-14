@@ -453,6 +453,7 @@ export const it: Dictionary = {
   "phone.homeTitle": "Cosa vuoi guardare?",
   "phone.homeHelp": "Incolla il link di un video o di una pagina che ne ha uno. Parte su {tv}, senza la pagina.",
   "phone.outdatedServer": "Il server non capisce questa versione dell'app. Riavvia il server, poi ricarica la pagina.",
+  "phone.linkTooLong": "Il link è troppo lungo per essere riprodotto. Prova con l'indirizzo della pagina da cui proviene.",
   "phone.tooSlow": "Ci sta mettendo troppo. Riprova tra un momento.",
   "phone.anotherTv": "Collega un'altra TV",
   "phone.tvGone": "Questo telefono non è più collegato alla TV. Inserisci il codice che vedi sulla TV per collegarti di nuovo.",
