@@ -1511,6 +1511,21 @@ test.describe("watching together", () => {
     await expect(follower.getByTestId("tv-disconnect")).toHaveText("Stop watching along");
   });
 
+  test("when the host's film has played to its end the card of a screen that watches along says it is finished, not that somebody paused it", async ({ browser, baseURL }) => {
+    const { leader, phone, follower } = await party(browser);
+    await phone.getByTestId("sheet-close").click();
+    await phone.getByTestId("url-input").fill(sample(baseURL!));
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
+
+    await leader.evaluate(() => {
+      const video = document.querySelector("video")!;
+      video.currentTime = video.duration - 1.2;
+    });
+    await expect(leader.getByTestId("tv-end")).toBeVisible({ timeout: 15_000 });
+    await expect(follower.getByTestId("tv-held")).toHaveText("Finished", { timeout: 15_000 });
+  });
+
   test("a TV added while a film is playing starts at the same place", async ({ browser, baseURL }) => {
     const leader = await openTv(browser);
     const phone = await openPairedPhone(browser, leader);

@@ -719,7 +719,7 @@ export function Tv() {
               else engine.pause();
             }
             // Who held the film, for the pause card, and who set it going again, for a line; and whether this picture is being brought to the host's.
-            const held: Hold | null = message.playing ? null : { by: message.by ?? null, waiting: message.waiting === true };
+            const held: Hold | null = message.playing ? null : { by: message.by ?? null, waiting: message.waiting === true, ...(message.ended ? { ended: true } : {}) };
             if (!held && holdRef.current && !holdRef.current.waiting) {
               const line = resumeLine(message.by, partyRef.current);
               if (line) notify(line);

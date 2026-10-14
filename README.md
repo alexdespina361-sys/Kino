@@ -413,9 +413,9 @@ friends off is not shown at all.
 **What a guest sees** is the picture's controls any screen has, not a lesser set: the title and the episode's name, *Watching along with Sam*
 (and *Catching up* while the guest's picture is being brought to the host's), the time of day and when the film ends, the bar with the time
 played and left (a bar to look at, not to click, unless the guest is an admin), and, while the film is held, whose doing that is on the card in
-the middle: *Paused by Sam*, *Paused by you* (an admin's own), or *Waiting for Sam* when the host's picture only ran out of data. When somebody sets it
+the middle: *Paused by Sam*, *Paused by you* (an admin's own), *Waiting for Sam* when the host's picture only ran out of data, or *Finished* when the film has played to its end. When somebody sets it
 going again a line says *Sam resumed*. A tap on the picture (a phone held either way) shows the controls and the next tap puts them away. Who
-held the film travels with the host's reports (`TV_SYNC.by`, `TV_SYNC.waiting`); a pause that came from the host's own remote or phone is named after the host.
+held the film travels with the host's reports (`TV_SYNC.by`, `TV_SYNC.waiting`, `TV_SYNC.ended`); a pause that came from the host's own remote or phone is named after the host.
 
 **A phone as a guest** watches in either orientation. The guest's bar (Audio & subtitles, Mute, Watch party, Full screen, Leave) sits along the
 top: held sideways it is one row, held upright "Watching along with …" has a line of its own and the buttons wrap under it. The guest's screen says

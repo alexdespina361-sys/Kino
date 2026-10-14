@@ -670,6 +670,7 @@ export class Hub {
       ...(state.stream ? { stream: state.stream } : {}),
       by: this.holder(leader, playing, waiting),
       ...(waiting ? { waiting: true } : {}),
+      ...(state.ended ? { ended: true } : {}),
     };
     for (const follower of this.registry.followersOf(leader)) {
       const lag = this.lagBetween(leader, follower);

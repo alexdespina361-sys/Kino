@@ -298,6 +298,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     by: z.string().max(100).optional(),
     /** The film is held only because the leader's picture is waiting for data, not because anybody paused it. */
     waiting: z.boolean().optional(),
+    /** The film is held because it played to its end (the leader's `PlayerState.ended`), not because anybody paused it: a guest says it is finished. */
+    ended: z.boolean().optional(),
   }),
   /** The party this TV is in has changed (or it has left it: null). Sent again whenever someone joins, leaves or goes offline. */
   z.object({ type: z.literal("TV_PARTY"), party: PartyViewSchema.nullable() }),

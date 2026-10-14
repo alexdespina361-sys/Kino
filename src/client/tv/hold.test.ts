@@ -52,6 +52,12 @@ describe("holdLine", () => {
     expect(holdLine({ by: "somebody", waiting: true }, null, null, say)).toBeNull();
   });
 
+  it("says the film is finished when it played to its end, whoever last paused it (nobody paused that)", () => {
+    expect(holdLine({ by: "host-tv", waiting: false, ended: true }, party, null, say)).toBe("Finished");
+    expect(holdLine({ by: "guest-anna", waiting: false, ended: true }, party, "TV 9E88", say)).toBe("Finished");
+    expect(holdLine({ by: null, waiting: false, ended: true }, null, null, say)).toBe("Finished"); // (and it needs nobody to name)
+  });
+
   it("has nothing to say when nobody is to be named, or nothing is held", () => {
     expect(holdLine(null, party, "TV 9E88", say)).toBeNull();
     expect(holdLine({ by: null, waiting: false }, party, "TV 9E88", say)).toBeNull();
@@ -83,6 +89,8 @@ describe("sameHold", () => {
   it("is false when it is held by someone else, or has gone from a pause to a wait, or is not held any more", () => {
     expect(sameHold({ by: "a", waiting: false }, { by: "b", waiting: false })).toBe(false);
     expect(sameHold({ by: "a", waiting: false }, { by: "a", waiting: true })).toBe(false);
+    expect(sameHold({ by: "a", waiting: false }, { by: "a", waiting: false, ended: true })).toBe(false); // (a pause that became the end)
+    expect(sameHold({ by: "a", waiting: false, ended: true }, { by: "a", waiting: false, ended: true })).toBe(true);
     expect(sameHold({ by: "a", waiting: false }, null)).toBe(false);
     expect(sameHold(null, { by: "a", waiting: false })).toBe(false);
   });
