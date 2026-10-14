@@ -163,14 +163,16 @@ test.describe("a phone that watches a party along", () => {
       await hostPlays(host);
       await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
       await expect(phone.locator("video")).toBeVisible();
-      const outside = await phone.evaluate(
-        () =>
-          [...document.querySelectorAll(".tv-follow-bar, .tv-follow-bar button")].filter((element) => {
-            const box = element.getBoundingClientRect();
-            return box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight;
-          }).length,
-      );
-      expect(outside).toBe(0);
+      const bar = await phone.evaluate(() => {
+        const elements = [...document.querySelectorAll(".hud-bottom, .hud-bottom button")];
+        const outside = elements.filter((element) => {
+          const box = element.getBoundingClientRect();
+          return box.left < 0 || box.top < 0 || box.right > innerWidth || box.bottom > innerHeight;
+        });
+        return { outside: outside.length, all: elements.length };
+      });
+      expect(bar.all).toBeGreaterThan(3); // (the bar and its buttons were found: nothing outside of nothing is no proof)
+      expect(bar.outside).toBe(0);
       expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
     });
   }
@@ -208,9 +210,9 @@ test.describe("a phone that watches a party along", () => {
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
     await phone.touchscreen.tap(195, 420); // brings the bar up
     const onBar = phone.getByTestId("tv-fullscreen-btn");
-    await expect(onBar).toHaveText("Exit full screen");
+    await expect(onBar).toHaveAttribute("aria-label", "Exit full screen");
     await onBar.tap();
-    await expect(onBar).toHaveText("Full screen");
+    await expect(onBar).toHaveAttribute("aria-label", en["hud.fullscreen"]);
     expect(await isFullScreen(phone)).toBe(false);
   });
 
@@ -226,6 +228,38 @@ test.describe("a phone that watches a party along", () => {
     await expect(phone.getByTestId("tv-buffering")).toBeVisible();
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
     await expect(phone.getByTestId("tv-buffering")).toHaveCount(0);
+  });
+
+  test("a guest that follows the host to places it has downloaded does not flash the waiting wheel", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const { host, code } = await hosting(browser);
+    const phone = await openDevice(browser, PHONE);
+    await join(phone, code);
+    await hostPlays(host);
+    await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    const downloaded = (page: Page) =>
+      page.evaluate(() => {
+        const { buffered } = document.querySelector("video")!;
+        return buffered.length ? buffered.end(buffered.length - 1) : 0;
+      });
+    await expect.poll(() => downloaded(phone), { timeout: 15_000 }).toBeGreaterThan(25); // (all of the thirty seconds: a jump inside it asks nothing of the network)
+
+    // From here every time the wheel is put on the page is counted, however short it stays.
+    await phone.evaluate(() => {
+      const seen = { wheels: 0 };
+      Object.assign(window, { seen });
+      new MutationObserver((records) => {
+        for (const added of records.flatMap((record) => [...record.addedNodes])) {
+          if (added instanceof Element && (added.matches('[data-testid="tv-buffering"]') || added.querySelector('[data-testid="tv-buffering"]'))) seen.wheels += 1;
+        }
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+    const place = (page: Page) => page.evaluate(() => document.querySelector("video")!.currentTime);
+    for (const to of [20, 8, 22]) {
+      await host.evaluate((time) => void (document.querySelector("video")!.currentTime = time), to);
+      await expect.poll(async () => Math.abs((await place(phone)) - (await place(host))), { timeout: 10_000 }).toBeLessThan(1.5); // (the guest goes where the host went)
+    }
+    expect(await phone.evaluate(() => (window as unknown as { seen: { wheels: number } }).seen.wheels)).toBe(0);
   });
 
   test("a video it cannot play is said on its screen, not left as a black one", async ({ browser, baseURL }) => {

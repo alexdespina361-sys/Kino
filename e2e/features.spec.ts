@@ -1393,11 +1393,11 @@ test.describe("watching together", () => {
     await expect(leader.getByTestId("tv-play-btn")).toHaveCount(1);
     await expect(follower.getByTestId("tv-play-btn")).toHaveCount(0); // no player buttons on the follower
 
-    // The bar is at the top of the screen, and Up is as good a way onto it as Down; and it says when the host has stopped the picture.
+    // Up is as good a way onto the bar as Down, and it lands on the bar's first button; the card says when the host has stopped the picture.
     await follower.keyboard.press("ArrowUp");
-    await expect(follower.getByTestId("tv-mute-btn")).toBeFocused();
+    await expect(follower.locator(".hud-controls button").first()).toBeFocused();
     await phone.getByTestId("pause").click();
-    await expect(follower.getByTestId("tv-follow-bar")).toContainText(en["hud.paused"]);
+    await expect(follower.getByTestId("tv-held")).toHaveText(/^Paused by TV /); // (the screen the phone controls is the host of the party)
 
     await phone.getByTestId("stop").click();
     await expect(tvRoot(leader)).toHaveAttribute("data-state", "idle");
@@ -1442,8 +1442,8 @@ test.describe("watching together", () => {
     await phone.getByTestId("url-input").fill(sample(baseURL!));
     await phone.getByTestId("play-url").click();
     await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
-    await follower.keyboard.press("ArrowDown"); // wakes the bar and lands on its first button (Mute), even with the bar faded away
-    await expect(follower.getByTestId("tv-mute-btn")).toBeFocused();
+    await follower.keyboard.press("ArrowDown"); // wakes the bar and lands on its first button, even with the bar faded away
+    await expect(follower.locator(".hud-controls button").first()).toBeFocused();
     for (let i = 0; i < 4 && !(await follower.getByTestId("tv-leave").evaluate((el) => el === document.activeElement)); i++) {
       await follower.keyboard.press("ArrowRight");
     }
@@ -1801,7 +1801,75 @@ test.describe("a watch party started on a TV", () => {
     await expect(guest.getByTestId("tv-following")).toBeVisible(); // still in the party, waiting
   });
 
-  // The buttons that came with the admin (on a member of the list, and a bar of their own on a guest's film) go where there is room for them.
+  test("a guest has the bars any screen has, but only to be read: what is on, whom it follows, how far it is; and its own things stay its own", async ({ browser, baseURL }) => {
+    const { host, guest } = await party(browser, baseURL!);
+    const hostName = await host.getByTestId("tv-party-member").first().locator(".tv-party-name").innerText();
+    await host.getByTestId("tv-back-to-library").click();
+    await playFirst(host);
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+
+    await guest.mouse.move(60, 60); // brings the bars up
+    await expect(guest.getByTestId("tv-title")).toHaveText("sample"); // (a link to a file is called what the file is)
+    await expect(guest.getByTestId("tv-follow-line")).toContainText(hostName);
+    await expect(guest.getByTestId("tv-elapsed")).toHaveText(/^\d+:\d\d$/);
+    await expect(guest.locator(".hud-bar")).toHaveAttribute("role", "progressbar");
+    await expect.poll(async () => Number(await guest.locator(".hud-bar").getAttribute("aria-valuenow"))).toBeGreaterThan(0);
+    await expect(guest.getByTestId("tv-play-btn")).toHaveCount(0); // the host has the controls
+    await expect(guest.getByTestId("tv-admin-bar")).toHaveCount(0);
+
+    // A click on the bar moves nothing: the host's film is the host's.
+    const at = await tvTime(host);
+    const bar = (await guest.locator(".hud-bar").boundingBox())!;
+    await guest.mouse.click(bar.x + bar.width * 0.9, bar.y + bar.height / 2);
+    await guest.waitForTimeout(600);
+    expect(Math.abs((await tvTime(host)) - at)).toBeLessThan(3);
+
+    // What is its own is: the sound, the party, the way out (and the subtitles, where the film has some).
+    await expect(guest.getByTestId("tv-mute-btn")).toBeVisible();
+    await expect(guest.getByTestId("tv-party-btn")).toBeVisible();
+    await expect(guest.getByTestId("tv-leave")).toBeVisible();
+    await guest.getByTestId("tv-party-btn").click();
+    await expect(guest.getByTestId("tv-party-panel")).toBeVisible();
+    await expect(guest.getByTestId("tv-party-leave")).toBeVisible();
+  });
+
+  test("who held the film is said where it is held: a pause of the host's own to the guests, an admin's to the host and the others (and 'you' on its own screen)", async ({ browser, baseURL }) => {
+    const { host, guest: admin, code } = await party(browser, baseURL!);
+    const other = await screen(browser, baseURL!);
+    await joinWith(other, code);
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(3);
+    const nameAt = async (index: number) => host.getByTestId("tv-party-member").nth(index).locator(".tv-party-name").innerText();
+    const hostName = await nameAt(0);
+    const adminName = await nameAt(1);
+    await host.getByTestId("tv-party-admin").first().click(); // the first guest to have joined
+    await expect(admin.getByTestId("tv-party-member").nth(1)).toContainText("Admin");
+    await host.getByTestId("tv-back-to-library").click();
+    await playFirst(host);
+    for (const tv of [admin, other]) await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+
+    // The host's own pause and play.
+    await host.keyboard.press("Space");
+    for (const tv of [admin, other]) await expect(tv.getByTestId("tv-held")).toHaveText(`Paused by ${hostName}`);
+    await host.keyboard.press("Space");
+    for (const tv of [admin, other]) await expect(tv.getByTestId("tv-held")).toHaveCount(0);
+    await expect(other.getByTestId("tv-toast")).toHaveText(`${hostName} resumed`);
+
+    // The admin's: "you" to itself, its name to the others, and the host is told too, though it was its own screen that did it.
+    await admin.mouse.move(60, 60);
+    await admin.getByTestId("tv-admin-play").click();
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "paused");
+    await expect(admin.getByTestId("tv-held")).toHaveText("Paused by you");
+    await expect(other.getByTestId("tv-held")).toHaveText(`Paused by ${adminName}`);
+    await expect(host.getByTestId("tv-held")).toHaveText(`Paused by ${adminName}`);
+    await admin.getByTestId("tv-admin-play").click();
+    await expect(tvRoot(host)).toHaveAttribute("data-state", "playing");
+    await expect(other.getByTestId("tv-toast")).toHaveText(`${adminName} resumed`);
+    await expect(host.getByTestId("tv-toast")).toHaveText(`${adminName} resumed`);
+    await expect(admin.getByTestId("tv-held")).toHaveCount(0);
+    await expect(host.getByTestId("tv-held")).toHaveCount(0);
+  });
+
+  // The buttons that came with the admin (on a member of the list, and a group of their own on the bar of a guest's film) go where there is room for them.
   for (const size of [
     { name: "a TV (1280×720) in Italian", width: 1280, height: 720, language: "it" },
     { name: "a phone in Romanian", width: 390, height: 844, language: "ro" },
@@ -1858,17 +1926,17 @@ test.describe("a watch party started on a TV", () => {
       expect(panel.x).toBeGreaterThanOrEqual(0);
       expect(panel.x + panel.width).toBeLessThanOrEqual(size.width + 1);
 
-      // The guest: the film, and two bars under each other, all of their buttons on the screen.
+      // The guest: the film and the bar every screen has, the admin's buttons first on it, all of its buttons on the screen.
       await expect(tvRoot(admin)).toHaveAttribute("data-state", /playing|paused/, { timeout: 15_000 });
       await admin.mouse.move(60, 60);
       await expect(admin.getByTestId("tv-admin-bar")).toBeInViewport();
-      const bars = await admin.evaluate(() => {
+      const bar = await admin.evaluate(() => {
         const inside = (box: DOMRect) => box.left >= -1 && box.top >= -1 && box.right <= innerWidth + 1 && box.bottom <= innerHeight + 1;
-        const elements = [...document.querySelectorAll<HTMLElement>(".tv-follow-bar, .tv-follow-bar button")];
-        const bars = [...document.querySelectorAll(".tv-follow-bar")].map((bar) => bar.getBoundingClientRect());
-        return { outside: elements.filter((element) => !inside(element.getBoundingClientRect())).length, stacked: bars.length === 2 && bars[0]!.bottom <= bars[1]!.top + 1, count: bars.length };
+        const elements = [...document.querySelectorAll<HTMLElement>(".hud-bottom, .hud-bottom button")];
+        return { outside: elements.filter((element) => !inside(element.getBoundingClientRect())).length, buttons: elements.length - 1 };
       });
-      expect(bars).toEqual({ outside: 0, stacked: true, count: 2 });
+      expect(bar.outside).toBe(0);
+      expect(bar.buttons).toBeGreaterThanOrEqual(6); // (the admin's play, back, forward, stop, and the party, the sound and the way out)
       expect(await sideways(admin)).toBeLessThanOrEqual(0);
     });
   }

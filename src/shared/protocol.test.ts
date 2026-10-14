@@ -105,6 +105,19 @@ describe("newer protocol pieces", () => {
     for (const lag of [-0.1, 2.5, "0.1"]) expect(parseServerMessage(msg({ ...sync, lag }))).toBeNull();
   });
 
+  it("a TV_SYNC may say who held the film and that it only waits for data; a TV_CMD that an admin guest steered, whose it was", () => {
+    const sync = { type: "TV_SYNC", playing: false, time: 10, rate: 1 };
+    expect(parseServerMessage(msg({ ...sync, by: "a1b2c3d4e5f6", waiting: true }))).toEqual({ ...sync, by: "a1b2c3d4e5f6", waiting: true });
+    expect(parseServerMessage(msg(sync))).toEqual(sync); // (an older server says neither)
+    for (const by of [1, null, "x".repeat(101)]) expect(parseServerMessage(msg({ ...sync, by }))).toBeNull();
+    expect(parseServerMessage(msg({ ...sync, waiting: "yes" }))).toBeNull();
+
+    const pause = { type: "TV_CMD", command: { type: "PAUSE" } };
+    expect(parseServerMessage(msg({ ...pause, by: "a1b2c3d4e5f6" }))).toEqual({ ...pause, by: "a1b2c3d4e5f6" });
+    expect(parseServerMessage(msg(pause))).toEqual(pause);
+    expect(parseServerMessage(msg({ ...pause, by: 7 }))).toBeNull();
+  });
+
   it("player state carries optional buffering info", () => {
     const state = { state: "playing", currentTime: 5, duration: 60, buffering: true, bufferedEnd: 42 };
     expect(parseClientMessage(msg({ type: "TV_STATE", state }))).not.toBeNull();

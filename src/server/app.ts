@@ -11,7 +11,7 @@ import type { AccountStore } from "./accounts/store";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
-import { SegmentCache } from "./segmentCache";
+import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
 import { Hub, type HubOptions } from "./websocket/hub";
 import type { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
@@ -47,7 +47,15 @@ export interface AppOptions {
   allowPrivateNetwork?: boolean;
   /** Socket liveness tuning; tests shorten it. */
   hub?: HubOptions;
+  /** How much of a film the proxy keeps for the screens of a party (64 MB, 3 minutes unless set; env SEGMENT_CACHE_MB sets the size in megabytes). */
+  segmentCache?: SegmentCacheOptions;
   logger?: boolean;
+}
+
+/** The size of the cache of film pieces from the environment (megabytes, a fraction will do), or nothing when it is not set to a number above zero. */
+function segmentCacheFromEnv(): SegmentCacheOptions {
+  const megabytes = Number(process.env.SEGMENT_CACHE_MB);
+  return Number.isFinite(megabytes) && megabytes > 0 ? { maxBytes: Math.round(megabytes * 1024 * 1024) } : {};
 }
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -118,8 +126,17 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     socket.on("close", (code, reason) => request.log.info({ code, reason: reason.toString() }, "ws closed"));
     hub.handleConnection(socket);
   });
-  // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.)
-  app.get("/api/health", async () => ({ ok: true, ...(options.storage ? { storage: options.storage } : {}), uptime: Math.round(process.uptime()) }));
+  // Screens watching a film together ask for the same pieces of it: the proxy fetches each once and shares it (see `SegmentCache`).
+  const segments = new SegmentCache(options.segmentCache ?? segmentCacheFromEnv());
+  // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.
+  // `segments` counts the asks for a piece of a film that the proxy answered itself (`hits`) and the ones it had to take to the film's own place
+  // (`misses`): with screens watching together, the hits are the share of the load that was not multiplied by the number of screens.)
+  app.get("/api/health", async () => ({
+    ok: true,
+    ...(options.storage ? { storage: options.storage } : {}),
+    uptime: Math.round(process.uptime()),
+    segments: { hits: segments.hits, misses: segments.misses, keptMB: Math.round(segments.keptBytes / 1024 / 1024) },
+  }));
   app.get("/api/library", async (_request, reply) => {
     reply.header("Cache-Control", "public, max-age=300");
     return library.get();
@@ -172,8 +189,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const result = await resolve(rawUrl);
     return reply.send(result);
   });
-  // Screens watching a film together ask for the same pieces of it: the proxy fetches each once and shares it (see `SegmentCache`).
-  const segments = new SegmentCache();
   app.get<{ Querystring: { url?: string; referer?: string } }>("/api/proxy", async (request, reply) => {
     return handleStreamProxy(request, reply, {
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",

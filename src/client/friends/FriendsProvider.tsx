@@ -5,7 +5,7 @@ import { ApiError } from "../account/api";
 import { useProfileData } from "../account/store";
 import { t } from "../i18n";
 import { friendsApi } from "./api";
-import { describeNews, known, whatsNew, type Known } from "./news";
+import { describeNews, isUrgent, known, whatsNew, type Known } from "./news";
 import { withoutOnline } from "./stale";
 
 /** A screen looks at its friends this often while it is on screen. */
@@ -102,11 +102,12 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
         if (stopped || mine < taken) return;
         taken = mine;
         lastAnswer = Date.now();
-        const line = describeNews(whatsNew(seen.current, next, Date.now()), t);
+        const news = whatsNew(seen.current, next, Date.now());
+        const line = describeNews(news, t);
         seen.current = known(next);
         setState(next);
         setStatus("ready");
-        if (line) accountRef.current.say(line);
+        if (line) accountRef.current.say(line, isUrgent(news) ? "urgent" : "info");
       } catch (error) {
         if (stopped) return;
         const early = error instanceof ApiError && error.code === "friends_off" && attempt < SETTING_WAIT_MS.length;

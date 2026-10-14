@@ -288,6 +288,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     stream: z.string().max(2048).optional(),
     /** About how long this report took to get here, in seconds: half of the leader's round trip to the server and half of this screen's, as each last measured them. A leader that plays has moved on by that much. */
     lag: z.number().finite().min(0).max(MAX_LAG_S).optional(),
+    /** Who last set the film going or held it, as that screen is called in the party's lists (`PartyTv.id`): the host's own screen, or a guest that steers. A guest says "Paused by Anna" from it. */
+    by: z.string().max(100).optional(),
+    /** The film is held only because the leader's picture is waiting for data, not because anybody paused it. */
+    waiting: z.boolean().optional(),
   }),
   /** The party this TV is in has changed (or it has left it: null). Sent again whenever someone joins, leaves or goes offline. */
   z.object({ type: z.literal("TV_PARTY"), party: PartyViewSchema.nullable() }),
@@ -295,7 +299,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("TV_CODE"), pairing: PairingCodeSchema, control: z.boolean().optional() }),
   /** A phone has connected to this TV: the first one pairs it, a later one joins it. */
   z.object({ type: z.literal("TV_PAIRED") }),
-  z.object({ type: z.literal("TV_CMD"), command: CommandSchema }),
+  /** `by`: the guest that steers (see TV_PARTY_CMD) when the command is theirs, as `PartyTv.id`, so the host's screen can say who paused. */
+  z.object({ type: z.literal("TV_CMD"), command: CommandSchema, by: z.string().max(100).optional() }),
   /** The phone forgot this TV. Back to the pairing screen with a fresh code. */
   z.object({ type: z.literal("TV_UNPAIRED"), pairing: PairingCodeSchema.nullable() }),
   /** The server is looking up a pasted link; lets the TV say so instead of looking idle. */
