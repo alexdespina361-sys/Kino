@@ -80,7 +80,7 @@ pnpm build && pnpm start     # http://localhost:8787
   the TV's **Profile** page. **A title that was rated shows its score** (a star and the number) in the corner of its picture wherever it is shown, in the rows, a
   grid, a search, Continue watching, the lists and what friends recommended, on the phone and the TV, so what was rated is seen while scrolling the library
   (a screen reader says it with the title; a season's score is the season's: the show shows none of its own). Ratings are saved to the
-  profile and synced like the lists (up to 500; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
+  profile and synced like the lists (up to 500, and past that the oldest, notes with them, fall away without a word; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
   and TV) switches the whole thing off, every sign of it, and keeps what was rated.
 - **Friends** are optional and **off until a profile turns them on** in its settings (phone and TV; they belong to an account, so a guest is told to sign in).
   Two profiles become friends with a code (`ABCD-2345`, good once and for a week) that one gives and the other types or opens as a link: the phone shows it
