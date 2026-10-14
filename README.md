@@ -85,7 +85,7 @@ pnpm build && pnpm start     # http://localhost:8787
 - **Friends** are optional and **off until a profile turns them on** in its settings (phone and TV; they belong to an account, so a guest is told to sign in).
   Two profiles become friends with a code (`ABCD-2345`, good once and for a week) that one gives and the other types or opens as a link: the phone shows it
   with a QR code, a **Copy code** button and a link to send (with a **Copy link** button of its own); the TV shows it with a QR code and the same **Copy code** button, which the remote or a mouse presses; where a browser will not copy, the code is selected instead, to be copied by hand. Up to 5 codes can be out at once (a sixth takes back the oldest, and the phone says so beside the button); one can be taken back. A friend can **look at your lists and
-  ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone), **be invited to a
+  ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone; when the friend chosen has just stopped taking things the sheet says so and stays open, words and all, for somebody else), **be invited to a
   watch party** (a button that joins on the phone; on the TV, pressing the invitation on the Friends page joins) and **hear what you watch** ("Sam is watching
   Alien", from a minute in, the last two weeks). Each of these has a switch of its own: *Friends can see my lists*, *…my ratings*, *Tell friends what I watch*,
   *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*, *Friends can see when I'm online*. They live in the
