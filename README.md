@@ -549,6 +549,20 @@ The server is one Node process that serves the page, the API and the sockets fro
    `?debug` panel, next to how a guest's picture keeps with the host's. A screen on a weak link brings its own quality down (*Quality follows
    the connection*), so it asks the server for fewer bytes, not more.
 
+### Other hosts
+
+Anything that runs a Node process does (Northflank, Railway, Fly, a VPS):
+
+- **Start with `pnpm start`.** `tsx`, which it runs, is a regular dependency, so a host that installs only the dependencies of a running app, or that
+  removes the build tools after building (most buildpacks do), still has it: `tsx: not found` and a restart loop was the sign of it being missing. `dist/client`
+  is committed, so there is nothing to build.
+- **Node 24** (`.node-version`), pnpm from `packageManager` (`corepack enable`).
+- **The port:** the server listens on `PORT` (default 8787) on `HOST` (default `0.0.0.0`). Declare that port as HTTP in the host, with WebSockets allowed
+  (the page talks over `/ws`), and `/api/health` as the health check.
+- **Set `TRUST_PROXY=1`** (the number of proxies in front of the server; it is on by itself only on Render). Without it every visitor looks like one address
+  to the rate limits (10 sign-ups an hour, wrong codes, link polls) and they apply to everybody together.
+- `DATABASE_URL` as above, and **one running copy per database**: two copies (the old host and the new one) write over each other.
+
 Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),
 an account with no password can be opened by anyone who types its name (give it one if that matters), and the sign-in rate limits are
 per name and per address, so they are best-effort behind a shared proxy. A browser that wipes **all** of a site's data when it is closed
