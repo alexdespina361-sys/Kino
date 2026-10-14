@@ -331,6 +331,50 @@ test.describe("signing a TV in from the phone", () => {
   });
 });
 
+test.describe("a TV that nobody is at", () => {
+  // Left on "Sign in with another device", a TV used to ask for a code and then whether it was approved every two seconds, for ever.
+  test("asks for a second code, and then rests until the button is pressed", async ({ browser }) => {
+    const FIVE_MINUTES = 5 * 60_000;
+    let starts = 0;
+    let polls = 0;
+    const tv = await openLibrary(browser, async (context) => {
+      await context.clock.install(); // (the minutes are skipped with `fastForward`)
+      await context.route("**/api/link/start", async (route) => {
+        starts += 1;
+        const now = await route.request().frame().evaluate(() => Date.now()); // (a code runs out five minutes after, by the page's clock)
+        await route.fulfill({ status: 201, json: { code: `TEST000${starts}`, secret: "s", expiresAt: now + FIVE_MINUTES } });
+      });
+      await context.route("**/api/link/poll", (route) => {
+        polls += 1;
+        return route.fulfill({ json: { status: "waiting" } });
+      });
+    });
+    await tv.getByTestId("tv-account-chip").click();
+    await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0001");
+    await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
+
+    await tv.clock.fastForward(FIVE_MINUTES + 2500); // the first code runs out, and the TV that is still there asks for another
+    await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0002");
+    await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
+
+    await tv.clock.fastForward(FIVE_MINUTES + 2500); // ten minutes of nobody: it rests
+    await expect(tv.getByTestId("tv-signin-status")).toHaveText(en["link.rested"]);
+    await expect(tv.getByTestId("tv-signin-again")).toHaveText(en["link.newCode"]);
+    await expect(tv.getByTestId("tv-signin-again")).toBeFocused(); // (OK on the remote goes on)
+    await expect(tv.getByTestId("tv-link-code")).not.toHaveText("TEST-0002"); // the code that ran out is not left on the screen
+
+    const [startsThen, pollsThen] = [starts, polls];
+    await tv.clock.fastForward(60 * 60_000); // an hour
+    await tv.waitForTimeout(300);
+    expect([starts, polls]).toEqual([startsThen, pollsThen]); // nothing asked meanwhile
+
+    await tv.getByTestId("tv-signin-again").click();
+    await expect(tv.getByTestId("tv-link-code")).toHaveText(`TEST-000${startsThen + 1}`);
+    await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-signin-status")).toContainText(en["link.waiting"]);
+  });
+});
+
 /** A computer's screen page that has made an account with the email form, which is how a screen with a keyboard signs in. */
 async function signedInScreen(browser: Browser, account = fresh()) {
   const screen = await openLibrary(browser);

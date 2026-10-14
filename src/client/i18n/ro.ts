@@ -125,6 +125,8 @@ export const ro: Dictionary = {
   "link.step2": "Atinge poza ta, apoi „Autentifică alt dispozitiv”.",
   "link.step3": "Scanează acest cod sau scrie-l.",
   "link.waiting": "Aștept celălalt dispozitiv…",
+  "link.rested": "Codul a expirat.",
+  "link.newCode": "Cere un cod nou",
   "link.emailInstead": "Folosește numele de utilizator și parola",
   "link.codeInstead": "Folosește alt dispozitiv",
   "link.approveTitle": "Conectezi acest dispozitiv?",

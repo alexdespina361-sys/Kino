@@ -126,6 +126,8 @@ export const en = {
   "link.step2": "Tap your picture, then “Sign in another device”.",
   "link.step3": "Scan this code, or type it in.",
   "link.waiting": "Waiting for the other device…",
+  "link.rested": "The code ran out.",
+  "link.newCode": "Get a new code",
   "link.emailInstead": "Use a username and password instead",
   "link.codeInstead": "Use another device instead",
   "link.approveTitle": "Sign in this device?",

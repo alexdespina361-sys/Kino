@@ -144,7 +144,8 @@ pnpm build && pnpm start     # http://localhost:8787
   device that is offline keeps working and catches up.
 - **Sign a TV in from the phone.** Typing a name and a password on a TV remote is a chore, so the TV's sign-in page shows a QR code and a short code
   (`ABCD-2345`). A phone that is already signed in opens it (the camera app, or Account → "Sign in another device" to scan or type the code), sees what is
-  asking, and approves; the TV is signed in a moment later. The code works once and expires after five minutes, and nothing signs a TV in
+  asking, and approves; the TV is signed in a moment later. The code works once and expires after five minutes (a TV that is still on the page
+  asks for a second one; after ten minutes of nobody answering it stops asking, says the code ran out, and has a button for a new one), and nothing signs a TV in
   until a signed-in person says yes. A screen that is signed in itself can do the asking too (a computer with no phone at hand): its account
   page has **Sign in another device**: type the code the other screen shows, check who is asking, approve.
 - The phone's account page: profiles, settings, devices (sign others out, and give a device a name of its own: "Living room"), password, delete account. The TV has its own: who's watching,

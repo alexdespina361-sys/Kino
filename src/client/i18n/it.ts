@@ -125,6 +125,8 @@ export const it: Dictionary = {
   "link.step2": "Tocca la tua immagine, poi “Fai accedere un altro dispositivo”.",
   "link.step3": "Inquadra questo codice oppure scrivilo.",
   "link.waiting": "In attesa dell'altro dispositivo…",
+  "link.rested": "Il codice è scaduto.",
+  "link.newCode": "Chiedi un nuovo codice",
   "link.emailInstead": "Usa nome utente e password",
   "link.codeInstead": "Usa un altro dispositivo",
   "link.approveTitle": "Far accedere questo dispositivo?",
