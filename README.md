@@ -258,7 +258,8 @@ pnpm build && pnpm start     # http://localhost:8787
   browser was closed (the last four characters, in storage and in the cookie), where the server keeps things and how long it has been up (a
   short time with `file` or `memory` is why a TV "lost its phone"), how many pieces of films the server gave from memory and how many it
   had to fetch, on a screen that watches a party along how its picture keeps with the host's (reports, jumps, speed changes, how far
-  apart the two are now), and, live, each key it sends and where the focus went, the clicks, the video's state and the page's errors.
+  apart the two are now, and how far on it aims its jumps: what this screen has been found to take to land one), and, live, each key it
+  sends and where the focus went, the clicks, the video's state and the page's errors.
   `?debug=0` turns it off. `?fullscreen=off` keeps any browser from being asked for full
   screen (`?fullscreen=on` undoes it); both are kept for the next visits
 - **Subtitle languages.** The menu lists every language the video has. The ones a profile wants come first (a guest gets the website's
@@ -380,7 +381,12 @@ From that place a guest nudges its speed by 6% when it is more than a quarter of
 starting and stopping with every report), jumps ahead when it is a second or more behind, goes back in time only when the reports agree on it
 (or when it is 8 s ahead, which no late report explains), shows the host's frame when paused (within 0.1 s; a host that only waits for data
 is waited for where the guest is, unless that is 2 s away), and jumps to the host's place at once when the host starts again, if it has that
-place (`src/client/tv/sync.ts`). A guest that is still waiting for data does not chase the host: it does not speed up on a thin buffer,
+place (`src/client/tv/sync.ts`). A jump takes a moment to land (a few hundredths of a second on a computer, more on a TV, most when it starts a
+picture that was paused) and the host plays on meanwhile, so a guest sent to where the host is would land behind it by that moment, and
+stay there (inside what is not worth a nudge nothing puts it right). So a guest looks at how far from the host each kind of jump left it, once
+its picture plays and the reads of the host agree, and aims the next jump of that kind further on by 60% of what it missed by (never by more than
+0.25 s; it starts from what a desktop browser was measured to take, 0.07 s for a picture that was playing and 0.1 s for one that was paused).
+A guest that is still waiting for data does not chase the host: it does not speed up on a thin buffer,
 and it jumps only to a place it has already downloaded (after 15 s behind, anywhere), so a slow screen is not sent back and forth. The
 waiting wheel does not show for a wait shorter than 0.4 s, so the jumps of a guest do not flash it. The screens of a party also download
 only about 40 seconds ahead of their picture (see *What a watch party costs the server*). **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
