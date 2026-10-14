@@ -1,4 +1,4 @@
-import { chromium, expect, type Browser, type Locator, type Page } from "@playwright/test";
+import { chromium, expect, type Browser, type Locator, type Page, type WebSocketRoute } from "@playwright/test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -959,6 +959,68 @@ test.describe("sources", () => {
     await expect(phone.getByTestId("chip-source")).toContainText("Mirror");
   });
 
+  test("the source that takes over starts where the video was told to start, and stays held when it was put back held", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    // (What the server sends a TV whose page was opened again: the video and the place, and no PLAY behind it.)
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/does-not-exist.mp4" }, { label: "Mirror", url: "/fixtures/sample.mp4" }]), startAt: 9 });
+    await expect(tv.getByTestId("tv-source-btn")).toHaveText("Mirror", { timeout: 15_000 });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect.poll(() => tvTime(tv), { timeout: 10_000 }).toBeGreaterThan(8);
+    await tv.waitForTimeout(1000);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused"); // not set going by the hand-over
+    phone.close();
+  });
+
+  test("the source that takes over plays from where the video was told to start, when it was meant to play", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/does-not-exist.mp4" }, { label: "Mirror", url: "/fixtures/sample.mp4" }]), startAt: 9 });
+    phone.cmd({ type: "PLAY" });
+    await expect(tv.getByTestId("tv-source-btn")).toHaveText("Mirror", { timeout: 15_000 });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    expect(await tvTime(tv)).toBeGreaterThan(8);
+    phone.close();
+  });
+
+  test("Try again carries on from where the video stopped, not from the start", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/sample.mp4" }]) });
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await tv.evaluate(() => void (document.querySelector("video")!.currentTime = 9));
+    await expect.poll(() => tvTime(tv)).toBeGreaterThan(8.5);
+    await tv.evaluate(() => void document.querySelector("video")!.dispatchEvent(new Event("error"))); // (a video that gave out part of the way)
+    await expect(tv.getByTestId("tv-error")).toBeVisible();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-error")).toHaveCount(0);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    expect(await tvTime(tv)).toBeGreaterThan(8);
+    phone.close();
+  });
+
+  test("a video that stopped because the connection went is tried again by itself, and the card says what happened", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    // (hls.js asks the film's pieces from the server: with the page offline they get no answer at all, which is what a server that is away looks like.)
+    phone.cmd({ type: "LOAD", media: { title: "Streamed", stream: { url: "/fixtures/hls/master.m3u8", type: "hls" } } });
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await tv.evaluate(() => void (document.querySelector("video")!.currentTime = 0.5));
+    // A video that gave out for want of a connection: the error that the player raises for it (an answer with a 404 is another thing, covered above).
+    await tv.evaluate(() => {
+      Object.defineProperty(document.querySelector("video")!, "error", { configurable: true, get: () => ({ code: 2 }) });
+      document.querySelector("video")!.dispatchEvent(new Event("error"));
+    });
+    await expect(tv.getByTestId("tv-error")).toBeVisible();
+    await expect(tv.getByTestId("tv-error")).toContainText("The connection to the video was lost.");
+    // Still connected to the server, so a moment later the picture is tried again without anybody pressing anything.
+    await expect(tv.getByTestId("tv-error")).toHaveCount(0, { timeout: 10_000 });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", /playing|paused/, { timeout: 15_000 });
+    phone.close();
+  });
+
   test("when every source fails, the TV says so instead of looping", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
@@ -1378,6 +1440,34 @@ test.describe("watching together", () => {
       .poll(async () => (await video(follower)).time - (await video(leader)).time, { timeout: 15_000, message: "the guest settles about 1.5 s ahead of the host" })
       .toBeGreaterThan(1.1);
     expect((await video(follower)).time - (await video(leader)).time).toBeLessThan(2.1);
+  });
+
+  test("a screen that has the host's film on when the party takes it in loads that film again, however close the two messages come", async ({ browser, baseURL }) => {
+    // (The server answers a join with TV_FOLLOWING and, a millisecond later, the host's LOAD. Over a slow link, or behind a proxy that passes frames on together,
+    // both reach the page before it has drawn once: here the test plays the server for those two.)
+    const sockets: WebSocketRoute[] = [];
+    const tv = await openLibrary(browser, async (context) => {
+      await context.routeWebSocket(/\/ws$/, (page) => {
+        sockets.push(page);
+        const server = page.connectToServer();
+        page.onMessage((message) => server.send(message));
+        server.onMessage((message) => page.send(message));
+        page.onClose((code, reason) => void server.close({ code, reason }));
+        server.onClose((code, reason) => void page.close({ code, reason }));
+      });
+    });
+    await tv.getByTestId("rail-connect").click();
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    const media: NormalizedMedia = { title: "Same Film", stream: { url: "/fixtures/sample.mp4", type: "mp4" } };
+    phone.cmd({ type: "LOAD", media });
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+
+    sockets.at(-1)!.send(JSON.stringify({ type: "TV_FOLLOWING", leader: "Sam" }));
+    sockets.at(-1)!.send(JSON.stringify({ type: "TV_CMD", command: { type: "LOAD", media } }));
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", /paused|playing/, { timeout: 15_000 }); // (not "idle": a picture that was stopped and never loaded again)
+    expect(await tv.evaluate(() => document.querySelector("video")!.currentSrc)).toContain("/fixtures/sample.mp4");
+    phone.close();
   });
 
   test("a follower has no controls of its own: keys do nothing, and the phone's stop ends it for both", async ({ browser, baseURL }) => {

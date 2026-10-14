@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PARTY_BUFFER_AHEAD_S, PARTY_BUFFER_BYTES, bufferPolicy } from "./engine";
+import { PARTY_BUFFER_AHEAD_S, PARTY_BUFFER_BYTES, bufferPolicy, lostTheConnection } from "./engine";
 
 /** What hls.js aims at: seconds of film downloaded ahead of the picture, `max(8 * maxBufferSize / bitrate, maxBufferLength)`, never more than `maxMaxBufferLength`. */
 function aheadSeconds(policy: ReturnType<typeof bufferPolicy>, bitsPerSecond: number): number {
@@ -24,5 +24,23 @@ describe("bufferPolicy", () => {
   it("still looks ahead in a party, to ride out a bad moment on the way", () => {
     expect(aheadSeconds(bufferPolicy(true), 4_000_000)).toBe(PARTY_BUFFER_AHEAD_S);
     expect(aheadSeconds(bufferPolicy(true), 16_000_000)).toBeGreaterThan(10);
+  });
+});
+
+describe("lostTheConnection", () => {
+  it("is a network error that got no answer: refused, dropped or timed out", () => {
+    expect(lostTheConnection({ type: "networkError", details: "fragLoadError" })).toBe(true); // (no response at all)
+    expect(lostTheConnection({ type: "networkError", details: "fragLoadError", response: { code: 0 } })).toBe(true); // (what a failed request is called)
+    expect(lostTheConnection({ type: "networkError", details: "manifestLoadTimeOut" })).toBe(true);
+    expect(lostTheConnection({ type: "networkError", details: "fragLoadTimeOut", response: { code: 504 } })).toBe(true); // (a time-out is a time-out whatever came with it)
+  });
+
+  it("is not an answer that says no, nor a picture that cannot be decoded: waiting does not change those", () => {
+    for (const code of [403, 404, 410, 500, 502]) {
+      expect(lostTheConnection({ type: "networkError", details: "fragLoadError", response: { code } }), `${code}`).toBe(false);
+    }
+    expect(lostTheConnection({ type: "mediaError", details: "fragParsingError" })).toBe(false);
+    expect(lostTheConnection({ type: "otherError", details: "internalException" })).toBe(false);
+    expect(lostTheConnection({})).toBe(false);
   });
 });

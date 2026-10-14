@@ -433,6 +433,7 @@ export const en = {
   "playerError.SOURCE_NOT_DIRECTLY_PLAYABLE": "This video can't be played on the TV.",
   "playerError.HLS_UNSUPPORTED": "This TV's browser can't play this kind of stream.",
   "playerError.PLAYBACK_BLOCKED": "The TV is waiting for a press. Press OK on the TV to start the video.",
+  "playerError.CONNECTION_LOST": "The connection to the video was lost.",
   "playerError.generic": "Something went wrong while playing this video.",
   "tv.leave": "Leave",
   "tv.fsPrompt": "Press OK for full screen",

@@ -38,7 +38,7 @@ import { useSlow, useWaking } from "../shared/useSlow";
 import { friendlyError, noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
-import { PlayerEngine } from "./engine";
+import { PlayerEngine, PlayerError } from "./engine";
 import { pickInRows } from "./dpad";
 import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, zoneOf, type PointerKind, type Side } from "./gestures";
 import { holdLine, resumeLine, sameHold, type Hold } from "./hold";
@@ -287,6 +287,14 @@ export function Tv() {
 
   const currentMediaRef = useRef<NormalizedMedia | null>(null);
   currentMediaRef.current = currentMedia;
+  /**
+   * Puts a video on (or takes it off), in the ref at once: the render that refreshes the ref comes later, and a message that follows within the same
+   * moment (a party's `TV_FOLLOWING` and the `LOAD` behind it) must compare with this video, not the one that was on before it.
+   */
+  const putMedia = (media: NormalizedMedia | null) => {
+    currentMediaRef.current = media;
+    setCurrentMedia(media);
+  };
   playerRef.current = player;
   const upNextDismissedRef = useRef(false);
   upNextDismissedRef.current = upNextDismissed;
@@ -309,14 +317,18 @@ export function Tv() {
   const loadSource = (index: number, manual: boolean) => {
     const media = currentMediaRef.current;
     const source = media ? sourcesOf(media)[index] : undefined;
+    const engine = engineRef.current;
     if (!media || !source || (manual && index === sourceIndexRef.current)) return;
-    const at = playerRef.current.currentTime;
+    // (Read before `load` wipes the element: where it was, or where it was told to start when the source that failed never got going, and whether
+    // it was meant to play: a video put back after a restart is held, and a source that takes over from a failing one does not start it.)
+    const at = engine?.resumePoint() ?? playerRef.current.currentTime;
+    const play = manual || (engine?.wantsPlay() ?? true);
     triedSourcesRef.current = manual ? new Set([index]) : triedSourcesRef.current.add(index);
     sourceIndexRef.current = index;
     setSourceIndex(index);
     resetApplied();
-    void engineRef.current?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined);
-    engineRef.current?.play();
+    void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined);
+    if (play) engine?.play();
   };
 
   // A source that fails hands over to the next one that hasn't been tried, so the first one that works plays.
@@ -342,7 +354,7 @@ export function Tv() {
 
     if (preloaded && nextUrl) {
       putOnAtOnceRef.current = preloaded;
-      setCurrentMedia(preloaded);
+      putMedia(preloaded);
       profileStore.playbackStarted(preloaded);
       resetApplied();
       resetSources();
@@ -656,7 +668,7 @@ export function Tv() {
             setResolving(false);
             setMenu(null);
             if (currentMediaRef.current) {
-              setCurrentMedia(null);
+              putMedia(null); // (in the ref at once: the host's LOAD follows within the same moment, and a screen that had this very video on must load it again)
               engine.stop();
             }
             break;
@@ -744,11 +756,11 @@ export function Tv() {
               const isSameStream = current?.stream.url === command.media.stream.url;
 
               if (isSameEpisode(current, command.media) || isSameStream) {
-                setCurrentMedia(command.media);
+                putMedia(command.media);
                 return;
               }
 
-              setCurrentMedia(command.media);
+              putMedia(command.media);
               follower.reset(); // (where the host was in the film before says nothing about this one)
               if (!followingRef.current) profileStore.playbackStarted(command.media); // it moves to the front of "Continue watching" at once (not for a screen that watches along)
               setUpNextCountdown(null);
@@ -774,7 +786,7 @@ export function Tv() {
             } else if (command.type === "SEEK") engine.seek(command.time);
             else if (command.type === "SKIP") skip(command.seconds);
             else if (command.type === "STOP") {
-              setCurrentMedia(null);
+              putMedia(null);
               setUpNextCountdown(null);
               setResolving(false);
               setMenu(null);
@@ -1071,12 +1083,12 @@ export function Tv() {
     leavingRef.current = true;
     setMenu(null);
     engineRef.current?.stop();
-    setCurrentMedia(null);
+    putMedia(null);
     socketRef.current?.send({ type: "TV_UNPAIR" });
   };
   /** Stop what plays and go back to the library. A host that does takes the video from its guests too (the server tells them). */
   const stopPlayback = () => {
-    setCurrentMedia(null);
+    putMedia(null);
     setUpNextCountdown(null);
     engineRef.current?.stop();
   };
@@ -1093,7 +1105,7 @@ export function Tv() {
   const cancelLoad = () => {
     wasResolvingRef.current = false; // giving up is not a lookup that failed: no "wouldn't play" notice
     setResolving(false);
-    setCurrentMedia(null);
+    putMedia(null);
     setUpNextCountdown(null);
     setMenu(null);
     engineRef.current?.stop();
@@ -1119,15 +1131,42 @@ export function Tv() {
   useEffect(() => {
     if (failed) setMenu(null);
   }, [failed]);
-  /** From the first source again, as the first time: a failure is sometimes only a bad moment. */
+  /** From the first source again, as the first time: a failure is sometimes only a bad moment. Where it stopped is where it carries on from, not the start. */
   const retryPlayback = () => {
+    const engine = engineRef.current;
     const source = currentMedia ? sourcesOf(currentMedia)[0] : undefined;
-    if (!source) return;
+    if (!source || !engine) return;
+    const at = engine.resumePoint();
     resetApplied();
     resetSources();
-    void engineRef.current?.load(source.stream.url, source.stream.type, source.subtitles);
-    engineRef.current?.play();
+    void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined);
+    engine.play();
   };
+
+  // A video that stopped because the connection went (a server that was away for minutes outlasts what was downloaded) is tried again by itself: at once when
+  // this page is connected again, and a moment after it stopped when it was connected all along (the picture's own tries may have outlasted the outage). A few
+  // times, not for ever: past that the card's Try again is the way, and it carries on from the same place.
+  const lostConnection = failed && player.error === PlayerError.ConnectionLost;
+  const retryRef = useRef(retryPlayback);
+  retryRef.current = retryPlayback;
+  const connectionRetriesRef = useRef(0);
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    const reopened = connection === "open" && !wasOpenRef.current;
+    wasOpenRef.current = connection === "open";
+    if (!lostConnection || connection !== "open" || connectionRetriesRef.current >= 3) return;
+    const timer = setTimeout(
+      () => {
+        connectionRetriesRef.current += 1;
+        retryRef.current();
+      },
+      reopened ? 0 : 4000,
+    );
+    return () => clearTimeout(timer);
+  }, [connection, lostConnection]);
+  useEffect(() => {
+    if (player.state === "playing") connectionRetriesRef.current = 0;
+  }, [player.state]);
 
   // Arrow keys move along the buttons once one has focus; otherwise they seek. OK presses the focused button.
   useEffect(() => {
