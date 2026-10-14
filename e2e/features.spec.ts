@@ -1228,6 +1228,20 @@ test.describe("full screen", () => {
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
   });
 
+  for (const how of ["key", "click"] as const) {
+    test(`the first ${how === "key" ? "key press" : "click"} on the welcome asks the browser for full screen once: nothing is refused, so the console has nothing to say`, async ({ browser, baseURL }) => {
+      const tv = await firstVisit(browser, baseURL!);
+      const complaints: string[] = [];
+      tv.on("console", (message) => message.text().includes("requestFullscreen") && complaints.push(message.text()));
+      await expect(tv.getByTestId("welcome-enter")).toBeVisible();
+      if (how === "key") await tv.keyboard.press("Enter");
+      else await tv.getByTestId("welcome-enter").click();
+      await expect.poll(() => isFullScreen(tv)).toBe(true);
+      await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
+      expect(complaints).toEqual([]);
+    });
+  }
+
   test("Back lets the waiting welcome go, and the library is as it was", async ({ browser, baseURL }) => {
     const tv = await firstVisit(browser, baseURL!);
     await expect(tv.getByTestId("welcome-enter")).toBeVisible();

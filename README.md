@@ -285,8 +285,10 @@ pnpm build && pnpm start     # http://localhost:8787
   one). It is not done after Stop, Back to the library or the end of the film, nor for a TV on its own (its own *Continue watching* has the
   place). The place is written down every 30 seconds it moves, and exactly when the TV goes away
 - **The library is the front door.** The site opens straight into it, signed in or not (a guest's progress stays on that screen), so a screen can
-  pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press. (Only a party link opens a "Press OK" page
-  first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
+  pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press, unless the first press would take the screen
+  full screen (a browser that has a full screen to give, and was not left that way last time): then the welcome waits with a **Start watching**
+  button, which is that press (any other key or click is too, and the page asks the browser for full screen once for it; Back lets the welcome go
+  without it). (Only a party link opens a "Press OK" page first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
   says so, with **Back to the library** and **Disconnect from phone** (unpairs the TV from every phone and shows a new code; the phone
   controlling it goes back to the code screen, one that had moved on to another TV just loses it from its list)
 - **Sign in** is the button in the library's top corner (the profile picture once signed in); nobody is made to
