@@ -52,6 +52,31 @@ const guestCopy = (page: Page) =>
   page.evaluate(() => JSON.parse(localStorage.getItem("kino.data.guest") ?? "null") as { data: { progress: unknown[]; list: unknown[]; listNames: unknown[] } } | null);
 
 test.describe("accounts and profiles", () => {
+  test("Tab goes round the page that is open, in both directions, and never out of it into the remote behind", async ({ browser }) => {
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, fresh());
+    await expect(phone.getByTestId("account-screen")).toBeVisible();
+    const onThePage = () => phone.evaluate(() => document.activeElement?.closest(".page") !== null && document.activeElement !== document.body);
+
+    for (const [row, page] of [["menu-settings", "settings-page"], ["menu-devices", "devices-page"], ["menu-security", "security-page"]] as const) {
+      await phone.getByTestId(row).click();
+      await expect(phone.getByTestId(page)).toBeVisible();
+      expect(await onThePage(), `${page}: the keyboard starts on the page`).toBe(true);
+      const controls = await phone.locator(".page button, .page input, .page select, .page a[href]").count();
+      for (const key of ["Tab", "Shift+Tab"]) {
+        const where: boolean[] = [];
+        for (let i = 0; i < controls + 3; i++) {
+          await phone.keyboard.press(key);
+          where.push(await onThePage());
+        }
+        expect(where, `${page}, ${key}`).not.toContain(false);
+      }
+      await phone.keyboard.press("Escape"); // back to the account page
+      await expect(phone.getByTestId("account-screen")).toBeVisible();
+    }
+  });
+
   test("an account has a first profile, up to five can be added, and signing in again brings them all back", async ({ browser }) => {
     test.setTimeout(60_000);
     // A name and a password of one character: what somebody who only wants to watch types.

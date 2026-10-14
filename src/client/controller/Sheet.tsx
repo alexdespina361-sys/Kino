@@ -103,8 +103,8 @@ function usePullToClose(backdrop: RefObject<HTMLDivElement | null>, sheet: RefOb
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/** Tab goes round the sheet (from its last control to its first, and back with Shift), not out of it to the page under it. */
-function keepFocusIn(panel: HTMLElement, event: KeyboardEvent) {
+/** Tab goes round the sheet (from its last control to its first, and back with Shift), not out of it to the page under it. A full-screen page does the same. */
+export function keepFocusIn(panel: HTMLElement, event: KeyboardEvent) {
   const items = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((item) => item.offsetParent !== null);
   const first = items[0];
   const last = items[items.length - 1];
