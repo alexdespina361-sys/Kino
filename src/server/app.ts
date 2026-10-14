@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
+import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -72,6 +73,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const proxies = options.trustProxy;
   const trustProxy = typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies;
   const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
+  await app.register(fastifyCompress, {
+    threshold: 1024,
+  });
   const registry = options.registry ?? new Registry();
   const accounts = options.accounts;
   // (A screen that is signed in tells the watch party whose it is by a proof the accounts give it: see accounts/screens.ts.)
@@ -189,7 +193,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const result = await resolve(rawUrl);
     return reply.send(result);
   });
-  app.get<{ Querystring: { url?: string; referer?: string } }>("/api/proxy", async (request, reply) => {
+  app.get<{ Querystring: { url?: string; referer?: string } }>("/api/proxy", { compress: false }, async (request, reply) => {
     return handleStreamProxy(request, reply, {
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",
       segments,
@@ -210,7 +214,13 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       // Vite names the files in /assets after what is in them, so a changed file has a new name and an old one can be kept for good.
       // The page itself is always checked again, which is how a new build reaches a screen that still has the old one.
       setHeaders: (reply, filePath) => {
-        if (filePath.startsWith(assetsDir)) reply.header("Cache-Control", "public, max-age=31536000, immutable");
+        if (filePath.startsWith(assetsDir)) {
+          reply.header("Cache-Control", "public, max-age=31536000, immutable");
+        } else if (filePath.endsWith("index.html")) {
+          reply.header("Cache-Control", "no-cache, must-revalidate");
+        } else {
+          reply.header("Cache-Control", "public, max-age=86400");
+        }
       },
     });
     // One SPA: "/" is the phone, "/tv" is the receiver. Both are index.html.

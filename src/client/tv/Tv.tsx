@@ -327,7 +327,7 @@ export function Tv() {
     sourceIndexRef.current = index;
     setSourceIndex(index);
     resetApplied();
-    void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined);
+    void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     if (play) engine?.play();
   };
 
@@ -358,7 +358,7 @@ export function Tv() {
       profileStore.playbackStarted(preloaded);
       resetApplied();
       resetSources();
-      engineRef.current?.load(preloaded.stream.url, preloaded.stream.type, preloaded.subtitles);
+      engineRef.current?.load(preloaded.stream.url, preloaded.stream.type, preloaded.subtitles, undefined, preloaded.stream.directUrl);
       engineRef.current?.play();
       socketRef.current?.send({ type: "TV_PLAY_URL", url: nextUrl });
     } else if (nextUrl) {
@@ -767,7 +767,7 @@ export function Tv() {
               setUpNextDismissed(false);
               resetApplied();
               resetSources();
-              void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt);
+              void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt, command.media.stream.directUrl);
             } else if (command.type === "PLAY") {
               engine.play();
               if (message.by) {
@@ -1139,7 +1139,7 @@ export function Tv() {
     const at = engine.resumePoint();
     resetApplied();
     resetSources();
-    void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined);
+    void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     engine.play();
   };
 

@@ -67,3 +67,20 @@ export function writeStorage(key: string, value: string | null): void {
     /* storage unavailable: the app just forgets between loads */
   }
 }
+
+export function readSession(key: string): string | undefined {
+  try {
+    return sessionStorage.getItem(key) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeSession(key: string, value: string | null): void {
+  try {
+    if (value === null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable */
+  }
+}

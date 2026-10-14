@@ -39,11 +39,17 @@ export function lostTheConnection(data: { type?: string; details?: string; respo
  */
 export const PARTY_BUFFER_AHEAD_S = 40;
 export const PARTY_BUFFER_BYTES = 32 * 1024 * 1024;
+export const LONE_PROXY_BUFFER_AHEAD_S = 90;
+export const LONE_PROXY_BUFFER_BYTES = 48 * 1024 * 1024;
 
-export function bufferPolicy(inParty: boolean): { maxBufferLength: number; maxMaxBufferLength: number; maxBufferSize: number } {
-  return inParty
-    ? { maxBufferLength: 10, maxMaxBufferLength: PARTY_BUFFER_AHEAD_S, maxBufferSize: PARTY_BUFFER_BYTES }
-    : { maxBufferLength: 120, maxMaxBufferLength: 600, maxBufferSize: 128 * 1024 * 1024 };
+export function bufferPolicy(inParty: boolean, isProxied = false): { maxBufferLength: number; maxMaxBufferLength: number; maxBufferSize: number } {
+  if (inParty) {
+    return { maxBufferLength: 10, maxMaxBufferLength: PARTY_BUFFER_AHEAD_S, maxBufferSize: PARTY_BUFFER_BYTES };
+  }
+  if (isProxied) {
+    return { maxBufferLength: 30, maxMaxBufferLength: LONE_PROXY_BUFFER_AHEAD_S, maxBufferSize: LONE_PROXY_BUFFER_BYTES };
+  }
+  return { maxBufferLength: 120, maxMaxBufferLength: 600, maxBufferSize: 128 * 1024 * 1024 };
 }
 
 export function formatQualityLabel(width?: number, height?: number, name?: string): string {
@@ -83,6 +89,7 @@ export class PlayerEngine {
   private adaptive = true;
   /** The last state handed to `onChange`, as JSON, to skip repeats. */
   private lastEmitted = "";
+  private nativeFallbackSrc?: string;
   private readonly ticker: ReturnType<typeof setInterval>;
 
   constructor(
@@ -115,13 +122,21 @@ export class PlayerEngine {
       video.textTracks.addEventListener("addtrack", () => this.emit());
     }
     video.addEventListener("error", () => {
-      // (MEDIA_ERR_NETWORK, 2: the download broke off part of the way. A file that cannot be opened at all, or played, is another code.)
-      if (this.hasSource) this.fail(video.error?.code === 2 ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
+      if (this.hasSource) {
+        if (this.nativeFallbackSrc && this.video.src !== this.nativeFallbackSrc) {
+          const fallback = this.nativeFallbackSrc;
+          this.nativeFallbackSrc = undefined;
+          this.video.src = fallback;
+          return;
+        }
+        // (MEDIA_ERR_NETWORK, 2: the download broke off part of the way. A file that cannot be opened at all, or played, is another code.)
+        this.fail(video.error?.code === 2 ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
+      }
     });
     this.ticker = setInterval(() => this.hasSource && this.emit(), 1000);
   }
 
-  async load(url: string, type: StreamType, subtitles?: SubtitleTrack[], startAt?: number): Promise<void> {
+  async load(url: string, type: StreamType, subtitles?: SubtitleTrack[], startAt?: number, directUrl?: string): Promise<void> {
     this.teardown();
     const generation = this.generation;
     this.hasSource = true;
@@ -146,7 +161,7 @@ export class PlayerEngine {
     }
 
     if (type === "mp4") {
-      this.video.src = src;
+      this.video.src = directUrl || src;
       return;
     }
 
@@ -160,7 +175,7 @@ export class PlayerEngine {
       const hls = new HlsLib({
         startPosition: resumeAt ?? -1,
         capLevelToPlayerSize: false,
-        ...bufferPolicy(this.inParty),
+        ...bufferPolicy(this.inParty, src.includes("/api/proxy")),
         lowLatencyMode: false,
         // (The first piece in the lowest quality, which is the first one the player lists: it drops the variants that have no picture when there are some that do.)
         ...(adaptive ? { startLevel: 0 } : {}),
@@ -181,6 +196,7 @@ export class PlayerEngine {
           if (!retriedProxy && !src.includes("/api/proxy") && (src.startsWith("http://") || src.startsWith("https://"))) {
             retriedProxy = true;
             console.log("[HLS] Retrying via proxy:", src);
+            Object.assign(hls.config, bufferPolicy(this.inParty, true));
             const proxied = new URL(`/api/proxy?url=${encodeURIComponent(src)}`, location.href).href;
             hls.loadSource(proxied);
             return;
@@ -228,7 +244,12 @@ export class PlayerEngine {
       hls.loadSource(src);
       hls.attachMedia(this.video);
     } else if (this.video.canPlayType("application/vnd.apple.mpegurl")) {
-      this.video.src = src;
+      if (directUrl && directUrl !== src) {
+        this.nativeFallbackSrc = src;
+        this.video.src = directUrl;
+      } else {
+        this.video.src = src;
+      }
     } else {
       this.fail(PlayerError.HlsUnsupported);
     }
@@ -240,7 +261,10 @@ export class PlayerEngine {
    */
   setInParty(inParty: boolean): void {
     this.inParty = inParty;
-    if (this.hls) Object.assign(this.hls.config, bufferPolicy(inParty));
+    if (this.hls) {
+      const isProxied = Boolean(this.video.src?.includes("/api/proxy") || this.hls.url?.includes("/api/proxy"));
+      Object.assign(this.hls.config, bufferPolicy(inParty, isProxied));
+    }
   }
 
   /**
@@ -479,6 +503,7 @@ export class PlayerEngine {
     this.pendingPlay = false;
     this.startAt = undefined;
     this.requestedStart = undefined;
+    this.nativeFallbackSrc = undefined;
     this.hls?.destroy();
     this.hls = null;
     this.hasSource = false;
