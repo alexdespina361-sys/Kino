@@ -185,10 +185,10 @@
 .choose .profile-grid { grid-template-columns: repeat(auto-fit, 104px); justify-content: center; width: 100%; }
 .choose .profile-editor { width: 100%; text-align: left; }
 
-/* A short message from the account (what was brought across at sign-in), over everything. */
-.account-toast { position: fixed; left: 50%; top: max(16px, env(safe-area-inset-top)); z-index: 80; width: max-content; max-width: min(92vw, 420px); margin: 0; padding: 11px 18px; border-radius: 14px; background: rgba(245, 245, 245, 0.97); color: #111; font-size: 0.9rem; font-weight: 600; line-height: 1.3; text-align: center; transform: translateX(-50%); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5); animation: account-toast 4.5s ease-out forwards; pointer-events: none; }
+/* A short message from the account (what was brought across at sign-in), over everything. At the bottom, as the remote's own are: a page's title is at the top. */
+.account-toast { position: fixed; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); z-index: 80; width: max-content; max-width: min(92vw, 420px); margin: 0; padding: 11px 18px; border-radius: 14px; background: rgba(245, 245, 245, 0.97); color: #111; font-size: 0.9rem; font-weight: 600; line-height: 1.3; text-align: center; transform: translateX(-50%); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5); animation: account-toast 4.5s ease-out forwards; pointer-events: none; }
 @keyframes account-toast {
-  0% { opacity: 0; transform: translate(-50%, -10px); }
+  0% { opacity: 0; transform: translate(-50%, 10px); }
   7% { opacity: 1; transform: translate(-50%, 0); }
   90% { opacity: 1; }
   100% { opacity: 0; }

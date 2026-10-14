@@ -265,6 +265,8 @@ test.describe("making friends", () => {
     await expect(bob.page.getByTestId("friend-code-name")).toHaveText(ann.name); // who it is from, before it is used
     await bob.page.getByTestId("friend-code-add").click();
     await expect(bob.page.getByTestId("account-toast")).toContainText(`You and ${ann.name} are now friends`);
+    const head = await where(bob.page.locator(".page-head"));
+    await expect.poll(async () => apart(await where(bob.page.getByTestId("account-toast")), head)).toBe(true); // (not drawn over the page's own title)
     await expect(bob.page.getByTestId("friend-row")).toHaveCount(1);
     await expect(bob.page.getByTestId("friend-row")).toContainText(ann.name);
 
