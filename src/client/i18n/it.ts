@@ -146,6 +146,8 @@ export const it: Dictionary = {
   "settings.autoplayNext": "Riproduci automaticamente il prossimo episodio",
   "settings.tapToPause": "Tocca l'immagine per pausa e riproduzione",
   "settings.tapToPauseHelp": "Disattivato: un tocco o un clic sull'immagine mostra o nasconde soltanto i comandi. Attivato: mette in pausa e riprende (un tocco a comandi nascosti prima li mostra soltanto). Il pulsante grande al centro e il tasto OK del telecomando mettono in pausa e riprendono comunque.",
+  "settings.adaptiveQuality": "Adatta la qualità dell'immagine alla connessione",
+  "settings.adaptiveQualityHelp": "Attivato: il film parte nella qualità più bassa, così inizia subito, e prosegue nella migliore che la connessione regge: più bassa quando non ce la fa, più alta quando può. Disattivato: sempre la qualità più alta disponibile. Vale dal film successivo; una qualità scelta nel lettore resta.",
   "settings.playbackHelp": "Su uno schermo tattile: tocca due volte il lato sinistro o destro dell'immagine per andare indietro o avanti, e tieni premuto sull'immagine per la velocità doppia.",
   "settings.pasteLink": "Incolla un link",
   "settings.pasteLinkSwitch": "Mostra nella schermata iniziale la casella per incollare un link",

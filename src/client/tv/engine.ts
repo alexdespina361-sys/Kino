@@ -64,6 +64,8 @@ export class PlayerEngine {
   private boostedFrom: number | null = null;
   /** This screen is in a party (see `bufferPolicy`). */
   private inParty = false;
+  /** The profile lets the picture's quality follow the connection (see `setAdaptive`). */
+  private adaptive = true;
   /** The last state handed to `onChange`, as JSON, to skip repeats. */
   private lastEmitted = "";
   private readonly ticker: ReturnType<typeof setInterval>;
@@ -137,11 +139,14 @@ export class PlayerEngine {
     if (HlsLib.isSupported()) {
       const resumeAt = this.startAt;
       this.startAt = undefined; // hls.js starts there itself
+      const adaptive = this.adaptive;
       const hls = new HlsLib({
         startPosition: resumeAt ?? -1,
         capLevelToPlayerSize: false,
         ...bufferPolicy(this.inParty),
         lowLatencyMode: false,
+        // (The first piece in the lowest quality, which is the first one the player lists: it drops the variants that have no picture when there are some that do.)
+        ...(adaptive ? { startLevel: 0 } : {}),
       });
       this.hls = hls;
       hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
@@ -177,8 +182,8 @@ export class PlayerEngine {
       });
 
       hls.on(HlsLib.Events.MANIFEST_PARSED, (_event, data) => {
-        // Automatically select the highest available quality level
-        if (data?.levels && data.levels.length > 0) {
+        // Not adaptive: the highest quality there is, whatever the connection. (Adaptive leaves the choice to hls.js: see `setAdaptive`.)
+        if (!adaptive && data?.levels && data.levels.length > 0) {
           let highestIdx = 0;
           let maxMetric = 0;
           data.levels.forEach((lvl, idx) => {
@@ -221,6 +226,18 @@ export class PlayerEngine {
     if (this.hls) Object.assign(this.hls.config, bufferPolicy(inParty));
   }
 
+  /**
+   * Whether the picture's quality follows the connection (the profile's choice), from the next film on. On, the first piece of a film is
+   * the lowest quality, which arrives at once whatever the link, so the picture starts at once; hls.js then asks for every piece in the best
+   * quality that the link carries, as it measures it, which a weak or unsteady link brings down (and back up when it recovers). A change
+   * applies to the pieces still to be downloaded: what is downloaded already plays out first. Off, every piece is the highest quality
+   * there is, which on a link that cannot carry it is a picture that stops to fill again and again. Either way a quality picked from the
+   * menu stays (`setQuality`).
+   */
+  setAdaptive(adaptive: boolean): void {
+    this.adaptive = adaptive;
+  }
+
   play(): void {
     if (!this.hasSource) return;
     if (this.loading) {
@@ -254,9 +271,10 @@ export class PlayerEngine {
     this.seek(this.video.currentTime + seconds);
   }
 
+  /** A quality picked by hand, or -1 for the player's own choice again: from the next piece on, without a stop (what is downloaded beyond the piece that plays is replaced). */
   setQuality(level: number): void {
     if (!this.hls) return;
-    this.hls.currentLevel = level;
+    this.hls.nextLevel = level;
     this.emit();
   }
 
@@ -350,7 +368,7 @@ export class PlayerEngine {
     return false;
   }
 
-  private getQualityState(): { levels: PlayerQualityLevel[]; current: number } | undefined {
+  private getQualityState(): { levels: PlayerQualityLevel[]; current: number; active?: number } | undefined {
     if (!this.hls?.levels || this.hls.levels.length <= 1) return undefined;
     const levels: PlayerQualityLevel[] = this.hls.levels.map((lvl, index) => {
       return {
@@ -360,9 +378,11 @@ export class PlayerEngine {
         bitrate: lvl.bitrate,
       };
     });
+    const playing = this.hls.currentLevel; // (-1 until a piece plays)
     return {
       levels,
-      current: this.hls.autoLevelEnabled ? -1 : this.hls.currentLevel,
+      current: this.hls.manualLevel,
+      ...(playing >= 0 ? { active: playing } : {}),
     };
   }
 

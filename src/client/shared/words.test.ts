@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { CAPTION_SETTINGS, CAPTION_VALUES, MAX_FOLLOWERS, type ResolveStatus } from "../../shared";
 import { setLanguage } from "../i18n";
-import { captionLabel, captionTitle, friendlyError, noticeText, resolveFailure, socketError, statusWords, trackName } from "./words";
+import { captionLabel, captionTitle, friendlyError, noticeText, qualityName, resolveFailure, socketError, statusWords, trackName } from "./words";
 
 const LANGUAGES = ["en", "ro", "it"] as const;
 afterEach(() => setLanguage("en", false));
@@ -54,6 +54,25 @@ describe("noticeText", () => {
     expect(noticeText({ kind: "subtitlesOff" })).not.toBe("Subtitles off");
     setLanguage("it", false);
     expect(noticeText({ kind: "quality", label: "1080p" })).toContain("1080p");
+  });
+});
+
+describe("qualityName", () => {
+  const levels = [
+    { id: 0, label: "360p" },
+    { id: 1, label: "720p" },
+    { id: 2, label: "1080p" },
+  ];
+
+  it("names the quality that was picked, and says Auto, with the quality it has chosen after it once that is known, when none was", () => {
+    expect(qualityName({ levels, current: 1 })).toBe("720p");
+    expect(qualityName({ levels, current: 1, active: 2 })).toBe("720p"); // (a picked quality is what it says, whatever is playing as it is changed)
+    expect(qualityName({ levels, current: -1 })).toBe("Auto");
+    expect(qualityName({ levels, current: -1, active: 1 })).toBe("Auto · 720p");
+    expect(qualityName({ levels, current: -1, active: 9 })).toBe("Auto"); // (not one of the levels: nothing to add)
+    expect(qualityName(undefined)).toBe("Auto");
+    setLanguage("ro", false);
+    expect(qualityName({ levels, current: -1, active: 2 })).toBe("Automată · 1080p");
   });
 });
 

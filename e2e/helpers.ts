@@ -20,6 +20,26 @@ export const test = base.extend<{ closeDevices: void }>({
 /** (The screen is the phone's own: the project's desktop browser would otherwise say 1920 by 1080 whatever the window is.) */
 export const PHONE = { viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: true } as const;
 
+/**
+ * One stream at two sizes, for a screen that is to be offered a choice of quality: the context serves /fixtures/hls/multi.m3u8, the smaller
+ * size listed second (as a real one's might be), over the fixture's own pieces.
+ */
+export const twoSizes = (context: BrowserContext) =>
+  context.route("**/fixtures/hls/multi.m3u8", (route) =>
+    route.fulfill({
+      contentType: "application/vnd.apple.mpegurl",
+      body: [
+        "#EXTM3U",
+        "#EXT-X-VERSION:7",
+        '#EXT-X-STREAM-INF:BANDWIDTH=453168,RESOLUTION=1280x720,CODECS="vp09.00.11.08"',
+        "stream.m3u8",
+        '#EXT-X-STREAM-INF:BANDWIDTH=153168,RESOLUTION=320x180,CODECS="vp09.00.11.08"',
+        "stream.m3u8",
+        "",
+      ].join("\n"),
+    }),
+  );
+
 /** A device that has never opened the page: nothing kept, so a screen goes full screen at its first press (the config's pages start as if it had been left). */
 export const FIRST_VISIT = { cookies: [], origins: [] };
 

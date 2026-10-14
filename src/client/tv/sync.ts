@@ -42,12 +42,13 @@ export function leaderNow(report: { playing: boolean; time: number; rate: number
 export const HARD_SEEK_S = 1;
 /**
  * Between this and a jump, catch up by playing a little faster or slower. What is left of a report's age once `leaderNow` has added it is
- * the guess being a little off, so a nudge starts a little beyond that, and then goes on until the pictures are close (`NUDGE_UNTIL_S`),
- * instead of starting and stopping with every report.
+ * the guess being a little off, and a picture that has just started needs a moment to move, so a nudge starts well beyond that (a quarter
+ * of a second apart is not something two screens in two rooms show), and then goes on until the pictures are close (`NUDGE_UNTIL_S`),
+ * instead of starting and stopping with every report. The speed is changed as little as will do: a change of speed is what a viewer notices.
  */
-export const NUDGE_FROM_S = 0.15;
-export const NUDGE_UNTIL_S = 0.05;
-export const NUDGE = 0.08;
+export const NUDGE_FROM_S = 0.25;
+export const NUDGE_UNTIL_S = 0.08;
+export const NUDGE = 0.06;
 /** A paused picture only needs to be near, since nothing moves (but near enough to show the same frame). */
 export const PAUSED_TOLERANCE_S = 0.1;
 /**
@@ -70,6 +71,26 @@ export const FAR_SEEK_S = 8;
 export const RESUME_SEEK_S = 0.1;
 /** After a jump the picture needs a moment to fill; a second jump before then would only chase it. */
 export const SEEK_COOLDOWN_MS = 3000;
+/**
+ * A picture sent to a place shows it a moment later, and the host has moved on by then: left to itself, a guest lands behind the host by that
+ * moment, every time, and stays there (it is inside what is not worth a nudge, so nothing ever puts it right). The moment is not the same for
+ * every screen, nor for every kind of jump: one that starts a picture moving (a guest that was paused) takes longer than one that carries on,
+ * and a host that is slow to start moving, itself, makes it shorter. So a guest does not guess it: it looks at how far from the host each jump
+ * left it, and aims that much further on (or less far) the next time it jumps (`Follower`). These are what it starts from, before it has seen
+ * any (seconds, for a picture at normal speed; what a desktop browser was measured to take: a jump landed 60-75 ms behind the host, and a
+ * jump that starts a paused picture 120-150 ms, of which the host's own slowness to start is some 70), and the most that it will ever aim
+ * off by: no more than a nudge is for, so that a lead that is wrong is never what starts one.
+ */
+export const LEAD_FROM_PLAYING_S = 0.07;
+export const LEAD_FROM_STILL_S = 0.1;
+export const LEAD_MAX_S = NUDGE_FROM_S;
+/** How much of what a jump was found to have missed by is put into the next one (the place the host is read at is a little noisy, so not all of it). */
+export const LEAD_GAIN = 0.6;
+/** A jump is looked at by the first report this long after it (its picture has had time to start), and given up on after this long. */
+export const LEAD_LOOK_AFTER_S = 1;
+export const LEAD_LOOK_UNTIL_S = 20;
+/** Missing by as much as a hard jump is for is not what a jump takes: the picture waited for data, or the host jumped too. It teaches nothing. */
+export const LEAD_LEARN_UNTIL_S = HARD_SEEK_S;
 /**
  * A picture that is playing with less than this downloaded ahead is about to wait for data. It is not made to run faster (that
  * would use up what little it has), and it is not sent to a place it has not downloaded (it would wait there, fall behind again,
@@ -137,6 +158,8 @@ export class HostClock {
   private samples: Array<{ anchor: number; at: number }> = [];
   private doubt: { anchor: number; at: number } | null = null;
   private rate = 1;
+  /** The last report was of a host that holds still: the next one that says it plays is the moment it was told to, not yet a place on its clock. */
+  private starting = false;
 
   /** What was read is of no use any more (another film, another speed). */
   reset(): void {
@@ -155,6 +178,7 @@ export class HostClock {
   read(report: HostReport, now: number): number {
     if (!report.playing) {
       this.reset(); // a host that holds still has a place, not a clock to read
+      this.starting = !report.waiting; // (one that only waits for data starts again at once, with nothing to wait for first)
       return report.time;
     }
     if (report.rate !== this.rate) {
@@ -164,6 +188,14 @@ export class HostClock {
     // The anchor of a report is where the host would have been when this page's clock read zero, had it played at that speed all along:
     // reports of a host that plays have the same anchor, whatever time they came at, except for what held each of them up.
     const anchor = report.time + (report.lag ?? 0) * report.rate - report.rate * now;
+    if (this.starting) {
+      // The host was told to play and says so at once, but its picture takes a moment to start moving (more on some screens than on others): this
+      // report is ahead of the host's clock by that moment, and the furthest report is the one that is read from, for as long as it is kept.
+      // Read from, it would have every guest play ahead of the host by that much, and then slow down when it was forgotten. It is used for what
+      // it says (the place to start from) and left out of the clock, which the reports after it make.
+      this.starting = false;
+      return anchor + report.rate * now;
+    }
     this.samples = this.samples.filter((sample) => now - sample.at < CLOCK_WINDOW_S);
     // (How far a late report is behind the rest has to be more than how much they differ among themselves: on a link whose reports are
     // all late by something different, a report that is merely later than most is no sign of anything.)
@@ -192,42 +224,71 @@ export class HostClock {
   }
 }
 
-/** What a follower has done on this page, for the `?debug` panel: a picture that lags is told apart from one that only looks like it. */
-export const syncStats = { reports: 0, seeks: 0, rewinds: 0, speedChanges: 0, waits: 0, drift: 0, settled: false };
+/** A jump of a picture that was playing (it carries on from the new place), or of one that was not (it has to start there). */
+type JumpKind = "playing" | "still";
+
+/**
+ * What a follower has done on this page, for the `?debug` panel: a picture that lags is told apart from one that only looks like it. And how far
+ * on it aims a jump (seconds, for a picture that was playing and for one that was not): what this screen has been found to take to land one.
+ */
+export const syncStats = { reports: 0, seeks: 0, rewinds: 0, speedChanges: 0, waits: 0, drift: 0, settled: false, leadPlaying: LEAD_FROM_PLAYING_S, leadStill: LEAD_FROM_STILL_S };
 
 /** The follower's doings in a line, or null while it has done nothing (this page follows nobody). */
 export function describeSync(stats: typeof syncStats): string | null {
   if (stats.reports === 0) return null;
   const drift = `${stats.drift >= 0 ? "+" : "−"}${Math.abs(stats.drift).toFixed(2)}s`;
-  return `sync: ${stats.reports} reports  now ${drift} from the host${stats.settled ? "" : " (not settled)"}  jumps ${stats.seeks} (${stats.rewinds} back)  speed changes ${stats.speedChanges}  host waits ${stats.waits}`;
+  const lead = `${Math.round(stats.leadPlaying * 1000)}/${Math.round(stats.leadStill * 1000)} ms`;
+  return `sync: ${stats.reports} reports  now ${drift} from the host${stats.settled ? "" : " (not settled)"}  jumps ${stats.seeks} (${stats.rewinds} back)  speed changes ${stats.speedChanges}  host waits ${stats.waits}  jumps aimed on by ${lead} (playing/paused)`;
 }
 
 /**
  * A guest's way of keeping its picture with the host's: what to do about each report (`TV_SYNC`). Reads the host's place with a `HostClock`,
- * remembers when it last jumped (a second jump before the first has filled would only chase it), and keeps `syncStats`.
+ * remembers when it last jumped (a second jump before the first has filled would only chase it), aims its jumps at where the host will be
+ * when they land (`LEAD_*`), and keeps `syncStats`.
  */
 export class Follower {
   private readonly clock = new HostClock();
   private lastSeekAt = -Infinity;
+  /**
+   * How long a jump of each kind has been found to take to land, in seconds. The two kinds are told apart by whether the picture was playing
+   * when it jumped. Kept for as long as this page is open, film after film: it is a thing about this screen.
+   */
+  private readonly lead: Record<JumpKind, number> = { playing: LEAD_FROM_PLAYING_S, still: LEAD_FROM_STILL_S };
+  /** The last jump to a host that plays, until it has been looked at (what it missed by is how long the next one has to aim on). */
+  private pending: { at: number; kind: JumpKind } | null = null;
 
   /** A different film: where the host was in the one before says nothing about this one. */
   reset(): void {
     this.clock.reset();
+    this.pending = null;
   }
 
   /** `now` is a clock that only goes on, in seconds (`performance.now() / 1000`); `hasBuffered` says whether a place in the film is downloaded here. */
   step(report: HostReport, local: Omit<SyncLocal, "targetBuffered">, now: number, hasBuffered: (time: number) => boolean): SyncStep {
     const time = this.clock.read(report, now);
     const settled = this.clock.settled;
+    this.learn(report, local, time, settled, now);
+    const targetBuffered = hasBuffered(time);
     const step = syncStep(
       { playing: report.playing, time, rate: report.rate, waiting: report.waiting === true, settled },
-      { ...local, targetBuffered: hasBuffered(time) },
+      { ...local, targetBuffered },
       (now - this.lastSeekAt) * 1000,
     );
-    if (step.seek !== undefined) this.lastSeekAt = now;
+    if (step.seek !== undefined) {
+      this.lastSeekAt = now;
+      if (report.playing) {
+        // The host moves on while the picture lands, so the jump goes to where it will be then. (A host that holds still does not move on.)
+        const kind = local.playing ? "playing" : "still";
+        step.seek = Math.max(0, step.seek + this.lead[kind] * report.rate);
+        // (A place that is not downloaded is landed at when it has been: how long that takes says nothing of how long a jump takes.)
+        this.pending = targetBuffered ? { at: now, kind } : null;
+      }
+    }
     syncStats.reports += 1;
     syncStats.drift = local.time - time;
     syncStats.settled = settled;
+    syncStats.leadPlaying = this.lead.playing;
+    syncStats.leadStill = this.lead.still;
     if (step.seek !== undefined) {
       syncStats.seeks += 1;
       if (step.seek < local.time) syncStats.rewinds += 1;
@@ -235,5 +296,21 @@ export class Follower {
     if (report.playing && Math.abs(step.rate - local.rate) > 0.001) syncStats.speedChanges += 1;
     if (report.waiting && local.playing && !step.play) syncStats.waits += 1;
     return step;
+  }
+
+  /** Looks at how far from the host the last jump left this picture, once it is playing, and takes what it missed by into the next one. */
+  private learn(report: HostReport, local: Omit<SyncLocal, "targetBuffered">, time: number, settled: boolean, now: number): void {
+    const pending = this.pending;
+    if (!pending) return;
+    const age = now - pending.at;
+    if (!report.playing || age > LEAD_LOOK_UNTIL_S) {
+      this.pending = null; // (the host stopped, or this took too long to be what a jump takes)
+      return;
+    }
+    if (age < LEAD_LOOK_AFTER_S || !settled || !local.playing || local.buffering) return;
+    this.pending = null;
+    const missed = (time - local.time) / report.rate; // positive: still behind the host, so the jump should have aimed on
+    if (Math.abs(missed) > LEAD_LEARN_UNTIL_S) return;
+    this.lead[pending.kind] = Math.min(LEAD_MAX_S, Math.max(-LEAD_MAX_S, this.lead[pending.kind] + LEAD_GAIN * missed));
   }
 }

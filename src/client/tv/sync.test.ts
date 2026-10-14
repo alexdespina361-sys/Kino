@@ -7,6 +7,12 @@ import {
   GIVE_UP_S,
   HARD_SEEK_S,
   HostClock,
+  LEAD_FROM_PLAYING_S,
+  LEAD_FROM_STILL_S,
+  LEAD_GAIN,
+  LEAD_LOOK_AFTER_S,
+  LEAD_LOOK_UNTIL_S,
+  LEAD_MAX_S,
   NUDGE,
   NUDGE_FROM_S,
   NUDGE_UNTIL_S,
@@ -93,7 +99,7 @@ describe("syncStep", () => {
     });
 
     it("does not go back in time when it is ahead: it plays on, a little slower, until the host is where it is", () => {
-      expect(syncStep(leader(), me({ playing: false, time: 100 + RESUME_SEEK_S + 0.1 }), LONG_AGO)).toEqual({ play: true, rate: 1 - NUDGE });
+      expect(syncStep(leader(), me({ playing: false, time: 100 + NUDGE_FROM_S + 0.1 }), LONG_AGO)).toEqual({ play: true, rate: 1 - NUDGE });
       expect(syncStep(leader(), me({ playing: false, time: 100.8 }), LONG_AGO)).toEqual({ play: true, rate: 1 - NUDGE });
     });
 
@@ -302,6 +308,37 @@ describe("HostClock", () => {
     expect(clock.read({ playing: true, time: 60, rate: 1.5, lag: 0 }, 4)).toBeCloseTo(60);
   });
 
+  describe("a host that was told to play again", () => {
+    // The host presses play at 3.0 on the guest's clock; its picture starts moving at 3.3. Its report goes out at once, with the place it was stopped at.
+    const stopped = { playing: false, time: 50, rate: 1, lag: 0.05 } as const;
+    const first = { playing: true, time: 50, rate: 1, lag: 0.05 } as const;
+    const later = (at: number): HostReport => ({ playing: true, time: 50 + (at - 0.05 - 3.3), rate: 1, lag: 0.05 });
+
+    it("is read at the place it starts from by its first report, but that report is left out of the clock: the picture has not moved yet", () => {
+      const clock = new HostClock();
+      clock.read(stopped, 2);
+      expect(clock.read(first, 3)).toBeCloseTo(50.05);
+      expect(clock.read(later(4), 4)).toBeCloseTo(50.65 + 0.05);
+      // Kept in the clock, the first report would be the furthest on for as long as it was kept, and the host would be read to be a third of a second ahead of where it is.
+      expect(clock.read(later(5), 5)).toBeCloseTo(51.7);
+      expect(clock.read(later(9), 9)).toBeCloseTo(55.7);
+    });
+
+    it("counts its first report like any other when it only waited for data: its picture goes on at once", () => {
+      const clock = new HostClock();
+      clock.read({ ...stopped, waiting: true }, 2);
+      expect(clock.read({ ...first, time: 50 }, 3)).toBeCloseTo(50.05);
+      // (This one was held up by 0.3 s, which is not enough to be in doubt: the first report is the least late, and is read from.)
+      expect(clock.read({ playing: true, time: 50.75, rate: 1, lag: 0.05 }, 4)).toBeCloseTo(51.05);
+    });
+
+    it("takes the first report a guest ever gets as any other: a host that is already playing has a clock", () => {
+      const clock = new HostClock();
+      expect(clock.read({ playing: true, time: 80, rate: 1, lag: 0.05 }, 1)).toBeCloseTo(80.05);
+      expect(clock.read({ playing: true, time: 80.75, rate: 1, lag: 0.05 }, 2)).toBeCloseTo(81.05); // (read from the first, which was less late)
+    });
+  });
+
   it("is settled only when reports from different moments agree", () => {
     const clock = new HostClock();
     expect(clock.settled).toBe(false);
@@ -335,7 +372,7 @@ describe("Follower", () => {
   it("sends a picture that is behind to where the host is, once, and lets it fill before it sends it again", () => {
     const follower = new Follower();
     const first = follower.step(report(1), picture({ time: truth(1) - 5 }), 1, everything);
-    expect(first.seek).toBeCloseTo(truth(1));
+    expect(first.seek).toBeCloseTo(truth(1) + LEAD_FROM_PLAYING_S);
     expect(follower.step(report(2), picture({ time: truth(2) - 5 }), 2, everything).seek).toBeUndefined();
     expect(follower.step(report(2 + SEEK_COOLDOWN_MS / 1000 + 0.1), picture({ time: truth(5.2) - 5 }), 2 + SEEK_COOLDOWN_MS / 1000 + 0.1, everything).seek).toBeDefined();
   });
@@ -346,7 +383,119 @@ describe("Follower", () => {
     const first = follower.step(report(1), ahead(1), 1, everything);
     expect(first.seek).toBeUndefined();
     expect(first.rate).toBeLessThan(1);
-    expect(follower.step(report(2), ahead(2), 2, everything).seek).toBeCloseTo(truth(2));
+    expect(follower.step(report(2), ahead(2), 2, everything).seek).toBeCloseTo(truth(2) + LEAD_FROM_PLAYING_S);
+  });
+
+  describe("aiming a jump at where the host will be when it lands", () => {
+    // A jump takes a moment to land, and the host plays on meanwhile: a picture sent to where the host is lands behind it by that moment, every time.
+    /** A jump at `at`, then the picture looked at by the reports after it: `missedBy` seconds behind the host at the first one that is `LEAD_LOOK_AFTER_S` after it. */
+    const jumpAndLand = (follower: Follower, at: number, missedBy: number, patch: Partial<Omit<SyncLocal, "targetBuffered">> = {}, has: (time: number) => boolean = everything) => {
+      const jump = follower.step(report(at), picture({ time: truth(at) - 5, ...patch }), at, has);
+      follower.step(report(at + LEAD_LOOK_AFTER_S / 2), picture({ time: truth(at + LEAD_LOOK_AFTER_S / 2) - missedBy }), at + LEAD_LOOK_AFTER_S / 2, has); // (too soon to look)
+      follower.step(report(at + LEAD_LOOK_AFTER_S + 0.2), picture({ time: truth(at + LEAD_LOOK_AFTER_S + 0.2) - missedBy }), at + LEAD_LOOK_AFTER_S + 0.2, has);
+      return jump;
+    };
+    /** The next jump, long after, and where it aims relative to where the host is. */
+    const nextAim = (follower: Follower, patch: Partial<Omit<SyncLocal, "targetBuffered">> = {}, at = 100) =>
+      follower.step(report(at), picture({ time: truth(at) - 5, ...patch }), at, everything).seek! - truth(at);
+
+    it("starts from what a jump of each kind took when it was measured, a picture that is moving on one and a picture that has to start on the other", () => {
+      expect(nextAim(new Follower())).toBeCloseTo(LEAD_FROM_PLAYING_S);
+      expect(nextAim(new Follower(), { playing: false, time: truth(100) - 0.5 })).toBeCloseTo(LEAD_FROM_STILL_S);
+    });
+
+    it("aims further on after a jump that landed behind the host, by a good part of how far behind", () => {
+      const follower = new Follower();
+      jumpAndLand(follower, 1, 0.2);
+      expect(nextAim(follower)).toBeCloseTo(LEAD_FROM_PLAYING_S + LEAD_GAIN * 0.2);
+    });
+
+    it("aims less far on after one that landed ahead of it", () => {
+      const follower = new Follower();
+      jumpAndLand(follower, 1, -0.05);
+      expect(nextAim(follower)).toBeCloseTo(LEAD_FROM_PLAYING_S - LEAD_GAIN * 0.05);
+    });
+
+    it("keeps what it learned of each kind to that kind", () => {
+      const follower = new Follower();
+      jumpAndLand(follower, 1, 0.2);
+      expect(nextAim(follower, { playing: false, time: truth(100) - 0.5 })).toBeCloseTo(LEAD_FROM_STILL_S);
+      const still = new Follower();
+      jumpAndLand(still, 1, 0.2, { playing: false, time: truth(1) - 0.5 });
+      expect(nextAim(still)).toBeCloseTo(LEAD_FROM_PLAYING_S);
+      expect(nextAim(still, { playing: false, time: truth(200) - 0.5 }, 200)).toBeCloseTo(LEAD_FROM_STILL_S + LEAD_GAIN * 0.2);
+    });
+
+    // A picture that takes `took` seconds to land, jumping again and again: each jump is aimed on by what it is thought to take, and so lands behind by what is left.
+    const keepJumping = (took: number, times: number) => {
+      const follower = new Follower();
+      const aims: number[] = [];
+      for (let i = 0; i < times; i++) {
+        const at = 10 + i * 20;
+        const aim = follower.step(report(at), picture({ time: truth(at) - 5 }), at, everything).seek! - truth(at);
+        const looked = at + LEAD_LOOK_AFTER_S + 0.2;
+        follower.step(report(looked), picture({ time: truth(looked) - (took - aim) }), looked, everything);
+        aims.push(aim);
+      }
+      return aims;
+    };
+
+    it("gets there in a few jumps", () => {
+      const aims = keepJumping(0.2, 6);
+      expect(aims[0]).toBeCloseTo(LEAD_FROM_PLAYING_S);
+      expect(aims.at(-1)).toBeCloseTo(0.2, 1);
+      for (let i = 1; i < aims.length; i++) expect(aims[i]).toBeGreaterThan(aims[i - 1]!); // (never overshooting: it is a part of what is left that is put in each time)
+    });
+
+    it("never aims on by more than a nudge is for, however long a picture takes to land (so that a wrong lead is not what starts one)", () => {
+      for (const aim of keepJumping(0.8, 5)) expect(aim).toBeLessThanOrEqual(LEAD_MAX_S + 1e-9);
+      expect(keepJumping(0.8, 5).at(-1)).toBeCloseTo(LEAD_MAX_S);
+      for (const aim of keepJumping(-0.8, 5)) expect(aim).toBeGreaterThanOrEqual(-LEAD_MAX_S - 1e-9);
+    });
+
+    it("learns nothing from a picture that has not landed yet, or that is waiting for data: only from one that plays", () => {
+      const follower = new Follower();
+      follower.step(report(1), picture({ time: truth(1) - 5 }), 1, everything);
+      follower.step(report(2.2), picture({ time: truth(2.2) - 0.4, buffering: true }), 2.2, everything); // waiting for data: no use
+      follower.step(report(3.1), picture({ time: truth(3.1) - 0.1 }), 3.1, everything); // landed and playing: 0.1 behind
+      expect(nextAim(follower)).toBeCloseTo(LEAD_FROM_PLAYING_S + LEAD_GAIN * 0.1);
+    });
+
+    it("learns nothing from a jump that missed by more than a jump takes, or a place that had to be downloaded first", () => {
+      const far = new Follower();
+      jumpAndLand(far, 1, 3);
+      expect(nextAim(far)).toBeCloseTo(LEAD_FROM_PLAYING_S);
+      const downloading = new Follower();
+      jumpAndLand(downloading, 1, 0.2, {}, () => false);
+      expect(nextAim(downloading)).toBeCloseTo(LEAD_FROM_PLAYING_S);
+    });
+
+    it("gives up looking at a jump after a while, and when the host stops", () => {
+      const late = new Follower();
+      late.step(report(1), picture({ time: truth(1) - 5 }), 1, everything);
+      late.step(report(1 + LEAD_LOOK_UNTIL_S + 1), picture({ time: truth(1 + LEAD_LOOK_UNTIL_S + 1) - 0.2 }), 1 + LEAD_LOOK_UNTIL_S + 1, everything);
+      expect(nextAim(late)).toBeCloseTo(LEAD_FROM_PLAYING_S);
+      const stopped = new Follower();
+      stopped.step(report(1), picture({ time: truth(1) - 5 }), 1, everything);
+      stopped.step({ playing: false, time: truth(1.5), rate: 1 }, picture({ time: truth(1.5) - 0.2 }), 1.5, everything);
+      stopped.step(report(2.5), picture({ time: truth(2.5) - 0.2 }), 2.5, everything);
+      expect(nextAim(stopped)).toBeCloseTo(LEAD_FROM_PLAYING_S);
+    });
+
+    it("does not aim on for a host that holds still: it goes where the host is", () => {
+      const follower = new Follower();
+      jumpAndLand(follower, 1, 0.2);
+      expect(follower.step({ playing: false, time: 100, rate: 1 }, picture({ time: 90 }), 50, everything).seek).toBe(100);
+    });
+
+    it("aims on by the speed the host plays at, and keeps what it learned from one film to the next", () => {
+      const follower = new Follower();
+      jumpAndLand(follower, 1, 0.2);
+      follower.reset();
+      expect(nextAim(follower)).toBeCloseTo(LEAD_FROM_PLAYING_S + LEAD_GAIN * 0.2);
+      const fast = follower.step({ playing: true, time: 500, rate: 2, lag: 0 }, picture({ time: 400, rate: 2 }), 200, everything);
+      expect(fast.seek).toBeCloseTo(500 + 2 * (LEAD_FROM_PLAYING_S + LEAD_GAIN * 0.2));
+    });
   });
 
   it("asks whether the place it read for the host is downloaded, not the place the report named", () => {
@@ -379,16 +528,27 @@ describe("Follower", () => {
     expect(syncStats).toMatchObject({ reports: 3, seeks: 1, rewinds: 0, speedChanges: 1, waits: 1 });
     expect(syncStats.drift).toBeCloseTo(-6.05, 1);
   });
+
+  it("says, for the debug panel, how far on it aims its jumps once it has learned what they take", () => {
+    const follower = new Follower();
+    const jump = follower.step(report(1), picture({ time: truth(1) - 5 }), 1, everything);
+    follower.step(report(2.5), picture({ time: truth(2.5) - 0.2 }), 2.5, everything);
+    expect(jump.seek).toBeDefined();
+    expect(syncStats.leadPlaying).toBeCloseTo(LEAD_FROM_PLAYING_S + LEAD_GAIN * 0.2);
+    expect(syncStats.leadStill).toBeCloseTo(LEAD_FROM_STILL_S);
+  });
 });
 
 describe("describeSync", () => {
+  const stats = { reports: 0, seeks: 0, rewinds: 0, speedChanges: 0, waits: 0, drift: 0, settled: false, leadPlaying: 0.07, leadStill: 0.1 };
+
   it("says nothing for a page that follows nobody", () => {
-    expect(describeSync({ reports: 0, seeks: 0, rewinds: 0, speedChanges: 0, waits: 0, drift: 0, settled: false })).toBeNull();
+    expect(describeSync(stats)).toBeNull();
   });
 
   it("says in a line how far from the host the picture is, and what it has had to do about it", () => {
-    const line = describeSync({ reports: 42, seeks: 3, rewinds: 1, speedChanges: 14, waits: 2, drift: -0.123, settled: true });
-    expect(line).toBe("sync: 42 reports  now −0.12s from the host  jumps 3 (1 back)  speed changes 14  host waits 2");
-    expect(describeSync({ reports: 1, seeks: 0, rewinds: 0, speedChanges: 0, waits: 0, drift: 0.4, settled: false })).toContain("+0.40s from the host (not settled)");
+    const line = describeSync({ ...stats, reports: 42, seeks: 3, rewinds: 1, speedChanges: 14, waits: 2, drift: -0.123, settled: true, leadPlaying: 0.0712, leadStill: 0.131 });
+    expect(line).toBe("sync: 42 reports  now −0.12s from the host  jumps 3 (1 back)  speed changes 14  host waits 2  jumps aimed on by 71/131 ms (playing/paused)");
+    expect(describeSync({ ...stats, reports: 1, drift: 0.4 })).toContain("+0.40s from the host (not settled)");
   });
 });

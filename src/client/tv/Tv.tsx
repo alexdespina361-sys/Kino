@@ -218,6 +218,8 @@ export function Tv() {
   const autoplay = settings.autoplayNext ?? true;
   /** Whether a tap or click on the picture pauses it (the profile's choice); off, it only shows or hides the controls. */
   const tapToPause = settings.tapToPause ?? false;
+  /** Whether the picture's quality follows the connection (the profile's choice; see `PlayerEngine.setAdaptive`). */
+  const adaptiveQuality = settings.adaptiveQuality ?? true;
   useEffect(() => {
     // (A screen that watches along shows the host's video: it is the host's to continue, not an entry in this profile's row, with a place and an address that are the host's.)
     if (following || !currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
@@ -819,6 +821,9 @@ export function Tv() {
   useEffect(() => {
     engineRef.current?.setInParty(inParty);
   }, [inParty]);
+  useEffect(() => {
+    engineRef.current?.setAdaptive(adaptiveQuality);
+  }, [adaptiveQuality]);
 
   // Safety net for TV_RESOLVING { active: true } without a matching end.
   useEffect(() => {

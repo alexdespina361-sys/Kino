@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openProfilePage, openProfilePlace, openTv, pressProfilePlace, RawPhone, readPairingCode, test, tvRoot, withLibrary } from "./helpers";
+import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openProfilePage, openProfilePlace, openTv, pressProfilePlace, RawPhone, readPairingCode, test, tvRoot, twoSizes, withLibrary } from "./helpers";
 
 /** What the screens look like on a TV: the remote walks them, the buttons match, and everything fits. */
 
@@ -203,22 +203,9 @@ test.describe("the controls fit the screen", () => {
     phone.close();
   });
 
-  /** One stream at two sizes: the quality button is only there when there is a choice. */
-  const twoSizes = [
-    "#EXTM3U",
-    "#EXT-X-VERSION:7",
-    '#EXT-X-STREAM-INF:BANDWIDTH=153168,RESOLUTION=320x180,CODECS="vp09.00.11.08"',
-    "stream.m3u8",
-    '#EXT-X-STREAM-INF:BANDWIDTH=453168,RESOLUTION=1280x720,CODECS="vp09.00.11.08"',
-    "stream.m3u8",
-    "",
-  ].join("\n");
-
   for (const [locale, language] of [["en-US", "English"], ["ro-RO", "Romanian"], ["it-IT", "Italian"]] as const) {
     test(`everything the controls have is on one line in ${language}, from 4K down to a small window, and stays there as the window changes`, async ({ browser, baseURL }) => {
-      const tv = await openDevice(browser, { viewport: { width: 1920, height: 1080 }, locale }, {}, (context) =>
-        context.route("**/fixtures/hls/multi.m3u8", (route) => route.fulfill({ contentType: "application/vnd.apple.mpegurl", body: twoSizes })),
-      );
+      const tv = await openDevice(browser, { viewport: { width: 1920, height: 1080 }, locale }, {}, twoSizes); // (the quality button is only there when there is a choice)
       await tv.goto("/tv");
       await expect(tv.getByTestId("tv-browse")).toBeVisible();
       await tv.getByTestId("rail-connect").click();
@@ -2715,7 +2702,7 @@ test.describe("ratings on the TV", () => {
       const tv = await openLibrary(browser, withLibrary(library), { width: screen.width, height: screen.height });
       await openProfilePlace(tv, "settings");
       await expect(tv.getByTestId("tv-ratings-switch")).toBeVisible();
-      for (const id of ["tv-lang-en", "tv-autoplay", "tv-tap-to-pause", "tv-ratings-switch", "tv-account-back"]) {
+      for (const id of ["tv-lang-en", "tv-autoplay", "tv-tap-to-pause", "tv-adaptive-quality", "tv-ratings-switch", "tv-account-back"]) {
         const at = (await tv.getByTestId(id).boundingBox())!;
         expect(at.x, `${id} from the left`).toBeGreaterThanOrEqual(0);
         expect(at.y, `${id} from the top`).toBeGreaterThanOrEqual(0);
