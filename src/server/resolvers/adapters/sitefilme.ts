@@ -1,4 +1,5 @@
 import type { ResolveResult, SiteAdapter } from "../types";
+import { streamAddress } from "./streamAddress";
 
 export function createSitefilmeAdapter(): SiteAdapter {
   return {
@@ -22,13 +23,8 @@ export function createSitefilmeAdapter(): SiteAdapter {
       }
 
       // sitefilme streams (e.g. stf05.vip) enforce CORS (allow-origin: https://sitefilme.com)
-      // and require the sitefilme referer. Route through the stream proxy (or external EDGE_STREAM_PROXY_URL / DIRECT_STREAMING).
-      const edgeProxy = process.env.EDGE_STREAM_PROXY_URL?.trim();
-      const directStreaming = process.env.DIRECT_STREAMING === "true";
-      const proxyBase = edgeProxy ? edgeProxy.replace(/\/$/, "") : "/api/proxy";
-      const proxiedUrl = directStreaming
-        ? best.url
-        : `${proxyBase}?url=${encodeURIComponent(best.url)}&referer=${encodeURIComponent(page.url.href)}`;
+      // and require the sitefilme referer. Route through the edge relay or the stream proxy (see `streamAddress`).
+      const proxiedUrl = streamAddress(best.url, page.url.href);
 
       return {
         status: "success",

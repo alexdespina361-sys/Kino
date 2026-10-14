@@ -31,6 +31,44 @@ describe("GET /api/library", () => {
     app = await buildApp();
     expect((await app.inject({ url: "/api/library" })).json()).toEqual({ rows: [], updatedAt: 0 });
   });
+
+  it("tells a browser that already has this very list so in a few bytes, however it words the question", async () => {
+    app = await buildApp({ librarySources: [source] });
+    const first = await app.inject({ url: "/api/library" });
+    const tag = String(first.headers.etag);
+    expect(tag).toMatch(/^W\/"[\w-]+"$/);
+    for (const asked of [tag, tag.replace("W/", ""), `W/"another", ${tag}`, "*"]) {
+      const again = await app.inject({ url: "/api/library", headers: { "if-none-match": asked } });
+      expect(again.statusCode, asked).toBe(304);
+      expect(again.body, asked).toBe("");
+      expect(again.headers["cache-control"], asked).toBe("public, max-age=300");
+    }
+    const other = await app.inject({ url: "/api/library", headers: { "if-none-match": 'W/"not-this-list"' } });
+    expect(other.statusCode).toBe(200);
+    expect(other.json()).toEqual(first.json());
+  });
+
+  it("has another tag for another list", async () => {
+    const another: LibrarySource = { ...source, load: async () => [{ id: "r", title: "Row", source: "Fake", items: [{ id: "i", title: "Another title", url: "https://x.example/i" }] }] };
+    app = await buildApp({ librarySources: [source] });
+    const tag = (await app.inject({ url: "/api/library" })).headers.etag;
+    await app.close();
+    app = await buildApp({ librarySources: [another] });
+    expect((await app.inject({ url: "/api/library" })).headers.etag).not.toBe(tag);
+  });
+
+  it("keeps its tag when the list goes out packed, and the tag still works", async () => {
+    const items = Array.from({ length: 40 }, (_, at) => ({ id: `i${at}`, title: `Title ${at}`, description: "A few words about the title, enough that forty of them are more than a packet.", url: `https://x.example/${at}` }));
+    const big: LibrarySource = { ...source, load: async () => [{ id: "r", title: "Row", source: "Fake", items }] };
+    app = await buildApp({ librarySources: [big] });
+    const packed = await app.inject({ url: "/api/library", headers: { "accept-encoding": "gzip" } });
+    expect(packed.headers["content-encoding"]).toBe("gzip");
+    expect(packed.headers.etag).toBeTruthy();
+    const again = await app.inject({ url: "/api/library", headers: { "accept-encoding": "gzip", "if-none-match": String(packed.headers.etag) } });
+    expect(again.statusCode).toBe(304);
+    // (...and it is the same list whichever way it was asked for.)
+    expect((await app.inject({ url: "/api/library" })).headers.etag).toBe(packed.headers.etag);
+  });
 });
 
 describe("GET /api/library/search", () => {

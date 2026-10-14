@@ -95,6 +95,11 @@ describe("handleStreamProxy", () => {
         response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl" });
         return void response.end("#EXTM3U\n#EXTINF:4,\nseg.ts\n");
       }
+      if (url.pathname === "/hls/playlist") {
+        // (Many servers write the type like this, and the address says nothing.)
+        response.writeHead(200, { "content-type": "application/x-mpegURL" });
+        return void response.end("#EXTM3U\n#EXTINF:4,\nseg.ts\n");
+      }
       if (url.pathname === "/p/one.ts") {
         response.writeHead(200, { "content-type": "video/mp2t", "content-length": "9" });
         return void response.end("ONE-BYTES");
@@ -133,6 +138,21 @@ describe("handleStreamProxy", () => {
       if (url.pathname === "/p/plain.mp4") {
         response.writeHead(200, { "content-type": "video/mp4", "content-length": "5" });
         return void response.end("plain");
+      }
+      if (url.pathname === "/sub.srt" || url.pathname === "/sub-without-a-suffix") {
+        response.writeHead(200, { "content-type": "text/plain" });
+        return void response.end("1\n00:00:01,000 --> 00:00:02,000\nHello\n");
+      }
+      if (url.pathname === "/long.srt" || url.pathname === "/big.bin") {
+        const bytes = Buffer.alloc(3 * 1024 * 1024, "a");
+        response.writeHead(200, { "content-type": url.pathname === "/big.bin" ? "application/octet-stream" : "text/plain", "content-length": String(bytes.length) });
+        return void response.end(bytes);
+      }
+      if (url.pathname === "/long-chunked.srt") {
+        // (No length given: how long it is is known only when it has all come.)
+        response.writeHead(200, { "content-type": "text/plain" });
+        for (let part = 0; part < 3; part++) response.write(Buffer.alloc(1024 * 1024 + 1, "a"));
+        return void response.end();
       }
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("nothing here");
@@ -177,6 +197,97 @@ describe("handleStreamProxy", () => {
   it("rewrites a playlist so that its pieces come through here as well", async () => {
     const answer = await ask(at(OKAY, "/list.m3u8"));
     expect(answer.body).toContain(`/api/proxy?url=${encodeURIComponent(at(OKAY, "/seg.ts"))}`);
+  });
+
+  it("knows a playlist by the type the other end gives it, in whatever case, when the address does not say so", async () => {
+    const answer = await ask(at(OKAY, "/hls/playlist"));
+    expect(answer.headers["content-type"]).toBe("application/vnd.apple.mpegurl");
+    expect(answer.body).toContain(`/api/proxy?url=${encodeURIComponent(at(OKAY, "/hls/seg.ts"))}`);
+  });
+
+  it("counts the bytes it sends on and the requests it answers: pieces, parts of a file, playlists, and a piece that screens share", async () => {
+    const stats = { bytes: 0, requests: 0, refused: 0 };
+    const counting = Fastify();
+    counting.get<{ Querystring: { url?: string; referer?: string; format?: string } }>("/api/proxy", (request, reply) =>
+      handleStreamProxy(request, reply, { isAllowedAddress: allowed, stats, segments: new SegmentCache() }),
+    );
+    await counting.ready();
+    try {
+      const through = (target: string, headers: Record<string, string> = {}) => counting.inject({ url: `/api/proxy?url=${encodeURIComponent(target)}`, headers });
+      await through(at(OKAY, "/seg.ts")); // 13 bytes (and shared)
+      await through(at(OKAY, "/seg.ts")); // 13 more, from memory this time: it is sent all the same
+      await through(at(OKAY, "/range.mp4"), { range: "bytes=2-5" }); // 4
+      const playlist = await through(at(OKAY, "/list.m3u8")); // as it was rewritten
+      expect(stats).toEqual({ bytes: 13 + 13 + 4 + Buffer.byteLength(playlist.body), requests: 4, refused: 0 });
+      expect((await through(at("127.0.0.1", "/seg.ts"))).statusCode).toBe(403);
+      expect(stats.requests).toBe(4); // (a refusal sends nothing on)
+    } finally {
+      await counting.close();
+    }
+  });
+
+  describe("when it is not to carry film (a host that charges for what it sends)", () => {
+    const stats = { bytes: 0, requests: 0, refused: 0 };
+    let quiet: FastifyInstance;
+    beforeAll(async () => {
+      quiet = Fastify();
+      quiet.get<{ Querystring: { url?: string; referer?: string; format?: string } }>("/api/proxy", (request, reply) =>
+        handleStreamProxy(request, reply, { isAllowedAddress: allowed, video: false, stats, segments: new SegmentCache() }),
+      );
+      await quiet.ready();
+    });
+    afterAll(async () => {
+      await quiet.close();
+    });
+    const through = (path: string, more = "") => quiet.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, path))}${more}` });
+
+    it("turns away a piece of a film without so much as asking for it, and says so in a way a player can read", async () => {
+      hits.length = 0;
+      const before = stats.refused;
+      const answer = await through("/seg.ts");
+      expect(answer.statusCode).toBe(403);
+      expect(answer.json()).toEqual({ error: "VIDEO_NOT_CARRIED" });
+      expect(answer.headers["access-control-allow-origin"]).toBe("*");
+      expect(hits).toEqual([]);
+      expect(stats.refused).toBe(before + 1);
+    });
+
+    it("turns away a playlist, a file and anything else that is not a subtitle, and sends none of it on", async () => {
+      const before = { ...stats };
+      for (const path of ["/list.m3u8", "/p/plain.mp4", "/big.bin", "/missing"]) {
+        const answer = await through(path);
+        expect(answer.statusCode, path).toBe(403);
+        expect(answer.json(), path).toEqual({ error: "VIDEO_NOT_CARRIED" });
+      }
+      expect(stats.bytes).toBe(before.bytes);
+      expect(stats.refused).toBe(before.refused + 4);
+      // (A range, a piece's other names and a plain "this is a subtitle" on the address make no difference to what it is.)
+      expect((await quiet.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/range.mp4"))}`, headers: { range: "bytes=0-3" } })).statusCode).toBe(403);
+      expect((await through("/list.m3u8", "&format=vtt")).statusCode).toBe(403);
+    });
+
+    it("still passes a subtitle on, as WebVTT, which is what a screen has it for", async () => {
+      for (const [path, more] of [["/sub.srt", ""], ["/sub-without-a-suffix", "&format=vtt"]] as const) {
+        const answer = await through(path, more);
+        expect(answer.statusCode, path).toBe(200);
+        expect(answer.headers["content-type"], path).toContain("text/vtt");
+        expect(answer.body, path).toBe("WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nHello");
+      }
+    });
+
+    it("does not pass a long text on as a subtitle, nor a file that is only called one", async () => {
+      const before = { ...stats };
+      for (const [path, more] of [["/long.srt", ""], ["/long-chunked.srt", ""], ["/big.bin", "&format=vtt"]] as const) {
+        const answer = await through(path, more);
+        expect(answer.statusCode, path).toBe(403);
+      }
+      expect(stats.bytes).toBe(before.bytes);
+    });
+
+    it("is what a proxy that is not told otherwise is not: that one carries a long text as well", async () => {
+      expect((await ask(at(OKAY, "/long.srt"))).statusCode).toBe(200);
+      expect((await ask(at(OKAY, "/seg.ts"))).statusCode).toBe(200);
+    });
   });
 
   it("says what the other end said when it has no such thing, and does not tell the player to keep that", async () => {

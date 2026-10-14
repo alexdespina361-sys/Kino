@@ -52,6 +52,29 @@ export function bufferPolicy(inParty: boolean, isProxied = false): { maxBufferLe
   return { maxBufferLength: 120, maxMaxBufferLength: 600, maxBufferSize: 128 * 1024 * 1024 };
 }
 
+/** How long a direct address may take to start playing before the server's own is used instead (see `PlayerEngine.playNatively`). */
+export const DIRECT_START_MS = 12_000;
+
+/** 1080p and above: what `formatQualityLabel` calls those (a film's own shape counts: 1920x804 is 1080p, 1280x536 is 720p). */
+const isHighDefinition = (width = 0, height = 0): boolean => width >= 1800 || height >= 800;
+
+/**
+ * Where the quality that the player picks by itself stops while the picture comes through this server (`/api/proxy`), which is where
+ * the bytes of a film are the server's to pay for: the best level that is not high definition (720p carries about half of what 1080p does),
+ * as the index hls.js wants for `autoLevelCapping`, or -1 for no limit (one level, or none above 720p). A quality picked by hand is no part of
+ * this (the menu still lists every level), and neither is a picture that does not come through the server. When every level is high
+ * definition the lowest one is the limit.
+ */
+export function proxiedQualityCap(levels: ReadonlyArray<{ width?: number; height?: number }>): number {
+  if (levels.length <= 1) return -1;
+  let cap = -1;
+  levels.forEach((level, index) => {
+    if (!isHighDefinition(level.width, level.height)) cap = index;
+  });
+  if (cap === -1) return 0;
+  return cap === levels.length - 1 ? -1 : cap;
+}
+
 export function formatQualityLabel(width?: number, height?: number, name?: string): string {
   const w = width || 0;
   const h = height || 0;
@@ -90,6 +113,8 @@ export class PlayerEngine {
   /** The last state handed to `onChange`, as JSON, to skip repeats. */
   private lastEmitted = "";
   private nativeFallbackSrc?: string;
+  /** Gives up on a direct address that has not started playing (see `watchDirectStart`). */
+  private directTimer?: ReturnType<typeof setTimeout>;
   private readonly ticker: ReturnType<typeof setInterval>;
 
   constructor(
@@ -98,6 +123,7 @@ export class PlayerEngine {
     private readonly onEnded?: () => void,
   ) {
     video.addEventListener("loadedmetadata", () => {
+      clearTimeout(this.directTimer);
       this.loading = false;
       if (this.startAt !== undefined) {
         const duration = Number.isFinite(video.duration) ? video.duration : this.startAt;
@@ -123,12 +149,7 @@ export class PlayerEngine {
     }
     video.addEventListener("error", () => {
       if (this.hasSource) {
-        if (this.nativeFallbackSrc && this.video.src !== this.nativeFallbackSrc) {
-          const fallback = this.nativeFallbackSrc;
-          this.nativeFallbackSrc = undefined;
-          this.video.src = fallback;
-          return;
-        }
+        if (this.useFallbackSource()) return;
         // (MEDIA_ERR_NETWORK, 2: the download broke off part of the way. A file that cannot be opened at all, or played, is another code.)
         this.fail(video.error?.code === 2 ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
       }
@@ -161,7 +182,7 @@ export class PlayerEngine {
     }
 
     if (type === "mp4") {
-      this.video.src = directUrl || src;
+      this.playNatively(src, directUrl, generation);
       return;
     }
 
@@ -227,6 +248,9 @@ export class PlayerEngine {
             }
           });
           hls.currentLevel = highestIdx;
+        } else if (data?.levels && (hls.url ?? src).includes("/api/proxy")) {
+          // Adaptive, through this server: its own choice stops at 720p (a quality picked from the menu still goes higher). See `proxiedQualityCap`.
+          hls.autoLevelCapping = proxiedQualityCap(data.levels);
         }
         if (this.pendingPlay) {
           this.pendingPlay = false;
@@ -244,15 +268,40 @@ export class PlayerEngine {
       hls.loadSource(src);
       hls.attachMedia(this.video);
     } else if (this.video.canPlayType("application/vnd.apple.mpegurl")) {
-      if (directUrl && directUrl !== src) {
-        this.nativeFallbackSrc = src;
-        this.video.src = directUrl;
-      } else {
-        this.video.src = src;
-      }
+      this.playNatively(src, directUrl, generation);
     } else {
       this.fail(PlayerError.HlsUnsupported);
     }
+  }
+
+  /** Plays with the browser's own player: a direct address, when there is one, goes first and `src` (the server's own) is what it falls back to. */
+  private playNatively(src: string, directUrl: string | undefined, generation: number): void {
+    if (directUrl && directUrl !== src) {
+      this.nativeFallbackSrc = src;
+      this.video.src = directUrl;
+      this.watchDirectStart(generation);
+    } else {
+      this.video.src = src;
+    }
+  }
+
+  /** A direct address that neither plays nor fails is a place that does not answer: after `DIRECT_START_MS` the server's own is used (once). */
+  private watchDirectStart(generation: number): void {
+    clearTimeout(this.directTimer);
+    this.directTimer = setTimeout(() => {
+      // (1 is HAVE_METADATA: it has begun.)
+      if (generation === this.generation && this.video.readyState < 1) this.useFallbackSource();
+    }, DIRECT_START_MS);
+  }
+
+  /** The direct address failed, or never started: the server's own instead. False when there is none (or it is the one that is playing). */
+  private useFallbackSource(): boolean {
+    clearTimeout(this.directTimer);
+    const fallback = this.nativeFallbackSrc;
+    if (!fallback || this.video.src === fallback) return false;
+    this.nativeFallbackSrc = undefined;
+    this.video.src = fallback;
+    return true;
   }
 
   /**
@@ -504,6 +553,7 @@ export class PlayerEngine {
     this.startAt = undefined;
     this.requestedStart = undefined;
     this.nativeFallbackSrc = undefined;
+    clearTimeout(this.directTimer);
     this.hls?.destroy();
     this.hls = null;
     this.hasSource = false;

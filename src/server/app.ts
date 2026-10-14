@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import fastifyCompress from "@fastify/compress";
@@ -10,7 +11,7 @@ import { accountRoutes } from "./accounts/routes";
 import { ScreenProofs, screenProfiles } from "./accounts/screens";
 import type { AccountStore } from "./accounts/store";
 import { createLibrary, type LibrarySource } from "./library/library";
-import { handleStreamProxy } from "./proxy";
+import { handleStreamProxy, type ProxyStats } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
 import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
 import { Hub, type HubOptions } from "./websocket/hub";
@@ -46,6 +47,8 @@ export interface AppOptions {
   libraryNow?: () => number;
   /** Let the resolver fetch loopback/LAN pages (local fixtures). Default false; env ALLOW_PRIVATE_NETWORK=1. */
   allowPrivateNetwork?: boolean;
+  /** Whether `/api/proxy` carries film (playlists, pieces, files) or only subtitles. On unless set; env PROXY_VIDEO=off turns it off (see `ProxyOptions.video`). */
+  proxyVideo?: boolean;
   /** Socket liveness tuning; tests shorten it. */
   hub?: HubOptions;
   /** How much of a film the proxy keeps for the screens of a party (64 MB, 3 minutes unless set; env SEGMENT_CACHE_MB sets the size in megabytes). */
@@ -57,6 +60,13 @@ export interface AppOptions {
 function segmentCacheFromEnv(): SegmentCacheOptions {
   const megabytes = Number(process.env.SEGMENT_CACHE_MB);
   return Number.isFinite(megabytes) && megabytes > 0 ? { maxBytes: Math.round(megabytes * 1024 * 1024) } : {};
+}
+
+/** Whether an `If-None-Match` header names `tag` (a weak comparison, so `W/` makes no difference) or anything at all (`*`). */
+export function hasTag(header: string | undefined, tag: string): boolean {
+  if (!header) return false;
+  const bare = (value: string) => value.trim().replace(/^W\//, "");
+  return header.split(",").some((each) => each.trim() === "*" || bare(each) === bare(tag));
 }
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -132,6 +142,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   // Screens watching a film together ask for the same pieces of it: the proxy fetches each once and shares it (see `SegmentCache`).
   const segments = new SegmentCache(options.segmentCache ?? segmentCacheFromEnv());
+  const proxyStats: ProxyStats = { bytes: 0, requests: 0, refused: 0 };
+  const proxyVideo = options.proxyVideo ?? process.env.PROXY_VIDEO !== "off";
   // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.
   // `segments` counts the asks for a piece of a film that the proxy answered itself (`hits`) and the ones it had to take to the film's own place
   // (`misses`): with screens watching together, the hits are the share of the load that was not multiplied by the number of screens.)
@@ -140,10 +152,18 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     ...(options.storage ? { storage: options.storage } : {}),
     uptime: Math.round(process.uptime()),
     segments: { hits: segments.hits, misses: segments.misses, keptMB: Math.round(segments.keptBytes / 1024 / 1024) },
+    // (`proxy` is what the proxy has sent on to the screens, in bytes: the films are most of what a host's bandwidth goes on, and this is how much that was.
+    // `video` says whether it carries films at all, and `refused` how many asks it turned away because it does not.)
+    proxy: { bytes: proxyStats.bytes, requests: proxyStats.requests, refused: proxyStats.refused, video: proxyVideo ? "on" : "off" },
   }));
-  app.get("/api/library", async (_request, reply) => {
-    reply.header("Cache-Control", "public, max-age=300");
-    return library.get();
+  app.get("/api/library", async (request, reply) => {
+    const body = JSON.stringify(await library.get());
+    // The browser may keep the list for five minutes without asking; after that it asks with the tag of the one it has, and the list is
+    // collected again only every few hours, so the answer is nearly always "the same" in a few bytes instead of the list in some dozens of kilobytes.
+    const tag = `W/"${createHash("sha1").update(body).digest("base64url")}"`;
+    reply.header("Cache-Control", "public, max-age=300").header("ETag", tag);
+    if (hasTag(request.headers["if-none-match"], tag)) return reply.code(304).send();
+    return reply.type("application/json; charset=utf-8").send(body);
   });
   app.get<{ Querystring: { q?: string } }>("/api/library/search", async (request, reply) => {
     const q = request.query.q ?? "";
@@ -196,7 +216,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   app.get<{ Querystring: { url?: string; referer?: string } }>("/api/proxy", { compress: false }, async (request, reply) => {
     return handleStreamProxy(request, reply, {
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",
+      video: proxyVideo,
       segments,
+      stats: proxyStats,
     });
   });
 
