@@ -719,6 +719,7 @@ export const it: Dictionary = {
   "friends.codeCopied": "Codice copiato",
   "friends.codeCopyFailed": "Impossibile copiare: seleziona il codice e copialo",
   "friends.takeBack": "Ritira questo codice",
+  "friends.codesFull": "Hai {count} codici in giro. Se ne crei un altro, ritiri il più vecchio.",
   "friends.enterCode": "Hai un codice? Scrivilo qui",
   "friends.codeLabel": "Il codice del tuo amico",
   "friends.addAsk": "Ti ha dato questo codice. Diventate amici?",

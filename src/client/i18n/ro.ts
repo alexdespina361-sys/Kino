@@ -731,6 +731,7 @@ export const ro: Dictionary = {
   "friends.codeCopied": "Cod copiat",
   "friends.codeCopyFailed": "Nu s-a putut copia: selectează codul și copiază-l",
   "friends.takeBack": "Retrage acest cod",
+  "friends.codesFull": "Ai {count} coduri date. Dacă faci altul, îl retragi pe cel mai vechi.",
   "friends.enterCode": "Ai un cod? Scrie-l aici",
   "friends.codeLabel": "Codul prietenului tău",
   "friends.addAsk": "Ți-a dat acest cod. Deveniți prieteni?",

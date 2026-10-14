@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { canAskTogether, FRIEND_NOTE_MAX, friendLink, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite } from "../../shared";
+import { canAskTogether, FRIEND_NOTE_MAX, friendLink, MAX_OPEN_INVITES, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -246,14 +246,21 @@ function AddFriend() {
     }
   };
 
+  const out = friends.state?.invites ?? [];
+
   return (
     <Group title={t("friends.add")}>
-      {(friends.state?.invites ?? []).map((invite) => (
+      {out.map((invite) => (
         <InviteCard key={invite.code} invite={invite} />
       ))}
       <button className="btn btn-block" disabled={busy} onClick={() => void make()} data-testid="friend-make-code">
         <PlusIcon /> {t("friends.makeCode")}
       </button>
+      {out.length >= MAX_OPEN_INVITES && (
+        <p className="muted small" data-testid="friend-invites-full">
+          {t("friends.codesFull", { count: out.length })}
+        </p>
+      )}
       {problem && (
         <p className="auth-error" role="alert" data-testid="friend-invite-error">
           {problem}

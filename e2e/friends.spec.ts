@@ -290,6 +290,34 @@ test.describe("making friends", () => {
     await expect(bob.page.getByTestId("friends-none")).toBeVisible();
   });
 
+  test("with five codes out the page says that another takes back the oldest, which is what it does", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    await openFriends(ann.page);
+    const make = ann.page.getByTestId("friend-make-code");
+    const codes = ann.page.getByTestId("friend-invite-code");
+    const full = ann.page.getByTestId("friend-invites-full");
+
+    for (let out = 1; out <= 4; out++) {
+      await make.click();
+      await expect(codes).toHaveCount(out);
+    }
+    await expect(full).toHaveCount(0); // four out: room for one more, nothing to say
+    await make.click();
+    await expect(codes).toHaveCount(5);
+    await expect(full).toHaveText("You have 5 codes out. Making another takes back the oldest one.");
+
+    const oldest = (await codes.first().textContent())!;
+    await make.click(); // the sixth
+    await expect(codes.filter({ hasText: oldest })).toHaveCount(0);
+    await expect(codes).toHaveCount(5);
+    await expect(full).toBeVisible();
+
+    await ann.page.getByTestId("friend-invite-revoke").first().click(); // one taken back: room again
+    await expect(codes).toHaveCount(4);
+    await expect(full).toHaveCount(0);
+  });
+
   test("the code that is given has a small button that copies it, and what it copies is what a friend types", async ({ browser }) => {
     test.setTimeout(90_000);
     const ann = await phoneWithFriends(browser, "Ann");

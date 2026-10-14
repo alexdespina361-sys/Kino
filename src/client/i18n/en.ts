@@ -719,6 +719,7 @@ export const en = {
   "friends.codeCopied": "Code copied",
   "friends.codeCopyFailed": "Could not copy: select the code and copy it",
   "friends.takeBack": "Take this code back",
+  "friends.codesFull": "You have {count} codes out. Making another takes back the oldest one.",
   "friends.enterCode": "Have a code? Type it here",
   "friends.codeLabel": "Your friend's code",
   "friends.addAsk": "Gave you this code. Become friends?",
