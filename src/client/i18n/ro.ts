@@ -53,6 +53,7 @@ export const ro: Dictionary = {
   "error.generic": "Ceva nu a mers bine. Încearcă din nou.",
   "error.offline": "Nu mă pot conecta la server. Verifică conexiunea.",
   "error.invalid_credentials": "Nume de utilizator sau parolă greșită.",
+  "error.wrong_password": "Parolă greșită.",
   "error.email_taken": "Cineva are deja acest nume de utilizator. Alege altul sau autentifică-te.",
   "error.weak_password": "Parola e prea lungă (cel mult 200 de caractere).",
   "error.invalid_email": "Scrie un nume de utilizator.",
@@ -118,6 +119,7 @@ export const ro: Dictionary = {
   "account.delete": "Șterge contul",
   "account.deleteWarn": "Contul, profilurile, istoricul și listele se șterg definitiv. Scrie parola pentru a confirma.",
   "account.deleteConfirm": "Șterge tot",
+  "account.deleted": "Contul a fost șters.",
 
   /* signing another device in */
   "link.title": "Autentifică-te cu alt dispozitiv",

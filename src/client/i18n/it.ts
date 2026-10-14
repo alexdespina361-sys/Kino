@@ -53,6 +53,7 @@ export const it: Dictionary = {
   "error.generic": "Qualcosa è andato storto. Riprova.",
   "error.offline": "Impossibile raggiungere il server. Controlla la connessione.",
   "error.invalid_credentials": "Nome utente o password errati.",
+  "error.wrong_password": "Password errata.",
   "error.email_taken": "Qualcuno ha già questo nome utente. Scegline un altro o accedi.",
   "error.weak_password": "La password è troppo lunga (al massimo 200 caratteri).",
   "error.invalid_email": "Scrivi un nome utente.",
@@ -118,6 +119,7 @@ export const it: Dictionary = {
   "account.delete": "Elimina account",
   "account.deleteWarn": "Account, profili, cronologia e liste vengono eliminati per sempre. Scrivi la password per confermare.",
   "account.deleteConfirm": "Elimina tutto",
+  "account.deleted": "Il tuo account è stato eliminato.",
 
   /* signing another device in */
   "link.title": "Accedi con un altro dispositivo",

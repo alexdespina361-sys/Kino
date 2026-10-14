@@ -125,6 +125,32 @@ test.describe("accounts and profiles", () => {
     expect(cookie!.expires - Date.now() / 1000).toBeGreaterThan(399 * 24 * 3600); // (the browser caps a cookie's life at 400 days)
   });
 
+  test("deleting the account: a wrong password is called a wrong password, and afterwards the page says the account is gone, not that the person was signed out", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, account);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Robert/); // (the account's page stays open after signing up)
+    const turnedAway: string[] = [];
+    phone.on("response", (response) => {
+      if (response.status() === 401) turnedAway.push(new URL(response.url()).pathname);
+    });
+
+    await phone.getByTestId("menu-security").click();
+    await phone.getByTestId("delete-account").click();
+    await phone.getByTestId("delete-password").fill("2");
+    await phone.getByTestId("delete-confirm").click();
+    await expect(phone.getByTestId("delete-error")).toHaveText(en["error.wrong_password"]); // (there is no user name on this page to be wrong)
+
+    await phone.getByTestId("delete-password").fill(account.password);
+    await phone.getByTestId("delete-confirm").click();
+    await expect(phone.getByTestId("account-toast")).toHaveText(en["account.deleted"]);
+    await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
+    await phone.waitForTimeout(800);
+    expect(turnedAway).toEqual(["/api/me/delete"]); // only the wrong try: nothing was sent to a session that had ended with the account
+  });
+
   test("an account can have no password: the empty field says what that means, the sign-up says it again and asks, and signing in with nothing opens it", async ({ browser }) => {
     test.setTimeout(60_000);
     const account = { email: `Guest ${Date.now().toString(36)}${++counter}`, password: "" };

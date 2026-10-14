@@ -54,6 +54,7 @@ export const en = {
   "error.generic": "Something went wrong. Please try again.",
   "error.offline": "Can't reach the server. Check your connection.",
   "error.invalid_credentials": "Wrong username or password.",
+  "error.wrong_password": "Wrong password.",
   "error.email_taken": "Somebody already has that username. Pick another one, or sign in.",
   "error.weak_password": "That password is too long (200 characters at most).",
   "error.invalid_email": "Type a username.",
@@ -119,6 +120,7 @@ export const en = {
   "account.delete": "Delete account",
   "account.deleteWarn": "This deletes your account, profiles, history and lists for good. Enter your password to confirm.",
   "account.deleteConfirm": "Delete everything",
+  "account.deleted": "Your account was deleted.",
 
   /* signing another device in */
   "link.title": "Sign in with another device",
