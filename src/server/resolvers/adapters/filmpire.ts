@@ -481,8 +481,13 @@ export function createFilmpireAdapter(): SiteAdapter {
         finalStreamUrl = `${chosenStream}${delim}token=${encodeURIComponent(chosenToken)}&bypass_localize=true`;
       }
 
-      // 8. Wrap through /api/proxy with referer so the TV player never hits CORS issues
-      const proxiedUrl = `/api/proxy?url=${encodeURIComponent(finalStreamUrl)}&referer=${encodeURIComponent(playerUrl)}`;
+      // 8. Wrap through /api/proxy (or external EDGE_STREAM_PROXY_URL / DIRECT_STREAMING)
+      const edgeProxy = process.env.EDGE_STREAM_PROXY_URL?.trim();
+      const directStreaming = process.env.DIRECT_STREAMING === "true";
+      const proxyBase = edgeProxy ? edgeProxy.replace(/\/$/, "") : "/api/proxy";
+      const proxiedUrl = directStreaming
+        ? finalStreamUrl
+        : `${proxyBase}?url=${encodeURIComponent(finalStreamUrl)}&referer=${encodeURIComponent(playerUrl)}`;
 
       // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
       const alternates: AlternateSource[] = [];
@@ -497,7 +502,9 @@ export function createFilmpireAdapter(): SiteAdapter {
           const altFinalUrl = altToken
             ? `${sUrl}${altDelim}token=${encodeURIComponent(altToken)}&bypass_localize=true`
             : sUrl;
-          const altProxied = `/api/proxy?url=${encodeURIComponent(altFinalUrl)}&referer=${encodeURIComponent(playerUrl)}`;
+          const altProxied = directStreaming
+            ? altFinalUrl
+            : `${proxyBase}?url=${encodeURIComponent(altFinalUrl)}&referer=${encodeURIComponent(playerUrl)}`;
           alternates.push({
             label: `Server ${alternates.length + 2} (${hostName})`,
             stream: {
