@@ -512,6 +512,7 @@ export const ro: Dictionary = {
   "tvs.offline": "Deconectat",
   "tvs.forget": "Uită",
   "tvs.forgetLabel": "Uită {tv}",
+  "tvs.forgetAsk": "Uiți „{tv}”? Ca să-l controlezi din nou, vei avea nevoie de codul lui.",
   "tvs.nameTitle": "Numele televizorului folosit",
   "tvs.nameHelp": "Apare în această listă (și în listele celorlalte telefoane ale tale), ca să le poți deosebi.",
   "tvs.addTitle": "Conectează alt televizor",

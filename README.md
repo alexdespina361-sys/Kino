@@ -161,7 +161,7 @@ pnpm build && pnpm start     # http://localhost:8787
   (offline) at once, since there is nothing to ask about
 - **My TVs.** A phone keeps the TVs it has connected to (up to eight, in the order it did): *My TVs* in its menu, and on its first screen once
   it controls none. A tap on one controls it, **with no code**; the one it leaves is not touched: it keeps playing, stays paired and
-  is still on the list, with a dot for whether it is on. **Forget** lets a TV go (a TV with no phone left shows a new code, as after
+  is still on the list, with a dot for whether it is on. **Forget** lets a TV go, after a question that names it (a TV with no phone left shows a new code, as after
   *Disconnect*, and stops what it was playing); the field below connects another TV with its code, scanned or typed (the list says when it is full), and the
   TV in use can be **named** there (shown on the list and on the other phones' lists; empty gives it its own name back). A phone only hears
   what the TV it controls is doing, and the menu's count of phones counts only those controlling that TV now. A TV's own **Disconnect**

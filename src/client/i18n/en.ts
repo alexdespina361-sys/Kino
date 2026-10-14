@@ -508,6 +508,7 @@ export const en = {
   "tvs.offline": "Offline",
   "tvs.forget": "Forget",
   "tvs.forgetLabel": "Forget {tv}",
+  "tvs.forgetAsk": "Forget “{tv}”? To control it again you will need its code.",
   "tvs.nameTitle": "Name of the TV in use",
   "tvs.nameHelp": "Shown on this list (and on your other phones' lists), so the TVs can be told apart.",
   "tvs.addTitle": "Connect another TV",

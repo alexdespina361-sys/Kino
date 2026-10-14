@@ -1,9 +1,15 @@
-import { expect, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { openPairedPhone, openTv, PHONE, readPairingCode, test, tvRoot, tvTime } from "./helpers";
 
 const sample = (baseURL: string | undefined) => `${baseURL}/fixtures/sample.mp4`;
 
 const rows = (phone: Page) => phone.getByTestId("tv-row");
+
+/** Forget on a TV's row, and the "Forget" that answers the question it asks. */
+async function forget(row: Locator) {
+  await row.getByTestId("tv-forget").click();
+  await row.getByTestId("tv-forget-yes").click();
+}
 
 /** The list of TVs: from the menu of a phone that controls one, or (`fromMenu` false) from the first screen of one that does not. */
 async function openList(phone: Page, fromMenu = true) {
@@ -133,18 +139,27 @@ test.describe("a phone with several TVs", () => {
   test("forgetting a TV lets that one go and leaves the others alone; forgetting the last one is the first screen with no list", async ({ browser }) => {
     const first = await openTv(browser);
     const phone = await openPairedPhone(browser, first);
+    const firstName = await phone.getByTestId("tv-name").innerText();
     const second = await addTv(browser, phone);
     const secondName = await phone.getByTestId("tv-name").innerText();
 
     await openList(phone);
-    await rows(phone).nth(0).getByTestId("tv-forget").click(); // the first, which it is not controlling
+    // A tap on Forget asks first, naming the TV; Cancel leaves everything as it was.
+    await rows(phone).nth(0).getByTestId("tv-forget").click();
+    await expect(phone.getByTestId("tv-forget-ask")).toContainText(`Forget “${firstName}”?`);
+    await phone.getByTestId("tv-forget-no").click();
+    await expect(phone.getByTestId("tv-forget-ask")).toHaveCount(0);
+    await expect(rows(phone)).toHaveCount(2);
+    await expect(first.getByTestId("tv-paired")).toBeVisible(); // (nothing was let go)
+
+    await forget(rows(phone).nth(0)); // the first, which it is not controlling
     await expect(rows(phone)).toHaveCount(1);
     await expect(first.getByTestId("pairing-code")).toBeVisible(); // let go: it offers itself again with a new code
     await expect(phone.getByTestId("tvs-sheet")).toBeVisible(); // and the phone stays where it was
     await expect(phone.getByTestId("tv-name")).toHaveText(secondName);
     await expect(second.getByTestId("tv-paired")).toBeVisible();
 
-    await rows(phone).nth(0).getByTestId("tv-forget").click(); // the one in use, which was the last
+    await forget(rows(phone).nth(0)); // the one in use, which was the last
     await expect(phone.getByTestId("code-input")).toBeVisible();
     await expect(phone.getByTestId("tvs-sheet")).toHaveCount(0);
     await expect(phone.getByTestId("tvs-open")).toHaveCount(0); // nothing is on a list that is empty
@@ -253,7 +268,7 @@ test.describe("a phone with several TVs", () => {
     await expect(phone.getByTestId("tvs-full")).toBeVisible();
     await expect(phone.getByTestId("tvs-code")).toHaveCount(0);
 
-    await rows(phone).nth(0).getByTestId("tv-forget").click();
+    await forget(rows(phone).nth(0));
     await expect(rows(phone)).toHaveCount(7);
     await expect(phone.getByTestId("tvs-full")).toHaveCount(0);
     await expect(phone.getByTestId("tvs-code")).toBeVisible();
@@ -311,5 +326,18 @@ test.describe("a phone with several TVs", () => {
     expect(field.y + field.height).toBeLessThanOrEqual(sheet.y + sheet.height);
     expect(field.x).toBeGreaterThanOrEqual(0);
     expect(field.x + field.width).toBeLessThanOrEqual(320);
+
+    // The question that Forget asks fits the row as well: its two answers side by side, inside it, each a finger's size.
+    await rows(phone).nth(0).getByTestId("tv-forget").click();
+    const ask = (await phone.getByTestId("tv-forget-ask").boundingBox())!;
+    expect(ask.x).toBeGreaterThanOrEqual(0);
+    expect(ask.x + ask.width).toBeLessThanOrEqual(320);
+    for (const answer of ["tv-forget-yes", "tv-forget-no"]) {
+      const box = (await phone.getByTestId(answer).boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(ask.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(ask.x + ask.width + 0.5);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+    expect(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 });

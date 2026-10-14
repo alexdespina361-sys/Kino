@@ -508,6 +508,7 @@ export const it: Dictionary = {
   "tvs.offline": "Offline",
   "tvs.forget": "Dimentica",
   "tvs.forgetLabel": "Dimentica {tv}",
+  "tvs.forgetAsk": "Dimenticare “{tv}”? Per controllarla di nuovo ti servirà il suo codice.",
   "tvs.nameTitle": "Nome della TV in uso",
   "tvs.nameHelp": "Compare in questa lista (e nelle liste degli altri tuoi telefoni), per distinguere le TV.",
   "tvs.addTitle": "Collega un'altra TV",
