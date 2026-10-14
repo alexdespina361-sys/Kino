@@ -18,8 +18,6 @@ import { BackspaceIcon, CheckIcon, ChevronIcon, CloseIcon, FilmIcon, GridIcon, H
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
-import { readSession, writeSession } from "../shared/format";
-import { getCachedLibrary, setCachedLibrary } from "../shared/libraryCache";
 import { hueOf } from "../shared/Poster";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { switchRole, thisIsPhone } from "../role";
@@ -232,8 +230,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   const narrow = narrowColumns > 0;
   const gridColumns = narrowColumns || GRID_COLUMNS;
   const resultColumns = narrowColumns || RESULT_COLUMNS;
-  const [library, setLibrary] = useState<Library | null>(() => remembered.library ?? getCachedLibrary());
-  const [status, setStatus] = useState<"loading" | "ready" | "failed">(() => (remembered.library ?? getCachedLibrary()) ? "ready" : "loading");
+  const [library, setLibrary] = useState<Library | null>(remembered.library);
+  const [status, setStatus] = useState<"loading" | "ready" | "failed">(remembered.library ? "ready" : "loading");
   const [attempt, setAttempt] = useState(0);
   const [view, setViewState] = useState<View>(remembered.view);
   const [query, setQuery] = useState(remembered.query);
@@ -279,13 +277,12 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
         const parsed = LibrarySchema.parse(data);
         if (!live) return;
         remembered.library = parsed;
-        setCachedLibrary(parsed);
         if (attempt > 0) remembered.resultsFor = ""; // what a search showed is asked for again against the new list
         setLibrary(parsed);
         setStatus("ready");
       })
       .catch(() => {
-        if (live && !remembered.library && !getCachedLibrary()) setStatus("failed");
+        if (live && !remembered.library) setStatus("failed");
       });
     return () => {
       live = false;
@@ -297,16 +294,6 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     if (!newest) return setSimilarItems([]);
     const known = remembered.similar[newest.key];
     if (known) return setSimilarItems(known);
-    const cached = readSession(`kino.similar.${newest.key}`);
-    if (cached) {
-      try {
-        const parsed = LibraryItemsSchema.safeParse(JSON.parse(cached));
-        if (parsed.success) {
-          remembered.similar[newest.key] = parsed.data.items;
-          return setSimilarItems(parsed.data.items);
-        }
-      } catch {}
-    }
     let live = true;
     fetch(`/api/library/similar?url=${encodeURIComponent(newest.url)}`)
       .then((res) => (res.ok ? res.json() : null))
@@ -314,9 +301,6 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
         const parsed = LibraryItemsSchema.safeParse(data);
         const items = parsed.success ? parsed.data.items : [];
         remembered.similar[newest.key] = items;
-        if (parsed.success && items.length > 0) {
-          writeSession(`kino.similar.${newest.key}`, JSON.stringify({ items }));
-        }
         if (live) setSimilarItems(items);
       })
       .catch(() => {}); // not remembered, so the next visit asks again

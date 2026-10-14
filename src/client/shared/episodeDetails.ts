@@ -1,26 +1,11 @@
 import { useEffect, useState } from "react";
 import { EpisodeDetailsSchema, SeasonsSchema, type EpisodeDetail } from "../../shared";
-import { readSession, writeSession } from "./format";
 
 /** What a season's episodes are known by, by episode number. */
 export type SeasonDetails = ReadonlyMap<number, EpisodeDetail>;
 
-/** The seasons found for each show, kept in memory and sessionStorage. */
+/** The seasons found for each show, kept for as long as the page is open. Nothing found is not kept: it may be a place that could not be reached just then. */
 const seasonsFound = new Map<string, number[]>();
-
-function readCachedSeasons(key: string): number[] | undefined {
-  if (seasonsFound.has(key)) return seasonsFound.get(key);
-  const raw = readSession(`kino.seasons.${key}`);
-  if (!raw) return undefined;
-  try {
-    const parsed = SeasonsSchema.safeParse(JSON.parse(raw));
-    if (parsed.success && parsed.data.seasons.length > 0) {
-      seasonsFound.set(key, parsed.data.seasons);
-      return parsed.data.seasons;
-    }
-  } catch {}
-  return undefined;
-}
 
 /** A show's episodes have links that differ in the query only, so any of them says which show it is. */
 const showOf = (link: string): string => {
@@ -41,17 +26,14 @@ export function useSeasons(link: string | undefined): number[] | undefined {
   const [answer, setAnswer] = useState<{ key: string; seasons: number[] }>();
 
   useEffect(() => {
-    if (key === undefined || link === undefined || readCachedSeasons(key)) return;
+    if (key === undefined || link === undefined || seasonsFound.has(key)) return;
     let live = true;
     fetch(`/api/library/seasons?url=${encodeURIComponent(link)}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
       .then((body: unknown) => {
         const parsed = SeasonsSchema.safeParse(body);
         const seasons = parsed.success ? parsed.data.seasons : [];
-        if (seasons.length > 0) {
-          seasonsFound.set(key, seasons);
-          writeSession(`kino.seasons.${key}`, JSON.stringify({ seasons }));
-        }
+        if (seasons.length > 0) seasonsFound.set(key, seasons);
         if (live) setAnswer({ key, seasons });
       })
       .catch(() => live && setAnswer({ key, seasons: [] }));
@@ -61,28 +43,11 @@ export function useSeasons(link: string | undefined): number[] | undefined {
   }, [key, link]);
 
   if (key === undefined) return [];
-  const cached = readCachedSeasons(key);
-  if (cached) return cached;
-  return answer?.key === key ? answer.seasons : undefined;
+  return seasonsFound.get(key) ?? (answer?.key === key ? answer.seasons : undefined);
 }
 
-/** What was learned of a season, kept in memory and sessionStorage. */
+/** What was learned of a season, kept for as long as the page is open: `null` is "asked, and nobody knows". */
 const learned = new Map<string, SeasonDetails | null>();
-
-function readCachedEpisodes(key: string): SeasonDetails | null | undefined {
-  if (learned.has(key)) return learned.get(key) ?? null;
-  const raw = readSession(`kino.episodes.${key}`);
-  if (!raw) return undefined;
-  try {
-    const parsed = EpisodeDetailsSchema.safeParse(JSON.parse(raw));
-    if (parsed.success) {
-      const details = parsed.data.episodes.length > 0 ? new Map(parsed.data.episodes.map((detail) => [detail.episode, detail])) : null;
-      learned.set(key, details);
-      return details;
-    }
-  } catch {}
-  return undefined;
-}
 
 const keyOf = (link: string, season: number) => `${season}|${link}`;
 
@@ -96,7 +61,7 @@ export function useEpisodeDetails(link: string | undefined, season: number | und
   const [answer, setAnswer] = useState<{ key: string; details: SeasonDetails | null }>();
 
   useEffect(() => {
-    if (key === undefined || link === undefined || season === undefined || readCachedEpisodes(key) !== undefined) return;
+    if (key === undefined || link === undefined || season === undefined || learned.has(key)) return;
     let live = true;
     fetch(`/api/library/episodes?season=${season}&url=${encodeURIComponent(link)}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
@@ -104,9 +69,6 @@ export function useEpisodeDetails(link: string | undefined, season: number | und
         const parsed = EpisodeDetailsSchema.safeParse(body);
         const details = parsed.success && parsed.data.episodes.length > 0 ? new Map(parsed.data.episodes.map((detail) => [detail.episode, detail])) : null;
         learned.set(key, details);
-        if (parsed.success && parsed.data.episodes.length > 0) {
-          writeSession(`kino.episodes.${key}`, JSON.stringify(parsed.data));
-        }
         if (live) setAnswer({ key, details });
       })
       .catch(() => live && setAnswer({ key, details: null }));
@@ -116,7 +78,6 @@ export function useEpisodeDetails(link: string | undefined, season: number | und
   }, [key, link, season]);
 
   if (key === undefined) return null;
-  const cached = readCachedEpisodes(key);
-  if (cached !== undefined) return cached;
+  if (learned.has(key)) return learned.get(key) ?? null;
   return answer?.key === key ? answer.details : undefined;
 }
