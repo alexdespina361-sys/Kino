@@ -1,9 +1,9 @@
-import { chromium, expect, type Browser, type Locator, type Page } from "@playwright/test";
+import { chromium, expect, type Browser, type Locator, type Page, type WebSocketRoute } from "@playwright/test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import qrcode from "qrcode-generator";
-import { progressKey, type NormalizedMedia } from "../src/shared";
+import { MAX_LINK_LENGTH, progressKey, type NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
@@ -266,6 +266,19 @@ test.describe("a server that is slow to answer", () => {
 });
 
 test.describe("playing links", () => {
+  test("a link that is too long for the server to read is said to be too long, not blamed on the server's version", async ({ browser }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.getByTestId("url-input").fill(`http://example.com/${"a".repeat(MAX_LINK_LENGTH)}`); // (a signed link of a file host can be that long)
+    await phone.getByTestId("play-url").click();
+    await expect(phone.getByTestId("error")).toHaveText(en["phone.linkTooLong"]);
+    await expect(phone.getByTestId("resolve-status")).toHaveCount(0); // nothing was asked of the server
+    await phone.getByTestId("url-input").fill("http://example.com/short"); // and a link that fits goes on as before
+    await phone.getByTestId("play-url").click();
+    await expect(phone.getByTestId("error")).toHaveCount(0);
+    await expect(phone.getByTestId("resolve-status")).toBeVisible();
+  });
+
   test("a link shared to the app (?url=) plays as soon as a TV is paired", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);
@@ -959,6 +972,68 @@ test.describe("sources", () => {
     await expect(phone.getByTestId("chip-source")).toContainText("Mirror");
   });
 
+  test("the source that takes over starts where the video was told to start, and stays held when it was put back held", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    // (What the server sends a TV whose page was opened again: the video and the place, and no PLAY behind it.)
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/does-not-exist.mp4" }, { label: "Mirror", url: "/fixtures/sample.mp4" }]), startAt: 9 });
+    await expect(tv.getByTestId("tv-source-btn")).toHaveText("Mirror", { timeout: 15_000 });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await expect.poll(() => tvTime(tv), { timeout: 10_000 }).toBeGreaterThan(8);
+    await tv.waitForTimeout(1000);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused"); // not set going by the hand-over
+    phone.close();
+  });
+
+  test("the source that takes over plays from where the video was told to start, when it was meant to play", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/does-not-exist.mp4" }, { label: "Mirror", url: "/fixtures/sample.mp4" }]), startAt: 9 });
+    phone.cmd({ type: "PLAY" });
+    await expect(tv.getByTestId("tv-source-btn")).toHaveText("Mirror", { timeout: 15_000 });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    expect(await tvTime(tv)).toBeGreaterThan(8);
+    phone.close();
+  });
+
+  test("Try again carries on from where the video stopped, not from the start", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: withSources([{ url: "/fixtures/sample.mp4" }]) });
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await tv.evaluate(() => void (document.querySelector("video")!.currentTime = 9));
+    await expect.poll(() => tvTime(tv)).toBeGreaterThan(8.5);
+    await tv.evaluate(() => void document.querySelector("video")!.dispatchEvent(new Event("error"))); // (a video that gave out part of the way)
+    await expect(tv.getByTestId("tv-error")).toBeVisible();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-error")).toHaveCount(0);
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    expect(await tvTime(tv)).toBeGreaterThan(8);
+    phone.close();
+  });
+
+  test("a video that stopped because the connection went is tried again by itself, and the card says what happened", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    // (hls.js asks the film's pieces from the server: with the page offline they get no answer at all, which is what a server that is away looks like.)
+    phone.cmd({ type: "LOAD", media: { title: "Streamed", stream: { url: "/fixtures/hls/master.m3u8", type: "hls" } } });
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await tv.evaluate(() => void (document.querySelector("video")!.currentTime = 0.5));
+    // A video that gave out for want of a connection: the error that the player raises for it (an answer with a 404 is another thing, covered above).
+    await tv.evaluate(() => {
+      Object.defineProperty(document.querySelector("video")!, "error", { configurable: true, get: () => ({ code: 2 }) });
+      document.querySelector("video")!.dispatchEvent(new Event("error"));
+    });
+    await expect(tv.getByTestId("tv-error")).toBeVisible();
+    await expect(tv.getByTestId("tv-error")).toContainText("The connection to the video was lost.");
+    // Still connected to the server, so a moment later the picture is tried again without anybody pressing anything.
+    await expect(tv.getByTestId("tv-error")).toHaveCount(0, { timeout: 10_000 });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", /playing|paused/, { timeout: 15_000 });
+    phone.close();
+  });
+
   test("when every source fails, the TV says so instead of looping", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
@@ -1152,6 +1227,20 @@ test.describe("full screen", () => {
     await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
   });
+
+  for (const how of ["key", "click"] as const) {
+    test(`the first ${how === "key" ? "key press" : "click"} on the welcome asks the browser for full screen once: nothing is refused, so the console has nothing to say`, async ({ browser, baseURL }) => {
+      const tv = await firstVisit(browser, baseURL!);
+      const complaints: string[] = [];
+      tv.on("console", (message) => message.text().includes("requestFullscreen") && complaints.push(message.text()));
+      await expect(tv.getByTestId("welcome-enter")).toBeVisible();
+      if (how === "key") await tv.keyboard.press("Enter");
+      else await tv.getByTestId("welcome-enter").click();
+      await expect.poll(() => isFullScreen(tv)).toBe(true);
+      await expect(tv.getByTestId("tv-welcome")).toHaveCount(0, { timeout: 4_000 });
+      expect(complaints).toEqual([]);
+    });
+  }
 
   test("Back lets the waiting welcome go, and the library is as it was", async ({ browser, baseURL }) => {
     const tv = await firstVisit(browser, baseURL!);
@@ -1380,6 +1469,34 @@ test.describe("watching together", () => {
     expect((await video(follower)).time - (await video(leader)).time).toBeLessThan(2.1);
   });
 
+  test("a screen that has the host's film on when the party takes it in loads that film again, however close the two messages come", async ({ browser, baseURL }) => {
+    // (The server answers a join with TV_FOLLOWING and, a millisecond later, the host's LOAD. Over a slow link, or behind a proxy that passes frames on together,
+    // both reach the page before it has drawn once: here the test plays the server for those two.)
+    const sockets: WebSocketRoute[] = [];
+    const tv = await openLibrary(browser, async (context) => {
+      await context.routeWebSocket(/\/ws$/, (page) => {
+        sockets.push(page);
+        const server = page.connectToServer();
+        page.onMessage((message) => server.send(message));
+        server.onMessage((message) => page.send(message));
+        page.onClose((code, reason) => void server.close({ code, reason }));
+        server.onClose((code, reason) => void page.close({ code, reason }));
+      });
+    });
+    await tv.getByTestId("rail-connect").click();
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    const media: NormalizedMedia = { title: "Same Film", stream: { url: "/fixtures/sample.mp4", type: "mp4" } };
+    phone.cmd({ type: "LOAD", media });
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+
+    sockets.at(-1)!.send(JSON.stringify({ type: "TV_FOLLOWING", leader: "Sam" }));
+    sockets.at(-1)!.send(JSON.stringify({ type: "TV_CMD", command: { type: "LOAD", media } }));
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", /paused|playing/, { timeout: 15_000 }); // (not "idle": a picture that was stopped and never loaded again)
+    expect(await tv.evaluate(() => document.querySelector("video")!.currentSrc)).toContain("/fixtures/sample.mp4");
+    phone.close();
+  });
+
   test("a follower has no controls of its own: keys do nothing, and the phone's stop ends it for both", async ({ browser, baseURL }) => {
     const { leader, phone, follower } = await party(browser);
     await phone.getByTestId("sheet-close").click();
@@ -1406,6 +1523,21 @@ test.describe("watching together", () => {
     await expect(follower.getByTestId("tv-back-to-library")).toHaveCount(0); // it can't choose what plays, so no library
     await expect(follower.getByTestId("tv-browse")).toHaveCount(0);
     await expect(follower.getByTestId("tv-disconnect")).toHaveText("Stop watching along");
+  });
+
+  test("when the host's film has played to its end the card of a screen that watches along says it is finished, not that somebody paused it", async ({ browser, baseURL }) => {
+    const { leader, phone, follower } = await party(browser);
+    await phone.getByTestId("sheet-close").click();
+    await phone.getByTestId("url-input").fill(sample(baseURL!));
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(follower)).toHaveAttribute("data-state", "playing");
+
+    await leader.evaluate(() => {
+      const video = document.querySelector("video")!;
+      video.currentTime = video.duration - 1.2;
+    });
+    await expect(leader.getByTestId("tv-end")).toBeVisible({ timeout: 15_000 });
+    await expect(follower.getByTestId("tv-held")).toHaveText("Finished", { timeout: 15_000 });
   });
 
   test("a TV added while a film is playing starts at the same place", async ({ browser, baseURL }) => {
@@ -2469,6 +2601,31 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("title-play")).toHaveText("Resume S2:E3");
     await expect(phone.getByTestId("title-season-2")).toHaveAttribute("aria-selected", "true");
     await expect(phone.getByTestId("title-episode").nth(2)).toHaveAttribute("data-target", "true");
+  });
+
+  test("at twelve lists there is no New list, and the sheets say why; a list deleted gives the button back", async ({ browser, baseURL }) => {
+    const now = Date.now();
+    const listNames = Array.from({ length: 11 }, (_, i) => ({ key: `l${String(i).padStart(3, "0")}`, at: now - 10_000 + i, name: `List ${i + 1}` }));
+    const { phone } = await connect(browser, baseURL!, { seed: guestStorage({ listNames }) });
+    const words = "You have reached the limit of 12 lists. Delete one to make a new one.";
+
+    // The round button on a title asks which list; there is no way to make a thirteenth there.
+    await phone.getByTestId("library-list-toggle").first().click();
+    await expect(phone.getByTestId("list-picker")).toBeVisible();
+    await expect(phone.getByTestId("pick-new")).toHaveCount(0);
+    await expect(phone.getByTestId("lists-full")).toHaveText(words);
+    await phone.getByTestId("pick-favourites").click(); // (a saved title is what gives the row its button for the lists)
+    await phone.getByTestId("sheet-close").click();
+
+    await phone.getByTestId("lists-manage").click();
+    await expect(phone.getByTestId("list-new")).toHaveCount(0);
+    await expect(phone.getByTestId("lists-full")).toHaveText(words);
+
+    await phone.getByTestId("manage-l010").click();
+    await phone.getByTestId("list-delete").click();
+    await phone.getByTestId("list-delete-confirm").click();
+    await expect(phone.getByTestId("list-new")).toBeVisible();
+    await expect(phone.getByTestId("lists-full")).toHaveCount(0);
   });
 
   test("a title's page keeps the title in a list, and its Close puts it away", async ({ browser, baseURL }) => {

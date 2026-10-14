@@ -235,7 +235,8 @@ export async function handleStreamProxy(
 
   // (An answer that was looked at and found not to be one to share is carried on with, not asked for again.)
   const abortController = handed.answer?.control ?? new AbortController();
-  request.raw.socket?.on("close", () => {
+  // (On the response, not on the socket: a browser keeps one connection for hundreds of pieces, and a listener per piece on it was never taken off.)
+  reply.raw.once("close", () => {
     if (!reply.raw.writableEnded) {
       abortController.abort();
     }

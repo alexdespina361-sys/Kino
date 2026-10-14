@@ -1,5 +1,5 @@
 import http from "node:http";
-import type { AddressInfo } from "node:net";
+import type { AddressInfo, Socket } from "node:net";
 import { gzipSync } from "node:zlib";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -219,6 +219,33 @@ describe("handleStreamProxy", () => {
   it("gives up on a redirect that leads to itself", async () => {
     const answer = await ask(at(OKAY, "/loop"));
     expect(answer.statusCode).toBe(502);
+  });
+
+  it("leaves nothing behind on the connection for each piece it passes on (a browser asks for hundreds over one)", async () => {
+    const live = Fastify();
+    live.get<{ Querystring: { url?: string; referer?: string; format?: string } }>("/api/proxy", (request, reply) => handleStreamProxy(request, reply, { isAllowedAddress: allowed }));
+    const sockets: Socket[] = [];
+    live.server.on("connection", (socket) => sockets.push(socket));
+    await live.listen({ port: 0, host: "127.0.0.1" });
+    const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+    const target = encodeURIComponent(at(OKAY, "/seg.ts"));
+    try {
+      for (let piece = 0; piece < 15; piece++) {
+        await new Promise<void>((resolve, reject) => {
+          http
+            .get({ host: "127.0.0.1", port: (live.server.address() as AddressInfo).port, path: `/api/proxy?url=${target}`, agent }, (response) => {
+              response.resume();
+              response.on("end", resolve);
+            })
+            .on("error", reject);
+        });
+      }
+      expect(sockets).toHaveLength(1); // (one connection carried all fifteen)
+      expect(sockets[0]!.listenerCount("close")).toBeLessThan(6); // (it was fifteen more than the server's own, and Node warns of a leak from eleven)
+    } finally {
+      agent.destroy();
+      await live.close();
+    }
   });
 
   describe("with the cache that screens watching together share", () => {

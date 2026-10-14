@@ -14,7 +14,20 @@ export const PlayerError = {
   NotDirectlyPlayable: "SOURCE_NOT_DIRECTLY_PLAYABLE",
   HlsUnsupported: "HLS_UNSUPPORTED",
   Blocked: "PLAYBACK_BLOCKED",
+  /** Nothing came back from the network at all: the link or the server went away (it passes; the video itself is fine). */
+  ConnectionLost: "CONNECTION_LOST",
 } as const;
+
+/**
+ * Whether a fatal hls.js error is the connection going and not the video being bad: a network error that got no answer (a refused or dropped
+ * connection, a time-out). An answer that says no (404, 403, a 5xx) is the video's, or the site's, and no waiting changes it.
+ */
+export function lostTheConnection(data: { type?: string; details?: string; response?: { code?: number } }): boolean {
+  if (data.type !== "networkError") return false;
+  if (data.details?.endsWith("TimeOut")) return true;
+  const code = data.response?.code;
+  return code === undefined || code < 100;
+}
 
 /**
  * How far ahead of the picture a screen downloads, in the three numbers hls.js wants (it aims at `max(8 * maxBufferSize / bitrate, maxBufferLength)`
@@ -59,6 +72,8 @@ export class PlayerEngine {
   private errorCode: string | undefined;
   /** Resume point for a plain (non-hls.js) source; applied once the duration is known. */
   private startAt: number | undefined;
+  /** Where the video that is loading (or has just failed to) was told to start, kept after the player has taken it: see `resumePoint`. */
+  private requestedStart: number | undefined;
   private generation = 0;
   /** The speed that was chosen, while a hold on the picture plays faster (see `boost`); null when nothing is held. */
   private boostedFrom: number | null = null;
@@ -100,7 +115,8 @@ export class PlayerEngine {
       video.textTracks.addEventListener("addtrack", () => this.emit());
     }
     video.addEventListener("error", () => {
-      if (this.hasSource) this.fail(PlayerError.NotDirectlyPlayable);
+      // (MEDIA_ERR_NETWORK, 2: the download broke off part of the way. A file that cannot be opened at all, or played, is another code.)
+      if (this.hasSource) this.fail(video.error?.code === 2 ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
     });
     this.ticker = setInterval(() => this.hasSource && this.emit(), 1000);
   }
@@ -111,6 +127,7 @@ export class PlayerEngine {
     this.hasSource = true;
     this.loading = true;
     this.startAt = startAt && startAt > 0 ? startAt : undefined;
+    this.requestedStart = this.startAt;
     this.emit();
 
     // Media may be root-relative (local fixtures); resolve against the TV's own origin.
@@ -177,7 +194,7 @@ export class PlayerEngine {
           }
 
           console.error("[HLS FATAL ERROR]", data.type, data.details);
-          this.fail(PlayerError.NotDirectlyPlayable);
+          this.fail(lostTheConnection(data) ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
         }
       });
 
@@ -258,6 +275,20 @@ export class PlayerEngine {
   pause(): void {
     this.pendingPlay = false;
     this.video.pause();
+  }
+
+  /**
+   * Where the picture carries on from if it has to be loaded again (another source, the same one once more): where it is, or, when it never got
+   * going, where it was told to start. Read it before `load`, which wipes the element.
+   */
+  resumePoint(): number {
+    const at = this.video.currentTime || 0;
+    return at > 0 ? at : (this.requestedStart ?? 0);
+  }
+
+  /** Whether the picture is meant to be playing: it is, or it was asked to as soon as it can (a video put back after a restart is neither, and stays held). */
+  wantsPlay(): boolean {
+    return this.pendingPlay || (this.hasSource && !this.video.paused);
   }
 
   seek(time: number): void {
@@ -447,6 +478,7 @@ export class PlayerEngine {
     this.generation += 1;
     this.pendingPlay = false;
     this.startAt = undefined;
+    this.requestedStart = undefined;
     this.hls?.destroy();
     this.hls = null;
     this.hasSource = false;

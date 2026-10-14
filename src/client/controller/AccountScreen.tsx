@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -15,19 +15,29 @@ import { LinkApprove } from "../account/LinkApprove";
 import { useBackToClose } from "./backButton";
 import { FriendPage, FriendsPage } from "./Friends";
 import { RatingsSheet } from "./RatingsSheet";
-import { sheetIsOpen } from "./Sheet";
+import { keepFocusIn, sheetIsOpen } from "./Sheet";
 
 /** A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. */
 export function Page({ title, onBack, children, testId }: { title: string; onBack: () => void; children: ReactNode; testId?: string }) {
   const t = useT();
+  const page = useRef<HTMLDivElement>(null);
   useBackToClose(onBack); // (the phone's own Back goes back a page too, instead of leaving the site)
+  // The keyboard goes into the page when it opens (not left on the button behind it), and Tab goes round it rather than out to the controls under it.
+  // (The pages of a view that changes are this one component with other words: each is "opened" as its title changes, the button that opened it gone.)
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && !sheetIsOpen() && onBack();
+    if (page.current && !page.current.contains(document.activeElement)) page.current.focus({ preventScroll: true });
+  }, [title, testId]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (sheetIsOpen()) return; // (a sheet over the page keeps its own focus)
+      if (event.key === "Escape") onBack();
+      else if (event.key === "Tab" && page.current) keepFocusIn(page.current, event);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onBack]);
   return (
-    <div className="page" role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
+    <div className="page" ref={page} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
       <header className="page-head">
         <button className="icon-btn" onClick={onBack} aria-label={t("common.back")} data-testid="page-back">
           <ChevronIcon className="flip" />

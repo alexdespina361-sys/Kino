@@ -111,6 +111,8 @@ describe("newer protocol pieces", () => {
     expect(parseServerMessage(msg(sync))).toEqual(sync); // (an older server says neither)
     for (const by of [1, null, "x".repeat(101)]) expect(parseServerMessage(msg({ ...sync, by }))).toBeNull();
     expect(parseServerMessage(msg({ ...sync, waiting: "yes" }))).toBeNull();
+    expect(parseServerMessage(msg({ ...sync, ended: true }))).toEqual({ ...sync, ended: true }); // (the film is over: not a pause)
+    expect(parseServerMessage(msg({ ...sync, ended: "yes" }))).toBeNull();
 
     const pause = { type: "TV_CMD", command: { type: "PAUSE" } };
     expect(parseServerMessage(msg({ ...pause, by: "a1b2c3d4e5f6" }))).toEqual({ ...pause, by: "a1b2c3d4e5f6" });

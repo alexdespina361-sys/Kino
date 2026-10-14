@@ -56,7 +56,8 @@ export interface AccountContextValue {
 
   signIn(email: string, password: string): Promise<Me>;
   signUp(email: string, password: string): Promise<Me>;
-  signOut(): Promise<void>;
+  /** `deleted`: the account has just been deleted on the server, which has ended its sessions too (so there is nothing to send what is left to, and nobody to sign out). */
+  signOut(options?: { deleted?: boolean }): Promise<void>;
   /** A sign-in that already happened on the server (a TV signed in from a phone). */
   signedInAs(me: Me): void;
   choose(profileId: string | null): void;
@@ -257,19 +258,23 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
         setMe(created);
         return created;
       },
-      async signOut() {
-        // What has not been sent yet is sent first, or it would be lost with this screen's copy.
-        await Promise.race([syncRef.current(), new Promise((resolve) => setTimeout(resolve, FINAL_SYNC_MS))]);
+      async signOut(options) {
         const leaving = meRef.current;
-        try {
-          await api.logout();
-        } catch {
-          /* the cookie may already be gone */
+        // (An account that was just deleted has no session left: a last exchange would only be told so, and take it for a sign-out elsewhere.)
+        if (!options?.deleted) {
+          // What has not been sent yet is sent first, or it would be lost with this screen's copy.
+          await Promise.race([syncRef.current(), new Promise((resolve) => setTimeout(resolve, FINAL_SYNC_MS))]);
+          try {
+            await api.logout();
+          } catch {
+            /* the cookie may already be gone */
+          }
         }
         profileStore.openScope(GUEST);
         for (const other of leaving?.profiles ?? []) profileStore.forget(other.id);
         setProfileId(null);
         setMe(null);
+        if (options?.deleted) say(t("account.deleted"));
       },
       signedInAs(signedIn) {
         setMe(signedIn);

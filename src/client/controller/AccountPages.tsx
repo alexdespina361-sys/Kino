@@ -3,7 +3,7 @@ import { ACCENTS, DEVICE_NAME_MAX, friendChoices, preferredLanguages, UI_LANGUAG
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
 import { Avatar } from "../account/Avatar";
-import { describeError } from "../account/errors";
+import { describeError, describePasswordError } from "../account/errors";
 import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
@@ -457,7 +457,7 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
       setCurrent("");
       setNext("");
     } catch (cause) {
-      setChangeProblem(describeError(cause));
+      setChangeProblem(describePasswordError(cause));
     } finally {
       setBusy(false);
     }
@@ -468,10 +468,10 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
     setDeleteProblem(null);
     try {
       await api.deleteAccount(confirm);
-      await account.signOut();
+      await account.signOut({ deleted: true });
       onDeleted();
     } catch (cause) {
-      setDeleteProblem(describeError(cause));
+      setDeleteProblem(describePasswordError(cause));
       setBusy(false);
     }
   };

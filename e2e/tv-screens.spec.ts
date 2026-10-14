@@ -730,6 +730,7 @@ test.describe("the library on the TV", () => {
     await tv.getByTestId("rail-list").click();
     await expect(tv.getByTestId("tv-view-title")).toHaveText("Favourites");
     await expect(tiles(tv)).toHaveCount(1);
+    await expect(tv.getByTestId("lists-full")).toHaveCount(0); // (there is room for more: no word about the most)
     await tv.getByTestId("list-new").click();
     await expect(tv.getByTestId("list-name-input")).toBeFocused();
     await tv.keyboard.type("Weekend");
@@ -971,6 +972,26 @@ test.describe("the library on the TV", () => {
       return edit.x + edit.width;
     };
     await expect.poll(rightEdge).toBeLessThanOrEqual(1280); // the last button has slid into view (it takes a moment)
+  });
+
+  test("at twelve lists there is no New list, and the lists page and the question of which list say why", async ({ browser }) => {
+    const now = Date.now();
+    const seed = guestStorage({ listNames: Array.from({ length: 11 }, (_, i) => ({ key: `l${String(i).padStart(3, "0")}`, at: now - 10_000 + i, name: `List ${i + 1}` })) });
+    const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
+    const words = "You have reached the limit of 12 lists. Delete one to make a new one.";
+
+    await tv.getByTestId("rail-list").click();
+    await expect(tv.getByTestId("list-new")).toHaveCount(0);
+    await expect(tv.getByTestId("lists-full")).toHaveText(words);
+
+    // The question of which list for a title says the same, and Done is still on the screen below it.
+    await tv.getByTestId("rail-home").click();
+    await tv.locator('[data-testid="tv-browse-tile"][title="Film number 3"]').click();
+    await tv.getByTestId("tv-detail-list").click();
+    await expect(tv.getByTestId("tv-list-picker")).toBeVisible();
+    await expect(tv.getByTestId("pick-new")).toHaveCount(0);
+    await expect(tv.getByTestId("lists-full")).toHaveText(words);
+    await expect(tv.getByTestId("pick-done")).toBeInViewport({ ratio: 1 });
   });
 
   test("a saved title that is part way through says Resume on its own page, wherever it is shown", async ({ browser }) => {

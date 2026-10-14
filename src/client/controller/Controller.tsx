@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   IDLE_STATE,
+  MAX_LINK_LENGTH,
   describeChange,
   previousEpisode,
   seriesKeyOf,
@@ -258,6 +259,8 @@ export function Controller() {
   const playLink = (link: string, startAt?: number, hint?: PlayHint) => {
     setError(null);
     setResolve(null);
+    // (The server cannot read a longer one, and would answer with the words for a page that is newer than it: a signed link of a file host can be that long.)
+    if (link.length > MAX_LINK_LENGTH) return setError(t("phone.linkTooLong"));
     socketRef.current?.send({ type: "PLAY_URL", url: link, ...(startAt ? { startAt } : {}), ...(hint ? { hint } : {}) });
   };
 

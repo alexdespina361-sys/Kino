@@ -41,12 +41,16 @@ export function ListPickerSheet({ entry, onClose }: { entry: ListEntry; onClose:
                 </button>
               );
             })}
-            {lists.length < MAX_LISTS && (
+            {lists.length < MAX_LISTS ? (
               <button type="button" className="choice choice-new" onClick={() => setMaking(true)} data-testid="pick-new">
                 <span className="choice-label">
                   <PlusIcon /> {t("lists.new")}
                 </span>
               </button>
+            ) : (
+              <p className="muted" data-testid="lists-full">
+                {t("lists.full", { count: MAX_LISTS })}
+              </p>
             )}
           </div>
         </>
@@ -79,12 +83,16 @@ export function ListsSheet({ onClose }: { onClose: () => void }) {
               </span>
             </button>
           ))}
-          {lists.length < MAX_LISTS && (
+          {lists.length < MAX_LISTS ? (
             <button type="button" className="choice choice-new" onClick={() => setEditing(null)} data-testid="list-new">
               <span className="choice-label">
                 <PlusIcon /> {t("lists.new")}
               </span>
             </button>
+          ) : (
+            <p className="muted" data-testid="lists-full">
+              {t("lists.full", { count: MAX_LISTS })}
+            </p>
           )}
         </div>
       ) : (

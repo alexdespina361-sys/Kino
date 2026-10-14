@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { canAskTogether, FRIEND_NOTE_MAX, friendLink, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite } from "../../shared";
+import { canAskTogether, FRIEND_NOTE_MAX, friendLink, MAX_OPEN_INVITES, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -246,14 +246,21 @@ function AddFriend() {
     }
   };
 
+  const out = friends.state?.invites ?? [];
+
   return (
     <Group title={t("friends.add")}>
-      {(friends.state?.invites ?? []).map((invite) => (
+      {out.map((invite) => (
         <InviteCard key={invite.code} invite={invite} />
       ))}
       <button className="btn btn-block" disabled={busy} onClick={() => void make()} data-testid="friend-make-code">
         <PlusIcon /> {t("friends.makeCode")}
       </button>
+      {out.length >= MAX_OPEN_INVITES && (
+        <p className="muted small" data-testid="friend-invites-full">
+          {t("friends.codesFull", { count: out.length })}
+        </p>
+      )}
       {problem && (
         <p className="auth-error" role="alert" data-testid="friend-invite-error">
           {problem}
@@ -705,7 +712,8 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
 
 /**
  * Pick the friends a title or an invitation to a watch party goes to, with a few words of why for a title. Only friends who take
- * things are offered; the server has the last word on who gets it (it says who it reached and who is not taking things).
+ * things are offered; the server has the last word on who gets it (it says who it reached and who is not taking things). When it
+ * reached nobody the sheet stays, with the few words typed, so that they need not be typed again for the next friend.
  */
 export function FriendPicker({ title, withNote, build, onClose }: { title: string; withNote?: boolean; build: (note: string | undefined) => Message; onClose: () => void }) {
   const t = useT();
@@ -717,6 +725,11 @@ export function FriendPicker({ title, withNote, build, onClose }: { title: strin
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+
+  // Who takes things is looked at when the sheet opens, not only every half minute: somebody who just stopped is not offered.
+  useEffect(() => {
+    void friends.refresh();
+  }, []);
 
   const toggle = (id: string) =>
     setPicked((now) => {
@@ -734,7 +747,17 @@ export function FriendPicker({ title, withNote, build, onClose }: { title: strin
       // (Both are told when some took it and some did not: the ones who did must not be sent it again.)
       const told: string[] = [];
       if (answer.sent.length > 0) told.push(t(withNote ? "friends.sent" : "friends.inviteSent", { names: names(answer.sent) }));
-      if (answer.declined.length > 0) told.push(t(answer.declined.length > 1 ? "friends.declinedMany" : "friends.declined", { names: names(answer.declined) }));
+      if (answer.declined.length > 0) {
+        told.push(t(answer.declined.length > 1 ? "friends.declinedMany" : "friends.declined", { names: names(answer.declined) }));
+        void friends.refresh(); // (what the server just said is what the list shows from now on)
+      }
+      if (answer.sent.length === 0) {
+        // Nobody took it: the sheet stays, with the few words typed, so that it can go to somebody else.
+        setPicked((now) => new Set([...now].filter((id) => !answer.declined.includes(id))));
+        setProblem(told.join(". "));
+        setBusy(false);
+        return;
+      }
       if (told.length > 0) account.say(told.join(". "));
       onClose();
     } catch (error) {

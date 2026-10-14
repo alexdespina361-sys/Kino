@@ -234,6 +234,9 @@ describe("what people type", () => {
     expect(nameFromEmail("robert")).toBe("Robert");
     expect(nameFromEmail("my tv 2")).toBe("My tv 2");
     expect(nameFromEmail("###")).toBe("Me");
+    expect(nameFromEmail("qa-alpha")).toBe("Qa alpha"); // a name with a dash in it is two words, not one glued together
+    expect(nameFromEmail("john.smith")).toBe("John smith");
+    expect(nameFromEmail("ioana_m")).toBe("Ioana m");
     expect(nameFromEmail("a very long name for a profile")).toBe("A very long name");
     expect(nextAvatar([])).toBe("fox");
     expect(nextAvatar(["fox", "cat"])).toBe("panda");

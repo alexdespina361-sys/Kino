@@ -80,12 +80,12 @@ pnpm build && pnpm start     # http://localhost:8787
   the TV's **Profile** page. **A title that was rated shows its score** (a star and the number) in the corner of its picture wherever it is shown, in the rows, a
   grid, a search, Continue watching, the lists and what friends recommended, on the phone and the TV, so what was rated is seen while scrolling the library
   (a screen reader says it with the title; a season's score is the season's: the show shows none of its own). Ratings are saved to the
-  profile and synced like the lists (up to 500; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
+  profile and synced like the lists (up to 500, and past that the oldest, notes with them, fall away without a word; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
   and TV) switches the whole thing off, every sign of it, and keeps what was rated.
 - **Friends** are optional and **off until a profile turns them on** in its settings (phone and TV; they belong to an account, so a guest is told to sign in).
   Two profiles become friends with a code (`ABCD-2345`, good once and for a week) that one gives and the other types or opens as a link: the phone shows it
-  with a QR code, a **Copy code** button and a link to send (with a **Copy link** button of its own); the TV shows it with a QR code and the same **Copy code** button, which the remote or a mouse presses; where a browser will not copy, the code is selected instead, to be copied by hand. Up to 5 codes can be out at once; one can be taken back. A friend can **look at your lists and
-  ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone), **be invited to a
+  with a QR code, a **Copy code** button and a link to send (with a **Copy link** button of its own); the TV shows it with a QR code and the same **Copy code** button, which the remote or a mouse presses; where a browser will not copy, the code is selected instead, to be copied by hand. Up to 5 codes can be out at once (a sixth takes back the oldest, and the phone says so beside the button); one can be taken back. A friend can **look at your lists and
+  ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone; when the friend chosen has just stopped taking things the sheet says so and stays open, words and all, for somebody else), **be invited to a
   watch party** (a button that joins on the phone; on the TV, pressing the invitation on the Friends page joins) and **hear what you watch** ("Sam is watching
   Alien", from a minute in, the last two weeks). Each of these has a switch of its own: *Friends can see my lists*, *…my ratings*, *Tell friends what I watch*,
   *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*, *Friends can see when I'm online*. They live in the
@@ -144,7 +144,8 @@ pnpm build && pnpm start     # http://localhost:8787
   device that is offline keeps working and catches up.
 - **Sign a TV in from the phone.** Typing a name and a password on a TV remote is a chore, so the TV's sign-in page shows a QR code and a short code
   (`ABCD-2345`). A phone that is already signed in opens it (the camera app, or Account → "Sign in another device" to scan or type the code), sees what is
-  asking, and approves; the TV is signed in a moment later. The code works once and expires after five minutes, and nothing signs a TV in
+  asking, and approves; the TV is signed in a moment later. The code works once and expires after five minutes (a TV that is still on the page
+  asks for a second one; after ten minutes of nobody answering it stops asking, says the code ran out, and has a button for a new one), and nothing signs a TV in
   until a signed-in person says yes. A screen that is signed in itself can do the asking too (a computer with no phone at hand): its account
   page has **Sign in another device**: type the code the other screen shows, check who is asking, approve.
 - The phone's account page: profiles, settings, devices (sign others out, and give a device a name of its own: "Living room"), password, delete account. The TV has its own: who's watching,
@@ -160,7 +161,7 @@ pnpm build && pnpm start     # http://localhost:8787
   (offline) at once, since there is nothing to ask about
 - **My TVs.** A phone keeps the TVs it has connected to (up to eight, in the order it did): *My TVs* in its menu, and on its first screen once
   it controls none. A tap on one controls it, **with no code**; the one it leaves is not touched: it keeps playing, stays paired and
-  is still on the list, with a dot for whether it is on. **Forget** lets a TV go (a TV with no phone left shows a new code, as after
+  is still on the list, with a dot for whether it is on. **Forget** lets a TV go, after a question that names it (a TV with no phone left shows a new code, as after
   *Disconnect*, and stops what it was playing); the field below connects another TV with its code, scanned or typed (the list says when it is full), and the
   TV in use can be **named** there (shown on the list and on the other phones' lists; empty gives it its own name back). A phone only hears
   what the TV it controls is doing, and the menu's count of phones counts only those controlling that TV now. A TV's own **Disconnect**
@@ -284,8 +285,10 @@ pnpm build && pnpm start     # http://localhost:8787
   one). It is not done after Stop, Back to the library or the end of the film, nor for a TV on its own (its own *Continue watching* has the
   place). The place is written down every 30 seconds it moves, and exactly when the TV goes away
 - **The library is the front door.** The site opens straight into it, signed in or not (a guest's progress stays on that screen), so a screen can
-  pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press. (Only a party link opens a "Press OK" page
-  first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
+  pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press, unless the first press would take the screen
+  full screen (a browser that has a full screen to give, and was not left that way last time): then the welcome waits with a **Start watching**
+  button, which is that press (any other key or click is too, and the page asks the browser for full screen once for it; Back lets the welcome go
+  without it). (Only a party link opens a "Press OK" page first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
   says so, with **Back to the library** and **Disconnect from phone** (unpairs the TV from every phone and shows a new code; the phone
   controlling it goes back to the code screen, one that had moved on to another TV just loses it from its list)
 - **Sign in** is the button in the library's top corner (the profile picture once signed in); nobody is made to
@@ -306,8 +309,11 @@ pnpm build && pnpm start     # http://localhost:8787
   The pieces of a film that the screens of a party ask for a few seconds apart are fetched from the site once and handed to each of them
   (`src/server/segmentCache.ts`: only whole answers that say how long they are, at most 64 MB kept for 3 minutes), so five screens do not
   look like five viewers to the site; what the server sends on to the screens is still one copy each
-- Pairing codes are single-use and expire after 10 minutes. After 20 wrong codes in a minute (all phones counted together)
-  pairing pauses until the minute is over, because the code is only six digits
+- Pairing codes are single-use and expire after 10 minutes. The code is only six digits, so wrong ones are counted: after 20 in a minute
+  from one address pairing pauses for that address until the minute is over, and after 100 in a minute from all addresses together it pauses
+  for everybody (one visitor cannot stop the others, and guessing from many addresses at once is still slow)
+- A connection may send a burst of 100 messages and then 30 a second (a TV reports about once a second, a phone sends a message per tap).
+  Past the burst messages are dropped unread; one that goes on past twice the burst is closed (1008) and its page connects again
 - **Accounts, pairings and what each TV was playing are kept**: written to disk (or Postgres) a moment after every change and again when the
   server is told to stop. A restart (or a free host sleeping and waking) leaves every phone and TV paired as it was (a phone's list of TVs
   included), and a TV whose page is
@@ -409,9 +415,9 @@ friends off is not shown at all.
 **What a guest sees** is the picture's controls any screen has, not a lesser set: the title and the episode's name, *Watching along with Sam*
 (and *Catching up* while the guest's picture is being brought to the host's), the time of day and when the film ends, the bar with the time
 played and left (a bar to look at, not to click, unless the guest is an admin), and, while the film is held, whose doing that is on the card in
-the middle: *Paused by Sam*, *Paused by you* (an admin's own), or *Waiting for Sam* when the host's picture only ran out of data. When somebody sets it
+the middle: *Paused by Sam*, *Paused by you* (an admin's own), *Waiting for Sam* when the host's picture only ran out of data, or *Finished* when the film has played to its end. When somebody sets it
 going again a line says *Sam resumed*. A tap on the picture (a phone held either way) shows the controls and the next tap puts them away. Who
-held the film travels with the host's reports (`TV_SYNC.by`, `TV_SYNC.waiting`); a pause that came from the host's own remote or phone is named after the host.
+held the film travels with the host's reports (`TV_SYNC.by`, `TV_SYNC.waiting`, `TV_SYNC.ended`); a pause that came from the host's own remote or phone is named after the host.
 
 **A phone as a guest** watches in either orientation. The guest's bar (Audio & subtitles, Mute, Watch party, Full screen, Leave) sits along the
 top: held sideways it is one row, held upright "Watching along with …" has a line of its own and the buttons wrap under it. The guest's screen says
@@ -560,7 +566,8 @@ Anything that runs a Node process does (Northflank, Railway, Fly, a VPS):
 - **The port:** the server listens on `PORT` (default 8787) on `HOST` (default `0.0.0.0`). Declare that port as HTTP in the host, with WebSockets allowed
   (the page talks over `/ws`), and `/api/health` as the health check.
 - **Set `TRUST_PROXY=1`** (the number of proxies in front of the server; it is on by itself only on Render). Without it every visitor looks like one address
-  to the rate limits (10 sign-ups an hour, wrong codes, link polls) and they apply to everybody together.
+  to the rate limits (10 sign-ups an hour, wrong codes, link polls) and they apply to everybody together (twenty wrong codes from anybody
+  then pause pairing for all).
 - `DATABASE_URL` as above, and **one running copy per database**: two copies (the old host and the new one) write over each other.
 
 Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),
