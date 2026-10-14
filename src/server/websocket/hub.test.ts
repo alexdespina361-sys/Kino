@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_PHONE_TVS, parseServerMessage, type ClientMessage, type Command, type ServerMessage } from "../../shared";
 import { MemoryPersistence } from "../accounts/persistence";
 import { buildApp } from "../app";
@@ -8,7 +8,7 @@ import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
 import type { ResolveFn } from "../resolvers";
 import { PairingStore } from "../sessions/pairings";
 import { Registry } from "../sessions/registry";
-import { CLOSE_REPLACED } from "./hub";
+import { CLOSE_REPLACED, STEER_ATTRIBUTION_MS } from "./hub";
 
 /**
  * Minimal fake TV / phone. It connects through `app.injectWS`, in memory: a client and a server that talk over real loopback
@@ -852,9 +852,11 @@ describe("watching together", () => {
     const { tv2 } = await addTv(phone);
     tv.send({ type: "TV_STATE", state: { state: "loading", currentTime: 0, duration: 0 } });
     tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 12.5, duration: 600, playbackRate: 1.25, stream: "/a.mp4" } });
-    expect(await tv2.next("TV_SYNC")).toEqual({ type: "TV_SYNC", playing: true, time: 12.5, rate: 1.25, stream: "/a.mp4" });
+    const first = await tv2.next("TV_SYNC");
+    expect(first).toEqual({ type: "TV_SYNC", playing: true, time: 12.5, rate: 1.25, stream: "/a.mp4", by: expect.any(String) });
+    expect(JSON.stringify(first)).not.toContain("tv_"); // (who it was is told by the public id, never the TV's own)
     tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 13, duration: 600 } });
-    expect(await tv2.next("TV_SYNC")).toEqual({ type: "TV_SYNC", playing: false, time: 13, rate: 1 });
+    expect(await tv2.next("TV_SYNC")).toEqual({ type: "TV_SYNC", playing: false, time: 13, rate: 1, by: first.by });
     tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 14, duration: 600, buffering: true } });
     expect((await tv2.next("TV_SYNC")).playing).toBe(false); // the leader is waiting for data, so the others wait
   });
@@ -1054,7 +1056,7 @@ describe("a watch party started on a TV", () => {
     expect((await guest.tv.next("TV_CMD")).command).toEqual({ type: "LOAD", media });
 
     host.tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 61, duration: 600, playbackRate: 1.5, stream: media.stream.url } });
-    expect(await guest.tv.next("TV_SYNC")).toEqual({ type: "TV_SYNC", playing: true, time: 61, rate: 1.5, stream: media.stream.url });
+    expect(await guest.tv.next("TV_SYNC")).toEqual({ type: "TV_SYNC", playing: true, time: 61, rate: 1.5, stream: media.stream.url, by: expect.any(String) });
     host.tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 62, duration: 600, stream: media.stream.url } });
     expect((await guest.tv.next("TV_SYNC")).playing).toBe(false);
 
@@ -1454,6 +1456,125 @@ describe("a watch party started on a TV", () => {
       await loner.next("CTL_WELCOME");
       loner.send({ type: "PARTY_ADMIN", id: guestId, admin: true });
       expect((await loner.next("ERROR")).code).toBe("NOT_PAIRED");
+    });
+
+    describe("who held the film (the `by` of what the guests are told)", () => {
+      /** A party with an admin guest and one more guest, the film playing, and a way to say what the host's screen reports. */
+      async function playingParty() {
+        resolveImpl = async () => ({ status: "success", resolver: "test", media });
+        const host = await openParty();
+        const admin = await joinWith(host.code);
+        const other = await joinWith(host.code);
+        const view = (await admin.tv.next("TV_PARTY")).party!;
+        host.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" });
+        for (const screen of [host, admin, other]) await screen.tv.nextWhere("TV_CMD", aCommand("LOAD"));
+        host.tv.send({ type: "TV_PARTY_ADMIN", id: view.you, admin: true });
+        await admin.tv.nextWhere("TV_PARTY", isAdminIn(view.you));
+        const report = (state: "playing" | "paused", time: number, buffering = false) =>
+          host.tv.send({ type: "TV_STATE", state: { state, currentTime: time, duration: 600, stream: media.stream.url, ...(buffering ? { buffering } : {}) } });
+        /** What the report that was just made says to a guest. */
+        const heard = async (screen: { tv: Client } = other) => {
+          const { playing, by, waiting } = await screen.tv.next("TV_SYNC");
+          return { playing, by, waiting };
+        };
+        return { host, admin, other, adminId: view.you, hostId: view.host.id, report, heard };
+      }
+
+      it("is the host's screen when it paused or played by itself, and goes on being said at every report while the film is held", async () => {
+        const { report, heard, hostId } = await playingParty();
+        report("playing", 1);
+        expect(await heard()).toEqual({ playing: true, by: hostId, waiting: undefined });
+        report("paused", 2);
+        expect(await heard()).toEqual({ playing: false, by: hostId, waiting: undefined });
+        report("paused", 2); // (the host says where it is every second, held or not)
+        expect(await heard()).toEqual({ playing: false, by: hostId, waiting: undefined });
+        report("playing", 3);
+        expect(await heard()).toEqual({ playing: true, by: hostId, waiting: undefined });
+      });
+
+      it("is the admin guest whose play or pause the host's screen has just done, and is the host's again when the host does the next one", async () => {
+        const { host, admin, report, heard, hostId, adminId } = await playingParty();
+        report("playing", 1);
+        await heard();
+        await heard(admin);
+
+        admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
+        expect(await host.tv.nextWhere("TV_CMD", aCommand("PAUSE"))).toMatchObject({ command: { type: "PAUSE" }, by: adminId }); // the host is told whose it is, too
+        report("paused", 2);
+        expect(await heard()).toMatchObject({ playing: false, by: adminId });
+        expect(await heard(admin)).toMatchObject({ playing: false, by: adminId }); // (the admin hears it like the others: its own screen follows the host's)
+        report("paused", 2);
+        expect(await heard()).toMatchObject({ playing: false, by: adminId }); // (and it stays the admin's until something changes)
+
+        admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PLAY" } });
+        await host.tv.nextWhere("TV_CMD", aCommand("PLAY"));
+        report("playing", 3);
+        expect(await heard()).toMatchObject({ playing: true, by: adminId });
+
+        report("paused", 4); // the host's own pause, with nobody having asked
+        expect(await heard()).toMatchObject({ playing: false, by: hostId });
+      });
+
+      it("is not an admin's when what it asked for was not done, so that a pause the host makes later is not put on it", async () => {
+        const { host, admin, report, heard, hostId } = await playingParty();
+        report("playing", 1);
+        await heard();
+        admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
+        await host.tv.nextWhere("TV_CMD", aCommand("PAUSE")); // (the host's screen never did it)
+        const realNow = Date.now.bind(Date);
+        const later = vi.spyOn(Date, "now").mockImplementation(() => realNow() + STEER_ATTRIBUTION_MS + 1000);
+        try {
+          report("paused", 9);
+          expect(await heard()).toMatchObject({ playing: false, by: hostId });
+        } finally {
+          later.mockRestore();
+        }
+      });
+
+      it("is nobody's when the film only waits for data: the host's screen is what the others wait for", async () => {
+        const { admin, report, heard, hostId } = await playingParty();
+        report("playing", 1);
+        await heard();
+        admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } }); // (an admin's pause that lands as the host runs short of data is the host's wait, not a pause)
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        report("playing", 2, true);
+        expect(await heard()).toEqual({ playing: false, by: hostId, waiting: true });
+        report("playing", 2, true);
+        expect(await heard()).toEqual({ playing: false, by: hostId, waiting: true });
+        report("playing", 3);
+        expect(await heard()).toEqual({ playing: true, by: hostId, waiting: undefined }); // data came: nothing to wait for
+      });
+
+      it("is told to a guest that comes in while the film is held, as it was before it came", async () => {
+        const { host, admin, report, heard, adminId } = await playingParty();
+        report("playing", 1);
+        await heard();
+        admin.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
+        await host.tv.nextWhere("TV_CMD", aCommand("PAUSE"));
+        report("paused", 2);
+        await heard();
+
+        const late = await joinWith(host.code);
+        await late.tv.nextWhere("TV_CMD", aCommand("LOAD"));
+        report("paused", 2);
+        expect(await heard(late)).toMatchObject({ playing: false, by: adminId });
+      });
+
+      it("is never made up by a guest that is not an admin: its pause does nothing, and the host's own is the host's", async () => {
+        resolveImpl = async () => ({ status: "success", resolver: "test", media });
+        const host = await openParty();
+        const guest = await joinWith(host.code);
+        const view = (await guest.tv.next("TV_PARTY")).party!;
+        host.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" });
+        await guest.tv.nextWhere("TV_CMD", aCommand("LOAD"));
+        host.tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 1, duration: 600, stream: media.stream.url } });
+        await guest.tv.next("TV_SYNC");
+
+        guest.tv.send({ type: "TV_PARTY_CMD", command: { type: "PAUSE" } });
+        await host.tv.expectNone((m) => m.type === "TV_CMD" && m.command.type === "PAUSE");
+        host.tv.send({ type: "TV_STATE", state: { state: "paused", currentTime: 2, duration: 600, stream: media.stream.url } });
+        expect(await guest.tv.next("TV_SYNC")).toMatchObject({ playing: false, by: view.host.id });
+      });
     });
   });
 

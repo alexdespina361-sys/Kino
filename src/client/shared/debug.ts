@@ -1,3 +1,4 @@
+import { describeSync, syncStats } from "../tv/sync";
 import { isHisense } from "./browser";
 import { readStorage } from "./format";
 import { canFullscreen } from "./fullscreen";
@@ -83,12 +84,15 @@ function spanOf(seconds: number): string {
  * What `/api/health` said, in a line: where the server keeps accounts and pairs, and how long it has been up. Only Postgres keeps them when
  * a free host sleeps or restarts; a short time up next to a TV that "lost its phone" is that restart. (Asked once when the panel starts and
  * whenever the page comes back to the front, never on a timer: a page that asked every few seconds would keep a sleeping host awake.)
+ * With screens watching a film together, the pieces of it the proxy gave from memory against the ones it fetched say whether the film's own
+ * place is asked once or once per screen.
  */
 export function describeServer(health: unknown): string {
-  const { storage, uptime } = (health && typeof health === "object" ? health : {}) as { storage?: unknown; uptime?: unknown };
+  const { storage, uptime, segments } = (health && typeof health === "object" ? health : {}) as { storage?: unknown; uptime?: unknown; segments?: { hits?: unknown; misses?: unknown } | null };
   const where = typeof storage === "string" ? storage : "unknown";
   const verdict = where === "postgres" ? "kept" : where === "unknown" ? "?" : "lost when it sleeps or restarts";
-  return `server: storage ${where} (${verdict})  up ${typeof uptime === "number" && uptime >= 0 ? spanOf(uptime) : "?"}`;
+  const pieces = segments && typeof segments.hits === "number" && typeof segments.misses === "number" ? `  film pieces: ${segments.hits} from memory, ${segments.misses} fetched` : "";
+  return `server: storage ${where} (${verdict})  up ${typeof uptime === "number" && uptime >= 0 ? spanOf(uptime) : "?"}${pieces}`;
 }
 
 /** What the browser can do that the page leans on, each as Y or N. A style it lacks makes a whole rule drop out, so these say what to look at. */
@@ -148,6 +152,7 @@ function startDebug(): void {
     const video_ = video
       ? `paused ${video.paused} at ${video.currentTime.toFixed(1)}s ready ${video.readyState} net ${video.networkState} controls ${video.controls} size ${video.videoWidth}x${video.videoHeight} error ${video.error?.code ?? "-"}`
       : "none";
+    const sync = describeSync(syncStats); // (only on a screen that has watched along with a host)
     return [
       "KINO DEBUG  (?debug=0 turns it off)",
       `UA ${navigator.userAgent}`,
@@ -158,6 +163,7 @@ function startDebug(): void {
       server,
       `page: ${root ? `tv state ${root.dataset.state} controls ${root.dataset.hud}` : "no TV screen"}  focus ${describeElement(document.activeElement)}`,
       `video: ${video_}`,
+      ...(sync ? [sync] : []),
     ];
   };
 

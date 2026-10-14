@@ -58,6 +58,12 @@ export function whatsNew(before: Known | null, state: FriendsState, now: number)
   ];
 }
 
+/**
+ * Whether any of the news is an invitation to something going on now (a party that is open, a friend asking to watch together): the one
+ * kind that is let over a film, in a small note. The rest (a title sent, a new friend, what somebody watches, a request to be friends) can wait in the bell.
+ */
+export const isUrgent = (news: readonly News[]): boolean => news.some((item) => item.kind === "party" || item.kind === "together");
+
 export type Translate = (key: Key, params?: Params) => string;
 
 /** One line for the news: an invitation or a request (for a party, to be friends) if there is one, else the one thing that happened, else how many things. */

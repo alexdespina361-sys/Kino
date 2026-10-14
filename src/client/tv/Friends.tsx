@@ -626,6 +626,18 @@ export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
             <span className="tv-switch" aria-hidden="true" />
           </button>
         ))}
+        {/* (What this screen does with friends' news, not what a friend may do: it stays on this side and is not sent to the server.) */}
+        <button
+          className="tv-switch-row"
+          role="switch"
+          aria-checked={settings.newsPopups !== false}
+          onClick={() => set("newsPopups", settings.newsPopups === false ? undefined : false)}
+          data-nav
+          data-testid="tv-friends-popups"
+        >
+          <span>{t("friends.popups")}</span>
+          <span className="tv-switch" aria-hidden="true" />
+        </button>
       </div>
       <div className="tv-actions">
         <button className="tv-action tv-action-primary" onClick={onClose} data-nav data-testid="tv-friend-settings-done">

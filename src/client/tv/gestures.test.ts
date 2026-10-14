@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CHAIN_MS, DOUBLE_TAP_MS, HOLD_MS, MOVE_PX, PictureGestures, sideOf, type PictureActions, type PointerKind } from "./gestures";
+import { CHAIN_MS, DOUBLE_TAP_MS, HOLD_MS, MOVE_PX, PictureGestures, sideOf, type PictureActions, type PointerKind, type Zone } from "./gestures";
 
 const WIDTH = 1000;
 const LEFT = 100;
@@ -21,15 +21,15 @@ function setup(holdTakes = true) {
   const gestures = new PictureGestures(actions);
   let id = 0;
   /** A finger (or a mouse) goes down and comes up again `after` ms later. */
-  const tap = (x: number, { kind = "touch", after = 40, visible = false }: { kind?: PointerKind; after?: number; visible?: boolean } = {}) => {
+  const tap = (x: number, { kind = "touch", after = 40, visible = false, zone }: { kind?: PointerKind; after?: number; visible?: boolean; zone?: Zone } = {}) => {
     id += 1;
-    gestures.start({ id, x, y: 300, width: WIDTH, kind, wasVisible: visible });
+    gestures.start({ id, x, y: 300, width: WIDTH, kind, wasVisible: visible, ...(zone ? { zone } : {}) });
     vi.advanceTimersByTime(after);
     gestures.end(id);
   };
-  const press = (x: number, kind: PointerKind = "touch") => {
+  const press = (x: number, kind: PointerKind = "touch", zone?: Zone) => {
     id += 1;
-    gestures.start({ id, x, y: 300, width: WIDTH, kind, wasVisible: false });
+    gestures.start({ id, x, y: 300, width: WIDTH, kind, wasVisible: false, ...(zone ? { zone } : {}) });
     return id;
   };
   return { calls, gestures, tap, press };
@@ -284,6 +284,39 @@ describe("a run of skips", () => {
     tap(RIGHT);
     vi.advanceTimersByTime(DOUBLE_TAP_MS);
     expect(calls).toEqual(["double:forward", "tap:mouse:away", "tap:touch:away"]);
+  });
+});
+
+describe("a finger on the bars laid over the picture", () => {
+  it("taps, and puts the controls away, like one on the picture", () => {
+    const { calls, tap } = setup();
+    tap(MIDDLE, { zone: "bar", visible: true });
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["tap:touch:up"]);
+  });
+
+  it("skips on a double tap at the side, like one on the picture", () => {
+    const { calls, tap } = setup();
+    tap(LEFT, { zone: "bar" });
+    tap(LEFT, { zone: "bar" });
+    expect(calls).toEqual(["double:back"]);
+  });
+
+  it("does not hold, however long it rests: on its way to a button it is no wish to play faster", () => {
+    const { calls, gestures, press } = setup();
+    const id = press(MIDDLE, "touch", "bar");
+    vi.advanceTimersByTime(HOLD_MS * 3);
+    expect(calls).toEqual([]);
+    gestures.end(id);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["tap:touch:away"]); // (a slow tap, but a tap)
+  });
+
+  it("holds on the picture, which is where a press lands when the page does not say", () => {
+    const { calls, press } = setup();
+    press(MIDDLE, "touch", "picture");
+    vi.advanceTimersByTime(HOLD_MS);
+    expect(calls).toEqual(["hold"]);
   });
 });
 

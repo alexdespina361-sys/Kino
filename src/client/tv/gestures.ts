@@ -21,6 +21,12 @@ export const HOLD_SPEED = 2;
 export type Side = "back" | "forward" | "middle";
 /** A finger (or a pen), or a mouse (a remote that points is one). */
 export type PointerKind = "touch" | "mouse";
+/**
+ * Where a press landed: on the picture itself, or on the bars laid over it (the title, and the progress and buttons) away from anything
+ * that is pressed there. A finger on either is a finger on the picture, since on a phone the bars take much of it and a tap there
+ * must still put them away; a mouse is not (a click a button's width beside it would pause the film), and a hold only means something on the picture.
+ */
+export type Zone = "picture" | "bar";
 
 /** Which part of the picture a tap at `x` (of a picture `width` wide) is in. */
 export function sideOf(x: number, width: number): Side {
@@ -53,6 +59,8 @@ export interface PressStart {
   width: number;
   kind: PointerKind;
   wasVisible: boolean;
+  /** Where it landed; on the picture when not said. */
+  zone?: Zone;
 }
 
 interface Press extends PressStart {
@@ -91,7 +99,8 @@ export class PictureGestures {
     }
     const press: Press = { ...start, moved: false, held: false, holdTimer: undefined };
     // A mouse does not hold: a click that is slow is still a click, and a button held down on the picture is not asking for anything.
-    if (start.kind === "touch") press.holdTimer = setTimeout(() => this.holdNow(press), HOLD_MS);
+    // Nor does a finger on the bars: resting it by a button on the way to it is no wish to play faster.
+    if (start.kind === "touch" && start.zone !== "bar") press.holdTimer = setTimeout(() => this.holdNow(press), HOLD_MS);
     this.press = press;
   }
 
@@ -208,8 +217,21 @@ export class PictureGestures {
   }
 }
 
-/** Whether an event landed on the picture itself (the video, or the empty part of what is laid over it), and not on a control or a card. */
-export const isPicture = (target: EventTarget | null): boolean => target instanceof HTMLElement && target.hasAttribute("data-picture");
+/** What is pressed, and does something of its own: a press on it is not on the picture. */
+const CONTROLS = 'button, a, input, select, textarea, [role="slider"], [role="button"]';
+
+/**
+ * Where an event landed, as far as the picture goes: on the video or the empty part of what is laid over it (`data-picture`), or on
+ * the text and the empty space of the bars (`data-picture="bar"`), and not on a control, nor on a card or menu of the page's own.
+ */
+export function zoneOf(target: EventTarget | null): Zone | null {
+  if (!(target instanceof HTMLElement) || target.closest(CONTROLS)) return null;
+  const zone = target.closest<HTMLElement>("[data-picture]");
+  return zone ? (zone.dataset.picture === "bar" ? "bar" : "picture") : null;
+}
+
+/** Whether an event landed on the picture or its bars, and not on a control or a card. */
+export const isPicture = (target: EventTarget | null): boolean => zoneOf(target) !== null;
 
 interface PictureOptions {
   actions: PictureActions;
@@ -275,9 +297,10 @@ export function usePictureGestures({ actions, enabled, source, controlsUp }: Pic
       kindRef.current = kind;
       if (kind === "touch") touchedAtRef.current = Date.now();
       const { enabled: on, controlsUp: up } = latest.current;
-      if (!on || !isPicture(event.target) || (kind === "mouse" && event.button !== 0)) return gestures.reset();
+      const zone = zoneOf(event.target);
+      if (!on || !zone || (kind === "mouse" && (event.button !== 0 || zone === "bar"))) return gestures.reset();
       if (kind === "touch") event.preventDefault(); // the browser's mouse events that follow a touch are not wanted: the touch was handled here
-      gestures.start({ id: event.pointerId, x: event.clientX, y: event.clientY, width: event.currentTarget.clientWidth, kind, wasVisible: up() });
+      gestures.start({ id: event.pointerId, x: event.clientX, y: event.clientY, width: event.currentTarget.clientWidth, kind, wasVisible: up(), zone });
     },
   };
 }

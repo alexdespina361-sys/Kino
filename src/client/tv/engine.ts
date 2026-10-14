@@ -16,6 +16,23 @@ export const PlayerError = {
   Blocked: "PLAYBACK_BLOCKED",
 } as const;
 
+/**
+ * How far ahead of the picture a screen downloads, in the three numbers hls.js wants (it aims at `max(8 * maxBufferSize / bitrate, maxBufferLength)`
+ * seconds, and never more than `maxMaxBufferLength`). Alone, a screen takes a good part of the film in at once (minutes ahead): nothing else
+ * is asking for it. The screens of a party are different: the proxy keeps the pieces that one of them fetched so that the others get them
+ * from memory, but only a few dozen megabytes of them (see `SegmentCache`), and a host that is minutes ahead has long since pushed out what a
+ * guest asks for now, so every guest went to the film's own server for all of it again. Within a party every screen stays this close to
+ * its picture instead, which is what the proxy can hold, and which is plenty to ride out a bad moment on the way.
+ */
+export const PARTY_BUFFER_AHEAD_S = 40;
+export const PARTY_BUFFER_BYTES = 32 * 1024 * 1024;
+
+export function bufferPolicy(inParty: boolean): { maxBufferLength: number; maxMaxBufferLength: number; maxBufferSize: number } {
+  return inParty
+    ? { maxBufferLength: 10, maxMaxBufferLength: PARTY_BUFFER_AHEAD_S, maxBufferSize: PARTY_BUFFER_BYTES }
+    : { maxBufferLength: 120, maxMaxBufferLength: 600, maxBufferSize: 128 * 1024 * 1024 };
+}
+
 export function formatQualityLabel(width?: number, height?: number, name?: string): string {
   const w = width || 0;
   const h = height || 0;
@@ -45,6 +62,8 @@ export class PlayerEngine {
   private generation = 0;
   /** The speed that was chosen, while a hold on the picture plays faster (see `boost`); null when nothing is held. */
   private boostedFrom: number | null = null;
+  /** This screen is in a party (see `bufferPolicy`). */
+  private inParty = false;
   /** The last state handed to `onChange`, as JSON, to skip repeats. */
   private lastEmitted = "";
   private readonly ticker: ReturnType<typeof setInterval>;
@@ -121,9 +140,7 @@ export class PlayerEngine {
       const hls = new HlsLib({
         startPosition: resumeAt ?? -1,
         capLevelToPlayerSize: false,
-        maxBufferLength: 120,
-        maxMaxBufferLength: 600,
-        maxBufferSize: 128 * 1024 * 1024,
+        ...bufferPolicy(this.inParty),
         lowLatencyMode: false,
       });
       this.hls = hls;
@@ -193,6 +210,15 @@ export class PlayerEngine {
     } else {
       this.fail(PlayerError.HlsUnsupported);
     }
+  }
+
+  /**
+   * This screen is, or is no longer, in a party: how far ahead it downloads changes at once for a film that is playing (hls.js reads its
+   * settings each time it decides what to fetch next) and is the same for the ones that load later. What it has downloaded already stays.
+   */
+  setInParty(inParty: boolean): void {
+    this.inParty = inParty;
+    if (this.hls) Object.assign(this.hls.config, bufferPolicy(inParty));
   }
 
   play(): void {

@@ -195,6 +195,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page, .account-toast { animation-duration: 0.01s; }
+  .page { animation-duration: 0.01s; }
+  .account-toast { animation: none; } /* (it fades out at the end: a quick animation would leave it where it ends, gone, before it is read) */
   .profile-picture, .avatar-choice, .switch::after, .swatch { transition: none; }
 }

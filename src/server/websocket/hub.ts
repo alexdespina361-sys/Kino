@@ -22,6 +22,17 @@ import type { Controller, Device, Registry } from "../sessions/registry";
 /** Close code sent to an older TV page when a newer page takes over the same device. */
 export const CLOSE_REPLACED = 4000;
 
+/** A film that starts or holds within this long of an admin guest's play or pause is that guest's doing; otherwise it is the host's own. */
+export const STEER_ATTRIBUTION_MS = 4000;
+
+/** Whether a party's film was going when its host last reported, and whose doing that was (`PartyTv.id`). */
+interface Hold {
+  playing: boolean;
+  /** Held only because the host's picture waits for data. */
+  waiting: boolean;
+  by: string;
+}
+
 type Conn =
   | { role: "none"; socket: WebSocket }
   | { role: "tv"; socket: WebSocket; deviceId: string }
@@ -52,6 +63,10 @@ export class Hub {
   private readonly opened = new Set<string>();
   /** How long each TV last said its answers take to come (a PING's `rtt`, in milliseconds), which is how a guest is told how old the host's position is. */
   private readonly roundTrips = new Map<string, number>(); // deviceId -> ms
+  /** Whether each hosting TV's film was going when it last reported, and who started or held it: what the guests are told when it is held ("Paused by Anna"). */
+  private readonly holds = new Map<string, Hold>(); // host deviceId
+  /** The last play or pause an admin guest asked of a host, to tell it from the host's own when the film changes. */
+  private readonly steered = new Map<string, { by: string; at: number }>(); // host deviceId
   private readonly sweeper: ReturnType<typeof setInterval>;
   /** When recent wrong codes were tried. A code is only six digits, so guessing has to be slow once this is on the internet. */
   private failedPairings: number[] = [];
@@ -96,6 +111,8 @@ export class Hub {
         this.tvs.delete(conn.deviceId);
         this.opened.delete(conn.deviceId);
         this.roundTrips.delete(conn.deviceId);
+        this.holds.delete(conn.deviceId);
+        this.steered.delete(conn.deviceId);
         const device = this.registry.getDevice(conn.deviceId);
         if (device) this.registry.checkpoint(device); // where it had got is written down exactly, in case the page is not opened again for a while
         if (device) this.toControllers(device, { type: "TV_STATUS", online: false });
@@ -221,7 +238,8 @@ export class Hub {
       // Only a guest that the host has made an admin steers the film, and only while the host's own screen is there to do what it asks.
       const host = this.registry.leaderOf(device);
       if (!host || !device.admin || !this.tvs.has(host.id)) return;
-      this.command(host, message.command);
+      if (message.command.type === "PLAY" || message.command.type === "PAUSE") this.steered.set(host.id, { by: device.publicId, at: Date.now() });
+      this.command(host, message.command, undefined, device.publicId);
     } else if (message.type === "TV_NEW_CODE") {
       // A free TV is given a pairing code. One that has a phone gets the code that lets another phone in; asking is what keeps
       // that one good, so a TV asks while it shows it and not otherwise.
@@ -329,8 +347,8 @@ export class Hub {
     this.command(device, message.command, controllerId);
   }
 
-  /** What a command does to the TV it is for and the screens watching along with it: asked by the phone that controls it, or by a guest the host made an admin. */
-  private command(device: Device, command: Command, controllerId?: string): void {
+  /** What a command does to the TV it is for and the screens watching along with it: asked by the phone that controls it, or by a guest the host made an admin (`by`, which the host's screen is told). */
+  private command(device: Device, command: Command, controllerId?: string, by?: string): void {
     if (command.type === "NEXT_EPISODE") {
       if (device.media?.series?.next?.url) {
         void this.playUrlForDevice(device, device.media.series.next.url, controllerId);
@@ -339,7 +357,7 @@ export class Hub {
     }
 
     if (command.type === "LOAD" || command.type === "STOP") this.bumpResolveSeq(device.id);
-    this.send(this.tvs.get(device.id), { type: "TV_CMD", command });
+    this.send(this.tvs.get(device.id), { type: "TV_CMD", command, ...(by ? { by } : {}) });
     // The TVs watching along load and stop with this one; play, pause and seeks reach them as the position it reports.
     if (command.type === "LOAD" || command.type === "STOP") {
       this.toFollowers(device, { type: "TV_CMD", command });
@@ -593,19 +611,43 @@ export class Hub {
   /** What the followers need from every report of the leader: is it playing, and where. They keep their own picture in step. */
   private syncFollowers(leader: Device): void {
     const { state } = leader;
-    if (leader.followerIds.length === 0 || (state.state !== "playing" && state.state !== "paused")) return;
+    if (leader.followerIds.length === 0) {
+      this.holds.delete(leader.id); // (nobody to tell who paused: the next party starts from nothing)
+      this.steered.delete(leader.id);
+      return;
+    }
+    if (state.state !== "playing" && state.state !== "paused") return;
+    // A leader that is waiting for data holds the others too, so nobody runs ahead of it.
+    const waiting = state.state === "playing" && Boolean(state.buffering);
+    const playing = state.state === "playing" && !waiting;
     const report = {
       type: "TV_SYNC" as const,
-      // A leader that is waiting for data holds the others too, so nobody runs ahead of it.
-      playing: state.state === "playing" && !state.buffering,
+      playing,
       time: state.currentTime,
       rate: state.playbackRate ?? 1,
       ...(state.stream ? { stream: state.stream } : {}),
+      by: this.holder(leader, playing, waiting),
+      ...(waiting ? { waiting: true } : {}),
     };
     for (const follower of this.registry.followersOf(leader)) {
       const lag = this.lagBetween(leader, follower);
       this.send(this.tvs.get(follower.id), lag === undefined ? report : { ...report, lag });
     }
+  }
+
+  /**
+   * Who set the leader's film going or held it, for the guests to say ("Paused by Anna"): an admin guest whose play or pause this just was,
+   * otherwise the host's own screen (or the phone that controls it). Kept as it was until the film changes again, so a guest that comes
+   * in while it is held is told too. A film that only waits for data is nobody's pause, and is the host's to be waited for.
+   */
+  private holder(leader: Device, playing: boolean, waiting: boolean): string {
+    const before = this.holds.get(leader.id);
+    if (before && before.playing === playing && before.waiting === waiting) return before.by;
+    const steer = this.steered.get(leader.id);
+    this.steered.delete(leader.id);
+    const by = !waiting && steer && Date.now() - steer.at < STEER_ATTRIBUTION_MS ? steer.by : leader.publicId;
+    this.holds.set(leader.id, { playing, waiting, by });
+    return by;
   }
 
   /**

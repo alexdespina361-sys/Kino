@@ -139,6 +139,14 @@ test.describe("friends are optional", () => {
     await page.getByTestId("friends-presence").click();
     expect(await states()).toEqual(["false", "true", "true", "false", "true", "false"]);
 
+    // What this screen says of friends' news is a choice of its own: on until it is turned off, and only the profile's own (a friend never sees it).
+    const popups = page.getByTestId("news-popups-switch");
+    await expect(popups).toHaveAttribute("aria-checked", "true");
+    await popups.click();
+    await expect(popups).toHaveAttribute("aria-checked", "false");
+    await popups.click();
+    await expect(popups).toHaveAttribute("aria-checked", "true");
+
     // the server keeps them (it decides what a friend is shown from them)
     const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
     await expect

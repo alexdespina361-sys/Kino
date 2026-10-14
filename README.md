@@ -133,6 +133,9 @@ pnpm build && pnpm start     # http://localhost:8787
   home, not to the account page it was never on. Opening the list is looking: it marks the inbox read and puts the dot out (when it was put out is kept per profile on each device, in
   `kino.bellSeen.<profile>`). The unread dot that the profile's picture used to carry moved to the bell. Nothing is added to the server for it: the bell reads the state that the Friends
   page already polls every 30 seconds.
+  **Quiet while something plays.** A screen that is playing a film puts nothing over the picture for friends' news (requests, titles sent, what a friend watches) except an *invitation*, as a
+  small note in the corner for 4.5 seconds (a screen with nothing playing shows the usual toast); all of it waits in the bell. A profile's switch *Show friends' news on screen*
+  (`newsPopups`, on by default; on the phone's account page and on the TV's Friends page) turns even the note off, and the bell is never muted.
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.
@@ -244,8 +247,10 @@ pnpm build && pnpm start     # http://localhost:8787
   and knows the vendors' extra remote keys (play, pause, stop, rewind, forward, back). **To find out what a TV browser does**, open
   `/tv?debug=1` on it: a small panel in the corner says what the browser is and what it can do, whether the TV's id was kept since the
   browser was closed (the last four characters, in storage and in the cookie), where the server keeps things and how long it has been up (a
-  short time with `file` or `memory` is why a TV "lost its phone"), and, live, each key it sends and where the focus went, the
-  clicks, the video's state and the page's errors. `?debug=0` turns it off. `?fullscreen=off` keeps any browser from being asked for full
+  short time with `file` or `memory` is why a TV "lost its phone"), how many pieces of films the server gave from memory and how many it
+  had to fetch, on a screen that watches a party along how its picture keeps with the host's (reports, jumps, speed changes, how far
+  apart the two are now), and, live, each key it sends and where the focus went, the clicks, the video's state and the page's errors.
+  `?debug=0` turns it off. `?fullscreen=off` keeps any browser from being asked for full
   screen (`?fullscreen=on` undoes it); both are kept for the next visits
 - **Subtitle languages.** The menu lists every language the video has. The ones a profile wants come first (a guest gets the website's
   language, English, Romanian and Italian), the rest sit under **More languages**. A signed-in profile can choose its own ordered list in
@@ -356,11 +361,17 @@ or on its phone) can remove a guest or end the party, and a guest can leave from
 reports its position and the server relays it, saying how old it is by then (half of the host's round trip to the server plus half of the
 guest's: every screen times the answers to its keepalive PINGs and sends the shortest of the last few along, and the server puts the sum
 on the `TV_SYNC` as `lag`), so each guest aims at where the host is now, not where it was; guests used to sit behind it by about that
-much. A guest nudges its speed by a few percent when it is more than 0.15 s off (and goes on until it is within 0.05 s, instead of starting
-and stopping with every report), jumps when it is a second or more off, shows the host's frame when paused (within 0.1 s), and jumps to
-the host's place at once when the host starts again, if it has that place (`src/client/tv/sync.ts`). A guest that is still waiting for
-data does not chase the host: it does not speed up on a thin buffer, and it jumps only to a place it has already downloaded (after 15 s
-behind, anywhere), so a slow screen is not sent back and forth. **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
+much. A guest does not take the last report at its word (a report held up on the way makes the host look behind, by a different amount each
+time on a mobile network): it reads the host's place from the reports of the last twelve seconds, going by the least delayed of them, and
+a report that is well behind the rest counts only when a second one, a little later, says the same (the host went back in the film).
+From that place a guest nudges its speed by a few percent when it is more than 0.15 s off (and goes on until it is within 0.05 s, instead of
+starting and stopping with every report), jumps ahead when it is a second or more behind, goes back in time only when the reports agree on it
+(or when it is 8 s ahead, which no late report explains), shows the host's frame when paused (within 0.1 s; a host that only waits for data
+is waited for where the guest is, unless that is 2 s away), and jumps to the host's place at once when the host starts again, if it has that
+place (`src/client/tv/sync.ts`). A guest that is still waiting for data does not chase the host: it does not speed up on a thin buffer,
+and it jumps only to a place it has already downloaded (after 15 s behind, anywhere), so a slow screen is not sent back and forth. The
+waiting wheel does not show for a wait shorter than 0.4 s, so the jumps of a guest do not flash it. The screens of a party also download
+only about 40 seconds ahead of their picture (see *What a watch party costs the server*). **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
 from the guest's *Audio & subtitles* button; volume is the device's own.
 
 **Admins:** next to each guest's name the host (on the TV, or on its phone) has a **Make admin** button, which turns into **Remove admin**. An
@@ -376,6 +387,13 @@ own profile has friends on gets a short **Add** button beside it (**Requested** 
 signed in on). It sends the same request as typing a tag does (see Friends). The profile shown is the server's word, not the screen's: a signed-in screen asks for a single-use
 proof of who it is (`POST /api/profiles/:id/screen`, good for two minutes) and sends it with `TV_PROFILE`, so a screen cannot pass for somebody else, and a profile that has
 friends off is not shown at all.
+
+**What a guest sees** is the picture's controls any screen has, not a lesser set: the title and the episode's name, *Watching along with Sam*
+(and *Catching up* while the guest's picture is being brought to the host's), the time of day and when the film ends, the bar with the time
+played and left (a bar to look at, not to click, unless the guest is an admin), and, while the film is held, whose doing that is on the card in
+the middle: *Paused by Sam*, *Paused by you* (an admin's own), or *Waiting for Sam* when the host's picture only ran out of data. When somebody sets it
+going again a line says *Sam resumed*. A tap on the picture (a phone held either way) shows the controls and the next tap puts them away. Who
+held the film travels with the host's reports (`TV_SYNC.by`, `TV_SYNC.waiting`); a pause that came from the host's own remote or phone is named after the host.
 
 **A phone as a guest** watches in either orientation. The guest's bar (Audio & subtitles, Mute, Watch party, Full screen, Leave) sits along the
 top: held sideways it is one row, held upright "Watching along with …" has a line of its own and the buttons wrap under it. The guest's screen says
@@ -503,6 +521,14 @@ The server is one Node process that serves the page, the API and the sockets fro
    Watch parties and the codes live in the memory of **one service**: two services (two `onrender.com` names, even of the same repository)
    do not know each other's codes, so a phone on a different address than the TV answers "Invalid or expired code" however well the code is
    typed. Use the address the TV shows (the party page prints it) on every device, and delete a duplicate service.
+6. **What a watch party costs the server.** Every screen of a party gets its own copy of the film through `/api/proxy`, so the bandwidth grows
+   with the number of screens whatever the cache does (check the monthly outbound traffic of your plan before a long film with a big party).
+   What the cache saves is the other side: the server keeps the film's pieces that one screen fetched for a few minutes (64 MB, or
+   `SEGMENT_CACHE_MB`), so the screens of a party ask the film's own site once for a piece, not once each. For that to work the screens of a
+   party download only about 40 seconds ahead of their picture (a lone screen takes minutes in), which is what that memory holds. Open
+   `/api/health`: `segments.hits` are the pieces the server gave from memory and `segments.misses` the ones it had to fetch; a party that
+   watches together shows about as many hits as misses with two screens, and about twice as many with three. The same two numbers are on the
+   `?debug` panel, next to how a guest's picture keeps with the host's.
 
 Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),
 an account with no password can be opened by anyone who types its name (give it one if that matters), and the sign-in rate limits are

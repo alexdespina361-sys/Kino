@@ -3,6 +3,10 @@ export interface SyncTarget {
   playing: boolean;
   time: number;
   rate: number;
+  /** Not playing only because it waits for data (the host's picture ran dry), not because anybody paused it. */
+  waiting?: boolean;
+  /** Where it is has been read from reports that agree (see `HostClock`); false (a read from one report) is not enough to send a picture back in time. */
+  settled?: boolean;
 }
 
 /** Where this follower's own picture is. */
@@ -47,6 +51,18 @@ export const NUDGE = 0.08;
 /** A paused picture only needs to be near, since nothing moves (but near enough to show the same frame). */
 export const PAUSED_TOLERANCE_S = 0.1;
 /**
+ * A host that only waits for data (its picture ran dry, nobody paused it) is waited for where the picture is: sent back to the host's
+ * frame, a guest would jump for every hiccup of the host's, and then play on from there a moment behind. Only one that is farther from
+ * the host than this goes to it (it has that place to download anyway).
+ */
+export const WAIT_TOLERANCE_S = 2;
+/**
+ * A picture that is ahead of where the host is read to be is sent back in time only once that read is `settled`, or when it is this far
+ * ahead, which no late report explains: a report that was held up on the way makes the host look behind, and a jump back on its word
+ * has to be undone, by a jump forward, a moment later.
+ */
+export const FAR_SEEK_S = 8;
+/**
  * A picture that is not playing when the leader is (a guest whose host has just started again) goes to the place at once if it is this
  * far from it and already has it: nothing to download, and nothing moving that the jump would disturb. Otherwise it would start about
  * a report's age behind and spend seconds catching up.
@@ -68,14 +84,17 @@ export function syncStep(target: SyncTarget, local: SyncLocal, msSinceSeek: numb
   const drift = local.time - target.time; // positive: this TV is ahead
   const apart = Math.abs(drift);
   if (!target.playing) {
-    return { play: false, rate: target.rate, ...(apart > PAUSED_TOLERANCE_S ? { seek: target.time } : {}) };
+    const tolerance = target.waiting ? WAIT_TOLERANCE_S : PAUSED_TOLERANCE_S;
+    return { play: false, rate: target.rate, ...(apart > tolerance ? { seek: target.time } : {}) };
   }
   // (A picture that is not playing yet has nothing to run dry: it goes straight to the place, as a screen that has just joined must.)
   const thin = local.playing && (local.buffering || local.ahead < THIN_BUFFER_S);
-  if (apart > HARD_SEEK_S && msSinceSeek > SEEK_COOLDOWN_MS && (!thin || local.targetBuffered || apart > GIVE_UP_S)) {
+  const unsure = drift > 0 && target.settled === false && apart < FAR_SEEK_S;
+  if (apart > HARD_SEEK_S && !unsure && msSinceSeek > SEEK_COOLDOWN_MS && (!thin || local.targetBuffered || apart > GIVE_UP_S)) {
     return { play: true, seek: target.time, rate: target.rate };
   }
-  if (!local.playing && apart > RESUME_SEEK_S && local.targetBuffered && msSinceSeek > SEEK_COOLDOWN_MS) {
+  // (Only a picture that is behind goes to the place at once. One that is ahead plays on, a little slower, until the host is where it is: no jump back.)
+  if (!local.playing && drift < 0 && apart > RESUME_SEEK_S && local.targetBuffered && msSinceSeek > SEEK_COOLDOWN_MS) {
     return { play: true, seek: target.time, rate: target.rate };
   }
   const behind = drift < 0;
@@ -84,4 +103,137 @@ export function syncStep(target: SyncTarget, local: SyncLocal, msSinceSeek: numb
     return { play: true, rate: target.rate * (behind ? 1 + NUDGE : 1 - NUDGE) };
   }
   return { play: true, rate: target.rate };
+}
+
+/** One report of the host, as a guest gets it (`TV_SYNC`). */
+export interface HostReport {
+  playing: boolean;
+  time: number;
+  rate: number;
+  lag?: number | undefined;
+  waiting?: boolean | undefined;
+}
+
+/** How long the reports of a host that plays are kept, to read where it is from the least delayed of them (seconds). */
+export const CLOCK_WINDOW_S = 12;
+/** A report this far behind what the recent ones say is in doubt: it may have been held up on the way, or the host may have gone back. */
+export const CLOCK_DOUBT_S = 0.4;
+/** Two reports in doubt that say the same (to within this) are one late delivery, or the host having gone back... */
+export const CLOCK_AGREE_S = 0.5;
+/** ...and are the host having gone back only if they came this far apart (seconds): late ones that were held up together come together... */
+export const CLOCK_CONFIRM_S = 0.5;
+/** ...and only if the second is not later than the first by more than this: reports that are less late one after another are a queue emptying. */
+export const CLOCK_RISING_S = 0.1;
+
+/**
+ * Where the host is, read from its recent reports instead of its last. Every report is late by what its way took, and that varies from
+ * one report to the next (a phone on a mobile network more than a screen on a wire), but it is never early: of the reports of the last
+ * seconds, the one that is furthest on is the one that was held up least, and the one to read the host's place from. Going by the last
+ * report alone, a guest on a poor link was always being told it was a little ahead or behind, and was made to play faster, slower, or
+ * to jump, every few seconds. A report that is well behind the others is held back until a second one, from a later moment, says the
+ * same: the host has then gone back (it jumped back in the film), and what was read before is of no use.
+ */
+export class HostClock {
+  private samples: Array<{ anchor: number; at: number }> = [];
+  private doubt: { anchor: number; at: number } | null = null;
+  private rate = 1;
+
+  /** What was read is of no use any more (another film, another speed). */
+  reset(): void {
+    this.samples = [];
+    this.doubt = null;
+  }
+
+  /** Whether the place it says is read from reports that came a moment apart and agree. */
+  get settled(): boolean {
+    const first = this.samples[0];
+    const last = this.samples[this.samples.length - 1];
+    return first !== undefined && last !== undefined && last.at - first.at >= CLOCK_CONFIRM_S;
+  }
+
+  /** Where the host is at `now` (seconds, on a clock that only goes on), given the report that has just arrived. */
+  read(report: HostReport, now: number): number {
+    if (!report.playing) {
+      this.reset(); // a host that holds still has a place, not a clock to read
+      return report.time;
+    }
+    if (report.rate !== this.rate) {
+      this.reset();
+      this.rate = report.rate;
+    }
+    // The anchor of a report is where the host would have been when this page's clock read zero, had it played at that speed all along:
+    // reports of a host that plays have the same anchor, whatever time they came at, except for what held each of them up.
+    const anchor = report.time + (report.lag ?? 0) * report.rate - report.rate * now;
+    this.samples = this.samples.filter((sample) => now - sample.at < CLOCK_WINDOW_S);
+    // (How far a late report is behind the rest has to be more than how much they differ among themselves: on a link whose reports are
+    // all late by something different, a report that is merely later than most is no sign of anything.)
+    if (anchor < this.furthest() - Math.max(CLOCK_DOUBT_S, 2 * this.spread())) {
+      const doubt = this.doubt;
+      if (!doubt || Math.abs(anchor - doubt.anchor) >= CLOCK_AGREE_S || anchor > doubt.anchor + CLOCK_RISING_S) this.doubt = { anchor, at: now };
+      else if (now - doubt.at >= CLOCK_CONFIRM_S) {
+        this.samples = [doubt, { anchor, at: now }];
+        this.doubt = null;
+      }
+    } else {
+      this.doubt = null;
+      this.samples.push({ anchor, at: now });
+    }
+    return this.furthest() + report.rate * now;
+  }
+
+  private furthest(): number {
+    return this.samples.reduce((most, sample) => Math.max(most, sample.anchor), -Infinity);
+  }
+
+  /** How much the reports kept differ among themselves (the holding-up of each is what differs). */
+  private spread(): number {
+    if (this.samples.length < 2) return 0;
+    return this.furthest() - this.samples.reduce((least, sample) => Math.min(least, sample.anchor), Infinity);
+  }
+}
+
+/** What a follower has done on this page, for the `?debug` panel: a picture that lags is told apart from one that only looks like it. */
+export const syncStats = { reports: 0, seeks: 0, rewinds: 0, speedChanges: 0, waits: 0, drift: 0, settled: false };
+
+/** The follower's doings in a line, or null while it has done nothing (this page follows nobody). */
+export function describeSync(stats: typeof syncStats): string | null {
+  if (stats.reports === 0) return null;
+  const drift = `${stats.drift >= 0 ? "+" : "−"}${Math.abs(stats.drift).toFixed(2)}s`;
+  return `sync: ${stats.reports} reports  now ${drift} from the host${stats.settled ? "" : " (not settled)"}  jumps ${stats.seeks} (${stats.rewinds} back)  speed changes ${stats.speedChanges}  host waits ${stats.waits}`;
+}
+
+/**
+ * A guest's way of keeping its picture with the host's: what to do about each report (`TV_SYNC`). Reads the host's place with a `HostClock`,
+ * remembers when it last jumped (a second jump before the first has filled would only chase it), and keeps `syncStats`.
+ */
+export class Follower {
+  private readonly clock = new HostClock();
+  private lastSeekAt = -Infinity;
+
+  /** A different film: where the host was in the one before says nothing about this one. */
+  reset(): void {
+    this.clock.reset();
+  }
+
+  /** `now` is a clock that only goes on, in seconds (`performance.now() / 1000`); `hasBuffered` says whether a place in the film is downloaded here. */
+  step(report: HostReport, local: Omit<SyncLocal, "targetBuffered">, now: number, hasBuffered: (time: number) => boolean): SyncStep {
+    const time = this.clock.read(report, now);
+    const settled = this.clock.settled;
+    const step = syncStep(
+      { playing: report.playing, time, rate: report.rate, waiting: report.waiting === true, settled },
+      { ...local, targetBuffered: hasBuffered(time) },
+      (now - this.lastSeekAt) * 1000,
+    );
+    if (step.seek !== undefined) this.lastSeekAt = now;
+    syncStats.reports += 1;
+    syncStats.drift = local.time - time;
+    syncStats.settled = settled;
+    if (step.seek !== undefined) {
+      syncStats.seeks += 1;
+      if (step.seek < local.time) syncStats.rewinds += 1;
+    }
+    if (report.playing && Math.abs(step.rate - local.rate) > 0.001) syncStats.speedChanges += 1;
+    if (report.waiting && local.playing && !step.play) syncStats.waits += 1;
+    return step;
+  }
 }

@@ -220,6 +220,8 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
           {FRIEND_SWITCHES.filter(({ key }) => key !== "friendsRatings" || settings.ratings !== false).map(({ key, label, testId }) => (
             <Switch key={key} label={t(label)} checked={choices[key]} onChange={(on) => change(key, on)} testId={testId} />
           ))}
+          <Switch label={t("friends.popups")} checked={settings.newsPopups !== false} onChange={(on) => set("newsPopups", on ? undefined : false)} testId="news-popups-switch" />
+          <p className="muted small">{t("friends.popupsHelp")}</p>
           <button className="btn btn-block" onClick={onOpen} data-testid="friends-open">
             <UsersIcon /> {t("friends.open")}
             {friends.state && <small>{t("friends.count", { count: friends.state.friends.length })}</small>}
