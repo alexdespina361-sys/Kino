@@ -1,3 +1,4 @@
+import type { Socket } from "node:net";
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,7 +9,7 @@ import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
 import type { ResolveFn } from "../resolvers";
 import { PairingStore } from "../sessions/pairings";
 import { Registry } from "../sessions/registry";
-import { CLOSE_REPLACED, STEER_ATTRIBUTION_MS } from "./hub";
+import { CLOSE_REPLACED, FRAME_BURST, STEER_ATTRIBUTION_MS } from "./hub";
 
 /**
  * Minimal fake TV / phone. It connects through `app.injectWS`, in memory: a client and a server that talk over real loopback
@@ -32,8 +33,9 @@ class Client {
     };
   }
 
-  static async open(server: FastifyInstance): Promise<Client> {
-    return new Client(await server.injectWS("/ws"));
+  /** `address` is where the connection claims to come from (what the server sees as the request's `ip`; without one it has none, as every test connection did). */
+  static async open(server: FastifyInstance, address?: string): Promise<Client> {
+    return new Client(await server.injectWS("/ws", address ? { socket: { remoteAddress: address } as Socket } : {}));
   }
 
   send(message: ClientMessage | { type: string }): void {
@@ -64,6 +66,12 @@ class Client {
   async expectNone(predicate: (message: ServerMessage) => boolean, waitMs = 150): Promise<void> {
     await new Promise((r) => setTimeout(r, waitMs));
     expect(this.queue.filter(predicate)).toEqual([]);
+  }
+
+  /** Wait a moment for what is on its way, then say how many messages of this type have arrived (and not been taken with `next`). */
+  async received(type: ServerMessage["type"], waitMs = 300): Promise<number> {
+    await new Promise((r) => setTimeout(r, waitMs));
+    return this.queue.filter((m) => m.type === type).length;
   }
 
   /** Wait a moment for what is on its way, then let go of everything that has arrived: for looking only at what a next step brings. */
@@ -183,9 +191,9 @@ describe("pairing over WebSocket", () => {
 });
 
 describe("guessing pairing codes", () => {
-  /** A hub that tolerates `max` wrong codes per `windowMs`, with one TV showing a code and one phone ready to try. */
-  async function guessingSetup(max: number, windowMs: number) {
-    const strict = await buildApp({ hub: { maxFailedPairings: max, failedPairingWindowMs: windowMs } });
+  /** A hub that tolerates `max` wrong codes per `windowMs` from one address (and `inAll` from all of them, if said), with one TV showing a code and one phone ready to try. */
+  async function guessingSetup(max: number, windowMs: number, inAll?: number) {
+    const strict = await buildApp({ hub: { maxFailedPairings: max, failedPairingWindowMs: windowMs, ...(inAll ? { maxFailedPairingsInAll: inAll } : {}) } });
     await strict.ready();
     const tv = await Client.open(strict);
     tv.send({ type: "TV_HELLO" });
@@ -212,7 +220,59 @@ describe("guessing pairing codes", () => {
     }
   });
 
-  it("counts wrong codes from every phone together", async () => {
+  /** A phone that has said hello from this address, to the server `strict`. */
+  async function phoneAt(strict: FastifyInstance, address: string): Promise<Client> {
+    const phone = await Client.open(strict, address);
+    phone.send({ type: "CTL_HELLO" });
+    await phone.next("CTL_WELCOME");
+    return phone;
+  }
+
+  it("does not stop other addresses pairing when one has guessed too much", async () => {
+    const { strict, tv, code, wrong, close } = await guessingSetup(2, 60_000);
+    try {
+      const noisy = await phoneAt(strict, "203.0.113.7");
+      for (let i = 0; i < 2; i++) {
+        noisy.send({ type: "PAIR", code: wrong });
+        expect((await noisy.next("ERROR")).code).toBe("INVALID_CODE");
+      }
+      noisy.send({ type: "PAIR", code });
+      expect((await noisy.next("ERROR")).code).toBe("RATE_LIMITED"); // (this address is paused, the right code too)
+
+      const neighbour = await phoneAt(strict, "198.51.100.9");
+      neighbour.send({ type: "PAIR", code });
+      expect((await neighbour.next("CTL_WELCOME")).tv).toMatchObject({ online: true });
+      await tv.next("TV_PAIRED");
+      noisy.close();
+      neighbour.close();
+    } finally {
+      close();
+      await strict.close();
+    }
+  });
+
+  it("pauses pairing for everyone once many addresses have guessed wrong together", async () => {
+    const { strict, code, wrong, close } = await guessingSetup(2, 60_000, 4);
+    try {
+      for (const address of ["203.0.113.7", "203.0.113.8"]) {
+        const guesser = await phoneAt(strict, address);
+        for (let i = 0; i < 2; i++) {
+          guesser.send({ type: "PAIR", code: wrong });
+          expect((await guesser.next("ERROR")).code).toBe("INVALID_CODE");
+        }
+        guesser.close();
+      }
+      const stranger = await phoneAt(strict, "198.51.100.9"); // (never guessed: but four wrong codes came from the others)
+      stranger.send({ type: "PAIR", code });
+      expect((await stranger.next("ERROR")).code).toBe("RATE_LIMITED");
+      stranger.close();
+    } finally {
+      close();
+      await strict.close();
+    }
+  });
+
+  it("counts wrong codes from every phone of one address together", async () => {
     const { strict, phone, code, wrong, close } = await guessingSetup(2, 60_000);
     try {
       const other = await Client.open(strict);
@@ -257,6 +317,34 @@ describe("guessing pairing codes", () => {
       close();
       await strict.close();
     }
+  });
+});
+
+describe("a connection that sends too much", () => {
+  it("is heard out as long as it stays within the burst", async () => {
+    const client = await connect();
+    for (let i = 0; i < FRAME_BURST - 10; i++) client.send({ type: "PING" });
+    expect(await client.received("PONG")).toBe(FRAME_BURST - 10);
+  });
+
+  it("is not listened to past the burst", async () => {
+    const client = await connect();
+    for (let i = 0; i < FRAME_BURST + 40; i++) client.send({ type: "PING" });
+    const answered = await client.received("PONG");
+    expect(answered).toBeGreaterThanOrEqual(FRAME_BURST);
+    expect(answered).toBeLessThan(FRAME_BURST + 40); // (the rest was dropped, not answered)
+    expect(client.closeCode).toBeUndefined(); // (a short overshoot is no reason to hang up)
+  });
+
+  it("is closed when it keeps on, and the others are left alone", async () => {
+    const flooder = await connect();
+    const other = await connect();
+    other.send({ type: "PING" });
+    for (let i = 0; i < 3 * FRAME_BURST; i++) flooder.send({ type: "PING" });
+    expect(await flooder.closed()).toBe(1008);
+    await other.next("PONG");
+    other.send({ type: "PING" });
+    await other.next("PONG");
   });
 });
 

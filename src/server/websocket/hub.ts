@@ -15,12 +15,21 @@ import {
   type ResolveStatus,
   type ServerMessage,
 } from "../../shared";
+import { RateLimiter } from "../accounts/rateLimit";
 import type { ScreenProfiles } from "../accounts/screens";
 import type { ResolveFn, ResolveResult } from "../resolvers";
 import type { Controller, Device, Registry } from "../sessions/registry";
 
 /** Close code sent to an older TV page when a newer page takes over the same device. */
 export const CLOSE_REPLACED = 4000;
+
+/**
+ * How much one connection may say. A TV reports about once a second (a handful at once when a video starts), a phone sends a message
+ * per tap, so the allowance is far above any page that works: `FRAME_BURST` messages at once, `FRAME_RATE_PER_S` a second after that.
+ * A connection past the burst is not listened to; one that keeps on (more than twice the burst) is closed.
+ */
+export const FRAME_BURST = 100;
+export const FRAME_RATE_PER_S = 30;
 
 /** A film that starts or holds within this long of an admin guest's play or pause is that guest's doing; otherwise it is the host's own. */
 export const STEER_ATTRIBUTION_MS = 4000;
@@ -43,8 +52,10 @@ export interface HubOptions {
   staleAfterMs?: number;
   /** How often to look for silent sockets. Default 20 s. */
   sweepEveryMs?: number;
-  /** Wrong or expired codes tolerated across all phones in one window before pairing pauses. Default 20. */
+  /** Wrong or expired codes tolerated from one address in one window before pairing pauses for it. Default 20. */
   maxFailedPairings?: number;
+  /** Wrong codes tolerated from all addresses together in that window before pairing pauses for everyone (a code is only six digits). Default 5 times as many. */
+  maxFailedPairingsInAll?: number;
   /** Length of that window. Default 60 s. */
   failedPairingWindowMs?: number;
   /** Whose a screen is, as the accounts prove it (see TV_PROFILE). Without it a watch party shows no profiles. */
@@ -68,10 +79,15 @@ export class Hub {
   /** The last play or pause an admin guest asked of a host, to tell it from the host's own when the film changes. */
   private readonly steered = new Map<string, { by: string; at: number }>(); // host deviceId
   private readonly sweeper: ReturnType<typeof setInterval>;
-  /** When recent wrong codes were tried. A code is only six digits, so guessing has to be slow once this is on the internet. */
-  private failedPairings: number[] = [];
-  private readonly maxFailedPairings: number;
-  private readonly failedPairingWindowMs: number;
+  /**
+   * Wrong codes lately, counted for each address and for all of them. A code is only six digits, so guessing has to be slow once this is on
+   * the internet; counted per address, one visitor who types wrong codes cannot stop everyone else pairing, and the count over all of them
+   * is what is left to slow down guessing from many addresses at once.
+   */
+  private readonly wrongByAddress: RateLimiter;
+  private readonly wrongInAll: RateLimiter;
+  /** Where each open socket comes from (see `addressOf`). */
+  private readonly addresses = new WeakMap<WebSocket, string>();
   private readonly profiles: ScreenProfiles | undefined;
 
   constructor(
@@ -81,8 +97,10 @@ export class Hub {
   ) {
     const staleAfterMs = options.staleAfterMs ?? 60_000;
     this.profiles = options.profiles;
-    this.maxFailedPairings = options.maxFailedPairings ?? 20;
-    this.failedPairingWindowMs = options.failedPairingWindowMs ?? 60_000;
+    const perAddress = options.maxFailedPairings ?? 20;
+    const windowMs = options.failedPairingWindowMs ?? 60_000;
+    this.wrongByAddress = new RateLimiter(perAddress, windowMs);
+    this.wrongInAll = new RateLimiter(options.maxFailedPairingsInAll ?? perAddress * 5, windowMs);
     this.sweeper = setInterval(() => {
       const now = Date.now();
       for (const [socket, seen] of this.lastSeen) if (now - seen > staleAfterMs) socket.terminate();
@@ -94,12 +112,25 @@ export class Hub {
     clearInterval(this.sweeper);
   }
 
-  handleConnection(socket: WebSocket): void {
+  /** `address` is where the connection comes from (the request's `ip`); wrong codes are counted against it. */
+  handleConnection(socket: WebSocket, address?: string): void {
     let conn: Conn = { role: "none", socket };
-    this.lastSeen.set(socket, Date.now());
+    const now = Date.now();
+    this.lastSeen.set(socket, now);
+    if (address) this.addresses.set(socket, address);
+    let load = 0; // messages lately, draining at FRAME_RATE_PER_S
+    let loadAt = now;
 
     socket.on("message", (data, isBinary) => {
-      this.lastSeen.set(socket, Date.now());
+      const at = Date.now();
+      load = Math.max(0, load - ((at - loadAt) / 1000) * FRAME_RATE_PER_S) + 1;
+      loadAt = at;
+      if (load > FRAME_BURST) {
+        // (Not read, not answered: an answer for each would double the work. A connection that goes on past twice the burst is closed.)
+        if (load > 2 * FRAME_BURST && socket.readyState === socket.OPEN) socket.close(1008, "too many messages");
+        return;
+      }
+      this.lastSeen.set(socket, at);
       const message = isBinary ? null : parseClientMessage(data.toString());
       if (!message) return this.send(socket, { type: "ERROR", code: "BAD_MESSAGE", message: "Invalid message." });
       conn = this.dispatch(conn, message);
@@ -373,7 +404,8 @@ export class Hub {
     // A phone that has a TV is not turned away: that TV stays on its list, as it was, and the one this code belongs to is the one it controls now.
     if (this.registry.isFull(controller)) return this.error(controller.id, "TV_LIST_FULL", `A phone can keep ${MAX_PHONE_TVS} TVs. Forget one first.`);
     // While blocked the code is not even checked, so a right guess gets no answer different from a wrong one.
-    if (this.pairingPaused()) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
+    const socket = this.controllers.get(controller.id);
+    if (this.pairingPaused(socket)) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
 
     const before = this.registry.deviceForController(controller);
     let device = this.registry.pair(controller, code);
@@ -387,7 +419,7 @@ export class Hub {
       if (this.registry.isPartyCode(code)) {
         return this.error(controller.id, "PARTY_CODE", "That is the code of a watch party. Watch on this device to join it.");
       }
-      this.failedPairings.push(Date.now());
+      this.wrongCode(socket);
       return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");
     }
     this.send(this.tvs.get(device.id), { type: "TV_PAIRED" }); // a later phone is news to the TV too
@@ -436,11 +468,20 @@ export class Hub {
     if (this.registry.inParty(host)) this.sendParty(host);
   }
 
-  /** Wrong codes only count against the limit for so long. True while too many were tried recently. */
-  private pairingPaused(): boolean {
-    const now = Date.now();
-    this.failedPairings = this.failedPairings.filter((at) => now - at < this.failedPairingWindowMs);
-    return this.failedPairings.length >= this.maxFailedPairings;
+  /** Where a connection comes from, as far as it is known (a request without an address, as in a test, is one place with the others like it). */
+  private addressOf(socket: WebSocket | undefined): string {
+    return (socket && this.addresses.get(socket)) ?? "unknown";
+  }
+
+  /** Wrong codes only count against the limit for so long. True while too many were tried recently from this connection's address, or from all of them. */
+  private pairingPaused(socket: WebSocket | undefined): boolean {
+    return this.wrongByAddress.wait(this.addressOf(socket)) > 0 || this.wrongInAll.wait("all") > 0;
+  }
+
+  /** A wrong code was tried from this connection. */
+  private wrongCode(socket: WebSocket | undefined): void {
+    this.wrongByAddress.hit(this.addressOf(socket));
+    this.wrongInAll.hit("all");
   }
 
   /**
@@ -468,7 +509,8 @@ export class Hub {
 
   /** Another TV's code, typed on the phone: that TV now watches along with the phone's TV. */
   private addTv(controller: Controller, code: string): void {
-    if (this.pairingPaused()) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
+    const socket = this.controllers.get(controller.id);
+    if (this.pairingPaused(socket)) return this.error(controller.id, "RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
     const joined = this.registry.addFollower(controller, code);
     if (!joined.ok) {
       if (joined.reason === "INVALID_CODE") {
@@ -476,7 +518,7 @@ export class Hub {
         if (this.registry.isPartyCode(code)) {
           return this.error(controller.id, "ADD_PARTY_CODE", "That is the code of a watch party. Type it on the device that should join it.");
         }
-        this.failedPairings.push(Date.now());
+        this.wrongCode(socket);
         return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");
       }
       if (joined.reason === "PARTY_FULL") {
@@ -532,12 +574,12 @@ export class Hub {
   private joinParty(guest: Device, code: string): void {
     const tv = this.tvs.get(guest.id);
     const refuse = (errorCode: string, message: string) => this.send(tv, { type: "ERROR", code: errorCode, message });
-    if (this.pairingPaused()) return refuse("RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
+    if (this.pairingPaused(tv)) return refuse("RATE_LIMITED", "Too many wrong codes. Try again in a minute.");
     const joined = this.registry.joinParty(guest, code);
     if (!joined.ok) {
       switch (joined.reason) {
         case "INVALID_CODE":
-          this.failedPairings.push(Date.now());
+          this.wrongCode(tv);
           return refuse("INVALID_CODE", "Invalid or expired code.");
         case "PARTY_FULL":
           return refuse("PARTY_FULL", `A party has room for ${MAX_FOLLOWERS + 1} devices.`);

@@ -124,7 +124,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const { host, origin } = request.headers;
     request.log.info({ host, origin, ip: request.headers["x-forwarded-for"] ?? request.ip }, "ws connected");
     socket.on("close", (code, reason) => request.log.info({ code, reason: reason.toString() }, "ws closed"));
-    hub.handleConnection(socket);
+    hub.handleConnection(socket, request.ip);
   });
   // Screens watching a film together ask for the same pieces of it: the proxy fetches each once and shares it (see `SegmentCache`).
   const segments = new SegmentCache(options.segmentCache ?? segmentCacheFromEnv());

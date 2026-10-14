@@ -306,8 +306,11 @@ pnpm build && pnpm start     # http://localhost:8787
   The pieces of a film that the screens of a party ask for a few seconds apart are fetched from the site once and handed to each of them
   (`src/server/segmentCache.ts`: only whole answers that say how long they are, at most 64 MB kept for 3 minutes), so five screens do not
   look like five viewers to the site; what the server sends on to the screens is still one copy each
-- Pairing codes are single-use and expire after 10 minutes. After 20 wrong codes in a minute (all phones counted together)
-  pairing pauses until the minute is over, because the code is only six digits
+- Pairing codes are single-use and expire after 10 minutes. The code is only six digits, so wrong ones are counted: after 20 in a minute
+  from one address pairing pauses for that address until the minute is over, and after 100 in a minute from all addresses together it pauses
+  for everybody (one visitor cannot stop the others, and guessing from many addresses at once is still slow)
+- A connection may send a burst of 100 messages and then 30 a second (a TV reports about once a second, a phone sends a message per tap).
+  Past the burst messages are dropped unread; one that goes on past twice the burst is closed (1008) and its page connects again
 - **Accounts, pairings and what each TV was playing are kept**: written to disk (or Postgres) a moment after every change and again when the
   server is told to stop. A restart (or a free host sleeping and waking) leaves every phone and TV paired as it was (a phone's list of TVs
   included), and a TV whose page is
@@ -560,7 +563,8 @@ Anything that runs a Node process does (Northflank, Railway, Fly, a VPS):
 - **The port:** the server listens on `PORT` (default 8787) on `HOST` (default `0.0.0.0`). Declare that port as HTTP in the host, with WebSockets allowed
   (the page talks over `/ws`), and `/api/health` as the health check.
 - **Set `TRUST_PROXY=1`** (the number of proxies in front of the server; it is on by itself only on Render). Without it every visitor looks like one address
-  to the rate limits (10 sign-ups an hour, wrong codes, link polls) and they apply to everybody together.
+  to the rate limits (10 sign-ups an hour, wrong codes, link polls) and they apply to everybody together (twenty wrong codes from anybody
+  then pause pairing for all).
 - `DATABASE_URL` as above, and **one running copy per database**: two copies (the old host and the new one) write over each other.
 
 Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),
