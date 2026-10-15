@@ -369,6 +369,7 @@ export const en = {
   "notice.unmuted": "Sound on",
   "notice.sourceFailed": "{from} didn't work. Trying {to}…",
   "notice.embedFallback": "Switching to web player…",
+  "notice.embedSwitching": "Stream failed. Trying {name}…",
   "notice.thatSource": "That source",
   "notice.wouldntPlay": "That one wouldn't play. Try another.",
   "caption.size": "Size",

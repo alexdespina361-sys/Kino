@@ -371,6 +371,7 @@ export const ro: Dictionary = {
   "notice.unmuted": "Sunet pornit",
   "notice.sourceFailed": "{from} nu a mers. Încerc {to}…",
   "notice.embedFallback": "Comutare la web player…",
+  "notice.embedSwitching": "Fluxul a eșuat. Încerc {name}…",
   "notice.thatSource": "Sursa aceea",
   "notice.wouldntPlay": "Aceea nu a pornit. Încearcă alta.",
   "caption.size": "Mărime",

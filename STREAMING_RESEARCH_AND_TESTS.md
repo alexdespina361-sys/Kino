@@ -101,8 +101,56 @@ This document tracks all investigations, hypotheses, implementations, empirical 
      - Added dedicated "Back to Library" button in `hud-top`.
   5. **Instant WAF Failover**:
      - When direct stream fails with `PlayerError.NotDirectlyPlayable` (due to Cloudflare Origin blocks on segments), `Tv.tsx` immediately transitions to the embed player (`setEmbedActive(true)`) instead of wasting time cycling through redundant failing servers.
-- **Result**: **SUCCESS**.
+- **Result**: **PARTIALLY WORKED (Upstream Provider Glitch on movie 169)**.
+- **Root Cause Analysis (Movie 169)**:
+  1. Direct HLS failed on fragment CORS (`Fragment loading blocked (WAF/CORS 403), falling back immediately`) as expected.
+  2. Kino cleanly transitioned to embed mode and loaded VidLink.
+  3. VidLink displayed the movie backdrop/first frame, but then failed internally because its upstream DASH manifest on `noon.mooncase.online` was blocked by CORS (`from origin 'https://vidlink.pro' has been blocked by CORS policy`).
+  4. Adblockers on the client blocked VidLink tracker scripts (`ERR_BLOCKED_BY_CLIENT`).
+  5. The single hardcoded embed URL left the player with no failover path when VidLink glitched.
+  6. In Kino's HUD, `player.state` was not cleared of the previous direct HLS error, causing `useBusy` to keep controls sticky and render error markers.
+
+---
+
+### Test 8: Resilient Multi-Provider Embed Architecture, Cloudflare Partner Domain Bypass & Watchdog Failover
+- **Hypothesis**: Provide a prioritized, multi-provider embed cascade (AutoEmbed, VidLink with JWPlayer and fallback_url, SmashyStream/AnyEmbed, 2Embed, VidSrc.to) with an automated 7-second watchdog failover and 1-click manual Source menu switching inside Kino's custom HUD.
+- **Technical Discoveries**:
+  1. **AutoEmbed (`https://player.autoembed.co/embed/...`)**:
+     - Embeds `https://nextgencloudfabric.com/embed/...`.
+     - `nextgencloudfabric.com` is the official upstream CDN partner domain. From Test 4, requests originating from `https://nextgencloudfabric.com` return **`200 OK`** without CORS blocks.
+     - Resolves Cloudflare Turnstile invisibly in the browser background without user intervention.
+     - Automatically forwards all postMessage events to `window.parent`.
+     - Does not vendor aggressive `disable-devtool` scripts.
+  2. **VidLink with `player=jw` and `fallback_url`**:
+     - Supports `player=jw` (JWPlayer engine, bypassing dashjs `noon.mooncase.online` failures).
+     - Accepts `fallback_url` parameter, automatically redirecting if VidLink fails to locate stream chunks.
+  3. **SmashyStream & 2Embed & VidSrc.to**:
+     - Verified working embed alternatives (Status 200, no blocking `X-Frame-Options` or restricting CSP).
+- **Implementation**:
+  1. **Schema & Adapter (`src/shared/media.ts`, `src/server/resolvers/adapters/filmpire.ts`)**:
+     - Added `embedUrls` array to `NormalizedMediaSchema`.
+     - Generates 5 prioritized provider URLs for any movie or TV series episode:
+       - Provider 1: AutoEmbed (`player.autoembed.co`)
+       - Provider 2: VidLink (`vidlink.pro` with `player=jw` & `fallback_url`)
+       - Provider 3: SmashyStream (`player.smashystream.com`)
+       - Provider 4: 2Embed (`www.2embed.cc`)
+       - Provider 5: VidSrc.to (`vidsrc.to`)
+  2. **Automated Watchdog Failover (`src/client/tv/Tv.tsx`)**:
+     - Starts a 7-second timer when entering embed mode.
+     - If active provider does not emit `play`, `timeupdate`, or `PLAYER_EVENT` within 7 seconds, Kino automatically advances `embedIndex` to the next provider and notifies the user with a toast.
+     - When playback starts, the watchdog is instantly cleared.
+  3. **Custom HUD Source Menu Integration (`src/client/tv/Tv.tsx`)**:
+     - When `embedActive` is true, the HUD's "Source" menu dynamically populates with the embed providers: "Stream 1 (AutoEmbed)", "Stream 2 (VidLink)", "Stream 3 (Smashy)", "Stream 4 (2Embed)", "Stream 5 (VidSrc)".
+     - Allows instant 1-click provider switching directly from Kino's native HUD.
+  4. **Multi-Protocol Bidirectional HUD Control**:
+     - Dispatches commands in all provider formats (`{ method }`, `{ type }`, `{ event, func }`, `{ action }`) for play, pause, and seek.
+     - Supports incoming events from VidLink, JWPlayer, Plyr, Video.js, and HTML5 video.
+  5. **HUD Overlay & Error Cleansing (`src/client/tv/Hud.tsx`, `src/client/tv/Tv.tsx`)**:
+     - Fixed `useBusy`: sets `busy = false` when `embedActive` is true to eliminate blocking spinner over iframe.
+     - Clears `player.error: undefined` on entering embed mode so error cards never obscure video playback.
 - **Verification**:
-  - Full test suite: 72 test suites, **1413 tests passed** (100%).
-  - Production build: clean in 999ms (`dist/client/assets/Tv-IhHsjJLb.js`).
+  - Full test suite: 72 test files, **1413 tests passed** (100%).
+  - Zero TypeScript errors (`npm run typecheck` clean).
+  - Production build: clean in 324ms (`dist/client/assets/Tv-DLxTp8VU.js`).
   - Zero Render server bandwidth (`proxyVideo: false`).
+

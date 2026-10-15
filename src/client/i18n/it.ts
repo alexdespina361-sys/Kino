@@ -368,6 +368,7 @@ export const it: Dictionary = {
   "notice.unmuted": "Audio attivo",
   "notice.sourceFailed": "{from} non ha funzionato. Provo {to}…",
   "notice.embedFallback": "Passaggio al web player…",
+  "notice.embedSwitching": "Streaming fallito. Provo {name}…",
   "notice.thatSource": "Quella fonte",
   "notice.wouldntPlay": "Quello non è partito. Provane un altro.",
   "caption.size": "Dimensione",

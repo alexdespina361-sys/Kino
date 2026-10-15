@@ -485,16 +485,28 @@ export function createFilmpireAdapter(): SiteAdapter {
       // 8. Through the edge relay, the provider's own address or /api/proxy (see `streamAddress`)
       const proxiedUrl = streamAddress(finalStreamUrl, playerUrl);
 
-      // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
+      // 9. Generate multi-provider embeds & alternates for redundant streaming
       const alternates: AlternateSource[] = [];
       const targetSeason = s || "1";
       const targetEpisode = e || "1";
-      const publicEmbed = isTv
-        ? `https://vidlink.pro/tv/${id}/${targetSeason}/${targetEpisode}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914`
-        : `https://vidlink.pro/movie/${id}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914`;
-      const fallbackEmbed = isTv
+
+      const autoEmbedUrl = isTv
         ? `https://player.autoembed.co/embed/tv/${id}/${targetSeason}/${targetEpisode}`
         : `https://player.autoembed.co/embed/movie/${id}`;
+      const vidLinkUrl = isTv
+        ? `https://vidlink.pro/tv/${id}/${targetSeason}/${targetEpisode}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914&player=jw&fallback_url=${encodeURIComponent(autoEmbedUrl)}`
+        : `https://vidlink.pro/movie/${id}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914&player=jw&fallback_url=${encodeURIComponent(autoEmbedUrl)}`;
+      const smashyUrl = isTv
+        ? `https://player.smashystream.com/tv/${id}/${targetSeason}/${targetEpisode}`
+        : `https://player.smashystream.com/movie/${id}`;
+      const twoEmbedUrl = isTv
+        ? `https://www.2embed.cc/embedtv/${id}&s=${targetSeason}&e=${targetEpisode}`
+        : `https://www.2embed.cc/embed/${id}`;
+      const vidsrcToUrl = isTv
+        ? `https://vidsrc.to/embed/tv/${id}/${targetSeason}/${targetEpisode}`
+        : `https://vidsrc.to/embed/movie/${id}`;
+
+      const embedProviders = [autoEmbedUrl, vidLinkUrl, smashyUrl, twoEmbedUrl, vidsrcToUrl];
 
       for (const sUrl of streamUrls) {
         if (sUrl === chosenStream) continue;
@@ -513,7 +525,7 @@ export function createFilmpireAdapter(): SiteAdapter {
               url: streamAddress(altFinalUrl, playerUrl),
               type: "hls",
               directUrl: altFinalUrl,
-              embedUrl: publicEmbed,
+              embedUrl: embedProviders[alternates.length % embedProviders.length] || embedProviders[0],
             },
           });
         } catch {
@@ -530,9 +542,10 @@ export function createFilmpireAdapter(): SiteAdapter {
             url: proxiedUrl,
             type: "hls",
             directUrl: finalStreamUrl,
-            embedUrl: publicEmbed,
+            embedUrl: embedProviders[0],
           },
-          embedUrl: publicEmbed,
+          embedUrl: embedProviders[0],
+          embedUrls: embedProviders,
           subtitles: subtitles.length ? subtitles : undefined,
           series: seriesInfo,
           alternates: alternates.length ? alternates : undefined,

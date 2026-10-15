@@ -299,9 +299,16 @@ export function Tv() {
    * moment (a party's `TV_FOLLOWING` and the `LOAD` behind it) must compare with this video, not the one that was on before it.
    */
   const [embedActive, setEmbedActive] = useState(false);
+  const embedActiveRef = useRef(false);
+  embedActiveRef.current = embedActive;
+  const [embedIndex, setEmbedIndex] = useState(0);
+  const embedIndexRef = useRef(0);
+  embedIndexRef.current = embedIndex;
+
   const putMedia = (media: NormalizedMedia | null) => {
     currentMediaRef.current = media;
     setEmbedActive(false);
+    setEmbedIndex(0);
     setCurrentMedia(media);
   };
   playerRef.current = player;
@@ -310,6 +317,27 @@ export function Tv() {
   /** What the phone is told about the end of the picture: that it came, and whether the next episode starts by itself (and in how long). */
   const endingRef = useRef<Ending>({ ended: false });
   endingRef.current = { ended, upNext: following || upNextCountdown === null ? undefined : { seconds: autoplay ? upNextCountdown : null } };
+
+  const sendEmbedCommand = (command: "play" | "pause" | "seek", value?: number) => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    if (command === "play") {
+      win.postMessage({ method: "play" }, "*");
+      win.postMessage({ type: "play" }, "*");
+      win.postMessage({ event: "command", func: "playVideo" }, "*");
+      win.postMessage({ action: "play" }, "*");
+    } else if (command === "pause") {
+      win.postMessage({ method: "pause" }, "*");
+      win.postMessage({ type: "pause" }, "*");
+      win.postMessage({ event: "command", func: "pauseVideo" }, "*");
+      win.postMessage({ action: "pause" }, "*");
+    } else if (command === "seek" && typeof value === "number") {
+      win.postMessage({ method: "seek", value, time: value }, "*");
+      win.postMessage({ type: "seek", time: value }, "*");
+      win.postMessage({ event: "command", func: "seekTo", args: [value, true] }, "*");
+      win.postMessage({ action: "seek", time: value }, "*");
+    }
+  };
 
   /* ------------------------------ sources ------------------------------ */
 
@@ -336,6 +364,7 @@ export function Tv() {
     sourceIndexRef.current = index;
     setSourceIndex(index);
     setEmbedActive(false);
+    setEmbedIndex(0);
     resetApplied();
     void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     if (play) engine?.play();
@@ -350,9 +379,16 @@ export function Tv() {
     const next = sources.findIndex((_, index) => !triedSourcesRef.current.has(index));
     const isWafBlock = player.error === PlayerError.NotDirectlyPlayable;
     if (next === -1 || isWafBlock) {
-      const embed = media.embedUrl || media.stream.embedUrl;
-      if (embed && !embedActive) {
+      const embeds = getEmbedList(media);
+      if (embeds.length > 0 && !embedActive) {
         setEmbedActive(true);
+        setEmbedIndex(0);
+        setPlayer((prev) => ({
+          ...prev,
+          state: "playing",
+          error: undefined,
+          buffering: false,
+        }));
         engineRef.current?.stop();
         notify(t("notice.embedFallback"));
       }
@@ -363,7 +399,37 @@ export function Tv() {
     loadSource(next, false);
   }, [player.state, embedActive]);
 
-  // Listen for iframe embed player messages (e.g. VidLink postMessage PLAYER_EVENT)
+  const embedWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const embedPlaybackStartedRef = useRef(false);
+
+  // Watchdog timer: automatically switch provider if active embed doesn't start within 7s
+  useEffect(() => {
+    if (!embedActive) {
+      if (embedWatchdogRef.current) clearTimeout(embedWatchdogRef.current);
+      embedPlaybackStartedRef.current = false;
+      return;
+    }
+
+    embedPlaybackStartedRef.current = false;
+    const embeds = getEmbedList(currentMediaRef.current);
+    if (embeds.length <= 1) return;
+
+    if (embedWatchdogRef.current) clearTimeout(embedWatchdogRef.current);
+    embedWatchdogRef.current = setTimeout(() => {
+      if (embedPlaybackStartedRef.current) return;
+      setEmbedIndex((prev) => {
+        const nextIdx = (prev + 1) % embeds.length;
+        notify(t("notice.embedSwitching", { name: embedProviderName(embeds[nextIdx]!, nextIdx) }));
+        return nextIdx;
+      });
+    }, 7000);
+
+    return () => {
+      if (embedWatchdogRef.current) clearTimeout(embedWatchdogRef.current);
+    };
+  }, [embedActive, embedIndex]);
+
+  // Listen for iframe embed player messages (VidLink, JWPlayer, Plyr, Video.js)
   useEffect(() => {
     if (!embedActive) return;
 
@@ -371,25 +437,51 @@ export function Tv() {
       const data = event.data;
       if (!data) return;
 
-      // VidLink Player Event schema:
-      // { type: "PLAYER_EVENT", data: { event: "play"|"pause"|"seeked"|"ended"|"timeupdate", currentTime, duration, ... } }
-      if (data.type === "PLAYER_EVENT" && data.data) {
-        const { event: evt, currentTime, duration } = data.data;
-        if (typeof currentTime === "number") {
-          setPlayer((prev) => ({
-            ...prev,
-            currentTime,
-            duration: typeof duration === "number" && duration > 0 ? duration : prev.duration,
-            state: evt === "pause" ? "paused" : evt === "ended" ? "paused" : "playing",
-            buffering: false,
-          }));
-        }
+      let evt: string | undefined;
+      let currentTime: number | undefined;
+      let duration: number | undefined;
 
-        if (evt === "ended") {
-          setEnded(true);
-          if (currentMediaRef.current?.series?.next) {
-            setUpNextCountdown(UP_NEXT_SECONDS);
-          }
+      if (data.type === "PLAYER_EVENT" && data.data) {
+        evt = data.data.event;
+        currentTime = data.data.currentTime;
+        duration = data.data.duration;
+      } else if (typeof data.event === "string") {
+        evt = data.event;
+        currentTime = typeof data.currentTime === "number" ? data.currentTime : typeof data.time === "number" ? data.time : undefined;
+        duration = typeof data.duration === "number" ? data.duration : undefined;
+      } else if (typeof data.type === "string") {
+        evt = data.type;
+        currentTime = typeof data.currentTime === "number" ? data.currentTime : typeof data.time === "number" ? data.time : undefined;
+        duration = typeof data.duration === "number" ? data.duration : undefined;
+      }
+
+      if (typeof currentTime === "number") {
+        embedPlaybackStartedRef.current = true;
+        if (embedWatchdogRef.current) {
+          clearTimeout(embedWatchdogRef.current);
+          embedWatchdogRef.current = null;
+        }
+        setPlayer((prev) => ({
+          ...prev,
+          currentTime,
+          duration: typeof duration === "number" && duration > 0 ? duration : prev.duration,
+          state: evt === "pause" ? "paused" : evt === "ended" ? "paused" : "playing",
+          buffering: false,
+          error: undefined,
+        }));
+      } else if (evt === "play" || evt === "playing") {
+        embedPlaybackStartedRef.current = true;
+        if (embedWatchdogRef.current) {
+          clearTimeout(embedWatchdogRef.current);
+          embedWatchdogRef.current = null;
+        }
+        setPlayer((prev) => ({ ...prev, state: "playing", buffering: false, error: undefined }));
+      }
+
+      if (evt === "ended") {
+        setEnded(true);
+        if (currentMediaRef.current?.series?.next) {
+          setUpNextCountdown(UP_NEXT_SECONDS);
         }
       }
     };
@@ -564,7 +656,7 @@ export function Tv() {
   };
   useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]); // the phone's sheet shows what the TV really uses
   const streamUrl = currentMedia?.stream.url;
-  useEffect(() => republishRef.current(), [streamUrl, sourceIndex]); // a state names its media and source, and those can change without the video doing so
+  useEffect(() => republishRef.current(), [streamUrl, sourceIndex, embedActive, embedIndex]); // a state names its media and source, and those can change without the video doing so
   useEffect(() => republishRef.current(), [ended, upNextCountdown, autoplay, following]); // the phone follows the end of the picture and the countdown to the next episode
 
   useEffect(() => {
@@ -603,7 +695,7 @@ export function Tv() {
   const skip = (seconds: number) => {
     if (embedActive) {
       const targetTime = Math.max(0, Math.min(player.duration || Infinity, player.currentTime + seconds));
-      iframeRef.current?.contentWindow?.postMessage({ method: "seek", value: targetTime, time: targetTime }, "*");
+      sendEmbedCommand("seek", targetTime);
       setPlayer((prev) => ({ ...prev, currentTime: targetTime }));
     } else {
       engineRef.current?.skip(seconds);
@@ -656,7 +748,7 @@ export function Tv() {
     const video = videoRef.current!;
     video.setAttribute("referrerpolicy", "no-referrer");
     const publish = (state: PlayerState) => {
-      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current);
+      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current, embedActiveRef.current, embedIndexRef.current);
       setPlayer(full);
       if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
     };
@@ -1128,7 +1220,7 @@ export function Tv() {
   const togglePlay = () => {
     if (embedActive) {
       const isPlaying = player.state === "playing";
-      iframeRef.current?.contentWindow?.postMessage({ method: isPlaying ? "pause" : "play", type: isPlaying ? "pause" : "play" }, "*");
+      sendEmbedCommand(isPlaying ? "pause" : "play");
       setPlayer((prev) => ({ ...prev, state: isPlaying ? "paused" : "playing" }));
       return;
     }
@@ -1513,10 +1605,11 @@ export function Tv() {
         style={{ display: showVideo && !embedActive ? "block" : "none" }}
         playsInline
       />
-      {showVideo && embedActive && (currentMedia?.embedUrl || currentMedia?.stream.embedUrl) && (
+      {showVideo && embedActive && (getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl) && (
         <iframe
+          key={`${getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl}-${embedIndex}`}
           ref={iframeRef}
-          src={currentMedia.embedUrl || currentMedia.stream.embedUrl}
+          src={getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl}
           className="tv-video"
           data-picture
           allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
@@ -1634,7 +1727,11 @@ export function Tv() {
           title={mainTitle}
           message={friendlyError(player.error)}
           onRetry={retryPlayback}
-          onEmbed={currentMedia?.embedUrl || currentMedia?.stream.embedUrl ? () => setEmbedActive(true) : undefined}
+          onEmbed={getEmbedList(currentMedia).length > 0 ? () => {
+            setEmbedActive(true);
+            setEmbedIndex(0);
+            setPlayer((prev) => ({ ...prev, state: "playing", error: undefined, buffering: false }));
+          } : undefined}
           onLibrary={() => {
             stopPlayback();
             setScreen("library");
@@ -1675,7 +1772,7 @@ export function Tv() {
               return;
             }
             if (embedActive) {
-              iframeRef.current?.contentWindow?.postMessage({ method: "seek", value: time, time }, "*");
+              sendEmbedCommand("seek", time);
               setPlayer((prev) => ({ ...prev, currentTime: time }));
             } else {
               engineRef.current?.seek(time);
@@ -1735,7 +1832,16 @@ export function Tv() {
           onQuality={(level) => engineRef.current?.setQuality(level)}
           onSource={(index) => {
             setMenu(null);
-            loadSource(index, true);
+            if (embedActive) {
+              const embeds = getEmbedList(currentMediaRef.current);
+              if (index < embeds.length) {
+                setEmbedIndex(index);
+                setPlayer((prev) => ({ ...prev, state: "playing", error: undefined, buffering: false }));
+                notify(embedProviderName(embeds[index]!, index));
+              }
+            } else {
+              loadSource(index, true);
+            }
           }}
           onCaption={changeCaptions}
           onKind={setMenu}
@@ -1763,6 +1869,34 @@ export function Tv() {
 /** What a source is called on screen: the name it came with, or its place in the list. */
 const sourceName = (source: PlayableSource, index: number) => source.label ?? t("player.sourceN", { n: index + 1 });
 
+function getEmbedList(media: NormalizedMedia | null): string[] {
+  if (!media) return [];
+  if (media.embedUrls && media.embedUrls.length > 0) return media.embedUrls;
+  const list: string[] = [];
+  if (media.embedUrl) list.push(media.embedUrl);
+  if (media.stream.embedUrl && !list.includes(media.stream.embedUrl)) list.push(media.stream.embedUrl);
+  for (const alt of media.alternates ?? []) {
+    if (alt.stream.embedUrl && !list.includes(alt.stream.embedUrl)) {
+      list.push(alt.stream.embedUrl);
+    }
+  }
+  return list;
+}
+
+function embedProviderName(url: string, index: number): string {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    if (host.includes("autoembed")) return `Stream ${index + 1} (AutoEmbed)`;
+    if (host.includes("vidlink")) return `Stream ${index + 1} (VidLink)`;
+    if (host.includes("smashystream")) return `Stream ${index + 1} (Smashy)`;
+    if (host.includes("2embed")) return `Stream ${index + 1} (2Embed)`;
+    if (host.includes("vidsrc")) return `Stream ${index + 1} (VidSrc)`;
+    return `Stream ${index + 1} (${host.split(".")[0]})`;
+  } catch {
+    return `Stream ${index + 1}`;
+  }
+}
+
 /** What the TV knows that the video doesn't: which media this is, whether it is full screen, and how subtitles look. */
 /** The end of the picture, as the TV knows it: it played to the end, and the next episode is counting down (null: it waits to be asked for). */
 interface Ending {
@@ -1770,18 +1904,32 @@ interface Ending {
   upNext?: { seconds: number | null } | undefined;
 }
 
-const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number, ending: Ending): PlayerState => ({
-  ...state,
-  ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
-  ...(media && state.state !== "idle" && sourcesOf(media).length > 1
-    ? { sources: { labels: sourcesOf(media).map(sourceName), current: sourceIndex } }
-    : {}),
-  fullscreen: Boolean(document.fullscreenElement),
-  captionStyle,
-  subtitleDelay,
-  ...(ending.ended && state.state === "paused" ? { ended: true } : {}),
-  ...(ending.upNext && state.state !== "idle" ? { upNext: ending.upNext } : {}),
-});
+const withTvState = (
+  state: PlayerState,
+  captionStyle: CaptionStyle,
+  media: NormalizedMedia | null,
+  sourceIndex: number,
+  subtitleDelay: number,
+  ending: Ending,
+  embedActive = false,
+  embedIndex = 0,
+): PlayerState => {
+  const embedList = getEmbedList(media);
+  return {
+    ...state,
+    ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
+    ...(embedActive && embedList.length > 1
+      ? { sources: { labels: embedList.map((u, i) => embedProviderName(u, i)), current: embedIndex } }
+      : media && state.state !== "idle" && sourcesOf(media).length > 1
+      ? { sources: { labels: sourcesOf(media).map(sourceName), current: sourceIndex } }
+      : {}),
+    fullscreen: Boolean(document.fullscreenElement),
+    captionStyle,
+    subtitleDelay,
+    ...(ending.ended && state.state === "paused" ? { ended: true } : {}),
+    ...(ending.upNext && state.state !== "idle" ? { upNext: ending.upNext } : {}),
+  };
+};
 
 function toPairing(info: { code: string; expiresInMs: number } | null): Pairing | null {
   return info ? { code: info.code, expiresAt: Date.now() + info.expiresInMs } : null;
