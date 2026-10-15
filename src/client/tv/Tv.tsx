@@ -1584,25 +1584,70 @@ export function Tv() {
       )}
 
       {unlocked && showVideo && embedActive && (
-        <div style={{ position: "absolute", top: "1rem", left: "1rem", zIndex: 100 }}>
-          <button
-            className="tv-action"
-            onClick={stopPlayback}
-            style={{
-              background: "rgba(0,0,0,0.8)",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,0.2)",
-              borderRadius: "8px",
-              padding: "0.5rem 1rem",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              fontSize: "0.9rem",
-            }}
-          >
-            <HomeIcon /> {t("tv.backToLibrary")}
-          </button>
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "1rem 1.5rem",
+            background: "linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 70%, transparent 100%)",
+            pointerEvents: "none",
+            transition: "opacity 0.3s ease",
+            opacity: controlsVisible ? 1 : 0,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "1rem", pointerEvents: "auto" }}>
+            <button
+              className="tv-action"
+              onClick={stopPlayback}
+              style={{
+                background: "rgba(0,0,0,0.7)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "8px",
+                padding: "0.5rem 1rem",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                fontSize: "0.9rem",
+                backdropFilter: "blur(8px)",
+              }}
+            >
+              <HomeIcon /> {t("tv.backToLibrary")}
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <span style={{ fontWeight: 600, fontSize: "1.1rem", color: "#fff", textShadow: "0 2px 4px rgba(0,0,0,0.8)" }}>
+                {mainTitle}
+              </span>
+              {series && (
+                <span style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.7)", textShadow: "0 2px 4px rgba(0,0,0,0.8)" }}>
+                  S{series.season}:E{series.episode} {episodeTitle ? `· ${episodeTitle}` : ""}
+                </span>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", pointerEvents: "auto" }}>
+            <span
+              style={{
+                background: "rgba(255,255,255,0.15)",
+                color: "#eee",
+                borderRadius: "6px",
+                padding: "0.3rem 0.6rem",
+                fontSize: "0.75rem",
+                fontWeight: 500,
+                backdropFilter: "blur(8px)",
+                border: "1px solid rgba(255,255,255,0.1)",
+              }}
+            >
+              Web Player
+            </span>
+          </div>
         </div>
       )}
 

@@ -315,8 +315,11 @@ export class PlayerEngine {
       });
       this.hls = hls;
       hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
-      let retriedProxy = false;
+      let consecutiveFragErrors = 0;
       let mediaRecoverAttempts = 0;
+      hls.on(HlsLib.Events.FRAG_LOADED, () => {
+        consecutiveFragErrors = 0;
+      });
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
         console.warn("[HLS EVENT ERROR]", {
           type: data.type,
@@ -325,15 +328,19 @@ export class PlayerEngine {
           url: data.url,
           response: data.response ? { code: data.response.code, text: data.response.text } : undefined,
         });
-        if (data.fatal) {
-          if (!retriedProxy && !src.includes("/api/proxy") && (src.startsWith("http://") || src.startsWith("https://"))) {
-            retriedProxy = true;
-            Object.assign(hls.config, bufferPolicy(this.inParty, true));
-            const proxied = new URL(`/api/proxy?url=${encodeURIComponent(src)}`, location.href).href;
-            hls.loadSource(proxied);
+
+        if (data.details === "fragLoadError") {
+          consecutiveFragErrors++;
+          // A 403 Forbidden or repeated fragment error on direct streams indicates WAF origin blocking.
+          const isBlocked = data.response?.code === 403 || consecutiveFragErrors >= 2;
+          if (isBlocked) {
+            console.warn("[HLS] Fragment loading blocked (WAF/CORS 403), falling back immediately.");
+            this.fail(PlayerError.NotDirectlyPlayable);
             return;
           }
+        }
 
+        if (data.fatal) {
           if (data.type === HlsLib.ErrorTypes.MEDIA_ERROR && mediaRecoverAttempts < 2) {
             mediaRecoverAttempts++;
             console.log("[HLS] Recovering from media error, attempt:", mediaRecoverAttempts);
