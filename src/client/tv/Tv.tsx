@@ -50,6 +50,7 @@ import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
 import { keepNativePlayerOut } from "./nativePlayer";
 import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
+import { nearTheEnd } from "./preloadNext";
 import { Follower } from "./sync";
 import {
   describeTrack,
@@ -240,10 +241,13 @@ export function Tv() {
     return () => clearInterval(timer);
   }, []);
 
-  // Preload next episode whenever current media has a series next URL
+  // Preload the next episode (looked up, its first pieces fetched) once this one is nearly over: at its start that was a lookup and a few
+  // megabytes of film for every episode that is not watched to its end.
+  const nextEpisodeUrl = currentMedia?.series?.next?.url;
+  const nearEnd = nearTheEnd(player.currentTime, player.duration);
   useEffect(() => {
-    const nextUrl = currentMedia?.series?.next?.url;
-    if (!nextUrl || following) {
+    const nextUrl = nextEpisodeUrl;
+    if (!nextUrl || following || !nearEnd) {
       preloadedNextMediaRef.current = null;
       return;
     }
@@ -257,6 +261,8 @@ export function Tv() {
       .then(async (data: { status: string; media?: NormalizedMedia }) => {
         if (!active || data.status !== "success" || !data.media) return;
         preloadedNextMediaRef.current = data.media;
+        // (Only a playlist is read as one: a plain file would be taken in whole, as text.)
+        if (data.media.stream.type !== "hls") return;
 
         // 2. Prefetch the master playlist and initial media chunks into browser HTTP cache
         try {
@@ -283,7 +289,7 @@ export function Tv() {
     return () => {
       active = false;
     };
-  }, [currentMedia?.series?.next?.url, following]);
+  }, [nextEpisodeUrl, following, nearEnd]);
 
   const currentMediaRef = useRef<NormalizedMedia | null>(null);
   currentMediaRef.current = currentMedia;
@@ -327,7 +333,7 @@ export function Tv() {
     sourceIndexRef.current = index;
     setSourceIndex(index);
     resetApplied();
-    void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined);
+    void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     if (play) engine?.play();
   };
 
@@ -358,7 +364,7 @@ export function Tv() {
       profileStore.playbackStarted(preloaded);
       resetApplied();
       resetSources();
-      engineRef.current?.load(preloaded.stream.url, preloaded.stream.type, preloaded.subtitles);
+      engineRef.current?.load(preloaded.stream.url, preloaded.stream.type, preloaded.subtitles, undefined, preloaded.stream.directUrl);
       engineRef.current?.play();
       socketRef.current?.send({ type: "TV_PLAY_URL", url: nextUrl });
     } else if (nextUrl) {
@@ -767,7 +773,7 @@ export function Tv() {
               setUpNextDismissed(false);
               resetApplied();
               resetSources();
-              void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt);
+              void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt, command.media.stream.directUrl);
             } else if (command.type === "PLAY") {
               engine.play();
               if (message.by) {
@@ -1139,7 +1145,7 @@ export function Tv() {
     const at = engine.resumePoint();
     resetApplied();
     resetSources();
-    void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined);
+    void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     engine.play();
   };
 

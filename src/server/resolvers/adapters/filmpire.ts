@@ -1,5 +1,6 @@
 import type { AlternateSource, EpisodeRef, SeriesInfo, SubtitleTrack } from "../../../shared";
 import type { ResolveResult, SiteAdapter } from "../types";
+import { streamAddress } from "./streamAddress";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -481,13 +482,8 @@ export function createFilmpireAdapter(): SiteAdapter {
         finalStreamUrl = `${chosenStream}${delim}token=${encodeURIComponent(chosenToken)}&bypass_localize=true`;
       }
 
-      // 8. Wrap through /api/proxy (or external EDGE_STREAM_PROXY_URL / DIRECT_STREAMING)
-      const edgeProxy = process.env.EDGE_STREAM_PROXY_URL?.trim();
-      const directStreaming = process.env.DIRECT_STREAMING === "true";
-      const proxyBase = edgeProxy ? edgeProxy.replace(/\/$/, "") : "/api/proxy";
-      const proxiedUrl = directStreaming
-        ? finalStreamUrl
-        : `${proxyBase}?url=${encodeURIComponent(finalStreamUrl)}&referer=${encodeURIComponent(playerUrl)}`;
+      // 8. Through the edge relay, the provider's own address or /api/proxy (see `streamAddress`)
+      const proxiedUrl = streamAddress(finalStreamUrl, playerUrl);
 
       // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
       const alternates: AlternateSource[] = [];
@@ -502,14 +498,12 @@ export function createFilmpireAdapter(): SiteAdapter {
           const altFinalUrl = altToken
             ? `${sUrl}${altDelim}token=${encodeURIComponent(altToken)}&bypass_localize=true`
             : sUrl;
-          const altProxied = directStreaming
-            ? altFinalUrl
-            : `${proxyBase}?url=${encodeURIComponent(altFinalUrl)}&referer=${encodeURIComponent(playerUrl)}`;
           alternates.push({
             label: `Server ${alternates.length + 2} (${hostName})`,
             stream: {
-              url: altProxied,
+              url: streamAddress(altFinalUrl, playerUrl),
               type: "hls",
+              directUrl: altFinalUrl,
             },
           });
         } catch {
@@ -525,6 +519,7 @@ export function createFilmpireAdapter(): SiteAdapter {
           stream: {
             url: proxiedUrl,
             type: "hls",
+            directUrl: finalStreamUrl,
           },
           subtitles: subtitles.length ? subtitles : undefined,
           series: seriesInfo,

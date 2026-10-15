@@ -47,4 +47,42 @@ describe("/api/health", () => {
     }
     expect((await app.inject("/api/health")).json<Health>().segments).toEqual({ hits: 2, misses: 1, keptMB: 0 });
   });
+
+  it("counts how much film the proxy sent on, which is most of what a host's bandwidth goes on", async () => {
+    upstream = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "video/mp2t", "content-length": "5" });
+      response.end("BYTES");
+    });
+    await new Promise<void>((resolve) => upstream!.listen(0, "127.0.0.1", resolve));
+    const piece = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/seg-1.ts`;
+    app = await buildApp({ allowPrivateNetwork: true });
+    expect((await app.inject("/api/health")).json<{ proxy: unknown }>().proxy).toEqual({ bytes: 0, requests: 0, refused: 0, video: "on" });
+    for (let screen = 0; screen < 3; screen++) await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`);
+    // (Three screens each had the five bytes, although the film's own place was asked once.)
+    expect((await app.inject("/api/health")).json<{ proxy: unknown }>().proxy).toEqual({ bytes: 15, requests: 3, refused: 0, video: "on" });
+  });
+
+  it("says when it carries no film, and how many asks for one it turned away", async () => {
+    upstream = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "video/mp2t", "content-length": "5" });
+      response.end("BYTES");
+    });
+    await new Promise<void>((resolve) => upstream!.listen(0, "127.0.0.1", resolve));
+    const piece = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/seg-1.ts`;
+    app = await buildApp({ allowPrivateNetwork: true, proxyVideo: false });
+    for (let screen = 0; screen < 3; screen++) expect((await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`)).statusCode).toBe(403);
+    expect((await app.inject("/api/health")).json<{ proxy: unknown }>().proxy).toEqual({ bytes: 0, requests: 3, refused: 3, video: "off" });
+  });
+
+  it("is told to carry no film by PROXY_VIDEO=off, which is how a host says it", async () => {
+    const before = process.env.PROXY_VIDEO;
+    process.env.PROXY_VIDEO = "off";
+    try {
+      app = await buildApp();
+      expect((await app.inject("/api/health")).json<{ proxy: { video: string } }>().proxy.video).toBe("off");
+    } finally {
+      if (before === undefined) delete process.env.PROXY_VIDEO;
+      else process.env.PROXY_VIDEO = before;
+    }
+  });
 });
