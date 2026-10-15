@@ -114,6 +114,7 @@ export interface HudProps {
    * admin's too, whose play, skips, bar, next episode and stop (`onToggle`, `onSkip`, `onSeekTo`, `onNext`, `onStop`) ask the host's screen.
    */
   follow?: FollowProps | undefined;
+  embedActive?: boolean | undefined;
 }
 
 /** The picture is not there yet: a link is being looked up, the video is loading, or it stopped to fill up. */
@@ -538,30 +539,47 @@ export function Hud(p: HudProps) {
       {isBlocked(player) && !follow && <TapToPlay onPlay={p.onToggle} />}
 
       {/* The overlay sits on top of the video, so its empty part is the picture as far as a hand can tell (data-picture: see gestures.ts); the bars' own is the picture to a finger only. */}
-      <div className={`tv-overlay ${p.visible ? "visible" : "hidden"}`} data-picture data-paused={(paused && !p.upNext) || undefined} data-boosting={p.boosting || undefined}>
+      <div
+        className={`tv-overlay ${p.visible ? "visible" : "hidden"}`}
+        data-picture
+        data-embed={p.embedActive || undefined}
+        data-paused={(paused && !p.upNext) || undefined}
+        data-boosting={p.boosting || undefined}
+      >
         <header className="hud-top" data-picture="bar">
-          <div className="hud-titles">
-            <h1 className="hud-title" data-testid="tv-title">
-              {p.title}
-            </h1>
-            {p.subTitle && (
-              <div className="hud-episode">
-                <span className="hud-badge">{p.badge}</span>
-                <span>{p.subTitle}</span>
-              </div>
-            )}
-            {p.episodeName && (
-              <div className="hud-ep-name" data-testid="tv-episode-name">
-                {p.episodeName}
-              </div>
-            )}
-            {follow && (
-              <div className="hud-follow" data-testid="tv-follow-line">
-                <UsersIcon />
-                <span>{t("tv.following", { name: follow.host })}</span>
-                {follow.catchingUp && <em data-testid="tv-catching-up">{t("party.catchingUp")}</em>}
-              </div>
-            )}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "1.2em", minWidth: 0 }}>
+            <button
+              className="tv-btn tv-btn-icon tv-btn-hud-back"
+              onClick={p.onStop}
+              title={t("tv.backToLibrary")}
+              aria-label={t("tv.backToLibrary")}
+              data-testid="hud-back-btn"
+            >
+              <HomeIcon />
+            </button>
+            <div className="hud-titles">
+              <h1 className="hud-title" data-testid="tv-title">
+                {p.title}
+              </h1>
+              {p.subTitle && (
+                <div className="hud-episode">
+                  <span className="hud-badge">{p.badge}</span>
+                  <span>{p.subTitle}</span>
+                </div>
+              )}
+              {p.episodeName && (
+                <div className="hud-ep-name" data-testid="tv-episode-name">
+                  {p.episodeName}
+                </div>
+              )}
+              {follow && (
+                <div className="hud-follow" data-testid="tv-follow-line">
+                  <UsersIcon />
+                  <span>{t("tv.following", { name: follow.host })}</span>
+                  {follow.catchingUp && <em data-testid="tv-catching-up">{t("party.catchingUp")}</em>}
+                </div>
+              )}
+            </div>
           </div>
           <div className="hud-time-of-day">
             <div className="hud-clock">{p.clock}</div>

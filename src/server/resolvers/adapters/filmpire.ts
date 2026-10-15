@@ -490,6 +490,9 @@ export function createFilmpireAdapter(): SiteAdapter {
       const targetSeason = s || "1";
       const targetEpisode = e || "1";
       const publicEmbed = isTv
+        ? `https://vidlink.pro/tv/${id}/${targetSeason}/${targetEpisode}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914`
+        : `https://vidlink.pro/movie/${id}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914`;
+      const fallbackEmbed = isTv
         ? `https://player.autoembed.co/embed/tv/${id}/${targetSeason}/${targetEpisode}`
         : `https://player.autoembed.co/embed/movie/${id}`;
 
