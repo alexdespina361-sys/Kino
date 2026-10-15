@@ -638,6 +638,14 @@ export const en = {
   "tv.filterSeries": "Series",
   "tv.backToLibrary": "Back to the library",
   "tv.playWebPlayer": "Web Player",
+  "tv.enableNativeHud": "Enable Native HUD",
+  "tv.extensionTitle": "Enable Native Kino Player & HUD",
+  "tv.extensionDesc": "Watch directly inside Kino with full controls, seekbar, and watch party sync by installing the lightweight Origin Stripper extension in your browser.",
+  "tv.extensionStep1": "1. Extract the downloaded kino-origin-stripper.zip file.",
+  "tv.extensionStep2": "2. Open brave://extensions (or chrome://extensions) and toggle 'Developer mode' ON.",
+  "tv.extensionStep3": "3. Click 'Load unpacked' and select the extracted folder.",
+  "tv.extensionStep4": "4. Refresh this page to enjoy the full native Kino player!",
+  "tv.downloadAgain": "Download Extension (.zip)",
   "rows.because": "Because you watched {title}",
 
   /* ratings: a score out of ten, why, and what was watched */

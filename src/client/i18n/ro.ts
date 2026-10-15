@@ -645,6 +645,14 @@ export const ro: Dictionary = {
   "tv.filterSeries": "Seriale",
   "tv.backToLibrary": "Înapoi la bibliotecă",
   "tv.playWebPlayer": "Web Player",
+  "tv.enableNativeHud": "Activează HUD nativ",
+  "tv.extensionTitle": "Activează Player-ul și HUD-ul nativ Kino",
+  "tv.extensionDesc": "Urmărește filmele direct în Kino cu comenzi native, bară de derulare și watch parties instalând extensia ușoară Origin Stripper în browser.",
+  "tv.extensionStep1": "1. Extrage fișierul descărcat kino-origin-stripper.zip.",
+  "tv.extensionStep2": "2. Deschide brave://extensions (sau chrome://extensions) și bifează 'Mod dezvoltator'.",
+  "tv.extensionStep3": "3. Fă clic pe 'Încarcă extensie despachetată' și alege folderul extras.",
+  "tv.extensionStep4": "4. Reîncarcă această pagină pentru a te bucura de player-ul nativ Kino!",
+  "tv.downloadAgain": "Descarcă extensia (.zip)",
   "rows.because": "Pentru că ai urmărit {title}",
 
   /* ratings: a score out of ten, why, and what was watched */

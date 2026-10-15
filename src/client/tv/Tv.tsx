@@ -30,7 +30,7 @@ import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
-import { FullscreenIcon, HomeIcon, UsersIcon } from "../shared/icons";
+import { DownloadIcon, FullscreenIcon, HomeIcon, UsersIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
@@ -39,6 +39,7 @@ import { friendlyError, noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
 import { PlayerEngine, PlayerError } from "./engine";
+import { downloadExtensionZip, ExtensionModal } from "./extension";
 import { pickInRows } from "./dpad";
 import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, zoneOf, type PointerKind, type Side } from "./gestures";
 import { holdLine, resumeLine, sameHold, type Hold } from "./hold";
@@ -298,6 +299,7 @@ export function Tv() {
    * moment (a party's `TV_FOLLOWING` and the `LOAD` behind it) must compare with this video, not the one that was on before it.
    */
   const [embedActive, setEmbedActive] = useState(false);
+  const [showExtensionModal, setShowExtensionModal] = useState(false);
   const putMedia = (media: NormalizedMedia | null) => {
     currentMediaRef.current = media;
     setEmbedActive(false);
@@ -1576,6 +1578,10 @@ export function Tv() {
           message={friendlyError(player.error)}
           onRetry={retryPlayback}
           onEmbed={currentMedia?.embedUrl || currentMedia?.stream.embedUrl ? () => setEmbedActive(true) : undefined}
+          onExtension={() => {
+            downloadExtensionZip();
+            setShowExtensionModal(true);
+          }}
           onLibrary={() => {
             stopPlayback();
             setScreen("library");
@@ -1584,7 +1590,7 @@ export function Tv() {
       )}
 
       {unlocked && showVideo && embedActive && (
-        <div style={{ position: "absolute", top: "1rem", left: "1rem", zIndex: 100 }}>
+        <div style={{ position: "absolute", top: "1rem", left: "1rem", zIndex: 100, display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <button
             className="tv-action"
             onClick={stopPlayback}
@@ -1602,6 +1608,29 @@ export function Tv() {
             }}
           >
             <HomeIcon /> {t("tv.backToLibrary")}
+          </button>
+          <button
+            className="tv-action"
+            onClick={() => {
+              downloadExtensionZip();
+              setShowExtensionModal(true);
+            }}
+            style={{
+              background: "linear-gradient(135deg, #ff3b46 0%, #c40812 100%)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.3)",
+              borderRadius: "8px",
+              padding: "0.5rem 1.1rem",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+              boxShadow: "0 4px 14px rgba(255,59,70,0.45)",
+            }}
+          >
+            <DownloadIcon /> {t("tv.enableNativeHud")}
           </button>
         </div>
       )}
@@ -1708,6 +1737,8 @@ export function Tv() {
       )}
 
       {unlocked && welcoming && <TvWelcome ask={asksToEnter} onDone={() => setWelcoming(false)} />}
+
+      {showExtensionModal && <ExtensionModal onClose={() => setShowExtensionModal(false)} />}
     </main>
   );
 }

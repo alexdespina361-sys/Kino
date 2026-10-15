@@ -90,6 +90,37 @@ export function formatQualityLabel(width?: number, height?: number, name?: strin
 }
 
 /**
+ * Refreshes an upstream CDN stream token from the viewer's client residential IP.
+ * The upstream hosts (e.g. perigeeofparchment, diaphanousdogma) require a JWT token bound
+ * to the exact requesting IP (generate.php with Access-Control-Allow-Origin: *).
+ */
+export async function refreshStreamToken(streamUrl: string): Promise<string> {
+  try {
+    const u = new URL(streamUrl);
+    if (!u.pathname.includes("/pl/")) return streamUrl;
+    const genUrl = `${u.origin}/generate.php`;
+    const resp = await fetch(genUrl, { cache: "no-store" });
+    if (!resp.ok) return streamUrl;
+    const text = await resp.text();
+    let token = "";
+    try {
+      const parsed = JSON.parse(text.trim()) as Record<string, string>;
+      token = parsed.token || parsed.data || text.trim();
+    } catch {
+      token = text.trim();
+    }
+    if (token && token.includes(".")) {
+      u.searchParams.set("token", token);
+      u.searchParams.set("bypass_localize", "true");
+      return u.href;
+    }
+  } catch {
+    // If client fetch fails (e.g. network/offline), return original stream URL
+  }
+  return streamUrl;
+}
+
+/**
  * Thin wrapper around one <video>. Reports its real state through `onChange` on every media event
  * and once per second while it is moving, so the phone always renders what the TV is actually doing.
  */
@@ -168,7 +199,16 @@ export class PlayerEngine {
     this.emit();
 
     // Media may be root-relative (local fixtures); resolve against the TV's own origin.
-    const src = new URL(url, location.href).href;
+    let src = new URL(url, location.href).href;
+    let effectiveDirectUrl = directUrl;
+
+    // Refresh stream tokens directly from the browser's residential IP if needed
+    if (src.includes("/pl/")) {
+      src = await refreshStreamToken(src);
+    }
+    if (effectiveDirectUrl && effectiveDirectUrl.includes("/pl/")) {
+      effectiveDirectUrl = await refreshStreamToken(effectiveDirectUrl);
+    }
 
     // Attach external subtitle tracks if provided
     if (subtitles?.length) {
@@ -183,7 +223,7 @@ export class PlayerEngine {
     }
 
     if (type === "mp4") {
-      this.playNatively(src, directUrl, generation);
+      this.playNatively(src, effectiveDirectUrl, generation);
       return;
     }
 
@@ -205,6 +245,7 @@ export class PlayerEngine {
       this.hls = hls;
       hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
       let retriedProxy = false;
+      let triedNativeHls = false;
       let mediaRecoverAttempts = 0;
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
         console.warn("[HLS EVENT ERROR]", {
@@ -221,6 +262,15 @@ export class PlayerEngine {
             Object.assign(hls.config, bufferPolicy(this.inParty, true));
             const proxied = new URL(`/api/proxy?url=${encodeURIComponent(src)}`, location.href).href;
             hls.loadSource(proxied);
+            return;
+          }
+
+          if (this.video.canPlayType("application/vnd.apple.mpegurl") && !triedNativeHls && effectiveDirectUrl) {
+            triedNativeHls = true;
+            console.log("[HLS] Network error: attempting native HLS playback...");
+            hls.destroy();
+            this.hls = null;
+            this.playNatively(src, effectiveDirectUrl, generation);
             return;
           }
 
