@@ -370,6 +370,7 @@ export const ro: Dictionary = {
   "notice.muted": "Sunet oprit",
   "notice.unmuted": "Sunet pornit",
   "notice.sourceFailed": "{from} nu a mers. Încerc {to}…",
+  "notice.embedFallback": "Comutare la web player…",
   "notice.thatSource": "Sursa aceea",
   "notice.wouldntPlay": "Aceea nu a pornit. Încearcă alta.",
   "caption.size": "Mărime",
@@ -643,6 +644,7 @@ export const ro: Dictionary = {
   "tv.filterMovies": "Filme",
   "tv.filterSeries": "Seriale",
   "tv.backToLibrary": "Înapoi la bibliotecă",
+  "tv.playWebPlayer": "Web Player",
   "rows.because": "Pentru că ai urmărit {title}",
 
   /* ratings: a score out of ten, why, and what was watched */

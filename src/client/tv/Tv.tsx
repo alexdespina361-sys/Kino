@@ -30,7 +30,7 @@ import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
-import { FullscreenIcon, UsersIcon } from "../shared/icons";
+import { FullscreenIcon, HomeIcon, UsersIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
@@ -297,8 +297,10 @@ export function Tv() {
    * Puts a video on (or takes it off), in the ref at once: the render that refreshes the ref comes later, and a message that follows within the same
    * moment (a party's `TV_FOLLOWING` and the `LOAD` behind it) must compare with this video, not the one that was on before it.
    */
+  const [embedActive, setEmbedActive] = useState(false);
   const putMedia = (media: NormalizedMedia | null) => {
     currentMediaRef.current = media;
+    setEmbedActive(false);
     setCurrentMedia(media);
   };
   playerRef.current = player;
@@ -332,6 +334,7 @@ export function Tv() {
     triedSourcesRef.current = manual ? new Set([index]) : triedSourcesRef.current.add(index);
     sourceIndexRef.current = index;
     setSourceIndex(index);
+    setEmbedActive(false);
     resetApplied();
     void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     if (play) engine?.play();
@@ -344,11 +347,19 @@ export function Tv() {
     if (!media) return;
     const sources = sourcesOf(media);
     const next = sources.findIndex((_, index) => !triedSourcesRef.current.has(index));
-    if (next === -1) return;
+    if (next === -1) {
+      const embed = media.embedUrl || media.stream.embedUrl;
+      if (embed && !embedActive) {
+        setEmbedActive(true);
+        engineRef.current?.stop();
+        notify(t("notice.embedFallback"));
+      }
+      return;
+    }
     const failed = sources[sourceIndexRef.current];
     notify(t("notice.sourceFailed", { from: failed ? sourceName(failed, sourceIndexRef.current) : t("notice.thatSource"), to: sourceName(sources[next]!, next) }));
     loadSource(next, false);
-  }, [player.state]);
+  }, [player.state, embedActive]);
 
   const triggerNextEpisode = () => {
     if (followingRef.current) return; // the TV being followed picks what comes next
@@ -1134,7 +1145,7 @@ export function Tv() {
 
   /** Every source of the video has failed (a failing one hands over to the next, which is not yet a failure): the controls are of no use, so a card with a way on takes their place. */
   const untriedSource = currentMedia ? sourcesOf(currentMedia).some((_, index) => !triedSourcesRef.current.has(index)) : false;
-  const failed = player.state === "error" && !isBlocked(player) && !following && !resolving && !untriedSource;
+  const failed = player.state === "error" && !isBlocked(player) && !following && !resolving && !untriedSource && !embedActive;
   useEffect(() => {
     if (failed) setMenu(null);
   }, [failed]);
@@ -1146,6 +1157,7 @@ export function Tv() {
     const at = engine.resumePoint();
     resetApplied();
     resetSources();
+    setEmbedActive(false);
     void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     engine.play();
   };
@@ -1435,9 +1447,20 @@ export function Tv() {
         if (isPicture(event.target) && picture.kindRef.current === "touch") event.preventDefault(); // (a hold is no request for a menu)
       }}
     >
-      <video ref={videoRef} className="tv-video" data-picture preload="auto" style={{ display: showVideo ? "block" : "none" }} playsInline />
+      {showVideo && embedActive && (currentMedia?.embedUrl || currentMedia?.stream.embedUrl) ? (
+        <iframe
+          src={currentMedia.embedUrl || currentMedia.stream.embedUrl}
+          className="tv-video"
+          data-picture
+          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+          referrerPolicy="origin"
+          style={{ width: "100%", height: "100%", border: "none" }}
+        />
+      ) : (
+        <video ref={videoRef} className="tv-video" data-picture preload="auto" style={{ display: showVideo ? "block" : "none" }} playsInline />
+      )}
 
-      {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
+      {showVideo && !embedActive && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
       {/* Only a party's link starts here. Pressing OK is also the first press, which takes the page full screen. */}
       {!unlocked && <TvLocked onUnlock={() => setUnlocked(true)} />}
@@ -1546,6 +1569,7 @@ export function Tv() {
           title={mainTitle}
           message={friendlyError(player.error)}
           onRetry={retryPlayback}
+          onEmbed={currentMedia?.embedUrl || currentMedia?.stream.embedUrl ? () => setEmbedActive(true) : undefined}
           onLibrary={() => {
             stopPlayback();
             setScreen("library");
@@ -1553,7 +1577,30 @@ export function Tv() {
         />
       )}
 
-      {unlocked && showVideo && !finished && !failed && (
+      {unlocked && showVideo && embedActive && (
+        <div style={{ position: "absolute", top: "1rem", left: "1rem", zIndex: 100 }}>
+          <button
+            className="tv-action"
+            onClick={stopPlayback}
+            style={{
+              background: "rgba(0,0,0,0.8)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: "8px",
+              padding: "0.5rem 1rem",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              fontSize: "0.9rem",
+            }}
+          >
+            <HomeIcon /> {t("tv.backToLibrary")}
+          </button>
+        </div>
+      )}
+
+      {unlocked && showVideo && !finished && !failed && !embedActive && (
         <Hud
           visible={controlsVisible && menu !== "captions"}
           player={player}

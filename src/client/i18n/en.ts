@@ -368,6 +368,7 @@ export const en = {
   "notice.muted": "Muted",
   "notice.unmuted": "Sound on",
   "notice.sourceFailed": "{from} didn't work. Trying {to}…",
+  "notice.embedFallback": "Switching to web player…",
   "notice.thatSource": "That source",
   "notice.wouldntPlay": "That one wouldn't play. Try another.",
   "caption.size": "Size",
@@ -636,6 +637,7 @@ export const en = {
   "tv.filterMovies": "Movies",
   "tv.filterSeries": "Series",
   "tv.backToLibrary": "Back to the library",
+  "tv.playWebPlayer": "Web Player",
   "rows.because": "Because you watched {title}",
 
   /* ratings: a score out of ten, why, and what was watched */

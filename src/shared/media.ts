@@ -50,6 +50,7 @@ const StreamSchema = z.object({
   url: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path"),
   type: StreamTypeSchema,
   directUrl: z.string().max(2048).optional(),
+  embedUrl: z.string().max(2048).optional(),
 });
 
 /** Another way to get the same video (a mirror, another server). The TV falls back to these when the main stream fails. */
@@ -73,6 +74,7 @@ export const NormalizedMediaSchema = z.object({
   alternates: z.array(AlternateSourceSchema).max(MAX_ALTERNATES).optional(),
   /** The link that plays this again, which is what "continue watching" and the history are saved against (the stream's own link may stop working). Filled in by the server from what was asked for. */
   page: z.string().max(2048).optional(),
+  embedUrl: z.string().max(2048).optional(),
   /** A picture (upright and wide) and a year for cards, when whoever asked for it knew them (a library tile did). */
   poster: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path").optional(),
   backdrop: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path").optional(),

@@ -504,6 +504,7 @@ export function createFilmpireAdapter(): SiteAdapter {
               url: streamAddress(altFinalUrl, playerUrl),
               type: "hls",
               directUrl: altFinalUrl,
+              embedUrl: playerUrl,
             },
           });
         } catch {
@@ -520,7 +521,9 @@ export function createFilmpireAdapter(): SiteAdapter {
             url: proxiedUrl,
             type: "hls",
             directUrl: finalStreamUrl,
+            embedUrl: playerUrl,
           },
+          embedUrl: playerUrl,
           subtitles: subtitles.length ? subtitles : undefined,
           series: seriesInfo,
           alternates: alternates.length ? alternates : undefined,

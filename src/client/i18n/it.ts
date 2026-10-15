@@ -367,6 +367,7 @@ export const it: Dictionary = {
   "notice.muted": "Audio disattivato",
   "notice.unmuted": "Audio attivo",
   "notice.sourceFailed": "{from} non ha funzionato. Provo {to}…",
+  "notice.embedFallback": "Passaggio al web player…",
   "notice.thatSource": "Quella fonte",
   "notice.wouldntPlay": "Quello non è partito. Provane un altro.",
   "caption.size": "Dimensione",
@@ -636,6 +637,7 @@ export const it: Dictionary = {
   "tv.filterMovies": "Film",
   "tv.filterSeries": "Serie TV",
   "tv.backToLibrary": "Torna alla libreria",
+  "tv.playWebPlayer": "Web Player",
   "rows.because": "Perché hai guardato {title}",
 
   /* ratings: a score out of ten, why, and what was watched */
