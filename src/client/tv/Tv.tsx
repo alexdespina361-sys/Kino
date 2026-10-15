@@ -339,6 +339,27 @@ export function Tv() {
     }
   };
 
+  const publishEmbedState = (nextState: Partial<PlayerState>) => {
+    setPlayer((prev) => {
+      const base: PlayerState = {
+        ...prev,
+        ...nextState,
+      };
+      const full = withTvState(
+        base,
+        captionStyleRef.current,
+        currentMediaRef.current,
+        sourceIndexRef.current,
+        subtitleDelayRef.current,
+        endingRef.current,
+        true,
+        embedIndexRef.current,
+      );
+      if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full });
+      return full;
+    });
+  };
+
   /* ------------------------------ sources ------------------------------ */
 
   // Which of the video's sources is playing, and which have been tried since the last pick (a failing one is skipped).
@@ -384,12 +405,11 @@ export function Tv() {
         setEmbedActive(true);
         setEmbedIndex(0);
         engineRef.current?.stop();
-        setPlayer((prev) => ({
-          ...prev,
+        publishEmbedState({
           state: "playing",
           error: undefined,
           buffering: false,
-        }));
+        });
         notify(t("notice.embedFallback"));
       }
       return;
@@ -461,21 +481,20 @@ export function Tv() {
           clearTimeout(embedWatchdogRef.current);
           embedWatchdogRef.current = null;
         }
-        setPlayer((prev) => ({
-          ...prev,
+        publishEmbedState({
           currentTime,
-          duration: typeof duration === "number" && duration > 0 ? duration : prev.duration,
+          duration: typeof duration === "number" && duration > 0 ? duration : playerRef.current.duration,
           state: evt === "pause" ? "paused" : evt === "ended" ? "paused" : "playing",
           buffering: false,
           error: undefined,
-        }));
+        });
       } else if (evt === "play" || evt === "playing") {
         embedPlaybackStartedRef.current = true;
         if (embedWatchdogRef.current) {
           clearTimeout(embedWatchdogRef.current);
           embedWatchdogRef.current = null;
         }
-        setPlayer((prev) => ({ ...prev, state: "playing", buffering: false, error: undefined }));
+        publishEmbedState({ state: "playing", buffering: false, error: undefined });
       }
 
       if (evt === "ended") {
@@ -696,7 +715,7 @@ export function Tv() {
     if (embedActive) {
       const targetTime = Math.max(0, Math.min(player.duration || Infinity, player.currentTime + seconds));
       sendEmbedCommand("seek", targetTime);
-      setPlayer((prev) => ({ ...prev, currentTime: targetTime }));
+      publishEmbedState({ currentTime: targetTime });
     } else {
       engineRef.current?.skip(seconds);
     }
@@ -924,7 +943,12 @@ export function Tv() {
               resetSources();
               void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt, command.media.stream.directUrl);
             } else if (command.type === "PLAY") {
-              engine.play();
+              if (embedActiveRef.current) {
+                sendEmbedCommand("play");
+                publishEmbedState({ state: "playing" });
+              } else {
+                engine.play();
+              }
               if (message.by) {
                 // A guest that steers set the film going: said once, and the film is held by nobody any more.
                 holdRef.current = null;
@@ -933,18 +957,31 @@ export function Tv() {
                 if (line) notify(line);
               }
             } else if (command.type === "PAUSE") {
-              engine.pause();
+              if (embedActiveRef.current) {
+                sendEmbedCommand("pause");
+                publishEmbedState({ state: "paused" });
+              } else {
+                engine.pause();
+              }
               if (message.by) {
                 holdRef.current = { by: message.by, waiting: false }; // (a guest that steers paused it: the pause card says who)
                 setHold(holdRef.current);
               }
-            } else if (command.type === "SEEK") engine.seek(command.time);
-            else if (command.type === "SKIP") skip(command.seconds);
+            } else if (command.type === "SEEK") {
+              if (embedActiveRef.current) {
+                sendEmbedCommand("seek", command.time);
+                publishEmbedState({ currentTime: command.time });
+              } else {
+                engine.seek(command.time);
+              }
+            } else if (command.type === "SKIP") skip(command.seconds);
             else if (command.type === "STOP") {
               putMedia(null);
               setUpNextCountdown(null);
               setResolving(false);
               setMenu(null);
+              setEmbedActive(false);
+              setEmbedIndex(0);
               engine.stop();
             } else if (command.type === "SET_QUALITY") engine.setQuality(command.level);
             else if (command.type === "SET_SUBTITLE") chooseSubtitle(command.track);
@@ -952,7 +989,18 @@ export function Tv() {
             else if (command.type === "SET_CAPTION_STYLE") changeCaptions(command.style);
             else if (command.type === "SET_SPEED") engine.setPlaybackRate(command.rate);
             else if (command.type === "SET_AUDIO") chooseAudio(command.track);
-            else if (command.type === "SET_SOURCE") loadSource(command.index, true);
+            else if (command.type === "SET_SOURCE") {
+              if (embedActiveRef.current) {
+                const embeds = getEmbedList(currentMediaRef.current);
+                if (command.index < embeds.length) {
+                  setEmbedIndex(command.index);
+                  publishEmbedState({ state: "playing", error: undefined, buffering: false });
+                  notify(embedProviderName(embeds[command.index]!, command.index));
+                }
+              } else {
+                loadSource(command.index, true);
+              }
+            }
             else if (command.type === "TOGGLE_FULLSCREEN") fullscreenFromPhone();
             else if (command.type === "NEXT_EPISODE") triggerNextEpisode();
             else if (command.type === "DISMISS_UP_NEXT") dismissUpNext();
@@ -1222,7 +1270,7 @@ export function Tv() {
     if (embedActive) {
       const isPlaying = player.state === "playing";
       sendEmbedCommand(isPlaying ? "pause" : "play");
-      setPlayer((prev) => ({ ...prev, state: isPlaying ? "paused" : "playing" }));
+      publishEmbedState({ state: isPlaying ? "paused" : "playing" });
       return;
     }
     return player.state === "playing" ? engineRef.current?.pause() : engineRef.current?.play();
@@ -1253,6 +1301,8 @@ export function Tv() {
   const stopPlayback = () => {
     putMedia(null);
     setUpNextCountdown(null);
+    setEmbedActive(false);
+    setEmbedIndex(0);
     engineRef.current?.stop();
   };
   /** The next subtitle track, and off after the last. Works for a TV that watches along too: what is read is its own choice. */
@@ -1271,6 +1321,8 @@ export function Tv() {
     putMedia(null);
     setUpNextCountdown(null);
     setMenu(null);
+    setEmbedActive(false);
+    setEmbedIndex(0);
     engineRef.current?.stop();
     if (!followingRef.current) socketRef.current?.send({ type: "TV_CANCEL" });
   };
@@ -1285,9 +1337,9 @@ export function Tv() {
   const watchAgain = () => {
     setEnded(false);
     if (embedActive) {
-      iframeRef.current?.contentWindow?.postMessage({ method: "seek", value: 0, time: 0 }, "*");
-      iframeRef.current?.contentWindow?.postMessage({ method: "play", type: "play" }, "*");
-      setPlayer((prev) => ({ ...prev, currentTime: 0, state: "playing" }));
+      sendEmbedCommand("seek", 0);
+      sendEmbedCommand("play");
+      publishEmbedState({ currentTime: 0, state: "playing" });
     } else {
       engineRef.current?.seek(0);
       engineRef.current?.play();
@@ -1447,10 +1499,20 @@ export function Tv() {
           else togglePlay();
           break;
         case "play":
-          engine.play();
+          if (embedActive) {
+            sendEmbedCommand("play");
+            publishEmbedState({ state: "playing" });
+          } else {
+            engine.play();
+          }
           break;
         case "pause":
-          engine.pause();
+          if (embedActive) {
+            sendEmbedCommand("pause");
+            publishEmbedState({ state: "paused" });
+          } else {
+            engine.pause();
+          }
           break;
         case "left":
         case "rewind":
@@ -1774,7 +1836,7 @@ export function Tv() {
             }
             if (embedActive) {
               sendEmbedCommand("seek", time);
-              setPlayer((prev) => ({ ...prev, currentTime: time }));
+              publishEmbedState({ currentTime: time });
             } else {
               engineRef.current?.seek(time);
             }
@@ -1837,7 +1899,7 @@ export function Tv() {
               const embeds = getEmbedList(currentMediaRef.current);
               if (index < embeds.length) {
                 setEmbedIndex(index);
-                setPlayer((prev) => ({ ...prev, state: "playing", error: undefined, buffering: false }));
+                publishEmbedState({ state: "playing", error: undefined, buffering: false });
                 notify(embedProviderName(embeds[index]!, index));
               }
             } else {
@@ -1905,7 +1967,7 @@ interface Ending {
   upNext?: { seconds: number | null } | undefined;
 }
 
-const withTvState = (
+function withTvState(
   state: PlayerState,
   captionStyle: CaptionStyle,
   media: NormalizedMedia | null,
@@ -1914,7 +1976,7 @@ const withTvState = (
   ending: Ending,
   embedActive = false,
   embedIndex = 0,
-): PlayerState => {
+): PlayerState {
   const embedList = getEmbedList(media);
   return {
     ...state,
@@ -1930,7 +1992,7 @@ const withTvState = (
     ...(ending.ended && state.state === "paused" ? { ended: true } : {}),
     ...(ending.upNext && state.state !== "idle" ? { upNext: ending.upNext } : {}),
   };
-};
+}
 
 function toPairing(info: { code: string; expiresInMs: number } | null): Pairing | null {
   return info ? { code: info.code, expiresAt: Date.now() + info.expiresInMs } : null;

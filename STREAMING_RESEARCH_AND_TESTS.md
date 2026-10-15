@@ -166,3 +166,24 @@ This document tracks all investigations, hypotheses, implementations, empirical 
 - **Result**: **SUCCESS**.
 - **Outcome**: React hook order remains strictly constant across all renders. Embed player transitions cleanly without hook exceptions or state clobbering.
 
+### Test 10: Complete Embed HUD Bidirectional State Synchronization & Remote Control Alignment
+- **Hypothesis**: Synchronize the entire Kino ecosystem (Kino TV HUD, mobile phone controller over WebSocket, watch parties, watch history store) when playing in embed mode, and ensure remote media keys (play, pause, seek, stop, source selection) map to embed commands.
+- **Implementation**:
+  1. **Unified State Publisher (`publishEmbedState`) in `src/client/tv/Tv.tsx`**:
+     - Computes full `withTvState` including stream url, media metadata, sources/providers, and ending state.
+     - Automatically broadcasts `TV_STATE` over WebSocket so paired phone controllers and watch party guests reflect current playback time, duration, and play/pause state in real-time.
+     - Triggers `profileStore.playbackAt(currentMedia, player)` so the user's progress is saved in "Continue watching" and resume points are tracked.
+  2. **Remote Phone Controller Integration (`TV_CMD`)**:
+     - Mapped `PLAY`, `PAUSE`, and `SEEK` commands received from the phone controller to `sendEmbedCommand()` and `publishEmbedState()`.
+     - Mapped `SET_SOURCE` to switch `embedIndex` dynamically across the 5 providers.
+     - Added clean reset (`setEmbedActive(false)`, `setEmbedIndex(0)`) to `STOP`, `stopPlayback()`, and `cancelLoad()`.
+  3. **Hardware / TV Remote Key Alignments (`keys.ts` & `onKey`)**:
+     - Mapped dedicated `play` and `pause` hardware actions to embed commands.
+  4. **CSS Refinement (`src/client/tv/tv.css`)**:
+     - Added `border: 0;` to `.tv-video` to eliminate default browser borders on iframe elements.
+- **Verification**:
+  - Full test suite: 72 test files, 1413 tests passed (100%).
+  - Zero TypeScript errors (`npm run typecheck` clean).
+  - Production build: clean in 330ms (`dist/client/assets/Tv-D0WnFKQd.js`).
+
+

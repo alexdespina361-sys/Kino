@@ -26,6 +26,7 @@
   height: 100%;
   object-fit: contain;
   background: #000;
+  border: 0;
 }
 /* The picture takes taps, double taps and holds (gestures.ts) and nothing of it scrolls, so a touch on it is left to the page: the browser starts no pan of its own. */
 .tv-video, .tv-overlay { touch-action: none; -webkit-tap-highlight-color: transparent; }
