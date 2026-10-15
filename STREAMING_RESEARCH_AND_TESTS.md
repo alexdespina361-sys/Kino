@@ -154,3 +154,15 @@ This document tracks all investigations, hypotheses, implementations, empirical 
   - Production build: clean in 324ms (`dist/client/assets/Tv-DLxTp8VU.js`).
   - Zero Render server bandwidth (`proxyVideo: false`).
 
+### Test 9: React 19 Hook Ordering Integrity & Engine Teardown Isolation
+- **Hypothesis**: Eliminate client crash `Cannot read properties of null (reading 'inst')` and prevent dormant HTML5 engine teardown from overwriting embed state back to idle.
+- **Root Cause Analysis**:
+  1. In `src/client/tv/Hud.tsx`, `useBusy` was invoked behind a short-circuit conditional: `const busy = !p.embedActive && useBusy(player, p.resolving);`. When `embedActive` flipped to `true`, the hook call was skipped. In React 19, this violated the Rules of Hooks and corrupted the fiber hook pointer linked list, crashing the subsequent `useOneLine` (`useLayoutEffect`).
+  2. In `src/client/tv/Tv.tsx`, calling `engineRef.current?.stop()` triggered `this.teardown()`, which called `publish(IDLE_STATE)`. Without an early guard, this teardown event overwrote `player.state = "playing"` with `"idle"` during the transition to embed mode.
+- **Implementation**:
+  1. `src/client/tv/Hud.tsx`: Unconditionally invoke `const rawBusy = useBusy(player, p.resolving);` followed by `const busy = !p.embedActive && rawBusy;`.
+  2. `src/client/tv/Tv.tsx`: Added `if (embedActiveRef.current) return;` at the very start of `publish(state)` to isolate embed state from background native player teardown.
+  3. Ordered `engineRef.current?.stop()` before setting embed `player` state in the fallback handler.
+- **Result**: **SUCCESS**.
+- **Outcome**: React hook order remains strictly constant across all renders. Embed player transitions cleanly without hook exceptions or state clobbering.
+

@@ -459,7 +459,8 @@ export function Hud(p: HudProps) {
   const duration = player.duration || 0;
   const percent = (time: number) => (duration > 0 ? Math.max(0, Math.min(100, (time / duration) * 100)) : 0);
   const playing = player.state === "playing";
-  const busy = !p.embedActive && useBusy(player, p.resolving);
+  const rawBusy = useBusy(player, p.resolving);
+  const busy = !p.embedActive && rawBusy;
   const paused = !busy && player.state === "paused";
   const follow = p.follow;
   /** Whether the playback is this screen's to move: any screen's own picture, or an admin's, but not that of a guest who only watches. */

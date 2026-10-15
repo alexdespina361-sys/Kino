@@ -383,13 +383,13 @@ export function Tv() {
       if (embeds.length > 0 && !embedActive) {
         setEmbedActive(true);
         setEmbedIndex(0);
+        engineRef.current?.stop();
         setPlayer((prev) => ({
           ...prev,
           state: "playing",
           error: undefined,
           buffering: false,
         }));
-        engineRef.current?.stop();
         notify(t("notice.embedFallback"));
       }
       return;
@@ -748,6 +748,7 @@ export function Tv() {
     const video = videoRef.current!;
     video.setAttribute("referrerpolicy", "no-referrer");
     const publish = (state: PlayerState) => {
+      if (embedActiveRef.current) return;
       const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current, embedActiveRef.current, embedIndexRef.current);
       setPlayer(full);
       if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
@@ -1605,9 +1606,9 @@ export function Tv() {
         style={{ display: showVideo && !embedActive ? "block" : "none" }}
         playsInline
       />
-      {showVideo && embedActive && (getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl) && (
+      {showVideo && embedActive && Boolean(getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl) && (
         <iframe
-          key={`${getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl}-${embedIndex}`}
+          key={`embed-${embedIndex}-${getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl}`}
           ref={iframeRef}
           src={getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl}
           className="tv-video"
