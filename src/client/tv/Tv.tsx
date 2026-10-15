@@ -1352,7 +1352,7 @@ export function Tv() {
 
   /* ------------------------------ the picture under a hand ------------------------------ */
 
-  const showVideo = player.state !== "idle";
+  const showVideo = player.state !== "idle" || embedActive;
   /** A film is what the screen is for right now (not its end card, nor an error): nothing is to land on it that can wait. */
   const filmIsOn = showVideo && !finished && !failed;
 
@@ -1394,7 +1394,7 @@ export function Tv() {
    * Whether a hand's taps on the picture are the picture's: a video, with nobody's card or menu over it. (A screen that watches along has
    * them too, to bring its bars up and put them away, but its playback is the host's: only an admin's taps move it, and then by asking.)
    */
-  const takesTaps = unlocked && showVideo && !finished && !failed && menu === null;
+  const takesTaps = unlocked && showVideo && !finished && !failed && menu === null && !embedActive;
   const picture = usePictureGestures({
     enabled: takesTaps,
     source: currentMedia?.stream.url ?? "",
@@ -1447,7 +1447,15 @@ export function Tv() {
         if (isPicture(event.target) && picture.kindRef.current === "touch") event.preventDefault(); // (a hold is no request for a menu)
       }}
     >
-      {showVideo && embedActive && (currentMedia?.embedUrl || currentMedia?.stream.embedUrl) ? (
+      <video
+        ref={videoRef}
+        className="tv-video"
+        data-picture
+        preload="auto"
+        style={{ display: showVideo && !embedActive ? "block" : "none" }}
+        playsInline
+      />
+      {showVideo && embedActive && (currentMedia?.embedUrl || currentMedia?.stream.embedUrl) && (
         <iframe
           src={currentMedia.embedUrl || currentMedia.stream.embedUrl}
           className="tv-video"
@@ -1456,8 +1464,6 @@ export function Tv() {
           referrerPolicy="origin"
           style={{ width: "100%", height: "100%", border: "none" }}
         />
-      ) : (
-        <video ref={videoRef} className="tv-video" data-picture preload="auto" style={{ display: showVideo ? "block" : "none" }} playsInline />
       )}
 
       {showVideo && !embedActive && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}

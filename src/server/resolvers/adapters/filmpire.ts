@@ -487,6 +487,12 @@ export function createFilmpireAdapter(): SiteAdapter {
 
       // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
       const alternates: AlternateSource[] = [];
+      const targetSeason = s || "1";
+      const targetEpisode = e || "1";
+      const publicEmbed = isTv
+        ? `https://player.autoembed.co/embed/tv/${id}/${targetSeason}/${targetEpisode}`
+        : `https://player.autoembed.co/embed/movie/${id}`;
+
       for (const sUrl of streamUrls) {
         if (sUrl === chosenStream) continue;
         if (alternates.length >= 4) break;
@@ -504,7 +510,7 @@ export function createFilmpireAdapter(): SiteAdapter {
               url: streamAddress(altFinalUrl, playerUrl),
               type: "hls",
               directUrl: altFinalUrl,
-              embedUrl: playerUrl,
+              embedUrl: publicEmbed,
             },
           });
         } catch {
@@ -521,9 +527,9 @@ export function createFilmpireAdapter(): SiteAdapter {
             url: proxiedUrl,
             type: "hls",
             directUrl: finalStreamUrl,
-            embedUrl: playerUrl,
+            embedUrl: publicEmbed,
           },
-          embedUrl: playerUrl,
+          embedUrl: publicEmbed,
           subtitles: subtitles.length ? subtitles : undefined,
           series: seriesInfo,
           alternates: alternates.length ? alternates : undefined,
