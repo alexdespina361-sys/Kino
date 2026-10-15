@@ -122,6 +122,7 @@ export class PlayerEngine {
     private readonly onChange: (state: PlayerState) => void,
     private readonly onEnded?: () => void,
   ) {
+    video.setAttribute?.("referrerpolicy", "no-referrer");
     video.addEventListener("loadedmetadata", () => {
       clearTimeout(this.directTimer);
       this.loading = false;

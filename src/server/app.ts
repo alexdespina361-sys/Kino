@@ -143,7 +143,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // Screens watching a film together ask for the same pieces of it: the proxy fetches each once and shares it (see `SegmentCache`).
   const segments = new SegmentCache(options.segmentCache ?? segmentCacheFromEnv());
   const proxyStats: ProxyStats = { bytes: 0, requests: 0, refused: 0 };
-  const proxyVideo = options.proxyVideo ?? process.env.PROXY_VIDEO !== "off";
+  const isProxyOff = process.env.PROXY_VIDEO === "off" || process.env.PROXY_VIDEO === "false" || process.env.PROXY_VIDEO === "0";
+  const proxyVideo = options.proxyVideo ?? !isProxyOff;
   // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.
   // `segments` counts the asks for a piece of a film that the proxy answered itself (`hits`) and the ones it had to take to the film's own place
   // (`misses`): with screens watching together, the hits are the share of the load that was not multiplied by the number of screens.)

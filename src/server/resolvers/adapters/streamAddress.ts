@@ -11,6 +11,13 @@ export function streamAddress(raw: string, referer: string, env: NodeJS.ProcessE
   const relay = env.EDGE_STREAM_PROXY_URL?.trim();
   const asked = (base: string) => `${base}?url=${encodeURIComponent(raw)}&referer=${encodeURIComponent(referer)}`;
   if (relay) return asked(relay.replace(/\/$/, ""));
-  if (env.DIRECT_STREAMING === "true") return raw;
+  const isDirect =
+    env.DIRECT_STREAMING === "true" ||
+    env.DIRECT_STREAMING === "on" ||
+    env.DIRECT_STREAMING === "1" ||
+    env.PROXY_VIDEO === "off" ||
+    env.PROXY_VIDEO === "false" ||
+    env.PROXY_VIDEO === "0";
+  if (isDirect) return raw;
   return asked("/api/proxy");
 }

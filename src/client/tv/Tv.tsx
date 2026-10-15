@@ -599,6 +599,7 @@ export function Tv() {
 
   useEffect(() => {
     const video = videoRef.current!;
+    video.setAttribute("referrerpolicy", "no-referrer");
     const publish = (state: PlayerState) => {
       const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current);
       setPlayer(full);

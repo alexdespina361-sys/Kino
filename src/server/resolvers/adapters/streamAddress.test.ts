@@ -18,9 +18,13 @@ describe("streamAddress", () => {
 
   it("is the other end's own address when asked to be", () => {
     expect(streamAddress(raw, page, { DIRECT_STREAMING: "true" })).toBe(raw);
+    expect(streamAddress(raw, page, { DIRECT_STREAMING: "on" })).toBe(raw);
+    expect(streamAddress(raw, page, { DIRECT_STREAMING: "1" })).toBe(raw);
+    expect(streamAddress(raw, page, { PROXY_VIDEO: "off" })).toBe(raw);
   });
 
   it("is the relay's even when the other end's own address is asked for too, which a browser from another website would be turned away from", () => {
     expect(streamAddress(raw, page, { DIRECT_STREAMING: "true", EDGE_STREAM_PROXY_URL: "https://kino-edge.example.workers.dev" })).toBe(asked("https://kino-edge.example.workers.dev"));
+    expect(streamAddress(raw, page, { DIRECT_STREAMING: "on", EDGE_STREAM_PROXY_URL: "https://kino-edge.example.workers.dev" })).toBe(asked("https://kino-edge.example.workers.dev"));
   });
 });
