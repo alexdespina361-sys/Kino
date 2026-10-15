@@ -90,34 +90,105 @@ export function formatQualityLabel(width?: number, height?: number, name?: strin
 }
 
 /**
+ * In-memory & sessionStorage cache for upstream CDN residential stream tokens.
+ * Tokens are valid for 4 hours; we cache them for 2 hours and 50 seconds (7,250,000 ms)
+ * to avoid ever hitting the strict 1-request-per-10-seconds Nginx rate limit.
+ */
+const TOKEN_TTL_MS = (2 * 60 * 60 + 50) * 1000;
+const memoryTokenCache = new Map<string, { token: string; expiresAt: number }>();
+const inFlightTokenFetches = new Map<string, Promise<string | null>>();
+
+export function extractDirectUrl(url: string): string {
+  try {
+    const u = new URL(url, location.href);
+    const target = u.searchParams.get("url") || u.searchParams.get("u");
+    if (target && (target.startsWith("http://") || target.startsWith("https://"))) {
+      return target;
+    }
+  } catch {}
+  return url;
+}
+
+/**
  * Refreshes an upstream CDN stream token from the viewer's client residential IP.
- * The upstream hosts (e.g. perigeeofparchment, diaphanousdogma) require a JWT token bound
- * to the exact requesting IP (generate.php with Access-Control-Allow-Origin: *).
+ * The upstream hosts (e.g. perigeeofparchment, diaphanousdogma, farragoandfulcrum)
+ * require a JWT token bound to the exact requesting IP (generate.php with Access-Control-Allow-Origin: *).
  */
 export async function refreshStreamToken(streamUrl: string): Promise<string> {
   try {
-    const u = new URL(streamUrl);
-    if (!u.pathname.includes("/pl/")) return streamUrl;
-    const genUrl = `${u.origin}/generate.php`;
-    const resp = await fetch(genUrl, { cache: "no-store" });
-    if (!resp.ok) return streamUrl;
-    const text = await resp.text();
-    let token = "";
-    try {
-      const parsed = JSON.parse(text.trim()) as Record<string, string>;
-      token = parsed.token || parsed.data || text.trim();
-    } catch {
-      token = text.trim();
+    const directUrl = extractDirectUrl(streamUrl);
+    const u = new URL(directUrl);
+    if (!u.pathname.includes("/pl/")) return directUrl;
+
+    const origin = u.origin;
+    const now = Date.now();
+
+    // 1. Check in-memory cache
+    const memCached = memoryTokenCache.get(origin);
+    if (memCached && memCached.expiresAt > now) {
+      u.searchParams.set("token", memCached.token);
+      u.searchParams.set("bypass_localize", "true");
+      return u.href;
     }
-    if (token && token.includes(".")) {
+
+    // 2. Check sessionStorage cache (persists across page reloads)
+    try {
+      const stored = sessionStorage.getItem(`kino_tok_${origin}`);
+      if (stored) {
+        const parsed = JSON.parse(stored) as { token: string; expiresAt: number };
+        if (parsed.token && parsed.expiresAt > now) {
+          memoryTokenCache.set(origin, parsed);
+          u.searchParams.set("token", parsed.token);
+          u.searchParams.set("bypass_localize", "true");
+          return u.href;
+        }
+      }
+    } catch {}
+
+    // 3. Deduplicate in-flight fetches so concurrent requests share one single fetch
+    let fetchPromise = inFlightTokenFetches.get(origin);
+    if (!fetchPromise) {
+      fetchPromise = (async () => {
+        try {
+          const genUrl = `${origin}/generate.php`;
+          const resp = await fetch(genUrl, { mode: "cors", credentials: "omit" });
+          if (!resp.ok) return null;
+          const text = await resp.text();
+          let token = "";
+          try {
+            const parsed = JSON.parse(text.trim()) as Record<string, string>;
+            token = parsed.token || parsed.data || text.trim();
+          } catch {
+            token = text.trim();
+          }
+          if (token && token.includes(".")) {
+            const entry = { token, expiresAt: Date.now() + TOKEN_TTL_MS };
+            memoryTokenCache.set(origin, entry);
+            try {
+              sessionStorage.setItem(`kino_tok_${origin}`, JSON.stringify(entry));
+            } catch {}
+            return token;
+          }
+        } catch {
+          // Network or offline: fall back
+        } finally {
+          inFlightTokenFetches.delete(origin);
+        }
+        return null;
+      })();
+      inFlightTokenFetches.set(origin, fetchPromise);
+    }
+
+    const token = await fetchPromise;
+    if (token) {
       u.searchParams.set("token", token);
       u.searchParams.set("bypass_localize", "true");
       return u.href;
     }
+    return directUrl;
   } catch {
-    // If client fetch fails (e.g. network/offline), return original stream URL
+    return streamUrl;
   }
-  return streamUrl;
 }
 
 /**
@@ -245,7 +316,6 @@ export class PlayerEngine {
       this.hls = hls;
       hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
       let retriedProxy = false;
-      let triedNativeHls = false;
       let mediaRecoverAttempts = 0;
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
         console.warn("[HLS EVENT ERROR]", {
@@ -258,19 +328,9 @@ export class PlayerEngine {
         if (data.fatal) {
           if (!retriedProxy && !src.includes("/api/proxy") && (src.startsWith("http://") || src.startsWith("https://"))) {
             retriedProxy = true;
-            console.log("[HLS] Retrying via proxy:", src);
             Object.assign(hls.config, bufferPolicy(this.inParty, true));
             const proxied = new URL(`/api/proxy?url=${encodeURIComponent(src)}`, location.href).href;
             hls.loadSource(proxied);
-            return;
-          }
-
-          if (this.video.canPlayType("application/vnd.apple.mpegurl") && !triedNativeHls && effectiveDirectUrl) {
-            triedNativeHls = true;
-            console.log("[HLS] Network error: attempting native HLS playback...");
-            hls.destroy();
-            this.hls = null;
-            this.playNatively(src, effectiveDirectUrl, generation);
             return;
           }
 

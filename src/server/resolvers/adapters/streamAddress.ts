@@ -8,6 +8,7 @@
  *  - this server (`/api/proxy`).
  */
 export function streamAddress(raw: string, referer: string, env: NodeJS.ProcessEnv = process.env): string {
+  if (raw.includes("/pl/")) return raw;
   const relay = env.EDGE_STREAM_PROXY_URL?.trim();
   const asked = (base: string) => `${base}?url=${encodeURIComponent(raw)}&referer=${encodeURIComponent(referer)}`;
   if (relay) return asked(relay.replace(/\/$/, ""));

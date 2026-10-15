@@ -652,7 +652,6 @@ interface ErrorCardProps {
   onRetry: () => void;
   onLibrary: () => void;
   onEmbed?: () => void;
-  onExtension?: () => void;
 }
 
 /**
@@ -679,11 +678,6 @@ export function ErrorCard(p: ErrorCardProps) {
           {p.onEmbed && (
             <button className="tv-action tv-action-primary" onClick={p.onEmbed} data-testid="error-embed" data-nav>
               <PlayIcon /> {t("tv.playWebPlayer")}
-            </button>
-          )}
-          {p.onExtension && (
-            <button className="tv-action" onClick={p.onExtension} data-testid="error-extension" data-nav>
-              <DownloadIcon /> {t("tv.enableNativeHud")}
             </button>
           )}
           <button className={`tv-action ${p.onEmbed ? "" : "tv-action-primary"}`} onClick={p.onRetry} data-testid="error-retry" data-nav>
