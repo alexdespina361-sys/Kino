@@ -9,4 +9,4 @@ cd "$(dirname "$0")/../.."
 look="${1:-polish}"; part="${2:-tv-hd}"; steps="${3:-02-home}"; out="${4:-.ui-polish/iter/$look}"
 only=(--steps="$steps"); [ "$steps" = "all" ] && only=()
 node node_modules/vite/bin/vite.js build --outDir .ui-polish/dist-iter --emptyOutDir > /dev/null
-CLIENT_DIR=.ui-polish/dist-iter node scripts/ui-walk/run.mjs --ui="$look" --no-build --only="$part" "${only[@]}" ${SCAN:+--scan} ${SIZE:+--size=$SIZE} --out="$out" --port=$((9100 + RANDOM % 800)) | grep -v "^===" || true
+CLIENT_DIR=.ui-polish/dist-iter node scripts/ui-walk/run.mjs --no-build --only="$part" "${only[@]}" ${SCAN:+--scan} ${SIZE:+--size=$SIZE} --out="$out" --port=$((9100 + RANDOM % 800)) | grep -v "^===" || true

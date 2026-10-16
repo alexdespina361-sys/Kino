@@ -5,7 +5,7 @@ const dir = new URL(".", import.meta.url);
 const sheets = readdirSync(dir).filter((name) => name.endsWith(".css"));
 const withoutComments = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
 
-/** What an old TV browser (VIDAA, Tizen, webOS) drops, or worse, drops the whole block around. The classic look does not use these either. */
+/** What an old TV browser (VIDAA, Tizen, webOS) drops, or worse, drops the whole block around. The older sheets do not use these either. */
 const TOO_NEW: [RegExp, string][] = [
   [/@layer\b/, "@layer (a browser that does not know it drops the whole block)"],
   [/@container\b/, "@container"],
@@ -55,7 +55,7 @@ describe("selectorsOf", () => {
   });
 });
 
-describe("the stylesheets of the refined look", () => {
+describe("the stylesheets of the refined layer (src/client/polish)", () => {
   it("are there", () => {
     expect(sheets).toContain("base.css");
   });
@@ -63,14 +63,14 @@ describe("the stylesheets of the refined look", () => {
   for (const name of sheets) {
     const css = withoutComments(readFileSync(new URL(name, dir), "utf8"));
 
-    it(`${name}: starts every rule with :root[data-ui="polish"], so none of it reaches the classic look`, () => {
+    it(`${name}: starts every rule with :root[data-ui="polish"], so the layer stays one that can be taken off the page by taking off the attribute`, () => {
       const offenders = selectorsOf(css)
         .flatMap((list) => list.split(",").map((one) => one.trim()))
         .filter((one) => !one.startsWith(':root[data-ui="polish"]'));
       expect(offenders).toEqual([]);
     });
 
-    it(`${name}: names its @keyframes polish-..., since keyframes are global and one of the same name as the classic look's would change the classic look`, () => {
+    it(`${name}: names its @keyframes polish-..., since keyframes are global and one of the same name as an older sheet's would change that animation by accident`, () => {
       const names = [...css.matchAll(/@keyframes\s+([^\s{]+)/g)].map((match) => match[1] ?? "");
       expect(names.filter((one) => !one.startsWith("polish-"))).toEqual([]);
     });

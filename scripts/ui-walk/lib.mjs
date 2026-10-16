@@ -1,13 +1,13 @@
 // Shared pieces of the screenshot walk: a made-up catalogue with drawn posters, the way each device is opened, the step/snap helpers.
-// Run by run.mjs against a server on its own (accounts live in the server's memory), with UI=classic|polish choosing the look the pages wear.
+// Run by run.mjs against a server on its own (accounts live in the server's memory). There is one look (the refined one), so nothing chooses it.
 import { chromium, devices } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { saveScan } from "./scan.mjs";
 
 export { chromium };
 
-/** The look the pages wear (src/client/shared/look.ts): the walk is run once for each, and the two sets of pictures are compared. */
-export const look = process.env.UI === "polish" ? "polish" : "classic";
+/** The folder name the pictures and scans go under. There is one look now (it used to be two, compared); the name stays so the old folders and notes still read. */
+export const look = "polish";
 export const base = process.env.BASE ?? "http://127.0.0.1:8810";
 export const out = process.env.OUT ?? `.ui-polish/shots/${look}`;
 /** With SCAN=1 every picture is also measured (scan.mjs): one JSON of computed styles per picture, for drift.mjs. */
@@ -166,7 +166,7 @@ export const phoneName = sized ? `phone-${PHONE.width}x${PHONE.height}` : "phone
 export const PHONE_SMALL = { width: 360, height: 800 };
 
 /** What a device that came back after leaving full screen once and turned the link box on looks like (the pages start like this in the tests too). */
-const kept = (first) => [...(first ? [] : [{ name: "kino.fullscreen.left", value: "1" }, { name: "kino.linkbox", value: "1" }]), ...(look === "polish" ? [{ name: "kino.ui", value: "polish" }] : [])];
+const kept = (first) => [...(first ? [] : [{ name: "kino.fullscreen.left", value: "1" }, { name: "kino.linkbox", value: "1" }])];
 const storageOf = (first) => ({ cookies: [], origins: kept(first).length > 0 ? [{ origin: base, localStorage: kept(first) }] : [] });
 
 export async function openContext(browser, viewport, { phone = false, first = false, seed = {}, locale = "en-US" } = {}) {

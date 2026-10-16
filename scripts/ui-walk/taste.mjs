@@ -30,7 +30,7 @@ function walk(question, variant, shot) {
   if (question.attr) env.TASTE_ATTR = question.attr;
   const run = spawnSync(
     process.execPath,
-    [here("run.mjs"), "--ui=polish", "--no-build", `--only=${shot.part}`, `--steps=${shot.steps.join(",")}`, `--out=${outRoot}/${question.id}/${variant}`, `--port=${port++}`],
+    [here("run.mjs"), "--no-build", `--only=${shot.part}`, `--steps=${shot.steps.join(",")}`, `--out=${outRoot}/${question.id}/${variant}`, `--port=${port++}`],
     { env, encoding: "utf8" },
   );
   const failed = (run.stdout ?? "").split("\n").filter((line) => line.startsWith("FAIL"));
