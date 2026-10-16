@@ -1,0 +1,2 @@
+/* B4: names under the pictures. B shows the name and year of the picture the remote is on only (A: of every picture). */
+:root[data-ui="polish"] .tv-tile:not(:focus-visible):not(:hover) .tv-tile-body > :not(.tv-tile-art) { visibility: hidden; }

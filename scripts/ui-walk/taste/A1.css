@@ -1,0 +1,3 @@
+/* A1: the accent as a fill under white words. Blue and purple are too light for white (3.76 and 3.91 against 4.5): B is a fill one step deeper (4.93 and 4.99); the bright one stays for rings and text. */
+:root[data-accent="blue"] { --accent: #1f6ae6 !important; --accent-hover: #3b82f0 !important; --accent-rgb: 31 106 230 !important; }
+:root[data-accent="purple"] { --accent: #8847f0 !important; --accent-hover: #a066f5 !important; --accent-rgb: 136 71 240 !important; }

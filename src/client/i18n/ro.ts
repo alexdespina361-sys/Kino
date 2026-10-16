@@ -152,7 +152,7 @@ export const ro: Dictionary = {
   "settings.tapToPauseHelp": "Dezactivat: o atingere sau un clic pe imagine doar arată sau ascunde butoanele. Activat: pune filmul pe pauză și îl reia (o atingere cât timp butoanele sunt ascunse doar le arată mai întâi). Pauza și redarea merg oricum cu butonul mare din mijloc și cu tasta OK a telecomenzii.",
   "settings.adaptiveQuality": "Adaptează calitatea imaginii la conexiune",
   "settings.adaptiveQualityHelp": "Activat: filmul pornește în cea mai joasă calitate, ca să înceapă imediat, și continuă în cea mai bună pe care o duce conexiunea: mai jos când nu ține pasul, mai sus când poate. Dezactivat: mereu cea mai înaltă calitate disponibilă. Se aplică de la următorul film; o calitate aleasă în player rămâne.",
-  "settings.playbackHelp": "Pe un ecran tactil: atinge de două ori partea stângă sau dreaptă a imaginii ca să sari înapoi sau înainte, iar dacă ții degetul apăsat pe imagine, filmul rulează cu viteză dublă.",
+  "settings.playbackHelp": "Atinge de două ori sau dă dublu clic pe partea stângă sau dreaptă a imaginii ca să sari înapoi sau înainte, iar dacă ții apăsat pe imagine cu degetul sau cu butonul mouse-ului, filmul rulează cu viteză dublă.",
   "settings.pasteLink": "Lipește un link",
   "settings.pasteLinkSwitch": "Arată pe ecranul principal caseta pentru lipit un link",
   "settings.linkBoxHelp": "O casetă pe ecranul principal în care lipești linkul unui videoclip sau al unei pagini, ca să ruleze pe televizor. Alegerea rămâne doar pe acest telefon.",
@@ -240,6 +240,8 @@ export const ro: Dictionary = {
 
   /* the account pages: settings, devices, signing another device in */
   "settings.playback": "Redare",
+  "settings.appearance": "Aspect",
+  "settings.ratingsFriends": "Note și prieteni",
   "settings.subtitleDefaults": "Se arată mai întâi {languages}. Adaugă propriile limbi pentru a schimba asta.",
   "settings.addLanguage": "Adaugă o limbă",
   "settings.moveUp": "Mută mai sus",
@@ -311,6 +313,8 @@ export const ro: Dictionary = {
   "tv.space": "Spațiu",
   "tv.delete": "Șterge",
   "tv.clear": "Șterge tot",
+  "tv.caretLeft": "Mută cursorul la stânga",
+  "tv.caretRight": "Mută cursorul la dreapta",
   "tv.openCategory": "Deschide",
 
   /* the player: menus, sheets and the controls over the picture */
@@ -621,8 +625,6 @@ export const ro: Dictionary = {
   "profile.friendsNew_one": "{count} necitit",
   "profile.friendsNew_few": "{count} necitite",
   "profile.friendsNew_other": "{count} de necitite",
-  "profile.settingsNote": "Cont, limbă, redare și altele",
-  "profile.signInNote": "Păstrează listele și notele pe toate ecranele",
   "tv.listEmpty": "Nimic aici încă. Deschide un titlu și adaugă-l în această listă.",
   "list.favourites": "Favorite",
   "lists.new": "Listă nouă",

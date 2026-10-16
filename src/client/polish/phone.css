@@ -1,0 +1,465 @@
+/*
+ * The phone (the remote and the account pages around it) in the refined look (docs/ui-polish). Loaded after controller.css; every rule starts
+ * with :root[data-ui="polish"] (polish.test.ts), and all but the tokens go on to say .phone-ui (the phone's own screens, and the layers over them that an
+ * unpaired phone shows next to its first page: an account, a list of TVs, a title), so that the TV page (which loads the same bundle) is never touched.
+ * The classic sheets write sizes as rem that are a hair apart (13 of them between 12 and 18 px); this one says six sizes, three corners, and what a surface is, once.
+ */
+
+/* ------------------------------ tokens ------------------------------ */
+
+:root[data-ui="polish"] {
+  --p-fs-1: 13px; /* a count, a caption, a note under a field */
+  --p-fs-2: 14px; /* a chip, a link's name, a line in a row */
+  --p-fs-3: 16px; /* body, in any colour (also what stops a phone zooming into a field) */
+  --p-fs-4: 18px; /* a heading of a sheet, a page or a row of pictures */
+  --p-fs-5: 24px; /* a title */
+  --p-fs-6: 32px; /* a code */
+  --p-r-1: 8px; /* small things: a picture of an episode, a mini button */
+  --p-r-2: 12px; /* controls, rows, cards, pictures */
+  --p-r-3: 22px; /* what comes up from the edge: a sheet, a toast, a profile's card */
+  --surface-3: #2e2e34; /* pressed, and what the finger is on */
+  --overlay: #1c1c20;
+  --p-label: #d2d2d9; /* the heading of a group: lighter than the words it heads, never louder than a heading of the page */
+  --p-line: rgba(255, 255, 255, 0.1);
+  --p-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* A sheet is a surface of its own: what lies on it is one step lighter than it (the classic look has some of it darker, some lighter). */
+:root[data-ui="polish"] .phone-ui .sheet {
+  --surface: #25252a;
+  --surface-2: #2e2e34;
+  --surface-3: #3a3a42;
+  background: var(--overlay);
+  border-radius: var(--p-r-3) var(--p-r-3) 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+  max-height: min(86vh, calc(100% - 8px)); /* (86vh is the screen with a browser's bar gone; the backdrop is what is there to be seen) */
+}
+:root[data-ui="polish"] .phone-ui .sheet-grip { width: 36px; background: rgba(255, 255, 255, 0.24); }
+/* what comes up from the edge, or in from the side, slows down as it lands: the one ease, as on the TV */
+:root[data-ui="polish"] .phone-ui .sheet,
+:root[data-ui="polish"] .phone-ui .page { animation-timing-function: var(--p-ease); }
+:root[data-ui="polish"] .phone-ui .sheet-head h2 { font-size: var(--p-fs-4); font-weight: 700; }
+
+/* ------------------------------ writing ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .muted { font-size: var(--p-fs-3); }
+:root[data-ui="polish"] .phone-ui .muted.small { font-size: var(--p-fs-1); }
+:root[data-ui="polish"] .phone.pair h1,
+:root[data-ui="polish"] .phone-ui .home h2,
+:root[data-ui="polish"] .phone-ui .now-playing h2,
+:root[data-ui="polish"] .phone-ui .account-who h1,
+:root[data-ui="polish"] .phone-ui .account-pitch h1,
+:root[data-ui="polish"] .phone.choose h1,
+:root[data-ui="polish"] .phone-ui .link-approve h2 { font-size: var(--p-fs-5); font-weight: 700; letter-spacing: -0.01em; }
+:root[data-ui="polish"] .phone-ui .top-tv h1,
+:root[data-ui="polish"] .phone-ui .page-head h2,
+:root[data-ui="polish"] .phone-ui .lib-row h3 { font-size: var(--p-fs-4); font-weight: 700; }
+:root[data-ui="polish"] .phone-ui .friend-code { font-size: var(--p-fs-4); }
+:root[data-ui="polish"] .phone-ui .link-code-input { font-size: var(--p-fs-5); }
+:root[data-ui="polish"] .phone-ui .your-tag-line b { font-size: var(--p-fs-4); }
+:root[data-ui="polish"] .phone-ui .brand { font-size: var(--p-fs-3); }
+:root[data-ui="polish"] .phone-ui .poster-initial { font-size: var(--p-fs-6); }
+:root[data-ui="polish"] .phone-ui small { font-size: var(--p-fs-1); }
+:root[data-ui="polish"] .phone-ui .copy-link-button,
+:root[data-ui="polish"] .phone-ui .choice-note,
+:root[data-ui="polish"] .phone-ui .rating-badge,
+:root[data-ui="polish"] .phone-ui .episode-no,
+:root[data-ui="polish"] .phone-ui .rating-head-value,
+:root[data-ui="polish"] .phone-ui .profile-name,
+:root[data-ui="polish"] .phone-ui .inbox-item .btn,
+:root[data-ui="polish"] .phone-ui .friend-party .btn,
+:root[data-ui="polish"] .phone-ui .friend-row.kept .btn,
+:root[data-ui="polish"] .phone-ui .banner,
+:root[data-ui="polish"] .phone-ui .status,
+:root[data-ui="polish"] .phone-ui .state,
+:root[data-ui="polish"] .phone-ui .seek-times,
+:root[data-ui="polish"] .phone-ui .field-btn,
+:root[data-ui="polish"] .phone-ui .row-link,
+:root[data-ui="polish"] .phone-ui .lib-title,
+:root[data-ui="polish"] .phone-ui .chip-text b,
+:root[data-ui="polish"] .phone-ui .rating-line,
+:root[data-ui="polish"] .phone-ui .rating-quote,
+:root[data-ui="polish"] .phone-ui .auth-note,
+:root[data-ui="polish"] .phone-ui .auth-switch,
+:root[data-ui="polish"] .phone-ui .auth-error,
+:root[data-ui="polish"] .phone-ui .auth-ok,
+:root[data-ui="polish"] .phone-ui .or,
+:root[data-ui="polish"] .phone-ui .role-switch { font-size: var(--p-fs-2); }
+:root[data-ui="polish"] .phone-ui .tv-status,
+:root[data-ui="polish"] .phone-ui .badge,
+:root[data-ui="polish"] .phone-ui .lib-year,
+:root[data-ui="polish"] .phone-ui .episode-note,
+:root[data-ui="polish"] .phone-ui .episode-now,
+:root[data-ui="polish"] .phone-ui .episode-about,
+:root[data-ui="polish"] .phone-ui .cap-count,
+:root[data-ui="polish"] .phone-ui .party-state,
+:root[data-ui="polish"] .phone-ui .party-count,
+:root[data-ui="polish"] .phone-ui .rating-count,
+:root[data-ui="polish"] .phone-ui .rating-facts > *,
+:root[data-ui="polish"] .phone-ui .rating-item .rating-facts > *,
+:root[data-ui="polish"] .phone-ui .rating-progress,
+:root[data-ui="polish"] .phone-ui .friend-text small,
+:root[data-ui="polish"] .phone-ui .inbox-text small,
+:root[data-ui="polish"] .phone-ui .language-rank,
+:root[data-ui="polish"] .phone-ui .auth-field > small,
+:root[data-ui="polish"] .phone-ui .code-card .copy-link-url,
+:root[data-ui="polish"] .phone-ui .code-card .copy-link-note { font-size: var(--p-fs-1); }
+:root[data-ui="polish"] .phone-ui .auth-field > span:first-child { font-size: var(--p-fs-2); letter-spacing: 0; }
+:root[data-ui="polish"] .phone-ui .badge { letter-spacing: 0; }
+:root[data-ui="polish"] .phone-ui .lib-art .score-badge,
+:root[data-ui="polish"] .phone-ui .lib-result-art .score-badge { font-size: var(--p-fs-1); }
+
+/* Over a group of things, one way of saying what the group is: in words, not capitals (a capital label wraps into an orphan the moment it has a count in it). A heading of a group is as large as the body and bold, in a lighter grey than the words it heads, so that it is told from the label of a field (smaller, quiet) without a capital's help. */
+:root[data-ui="polish"] .phone-ui .group h3,
+:root[data-ui="polish"] .phone-ui .sheet-section {
+  color: var(--p-label);
+  font-size: var(--p-fs-3);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+:root[data-ui="polish"] .phone-ui .cap-label,
+:root[data-ui="polish"] .phone-ui .code-card-title,
+:root[data-ui="polish"] .phone-ui .chip-text small,
+:root[data-ui="polish"] .phone-ui .avatar-picker legend {
+  color: var(--p-label);
+  font-size: var(--p-fs-1);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ------------------------------ buttons, chips, rows ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .btn { min-height: 48px; border-radius: var(--p-r-2); transition: transform 0.08s var(--p-ease), background 0.15s var(--p-ease); }
+:root[data-ui="polish"] .phone-ui .friend-row.kept .btn,
+:root[data-ui="polish"] .phone-ui .inbox-item .btn,
+:root[data-ui="polish"] .phone-ui .friend-party .btn,
+:root[data-ui="polish"] .phone-ui .your-tag .copy-link-button,
+:root[data-ui="polish"] .phone-ui .code-card .copy-code .copy-link-button,
+:root[data-ui="polish"] .phone-ui .delay-buttons .btn { min-height: 44px; }
+:root[data-ui="polish"] .phone-ui .btn-red:active:not(:disabled) { background: var(--accent-hover); }
+/* What cannot be pressed yet is not an error: grey, not the accent at half strength (that is what a failure looks like). */
+:root[data-ui="polish"] .phone-ui .btn-red:disabled { opacity: 1; background: var(--surface-2); color: var(--muted); }
+/* Taking something away is told by its words and its colour, on a plain surface: red as a fill is what is chosen. */
+:root[data-ui="polish"] .phone-ui .btn-danger { background: var(--surface-2); color: var(--bad); }
+:root[data-ui="polish"] .phone-ui .btn-danger[data-asking="true"] { background: var(--bad); color: #0b0b0c; }
+:root[data-ui="polish"] .phone-ui .icon-btn { width: 44px; height: 44px; }
+:root[data-ui="polish"] .phone-ui .icon-btn:active { background: var(--surface-2); }
+:root[data-ui="polish"] .phone-ui .code-input { border-radius: var(--p-r-2); }
+
+:root[data-ui="polish"] .phone-ui .chip,
+:root[data-ui="polish"] .phone-ui .choice,
+:root[data-ui="polish"] .phone-ui .switch-row,
+:root[data-ui="polish"] .phone-ui .menu,
+:root[data-ui="polish"] .phone-ui .banner,
+:root[data-ui="polish"] .phone-ui .code-card,
+:root[data-ui="polish"] .phone-ui .rating-box,
+:root[data-ui="polish"] .phone-ui .friend-row,
+:root[data-ui="polish"] .phone-ui .friend-code-card,
+:root[data-ui="polish"] .phone-ui .inbox-item,
+:root[data-ui="polish"] .phone-ui .your-tag,
+:root[data-ui="polish"] .phone-ui .language-list li,
+:root[data-ui="polish"] .phone-ui .device-list li,
+:root[data-ui="polish"] .phone-ui .delay-row,
+:root[data-ui="polish"] .phone-ui .episode,
+:root[data-ui="polish"] .phone-ui .editor-confirm,
+:root[data-ui="polish"] .phone-ui .title-art,
+:root[data-ui="polish"] .phone-ui .cap-frame { border-radius: var(--p-r-2); }
+:root[data-ui="polish"] .phone-ui .field input,
+:root[data-ui="polish"] .phone-ui .auth-field input,
+:root[data-ui="polish"] .phone-ui .rating-note { border-radius: var(--p-r-2); }
+:root[data-ui="polish"] .phone-ui .lib-art,
+:root[data-ui="polish"] .phone-ui .lib-result-main { border-radius: var(--p-r-2); }
+:root[data-ui="polish"] .phone-ui .episode-still,
+:root[data-ui="polish"] .phone-ui .lib-result-art,
+:root[data-ui="polish"] .phone-ui .code-card-top > svg,
+:root[data-ui="polish"] .phone-ui .mini { border-radius: var(--p-r-1); }
+:root[data-ui="polish"] .phone-ui .account-card { border-radius: var(--p-r-3); }
+:root[data-ui="polish"] .phone-ui .scanner-frame { border-radius: var(--p-r-3); }
+
+/* Chosen: the accent as a tint with a ring (and the dot, where a row has one); white is for nothing on the phone. */
+:root[data-ui="polish"] .phone-ui .choice.active,
+:root[data-ui="polish"] .phone-ui .episode.now { background: rgb(var(--accent-rgb) / 0.2); box-shadow: inset 0 0 0 1.5px var(--accent); }
+:root[data-ui="polish"] .phone-ui .lib-pill[aria-pressed="true"],
+:root[data-ui="polish"] .phone-ui .cap-choice.active,
+:root[data-ui="polish"] .phone-ui .season.active,
+:root[data-ui="polish"] .phone-ui .segmented button[aria-checked="true"] {
+  background: rgb(var(--accent-rgb) / 0.22);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+:root[data-ui="polish"] .phone-ui .cap-count { color: var(--text); }
+:root[data-ui="polish"] .phone-ui .cap-choice.active .cap-count { background: rgb(var(--accent-rgb) / 0.3); }
+:root[data-ui="polish"] .phone-ui .segmented { background: var(--surface); }
+:root[data-ui="polish"] .phone-ui .segmented button { border-radius: var(--p-r-1); }
+:root[data-ui="polish"] .phone-ui .segmented:not(.compact) button { font-size: var(--p-fs-3); }
+:root[data-ui="polish"] .phone-ui .segmented.compact button { font-size: var(--p-fs-2); }
+
+/* Small things to press are 44 px tall: a thumb's size, whatever the words in them. */
+:root[data-ui="polish"] .phone-ui .lib-pill,
+:root[data-ui="polish"] .phone-ui .cap-choice,
+:root[data-ui="polish"] .phone-ui .season,
+:root[data-ui="polish"] .phone-ui .chip-pill,
+:root[data-ui="polish"] .phone-ui .signin-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding-block: 0;
+  font-size: var(--p-fs-2);
+}
+:root[data-ui="polish"] .phone-ui .segmented.compact button { min-height: 44px; padding-block: 0; }
+:root[data-ui="polish"] .phone-ui .state-action { min-height: 44px; margin-block: -10px; display: inline-flex; align-items: center; font-size: var(--p-fs-2); }
+:root[data-ui="polish"] .phone-ui .menu-row { min-height: 52px; padding: 14px 16px; }
+:root[data-ui="polish"] .phone-ui .auth-switch { min-height: 44px; }
+:root[data-ui="polish"] .phone-ui .segmented button { min-height: 44px; padding-block: 0; }
+:root[data-ui="polish"] .phone-ui .swatch { flex-basis: 44px; }
+:root[data-ui="polish"] .phone-ui .seek-bar { padding-block: 20px; }
+/* The drawing stays as small as it was; a ring of 4-6 px around it that nothing else uses is the part a finger can land on (8 px between neighbours, so two never share one). */
+:root[data-ui="polish"] .phone-ui .mini { position: relative; }
+:root[data-ui="polish"] .phone-ui .mini::after { content: ""; position: absolute; inset: -6px -5px; }
+:root[data-ui="polish"] .phone-ui .field-btn { min-width: 36px; min-height: 36px; justify-content: center; }
+:root[data-ui="polish"] .phone-ui .field-btn::after { content: ""; position: absolute; inset: -4px; }
+:root[data-ui="polish"] .phone-ui .lib-corner { gap: 8px; }
+:root[data-ui="polish"] .phone-ui .lib-card .lib-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-ui="polish"] .phone-ui .lib-round::after { inset: -4px; }
+:root[data-ui="polish"] .phone-ui .row-link { margin-block: -13px; padding: 13px 0 13px 12px; }
+:root[data-ui="polish"] .phone-ui .device-name-button { margin: -12px 0; padding: 12px 0; }
+
+/* A tap is felt: one press for what had none (the other families keep theirs). */
+:root[data-ui="polish"] .phone-ui .field-btn,
+:root[data-ui="polish"] .phone-ui .lib-pill,
+:root[data-ui="polish"] .phone-ui .season,
+:root[data-ui="polish"] .phone-ui .episode,
+:root[data-ui="polish"] .phone-ui .secret-eye,
+:root[data-ui="polish"] .phone-ui .auth-switch,
+:root[data-ui="polish"] .phone-ui .segmented button,
+:root[data-ui="polish"] .phone-ui .swatch,
+:root[data-ui="polish"] .phone-ui .switch-row,
+:root[data-ui="polish"] .phone-ui .chip,
+:root[data-ui="polish"] .phone-ui .mini { transition: transform 0.08s var(--p-ease), background 0.15s var(--p-ease), color 0.15s var(--p-ease); }
+:root[data-ui="polish"] .phone-ui .field-btn:active:not(:disabled),
+:root[data-ui="polish"] .phone-ui .lib-pill:active:not(:disabled),
+:root[data-ui="polish"] .phone-ui .season:active,
+:root[data-ui="polish"] .phone-ui .episode:active,
+:root[data-ui="polish"] .phone-ui .secret-eye:active,
+:root[data-ui="polish"] .phone-ui .auth-switch:active,
+:root[data-ui="polish"] .phone-ui .segmented button:active,
+:root[data-ui="polish"] .phone-ui .swatch:active,
+:root[data-ui="polish"] .phone-ui .switch-row:active,
+:root[data-ui="polish"] .phone-ui .chip:active,
+:root[data-ui="polish"] .phone-ui .mini:active:not(:disabled) { transform: scale(0.97); }
+
+:root[data-ui="polish"] .phone-ui .menu { background: var(--surface); }
+:root[data-ui="polish"] .phone-ui .menu-row { border-bottom-color: var(--p-line); }
+:root[data-ui="polish"] .phone-ui .menu-row:active,
+:root[data-ui="polish"] .phone-ui .choice:active:not(.active),
+:root[data-ui="polish"] .phone-ui .friend-row:active { background: var(--surface-3); }
+
+/* ------------------------------ lists and cards ------------------------------ */
+
+/*
+ * What belongs together is one card with a hairline between its rows, and cards are told apart by the space between them (a card to every row is a stack of
+ * ten the same, which a thumb has to read to the end): rows that lead somewhere (a chevron), rows that switch something (the words of each inside its row,
+ * so a tap on them is a tap on the row), and the one thing that takes something away, on its own at the end.
+ */
+:root[data-ui="polish"] .phone-ui .menu-groups { display: flex; flex-direction: column; gap: 16px; }
+/* (a card in a sheet keeps all its rows and the sheet scrolls: a card that clips what it holds would let the sheet squeeze it instead) */
+:root[data-ui="polish"] .phone-ui .sheet-body > .menu { flex: none; }
+:root[data-ui="polish"] .phone-ui .switch-row { min-height: 52px; padding: 14px 16px; }
+:root[data-ui="polish"] .phone-ui .switch-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+:root[data-ui="polish"] .phone-ui .switch-hint { color: var(--muted); font-weight: 400; line-height: 1.4; }
+/* (the switch stays level with the first line of the words, however many lines the hint under them takes) */
+:root[data-ui="polish"] .phone-ui .switch-row.has-hint { align-items: flex-start; }
+:root[data-ui="polish"] .phone-ui .switch-row.has-hint .switch { margin-top: -2px; }
+:root[data-ui="polish"] .phone-ui .menu > .switch-row { border-radius: 0; border-bottom: 1px solid var(--p-line); background: transparent; }
+:root[data-ui="polish"] .phone-ui .menu > .switch-row:last-child { border-bottom: 0; }
+:root[data-ui="polish"] .phone-ui .menu > .switch-row:active { transform: none; background: var(--surface-3); }
+:root[data-ui="polish"] .phone-ui .menu-row:focus-visible,
+:root[data-ui="polish"] .phone-ui .menu > .switch-row:focus-visible { outline: none; background: var(--surface-3); box-shadow: inset 0 0 0 2px #fff; }
+/* On a sheet every card is the one tone (the code and the way out are, and so are the lists). */
+:root[data-ui="polish"] .phone-ui .sheet .menu { background: var(--surface-2); }
+/* The colours are a card, as the language is, the six spread across it. Their gap is the least between two: six of 44 px and five of 6 fit a 360 px phone's card, so none is squeezed under a thumb's size. */
+:root[data-ui="polish"] .phone-ui .swatches { gap: 6px; justify-content: space-between; padding: 12px 14px; border-radius: var(--p-r-2); background: var(--surface); }
+:root[data-ui="polish"] .phone-ui .swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px #fff; }
+/* Each of the settings' groups has room round it, so that the heading of the next is not taken for a line of the one before. */
+:root[data-ui="polish"] .phone-ui .page-stack[data-testid="settings-page"] { gap: 28px; }
+
+/* ------------------------------ remote ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .now-playing { gap: 4px; }
+/* What is played stays at the top, what is pressed sinks to the bottom of the screen, where a thumb rests (the classic remote ends half way down and leaves the rest empty). */
+:root[data-ui="polish"] .phone-ui .remote { display: flex; flex: 1 1 auto; flex-direction: column; gap: 16px; }
+:root[data-ui="polish"] .phone-ui .remote-controls,
+:root[data-ui="polish"] .phone-ui .remote-extras { display: flex; flex-direction: column; gap: 16px; }
+:root[data-ui="polish"] .phone-ui .remote-controls { margin-top: auto; }
+/* A hint that comes and goes lies over the chips instead of shoving the buttons under the thumb that just pressed one. */
+:root[data-ui="polish"] .phone-ui .remote-extras { position: relative; }
+:root[data-ui="polish"] .phone-ui .remote-extras > .banner { position: absolute; z-index: 2; right: 0; bottom: 100%; left: 0; margin-bottom: 8px; background: var(--surface-2); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+:root[data-ui="polish"] .phone-ui .round { background: var(--surface-2); }
+:root[data-ui="polish"] .phone-ui .round:active:not(:disabled) { background: var(--surface-3); }
+:root[data-ui="polish"] .phone-ui .round.big { background: #fff; color: #0b0b0c; }
+:root[data-ui="polish"] .phone-ui .round.big:active:not(:disabled) { background: #e6e6ea; }
+:root[data-ui="polish"] .phone-ui .seek-track { background: rgba(255, 255, 255, 0.18); }
+:root[data-ui="polish"] .phone-ui .chip { background: var(--surface); }
+:root[data-ui="polish"] .phone-ui .chip:active { background: var(--surface-2); }
+:root[data-ui="polish"] .phone-ui .actions .btn { font-size: var(--p-fs-1); }
+:root[data-ui="polish"] .phone-ui .state-action { background: var(--surface-2); }
+
+/* ------------------------------ pictures ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .lib-card:focus-visible .lib-art { box-shadow: 0 0 0 2px #fff; }
+:root[data-ui="polish"] .phone-ui .lib-card:active .lib-art { transform: scale(0.97); box-shadow: 0 0 0 2px #fff; }
+:root[data-ui="polish"] .phone-ui .lib-round.lib-add[aria-pressed="true"] { background: rgba(0, 0, 0, 0.62); color: var(--accent-hover); box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.8); }
+:root[data-ui="polish"] .phone-ui .lib-result > .lib-round.lib-add[aria-pressed="true"] { background: var(--surface-2); color: var(--accent-hover); box-shadow: inset 0 0 0 1.5px var(--accent); }
+:root[data-ui="polish"] .phone-ui .rating-box { background: var(--surface); }
+:root[data-ui="polish"] .phone-ui .rating-score { border-radius: var(--p-r-2); }
+
+/* ------------------------------ the phone's pages ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .page-head { padding-bottom: 8px; }
+:root[data-ui="polish"] .phone-ui .group { gap: 8px; }
+:root[data-ui="polish"] .phone-ui .profile-tile:focus-visible .profile-picture,
+:root[data-ui="polish"] .phone-ui .avatar-choice[aria-checked="true"] { box-shadow: 0 0 0 3px #fff; }
+:root[data-ui="polish"] .phone-ui .avatar-button { width: 44px; height: 44px; display: grid; place-items: center; font-size: 36px; }
+:root[data-ui="polish"] .phone-ui .editor-confirm { background: rgba(255, 107, 107, 0.1); }
+
+/* ------------------------------ one message, one look ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .toast,
+:root[data-ui="polish"] .phone-ui .account-toast {
+  border-radius: var(--p-r-3);
+  background: rgba(245, 245, 247, 0.97);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  font-size: var(--p-fs-2);
+  font-weight: 600;
+}
+:root[data-ui="polish"] .phone-ui .toast { animation-duration: 3.5s; }
+:root[data-ui="polish"] .phone-ui .error.banner,
+:root[data-ui="polish"] .phone-ui .auth-error { border-radius: var(--p-r-2); background: rgba(255, 107, 107, 0.12); }
+
+/* ------------------------------ friends ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .friend-pic[data-online="true"]::after { background: var(--ok); }
+:root[data-ui="polish"] .phone-ui .friend-row:focus-visible { background: var(--surface-2); }
+:root[data-ui="polish"] .phone-ui .bell-badge { font-size: var(--p-fs-1); }
+/* A friend's card: the line under the name (online, and since when) wraps rather than being cut with an ellipsis: the date is the point of it (and "Friends since 13 Oct 2026" is longer in another language). */
+:root[data-ui="polish"] .phone-ui [data-testid="friend-page"] .account-who .muted { font-size: var(--p-fs-2); white-space: normal; }
+
+/* ------------------------------ held sideways ------------------------------ */
+
+/*
+ * A phone on its side is 360-430 px tall and 800-930 wide. The classic look keeps its 520 px column in the middle of that and lets it scroll, so the
+ * remote's buttons, a title's Play and a menu's rows end up below the fold with a third of the width empty on both sides. Here the width is used:
+ * the page runs edge to edge (clear of a notch), what was a stack becomes two columns where that saves height, and the pictures and the
+ * controls are not made smaller. It is the height that decides (a short window is a cramped one, whatever it is a window of), not the width.
+ */
+@media (orientation: landscape) and (max-height: 520px) {
+  :root[data-ui="polish"] .phone-ui { --p-pad: max(20px, env(safe-area-inset-left), env(safe-area-inset-right)); }
+  :root[data-ui="polish"] .phone {
+    max-width: none;
+    gap: 10px;
+    padding: max(8px, env(safe-area-inset-top)) var(--p-pad) max(16px, env(safe-area-inset-bottom));
+  }
+  /* (the rows of pictures bleed to the screen's edge, in line with the page's own edge) */
+  :root[data-ui="polish"] .phone-ui .lib-scroller { margin: 0 calc(var(--p-pad) * -1); padding: 0 var(--p-pad) 6px; scroll-padding: 0 var(--p-pad); }
+
+  /* home: what to say and where to say it share the first line */
+  :root[data-ui="polish"] .phone-ui .home { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 28px; align-items: start; }
+  :root[data-ui="polish"] .phone-ui .home > * { grid-column: 1 / -1; }
+  :root[data-ui="polish"] .phone-ui .home > h2 { grid-column: 1; grid-row: 1; align-self: end; }
+  :root[data-ui="polish"] .phone-ui .home > .muted { grid-column: 1; grid-row: 2; align-self: start; }
+  :root[data-ui="polish"] .phone-ui .home > .play-link { grid-column: 2; grid-row: 1 / span 2; }
+
+  /* the remote: the title and what is playing, then the transport, on the left; the extras and the three big buttons on the right, under the thumb of that hand */
+  :root[data-ui="polish"] .phone-ui .remote { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 8px 32px; }
+  :root[data-ui="polish"] .phone-ui .now-playing { grid-column: 1; grid-row: 1; }
+  :root[data-ui="polish"] .phone-ui .remote-controls { grid-column: 1; grid-row: 2; align-self: end; margin-top: 0; gap: 8px; }
+  :root[data-ui="polish"] .phone-ui .remote-extras { grid-column: 2; grid-row: 1 / span 2; align-self: end; gap: 10px; }
+  :root[data-ui="polish"] .phone-ui .round { width: 56px; height: 56px; }
+  :root[data-ui="polish"] .phone-ui .round.big { width: 72px; height: 72px; }
+  :root[data-ui="polish"] .phone-ui .transport { margin: 0; }
+
+  /* the first page: the words on one side, the ways to connect on the other */
+  :root[data-ui="polish"] .phone.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr auto; gap: 8px 40px; align-items: center; text-align: left; }
+  :root[data-ui="polish"] .phone.pair .pair-top { grid-column: 1 / -1; margin-bottom: 0; }
+  :root[data-ui="polish"] .phone.pair .pair-icon { display: none; }
+  :root[data-ui="polish"] .phone.pair .pair-copy,
+  :root[data-ui="polish"] .phone.pair .pair-actions { display: flex; flex-direction: column; gap: 10px; }
+  :root[data-ui="polish"] .phone.pair .pair-copy { grid-column: 1; grid-row: 2; }
+  :root[data-ui="polish"] .phone.pair .pair-actions { grid-column: 2; grid-row: 2; }
+  :root[data-ui="polish"] .phone.pair > :last-child { grid-column: 1 / -1; grid-row: 3; margin: 0 auto; }
+  :root[data-ui="polish"] .phone.pair form { flex-direction: row; gap: 8px; margin: 0; }
+  :root[data-ui="polish"] .phone.pair .code-input { flex: 1; width: auto; min-width: 0; }
+  :root[data-ui="polish"] .phone.pair form .btn { flex: none; width: auto; padding: 0 20px; }
+
+  /* sheets: as wide as they need to be, as tall as the screen lets them, and a head that is not a third of what is visible */
+  :root[data-ui="polish"] .phone-ui .sheet { max-width: 680px; max-height: calc(100% - 8px); padding-top: 4px; }
+  :root[data-ui="polish"] .phone-ui .sheet-grip { margin: 2px auto 2px; }
+  :root[data-ui="polish"] .phone-ui .sheet-head { min-height: 44px; }
+  :root[data-ui="polish"] .phone-ui .sheet-body { gap: 10px; padding-top: 4px; }
+  /* a short list of short words (the speeds, the qualities) is two columns: all of it in view, and a row no longer a hand's length from its own dot; a few rows with a count and a pencil (the lists, the bell) are not as wide as a title's sheet */
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="speed-sheet"],
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="quality-sheet"] { max-width: 560px; }
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="speed-sheet"] .choices,
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="quality-sheet"] .choices { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="lists-sheet"],
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="bell-sheet"] { max-width: 520px; }
+
+  /* the subtitle style: the little TV stays on the left while the choices scroll on the right (a picture that is taller than what it sits in is no help) */
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="captions-sheet"] { max-width: 780px; }
+  :root[data-ui="polish"] .phone-ui .cap-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; align-items: start; }
+  :root[data-ui="polish"] .phone-ui .cap-controls { display: flex; flex-direction: column; gap: 10px; }
+
+  /* what to point a camera at is a square that leaves room for the words under it */
+  :root[data-ui="polish"] .phone-ui .scanner-frame { width: min(70vw, 300px, 52vh); }
+
+  /* a title: the picture on the left, what to do with it and what it is about on the right; a show's episodes under both, as wide as the sheet */
+  :root[data-ui="polish"] .phone-ui .sheet[data-testid="title-sheet"] { max-width: 780px; }
+  :root[data-ui="polish"] .phone-ui .title-top { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; align-items: start; }
+  :root[data-ui="polish"] .phone-ui .title-main { display: flex; flex-direction: column; gap: 10px; }
+
+  /* the pages: settings in two columns (it is one long list), the account's front page as who and what (the rows all in view), the rest in the column they were made for, centred */
+  :root[data-ui="polish"] .phone-ui .page-head { padding-left: max(10px, env(safe-area-inset-left)); }
+  :root[data-ui="polish"] .phone-ui .page-body { max-width: 940px; padding-left: var(--p-pad); padding-right: var(--p-pad); }
+  :root[data-ui="polish"] .phone-ui .page-body > * { max-width: 520px; margin-inline: auto; }
+  :root[data-ui="polish"] .phone-ui .page-stack[data-testid="settings-page"] { display: block; max-width: none; column-count: 2; column-gap: 40px; }
+  :root[data-ui="polish"] .phone-ui .page-stack[data-testid="settings-page"] > * { break-inside: avoid; margin-bottom: 18px; }
+  :root[data-ui="polish"] .phone-ui .account-hub { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-rows: auto auto 1fr; gap: 12px 32px; align-items: start; max-width: none; }
+  :root[data-ui="polish"] .phone-ui .account-hub > .account-card { grid-column: 1; grid-row: 1; }
+  :root[data-ui="polish"] .phone-ui .account-hub > .menu-groups { grid-column: 2; grid-row: 1 / span 3; }
+  :root[data-ui="polish"] .phone-ui .account-hub > .btn { grid-column: 1; grid-row: 2; }
+  :root[data-ui="polish"] .phone-ui .menu-row { min-height: 44px; padding-block: 10px; }
+  /* (the same for someone who is not signed in: what the account is for on one side, the way in on the other) */
+  :root[data-ui="polish"] .phone-ui .account-guest { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 32px; align-items: start; max-width: none; }
+  :root[data-ui="polish"] .phone-ui .account-guest > .account-pitch { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
+  :root[data-ui="polish"] .phone-ui .account-guest > .auth-form { grid-column: 2; grid-row: 1; }
+  :root[data-ui="polish"] .phone-ui .account-guest > .menu { grid-column: 2; grid-row: 2; }
+  :root[data-ui="polish"] .phone-ui .account-guest > .muted { grid-column: 1 / -1; grid-row: 3; }
+}
+
+/* ------------------------------ cost, and calm ------------------------------ */
+
+/* A blur behind a disc, on every picture of a library of hundreds, is a layer each: the disc is dark enough without it. */
+:root[data-ui="polish"] .phone-ui .lib-round { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/*
+ * Someone who asked their phone for less movement gets none from here. The classic look has a rule or two for it; the rules of this one are more
+ * specific than those and would bring back what they silence, so it says it again, with its own prefix. (A spinner keeps turning, slowly: it is the
+ * only thing that says something is happening.)
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ui="polish"] .phone-ui,
+  :root[data-ui="polish"] .phone-ui * {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
+  }
+  :root[data-ui="polish"] .phone-ui .spinner { animation-duration: 2.4s !important; animation-iteration-count: infinite !important; }
+  /* (The toast fades out at the end of its animation, and the page takes it away after its time: a quick animation would leave it where it ends, gone, before it is read.) */
+  :root[data-ui="polish"] .phone-ui .toast { animation-name: none; }
+}

@@ -1,0 +1,3768 @@
+{
+  "look": "polish",
+  "generated": "2026-10-16T22:46:29.580Z",
+  "pages": 180,
+  "elements": 37166,
+  "census": {
+    "tv": {
+      "fontSize": [
+        {
+          "value": "1.7em",
+          "count": 1415,
+          "pages": 124,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "1.3em",
+          "count": 1392,
+          "pages": 112,
+          "sample": "span.tv-tile-name \"The Long Night\""
+        },
+        {
+          "value": "1em",
+          "count": 1049,
+          "pages": 98,
+          "sample": "button[tv-browse-tile] (The Long Harbour)"
+        },
+        {
+          "value": "1.5em",
+          "count": 957,
+          "pages": 125,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "2.2em",
+          "count": 241,
+          "pages": 127,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "8.7em",
+          "count": 238,
+          "pages": 34,
+          "sample": "b \"1\""
+        },
+        {
+          "value": "2em",
+          "count": 211,
+          "pages": 83,
+          "sample": "p \"Welcome\""
+        },
+        {
+          "value": "1.9em",
+          "count": 92,
+          "pages": 3,
+          "sample": "button[key-a] \"a\""
+        },
+        {
+          "value": "3.2em",
+          "count": 83,
+          "pages": 79,
+          "sample": "h1[tv-hero-title] \"The Long Harbour\""
+        },
+        {
+          "value": "4.2em",
+          "count": 61,
+          "pages": 55,
+          "sample": "h1[tv-detail-title] \"Paper Moons\""
+        },
+        {
+          "value": "1.6em",
+          "count": 60,
+          "pages": 10,
+          "sample": "button[tv-accent-red] (Red)"
+        },
+        {
+          "value": "2.6em",
+          "count": 59,
+          "pages": 56,
+          "sample": "h1[tv-hero-title] \"Blue Hour\""
+        },
+        {
+          "value": "3em",
+          "count": 30,
+          "pages": 3,
+          "sample": "button[rate-score-1] \"1\""
+        },
+        {
+          "value": "2.3em",
+          "count": 15,
+          "pages": 12,
+          "sample": "button[tv-play-btn] (Pause)"
+        },
+        {
+          "value": "1.2em",
+          "count": 6,
+          "pages": 2,
+          "sample": "button[name-key-space] \"Space\""
+        },
+        {
+          "value": "8.4em",
+          "count": 6,
+          "pages": 6,
+          "sample": "p[pairing-code] \"123 456\""
+        },
+        {
+          "value": "6.8em",
+          "count": 3,
+          "pages": 3,
+          "sample": "p[tv-link-code] \"ABCD-2345\""
+        },
+        {
+          "value": "1.4em",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[key-space] \"Space\""
+        },
+        {
+          "value": "1.8em",
+          "count": 2,
+          "pages": 2,
+          "sample": "input[rate-note-input]"
+        },
+        {
+          "value": "3.4em",
+          "count": 2,
+          "pages": 2,
+          "sample": "p[tv-friend-code] \"ABCD-2345\""
+        },
+        {
+          "value": "7em",
+          "count": 1,
+          "pages": 1,
+          "sample": "span \"Kin\""
+        }
+      ],
+      "fontWeight": [
+        {
+          "value": "600",
+          "count": 2617,
+          "pages": 139,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "400",
+          "count": 2069,
+          "pages": 139,
+          "sample": "button[fullscreen-toggle] (Full screen)"
+        },
+        {
+          "value": "700",
+          "count": 716,
+          "pages": 139,
+          "sample": "h1[tv-hero-title] \"The Long Harbour\""
+        },
+        {
+          "value": "800",
+          "count": 284,
+          "pages": 127,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "900",
+          "count": 238,
+          "pages": 34,
+          "sample": "b \"1\""
+        },
+        {
+          "value": "500",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.tv-query-hint \"Search titles\""
+        }
+      ],
+      "lineHeight": [
+        {
+          "value": "normal",
+          "count": 3717,
+          "pages": 139,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "1.7em",
+          "count": 560,
+          "pages": 77,
+          "sample": "span.tv-tile-name \"The Long Night\""
+        },
+        {
+          "value": "1.95em",
+          "count": 259,
+          "pages": 90,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "6.8em",
+          "count": 238,
+          "pages": 34,
+          "sample": "b \"1\""
+        },
+        {
+          "value": "2.2em",
+          "count": 237,
+          "pages": 127,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "1.85em",
+          "count": 224,
+          "pages": 88,
+          "sample": "button[tv-hero-play] \"Play\""
+        },
+        {
+          "value": "1.65em",
+          "count": 150,
+          "pages": 65,
+          "sample": "button[tv-detail-close] \"Close\""
+        },
+        {
+          "value": "2.1em",
+          "count": 107,
+          "pages": 18,
+          "sample": "p.tv-hero-about \"A dockworker's last winter in a town tha\""
+        },
+        {
+          "value": "2em",
+          "count": 60,
+          "pages": 12,
+          "sample": "button.tv-btn (Back 10 seconds)"
+        },
+        {
+          "value": "2.15em",
+          "count": 46,
+          "pages": 13,
+          "sample": "span.tv-category-name \"Popular this week\""
+        },
+        {
+          "value": "2.3em",
+          "count": 44,
+          "pages": 30,
+          "sample": "p.tv-profile-line \"Sign in and what you watch on your phone\""
+        },
+        {
+          "value": "1.3em",
+          "count": 42,
+          "pages": 14,
+          "sample": "button[name-key-space] \"Space\""
+        },
+        {
+          "value": "3em",
+          "count": 40,
+          "pages": 13,
+          "sample": "button[rate-score-1] \"1\""
+        },
+        {
+          "value": "2.9em",
+          "count": 34,
+          "pages": 34,
+          "sample": "h1[tv-hero-title] \"Blue Hour\""
+        },
+        {
+          "value": "3.6em",
+          "count": 33,
+          "pages": 33,
+          "sample": "h1[tv-hero-title] \"The Long Harbour\""
+        },
+        {
+          "value": "2.5em",
+          "count": 28,
+          "pages": 14,
+          "sample": "span.tv-category-name \"My ratings\""
+        },
+        {
+          "value": "0em",
+          "count": 24,
+          "pages": 2,
+          "sample": "button[avatar-fox] (Fox)"
+        },
+        {
+          "value": "4.55em",
+          "count": 23,
+          "pages": 23,
+          "sample": "h1[tv-detail-title] \"Paper Moons\""
+        },
+        {
+          "value": "2.45em",
+          "count": 19,
+          "pages": 19,
+          "sample": "p.tv-detail-about \"Two sisters run a failing cinema and dec\""
+        },
+        {
+          "value": "3.5em",
+          "count": 11,
+          "pages": 11,
+          "sample": "h1[tv-view-title] \"All categories\""
+        },
+        {
+          "value": "4.6em",
+          "count": 10,
+          "pages": 10,
+          "sample": "h1[tv-profile-name] \"Guest\""
+        },
+        {
+          "value": "9.25em",
+          "count": 6,
+          "pages": 6,
+          "sample": "p[pairing-code] \"123 456\""
+        },
+        {
+          "value": "7.5em",
+          "count": 3,
+          "pages": 3,
+          "sample": "p[tv-link-code] \"ABCD-2345\""
+        },
+        {
+          "value": "1.55em",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[key-space] \"Space\""
+        },
+        {
+          "value": "3.75em",
+          "count": 2,
+          "pages": 2,
+          "sample": "p[tv-friend-code] \"ABCD-2345\""
+        },
+        {
+          "value": "1.9em",
+          "count": 2,
+          "pages": 2,
+          "sample": "span \"Wants to be friends\""
+        },
+        {
+          "value": "1.8em",
+          "count": 2,
+          "pages": 2,
+          "sample": "span \"Pick which subtitle languages are listed\""
+        },
+        {
+          "value": "7em",
+          "count": 1,
+          "pages": 1,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "2.8em",
+          "count": 1,
+          "pages": 1,
+          "sample": "p[tv-view-empty] \"Nothing here yet. Open a title and add i\""
+        }
+      ],
+      "radius": [
+        {
+          "value": "pill / circle",
+          "count": 1827,
+          "pages": 139,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "0.7em",
+          "count": 426,
+          "pages": 126,
+          "sample": "button[tv-hero-play] \"Play\""
+        },
+        {
+          "value": "0.45em",
+          "count": 232,
+          "pages": 20,
+          "sample": "button[key-a] \"a\""
+        },
+        {
+          "value": "1.1em",
+          "count": 100,
+          "pages": 44,
+          "sample": "button[tv-category-tile] (My ratings)"
+        },
+        {
+          "value": "3.9em",
+          "count": 6,
+          "pages": 6,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "0.75em",
+          "count": 4,
+          "pages": 2,
+          "sample": "span.profile-picture"
+        },
+        {
+          "value": "1.95em",
+          "count": 4,
+          "pages": 2,
+          "sample": "button[tv-row-next]"
+        },
+        {
+          "value": "2.6em",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.tv-profile-guest"
+        },
+        {
+          "value": "3.65em",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.tv-profile-guest"
+        },
+        {
+          "value": "3.45em",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.tv-profile-guest"
+        }
+      ],
+      "textColour": [
+        {
+          "value": "#c9c9d1",
+          "count": 2189,
+          "pages": 133,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "#9b9ba3",
+          "count": 1450,
+          "pages": 139,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "#f5f5f7",
+          "count": 1338,
+          "pages": 139,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "#ffffff",
+          "count": 577,
+          "pages": 138,
+          "sample": "h1[tv-hero-title] \"The Long Harbour\""
+        },
+        {
+          "value": "#0b0b0c",
+          "count": 299,
+          "pages": 75,
+          "sample": "b \"1\""
+        },
+        {
+          "value": "#111111",
+          "count": 30,
+          "pages": 10,
+          "sample": "button[tv-accent-green] (Green)"
+        },
+        {
+          "value": "#ffffff50%",
+          "count": 18,
+          "pages": 14,
+          "sample": "span.tv-tile-initial \"H\""
+        },
+        {
+          "value": "#222222",
+          "count": 10,
+          "pages": 10,
+          "sample": "p \"Or scan this with your camera\""
+        },
+        {
+          "value": "#ffb4b4",
+          "count": 6,
+          "pages": 4,
+          "sample": "button[friend-remove] \"Remove friend\""
+        },
+        {
+          "value": "#cfcfd4",
+          "count": 4,
+          "pages": 2,
+          "sample": "li \"40% watched\""
+        },
+        {
+          "value": "#55555c",
+          "count": 3,
+          "pages": 3,
+          "sample": "small \"This screen plays, and the ones you invi\""
+        },
+        {
+          "value": "#6f6f78",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.tv-query-hint \"Search titles\""
+        }
+      ],
+      "fill": [
+        {
+          "value": "#0b0b0c72%",
+          "count": 986,
+          "pages": 77,
+          "sample": "span[tv-tile-corner] (Add to Favourites)"
+        },
+        {
+          "value": "#0b0b0c",
+          "count": 388,
+          "pages": 144,
+          "sample": "div"
+        },
+        {
+          "value": "#e50914",
+          "count": 317,
+          "pages": 111,
+          "sample": "button[tv-hero-play] \"Play\""
+        },
+        {
+          "value": "#ffffff8%",
+          "count": 304,
+          "pages": 132,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "#232327",
+          "count": 296,
+          "pages": 61,
+          "sample": "button[key-b] \"b\""
+        },
+        {
+          "value": "#ffffff14%",
+          "count": 181,
+          "pages": 74,
+          "sample": "svg"
+        },
+        {
+          "value": "#000000",
+          "count": 145,
+          "pages": 144,
+          "sample": "main[tv]"
+        },
+        {
+          "value": "#ffffff28%",
+          "count": 133,
+          "pages": 61,
+          "sample": "span.tv-tile-progress"
+        },
+        {
+          "value": "#0b0b0c45%",
+          "count": 114,
+          "pages": 90,
+          "sample": "div.tv-browse-shade"
+        },
+        {
+          "value": "#18181b",
+          "count": 94,
+          "pages": 37,
+          "sample": "input[rate-note-input]"
+        },
+        {
+          "value": "#ffffff",
+          "count": 58,
+          "pages": 55,
+          "sample": "button[welcome-enter] \"Start watching\""
+        },
+        {
+          "value": "#e5091422%",
+          "count": 34,
+          "pages": 29,
+          "sample": "button[filter-all] \"All\""
+        },
+        {
+          "value": "#e5091420%",
+          "count": 30,
+          "pages": 30,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "#ffffff38%",
+          "count": 12,
+          "pages": 12,
+          "sample": "div.hud-bar-buffered"
+        },
+        {
+          "value": "#2772e5",
+          "count": 10,
+          "pages": 10,
+          "sample": "button[tv-accent-blue] (Blue)"
+        },
+        {
+          "value": "#8e54ea",
+          "count": 10,
+          "pages": 10,
+          "sample": "button[tv-accent-purple] (Purple)"
+        },
+        {
+          "value": "#1fb86a",
+          "count": 10,
+          "pages": 10,
+          "sample": "button[tv-accent-green] (Green)"
+        },
+        {
+          "value": "#ff8a1f",
+          "count": 10,
+          "pages": 10,
+          "sample": "button[tv-accent-orange] (Orange)"
+        },
+        {
+          "value": "#ff4f9a",
+          "count": 10,
+          "pages": 10,
+          "sample": "button[tv-accent-pink] (Pink)"
+        },
+        {
+          "value": "#00000045%",
+          "count": 8,
+          "pages": 8,
+          "sample": "span.tv-ep-play"
+        },
+        {
+          "value": "#3f3f46",
+          "count": 6,
+          "pages": 6,
+          "sample": "button[tv-episode]"
+        },
+        {
+          "value": "#313136",
+          "count": 6,
+          "pages": 6,
+          "sample": "button[name-key-space] \"Space\""
+        },
+        {
+          "value": "#ffffff10%",
+          "count": 4,
+          "pages": 2,
+          "sample": "li \"40% watched\""
+        },
+        {
+          "value": "#ff6b6b16%",
+          "count": 4,
+          "pages": 4,
+          "sample": "button[friend-remove] \"Remove friend\""
+        },
+        {
+          "value": "#00000082%",
+          "count": 3,
+          "pages": 3,
+          "sample": "div.tv-menu-backdrop"
+        },
+        {
+          "value": "#46d369",
+          "count": 2,
+          "pages": 2,
+          "sample": "i.tv-party-dot"
+        },
+        {
+          "value": "#e5091434%",
+          "count": 1,
+          "pages": 1,
+          "sample": "button.tv-opt"
+        },
+        {
+          "value": "#ffffff22%",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.tv-place-icon"
+        }
+      ],
+      "border": [
+        {
+          "value": "3 solid #e50914",
+          "count": 5,
+          "pages": 5,
+          "sample": "span.spinner"
+        },
+        {
+          "value": "2 solid #e50914",
+          "count": 5,
+          "pages": 5,
+          "sample": "input[auth-email]"
+        },
+        {
+          "value": "1 solid #ffffff10%",
+          "count": 3,
+          "pages": 3,
+          "sample": "div[audio-subtitles-modal] (Playback speed)"
+        },
+        {
+          "value": "1 solid #e50914",
+          "count": 2,
+          "pages": 2,
+          "sample": "input[rate-note-input]"
+        },
+        {
+          "value": "2 solid #ffffff10%",
+          "count": 2,
+          "pages": 2,
+          "sample": "input[auth-password]"
+        },
+        {
+          "value": "2 dashed #ffffff28%",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.profile-picture"
+        },
+        {
+          "value": "3 solid #ffffff10%",
+          "count": 1,
+          "pages": 1,
+          "sample": "input[auth-email]"
+        }
+      ],
+      "shadow": [
+        {
+          "value": "rgba(255, 255, 255, 0.22) 0px 0px 0px 1px",
+          "count": 974,
+          "pages": 77,
+          "sample": "span[tv-tile-corner] (Add to Favourites)"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 2.816px 19.712px 0px, rgba(255, 255, 255, 0.3) 0px 1.9712px 0px 0px inset",
+          "count": 131,
+          "pages": 70,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 4.224px 29.568px 0px, rgba(255, 255, 255, 0.3) 0px 2.9568px 0px 0px inset",
+          "count": 58,
+          "pages": 30,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.06) 0px 0px 0px 1px inset, rgba(255, 255, 255, 0.05) 0px 1px 0px 0px inset",
+          "count": 42,
+          "pages": 10,
+          "sample": "div.tv-group-body"
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.28px, rgb(255, 255, 255) 0px 0px 0px 3.84px, rgba(0, 0, 0, 0.6) 0px 8.96px 23.04px 0px",
+          "count": 25,
+          "pages": 24,
+          "sample": "span.tv-tile-art"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.08) 0px 0px 0px 1px inset, rgba(255, 255, 255, 0.06) 0px 1px 0px 0px inset",
+          "count": 21,
+          "pages": 10,
+          "sample": "button[tv-category-tile] (My ratings)"
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 1.792px inset",
+          "count": 17,
+          "pages": 17,
+          "sample": "button[filter-all] \"All\""
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.8) 0px 0px 0px 1.536px inset",
+          "count": 16,
+          "pages": 16,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 3.00377px 21.0264px 0px, rgba(255, 255, 255, 0.3) 0px 2.10264px 0px 0px inset",
+          "count": 16,
+          "pages": 9,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 3.168px 22.176px 0px, rgba(255, 255, 255, 0.3) 0px 2.2176px 0px 0px inset",
+          "count": 16,
+          "pages": 9,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 5.632px 39.424px 0px, rgba(255, 255, 255, 0.3) 0px 3.9424px 0px 0px inset",
+          "count": 16,
+          "pages": 9,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.8) 0px 0px 0px 2.304px inset",
+          "count": 11,
+          "pages": 11,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.07) 0px 0px 0px 1px inset",
+          "count": 10,
+          "pages": 10,
+          "sample": "div.tv-segmented (Language)"
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.28px, rgb(201, 201, 209) 0px 0px 0px 3.328px",
+          "count": 8,
+          "pages": 8,
+          "sample": "button[tv-accent-red] (Red)"
+        },
+        {
+          "value": "rgb(255, 255, 255) 0px 0px 0px 1.536px, rgba(0, 0, 0, 0.6) 0px 2.56px 7.68px 0px",
+          "count": 7,
+          "pages": 7,
+          "sample": "div.hud-bar-thumb"
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.92px, rgb(255, 255, 255) 0px 0px 0px 5.76px, rgba(0, 0, 0, 0.6) 0px 13.44px 34.56px 0px",
+          "count": 7,
+          "pages": 7,
+          "sample": "span.tv-tile-art"
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.28px, rgb(229, 9, 20) 0px 0px 0px 5.12px, rgba(0, 0, 0, 0.6) 0px 8.96px 23.04px 0px",
+          "count": 6,
+          "pages": 6,
+          "sample": "button[tv-detail-play] \"Play S1:E1\""
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 0px 0px 3.584px",
+          "count": 5,
+          "pages": 5,
+          "sample": "input[auth-email]"
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 2.688px inset",
+          "count": 5,
+          "pages": 5,
+          "sample": "button[tv-season-1] \"Season 1\""
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.22) 0px 0px 0px 1px, rgba(0, 0, 0, 0.6) 0px 8.96px 23.04px 0px",
+          "count": 4,
+          "pages": 4,
+          "sample": "button[tv-row-next]"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.06) 0px 0px 0px 3.2px",
+          "count": 4,
+          "pages": 4,
+          "sample": "span.tv-profile-guest"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.22) 0px 0px 0px 1px, rgba(0, 0, 0, 0.6) 0px 13.44px 34.56px 0px",
+          "count": 4,
+          "pages": 4,
+          "sample": "button[tv-row-next]"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 0px 0px 5.376px",
+          "count": 4,
+          "pages": 4,
+          "sample": "input[auth-password]"
+        },
+        {
+          "value": "rgb(255, 255, 255) 0px 0px 0px 3.84px inset",
+          "count": 3,
+          "pages": 3,
+          "sample": "button[tv-episode]"
+        },
+        {
+          "value": "rgba(0, 0, 0, 0.9) 0px 25.6px 64px 0px",
+          "count": 3,
+          "pages": 3,
+          "sample": "div[audio-subtitles-modal] (Playback speed)"
+        },
+        {
+          "value": "rgba(0, 0, 0, 0.7) 17.92px 0px 43.52px 0px",
+          "count": 2,
+          "pages": 2,
+          "sample": "nav[tv-rail] (Library menu)"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 0px 0px 3.2256px",
+          "count": 2,
+          "pages": 2,
+          "sample": "input[rate-note-input]"
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.28px, rgb(255, 255, 255) 0px 0px 0px 3.84px",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[tv-accent-blue] (Blue)"
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 3.2px",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.profile-picture"
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.36535px, rgb(255, 255, 255) 0px 0px 0px 4.09605px, rgba(0, 0, 0, 0.6) 0px 9.55745px 24.576",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.tv-tile-art"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.22) 0px 0px 0px 1px, rgba(0, 0, 0, 0.6) 0px 9.55745px 24.5763px 0px",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[tv-row-next]"
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 1.91149px inset",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[tv-season-1] \"Season 1\""
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.44px, rgb(255, 255, 255) 0px 0px 0px 4.32px, rgba(0, 0, 0, 0.6) 0px 10.08px 25.92px 0px",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.tv-tile-art"
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 2.016px inset",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[tv-season-1] \"Season 1\""
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.92px, rgb(229, 9, 20) 0px 0px 0px 7.68px, rgba(0, 0, 0, 0.6) 0px 13.44px 34.56px 0px",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[tv-detail-play] \"Play S1:E1\""
+        },
+        {
+          "value": "rgb(255, 255, 255) 0px 0px 0px 2.304px, rgba(0, 0, 0, 0.6) 0px 3.84px 11.52px 0px",
+          "count": 2,
+          "pages": 2,
+          "sample": "div.hud-bar-thumb"
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 4.8px",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.profile-picture"
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 2.56px, rgb(255, 255, 255) 0px 0px 0px 7.68px, rgba(0, 0, 0, 0.6) 0px 17.92px 46.08px 0px",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.tv-tile-art"
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 3.584px inset",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[tv-season-1] \"Season 1\""
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 8.96px 62.72px 0px, rgba(255, 255, 255, 0.3) 0px 6.272px 0px 0px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.28) 0px 0px 0px 1.7408px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[pick-new] \"New list\""
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.664px, rgb(255, 255, 255) 0px 0px 0px 5.504px, rgba(0, 0, 0, 0.6) 0px 8.96px 23.04px 0px",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-play-btn] (Pause)"
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 2.56px inset, rgb(11, 11, 12) 0px 0px 0px 1.28px, rgb(255, 255, 255) 0px 0px 0px 3.84px, rgb",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-lang-en] \"English\""
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.08) 0px 0px 0px 3.2px, rgba(0, 0, 0, 0.5) 0px 10.24px 25.6px 0px",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg.avatar (Fox)"
+        },
+        {
+          "value": "rgba(0, 0, 0, 0.7) 19.1149px 0px 46.4219px 0px",
+          "count": 1,
+          "pages": 1,
+          "sample": "nav[tv-rail] (Library menu)"
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.36535px, rgb(229, 9, 20) 0px 0px 0px 5.4614px, rgba(0, 0, 0, 0.6) 0px 9.55745px 24.5763px ",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-detail-play] \"Play S1:E1\""
+        },
+        {
+          "value": "rgb(255, 255, 255) 0px 0px 0px 4.09605px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-episode]"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.8) 0px 0px 0px 1.63842px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.06) 0px 0px 0px 3.41338px",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.tv-profile-guest"
+        },
+        {
+          "value": "rgb(255, 255, 255) 0px 0px 0px 1.63842px, rgba(0, 0, 0, 0.6) 0px 2.7307px 8.1921px 0px",
+          "count": 1,
+          "pages": 1,
+          "sample": "div.hud-bar-thumb"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.22) 0px 0px 0px 1px, rgba(0, 0, 0, 0.6) 0px 10.08px 25.92px 0px",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-row-next]"
+        },
+        {
+          "value": "rgba(0, 0, 0, 0.7) 20.16px 0px 48.96px 0px",
+          "count": 1,
+          "pages": 1,
+          "sample": "nav[tv-rail] (Library menu)"
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 1.44px, rgb(229, 9, 20) 0px 0px 0px 5.76px, rgba(0, 0, 0, 0.6) 0px 10.08px 25.92px 0px",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-detail-play] \"Play S1:E1\""
+        },
+        {
+          "value": "rgb(255, 255, 255) 0px 0px 0px 4.32px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-episode]"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.8) 0px 0px 0px 1.728px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.06) 0px 0px 0px 3.6px",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.tv-profile-guest"
+        },
+        {
+          "value": "rgb(255, 255, 255) 0px 0px 0px 1.728px, rgba(0, 0, 0, 0.6) 0px 2.88px 8.64px 0px",
+          "count": 1,
+          "pages": 1,
+          "sample": "div.hud-bar-thumb"
+        },
+        {
+          "value": "rgba(0, 0, 0, 0.7) 26.88px 0px 65.28px 0px",
+          "count": 1,
+          "pages": 1,
+          "sample": "nav[tv-rail] (Library menu)"
+        },
+        {
+          "value": "rgb(255, 255, 255) 0px 0px 0px 5.76px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[tv-episode]"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.06) 0px 0px 0px 4.8px",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.tv-profile-guest"
+        }
+      ],
+      "transition": [
+        {
+          "value": "background, color, transform 0.18s, 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 2996,
+          "pages": 90,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "transform, color 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 2788,
+          "pages": 77,
+          "sample": "button[tv-browse-tile] (The Long Harbour)"
+        },
+        {
+          "value": "background, color, margin-right 0.18s, 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 720,
+          "pages": 90,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "transform, background, color, box-shadow 0.18s, 0.18s, 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 667,
+          "pages": 87,
+          "sample": "button[welcome-enter] \"Start watching\""
+        },
+        {
+          "value": "-webkit-text-stroke-color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)",
+          "count": 546,
+          "pages": 55,
+          "sample": "b \"1\""
+        },
+        {
+          "value": "background, color, transform, box-shadow 0.18s, 0.18s, 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 195,
+          "pages": 64,
+          "sample": "button[tv-hero-play] \"Play\""
+        },
+        {
+          "value": "transform, box-shadow 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 158,
+          "pages": 35,
+          "sample": "button[tv-category-tile] (Popular this week)"
+        },
+        {
+          "value": "opacity 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)",
+          "count": 58,
+          "pages": 16,
+          "sample": "span \"Search\""
+        },
+        {
+          "value": "background 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)",
+          "count": 56,
+          "pages": 12,
+          "sample": "span.tv-switch"
+        },
+        {
+          "value": "opacity 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)",
+          "count": 24,
+          "pages": 24,
+          "sample": "div[tv-detail] (Paper Moons)"
+        },
+        {
+          "value": "box-shadow 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)",
+          "count": 20,
+          "pages": 20,
+          "sample": "span.tv-tile-art"
+        },
+        {
+          "value": "border-color, box-shadow 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 14,
+          "pages": 11,
+          "sample": "input[rate-note-input]"
+        },
+        {
+          "value": "opacity, background, color 0.18s, 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 12,
+          "pages": 12,
+          "sample": "button[tv-row-next]"
+        },
+        {
+          "value": "height 0.12s cubic-bezier(0.2, 0.8, 0.2, 1)",
+          "count": 12,
+          "pages": 12,
+          "sample": "div.hud-bar-track"
+        },
+        {
+          "value": "transform 0.12s ease",
+          "count": 12,
+          "pages": 12,
+          "sample": "div.hud-bar-thumb"
+        },
+        {
+          "value": "color 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)",
+          "count": 8,
+          "pages": 4,
+          "sample": "svg.tv-line-chevron"
+        },
+        {
+          "value": "width 0.18s cubic-bezier(0.2, 0.8, 0.2, 1)",
+          "count": 6,
+          "pages": 6,
+          "sample": "nav[tv-rail] (Library menu)"
+        },
+        {
+          "value": "opacity 0.12s cubic-bezier(0.2, 0.8, 0.2, 1)",
+          "count": 6,
+          "pages": 6,
+          "sample": "span.tv-ep-play"
+        },
+        {
+          "value": "background, color 0.18s, 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 6,
+          "pages": 2,
+          "sample": "span.tv-line-icon"
+        },
+        {
+          "value": "transform, box-shadow 0.18s, 0.18s ease, ease",
+          "count": 4,
+          "pages": 2,
+          "sample": "span.profile-picture"
+        }
+      ],
+      "animation": [
+        {
+          "value": "polish-picture-in 0.4s",
+          "count": 1350,
+          "pages": 49,
+          "sample": "img"
+        },
+        {
+          "value": "tv-fade-in 1s",
+          "count": 114,
+          "pages": 90,
+          "sample": "div.tv-hero-bg"
+        },
+        {
+          "value": "tv-fade, tv-arrive 0.25s, 0.5s",
+          "count": 24,
+          "pages": 24,
+          "sample": "div[tv-detail] (Paper Moons)"
+        },
+        {
+          "value": "tv-fade 0.2s",
+          "count": 3,
+          "pages": 3,
+          "sample": "div.tv-menu-backdrop"
+        },
+        {
+          "value": "tv-welcome-in 0.9s",
+          "count": 2,
+          "pages": 1,
+          "sample": "p \"Welcome\""
+        },
+        {
+          "value": "spin 0.9s",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.spinner"
+        }
+      ],
+      "padding": [
+        {
+          "value": "11.52 10.24 11.52 10.24",
+          "count": 384,
+          "pages": 48,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "17.28 15.36 17.28 15.36",
+          "count": 168,
+          "pages": 21,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "8.96 20.48 8.96 20.48",
+          "count": 85,
+          "pages": 31,
+          "sample": "button[tv-hero-play] \"Play\""
+        },
+        {
+          "value": "12.16 0 12.16 0",
+          "count": 80,
+          "pages": 2,
+          "sample": "button[key-a] \"a\""
+        },
+        {
+          "value": "5.76 0 5.76 0",
+          "count": 78,
+          "pages": 2,
+          "sample": "button[name-key-a] \"a\""
+        },
+        {
+          "value": "6.4 6.4 6.4 6.4",
+          "count": 72,
+          "pages": 16,
+          "sample": "div.tv-group-body"
+        },
+        {
+          "value": "1.28 8.96 1.28 6.4",
+          "count": 56,
+          "pages": 23,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "12.29 10.92 12.29 10.92",
+          "count": 56,
+          "pages": 7,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "12.96 11.52 12.96 11.52",
+          "count": 56,
+          "pages": 7,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "23.04 20.48 23.04 20.48",
+          "count": 56,
+          "pages": 7,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "5.76 21.12 5.76 5.76",
+          "count": 48,
+          "pages": 48,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "15.23 30.46 15.23 30.46",
+          "count": 47,
+          "pages": 28,
+          "sample": "button[welcome-enter] \"Start watching\""
+        },
+        {
+          "value": "11.52 12.8 11.52 12.8",
+          "count": 37,
+          "pages": 9,
+          "sample": "button[tv-ratings-switch]"
+        },
+        {
+          "value": "6.72 6.72 6.72 6.72",
+          "count": 34,
+          "pages": 34,
+          "sample": "svg"
+        },
+        {
+          "value": "13.06 30.46 13.06 30.46",
+          "count": 30,
+          "pages": 8,
+          "sample": "button[filter-all] \"All\""
+        },
+        {
+          "value": "12.8 15.36 12.8 15.36",
+          "count": 28,
+          "pages": 7,
+          "sample": "button[tv-category-tile] (Popular this week)"
+        },
+        {
+          "value": "8.32 5.12 8.32 5.12",
+          "count": 27,
+          "pages": 9,
+          "sample": "button[tv-lang-en] \"English\""
+        },
+        {
+          "value": "0 23.04 0 14.08",
+          "count": 24,
+          "pages": 24,
+          "sample": "button[tv-account-back] \"Back\""
+        },
+        {
+          "value": "13.44 30.72 13.44 30.72",
+          "count": 24,
+          "pages": 11,
+          "sample": "button[tv-hero-play] \"Resume\""
+        },
+        {
+          "value": "8.64 31.68 8.64 8.64",
+          "count": 21,
+          "pages": 21,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "19.2 23.04 19.2 23.04",
+          "count": 21,
+          "pages": 6,
+          "sample": "button[tv-category-tile] (Cy#1)"
+        },
+        {
+          "value": "1.44 10.08 1.44 7.2",
+          "count": 19,
+          "pages": 6,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "22.85 45.7 22.85 45.7",
+          "count": 19,
+          "pages": 11,
+          "sample": "button[auth-submit] \"Create account\""
+        },
+        {
+          "value": "1.92 13.44 1.92 9.6",
+          "count": 18,
+          "pages": 7,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "1.37 9.56 1.37 6.83",
+          "count": 17,
+          "pages": 6,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "2.56 17.92 2.56 12.8",
+          "count": 17,
+          "pages": 6,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "9.56 21.85 9.56 21.85",
+          "count": 15,
+          "pages": 6,
+          "sample": "button[tv-hero-play] \"Resume\""
+        },
+        {
+          "value": "10.08 23.04 10.08 23.04",
+          "count": 15,
+          "pages": 6,
+          "sample": "button[tv-hero-play] \"Resume\""
+        },
+        {
+          "value": "9.6 9.6 9.6 9.6",
+          "count": 15,
+          "pages": 3,
+          "sample": "button.tv-btn (Back 10 seconds)"
+        },
+        {
+          "value": "17.92 40.96 17.92 40.96",
+          "count": 15,
+          "pages": 6,
+          "sample": "button[tv-hero-play] \"Resume\""
+        },
+        {
+          "value": "8.32 13.31 8.32 13.31",
+          "count": 14,
+          "pages": 7,
+          "sample": "button[tv-speed-btn] \"1×\""
+        },
+        {
+          "value": "0 5.82 0 5.82",
+          "count": 14,
+          "pages": 14,
+          "sample": "b[tv-bell-badge] \"2\""
+        },
+        {
+          "value": "0 8.74 0 8.74",
+          "count": 14,
+          "pages": 14,
+          "sample": "b[tv-bell-badge] \"2\""
+        },
+        {
+          "value": "15.23 21.76 15.23 21.76",
+          "count": 13,
+          "pages": 3,
+          "sample": "button.tv-opt"
+        },
+        {
+          "value": "0 23.04 0 16.64",
+          "count": 12,
+          "pages": 12,
+          "sample": "button[tv-detail-close] \"Close\""
+        },
+        {
+          "value": "23.04 23.04 23.04 23.04",
+          "count": 12,
+          "pages": 6,
+          "sample": "button[tv-category-tile] (My ratings)"
+        },
+        {
+          "value": "9.73 0 9.73 0",
+          "count": 12,
+          "pages": 1,
+          "sample": "button[pad-1] \"1\""
+        },
+        {
+          "value": "19.58 45.7 19.58 45.7",
+          "count": 11,
+          "pages": 3,
+          "sample": "button[tv-season-1] \"Season 1\""
+        },
+        {
+          "value": "0 34.56 0 21.12",
+          "count": 11,
+          "pages": 11,
+          "sample": "button[tv-back-to-library] \"Back to the library\""
+        },
+        {
+          "value": "7.68 12.8 7.68 5.12",
+          "count": 9,
+          "pages": 3,
+          "sample": "button[tv-episode]"
+        },
+        {
+          "value": "3.84 3.84 3.84 3.84",
+          "count": 9,
+          "pages": 9,
+          "sample": "div.tv-segmented (Language)"
+        },
+        {
+          "value": "0 12.8 12.8 12.8",
+          "count": 8,
+          "pages": 8,
+          "sample": "p.tv-who-note \"Sign in and what you watch on your phone\""
+        },
+        {
+          "value": "14.08 20.48 14.08 20.48",
+          "count": 7,
+          "pages": 5,
+          "sample": "input[auth-email]"
+        },
+        {
+          "value": "20.48 17.92 17.92 17.92",
+          "count": 7,
+          "pages": 3,
+          "sample": "button[tv-party-start]"
+        },
+        {
+          "value": "13.44 23.04 13.44 23.04",
+          "count": 7,
+          "pages": 1,
+          "sample": "button[tv-friends-lists]"
+        },
+        {
+          "value": "6.14 22.53 6.14 6.14",
+          "count": 7,
+          "pages": 7,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "7.17 7.17 7.17 7.17",
+          "count": 7,
+          "pages": 7,
+          "sample": "svg"
+        },
+        {
+          "value": "6.48 23.76 6.48 6.48",
+          "count": 7,
+          "pages": 7,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "7.56 7.56 7.56 7.56",
+          "count": 7,
+          "pages": 7,
+          "sample": "svg"
+        },
+        {
+          "value": "10.08 10.08 10.08 10.08",
+          "count": 7,
+          "pages": 7,
+          "sample": "svg"
+        },
+        {
+          "value": "20.16 34.56 20.16 34.56",
+          "count": 7,
+          "pages": 1,
+          "sample": "button[tv-friends-lists]"
+        },
+        {
+          "value": "11.52 42.24 11.52 11.52",
+          "count": 7,
+          "pages": 7,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "13.44 13.44 13.44 13.44",
+          "count": 7,
+          "pages": 7,
+          "sample": "svg"
+        },
+        {
+          "value": "4.61 0 4.61 0",
+          "count": 6,
+          "pages": 2,
+          "sample": "button[name-key-space] \"Space\""
+        },
+        {
+          "value": "12.8 12.8 12.8 12.8",
+          "count": 6,
+          "pages": 2,
+          "sample": "div.tv-qr"
+        },
+        {
+          "value": "10 14 10 14",
+          "count": 6,
+          "pages": 6,
+          "sample": "button[switch-to-remote] \"Use this screen as a remote\""
+        },
+        {
+          "value": "13.93 32.5 13.93 32.5",
+          "count": 6,
+          "pages": 2,
+          "sample": "button[tv-season-1] \"Season 1\""
+        },
+        {
+          "value": "14.69 34.27 14.69 34.27",
+          "count": 6,
+          "pages": 2,
+          "sample": "button[tv-season-1] \"Season 1\""
+        },
+        {
+          "value": "26.11 60.93 26.11 60.93",
+          "count": 6,
+          "pages": 2,
+          "sample": "button[tv-season-1] \"Season 1\""
+        },
+        {
+          "value": "6.83 6.83 6.83 6.83",
+          "count": 5,
+          "pages": 1,
+          "sample": "button.tv-btn (Back 10 seconds)"
+        }
+      ],
+      "gap": [
+        {
+          "value": "1.35em",
+          "count": 720,
+          "pages": 90,
+          "sample": "button[rail-search]"
+        },
+        {
+          "value": "0.6em",
+          "count": 262,
+          "pages": 70,
+          "sample": "button[tv-hero-play] \"Play\""
+        },
+        {
+          "value": "0.35em",
+          "count": 130,
+          "pages": 52,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "0.9em",
+          "count": 125,
+          "pages": 102,
+          "sample": "button[tv-account-chip] (Sign in)"
+        },
+        {
+          "value": "0.75em",
+          "count": 99,
+          "pages": 10,
+          "sample": "button[key-a] \"a\""
+        },
+        {
+          "value": "0.85em",
+          "count": 72,
+          "pages": 39,
+          "sample": "button[welcome-enter] \"Start watching\""
+        },
+        {
+          "value": "0.3em",
+          "count": 66,
+          "pages": 52,
+          "sample": "nav[tv-rail] (Library menu)"
+        },
+        {
+          "value": "0.8em",
+          "count": 60,
+          "pages": 12,
+          "sample": "button.tv-btn (Back 10 seconds)"
+        },
+        {
+          "value": "0.7em",
+          "count": 59,
+          "pages": 17,
+          "sample": "button[filter-all] \"All\""
+        },
+        {
+          "value": "3em",
+          "count": 56,
+          "pages": 12,
+          "sample": "button[tv-ratings-switch]"
+        },
+        {
+          "value": "0.5em",
+          "count": 48,
+          "pages": 22,
+          "sample": "button[name-key-space] \"Space\""
+        },
+        {
+          "value": "0.4em",
+          "count": 44,
+          "pages": 24,
+          "sample": "button[tv-detail-close] \"Close\""
+        },
+        {
+          "value": "0.2em",
+          "count": 36,
+          "pages": 22,
+          "sample": "button[tv-category-tile] (Popular this week)"
+        },
+        {
+          "value": "1.1em",
+          "count": 29,
+          "pages": 13,
+          "sample": "button[tv-episode]"
+        },
+        {
+          "value": "1.7em",
+          "count": 13,
+          "pages": 3,
+          "sample": "button.tv-opt"
+        },
+        {
+          "value": "1.55em",
+          "count": 8,
+          "pages": 4,
+          "sample": "button[tv-bell-item]"
+        },
+        {
+          "value": "1.2em",
+          "count": 6,
+          "pages": 2,
+          "sample": "button[tv-manage-profiles]"
+        },
+        {
+          "value": "1.15em",
+          "count": 3,
+          "pages": 3,
+          "sample": "button.tv-btn (Close)"
+        },
+        {
+          "value": "0.55em",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[key-space] \"Space\""
+        },
+        {
+          "value": "1.4em",
+          "count": 1,
+          "pages": 1,
+          "sample": "p[tv-signin-status] \"Waiting for the other device…\""
+        }
+      ],
+      "iconSize": [
+        {
+          "value": "1.95em",
+          "count": 496,
+          "pages": 62,
+          "sample": "svg"
+        },
+        {
+          "value": "1.15em",
+          "count": 472,
+          "pages": 46,
+          "sample": "svg"
+        },
+        {
+          "value": "1.2em",
+          "count": 353,
+          "pages": 31,
+          "sample": "svg"
+        },
+        {
+          "value": "2em",
+          "count": 307,
+          "pages": 41,
+          "sample": "svg"
+        },
+        {
+          "value": "1.5em",
+          "count": 198,
+          "pages": 89,
+          "sample": "svg"
+        },
+        {
+          "value": "1.7em",
+          "count": 159,
+          "pages": 69,
+          "sample": "svg"
+        },
+        {
+          "value": "1.8em",
+          "count": 124,
+          "pages": 86,
+          "sample": "svg"
+        },
+        {
+          "value": "1.45em",
+          "count": 112,
+          "pages": 57,
+          "sample": "svg"
+        },
+        {
+          "value": "2.6em",
+          "count": 79,
+          "pages": 24,
+          "sample": "svg"
+        },
+        {
+          "value": "1.3em",
+          "count": 73,
+          "pages": 31,
+          "sample": "svg"
+        },
+        {
+          "value": "2.05em",
+          "count": 71,
+          "pages": 22,
+          "sample": "svg"
+        },
+        {
+          "value": "1.35em",
+          "count": 65,
+          "pages": 33,
+          "sample": "svg"
+        },
+        {
+          "value": "2.75em",
+          "count": 54,
+          "pages": 50,
+          "sample": "svg"
+        },
+        {
+          "value": "2.7em",
+          "count": 42,
+          "pages": 42,
+          "sample": "svg"
+        },
+        {
+          "value": "2.4em",
+          "count": 27,
+          "pages": 17,
+          "sample": "svg"
+        },
+        {
+          "value": "4.6em",
+          "count": 23,
+          "pages": 13,
+          "sample": "svg"
+        },
+        {
+          "value": "6.7em",
+          "count": 22,
+          "pages": 2,
+          "sample": "svg.avatar (Fox)"
+        },
+        {
+          "value": "2.55em",
+          "count": 20,
+          "pages": 6,
+          "sample": "svg"
+        },
+        {
+          "value": "1.25em",
+          "count": 18,
+          "pages": 18,
+          "sample": "svg"
+        },
+        {
+          "value": "1.65em",
+          "count": 14,
+          "pages": 6,
+          "sample": "svg"
+        },
+        {
+          "value": "1.9em",
+          "count": 10,
+          "pages": 3,
+          "sample": "svg"
+        },
+        {
+          "value": "3.6em",
+          "count": 10,
+          "pages": 10,
+          "sample": "svg"
+        },
+        {
+          "value": "2.25em",
+          "count": 10,
+          "pages": 7,
+          "sample": "svg"
+        },
+        {
+          "value": "3.4em",
+          "count": 9,
+          "pages": 5,
+          "sample": "svg"
+        },
+        {
+          "value": "1.55em",
+          "count": 8,
+          "pages": 7,
+          "sample": "svg"
+        },
+        {
+          "value": "3.75em",
+          "count": 8,
+          "pages": 4,
+          "sample": "svg.avatar (Fox)"
+        },
+        {
+          "value": "1.85em",
+          "count": 7,
+          "pages": 7,
+          "sample": "svg"
+        },
+        {
+          "value": "3.45em",
+          "count": 6,
+          "pages": 4,
+          "sample": "svg"
+        },
+        {
+          "value": "19.6em",
+          "count": 5,
+          "pages": 5,
+          "sample": "svg[pairing-qr] (Scan with your phone's camera to connect)"
+        },
+        {
+          "value": "1.75em",
+          "count": 4,
+          "pages": 4,
+          "sample": "svg"
+        },
+        {
+          "value": "2.3em",
+          "count": 4,
+          "pages": 4,
+          "sample": "svg"
+        },
+        {
+          "value": "1.4em",
+          "count": 3,
+          "pages": 3,
+          "sample": "svg"
+        },
+        {
+          "value": "2.8em",
+          "count": 3,
+          "pages": 3,
+          "sample": "svg"
+        },
+        {
+          "value": "3.5em",
+          "count": 3,
+          "pages": 3,
+          "sample": "svg"
+        },
+        {
+          "value": "8.6em",
+          "count": 2,
+          "pages": 2,
+          "sample": "svg.avatar (Fox)"
+        },
+        {
+          "value": "13.45em",
+          "count": 2,
+          "pages": 2,
+          "sample": "svg[pairing-qr] (QR code that adds you as a friend)"
+        },
+        {
+          "value": "5.4em",
+          "count": 2,
+          "pages": 2,
+          "sample": "svg.avatar (Fox)"
+        },
+        {
+          "value": "10em",
+          "count": 2,
+          "pages": 2,
+          "sample": "svg.avatar (Fox)"
+        },
+        {
+          "value": "4.2em",
+          "count": 2,
+          "pages": 2,
+          "sample": "svg"
+        },
+        {
+          "value": "7.25em",
+          "count": 2,
+          "pages": 2,
+          "sample": "svg.avatar (Panda)"
+        },
+        {
+          "value": "3.35em",
+          "count": 2,
+          "pages": 1,
+          "sample": "svg"
+        },
+        {
+          "value": "2.45em",
+          "count": 2,
+          "pages": 1,
+          "sample": "svg"
+        },
+        {
+          "value": "13.4em",
+          "count": 2,
+          "pages": 2,
+          "sample": "svg[pairing-qr] (QR code that adds you as a friend)"
+        },
+        {
+          "value": "17.05em",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg[pairing-qr] (Scan this code, or type it in.)"
+        },
+        {
+          "value": "2.5em",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg"
+        },
+        {
+          "value": "12.05em",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg.avatar (Cat)"
+        },
+        {
+          "value": "19.65em",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg[pairing-qr] (Scan with your phone's camera to connect)"
+        },
+        {
+          "value": "12em",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg.avatar (Cat)"
+        }
+      ],
+      "fontFamily": [
+        {
+          "value": "system-ui",
+          "count": 5911,
+          "pages": 139,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "Arial",
+          "count": 14,
+          "pages": 11,
+          "sample": "input[rate-note-input]"
+        }
+      ]
+    },
+    "phone": {
+      "fontSize": [
+        {
+          "value": "16px",
+          "count": 613,
+          "pages": 36,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "14px",
+          "count": 469,
+          "pages": 36,
+          "sample": "button[account-button] \"Sign in\""
+        },
+        {
+          "value": "13px",
+          "count": 352,
+          "pages": 35,
+          "sample": "span[tv-online] \"TV connected\""
+        },
+        {
+          "value": "18px",
+          "count": 161,
+          "pages": 35,
+          "sample": "h1[tv-name] \"TV 4F2A\""
+        },
+        {
+          "value": "17.6px",
+          "count": 140,
+          "pages": 29,
+          "sample": "button[continue-list-toggle] (Add to a list: The Glass Orchard)"
+        },
+        {
+          "value": "20px",
+          "count": 85,
+          "pages": 35,
+          "sample": "button[fullscreen-toggle] (Full screen)"
+        },
+        {
+          "value": "24px",
+          "count": 38,
+          "pages": 32,
+          "sample": "h1 \"Connect to your TV\""
+        },
+        {
+          "value": "32px",
+          "count": 18,
+          "pages": 11,
+          "sample": "span[control-code] \"123 456\""
+        },
+        {
+          "value": "36px",
+          "count": 17,
+          "pages": 17,
+          "sample": "button[account-button] (Account and profiles: Dana)"
+        },
+        {
+          "value": "19.2px",
+          "count": 12,
+          "pages": 2,
+          "sample": "button[accent-red] (Red)"
+        },
+        {
+          "value": "40px",
+          "count": 6,
+          "pages": 6,
+          "sample": "button[pause] (Pause)"
+        },
+        {
+          "value": "12.8px",
+          "count": 6,
+          "pages": 5,
+          "sample": "button[friend-request-decline] (Decline)"
+        },
+        {
+          "value": "33.6px",
+          "count": 3,
+          "pages": 3,
+          "sample": "input[code-input] (6-digit code from the TV)"
+        },
+        {
+          "value": "9.26px",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.cap-sample \"This is how your subtitles will look\""
+        },
+        {
+          "value": "16.8px",
+          "count": 1,
+          "pages": 1,
+          "sample": "span \"Kin\""
+        }
+      ],
+      "fontWeight": [
+        {
+          "value": "400",
+          "count": 922,
+          "pages": 36,
+          "sample": "button[fullscreen-toggle] (Full screen)"
+        },
+        {
+          "value": "600",
+          "count": 648,
+          "pages": 36,
+          "sample": "button[scan] \"Scan the TV's QR code\""
+        },
+        {
+          "value": "700",
+          "count": 315,
+          "pages": 36,
+          "sample": "button[account-button] \"Sign in\""
+        },
+        {
+          "value": "800",
+          "count": 36,
+          "pages": 17,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "500",
+          "count": 2,
+          "pages": 2,
+          "sample": "small \"1 friend\""
+        }
+      ],
+      "lineHeight": [
+        {
+          "value": "normal",
+          "count": 1524,
+          "pages": 36,
+          "sample": "button[fullscreen-toggle] (Full screen)"
+        },
+        {
+          "value": "17.5px",
+          "count": 167,
+          "pages": 29,
+          "sample": "span.lib-title \"The Glass Orchard\""
+        },
+        {
+          "value": "23.2px",
+          "count": 43,
+          "pages": 28,
+          "sample": "p.muted \"Open on your TV and choose in its menu. \""
+        },
+        {
+          "value": "18.85px",
+          "count": 39,
+          "pages": 21,
+          "sample": "p[title-meta] \"2011 · Movie\""
+        },
+        {
+          "value": "28.8px",
+          "count": 32,
+          "pages": 31,
+          "sample": "h2 \"What do you want to watch?\""
+        },
+        {
+          "value": "22.5px",
+          "count": 31,
+          "pages": 31,
+          "sample": "h1[tv-name] \"TV 4F2A\""
+        },
+        {
+          "value": "19.5px",
+          "count": 27,
+          "pages": 12,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "18px",
+          "count": 17,
+          "pages": 17,
+          "sample": "b[bell-badge] \"2\""
+        },
+        {
+          "value": "0px",
+          "count": 17,
+          "pages": 17,
+          "sample": "button[account-button] (Account and profiles: Dana)"
+        },
+        {
+          "value": "18.2px",
+          "count": 15,
+          "pages": 9,
+          "sample": "small.switch-hint \"Shows a box on the home screen where a v\""
+        },
+        {
+          "value": "24px",
+          "count": 3,
+          "pages": 3,
+          "sample": "p.muted \"Two sisters run a failing cinema and dec\""
+        },
+        {
+          "value": "15.6px",
+          "count": 2,
+          "pages": 2,
+          "sample": "span[party-link-url] \"http://127.0.0.1:9303/?party=029396\""
+        },
+        {
+          "value": "12.04px",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.cap-sample \"This is how your subtitles will look\""
+        },
+        {
+          "value": "16px",
+          "count": 1,
+          "pages": 1,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "17.55px",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.episode-about \"The harbour wakes late, and everyone pre\""
+        },
+        {
+          "value": "16.8px",
+          "count": 1,
+          "pages": 1,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "20.3px",
+          "count": 1,
+          "pages": 1,
+          "sample": "p.muted \"Online · Friends since 17 Oct 2026\""
+        }
+      ],
+      "radius": [
+        {
+          "value": "pill / circle",
+          "count": 457,
+          "pages": 36,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "12px",
+          "count": 207,
+          "pages": 36,
+          "sample": "button[scan] \"Scan the TV's QR code\""
+        },
+        {
+          "value": "8px",
+          "count": 36,
+          "pages": 27,
+          "sample": "button[switch-lang-en] \"English\""
+        },
+        {
+          "value": "22px",
+          "count": 16,
+          "pages": 15,
+          "sample": "div[title-sheet] (Paper Moons)"
+        },
+        {
+          "value": "14px",
+          "count": 3,
+          "pages": 1,
+          "sample": "span.profile-picture"
+        },
+        {
+          "value": "10px",
+          "count": 2,
+          "pages": 2,
+          "sample": "span[party-link-url] \"http://127.0.0.1:9303/?party=029396\""
+        },
+        {
+          "value": "1.11px",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.cap-sample \"This is how your subtitles will look\""
+        }
+      ],
+      "textColour": [
+        {
+          "value": "#f5f5f7",
+          "count": 1104,
+          "pages": 36,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "#9b9ba3",
+          "count": 496,
+          "pages": 36,
+          "sample": "button[fullscreen-toggle] (Full screen)"
+        },
+        {
+          "value": "#ffffff",
+          "count": 202,
+          "pages": 32,
+          "sample": "button[scan] \"Scan the TV's QR code\""
+        },
+        {
+          "value": "#d2d2d9",
+          "count": 58,
+          "pages": 23,
+          "sample": "h3.sheet-section \"Episodes\""
+        },
+        {
+          "value": "#46d369",
+          "count": 34,
+          "pages": 31,
+          "sample": "span[tv-online] \"TV connected\""
+        },
+        {
+          "value": "#ff6b6b",
+          "count": 11,
+          "pages": 10,
+          "sample": "button[disconnect] \"Disconnect from this TV\""
+        },
+        {
+          "value": "#111111",
+          "count": 6,
+          "pages": 2,
+          "sample": "button[accent-green] (Green)"
+        },
+        {
+          "value": "#0b0b0c",
+          "count": 6,
+          "pages": 6,
+          "sample": "button[pause] (Pause)"
+        },
+        {
+          "value": "#f6121d",
+          "count": 3,
+          "pages": 3,
+          "sample": "button[library-list-toggle] (In your lists: Velvet Static)"
+        },
+        {
+          "value": "#ffffff50%",
+          "count": 3,
+          "pages": 3,
+          "sample": "span.poster-initial \"H\""
+        }
+      ],
+      "fill": [
+        {
+          "value": "#232328",
+          "count": 198,
+          "pages": 36,
+          "sample": "button[account-button] \"Sign in\""
+        },
+        {
+          "value": "#00000062%",
+          "count": 156,
+          "pages": 34,
+          "sample": "button[continue-list-toggle] (Add to a list: The Glass Orchard)"
+        },
+        {
+          "value": "#e50914",
+          "count": 118,
+          "pages": 36,
+          "sample": "button[scan] \"Scan the TV's QR code\""
+        },
+        {
+          "value": "#17171a",
+          "count": 84,
+          "pages": 36,
+          "sample": "input[code-input] (6-digit code from the TV)"
+        },
+        {
+          "value": "#2e2e34",
+          "count": 80,
+          "pages": 15,
+          "sample": "button[title-list] \"My Lists\""
+        },
+        {
+          "value": "#00000055%",
+          "count": 55,
+          "pages": 26,
+          "sample": "span.lib-progress"
+        },
+        {
+          "value": "#0b0b0c",
+          "count": 50,
+          "pages": 33,
+          "sample": "div"
+        },
+        {
+          "value": "#00000068%",
+          "count": 27,
+          "pages": 12,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "#e5091422%",
+          "count": 22,
+          "pages": 10,
+          "sample": "button[switch-lang-en] \"English\""
+        },
+        {
+          "value": "#1c1c20",
+          "count": 16,
+          "pages": 15,
+          "sample": "div[title-sheet] (Paper Moons)"
+        },
+        {
+          "value": "#ffffff24%",
+          "count": 16,
+          "pages": 15,
+          "sample": "div.sheet-grip"
+        },
+        {
+          "value": "#ffffff20%",
+          "count": 12,
+          "pages": 12,
+          "sample": "span.switch"
+        },
+        {
+          "value": "#25252a",
+          "count": 10,
+          "pages": 7,
+          "sample": "section[rate-title] (Your rating)"
+        },
+        {
+          "value": "#ffffff18%",
+          "count": 6,
+          "pages": 6,
+          "sample": "div.seek-track"
+        },
+        {
+          "value": "#ffffff",
+          "count": 6,
+          "pages": 6,
+          "sample": "button[pause] (Pause)"
+        },
+        {
+          "value": "#e5091420%",
+          "count": 3,
+          "pages": 3,
+          "sample": "button[tv-switch]"
+        },
+        {
+          "value": "#ffffff7%",
+          "count": 2,
+          "pages": 2,
+          "sample": "span[party-link-url] \"http://127.0.0.1:9303/?party=029396\""
+        },
+        {
+          "value": "#2772e5",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[accent-blue] (Blue)"
+        },
+        {
+          "value": "#8e54ea",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[accent-purple] (Purple)"
+        },
+        {
+          "value": "#1fb86a",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[accent-green] (Green)"
+        },
+        {
+          "value": "#ff8a1f",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[accent-orange] (Orange)"
+        },
+        {
+          "value": "#ff4f9a",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[accent-pink] (Pink)"
+        },
+        {
+          "value": "#00000050%",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.cap-sample \"This is how your subtitles will look\""
+        },
+        {
+          "value": "#e5091414%",
+          "count": 1,
+          "pages": 1,
+          "sample": "div.pair-icon"
+        },
+        {
+          "value": "#ffffff16%",
+          "count": 1,
+          "pages": 1,
+          "sample": "small.cap-count \"1\""
+        },
+        {
+          "value": "#ffffff10%",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[friend-invite-code-copy] \"Copy code\""
+        },
+        {
+          "value": "#00000045%",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.profile-pencil"
+        }
+      ],
+      "border": [
+        {
+          "value": "1 solid #ffffff10%",
+          "count": 47,
+          "pages": 30,
+          "sample": "input[code-input] (6-digit code from the TV)"
+        },
+        {
+          "value": "2 solid #ffffff30%",
+          "count": 7,
+          "pages": 2,
+          "sample": "span.choice-dot"
+        },
+        {
+          "value": "2 solid #e50914",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.choice-dot"
+        },
+        {
+          "value": "2 dashed #ffffff28%",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.profile-picture"
+        }
+      ],
+      "shadow": [
+        {
+          "value": "rgba(255, 255, 255, 0.28) 0px 0px 0px 1px",
+          "count": 27,
+          "pages": 12,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 1.5px inset",
+          "count": 25,
+          "pages": 13,
+          "sample": "button[switch-lang-en] \"English\""
+        },
+        {
+          "value": "rgb(11, 11, 12) 0px 0px 0px 2px",
+          "count": 17,
+          "pages": 17,
+          "sample": "b[bell-badge] \"2\""
+        },
+        {
+          "value": "rgba(0, 0, 0, 0.5) 0px -12px 40px 0px",
+          "count": 16,
+          "pages": 15,
+          "sample": "div[title-sheet] (Paper Moons)"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.8) 0px 0px 0px 1px",
+          "count": 3,
+          "pages": 3,
+          "sample": "button[library-list-toggle] (In your lists: Velvet Static)"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.16) 0px 0px 0px 1.5px inset",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[pick-new]"
+        },
+        {
+          "value": "rgb(23, 23, 26) 0px 0px 0px 3px, rgb(255, 255, 255) 0px 0px 0px 5px",
+          "count": 2,
+          "pages": 2,
+          "sample": "button[accent-red] (Red)"
+        },
+        {
+          "value": "rgba(0, 0, 0, 0.45) 0px 6px 14px 0px",
+          "count": 2,
+          "pages": 2,
+          "sample": "div[caption-preview]"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 1.6px 11.2px 0px, rgba(255, 255, 255, 0.3) 0px 1.12px 0px 0px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.55) 0px 0px 0px 1.5px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[title-episode]"
+        },
+        {
+          "value": "rgba(229, 9, 20, 0.5) 0px 1.68px 11.76px 0px, rgba(255, 255, 255, 0.3) 0px 1.176px 0px 0px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.logo-o"
+        },
+        {
+          "value": "rgba(255, 255, 255, 0.22) 0px 0px 0px 1.5px inset",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[subtitle-more] \"More languages\""
+        },
+        {
+          "value": "rgb(229, 9, 20) 0px 0px 0px 3px",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.profile-picture"
+        }
+      ],
+      "transition": [
+        {
+          "value": "background, transform 0.15s, 0.1s ease, ease",
+          "count": 1563,
+          "pages": 29,
+          "sample": "button[continue-list-toggle] (Add to a list: The Glass Orchard)"
+        },
+        {
+          "value": "transform, background, color 0.08s, 0.15s, 0.15s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 288,
+          "pages": 36,
+          "sample": "button[switch-lang-en] \"English\""
+        },
+        {
+          "value": "transform, background 0.08s, 0.15s cubic-bezier(0.2, 0.8, 0.2, 1), cubic-be",
+          "count": 96,
+          "pages": 36,
+          "sample": "button[scan] \"Scan the TV's QR code\""
+        },
+        {
+          "value": "background 0.18s ease",
+          "count": 76,
+          "pages": 9,
+          "sample": "span.switch"
+        },
+        {
+          "value": "color, opacity 0.15s, 0.1s ease, ease",
+          "count": 58,
+          "pages": 29,
+          "sample": "button[lists-manage] \"Manage lists\""
+        },
+        {
+          "value": "background, transform 0.15s, 0.08s ease, ease",
+          "count": 28,
+          "pages": 11,
+          "sample": "button[library-result] (Harvest Moon Motel)"
+        },
+        {
+          "value": "background 0.12s ease",
+          "count": 22,
+          "pages": 5,
+          "sample": "button[party-open]"
+        },
+        {
+          "value": "transform 0.08s ease",
+          "count": 18,
+          "pages": 6,
+          "sample": "button.round (Back 10 seconds)"
+        },
+        {
+          "value": "transform, box-shadow 0.15s, 0.15s ease, ease",
+          "count": 17,
+          "pages": 17,
+          "sample": "button[account-button] (Account and profiles: Dana)"
+        },
+        {
+          "value": "border-color, box-shadow 0.15s, 0.15s ease, ease",
+          "count": 11,
+          "pages": 6,
+          "sample": "input[tv-rename]"
+        },
+        {
+          "value": "color 0.15s ease",
+          "count": 10,
+          "pages": 4,
+          "sample": "svg"
+        },
+        {
+          "value": "opacity 0.12s ease",
+          "count": 7,
+          "pages": 7,
+          "sample": "svg"
+        },
+        {
+          "value": "height 0.1s ease",
+          "count": 6,
+          "pages": 6,
+          "sample": "div.seek-track"
+        },
+        {
+          "value": "width, height 0.1s, 0.1s ease, ease",
+          "count": 6,
+          "pages": 6,
+          "sample": "div.seek-thumb"
+        },
+        {
+          "value": "background 0.15s ease",
+          "count": 4,
+          "pages": 3,
+          "sample": "button[rate-title-toggle]"
+        },
+        {
+          "value": "transform, box-shadow 0.18s, 0.18s ease, ease",
+          "count": 2,
+          "pages": 1,
+          "sample": "span.profile-picture"
+        },
+        {
+          "value": "color 0.12s ease",
+          "count": 2,
+          "pages": 1,
+          "sample": "button[device-rename] (Rename Chrome on Android)"
+        }
+      ],
+      "animation": [
+        {
+          "value": "polish-picture-in 0.4s",
+          "count": 960,
+          "pages": 29,
+          "sample": "img"
+        },
+        {
+          "value": "page-in 0.22s",
+          "count": 17,
+          "pages": 17,
+          "sample": "div[account-screen] (Account)"
+        },
+        {
+          "value": "fade-in 0.18s",
+          "count": 16,
+          "pages": 15,
+          "sample": "div.sheet-backdrop"
+        },
+        {
+          "value": "sheet-up 0.24s",
+          "count": 16,
+          "pages": 15,
+          "sample": "div[title-sheet] (Paper Moons)"
+        }
+      ],
+      "padding": [
+        {
+          "value": "0 12 0 12",
+          "count": 81,
+          "pages": 7,
+          "sample": "button[add-language-en] \"English\""
+        },
+        {
+          "value": "0 14 0 14",
+          "count": 79,
+          "pages": 20,
+          "sample": "button[account-button] \"Sign in\""
+        },
+        {
+          "value": "0 18 0 18",
+          "count": 57,
+          "pages": 32,
+          "sample": "button[scan] \"Scan the TV's QR code\""
+        },
+        {
+          "value": "14 16 14 16",
+          "count": 51,
+          "pages": 12,
+          "sample": "button[party-open]"
+        },
+        {
+          "value": "13 0 13 12",
+          "count": 47,
+          "pages": 29,
+          "sample": "button[lists-manage] \"Manage lists\""
+        },
+        {
+          "value": "0 6 0 6",
+          "count": 29,
+          "pages": 10,
+          "sample": "button[switch-lang-en] \"English\""
+        },
+        {
+          "value": "15 96 15 14",
+          "count": 29,
+          "pages": 29,
+          "sample": "input[url-input] (Video or page link)"
+        },
+        {
+          "value": "1 8 1 6",
+          "count": 27,
+          "pages": 12,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "14 14 14 14",
+          "count": 26,
+          "pages": 12,
+          "sample": "button[pick-favourites]"
+        },
+        {
+          "value": "8 10 8 10",
+          "count": 25,
+          "pages": 25,
+          "sample": "button[paste] \"Paste\""
+        },
+        {
+          "value": "0 5 0 5",
+          "count": 17,
+          "pages": 17,
+          "sample": "b[bell-badge] \"2\""
+        },
+        {
+          "value": "8 16 20 16",
+          "count": 16,
+          "pages": 15,
+          "sample": "div[title-sheet] (Paper Moons)"
+        },
+        {
+          "value": "0 15 0 15",
+          "count": 14,
+          "pages": 4,
+          "sample": "button[filter-all] \"All\""
+        },
+        {
+          "value": "12 14 12 14",
+          "count": 12,
+          "pages": 9,
+          "sample": "div.swatches (Colour)"
+        },
+        {
+          "value": "20 0 20 0",
+          "count": 6,
+          "pages": 6,
+          "sample": "div[seek] (Seek)"
+        },
+        {
+          "value": "4 8 4 4",
+          "count": 6,
+          "pages": 5,
+          "sample": "li[friend-request]"
+        },
+        {
+          "value": "6 10 6 10",
+          "count": 6,
+          "pages": 5,
+          "sample": "button[friend-request-decline] (Decline)"
+        },
+        {
+          "value": "8 8 8 8",
+          "count": 5,
+          "pages": 2,
+          "sample": "button.field-btn \"✕\""
+        },
+        {
+          "value": "4 4 4 4",
+          "count": 4,
+          "pages": 4,
+          "sample": "div[language-switch] (Language)"
+        },
+        {
+          "value": "13 14 13 14",
+          "count": 4,
+          "pages": 3,
+          "sample": "button[rate-title-toggle]"
+        },
+        {
+          "value": "10 14 10 14",
+          "count": 4,
+          "pages": 4,
+          "sample": "button[auth-switch] \"New here? Create an account\""
+        },
+        {
+          "value": "3 8 3 8",
+          "count": 4,
+          "pages": 1,
+          "sample": "span \"Rated 16 Oct 2026\""
+        },
+        {
+          "value": "14 8 14 19.76",
+          "count": 3,
+          "pages": 3,
+          "sample": "input[code-input] (6-digit code from the TV)"
+        },
+        {
+          "value": "14 52 14 14",
+          "count": 3,
+          "pages": 2,
+          "sample": "input[auth-password]"
+        },
+        {
+          "value": "13 12 13 12",
+          "count": 2,
+          "pages": 2,
+          "sample": "span[party-link-url] \"http://127.0.0.1:9303/?party=029396\""
+        },
+        {
+          "value": "0.37 3.71 0.37 3.71",
+          "count": 2,
+          "pages": 2,
+          "sample": "span.cap-sample \"This is how your subtitles will look\""
+        },
+        {
+          "value": "10 12 10 12",
+          "count": 2,
+          "pages": 2,
+          "sample": "div[friend-your-tag]"
+        },
+        {
+          "value": "10 12 10 10",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[title-episode]"
+        },
+        {
+          "value": "2 0 0 0",
+          "count": 1,
+          "pages": 1,
+          "sample": "span.episode-no \"1\""
+        },
+        {
+          "value": "1 6 1 6",
+          "count": 1,
+          "pages": 1,
+          "sample": "small.cap-count \"1\""
+        },
+        {
+          "value": "12 0 12 0",
+          "count": 1,
+          "pages": 1,
+          "sample": "button[device-rename] (Rename Chrome on Android)"
+        }
+      ],
+      "gap": [
+        {
+          "value": "6px",
+          "count": 394,
+          "pages": 36,
+          "sample": "button[account-button] \"Sign in\""
+        },
+        {
+          "value": "8px",
+          "count": 82,
+          "pages": 35,
+          "sample": "button[scan] \"Scan the TV's QR code\""
+        },
+        {
+          "value": "12px",
+          "count": 79,
+          "pages": 23,
+          "sample": "p.or \"or type the 6-digit code\""
+        },
+        {
+          "value": "3px",
+          "count": 27,
+          "pages": 12,
+          "sample": "span[score-badge] \"7\""
+        },
+        {
+          "value": "10px",
+          "count": 24,
+          "pages": 14,
+          "sample": "button[rate-title-toggle]"
+        },
+        {
+          "value": "4px",
+          "count": 23,
+          "pages": 11,
+          "sample": "div[language-switch] (Language)"
+        },
+        {
+          "value": "5px",
+          "count": 4,
+          "pages": 1,
+          "sample": "span.rating-badge \"9/10\""
+        }
+      ],
+      "iconSize": [
+        {
+          "value": "18px",
+          "count": 166,
+          "pages": 35,
+          "sample": "svg"
+        },
+        {
+          "value": "14px",
+          "count": 120,
+          "pages": 32,
+          "sample": "svg"
+        },
+        {
+          "value": "20px",
+          "count": 107,
+          "pages": 35,
+          "sample": "svg"
+        },
+        {
+          "value": "19px",
+          "count": 43,
+          "pages": 29,
+          "sample": "svg"
+        },
+        {
+          "value": "21px",
+          "count": 36,
+          "pages": 31,
+          "sample": "svg"
+        },
+        {
+          "value": "16px",
+          "count": 36,
+          "pages": 15,
+          "sample": "svg"
+        },
+        {
+          "value": "12px",
+          "count": 27,
+          "pages": 12,
+          "sample": "svg"
+        },
+        {
+          "value": "36px",
+          "count": 17,
+          "pages": 17,
+          "sample": "svg.avatar (Fox)"
+        },
+        {
+          "value": "40px",
+          "count": 15,
+          "pages": 11,
+          "sample": "svg"
+        },
+        {
+          "value": "32px",
+          "count": 13,
+          "pages": 7,
+          "sample": "svg"
+        },
+        {
+          "value": "13px",
+          "count": 6,
+          "pages": 5,
+          "sample": "svg"
+        },
+        {
+          "value": "17px",
+          "count": 5,
+          "pages": 4,
+          "sample": "svg"
+        },
+        {
+          "value": "104px",
+          "count": 4,
+          "pages": 4,
+          "sample": "svg[pairing-qr] (QR code that lets another phone control this TV)"
+        },
+        {
+          "value": "72px",
+          "count": 3,
+          "pages": 3,
+          "sample": "svg.avatar (Fox)"
+        },
+        {
+          "value": "11px",
+          "count": 2,
+          "pages": 2,
+          "sample": "svg"
+        },
+        {
+          "value": "84px",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg.avatar (Fox)"
+        },
+        {
+          "value": "29px",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg"
+        },
+        {
+          "value": "35px",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg"
+        },
+        {
+          "value": "22px",
+          "count": 1,
+          "pages": 1,
+          "sample": "svg"
+        }
+      ],
+      "fontFamily": [
+        {
+          "value": "system-ui",
+          "count": 1882,
+          "pages": 36,
+          "sample": "span \"Kin\""
+        },
+        {
+          "value": "Arial",
+          "count": 41,
+          "pages": 30,
+          "sample": "input[code-input] (6-digit code from the TV)"
+        }
+      ]
+    }
+  },
+  "problems": {
+    "smallText": [
+      {
+        "picture": "phone-390/p17-caption-style-1of2",
+        "element": "span.cap-sample \"This is how your subtitles will look\"",
+        "size": 9.26,
+        "floor": 12,
+        "count": 2,
+        "pictures": 2
+      }
+    ],
+    "contrast": [],
+    "smallTarget": [],
+    "tinyTarget": [],
+    "unnamed": [
+      {
+        "picture": "phone-390/p08-tvs-sheet",
+        "element": "input[tv-rename]",
+        "size": "358x48",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "phone-390/p10-account-guest",
+        "element": "input[auth-email]",
+        "size": "358x48",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "phone-390/p10-account-guest",
+        "element": "input[auth-password]",
+        "size": "358x48",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "phone-390-signed-in/p31-security",
+        "element": "input[password-current]",
+        "size": "358x48",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "phone-390-signed-in/p31-security",
+        "element": "input[password-new]",
+        "size": "358x48",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280/03-home-scrolled",
+        "element": "button[tv-row-next]",
+        "size": "51x51",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1280/14-rate-note",
+        "element": "input[rate-note-input]",
+        "size": "896x54",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280/16-list-edit",
+        "element": "input[list-name-input]",
+        "size": "589x54",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280/22-signin-form",
+        "element": "input[auth-email]",
+        "size": "640x61",
+        "count": 2,
+        "pictures": 2
+      },
+      {
+        "picture": "tv-1280/22-signin-form",
+        "element": "input[auth-password]",
+        "size": "640x61",
+        "count": 2,
+        "pictures": 2
+      },
+      {
+        "picture": "tv-1280-signed-in/s07-friend-tag-page",
+        "element": "input[tv-friend-tag-input]",
+        "size": "640x61",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280-signed-in/s15-profile-add",
+        "element": "input[profile-name-input]",
+        "size": "589x61",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280-signed-in/s16-approve-another-screen",
+        "element": "input[tv-approve-input]",
+        "size": "640x61",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1366x768/03-home-scrolled",
+        "element": "button[tv-row-next]",
+        "size": "55x55",
+        "count": 2,
+        "pictures": 2
+      },
+      {
+        "picture": "tv-1440x900/03-home-scrolled",
+        "element": "button[tv-row-next]",
+        "size": "58x58",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920/03-home-scrolled",
+        "element": "button[tv-row-next]",
+        "size": "77x77",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1920-signed-in/s00-signup-form",
+        "element": "input[auth-email]",
+        "size": "960x92",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920-signed-in/s00-signup-form",
+        "element": "input[auth-password]",
+        "size": "960x92",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920-signed-in/s07-friend-tag-page",
+        "element": "input[tv-friend-tag-input]",
+        "size": "960x92",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920-signed-in/s15-profile-add",
+        "element": "input[profile-name-input]",
+        "size": "883x92",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920-signed-in/s16-approve-another-screen",
+        "element": "input[tv-approve-input]",
+        "size": "960x92",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-2560/03-home-scrolled",
+        "element": "button[tv-row-next]",
+        "size": "102x102",
+        "count": 1,
+        "pictures": 1
+      }
+    ],
+    "safeMargin": [
+      {
+        "picture": "tv-1280/05-movies",
+        "element": "button[tv-row-next]",
+        "edges": "94.6% .. 98.6% / 87.4% .. 94.4%",
+        "count": 2,
+        "pictures": 2
+      },
+      {
+        "picture": "tv-1280/12-detail-series",
+        "element": "button[tv-season-1] \"Season 1\"",
+        "edges": "7.3% .. 18.6% / 90.1% .. 97.6%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280/12-detail-series",
+        "element": "button[tv-season-2] \"Season 2\"",
+        "edges": "19.5% .. 31.1% / 90.1% .. 97.6%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280/12-detail-series",
+        "element": "button[tv-season-3] \"Season 3\"",
+        "edges": "31.9% .. 43.5% / 90.1% .. 97.6%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280/12b-detail-series-episodes",
+        "element": "p.tv-hero-eyebrow \"Series to binge\"",
+        "edges": "7.0% .. 58.0% / 4.6% .. 8.2%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280-keys/keys-detail-series",
+        "element": "button[tv-detail-remove] \"Remove from Continue watching\"",
+        "edges": "7.0% .. 37.9% / 0.3% .. 6.1%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280-keys/keys-player",
+        "element": "button[tv-play-btn] (Pause)",
+        "edges": "4.8% .. 8.8% / 88.2% .. 95.3%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280-signed-in/s01-home-with-bell-badge",
+        "element": "b[tv-bell-badge] \"2\"",
+        "edges": "79.6% .. 81.6% / 4.7% .. 8.2%",
+        "count": 3,
+        "pictures": 3
+      },
+      {
+        "picture": "tv-1280-signed-in/s01-home-with-bell-badge",
+        "element": "button[tv-row-next]",
+        "edges": "94.6% .. 98.6% / 82.2% .. 89.3%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1280-signed-in/s01-home",
+        "element": "b[tv-bell-badge] \"1\"",
+        "edges": "79.6% .. 81.6% / 4.7% .. 8.2%",
+        "count": 11,
+        "pictures": 11
+      },
+      {
+        "picture": "tv-1280-signed-in/s04-friend-page",
+        "element": "button[friend-remove] \"Remove friend\"",
+        "edges": "7.0% .. 25.4% / 89.3% .. 96.8%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1366x768/11-detail-movie",
+        "element": "button[rail-search]",
+        "edges": "1.8% .. 5.3% / 13.8% .. 21.1%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1366x768/11-detail-movie",
+        "element": "button[rail-home]",
+        "edges": "1.8% .. 5.3% / 21.6% .. 28.9%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1366x768/11-detail-movie",
+        "element": "button[rail-movies]",
+        "edges": "1.8% .. 5.3% / 29.4% .. 36.7%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1366x768/11-detail-movie",
+        "element": "button[rail-series]",
+        "edges": "1.8% .. 5.3% / 37.1% .. 44.4%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1366x768/11-detail-movie",
+        "element": "button[rail-categories]",
+        "edges": "1.8% .. 5.3% / 44.9% .. 52.2%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1366x768/11-detail-movie",
+        "element": "button[rail-list]",
+        "edges": "1.8% .. 5.3% / 52.7% .. 60.0%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1366x768/11-detail-movie",
+        "element": "button[rail-party]",
+        "edges": "1.8% .. 5.3% / 63.0% .. 70.3%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1366x768/11-detail-movie",
+        "element": "button[rail-connect]",
+        "edges": "1.8% .. 5.3% / 70.7% .. 78.0%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1366x768/12-detail-series",
+        "element": "button[tv-season-1] \"Season 1\"",
+        "edges": "7.3% .. 18.7% / 90.1% .. 97.8%",
+        "count": 2,
+        "pictures": 2
+      },
+      {
+        "picture": "tv-1366x768/12-detail-series",
+        "element": "button[tv-season-2] \"Season 2\"",
+        "edges": "19.5% .. 31.1% / 90.1% .. 97.8%",
+        "count": 2,
+        "pictures": 2
+      },
+      {
+        "picture": "tv-1366x768/12-detail-series",
+        "element": "button[tv-season-3] \"Season 3\"",
+        "edges": "31.8% .. 43.5% / 90.1% .. 97.8%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1366x768/12b-detail-series-episodes",
+        "element": "p.tv-hero-eyebrow \"Series to binge\"",
+        "edges": "7.0% .. 58.0% / 4.6% .. 8.1%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1366x768/26-player-hud",
+        "element": "h1[tv-title] \"long\"",
+        "edges": "5.0% .. 10.4% / 4.9% .. 11.1%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1366x768/26-player-hud",
+        "element": "div.hud-clock \"01:39\"",
+        "edges": "87.4% .. 95.0% / 4.9% .. 9.0%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1366x768/26-player-hud",
+        "element": "button[tv-play-btn] (Pause)",
+        "edges": "5.0% .. 8.6% / 88.5% .. 95.1%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1440x900/02-home",
+        "element": "button[tv-account-chip] (Sign in)",
+        "edges": "80.1% .. 90.5% / 4.7% .. 10.4%",
+        "count": 7,
+        "pictures": 7
+      },
+      {
+        "picture": "tv-1440x900/02-home",
+        "element": "button[fullscreen-toggle] (Full screen)",
+        "edges": "91.4% .. 95.0% / 4.7% .. 10.4%",
+        "count": 7,
+        "pictures": 7
+      },
+      {
+        "picture": "tv-1440x900/03-home-scrolled",
+        "element": "button[tv-row-next]",
+        "edges": "94.6% .. 98.6% / 86.7% .. 93.1%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1440x900/11-detail-movie",
+        "element": "button[rail-search]",
+        "edges": "1.8% .. 5.3% / 12.4% .. 18.9%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1440x900/11-detail-movie",
+        "element": "button[rail-home]",
+        "edges": "1.8% .. 5.3% / 19.4% .. 25.9%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1440x900/11-detail-movie",
+        "element": "button[rail-movies]",
+        "edges": "1.8% .. 5.3% / 26.3% .. 32.8%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1440x900/11-detail-movie",
+        "element": "button[rail-series]",
+        "edges": "1.8% .. 5.3% / 33.2% .. 39.7%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1440x900/11-detail-movie",
+        "element": "button[rail-categories]",
+        "edges": "1.8% .. 5.3% / 40.1% .. 46.6%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1440x900/11-detail-movie",
+        "element": "button[rail-list]",
+        "edges": "1.8% .. 5.3% / 47.0% .. 53.4%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1440x900/11-detail-movie",
+        "element": "button[rail-party]",
+        "edges": "1.8% .. 5.3% / 56.2% .. 62.7%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1440x900/11-detail-movie",
+        "element": "button[rail-connect]",
+        "edges": "1.8% .. 5.3% / 63.1% .. 69.6%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1440x900/11-detail-movie",
+        "element": "button[tv-detail-close] \"Close\"",
+        "edges": "86.3% .. 95.0% / 4.7% .. 10.4%",
+        "count": 3,
+        "pictures": 3
+      },
+      {
+        "picture": "tv-1440x900/12-detail-series",
+        "element": "button[tv-season-1] \"Season 1\"",
+        "edges": "7.3% .. 18.7% / 91.1% .. 97.9%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1440x900/12-detail-series",
+        "element": "button[tv-season-2] \"Season 2\"",
+        "edges": "19.4% .. 31.0% / 91.1% .. 97.9%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1440x900/12-detail-series",
+        "element": "button[tv-season-3] \"Season 3\"",
+        "edges": "31.9% .. 43.5% / 91.1% .. 97.9%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1440x900/12b-detail-series-episodes",
+        "element": "span.tv-ep-name \"Salt\"",
+        "edges": "24.7% .. 27.4% / 96.2% .. 99.3%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1440x900/12b-detail-series-episodes",
+        "element": "span.tv-ep-meta \"44 min\"",
+        "edges": "63.1% .. 67.0% / 96.6% .. 99.3%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1440x900/23-connect",
+        "element": "button[tv-back-to-library] \"Back to the library\"",
+        "edges": "77.8% .. 95.0% / 4.7% .. 10.4%",
+        "count": 2,
+        "pictures": 2
+      },
+      {
+        "picture": "tv-1440x900/26-player-hud",
+        "element": "h1[tv-title] \"long\"",
+        "edges": "5.0% .. 10.4% / 4.4% .. 9.9%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1440x900/26-player-hud",
+        "element": "div.hud-clock \"01:39\"",
+        "edges": "87.4% .. 95.0% / 4.4% .. 8.0%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1440x900/26-player-hud",
+        "element": "button[tv-play-btn] (Pause)",
+        "edges": "5.0% .. 8.7% / 89.7% .. 95.6%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920/11-detail-movie",
+        "element": "button[rail-search]",
+        "edges": "1.8% .. 5.4% / 13.9% .. 21.1%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1920/11-detail-movie",
+        "element": "button[rail-home]",
+        "edges": "1.8% .. 5.4% / 21.6% .. 28.8%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1920/11-detail-movie",
+        "element": "button[rail-movies]",
+        "edges": "1.8% .. 5.4% / 29.3% .. 36.5%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1920/11-detail-movie",
+        "element": "button[rail-series]",
+        "edges": "1.8% .. 5.4% / 37.0% .. 44.3%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1920/11-detail-movie",
+        "element": "button[rail-categories]",
+        "edges": "1.8% .. 5.4% / 44.7% .. 51.9%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1920/11-detail-movie",
+        "element": "button[rail-list]",
+        "edges": "1.8% .. 5.4% / 52.4% .. 59.6%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1920/11-detail-movie",
+        "element": "button[rail-party]",
+        "edges": "1.8% .. 5.4% / 62.6% .. 69.8%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1920/11-detail-movie",
+        "element": "button[rail-connect]",
+        "edges": "1.8% .. 5.4% / 70.4% .. 77.6%",
+        "count": 4,
+        "pictures": 4
+      },
+      {
+        "picture": "tv-1920/12-detail-series",
+        "element": "button[tv-season-1] \"Season 1\"",
+        "edges": "7.3% .. 18.6% / 90.2% .. 97.8%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920/12-detail-series",
+        "element": "button[tv-season-2] \"Season 2\"",
+        "edges": "19.5% .. 31.1% / 90.2% .. 97.8%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920/12-detail-series",
+        "element": "button[tv-season-3] \"Season 3\"",
+        "edges": "31.9% .. 43.5% / 90.2% .. 97.8%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920/12b-detail-series-episodes",
+        "element": "p.tv-hero-eyebrow \"Series to binge\"",
+        "edges": "7.0% .. 58.0% / 4.5% .. 8.1%",
+        "count": 2,
+        "pictures": 2
+      },
+      {
+        "picture": "tv-1920/26-player-hud",
+        "element": "button[tv-play-btn] (Pause)",
+        "edges": "5.0% .. 8.7% / 88.5% .. 95.1%",
+        "count": 2,
+        "pictures": 2
+      },
+      {
+        "picture": "tv-1920-signed-in/s01-home-with-bell-badge",
+        "element": "b[tv-bell-badge] \"2\"",
+        "edges": "79.6% .. 81.6% / 4.7% .. 8.1%",
+        "count": 3,
+        "pictures": 3
+      },
+      {
+        "picture": "tv-1920-signed-in/s01-home-with-bell-badge",
+        "element": "button[tv-row-next]",
+        "edges": "94.6% .. 98.6% / 82.4% .. 89.5%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-1920-signed-in/s01-home",
+        "element": "b[tv-bell-badge] \"1\"",
+        "edges": "79.6% .. 81.6% / 4.7% .. 8.1%",
+        "count": 11,
+        "pictures": 11
+      },
+      {
+        "picture": "tv-1920-signed-in/s04-friend-page",
+        "element": "button[friend-remove] \"Remove friend\"",
+        "edges": "7.0% .. 25.4% / 89.2% .. 96.8%",
+        "count": 1,
+        "pictures": 1
+      },
+      {
+        "picture": "tv-2560/12-detail-series",
+        "element": "button[tv-season-3] \"Season 3\"",
+        "edges": "31.9% .. 43.5% / 90.1% .. 97.8%",
+        "count": 1,
+        "pictures": 1
+      }
+    ],
+    "cutText": [],
+    "sideways": [],
+    "noFocus": [
+      "tv-1280/21-signin-code",
+      "tv-1280/23-connect",
+      "tv-1280/26-player-hud",
+      "tv-1280/26b-player-hud-live",
+      "tv-1280/29-player-clean",
+      "tv-1280-signed-in/s19-player-hud-signed-in",
+      "tv-1366x768/23-connect",
+      "tv-1366x768/26-player-hud",
+      "tv-1366x768/29-player-clean",
+      "tv-1440x900/23-connect",
+      "tv-1440x900/26-player-hud",
+      "tv-1440x900/29-player-clean",
+      "tv-1920/23-connect",
+      "tv-1920/26-player-hud",
+      "tv-1920/29-player-clean",
+      "tv-1920-signed-in/s19-player-hud-signed-in",
+      "tv-2560/23-connect",
+      "tv-2560/26-player-hud",
+      "tv-2560/29-player-clean"
+    ],
+    "fewTargets": [
+      "tv-1280/29-player-clean",
+      "tv-1366x768/29-player-clean",
+      "tv-1440x900/29-player-clean",
+      "tv-1920/29-player-clean",
+      "tv-2560/29-player-clean"
+    ]
+  }
+}

@@ -6,6 +6,7 @@ import { FriendsProvider } from "./friends/FriendsProvider";
 import { roleOfThisPage } from "./role";
 import { setUpFullscreen } from "./shared/fullscreen";
 import "./styles.css";
+import "./polish/base.css";
 
 // Each screen is a chunk of its own, so a phone does not download the TV's player and a TV does not download the remote.
 const Tv = lazy(() => import("./tv/Tv").then((module) => ({ default: module.Tv })));

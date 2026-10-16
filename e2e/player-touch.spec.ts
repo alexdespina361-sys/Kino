@@ -286,13 +286,13 @@ test.describe("a finger on the picture", () => {
     phone.close();
   });
 
-  test("a mouse's double click on the picture still goes full screen", async ({ browser, baseURL }) => {
+  test("a mouse's double click in the middle of the picture goes full screen", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const remote = await RawPhone.connect(baseURL!, await readPairingCode(tv));
     remote.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/long.mp4", type: "mp4" } } });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
     expect(await isFullScreen(tv)).toBe(false);
-    await tv.mouse.dblclick(300, 250);
+    await tv.mouse.dblclick(640, 250);
     await expect.poll(() => isFullScreen(tv)).toBe(true);
     remote.close();
   });
@@ -307,6 +307,164 @@ test.describe("a finger on the picture", () => {
     await phone.touchscreen.tap(MIDDLE.x, MIDDLE.y);
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
     phone.close();
+  });
+});
+
+test.describe("a mouse on the picture", () => {
+  // (a desktop's screen, 1280 by 720: the two sides of the picture, and the middle of it, above the big button)
+  const SIDE_LEFT = { x: 200, y: 250 };
+  const SIDE_RIGHT = { x: 1080, y: 250 };
+  const CENTRE = { x: 640, y: 250 };
+
+  /** A screen the size of a desktop's, a film of forty seconds playing from the start, and the controls gone (a move of the mouse brings them back). */
+  async function playing(browser: Browser, baseURL: string | undefined) {
+    const tv = await openTv(browser);
+    const remote = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    remote.cmd({ type: "LOAD", media: { title: "Sample", stream: { url: "/fixtures/long.mp4", type: "mp4" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    remote.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 8_000 });
+    return { tv, remote };
+  }
+
+  test("two clicks on the right side skip forward, and a click soon after goes on skipping", async ({ browser, baseURL }) => {
+    const { tv, remote } = await playing(browser, baseURL);
+    const toast = tv.getByTestId("tv-toast");
+    await seekTo(tv, 8);
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(8);
+    const at = await tvTime(tv);
+    await tv.mouse.dblclick(SIDE_RIGHT.x, SIDE_RIGHT.y);
+    await expect(toast).toHaveText("+10s");
+    await expect(toast).toHaveClass(/side-forward/);
+    await expect.poll(() => tvTime(tv)).toBeGreaterThan(at + 8);
+    await tv.mouse.click(SIDE_RIGHT.x, SIDE_RIGHT.y); // one more, in the same run: it does not have to be a double itself
+    await expect(toast).toHaveText("+20s");
+    await expect.poll(() => tvTime(tv)).toBeGreaterThan(at + 18);
+    expect(await isFullScreen(tv)).toBe(false); // (a side skips: it is only the middle that goes full screen)
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    remote.close();
+  });
+
+  test("two clicks on the left side skip back", async ({ browser, baseURL }) => {
+    const { tv, remote } = await playing(browser, baseURL);
+    await seekTo(tv, 25);
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(25);
+    const before = await tvTime(tv);
+    await tv.mouse.dblclick(SIDE_LEFT.x, SIDE_LEFT.y);
+    await expect(tv.getByTestId("tv-toast")).toHaveText("−10s");
+    await expect(tv.getByTestId("tv-toast")).toHaveClass(/side-back/);
+    await expect.poll(() => tvTime(tv)).toBeLessThan(before - 8);
+    expect(await isFullScreen(tv)).toBe(false);
+    remote.close();
+  });
+
+  test("a single click is only a click, a moment late: it puts the controls away, and nothing skips", async ({ browser, baseURL }) => {
+    const { tv, remote } = await playing(browser, baseURL);
+    await seekTo(tv, 8);
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(8);
+    const at = await tvTime(tv);
+    await tv.mouse.click(SIDE_LEFT.x, SIDE_LEFT.y); // (the mouse coming to the picture brought the controls up; the click puts them away)
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 1_500 }); // (soon: the controls put themselves away after 2.5 s without a click, which would pass for one)
+    expect(await tv.getByTestId("tv-toast").count(), "nobody is told of a skip").toBe(0); // (counted once: a toast that was shown and went would pass a wait)
+    expect(await tvTime(tv)).toBeGreaterThanOrEqual(at);
+    expect(await tvTime(tv)).toBeLessThan(at + 5);
+    remote.close();
+  });
+
+  test("a button held down on the picture plays it at twice the speed, says so, and lets go of it when it comes up, without a click", async ({ browser, baseURL }) => {
+    const { tv, remote } = await playing(browser, baseURL);
+    expect(await rate(tv)).toBe(1);
+    await tv.mouse.move(SIDE_RIGHT.x, SIDE_RIGHT.y);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible"); // (the mouse coming to the picture brings the controls up)
+    await tv.mouse.down();
+    await expect(tv.getByTestId("tv-boost")).toBeVisible({ timeout: 3_000 });
+    expect(await rate(tv)).toBe(2);
+    await expect(tv.getByTestId("tv-toast")).toHaveCount(0); // (a hold is not a change of speed: nobody is told it is)
+    await tv.mouse.up();
+    await expect(tv.getByTestId("tv-boost")).toHaveCount(0);
+    await expect.poll(() => rate(tv)).toBe(1);
+    await tv.waitForTimeout(500); // (longer than a click is waited for: the press that was a hold is no click, which would have put the controls away)
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    expect(await hud(tv)).toBe("visible");
+    remote.close();
+  });
+
+  test("the dot of the bar is picked up and dragged: the times follow the pointer, and the film goes where it is let go", async ({ browser, baseURL }) => {
+    const { tv, remote } = await playing(browser, baseURL);
+    await tv.mouse.move(640, 600);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    const bar = (await tv.locator(".hud-bar").boundingBox())!;
+    const dot = (await tv.locator(".hud-bar-thumb").boundingBox())!;
+    const y = dot.y + dot.height / 2;
+    await tv.mouse.move(dot.x + dot.width / 2, y);
+    await tv.mouse.down();
+    await expect(tv.locator(".hud-bar")).toHaveAttribute("data-scrubbing", "true");
+    await tv.mouse.move(bar.x + bar.width * 0.4, y, { steps: 8 });
+    await tv.mouse.move(bar.x + bar.width * 0.61, y + 60, { steps: 8 }); // (off the line of the bar: the dot goes on following)
+    await expect(tv.getByTestId("tv-elapsed")).toHaveText(/^0:2[34]$/); // (61% of forty seconds: the time is where the dot is)
+    await expect(tv.locator(".hud-bar")).toHaveAttribute("aria-valuenow", /^2[34]$/);
+    expect(await tvTime(tv)).toBeLessThan(15); // (the film has not moved yet: a drag across the bar does not ask for a picture at every pixel of it)
+    await tv.mouse.up();
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(24);
+    await expect(tv.locator(".hud-bar")).not.toHaveAttribute("data-scrubbing", "true");
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    remote.close();
+  });
+
+  test("a drag of the dot that the bar could not keep hold of ends where the button comes up, and takes the film there; the dot is not left to follow the mouse", async ({ browser, baseURL }) => {
+    const { tv, remote } = await playing(browser, baseURL);
+    await tv.mouse.move(640, 600);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    const bar = (await tv.locator(".hud-bar").boundingBox())!;
+    const y = bar.y + bar.height / 2;
+    // A pointer the browser has no record of, like one that is already gone: asking to keep hold of it is refused, so the bar is never given the end of the drag.
+    const send = (type: string, x: number, atY: number, onBody = false) =>
+      tv.evaluate(
+        ({ type, x, atY, onBody }) => {
+          const target = onBody ? document.body : document.querySelector(".hud-bar")!;
+          target.dispatchEvent(new PointerEvent(type, { pointerId: 77, pointerType: "mouse", isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1, clientX: x, clientY: atY, bubbles: true, cancelable: true }));
+        },
+        { type, x, atY, onBody },
+      );
+    await send("pointerdown", bar.x + bar.width * 0.1, y);
+    await send("pointermove", bar.x + bar.width * 0.6, y);
+    await expect(tv.locator(".hud-bar")).toHaveAttribute("data-scrubbing", "true");
+    await send("pointerup", bar.x + bar.width * 0.6, y - 200, true); // (let go above the bar, where nothing listens but the window)
+    await expect(tv.locator(".hud-bar")).not.toHaveAttribute("data-scrubbing", "true", { timeout: 1_000 });
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(22);
+    await tv.mouse.move(bar.x + bar.width * 0.1, y, { steps: 4 }); // (a mouse that only passes over the bar afterwards moves nothing)
+    await tv.waitForTimeout(600);
+    expect(await tvTime(tv)).toBeGreaterThanOrEqual(22);
+    await expect(tv.locator(".hud-bar")).not.toHaveAttribute("data-scrubbing", "true");
+    remote.close();
+  });
+
+  test("the dot, held still for a moment, takes the film with it, so that the picture shows what is under it", async ({ browser, baseURL }) => {
+    const { tv, remote } = await playing(browser, baseURL);
+    await tv.mouse.move(640, 600);
+    const bar = (await tv.locator(".hud-bar").boundingBox())!;
+    const dot = (await tv.locator(".hud-bar-thumb").boundingBox())!;
+    const y = dot.y + dot.height / 2;
+    await tv.mouse.move(dot.x + dot.width / 2, y);
+    await tv.mouse.down();
+    await tv.mouse.move(bar.x + bar.width * 0.7, y, { steps: 6 });
+    await expect.poll(() => tvTime(tv), { timeout: 3_000 }).toBeGreaterThanOrEqual(27); // (the button is still down)
+    await expect(tv.locator(".hud-bar")).toHaveAttribute("data-scrubbing", "true");
+    await tv.mouse.up();
+    await expect(tv.locator(".hud-bar")).not.toHaveAttribute("data-scrubbing", "true");
+    expect(await tvTime(tv)).toBeGreaterThanOrEqual(27);
+    remote.close();
+  });
+
+  test("a click on the bar still seeks there", async ({ browser, baseURL }) => {
+    const { tv, remote } = await playing(browser, baseURL);
+    await tv.mouse.move(640, 600);
+    const bar = (await tv.locator(".hud-bar").boundingBox())!;
+    await tv.mouse.click(bar.x + bar.width * 0.75, bar.y + bar.height / 2);
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(30);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible"); // (a seek is a use of the controls, not a way out of them)
+    remote.close();
   });
 });
 
@@ -328,6 +486,28 @@ test.describe("a finger on the bars laid over the picture", () => {
       await phone.touchscreen.tap(bar.x + bar.width * 0.7, bar.y + bar.height / 2);
       await expect.poll(() => tvTime(phone)).toBeGreaterThan(24); // (70% of forty seconds)
       expect(await hud(phone)).toBe("visible"); // a seek is a use of the controls, not a way out of them
+      phone.close();
+    });
+
+    test(`held ${shape.how}: a finger drags the dot along the bar, and the film goes where it lifts`, async ({ browser }) => {
+      const phone = await openFilms(browser, { shape });
+      await startFilm(phone);
+      await showControls(phone);
+      const cdp = await phone.context().newCDPSession(phone);
+      const bar = (await phone.locator(".hud-bar").boundingBox())!;
+      const dot = (await phone.locator(".hud-bar-thumb").boundingBox())!;
+      const y = dot.y + dot.height / 2;
+      const from = dot.x + dot.width / 2;
+      const to = bar.x + bar.width * 0.76;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from, y }] });
+      for (let step = 1; step <= 6; step++) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from + ((to - from) * step) / 6, y }] });
+      }
+      await expect(phone.getByTestId("tv-elapsed")).toHaveText(/^0:(29|30)$/); // (76% of forty seconds: the time is where the finger is)
+      await expect(phone.locator(".hud-bar")).toHaveAttribute("data-scrubbing", "true");
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await expect.poll(() => tvTime(phone)).toBeGreaterThanOrEqual(29);
+      expect(await hud(phone)).toBe("visible"); // (a drag is a use of the controls, not a way out of them)
       phone.close();
     });
 

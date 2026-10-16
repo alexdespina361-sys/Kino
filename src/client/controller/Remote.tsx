@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { episodeLabel, previousEpisode, type Command, type NormalizedMedia, type PlayerState, type TvInfo } from "../../shared";
 import { Rich } from "../i18n/Rich";
 import { t, useT } from "../i18n";
@@ -61,6 +61,10 @@ function Chip({ icon, label, value, onClick, testId }: { icon?: ReactNode; label
 /** The remote: what's playing, a seek bar, transport buttons, and the extras that apply to this video. */
 export function Remote({ tv, online, media, player, send, onStop, onNext, onPrevious, onOpen }: RemoteProps) {
   useT();
+  // It takes the place of the library, which may have been scrolled far down: it starts at its own top (the title, and the TV's menu, are there).
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   const series = media.series;
   const rawTitle = media.title ?? hostOf(media.stream.url) ?? media.stream.url;
   const title = series && rawTitle.includes("·") ? rawTitle.split("·")[0]!.trim() : rawTitle;
@@ -91,7 +95,7 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
   const previous = previousEpisode(series);
 
   return (
-    <>
+    <div className="remote">
       <section className="now-playing">
         {series && (
           <div className="episode-line">
@@ -116,107 +120,111 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
         </div>
       </section>
 
-      <SeekBar
-        currentTime={player.currentTime}
-        duration={player.duration}
-        buffered={player.bufferedEnd}
-        onSeek={(time) => send({ type: "SEEK", time })}
-      />
+      <div className="remote-controls">
+        <SeekBar
+          currentTime={player.currentTime}
+          duration={player.duration}
+          buffered={player.bufferedEnd}
+          onSeek={(time) => send({ type: "SEEK", time })}
+        />
 
-      <div className="transport">
-        <button
-          className="round"
-          onClick={() => send({ type: "SKIP", seconds: -10 })}
-          disabled={!online}
-          aria-label={t("hud.back", { n: 10 })}
-        >
-          <Back10Icon />
-        </button>
-        {playing ? (
-          <button className="round big" data-testid="pause" onClick={() => send({ type: "PAUSE" })} disabled={!online} aria-label={t("hud.pause")}>
-            <PauseIcon />
+        <div className="transport">
+          <button
+            className="round"
+            onClick={() => send({ type: "SKIP", seconds: -10 })}
+            disabled={!online}
+            aria-label={t("hud.back", { n: 10 })}
+          >
+            <Back10Icon />
           </button>
-        ) : (
-          <button className="round big" data-testid="play" onClick={() => send({ type: "PLAY" })} disabled={!online} aria-label={t("hud.play")}>
-            <PlayIcon />
-          </button>
-        )}
-        <button
-          className="round"
-          onClick={() => send({ type: "SKIP", seconds: 10 })}
-          disabled={!online}
-          aria-label={t("hud.forward", { n: 10 })}
-        >
-          <Forward10Icon />
-        </button>
-      </div>
-
-      {(previous || next) && (
-        <div className="episode-nav">
-          {previous && (
-            <button className="btn" data-testid="previous-episode" onClick={onPrevious} disabled={!online}>
-              <PreviousIcon /> {t("remote.previous")}
-              <small>{episodeLabel(previous)}</small>
+          {playing ? (
+            <button className="round big" data-testid="pause" onClick={() => send({ type: "PAUSE" })} disabled={!online} aria-label={t("hud.pause")}>
+              <PauseIcon />
+            </button>
+          ) : (
+            <button className="round big" data-testid="play" onClick={() => send({ type: "PLAY" })} disabled={!online} aria-label={t("hud.play")}>
+              <PlayIcon />
             </button>
           )}
-          {next && (
-            <button className="btn btn-red" data-testid="next-episode" onClick={onNext} disabled={!online}>
-              <NextIcon /> {t("remote.next")}
-              <small>{episodeLabel(next)}</small>
-            </button>
+          <button
+            className="round"
+            onClick={() => send({ type: "SKIP", seconds: 10 })}
+            disabled={!online}
+            aria-label={t("hud.forward", { n: 10 })}
+          >
+            <Forward10Icon />
+          </button>
+        </div>
+
+        {(previous || next) && (
+          <div className="episode-nav">
+            {previous && (
+              <button className="btn" data-testid="previous-episode" onClick={onPrevious} disabled={!online}>
+                <PreviousIcon /> {t("remote.previous")}
+                <small>{episodeLabel(previous)}</small>
+              </button>
+            )}
+            {next && (
+              <button className="btn btn-red" data-testid="next-episode" onClick={onNext} disabled={!online}>
+                <NextIcon /> {t("remote.next")}
+                <small>{episodeLabel(next)}</small>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="remote-extras">
+        <div className="chips">
+          {series?.episodes && series.episodes.length > 1 && (
+            <Chip
+              testId="chip-episodes"
+              label={t("player.episodes")}
+              value={t("remote.inList", { count: series.episodes.length })}
+              onClick={() => onOpen("episodes")}
+            />
+          )}
+          {hasTracks && (
+            <Chip
+              testId="chip-tracks"
+              icon={<SubtitlesIcon />}
+              label={t("player.subtitles")}
+              value={subtitleName || t("player.audio")}
+              onClick={() => onOpen("tracks")}
+            />
+          )}
+          {player.sources && (
+            <Chip
+              testId="chip-source"
+              label={t("player.source")}
+              value={player.sources.labels[player.sources.current] ?? t("player.source")}
+              onClick={() => onOpen("sources")}
+            />
+          )}
+          <Chip testId="chip-speed" label={t("player.speedShort")} value={`${player.playbackRate ?? 1}×`} onClick={() => onOpen("speed")} />
+          {player.quality && player.quality.levels.length > 1 && (
+            <Chip testId="chip-quality" label={t("player.quality")} value={qualityLabel} onClick={() => onOpen("quality")} />
           )}
         </div>
-      )}
 
-      <div className="chips">
-        {series?.episodes && series.episodes.length > 1 && (
-          <Chip
-            testId="chip-episodes"
-            label={t("player.episodes")}
-            value={t("remote.inList", { count: series.episodes.length })}
-            onClick={() => onOpen("episodes")}
-          />
+        {fsHint && (
+          <p className="banner" data-testid="fs-hint" role="status">
+            <Rich k="remote.fsHint" parts={{ ok: <b>OK</b> }} />
+          </p>
         )}
-        {hasTracks && (
-          <Chip
-            testId="chip-tracks"
-            icon={<SubtitlesIcon />}
-            label={t("player.subtitles")}
-            value={subtitleName || t("player.audio")}
-            onClick={() => onOpen("tracks")}
-          />
-        )}
-        {player.sources && (
-          <Chip
-            testId="chip-source"
-            label={t("player.source")}
-            value={player.sources.labels[player.sources.current] ?? t("player.source")}
-            onClick={() => onOpen("sources")}
-          />
-        )}
-        <Chip testId="chip-speed" label={t("player.speedShort")} value={`${player.playbackRate ?? 1}×`} onClick={() => onOpen("speed")} />
-        {player.quality && player.quality.levels.length > 1 && (
-          <Chip testId="chip-quality" label={t("player.quality")} value={qualityLabel} onClick={() => onOpen("quality")} />
-        )}
+
+        <div className="actions">
+          <button className="btn btn-danger" data-testid="stop" onClick={onStop}>
+            <StopIcon /> {t("remote.stop")}
+          </button>
+          <button className="btn" data-testid="fullscreen" onClick={toggleFullscreen} disabled={!online}>
+            <FullscreenIcon /> {player.fullscreen ? t("remote.exitFullscreen") : t("remote.fullscreen")}
+          </button>
+          <button className="btn" data-testid="change-video" onClick={() => onOpen("link")}>
+            <LinkIcon /> {t("remote.changeVideo")}
+          </button>
+        </div>
       </div>
-
-      {fsHint && (
-        <p className="banner" data-testid="fs-hint" role="status">
-          <Rich k="remote.fsHint" parts={{ ok: <b>OK</b> }} />
-        </p>
-      )}
-
-      <div className="actions">
-        <button className="btn btn-danger" data-testid="stop" onClick={onStop}>
-          <StopIcon /> {t("remote.stop")}
-        </button>
-        <button className="btn" data-testid="fullscreen" onClick={toggleFullscreen} disabled={!online}>
-          <FullscreenIcon /> {player.fullscreen ? t("remote.exitFullscreen") : t("remote.fullscreen")}
-        </button>
-        <button className="btn" data-testid="change-video" onClick={() => onOpen("link")}>
-          <LinkIcon /> {t("remote.changeVideo")}
-        </button>
-      </div>
-    </>
+    </div>
   );
 }

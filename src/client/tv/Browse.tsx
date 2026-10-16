@@ -14,11 +14,11 @@ import { useBell } from "../friends/useBell";
 import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
-import { BackspaceIcon, CheckIcon, ChevronIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { BackspaceIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
-import { hueOf } from "../shared/Poster";
+import { comesIn, hueOf } from "../shared/Poster";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
@@ -26,11 +26,14 @@ import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, UnfriendTv } from "./Friends";
 import { AccountChip, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
-import { appendTo, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, typedCharacter } from "./librarySearch";
+import { editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, typedCharacter, type BoxEdit, type SearchBox } from "./librarySearch";
 import { asOpened, entryOfItem, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, listOfRow, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
+import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
 import { RateOverlay } from "./RateOverlay";
+import { RowTiles } from "./RowTiles";
+import { SearchField } from "./SearchField";
 
 /** What a screen that starts a title can add: where to pick it up, and the picture and year the library already knows for it. */
 export interface PlayOptions {
@@ -40,9 +43,9 @@ export interface PlayOptions {
 
 interface BrowseProps {
   onPlay: (url: string, options?: PlayOptions) => void;
-  /** The account button in the corner: signing in for a guest, the account page for somebody signed in. */
-  onAccount: () => void;
-  /** The menu's pages that are not the library: the settings, pairing a phone, and the watch party. */
+  /** The profile page's way to sign in (a guest's): the page of the account that is not the library. */
+  onSignIn: () => void;
+  /** Settings, from the corner of the profile's page; and the menu's other pages that are not the library: pairing a phone and the watch party. */
   onSettings: () => void;
   onConnect: () => void;
   onParty: () => void;
@@ -145,8 +148,8 @@ const DETAIL: Target = { zone: "detail", row: 0, col: 0 };
 const fresh = (target: Target): Target => (target ? { ...target } : target);
 /** Where the remote can start on a page, in the order they are tried. */
 const CONTENT_ZONES: Zone[] = ["rows", "grid", "keys"];
-/** What it can be put back on when a page is returned to. */
-const RESTORABLE: Zone[] = [...CONTENT_ZONES, "chips", "results", "foot"];
+/** What it can be put back on when a page is returned to ("hero": the profile's page, back from Settings, whose button it was on). */
+const RESTORABLE: Zone[] = [...CONTENT_ZONES, "chips", "results", "foot", "hero"];
 
 const find = (root: ParentNode, pos: Pos) => root.querySelector<HTMLElement>(`[data-zone="${pos.zone}"][data-row="${pos.row}"][data-col="${pos.col}"]`);
 function posOf(element: Element | null): Pos | null {
@@ -218,7 +221,7 @@ function slideIntoView(button: HTMLElement) {
  * the menu, OK on a title opens its own page (play it, keep it in a list), and Back steps out: of that page, of the menu, then to
  * the home page, and from there into the menu.
  */
-export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice }: BrowseProps) {
+export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice }: BrowseProps) {
   const t = useT();
   const language = useLanguage();
   const { status: accountStatus, me, profile, say } = useAccount();
@@ -234,7 +237,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   const [status, setStatus] = useState<"loading" | "ready" | "failed">(remembered.library ? "ready" : "loading");
   const [attempt, setAttempt] = useState(0);
   const [view, setViewState] = useState<View>(remembered.view);
-  const [query, setQuery] = useState(remembered.query);
+  const [box, setBox] = useState<SearchBox>(() => ({ text: remembered.query, caret: remembered.query.length }));
+  const query = box.text;
+  const edit = (change: BoxEdit) => setBox((before) => editBox(before, change));
   const [results, setResults] = useState<LibraryItem[]>(remembered.results);
   const [filter, setFilter] = useState<KindFilter>(remembered.filter);
   const [searching, setSearching] = useState(false);
@@ -407,8 +412,9 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     setPending(CONTENT);
   };
 
-  // The menu: the places (search, home, films, shows, the categories, the lists), then what is done from here and who is watching (the party, a phone, the
-  // profile, which holds what the profile rated, its friends, History and the settings). A few lines, so that none has to be scrolled to.
+  // The menu: the places (search, home, films, shows, the categories, the lists), then what is done from here (the party, a phone). A few lines, so that
+  // none has to be scrolled to. Who is watching is not in it: the button in the corner is, and opens the profile, which holds what the profile rated,
+  // its friends and History, with the settings in its own corner.
   const entries: RailEntry[] = [
     { id: "search", label: t("tv.search"), icon: <SearchIcon />, current: view.kind === "search", testId: "rail-search", onPress: () => choose({ kind: "search" }) },
     { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) },
@@ -420,30 +426,25 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     phone
       ? { id: "connect", label: t("tv.useRemote"), icon: <PhoneIcon />, testId: "rail-connect", onPress: () => switchRole("remote") }
       : { id: "connect", label: t(connected ? "tv.phoneConnected" : "tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { lit: true } : {}), testId: "rail-connect", onPress: onConnect },
-    {
-      id: "profile",
-      label: t("tv.profile"),
-      icon: <UserIcon />,
-      current: isProfilePage(view),
-      ...(friends.on && friends.attention > 0 ? { badge: String(friends.attention) } : {}),
-      testId: "rail-profile",
-      onPress: () => choose({ kind: "profile" }),
-    },
   ];
   const openEntry = entries.findIndex((entry) => entry.current);
   const railIndex = openEntry === -1 ? 1 : openEntry; // a page the menu has no line for belongs to Home
 
   // What the arrow keys can reach, row by row: the key handler below reads it through a ref.
-  const showAccount = accountStatus === "ready";
-  const showBell = showAccount && bell.on;
+  const canSignIn = accountStatus === "ready"; // (a server without accounts has nobody to sign in, but its TV has Settings, which the corner button leads to)
+  const showAccount = accountStatus !== "loading";
+  const showBell = canSignIn && bell.on;
   const topButtons = (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the bell, the account button, then the full screen one
+  const signedIn = Boolean(me && profile);
+  /** The profile's page has buttons where the other pages have a banner: Settings, and for a guest the way to sign in before it. */
+  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 1 : 2) : 0;
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   // Movies or Series of a library that has titles, none of them of that kind (a source that does not say which): not "nothing yet", which Retry could not mend.
   const kindEmpty = showRetry && hasTiles && (view.kind === "movies" || view.kind === "series");
   const shape: Shape = {
     rail: entries.map(() => 1),
     top: topButtons > 0 ? [topButtons] : [],
-    ...(rowsPage ? { hero: !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
+    ...(rowsPage ? { hero: profileButtons > 0 ? [profileButtons] : !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
     ...(grid ? { grid: gridRows(grid.entries.length, gridColumns) } : {}),
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: gridRows(shownResults.length, resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
@@ -459,33 +460,37 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
         }
       : {}),
   };
-  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists });
-  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists };
+  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn });
+  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn };
 
-  /** Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. */
-  const resolve = (target: Target): Pos | null => {
+  /**
+   * Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. `leaving` is the block of buttons
+   * the remote is moving out of: Down from the profile's top buttons goes to its cards, not back to the button it was on.
+   */
+  const resolve = (target: Target, leaving?: Zone): Pos | null => {
     const root = rootRef.current;
     if (!target || !root) return null;
     if (target.row !== -1) return target as Pos;
     if (target.zone === "rail") return { zone: "rail", row: latest.current.railIndex, col: 0 };
     const at = savedPos(latest.current.view, latest.current.homeRows);
-    if (at && RESTORABLE.includes(at.zone) && find(root, at)) return at;
+    if (at && at.zone !== leaving && RESTORABLE.includes(at.zone) && find(root, at)) return at;
     // (On the lists page the buttons over the titles are somewhere to stand when the list has none; on a friend's page, the button of the half that is shown, not the way back.)
     const page = latest.current.view;
-    const zones: Zone[] = page.kind === "list" || page.kind === "friend" ? [...CONTENT_ZONES, "chips"] : CONTENT_ZONES;
+    // (A guest came to the profile's page for one thing: the way to sign in is where the remote starts.)
+    const zones: Zone[] = page.kind === "list" || page.kind === "friend" ? [...CONTENT_ZONES, "chips"] : page.kind === "profile" && !latest.current.signedIn ? ["hero", ...CONTENT_ZONES] : CONTENT_ZONES;
     const start = (zone: Zone): Pos => ({ zone, row: 0, col: zone === "chips" && page.kind === "friend" ? friendChip(page.tab) : 0 });
-    return zones.map(start).find((pos) => find(root, pos)) ?? null;
+    return zones.filter((zone) => zone !== leaving).map(start).find((pos) => find(root, pos)) ?? null;
   };
-  const focusAt = (target: Target) => {
-    const pos = resolve(target);
+  const focusAt = (target: Target, leaving?: Zone) => {
+    const pos = resolve(target, leaving);
     if (pos && rootRef.current) find(rootRef.current, pos)?.focus({ preventScroll: true });
   };
   /** Move the focus; the menu is only on screen while it has the focus, so it is opened first and reached after the render. */
-  const go = (target: Target) => {
+  const go = (target: Target, leaving?: Zone) => {
     if (target && target.zone === "rail") {
       setRailOpen(true);
       setPending(target);
-    } else focusAt(target);
+    } else focusAt(target, leaving);
   };
 
   useEffect(() => {
@@ -571,7 +576,8 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
     setSearching(true);
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      fetch(`/api/library/search?q=${encodeURIComponent(text)}`, { signal: controller.signal })
+      Promise.resolve() // (encodeURIComponent throws for a lone half of a pair: inside the chain it is a failed search, outside it an error that leaves "searching" on)
+        .then(() => fetch(`/api/library/search?q=${encodeURIComponent(text)}`, { signal: controller.signal }))
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
         .then((answer: unknown) => {
           const parsed = LibraryItemsSchema.parse(answer);
@@ -606,11 +612,19 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
       const { shape: now, view: page, query: text, detail: open, overlay: over, lists: all } = latest.current;
       if (over) return; // a page over the library walks its own buttons (see Idle.tsx)
 
-      // A keyboard types into the search box (not while a title's page is over it).
-      const typed = page.kind === "search" && !open ? typedCharacter(event) : null;
+      // A keyboard types into the search box, at the caret (not while a title's page is over it; a small screen's box is a field that takes its keys itself).
+      const boxKeys = page.kind === "search" && !open && !(event.target instanceof HTMLInputElement);
+      const typed = boxKeys ? typedCharacter(event) : null;
       if (typed !== null) {
         event.preventDefault();
-        setQuery((before) => appendTo(before, typed));
+        edit({ kind: "type", char: typed });
+        return;
+      }
+      // ...and Delete takes the character after the caret, Home and End take it to the ends of the text.
+      const caretKey: BoxEdit | null = !boxKeys ? null : event.key === "Delete" ? { kind: "delete" } : event.key === "Home" ? { kind: "move", to: "start" } : event.key === "End" ? { kind: "move", to: "end" } : null;
+      if (caretKey) {
+        event.preventDefault();
+        edit(caretKey);
         return;
       }
 
@@ -619,7 +633,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
         event.preventDefault();
         if (open) return closeDetail();
         if (event.key === "Backspace" && page.kind === "search") {
-          if (text) return setQuery(text.slice(0, -1));
+          if (text) return edit({ kind: "backspace" }); // (at the very start of the text there is nothing before the caret: nothing goes, and the page is not left either)
           if (event.repeat) return; // (holding it down empties the box and stops there: the repeats must not go on to leave the page)
         }
         if (posOf(document.activeElement)?.zone === "rail" && resolve(CONTENT)) go(CONTENT);
@@ -644,7 +658,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
       const next = stepFrom(now, at, action);
       // Up from the titles lands on the button of the list (or the half of a friend's page) that is shown, not on the one above whichever title the remote was on.
       const shownChip = page.kind === "friend" ? friendChip(page.tab) : Math.max(0, all.findIndex((info) => info.id === shownList(page, all).id));
-      go(at.zone === "grid" && next?.zone === "chips" ? { ...next, col: shownChip } : next);
+      go(at.zone === "grid" && next?.zone === "chips" ? { ...next, col: shownChip } : next, at.zone);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -665,7 +679,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
       const room = edge.width * 0.7; // keep a title beside it showing, so there is somewhere to go
       if (edge.left < box.left + room) scroller.scrollBy({ left: edge.left - box.left - room, behavior: "smooth" });
       else if (edge.right > box.right - room) scroller.scrollBy({ left: edge.right - box.right + room, behavior: "smooth" });
-      rowsRef.current?.scrollTo({ top: scroller.parentElement!.offsetTop, behavior: "smooth" });
+      rowsRef.current?.scrollTo({ top: scroller.closest<HTMLElement>(".tv-row")!.offsetTop, behavior: "smooth" }); // (the row itself, with its name: not the box round its titles)
     } else {
       const container = element.closest<HTMLElement>(".tv-grid");
       if (container) keepInView(container, element);
@@ -709,8 +723,6 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
   // A tile of the friends page may instead join the party it stands for, start one a friend asked for, ask for one, or open a page of its own over the library.
   const press = (title: Focused, from: Target) => {
     const { entry } = title;
-    if (entry.action === "settings") return onSettings();
-    if (entry.action === "signIn") return onAccount();
     if (entry.action) return setOverlay({ kind: entry.action, back: from });
     if (entry.request) return setOverlay({ kind: "friendRequest", person: entry.request, back: from });
     if (entry.party) return onJoinParty(entry.party);
@@ -890,15 +902,26 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
         )}
         <div className="tv-browse-corner">
           {showBell && <BellChip onOpen={() => setOverlay({ kind: "bell", back: { zone: "top", row: 0, col: 0 } })} col={0} />}
-          {showAccount && <AccountChip onOpen={onAccount} zone col={showBell ? 1 : 0} />}
+          {showAccount && <AccountChip onOpen={() => choose({ kind: "profile" })} current={isProfilePage(view)} zone col={showBell ? 1 : 0} />}
           <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": (showBell ? 1 : 0) + (showAccount ? 1 : 0) }} />
         </div>
       </header>
 
       {rowsPage && (
         <>
-          <div className="tv-hero" data-testid="tv-hero">
-            {shown ? (
+          <div className={`tv-hero${view.kind === "profile" ? " tv-hero-profile" : ""}`} data-testid="tv-hero">
+            {view.kind === "profile" ? (
+              <ProfileHead
+                name={signedIn && profile ? profile.name : t("profile.guest")}
+                avatar={signedIn ? profile?.avatar : undefined}
+                line={me ? t("account.signedInAs", { email: me.account.email }) : canSignIn ? t("auth.pitchDetail") : ""}
+                signedIn={signedIn}
+                canSignIn={canSignIn}
+                onSignIn={onSignIn}
+                onSettings={onSettings}
+                onArrive={(col) => (remembered.focus[viewKey(view)] = { zone: "hero", row: 0, col })}
+              />
+            ) : shown ? (
               <div className="tv-hero-text" key={shown.entry.id}>
                 <p className="tv-hero-eyebrow" data-testid="tv-hero-eyebrow">{shown.entry.opens?.kind === "category" || shown.entry.opens?.kind === "categories" ? t("tv.byCategory") : shown.label}</p>
                 <h1 className="tv-hero-title" data-testid="tv-hero-title">
@@ -953,7 +976,7 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
               ? homeRows.map((row, r) => (
                   <section className="tv-row" key={row.id} data-layout={row.layout} aria-label={row.title}>
                     <h2 className="tv-row-title">{row.title}</h2>
-                    <div className="tv-row-tiles">{row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id)))}</div>
+                    <RowTiles>{row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id)))}</RowTiles>
                   </section>
                 ))
               : status === "loading" && (
@@ -1112,28 +1135,32 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
                 placeholder={t("tv.searchHint")}
                 aria-label={t("tv.search")}
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => setBox({ text: event.target.value, caret: event.target.value.length })}
               />
             ) : (
               <>
-                <p className="tv-query" data-testid="tv-query" aria-live="polite">
-                  {query ? <span>{query}</span> : <span className="tv-query-hint">{t("tv.searchHint")}</span>}
-                  <i className="tv-caret" />
-                </p>
+                <SearchField box={box} hint={t("tv.searchHint")} onPlace={(caret) => edit({ kind: "move", to: caret })} />
                 <div className="tv-keys" role="group" aria-label={t("tv.keyboard")}>
                   {KEYBOARD_KEYS.map((key, i) => (
-                    <Key key={key} testId={`key-${key}`} pos={{ zone: "keys", row: Math.floor(i / KEYBOARD_COLUMNS), col: i % KEYBOARD_COLUMNS }} onPress={() => setQuery((before) => appendTo(before, key))}>
+                    <Key key={key} testId={`key-${key}`} pos={{ zone: "keys", row: Math.floor(i / KEYBOARD_COLUMNS), col: i % KEYBOARD_COLUMNS }} onPress={() => edit({ kind: "type", char: key })}>
                       {key}
                     </Key>
                   ))}
-                  <Key testId="key-space" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 0 }} onPress={() => setQuery((before) => appendTo(before, " "))}>
+                  {/* Under the letters: the caret's two keys, Space (two columns wide), and the two that take letters out (one, and all of them). */}
+                  <Key testId="key-left" label={t("tv.caretLeft")} pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 0 }} onPress={() => edit({ kind: "move", to: "left" })}>
+                    <ChevronLeftIcon />
+                  </Key>
+                  <Key testId="key-right" label={t("tv.caretRight")} pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 1 }} onPress={() => edit({ kind: "move", to: "right" })}>
+                    <ChevronIcon />
+                  </Key>
+                  <Key testId="key-space" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 2 }} onPress={() => edit({ kind: "type", char: " " })}>
                     {t("tv.space")}
                   </Key>
-                  <Key testId="key-delete" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 1 }} onPress={() => setQuery((before) => before.slice(0, -1))}>
-                    <BackspaceIcon /> {t("tv.delete")}
+                  <Key testId="key-delete" label={t("tv.delete")} pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 3 }} onPress={() => edit({ kind: "backspace" })}>
+                    <BackspaceIcon />
                   </Key>
-                  <Key testId="key-clear" wide pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 2 }} onPress={() => setQuery("")}>
-                    {t("tv.clear")}
+                  <Key testId="key-clear" label={t("tv.clear")} pos={{ zone: "keys", row: KEYBOARD_SHAPE.length - 1, col: 4 }} onPress={() => edit({ kind: "clear" })}>
+                    <ClearIcon />
                   </Key>
                 </div>
               </>
@@ -1377,10 +1404,11 @@ function Backdrop({ image }: { image: string | undefined }) {
   );
 }
 
-function Key({ children, pos, wide, testId, onPress }: { children: ReactNode; pos: Pos; wide?: boolean; testId: string; onPress: () => void }) {
+function Key({ children, pos, wide, label, testId, onPress }: { children: ReactNode; pos: Pos; wide?: boolean; /** What a key that is only a picture does: its name for a screen reader, and for a pointer resting on it. */ label?: string; testId: string; onPress: () => void }) {
   return (
     <button
       className={`tv-key${wide ? " tv-key-wide" : ""}`}
+      {...(label ? { "aria-label": label, title: label } : {})}
       data-testid={testId}
       data-zone={pos.zone}
       data-row={pos.row}
@@ -1392,6 +1420,13 @@ function Key({ children, pos, wide, testId, onPress }: { children: ReactNode; po
     </button>
   );
 }
+
+/** The glyph of each place on the profile's page (a tile of colour and a name was all a place was: now it says what it holds). */
+const PLACE_ICON: Record<string, ReactNode> = {
+  "profile:ratings": <StarIcon />,
+  "profile:friends": <UsersIcon />,
+  "profile:history": <ClockIcon />,
+};
 
 /** The round button in a title's corner: what it is (its look), what it says, and what it does. */
 interface Corner {
@@ -1429,9 +1464,15 @@ function Tile({ entry, layout, rank, pos, corner, score, onArrive, onPress }: { 
   };
 
   if (layout === "categories") {
+    const place = PLACE_ICON[entry.id];
     return (
-      <button className={`tv-tile tv-tile-category${entry.avatar ? " tv-tile-person" : ""}`} data-testid="tv-category-tile" {...common} style={{ "--hue": hue } as CSSProperties}>
-        {showPicture && <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} />}
+      <button className={`tv-tile tv-tile-category${entry.avatar ? " tv-tile-person" : ""}${place ? " tv-tile-place" : ""}`} data-testid="tv-category-tile" {...common} style={{ "--hue": hue } as CSSProperties}>
+        {showPicture && <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
+        {place && (
+          <span className="tv-place-icon" aria-hidden="true">
+            {place}
+          </span>
+        )}
         {entry.avatar ? (
           <>
             <span className="tv-person-pic" data-online={entry.online ? "true" : undefined}>
@@ -1463,7 +1504,7 @@ function Tile({ entry, layout, rank, pos, corner, score, onArrive, onPress }: { 
       <span className="tv-tile-body">
         <span className="tv-tile-art" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
           {showPicture ? (
-            <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} />
+            <img src={picture} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
           ) : (
             <span className="tv-tile-initial" aria-hidden="true">
               {entry.title.trim().charAt(0).toUpperCase()}

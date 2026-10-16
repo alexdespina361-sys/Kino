@@ -51,32 +51,37 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
 
   return (
     <Sheet title={entry.title} onClose={onClose} testId="title-sheet">
-      <Poster className="title-art" title={entry.title} image={entry.backdrop ?? entry.image} seed={entry.id} />
-      {meta && (
-        <p className="muted small" data-testid="title-meta">
-          {meta}
-        </p>
-      )}
-      <div className="title-actions">
-        {play && (
-          <button className="btn btn-red" data-testid="title-play" onClick={() => (at ? play(at.url, at.startAt) : play(entry.resumeUrl ?? entry.url, entry.startAt))}>
-            <PlayIcon /> {playLabel}
-          </button>
-        )}
-        <button
-          className="btn"
-          data-testid="title-list"
-          aria-pressed={kept}
-          aria-haspopup={several ? "dialog" : undefined}
-          aria-label={listLabel}
-          onClick={() => (several ? onPick(listEntryOf(entry)) : profileStore.setInList(listEntryOf(entry), !kept))}
-        >
-          {kept ? <CheckIcon /> : <PlusIcon />} {listText}
-        </button>
+      {/* (one column on a phone held upright; held sideways, the picture beside what is done with it: see the wrappers in the style sheets) */}
+      <div className="title-top">
+        <Poster className="title-art" title={entry.title} image={entry.backdrop ?? entry.image} seed={entry.id} />
+        <div className="title-main">
+          {meta && (
+            <p className="muted small" data-testid="title-meta">
+              {meta}
+            </p>
+          )}
+          <div className="title-actions">
+            {play && (
+              <button className="btn btn-red" data-testid="title-play" onClick={() => (at ? play(at.url, at.startAt) : play(entry.resumeUrl ?? entry.url, entry.startAt))}>
+                <PlayIcon /> {playLabel}
+              </button>
+            )}
+            <button
+              className="btn"
+              data-testid="title-list"
+              aria-pressed={kept}
+              aria-haspopup={several ? "dialog" : undefined}
+              aria-label={listLabel}
+              onClick={() => (several ? onPick(listEntryOf(entry)) : profileStore.setInList(listEntryOf(entry), !kept))}
+            >
+              {kept ? <CheckIcon /> : <PlusIcon />} {listText}
+            </button>
+          </div>
+          <RecommendButton entry={entry} />
+          {ratings && <RatingBox entry={entry} isShow={series.isShow} title={t("rating.yours")} testId="rate-title" />}
+          {entry.description && <p className="muted title-about">{entry.description}</p>}
+        </div>
       </div>
-      <RecommendButton entry={entry} />
-      {ratings && <RatingBox entry={entry} isShow={series.isShow} title={t("rating.yours")} testId="rate-title" />}
-      {entry.description && <p className="muted title-about">{entry.description}</p>}
       {series.isShow && (
         <Episodes
           page={series}

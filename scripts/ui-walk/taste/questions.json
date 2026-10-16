@@ -1,0 +1,378 @@
+[
+  {
+    "id": "A1",
+    "scope": "cross-platform",
+    "title": "White words on blue and purple",
+    "attr": "data-accent=blue",
+    "shots": [
+      {
+        "kind": "tv",
+        "part": "tv-hd",
+        "steps": [
+          "11-detail-movie"
+        ],
+        "device": "tv-1280",
+        "names": [
+          "11-detail-movie"
+        ],
+        "scale": 1,
+        "crop": [
+          60,
+          380,
+          700,
+          300
+        ]
+      },
+      {
+        "kind": "phone",
+        "part": "phone",
+        "steps": [
+          "p02-home",
+          "p04-title-sheet"
+        ],
+        "device": "phone-390",
+        "names": [
+          "p04-title-sheet"
+        ],
+        "scale": 0.5,
+        "crop": [
+          0,
+          1230,
+          780,
+          260
+        ]
+      }
+    ]
+  },
+  {
+    "id": "A2",
+    "scope": "cross-platform",
+    "title": "How a chosen option looks",
+    "shots": [
+      {
+        "kind": "tv",
+        "part": "tv-hd",
+        "steps": [
+          "17-profile-guest",
+          "20-settings"
+        ],
+        "device": "tv-1280",
+        "names": [
+          "20-settings"
+        ],
+        "scale": 1,
+        "crop": [
+          500,
+          100,
+          700,
+          320
+        ]
+      },
+      {
+        "kind": "phone",
+        "part": "phone",
+        "steps": [
+          "p02-home",
+          "p10-account-guest"
+        ],
+        "device": "phone-390",
+        "names": [
+          "p11-settings-guest-1of3"
+        ],
+        "scale": 0.5,
+        "crop": [
+          0,
+          130,
+          780,
+          640
+        ]
+      }
+    ]
+  },
+  {
+    "id": "A3",
+    "scope": "cross-platform",
+    "title": "How round things are",
+    "shots": [
+      {
+        "kind": "tv",
+        "part": "tv-hd",
+        "steps": [
+          "02-home"
+        ],
+        "device": "tv-1280",
+        "names": [
+          "02-home"
+        ],
+        "scale": 1,
+        "crop": [
+          60,
+          330,
+          760,
+          360
+        ]
+      },
+      {
+        "kind": "phone",
+        "part": "phone",
+        "steps": [
+          "p02-home",
+          "p04-title-sheet"
+        ],
+        "device": "phone-390",
+        "names": [
+          "p04-title-sheet"
+        ],
+        "scale": 0.5,
+        "crop": [
+          0,
+          680,
+          780,
+          800
+        ]
+      }
+    ]
+  },
+  {
+    "id": "A4",
+    "scope": "cross-platform",
+    "title": "What a group is called",
+    "shots": [
+      {
+        "kind": "tv",
+        "part": "tv-hd",
+        "steps": [
+          "02-home",
+          "17-profile-guest",
+          "20-settings"
+        ],
+        "device": "tv-1280",
+        "names": [
+          {
+            "name": "02-home",
+            "crop": [
+              60,
+              110,
+              700,
+              260
+            ]
+          },
+          {
+            "name": "20-settings",
+            "crop": [
+              500,
+              100,
+              700,
+              330
+            ]
+          }
+        ],
+        "scale": 1
+      },
+      {
+        "kind": "phone",
+        "part": "phone",
+        "steps": [
+          "p02-home",
+          "p10-account-guest"
+        ],
+        "device": "phone-390",
+        "names": [
+          "p11-settings-guest-1of3"
+        ],
+        "scale": 0.5,
+        "crop": [
+          0,
+          130,
+          780,
+          800
+        ]
+      }
+    ]
+  },
+  {
+    "id": "B1",
+    "scope": "TV",
+    "title": "What the remote is on",
+    "shots": [
+      {
+        "kind": "tv",
+        "part": "tv-keys",
+        "steps": [
+          "keys-detail-list",
+          "keys-settings-language",
+          "keys-search"
+        ],
+        "device": "tv-1280-keys",
+        "scale": 1,
+        "names": [
+          {
+            "name": "keys-detail-list",
+            "crop": [
+              60,
+              400,
+              640,
+              280
+            ]
+          },
+          {
+            "name": "keys-settings-language",
+            "crop": [
+              500,
+              100,
+              700,
+              320
+            ]
+          },
+          {
+            "name": "keys-search",
+            "crop": [
+              80,
+              90,
+              640,
+              330
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "B2",
+    "scope": "TV",
+    "title": "What is behind the open menu",
+    "shots": [
+      {
+        "kind": "tv",
+        "part": "tv-hd",
+        "steps": [
+          "04-rail-open"
+        ],
+        "device": "tv-1280",
+        "names": [
+          "04-rail-open"
+        ],
+        "scale": 0.7
+      }
+    ]
+  },
+  {
+    "id": "B3",
+    "scope": "TV",
+    "title": "The main button of a page",
+    "shots": [
+      {
+        "kind": "tv",
+        "part": "tv-hd",
+        "steps": [
+          "02-home",
+          "11-detail-movie"
+        ],
+        "device": "tv-1280",
+        "names": [
+          {
+            "name": "02-home",
+            "crop": [
+              60,
+              110,
+              640,
+              220
+            ]
+          },
+          {
+            "name": "11-detail-movie",
+            "crop": [
+              60,
+              400,
+              640,
+              280
+            ]
+          }
+        ],
+        "scale": 1
+      }
+    ]
+  },
+  {
+    "id": "B4",
+    "scope": "TV",
+    "title": "Names under the pictures",
+    "shots": [
+      {
+        "kind": "tv",
+        "part": "tv-hd",
+        "steps": [
+          "02-home"
+        ],
+        "device": "tv-1280",
+        "names": [
+          "02-home"
+        ],
+        "scale": 1,
+        "crop": [
+          60,
+          320,
+          1100,
+          390
+        ]
+      }
+    ]
+  },
+  {
+    "id": "C1",
+    "scope": "phone",
+    "title": "How big what is pressed looks",
+    "shots": [
+      {
+        "kind": "phone",
+        "part": "phone",
+        "steps": [
+          "p02-home",
+          "p07-menu"
+        ],
+        "device": "phone-390",
+        "names": [
+          {
+            "name": "p02-home",
+            "crop": [
+              0,
+              0,
+              780,
+              570
+            ]
+          },
+          {
+            "name": "p07-menu",
+            "crop": [
+              0,
+              860,
+              780,
+              700
+            ]
+          }
+        ],
+        "scale": 0.5
+      }
+    ]
+  },
+  {
+    "id": "C2",
+    "scope": "phone",
+    "title": "Where the remote's buttons are",
+    "shots": [
+      {
+        "kind": "phone",
+        "part": "phone",
+        "steps": [
+          "p02-home",
+          "p12-remote"
+        ],
+        "device": "phone-390",
+        "names": [
+          "p12-remote-playing"
+        ],
+        "scale": 0.45
+      }
+    ]
+  }
+]

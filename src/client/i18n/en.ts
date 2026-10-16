@@ -153,7 +153,7 @@ export const en = {
   "settings.tapToPauseHelp": "Off: a tap or click on the picture only shows or hides the controls. On: it pauses and plays (a touch while the controls are hidden only brings them up first). The big button in the middle and the OK key of a remote pause and play either way.",
   "settings.adaptiveQuality": "Match the picture quality to the connection",
   "settings.adaptiveQualityHelp": "On: a film starts in the lowest quality, so that it begins at once, and goes on in the best your connection carries: lower when it cannot keep up, higher when it can. Off: always the highest quality there is. It applies from the next film; a quality you pick in the player stays.",
-  "settings.playbackHelp": "On a touch screen: double-tap the left or right side of the picture to skip back or forward, and hold a finger on it for 2× speed.",
+  "settings.playbackHelp": "Double-tap or double-click the left or right side of the picture to skip back or forward, and hold a finger or the mouse button on it for 2× speed.",
   "settings.pasteLink": "Paste a link",
   "settings.pasteLinkSwitch": "Show the box for pasting a link on the home screen",
   "settings.linkBoxHelp": "A box on the home screen where you paste the link of a video or a page, to play it on your TV. This choice stays on this phone.",
@@ -240,6 +240,8 @@ export const en = {
 
   /* the account pages: settings, devices, signing another device in */
   "settings.playback": "Playback",
+  "settings.appearance": "Appearance",
+  "settings.ratingsFriends": "Ratings and friends",
   "settings.subtitleDefaults": "Showing {languages} first. Add your own to change this.",
   "settings.addLanguage": "Add a language",
   "settings.moveUp": "Move up",
@@ -309,6 +311,8 @@ export const en = {
   "tv.space": "Space",
   "tv.delete": "Delete",
   "tv.clear": "Clear",
+  "tv.caretLeft": "Move the cursor left",
+  "tv.caretRight": "Move the cursor right",
   "tv.openCategory": "Open",
 
   /* the player: menus, sheets and the controls over the picture */
@@ -614,8 +618,6 @@ export const en = {
   "profile.friendsNone": "No friends yet",
   "profile.friendsNew_one": "{count} unread",
   "profile.friendsNew_other": "{count} unread",
-  "profile.settingsNote": "Account, language, playback and more",
-  "profile.signInNote": "Keep your lists and ratings on every screen",
   "tv.listEmpty": "Nothing here yet. Open a title and add it to this list.",
   "list.favourites": "Favourites",
   "lists.new": "New list",

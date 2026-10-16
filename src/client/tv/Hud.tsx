@@ -85,6 +85,8 @@ export interface HudProps {
   onToggle: () => void;
   onSkip: (seconds: number) => void;
   onSeekTo: (time: number) => void;
+  /** A hand is dragging the bar: the controls stay up for as long as it does. */
+  onScrub: () => void;
   onNext: () => void;
   onPrevious: () => void;
   onDismissUpNext: () => void;
@@ -185,7 +187,10 @@ export function FollowStatus({ player, onPlay }: { player: PlayerState; onPlay: 
   return null;
 }
 
-/** 0..1: how far along the bar a mouse event is. */
+/** How long the bar's dot rests, held, before the film goes where it is (a drag across the bar would otherwise ask for a picture at every pixel of it). */
+export const SCRUB_REST_MS = 350;
+
+/** 0..1: how far along the bar a pointer event is. */
 const fractionAt = (event: { clientX: number; currentTarget: HTMLElement }) => {
   const rect = event.currentTarget.getBoundingClientRect();
   return Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
@@ -471,6 +476,50 @@ export function Hud(p: HudProps) {
   const held = p.heldLine ?? (follow ? t("hud.paused") : null);
   // Mouse only: where on the bar the pointer is, and what time that is.
   const [hover, setHover] = useState<number | null>(null);
+  // Where the bar is held (0..1) while its dot is dragged: the dot, the fill and the times follow the pointer, and the film goes where it is let go.
+  const [scrub, setScrub] = useState<number | null>(null);
+  const scrubbing = scrub !== null;
+  const shownTime = scrub !== null ? scrub * duration : player.currentTime;
+  const seekRef = useRef(p.onSeekTo);
+  seekRef.current = p.onSeekTo;
+  /** Where the film was last sent while the dot was held, so that letting go there does not ask for it twice. */
+  const sentRef = useRef<number | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  /** Which pointer holds the dot, and where the dot is: what the window's listeners below need to end a drag the bar itself does not hear the end of. */
+  const holderRef = useRef<number | null>(null);
+  const scrubRef = useRef<number | null>(null);
+  scrubRef.current = scrub;
+  // Held and resting, the film goes there too, so that the picture shows what is under the dot (not on a screen that watches along, nor in a party: a seek is told to all of them).
+  const alone = !follow && p.partySize <= 1;
+  useEffect(() => {
+    if (scrub === null || !alone || !(duration > 0)) return;
+    const timer = setTimeout(() => {
+      sentRef.current = scrub;
+      seekRef.current(scrub * duration);
+    }, SCRUB_REST_MS);
+    return () => clearTimeout(timer);
+  }, [scrub, alone, duration]);
+  // The drag ends where the button comes up, wherever that is (the bar asks to keep the pointer, but a browser can refuse, and then the bar never hears of it), and it
+  // ends at once if this screen stops steering the film in the middle of it (an admin whose admin the host takes away): the dot would stay where it was left.
+  useEffect(() => {
+    if (!scrubbing) return;
+    if (!steers) return setScrub(null);
+    const end = (event: PointerEvent) => {
+      if (event.pointerId !== holderRef.current || barRef.current?.contains(event.target as Node)) return; // (another finger; or on the bar, whose own handlers have it)
+      const at = scrubRef.current;
+      setScrub(null);
+      if (event.type === "pointerup" && at !== null && sentRef.current !== at && duration > 0) {
+        sentRef.current = at;
+        seekRef.current(at * duration);
+      }
+    };
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+  }, [scrubbing, steers, duration]);
   useOneLine(p.controlsRef);
 
   return (
@@ -602,33 +651,73 @@ export function Hud(p: HudProps) {
         <footer className="hud-bottom" data-picture="bar" data-testid={follow ? "tv-follow-bar" : undefined}>
           <div className="hud-progress">
             <span className="hud-time" data-testid="tv-elapsed">
-              {formatTime(player.currentTime)}
+              {formatTime(shownTime)}
             </span>
-            {/* Where the film is, for any screen; moved by a click only on one whose to steer (a guest that only watches is shown where it is). */}
+            {/* Where the film is, for any screen; moved by a press or a drag of the dot only on one whose to steer (a guest that only watches is shown where it is). */}
             <div
               className="hud-bar"
+              ref={barRef}
               role={steers ? "slider" : "progressbar"}
               data-readonly={steers ? undefined : true}
+              data-scrubbing={scrubbing || undefined}
               aria-label={steers ? t("hud.seek") : p.title}
               aria-valuemin={0}
               aria-valuemax={Math.round(duration)}
-              aria-valuenow={Math.round(player.currentTime)}
-              onClick={steers ? (event) => p.onSeekTo(fractionAt(event) * duration) : undefined}
+              aria-valuenow={Math.round(shownTime)}
+              onPointerDown={
+                steers
+                  ? (event) => {
+                      if (!(duration > 0) || (event.pointerType === "mouse" && event.button !== 0)) return;
+                      // (The bar keeps the pointer for as long as it is down, so the dot follows it past the bar's ends and off its line.)
+                      try {
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                      } catch {
+                        // (the pointer is gone already: the drag goes on as far as the bar sees it)
+                      }
+                      sentRef.current = null;
+                      holderRef.current = event.pointerId;
+                      setHover(null);
+                      setScrub(fractionAt(event));
+                      p.onScrub();
+                    }
+                  : undefined
+              }
+              onPointerMove={
+                steers
+                  ? (event) => {
+                      if (scrub === null) return;
+                      setScrub(fractionAt(event));
+                      p.onScrub();
+                    }
+                  : undefined
+              }
+              onPointerUp={
+                steers
+                  ? (event) => {
+                      if (scrub === null) return;
+                      const at = fractionAt(event);
+                      setScrub(null);
+                      if (sentRef.current !== at) p.onSeekTo(at * duration);
+                    }
+                  : undefined
+              }
+              onPointerCancel={steers ? () => setScrub(null) : undefined}
+              onClick={steers && typeof PointerEvent === "undefined" ? (event) => p.onSeekTo(fractionAt(event) * duration) : undefined} // (a browser from before pointer events has only the click)
               onMouseMove={steers ? (event) => duration > 0 && setHover(fractionAt(event)) : undefined}
               onMouseLeave={steers ? () => setHover(null) : undefined}
             >
               <div className="hud-bar-track">
                 <div className="hud-bar-buffered" style={{ width: `${percent(player.bufferedEnd ?? 0)}%` }} />
-                <div className="hud-bar-fill" style={{ width: `${percent(player.currentTime)}%` }} />
-                <div className="hud-bar-thumb" style={{ left: `${percent(player.currentTime)}%` }} />
-                {hover !== null && (
-                  <div className="hud-bar-tip" style={{ left: `${hover * 100}%` }}>
-                    {formatTime(hover * duration)}
+                <div className="hud-bar-fill" style={{ width: `${percent(shownTime)}%` }} />
+                <div className="hud-bar-thumb" style={{ left: `${percent(shownTime)}%` }} />
+                {(scrub ?? hover) !== null && (
+                  <div className="hud-bar-tip" style={{ left: `${(scrub ?? hover ?? 0) * 100}%` }}>
+                    {formatTime((scrub ?? hover ?? 0) * duration)}
                   </div>
                 )}
               </div>
             </div>
-            <span className="hud-time">{formatRemaining(player.currentTime, duration)}</span>
+            <span className="hud-time">{formatRemaining(shownTime, duration)}</span>
           </div>
 
           <div className="hud-controls" ref={p.controlsRef}>

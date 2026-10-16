@@ -66,7 +66,7 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
   };
 
   return (
-    <main className="phone pair">
+    <main className="phone pair phone-ui">
       <div className="pair-top">
         <div className="brand">
           <Logo />
@@ -76,69 +76,73 @@ export function PairScreen({ code, onCodeChange, onSubmit, connection, pending, 
       <div className="pair-icon" aria-hidden="true">
         <TvIcon />
       </div>
-      <h1>{t("pair.title")}</h1>
-      {notice && (
-        <p className="banner" data-testid="pair-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {/* A phone that has TVs has done this before: the way to them takes the place of the steps for a new one (the list has them too). */}
-      {tvCount > 0 && onTvs ? (
-        <button type="button" className="btn btn-block" data-testid="tvs-open" onClick={onTvs}>
-          <TvIcon /> {tvCount > 1 ? t("menu.tvsCount", { count: tvCount }) : t("menu.tvs")}
+      <div className="pair-copy">
+        <h1>{t("pair.title")}</h1>
+        {notice && (
+          <p className="banner" data-testid="pair-notice" role="status">
+            {notice}
+          </p>
+        )}
+        {/* A phone that has TVs has done this before: the way to them takes the place of the steps for a new one (the list has them too). */}
+        {tvCount > 0 && onTvs ? (
+          <button type="button" className="btn btn-block" data-testid="tvs-open" onClick={onTvs}>
+            <TvIcon /> {tvCount > 1 ? t("menu.tvsCount", { count: tvCount }) : t("menu.tvs")}
+          </button>
+        ) : (
+          <p className="muted">
+            <Rich k={canScan ? "pair.introScan" : "pair.introType"} parts={{ host: <b>{location.host}</b>, connect: <b>{t("tv.connectPhone")}</b> }} />
+          </p>
+        )}
+      </div>
+
+      <div className="pair-actions">
+        {canScan && (
+          <button type="button" className="btn btn-red btn-block" data-testid="scan" onClick={() => setScanning(true)} disabled={!ready}>
+            <ScanIcon /> {t("pair.scan")}
+          </button>
+        )}
+        {canScan && <p className="or">{t("pair.orType")}</p>}
+
+        <form onSubmit={submit}>
+          <input
+            ref={input}
+            data-testid="code-input"
+            className="code-input"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={6}
+            placeholder="••••••"
+            aria-label={t("pair.codeLabel")}
+            value={code}
+            onChange={(event) => change(event.target.value)}
+          />
+          <button type="submit" className={`btn btn-block ${canScan ? "" : "btn-red"}`} data-testid="connect" disabled={code.length !== 6 || !ready}>
+            {pending ? (
+              <>
+                <span className="spinner" /> {t("tv.connecting")}
+              </>
+            ) : (
+              t("pair.connect")
+            )}
+          </button>
+        </form>
+
+        {connection !== "open" && (
+          <p className="muted center" data-testid={waking ? "server-waking" : undefined} role="status">
+            <span className="spinner" /> {waking ? t("server.waking") : offline ? t("error.offline") : t("pair.reaching")}
+          </p>
+        )}
+        {error && (
+          <p className="error" data-testid="error" role="alert">
+            {error}
+          </p>
+        )}
+
+        <p className="or">{t("pair.orWatch")}</p>
+        <button type="button" className="btn btn-block" data-testid="switch-to-tv" onClick={() => switchRole("tv")}>
+          <PlayIcon /> {t("pair.watchHere")}
         </button>
-      ) : (
-        <p className="muted">
-          <Rich k={canScan ? "pair.introScan" : "pair.introType"} parts={{ host: <b>{location.host}</b>, connect: <b>{t("tv.connectPhone")}</b> }} />
-        </p>
-      )}
-
-      {canScan && (
-        <button type="button" className="btn btn-red btn-block" data-testid="scan" onClick={() => setScanning(true)} disabled={!ready}>
-          <ScanIcon /> {t("pair.scan")}
-        </button>
-      )}
-      {canScan && <p className="or">{t("pair.orType")}</p>}
-
-      <form onSubmit={submit}>
-        <input
-          ref={input}
-          data-testid="code-input"
-          className="code-input"
-          inputMode="numeric"
-          autoComplete="off"
-          maxLength={6}
-          placeholder="••••••"
-          aria-label={t("pair.codeLabel")}
-          value={code}
-          onChange={(event) => change(event.target.value)}
-        />
-        <button type="submit" className={`btn btn-block ${canScan ? "" : "btn-red"}`} data-testid="connect" disabled={code.length !== 6 || !ready}>
-          {pending ? (
-            <>
-              <span className="spinner" /> {t("tv.connecting")}
-            </>
-          ) : (
-            t("pair.connect")
-          )}
-        </button>
-      </form>
-
-      {connection !== "open" && (
-        <p className="muted center" data-testid={waking ? "server-waking" : undefined} role="status">
-          <span className="spinner" /> {waking ? t("server.waking") : offline ? t("error.offline") : t("pair.reaching")}
-        </p>
-      )}
-      {error && (
-        <p className="error" data-testid="error" role="alert">
-          {error}
-        </p>
-      )}
-
-      <p className="or">{t("pair.orWatch")}</p>
-      <button type="button" className="btn btn-block" data-testid="switch-to-tv" onClick={() => switchRole("tv")}>
-        <PlayIcon /> {t("pair.watchHere")}
-      </button>
+      </div>
 
       {scanning && <Scanner onCode={scanned} onClose={() => setScanning(false)} />}
       <LanguageSwitch />

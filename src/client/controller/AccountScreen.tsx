@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -21,7 +21,12 @@ import { keepFocusIn, sheetIsOpen } from "./Sheet";
 export function Page({ title, onBack, children, testId }: { title: string; onBack: () => void; children: ReactNode; testId?: string }) {
   const t = useT();
   const page = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   useBackToClose(onBack); // (the phone's own Back goes back a page too, instead of leaving the site)
+  // (one page is the next one in the same place: what was scrolled in the one before is not where the next begins)
+  useLayoutEffect(() => {
+    body.current?.scrollTo(0, 0);
+  }, [title]);
   // The keyboard goes into the page when it opens (not left on the button behind it), and Tab goes round it rather than out to the controls under it.
   // (The pages of a view that changes are this one component with other words: each is "opened" as its title changes, the button that opened it gone.)
   useEffect(() => {
@@ -44,7 +49,9 @@ export function Page({ title, onBack, children, testId }: { title: string; onBac
         </button>
         <h2>{title}</h2>
       </header>
-      <div className="page-body">{children}</div>
+      <div className="page-body" ref={body}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -229,7 +236,7 @@ export function AccountScreen({
   return (
     <Page title={t("account.title")} onBack={onClose} testId="account-screen">
       {me && profile ? (
-        <div className="page-stack">
+        <div className="page-stack account-hub">
           <section className="account-card" data-testid="account-card">
             <Avatar id={profile.avatar} className="account-avatar" />
             <div className="account-who">
@@ -237,16 +244,24 @@ export function AccountScreen({
               <p className="muted">{t("account.signedInAs", { email: me.account.email })}</p>
             </div>
           </section>
-          <nav className="menu">
-            {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={() => setView("picker")} testId="menu-switch" />}
-            <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={() => setView("profiles")} testId="menu-profiles" />
-            <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
-            {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.attention > 0 ? String(friends.attention) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
-            {ratingsRow}
-            <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
-            <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
-            <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
-          </nav>
+          <div className="menu-groups">
+            <nav className="menu">
+              {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={() => setView("picker")} testId="menu-switch" />}
+              <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={() => setView("profiles")} testId="menu-profiles" />
+            </nav>
+            {(friends.on || ratingsOn) && (
+              <nav className="menu">
+                {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.attention > 0 ? String(friends.attention) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
+                {ratingsRow}
+              </nav>
+            )}
+            <nav className="menu">
+              <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
+              <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
+              <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
+              <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
+            </nav>
+          </div>
           <button
             className="btn btn-block"
             onClick={() => {
@@ -261,7 +276,7 @@ export function AccountScreen({
       ) : me ? (
         <ProfileGrid profiles={me.profiles} onPick={(picked) => account.choose(picked.id)} />
       ) : (
-        <div className="page-stack">
+        <div className="page-stack account-guest">
           <section className="account-pitch">
             <Logo />
             <h1>{t("auth.pitch")}</h1>
@@ -287,7 +302,7 @@ export function ChooseProfile() {
   const [adding, setAdding] = useState(false);
   if (!account.me) return null;
   return (
-    <main className="phone choose" data-testid="choose-profile">
+    <main className="phone choose phone-ui" data-testid="choose-profile">
       <div className="brand">
         <Logo />
       </div>

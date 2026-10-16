@@ -4,14 +4,14 @@ import { getLanguage, t } from "../i18n";
 import type { Entry, HomeRow } from "./pages";
 
 /**
- * The profile's page: the places that belong to whoever is watching (what they rated, their friends, what they watched) and the way to
- * the settings, as tiles in one row, each with a line that says how it stands. Pure, like the other pages, so what appears can be tested
- * without a screen; Browse.tsx draws it and walks it with the remote.
+ * The profile's page: the places that belong to whoever is watching (what they rated, their friends, what they watched), as tiles in one
+ * row, each with a line that says how it stands. Who is watching, Settings and (for a guest) signing in are buttons of the page's top,
+ * which Browse.tsx draws. Pure, like the other pages, so what appears can be tested without a screen; Browse.tsx draws it and walks it with the remote.
  */
 export interface ProfileFacts {
   /** The name the row carries (the profile in use); empty for a guest, whose row says so. */
   name: string;
-  /** A profile of an account is signed in: a guest has no friends, and is offered the way to sign in instead. */
+  /** A profile of an account is signed in: a guest has no friends. */
   signedIn: boolean;
   /** Ratings are on for this profile (off, the page has no tile for them), and what it rated. */
   ratingsOn: boolean;
@@ -37,7 +37,5 @@ export function profileRows(facts: ProfileFacts): HomeRow[] {
     entries.push(tile("friends", t("friends.title"), note, { opens: { kind: "friends" } }));
   }
   entries.push(tile("history", t("tv.history"), facts.watched > 0 ? t("tv.titles", { count: facts.watched }) : t("tv.historyHelp"), { opens: { kind: "history" } }));
-  if (!facts.signedIn) entries.push(tile("signin", t("auth.signIn"), t("profile.signInNote"), { action: "signIn" }));
-  entries.push(tile("settings", t("tv.settings"), t("profile.settingsNote"), { action: "settings" }));
   return [{ id: "profile", layout: "categories", title: facts.signedIn && facts.name ? facts.name : t("profile.guest"), entries }];
 }

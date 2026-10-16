@@ -1,0 +1,9 @@
+/* A2: what is chosen. B is the accent as a solid fill with its own ink (A is a tint with a ring). */
+:root[data-ui="polish"] .tv-choice[aria-checked="true"],
+:root[data-ui="polish"] .tv-list-picks .tv-action[aria-pressed="true"]:not(:focus-visible) { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+:root[data-ui="polish"] .phone-ui .choice.active,
+:root[data-ui="polish"] .phone-ui .episode.now,
+:root[data-ui="polish"] .phone-ui .lib-pill[aria-pressed="true"],
+:root[data-ui="polish"] .phone-ui .cap-choice.active,
+:root[data-ui="polish"] .phone-ui .season.active,
+:root[data-ui="polish"] .phone-ui .segmented button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); box-shadow: none; }

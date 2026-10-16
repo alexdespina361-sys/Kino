@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { guestStorage, openLibrary, openProfilePlace, sleepingServer, test, tvRoot, withLibrary } from "./helpers";
+import { guestStorage, openLibrary, openProfilePlace, openTvSignIn, sleepingServer, test, tvRoot, withLibrary } from "./helpers";
 
 /**
  * The remote's Back key on the TV. Every page, menu and window that opens over the library or the film is opened (with the mouse, which is
@@ -87,15 +87,16 @@ test("the remote's Back goes one step out of every page, menu and window of the 
 
   await test.step("the profile's page, and what it opens", () =>
     backOut(tv, [
-      { open: click("rail-profile"), shown: viewing("profile") },
+      { open: click("tv-account-chip"), shown: viewing("profile") },
       { open: () => tv.locator('[data-entry="profile:history"]').click(), shown: viewing("history") },
     ], viewing("home")));
 
-  await test.step("a guest's sign-in, with the typed form on top of the code", () =>
+  await test.step("a guest's sign-in, from the profile's page, with the typed form on top of the code", () =>
     backOut(tv, [
-      { open: click("tv-account-chip"), shown: id("tv-link-code") },
+      { open: click("tv-account-chip"), shown: viewing("profile") },
+      { open: click("tv-profile-signin"), shown: id("tv-link-code") },
       { open: click("tv-signin-email"), shown: id("auth-form") },
-    ]));
+    ], viewing("home")));
 
   await test.step("the settings, and the sign-in they lead to (Back goes to the settings, not past them)", async () => {
     await backOut(tv, [
@@ -176,7 +177,7 @@ test("the remote's Back, on a screen with a profile and friends", async ({ brows
   test.setTimeout(240_000);
   const name = `Ann${Date.now().toString(36).slice(-5)}`;
   const tv = await openLibrary(browser, withLibrary(library), HD);
-  await tv.getByTestId("tv-account-chip").click();
+  await openTvSignIn(tv);
   await tv.getByTestId("tv-signin-email").click();
   await tv.getByTestId("auth-switch").click();
   await expect(tv.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
@@ -191,11 +192,11 @@ test("the remote's Back, on a screen with a profile and friends", async ({ brows
   await expect(tv.locator('[data-entry="profile:friends"]')).toBeVisible();
   await tv.getByTestId("rail-home").click();
   const click = (testId: string) => () => tv.getByTestId(testId).click();
-  const panel: Level = { open: click("tv-account-chip"), shown: id("tv-account") };
+  const panel: Level = { open: () => openProfilePlace(tv, "settings"), shown: id("tv-account") }; // (the settings: the corner's button, then the one in the profile's corner)
 
   await test.step("the bell", () => backOut(tv, [{ open: click("tv-bell"), shown: id("tv-bell-page") }]));
 
-  await test.step("the account's panel, the profiles, a profile, and the question before it is removed", () =>
+  await test.step("the settings, the profiles, a profile, and the question before it is removed", () =>
     backOut(tv, [
       panel,
       { open: click("tv-manage-profiles"), shown: id("tv-profiles-done") },

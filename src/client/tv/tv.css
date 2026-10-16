@@ -538,9 +538,9 @@
 .hud-progress { display: flex; align-items: center; gap: 1.6em; }
 .hud-time { flex: none; min-width: 4.6em; font-size: 1.6em; color: #ddd; font-variant-numeric: tabular-nums; text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.85); }
 .hud-time:last-child { text-align: right; }
-.hud-bar { flex: 1; padding: 1em 0; cursor: pointer; }
+.hud-bar { flex: 1; padding: 1em 0; cursor: pointer; touch-action: none; } /* (a finger that drags the dot is not scrolling the page) */
 .hud-bar-track { position: relative; height: 0.55em; border-radius: 0.3em; background: rgba(255, 255, 255, 0.28); transition: height 0.12s ease; }
-.hud-bar:hover .hud-bar-track { height: 0.8em; }
+.hud-bar:hover .hud-bar-track, .hud-bar[data-scrubbing] .hud-bar-track { height: 0.8em; }
 .hud-bar-tip {
   position: absolute;
   bottom: 2em;
@@ -564,7 +564,13 @@
   background: var(--accent);
   box-shadow: 0 0 0 0.12em #fff, 0 0.2em 0.6em rgba(0, 0, 0, 0.6);
   transform: translate(-50%, -50%);
+  transition: transform 0.12s ease;
 }
+/* The dot is something to pick up: it grows under the pointer, and while it is held. */
+.hud-bar:not([data-readonly]) .hud-bar-thumb { cursor: grab; }
+.hud-bar:not([data-readonly]):hover .hud-bar-thumb { transform: translate(-50%, -50%) scale(1.15); }
+.hud-bar[data-scrubbing], .hud-bar[data-scrubbing] .hud-bar-thumb { cursor: grabbing; }
+.hud-bar[data-scrubbing] .hud-bar-thumb { transform: translate(-50%, -50%) scale(1.3); }
 /*
  * The controls are one line, on any screen and in any language, with every button there is (series, subtitles, sources, quality).
  * Fit.ts measures them, and when they would be wider than the row it says so in the row's data-fit: the room between them goes
@@ -586,12 +592,13 @@
 .hud-controls[data-fit~="tight"] .hud-group { gap: 0.3em; }
 .hud-controls[data-fit~="tight"] .tv-btn:not(.tv-btn-icon):not(.tv-btn-play) { padding-inline: 0.55em; gap: 0.3em; }
 .hud-controls[data-fit~="names"] .tv-btn-sub { display: none; }
-/* A control that is only an icon says what it is while the remote is on it (a mouse has the tooltip). It is drawn above the button, at a size of its own. */
+/* A control that is only an icon says what it is while the remote is on it (a mouse has the tooltip). It is drawn above the button, at a size of its own,
+   and above the progress row too: the times are at the ends of that row, right over the first and the last buttons, and a caption must not cover them. */
 .hud-controls .tv-btn:is(.tv-btn-icon, .tv-btn-play, [data-folded]):focus-visible { position: relative; }
 .hud-controls .tv-btn:is(.tv-btn-icon, .tv-btn-play, [data-folded]):focus-visible::after {
   content: attr(aria-label);
   position: absolute;
-  bottom: calc(100% + var(--em) * 0.7);
+  bottom: calc(100% + var(--em) * 3.8);
   left: 50%;
   width: max-content;
   max-width: calc(var(--em) * 26);
@@ -1425,21 +1432,6 @@
 .tv-action-danger { background: rgba(255, 107, 107, 0.2); color: #ffb4b4; }
 .tv-action-danger:hover { background: rgba(255, 107, 107, 0.34); color: #fff; }
 
-/* The account page: who is watching on the left, what the site looks like and does on the right. */
-.tv-panel { display: grid; grid-template-columns: 28em 1fr; align-items: center; gap: 6em; width: min(100%, 92em); text-align: left; }
-.tv-panel-who { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5em; }
-/* The picture beside the name, not above it: with the buttons under them the column has to fit a 16:9 screen, below the logo. */
-.tv-panel-id { display: flex; align-items: center; gap: 1.2em; max-width: 100%; }
-.tv-panel-avatar { flex: none; font-size: 7em; }
-.tv-panel-guest { display: grid; flex: none; place-items: center; width: 3.1em; height: 3.1em; border-radius: 50%; background: rgba(255, 255, 255, 0.1); color: #cfcfd4; font-size: 2.3em; }
-.tv-panel-who h1 { min-width: 0; margin: 0; font-size: 3.2em; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em; overflow-wrap: anywhere; }
-.tv-panel-who p { margin: 0; font-size: 1.6em; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
-.tv-panel-actions { align-self: stretch; display: flex; flex-direction: column; gap: 0.6em; margin-top: 0.8em; }
-.tv-panel-actions .tv-action { width: 100%; min-width: 0; padding-block: 0.55em; }
-/* Five headings and four switches, signed in, on a screen that is 56.25em tall at its shortest (16:9): the spacing is close, so they all fit. */
-.tv-panel-settings { display: flex; flex-direction: column; align-items: flex-start; }
-.tv-panel-settings h2 { margin: 0.9em 0 0.4em; font-size: 1.5em; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.tv-panel-settings h2:first-child { margin-top: 0; }
 .tv-choices { display: flex; gap: 0.8em; }
 .tv-choice {
   display: inline-flex;
@@ -1485,9 +1477,6 @@
 .tv-switch::after { content: ""; position: absolute; top: 0.18em; left: 0.18em; width: 1.14em; height: 1.14em; border-radius: 50%; background: #fff; box-shadow: 0 0.05em 0.2em rgba(0, 0, 0, 0.4); transition: transform 0.18s; }
 .tv-switch-row[aria-checked="true"] .tv-switch { background: var(--accent); }
 .tv-switch-row[aria-checked="true"] .tv-switch::after { transform: translateX(1.1em); }
-.tv-panel-settings .tv-switch-row { padding: 0.55em 1.2em; }
-.tv-panel-settings .tv-switch-row + .tv-switch-row { margin-top: 0.3em; }
-.tv-panel-settings .tv-hint { margin-top: 0.8em; max-width: 40em; text-align: left; }
 
 /* What the account says in passing (what was brought across at sign-in), over everything. */
 .tv-toast {
@@ -1778,14 +1767,7 @@
   .tv-qr, .tv-screen-compact .tv-qr { width: 16em; padding: 1em; }
   .tv-qr p, .tv-screen-compact .tv-qr p { font-size: 1.1em; }
 
-  /* The account page, the pickers of who is watching. */
-  .tv-panel { grid-template-columns: 1fr; gap: 2em; }
-  .tv-panel-who { align-items: center; text-align: center; }
-  .tv-panel-id { flex-direction: column; gap: 0.4em; }
-  .tv-panel-who h1 { font-size: 2.4em; }
-  .tv-panel-who p { font-size: 1.4em; }
-  .tv-panel-settings { align-items: stretch; }
-  .tv-panel-settings h2 { margin: 1.4em 0 0.5em; font-size: 1.2em; }
+  /* The pickers of who is watching and the settings. */
   .tv-choices { flex-wrap: wrap; }
   /* A few short choices (the languages) stay on one line however narrow the page is: they share its width. */
   .tv-choices-fit { flex-wrap: nowrap; gap: 0.5em; }
@@ -1801,13 +1783,11 @@
   /* (Six round buttons in a row are wider than the page where the text is set larger: the page is clipped at its edge, not scrolled, so the row wraps.) */
   .tv-swatches { flex-wrap: wrap; row-gap: 0.7em; }
   .tv-switch-row { max-width: none; font-size: 1.5em; }
-  /* (Here the page scrolls: the rows keep the room a finger wants, which the 16:9 page above has to take back.) */
-  .tv-panel-settings .tv-switch-row { padding: 0.7em 1.2em; }
-  .tv-panel-settings .tv-hint { margin-top: 1.2em; }
   .tv .auth-tv { width: 100%; }
   .tv .auth-tv .auth-field input, .tv .profile-editor-tv .auth-field input { font-size: 1.8em; }
   .tv .profile-editor-tv { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 1.2em; }
   .tv .profile-editor-tv .editor-preview { align-self: center; font-size: 7em; }
+  .tv .profile-editor-tv > .tv-headline { text-align: center; } /* (stacked, the title is over the picture, in the middle, as it was before it went into the form) */
   .tv .profile-editor-tv .editor-confirm p { font-size: 1.4em; }
   .tv-name-keys { display: none; }
   .profile-tv { gap: 1.6em 2em; }

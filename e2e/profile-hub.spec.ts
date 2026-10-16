@@ -3,9 +3,9 @@ import { ratingKey } from "../src/shared";
 import { guestStorage, openDevice, openLibrary, openProfilePage, openProfilePlace, pressProfilePlace, test, withLibrary, type ProfilePlace } from "./helpers";
 
 /**
- * The profile on the TV: one line of the menu (Profile) opens a page of the places that belong to whoever is watching (what they rated,
- * their friends, History, the settings), and what they rated shows as a score on the pictures of the titles. The friends' side of it
- * (a profile that is signed in and has them on) is in friends-tv.spec.ts, which has the accounts for it.
+ * The profile on the TV: the button in the corner opens a page of who is watching and the places that belong to them (what they rated, their
+ * friends, History), with Settings in the page's own corner, and what they rated shows as a score on the pictures of the titles. The friends' side
+ * of it (a profile that is signed in and has them on) is in friends-tv.spec.ts, which has the accounts for it.
  */
 
 const film = (n: number) => ({ id: `f${n}`, title: `Film number ${n}`, year: 1930 + n, kind: "movie", url: `/fixtures/sample.mp4?n=${n}` });
@@ -29,29 +29,32 @@ test.describe("the profile's page", () => {
   const night = { key: "url:https://films.example/night-train", at: Date.now() - 60_000, title: "Night Train", url: "https://films.example/night-train", position: 1500, duration: 6000 };
   const seed = guestStorage({ ratings: [rated(film(1).url, film(1).title, 8), rated(film(3).url, film(3).title, 7)], progress: [night] });
 
-  test("is one row of places: for a guest what it rated, History, the way to sign in and the settings, each saying how it stands", async ({ browser }) => {
+  test("says who is watching, with the way to sign in and Settings in its top, and for a guest a row of what it rated and History, each saying how it stands", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await openProfilePage(tv);
-    await expect(tv.getByTestId("rail-profile")).toHaveAttribute("aria-current", "page");
-    expect(await places(tv)).toEqual(["profile:ratings", "profile:history", "profile:signin", "profile:settings"]);
-    await expect(tv.locator(".tv-row-title")).toHaveText(["Guest"]);
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-current", "page");
+    await expect(tv.getByTestId("rail-profile")).toHaveCount(0); // (who is watching is the corner's button, not a line of the menu)
+    expect(await places(tv)).toEqual(["profile:ratings", "profile:history"]);
     await expect(tv.getByTestId("tv-tile-corner")).toHaveCount(0); // (a place is no title to keep)
-
-    // The remote is on the first place, and the banner speaks of the place it is on.
-    await expect(place(tv, "ratings")).toBeFocused();
-    await expect(tv.getByTestId("tv-hero-eyebrow")).toHaveText("Guest");
-    await expect(tv.getByTestId("tv-hero-title")).toHaveText("My ratings");
-    await expect(tv.getByTestId("tv-hero").locator(".tv-hero-meta")).toHaveText("2 ratings · average 7.5");
+    await expect(tv.getByTestId("tv-profile-name")).toHaveText("Guest");
+    await expect(tv.getByTestId("tv-profile-settings")).toBeVisible();
     await expect(place(tv, "ratings")).toContainText("2 ratings · average 7.5");
     await expect(place(tv, "history")).toContainText("1 title");
-    await expect(place(tv, "signin")).toContainText("Keep your lists and ratings on every screen");
-    await expect(place(tv, "settings")).toContainText("Account, language, playback and more");
 
+    // A guest came for one thing: the remote starts on the way to sign in; Right of it is Settings, Down from either the places.
+    await expect(tv.getByTestId("tv-profile-signin")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("tv-profile-settings")).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await expect(place(tv, "ratings")).toBeFocused();
     await tv.keyboard.press("ArrowRight");
     await expect(place(tv, "history")).toBeFocused();
-    await expect(tv.getByTestId("tv-hero-title")).toHaveText("History");
     await tv.keyboard.press("ArrowLeft");
     await expect(place(tv, "ratings")).toBeFocused();
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.getByTestId("tv-profile-signin")).toBeFocused();
+    await tv.keyboard.press("ArrowUp"); // (and above the top buttons, the corner's)
+    await expect(tv.getByTestId("tv-account-chip")).toBeFocused();
   });
 
   test("opens the settings and the way to sign in, and Back from either returns to it with the remote where it was", async ({ browser }) => {
@@ -61,12 +64,12 @@ test.describe("the profile's page", () => {
     await expect(tv.getByTestId("tv-account")).toBeVisible();
     await tv.getByTestId("tv-account-back").click();
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
-    await expect(place(tv, "settings")).toBeFocused();
+    await expect(tv.getByTestId("tv-profile-settings")).toBeFocused();
 
-    await tv.keyboard.press("ArrowLeft"); // (the place before it is the way to sign in)
-    await expect(place(tv, "signin")).toBeFocused();
+    await tv.keyboard.press("ArrowLeft"); // (the button before it is the way to sign in)
+    await expect(tv.getByTestId("tv-profile-signin")).toBeFocused();
     await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("tv-signin-email")).toBeVisible(); // a guest signs in from here too, not only from the corner
+    await expect(tv.getByTestId("tv-signin-email")).toBeVisible(); // a guest signs in from here
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
   });
@@ -81,14 +84,14 @@ test.describe("the profile's page", () => {
     await expect(tv.getByTestId("rail-home")).toBeFocused();
   });
 
-  test("has no place for ratings once they are off in the settings, and the remote comes back to Settings, which has moved up a place (no sign-in once somebody has signed in: checked with the friends, in friends-tv)", async ({ browser }) => {
+  test("has no place for ratings once they are off in the settings, and the remote comes back to Settings", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await openProfilePlace(tv, "settings");
     await tv.getByTestId("tv-ratings-switch").click();
     await expect(tv.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "false");
     await tv.getByTestId("tv-account-back").click();
-    expect(await places(tv)).toEqual(["profile:history", "profile:signin", "profile:settings"]);
-    await expect(place(tv, "settings")).toBeFocused(); // (the place it left from, not whatever is now in the column it was in)
+    expect(await places(tv)).toEqual(["profile:history"]);
+    await expect(tv.getByTestId("tv-profile-settings")).toBeFocused(); // (the button it left from)
   });
 
   for (const language of [
@@ -104,16 +107,16 @@ test.describe("the profile's page", () => {
       { name: "a phone held sideways", width: 844, height: 390 },
       { name: "a small phone held sideways", width: 568, height: 320 },
     ]) {
-      test(`its places and what they say fit their tiles, and the page fits the screen: ${language.name}, ${screen.name}`, async ({ browser }) => {
+      test(`its head, its places and what they say fit the screen: ${language.name}, ${screen.name}`, async ({ browser }) => {
         const tv = await openDevice(browser, { viewport: { width: screen.width, height: screen.height }, locale: language.locale }, seed, withLibrary(library));
         await tv.goto("/tv");
         await expect(tv.getByTestId("tv-browse")).toBeVisible();
-        // The menu's nine lines are all on the screen without scrolling it (a click on a line below the edge scrolls the menu to it, which would hide the fault).
+        // The menu's lines are all on the screen without scrolling it (a click on a line below the edge scrolls the menu to it, which would hide the fault).
         const room = await tv.getByTestId("tv-rail").evaluate((rail) => ({ needed: rail.scrollHeight, given: rail.clientHeight }));
         expect(room.needed).toBeLessThanOrEqual(room.given);
-        await tv.getByTestId("rail-profile").click();
+        await tv.getByTestId("tv-account-chip").click();
         await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
-        await expect(tv.getByTestId("tv-category-tile")).toHaveCount(4);
+        await expect(tv.getByTestId("tv-category-tile")).toHaveCount(2);
 
         // Every word of a tile is inside it (a name or a note that does not fit is cut, and what is cut is not read).
         const cut = await tv.getByTestId("tv-category-tile").evaluateAll((all) =>
@@ -131,8 +134,17 @@ test.describe("the profile's page", () => {
         expect(cut).toEqual([]);
         expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
-        // The menu lines are all on the screen too, the last of them (Profile) with the rest.
-        const last = (await tv.getByTestId("rail-profile").boundingBox())!;
+        // The head: its two buttons are on the screen and do not lie over the corner's buttons.
+        const corner = (await tv.getByTestId("tv-account-chip").boundingBox())!;
+        for (const id of ["tv-profile-signin", "tv-profile-settings"]) {
+          await expect(tv.getByTestId(id)).toBeInViewport({ ratio: 1 });
+          const box = (await tv.getByTestId(id).boundingBox())!;
+          const apart = box.y >= corner.y + corner.height - 0.5 || box.y + box.height <= corner.y + 0.5 || box.x >= corner.x + corner.width - 0.5 || box.x + box.width <= corner.x + 0.5;
+          expect(apart, `${id} is clear of the corner's button`).toBe(true);
+        }
+
+        // The menu lines are all on the screen too, the last of them with the rest.
+        const last = (await tv.getByTestId("rail-connect").boundingBox())!;
         expect(last.y + last.height).toBeLessThanOrEqual(screen.height + 0.5);
         expect(last.y).toBeGreaterThanOrEqual(0);
       });

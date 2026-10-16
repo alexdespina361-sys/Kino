@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ACCENTS, friendChoices, MAX_PROFILES, UI_LANGUAGES, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
@@ -11,10 +11,11 @@ import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { LANGUAGE_NAMES, useLanguage, useT } from "../i18n";
 import { formatLinkCode } from "../shared/format";
-import { CheckIcon, TvIcon, UserIcon } from "../shared/icons";
+import { CheckIcon, ChevronIcon, InfoIcon, LogoutIcon, PencilIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
-import { Screen } from "./Idle";
+import { BackButton, Screen } from "./Idle";
+import { TvCode } from "./TvCode";
 
 /** The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", and the same page for making and changing profiles. */
 export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage";
@@ -127,6 +128,7 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
         <button className="tv-action" onClick={() => setMode("phone")} data-nav data-testid="tv-signin-phone">
           {t("link.codeInstead")}
         </button>
+        {!asking && <BackButton onClick={() => setMode("phone")} testId="tv-signin-form-back" />}
       </Screen>
     );
   }
@@ -149,9 +151,14 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
             <span>{t("link.step3")}</span>
           </li>
           <li className="tv-code-row">
-            <p className="tv-code tv-link-code" data-testid="tv-link-code" aria-live="polite">
-              {request ? formatLinkCode(request.code) : "····-····"}
-            </p>
+            <TvCode
+              className="tv-link-code"
+              shown={request ? formatLinkCode(request.code) : "····-····"}
+              copy={request ? formatLinkCode(request.code) : undefined}
+              testId="tv-link-code"
+              copyTestId="tv-link-code-copy"
+              live
+            />
           </li>
         </ol>
         <div className="tv-qr">
@@ -174,10 +181,8 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
         <button className="tv-action" onClick={() => setMode("email")} data-nav data-testid="tv-signin-email">
           {t("link.emailInstead")}
         </button>
-        <button className="tv-action" onClick={onBack} data-nav data-testid="tv-signin-back">
-          {t("common.back")}
-        </button>
       </div>
+      <BackButton onClick={onBack} testId="tv-signin-back" />
     </Screen>
   );
 }
@@ -232,11 +237,7 @@ function TvApprove({ onClose }: { onClose: () => void }) {
           />
         </label>
       </form>
-      <div className="tv-actions">
-        <button className="tv-action" onClick={onClose} data-nav data-testid="tv-approve-back">
-          {t("common.back")}
-        </button>
-      </div>
+      <BackButton onClick={onClose} testId="tv-approve-back" />
     </Screen>
   );
 }
@@ -291,10 +292,8 @@ function TvApproveAsk({ code, onBack, onClose }: { code: string; onBack: () => v
             </button>
           </>
         )}
-        <button className="tv-action" onClick={onBack} data-nav data-testid="tv-approve-again">
-          {t("common.back")}
-        </button>
       </div>
+      <BackButton onClick={onBack} testId="tv-approve-again" />
     </Screen>
   );
 }
@@ -326,9 +325,9 @@ export function TvProfiles({ forced, manage, onDone, onBack }: ProfilesProps) {
     const close = () => setEditing(null);
     return (
       <Screen key="edit" testId="tv-profile-edit" compact focus onBack={close}>
-        <h1 className="tv-headline tv-headline-small">{t(existing ? "profiles.edit" : "profiles.new")}</h1>
         <ProfileEditor
           tv
+          heading={t(existing ? "profiles.edit" : "profiles.new")}
           profile={existing}
           taken={profiles.map((other) => other.avatar)}
           onSave={async (name, avatar) => {
@@ -384,22 +383,60 @@ export function TvProfiles({ forced, manage, onDone, onBack }: ProfilesProps) {
             <button className="tv-action" onClick={() => setManaging(true)} data-nav data-testid="tv-profiles-manage">
               {t("profiles.manage")}
             </button>
-            {!forced && (
-              <button className="tv-action" onClick={onBack} data-nav data-testid="tv-profiles-back">
-                {t("common.back")}
-              </button>
-            )}
             <button className="tv-action" onClick={() => void account.signOut().then(onDone)} data-nav data-testid="tv-profiles-signout">
               {t("auth.signOut")}
             </button>
           </>
         )}
       </div>
+      {!managing && !forced && <BackButton onClick={onBack} testId="tv-profiles-back" />}
     </Screen>
   );
 }
 
-/** Who is watching, and what the site looks like and does: language, colour, autoplay. For guests it is where signing in starts. */
+/** A titled group of the settings page: its words above, and its things on one surface (rows with a hairline between them, or fields). */
+function SettingsGroup({ title, children, testId }: { title?: string; children: ReactNode; testId?: string }) {
+  return (
+    <section className="tv-group" {...(title ? { "aria-label": title } : {})} data-testid={testId}>
+      {title && (
+        <h2 className="tv-group-title" aria-hidden="true">
+          {title}
+        </h2>
+      )}
+      <div className="tv-group-body">{children}</div>
+    </section>
+  );
+}
+
+/** A row of the settings page that leads on to another page, or does something to the account: an icon, what it does, and for a page, an arrow. */
+function SettingsLine({ icon, label, onPress, testId, autoFocus = false, tone = "plain" }: { icon: ReactNode; label: string; onPress: () => void; testId: string; autoFocus?: boolean; tone?: "plain" | "danger" }) {
+  return (
+    <button className={`tv-line${tone === "danger" ? " tv-line-danger" : ""}`} onClick={onPress} data-nav {...(autoFocus ? { "data-autofocus": true } : {})} data-testid={testId}>
+      <span className="tv-line-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="tv-line-text">{label}</span>
+      {tone === "plain" && <ChevronIcon className="tv-line-chevron" />}
+    </button>
+  );
+}
+
+/** An on/off row of the settings page. */
+function SettingsSwitch({ label, on, onToggle, testId }: { label: string; on: boolean; onToggle: () => void; testId: string }) {
+  return (
+    <button className="tv-switch-row" role="switch" aria-checked={on} onClick={onToggle} data-nav data-testid={testId}>
+      <span>{label}</span>
+      <span className="tv-switch" aria-hidden="true" />
+    </button>
+  );
+}
+
+/**
+ * The settings, from the corner of the profile's page: who is watching and what can be done with the account (a column of its own), what the
+ * site looks like (language, colour), what playback and sharing do. Three columns, each of groups with a name above and one surface under it,
+ * so that a language is chosen from a few words in a row, a colour from dots, and the rest are switches, and none of them looks like the next.
+ * For a guest the first column is where signing in starts.
+ */
 export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManage }: { onClose: () => void; onSignIn: () => void; onApprove: () => void; onSwitch: () => void; onManage: () => void }) {
   const t = useT();
   const language = useLanguage();
@@ -411,129 +448,124 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const adaptiveQuality = settings.adaptiveQuality ?? true;
   const ratingsOn = settings.ratings ?? true;
   const friendsOn = friendChoices(settings).friends;
+  const several = Boolean(me && me.profiles.length > 1);
   return (
     <Screen testId="tv-account" focus onBack={onClose}>
-      <div className="tv-panel">
-        <section className="tv-panel-who" data-nav-column>
-          <div className="tv-panel-id">
-            {me && profile ? (
-              <Avatar id={profile.avatar} className="tv-panel-avatar" />
-            ) : (
-              <span className="tv-panel-guest" aria-hidden="true">
-                <UserIcon />
-              </span>
-            )}
-            <h1 data-testid="tv-account-name">{me && profile ? profile.name : t("tv.notSignedIn")}</h1>
-          </div>
-          <p>{me ? t("account.signedInAs", { email: me.account.email }) : t("auth.pitchDetail")}</p>
-          <div className="tv-panel-actions">
-            {me && profile ? (
-              <>
-                {me.profiles.length > 1 && (
-                  <button className="tv-action" onClick={onSwitch} data-nav data-autofocus data-testid="tv-switch-profile">
-                    {t("profiles.switch")}
-                  </button>
+      <div className="tv-set">
+        <header className="tv-set-head" data-nav-column>
+          <h1 className="tv-set-title" data-testid="tv-settings-title">
+            {t("settings.title")}
+          </h1>
+          <BackButton onClick={onClose} testId="tv-account-back" />
+        </header>
+
+        <div className="tv-set-grid">
+          <div className="tv-set-col" data-nav-column>
+            <SettingsGroup title={t("tv.profile")} testId="tv-group-profile">
+              <div className="tv-who">
+                {me && profile ? (
+                  <Avatar id={profile.avatar} className="tv-who-avatar" />
+                ) : (
+                  <span className="tv-who-guest" aria-hidden="true">
+                    <UserIcon />
+                  </span>
                 )}
-                <button className="tv-action" onClick={onManage} data-nav data-testid="tv-manage-profiles">
-                  {t("profiles.manage")}
-                </button>
-                <button className="tv-action" onClick={onApprove} data-nav data-testid="tv-approve">
-                  {t("account.signInTv")}
-                </button>
-                <button className="tv-action" onClick={() => void account.signOut().then(onClose)} data-nav data-testid="tv-sign-out">
-                  {t("auth.signOut")}
-                </button>
-              </>
-            ) : (
-              account.status === "ready" && (
-                <button className="tv-action tv-action-primary" onClick={onSignIn} data-nav data-autofocus data-testid="tv-sign-in">
-                  {t("auth.signIn")}
-                </button>
-              )
+                <div className="tv-who-text">
+                  <h2 data-testid="tv-account-name">{me && profile ? profile.name : t("tv.notSignedIn")}</h2>
+                  {me && <p>{t("account.signedInAs", { email: me.account.email })}</p>}
+                </div>
+              </div>
+              {!me && <p className="tv-who-note">{t("auth.pitchDetail")}</p>}
+              {me && profile ? (
+                <>
+                  {several && <SettingsLine icon={<UsersIcon />} label={t("profiles.switch")} onPress={onSwitch} testId="tv-switch-profile" autoFocus />}
+                  <SettingsLine icon={<PencilIcon />} label={t("profiles.manage")} onPress={onManage} testId="tv-manage-profiles" autoFocus={!several} />
+                  <SettingsLine icon={<TvIcon />} label={t("account.signInTv")} onPress={onApprove} testId="tv-approve" />
+                </>
+              ) : (
+                account.status === "ready" && (
+                  <div className="tv-who-cta">
+                    <button className="tv-action tv-action-primary" onClick={onSignIn} data-nav data-autofocus data-testid="tv-sign-in">
+                      {t("auth.signIn")}
+                    </button>
+                  </div>
+                )
+              )}
+            </SettingsGroup>
+            {me && profile && (
+              <SettingsGroup testId="tv-group-account">
+                <SettingsLine icon={<LogoutIcon />} label={t("auth.signOut")} onPress={() => void account.signOut().then(onClose)} testId="tv-sign-out" tone="danger" />
+              </SettingsGroup>
             )}
-            <button className="tv-action" onClick={onClose} data-nav data-testid="tv-account-back">
-              {t("common.back")}
-            </button>
-          </div>
-        </section>
-
-        <section className="tv-panel-settings" data-nav-column>
-          <h2>{t("settings.language")}</h2>
-          <div className="tv-choices tv-choices-fit" role="radiogroup" aria-label={t("settings.language")}>
-            {UI_LANGUAGES.map((code) => (
-              <button key={code} className="tv-choice" role="radio" aria-checked={language === code} onClick={() => chooseLanguage(code)} data-nav data-testid={`tv-lang-${code}`}>
-                {LANGUAGE_NAMES[code]}
-              </button>
-            ))}
           </div>
 
-          <h2>{t("settings.accent")}</h2>
-          <div className="tv-swatches" role="radiogroup" aria-label={t("settings.accent")}>
-            {ACCENTS.map((accent) => (
-              <button
-                key={accent}
-                className="tv-swatch"
-                role="radio"
-                aria-checked={(settings.accent ?? ACCENTS[0]) === accent}
-                aria-label={t(`accent.${accent}`)}
-                style={{ background: ACCENT_SWATCH[accent], color: ACCENT_INK[accent] }}
-                onClick={() => chooseAccent(accent)}
-                data-nav
-                data-testid={`tv-accent-${accent}`}
-              >
-                <CheckIcon />
-              </button>
-            ))}
+          <div className="tv-set-col" data-nav-column>
+            <SettingsGroup title={t("settings.appearance")} testId="tv-group-look">
+              <div className="tv-field">
+                <span className="tv-field-label" aria-hidden="true">
+                  {t("settings.language")}
+                </span>
+                <div className="tv-segmented" role="radiogroup" aria-label={t("settings.language")}>
+                  {UI_LANGUAGES.map((code) => (
+                    <button key={code} className="tv-choice" role="radio" aria-checked={language === code} onClick={() => chooseLanguage(code)} data-nav data-testid={`tv-lang-${code}`}>
+                      {LANGUAGE_NAMES[code]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="tv-field">
+                <span className="tv-field-label" aria-hidden="true">
+                  {t("settings.accent")}
+                </span>
+                <div className="tv-swatches" role="radiogroup" aria-label={t("settings.accent")}>
+                  {ACCENTS.map((accent) => (
+                    <button
+                      key={accent}
+                      className="tv-swatch"
+                      role="radio"
+                      aria-checked={(settings.accent ?? ACCENTS[0]) === accent}
+                      aria-label={t(`accent.${accent}`)}
+                      style={{ background: ACCENT_SWATCH[accent], color: ACCENT_INK[accent] }}
+                      onClick={() => chooseAccent(accent)}
+                      data-nav
+                      data-testid={`tv-accent-${accent}`}
+                    >
+                      <CheckIcon />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </SettingsGroup>
+
+            <SettingsGroup title={t("settings.ratingsFriends")} testId="tv-group-share">
+              <SettingsSwitch label={t("rating.settingsSwitch")} on={ratingsOn} onToggle={() => set("ratings", !ratingsOn)} testId="tv-ratings-switch" />
+              {me && profile && (
+                <SettingsSwitch
+                  label={t("friends.switch")}
+                  on={friendsOn}
+                  onToggle={() => {
+                    set("friends", !friendsOn);
+                    account.syncNow(); // (the server hears of it now: it is what decides what a friend is shown)
+                  }}
+                  testId="tv-friends-switch"
+                />
+              )}
+            </SettingsGroup>
           </div>
 
-          <h2>{t("settings.playback")}</h2>
-          <button className="tv-switch-row" role="switch" aria-checked={autoplay} onClick={() => set("autoplayNext", !autoplay)} data-nav data-testid="tv-autoplay">
-            <span>{t("settings.autoplayNext")}</span>
-            <span className="tv-switch" aria-hidden="true" />
-          </button>
-          <button className="tv-switch-row" role="switch" aria-checked={tapToPause} onClick={() => set("tapToPause", !tapToPause)} data-nav data-testid="tv-tap-to-pause">
-            <span>{t("settings.tapToPause")}</span>
-            <span className="tv-switch" aria-hidden="true" />
-          </button>
-          <button
-            className="tv-switch-row"
-            role="switch"
-            aria-checked={adaptiveQuality}
-            onClick={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)}
-            data-nav
-            data-testid="tv-adaptive-quality"
-          >
-            <span>{t("settings.adaptiveQuality")}</span>
-            <span className="tv-switch" aria-hidden="true" />
-          </button>
-
-          <h2>{t("rating.settings")}</h2>
-          <button className="tv-switch-row" role="switch" aria-checked={ratingsOn} onClick={() => set("ratings", !ratingsOn)} data-nav data-testid="tv-ratings-switch">
-            <span>{t("rating.settingsSwitch")}</span>
-            <span className="tv-switch" aria-hidden="true" />
-          </button>
-
-          {me && profile && (
-            <>
-              <h2>{t("friends.settings")}</h2>
-              <button
-                className="tv-switch-row"
-                role="switch"
-                aria-checked={friendsOn}
-                onClick={() => {
-                  set("friends", !friendsOn);
-                  account.syncNow(); // (the server hears of it now: it is what decides what a friend is shown)
-                }}
-                data-nav
-                data-testid="tv-friends-switch"
-              >
-                <span>{t("friends.switch")}</span>
-                <span className="tv-switch" aria-hidden="true" />
-              </button>
-            </>
-          )}
-          {me && <p className="tv-hint">{t("tv.subtitlesHint")}</p>}
-        </section>
+          <div className="tv-set-col" data-nav-column>
+            <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
+              <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
+              <SettingsSwitch label={t("settings.tapToPause")} on={tapToPause} onToggle={() => set("tapToPause", !tapToPause)} testId="tv-tap-to-pause" />
+              <SettingsSwitch label={t("settings.adaptiveQuality")} on={adaptiveQuality} onToggle={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)} testId="tv-adaptive-quality" />
+            </SettingsGroup>
+            {me && (
+              <p className="tv-hint tv-set-hint">
+                <InfoIcon /> <span>{t("tv.subtitlesHint")}</span>
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </Screen>
   );

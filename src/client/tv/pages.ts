@@ -53,7 +53,7 @@ export const isRowsPage = (view: View): view is { kind: RowsPage } => view.kind 
 /** The pages that have a banner and rows under it: those above, the profile's (profile.ts) and the friends' (whose rows come from friends/pages.ts). */
 export const hasRows = (view: View): boolean => isRowsPage(view) || view.kind === "profile" || view.kind === "friends";
 
-/** The pages that belong to the profile: the menu's Profile line stands for them all, and Back from any but the first goes to the first. */
+/** The pages that belong to the profile: the corner button that opens the first of them stands for them all, and Back from any but the first goes to the first. */
 export const isProfilePage = (view: View): boolean => view.kind === "profile" || view.kind === "ratings" || view.kind === "history" || view.kind === "friends" || view.kind === "friend";
 
 /** How a row is laid out: wide tiles, a numbered ranking of posters, wide "continue" cards with a progress bar, or tiles of categories. */
@@ -96,8 +96,8 @@ export interface Entry {
   wants?: string;
   /** Somebody's request to be friends: pressing it asks whether to say yes. */
   request?: Person;
-  /** A tile that opens a page over the library, or the account's own pages, instead of a title or a page of the library. */
-  action?: "addFriend" | "friendSettings" | "settings" | "signIn";
+  /** A tile that opens a page over the library, instead of a title or a page of the library. */
+  action?: "addFriend" | "friendSettings";
   /** A person's tile (a friend): the picture they chose, and whether they are online now. */
   avatar?: AvatarId;
   online?: boolean;

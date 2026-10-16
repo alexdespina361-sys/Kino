@@ -4,7 +4,7 @@ import { weakness } from "../src/client/account/password";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, openTvSettings, openTvSignIn, PHONE, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
 import { TEST_ACCOUNT, TEST_ACCOUNT_B } from "./testAccount";
 
 /**
@@ -321,7 +321,7 @@ test.describe("signing a TV in from the phone", () => {
     await expect(phone.getByTestId("account-profile-name")).toHaveText("Viewer");
 
     const tv = await openLibrary(browser);
-    await tv.getByTestId("tv-account-chip").click(); // nobody is signed in, so the button leads straight to signing in
+    await openTvSignIn(tv); // (nobody is signed in: the corner's button opens the profile's page, and the button there asks for the code)
     const code = tv.getByTestId("tv-link-code");
     await expect(code).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/); // (until the TV has been given one it shows dots)
     const shown = (await code.textContent())!.trim();
@@ -400,7 +400,7 @@ test.describe("a TV that nobody is at", () => {
         return route.fulfill({ json: { status: "waiting" } });
       });
     });
-    await tv.getByTestId("tv-account-chip").click();
+    await openTvSignIn(tv);
     await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0001");
     await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
 
@@ -429,7 +429,7 @@ test.describe("a TV that nobody is at", () => {
 /** A computer's screen page that has made an account with the email form, which is how a screen with a keyboard signs in. */
 async function signedInScreen(browser: Browser, account = fresh()) {
   const screen = await openLibrary(browser);
-  await screen.getByTestId("tv-account-chip").click();
+  await openTvSignIn(screen);
   await screen.getByTestId("tv-signin-email").click();
   await screen.getByTestId("auth-switch").click();
   await expect(screen.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
@@ -445,14 +445,14 @@ test.describe("signing a screen in from another screen", () => {
   /** Another screen that is not signed in, showing the code that asks for it. */
   async function screenAskingToSignIn(browser: Browser) {
     const other = await openLibrary(browser);
-    await other.getByTestId("tv-account-chip").click();
+    await openTvSignIn(other);
     const code = other.getByTestId("tv-link-code");
     await expect(code).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
     return { other, shown: (await code.textContent())!.trim() };
   }
 
   const openApprove = async (screen: Page) => {
-    await screen.getByTestId("tv-account-chip").click();
+    await openTvSettings(screen);
     await screen.getByTestId("tv-approve").click();
   };
 
@@ -474,7 +474,7 @@ test.describe("signing a screen in from another screen", () => {
     await expect(screen.getByTestId("tv-approve-done")).toContainText(en["link.approved"]);
     await expect(other.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/, { timeout: 15_000 });
     await screen.getByTestId("tv-approve-close").click();
-    await expect(screen.getByTestId("tv-account")).toBeVisible(); // back on the account page
+    await expect(screen.getByTestId("tv-account")).toBeVisible(); // back on the settings page
   });
 
   test("a code nobody is showing is refused in words, and a request turned down leaves the other screen signed out", async ({ browser }) => {
@@ -500,7 +500,7 @@ test.describe("a poor password on the TV's own form", () => {
     test.setTimeout(60_000);
     const account = { email: `Tvguest ${Date.now().toString(36)}${++counter}`, password: "12" };
     const tv = await openLibrary(browser);
-    await tv.getByTestId("tv-account-chip").click();
+    await openTvSignIn(tv);
     await tv.getByTestId("tv-signin-email").click();
     await tv.getByTestId("auth-switch").click();
     await tv.getByTestId("auth-email").fill(account.email);
@@ -529,27 +529,29 @@ test.describe("a poor password on the TV's own form", () => {
 });
 
 test.describe("profiles made and changed on the TV itself", () => {
-  test("the account page makes, renames and removes them with the remote, and 'Who's watching?' on the next sign-in is the same page", async ({ browser }) => {
+  test("the settings page makes, renames and removes them with the remote, and 'Who's watching?' on the next sign-in is the same page", async ({ browser }) => {
     test.setTimeout(75_000);
     const account = fresh();
     const tv = await signedInScreen(browser, account);
     const profiles = tv.getByTestId("tv-profiles");
 
     // One profile: nobody to switch to, but profiles are managed from here all the same.
-    await tv.getByTestId("tv-account-chip").click();
+    await openTvSettings(tv);
     await expect(tv.getByTestId("tv-switch-profile")).toHaveCount(0);
 
-    // The page is two columns, and Up and Down keep to the one the remote is in: the top of the first does not jump across to the settings.
-    const inColumn = (name: "who" | "settings") => tv.locator(`.tv-panel-${name} :focus`);
-    await expect(inColumn("who")).toHaveCount(1);
+    // The page is three columns, and Up and Down keep to the one the remote is in: the top of the first goes up to the way out in the corner, not across to the next.
+    const inColumn = (index: number) => tv.locator(".tv-set-col").nth(index).locator(":focus");
+    await expect(inColumn(0)).toHaveCount(1);
     await tv.keyboard.press("ArrowUp");
-    await expect(inColumn("who")).toHaveCount(1);
+    await expect(tv.getByTestId("tv-account-back")).toBeFocused();
+    await tv.getByTestId("tv-manage-profiles").focus();
+    await expect(inColumn(0)).toHaveCount(1);
     await tv.keyboard.press("ArrowRight");
-    await expect(inColumn("settings")).toHaveCount(1);
-    for (let i = 0; i < 5; i++) await tv.keyboard.press("ArrowDown");
-    await expect(tv.getByTestId("tv-friends-switch")).toBeFocused(); // the last of the settings (friends belong to an account), and Down from it goes nowhere
+    await expect(inColumn(1)).toHaveCount(1);
+    for (let i = 0; i < 8; i++) await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-friends-switch")).toBeFocused(); // the last of the middle column (friends belong to an account), and Down from it goes nowhere
     await tv.keyboard.press("ArrowLeft");
-    await expect(inColumn("who")).toHaveCount(1);
+    await expect(inColumn(0)).toHaveCount(1);
 
     await tv.getByTestId("tv-manage-profiles").click();
     await expect(profiles).toContainText("1 of 5 profiles");
@@ -604,17 +606,17 @@ test.describe("profiles made and changed on the TV itself", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("profile-Kim")).toBeVisible();
 
-    // Done: back on the account page, which can now switch to the other profile.
+    // Done: back on the settings page, which can now switch to the other profile.
     await tv.getByTestId("tv-profiles-done").click();
     await tv.getByTestId("tv-switch-profile").click();
     await tv.getByTestId("profile-Kim").click();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Kim/);
 
     // Signing in again asks who is watching, with a way to add or change profiles on that very page; there is no way round it.
-    await tv.getByTestId("tv-account-chip").click();
+    await openTvSettings(tv);
     await tv.getByTestId("tv-sign-out").click();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", en["account.signInPrompt"]);
-    await tv.getByTestId("tv-account-chip").click();
+    await openTvSignIn(tv);
     await tv.getByTestId("tv-signin-email").click();
     await tv.getByTestId("auth-email").fill(account.email);
     await tv.getByTestId("auth-password").fill(account.password);

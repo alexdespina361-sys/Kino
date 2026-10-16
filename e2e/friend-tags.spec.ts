@@ -2,7 +2,7 @@ import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { openDevice, openLibrary, openProfilePlace, PHONE, readPairingCode, test } from "./helpers";
+import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, readPairingCode, test } from "./helpers";
 
 /**
  * Tags and requests: every profile has a tag (`Name#1`) that another types to find it, and finding it only asks: the other says yes (or no).
@@ -77,7 +77,7 @@ interface Screen {
 async function screenWithFriends(browser: Browser, name: string, options: { viewport?: { width: number; height: number }; language?: Language } = {}): Promise<Screen> {
   const account = fresh(name);
   const page = await openLibrary(browser, undefined, options.viewport ?? HD, options.language ? { "kino.lang": options.language } : {});
-  await page.getByTestId("tv-account-chip").click();
+  await openTvSignIn(page);
   await page.getByTestId("tv-signin-email").click();
   await page.getByTestId("auth-switch").click();
   await expect(page.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");

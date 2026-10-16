@@ -181,27 +181,61 @@ export async function clickAsAHand(page: Page, target: Locator): Promise<void> {
   await page.mouse.up();
 }
 
-/** The places on a TV's profile page (what the profile rated, its friends, History, signing in for a guest, the settings). */
+/**
+ * What is on a TV's profile page: three places that are cards (what the profile rated, its friends, History), and two buttons in its top, which
+ * are not places (Settings, and for a guest the way to sign in).
+ */
 export type ProfilePlace = "ratings" | "friends" | "history" | "signin" | "settings";
 
-/** The profile's page, opened by a click on its line in the menu (which shuts, and the page's first tile has the remote). */
+/** The button of the profile page's top that a place is, if it is one (the others are cards). */
+export const profileButton = (tv: Page, place: ProfilePlace): Locator | null =>
+  place === "settings" ? tv.getByTestId("tv-profile-settings") : place === "signin" ? tv.getByTestId("tv-profile-signin") : null;
+
+/** The profile's page, opened by a click on the button in the corner (the page's first button or card has the remote). */
 export async function openProfilePage(tv: Page): Promise<void> {
-  await tv.getByTestId("rail-profile").click();
+  await tv.getByTestId("tv-account-chip").click();
   await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
 }
 
 /** A place on the profile's page, clicked as a mouse does it (the profile's page is opened first unless it is open). */
 export async function openProfilePlace(tv: Page, place: ProfilePlace): Promise<void> {
   if ((await tv.getByTestId("tv-browse").getAttribute("data-view")) !== "profile") await openProfilePage(tv);
-  await tv.locator(`[data-entry="profile:${place}"]`).click();
+  await (profileButton(tv, place) ?? tv.locator(`[data-entry="profile:${place}"]`)).click();
 }
 
-/** The same with a remote: Right along the tiles of the profile's page to the place, and OK. */
+/** The corner's button of a TV that is on the library's first screen, reached with a remote: Up (the banner's buttons are on the way), and OK opens the profile's page. */
+export async function openProfileByRemote(tv: Page): Promise<void> {
+  const chip = tv.getByTestId("tv-account-chip");
+  for (let step = 0; step < 4 && !(await chip.evaluate((element) => element === document.activeElement)); step++) await tv.keyboard.press("ArrowUp");
+  await expect(chip).toBeFocused();
+  await tv.keyboard.press("Enter");
+  await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
+}
+
+/** The way to sign in of a TV that nobody is signed in on: the corner's button opens the profile's page, whose first button it is. */
+export async function openTvSignIn(tv: Page): Promise<void> {
+  await tv.getByTestId("tv-account-chip").click();
+  await tv.getByTestId("tv-profile-signin").click();
+}
+
+/** The settings page of a TV (signed in or not): the corner's button, then the Settings button of the profile's page. */
+export async function openTvSettings(tv: Page): Promise<void> {
+  await openProfilePlace(tv, "settings");
+  await expect(tv.getByTestId("tv-account")).toBeVisible();
+}
+
+/** The same with a remote: Up to the top and along it to Settings or the way to sign in, or Down and Right along the cards to a place, and OK. */
 export async function pressProfilePlace(tv: Page, place: ProfilePlace): Promise<void> {
-  const tile = tv.locator(`[data-entry="profile:${place}"]`);
-  await expect(tile).toBeVisible();
-  for (let step = 0; step < 6 && !(await tile.evaluate((element) => element === document.activeElement)); step++) await tv.keyboard.press("ArrowRight");
-  await expect(tile).toBeFocused();
+  const button = profileButton(tv, place);
+  const target = button ?? tv.locator(`[data-entry="profile:${place}"]`);
+  await expect(target).toBeVisible();
+  const there = () => target.evaluate((element) => element === document.activeElement);
+  for (let step = 0; step < 6 && !(await there()); step++) {
+    const onCard = await tv.evaluate(() => document.activeElement?.getAttribute("data-zone") === "rows");
+    // (to a button of the top: Up from the cards, then Right to Settings or Left to Sign in; to a card: Down from the top, then Right along the cards)
+    await tv.keyboard.press(button ? (onCard ? "ArrowUp" : place === "settings" ? "ArrowRight" : "ArrowLeft") : onCard ? "ArrowRight" : "ArrowDown");
+  }
+  await expect(target).toBeFocused();
   await tv.keyboard.press("Enter");
 }
 
