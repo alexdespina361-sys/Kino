@@ -82,7 +82,6 @@ const PUT_AWAY_QUIET_MS = 600;
 export function Tv() {
   useT();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const engineRef = useRef<PlayerEngine | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -318,47 +317,6 @@ export function Tv() {
   const endingRef = useRef<Ending>({ ended: false });
   endingRef.current = { ended, upNext: following || upNextCountdown === null ? undefined : { seconds: autoplay ? upNextCountdown : null } };
 
-  const sendEmbedCommand = (command: "play" | "pause" | "seek", value?: number) => {
-    const win = iframeRef.current?.contentWindow;
-    if (!win) return;
-    if (command === "play") {
-      win.postMessage({ method: "play" }, "*");
-      win.postMessage({ type: "play" }, "*");
-      win.postMessage({ event: "command", func: "playVideo" }, "*");
-      win.postMessage({ action: "play" }, "*");
-    } else if (command === "pause") {
-      win.postMessage({ method: "pause" }, "*");
-      win.postMessage({ type: "pause" }, "*");
-      win.postMessage({ event: "command", func: "pauseVideo" }, "*");
-      win.postMessage({ action: "pause" }, "*");
-    } else if (command === "seek" && typeof value === "number") {
-      win.postMessage({ method: "seek", value, time: value }, "*");
-      win.postMessage({ type: "seek", time: value }, "*");
-      win.postMessage({ event: "command", func: "seekTo", args: [value, true] }, "*");
-      win.postMessage({ action: "seek", time: value }, "*");
-    }
-  };
-
-  const publishEmbedState = (nextState: Partial<PlayerState>) => {
-    setPlayer((prev) => {
-      const base: PlayerState = {
-        ...prev,
-        ...nextState,
-      };
-      const full = withTvState(
-        base,
-        captionStyleRef.current,
-        currentMediaRef.current,
-        sourceIndexRef.current,
-        subtitleDelayRef.current,
-        endingRef.current,
-        true,
-        embedIndexRef.current,
-      );
-      if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full });
-      return full;
-    });
-  };
 
   /* ------------------------------ sources ------------------------------ */
 
@@ -405,11 +363,12 @@ export function Tv() {
         setEmbedActive(true);
         setEmbedIndex(0);
         engineRef.current?.stop();
-        publishEmbedState({
+        setPlayer((prev) => ({
+          ...prev,
           state: "playing",
           error: undefined,
           buffering: false,
-        });
+        }));
         notify(t("notice.embedFallback"));
       }
       return;
@@ -418,96 +377,6 @@ export function Tv() {
     notify(t("notice.sourceFailed", { from: failed ? sourceName(failed, sourceIndexRef.current) : t("notice.thatSource"), to: sourceName(sources[next]!, next) }));
     loadSource(next, false);
   }, [player.state, embedActive]);
-
-  const embedWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const embedPlaybackStartedRef = useRef(false);
-
-  // Watchdog timer: automatically switch provider if active embed doesn't start within 7s
-  useEffect(() => {
-    if (!embedActive) {
-      if (embedWatchdogRef.current) clearTimeout(embedWatchdogRef.current);
-      embedPlaybackStartedRef.current = false;
-      return;
-    }
-
-    embedPlaybackStartedRef.current = false;
-    const embeds = getEmbedList(currentMediaRef.current);
-    if (embeds.length <= 1) return;
-
-    if (embedWatchdogRef.current) clearTimeout(embedWatchdogRef.current);
-    embedWatchdogRef.current = setTimeout(() => {
-      if (embedPlaybackStartedRef.current) return;
-      setEmbedIndex((prev) => {
-        const nextIdx = (prev + 1) % embeds.length;
-        notify(t("notice.embedSwitching", { name: embedProviderName(embeds[nextIdx]!, nextIdx) }));
-        return nextIdx;
-      });
-    }, 7000);
-
-    return () => {
-      if (embedWatchdogRef.current) clearTimeout(embedWatchdogRef.current);
-    };
-  }, [embedActive, embedIndex]);
-
-  // Listen for iframe embed player messages (VidLink, JWPlayer, Plyr, Video.js)
-  useEffect(() => {
-    if (!embedActive) return;
-
-    const handleMessage = (event: MessageEvent) => {
-      const data = event.data;
-      if (!data) return;
-
-      let evt: string | undefined;
-      let currentTime: number | undefined;
-      let duration: number | undefined;
-
-      if (data.type === "PLAYER_EVENT" && data.data) {
-        evt = data.data.event;
-        currentTime = data.data.currentTime;
-        duration = data.data.duration;
-      } else if (typeof data.event === "string") {
-        evt = data.event;
-        currentTime = typeof data.currentTime === "number" ? data.currentTime : typeof data.time === "number" ? data.time : undefined;
-        duration = typeof data.duration === "number" ? data.duration : undefined;
-      } else if (typeof data.type === "string") {
-        evt = data.type;
-        currentTime = typeof data.currentTime === "number" ? data.currentTime : typeof data.time === "number" ? data.time : undefined;
-        duration = typeof data.duration === "number" ? data.duration : undefined;
-      }
-
-      if (typeof currentTime === "number") {
-        embedPlaybackStartedRef.current = true;
-        if (embedWatchdogRef.current) {
-          clearTimeout(embedWatchdogRef.current);
-          embedWatchdogRef.current = null;
-        }
-        publishEmbedState({
-          currentTime,
-          duration: typeof duration === "number" && duration > 0 ? duration : playerRef.current.duration,
-          state: evt === "pause" ? "paused" : evt === "ended" ? "paused" : "playing",
-          buffering: false,
-          error: undefined,
-        });
-      } else if (evt === "play" || evt === "playing") {
-        embedPlaybackStartedRef.current = true;
-        if (embedWatchdogRef.current) {
-          clearTimeout(embedWatchdogRef.current);
-          embedWatchdogRef.current = null;
-        }
-        publishEmbedState({ state: "playing", buffering: false, error: undefined });
-      }
-
-      if (evt === "ended") {
-        setEnded(true);
-        if (currentMediaRef.current?.series?.next) {
-          setUpNextCountdown(UP_NEXT_SECONDS);
-        }
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, [embedActive]);
 
   const triggerNextEpisode = () => {
     if (followingRef.current) return; // the TV being followed picks what comes next
@@ -712,13 +581,7 @@ export function Tv() {
   /* ------------------------------ skipping ------------------------------ */
 
   const skip = (seconds: number) => {
-    if (embedActive) {
-      const targetTime = Math.max(0, Math.min(player.duration || Infinity, player.currentTime + seconds));
-      sendEmbedCommand("seek", targetTime);
-      publishEmbedState({ currentTime: targetTime });
-    } else {
-      engineRef.current?.skip(seconds);
-    }
+    engineRef.current?.skip(seconds);
     // Quick presses in the same direction add up ("+30s"), so you can see how far you have gone.
     const run = skipRunRef.current;
     const now = Date.now();
@@ -768,7 +631,7 @@ export function Tv() {
     video.setAttribute("referrerpolicy", "no-referrer");
     const publish = (state: PlayerState) => {
       if (embedActiveRef.current) return;
-      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current, embedActiveRef.current, embedIndexRef.current);
+      const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current);
       setPlayer(full);
       if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
     };
@@ -943,12 +806,7 @@ export function Tv() {
               resetSources();
               void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt, command.media.stream.directUrl);
             } else if (command.type === "PLAY") {
-              if (embedActiveRef.current) {
-                sendEmbedCommand("play");
-                publishEmbedState({ state: "playing" });
-              } else {
-                engine.play();
-              }
+              engine.play();
               if (message.by) {
                 // A guest that steers set the film going: said once, and the film is held by nobody any more.
                 holdRef.current = null;
@@ -957,24 +815,13 @@ export function Tv() {
                 if (line) notify(line);
               }
             } else if (command.type === "PAUSE") {
-              if (embedActiveRef.current) {
-                sendEmbedCommand("pause");
-                publishEmbedState({ state: "paused" });
-              } else {
-                engine.pause();
-              }
+              engine.pause();
               if (message.by) {
                 holdRef.current = { by: message.by, waiting: false }; // (a guest that steers paused it: the pause card says who)
                 setHold(holdRef.current);
               }
-            } else if (command.type === "SEEK") {
-              if (embedActiveRef.current) {
-                sendEmbedCommand("seek", command.time);
-                publishEmbedState({ currentTime: command.time });
-              } else {
-                engine.seek(command.time);
-              }
-            } else if (command.type === "SKIP") skip(command.seconds);
+            } else if (command.type === "SEEK") engine.seek(command.time);
+            else if (command.type === "SKIP") skip(command.seconds);
             else if (command.type === "STOP") {
               putMedia(null);
               setUpNextCountdown(null);
@@ -989,18 +836,7 @@ export function Tv() {
             else if (command.type === "SET_CAPTION_STYLE") changeCaptions(command.style);
             else if (command.type === "SET_SPEED") engine.setPlaybackRate(command.rate);
             else if (command.type === "SET_AUDIO") chooseAudio(command.track);
-            else if (command.type === "SET_SOURCE") {
-              if (embedActiveRef.current) {
-                const embeds = getEmbedList(currentMediaRef.current);
-                if (command.index < embeds.length) {
-                  setEmbedIndex(command.index);
-                  publishEmbedState({ state: "playing", error: undefined, buffering: false });
-                  notify(embedProviderName(embeds[command.index]!, command.index));
-                }
-              } else {
-                loadSource(command.index, true);
-              }
-            }
+            else if (command.type === "SET_SOURCE") loadSource(command.index, true);
             else if (command.type === "TOGGLE_FULLSCREEN") fullscreenFromPhone();
             else if (command.type === "NEXT_EPISODE") triggerNextEpisode();
             else if (command.type === "DISMISS_UP_NEXT") dismissUpNext();
@@ -1267,12 +1103,6 @@ export function Tv() {
   /* --------------------------- remote control --------------------------- */
 
   const togglePlay = () => {
-    if (embedActive) {
-      const isPlaying = player.state === "playing";
-      sendEmbedCommand(isPlaying ? "pause" : "play");
-      publishEmbedState({ state: isPlaying ? "paused" : "playing" });
-      return;
-    }
     return player.state === "playing" ? engineRef.current?.pause() : engineRef.current?.play();
   };
   const dismissUpNext = () => {
@@ -1336,14 +1166,8 @@ export function Tv() {
   /** Once more from the start. */
   const watchAgain = () => {
     setEnded(false);
-    if (embedActive) {
-      sendEmbedCommand("seek", 0);
-      sendEmbedCommand("play");
-      publishEmbedState({ currentTime: 0, state: "playing" });
-    } else {
-      engineRef.current?.seek(0);
-      engineRef.current?.play();
-    }
+    engineRef.current?.seek(0);
+    engineRef.current?.play();
   };
 
   /** Every source of the video has failed (a failing one hands over to the next, which is not yet a failure): the controls are of no use, so a card with a way on takes their place. */
@@ -1499,20 +1323,10 @@ export function Tv() {
           else togglePlay();
           break;
         case "play":
-          if (embedActive) {
-            sendEmbedCommand("play");
-            publishEmbedState({ state: "playing" });
-          } else {
-            engine.play();
-          }
+          engine.play();
           break;
         case "pause":
-          if (embedActive) {
-            sendEmbedCommand("pause");
-            publishEmbedState({ state: "paused" });
-          } else {
-            engine.pause();
-          }
+          engine.pause();
           break;
         case "left":
         case "rewind":
@@ -1671,11 +1485,11 @@ export function Tv() {
       {showVideo && embedActive && Boolean(getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl) && (
         <iframe
           key={`embed-${embedIndex}-${getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl}`}
-          ref={iframeRef}
           src={getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl}
           className="tv-video"
           data-picture
           allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+          allowFullScreen
           referrerPolicy="origin"
           style={{ width: "100%", height: "100%", border: "none" }}
         />
@@ -1802,10 +1616,61 @@ export function Tv() {
         />
       )}
 
-      {unlocked && showVideo && !finished && !failed && (
+      {unlocked && showVideo && embedActive && (
+        <div style={{ position: "absolute", top: "1.2rem", left: "1.2rem", zIndex: 100, display: "flex", gap: "0.6rem" }}>
+          <button
+            className="tv-action"
+            onClick={stopPlayback}
+            style={{
+              background: "rgba(0,0,0,0.85)",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: "8px",
+              padding: "0.55rem 1.1rem",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              fontSize: "0.95rem",
+              fontWeight: 600,
+              boxShadow: "0 4px 14px rgba(0,0,0,0.6)",
+            }}
+          >
+            <HomeIcon /> {t("tv.backToLibrary")}
+          </button>
+          {getEmbedList(currentMedia).length > 1 && (
+            <button
+              className="tv-action"
+              onClick={() => {
+                const list = getEmbedList(currentMedia);
+                const nextIdx = (embedIndex + 1) % list.length;
+                setEmbedIndex(nextIdx);
+                notify(embedProviderName(list[nextIdx]!, nextIdx));
+              }}
+              style={{
+                background: "rgba(0,0,0,0.85)",
+                color: "#fff",
+                border: "1px solid rgba(255,255,255,0.25)",
+                borderRadius: "8px",
+                padding: "0.55rem 1.1rem",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                fontSize: "0.95rem",
+                fontWeight: 600,
+                boxShadow: "0 4px 14px rgba(0,0,0,0.6)",
+              }}
+            >
+              {embedProviderName(getEmbedList(currentMedia)[embedIndex]!, embedIndex)} ▾
+            </button>
+          )}
+        </div>
+      )}
+
+      {unlocked && showVideo && !finished && !failed && !embedActive && (
         <Hud
           visible={controlsVisible && menu !== "captions"}
-          embedActive={embedActive}
           player={player}
           title={mainTitle}
           subTitle={series ? t("player.seasonEpisode", { season: series.season, episode: series.episode }) : ""}
@@ -1829,18 +1694,7 @@ export function Tv() {
           controlsRef={controlsRef}
           onToggle={playOrPause}
           onSkip={skipHere}
-          onSeekTo={(time) => {
-            if (following) {
-              if (admin) steer({ type: "SEEK", time });
-              return;
-            }
-            if (embedActive) {
-              sendEmbedCommand("seek", time);
-              publishEmbedState({ currentTime: time });
-            } else {
-              engineRef.current?.seek(time);
-            }
-          }}
+          onSeekTo={(time) => (following ? admin && steer({ type: "SEEK", time }) : engineRef.current?.seek(time))}
           onNext={() => (following ? admin && steer({ type: "NEXT_EPISODE" }) : triggerNextEpisode())}
           onPrevious={goToPrevious}
           onDismissUpNext={dismissUpNext}
@@ -1895,16 +1749,7 @@ export function Tv() {
           onQuality={(level) => engineRef.current?.setQuality(level)}
           onSource={(index) => {
             setMenu(null);
-            if (embedActive) {
-              const embeds = getEmbedList(currentMediaRef.current);
-              if (index < embeds.length) {
-                setEmbedIndex(index);
-                publishEmbedState({ state: "playing", error: undefined, buffering: false });
-                notify(embedProviderName(embeds[index]!, index));
-              }
-            } else {
-              loadSource(index, true);
-            }
+            loadSource(index, true);
           }}
           onCaption={changeCaptions}
           onKind={setMenu}
@@ -1967,32 +1812,18 @@ interface Ending {
   upNext?: { seconds: number | null } | undefined;
 }
 
-function withTvState(
-  state: PlayerState,
-  captionStyle: CaptionStyle,
-  media: NormalizedMedia | null,
-  sourceIndex: number,
-  subtitleDelay: number,
-  ending: Ending,
-  embedActive = false,
-  embedIndex = 0,
-): PlayerState {
-  const embedList = getEmbedList(media);
-  return {
-    ...state,
-    ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
-    ...(embedActive && embedList.length > 1
-      ? { sources: { labels: embedList.map((u, i) => embedProviderName(u, i)), current: embedIndex } }
-      : media && state.state !== "idle" && sourcesOf(media).length > 1
-      ? { sources: { labels: sourcesOf(media).map(sourceName), current: sourceIndex } }
-      : {}),
-    fullscreen: Boolean(document.fullscreenElement),
-    captionStyle,
-    subtitleDelay,
-    ...(ending.ended && state.state === "paused" ? { ended: true } : {}),
-    ...(ending.upNext && state.state !== "idle" ? { upNext: ending.upNext } : {}),
-  };
-}
+const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number, ending: Ending): PlayerState => ({
+  ...state,
+  ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
+  ...(media && state.state !== "idle" && sourcesOf(media).length > 1
+    ? { sources: { labels: sourcesOf(media).map(sourceName), current: sourceIndex } }
+    : {}),
+  fullscreen: Boolean(document.fullscreenElement),
+  captionStyle,
+  subtitleDelay,
+  ...(ending.ended && state.state === "paused" ? { ended: true } : {}),
+  ...(ending.upNext && state.state !== "idle" ? { upNext: ending.upNext } : {}),
+});
 
 function toPairing(info: { code: string; expiresInMs: number } | null): Pairing | null {
   return info ? { code: info.code, expiresAt: Date.now() + info.expiresInMs } : null;

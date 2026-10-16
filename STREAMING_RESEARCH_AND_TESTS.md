@@ -186,4 +186,27 @@ This document tracks all investigations, hypotheses, implementations, empirical 
   - Zero TypeScript errors (`npm run typecheck` clean).
   - Production build: clean in 330ms (`dist/client/assets/Tv-D0WnFKQd.js`).
 
+### Test 11: Reversion to Clean Native Fallback (Original Player HUD Without Conflicting Overlay)
+- **Problem Statement & User Feedback**:
+  - Superimposing Kino's custom overlay HUD (`<Hud />`) on cross-origin embed iframes created visual clutter and dual-HUD conflicts: the provider's original player HUD still appeared under/behind our controls, while postMessage synchronization across diverse upstream CDNs (AutoEmbed, VidLink, AnyEmbed) was inherently fragile and prone to timing desyncs.
+  - Reverted to the clean, proven architecture:
+    1. Try native direct HLS playback first with residential client token cache (no custom headers).
+    2. On Chromium/Windows or when upstream WAF blocks direct segments (403), gracefully fall back to the embed iframe player.
+    3. In embed mode, render the video player with its own original, fully functional HUD without layering Kino's HUD on top (`!embedActive`).
+    4. Provide an unobtrusive floating "Back to Library" button (and stream selector pill) in the top-left corner so users can seamlessly exit or switch providers.
+- **Implementation**:
+  1. `src/client/tv/Tv.tsx`:
+     - Guarded `<Hud />` with `!embedActive` so Kino's overlay controls are never rendered over the embed iframe.
+     - Removed `sendEmbedCommand`, synthetic `publishEmbedState`, and iframe `postMessage` listeners that caused conflicting state mutations.
+     - Restored the sleek floating "Back to Library" button and stream switcher pill in embed mode (`zIndex: 100`).
+     - Kept client-side token caching (2h 50s TTL) for direct playback.
+  2. `src/client/tv/Hud.tsx`:
+     - Removed `embedActive` prop and `data-embed` attribute.
+     - Kept unconditional `useBusy` hook call to preserve React 19 hook order integrity.
+  3. `src/client/tv/tv.css`:
+     - Removed `.tv-overlay[data-embed="true"]` rules.
+- **Result**: **SUCCESS**.
+- **Outcome**: Zero dual-HUD conflicts, zero pointer-event swallows. The embed player plays cleanly with full native playback controls, volume, seeking, quality, and subtitles, and users can exit to the library with a single click.
+
+
 

@@ -114,7 +114,6 @@ export interface HudProps {
    * admin's too, whose play, skips, bar, next episode and stop (`onToggle`, `onSkip`, `onSeekTo`, `onNext`, `onStop`) ask the host's screen.
    */
   follow?: FollowProps | undefined;
-  embedActive?: boolean | undefined;
 }
 
 /** The picture is not there yet: a link is being looked up, the video is loading, or it stopped to fill up. */
@@ -459,8 +458,7 @@ export function Hud(p: HudProps) {
   const duration = player.duration || 0;
   const percent = (time: number) => (duration > 0 ? Math.max(0, Math.min(100, (time / duration) * 100)) : 0);
   const playing = player.state === "playing";
-  const rawBusy = useBusy(player, p.resolving);
-  const busy = !p.embedActive && rawBusy;
+  const busy = useBusy(player, p.resolving);
   const paused = !busy && player.state === "paused";
   const follow = p.follow;
   /** Whether the playback is this screen's to move: any screen's own picture, or an admin's, but not that of a guest who only watches. */
@@ -543,7 +541,6 @@ export function Hud(p: HudProps) {
       <div
         className={`tv-overlay ${p.visible ? "visible" : "hidden"}`}
         data-picture
-        data-embed={p.embedActive || undefined}
         data-paused={(paused && !p.upNext) || undefined}
         data-boosting={p.boosting || undefined}
       >
