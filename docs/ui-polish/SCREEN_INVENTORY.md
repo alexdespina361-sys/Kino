@@ -1,6 +1,6 @@
 # Screen inventory
 
-Every screen of the app, how the walk reaches it, and the pictures that show it. Pictures are in `.ui-polish/shots/<look>/<device>/<name>.png` (git-ignored; regenerate with `pnpm ui:walk -- --ui=classic|polish`).
+Every screen of the app, how the walk reaches it, and the pictures that show it. Pictures are in `.ui-polish/shots/<look>/<device>/<name>.png` (git-ignored; regenerate with `pnpm ui:walk`; there is one look now, so the folder is `polish`).
 Devices: `tv-1280` (1280x720, everything, signed out), `tv-1920`, `tv-2560`, `tv-1440x900`, `tv-1366x768` (the main screens), `tv-1280-signed-in` / `tv-1920-signed-in` (friends, ratings, history, account, party, bell), `phone-390`, `phone-390-signed-in` (390x844).
 The *routes between screens* (the graph, with the key that does each step and what Back does) come from the flow audits (`audits/U1-flows-tv.md`, `audits/U2-flows-phone.md`) and are summarised in `ISSUES.md`.
 

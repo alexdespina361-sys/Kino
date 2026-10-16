@@ -2,7 +2,7 @@
 
 Taken 2026-10-13 from branch `ui/polish-system` (commit `125b5f9`, which is `origin/main` `cde1d7f` plus the look switch). Nothing in the pictures is real content: a made-up catalogue of 32 films and 8 series with drawn posters (`scripts/ui-walk/lib.mjs`), test accounts that live in a throwaway server's memory.
 
-Regenerate: `pnpm ui:walk -- --ui=classic --scan` (about 5 minutes, builds the client first), then `pnpm ui:drift`. The pictures go to `.ui-polish/shots/classic/` (git-ignored), the measurements to `.ui-polish/scan/classic/`.
+**History.** This is the old look, as it was on 2026-10-13, before the refined layer: it is kept as the "before" of the work. Since 2026-10-16 the site has one look (D18), so the walk takes no `--ui` any more: `pnpm ui:walk -- --scan` (about 5 minutes, builds the client first) draws today's look into `.ui-polish/shots/polish/` and measures it into `.ui-polish/scan/polish/`, then `pnpm ui:drift`. The classic pictures (`.ui-polish/shots/classic/`, git-ignored) were taken with the switch that is gone.
 
 ## What the walk covers
 
