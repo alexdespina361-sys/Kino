@@ -6,7 +6,6 @@ import {
   PARTY_BUFFER_AHEAD_S,
   PARTY_BUFFER_BYTES,
   PlayerEngine,
-  PlayerError,
   bufferPolicy,
   lostTheConnection,
   proxiedQualityCap,
@@ -21,7 +20,6 @@ const FakeHls = vi.hoisted(() => {
     static isSupported = () => FakeHls.supported;
     static Events = { ERROR: "error", MANIFEST_PARSED: "manifestParsed", LEVEL_SWITCHED: "ls", LEVEL_LOADED: "ll", SUBTITLE_TRACK_SWITCH: "sts", SUBTITLE_TRACKS_UPDATED: "stu", AUDIO_TRACK_SWITCHED: "ats", AUDIO_TRACKS_UPDATED: "atu" };
     static ErrorTypes = { MEDIA_ERROR: "mediaError", NETWORK_ERROR: "networkError" };
-    static ErrorDetails = { FRAG_LOAD_ERROR: "fragLoadError" };
     handlers = new Map<string, Handler[]>();
     url: string | null = null;
     autoLevelCapping = -1;
@@ -176,26 +174,16 @@ describe("a picture that comes through this server", () => {
     expect(hls.currentLevel).toBe(2);
   });
 
-  it("fails direct stream when a fatal error occurs", async () => {
-    const { engine, states } = newEngine();
+  it("holds for the server's own address that is tried after a direct one failed", async () => {
+    const { engine } = newEngine();
     await engine.load("https://cdn.example/a.m3u8", "hls");
     const hls = FakeHls.instances.at(-1)!;
     hls.emit("manifestParsed", { levels });
     expect(hls.autoLevelCapping).toBe(-1);
     hls.emit("error", { type: "networkError", details: "manifestLoadError", fatal: true });
-    expect(states.at(-1)?.state).toBe("error");
-    expect(states.at(-1)?.error).toBe(PlayerError.ConnectionLost);
-    engine.destroy();
-  });
-
-  it("fails direct stream fast on 403 fragment load error without waiting for fatal event", async () => {
-    const { engine, states } = newEngine();
-    await engine.load("https://cdn.example/a.m3u8", "hls");
-    const hls = FakeHls.instances.at(-1)!;
+    expect(hls.url).toContain("/api/proxy?url=");
     hls.emit("manifestParsed", { levels });
-    hls.emit("error", { type: "networkError", details: "fragLoadError", fatal: false, response: { code: 403 } });
-    expect(states.at(-1)?.state).toBe("error");
-    expect(states.at(-1)?.error).toBe(PlayerError.NotDirectlyPlayable);
+    expect(hls.autoLevelCapping).toBe(1);
     engine.destroy();
   });
 });

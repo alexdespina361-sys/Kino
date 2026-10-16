@@ -30,7 +30,7 @@ import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
-import { FullscreenIcon, HomeIcon, UsersIcon } from "../shared/icons";
+import { FullscreenIcon, UsersIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
@@ -297,19 +297,8 @@ export function Tv() {
    * Puts a video on (or takes it off), in the ref at once: the render that refreshes the ref comes later, and a message that follows within the same
    * moment (a party's `TV_FOLLOWING` and the `LOAD` behind it) must compare with this video, not the one that was on before it.
    */
-  const [embedActive, setEmbedActive] = useState(false);
-  const embedActiveRef = useRef(false);
-  embedActiveRef.current = embedActive;
-  const [embedIndex, setEmbedIndex] = useState(0);
-  const embedIndexRef = useRef(0);
-  embedIndexRef.current = embedIndex;
-  const [streamMenuOpen, setStreamMenuOpen] = useState(false);
-
   const putMedia = (media: NormalizedMedia | null) => {
     currentMediaRef.current = media;
-    setEmbedActive(false);
-    setEmbedIndex(0);
-    setStreamMenuOpen(false);
     setCurrentMedia(media);
   };
   playerRef.current = player;
@@ -318,7 +307,6 @@ export function Tv() {
   /** What the phone is told about the end of the picture: that it came, and whether the next episode starts by itself (and in how long). */
   const endingRef = useRef<Ending>({ ended: false });
   endingRef.current = { ended, upNext: following || upNextCountdown === null ? undefined : { seconds: autoplay ? upNextCountdown : null } };
-
 
   /* ------------------------------ sources ------------------------------ */
 
@@ -344,8 +332,6 @@ export function Tv() {
     triedSourcesRef.current = manual ? new Set([index]) : triedSourcesRef.current.add(index);
     sourceIndexRef.current = index;
     setSourceIndex(index);
-    setEmbedActive(false);
-    setEmbedIndex(0);
     resetApplied();
     void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     if (play) engine?.play();
@@ -358,34 +344,17 @@ export function Tv() {
     if (!media) return;
     const sources = sourcesOf(media);
     const next = sources.findIndex((_, index) => !triedSourcesRef.current.has(index));
-    const isWafBlock = player.error === PlayerError.NotDirectlyPlayable;
-    if (next === -1 || isWafBlock) {
-      const embeds = getEmbedList(media);
-      if (embeds.length > 0 && !embedActive) {
-        setEmbedActive(true);
-        setEmbedIndex(0);
-        engineRef.current?.stop();
-        setPlayer((prev) => ({
-          ...prev,
-          state: "playing",
-          error: undefined,
-          buffering: false,
-        }));
-        notify(t("notice.embedFallback"));
-      }
-      return;
-    }
+    if (next === -1) return;
     const failed = sources[sourceIndexRef.current];
     notify(t("notice.sourceFailed", { from: failed ? sourceName(failed, sourceIndexRef.current) : t("notice.thatSource"), to: sourceName(sources[next]!, next) }));
     loadSource(next, false);
-  }, [player.state, embedActive]);
+  }, [player.state]);
 
   const triggerNextEpisode = () => {
     if (followingRef.current) return; // the TV being followed picks what comes next
     setUpNextCountdown(null);
     setUpNextDismissed(false);
     setEnded(false);
-    setEmbedActive(false);
     const preloaded = preloadedNextMediaRef.current;
     const nextUrl = currentMediaRef.current?.series?.next?.url;
 
@@ -546,7 +515,7 @@ export function Tv() {
   };
   useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]); // the phone's sheet shows what the TV really uses
   const streamUrl = currentMedia?.stream.url;
-  useEffect(() => republishRef.current(), [streamUrl, sourceIndex, embedActive, embedIndex]); // a state names its media and source, and those can change without the video doing so
+  useEffect(() => republishRef.current(), [streamUrl, sourceIndex]); // a state names its media and source, and those can change without the video doing so
   useEffect(() => republishRef.current(), [ended, upNextCountdown, autoplay, following]); // the phone follows the end of the picture and the countdown to the next episode
 
   useEffect(() => {
@@ -632,7 +601,6 @@ export function Tv() {
     const video = videoRef.current!;
     video.setAttribute("referrerpolicy", "no-referrer");
     const publish = (state: PlayerState) => {
-      if (embedActiveRef.current) return;
       const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current);
       setPlayer(full);
       if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
@@ -829,8 +797,6 @@ export function Tv() {
               setUpNextCountdown(null);
               setResolving(false);
               setMenu(null);
-              setEmbedActive(false);
-              setEmbedIndex(0);
               engine.stop();
             } else if (command.type === "SET_QUALITY") engine.setQuality(command.level);
             else if (command.type === "SET_SUBTITLE") chooseSubtitle(command.track);
@@ -1104,9 +1070,7 @@ export function Tv() {
 
   /* --------------------------- remote control --------------------------- */
 
-  const togglePlay = () => {
-    return player.state === "playing" ? engineRef.current?.pause() : engineRef.current?.play();
-  };
+  const togglePlay = () => (player.state === "playing" ? engineRef.current?.pause() : engineRef.current?.play());
   const dismissUpNext = () => {
     setUpNextCountdown(null);
     setUpNextDismissed(true);
@@ -1133,8 +1097,6 @@ export function Tv() {
   const stopPlayback = () => {
     putMedia(null);
     setUpNextCountdown(null);
-    setEmbedActive(false);
-    setEmbedIndex(0);
     engineRef.current?.stop();
   };
   /** The next subtitle track, and off after the last. Works for a TV that watches along too: what is read is its own choice. */
@@ -1153,8 +1115,6 @@ export function Tv() {
     putMedia(null);
     setUpNextCountdown(null);
     setMenu(null);
-    setEmbedActive(false);
-    setEmbedIndex(0);
     engineRef.current?.stop();
     if (!followingRef.current) socketRef.current?.send({ type: "TV_CANCEL" });
   };
@@ -1174,7 +1134,7 @@ export function Tv() {
 
   /** Every source of the video has failed (a failing one hands over to the next, which is not yet a failure): the controls are of no use, so a card with a way on takes their place. */
   const untriedSource = currentMedia ? sourcesOf(currentMedia).some((_, index) => !triedSourcesRef.current.has(index)) : false;
-  const failed = player.state === "error" && !isBlocked(player) && !following && !resolving && !untriedSource && !embedActive;
+  const failed = player.state === "error" && !isBlocked(player) && !following && !resolving && !untriedSource;
   useEffect(() => {
     if (failed) setMenu(null);
   }, [failed]);
@@ -1186,7 +1146,6 @@ export function Tv() {
     const at = engine.resumePoint();
     resetApplied();
     resetSources();
-    setEmbedActive(false);
     void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
     engine.play();
   };
@@ -1381,7 +1340,7 @@ export function Tv() {
 
   /* ------------------------------ the picture under a hand ------------------------------ */
 
-  const showVideo = player.state !== "idle" || embedActive;
+  const showVideo = player.state !== "idle";
   /** A film is what the screen is for right now (not its end card, nor an error): nothing is to land on it that can wait. */
   const filmIsOn = showVideo && !finished && !failed;
 
@@ -1423,7 +1382,7 @@ export function Tv() {
    * Whether a hand's taps on the picture are the picture's: a video, with nobody's card or menu over it. (A screen that watches along has
    * them too, to bring its bars up and put them away, but its playback is the host's: only an admin's taps move it, and then by asking.)
    */
-  const takesTaps = unlocked && showVideo && !finished && !failed && menu === null && !embedActive;
+  const takesTaps = unlocked && showVideo && !finished && !failed && menu === null;
   const picture = usePictureGestures({
     enabled: takesTaps,
     source: currentMedia?.stream.url ?? "",
@@ -1476,27 +1435,9 @@ export function Tv() {
         if (isPicture(event.target) && picture.kindRef.current === "touch") event.preventDefault(); // (a hold is no request for a menu)
       }}
     >
-      <video
-        ref={videoRef}
-        className="tv-video"
-        data-picture
-        preload="auto"
-        style={{ display: showVideo && !embedActive ? "block" : "none" }}
-        playsInline
-      />
-      {showVideo && embedActive && Boolean(getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl) && (
-        <iframe
-          key={`embed-${embedIndex}-${getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl}`}
-          src={getEmbedList(currentMedia)[embedIndex] || currentMedia?.embedUrl || currentMedia?.stream.embedUrl}
-          className="tv-video"
-          data-picture
-          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-          referrerPolicy="origin"
-          style={{ width: "100%", height: "100%", border: "none" }}
-        />
-      )}
+      <video ref={videoRef} className="tv-video" data-picture preload="auto" style={{ display: showVideo ? "block" : "none" }} playsInline />
 
-      {showVideo && !embedActive && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
+      {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
       {/* Only a party's link starts here. Pressing OK is also the first press, which takes the page full screen. */}
       {!unlocked && <TvLocked onUnlock={() => setUnlocked(true)} />}
@@ -1605,11 +1546,6 @@ export function Tv() {
           title={mainTitle}
           message={friendlyError(player.error)}
           onRetry={retryPlayback}
-          onEmbed={getEmbedList(currentMedia).length > 0 ? () => {
-            setEmbedActive(true);
-            setEmbedIndex(0);
-            setPlayer((prev) => ({ ...prev, state: "playing", error: undefined, buffering: false }));
-          } : undefined}
           onLibrary={() => {
             stopPlayback();
             setScreen("library");
@@ -1617,102 +1553,7 @@ export function Tv() {
         />
       )}
 
-      {unlocked && showVideo && embedActive && (
-        <div style={{ position: "absolute", top: "1.2rem", left: "1.2rem", zIndex: 100, display: "flex", gap: "0.6rem" }}>
-          <button
-            className="tv-action"
-            onClick={stopPlayback}
-            style={{
-              background: "rgba(0,0,0,0.85)",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,0.25)",
-              borderRadius: "8px",
-              padding: "0.55rem 1.1rem",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              fontSize: "0.95rem",
-              fontWeight: 600,
-              boxShadow: "0 4px 14px rgba(0,0,0,0.6)",
-            }}
-          >
-            <HomeIcon /> {t("tv.backToLibrary")}
-          </button>
-          {getEmbedList(currentMedia).length > 1 && (
-            <div style={{ position: "relative" }}>
-              <button
-                className="tv-action"
-                onClick={() => setStreamMenuOpen((prev) => !prev)}
-                style={{
-                  background: "rgba(0,0,0,0.85)",
-                  color: "#fff",
-                  border: "1px solid rgba(255,255,255,0.25)",
-                  borderRadius: "8px",
-                  padding: "0.55rem 1.1rem",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                  fontSize: "0.95rem",
-                  fontWeight: 600,
-                  boxShadow: "0 4px 14px rgba(0,0,0,0.6)",
-                }}
-              >
-                {embedProviderName(getEmbedList(currentMedia)[embedIndex]!, embedIndex)} ▾
-              </button>
-              {streamMenuOpen && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "calc(100% + 0.4rem)",
-                    left: 0,
-                    background: "rgba(18,18,18,0.95)",
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    borderRadius: "8px",
-                    boxShadow: "0 8px 24px rgba(0,0,0,0.8)",
-                    display: "flex",
-                    flexDirection: "column",
-                    minWidth: "190px",
-                    zIndex: 200,
-                    backdropFilter: "blur(8px)",
-                    overflow: "hidden",
-                  }}
-                >
-                  {getEmbedList(currentMedia).map((url, idx) => (
-                    <button
-                      key={url}
-                      onClick={() => {
-                        setEmbedIndex(idx);
-                        setStreamMenuOpen(false);
-                        notify(embedProviderName(url, idx));
-                      }}
-                      style={{
-                        background: idx === embedIndex ? "rgba(229,9,20,0.3)" : "transparent",
-                        color: idx === embedIndex ? "#ff4d4d" : "#fff",
-                        border: "none",
-                        padding: "0.6rem 1rem",
-                        textAlign: "left",
-                        cursor: "pointer",
-                        fontWeight: idx === embedIndex ? 700 : 500,
-                        fontSize: "0.9rem",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                      }}
-                    >
-                      <span>{embedProviderName(url, idx)}</span>
-                      {idx === embedIndex && <span>✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {unlocked && showVideo && !finished && !failed && !embedActive && (
+      {unlocked && showVideo && !finished && !failed && (
         <Hud
           visible={controlsVisible && menu !== "captions"}
           player={player}
@@ -1820,36 +1661,6 @@ export function Tv() {
 
 /** What a source is called on screen: the name it came with, or its place in the list. */
 const sourceName = (source: PlayableSource, index: number) => source.label ?? t("player.sourceN", { n: index + 1 });
-
-function getEmbedList(media: NormalizedMedia | null): string[] {
-  if (!media) return [];
-  if (media.embedUrls && media.embedUrls.length > 0) return media.embedUrls;
-  const list: string[] = [];
-  if (media.embedUrl) list.push(media.embedUrl);
-  if (media.stream.embedUrl && !list.includes(media.stream.embedUrl)) list.push(media.stream.embedUrl);
-  for (const alt of media.alternates ?? []) {
-    if (alt.stream.embedUrl && !list.includes(alt.stream.embedUrl)) {
-      list.push(alt.stream.embedUrl);
-    }
-  }
-  return list;
-}
-
-function embedProviderName(url: string, index: number): string {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, "");
-    if (host.includes("vidsrc.me") || host.includes("vidsrc.pm")) return `Stream ${index + 1} (VidSrc)`;
-    if (host.includes("multiembed")) return `Stream ${index + 1} (MultiEmbed)`;
-    if (host.includes("vidsrc.to")) return `Stream ${index + 1} (VidSrc.to)`;
-    if (host.includes("2embed")) return `Stream ${index + 1} (2Embed)`;
-    if (host.includes("smashystream")) return `Stream ${index + 1} (Smashy)`;
-    if (host.includes("autoembed")) return `Stream ${index + 1} (AutoEmbed)`;
-    if (host.includes("vidlink")) return `Stream ${index + 1} (VidLink)`;
-    return `Stream ${index + 1} (${host.split(".")[0]})`;
-  } catch {
-    return `Stream ${index + 1}`;
-  }
-}
 
 /** What the TV knows that the video doesn't: which media this is, whether it is full screen, and how subtitles look. */
 /** The end of the picture, as the TV knows it: it played to the end, and the next episode is counting down (null: it waits to be asked for). */

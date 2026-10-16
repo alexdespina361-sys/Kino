@@ -129,32 +129,7 @@ export function connectSocket(options: SocketOptions): Socket {
     ws.send(JSON.stringify(options.hello()));
     probe();
   };
-
-  /** Close cleanly before the page enters Back-Forward Cache (bfcache) to prevent browser-level connection abort errors. */
-  const onPageHide = () => {
-    if (stopped) return;
-    clearTimeout(timer);
-    if (ws) {
-      ws.onclose = ws.onmessage = ws.onerror = null;
-      ws.close(1000, "pagehide");
-      ws = null;
-    }
-  };
-
-  /** Re-establish connection when restored from Back-Forward Cache (bfcache). */
-  const onPageShow = (event: PageTransitionEvent) => {
-    if (stopped) return;
-    if (event.persisted && (!ws || ws.readyState !== WebSocket.OPEN)) {
-      clearTimeout(timer);
-      connect();
-    }
-  };
-
   document.addEventListener("visibilitychange", onVisibility);
-  if (typeof window !== "undefined") {
-    window.addEventListener("pagehide", onPageHide);
-    window.addEventListener("pageshow", onPageShow);
-  }
 
   options.onStatus("connecting");
   connect();
@@ -168,10 +143,6 @@ export function connectSocket(options: SocketOptions): Socket {
     disconnect() {
       stopped = true;
       document.removeEventListener("visibilitychange", onVisibility);
-      if (typeof window !== "undefined") {
-        window.removeEventListener("pagehide", onPageHide);
-        window.removeEventListener("pageshow", onPageShow);
-      }
       clearTimeout(timer);
       ws?.close();
     },

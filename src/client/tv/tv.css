@@ -26,7 +26,6 @@
   height: 100%;
   object-fit: contain;
   background: #000;
-  border: 0;
 }
 /* The picture takes taps, double taps and holds (gestures.ts) and nothing of it scrolls, so a touch on it is left to the page: the browser starts no pan of its own. */
 .tv-video, .tv-overlay { touch-action: none; -webkit-tap-highlight-color: transparent; }
@@ -325,7 +324,6 @@
   transition: opacity 0.3s ease, visibility 0s linear 0s;
 }
 .tv-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
-.tv-btn-hud-back { flex-shrink: 0; margin-top: 0.2em; }
 /* The top and bottom bars slide a little as they fade, instead of just blinking out. */
 .hud-top, .hud-bottom { position: relative; z-index: 1; transition: transform 0.3s ease; } /* above the pause shade (.hud-center), which only the picture is to be dimmed by */
 .tv-overlay.hidden .hud-top { transform: translateY(-1.4em); }
