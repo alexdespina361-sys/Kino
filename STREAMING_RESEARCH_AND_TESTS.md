@@ -249,6 +249,17 @@ This document tracks all investigations, hypotheses, implementations, empirical 
   - Full test suite: 72 test files, 1413 tests passed (100%).
   - TypeScript typecheck: 0 errors (`npm run typecheck` clean).
 
+### Test 14: Full Revert to Native Player & Custom HUD (Revert to 9eadf37)
+- **User Directive**:
+  - Revert completely back to the clean architecture prior to third-party embed experimentation (`9eadf37`).
+  - Users watch 100% through Kino's native HUD.
+  - Zero third-party embed iframes, zero external ads, zero tracker scripts.
+- **Git Revert Execution**:
+  - Executed a true Git revert (`git revert --no-commit 9eadf37..HEAD`), restoring all source files and client bundles to match `9eadf37` bit-for-bit.
+  - Re-verified test suite: 72 test suites, 1412 tests passed (100%).
+  - Pushed revert commit `a616ff8` to `main`.
+
+
 
 
 
