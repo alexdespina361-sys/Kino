@@ -35,6 +35,8 @@ No extension is installed into the user's existing browser profile by the test t
 
 ## Verified on 16 October 2026
 
+- Version 1.1.0, production extension and live Kino website: LINK CLICK S1E1, Game of Thrones S1E1 and Fight Club played from three different hosts; Kino pause, seek and resume passed, with no relay use and zero website proxy traffic.
+- Hope passed the same checks on an independent recheck after one initial resume timeout. These were short playback checks, not a full-film or concurrency test.
 - Real Chromium playback of the original movie source through the normal Kino movie resolver and phone command path.
 - Kino HUD present; native video controls disabled.
 - Pause, seek forward exactly 10 seconds, and resume succeeded.
@@ -43,3 +45,5 @@ No extension is installed into the user's existing browser profile by the test t
 - The original local test used a development copy; the subsequent live-site test used the production extension and Kino domain.
 
 Brave itself was not runtime-tested in this workspace.
+
+For the investigated route without viewer installations, see `STREAMING_WITHOUT_EXTENSIONS.md` in the repository.

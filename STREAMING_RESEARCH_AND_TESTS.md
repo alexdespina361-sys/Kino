@@ -7,6 +7,26 @@ server; installing the extension alone cannot upgrade an older website build. Fo
 the local website carried zero video requests and zero video bytes. Public deployment still requires a reachable relay host.
 Earlier test entries below are historical and include approaches later reverted.
 
+## 16 October 2026: rotating-host extension 1.1.0 deployed and verified
+
+- The enabled 1.0.0 extension missed LINK CLICK's `theorboofthorns.space` host. Current resolver output also revealed different domains for
+  Game of Thrones, Fight Club, Inception, Interstellar and other titles. The live upstream player explicitly describes backend host rotation.
+- Replaced the two-domain allowlist with per-host session rules installed before playback. The extension now requests HTTPS host access,
+  while content injection and header-rule initiators remain limited to Kino. Rules target only a prepared public DNS hostname; private/local
+  names, IP literals, credentials, arbitrary fetch paths and non-HTTPS sources are rejected. The viewer obtains the fresh provider token.
+- Deployed commit `a5e8eaf`; live browser entry `index-CSkbyXer.js` and TV chunk `Tv-CfCfJpt4.js`. The exact production package was loaded
+  from `output/playwright/TheExtension`, version **1.1.0**, in an isolated Chromium profile.
+- Live-site LINK CLICK S1E1, Game of Thrones S1E1 and Fight Club rendered 152, 155 and 168 frames respectively. All passed pause, exactly
+  10 seconds of seeking, and resume. Their respective media hosts were `theorboofthorns.space`, `quorumofquiddity.site` and `comityofcognomen.site`;
+  media responses were HTTP 200. Relay requests were empty, and the website proxy remained at zero requests/bytes with video off.
+- Hope's first resume check timed out. An independent recheck rendered 161 frames and passed play, pause, seek and resume with no browser errors
+  or failed requests. These were short checks, not a sustained-playback validation. Brave itself was not runtime-tested.
+- Validation: **75 test files, 1,452 tests passing**, TypeScript check and production build. New tests execute the actual distributed worker,
+  cover every observed hostname and a future host, concurrent rule/token preparation, caller/source rejection and installation failure recovery.
+- The ready-to-load folder and versioned ZIP are both available under `output/playwright`. No extension was installed in the user's existing profile.
+- Follow-up: [investigation without viewer extensions](STREAMING_WITHOUT_EXTENSIONS.md) includes clean-browser CORS/ORB reproductions,
+  current free-host limitations, bandwidth sizing and an executable candidate-host probe. A public relay is not yet provisioned.
+
 ## 16 October 2026: verified extension route, no hosted video relay
 
 - Confirmed that background `fetch` with explicit extension host permissions sends neither Origin nor Referer on the tested GET requests.

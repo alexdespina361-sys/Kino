@@ -13,6 +13,11 @@ The upstream token also contains `ip_cidr`. It must be obtained by the machine t
 
 Use a separate host with an outbound IP the provider accepts. **Verify upstream access on that host before switching the website.** Playback was verified through this PC's connection; an arbitrary VPS IP has not been verified. Do not deploy this Node service as a Cloudflare Worker.
 
+For current free-host research, network sizing and the browser-only limitations, see [STREAMING_WITHOUT_EXTENSIONS.md](STREAMING_WITHOUT_EXTENSIONS.md).
+With Node 22 or newer on the candidate machine, run `node scripts/check-stream-relay-host.mjs` before deploying. It checks that machine's token,
+master, variant and a recognizable media sample for three titles without printing tokens. Passing is necessary, but does not establish browser
+playback, sustained throughput or the provider's long-term availability.
+
 The relay runs independently of the website, accounts and database:
 
 ```text
