@@ -182,6 +182,11 @@ test.describe("pairing", () => {
     const browse = tv.getByTestId("tv-back-to-library");
     await expect(button).not.toBeFocused(); // a stray OK press must not disconnect anything
     await expect(browse).not.toBeFocused();
+    // (The pill is in the corner, but in page order it is ahead of Disconnect: the first press lands on the first button, and while the code is on its
+    // way there is no Copy ahead of either, so Disconnect, which lets go of every phone at once, must never be the first.)
+    const order = await tv.evaluate(() => [...document.querySelectorAll<HTMLElement>(".tv-screen [data-nav]")].map((one) => one.dataset.testid));
+    expect(order).toContain("tv-back-to-library");
+    expect(order.indexOf("tv-back-to-library")).toBeLessThan(order.indexOf("tv-disconnect"));
 
     await tv.keyboard.press("ArrowDown"); // the first press only lands on the first button: Copy, under the code
     await expect(tv.getByTestId("tv-join-code-copy")).toBeFocused();
@@ -1127,6 +1132,19 @@ test.describe("feedback", () => {
     await expect(tv.getByTestId("tv-toast")).toHaveText("Subtitles off");
   });
 
+  test("with reduced motion asked for, a line the phone shows is there for its time, and not faded out the moment it comes", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await loadOnTv(phone, seriesMedia(baseURL!));
+    await expect(phone.getByTestId("media-title")).toBeVisible();
+    await phone.emulateMedia({ reducedMotion: "reduce" });
+    await tv.evaluate(() => void (document.querySelector("video")!.currentTime = 5)); // past the first second, when nothing is announced
+    await tv.keyboard.press("c"); // the subtitles change on the TV, and the phone says so
+    const toast = phone.getByTestId("toast");
+    await expect(toast).toHaveText("Subtitles: English");
+    await expect(toast).toHaveCSS("opacity", "1"); // (its fade is the end of an animation, which this setting cuts to nothing: it would be gone before it was read)
+  });
+
   test("nothing is announced when a video starts", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
@@ -1959,6 +1977,36 @@ test.describe("a watch party started on a TV", () => {
     await expect(tvRoot(host)).toHaveAttribute("data-state", "idle");
     await expect(tvRoot(guest)).toHaveAttribute("data-state", "idle");
     await expect(guest.getByTestId("tv-following")).toBeVisible(); // still in the party, waiting
+  });
+
+  test("an admin that is dragging the dot when the host takes its admin away lets go of it: the bar shows where the film is again, and does not stay where the dot was left", async ({ browser, baseURL }) => {
+    const { host, guest } = await party(browser, baseURL!);
+    await host.getByTestId("tv-party-admin").click();
+    await expect(guest.getByTestId("tv-party-member").nth(1)).toContainText("Admin");
+    await host.getByTestId("tv-back-to-library").click();
+    await playFirst(host);
+    await expect(tvRoot(guest)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await guest.mouse.move(60, 60); // brings the bars up
+    const bar = guest.locator(".hud-bar");
+    await expect(bar).toHaveAttribute("role", "slider");
+    await expect.poll(async () => Number(await bar.getAttribute("aria-valuemax"))).toBeGreaterThan(0);
+    const box = (await bar.boundingBox())!;
+    const dot = (await guest.locator(".hud-bar-thumb").boundingBox())!;
+    const y = dot.y + dot.height / 2;
+    await guest.mouse.move(dot.x + dot.width / 2, y);
+    await guest.mouse.down();
+    await guest.mouse.move(box.x + box.width * 0.8, y, { steps: 6 });
+    await expect(bar).toHaveAttribute("data-scrubbing", "true");
+
+    // The host takes the admin back while the button is still down.
+    await host.mouse.move(60, 60);
+    await host.getByTestId("tv-party-btn").click();
+    await host.getByTestId("tv-party-admin").click();
+    await expect(host.getByTestId("tv-party-admin")).toHaveText("Make admin");
+    await expect(bar).toHaveAttribute("role", "progressbar");
+    await expect(bar).not.toHaveAttribute("data-scrubbing", "true");
+    await guest.mouse.up();
+    await expect(bar).not.toHaveAttribute("data-scrubbing", "true");
   });
 
   test("a guest has the bars any screen has, but only to be read: what is on, whom it follows, how far it is; and its own things stay its own", async ({ browser, baseURL }) => {

@@ -576,9 +576,20 @@ test.describe("the library on the TV", () => {
   test("the banner leaves room for the rows: the first two rows are on screen at once", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library), { width: 1920, height: 1080 });
     await expect(tiles(tv).first()).toBeFocused();
+    // (The rows rise into place for 0.4 s, starting 0.9 em low, and the banner settles as the first picture is focused: measure the page at rest, not its first frame.)
+    await tv.evaluate(() => Promise.all(document.getAnimations().filter((one) => one.effect?.getComputedTiming().endTime !== Infinity).map((one) => one.finished.catch(() => undefined))));
     const [hero, second] = await tv.evaluate(() => [document.querySelector(".tv-hero")!.getBoundingClientRect().bottom, document.querySelectorAll(".tv-row")[1]!.getBoundingClientRect()] as const).then(([bottom, rect]) => [bottom, rect.bottom] as const);
     expect(hero).toBeLessThan(1080 * 0.45); // a banner, not most of the page
     expect(second).toBeLessThanOrEqual(1080); // and the next row is not pushed below the fold
+  });
+
+  test("with reduced motion asked for, the rows and the banner's words arrive where they are, and nothing else is left moving", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(library));
+    await tv.emulateMedia({ reducedMotion: "reduce" });
+    await expect(tiles(tv).first()).toBeFocused();
+    // (What arrives sets its own time in the refined layer; the rule that cuts it short for this setting has to say as much to be heard.)
+    const times = await tv.evaluate(() => [".tv-row", ".tv-hero-text"].map((selector) => getComputedStyle(document.querySelector(selector)!).animationDuration));
+    expect(times).toEqual(["0.01s", "0.01s"]);
   });
 
   test("a row scrolls along to keep the title in view while the page stays put", async ({ browser }) => {
@@ -599,6 +610,33 @@ test.describe("the library on the TV", () => {
     await expect(tiles(tv).nth(10 + 1)).toBeFocused();
     const shown = () => tiles(tv).nth(10 + 1).evaluate((tile) => tile.getBoundingClientRect().bottom <= window.innerHeight);
     await expect.poll(shown).toBe(true); // the second row was brought up, not left below the screen
+  });
+
+  test("the name of the row the remote is on stays in view above its titles: on the first row, and on each row after a Down", async ({ browser }) => {
+    const three = { updatedAt: Date.now(), rows: [...library.rows, { id: "r3", title: "Third row", source: "Test Source", items: [{ id: "y1", title: "Third row first", url: "/fixtures/sample.mp4?r3=1" }] }] };
+    const tv = await openLibrary(browser, withLibrary(three));
+    await expect(tiles(tv).first()).toBeFocused();
+    /**
+     * Looked at once the rows have stopped easing along (a look at the first moment would see the name before the page has moved off it):
+     * the name of the row that has the focus is inside the part of the page the rows scroll in.
+     */
+    const nameShown = async () => {
+      await expect
+        .poll(() => tv.evaluate(() => new Promise<number>((resolve) => { const rows = document.querySelector(".tv-rows")!; const before = rows.scrollTop; setTimeout(() => resolve(rows.scrollTop - before), 150); })), { intervals: [50] })
+        .toBe(0);
+      return tv.evaluate(() => {
+        const name = document.activeElement!.closest(".tv-row")!.querySelector(".tv-row-title")!.getBoundingClientRect();
+        const view = document.querySelector(".tv-rows")!.getBoundingClientRect();
+        return name.top >= view.top - 1 && name.bottom <= view.bottom + 1;
+      });
+    };
+    expect(await nameShown(), "the first row's name").toBe(true);
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-hero-title")).toHaveText("Second row first");
+    expect(await nameShown(), "the second row's name").toBe(true);
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv-hero-title")).toHaveText("Third row first");
+    expect(await nameShown(), "the third row's name").toBe(true);
   });
 
   test("OK on a title opens its own page and OK again plays it; Back shows the controls first, then returns to the library on the same title", async ({ browser }) => {
@@ -1876,6 +1914,19 @@ test.describe("categories and search on the TV", () => {
     await expect(query).toHaveText("film");
     await expect(query).toHaveAttribute("data-caret", "2");
 
+    // Where on the box it lands is of no matter, only how far along the text: above a letter or below it, in the padding, past the ends.
+    const field = (await query.boundingBox())!;
+    const first = (await query.locator('[data-at="0"]').boundingBox())!;
+    const last = (await query.locator('[data-at="3"]').boundingBox())!;
+    await tv.mouse.click(last.x + last.width * 0.25, field.y + 3); // (the top edge of the box, over the left half of the m: before it)
+    await expect(query).toHaveAttribute("data-caret", "3");
+    await tv.mouse.click(first.x + first.width * 0.75, field.y + field.height - 3); // (the bottom edge, under the right half of the f: after it)
+    await expect(query).toHaveAttribute("data-caret", "1");
+    await tv.mouse.click(field.x + field.width - 4, field.y + field.height / 2); // (far right, past the text: the end)
+    await expect(query).toHaveAttribute("data-caret", "4");
+    await tv.mouse.click(Math.max(field.x + 2, first.x - 3), field.y + 3); // (left of the first letter, up in the corner: the start)
+    await expect(query).toHaveAttribute("data-caret", "0");
+
     // Home and End take it to the ends, and Delete takes the letter after it (Backspace the one before).
     await tv.keyboard.press("Home");
     await expect(query).toHaveAttribute("data-caret", "0");
@@ -1906,6 +1957,28 @@ test.describe("categories and search on the TV", () => {
     await expect(query).toHaveAttribute("data-caret", "0");
     await tv.getByTestId("key-clear").click();
     await expect(query).toHaveText("Search titles");
+  });
+
+  test("search: an emoji that a narrow screen's own keyboard typed is one character to the caret and the keys when the page is wide enough for them", async ({ browser }) => {
+    const tv = await open(browser);
+    await choose(tv, "rail-search");
+    await tv.setViewportSize({ width: 800, height: 720 });
+    const query = tv.getByTestId("tv-query");
+    await expect(query).toHaveJSProperty("tagName", "INPUT"); // (a narrow window types on its own keyboard)
+    await query.fill("a\u{1F3AC}b");
+    await tv.setViewportSize({ width: 1280, height: 720 });
+    await expect(query).toHaveJSProperty("tagName", "P"); // (and the TV's keys again)
+    expect(await query.locator("[data-at]").evaluateAll((letters) => letters.map((one) => (one as HTMLElement).dataset.at))).toEqual(["0", "1", "3"]); // (the emoji is one letter, two places wide)
+    const clapper = (await query.locator('[data-at="1"]').boundingBox())!;
+    await tv.mouse.click(clapper.x + clapper.width * 0.75, clapper.y + clapper.height / 2);
+    await expect(query).toHaveAttribute("data-caret", "3"); // (after it, never in the middle of it)
+    await tv.getByTestId("key-left").click();
+    await expect(query).toHaveAttribute("data-caret", "1"); // (one key steps over all of it)
+    await tv.getByTestId("key-right").click();
+    await tv.getByTestId("key-delete").click(); // (and one takes all of it out: no half of it is left, which the address could not hold)
+    await expect(query).toHaveText("ab");
+    await expect(query).toHaveAttribute("data-caret", "1");
+    await expect(tv.getByTestId("tv-search-status")).not.toContainText("Could not");
   });
 
   test("search: a title is found with a slip of the fingers, an unfinished word or its spaces left out, before the server has answered", async ({ browser }) => {

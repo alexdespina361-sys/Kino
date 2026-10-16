@@ -801,6 +801,11 @@
  * A countdown is not decoration: the bar of the next episode still fills.
  */
 @media (prefers-reduced-motion: reduce) {
+  /* (what arrives sets its own time above, and a rule that says more than the classic look's 0.01 s for it wins: so it says 0.01 s again; and a picture that arrives late is simply there) */
+  :root[data-ui="polish"] .tv-row,
+  :root[data-ui="polish"] .tv-hero-text,
+  :root[data-ui="polish"] .tv-detail-text { animation-duration: 0.01s; }
+  :root[data-ui="polish"] .tv img[data-late][data-in] { animation: none; }
   :root[data-ui="polish"] .tv *,
   :root[data-ui="polish"] .tv *::before,
   :root[data-ui="polish"] .tv *::after { transition-duration: 0.01ms !important; transition-delay: 0s !important; }

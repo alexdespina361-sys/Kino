@@ -116,4 +116,22 @@ describe("editBox", () => {
   it("empties the box", () => {
     expect(editBox(box("night", 2), { kind: "clear" })).toEqual(box("", 0));
   });
+
+  // (a narrow screen's own keyboard can type an emoji: two UTF-16 units, one character; cut in half it is a text the address cannot hold)
+  it("steps over an emoji as one character, with the caret, Backspace and Delete alike", () => {
+    const text = "a\u{1F3AC}b"; // a, a clapper board, b: length 4
+    expect(editBox(box(text, 3), { kind: "move", to: "left" })).toEqual(box(text, 1));
+    expect(editBox(box(text, 1), { kind: "move", to: "right" })).toEqual(box(text, 3));
+    expect(editBox(box(text, 3), { kind: "backspace" })).toEqual(box("ab", 1));
+    expect(editBox(box(text, 1), { kind: "delete" })).toEqual(box("ab", 1));
+    expect(editBox(box(text, 1), { kind: "backspace" })).toEqual(box(text.slice(1), 0));
+    expect(editBox(box(text, 3), { kind: "delete" })).toEqual(box("a\u{1F3AC}", 3));
+  });
+
+  it("never leaves the caret in the middle of an emoji, wherever it is told to go", () => {
+    const text = "a\u{1F3AC}b";
+    expect(editBox(box(text), { kind: "move", to: 2 })).toEqual(box(text, 1)); // (back to where the emoji starts)
+    expect(editBox(box(text, 2), { kind: "type", char: "x" })).toEqual(box("ax\u{1F3AC}b", 2)); // (a caret that was left in the middle is mended before it types)
+    expect(editBox(box(text, 2), { kind: "backspace" })).toEqual(box("\u{1F3AC}b", 0));
+  });
 });

@@ -103,12 +103,14 @@ export function BellChip({ onOpen, col }: { onOpen: () => void; col: number }) {
 /**
  * Top right of the library: who is watching on this TV, or a way to sign in. It opens the profile's page (what this profile rated, its friends and
  * History, and Settings in that page's corner). `zone`: the library's own arrow keys walk to it, not the screen's; `col` is its place among the
- * corner's buttons; `current`: the page that is open is the profile's (or one of the pages that belong to it).
+ * corner's buttons; `current`: the page that is open is the profile's (or one of the pages that belong to it). On a server that has no accounts
+ * it is still there, as "Profile": nobody signs in, but the page has Settings in its corner, and there is no other way to them.
  */
 export function AccountChip({ onOpen, zone = false, col = 0, current = false }: { onOpen: () => void; zone?: boolean; col?: number; current?: boolean }) {
   const t = useT();
   const { status, me, profile } = useAccount();
-  if (status !== "ready") return null;
+  if (status === "loading") return null;
+  const guestWord = t(status === "ready" ? "account.signInPrompt" : "tv.profile");
   return (
     <button
       className="tv-account-chip"
@@ -116,7 +118,7 @@ export function AccountChip({ onOpen, zone = false, col = 0, current = false }: 
       aria-current={current ? "page" : undefined}
       {...(zone ? { "data-zone": "top", "data-row": 0, "data-col": col } : { "data-nav": true })}
       data-testid="tv-account-chip"
-      aria-label={me && profile ? `${t("account.open")}: ${profile.name}` : t("account.signInPrompt")}
+      aria-label={me && profile ? `${t("account.open")}: ${profile.name}` : guestWord}
     >
       {me && profile ? (
         <>
@@ -126,7 +128,7 @@ export function AccountChip({ onOpen, zone = false, col = 0, current = false }: 
       ) : (
         <>
           <UserIcon />
-          <span>{t("account.signInPrompt")}</span>
+          <span>{guestWord}</span>
         </>
       )}
     </button>
@@ -291,13 +293,14 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
             <p>{t("tv.qrHint")}</p>
           </div>
         </div>
+        {/* (The way out comes before Disconnect in page order, though the stylesheet puts it in the corner: the remote's first press lands on the first button, and while the code is on its way there is no Copy before it, so it must not be the one that lets go of every phone.) */}
+        {back}
         {/* Reached with the remote's arrow keys; the first press only lands on a button, it never presses one. */}
         <div className="tv-actions">
           <button className="tv-action" onClick={onDisconnect} data-testid="tv-disconnect" data-nav>
             {t("tv.disconnect")}
           </button>
         </div>
-        {back}
       </Screen>
     );
   }

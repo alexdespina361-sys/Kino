@@ -431,12 +431,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const railIndex = openEntry === -1 ? 1 : openEntry; // a page the menu has no line for belongs to Home
 
   // What the arrow keys can reach, row by row: the key handler below reads it through a ref.
-  const showAccount = accountStatus === "ready";
-  const showBell = showAccount && bell.on;
+  const canSignIn = accountStatus === "ready"; // (a server without accounts has nobody to sign in, but its TV has Settings, which the corner button leads to)
+  const showAccount = accountStatus !== "loading";
+  const showBell = canSignIn && bell.on;
   const topButtons = (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the bell, the account button, then the full screen one
   const signedIn = Boolean(me && profile);
   /** The profile's page has buttons where the other pages have a banner: Settings, and for a guest the way to sign in before it. */
-  const profileButtons = view.kind === "profile" ? (signedIn ? 1 : 2) : 0;
+  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 1 : 2) : 0;
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   // Movies or Series of a library that has titles, none of them of that kind (a source that does not say which): not "nothing yet", which Retry could not mend.
   const kindEmpty = showRetry && hasTiles && (view.kind === "movies" || view.kind === "series");
@@ -575,7 +576,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     setSearching(true);
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      fetch(`/api/library/search?q=${encodeURIComponent(text)}`, { signal: controller.signal })
+      Promise.resolve() // (encodeURIComponent throws for a lone half of a pair: inside the chain it is a failed search, outside it an error that leaves "searching" on)
+        .then(() => fetch(`/api/library/search?q=${encodeURIComponent(text)}`, { signal: controller.signal }))
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
         .then((answer: unknown) => {
           const parsed = LibraryItemsSchema.parse(answer);
@@ -677,7 +679,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       const room = edge.width * 0.7; // keep a title beside it showing, so there is somewhere to go
       if (edge.left < box.left + room) scroller.scrollBy({ left: edge.left - box.left - room, behavior: "smooth" });
       else if (edge.right > box.right - room) scroller.scrollBy({ left: edge.right - box.right + room, behavior: "smooth" });
-      rowsRef.current?.scrollTo({ top: scroller.parentElement!.offsetTop, behavior: "smooth" });
+      rowsRef.current?.scrollTo({ top: scroller.closest<HTMLElement>(".tv-row")!.offsetTop, behavior: "smooth" }); // (the row itself, with its name: not the box round its titles)
     } else {
       const container = element.closest<HTMLElement>(".tv-grid");
       if (container) keepInView(container, element);
@@ -912,8 +914,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               <ProfileHead
                 name={signedIn && profile ? profile.name : t("profile.guest")}
                 avatar={signedIn ? profile?.avatar : undefined}
-                line={me ? t("account.signedInAs", { email: me.account.email }) : t("auth.pitchDetail")}
+                line={me ? t("account.signedInAs", { email: me.account.email }) : canSignIn ? t("auth.pitchDetail") : ""}
                 signedIn={signedIn}
+                canSignIn={canSignIn}
                 onSignIn={onSignIn}
                 onSettings={onSettings}
                 onArrive={(col) => (remembered.focus[viewKey(view)] = { zone: "hero", row: 0, col })}

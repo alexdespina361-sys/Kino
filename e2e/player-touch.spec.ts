@@ -365,8 +365,8 @@ test.describe("a mouse on the picture", () => {
     await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(8);
     const at = await tvTime(tv);
     await tv.mouse.click(SIDE_LEFT.x, SIDE_LEFT.y); // (the mouse coming to the picture brought the controls up; the click puts them away)
-    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden");
-    await expect(tv.getByTestId("tv-toast")).toHaveCount(0);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "hidden", { timeout: 1_500 }); // (soon: the controls put themselves away after 2.5 s without a click, which would pass for one)
+    expect(await tv.getByTestId("tv-toast").count(), "nobody is told of a skip").toBe(0); // (counted once: a toast that was shown and went would pass a wait)
     expect(await tvTime(tv)).toBeGreaterThanOrEqual(at);
     expect(await tvTime(tv)).toBeLessThan(at + 5);
     remote.close();
@@ -409,6 +409,34 @@ test.describe("a mouse on the picture", () => {
     await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(24);
     await expect(tv.locator(".hud-bar")).not.toHaveAttribute("data-scrubbing", "true");
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    remote.close();
+  });
+
+  test("a drag of the dot that the bar could not keep hold of ends where the button comes up, and takes the film there; the dot is not left to follow the mouse", async ({ browser, baseURL }) => {
+    const { tv, remote } = await playing(browser, baseURL);
+    await tv.mouse.move(640, 600);
+    await expect(tvRoot(tv)).toHaveAttribute("data-hud", "visible");
+    const bar = (await tv.locator(".hud-bar").boundingBox())!;
+    const y = bar.y + bar.height / 2;
+    // A pointer the browser has no record of, like one that is already gone: asking to keep hold of it is refused, so the bar is never given the end of the drag.
+    const send = (type: string, x: number, atY: number, onBody = false) =>
+      tv.evaluate(
+        ({ type, x, atY, onBody }) => {
+          const target = onBody ? document.body : document.querySelector(".hud-bar")!;
+          target.dispatchEvent(new PointerEvent(type, { pointerId: 77, pointerType: "mouse", isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1, clientX: x, clientY: atY, bubbles: true, cancelable: true }));
+        },
+        { type, x, atY, onBody },
+      );
+    await send("pointerdown", bar.x + bar.width * 0.1, y);
+    await send("pointermove", bar.x + bar.width * 0.6, y);
+    await expect(tv.locator(".hud-bar")).toHaveAttribute("data-scrubbing", "true");
+    await send("pointerup", bar.x + bar.width * 0.6, y - 200, true); // (let go above the bar, where nothing listens but the window)
+    await expect(tv.locator(".hud-bar")).not.toHaveAttribute("data-scrubbing", "true", { timeout: 1_000 });
+    await expect.poll(() => tvTime(tv)).toBeGreaterThanOrEqual(22);
+    await tv.mouse.move(bar.x + bar.width * 0.1, y, { steps: 4 }); // (a mouse that only passes over the bar afterwards moves nothing)
+    await tv.waitForTimeout(600);
+    expect(await tvTime(tv)).toBeGreaterThanOrEqual(22);
+    await expect(tv.locator(".hud-bar")).not.toHaveAttribute("data-scrubbing", "true");
     remote.close();
   });
 

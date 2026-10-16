@@ -53,6 +53,19 @@ export type BoxEdit =
   | { kind: "move"; to: "left" | "right" | "start" | "end" | number }
   | { kind: "clear" };
 
+/** Does a pair of UTF-16 units that make one character (an emoji typed on a narrow screen's own keyboard) start at `at`? */
+const startsPair = (text: string, at: number) => at + 1 < text.length && (text.charCodeAt(at) & 0xfc00) === 0xd800 && (text.charCodeAt(at + 1) & 0xfc00) === 0xdc00;
+
+/** A place in the text, off the middle of a pair (back to where it starts) and never off the text. */
+function snap(text: string, at: number): number {
+  const to = Math.max(0, Math.min(at, text.length));
+  return to > 0 && startsPair(text, to - 1) ? to - 1 : to;
+}
+
+/** The place one character before `caret`, and the one after it: a pair counts as one, so a key never cuts an emoji in half. */
+const stepBack = (text: string, caret: number) => (caret <= 0 ? 0 : startsPair(text, caret - 2) ? caret - 2 : caret - 1);
+const stepOn = (text: string, caret: number) => (caret >= text.length ? text.length : startsPair(text, caret) ? caret + 2 : caret + 1);
+
 /** The text without a leading space or a double one (a letter taken out from between two spaces leaves two), the caret keeping its place among the characters that are left. */
 function tidy(text: string, caret: number): SearchBox {
   let kept = "";
@@ -73,19 +86,19 @@ function tidy(text: string, caret: number): SearchBox {
  */
 export function editBox(box: SearchBox, edit: BoxEdit, max = 60): SearchBox {
   const { text } = box;
-  const caret = Math.max(0, Math.min(box.caret, text.length));
+  const caret = snap(text, box.caret);
   switch (edit.kind) {
     case "type":
       if (text.length >= max) return { text, caret };
       if (edit.char === " " && (caret === 0 || text[caret - 1] === " " || text[caret] === " ")) return { text, caret };
       return { text: text.slice(0, caret) + edit.char + text.slice(caret), caret: caret + edit.char.length };
     case "backspace":
-      return caret === 0 ? { text, caret } : tidy(text.slice(0, caret - 1) + text.slice(caret), caret - 1);
+      return caret === 0 ? { text, caret } : tidy(text.slice(0, stepBack(text, caret)) + text.slice(caret), stepBack(text, caret));
     case "delete":
-      return caret === text.length ? { text, caret } : tidy(text.slice(0, caret) + text.slice(caret + 1), caret);
+      return caret === text.length ? { text, caret } : tidy(text.slice(0, caret) + text.slice(stepOn(text, caret)), caret);
     case "move": {
-      const to = edit.to === "left" ? caret - 1 : edit.to === "right" ? caret + 1 : edit.to === "start" ? 0 : edit.to === "end" ? text.length : edit.to;
-      return { text, caret: Math.max(0, Math.min(to, text.length)) };
+      const to = edit.to === "left" ? stepBack(text, caret) : edit.to === "right" ? stepOn(text, caret) : edit.to === "start" ? 0 : edit.to === "end" ? text.length : edit.to;
+      return { text, caret: snap(text, to) };
     }
     case "clear":
       return { text: "", caret: 0 };

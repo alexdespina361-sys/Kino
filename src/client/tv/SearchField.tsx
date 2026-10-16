@@ -3,9 +3,9 @@ import type { SearchBox } from "./librarySearch";
 
 /**
  * The search box of a screen that has no field of its own to type in (the keys under it are the keyboard): the text with its caret in it.
- * A click puts the caret where it landed (before a character when its left half was hit, after it when its right half was, at the end
- * when it landed past the text), so a slip in the middle is mended without typing all of it again. The text scrolls with the caret
- * when it is longer than the box.
+ * A click puts the caret where it landed along the text (before a character when it was left of its middle, at the end when it was past
+ * them all, whatever was under it: the box's padding, the line above), so a slip in the middle is mended without typing all of it
+ * again. The text scrolls with the caret when it is longer than the box.
  */
 export function SearchField({ box, hint, onPlace }: { box: SearchBox; hint: string; onPlace: (caret: number) => void }) {
   const field = useRef<HTMLParagraphElement>(null);
@@ -25,30 +25,37 @@ export function SearchField({ box, hint, onPlace }: { box: SearchBox; hint: stri
   }, [text, caret]);
 
   const place = (event: MouseEvent<HTMLElement>) => {
-    const hit = (event.target as HTMLElement).closest<HTMLElement>("[data-at]");
-    if (hit) {
-      const spot = hit.getBoundingClientRect();
-      return onPlace(Number(hit.dataset.at) + (event.clientX > spot.left + spot.width / 2 ? 1 : 0));
-    }
-    // (not on a character: left of the first one is the start, anywhere else is the end)
-    const first = field.current?.querySelector<HTMLElement>("[data-at]");
-    onPlace(first && event.clientX < first.getBoundingClientRect().left ? 0 : text.length);
+    // (by the click's distance along the line alone: the first character whose middle is right of it is the one the caret goes before)
+    const drawn = Array.from(field.current?.querySelectorAll<HTMLElement>("[data-at]") ?? []);
+    const next = drawn.find((letter) => {
+      const spot = letter.getBoundingClientRect();
+      return event.clientX < spot.left + spot.width / 2;
+    });
+    onPlace(next ? Number(next.dataset.at) : text.length);
   };
 
-  const characters = text.split("").map((char, at) => (
-    <span key={at} data-at={at}>
-      {char}
-    </span>
-  ));
+  // (a character is a code point, and `at` is where it starts in the text, which is what the caret counts in: an emoji is one span, two places wide)
+  let start = 0;
+  const letters = Array.from(text, (char) => {
+    const here = { char, at: start };
+    start += char.length;
+    return here;
+  });
+  const spans = (some: typeof letters) =>
+    some.map(({ char, at }) => (
+      <span key={at} data-at={at}>
+        {char}
+      </span>
+    ));
   const mark = <i className="tv-caret" key={`caret-${caret}-${text.length}`} />; // (a new one at every move: the blink starts over, as it does in a field)
 
   return (
     <p className="tv-query" data-testid="tv-query" data-caret={caret} aria-live="polite" ref={field} onClick={place}>
       {text ? (
         <span className="tv-query-text">
-          {characters.slice(0, caret)}
+          {spans(letters.filter((one) => one.at < caret))}
           {mark}
-          {characters.slice(caret)}
+          {spans(letters.filter((one) => one.at >= caret))}
         </span>
       ) : (
         <>

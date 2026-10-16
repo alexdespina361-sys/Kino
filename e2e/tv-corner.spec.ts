@@ -174,3 +174,26 @@ for (const viewport of [HD, FULL_HD]) {
     expect(space.height, "Space is as tall as a letter").toBeCloseTo(letter.height, 0);
   });
 }
+
+test("a server without accounts still has the corner button, as Profile, and Settings behind it, and nothing there to sign in to", async ({ browser }) => {
+  const tv = await openLibrary(
+    browser,
+    async (context) => {
+      await withLibrary(library)(context);
+      await context.route("**/api/me", (route) => route.fulfill({ status: 404, body: "not found" })); // (what a server without accounts answers)
+    },
+    HD,
+  );
+  const chip = tv.getByTestId("tv-account-chip");
+  await expect(chip).toBeVisible();
+  await expect(chip).toContainText(en["tv.profile"]);
+  await chip.click();
+  await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
+  await expect(tv.getByTestId("tv-profile-signin")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-profile-settings")).toBeVisible();
+  await tv.getByTestId("tv-profile-settings").click();
+  await expect(tv.getByTestId("tv-account")).toBeVisible();
+  await expect(tv.getByTestId("tv-sign-in")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-lang-en")).toBeVisible(); // (what is the device's own is all there: the language, the colour, what playback does)
+  await expect(tv.getByTestId("tv-autoplay")).toBeVisible();
+});

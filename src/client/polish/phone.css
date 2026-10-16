@@ -280,8 +280,8 @@
 :root[data-ui="polish"] .phone-ui .menu > .switch-row:focus-visible { outline: none; background: var(--surface-3); box-shadow: inset 0 0 0 2px #fff; }
 /* On a sheet every card is the one tone (the code and the way out are, and so are the lists). */
 :root[data-ui="polish"] .phone-ui .sheet .menu { background: var(--surface-2); }
-/* The colours are a card, as the language is, the six spread across it. */
-:root[data-ui="polish"] .phone-ui .swatches { justify-content: space-between; padding: 12px 14px; border-radius: var(--p-r-2); background: var(--surface); }
+/* The colours are a card, as the language is, the six spread across it. Their gap is the least between two: six of 44 px and five of 6 fit a 360 px phone's card, so none is squeezed under a thumb's size. */
+:root[data-ui="polish"] .phone-ui .swatches { gap: 6px; justify-content: space-between; padding: 12px 14px; border-radius: var(--p-r-2); background: var(--surface); }
 :root[data-ui="polish"] .phone-ui .swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px #fff; }
 /* Each of the settings' groups has room round it, so that the heading of the next is not taken for a line of the one before. */
 :root[data-ui="polish"] .phone-ui .page-stack[data-testid="settings-page"] { gap: 28px; }
@@ -460,4 +460,6 @@
     scroll-behavior: auto !important;
   }
   :root[data-ui="polish"] .phone-ui .spinner { animation-duration: 2.4s !important; animation-iteration-count: infinite !important; }
+  /* (The toast fades out at the end of its animation, and the page takes it away after its time: a quick animation would leave it where it ends, gone, before it is read.) */
+  :root[data-ui="polish"] .phone-ui .toast { animation-name: none; }
 }
