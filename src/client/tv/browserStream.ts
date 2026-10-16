@@ -1,11 +1,11 @@
-const PROVIDERS = new Set(["farragoandfulcrum.website", "diaphanousdogma.website"]);
 export const BROWSER_STREAM_TIMEOUT_MS = 15_000;
 
 /** An installed, site-scoped extension prepares the token; normal hls.js then fetches media directly with its header rules. */
 export function prepareBrowserStream(raw: string): Promise<string> | undefined {
   let source: URL;
   try { source = new URL(raw); } catch { return; }
-  if (source.protocol !== "https:" || source.username || source.password || source.port || !PROVIDERS.has(source.hostname) ||
+  // Hosts rotate per title/request. The extension validates and scopes each resolved host.
+  if (source.protocol !== "https:" || source.username || source.password || source.port ||
       !source.pathname.startsWith("/pl/") || !source.pathname.endsWith(".m3u8")) return;
   if (document.documentElement?.getAttribute("data-kino-direct") !== "1") return;
   return new Promise((resolve, reject) => {

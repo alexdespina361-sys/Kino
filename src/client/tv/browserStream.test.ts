@@ -24,10 +24,18 @@ describe("direct playback through the browser extension", () => {
     ready = false;
     expect(prepareBrowserStream(raw)).toBeUndefined();
     ready = true;
-    for (const url of ["https://other.example/pl/master.m3u8", "http://farragoandfulcrum.website/pl/a.m3u8", "https://farragoandfulcrum.website/private", "https://user:pass@farragoandfulcrum.website/pl/a.m3u8"]) {
+    for (const url of ["https://other.example/movie.mp4", "http://farragoandfulcrum.website/pl/a.m3u8", "https://farragoandfulcrum.website/private", "https://user:pass@farragoandfulcrum.website/pl/a.m3u8"]) {
       expect(prepareBrowserStream(url)).toBeUndefined();
     }
     expect(browser.postMessage).not.toHaveBeenCalled();
+  });
+
+  it.each(["theorboofthorns.space", "quorumofquiddity.site", "comityofcognomen.site", "future-video-host.net"])("prepares rotating provider %s instead of falling back to the Worker", async (host) => {
+    const source = `https://${host}/pl/title/master.m3u8?token=website-token`;
+    const pending = prepareBrowserStream(source)!;
+    expect(browser.postMessage.mock.calls[0]![0].url).toBe(source);
+    answer({ url: source.replace("website-token", "viewer-token") });
+    expect(await pending).toContain("token=viewer-token");
   });
 
   it("ignores messages from another window or origin before accepting a matching token response", async () => {

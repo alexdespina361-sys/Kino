@@ -1,5 +1,8 @@
 // Runs only on Kino. The extension can prepare a supported video URL; it accepts no arbitrary fetch commands.
-const announce = () => document.documentElement?.setAttribute("data-kino-direct", "1");
+const announce = () => {
+  document.documentElement?.setAttribute("data-kino-direct", "1");
+  document.documentElement?.setAttribute("data-kino-direct-version", chrome.runtime.getManifest().version);
+};
 announce();
 document.addEventListener("DOMContentLoaded", announce, { once: true });
 window.addEventListener("message", (event) => {
