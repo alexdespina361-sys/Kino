@@ -97,10 +97,10 @@ export type SessionInfo = z.infer<typeof SessionInfoSchema>;
 export const DEVICE_NAME_MAX = 40;
 export const SessionRenameSchema = z.object({ label: z.string().trim().min(1, "invalid_name").max(DEVICE_NAME_MAX, "invalid_name") });
 
-/** The name a first profile gets from what the account signs in with: "alex.popescu@x.com" -> "Alex", "robert" -> "Robert", "my tv" -> "My tv". */
+/** The name a first profile gets from what the account signs in with: "alex.popescu@x.com" -> "Alex", "robert" -> "Robert", "my tv" -> "My tv", "qa-alpha" -> "Qa alpha". */
 export function nameFromEmail(login: string): string {
   const own = login.includes("@") ? (login.split("@")[0]?.split(/[._+-]/)[0] ?? "") : login; // an address gives the part before the @, which is a name; a name is the name
-  const word = own.replace(/[^\p{L}\p{N} ]/gu, "").replace(/\s+/g, " ").trim();
+  const word = own.replace(/[._+-]+/g, " ").replace(/[^\p{L}\p{N} ]/gu, "").replace(/\s+/g, " ").trim(); // (a dash or a dot between words is a space, not nothing: "qa-alpha" is not "qaalpha")
   if (!word) return "Me";
   return (word.charAt(0).toUpperCase() + word.slice(1)).slice(0, PROFILE_NAME_MAX).trim();
 }
@@ -256,6 +256,17 @@ export const SETTING_SCHEMAS = {
   friendsGet: z.boolean(),
   friendsInbox: z.boolean(),
   friendsPresence: z.boolean(),
+  /**
+   * What friends say on the screen when they send something or ask for something (on unless turned off). Off, nothing of it is shown over the
+   * page or the film: it waits in the bell (and its number), which is never muted. This is only this screen's manner, so the server does not read it.
+   */
+  newsPopups: z.boolean(),
+  /**
+   * The picture's quality follows the connection (on unless turned off): a film starts in the lowest quality, which arrives at once, and goes on in the best the link
+   * carries, lower when it cannot keep up and higher when it can. Off, every film is in the highest quality there is, whatever the link. This is only this screen's
+   * manner, so the server does not read it.
+   */
+  adaptiveQuality: z.boolean(),
 } as const;
 export type SettingKey = keyof typeof SETTING_SCHEMAS;
 export const SETTING_KEYS = Object.keys(SETTING_SCHEMAS) as SettingKey[];

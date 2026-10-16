@@ -514,6 +514,8 @@ export function TvsSheet({
   const [code, setCode] = useState("");
   const [scanning, setScanning] = useState(false);
   const [name, setName] = useState(current?.name ?? "");
+  /** The TV that Forget was pressed for, and that is being asked about. */
+  const [asking, setAsking] = useState<string | null>(null);
   const full = tvs.length >= MAX_PHONE_TVS;
 
   // A code that was refused has been used up; a TV that was named (or switched to) shows its name.
@@ -539,19 +541,42 @@ export function TvsSheet({
       <ul className="party-list" data-testid="tv-list">
         {tvs.map((tv) => (
           <li className="tv-row" key={tv.id} data-testid="tv-row" data-current={tv.current} data-online={tv.online}>
-            <button className={`choice${tv.current ? " active" : ""}`} data-testid="tv-switch" aria-current={tv.current} onClick={() => !tv.current && onSwitch(tv.id)}>
-              <span>
-                {tv.name}
-                <span className={`party-state ${tv.online ? "ok" : "bad"}`}>
-                  {tv.current ? `${t("tvs.current")} · ` : ""}
-                  {tv.label ? `${tv.label} · ` : ""}
-                  {tv.online ? t("tvs.online") : t("tvs.offline")}
-                </span>
-              </span>
-            </button>
-            <button className="btn btn-danger" data-testid="tv-forget" aria-label={t("tvs.forgetLabel", { tv: tv.name })} onClick={() => onForget(tv.id)}>
-              {t("tvs.forget")}
-            </button>
+            {asking === tv.id ? (
+              <div className="editor-confirm" role="alert" data-testid="tv-forget-ask">
+                <p>{t("tvs.forgetAsk", { tv: tv.name })}</p>
+                <div className="editor-actions">
+                  <button
+                    className="btn btn-danger"
+                    data-testid="tv-forget-yes"
+                    onClick={() => {
+                      setAsking(null);
+                      onForget(tv.id);
+                    }}
+                  >
+                    {t("tvs.forget")}
+                  </button>
+                  <button className="btn" data-testid="tv-forget-no" autoFocus onClick={() => setAsking(null)}>
+                    {t("common.cancel")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <button className={`choice${tv.current ? " active" : ""}`} data-testid="tv-switch" aria-current={tv.current} onClick={() => !tv.current && onSwitch(tv.id)}>
+                  <span>
+                    {tv.name}
+                    <span className={`party-state ${tv.online ? "ok" : "bad"}`}>
+                      {tv.current ? `${t("tvs.current")} · ` : ""}
+                      {tv.label ? `${tv.label} · ` : ""}
+                      {tv.online ? t("tvs.online") : t("tvs.offline")}
+                    </span>
+                  </span>
+                </button>
+                <button className="btn btn-danger" data-testid="tv-forget" aria-label={t("tvs.forgetLabel", { tv: tv.name })} onClick={() => setAsking(tv.id)}>
+                  {t("tvs.forget")}
+                </button>
+              </>
+            )}
           </li>
         ))}
       </ul>

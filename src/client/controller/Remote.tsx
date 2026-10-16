@@ -16,7 +16,7 @@ import {
   StopIcon,
   SubtitlesIcon,
 } from "../shared/icons";
-import { friendlyError, trackName } from "../shared/words";
+import { friendlyError, qualityName, trackName } from "../shared/words";
 import { SeekBar } from "./SeekBar";
 
 export type SheetKind = "link" | "menu" | "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes" | "party" | "tvs";
@@ -90,10 +90,7 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
   const playingSubtitle = player.subtitles?.tracks.find((track) => track.id === player.subtitles?.current);
   const subtitleName = player.subtitles ? (playingSubtitle ? trackName(playingSubtitle) : t("common.off")) : "";
   const hasTracks = Boolean(player.subtitles?.tracks.length) || (player.audio?.tracks.length ?? 0) > 1;
-  const qualityName =
-    player.quality && player.quality.current !== -1
-      ? (player.quality.levels.find((level) => level.id === player.quality?.current)?.label ?? "HD")
-      : t("player.auto");
+  const qualityLabel = qualityName(player.quality);
   const next = series?.next;
   const previous = previousEpisode(series);
 
@@ -206,7 +203,7 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
           )}
           <Chip testId="chip-speed" label={t("player.speedShort")} value={`${player.playbackRate ?? 1}×`} onClick={() => onOpen("speed")} />
           {player.quality && player.quality.levels.length > 1 && (
-            <Chip testId="chip-quality" label={t("player.quality")} value={qualityName} onClick={() => onOpen("quality")} />
+            <Chip testId="chip-quality" label={t("player.quality")} value={qualityLabel} onClick={() => onOpen("quality")} />
           )}
         </div>
 

@@ -47,6 +47,9 @@ export class Piece {
   }
 }
 
+/** How many bytes of finished pieces a cache keeps unless it is told otherwise. */
+export const DEFAULT_SEGMENT_CACHE_BYTES = 64 * 1024 * 1024;
+
 export interface SegmentCacheOptions {
   /** How many bytes of finished pieces are kept; the oldest go first. */
   maxBytes?: number;
@@ -75,9 +78,13 @@ export class SegmentCache {
   readonly maxPiece: number;
   private readonly maxUnderway: number;
   private readonly now: () => number;
+  /** Asks answered from a piece that was kept or was already on its way: the place the film comes from was not asked again. */
+  hits = 0;
+  /** Asks that had to go to the place the film comes from (or were passed on to it without being shared). */
+  misses = 0;
 
   constructor(options: SegmentCacheOptions = {}) {
-    this.maxBytes = options.maxBytes ?? 64 * 1024 * 1024;
+    this.maxBytes = options.maxBytes ?? DEFAULT_SEGMENT_CACHE_BYTES;
     this.keepMs = options.keepMs ?? 3 * 60_000;
     this.maxPiece = options.maxPiece ?? 12 * 1024 * 1024;
     this.maxUnderway = options.maxUnderway ?? 10;
@@ -96,11 +103,18 @@ export class SegmentCache {
   async get(key: string, open: () => Promise<Opened | null>): Promise<Piece | null> {
     const have = this.kept.get(key);
     if (have) {
-      if (have.until > this.now()) return have.piece;
+      if (have.until > this.now()) {
+        this.hits += 1;
+        return have.piece;
+      }
       this.forget(key);
     }
     const coming = this.underway.get(key);
-    if (coming) return coming;
+    if (coming) {
+      this.hits += 1;
+      return coming;
+    }
+    this.misses += 1;
     if (this.underway.size >= this.maxUnderway) return null;
     const started = this.start(key, open);
     this.underway.set(key, started);

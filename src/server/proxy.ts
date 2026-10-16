@@ -13,13 +13,16 @@ export function srtToVtt(srt: string): string {
   return `WEBVTT\n\n${clean}`;
 }
 
-export function rewriteM3u8(content: string, playlistUrl: string, referer?: string): string {
+export function rewriteM3u8(content: string, playlistUrl: string, referer?: string, rewriteUrl?: (target: URL) => string): string {
   const lines = content.split(/\r?\n/);
   const out: string[] = [];
 
   const toProxyUrl = (target: string): string => {
     try {
-      const abs = new URL(target, playlistUrl).href;
+      const url = new URL(target, playlistUrl);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return target;
+      if (rewriteUrl) return rewriteUrl(url);
+      const abs = url.href;
       let res = `/api/proxy?url=${encodeURIComponent(abs)}`;
       if (referer) res += `&referer=${encodeURIComponent(referer)}`;
       return res;
@@ -37,7 +40,7 @@ export function rewriteM3u8(content: string, playlistUrl: string, referer?: stri
 
     if (trimmed.startsWith("#")) {
       // Tags that reference external resources via URI="..."
-      if (trimmed.startsWith("#EXT-X-KEY:") || trimmed.startsWith("#EXT-X-MAP:") || trimmed.startsWith("#EXT-X-MEDIA:")) {
+      if (trimmed.startsWith("#EXT")) {
         const rewrittenTag = line.replace(/URI=["']([^"']+)["']/g, (_match, uri: string) => {
           return `URI="${toProxyUrl(uri)}"`;
         });
@@ -55,18 +58,44 @@ export function rewriteM3u8(content: string, playlistUrl: string, referer?: stri
   return out.join("\n");
 }
 
+/**
+ * What the proxy has sent on to the screens since the server started, for `/api/health`: the films are most of what a host's bandwidth goes on
+ * (an hour of 1080p is about 2 GB), and this says how much of it there was. It counts what goes out (a piece that a few screens ask for is
+ * counted for each), not what the proxy fetches.
+ */
+export interface ProxyStats {
+  bytes: number;
+  requests: number;
+  /** The asks turned away because this server carries no film (see `ProxyOptions.video`). */
+  refused: number;
+}
+
 export interface ProxyOptions {
+  /** A dedicated relay supplies signed links back to itself for every playlist resource. */
+  rewriteUrl?: (target: URL) => string;
+  /** Server-to-server relays send the provider's Referer without forwarding a browser Origin. */
+  omitOrigin?: boolean;
+  /**
+   * False when this server is not to carry film (env `PROXY_VIDEO=off`), for a host that charges for what it sends: a playlist, a piece of a
+   * film or a file is turned away (403, whoever asks, and the player's own second try through here included), and only a subtitle goes through.
+   * Whatever the film's own address is, it is then the screen that asks for it (directly, or through a relay: see scripts/edge-stream-worker.js).
+   */
+  video?: boolean;
   allowPrivateNetwork?: boolean;
   /** Which addresses may be gone to (a test narrows it to one that is on this machine); without it, any public one, or any at all with `allowPrivateNetwork`. */
   isAllowedAddress?: (address: string) => boolean;
   /** The pieces of a film that screens watching together ask for: each is fetched once and shared (see `SegmentCache`). Without it every request is its own fetch. */
   segments?: SegmentCache;
+  /** Counts what is sent on (see `ProxyStats`). */
+  stats?: ProxyStats;
 }
 
 const ANYWHERE = () => true;
 const REDIRECTS = 5;
 /** A piece that has not arrived whole by then is given up on (it is shared, so it is not tied to the screen that asked first). */
 const PIECE_DEADLINE_MS = 60_000;
+/** A server that carries no film still passes a subtitle on, which is some tens of kilobytes: a text beyond this is not one. */
+const SUBTITLE_MAX_BYTES = 2 * 1024 * 1024;
 
 /** Whether the address says it is a piece of a film (the other way to tell is by the type the other end gives, which is known only after asking). */
 const isSegmentPath = (pathname: string): boolean => pathname.endsWith(".ts") || pathname.endsWith(".m4s") || pathname.includes("page-");
@@ -97,7 +126,7 @@ function poolFor(isAllowedAddress: (address: string) => boolean): Agent {
 }
 
 /** The answer to a GET of `target`. Redirects are followed here, not by `fetch`, so that each address on the way is looked at as the first one was. */
-async function openUpstream(
+export async function openUpstream(
   target: URL,
   headers: Record<string, string>,
   isAllowedAddress: (address: string) => boolean,
@@ -175,13 +204,33 @@ async function openPiece(
   return { status: response.status, contentType: response.headers.get("content-type") ?? "", length, stream: untilDone(response.body, () => clearTimeout(deadline)) };
 }
 
+/** The bytes of a body as they go out, counted (see `ProxyStats`). */
+async function* counted(body: AsyncIterable<Uint8Array>, stats?: ProxyStats): AsyncGenerator<Uint8Array> {
+  for await (const chunk of body) {
+    if (stats) stats.bytes += chunk.length;
+    yield chunk;
+  }
+}
+
+/** The text of an answer, or null when it is longer than `limit` bytes (what has come by then is dropped; leaving the loop ends the request to the other end). */
+async function textUpTo(response: Response, limit: number): Promise<string | null> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of (response.body ?? []) as AsyncIterable<Uint8Array>) {
+    size += chunk.length;
+    if (size > limit) return null;
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /** A shared piece, to whoever asked: from its first byte, as far as it has come. */
-function sendPiece(reply: FastifyReply, piece: Piece): FastifyReply {
+function sendPiece(reply: FastifyReply, piece: Piece, stats?: ProxyStats): FastifyReply {
   corsHeaders(reply);
   // (Only a piece that came is for keeping: an answer that said no, or that the site gave up on, is asked for again next time.)
   if (piece.status >= 200 && piece.status < 300) reply.header("Cache-Control", "public, max-age=86400, immutable");
   reply.code(piece.status).header("Content-Type", pieceType(piece.contentType)).header("Content-Length", String(piece.length));
-  return reply.send(Readable.from(piece.read(), { objectMode: false }));
+  return reply.send(Readable.from(counted(piece.read(), stats), { objectMode: false }));
 }
 
 export async function handleStreamProxy(
@@ -207,14 +256,25 @@ export async function handleStreamProxy(
   } catch {
     return reply.code(403).send({ error: "URL not allowed" });
   }
+  const stats = options.stats;
+  if (stats) stats.requests += 1;
+
+  // (A server that carries no film says no before it asks anyone, when the address is plainly a piece of one: see `ProxyOptions.video`.)
+  const video = options.video !== false;
+  const turnAway = (): FastifyReply => {
+    if (stats) stats.refused += 1;
+    corsHeaders(reply);
+    return reply.code(403).send({ error: "VIDEO_NOT_CARRIED" });
+  };
+  if (!video && isSegmentPath(targetUrl.pathname)) return turnAway();
 
   const referer = request.query.referer || targetUrl.origin;
   const headers: Record<string, string> = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     referer,
-    origin: new URL(referer).origin,
     accept: "*/*",
   };
+  if (!options.omitOrigin) headers.origin = new URL(referer).origin;
 
   if (request.headers.range) {
     headers.range = request.headers.range;
@@ -230,12 +290,13 @@ export async function handleStreamProxy(
         handed.answer = answer;
       }),
     );
-    if (piece) return sendPiece(reply, piece);
+    if (piece) return sendPiece(reply, piece, stats);
   }
 
   // (An answer that was looked at and found not to be one to share is carried on with, not asked for again.)
   const abortController = handed.answer?.control ?? new AbortController();
-  request.raw.socket?.on("close", () => {
+  // (On the response, not on the socket: a browser keeps one connection for hundreds of pieces, and a listener per piece on it was never taken off.)
+  reply.raw.once("close", () => {
     if (!reply.raw.writableEnded) {
       abortController.abort();
     }
@@ -255,23 +316,9 @@ export async function handleStreamProxy(
 
   const contentType = upstreamResponse.headers.get("content-type") || "";
   const isM3u8 =
-    contentType.includes("mpegurl") ||
-    contentType.includes("application/x-mpegurl") ||
+    contentType.toLowerCase().includes("mpegurl") ||
     targetUrl.pathname.endsWith(".m3u8");
 
-  if (isM3u8) {
-    const text = await upstreamResponse.text();
-    // Verify it actually looks like an m3u8
-    if (text.includes("#EXTM3U")) {
-      const rewritten = rewriteM3u8(text, upstreamUrl.href, referer);
-      reply.header("Content-Type", "application/vnd.apple.mpegurl");
-      return reply.code(upstreamResponse.status).send(rewritten);
-    }
-    reply.header("Content-Type", contentType || "text/plain");
-    return reply.code(upstreamResponse.status).send(text);
-  }
-
-  // Subtitle conversion to WebVTT
   const isSubtitle =
     request.query.format === "vtt" ||
     targetUrl.pathname.endsWith(".srt") ||
@@ -279,9 +326,42 @@ export async function handleStreamProxy(
     contentType.includes("vtt") ||
     contentType.includes("subrip");
 
+  // (A server that carries no film passes a subtitle on and nothing else: whatever the address, a playlist or a file is not one.)
+  if (!video && (isM3u8 || !isSubtitle)) {
+    await upstreamResponse.body?.cancel();
+    return turnAway();
+  }
+
+  if (!upstreamResponse.ok) {
+    reply.code(upstreamResponse.status).header("Cache-Control", "no-store");
+    if (contentType) reply.header("Content-Type", contentType);
+    const text = await textUpTo(upstreamResponse, 64 * 1024);
+    const message = text ?? `Upstream returned HTTP ${upstreamResponse.status}`;
+    if (stats) stats.bytes += Buffer.byteLength(message);
+    return reply.send(message);
+  }
+
+  if (isM3u8) {
+    const text = await upstreamResponse.text();
+    // Verify it actually looks like an m3u8
+    if (text.includes("#EXTM3U")) {
+      const rewritten = rewriteM3u8(text, upstreamUrl.href, referer, options.rewriteUrl);
+      reply.header("Cache-Control", "no-store");
+      if (stats) stats.bytes += Buffer.byteLength(rewritten);
+      reply.header("Content-Type", "application/vnd.apple.mpegurl");
+      return reply.code(upstreamResponse.status).send(rewritten);
+    }
+    if (stats) stats.bytes += Buffer.byteLength(text);
+    reply.header("Content-Type", contentType || "text/plain");
+    return reply.code(upstreamResponse.status).send(text);
+  }
+
+  // Subtitle conversion to WebVTT
   if (isSubtitle) {
-    const rawText = await upstreamResponse.text();
+    const rawText = video ? await upstreamResponse.text() : await textUpTo(upstreamResponse, SUBTITLE_MAX_BYTES);
+    if (rawText === null) return turnAway();
     const vtt = srtToVtt(rawText);
+    if (stats) stats.bytes += Buffer.byteLength(vtt);
     reply.header("Content-Type", "text/vtt; charset=utf-8");
     reply.header("Cache-Control", "public, max-age=86400");
     return reply.code(200).send(vtt);
@@ -307,7 +387,7 @@ export async function handleStreamProxy(
   }
 
   if (upstreamResponse.body) {
-    return reply.send(Readable.fromWeb(upstreamResponse.body as any));
+    return reply.send(Readable.from(counted(Readable.fromWeb(upstreamResponse.body as any), stats), { objectMode: false }));
   }
 
   return reply.send();

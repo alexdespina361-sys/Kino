@@ -34,6 +34,9 @@ const RETRY_MS = 20_000;
 /** Signing out waits this long at most to send what has not been sent. */
 const FINAL_SYNC_MS = 2_500;
 
+/** How much a piece of news from friends matters to a viewer who is in the middle of a film: an invitation to something under way, or anything else (which can wait in the bell). */
+export type NewsLevel = "urgent" | "info";
+
 export interface AccountContextValue {
   /** `unavailable`: this server has no accounts, so everything stays on the device. */
   status: "loading" | "unavailable" | "ready";
@@ -43,14 +46,18 @@ export interface AccountContextValue {
   profile: Profile | null;
   /** Signed in, but has to pick who is watching. */
   choosing: boolean;
-  /** Said once in a while ("Added what you watched here to Alex"), for the screen to show as a toast. */
-  message: { id: number; text: string } | null;
-  /** Say something in that same line (what friends are up to, a title that was sent). */
-  say(text: string): void;
+  /**
+   * Said once in a while ("Added what you watched here to Alex"), for the screen to show as a toast. `news` is set on what friends are up to:
+   * it is a thing the screen may keep to itself while a film plays ("urgent": an invitation is let through, small), and a thing this profile can turn off.
+   */
+  message: { id: number; text: string; news?: NewsLevel } | null;
+  /** Say something in that same line: what the viewer did (a title was sent), or, with `news`, what friends are up to (dropped when the profile has turned that off). */
+  say(text: string, news?: NewsLevel): void;
 
   signIn(email: string, password: string): Promise<Me>;
   signUp(email: string, password: string): Promise<Me>;
-  signOut(): Promise<void>;
+  /** `deleted`: the account has just been deleted on the server, which has ended its sessions too (so there is nothing to send what is left to, and nobody to sign out). */
+  signOut(options?: { deleted?: boolean }): Promise<void>;
   /** A sign-in that already happened on the server (a TV signed in from a phone). */
   signedInAs(me: Me): void;
   choose(profileId: string | null): void;
@@ -83,7 +90,12 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
   // A single profile is simply used (this is also true for the render before the effect below remembers it).
   const profile = me?.profiles.find((candidate) => candidate.id === profileId) ?? (me?.profiles.length === 1 ? me.profiles[0] : undefined) ?? null;
 
-  const say = useCallback((text: string) => setMessage((current) => ({ id: (current?.id ?? 0) + 1, text })), []);
+  // (What `say` reads of the profile's settings is what they are now, not when it was handed out.)
+  const popupsRef = useRef(true);
+  const say = useCallback((text: string, news?: NewsLevel) => {
+    if (news && !popupsRef.current) return; // the profile has turned friends' news off: it waits in the bell
+    setMessage((current) => ({ id: (current?.id ?? 0) + 1, text, ...(news ? { news } : {}) }));
+  }, []);
   useEffect(() => {
     if (!message) return;
     const timer = setTimeout(() => setMessage(null), 4500);
@@ -133,6 +145,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
 
   // The language and colour a profile chose follow it onto every screen it uses.
   const { settings } = useProfileData();
+  popupsRef.current = settings.newsPopups !== false;
   useEffect(() => {
     if (settings.lang) setLanguage(settings.lang, false);
   }, [settings.lang]);
@@ -245,19 +258,23 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
         setMe(created);
         return created;
       },
-      async signOut() {
-        // What has not been sent yet is sent first, or it would be lost with this screen's copy.
-        await Promise.race([syncRef.current(), new Promise((resolve) => setTimeout(resolve, FINAL_SYNC_MS))]);
+      async signOut(options) {
         const leaving = meRef.current;
-        try {
-          await api.logout();
-        } catch {
-          /* the cookie may already be gone */
+        // (An account that was just deleted has no session left: a last exchange would only be told so, and take it for a sign-out elsewhere.)
+        if (!options?.deleted) {
+          // What has not been sent yet is sent first, or it would be lost with this screen's copy.
+          await Promise.race([syncRef.current(), new Promise((resolve) => setTimeout(resolve, FINAL_SYNC_MS))]);
+          try {
+            await api.logout();
+          } catch {
+            /* the cookie may already be gone */
+          }
         }
         profileStore.openScope(GUEST);
         for (const other of leaving?.profiles ?? []) profileStore.forget(other.id);
         setProfileId(null);
         setMe(null);
+        if (options?.deleted) say(t("account.deleted"));
       },
       signedInAs(signedIn) {
         setMe(signedIn);

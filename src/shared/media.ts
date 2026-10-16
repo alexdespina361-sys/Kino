@@ -49,6 +49,7 @@ export type SeriesInfo = z.infer<typeof SeriesInfoSchema>;
 const StreamSchema = z.object({
   url: z.string().max(2048).refine(isMediaUrl, "Must be an http(s) URL or a root-relative path"),
   type: StreamTypeSchema,
+  directUrl: z.string().max(2048).optional(),
 });
 
 /** Another way to get the same video (a mirror, another server). The TV falls back to these when the main stream fails. */

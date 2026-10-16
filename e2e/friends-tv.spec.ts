@@ -839,6 +839,136 @@ test.describe("sending things to friends from the TV", () => {
   });
 });
 
+test.describe("friends' news while something plays", () => {
+  /** The screen looks at its friends now and has heard the answer (and shown what it has to show) before this goes on. */
+  async function looks(page: Page) {
+    const answer = page.waitForResponse((response) => response.request().method() === "GET" && /\/api\/profiles\/[^/]+\/friends$/.test(response.url()));
+    await look(page);
+    await answer;
+    await page.waitForTimeout(400);
+  }
+
+  /** A screen that plays the first film of its library. */
+  async function playsTheFilm(screen: Screen) {
+    await screen.page.getByTestId("rail-home").click();
+    await tile(screen.page, "Alpha Film").click();
+    await screen.page.getByTestId("tv-detail-play").click();
+    await expect(tvRoot(screen.page)).toHaveAttribute("data-state", "playing");
+  }
+
+  /** Back to the library from the film (the controls are woken first). */
+  async function stops(screen: Screen) {
+    await screen.page.mouse.move(60, 60);
+    await screen.page.getByTestId("tv-stop-btn").click();
+    await expect(view(screen.page)).toBeVisible();
+  }
+
+  async function sendsTheTitle(screen: Screen) {
+    await screen.page.getByTestId("rail-home").click();
+    await tile(screen.page, "Alpha Film").click();
+    await screen.page.getByTestId("tv-detail-recommend").click();
+    await screen.page.getByTestId("tv-friend-send").click();
+    await expect(screen.page.getByTestId("tv-account-toast")).toContainText("Sent to");
+  }
+
+  async function invitesToAParty(screen: Screen, to: Screen) {
+    await screen.page.keyboard.press("Escape"); // (out of the title's page, where sending it left the screen)
+    await expect(screen.page.getByTestId("tv-detail")).toHaveCount(0);
+    await screen.page.getByTestId("rail-party").click();
+    await screen.page.getByTestId("tv-party-start").click();
+    await screen.page.getByTestId("tv-party-invite-friends").click();
+    await screen.page.getByTestId("tv-friend-send").click();
+    await expect(screen.page.getByTestId("tv-account-toast")).toContainText(`Invited ${to.name}`);
+  }
+
+  test("over a film only an invitation is let through, as a small note in the corner that goes by itself; a title sent waits in the bell", async ({ browser, baseURL }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { library: films(baseURL!) });
+    const bob = await screenWithFriends(browser, "Bob", { library: films(baseURL!) });
+    await meet(ann, bob);
+    const page = bob.page;
+    await playsTheFilm(bob);
+
+    // A title sent to him: nothing over the film, not even for a moment.
+    await sendsTheTitle(ann);
+    await looks(page);
+    await expect(page.getByTestId("tv-account-toast")).toHaveCount(0);
+    await expect(tvRoot(page)).toHaveAttribute("data-state", "playing");
+
+    // An invitation to a party: a note, in the upper right, in the dark, that does not stop the film and goes after a few seconds.
+    await invitesToAParty(ann, bob);
+    await looks(page);
+    const note = page.getByTestId("tv-account-toast");
+    await expect(note).toContainText(`${ann.name} invited you to a watch party`);
+    await expect(note).toHaveClass(/tv-note/);
+    const at = (await note.boundingBox())!;
+    const screen = page.viewportSize()!;
+    expect(at.x + at.width / 2, "in the right half").toBeGreaterThan(screen.width / 2);
+    expect(at.y + at.height, "in the upper third").toBeLessThan(screen.height / 3);
+    expect(at.width, "a small one").toBeLessThan(screen.width / 3);
+    await expect(tvRoot(page)).toHaveAttribute("data-state", "playing");
+    await expect(note).toHaveCount(0, { timeout: 8000 });
+
+    // Both are in the bell for later: the menu has the number once the film is stopped.
+    await stops(bob);
+    await expect(page.getByTestId("rail-profile")).toHaveAttribute("data-badged", "true");
+    await expect(page.getByTestId("rail-profile")).toContainText("2");
+  });
+
+  test("the same news with nothing playing is a line over the library, as before", async ({ browser, baseURL }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { library: films(baseURL!) });
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    await bob.page.getByTestId("rail-home").click();
+    await sendsTheTitle(ann);
+    await looks(bob.page);
+    const toast = bob.page.getByTestId("tv-account-toast");
+    await expect(toast).toContainText(`${ann.name} sent you Alpha Film`);
+    await expect(toast).toHaveClass(/tv-toast/);
+  });
+
+  test("a screen can turn friends' news off: nothing is said over a film or a library, the bell still counts, and the choice is kept", async ({ browser, baseURL }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann", { library: films(baseURL!) });
+    const bob = await screenWithFriends(browser, "Bob", { library: films(baseURL!) });
+    await meet(ann, bob);
+    const page = bob.page;
+    const popups = page.getByTestId("tv-friends-popups");
+
+    // It is on until it is turned off; turning it off is one press on the friends' settings.
+    await tile(page, "Friends settings").click();
+    await expect(popups).toHaveAttribute("aria-checked", "true");
+    await popups.click();
+    await expect(popups).toHaveAttribute("aria-checked", "false");
+    await page.keyboard.press("Escape");
+    await tile(page, "Friends settings").click();
+    await expect(popups).toHaveAttribute("aria-checked", "false"); // (still, when the page is opened again)
+    await page.keyboard.press("Escape");
+
+    // Over the library: a title sent says nothing...
+    await page.getByTestId("rail-home").click();
+    await sendsTheTitle(ann);
+    await looks(page);
+    await expect(page.getByTestId("tv-account-toast")).toHaveCount(0);
+    await expect(page.getByTestId("rail-profile")).toHaveAttribute("data-badged", "true");
+
+    // ...and over a film not even an invitation does.
+    await playsTheFilm(bob);
+    await invitesToAParty(ann, bob);
+    await looks(page);
+    await expect(page.getByTestId("tv-account-toast")).toHaveCount(0);
+    await stops(bob);
+    await expect(page.getByTestId("rail-profile")).toContainText("2");
+
+    // And it can be turned on again.
+    await openFriends(page);
+    await tile(page, "Friends settings").click();
+    await popups.click();
+    await expect(popups).toHaveAttribute("aria-checked", "true");
+  });
+});
+
 test.describe("walking the friends' pages with the remote", () => {
   test("OK opens the pages over the library, Back closes them to the tile they came from, and the remote starts on the first button of each", async ({ browser }) => {
     test.setTimeout(150_000);

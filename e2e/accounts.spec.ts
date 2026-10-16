@@ -52,6 +52,31 @@ const guestCopy = (page: Page) =>
   page.evaluate(() => JSON.parse(localStorage.getItem("kino.data.guest") ?? "null") as { data: { progress: unknown[]; list: unknown[]; listNames: unknown[] } } | null);
 
 test.describe("accounts and profiles", () => {
+  test("Tab goes round the page that is open, in both directions, and never out of it into the remote behind", async ({ browser }) => {
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, fresh());
+    await expect(phone.getByTestId("account-screen")).toBeVisible();
+    const onThePage = () => phone.evaluate(() => document.activeElement?.closest(".page") !== null && document.activeElement !== document.body);
+
+    for (const [row, page] of [["menu-settings", "settings-page"], ["menu-devices", "devices-page"], ["menu-security", "security-page"]] as const) {
+      await phone.getByTestId(row).click();
+      await expect(phone.getByTestId(page)).toBeVisible();
+      expect(await onThePage(), `${page}: the keyboard starts on the page`).toBe(true);
+      const controls = await phone.locator(".page button, .page input, .page select, .page a[href]").count();
+      for (const key of ["Tab", "Shift+Tab"]) {
+        const where: boolean[] = [];
+        for (let i = 0; i < controls + 3; i++) {
+          await phone.keyboard.press(key);
+          where.push(await onThePage());
+        }
+        expect(where, `${page}, ${key}`).not.toContain(false);
+      }
+      await phone.keyboard.press("Escape"); // back to the account page
+      await expect(phone.getByTestId("account-screen")).toBeVisible();
+    }
+  });
+
   test("an account has a first profile, up to five can be added, and signing in again brings them all back", async ({ browser }) => {
     test.setTimeout(60_000);
     // A name and a password of one character: what somebody who only wants to watch types.
@@ -123,6 +148,32 @@ test.describe("accounts and profiles", () => {
     const cookie = header.find((entry) => entry.name === "kino_session");
     expect(cookie).toBeDefined();
     expect(cookie!.expires - Date.now() / 1000).toBeGreaterThan(399 * 24 * 3600); // (the browser caps a cookie's life at 400 days)
+  });
+
+  test("deleting the account: a wrong password is called a wrong password, and afterwards the page says the account is gone, not that the person was signed out", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, account);
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Robert/); // (the account's page stays open after signing up)
+    const turnedAway: string[] = [];
+    phone.on("response", (response) => {
+      if (response.status() === 401) turnedAway.push(new URL(response.url()).pathname);
+    });
+
+    await phone.getByTestId("menu-security").click();
+    await phone.getByTestId("delete-account").click();
+    await phone.getByTestId("delete-password").fill("2");
+    await phone.getByTestId("delete-confirm").click();
+    await expect(phone.getByTestId("delete-error")).toHaveText(en["error.wrong_password"]); // (there is no user name on this page to be wrong)
+
+    await phone.getByTestId("delete-password").fill(account.password);
+    await phone.getByTestId("delete-confirm").click();
+    await expect(phone.getByTestId("account-toast")).toHaveText(en["account.deleted"]);
+    await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
+    await phone.waitForTimeout(800);
+    expect(turnedAway).toEqual(["/api/me/delete"]); // only the wrong try: nothing was sent to a session that had ended with the account
   });
 
   test("an account can have no password: the empty field says what that means, the sign-up says it again and asks, and signing in with nothing opens it", async ({ browser }) => {
@@ -328,6 +379,50 @@ test.describe("signing a TV in from the phone", () => {
     await expect(tv.getByTestId("tv-signin-status")).toContainText(en["link.denied"], { timeout: 10_000 });
     await tv.getByTestId("tv-signin-back").click();
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", en["account.signInPrompt"]);
+  });
+});
+
+test.describe("a TV that nobody is at", () => {
+  // Left on "Sign in with another device", a TV used to ask for a code and then whether it was approved every two seconds, for ever.
+  test("asks for a second code, and then rests until the button is pressed", async ({ browser }) => {
+    const FIVE_MINUTES = 5 * 60_000;
+    let starts = 0;
+    let polls = 0;
+    const tv = await openLibrary(browser, async (context) => {
+      await context.clock.install(); // (the minutes are skipped with `fastForward`)
+      await context.route("**/api/link/start", async (route) => {
+        starts += 1;
+        const now = await route.request().frame().evaluate(() => Date.now()); // (a code runs out five minutes after, by the page's clock)
+        await route.fulfill({ status: 201, json: { code: `TEST000${starts}`, secret: "s", expiresAt: now + FIVE_MINUTES } });
+      });
+      await context.route("**/api/link/poll", (route) => {
+        polls += 1;
+        return route.fulfill({ json: { status: "waiting" } });
+      });
+    });
+    await tv.getByTestId("tv-account-chip").click();
+    await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0001");
+    await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
+
+    await tv.clock.fastForward(FIVE_MINUTES + 2500); // the first code runs out, and the TV that is still there asks for another
+    await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0002");
+    await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
+
+    await tv.clock.fastForward(FIVE_MINUTES + 2500); // ten minutes of nobody: it rests
+    await expect(tv.getByTestId("tv-signin-status")).toHaveText(en["link.rested"]);
+    await expect(tv.getByTestId("tv-signin-again")).toHaveText(en["link.newCode"]);
+    await expect(tv.getByTestId("tv-signin-again")).toBeFocused(); // (OK on the remote goes on)
+    await expect(tv.getByTestId("tv-link-code")).not.toHaveText("TEST-0002"); // the code that ran out is not left on the screen
+
+    const [startsThen, pollsThen] = [starts, polls];
+    await tv.clock.fastForward(60 * 60_000); // an hour
+    await tv.waitForTimeout(300);
+    expect([starts, polls]).toEqual([startsThen, pollsThen]); // nothing asked meanwhile
+
+    await tv.getByTestId("tv-signin-again").click();
+    await expect(tv.getByTestId("tv-link-code")).toHaveText(`TEST-000${startsThen + 1}`);
+    await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-signin-status")).toContainText(en["link.waiting"]);
   });
 });
 

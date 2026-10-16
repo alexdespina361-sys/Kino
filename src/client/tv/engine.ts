@@ -1,4 +1,5 @@
 import type Hls from "hls.js";
+import { prepareBrowserStream } from "./browserStream";
 import {
   IDLE_STATE,
   type PlayerQualityLevel,
@@ -14,7 +15,71 @@ export const PlayerError = {
   NotDirectlyPlayable: "SOURCE_NOT_DIRECTLY_PLAYABLE",
   HlsUnsupported: "HLS_UNSUPPORTED",
   Blocked: "PLAYBACK_BLOCKED",
+  /** Nothing came back from the network at all: the link or the server went away (it passes; the video itself is fine). */
+  ConnectionLost: "CONNECTION_LOST",
 } as const;
+
+/**
+ * Whether a fatal hls.js error is the connection going and not the video being bad: a network error that got no answer (a refused or dropped
+ * connection, a time-out). An answer that says no (404, 403, a 5xx) is the video's, or the site's, and no waiting changes it.
+ */
+export function lostTheConnection(data: { type?: string; details?: string; response?: { code?: number } }): boolean {
+  if (data.type !== "networkError") return false;
+  if (data.details?.endsWith("TimeOut")) return true;
+  const code = data.response?.code;
+  return code === undefined || code < 100;
+}
+
+/**
+ * How far ahead of the picture a screen downloads, in the three numbers hls.js wants (it aims at `max(8 * maxBufferSize / bitrate, maxBufferLength)`
+ * seconds, and never more than `maxMaxBufferLength`). Alone, a screen takes a good part of the film in at once (minutes ahead): nothing else
+ * is asking for it. The screens of a party are different: the proxy keeps the pieces that one of them fetched so that the others get them
+ * from memory, but only a few dozen megabytes of them (see `SegmentCache`), and a host that is minutes ahead has long since pushed out what a
+ * guest asks for now, so every guest went to the film's own server for all of it again. Within a party every screen stays this close to
+ * its picture instead, which is what the proxy can hold, and which is plenty to ride out a bad moment on the way.
+ */
+export const PARTY_BUFFER_AHEAD_S = 40;
+export const PARTY_BUFFER_BYTES = 32 * 1024 * 1024;
+export const LONE_PROXY_BUFFER_AHEAD_S = 90;
+export const LONE_PROXY_BUFFER_BYTES = 48 * 1024 * 1024;
+
+export function bufferPolicy(inParty: boolean, isProxied = false): { maxBufferLength: number; maxMaxBufferLength: number; maxBufferSize: number } {
+  if (inParty) {
+    return { maxBufferLength: 10, maxMaxBufferLength: PARTY_BUFFER_AHEAD_S, maxBufferSize: PARTY_BUFFER_BYTES };
+  }
+  if (isProxied) {
+    return { maxBufferLength: 30, maxMaxBufferLength: LONE_PROXY_BUFFER_AHEAD_S, maxBufferSize: LONE_PROXY_BUFFER_BYTES };
+  }
+  return { maxBufferLength: 120, maxMaxBufferLength: 600, maxBufferSize: 128 * 1024 * 1024 };
+}
+
+/** How long a direct address may take to start playing before the server's own is used instead (see `PlayerEngine.playNatively`). */
+export const DIRECT_START_MS = 12_000;
+
+/** 1080p and above: what `formatQualityLabel` calls those (a film's own shape counts: 1920x804 is 1080p, 1280x536 is 720p). */
+const isHighDefinition = (width = 0, height = 0): boolean => width >= 1800 || height >= 800;
+
+function usesWebsiteProxy(src: string): boolean {
+  const url = new URL(src, location.href);
+  return url.origin === new URL(location.href).origin && url.pathname === "/api/proxy";
+}
+
+/**
+ * Where the quality that the player picks by itself stops while the picture comes through this server (`/api/proxy`), which is where
+ * the bytes of a film are the server's to pay for: the best level that is not high definition (720p carries about half of what 1080p does),
+ * as the index hls.js wants for `autoLevelCapping`, or -1 for no limit (one level, or none above 720p). A quality picked by hand is no part of
+ * this (the menu still lists every level), and neither is a picture that does not come through the server. When every level is high
+ * definition the lowest one is the limit.
+ */
+export function proxiedQualityCap(levels: ReadonlyArray<{ width?: number; height?: number }>): number {
+  if (levels.length <= 1) return -1;
+  let cap = -1;
+  levels.forEach((level, index) => {
+    if (!isHighDefinition(level.width, level.height)) cap = index;
+  });
+  if (cap === -1) return 0;
+  return cap === levels.length - 1 ? -1 : cap;
+}
 
 export function formatQualityLabel(width?: number, height?: number, name?: string): string {
   const w = width || 0;
@@ -42,11 +107,20 @@ export class PlayerEngine {
   private errorCode: string | undefined;
   /** Resume point for a plain (non-hls.js) source; applied once the duration is known. */
   private startAt: number | undefined;
+  /** Where the video that is loading (or has just failed to) was told to start, kept after the player has taken it: see `resumePoint`. */
+  private requestedStart: number | undefined;
   private generation = 0;
   /** The speed that was chosen, while a hold on the picture plays faster (see `boost`); null when nothing is held. */
   private boostedFrom: number | null = null;
+  /** This screen is in a party (see `bufferPolicy`). */
+  private inParty = false;
+  /** The profile lets the picture's quality follow the connection (see `setAdaptive`). */
+  private adaptive = true;
   /** The last state handed to `onChange`, as JSON, to skip repeats. */
   private lastEmitted = "";
+  private nativeFallbackSrc?: string;
+  /** Gives up on a direct address that has not started playing (see `watchDirectStart`). */
+  private directTimer?: ReturnType<typeof setTimeout>;
   private readonly ticker: ReturnType<typeof setInterval>;
 
   constructor(
@@ -54,7 +128,9 @@ export class PlayerEngine {
     private readonly onChange: (state: PlayerState) => void,
     private readonly onEnded?: () => void,
   ) {
+    video.setAttribute?.("referrerpolicy", "no-referrer");
     video.addEventListener("loadedmetadata", () => {
+      clearTimeout(this.directTimer);
       this.loading = false;
       if (this.startAt !== undefined) {
         const duration = Number.isFinite(video.duration) ? video.duration : this.startAt;
@@ -79,21 +155,40 @@ export class PlayerEngine {
       video.textTracks.addEventListener("addtrack", () => this.emit());
     }
     video.addEventListener("error", () => {
-      if (this.hasSource) this.fail(PlayerError.NotDirectlyPlayable);
+      if (this.hasSource) {
+        if (this.useFallbackSource()) return;
+        // (MEDIA_ERR_NETWORK, 2: the download broke off part of the way. A file that cannot be opened at all, or played, is another code.)
+        this.fail(video.error?.code === 2 ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
+      }
     });
     this.ticker = setInterval(() => this.hasSource && this.emit(), 1000);
   }
 
-  async load(url: string, type: StreamType, subtitles?: SubtitleTrack[], startAt?: number): Promise<void> {
+  async load(url: string, type: StreamType, subtitles?: SubtitleTrack[], startAt?: number, directUrl?: string): Promise<void> {
     this.teardown();
     const generation = this.generation;
     this.hasSource = true;
     this.loading = true;
     this.startAt = startAt && startAt > 0 ? startAt : undefined;
+    this.requestedStart = this.startAt;
     this.emit();
 
     // Media may be root-relative (local fixtures); resolve against the TV's own origin.
-    const src = new URL(url, location.href).href;
+    let src = new URL(url, location.href).href;
+    const browserStream = type === "hls" ? prepareBrowserStream(directUrl ?? src) : undefined;
+    if (browserStream) {
+      try {
+        src = await browserStream;
+        if (generation !== this.generation) return;
+        directUrl = undefined;
+      } catch (error) {
+        if (generation === this.generation) {
+          console.warn("[Kino direct playback]", error instanceof Error ? error.message : "Could not prepare video");
+          this.fail(PlayerError.NotDirectlyPlayable);
+        }
+        return;
+      }
+    }
 
     // Attach external subtitle tracks if provided
     if (subtitles?.length) {
@@ -108,7 +203,7 @@ export class PlayerEngine {
     }
 
     if (type === "mp4") {
-      this.video.src = src;
+      this.playNatively(src, directUrl, generation);
       return;
     }
 
@@ -118,17 +213,17 @@ export class PlayerEngine {
     if (HlsLib.isSupported()) {
       const resumeAt = this.startAt;
       this.startAt = undefined; // hls.js starts there itself
+      const adaptive = this.adaptive;
       const hls = new HlsLib({
         startPosition: resumeAt ?? -1,
         capLevelToPlayerSize: false,
-        maxBufferLength: 120,
-        maxMaxBufferLength: 600,
-        maxBufferSize: 128 * 1024 * 1024,
+        ...bufferPolicy(this.inParty, usesWebsiteProxy(src)),
         lowLatencyMode: false,
+        // (The first piece in the lowest quality, which is the first one the player lists: it drops the variants that have no picture when there are some that do.)
+        ...(adaptive ? { startLevel: 0 } : {}),
       });
       this.hls = hls;
       hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
-      let retriedProxy = false;
       let mediaRecoverAttempts = 0;
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
         console.warn("[HLS EVENT ERROR]", {
@@ -139,14 +234,6 @@ export class PlayerEngine {
           response: data.response ? { code: data.response.code, text: data.response.text } : undefined,
         });
         if (data.fatal) {
-          if (!retriedProxy && !src.includes("/api/proxy") && (src.startsWith("http://") || src.startsWith("https://"))) {
-            retriedProxy = true;
-            console.log("[HLS] Retrying via proxy:", src);
-            const proxied = new URL(`/api/proxy?url=${encodeURIComponent(src)}`, location.href).href;
-            hls.loadSource(proxied);
-            return;
-          }
-
           if (data.type === HlsLib.ErrorTypes.MEDIA_ERROR && mediaRecoverAttempts < 2) {
             mediaRecoverAttempts++;
             console.log("[HLS] Recovering from media error, attempt:", mediaRecoverAttempts);
@@ -155,13 +242,13 @@ export class PlayerEngine {
           }
 
           console.error("[HLS FATAL ERROR]", data.type, data.details);
-          this.fail(PlayerError.NotDirectlyPlayable);
+          this.fail(lostTheConnection(data) ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
         }
       });
 
       hls.on(HlsLib.Events.MANIFEST_PARSED, (_event, data) => {
-        // Automatically select the highest available quality level
-        if (data?.levels && data.levels.length > 0) {
+        // Not adaptive: the highest quality there is, whatever the connection. (Adaptive leaves the choice to hls.js: see `setAdaptive`.)
+        if (!adaptive && data?.levels && data.levels.length > 0) {
           let highestIdx = 0;
           let maxMetric = 0;
           data.levels.forEach((lvl, idx) => {
@@ -172,6 +259,9 @@ export class PlayerEngine {
             }
           });
           hls.currentLevel = highestIdx;
+        } else if (data?.levels && usesWebsiteProxy(hls.url ?? src)) {
+          // Adaptive, through this server: its own choice stops at 720p (a quality picked from the menu still goes higher). See `proxiedQualityCap`.
+          hls.autoLevelCapping = proxiedQualityCap(data.levels);
         }
         if (this.pendingPlay) {
           this.pendingPlay = false;
@@ -189,10 +279,65 @@ export class PlayerEngine {
       hls.loadSource(src);
       hls.attachMedia(this.video);
     } else if (this.video.canPlayType("application/vnd.apple.mpegurl")) {
-      this.video.src = src;
+      this.playNatively(src, directUrl, generation);
     } else {
       this.fail(PlayerError.HlsUnsupported);
     }
+  }
+
+  /** Plays with the browser's own player: a direct address, when there is one, goes first and `src` (the server's own) is what it falls back to. */
+  private playNatively(src: string, directUrl: string | undefined, generation: number): void {
+    // Only the website's explicitly configured proxy has a direct-first path. A separate relay owns its tokens and must be used on Safari too.
+    if (directUrl && directUrl !== src && usesWebsiteProxy(src)) {
+      this.nativeFallbackSrc = src;
+      this.video.src = directUrl;
+      this.watchDirectStart(generation);
+    } else {
+      this.video.src = src;
+    }
+  }
+
+  /** A direct address that neither plays nor fails is a place that does not answer: after `DIRECT_START_MS` the server's own is used (once). */
+  private watchDirectStart(generation: number): void {
+    clearTimeout(this.directTimer);
+    this.directTimer = setTimeout(() => {
+      // (1 is HAVE_METADATA: it has begun.)
+      if (generation === this.generation && this.video.readyState < 1) this.useFallbackSource();
+    }, DIRECT_START_MS);
+  }
+
+  /** The direct address failed, or never started: the server's own instead. False when there is none (or it is the one that is playing). */
+  private useFallbackSource(): boolean {
+    clearTimeout(this.directTimer);
+    const fallback = this.nativeFallbackSrc;
+    if (!fallback || this.video.src === fallback) return false;
+    this.nativeFallbackSrc = undefined;
+    this.video.src = fallback;
+    return true;
+  }
+
+  /**
+   * This screen is, or is no longer, in a party: how far ahead it downloads changes at once for a film that is playing (hls.js reads its
+   * settings each time it decides what to fetch next) and is the same for the ones that load later. What it has downloaded already stays.
+   */
+  setInParty(inParty: boolean): void {
+    this.inParty = inParty;
+    if (this.hls) {
+      const isProxied = usesWebsiteProxy(this.hls.url || this.video.src || location.href);
+      Object.assign(this.hls.config, bufferPolicy(inParty, isProxied));
+    }
+  }
+
+  /**
+   * Whether the picture's quality follows the connection (the profile's choice), from the next film on. On, the first piece of a film is
+   * the lowest quality, which arrives at once whatever the link, so the picture starts at once; hls.js then asks for every piece in the best
+   * quality that the link carries, as it measures it, which a weak or unsteady link brings down (and back up when it recovers). A change
+   * applies to the pieces still to be downloaded: what is downloaded already plays out first. Off, every piece is the highest quality
+   * there is, which on a link that cannot carry it is a picture that stops to fill again and again. Either way a quality picked from the
+   * menu stays (`setQuality`).
+   */
+  setAdaptive(adaptive: boolean): void {
+    this.adaptive = adaptive;
   }
 
   play(): void {
@@ -217,6 +362,20 @@ export class PlayerEngine {
     this.video.pause();
   }
 
+  /**
+   * Where the picture carries on from if it has to be loaded again (another source, the same one once more): where it is, or, when it never got
+   * going, where it was told to start. Read it before `load`, which wipes the element.
+   */
+  resumePoint(): number {
+    const at = this.video.currentTime || 0;
+    return at > 0 ? at : (this.requestedStart ?? 0);
+  }
+
+  /** Whether the picture is meant to be playing: it is, or it was asked to as soon as it can (a video put back after a restart is neither, and stays held). */
+  wantsPlay(): boolean {
+    return this.pendingPlay || (this.hasSource && !this.video.paused);
+  }
+
   seek(time: number): void {
     if (!this.hasSource) return;
     const max = Number.isFinite(this.video.duration) ? this.video.duration : time;
@@ -228,9 +387,10 @@ export class PlayerEngine {
     this.seek(this.video.currentTime + seconds);
   }
 
+  /** A quality picked by hand, or -1 for the player's own choice again: from the next piece on, without a stop (what is downloaded beyond the piece that plays is replaced). */
   setQuality(level: number): void {
     if (!this.hls) return;
-    this.hls.currentLevel = level;
+    this.hls.nextLevel = level;
     this.emit();
   }
 
@@ -324,7 +484,7 @@ export class PlayerEngine {
     return false;
   }
 
-  private getQualityState(): { levels: PlayerQualityLevel[]; current: number } | undefined {
+  private getQualityState(): { levels: PlayerQualityLevel[]; current: number; active?: number } | undefined {
     if (!this.hls?.levels || this.hls.levels.length <= 1) return undefined;
     const levels: PlayerQualityLevel[] = this.hls.levels.map((lvl, index) => {
       return {
@@ -334,9 +494,11 @@ export class PlayerEngine {
         bitrate: lvl.bitrate,
       };
     });
+    const playing = this.hls.currentLevel; // (-1 until a piece plays)
     return {
       levels,
-      current: this.hls.autoLevelEnabled ? -1 : this.hls.currentLevel,
+      current: this.hls.manualLevel,
+      ...(playing >= 0 ? { active: playing } : {}),
     };
   }
 
@@ -401,6 +563,9 @@ export class PlayerEngine {
     this.generation += 1;
     this.pendingPlay = false;
     this.startAt = undefined;
+    this.requestedStart = undefined;
+    this.nativeFallbackSrc = undefined;
+    clearTimeout(this.directTimer);
     this.hls?.destroy();
     this.hls = null;
     this.hasSource = false;

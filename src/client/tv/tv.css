@@ -852,55 +852,19 @@
   color: #b5b5b5;
 }
 
-/* A TV that watches along has no controls of its own, only a way out; one that the host made an admin has the playback's buttons as well, under that. */
-.tv-follow {
-  position: absolute;
-  top: 3em;
-  left: 0;
-  right: 0;
-  z-index: 40;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.6em;
-  pointer-events: none; /* only the bars take the pointer: the picture between and around them stays the picture's */
-  transition: opacity 0.25s;
-}
-.tv-follow > * { pointer-events: auto; }
-.tv[data-hud="hidden"] .tv-follow { opacity: 0; }
-.tv[data-hud="hidden"] .tv-follow > * { pointer-events: none; }
-.tv-follow-bar {
-  width: max-content; /* as wide as its buttons need up to the screen's width (centred by the column it is in) */
-  max-width: calc(100% - 2em);
-  display: flex;
-  align-items: center;
-  gap: 1em;
-  padding: 0.4em 0.5em 0.4em 1.4em;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  background: rgba(0, 0, 0, 0.72);
-  font-size: 1.5em;
-}
-.tv-follow-admin { gap: 0.4em; padding: 0.4em 0.5em; }
-.tv-follow-admin button svg { font-size: 1.3em; }
-.tv-follow-bar button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4em;
-  font-size: 1em;
-  font-weight: 600;
-  padding: 0.4em 1.1em;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--muted);
-}
-.tv-follow-bar button:hover { background: rgba(255, 255, 255, 0.2); color: #fff; }
-.tv-follow-bar button:focus-visible {
-  background: #fff;
-  color: #000;
-  outline: 0.14em solid var(--accent);
-  outline-offset: 0.14em;
-}
+/* A screen that watches along has the player's bars like any other. Under the title it says whose film this is, and when it is being brought to the host's picture. */
+.hud-follow { display: flex; align-items: center; gap: 0.5em; font-size: 1.4em; font-weight: 600; color: #d4d4d4; text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.8); }
+.hud-follow svg { flex: none; font-size: 1.15em; }
+.hud-follow span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-follow em { flex: none; padding: 0.05em 0.6em; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-size: 0.85em; font-style: normal; font-weight: 700; color: #fff; }
+/* Who held the film ("Paused by Anna"), on the pause card. */
+.hud-held { align-self: flex-start; margin-top: 0.4em; padding: 0.2em 0.9em; border-radius: 999px; background: rgba(255, 255, 255, 0.16); font-size: 1.6em; font-weight: 700; color: #fff; }
+/* The bar of a guest that only watches shows where the film is, and nothing is pressed on it. */
+.hud-bar[data-readonly] { cursor: default; }
+.hud-bar[data-readonly]:hover .hud-bar-track { height: 0.55em; }
+.hud-bar[data-readonly] .hud-bar-thumb { display: none; }
+/* Without the playback's group (a guest that only watches) the one group left stays at the end of the row, where the player's second one is. */
+.hud-controls .hud-group:only-child { margin-left: auto; }
 
 /* ------------------------------ library ------------------------------ */
 
@@ -1553,6 +1517,40 @@
   100% { opacity: 0; }
 }
 
+/*
+ * The one thing from friends that is let over a film (an invitation to something under way): a small, dark note in the corner, under the
+ * clock, that fades in and out where it is. It never takes the middle of the picture or the bottom, where the subtitles and the buttons are.
+ */
+.tv-note {
+  position: absolute;
+  right: 1.6em;
+  top: 8em;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  max-width: 24em;
+  margin: 0;
+  padding: 0.55em 1em;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0.7em;
+  background: rgba(20, 20, 20, 0.86);
+  color: #e6e6e6;
+  font-size: 1.35em;
+  font-weight: 600;
+  line-height: 1.25;
+  animation: tv-note-life 4.5s ease-out forwards;
+  pointer-events: none;
+}
+.tv-note svg { flex: none; font-size: 1.15em; color: #fff; }
+.tv-note span { min-width: 0; }
+@keyframes tv-note-life {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* ------------------------------ library: the rows of the home page ------------------------------ */
 
 .tv-row { animation: tv-rise 0.45s ease both; }
@@ -1743,7 +1741,7 @@
 
 /* A press is felt: whatever answers a click sinks a little while it is held (after every focus rule, so it wins over the focus ring's growth). */
 .tv-tile:active, .tv-tile-category:active, .tv-end-tile:active, .tv-ep:active, .tv-rail-item:active, .tv-btn:active, .tv-action:active, .tv-hero-button:active, .tv-choice:active,
-.tv-key:active, .tv-opt:active, .tv-swatch:active, .tv-switch-row:active, .tv-corner-button:active, .tv-account-chip:active, .tv-follow-bar button:active,
+.tv-key:active, .tv-opt:active, .tv-swatch:active, .tv-switch-row:active, .tv-corner-button:active, .tv-account-chip:active,
 .tv-party-choice:active, .tv-party-remove:active { transform: scale(0.96); }
 
 /* ------------------------------ a hand-held screen ------------------------------ */
@@ -1817,6 +1815,7 @@
   .profile-tv .profile-picture { font-size: 7em; }
   .profile-tv .profile-name { font-size: 1.7em; }
   .tv-toast { max-width: calc(100% - 3em); bottom: 3em; font-size: 1.5em; }
+  .tv-note { right: 1.2em; top: 6em; max-width: calc(100% - 2.4em); font-size: 1.3em; }
 
   /* The library: a thin menu on the left, a smaller banner, rows that swipe sideways and a page that swipes down. */
   .tv-rail { width: 5.6em; padding: 5em 0 2em; }
@@ -1909,10 +1908,8 @@
   .tv-end-tile { flex: 1 1 0; max-width: 11.5em; }
   .tv-end-name { font-size: 1.1em; }
   .tv-end-art .poster-initial { font-size: 2.6em; }
-  .tv-follow { top: 1.2em; gap: 0.5em; }
-  .tv-follow-bar { flex-wrap: wrap; justify-content: center; gap: 0.6em; padding: 0.6em; border-radius: 1.4em; font-size: 1.2em; }
-  .tv-follow-bar > span { flex: 1 1 100%; text-align: center; }
-  .tv-follow-bar button { padding: 0.5em 0.9em; }
+  .hud-follow { font-size: 1.2em; }
+  .hud-held { font-size: 1.4em; }
   .tv-tap b { font-size: 1.7em; }
   .tv-fs-prompt { bottom: 6em; font-size: 1.5em; }
   .tv-banner { top: 2em; font-size: 1.4em; }
@@ -1955,6 +1952,7 @@
 @media (max-width: 520px) and (orientation: portrait) {
   .hud-pause-card { left: 1.6em; right: 1.6em; top: auto; bottom: calc(50% + 6.5em); max-width: none; align-items: center; text-align: center; transform: none; }
   .hud-pause-card b { -webkit-line-clamp: 3; }
+  .hud-held { align-self: center; }
   .hud-center::before { background: radial-gradient(ellipse 90% 40% at 50% 38%, rgba(0, 0, 0, 0.68), transparent); }
 }
 
@@ -1997,15 +1995,21 @@
 
 /* ...and a short screen that is also wide (a phone sideways) still has the room for things to sit side by side. */
 @media (max-height: 520px) and (min-width: 600px) {
-  .tv-follow-bar > span { flex-basis: auto; }
   .tv-pair, .tv-screen-compact .tv-pair, .tv-screen-compact .tv-party-invite { flex-direction: row; }
   .tv-actions { grid-auto-flow: column; grid-auto-columns: 1fr; width: auto; max-width: none; }
   .tv-party-choices { flex-direction: row; width: auto; max-width: none; }
   .tv-party-choice { width: 22em; }
+  /* The party panel over a film: the code and the people side by side. One above the other they are taller than the screen, and the panel opened scrolled to the bottom. */
+  .tv-menu[data-kind="party"][data-cols="2"] { width: min(96vw, 80em); }
+  .tv-menu[data-kind="party"] .tv-menu-cols { flex-direction: row; gap: 1.6em; }
+  .tv-menu[data-kind="party"] .tv-party-invite-col { flex: 1 1 0; }
+  .tv-menu[data-kind="party"] .tv-party-side { flex: 0 0 21em; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-upnext, .tv-toast, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p, .tv-welcome .tv-action { animation-duration: 0.01s; }
+  .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-upnext, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p, .tv-welcome .tv-action { animation-duration: 0.01s; }
+  /* (What fades out at the end is simply shown for its time: a quick animation would leave it where it ends, gone.) */
+  .tv-toast, .tv-note { animation: none; }
   .tv-detail { animation-duration: 0.01s, 0.5s; } /* the fade is quick; the pointer is still let through for as long */
   .tv-welcome { transition-duration: 0.01s; }
   .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }

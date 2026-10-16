@@ -21,6 +21,11 @@ const accounts = await AccountStore.open({ persistence, log: console });
 const registry = new Registry();
 const pairings = await PairingStore.open({ registry, persistence, log: console });
 
+// DIRECT_STREAMING is "on" by default to bypass the server middleman and stream directly to viewers.
+if (process.env.DIRECT_STREAMING === undefined) {
+  process.env.DIRECT_STREAMING = "on";
+}
+
 const app = await buildApp({
   clientDir: defaultClientDir(),
   fixturesDir: defaultFixturesDir(),
@@ -35,6 +40,9 @@ const app = await buildApp({
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),
   ...(Number(process.env.SIGNUPS_PER_HOUR) > 0 ? { signUpsPerHour: Number(process.env.SIGNUPS_PER_HOUR) } : {}),
   trustProxy: trustProxy(process.env),
+  // Website as middle man is toggled off by default so users cannot watch something if it uses website bandwidth.
+  // Set PROXY_VIDEO=on to explicitly allow the server to proxy video.
+  proxyVideo: process.env.PROXY_VIDEO === "on" || process.env.PROXY_VIDEO === "true" || process.env.PROXY_VIDEO === "1",
   logger: true,
 });
 app.log.info(`Accounts and pairings are kept in ${describe}.`);

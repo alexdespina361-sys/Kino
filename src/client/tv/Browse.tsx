@@ -976,6 +976,11 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
             {grid.title}
           </h1>
           {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
+          {view.kind === "list" && !canAdd && (
+            <p className="tv-view-meta" data-testid="lists-full">
+              {t("lists.full", { count: MAX_LISTS })}
+            </p>
+          )}
           {view.kind === "list" && (
             <div className="tv-filters" role="radiogroup" aria-label={t("rows.myList")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
               {lists.map((info, col) => (
@@ -1240,6 +1245,11 @@ export function TvBrowse({ onPlay, onAccount, onSettings, onConnect, onParty, on
               </button>
             )}
           </div>
+          {!canAdd && (
+            <p className="tv-view-meta" data-testid="lists-full">
+              {t("lists.full", { count: MAX_LISTS })}
+            </p>
+          )}
           <div className="tv-actions">
             {/* (A list just made from here has the title in it: the remote lands on Done.) */}
             <button className="tv-action tv-action-primary" onClick={closeOverlay} data-nav data-testid="pick-done" {...(overlay.fresh ? { "data-autofocus": true } : {})}>

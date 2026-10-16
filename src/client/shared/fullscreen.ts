@@ -30,8 +30,20 @@ export const canFullscreen = (): boolean => Boolean(document.fullscreenEnabled) 
 
 export const isFullscreen = (): boolean => document.fullscreenElement !== null;
 
+/**
+ * The request that is on its way. A press is used up by the first request made on it, and a second one is refused (with a line in the
+ * console): the page's first-press listener and the welcome's own button both ask for the same press, so they share the one request.
+ */
+let asked: Promise<void> | null = null;
+function requestFullscreen(): Promise<void> {
+  asked ??= document.documentElement.requestFullscreen().finally(() => {
+    asked = null;
+  });
+  return asked;
+}
+
 export function enterFullscreen(): void {
-  if (canFullscreen()) document.documentElement.requestFullscreen?.().catch(() => {});
+  if (canFullscreen() && typeof document.documentElement.requestFullscreen === "function") requestFullscreen().catch(() => {});
 }
 
 export function toggleFullscreen(): void {
@@ -122,7 +134,7 @@ export function setUpFullscreen({ byItself }: { byItself: boolean }): void {
     if (fillsDisplay()) return stop(); // already as full as it gets (it was opened that way, or the button got there first)
     asking = true;
     // A key that is no press to a browser (Escape) is refused: the next press is tried instead.
-    document.documentElement.requestFullscreen().then(stop, () => (asking = false));
+    requestFullscreen().then(stop, () => (asking = false));
   };
   addEventListener("keydown", enter, true);
   addEventListener("click", enter, true);

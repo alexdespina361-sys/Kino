@@ -23,6 +23,9 @@ export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage"
 /** How often the TV asks whether a phone has approved it. */
 const POLL_MS = 2000;
 
+/** How long a TV that nobody answers goes on asking (a code lasts 5 minutes, so it is given a second one) before it rests until someone says to go on. */
+const LISTEN_MS = 10 * 60_000;
+
 interface Request {
   code: string;
   secret: string;
@@ -42,12 +45,17 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
   const [request, setRequest] = useState<Request | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [resting, setResting] = useState(false); // nobody answered for LISTEN_MS: no more asking until the button says to
+  const until = useRef(Date.now() + LISTEN_MS); // when it rests
+  const again = useRef<HTMLButtonElement>(null);
   const done = useRef({ account, onClose });
   done.current = { account, onClose };
 
-  // One request at a time, asked for again whenever it ends: it ran out, or the phone said no.
+  // One request at a time, asked for again whenever it ends: it ran out, or the phone said no. A TV that nobody is at would go on for ever:
+  // once LISTEN_MS are over, a code that has run out (or could not be had) is not asked for again until the button is pressed.
   useEffect(() => {
     if (mode !== "phone") return;
+    setResting(false); // (a page that comes back from the typed form is asking again)
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const later = (message: string | null, delay: number) => {
@@ -56,19 +64,26 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
       setProblem(message);
       timer = setTimeout(() => setAttempt((n) => n + 1), delay);
     };
+    const retry = (message: string | null, delay: number) => {
+      if (Date.now() + delay <= until.current) return later(message, delay);
+      if (!live) return;
+      setRequest(null);
+      setProblem(null);
+      setResting(true);
+    };
     void (async () => {
       let started: Request;
       try {
         started = await api.linkStart("tv");
       } catch (error) {
-        return later(describeError(error), 6000);
+        return retry(describeError(error), 6000);
       }
       if (!live) return;
       setRequest(started);
       setProblem(null);
       const poll = async () => {
         if (!live) return;
-        if (Date.now() >= started.expiresAt) return later(null, 0);
+        if (Date.now() >= started.expiresAt) return retry(null, 0);
         try {
           const outcome = await api.linkPoll(started.code, started.secret);
           if (!live) return;
@@ -78,10 +93,10 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
             return;
           }
           if (outcome.status === "denied") return later(t("link.denied"), 3500);
-          if (outcome.status === "gone") return later(null, 0);
+          if (outcome.status === "gone") return retry(null, 0);
         } catch (error) {
           if (!live) return;
-          if (error instanceof ApiError && error.status === 404) return later(describeError(error), 6000);
+          if (error instanceof ApiError && error.status === 404) return retry(describeError(error), 6000);
           // not reachable just now (or told to slow down): look again in a moment
         }
         timer = setTimeout(() => void poll(), POLL_MS);
@@ -93,6 +108,16 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
       if (timer) clearTimeout(timer);
     };
   }, [mode, attempt]);
+
+  // The button is what is under the remote's OK when the page has been left alone.
+  useEffect(() => {
+    if (resting) again.current?.focus();
+  }, [resting]);
+  const goOn = () => {
+    until.current = Date.now() + LISTEN_MS;
+    setResting(false);
+    setAttempt((n) => n + 1);
+  };
 
   if (mode === "email") {
     return (
@@ -131,17 +156,22 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
           </li>
         </ol>
         <div className="tv-qr">
-          {request ? <QrCode value={`${location.origin}/?link=${encodeURIComponent(request.code)}`} label={t("link.step3")} /> : <div className="tv-qr-wait spinner" />}
+          {request ? <QrCode value={`${location.origin}/?link=${encodeURIComponent(request.code)}`} label={t("link.step3")} /> : <div className={`tv-qr-wait${resting ? "" : " spinner"}`} />}
         </div>
       </div>
       <p className={`tv-lead tv-signin-status${problem ? " is-problem" : ""}`} data-testid="tv-signin-status" role="status">
-        {problem ?? (
+        {(resting ? t("link.rested") : problem) ?? (
           <>
             <span className="spinner" /> {t("link.waiting")}
           </>
         )}
       </p>
       <div className="tv-actions">
+        {resting && (
+          <button ref={again} className="tv-action" onClick={goOn} data-nav data-testid="tv-signin-again">
+            {t("link.newCode")}
+          </button>
+        )}
         <button className="tv-action" onClick={() => setMode("email")} data-nav data-testid="tv-signin-email">
           {t("link.emailInstead")}
         </button>
@@ -380,6 +410,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const { me, profile } = account;
   const autoplay = settings.autoplayNext ?? true;
   const tapToPause = settings.tapToPause ?? false;
+  const adaptiveQuality = settings.adaptiveQuality ?? true;
   const ratingsOn = settings.ratings ?? true;
   const friendsOn = friendChoices(settings).friends;
   return (
@@ -473,6 +504,17 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
           </button>
           <button className="tv-switch-row" role="switch" aria-checked={tapToPause} onClick={() => set("tapToPause", !tapToPause)} data-nav data-testid="tv-tap-to-pause">
             <span>{t("settings.tapToPause")}</span>
+            <span className="tv-switch" aria-hidden="true" />
+          </button>
+          <button
+            className="tv-switch-row"
+            role="switch"
+            aria-checked={adaptiveQuality}
+            onClick={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)}
+            data-nav
+            data-testid="tv-adaptive-quality"
+          >
+            <span>{t("settings.adaptiveQuality")}</span>
             <span className="tv-switch" aria-hidden="true" />
           </button>
 

@@ -3,7 +3,7 @@ import { ACCENTS, DEVICE_NAME_MAX, friendChoices, preferredLanguages, UI_LANGUAG
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
 import { Avatar } from "../account/Avatar";
-import { describeError } from "../account/errors";
+import { describeError, describePasswordError } from "../account/errors";
 import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
@@ -221,6 +221,8 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
           {FRIEND_SWITCHES.filter(({ key }) => key !== "friendsRatings" || settings.ratings !== false).map(({ key, label, testId }) => (
             <Switch key={key} label={t(label)} checked={choices[key]} onChange={(on) => change(key, on)} testId={testId} />
           ))}
+          <Switch label={t("friends.popups")} checked={settings.newsPopups !== false} onChange={(on) => set("newsPopups", on ? undefined : false)} testId="news-popups-switch" />
+          <p className="muted small">{t("friends.popupsHelp")}</p>
           <button className="btn btn-block" onClick={onOpen} data-testid="friends-open">
             <UsersIcon /> {t("friends.open")}
             {friends.state && <small>{t("friends.count", { count: friends.state.friends.length })}</small>}
@@ -282,6 +284,8 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
         <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
         <Switch label={t("settings.tapToPause")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
         <p className="muted small">{t("settings.tapToPauseHelp")}</p>
+        <Switch label={t("settings.adaptiveQuality")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
+        <p className="muted small">{t("settings.adaptiveQualityHelp")}</p>
       </Group>
       <Group title={t("settings.pasteLink")} help={t("settings.linkBoxHelp")}>
         <Switch label={t("settings.pasteLinkSwitch")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />
@@ -464,7 +468,7 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
       setCurrent("");
       setNext("");
     } catch (cause) {
-      setChangeProblem(describeError(cause));
+      setChangeProblem(describePasswordError(cause));
     } finally {
       setBusy(false);
     }
@@ -475,10 +479,10 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
     setDeleteProblem(null);
     try {
       await api.deleteAccount(confirm);
-      await account.signOut();
+      await account.signOut({ deleted: true });
       onDeleted();
     } catch (cause) {
-      setDeleteProblem(describeError(cause));
+      setDeleteProblem(describePasswordError(cause));
       setBusy(false);
     }
   };

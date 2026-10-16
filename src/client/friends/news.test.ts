@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActivityItem, Friend, FriendsState, InboxItem } from "../../shared";
-import { NEWS_RECENT_MS, describeNews, known, whatsNew, type News, type Translate } from "./news";
+import { NEWS_RECENT_MS, describeNews, isUrgent, known, whatsNew, type News, type Translate } from "./news";
 
 const NOW = 50_000_000;
 const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1, on: true, lists: true, ratings: true, activity: true, inbox: true };
@@ -99,5 +99,35 @@ describe("saying it", () => {
     // A request to be friends is always said too, after the two above.
     expect(describeNews([...news, { kind: "request", name: "Kim#2" }], t)).toBe('friends.news.request {"name":"Kim#2"}');
     expect(describeNews([{ kind: "request", name: "Kim#2" }, { kind: "together", name: "Sam" }], t)).toBe('friends.news.together {"name":"Sam"}');
+  });
+});
+
+describe("what is let over a film", () => {
+  const t: Translate = (key) => key;
+  const quiet: News[] = [
+    { kind: "recommend", name: "Sam", title: "Dune" },
+    { kind: "friend", name: "Robin" },
+    { kind: "request", name: "Kim#2" },
+    { kind: "activity", name: "Sam", title: "Alien", verb: "watching" },
+  ];
+
+  it("is an invitation to something going on, or a friend asking to watch together, and nothing else", () => {
+    expect(isUrgent([{ kind: "party", name: "Sam" }])).toBe(true);
+    expect(isUrgent([{ kind: "together", name: "Sam" }])).toBe(true);
+    expect(isUrgent([])).toBe(false);
+    for (const item of quiet) expect(isUrgent([item])).toBe(false);
+    expect(isUrgent(quiet)).toBe(false);
+  });
+
+  it("is so when an invitation is among other news, and the line that is said is then the invitation", () => {
+    for (const urgent of [{ kind: "party", name: "Sam" }, { kind: "together", name: "Sam" }] as const) {
+      expect(isUrgent([...quiet, urgent])).toBe(true);
+      expect(describeNews([...quiet, urgent], t)).toBe(urgent.kind === "party" ? "friends.news.party" : "friends.news.together");
+    }
+  });
+
+  it("never lets through a line that is not about an invitation, and never holds back one that is", () => {
+    const every: News[][] = [[], ...quiet.map((item) => [item]), quiet, [{ kind: "party", name: "A" }], [{ kind: "together", name: "A" }], [...quiet, { kind: "together", name: "A" }], [{ kind: "together", name: "A" }, { kind: "party", name: "B" }]];
+    for (const news of every) expect(isUrgent(news)).toBe(/^friends\.news\.(party|together)$/.test(describeNews(news, t) ?? ""));
   });
 });

@@ -1,6 +1,6 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
-import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, RawPhone, readPairingCode, test, tvRoot, tvTime, withLibrary } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, playFirst, RawPhone, readPairingCode, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
 
 /** The picture under a hand: what a tap, two taps and a held finger do, the big button in the middle, the episode's name, and a phone turned sideways. */
 
@@ -19,9 +19,17 @@ const seekTo = (page: Page, time: number) => page.evaluate((to) => void (documen
 const rate = (page: Page) => page.evaluate(() => document.querySelector("video")!.playbackRate);
 const isFullScreen = (page: Page) => page.evaluate(() => document.fullscreenElement !== null);
 
+/** A phone held upright (390 by 844, the default) or sideways (844 by 390). */
+const SHAPES = [
+  { how: "upright", width: 390, height: 844 },
+  { how: "sideways", width: 844, height: 390 },
+] as const;
+type Shape = (typeof SHAPES)[number];
+
 /** A phone used as the screen, on the library of films. */
-async function openFilms(browser: Browser, { seed = {}, setup }: { seed?: Record<string, string>; setup?: (context: BrowserContext) => Promise<unknown> } = {}): Promise<Page> {
-  const phone = await openDevice(browser, PHONE, seed, async (context) => {
+async function openFilms(browser: Browser, { seed = {}, setup, shape }: { seed?: Record<string, string>; setup?: (context: BrowserContext) => Promise<unknown>; shape?: Shape } = {}): Promise<Page> {
+  const size = shape ? { viewport: { width: shape.width, height: shape.height }, screen: { width: shape.width, height: shape.height }, hasTouch: true } : PHONE;
+  const phone = await openDevice(browser, size, seed, async (context) => {
     await withFilms(context);
     await setup?.(context);
   });
@@ -302,6 +310,86 @@ test.describe("a finger on the picture", () => {
   });
 });
 
+test.describe("a finger on the bars laid over the picture", () => {
+  for (const shape of SHAPES) {
+    test(`held ${shape.how}: a tap on the title, the clock or the time puts the controls away, like one on the picture; the progress bar still seeks`, async ({ browser }) => {
+      const phone = await openFilms(browser, { shape });
+      await startFilm(phone);
+      for (const part of [".hud-title", ".hud-clock", '[data-testid="tv-elapsed"]']) {
+        await showControls(phone);
+        const box = (await phone.locator(part).first().boundingBox())!;
+        await phone.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+        await expect(tvRoot(phone), `a tap on ${part}`).toHaveAttribute("data-hud", "hidden");
+        await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
+      }
+
+      await showControls(phone);
+      const bar = (await phone.locator(".hud-bar").boundingBox())!;
+      await phone.touchscreen.tap(bar.x + bar.width * 0.7, bar.y + bar.height / 2);
+      await expect.poll(() => tvTime(phone)).toBeGreaterThan(24); // (70% of forty seconds)
+      expect(await hud(phone)).toBe("visible"); // a seek is a use of the controls, not a way out of them
+      phone.close();
+    });
+
+    test(`held ${shape.how}: a screen that watches a party along has the bars too, and says what is on, how far it is and who held it`, async ({ browser }) => {
+      const host = await openLibrary(browser, withFilms);
+      await host.getByTestId("rail-party").click();
+      await host.getByTestId("tv-party-start").click();
+      const code = (await host.getByTestId("tv-party-code").innerText()).replace(/\s/g, "");
+      const phone = await openFilms(browser, { shape });
+      await phone.getByTestId("rail-party").tap();
+      await phone.getByTestId("tv-party-join").tap();
+      for (const digit of code) await phone.getByTestId(`pad-${digit}`).tap();
+      await expect(phone.getByTestId("tv-following")).toBeVisible();
+      await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+      const hostName = await host.getByTestId("tv-party-member").first().locator(".tv-party-name").innerText();
+      await host.getByTestId("tv-back-to-library").click();
+      await playFirst(host);
+      await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+      await expect(tvRoot(phone)).toHaveAttribute("data-hud", "hidden", { timeout: 10_000 });
+
+      // What it was told nothing of before: the title, whose film it is, and how far along.
+      const middle = { x: shape.width / 2, y: shape.height * 0.35 };
+      await phone.touchscreen.tap(middle.x, middle.y);
+      await expect(tvRoot(phone)).toHaveAttribute("data-hud", "visible");
+      await expect(phone.getByTestId("tv-title")).toBeVisible();
+      await expect(phone.getByTestId("tv-title")).toHaveText("long"); // (a link to a file is called what the file is)
+      await expect(phone.getByTestId("tv-follow-line")).toContainText(hostName);
+      await expect(phone.getByTestId("tv-elapsed")).toBeVisible();
+      await expect(phone.locator(".hud-bar")).toHaveAttribute("role", "progressbar"); // (shown where it is, not moved: the host's film is the host's)
+      await expect.poll(async () => Number(await phone.locator(".hud-bar").getAttribute("aria-valuenow"))).toBeGreaterThan(0);
+      await expect(phone.getByTestId("tv-play-btn")).toHaveCount(0);
+
+      // A tap puts the bars away and the next brings them back, which a guest could not do before; and a tap on the progress bar seeks nothing.
+      await phone.touchscreen.tap(middle.x, middle.y);
+      await expect(tvRoot(phone)).toHaveAttribute("data-hud", "hidden");
+      await phone.touchscreen.tap(middle.x, middle.y);
+      await expect(tvRoot(phone)).toHaveAttribute("data-hud", "visible");
+      const bar = (await phone.locator(".hud-bar").boundingBox())!;
+      const before = await tvTime(phone);
+      await phone.touchscreen.tap(bar.x + bar.width * 0.9, bar.y + bar.height / 2);
+      await expect(tvRoot(phone)).toHaveAttribute("data-hud", "hidden");
+      expect(Math.abs((await tvTime(phone)) - before)).toBeLessThan(3);
+
+      // Who paused it is on the card, inside the screen; and who set it going again is said once.
+      await host.keyboard.press("Space");
+      await expect(tvRoot(phone)).toHaveAttribute("data-state", "paused", { timeout: 10_000 });
+      const held = phone.getByTestId("tv-held");
+      await expect(held).toHaveText(`Paused by ${hostName}`);
+      const around = (await held.boundingBox())!;
+      expect(around.x).toBeGreaterThanOrEqual(0);
+      expect(around.x + around.width).toBeLessThanOrEqual(shape.width);
+      expect(around.y + around.height).toBeLessThanOrEqual(shape.height);
+      await host.keyboard.press("Space");
+      await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing", { timeout: 10_000 });
+      await expect(phone.getByTestId("tv-toast")).toHaveText(`${hostName} resumed`);
+      await expect(held).toHaveCount(0);
+      phone.close();
+      host.close();
+    });
+  }
+});
+
 test.describe("a phone turned sideways", () => {
   /** Remember what the page asks of the screen's orientation. */
   const recordOrientation = (context: BrowserContext) =>
@@ -484,5 +572,67 @@ test.describe("the profile's choice of what a tap does", () => {
     await tap.click();
     await expect(tap).toHaveAttribute("aria-checked", "true");
     tv.close();
+  });
+});
+
+test.describe("the profile's choice of letting the picture's quality follow the connection", () => {
+  test("is a switch in the phone's Settings, on to begin with, and the choice to turn it off is kept", async ({ browser }) => {
+    const phone = await openDevice(browser, PHONE);
+    await phone.goto("/");
+    const open = async () => {
+      await phone.getByTestId("account-button").click();
+      await phone.getByTestId("menu-settings").click();
+      return phone.getByTestId("adaptive-quality");
+    };
+    const adaptive = await open();
+    await expect(adaptive).toHaveAttribute("aria-checked", "true");
+    await adaptive.click();
+    await expect(adaptive).toHaveAttribute("aria-checked", "false");
+
+    await phone.reload();
+    await expect(await open()).toHaveAttribute("aria-checked", "false");
+    phone.close();
+  });
+
+  test("is a switch on the TV's own account page too", async ({ browser }) => {
+    const tv = await openLibrary(browser, withFilms);
+    await openProfilePlace(tv, "settings");
+    const adaptive = tv.getByTestId("tv-adaptive-quality");
+    await expect(adaptive).toHaveAttribute("aria-checked", "true");
+    await adaptive.click();
+    await expect(adaptive).toHaveAttribute("aria-checked", "false");
+    tv.close();
+  });
+
+  /** A screen that is told, by a phone, to play a film that comes in two sizes (the bigger one listed first); the phone has every state the screen reported. */
+  async function playTwoSizes(browser: Browser, baseURL: string, seed: Record<string, string>) {
+    const tv = await openLibrary(browser, twoSizes, undefined, seed);
+    await tv.getByTestId("rail-connect").click();
+    const phone = await RawPhone.connect(baseURL, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: { title: "Two sizes", stream: { url: "/fixtures/hls/multi.m3u8", type: "hls" } } });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "PLAY" });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    return { tv, phone };
+  }
+  /** What the screen said of the quality when the first piece was playing. */
+  const firstPiece = (phone: RawPhone) => phone.states.find((state) => state.quality?.active !== undefined)?.quality;
+
+  test("on: the first piece of a film is the smallest size, though the film lists a bigger one first, and the button says what it has chosen", async ({ browser, baseURL }) => {
+    const { tv, phone } = await playTwoSizes(browser, baseURL!, {});
+    await expect.poll(() => firstPiece(phone)).toBeTruthy();
+    expect(firstPiece(phone)).toMatchObject({ current: -1, active: 0 }); // (the connection's to choose, and the smallest of the two is the first in the list the screen shows)
+    await tv.mouse.move(60, 60);
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveText(/^Auto · (180p|720p)$/);
+    phone.close();
+  });
+
+  test("off: every piece is the biggest size, as it was before the choice", async ({ browser, baseURL }) => {
+    const { tv, phone } = await playTwoSizes(browser, baseURL!, guestStorage({ settings: [{ key: "adaptiveQuality", at: Date.now(), value: false }] }));
+    await expect.poll(() => firstPiece(phone)).toBeTruthy();
+    expect(firstPiece(phone)).toMatchObject({ current: 1, active: 1 });
+    await tv.mouse.move(60, 60);
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveText("720p");
+    phone.close();
   });
 });

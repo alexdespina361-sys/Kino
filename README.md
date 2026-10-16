@@ -46,6 +46,10 @@ pnpm build && pnpm start     # http://localhost:8787
 | `TRUST_PROXY` | `1` on Render, else off | How many proxies sit in front (a number, `true` or `false`), so the rate limits see the real address. |
 | `LIBRARY` | on | `off` starts without the browsing library. |
 | `TMDB_API_KEY` | built-in key of the Filmpire source | The library's TMDB key. Set your own; the built-in one is shared by everybody who runs this. |
+| `EDGE_STREAM_PROXY_URL` | – | The separate video relay endpoint. For the signed Node relay use `https://YOUR-RELAY-HOST/api/proxy`; see [relay setup](STREAM_RELAY_SETUP.md). |
+| `EDGE_STREAM_PROXY_KEY` | – | Server-side signing secret shared with the separate relay's `STREAM_RELAY_KEY`. Never expose it in browser code. |
+| `PROXY_VIDEO` | `on` | `off`: this server never carries a film (`/api/proxy` passes subtitles and nothing else), so the host's bandwidth cannot go on one. |
+| `DIRECT_STREAMING` | off | `true`: a source's own address is handed to the screen (unless there is a relay). Only for sources that let pages of other websites in; see below before you use it. |
 
 ## What it does
 
@@ -80,12 +84,12 @@ pnpm build && pnpm start     # http://localhost:8787
   the TV's **Profile** page. **A title that was rated shows its score** (a star and the number) in the corner of its picture wherever it is shown, in the rows, a
   grid, a search, Continue watching, the lists and what friends recommended, on the phone and the TV, so what was rated is seen while scrolling the library
   (a screen reader says it with the title; a season's score is the season's: the show shows none of its own). Ratings are saved to the
-  profile and synced like the lists (up to 500; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
+  profile and synced like the lists (up to 500, and past that the oldest, notes with them, fall away without a word; a guest's stay on the device and are combined on sign-in). **Rate what I watch** in Settings (phone
   and TV) switches the whole thing off, every sign of it, and keeps what was rated.
 - **Friends** are optional and **off until a profile turns them on** in its settings (phone and TV; they belong to an account, so a guest is told to sign in).
   Two profiles become friends with a code (`ABCD-2345`, good once and for a week) that one gives and the other types or opens as a link: the phone shows it
-  with a QR code, a **Copy code** button and a link to send (with a **Copy link** button of its own); the TV shows it with a QR code and the same **Copy code** button, which the remote or a mouse presses; where a browser will not copy, the code is selected instead, to be copied by hand. Up to 5 codes can be out at once; one can be taken back. A friend can **look at your lists and
-  ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone), **be invited to a
+  with a QR code, a **Copy code** button and a link to send (with a **Copy link** button of its own); the TV shows it with a QR code and the same **Copy code** button, which the remote or a mouse presses; where a browser will not copy, the code is selected instead, to be copied by hand. Up to 5 codes can be out at once (a sixth takes back the oldest, and the phone says so beside the button); one can be taken back. A friend can **look at your lists and
+  ratings** (a page for each friend), **be sent a title** (*Recommend to a friend* on a title's page, with a few words of why on the phone; when the friend chosen has just stopped taking things the sheet says so and stays open, words and all, for somebody else), **be invited to a
   watch party** (a button that joins on the phone; on the TV, pressing the invitation on the Friends page joins) and **hear what you watch** ("Sam is watching
   Alien", from a minute in, the last two weeks). Each of these has a switch of its own: *Friends can see my lists*, *…my ratings*, *Tell friends what I watch*,
   *Tell me what friends watch* (something is told only when one gives and the other gets), *Friends can send me titles and invitations*, *Friends can see when I'm online*. They live in the
@@ -133,6 +137,9 @@ pnpm build && pnpm start     # http://localhost:8787
   home, not to the account page it was never on. Opening the list is looking: it marks the inbox read and puts the dot out (when it was put out is kept per profile on each device, in
   `kino.bellSeen.<profile>`). The unread dot that the profile's picture used to carry moved to the bell. Nothing is added to the server for it: the bell reads the state that the Friends
   page already polls every 30 seconds.
+  **Quiet while something plays.** A screen that is playing a film puts nothing over the picture for friends' news (requests, titles sent, what a friend watches) except an *invitation*, as a
+  small note in the corner for 4.5 seconds (a screen with nothing playing shows the usual toast); all of it waits in the bell. A profile's switch *Show friends' news on screen*
+  (`newsPopups`, on by default; on the phone's account page and on the TV's Friends page) turns even the note off, and the bell is never muted.
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.
@@ -141,7 +148,8 @@ pnpm build && pnpm start     # http://localhost:8787
   device that is offline keeps working and catches up.
 - **Sign a TV in from the phone.** Typing a name and a password on a TV remote is a chore, so the TV's sign-in page shows a QR code and a short code
   (`ABCD-2345`). A phone that is already signed in opens it (the camera app, or Account → "Sign in another device" to scan or type the code), sees what is
-  asking, and approves; the TV is signed in a moment later. The code works once and expires after five minutes, and nothing signs a TV in
+  asking, and approves; the TV is signed in a moment later. The code works once and expires after five minutes (a TV that is still on the page
+  asks for a second one; after ten minutes of nobody answering it stops asking, says the code ran out, and has a button for a new one), and nothing signs a TV in
   until a signed-in person says yes. A screen that is signed in itself can do the asking too (a computer with no phone at hand): its account
   page has **Sign in another device**: type the code the other screen shows, check who is asking, approve.
 - The phone's account page: profiles, settings, devices (sign others out, and give a device a name of its own: "Living room"), password, delete account. The TV has its own: who's watching,
@@ -157,7 +165,7 @@ pnpm build && pnpm start     # http://localhost:8787
   (offline) at once, since there is nothing to ask about
 - **My TVs.** A phone keeps the TVs it has connected to (up to eight, in the order it did): *My TVs* in its menu, and on its first screen once
   it controls none. A tap on one controls it, **with no code**; the one it leaves is not touched: it keeps playing, stays paired and
-  is still on the list, with a dot for whether it is on. **Forget** lets a TV go (a TV with no phone left shows a new code, as after
+  is still on the list, with a dot for whether it is on. **Forget** lets a TV go, after a question that names it (a TV with no phone left shows a new code, as after
   *Disconnect*, and stops what it was playing); the field below connects another TV with its code, scanned or typed (the list says when it is full), and the
   TV in use can be **named** there (shown on the list and on the other phones' lists; empty gives it its own name back). A phone only hears
   what the TV it controls is doing, and the menu's count of phones counts only those controlling that TV now. A TV's own **Disconnect**
@@ -220,6 +228,15 @@ pnpm build && pnpm start     # http://localhost:8787
   party and Audio & subtitles, the episode names under Previous / Next, the labels of Previous / Next, the label of Episodes (each label becomes its
   icon, still named for screen readers and in its tooltip), then the size of the buttons. Only a phone held upright is too narrow for that, and its
   controls wrap on two lines
+- **Quality follows the connection** (`src/client/tv/engine.ts`; the profile's switch **Match the picture quality to the connection**, in Settings on the
+  phone and on the TV, on unless turned off). A film starts with its first piece in the lowest quality, which arrives at once whatever the link (a piece
+  is as long as the film's pieces are, 2 to 10 seconds), and hls.js then asks for each next piece in the best quality that the link carries, as it
+  measures it: lower when the link cannot keep up (a weak or unsteady one, a phone on mobile data), higher again when it can. A change applies to the
+  pieces still to come, after what is downloaded already, with no stop. The quality button says what the player has chosen ("Auto · 720p") and lists
+  the film's qualities; one picked there stays, and applies from the next piece (what was downloaded beyond it is replaced, or a pick could take
+  minutes to show). **A guest of a party has the button too:** its picture is its own download, so it can take a lower quality without anyone else's
+  changing. Off, every film is in the highest quality there is, as before (a change of the switch applies from the next film). What it does not do:
+  look at the machine, so a screen that cannot decode the quality its link carries is not stepped down
 - Subtitles and audio like a streaming app: the language you chose is remembered. Tracks the file labels only with a code (`eng`) are
   named by their language. Subtitles are drawn by the page, so size, font, colour, opacity, background, edge, height and word spacing
   all work on any TV browser; change them from the TV's menu or the phone, with a live preview. A browser only lets a page go full screen
@@ -244,8 +261,11 @@ pnpm build && pnpm start     # http://localhost:8787
   and knows the vendors' extra remote keys (play, pause, stop, rewind, forward, back). **To find out what a TV browser does**, open
   `/tv?debug=1` on it: a small panel in the corner says what the browser is and what it can do, whether the TV's id was kept since the
   browser was closed (the last four characters, in storage and in the cookie), where the server keeps things and how long it has been up (a
-  short time with `file` or `memory` is why a TV "lost its phone"), and, live, each key it sends and where the focus went, the
-  clicks, the video's state and the page's errors. `?debug=0` turns it off. `?fullscreen=off` keeps any browser from being asked for full
+  short time with `file` or `memory` is why a TV "lost its phone"), how many pieces of films the server gave from memory and how many it
+  had to fetch, on a screen that watches a party along how its picture keeps with the host's (reports, jumps, speed changes, how far
+  apart the two are now, and how far on it aims its jumps: what this screen has been found to take to land one), and, live, each key it
+  sends and where the focus went, the clicks, the video's state and the page's errors.
+  `?debug=0` turns it off. `?fullscreen=off` keeps any browser from being asked for full
   screen (`?fullscreen=on` undoes it); both are kept for the next visits
 - **Subtitle languages.** The menu lists every language the video has. The ones a profile wants come first (a guest gets the website's
   language, English, Romanian and Italian), the rest sit under **More languages**. A signed-in profile can choose its own ordered list in
@@ -269,8 +289,10 @@ pnpm build && pnpm start     # http://localhost:8787
   one). It is not done after Stop, Back to the library or the end of the film, nor for a TV on its own (its own *Continue watching* has the
   place). The place is written down every 30 seconds it moves, and exactly when the TV goes away
 - **The library is the front door.** The site opens straight into it, signed in or not (a guest's progress stays on that screen), so a screen can
-  pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press. (Only a party link opens a "Press OK" page
-  first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
+  pick a film with no phone at all. A short welcome fades over it while it fills in, and takes no press, unless the first press would take the screen
+  full screen (a browser that has a full screen to give, and was not left that way last time): then the welcome waits with a **Start watching**
+  button, which is that press (any other key or click is too, and the page asks the browser for full screen once for it; Back lets the welcome go
+  without it). (Only a party link opens a "Press OK" page first, because that screen joins the moment it is pressed.) **Connect a phone** is one entry of its menu; once a phone is connected that page
   says so, with **Back to the library** and **Disconnect from phone** (unpairs the TV from every phone and shows a new code; the phone
   controlling it goes back to the code screen, one that had moved on to another TV just loses it from its list)
 - **Sign in** is the button in the library's top corner (the profile picture once signed in); nobody is made to
@@ -291,8 +313,11 @@ pnpm build && pnpm start     # http://localhost:8787
   The pieces of a film that the screens of a party ask for a few seconds apart are fetched from the site once and handed to each of them
   (`src/server/segmentCache.ts`: only whole answers that say how long they are, at most 64 MB kept for 3 minutes), so five screens do not
   look like five viewers to the site; what the server sends on to the screens is still one copy each
-- Pairing codes are single-use and expire after 10 minutes. After 20 wrong codes in a minute (all phones counted together)
-  pairing pauses until the minute is over, because the code is only six digits
+- Pairing codes are single-use and expire after 10 minutes. The code is only six digits, so wrong ones are counted: after 20 in a minute
+  from one address pairing pauses for that address until the minute is over, and after 100 in a minute from all addresses together it pauses
+  for everybody (one visitor cannot stop the others, and guessing from many addresses at once is still slow)
+- A connection may send a burst of 100 messages and then 30 a second (a TV reports about once a second, a phone sends a message per tap).
+  Past the burst messages are dropped unread; one that goes on past twice the burst is closed (1008) and its page connects again
 - **Accounts, pairings and what each TV was playing are kept**: written to disk (or Postgres) a moment after every change and again when the
   server is told to stop. A restart (or a free host sleeping and waking) leaves every phone and TV paired as it was (a phone's list of TVs
   included), and a TV whose page is
@@ -356,12 +381,26 @@ or on its phone) can remove a guest or end the party, and a guest can leave from
 reports its position and the server relays it, saying how old it is by then (half of the host's round trip to the server plus half of the
 guest's: every screen times the answers to its keepalive PINGs and sends the shortest of the last few along, and the server puts the sum
 on the `TV_SYNC` as `lag`), so each guest aims at where the host is now, not where it was; guests used to sit behind it by about that
-much. A guest nudges its speed by a few percent when it is more than 0.15 s off (and goes on until it is within 0.05 s, instead of starting
-and stopping with every report), jumps when it is a second or more off, shows the host's frame when paused (within 0.1 s), and jumps to
-the host's place at once when the host starts again, if it has that place (`src/client/tv/sync.ts`). A guest that is still waiting for
-data does not chase the host: it does not speed up on a thin buffer, and it jumps only to a place it has already downloaded (after 15 s
-behind, anywhere), so a slow screen is not sent back and forth. **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
-from the guest's *Audio & subtitles* button; volume is the device's own.
+much. A guest does not take the last report at its word (a report held up on the way makes the host look behind, by a different amount each
+time on a mobile network): it reads the host's place from the reports of the last twelve seconds, going by the least delayed of them, and
+a report that is well behind the rest counts only when a second one, a little later, says the same (the host went back in the film). The
+first report of a host that was told to play again is used for the place to start from and left out of that reading: the host's picture takes a
+moment to start moving, so that report is ahead of the host's clock by that moment, and kept for twelve seconds it would have every guest play
+ahead of the host and then slow down when it was forgotten.
+From that place a guest nudges its speed by 6% when it is more than a quarter of a second off (and goes on until it is within 0.08 s, instead of
+starting and stopping with every report), jumps ahead when it is a second or more behind, goes back in time only when the reports agree on it
+(or when it is 8 s ahead, which no late report explains), shows the host's frame when paused (within 0.1 s; a host that only waits for data
+is waited for where the guest is, unless that is 2 s away), and jumps to the host's place at once when the host starts again, if it has that
+place (`src/client/tv/sync.ts`). A jump takes a moment to land (a few hundredths of a second on a computer, more on a TV, most when it starts a
+picture that was paused) and the host plays on meanwhile, so a guest sent to where the host is would land behind it by that moment, and
+stay there (inside what is not worth a nudge nothing puts it right). So a guest looks at how far from the host each kind of jump left it, once
+its picture plays and the reads of the host agree, and aims the next jump of that kind further on by 60% of what it missed by (never by more than
+0.25 s; it starts from what a desktop browser was measured to take, 0.07 s for a picture that was playing and 0.1 s for one that was paused).
+A guest that is still waiting for data does not chase the host: it does not speed up on a thin buffer,
+and it jumps only to a place it has already downloaded (after 15 s behind, anywhere), so a slow screen is not sent back and forth. The
+waiting wheel does not show for a wait shorter than 0.4 s, so the jumps of a guest do not flash it. The screens of a party also download
+only about 40 seconds ahead of their picture (see *What a watch party costs the server*). **What stays each screen's own:** subtitles (language, delay, style) and the audio track,
+from the guest's *Audio & subtitles* button; the picture's quality, from the guest's quality button (see *Quality follows the connection*); volume is the device's own.
 
 **Admins:** next to each guest's name the host (on the TV, or on its phone) has a **Make admin** button, which turns into **Remove admin**. An
 admin guest gets a bar of its own under the guest's bar (jump back 10 seconds, play / pause, jump forward 10, the next episode where there is
@@ -376,6 +415,13 @@ own profile has friends on gets a short **Add** button beside it (**Requested** 
 signed in on). It sends the same request as typing a tag does (see Friends). The profile shown is the server's word, not the screen's: a signed-in screen asks for a single-use
 proof of who it is (`POST /api/profiles/:id/screen`, good for two minutes) and sends it with `TV_PROFILE`, so a screen cannot pass for somebody else, and a profile that has
 friends off is not shown at all.
+
+**What a guest sees** is the picture's controls any screen has, not a lesser set: the title and the episode's name, *Watching along with Sam*
+(and *Catching up* while the guest's picture is being brought to the host's), the time of day and when the film ends, the bar with the time
+played and left (a bar to look at, not to click, unless the guest is an admin), and, while the film is held, whose doing that is on the card in
+the middle: *Paused by Sam*, *Paused by you* (an admin's own), *Waiting for Sam* when the host's picture only ran out of data, or *Finished* when the film has played to its end. When somebody sets it
+going again a line says *Sam resumed*. A tap on the picture (a phone held either way) shows the controls and the next tap puts them away. Who
+held the film travels with the host's reports (`TV_SYNC.by`, `TV_SYNC.waiting`, `TV_SYNC.ended`); a pause that came from the host's own remote or phone is named after the host.
 
 **A phone as a guest** watches in either orientation. The guest's bar (Audio & subtitles, Mute, Watch party, Full screen, Leave) sits along the
 top: held sideways it is one row, held upright "Watching along with …" has a line of its own and the buttons wrap under it. The guest's screen says
@@ -472,6 +518,47 @@ called "Episode 3" in the language of the screen.
 order to try them (the main `stream` is always first). A resolver that finds several streams can fill it; the generic resolver
 does for the extra streams a page declares. The TV and the phone show a Source picker when there is more than one.
 
+## The film and the host's bandwidth
+
+For a few desktop viewers willing to install an extension, [Kino Direct Playback](extensions/kino-direct/README.md) is a verified alternative:
+Kino keeps its HUD while the browser fetches the film directly, with no relay hosting or website video traffic. Install the extension per
+playback browser and deploy the companion website update. Browsers without extension support can use the separate relay described below.
+
+The pages, the library and the sync are small (a first visit is about 0.3 MB packed, a revisit a few hundred bytes, an idle screen about 20 KB an
+hour). **The film is the bandwidth**: through `/api/proxy` an hour is about 0.4 GB in 360p, 1.2 GB in 720p and 2.4 GB in 1080p (a test film at
+0.8, 2.6 and 5.3 Mbit/s), and a plan with 5 GB a month is gone in a few hours of 720p. Making the picture smaller only stretches that. What
+works is that the film never comes through the server.
+
+**Why the screen cannot just ask the film's own place.** The places that the library's sources get their films from turn away a page of another
+website (they look at the `Origin` and at the `Referer`, and send no CORS headers), and want to see the address of their own player. A
+browser cannot set arbitrary Origin or Referer headers. `DIRECT_STREAMING=true` therefore works only when the provider permits the browser's
+requests. A failed external HLS stream now stays off the website proxy; there is no automatic website fallback. Native HLS browsers also
+use a configured separate relay from the start.
+
+**Use a separate relay whose IP the upstream accepts.** The existing Cloudflare Worker was reproduced returning upstream 403 blocks on
+16 October 2026, including at the token endpoint. It is not a working solution for this provider. The Node relay obtains IP-bound tokens
+on the same machine that downloads the media, signs all child links, and returns the CORS headers needed by the browser.
+
+1. Deploy the separate Node service with `pnpm relay` and `STREAM_RELAY_KEY`, on a host verified to reach the upstream.
+2. Set `EDGE_STREAM_PROXY_URL=https://YOUR-RELAY-HOST/api/proxy` and the matching `EDGE_STREAM_PROXY_KEY` on the website host.
+3. Keep `PROXY_VIDEO=off`. Subtitles can still use the website; video uses the separate relay.
+
+The [deployment and verification guide](STREAM_RELAY_SETUP.md) includes environment settings and a container definition. Kino's native HUD
+remains in use; viewers need no extensions or local software.
+
+To see that it works: open the Network tab on the TV page (the *Domain* column) while a film plays; every piece should come from your
+separate relay address, none from the app's own. `/api/health` says the same from the server's side: `proxy.bytes` stays where it was,
+`proxy.video` is `"off"`, and `proxy.refused` counts what was turned away. A host's own graph can lag by an hour (Render's is hourly).
+
+The library adapters use the relay; generic pasted links retain their resolver's selected delivery path. The new Node relay accepts only
+signed, unexpired links and refuses private destinations. Video bandwidth belongs to its separate host. A relay IP that the provider blocks
+will still fail, so validate the upstream token, playlist and segment from the chosen host before deployment.
+
+**When the server has to carry the film** (no relay, `PROXY_VIDEO` on): the player's own quality choice stops at 720p on a stream that comes
+through `/api/proxy` (`proxiedQualityCap` in `src/client/tv/engine.ts`; a quality picked from the menu still goes higher), it keeps only
+about 90 seconds ahead of the picture (48 MB) when one screen watches, and the next episode is fetched only in the last two minutes of
+the one before. That halves what an hour costs (1.2 GB instead of 2.4 GB in the test above), which is a way to slow it down, not to stop it.
+
 ## Hosting on Render
 
 The server is one Node process that serves the page, the API and the sockets from one port, which is what a Render **Web Service** is.
@@ -503,6 +590,30 @@ The server is one Node process that serves the page, the API and the sockets fro
    Watch parties and the codes live in the memory of **one service**: two services (two `onrender.com` names, even of the same repository)
    do not know each other's codes, so a phone on a different address than the TV answers "Invalid or expired code" however well the code is
    typed. Use the address the TV shows (the party page prints it) on every device, and delete a duplicate service.
+6. **What a watch party costs the server.** Every screen of a party gets its own copy of the film through `/api/proxy`, so the bandwidth grows
+   with the number of screens whatever the cache does (check the monthly outbound traffic of your plan before a long film with a big party).
+   What the cache saves is the other side: the server keeps the film's pieces that one screen fetched for a few minutes (64 MB, or
+   `SEGMENT_CACHE_MB`), so the screens of a party ask the film's own site once for a piece, not once each. For that to work the screens of a
+   party download only about 40 seconds ahead of their picture (a lone screen takes minutes in), which is what that memory holds. Open
+   `/api/health`: `segments.hits` are the pieces the server gave from memory and `segments.misses` the ones it had to fetch; a party that
+   watches together shows about as many hits as misses with two screens, and about twice as many with three. The same two numbers are on the
+   `?debug` panel, next to how a guest's picture keeps with the host's. A screen on a weak link brings its own quality down (*Quality follows
+   the connection*), so it asks the server for fewer bytes, not more.
+
+### Other hosts
+
+Anything that runs a Node process does (Northflank, Railway, Fly, a VPS):
+
+- **Start with `pnpm start`.** `tsx`, which it runs, is a regular dependency, so a host that installs only the dependencies of a running app, or that
+  removes the build tools after building (most buildpacks do), still has it: `tsx: not found` and a restart loop was the sign of it being missing. `dist/client`
+  is committed, so there is nothing to build.
+- **Node 24** (`.node-version`), pnpm from `packageManager` (`corepack enable`).
+- **The port:** the server listens on `PORT` (default 8787) on `HOST` (default `0.0.0.0`). Declare that port as HTTP in the host, with WebSockets allowed
+  (the page talks over `/ws`), and `/api/health` as the health check.
+- **Set `TRUST_PROXY=1`** (the number of proxies in front of the server; it is on by itself only on Render). Without it every visitor looks like one address
+  to the rate limits (10 sign-ups an hour, wrong codes, link polls) and they apply to everybody together (twenty wrong codes from anybody
+  then pause pairing for all).
+- `DATABASE_URL` as above, and **one running copy per database**: two copies (the old host and the new one) write over each other.
 
 Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),
 an account with no password can be opened by anyone who types its name (give it one if that matters), and the sign-in rate limits are

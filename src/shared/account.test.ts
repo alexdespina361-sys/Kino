@@ -191,6 +191,20 @@ describe("resolveSettings", () => {
     ];
     expect(resolveSettings(items)).toEqual({ lang: "ro", autoplayNext: false, onlySubtitleLanguages: true });
   });
+
+  it("keeps whether friends' news may appear on screen, which is on until it is turned off, and ignores anything else said of it", () => {
+    expect(resolveSettings([{ key: "newsPopups", at: 1, value: false }])).toEqual({ newsPopups: false });
+    expect(resolveSettings([{ key: "newsPopups", at: 1, value: true }])).toEqual({ newsPopups: true });
+    expect(resolveSettings([{ key: "newsPopups", at: 1, value: "off" }])).toEqual({});
+    expect(resolveSettings([{ key: "newsPopups", at: 2, deleted: true }])).toEqual({}); // (turned back on = the default again)
+  });
+
+  it("keeps whether the picture's quality follows the connection, which it does until it is turned off, and ignores anything else said of it", () => {
+    expect(resolveSettings([{ key: "adaptiveQuality", at: 1, value: false }])).toEqual({ adaptiveQuality: false });
+    expect(resolveSettings([{ key: "adaptiveQuality", at: 1, value: true }])).toEqual({ adaptiveQuality: true });
+    expect(resolveSettings([{ key: "adaptiveQuality", at: 1, value: "off" }])).toEqual({});
+    expect(resolveSettings([{ key: "adaptiveQuality", at: 2, deleted: true }])).toEqual({}); // (turned back on = the default again)
+  });
 });
 
 describe("what people type", () => {
@@ -220,6 +234,9 @@ describe("what people type", () => {
     expect(nameFromEmail("robert")).toBe("Robert");
     expect(nameFromEmail("my tv 2")).toBe("My tv 2");
     expect(nameFromEmail("###")).toBe("Me");
+    expect(nameFromEmail("qa-alpha")).toBe("Qa alpha"); // a name with a dash in it is two words, not one glued together
+    expect(nameFromEmail("john.smith")).toBe("John smith");
+    expect(nameFromEmail("ioana_m")).toBe("Ioana m");
     expect(nameFromEmail("a very long name for a profile")).toBe("A very long name");
     expect(nextAvatar([])).toBe("fox");
     expect(nextAvatar(["fox", "cat"])).toBe("panda");

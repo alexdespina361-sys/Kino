@@ -27,6 +27,13 @@ describe("describeServer", () => {
     expect(describeServer({ ok: true, storage: "postgres", uptime: 2 * 86_400 + 4 * 3600 })).toBe("server: storage postgres (kept)  up 2d 4h");
   });
 
+  it("says how many pieces of a film the proxy gave from memory and how many it fetched, when it says so", () => {
+    expect(describeServer({ storage: "postgres", uptime: 41, segments: { hits: 120, misses: 40, keptMB: 33 } })).toBe(
+      "server: storage postgres (kept)  up 41s  film pieces: 120 from memory, 40 fetched",
+    );
+    expect(describeServer({ storage: "postgres", uptime: 41, segments: { hits: "many" } })).toBe("server: storage postgres (kept)  up 41s");
+  });
+
   it("makes no claim about what it was not told", () => {
     expect(describeServer({ ok: true })).toBe("server: storage unknown (?)  up ?");
     expect(describeServer(null)).toBe("server: storage unknown (?)  up ?");

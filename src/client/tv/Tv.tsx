@@ -30,7 +30,7 @@ import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
 import { canFullscreen as offersFullscreen, enterFullscreen, entersAtFirstPress, toggleFullscreen, useLandscapeWhile } from "../shared/fullscreen";
-import { Back10Icon, Forward10Icon, FullscreenIcon, MutedIcon, NextIcon, PauseIcon, PlayIcon, StopIcon, SubtitlesIcon, UsersIcon, VolumeIcon } from "../shared/icons";
+import { FullscreenIcon, UsersIcon } from "../shared/icons";
 import { readPartyCode } from "../shared/launch";
 import { APP_NAME } from "../shared/Logo";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
@@ -38,10 +38,11 @@ import { useSlow, useWaking } from "../shared/useSlow";
 import { friendlyError, noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
-import { PlayerEngine } from "./engine";
+import { PlayerEngine, PlayerError } from "./engine";
 import { pickInRows } from "./dpad";
-import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, type PointerKind, type Side } from "./gestures";
-import { EndCard, ErrorCard, FollowStatus, hasTracks, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
+import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, zoneOf, type PointerKind, type Side } from "./gestures";
+import { holdLine, resumeLine, sameHold, type Hold } from "./hold";
+import { EndCard, ErrorCard, FollowStatus, Hud, isBlocked, isBusy, UP_NEXT_SECONDS } from "./Hud";
 import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
 import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, partyCommandForKey, SKIP_SECONDS } from "./keys";
@@ -49,7 +50,8 @@ import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
 import { keepNativePlayerOut } from "./nativePlayer";
 import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
-import { leaderNow, syncStep } from "./sync";
+import { nearTheEnd } from "./preloadNext";
+import { Follower } from "./sync";
 import {
   describeTrack,
   parsePrefs,
@@ -116,6 +118,12 @@ export function Tv() {
   followingRef.current = following;
   /** The watch party this TV is in, as host or as guest, and when the code that lets others in stops working. */
   const [party, setParty] = useState<PartyView | null>(null);
+  const partyRef = useRef<PartyView | null>(null);
+  partyRef.current = party;
+  /** Whose doing it is that the film is held (the host's report, or an admin's pause that was asked of this host), and whether this screen is still catching up with the host's picture. */
+  const [hold, setHold] = useState<Hold | null>(null);
+  const holdRef = useRef<Hold | null>(null);
+  const [catchingUp, setCatchingUp] = useState(false);
   /** The host made this screen an admin: the film's playback is its to steer too (the host's screen carries it out for everyone, see TV_PARTY_CMD). */
   const admin = party?.role === "guest" && party.guests.some((guest) => guest.id === party.you && guest.admin === true);
   const [partyEnds, setPartyEnds] = useState<number | null>(null);
@@ -212,6 +220,8 @@ export function Tv() {
   const autoplay = settings.autoplayNext ?? true;
   /** Whether a tap or click on the picture pauses it (the profile's choice); off, it only shows or hides the controls. */
   const tapToPause = settings.tapToPause ?? false;
+  /** Whether the picture's quality follows the connection (the profile's choice; see `PlayerEngine.setAdaptive`). */
+  const adaptiveQuality = settings.adaptiveQuality ?? true;
   useEffect(() => {
     // (A screen that watches along shows the host's video: it is the host's to continue, not an entry in this profile's row, with a place and an address that are the host's.)
     if (following || !currentMedia || (player.state !== "playing" && player.state !== "paused") || player.buffering || !stateIsFor(currentMedia, player)) return;
@@ -232,10 +242,13 @@ export function Tv() {
     return () => clearInterval(timer);
   }, []);
 
-  // Preload next episode whenever current media has a series next URL
+  // Preload the next episode (looked up, its first pieces fetched) once this one is nearly over: at its start that was a lookup and a few
+  // megabytes of film for every episode that is not watched to its end.
+  const nextEpisodeUrl = currentMedia?.series?.next?.url;
+  const nearEnd = nearTheEnd(player.currentTime, player.duration);
   useEffect(() => {
-    const nextUrl = currentMedia?.series?.next?.url;
-    if (!nextUrl || following) {
+    const nextUrl = nextEpisodeUrl;
+    if (!nextUrl || following || !nearEnd) {
       preloadedNextMediaRef.current = null;
       return;
     }
@@ -249,6 +262,8 @@ export function Tv() {
       .then(async (data: { status: string; media?: NormalizedMedia }) => {
         if (!active || data.status !== "success" || !data.media) return;
         preloadedNextMediaRef.current = data.media;
+        // (Only a playlist is read as one: a plain file would be taken in whole, as text.)
+        if (data.media.stream.type !== "hls") return;
 
         // 2. Prefetch the master playlist and initial media chunks into browser HTTP cache
         try {
@@ -275,10 +290,18 @@ export function Tv() {
     return () => {
       active = false;
     };
-  }, [currentMedia?.series?.next?.url, following]);
+  }, [nextEpisodeUrl, following, nearEnd]);
 
   const currentMediaRef = useRef<NormalizedMedia | null>(null);
   currentMediaRef.current = currentMedia;
+  /**
+   * Puts a video on (or takes it off), in the ref at once: the render that refreshes the ref comes later, and a message that follows within the same
+   * moment (a party's `TV_FOLLOWING` and the `LOAD` behind it) must compare with this video, not the one that was on before it.
+   */
+  const putMedia = (media: NormalizedMedia | null) => {
+    currentMediaRef.current = media;
+    setCurrentMedia(media);
+  };
   playerRef.current = player;
   const upNextDismissedRef = useRef(false);
   upNextDismissedRef.current = upNextDismissed;
@@ -301,14 +324,18 @@ export function Tv() {
   const loadSource = (index: number, manual: boolean) => {
     const media = currentMediaRef.current;
     const source = media ? sourcesOf(media)[index] : undefined;
+    const engine = engineRef.current;
     if (!media || !source || (manual && index === sourceIndexRef.current)) return;
-    const at = playerRef.current.currentTime;
+    // (Read before `load` wipes the element: where it was, or where it was told to start when the source that failed never got going, and whether
+    // it was meant to play: a video put back after a restart is held, and a source that takes over from a failing one does not start it.)
+    const at = engine?.resumePoint() ?? playerRef.current.currentTime;
+    const play = manual || (engine?.wantsPlay() ?? true);
     triedSourcesRef.current = manual ? new Set([index]) : triedSourcesRef.current.add(index);
     sourceIndexRef.current = index;
     setSourceIndex(index);
     resetApplied();
-    void engineRef.current?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined);
-    engineRef.current?.play();
+    void engine?.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
+    if (play) engine?.play();
   };
 
   // A source that fails hands over to the next one that hasn't been tried, so the first one that works plays.
@@ -334,11 +361,11 @@ export function Tv() {
 
     if (preloaded && nextUrl) {
       putOnAtOnceRef.current = preloaded;
-      setCurrentMedia(preloaded);
+      putMedia(preloaded);
       profileStore.playbackStarted(preloaded);
       resetApplied();
       resetSources();
-      engineRef.current?.load(preloaded.stream.url, preloaded.stream.type, preloaded.subtitles);
+      engineRef.current?.load(preloaded.stream.url, preloaded.stream.type, preloaded.subtitles, undefined, preloaded.stream.directUrl);
       engineRef.current?.play();
       socketRef.current?.send({ type: "TV_PLAY_URL", url: nextUrl });
     } else if (nextUrl) {
@@ -547,6 +574,20 @@ export function Tv() {
     setToast({ id: toastIdRef.current, text, notice: true });
   };
 
+  // A film that goes on is held by nobody: what a screen that watches along was told of its host is the host's report to make (see TV_SYNC), but a host's own is cleared here.
+  useEffect(() => {
+    if (player.state !== "playing" || followingRef.current) return;
+    holdRef.current = null;
+    setHold(null);
+  }, [player.state]);
+  // A picture that is not being brought to the host's has nothing to say for itself once it stops following.
+  useEffect(() => {
+    if (following) return;
+    holdRef.current = null;
+    setHold(null);
+    setCatchingUp(false);
+  }, [following]);
+
   // A new speed, subtitle, audio track or quality is said on screen, whether it came from the menu, a key or the phone.
   const lastPlayerRef = useRef<PlayerState>(IDLE_STATE);
   useEffect(() => {
@@ -559,13 +600,14 @@ export function Tv() {
 
   useEffect(() => {
     const video = videoRef.current!;
+    video.setAttribute("referrerpolicy", "no-referrer");
     const publish = (state: PlayerState) => {
       const full = withTvState(state, captionStyleRef.current, currentMediaRef.current, sourceIndexRef.current, subtitleDelayRef.current, endingRef.current);
       setPlayer(full);
       if (!followingRef.current) socketRef.current?.send({ type: "TV_STATE", state: full }); // a follower has no phone to tell
     };
-    // The leader's last position was this long ago (see TV_SYNC); a jump too soon after another would only chase a picture still filling.
-    let lastSeekAt = 0;
+    // What this screen does about the host's reports (see TV_SYNC): where the host is read to be, and when this picture last jumped.
+    const follower = new Follower();
     const engine = new PlayerEngine(
       video,
       publish,
@@ -634,7 +676,7 @@ export function Tv() {
             setResolving(false);
             setMenu(null);
             if (currentMediaRef.current) {
-              setCurrentMedia(null);
+              putMedia(null); // (in the ref at once: the host's LOAD follows within the same moment, and a screen that had this very video on must load it again)
               engine.stop();
             }
             break;
@@ -666,28 +708,33 @@ export function Tv() {
             const local = engine.getState();
             if (local.state !== "playing" && local.state !== "paused") break;
             const rate = local.playbackRate ?? 1;
-            const hostAt = leaderNow(message); // (the report is a little old by now)
-            const step = syncStep(
-              { playing: message.playing, time: hostAt, rate: message.rate },
+            const step = follower.step(
+              message,
               {
                 playing: local.state === "playing",
                 time: local.currentTime,
                 rate,
                 buffering: Boolean(local.buffering),
                 ahead: Math.max(0, (local.bufferedEnd ?? local.currentTime) - local.currentTime),
-                targetBuffered: engine.hasBuffered(hostAt),
               },
-              Date.now() - lastSeekAt,
+              performance.now() / 1000,
+              (time) => engine.hasBuffered(time),
             );
-            if (step.seek !== undefined) {
-              engine.seek(step.seek);
-              lastSeekAt = Date.now();
-            }
+            if (step.seek !== undefined) engine.seek(step.seek);
             if (Math.abs(step.rate - rate) > 0.001) engine.setPlaybackRate(step.rate);
             if (step.play !== (local.state === "playing")) {
               if (step.play) engine.play();
               else engine.pause();
             }
+            // Who held the film, for the pause card, and who set it going again, for a line; and whether this picture is being brought to the host's.
+            const held: Hold | null = message.playing ? null : { by: message.by ?? null, waiting: message.waiting === true, ...(message.ended ? { ended: true } : {}) };
+            if (!held && holdRef.current && !holdRef.current.waiting) {
+              const line = resumeLine(message.by, partyRef.current);
+              if (line) notify(line);
+            }
+            holdRef.current = held;
+            setHold((before) => (sameHold(before, held) ? before : held));
+            setCatchingUp(message.playing && (step.seek !== undefined || Math.abs(step.rate - message.rate) > 0.001));
             break;
           }
           case "TV_UNPAIRED":
@@ -717,23 +764,37 @@ export function Tv() {
               const isSameStream = current?.stream.url === command.media.stream.url;
 
               if (isSameEpisode(current, command.media) || isSameStream) {
-                setCurrentMedia(command.media);
+                putMedia(command.media);
                 return;
               }
 
-              setCurrentMedia(command.media);
+              putMedia(command.media);
+              follower.reset(); // (where the host was in the film before says nothing about this one)
               if (!followingRef.current) profileStore.playbackStarted(command.media); // it moves to the front of "Continue watching" at once (not for a screen that watches along)
               setUpNextCountdown(null);
               setUpNextDismissed(false);
               resetApplied();
               resetSources();
-              void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt);
-            } else if (command.type === "PLAY") engine.play();
-            else if (command.type === "PAUSE") engine.pause();
-            else if (command.type === "SEEK") engine.seek(command.time);
+              void engine.load(command.media.stream.url, command.media.stream.type, command.media.subtitles, command.startAt, command.media.stream.directUrl);
+            } else if (command.type === "PLAY") {
+              engine.play();
+              if (message.by) {
+                // A guest that steers set the film going: said once, and the film is held by nobody any more.
+                holdRef.current = null;
+                setHold(null);
+                const line = resumeLine(message.by, partyRef.current);
+                if (line) notify(line);
+              }
+            } else if (command.type === "PAUSE") {
+              engine.pause();
+              if (message.by) {
+                holdRef.current = { by: message.by, waiting: false }; // (a guest that steers paused it: the pause card says who)
+                setHold(holdRef.current);
+              }
+            } else if (command.type === "SEEK") engine.seek(command.time);
             else if (command.type === "SKIP") skip(command.seconds);
             else if (command.type === "STOP") {
-              setCurrentMedia(null);
+              putMedia(null);
               setUpNextCountdown(null);
               setResolving(false);
               setMenu(null);
@@ -774,6 +835,15 @@ export function Tv() {
       engine.destroy();
     };
   }, []);
+
+  // A screen in a party downloads no further ahead than the proxy can hold for the others (see `bufferPolicy`).
+  const inParty = party !== null;
+  useEffect(() => {
+    engineRef.current?.setInParty(inParty);
+  }, [inParty]);
+  useEffect(() => {
+    engineRef.current?.setAdaptive(adaptiveQuality);
+  }, [adaptiveQuality]);
 
   // Safety net for TV_RESOLVING { active: true } without a matching end.
   useEffect(() => {
@@ -983,6 +1053,16 @@ export function Tv() {
   const removeFromParty = (id: string) => void socketRef.current?.send({ type: "TV_PARTY_REMOVE", id });
   const setAdmin = (id: string, on: boolean) => void socketRef.current?.send({ type: "TV_PARTY_ADMIN", id, admin: on });
   const steer = (command: PartyCommand) => void socketRef.current?.send({ type: "TV_PARTY_CMD", command });
+  /** Play or pause: this screen's own picture, or, on one that watches along, what an admin asks of the host's screen (a guest that only watches asks for nothing). */
+  const playOrPause = () => {
+    if (!following) togglePlay();
+    else if (admin) steer({ type: player.state === "playing" ? "PAUSE" : "PLAY" });
+  };
+  /** The same for a skip. */
+  const skipHere = (seconds: number) => {
+    if (!following) skip(seconds);
+    else if (admin) steer({ type: "SKIP", seconds });
+  };
   const endParty = () => void socketRef.current?.send({ type: "TV_PARTY_CLOSE" });
   // Being made an admin shows the buttons that come with it.
   useEffect(() => {
@@ -1011,12 +1091,12 @@ export function Tv() {
     leavingRef.current = true;
     setMenu(null);
     engineRef.current?.stop();
-    setCurrentMedia(null);
+    putMedia(null);
     socketRef.current?.send({ type: "TV_UNPAIR" });
   };
   /** Stop what plays and go back to the library. A host that does takes the video from its guests too (the server tells them). */
   const stopPlayback = () => {
-    setCurrentMedia(null);
+    putMedia(null);
     setUpNextCountdown(null);
     engineRef.current?.stop();
   };
@@ -1033,7 +1113,7 @@ export function Tv() {
   const cancelLoad = () => {
     wasResolvingRef.current = false; // giving up is not a lookup that failed: no "wouldn't play" notice
     setResolving(false);
-    setCurrentMedia(null);
+    putMedia(null);
     setUpNextCountdown(null);
     setMenu(null);
     engineRef.current?.stop();
@@ -1059,15 +1139,42 @@ export function Tv() {
   useEffect(() => {
     if (failed) setMenu(null);
   }, [failed]);
-  /** From the first source again, as the first time: a failure is sometimes only a bad moment. */
+  /** From the first source again, as the first time: a failure is sometimes only a bad moment. Where it stopped is where it carries on from, not the start. */
   const retryPlayback = () => {
+    const engine = engineRef.current;
     const source = currentMedia ? sourcesOf(currentMedia)[0] : undefined;
-    if (!source) return;
+    if (!source || !engine) return;
+    const at = engine.resumePoint();
     resetApplied();
     resetSources();
-    void engineRef.current?.load(source.stream.url, source.stream.type, source.subtitles);
-    engineRef.current?.play();
+    void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
+    engine.play();
   };
+
+  // A video that stopped because the connection went (a server that was away for minutes outlasts what was downloaded) is tried again by itself: at once when
+  // this page is connected again, and a moment after it stopped when it was connected all along (the picture's own tries may have outlasted the outage). A few
+  // times, not for ever: past that the card's Try again is the way, and it carries on from the same place.
+  const lostConnection = failed && player.error === PlayerError.ConnectionLost;
+  const retryRef = useRef(retryPlayback);
+  retryRef.current = retryPlayback;
+  const connectionRetriesRef = useRef(0);
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    const reopened = connection === "open" && !wasOpenRef.current;
+    wasOpenRef.current = connection === "open";
+    if (!lostConnection || connection !== "open" || connectionRetriesRef.current >= 3) return;
+    const timer = setTimeout(
+      () => {
+        connectionRetriesRef.current += 1;
+        retryRef.current();
+      },
+      reopened ? 0 : 4000,
+    );
+    return () => clearTimeout(timer);
+  }, [connection, lostConnection]);
+  useEffect(() => {
+    if (player.state === "playing") connectionRetriesRef.current = 0;
+  }, [player.state]);
 
   // Arrow keys move along the buttons once one has focus; otherwise they seek. OK presses the focused button.
   useEffect(() => {
@@ -1131,7 +1238,7 @@ export function Tv() {
       if (row && focused && row.contains(focused)) {
         if (action === "left" || action === "right" || action === "up" || action === "down") {
           // The arrows walk the controls the way they are laid out: along a row, and between rows. Past the edge nothing moves,
-          // except out of the controls, which is the way the bar lies (up from the player's, down from a follower's at the top).
+          // except out of the controls, which is the way the bar lies (up from it, on any screen).
           const buttons = [...row.querySelectorAll<HTMLElement>("button:not(:disabled)")];
           let next = buttons[pickInRows(buttons.map((button) => button.getBoundingClientRect()), buttons.indexOf(focused), action)];
           const vertical = action === "up" || action === "down";
@@ -1140,7 +1247,7 @@ export function Tv() {
           if (next && vertical && left && left.to === focused && left.action !== action && buttons.includes(left.from)) next = left.from;
           lastStepRef.current = next && vertical ? { from: focused, to: next, action } : null;
           if (next) next.focus();
-          else if (action === (following ? "down" : "up")) focused.blur();
+          else if (action === "up") focused.blur();
           event.preventDefault();
           return;
         }
@@ -1159,8 +1266,11 @@ export function Tv() {
         const steering = admin ? partyCommandForKey(action, player.state === "playing", Boolean(currentMedia?.series?.next)) : null;
         if (isBlocked(player) && (action === "select" || action === "playpause" || action === "play")) engine.play();
         else if (steering) steer(steering);
-        else if (action === "up" || action === "down") (controlsRef.current?.querySelector<HTMLElement>("[data-autofocus]") ?? controlsRef.current?.querySelector<HTMLElement>("button"))?.focus(); // the bar is at the top, yet Down was always the way in
-        else if (action === "back") leaveRef.current?.focus(); // a screen that watches along has nowhere to go back to: Back points at the way out, and leaving stays a press of OK (as on the page that waits for the host)
+        else if (action === "up" || action === "down") focusControls(); // wakes the bar too, and lands on its first button (an admin's play, which is the one to press)
+        else if (action === "back") {
+          // A screen that watches along has nowhere to go back to: the first press brings the bar up, the next points at the way out, and leaving stays a press of OK (as on the page that waits for the host)
+          if (overlayWasVisible) leaveRef.current?.focus();
+        }
         else if (action === "captions") cycleSubtitles();
         else if (action === "mute") toggleMute();
         else if (action === "fullscreen") toggleFullscreen();
@@ -1232,6 +1342,8 @@ export function Tv() {
   /* ------------------------------ the picture under a hand ------------------------------ */
 
   const showVideo = player.state !== "idle";
+  /** A film is what the screen is for right now (not its end card, nor an error): nothing is to land on it that can wait. */
+  const filmIsOn = showVideo && !finished && !failed;
 
   /** A finger is held on the picture and it plays faster for as long as it stays. */
   const [boosting, setBoosting] = useState(false);
@@ -1239,6 +1351,7 @@ export function Tv() {
     const engine = engineRef.current;
     if (!engine || playerRef.current.state !== "playing") return false; // (a hold means nothing to a picture that is not moving)
     if (party?.role === "host" && party.guests.length > 0) return false; // (nor to one that others follow: they would be told the speed that was chosen, and fall behind)
+    if (followingRef.current) return false; // (nor to one that follows: its speed is the host's to say)
     engine.boost(HOLD_SPEED);
     setBoosting(true);
     return true;
@@ -1258,16 +1371,19 @@ export function Tv() {
   const tapPicture = (kind: PointerKind, wasVisible: boolean) => {
     if (!tapToPause) return wasVisible ? hideControls() : wake();
     wake();
-    if (kind === "mouse" || wasVisible) togglePlay();
+    if (kind === "mouse" || wasVisible) playOrPause();
   };
   /** Two taps in a row: a side skips that way (and shows nothing of the controls, as the two buttons under it would), the middle goes full screen. */
   const doubleTapPicture = (side: Side) => {
-    if (side !== "middle") skip(side === "back" ? -SKIP_SECONDS : SKIP_SECONDS);
+    if (side !== "middle") skipHere(side === "back" ? -SKIP_SECONDS : SKIP_SECONDS);
     else if (canFullscreen) toggleFullscreen();
   };
 
-  /** Whether a hand's taps on the picture are the picture's: a video, with nobody's card or menu over it, and nobody else's to control. */
-  const takesTaps = unlocked && showVideo && !following && !finished && !failed && menu === null;
+  /**
+   * Whether a hand's taps on the picture are the picture's: a video, with nobody's card or menu over it. (A screen that watches along has
+   * them too, to bring its bars up and put them away, but its playback is the host's: only an admin's taps move it, and then by asking.)
+   */
+  const takesTaps = unlocked && showVideo && !finished && !failed && menu === null;
   const picture = usePictureGestures({
     enabled: takesTaps,
     source: currentMedia?.stream.url ?? "",
@@ -1307,12 +1423,14 @@ export function Tv() {
         wake();
       }}
       onClick={(event) => {
-        if (!(takesTaps && isPicture(event.target))) return wake();
+        const zone = takesTaps ? zoneOf(event.target) : null;
+        // (A click on the bars is no click on the picture: a mouse only wakes them. A finger's tap there is the picture's, as anywhere, and was dealt with.)
+        if (!zone || (zone === "bar" && picture.kindRef.current === "mouse")) return wake();
         if (typeof PointerEvent === "undefined") tapPicture("mouse", upRef.current); // (a browser from before pointer events sends the click and nothing else)
       }}
       onPointerDown={picture.onPointerDown}
       onDoubleClick={(event) => {
-        if (isPicture(event.target) && picture.kindRef.current === "mouse") toggleFullscreen(); // (a finger's double tap was dealt with already)
+        if (zoneOf(event.target) === "picture" && picture.kindRef.current === "mouse") toggleFullscreen(); // (a finger's double tap was dealt with already)
       }}
       onContextMenu={(event) => {
         if (isPicture(event.target) && picture.kindRef.current === "touch") event.preventDefault(); // (a hold is no request for a menu)
@@ -1387,9 +1505,16 @@ export function Tv() {
 
       {unlocked && accountPage && <TvAccount view={accountPage} forced={choosing} onView={setAccountView} />}
 
-      {unlocked && account.message && (
-        <p className="tv-toast" role="status" key={account.message.id} data-testid="tv-account-toast">
-          {account.message.text}
+      {/* What friends are up to is kept off a film: an invitation shows in the corner, small, and the rest waits in the bell. What the viewer did, or the account says, is shown as ever. */}
+      {unlocked && account.message && !(account.message.news === "info" && filmIsOn) && (
+        <p
+          className={account.message.news && filmIsOn ? "tv-note" : "tv-toast"}
+          role="status"
+          key={account.message.id}
+          data-testid="tv-account-toast"
+        >
+          {account.message.news && filmIsOn && <UsersIcon />}
+          {account.message.news && filmIsOn ? <span>{account.message.text}</span> : account.message.text}
         </p>
       )}
 
@@ -1400,64 +1525,6 @@ export function Tv() {
       )}
 
       {unlocked && showVideo && following && <FollowStatus player={player} onPlay={() => engineRef.current?.play()} />}
-
-      {unlocked && showVideo && following && (
-        <div className="tv-follow" ref={controlsRef}>
-          <div className="tv-follow-bar" data-testid="tv-follow-bar">
-            <span>
-              {t("tv.following", { name: following })}
-              {player.state === "paused" && !(player.duration > 0 && player.currentTime >= player.duration - 1.5) && ` · ${t("hud.paused")}`}
-            </span>
-            {hasTracks(player) && (
-              <button onClick={() => openMenu("tracks")} data-testid="tv-audio-sub-btn">
-                <SubtitlesIcon /> {t("player.audioSubtitles")}
-              </button>
-            )}
-            <button onClick={toggleMute} aria-pressed={muted} data-testid="tv-mute-btn">
-              {muted ? <MutedIcon /> : <VolumeIcon />} {t(muted ? "hud.unmute" : "hud.mute")}
-            </button>
-            <button onClick={() => openMenu("party")} data-testid="tv-party-btn">
-              <UsersIcon /> {party ? t("party.size", { count: party.guests.length + 1 }) : t("party.rail")}
-            </button>
-            {canFullscreen && (
-              <button onClick={toggleFullscreen} data-testid="tv-fullscreen-btn">
-                <FullscreenIcon /> {t(fullscreen ? "remote.exitFullscreen" : "remote.fullscreen")}
-              </button>
-            )}
-            <button ref={leaveRef} onClick={leaveParty} data-testid="tv-leave">
-              {t("tv.leave")}
-            </button>
-          </div>
-          {/* An admin steers the film: these ask the host's screen, which does it for everyone (this one follows it, as always). */}
-          {admin && (
-            <div className="tv-follow-bar tv-follow-admin" data-testid="tv-admin-bar" role="group" aria-label={t("party.admin")}>
-              <button onClick={() => steer({ type: "SKIP", seconds: -SKIP_SECONDS })} title={t("hud.backTip", { n: SKIP_SECONDS })} aria-label={t("hud.back", { n: SKIP_SECONDS })} data-testid="tv-admin-back">
-                <Back10Icon />
-              </button>
-              <button
-                onClick={() => steer({ type: player.state === "playing" ? "PAUSE" : "PLAY" })}
-                title={t("hud.playTip")}
-                aria-label={t(player.state === "playing" ? "hud.pause" : "hud.play")}
-                data-testid="tv-admin-play"
-                data-autofocus
-              >
-                {player.state === "playing" ? <PauseIcon /> : <PlayIcon />}
-              </button>
-              <button onClick={() => steer({ type: "SKIP", seconds: SKIP_SECONDS })} title={t("hud.forwardTip", { n: SKIP_SECONDS })} aria-label={t("hud.forward", { n: SKIP_SECONDS })} data-testid="tv-admin-forward">
-                <Forward10Icon />
-              </button>
-              {next && (
-                <button onClick={() => steer({ type: "NEXT_EPISODE" })} title={t("hud.nextTip")} aria-label={`${t("hud.nextEpisode")}: ${episodeLabel(next)}`} data-testid="tv-admin-next">
-                  <NextIcon />
-                </button>
-              )}
-              <button onClick={() => steer({ type: "STOP" })} title={t("hud.stopTip")} aria-label={t("hud.stop")} data-testid="tv-admin-stop">
-                <StopIcon />
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       {unlocked && showVideo && finished && (
         <EndCard
@@ -1487,7 +1554,7 @@ export function Tv() {
         />
       )}
 
-      {unlocked && showVideo && !following && !finished && !failed && (
+      {unlocked && showVideo && !finished && !failed && (
         <Hud
           visible={controlsVisible && menu !== "captions"}
           player={player}
@@ -1511,10 +1578,10 @@ export function Tv() {
               : null
           }
           controlsRef={controlsRef}
-          onToggle={togglePlay}
-          onSkip={skip}
-          onSeekTo={(time) => engineRef.current?.seek(time)}
-          onNext={triggerNextEpisode}
+          onToggle={playOrPause}
+          onSkip={skipHere}
+          onSeekTo={(time) => (following ? admin && steer({ type: "SEEK", time }) : engineRef.current?.seek(time))}
+          onNext={() => (following ? admin && steer({ type: "NEXT_EPISODE" }) : triggerNextEpisode())}
           onPrevious={goToPrevious}
           onDismissUpNext={dismissUpNext}
           onOpenMenu={openMenu}
@@ -1523,11 +1590,13 @@ export function Tv() {
           muted={muted}
           onMute={toggleMute}
           onFullscreen={canFullscreen ? toggleFullscreen : null}
-          onStop={stopPlayback}
+          onStop={() => (following ? admin && steer({ type: "STOP" }) : stopPlayback())}
           stuck={stuck}
           onCancel={cancelLoad}
           touch={touch}
           boosting={boosting}
+          heldLine={holdLine(hold, party, following)}
+          follow={following ? { host: following, catchingUp, admin, leaveRef, onLeave: leaveParty } : undefined}
         />
       )}
 
