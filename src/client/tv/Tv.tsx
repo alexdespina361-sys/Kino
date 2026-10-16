@@ -1489,7 +1489,6 @@ export function Tv() {
           className="tv-video"
           data-picture
           allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-          allowFullScreen
           referrerPolicy="origin"
           style={{ width: "100%", height: "100%", border: "none" }}
         />

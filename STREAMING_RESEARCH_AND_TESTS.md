@@ -208,5 +208,23 @@ This document tracks all investigations, hypotheses, implementations, empirical 
 - **Result**: **SUCCESS**.
 - **Outcome**: Zero dual-HUD conflicts, zero pointer-event swallows. The embed player plays cleanly with full native playback controls, volume, seeking, quality, and subtitles, and users can exit to the library with a single click.
 
+### Test 12: DOM Precedence Warning Resolution & Back-Forward Cache (bfcache) Lifecycle
+- **Problem Statement**:
+  1. Chromium logged: `Allow attribute will take precedence over 'allowfullscreen'` because both `allow="autoplay; fullscreen; ..."` and `allowFullScreen` were specified on the embed `<iframe>`.
+  2. Chromium logged: `WebSocket connection to 'wss://.../ws' failed: Page entered Back-Forward Cache` when navigating away with an open WebSocket.
+  3. External user extensions (e.g. `shuba` novel chapter reader) logged `Unchecked runtime.lastError: Could not establish connection. Receiving end does not exist`.
+- **Implementation**:
+  1. `src/client/tv/Tv.tsx`:
+     - Removed redundant legacy `allowFullScreen` prop from the `<iframe>`. Standard W3C Permissions Policy `allow="autoplay; fullscreen; encrypted-media; picture-in-picture"` is retained, fully silencing the Chromium precedence warning while preserving fullscreen privileges.
+  2. `src/client/shared/socket.ts`:
+     - Added `window.addEventListener("pagehide", onPageHide)`: cleanly closes the WebSocket (`code: 1000`) and disarms retry timers before Chromium puts the page into bfcache.
+     - Added `window.addEventListener("pageshow", onPageShow)`: detects restoration from bfcache (`event.persisted`) and immediately reconnects the socket with fresh state handshake.
+     - Added cleanup in `disconnect()`.
+- **Verification**:
+  - Full test suite: 72 test files, 1413 tests passed (100%).
+  - TypeScript typecheck: 0 errors (`npm run typecheck` clean).
+  - Production build: clean in 1.27s (`dist/client/assets/Tv-ujlDkWVr.js`).
+
+
 
 
