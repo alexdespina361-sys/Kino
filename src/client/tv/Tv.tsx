@@ -303,11 +303,13 @@ export function Tv() {
   const [embedIndex, setEmbedIndex] = useState(0);
   const embedIndexRef = useRef(0);
   embedIndexRef.current = embedIndex;
+  const [streamMenuOpen, setStreamMenuOpen] = useState(false);
 
   const putMedia = (media: NormalizedMedia | null) => {
     currentMediaRef.current = media;
     setEmbedActive(false);
     setEmbedIndex(0);
+    setStreamMenuOpen(false);
     setCurrentMedia(media);
   };
   playerRef.current = player;
@@ -1638,31 +1640,74 @@ export function Tv() {
             <HomeIcon /> {t("tv.backToLibrary")}
           </button>
           {getEmbedList(currentMedia).length > 1 && (
-            <button
-              className="tv-action"
-              onClick={() => {
-                const list = getEmbedList(currentMedia);
-                const nextIdx = (embedIndex + 1) % list.length;
-                setEmbedIndex(nextIdx);
-                notify(embedProviderName(list[nextIdx]!, nextIdx));
-              }}
-              style={{
-                background: "rgba(0,0,0,0.85)",
-                color: "#fff",
-                border: "1px solid rgba(255,255,255,0.25)",
-                borderRadius: "8px",
-                padding: "0.55rem 1.1rem",
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                fontSize: "0.95rem",
-                fontWeight: 600,
-                boxShadow: "0 4px 14px rgba(0,0,0,0.6)",
-              }}
-            >
-              {embedProviderName(getEmbedList(currentMedia)[embedIndex]!, embedIndex)} ▾
-            </button>
+            <div style={{ position: "relative" }}>
+              <button
+                className="tv-action"
+                onClick={() => setStreamMenuOpen((prev) => !prev)}
+                style={{
+                  background: "rgba(0,0,0,0.85)",
+                  color: "#fff",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  borderRadius: "8px",
+                  padding: "0.55rem 1.1rem",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  boxShadow: "0 4px 14px rgba(0,0,0,0.6)",
+                }}
+              >
+                {embedProviderName(getEmbedList(currentMedia)[embedIndex]!, embedIndex)} ▾
+              </button>
+              {streamMenuOpen && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 0.4rem)",
+                    left: 0,
+                    background: "rgba(18,18,18,0.95)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "8px",
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.8)",
+                    display: "flex",
+                    flexDirection: "column",
+                    minWidth: "190px",
+                    zIndex: 200,
+                    backdropFilter: "blur(8px)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {getEmbedList(currentMedia).map((url, idx) => (
+                    <button
+                      key={url}
+                      onClick={() => {
+                        setEmbedIndex(idx);
+                        setStreamMenuOpen(false);
+                        notify(embedProviderName(url, idx));
+                      }}
+                      style={{
+                        background: idx === embedIndex ? "rgba(229,9,20,0.3)" : "transparent",
+                        color: idx === embedIndex ? "#ff4d4d" : "#fff",
+                        border: "none",
+                        padding: "0.6rem 1rem",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontWeight: idx === embedIndex ? 700 : 500,
+                        fontSize: "0.9rem",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <span>{embedProviderName(url, idx)}</span>
+                      {idx === embedIndex && <span>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -1793,11 +1838,13 @@ function getEmbedList(media: NormalizedMedia | null): string[] {
 function embedProviderName(url: string, index: number): string {
   try {
     const host = new URL(url).hostname.replace(/^www\./, "");
+    if (host.includes("vidsrc.me") || host.includes("vidsrc.pm")) return `Stream ${index + 1} (VidSrc)`;
+    if (host.includes("multiembed")) return `Stream ${index + 1} (MultiEmbed)`;
+    if (host.includes("vidsrc.to")) return `Stream ${index + 1} (VidSrc.to)`;
+    if (host.includes("2embed")) return `Stream ${index + 1} (2Embed)`;
+    if (host.includes("smashystream")) return `Stream ${index + 1} (Smashy)`;
     if (host.includes("autoembed")) return `Stream ${index + 1} (AutoEmbed)`;
     if (host.includes("vidlink")) return `Stream ${index + 1} (VidLink)`;
-    if (host.includes("smashystream")) return `Stream ${index + 1} (Smashy)`;
-    if (host.includes("2embed")) return `Stream ${index + 1} (2Embed)`;
-    if (host.includes("vidsrc")) return `Stream ${index + 1} (VidSrc)`;
     return `Stream ${index + 1} (${host.split(".")[0]})`;
   } catch {
     return `Stream ${index + 1}`;

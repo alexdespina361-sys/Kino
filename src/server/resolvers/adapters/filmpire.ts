@@ -490,23 +490,29 @@ export function createFilmpireAdapter(): SiteAdapter {
       const targetSeason = s || "1";
       const targetEpisode = e || "1";
 
+      const vidsrcMeUrl = isTv
+        ? `https://vidsrc.me/embed/tv?tmdb=${id}&season=${targetSeason}&episode=${targetEpisode}`
+        : `https://vidsrc.me/embed/movie/${id}`;
+      const multiEmbedUrl = isTv
+        ? `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${targetSeason}&e=${targetEpisode}`
+        : `https://multiembed.mov/?video_id=${id}&tmdb=1`;
+      const vidsrcToUrl = isTv
+        ? `https://vidsrc.to/embed/tv/${id}/${targetSeason}/${targetEpisode}`
+        : `https://vidsrc.to/embed/movie/${id}`;
+      const twoEmbedUrl = isTv
+        ? `https://www.2embed.cc/embedtv/${id}&s=${targetSeason}&e=${targetEpisode}`
+        : `https://www.2embed.cc/embed/${id}`;
+      const smashyUrl = isTv
+        ? `https://player.smashystream.com/tv/${id}/${targetSeason}/${targetEpisode}`
+        : `https://player.smashystream.com/movie/${id}`;
       const autoEmbedUrl = isTv
         ? `https://player.autoembed.co/embed/tv/${id}/${targetSeason}/${targetEpisode}`
         : `https://player.autoembed.co/embed/movie/${id}`;
       const vidLinkUrl = isTv
-        ? `https://vidlink.pro/tv/${id}/${targetSeason}/${targetEpisode}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914&player=jw&fallback_url=${encodeURIComponent(autoEmbedUrl)}`
-        : `https://vidlink.pro/movie/${id}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914&player=jw&fallback_url=${encodeURIComponent(autoEmbedUrl)}`;
-      const smashyUrl = isTv
-        ? `https://player.smashystream.com/tv/${id}/${targetSeason}/${targetEpisode}`
-        : `https://player.smashystream.com/movie/${id}`;
-      const twoEmbedUrl = isTv
-        ? `https://www.2embed.cc/embedtv/${id}&s=${targetSeason}&e=${targetEpisode}`
-        : `https://www.2embed.cc/embed/${id}`;
-      const vidsrcToUrl = isTv
-        ? `https://vidsrc.to/embed/tv/${id}/${targetSeason}/${targetEpisode}`
-        : `https://vidsrc.to/embed/movie/${id}`;
+        ? `https://vidlink.pro/tv/${id}/${targetSeason}/${targetEpisode}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914`
+        : `https://vidlink.pro/movie/${id}?title=false&autoplay=true&nextbutton=false&primaryColor=E50914`;
 
-      const embedProviders = [autoEmbedUrl, vidLinkUrl, smashyUrl, twoEmbedUrl, vidsrcToUrl];
+      const embedProviders = [vidsrcMeUrl, multiEmbedUrl, vidsrcToUrl, twoEmbedUrl, smashyUrl, autoEmbedUrl, vidLinkUrl];
 
       for (const sUrl of streamUrls) {
         if (sUrl === chosenStream) continue;
