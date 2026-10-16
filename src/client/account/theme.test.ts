@@ -30,7 +30,7 @@ describe("the accents", () => {
     expect(declared(accent, "accent-ink") ?? declared(ACCENTS[0], "accent-ink")).toBe(ACCENT_INK[accent]);
   });
 
-  it.each(ACCENTS)("%s: the words on it can be read", (accent) => {
-    expect(contrast(ACCENT_INK[accent], ACCENT_SWATCH[accent])).toBeGreaterThanOrEqual(3.5);
+  it.each(ACCENTS)("%s: the words on it can be read (4.5 : 1, small words included)", (accent) => {
+    expect(contrast(ACCENT_INK[accent], ACCENT_SWATCH[accent])).toBeGreaterThanOrEqual(4.5);
   });
 });

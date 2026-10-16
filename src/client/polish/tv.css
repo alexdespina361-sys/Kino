@@ -38,7 +38,7 @@
   --hero-h-deep: calc(var(--em) * 8.8); /* ...and this tall once the page is scrolled and the banner is down to three lines */
   --fs-deep: calc(var(--em) * 2.6);
   --rail-w: calc(var(--em) * 7.2);
-  --rail-w-open: calc(var(--em) * 27);
+  --rail-w-open: calc(var(--em) * 27.8); /* wide enough for "Connect a phone" with room to spare */
   --detail-b: calc(var(--em) * 4.5);
   --eps-t: calc(var(--em) * 1);
   --eps-b: calc(var(--em) * 6);
@@ -100,7 +100,8 @@
   font-weight: 600;
   transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), margin-right var(--t-base) var(--ease);
 }
-:root[data-ui="polish"] .tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: calc(var(--em) * 1.2); }
+/* Shut, a line is its icon with the same room on both sides (its padding), so that the box that lights as the menu opens starts as a tidy block around the icon. */
+:root[data-ui="polish"] .tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: calc(var(--rail-w) - var(--edge) - var(--em) * 1.6 - var(--fs-3) * 1.15); }
 :root[data-ui="polish"] .tv-rail-item[data-apart="true"] { margin-top: calc(var(--em) * 1.4); }
 :root[data-ui="polish"] .tv-rail-item:hover { color: var(--text-1); }
 /* Where you are: the entry's own words go white and a short bar of the accent sits at its edge (the classic look has the bar the whole height of the entry). */
@@ -128,12 +129,29 @@
   text-transform: none;
 }
 :root[data-ui="polish"] .tv-rail-category { margin-left: calc(var(--em) * 3.4); padding-left: calc(var(--em) * 0.6); font-size: var(--fs-2); }
+/* Open, the menu covers the page's own wordmark: it carries the name itself, in the same place and size, so the name stays where it was and only the panel opens under it. (A screen too small for that has the wordmark covered, as before.) */
+:root[data-ui="polish"] .tv-rail-brand { display: none; }
+@media (min-width: 900px) and (min-height: 521px) {
+  /* (The entries start below the wordmark, shut as well as open, so that opening the menu moves none of them.) */
+  :root[data-ui="polish"] .tv-rail { padding-top: calc(var(--top) + var(--em) * 4.9); }
+  :root[data-ui="polish"] .tv-rail-brand {
+    position: absolute;
+    top: calc(var(--top) + var(--em) * 0.34);
+    left: var(--gutter);
+    display: block;
+    font-size: 2.2em;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--t-base) var(--ease);
+  }
+  :root[data-ui="polish"] .tv-rail[data-open="true"] .tv-rail-brand { opacity: 1; }
+}
 
 /* ------------------------------ the wordmark on pages that are not the library ------------------------------ */
 
-/* The library draws the wordmark at the page's left edge (--gutter), level with the corner buttons; the pages that fill the screen (settings, sign-in, connect, party) put it in the same place, and keep the same edge on both sides. */
+/* The library draws the wordmark at the page's left edge (--gutter), centred on the corner buttons (a corner button is 3.6em tall, the wordmark's box about 2.9em: 0.34em of room above it); the pages that fill the screen (settings, sign-in, connect, party) and the open menu put it in the same place, so the name never moves, and keep the same edge on both sides. */
 @media (min-width: 900px) {
-  :root[data-ui="polish"] .tv-brand { top: calc(var(--top) + var(--em) * 0.6); left: var(--gutter); }
+  :root[data-ui="polish"] .tv-brand { top: calc(var(--top) + var(--em) * 0.34); left: var(--gutter); }
   :root[data-ui="polish"] .tv-screen { padding-left: var(--gutter); padding-right: var(--gutter); }
 }
 
@@ -228,6 +246,33 @@
   :root[data-ui="polish"] .tv-tile-corner:hover { background: #fff; box-shadow: none; color: #0b0b0c; }
 }
 
+/* An arrow at each end of a row that runs off the screen, for a mouse: it shows while the pointer is over the row, on the side that has more (a finger swipes a row, and the remote walks the titles). It is the one look of a button over a picture: the dark disc that lights white. */
+:root[data-ui="polish"] .tv-row-box { position: relative; }
+:root[data-ui="polish"] .tv-row-more { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  :root[data-ui="polish"] .tv-row-more {
+    position: absolute;
+    top: calc(var(--em) * 2.9);
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: calc(var(--em) * 4);
+    height: calc(var(--em) * 4);
+    border-radius: 50%;
+    background: rgba(11, 11, 12, 0.72);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22), var(--lift);
+    color: var(--text-1);
+    font-size: var(--fs-4);
+    opacity: 0;
+    transition: opacity var(--t-base) var(--ease), background var(--t-base) var(--ease), color var(--t-base) var(--ease);
+  }
+  :root[data-ui="polish"] .tv-row[data-layout="ranked"] .tv-row-more { top: calc(var(--em) * 5); }
+  :root[data-ui="polish"] .tv-row-box:hover .tv-row-more { opacity: 1; }
+  :root[data-ui="polish"] .tv-row-more:hover { background: #fff; box-shadow: var(--lift); color: #0b0b0c; }
+  :root[data-ui="polish"] .tv-row-more[data-side="before"] { left: calc(var(--rail-w) + var(--em) * 0.4); }
+  :root[data-ui="polish"] .tv-row-more[data-side="after"] { right: calc(var(--em) * 1.4); }
+}
+
 /* ------------------------------ a title's own page ------------------------------ */
 
 :root[data-ui="polish"] .tv-detail-text { gap: calc(var(--em) * 0.6); padding: 0 var(--page-r) var(--detail-b) var(--gutter); }
@@ -235,8 +280,18 @@
 :root[data-ui="polish"] .tv-detail-about { margin-top: calc(var(--em) * 0.4); font-size: var(--fs-3); line-height: 1.45; color: var(--text-2); }
 :root[data-ui="polish"] .tv-detail .tv-hero-actions { margin-top: calc(var(--em) * 1); }
 :root[data-ui="polish"] .tv-detail .tv-hero-button { font-size: var(--fs-3); }
-/* Close is a corner button like the library's, at the same distance from the edges. */
-:root[data-ui="polish"] .tv-detail .tv-detail-close { top: var(--top); right: var(--edge-r); font-size: var(--fs-2); }
+/* Close is the pill that Back is on the pages that fill the screen, in the same corner: level with the library's corner buttons, at the same distance from the edges. */
+:root[data-ui="polish"] .tv-detail .tv-detail-close {
+  top: var(--top);
+  right: var(--edge-r);
+  gap: calc(var(--em) * 0.4);
+  height: calc(var(--em) * 3.6);
+  padding: 0 calc(var(--em) * 1.8) 0 calc(var(--em) * 1.3);
+  border-radius: 999px;
+  font-size: var(--fs-2);
+}
+:root[data-ui="polish"] .tv-detail .tv-detail-close:not(:focus-visible) { background: var(--fill-1); color: var(--text-2); }
+:root[data-ui="polish"] .tv-detail .tv-detail-close:not(:focus-visible):hover { background: var(--fill-2); color: var(--text-1); }
 :root[data-ui="polish"] .tv-detail-eps { padding: var(--eps-t) var(--page-r) var(--eps-b) var(--gutter); }
 :root[data-ui="polish"] .tv-detail-eps-title { font-size: var(--fs-4); font-weight: 700; letter-spacing: -0.01em; }
 :root[data-ui="polish"] .tv-detail-eps-note { font-size: var(--fs-2); }
@@ -347,9 +402,27 @@
 :root[data-ui="polish"] .tv-action-danger:hover { background: rgba(255, 107, 107, 0.3); color: #fff; }
 :root[data-ui="polish"] .tv-action-danger:focus-visible { background: #fff; color: #b3261e; }
 :root[data-ui="polish"] .tv-notice { font-size: var(--fs-3); }
+/* The way back from a page that fills the screen: the same quiet pill on every one of them (a red one on a page is a main action, and this is not). Where the library has its corner buttons, so does the page: level with them and the wordmark, at the edge the profile's Settings button keeps. */
+:root[data-ui="polish"] .tv-back {
+  gap: calc(var(--em) * 0.3);
+  min-width: 0;
+  height: calc(var(--em) * 3.6);
+  padding: 0 calc(var(--em) * 1.8) 0 calc(var(--em) * 1.1);
+  border-radius: 999px;
+  background: var(--fill-1);
+  color: var(--text-2);
+  font-size: var(--fs-2);
+}
+:root[data-ui="polish"] .tv-back:hover:not(:focus-visible) { background: var(--fill-2); color: var(--text-1); }
+@media (min-width: 900px) {
+  :root[data-ui="polish"] .tv-screen .tv-back { position: absolute; top: var(--top); right: var(--edge-r); }
+}
 :root[data-ui="polish"] .tv-action:disabled,
 :root[data-ui="polish"] .tv-action[aria-disabled="true"],
 :root[data-ui="polish"] .tv-opt[aria-disabled="true"] { opacity: 0.55; }
+/* A main button that cannot be pressed yet (Save, before there is a name) does not go to a dimmer red, which reads as a button that is only unlit: it goes grey and quiet, as it does on the phone. */
+:root[data-ui="polish"] .tv-action-primary:disabled,
+:root[data-ui="polish"] .tv-action-primary:disabled:hover { opacity: 1; background: var(--surf-2); color: var(--text-3); }
 :root[data-ui="polish"] .tv .role-switch:focus-visible { outline: none; }
 /* The welcome's one button is the chosen one from the start (OK can only mean it): it looks as a button the remote is on looks everywhere. */
 :root[data-ui="polish"] .tv-welcome .tv-action,
@@ -389,6 +462,12 @@
 
 :root[data-ui="polish"] .tv-key { border-radius: var(--r-1); background: var(--surf-2); color: var(--text-1); }
 :root[data-ui="polish"] .tv-key:hover { background: var(--surf-3); }
+/* A key is about one and a tenth as wide as it is tall (the classic keys were half as wide again as tall, which looked like slabs; a square would look like a calculator). The names' keys, twelve to a row, keep their own shape. */
+@media (min-width: 900px) and (min-height: 521px) {
+  :root[data-ui="polish"] .tv-keys:not(.tv-name-keys) .tv-key,
+  :root[data-ui="polish"] .tv-pad .tv-key { min-height: calc(var(--em) * 4.4); }
+  :root[data-ui="polish"] .tv-pad { grid-template-columns: repeat(3, calc(var(--em) * 4.8)); }
+}
 :root[data-ui="polish"] .tv-score { border-radius: var(--r-1); background: var(--surf-2); color: var(--text-1); }
 :root[data-ui="polish"] .tv-score:hover { background: var(--surf-3); }
 :root[data-ui="polish"] .tv-score[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
@@ -416,21 +495,8 @@
 
 /* ------------------------------ the pages of what you have and who you are ------------------------------ */
 
-:root[data-ui="polish"] .tv-panel-who h1 { font-size: var(--fs-6); font-weight: 700; letter-spacing: -0.015em; }
-:root[data-ui="polish"] .tv-panel-who p { font-size: var(--fs-3); color: var(--text-3); }
-:root[data-ui="polish"] .tv-panel-guest { background: var(--surf-1); color: var(--text-2); }
-:root[data-ui="polish"] .tv-panel-settings h2 {
-  margin: calc(var(--em) * 1) 0 calc(var(--em) * 0.5);
-  color: var(--text-3);
-  font-size: var(--fs-2);
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-}
-:root[data-ui="polish"] .tv-panel-settings h2:first-child { margin-top: 0; }
-/* Signed in, the page has six headings and four switches: close enough to fit inside the safe margins of a 16:9 screen (a pass of the scanner says so). */
-:root[data-ui="polish"] .tv-panel-settings .tv-switch-row { padding-block: calc(var(--em) * 0.6); }
-:root[data-ui="polish"] .tv-category-name { font-size: var(--fs-3); font-weight: 700; letter-spacing: -0.005em; }
+/* (the sheet below clips the name to two lines at 1.1: a bold g or y lost its tail) */
+:root[data-ui="polish"] .tv-category-name { font-size: var(--fs-3); font-weight: 700; line-height: 1.25; letter-spacing: -0.005em; }
 :root[data-ui="polish"] .tv-category-count { font-size: var(--fs-1); font-weight: 400; color: var(--text-2); }
 :root[data-ui="polish"] .tv-tile-category { border-radius: var(--r-2); padding: calc(var(--em) * 1) calc(var(--em) * 1.2); transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-tile-category:focus-visible { transform: scale(1.06); box-shadow: var(--focus-ring), var(--lift); }
@@ -491,6 +557,14 @@
 
 :root[data-ui="polish"] .tv-hero-actions { margin-left: calc(var(--em) * -0.25); }
 
+/* ------------------------------ the search box: text with a caret in it ------------------------------ */
+
+/* A click puts the caret where it landed, so the pointer is a text one. The text keeps its spaces (a word is typed, then a space, before the next letter), and the caret takes no room of its own: it is a line drawn on the edge between two letters, so the text does not shift as the caret moves through it. */
+:root[data-ui="polish"] p.tv-query { cursor: text; }
+:root[data-ui="polish"] .tv-query-text { flex: none; white-space: pre; }
+:root[data-ui="polish"] .tv-caret { position: relative; display: inline-block; flex: none; width: 0; height: 1.1em; margin: 0; background: none; vertical-align: -0.2em; }
+:root[data-ui="polish"] .tv-caret::after { content: ""; position: absolute; top: 0; bottom: 0; left: -0.035em; width: 0.07em; border-radius: 999px; background: var(--accent); }
+
 /* ------------------------------ friends and the bell ------------------------------ */
 
 :root[data-ui="polish"] .tv-bell-heading { font-size: var(--fs-2); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text-2); }
@@ -510,12 +584,174 @@
 :root[data-ui="polish"] .tv-party-member small { letter-spacing: 0; text-transform: none; color: var(--text-3); font-weight: 600; }
 :root[data-ui="polish"] .tv-party-remove { background: var(--surf-2); color: var(--text-1); }
 :root[data-ui="polish"] .tv-code { font-weight: 700; }
+/* A code is selected whole by one click (a right click then copies it); the small button under it copies it and says so. */
+:root[data-ui="polish"] .tv-code-box { display: flex; flex-direction: column; align-items: center; gap: calc(var(--em) * 0.7); }
+:root[data-ui="polish"] .tv-steps .tv-code-box { align-items: flex-start; }
+:root[data-ui="polish"] .tv-code-box .tv-code { cursor: text; }
+:root[data-ui="polish"] .tv-code-box .copy-link-button { padding: calc(var(--em) * 0.5) calc(var(--em) * 1.2); font-size: var(--fs-2); }
 :root[data-ui="polish"] .tv-code-boxes i { border-radius: var(--r-1); background: var(--surf-1); font-weight: 700; }
 :root[data-ui="polish"] .tv-code-boxes i[data-filled="true"] { background: var(--surf-3); }
 :root[data-ui="polish"] .tv-steps { font-size: var(--fs-4); }
 :root[data-ui="polish"] .tv-step-no { background: var(--accent); color: var(--accent-ink); }
 :root[data-ui="polish"] .tv-party-start p { font-size: var(--fs-3); color: var(--text-2); }
 :root[data-ui="polish"] .tv-party-error { font-size: var(--fs-3); }
+
+/* ------------------------------ the profile's page ------------------------------ */
+
+/* Who is watching, where the other pages have a banner; Settings in its corner, level with the corner buttons' right edge. A guest's has two more lines (what signing in is for, and the button), so it is as tall as it needs, not a fixed height. */
+:root[data-ui="polish"] .tv-hero-profile { max-width: none; height: auto; min-height: calc(var(--em) * 14.5); padding-top: calc(var(--em) * 1.4); padding-right: var(--edge-r); justify-content: center; }
+:root[data-ui="polish"] .tv-profile-head { display: flex; align-items: center; gap: calc(var(--em) * 2.6); width: 100%; }
+:root[data-ui="polish"] .tv-profile-avatar { flex: none; font-size: calc(var(--em) * 8.6); border-radius: 50%; box-shadow: 0 0 0 calc(var(--em) * 0.25) rgba(255, 255, 255, 0.08), 0 calc(var(--em) * 0.8) calc(var(--em) * 2) rgba(0, 0, 0, 0.5); }
+:root[data-ui="polish"] .tv-profile-guest {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: calc(var(--em) * 8.6);
+  height: calc(var(--em) * 8.6);
+  border-radius: 50%;
+  background: var(--surf-2);
+  box-shadow: 0 0 0 calc(var(--em) * 0.25) rgba(255, 255, 255, 0.06);
+  color: var(--text-2);
+  font-size: calc(var(--em) * 3.6);
+}
+:root[data-ui="polish"] .tv-profile-who { display: flex; flex: 1 1 0; flex-direction: column; align-items: flex-start; gap: calc(var(--em) * 0.5); min-width: 0; }
+:root[data-ui="polish"] .tv-profile-name { margin: 0; max-width: 100%; overflow: hidden; font-size: var(--fs-7); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-ui="polish"] .tv-profile-line { margin: 0; max-width: calc(var(--em) * 46); font-size: var(--fs-3); line-height: 1.35; color: var(--text-2); overflow-wrap: anywhere; }
+:root[data-ui="polish"] .tv-profile-signin { margin-top: calc(var(--em) * 0.6); }
+:root[data-ui="polish"] .tv-profile-settings { flex: none; align-self: flex-start; margin-top: calc(var(--em) * 0.4); }
+/* In the corner the chip says where you are: the profile's page, or one of the pages that belong to it. */
+:root[data-ui="polish"] .tv-browse-corner .tv-account-chip[aria-current="page"]:not(:focus-visible) { background: rgb(var(--accent-rgb) / 0.2); box-shadow: inset 0 0 0 calc(var(--em) * 0.12) rgb(var(--accent-rgb) / 0.8); color: var(--text-1); }
+
+/* What the profile holds: a few places, each a card that says what is in it. Quiet surfaces (the picture's hue was the card's only difference), with the glyph first. */
+:root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row-title { display: none; }
+:root[data-ui="polish"] .tv-browse[data-view="profile"] .tv-row-tiles { padding-top: calc(var(--em) * 1); }
+:root[data-ui="polish"] .tv-tile-place {
+  width: calc(var(--em) * 27);
+  height: calc(var(--em) * 15);
+  justify-content: flex-end;
+  gap: calc(var(--em) * 0.35);
+  padding: calc(var(--em) * 1.8);
+  border-radius: var(--r-3);
+  background: linear-gradient(155deg, var(--surf-3), var(--surf-1) 72%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+:root[data-ui="polish"] .tv-tile-place::after { display: none; }
+:root[data-ui="polish"] .tv-place-icon {
+  position: absolute;
+  top: calc(var(--em) * 1.8);
+  left: calc(var(--em) * 1.8);
+  display: grid;
+  place-items: center;
+  width: calc(var(--em) * 4.6);
+  height: calc(var(--em) * 4.6);
+  border-radius: 50%;
+  background: var(--fill-2);
+  color: var(--text-1);
+  font-size: calc(var(--em) * 2.4);
+}
+:root[data-ui="polish"] .tv-tile-place .tv-category-name { font-size: var(--fs-4); font-weight: 700; }
+:root[data-ui="polish"] .tv-tile-place .tv-category-count { font-size: var(--fs-2); }
+:root[data-ui="polish"] .tv-tile-place:focus-visible { box-shadow: var(--focus-ring), var(--lift); }
+:root[data-ui="polish"] .tv-tile-place:focus-visible .tv-place-icon { background: var(--fill-3); }
+
+/* ------------------------------ the settings ------------------------------ */
+
+/* Three columns of groups. A group has its name over it and one surface under it; rows on that surface have a hairline between them, so a long run of the same kind of thing reads as a few, and the kinds differ: words to choose from in a row (language), dots (colour), switches, and rows that lead on. */
+/* It hangs from the top of the screen, not from its middle: a guest's first column is taller than a member's, and the title must stand where it stands for both. */
+:root[data-ui="polish"] .tv-set { display: flex; flex: 1 0 auto; flex-direction: column; gap: calc(var(--em) * 2.2); width: 100%; max-width: calc(var(--em) * 88); padding-top: calc(var(--em) * 2.4); text-align: left; }
+:root[data-ui="polish"] .tv-set-head { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--em) * 2); }
+:root[data-ui="polish"] .tv-set-title { margin: 0; font-size: var(--fs-6); font-weight: 700; letter-spacing: -0.015em; }
+:root[data-ui="polish"] .tv-flip { transform: scaleX(-1); }
+:root[data-ui="polish"] .tv-set-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(var(--em) * 2.4); align-items: start; }
+:root[data-ui="polish"] .tv-set-col { display: flex; flex-direction: column; gap: calc(var(--em) * 2); min-width: 0; }
+:root[data-ui="polish"] .tv-group-title { margin: 0 0 calc(var(--em) * 0.6) calc(var(--em) * 0.5); color: var(--text-3); font-size: var(--fs-2); font-weight: 600; letter-spacing: 0; text-transform: none; }
+:root[data-ui="polish"] .tv-group-body {
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--em) * 0.5);
+  border-radius: var(--r-3);
+  background: var(--surf-1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+/* the hairline between two things of one surface */
+:root[data-ui="polish"] .tv-group-body > .tv-line,
+:root[data-ui="polish"] .tv-group-body > .tv-switch-row,
+:root[data-ui="polish"] .tv-group-body > .tv-field { position: relative; }
+:root[data-ui="polish"] .tv-group-body > * + .tv-line::before,
+:root[data-ui="polish"] .tv-group-body > * + .tv-switch-row::before,
+:root[data-ui="polish"] .tv-group-body > * + .tv-field::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: calc(var(--em) * 1);
+  right: calc(var(--em) * 1);
+  height: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  transition: opacity var(--t-fast) var(--ease);
+}
+:root[data-ui="polish"] .tv-group-body > .tv-line:focus-visible::before,
+:root[data-ui="polish"] .tv-group-body > .tv-switch-row:focus-visible::before { opacity: 0; }
+
+/* who is watching, at the top of the first group */
+:root[data-ui="polish"] .tv-who { display: flex; align-items: center; gap: calc(var(--em) * 1.4); padding: calc(var(--em) * 1.1) calc(var(--em) * 1) calc(var(--em) * 1.2); }
+:root[data-ui="polish"] .tv-who-avatar { flex: none; font-size: calc(var(--em) * 5.4); border-radius: 50%; }
+:root[data-ui="polish"] .tv-who-guest { display: grid; flex: none; place-items: center; width: calc(var(--em) * 5.4); height: calc(var(--em) * 5.4); border-radius: 50%; background: var(--surf-2); color: var(--text-2); font-size: calc(var(--em) * 2.4); }
+:root[data-ui="polish"] .tv-who-text { min-width: 0; }
+:root[data-ui="polish"] .tv-who-text h2 { margin: 0; overflow: hidden; font-size: var(--fs-5); font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-ui="polish"] .tv-who-text p { margin: calc(var(--em) * 0.25) 0 0; color: var(--text-3); font-size: var(--fs-2); line-height: 1.3; overflow-wrap: anywhere; }
+:root[data-ui="polish"] .tv-who-note { margin: 0; padding: 0 calc(var(--em) * 1) calc(var(--em) * 1); color: var(--text-2); font-size: var(--fs-2); line-height: 1.4; }
+:root[data-ui="polish"] .tv-who-cta { padding: calc(var(--em) * 0.3) calc(var(--em) * 0.5) calc(var(--em) * 0.5); }
+:root[data-ui="polish"] .tv-who-cta .tv-action { width: 100%; min-width: 0; }
+
+/* a row that leads on to another page, or does something to the account: an icon in a small tile, the words, and for a page an arrow */
+:root[data-ui="polish"] .tv-line {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--em) * 1.2);
+  width: 100%;
+  padding: calc(var(--em) * 0.8) calc(var(--em) * 1);
+  border-radius: var(--r-2);
+  background: transparent;
+  color: var(--text-1);
+  font-size: var(--fs-3);
+  font-weight: 600;
+  text-align: left;
+  transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
+}
+:root[data-ui="polish"] .tv-line-icon { display: grid; flex: none; place-items: center; width: calc(var(--em) * 3.2); height: calc(var(--em) * 3.2); border-radius: var(--r-1); background: var(--fill-1); color: var(--text-2); font-size: calc(var(--em) * 1.8); transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease); }
+:root[data-ui="polish"] .tv-line-text { flex: 1 1 0; min-width: 0; }
+:root[data-ui="polish"] .tv-line-chevron { flex: none; color: var(--text-3); font-size: var(--fs-3); transition: color var(--t-base) var(--ease); }
+:root[data-ui="polish"] .tv-line:hover { background: var(--fill-1); }
+:root[data-ui="polish"] .tv-line:focus-visible { z-index: 2; background: #fff; color: #0b0b0c; outline: none; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.03); }
+:root[data-ui="polish"] .tv-line:focus-visible .tv-line-icon { background: rgba(11, 11, 12, 0.08); color: #0b0b0c; }
+:root[data-ui="polish"] .tv-line:focus-visible .tv-line-chevron { color: #55555c; }
+:root[data-ui="polish"] .tv-line:active { transform: scale(0.98); }
+:root[data-ui="polish"] .tv-line-danger { color: #ffb4b4; }
+:root[data-ui="polish"] .tv-line-danger .tv-line-icon { background: rgba(255, 107, 107, 0.16); color: #ffb4b4; }
+:root[data-ui="polish"] .tv-line-danger:hover { background: rgba(255, 107, 107, 0.14); color: #ffd0d0; }
+:root[data-ui="polish"] .tv-line-danger:focus-visible { background: #fff; color: #b3261e; }
+:root[data-ui="polish"] .tv-line-danger:focus-visible .tv-line-icon { background: rgba(179, 38, 30, 0.12); color: #b3261e; }
+
+/* a labelled field: language is chosen from words in a row, colour from dots */
+:root[data-ui="polish"] .tv-field { display: flex; flex-direction: column; gap: calc(var(--em) * 0.8); padding: calc(var(--em) * 1.1) calc(var(--em) * 1) calc(var(--em) * 1.2); }
+:root[data-ui="polish"] .tv-field-label { color: var(--text-3); font-size: var(--fs-1); font-weight: 600; }
+:root[data-ui="polish"] .tv-segmented { display: flex; gap: calc(var(--em) * 0.2); padding: calc(var(--em) * 0.3); border-radius: var(--r-2); background: var(--bg); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+:root[data-ui="polish"] .tv-segmented .tv-choice { flex: 1 1 0; justify-content: center; min-width: 0; padding: calc(var(--em) * 0.65) calc(var(--em) * 0.4); border-radius: var(--r-1); background: transparent; color: var(--text-2); font-size: var(--fs-2); }
+:root[data-ui="polish"] .tv-segmented .tv-choice:hover { background: var(--fill-1); color: var(--text-1); }
+:root[data-ui="polish"] .tv-segmented .tv-choice[aria-checked="true"] { background: rgb(var(--accent-rgb) / 0.22); color: var(--text-1); box-shadow: inset 0 0 0 calc(var(--em) * 0.14) var(--accent); }
+:root[data-ui="polish"] .tv-segmented .tv-choice:focus-visible,
+:root[data-ui="polish"] .tv-segmented .tv-choice[aria-checked="true"]:focus-visible { z-index: 2; background: #fff; color: #0b0b0c; }
+:root[data-ui="polish"] .tv-segmented .tv-choice[aria-checked="true"]:focus-visible { box-shadow: inset 0 0 0 calc(var(--em) * 0.2) var(--accent), var(--focus-ring), var(--lift); }
+:root[data-ui="polish"] .tv-set .tv-swatches { gap: calc(var(--em) * 1); padding: calc(var(--em) * 0.4) calc(var(--em) * 0.3); }
+:root[data-ui="polish"] .tv-set .tv-swatch { width: calc(var(--em) * 3.5); height: calc(var(--em) * 3.5); font-size: calc(var(--em) * 1.6); }
+
+/* switches on the same surface: no surface of their own */
+:root[data-ui="polish"] .tv-group-body .tv-switch-row { max-width: none; padding: calc(var(--em) * 0.9) calc(var(--em) * 1); background: transparent; font-size: var(--fs-2); line-height: 1.3; }
+:root[data-ui="polish"] .tv-group-body .tv-switch-row:hover { background: var(--fill-1); }
+:root[data-ui="polish"] .tv-group-body .tv-switch-row:focus-visible { z-index: 2; background: #fff; }
+:root[data-ui="polish"] .tv-set-hint { display: flex; align-items: flex-start; gap: calc(var(--em) * 0.8); margin: 0; padding: 0 calc(var(--em) * 0.5); color: var(--text-3); font-size: var(--fs-1); line-height: 1.4; }
+:root[data-ui="polish"] .tv-set-hint svg { flex: none; margin-top: 0.15em; }
 
 /* ------------------------------ what the classic sheet sized by itself ------------------------------ */
 
@@ -552,6 +788,10 @@
 :root[data-ui="polish"] .hud-bar-track { transition: height var(--t-fast) var(--ease); }
 :root[data-ui="polish"] .tv-rank b { transition: -webkit-text-stroke-color var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv .profile-editor-tv .avatar-choice { transition: transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
+/* what arrives slows down as it lands, on the same ease (the browser's own "ease" starts fast and lands hard): the rows, the banner's words and a title page's words rise over 0.4 s */
+:root[data-ui="polish"] .tv-row,
+:root[data-ui="polish"] .tv-hero-text,
+:root[data-ui="polish"] .tv-detail-text { animation-duration: 0.4s; animation-timing-function: var(--ease); }
 
 /* ------------------------------ reduced motion ------------------------------ */
 
@@ -595,18 +835,28 @@
     --hero-h: calc(var(--em) * 17);
     --hero-h-deep: calc(var(--em) * 7.4);
     --rail-w: calc(var(--em) * 5.6);
-    --rail-w-open: calc(var(--em) * 24);
+    --rail-w-open: calc(var(--em) * 25);
     --detail-b: calc(var(--em) * 2.4);
     --eps-t: calc(var(--em) * 0.6);
     --eps-b: calc(var(--em) * 4);
   }
   :root[data-ui="polish"] .tv-rail-item { margin: 0 calc(var(--em) * 1.2) 0 calc(var(--em) * 0.8); padding: calc(var(--em) * 0.8) calc(var(--em) * 0.7); }
-  :root[data-ui="polish"] .tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: calc(var(--em) * 0.8); }
+  :root[data-ui="polish"] .tv-rail:not([data-open="true"]) .tv-rail-item { margin-right: calc(var(--rail-w) - var(--em) * 0.8 - var(--em) * 1.4 - var(--fs-3) * 1.15); }
   :root[data-ui="polish"] .tv-rail-group { margin-left: calc(var(--em) * 1.5); }
   :root[data-ui="polish"] .tv-rail-category { margin-left: calc(var(--em) * 2.6); }
   :root[data-ui="polish"] .tv-hero-button,
   :root[data-ui="polish"] .tv-detail .tv-hero-button { padding: calc(var(--em) * 0.7) calc(var(--em) * 1.3); }
   :root[data-ui="polish"] .tv-tile-corner { width: calc(var(--em) * 2.6); height: calc(var(--em) * 2.6); }
+  /* the profile's page and the settings: the head is smaller, the groups come one under the other */
+  :root[data-ui="polish"] .tv-hero-profile { min-height: calc(var(--em) * 11); padding-top: calc(var(--em) * 0.8); }
+  :root[data-ui="polish"] .tv-profile-head { gap: calc(var(--em) * 1.6); }
+  :root[data-ui="polish"] .tv-profile-avatar { font-size: calc(var(--em) * 6.4); }
+  :root[data-ui="polish"] .tv-profile-guest { width: calc(var(--em) * 6.4); height: calc(var(--em) * 6.4); font-size: calc(var(--em) * 2.8); }
+  :root[data-ui="polish"] .tv-tile-place { width: calc(var(--em) * 21); height: calc(var(--em) * 12); padding: calc(var(--em) * 1.4); }
+  :root[data-ui="polish"] .tv-place-icon { top: calc(var(--em) * 1.4); left: calc(var(--em) * 1.4); width: calc(var(--em) * 3.6); height: calc(var(--em) * 3.6); font-size: calc(var(--em) * 1.9); }
+  :root[data-ui="polish"] .tv-set { padding-top: 0; }
+  :root[data-ui="polish"] .tv-set-grid { grid-template-columns: minmax(0, 1fr); gap: calc(var(--em) * 1.6); }
+  :root[data-ui="polish"] .tv-set-col { gap: calc(var(--em) * 1.6); }
 }
 
 /* Flat (a phone held sideways, a window as flat as one): the banner and the page's top give height back. */

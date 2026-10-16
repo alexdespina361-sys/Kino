@@ -5,13 +5,14 @@ import { useBell } from "../friends/useBell";
 import { useT } from "../i18n";
 import { formatCode } from "../shared/format";
 import { enterFullscreen, useFullscreen } from "../shared/fullscreen";
-import { BellIcon, CheckIcon, UserIcon } from "../shared/icons";
+import { BellIcon, CheckIcon, ChevronLeftIcon, UserIcon } from "../shared/icons";
 import { controlLink, pairLink } from "../shared/launch";
 import { Logo } from "../shared/Logo";
 import { RoleSwitch } from "../shared/RoleSwitch";
 import { QrCode } from "../shared/QrCode";
 import { navItems, useBack, useDpad } from "./dpad";
 import { actionForKey } from "./keys";
+import { TvCode } from "./TvCode";
 
 export interface Pairing {
   code: string;
@@ -56,6 +57,20 @@ export function Screen({ children, testId, compact = false, focus = false, onBac
 }
 
 /**
+ * The way out of a full-screen page, the same on every page that has one: a quiet button in the top corner (the stylesheet puts it there,
+ * wherever it stands in the page), level with the wordmark. What a page is for is the accent's colour; leaving it never is. `label` says
+ * where it goes when that is worth saying ("Back to the library").
+ */
+export function BackButton({ onClick, testId, label, autoFocus = false }: { onClick: () => void; testId: string; label?: string; autoFocus?: boolean }) {
+  const t = useT();
+  return (
+    <button className="tv-action tv-back" onClick={onClick} data-nav {...(autoFocus ? { "data-autofocus": true } : {})} data-testid={testId}>
+      <ChevronLeftIcon /> {label ?? t("common.back")}
+    </button>
+  );
+}
+
+/**
  * The bell beside the account chip: a number on it while something waits for an answer, a quieter dot when friends only watched something.
  * Not there while friends are off. `col` is its place among the corner's buttons, for the library's arrow keys.
  */
@@ -85,8 +100,12 @@ export function BellChip({ onOpen, col }: { onOpen: () => void; col: number }) {
   );
 }
 
-/** Top right of the library: who is watching on this TV, or a way to sign in. `zone`: the library's own arrow keys walk to it, not the screen's; `col` is its place among the corner's buttons. */
-export function AccountChip({ onOpen, zone = false, col = 0 }: { onOpen: () => void; zone?: boolean; col?: number }) {
+/**
+ * Top right of the library: who is watching on this TV, or a way to sign in. It opens the profile's page (what this profile rated, its friends and
+ * History, and Settings in that page's corner). `zone`: the library's own arrow keys walk to it, not the screen's; `col` is its place among the
+ * corner's buttons; `current`: the page that is open is the profile's (or one of the pages that belong to it).
+ */
+export function AccountChip({ onOpen, zone = false, col = 0, current = false }: { onOpen: () => void; zone?: boolean; col?: number; current?: boolean }) {
   const t = useT();
   const { status, me, profile } = useAccount();
   if (status !== "ready") return null;
@@ -94,6 +113,7 @@ export function AccountChip({ onOpen, zone = false, col = 0 }: { onOpen: () => v
     <button
       className="tv-account-chip"
       onClick={onOpen}
+      aria-current={current ? "page" : undefined}
       {...(zone ? { "data-zone": "top", "data-row": 0, "data-col": col } : { "data-nav": true })}
       data-testid="tv-account-chip"
       aria-label={me && profile ? `${t("account.open")}: ${profile.name}` : t("account.signInPrompt")}
@@ -217,11 +237,7 @@ interface IdleProps {
 /** What the TV shows besides the library, a video and a watch party: finding one, pairing a phone, being paired. */
 export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, onDisconnect, onBack }: IdleProps) {
   const t = useT();
-  const back = (
-    <button className="tv-action tv-action-primary" onClick={onBack} data-testid="tv-back-to-library" data-nav>
-      {t("tv.backToLibrary")}
-    </button>
-  );
+  const back = <BackButton onClick={onBack} testId="tv-back-to-library" label={t("tv.backToLibrary")} />;
 
   if (resolving) {
     return (
@@ -267,9 +283,7 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
               <span>{t("tv.stepEnter")}</span>
             </li>
             <li className="tv-code-row">
-              <p className="tv-code" data-testid="tv-join-code">
-                {control ? formatCode(control.code) : "…"}
-              </p>
+              <TvCode shown={control ? formatCode(control.code) : "…"} copy={control?.code} testId="tv-join-code" copyTestId="tv-join-code-copy" />
             </li>
           </ol>
           <div className="tv-qr">
@@ -279,11 +293,11 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
         </div>
         {/* Reached with the remote's arrow keys; the first press only lands on a button, it never presses one. */}
         <div className="tv-actions">
-          {back}
           <button className="tv-action" onClick={onDisconnect} data-testid="tv-disconnect" data-nav>
             {t("tv.disconnect")}
           </button>
         </div>
+        {back}
       </Screen>
     );
   }
@@ -306,9 +320,7 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
               <span>{t("tv.stepEnter")}</span>
             </li>
             <li className="tv-code-row">
-              <p className="tv-code" data-testid="pairing-code">
-                {formatCode(pairing.code)}
-              </p>
+              <TvCode shown={formatCode(pairing.code)} copy={pairing.code} testId="pairing-code" copyTestId="pairing-code-copy" />
             </li>
           </ol>
           <div className="tv-qr">
@@ -316,7 +328,7 @@ export function TvIdle({ paired, pairing, control, resolving, stuck, onCancel, o
             <p>{t("tv.qrHint")}</p>
           </div>
         </div>
-        <div className="tv-actions">{back}</div>
+        {back}
         <RoleSwitch to="remote" />
       </Screen>
     );

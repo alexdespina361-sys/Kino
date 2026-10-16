@@ -16,7 +16,7 @@ import { CopyCode } from "../shared/CopyLink";
 import { CheckIcon, PlayIcon, PlusIcon, SearchIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
-import { Screen } from "./Idle";
+import { BackButton, Screen } from "./Idle";
 import type { Entry } from "./pages";
 import "./friends.css";
 
@@ -283,11 +283,7 @@ function TypeCode({ onBack, onDone }: { onBack: () => void; onDone: () => void }
         </label>
       </form>
       {code && <TypedCode key={code} code={code} onDone={onDone} />}
-      <div className="tv-actions">
-        <button className="tv-action" onClick={onBack} data-nav data-testid="tv-friend-type-back">
-          {t("common.back")}
-        </button>
-      </div>
+      <BackButton onClick={onBack} testId="tv-friend-type-back" />
     </Screen>
   );
 }
@@ -367,10 +363,8 @@ function TypeTag({ onBack, onDone }: { onBack: () => void; onDone: () => void })
         <button className="tv-action tv-action-primary" disabled={!wanted} onClick={find} data-nav data-testid="tv-friend-tag-find">
           {t("friends.tagFind")}
         </button>
-        <button className="tv-action" onClick={onBack} data-nav data-testid="tv-friend-tag-back">
-          {t("common.back")}
-        </button>
       </div>
+      <BackButton onClick={onBack} testId="tv-friend-tag-back" />
     </Screen>
   );
 }
@@ -409,11 +403,7 @@ export function AddFriendTv({ onClose }: { onClose: () => void }) {
           {t("friends.yourTag")}: <b>{mine}</b>
         </p>
       )}
-      <div className="tv-actions">
-        <button className="tv-action" onClick={onClose} data-nav data-testid="tv-friend-add-back">
-          {t("common.back")}
-        </button>
-      </div>
+      <BackButton onClick={onClose} testId="tv-friend-add-back" />
     </Screen>
   );
 }
@@ -446,10 +436,8 @@ export function FriendRequestTv({ person, onClose }: { person: Person; onClose: 
         <button className="tv-action" disabled={busy} onClick={() => void respond(answer.decline(person))} data-nav data-testid="tv-friend-request-decline">
           {t("friends.decline")}
         </button>
-        <button className="tv-action" onClick={onClose} data-nav data-testid="tv-friend-request-back">
-          {t("common.back")}
-        </button>
       </div>
+      <BackButton onClick={onClose} testId="tv-friend-request-back" />
     </Screen>
   );
 }
@@ -534,10 +522,8 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
         <button className="tv-action tv-action-primary" onClick={onFriends} data-nav data-testid="tv-bell-friends">
           {t("bell.openFriends")}
         </button>
-        <button className="tv-action" onClick={onClose} data-nav data-testid="tv-bell-back">
-          {t("common.back")}
-        </button>
       </div>
+      <BackButton onClick={onClose} testId="tv-bell-back" />
     </Screen>
   );
 }

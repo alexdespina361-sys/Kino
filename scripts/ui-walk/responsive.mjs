@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
-const looks = option("looks", "classic,polish").split(",");
+const looks = option("looks", "polish").split(","); // (one look now; "classic,polish" still compares with old scans, if they are still on the disk)
 const scanRoot = option("scan", ".ui-polish/scan");
 
 /** phone-390-signed-in and phone-390 are one size (two accounts); tv-1280-keys is the same screen again with the remote somewhere else. */

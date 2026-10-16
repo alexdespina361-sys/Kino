@@ -244,16 +244,24 @@ export function AccountScreen({
               <p className="muted">{t("account.signedInAs", { email: me.account.email })}</p>
             </div>
           </section>
-          <nav className="menu">
-            {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={() => setView("picker")} testId="menu-switch" />}
-            <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={() => setView("profiles")} testId="menu-profiles" />
-            <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
-            {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.attention > 0 ? String(friends.attention) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
-            {ratingsRow}
-            <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
-            <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
-            <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
-          </nav>
+          <div className="menu-groups">
+            <nav className="menu">
+              {me.profiles.length > 1 && <MenuRow icon={<UserIcon />} label={t("profiles.switch")} onClick={() => setView("picker")} testId="menu-switch" />}
+              <MenuRow icon={<PencilIcon />} label={t("profiles.manage")} onClick={() => setView("profiles")} testId="menu-profiles" />
+            </nav>
+            {(friends.on || ratingsOn) && (
+              <nav className="menu">
+                {friends.on && <MenuRow icon={<UsersIcon />} label={t("friends.title")} detail={friends.attention > 0 ? String(friends.attention) : undefined} onClick={() => openFriends("main")} testId="menu-friends" />}
+                {ratingsRow}
+              </nav>
+            )}
+            <nav className="menu">
+              <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
+              <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
+              <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
+              <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
+            </nav>
+          </div>
           <button
             className="btn btn-block"
             onClick={() => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ACCENTS, DEVICE_NAME_MAX, friendChoices, preferredLanguages, UI_LANGUAGES, type FriendSetting, type KeptFriend, type SessionInfo } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
@@ -28,14 +28,35 @@ export function Group({ title, help, children }: { title: string; help?: string 
   );
 }
 
-/** An on/off setting. */
-export function Switch({ label, checked, onChange, testId }: { label: string; checked: boolean; onChange: (checked: boolean) => void; testId?: string }) {
+/** An on/off setting; what it does is said under it, in the same row (a tap on those words is a tap on the row), where a line or two of words is needed. */
+export function Switch({ label, hint, checked, onChange, testId }: { label: string; hint?: string | undefined; checked: boolean; onChange: (checked: boolean) => void; testId?: string }) {
+  const id = useId();
   return (
-    <button className="switch-row" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} data-testid={testId}>
-      <span>{label}</span>
+    <button
+      className={`switch-row${hint ? " has-hint" : ""}`}
+      role="switch"
+      aria-checked={checked}
+      aria-labelledby={`${id}-label`}
+      {...(hint ? { "aria-describedby": `${id}-hint` } : {})}
+      onClick={() => onChange(!checked)}
+      data-testid={testId}
+    >
+      <span className="switch-text">
+        <span id={`${id}-label`}>{label}</span>
+        {hint && (
+          <small id={`${id}-hint`} className="switch-hint">
+            {hint}
+          </small>
+        )}
+      </span>
       <span className="switch" aria-hidden="true" />
     </button>
   );
+}
+
+/** Settings that belong together are one card, a row to each with a hairline between (a card to each is a stack of ten the same). */
+export function Rows({ children }: { children: ReactNode }) {
+  return <div className="menu">{children}</div>;
 }
 
 /* ------------------------------ settings ------------------------------ */
@@ -217,11 +238,12 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
       <Switch label={t("friends.switch")} checked={choices.friends} onChange={(on) => change("friends", on)} testId="friends-switch" />
       {choices.friends && (
         <>
-          {FRIEND_SWITCHES.filter(({ key }) => key !== "friendsRatings" || settings.ratings !== false).map(({ key, label, testId }) => (
-            <Switch key={key} label={t(label)} checked={choices[key]} onChange={(on) => change(key, on)} testId={testId} />
-          ))}
-          <Switch label={t("friends.popups")} checked={settings.newsPopups !== false} onChange={(on) => set("newsPopups", on ? undefined : false)} testId="news-popups-switch" />
-          <p className="muted small">{t("friends.popupsHelp")}</p>
+          <Rows>
+            {FRIEND_SWITCHES.filter(({ key }) => key !== "friendsRatings" || settings.ratings !== false).map(({ key, label, testId }) => (
+              <Switch key={key} label={t(label)} checked={choices[key]} onChange={(on) => change(key, on)} testId={testId} />
+            ))}
+            <Switch label={t("friends.popups")} hint={t("friends.popupsHelp")} checked={settings.newsPopups !== false} onChange={(on) => set("newsPopups", on ? undefined : false)} testId="news-popups-switch" />
+          </Rows>
           <button className="btn btn-block" onClick={onOpen} data-testid="friends-open">
             <UsersIcon /> {t("friends.open")}
             {friends.state && <small>{t("friends.count", { count: friends.state.friends.length })}</small>}
@@ -270,17 +292,17 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
         </div>
       </Group>
       <Group title={t("settings.playback")} help={t("settings.playbackHelp")}>
-        <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
-        <Switch label={t("settings.tapToPause")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
-        <p className="muted small">{t("settings.tapToPauseHelp")}</p>
-        <Switch label={t("settings.adaptiveQuality")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
-        <p className="muted small">{t("settings.adaptiveQualityHelp")}</p>
+        <Rows>
+          <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
+          <Switch label={t("settings.tapToPause")} hint={t("settings.tapToPauseHelp")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
+          <Switch label={t("settings.adaptiveQuality")} hint={t("settings.adaptiveQualityHelp")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
+        </Rows>
       </Group>
-      <Group title={t("settings.pasteLink")} help={t("settings.linkBoxHelp")}>
-        <Switch label={t("settings.pasteLinkSwitch")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />
+      <Group title={t("settings.pasteLink")}>
+        <Switch label={t("settings.pasteLinkSwitch")} hint={t("settings.linkBoxHelp")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />
       </Group>
-      <Group title={t("rating.settings")} help={t("rating.settingsHelp")}>
-        <Switch label={t("rating.settingsSwitch")} checked={settings.ratings ?? true} onChange={(on) => set("ratings", on)} testId="ratings-switch" />
+      <Group title={t("rating.settings")}>
+        <Switch label={t("rating.settingsSwitch")} hint={t("rating.settingsHelp")} checked={settings.ratings ?? true} onChange={(on) => set("ratings", on)} testId="ratings-switch" />
       </Group>
       <FriendsGroup onOpen={onOpenFriends} />
       <SubtitleLanguages />

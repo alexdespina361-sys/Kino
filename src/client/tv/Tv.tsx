@@ -1345,7 +1345,7 @@ export function Tv() {
   /** A film is what the screen is for right now (not its end card, nor an error): nothing is to land on it that can wait. */
   const filmIsOn = showVideo && !finished && !failed;
 
-  /** A finger is held on the picture and it plays faster for as long as it stays. */
+  /** A finger (or a mouse button) is held on the picture and it plays faster for as long as it stays. */
   const [boosting, setBoosting] = useState(false);
   const holdPicture = (): boolean => {
     const engine = engineRef.current;
@@ -1365,15 +1365,16 @@ export function Tv() {
   }, [boosting, player.state]);
 
   /**
-   * One tap or click on the picture: it shows or hides the controls. (With the profile's choice it pauses and plays instead, as a click
-   * always did; then a finger on controls that are away only brings them up, so reaching for them does not pause the film.)
+   * One tap or click on the picture (acted on a moment late, once it is known not to be the first of two): it shows or hides the controls.
+   * (With the profile's choice it pauses and plays instead, as a click always did; then a finger on controls that are away only brings
+   * them up, so reaching for them does not pause the film.)
    */
   const tapPicture = (kind: PointerKind, wasVisible: boolean) => {
     if (!tapToPause) return wasVisible ? hideControls() : wake();
     wake();
     if (kind === "mouse" || wasVisible) playOrPause();
   };
-  /** Two taps in a row: a side skips that way (and shows nothing of the controls, as the two buttons under it would), the middle goes full screen. */
+  /** Two taps or clicks in a row: a side skips that way (and shows nothing of the controls, as the two buttons under it would), the middle goes full screen. */
   const doubleTapPicture = (side: Side) => {
     if (side !== "middle") skipHere(side === "back" ? -SKIP_SECONDS : SKIP_SECONDS);
     else if (canFullscreen) toggleFullscreen();
@@ -1430,7 +1431,8 @@ export function Tv() {
       }}
       onPointerDown={picture.onPointerDown}
       onDoubleClick={(event) => {
-        if (zoneOf(event.target) === "picture" && picture.kindRef.current === "mouse") toggleFullscreen(); // (a finger's double tap was dealt with already)
+        // (Pointer events tell a double click from two clicks themselves, and by the side of the picture it landed on: its sides skip, its middle goes full screen. A browser from before them has only this.)
+        if (typeof PointerEvent === "undefined" && zoneOf(event.target) === "picture") toggleFullscreen();
       }}
       onContextMenu={(event) => {
         if (isPicture(event.target) && picture.kindRef.current === "touch") event.preventDefault(); // (a hold is no request for a menu)
@@ -1481,7 +1483,7 @@ export function Tv() {
       {unlocked && !showVideo && !accountPage && !resolving && !following && screen === "library" && (
         <TvBrowse
           onPlay={playEpisode}
-          onAccount={() => setAccountView(account.me ? "panel" : "signin")}
+          onSignIn={() => setAccountView("signin")}
           onSettings={() => setAccountView("panel")}
           onConnect={() => setScreen("connect")}
           onParty={() => {
@@ -1581,6 +1583,7 @@ export function Tv() {
           onToggle={playOrPause}
           onSkip={skipHere}
           onSeekTo={(time) => (following ? admin && steer({ type: "SEEK", time }) : engineRef.current?.seek(time))}
+          onScrub={wake}
           onNext={() => (following ? admin && steer({ type: "NEXT_EPISODE" }) : triggerNextEpisode())}
           onPrevious={goToPrevious}
           onDismissUpNext={dismissUpNext}

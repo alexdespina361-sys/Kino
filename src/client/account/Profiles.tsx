@@ -75,10 +75,12 @@ interface EditorProps {
   onDelete?: (() => Promise<void>) | undefined;
   /** On the TV every control is reached with the remote's arrow keys (`data-nav`), and the buttons look like the TV's. */
   tv?: boolean;
+  /** The page's title, on the TV: it sits in the form's own grid, over the fields, so that it starts where they do. */
+  heading?: string;
 }
 
 /** The name and picture of one profile. */
-export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete, tv = false }: EditorProps) {
+export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete, tv = false, heading }: EditorProps) {
   const t = useT();
   const [name, setName] = useState(profile?.name ?? "");
   const [avatar, setAvatar] = useState<AvatarId>(profile?.avatar ?? AVATAR_IDS.find((id) => !taken.includes(id)) ?? AVATAR_IDS[0]);
@@ -107,6 +109,7 @@ export function ProfileEditor({ profile, taken = [], onSave, onCancel, onDelete,
 
   return (
     <form className={`profile-editor${tv ? " profile-editor-tv" : ""}`} onSubmit={submit} noValidate data-testid="profile-editor">
+      {heading && <h1 className="tv-headline tv-headline-small">{heading}</h1>}
       <div className="editor-preview">
         <Avatar id={avatar} className="profile-avatar editor-avatar" />
       </div>

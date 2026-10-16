@@ -2,7 +2,7 @@ import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { openDevice, openLibrary, openProfilePlace, openTv, PHONE, readPairingCode, test } from "./helpers";
+import { openDevice, openLibrary, openProfilePlace, openTv, openTvSignIn, PHONE, readPairingCode, test } from "./helpers";
 
 /**
  * The bell: a button beside the profile's picture, on the phone and on the TV. A number on it is what waits for an answer from this profile
@@ -125,7 +125,7 @@ interface Screen {
 async function screenWithFriends(browser: Browser, name: string, options: { language?: Language } = {}): Promise<Screen> {
   const account = fresh(name);
   const page = await openLibrary(browser, undefined, HD, options.language ? { "kino.lang": options.language } : {});
-  await page.getByTestId("tv-account-chip").click();
+  await openTvSignIn(page);
   await page.getByTestId("tv-signin-email").click();
   await page.getByTestId("auth-switch").click();
   await expect(page.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
@@ -353,8 +353,7 @@ test.describe("the bell on the TV", () => {
 
     // Bob tells what he watches and Cy hears it: a dot on the bell, a line in the list that opens the title.
     await setting(bob.page, "friends-give", true);
-    await tv.getByTestId("rail-profile").click();
-    await tv.locator('[data-entry="profile:friends"]').click();
+    await openProfilePlace(tv, "friends");
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "friends");
     await tv.locator(`.tv-tile[title="${en["friends.settingsTile"]}"]`).click();
     await tv.getByTestId("tv-friends-get").click();

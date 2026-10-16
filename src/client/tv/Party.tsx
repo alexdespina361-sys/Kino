@@ -9,7 +9,7 @@ import { BackspaceIcon, CheckIcon, CloseIcon, FullscreenIcon, PlusIcon, UsersIco
 import { partyLink } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { FriendPickerTv, useFriendPicker } from "./Friends";
-import { Screen } from "./Idle";
+import { BackButton, Screen } from "./Idle";
 
 /** How a button joins the remote's arrow keys: the pages use `data-nav`, the panel over a film `data-opt` in a column (see dpad.ts and Menu.tsx). */
 type Nav = Record<string, string | number | boolean>;
@@ -218,9 +218,6 @@ export function PartyPage(p: PageProps) {
         <Members party={p.party} nav={PAGE_NAV} onRemove={p.onRemove} onAdmin={p.onAdmin} />
         {p.party.guests.length === 0 && <p className="tv-hint">{t("party.waiting")}</p>}
         <div className="tv-actions">
-          <button className="tv-action tv-action-primary" onClick={p.onBack} data-testid="tv-back-to-library" data-nav data-autofocus>
-            {t("tv.backToLibrary")}
-          </button>
           {friends.on && invite && (
             <button className="tv-action" onClick={() => setInviting(true)} data-testid="tv-party-invite-friends" data-nav>
               <UsersIcon /> {t("friends.inviteFriends")}
@@ -230,6 +227,8 @@ export function PartyPage(p: PageProps) {
             {t("party.end")}
           </button>
         </div>
+        {/* (the next thing to do is pick a film, so the remote starts on the way out: a stray OK here ends nothing) */}
+        <BackButton onClick={p.onBack} testId="tv-back-to-library" label={t("tv.backToLibrary")} autoFocus />
       </Screen>
     );
   }
@@ -253,11 +252,7 @@ export function PartyPage(p: PageProps) {
           <small>{t("party.joinHint")}</small>
         </button>
       </div>
-      <div className="tv-actions">
-        <button className="tv-action" onClick={p.onBack} data-testid="tv-back-to-library" data-nav>
-          {t("tv.backToLibrary")}
-        </button>
-      </div>
+      <BackButton onClick={p.onBack} testId="tv-back-to-library" label={t("tv.backToLibrary")} />
     </Screen>
   );
 }
@@ -335,6 +330,7 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
           <CloseIcon />
         </button>
       </div>
+      <BackButton onClick={onBack} testId="tv-party-join-back" />
     </Screen>
   );
 }

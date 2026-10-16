@@ -46,11 +46,18 @@ const SCREENS = [
   ["search", "L U OK 2D R"],
   ["rate", "OK 2R OK"],
   ["rate-low", "OK 2R OK 4L"],
-  ["profile", "L 7D OK"],
-  ["settings", "L 7D OK 3R OK"],
-  ["settings-language", "L 7D OK 3R OK R 3U L"],
-  ["settings-colour", "L 7D OK 3R OK R 2U"],
-  ["settings-switch", "L 7D OK 3R OK R 5D"],
+  // (the profile is the corner button of the top row: two Ups from the first screen, then OK; its page has Settings at the right of its top)
+  ["profile", "2U OK"],
+  ["profile-settings", "2U OK R"],
+  ["profile-card", "2U OK D"],
+  // (an arrow goes to what is nearest in that direction: Right of Sign in is the first colour dot, level with it; the language row is above the dots, a switch below)
+  ["settings", "2U OK R OK"],
+  ["settings-colour", "2U OK R OK R"],
+  ["settings-colour-next", "2U OK R OK 2R"],
+  ["settings-language", "2U OK R OK R U"],
+  ["settings-playback", "2U OK R OK R U 3R"],
+  ["settings-switch", "2U OK R OK R D"],
+  ["settings-back", "2U OK R OK U"],
   ["party", "L 5D OK"],
   ["connect", "L 6D OK D"],
   ["player", "", async (page) => {

@@ -24,8 +24,8 @@ export function mergeAnswers(first: readonly LibraryItem[], more: readonly Libra
 /** The letters, then the digits: six keys to a row, which is what the TV's keyboard is laid out in. */
 export const KEYBOARD_KEYS = [..."abcdefghijklmnopqrstuvwxyz0123456789"];
 export const KEYBOARD_COLUMNS = 6;
-/** The keyboard's rows, then the row of the three wide keys (Space, Delete, Clear). */
-export const KEYBOARD_SHAPE = [...Array.from({ length: KEYBOARD_KEYS.length / KEYBOARD_COLUMNS }, () => KEYBOARD_COLUMNS), 3];
+/** The keyboard's rows, then the row under them: the two keys that move the caret (one column each), Space (two), Delete and Clear (one each). */
+export const KEYBOARD_SHAPE = [...Array.from({ length: KEYBOARD_KEYS.length / KEYBOARD_COLUMNS }, () => KEYBOARD_COLUMNS), 5];
 
 /** What a physical key adds to the search box, if anything (`null`: not a character for it). */
 export function typedCharacter(event: { key: string; altKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }): string | null {
@@ -37,4 +37,57 @@ export function typedCharacter(event: { key: string; altKey?: boolean; ctrlKey?:
 export function appendTo(text: string, char: string, max = 60): string {
   if (char === " " && (text === "" || text.endsWith(" "))) return text;
   return (text + char).slice(0, max);
+}
+
+/** The search box: what was typed, and where the caret stands in it (0 is before the first character, the length is after the last). */
+export interface SearchBox {
+  text: string;
+  caret: number;
+}
+
+/** What can be done to the box: type a character at the caret, take the one before it (Backspace) or the one after it (Delete), move the caret, or empty the box. */
+export type BoxEdit =
+  | { kind: "type"; char: string }
+  | { kind: "backspace" }
+  | { kind: "delete" }
+  | { kind: "move"; to: "left" | "right" | "start" | "end" | number }
+  | { kind: "clear" };
+
+/** The text without a leading space or a double one (a letter taken out from between two spaces leaves two), the caret keeping its place among the characters that are left. */
+function tidy(text: string, caret: number): SearchBox {
+  let kept = "";
+  let at = caret;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === " " && (kept === "" || kept.endsWith(" "))) {
+      if (i < caret) at--;
+      continue;
+    }
+    kept += text[i];
+  }
+  return { text: kept, caret: Math.max(0, Math.min(at, kept.length)) };
+}
+
+/**
+ * The box after an edit. The text stays what `appendTo` keeps it (no leading or double spaces, not longer than `max`), but a character
+ * goes in where the caret is and not only at the end, so a slip in the middle of a title is mended without typing it all again.
+ */
+export function editBox(box: SearchBox, edit: BoxEdit, max = 60): SearchBox {
+  const { text } = box;
+  const caret = Math.max(0, Math.min(box.caret, text.length));
+  switch (edit.kind) {
+    case "type":
+      if (text.length >= max) return { text, caret };
+      if (edit.char === " " && (caret === 0 || text[caret - 1] === " " || text[caret] === " ")) return { text, caret };
+      return { text: text.slice(0, caret) + edit.char + text.slice(caret), caret: caret + edit.char.length };
+    case "backspace":
+      return caret === 0 ? { text, caret } : tidy(text.slice(0, caret - 1) + text.slice(caret), caret - 1);
+    case "delete":
+      return caret === text.length ? { text, caret } : tidy(text.slice(0, caret) + text.slice(caret + 1), caret);
+    case "move": {
+      const to = edit.to === "left" ? caret - 1 : edit.to === "right" ? caret + 1 : edit.to === "start" ? 0 : edit.to === "end" ? text.length : edit.to;
+      return { text, caret: Math.max(0, Math.min(to, text.length)) };
+    }
+    case "clear":
+      return { text: "", caret: 0 };
+  }
 }

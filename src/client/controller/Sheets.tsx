@@ -33,13 +33,14 @@ import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { CopyLink } from "../shared/CopyLink";
 import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatCode, formatLeft } from "../shared/format";
-import { CheckIcon, PlusIcon, ScanIcon } from "../shared/icons";
+import { CheckIcon, ChevronIcon, PlusIcon, ScanIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { controlLink, partyLink } from "../shared/launch";
-import { hueOf } from "../shared/Poster";
+import { comesIn, hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { RoleSwitch } from "../shared/RoleSwitch";
 import { captionLabel, captionTitle, statusWords, trackName } from "../shared/words";
+import { Rows, Switch } from "./AccountPages";
 import { InviteFriendsButton } from "./Friends";
 import { codeFromScan } from "./scan";
 import { cameraAvailable, Scanner } from "./Scanner";
@@ -315,7 +316,7 @@ export function Still({ src, name }: { src: string | undefined; name: string }) 
   const hue = hueOf(name);
   return (
     <span className="episode-still" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
-      {src && !broken && <img src={src} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} />}
+      {src && !broken && <img src={src} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
     </span>
   );
 }
@@ -466,18 +467,26 @@ export function MenuSheet({
           </span>
         </div>
       )}
-      <button className="btn btn-block" data-testid="party-open" onClick={onParty}>
-        {partySize === 0 ? t("menu.partyOpen") : t("menu.partyActive", { count: partySize + 1 })}
-      </button>
-      <button className="btn btn-block" data-testid="tvs-open" onClick={onTvs}>
-        {tvCount > 1 ? t("menu.tvsCount", { count: tvCount }) : t("menu.tvs")}
-      </button>
-      <FullscreenToggle className="btn btn-block" labels={{ enter: t("phone.fullscreen"), exit: t("phone.exitFullscreen") }} />
-      <button className={`choice${linkBox ? " active" : ""}`} role="switch" aria-checked={linkBox} onClick={() => onLinkBox(!linkBox)} data-testid="link-box-toggle">
-        <span>{t("menu.linkBox")}</span>
-        <span className="choice-dot" aria-hidden="true" />
-      </button>
-      <p className="muted small">{t("menu.linkBoxHelp", { tv: tvName })}</p>
+      <nav className="menu">
+        <button className="menu-row" data-testid="party-open" onClick={onParty}>
+          <span className="menu-icon">
+            <UsersIcon />
+          </span>
+          <span className="menu-label">{partySize === 0 ? t("menu.partyOpen") : t("menu.partyActive", { count: partySize + 1 })}</span>
+          <ChevronIcon />
+        </button>
+        <button className="menu-row" data-testid="tvs-open" onClick={onTvs}>
+          <span className="menu-icon">
+            <TvIcon />
+          </span>
+          <span className="menu-label">{tvCount > 1 ? t("menu.tvsCount", { count: tvCount }) : t("menu.tvs")}</span>
+          <ChevronIcon />
+        </button>
+      </nav>
+      <Rows>
+        <FullscreenToggle className="menu-row" labels={{ enter: t("phone.fullscreen"), exit: t("phone.exitFullscreen") }} />
+        <Switch label={t("menu.linkBox")} hint={t("menu.linkBoxHelp", { tv: tvName })} checked={linkBox} onChange={onLinkBox} testId="link-box-toggle" />
+      </Rows>
       <button className="btn btn-danger btn-block" data-testid="disconnect" onClick={onDisconnect}>
         {t("menu.disconnect")}
       </button>

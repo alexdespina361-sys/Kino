@@ -10,7 +10,7 @@ import { join } from "node:path";
 
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
-const look = option("look", "classic");
+const look = option("look", "polish"); // (the folder the walk writes: there is one look now; "classic" reads the old scans, if they are still on the disk)
 const scanDir = join(option("scan", ".ui-polish/scan"), look);
 const outDir = option("out", "docs/ui-polish/drift");
 const examples = Number(option("examples", "6"));

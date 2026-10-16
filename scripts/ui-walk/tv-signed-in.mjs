@@ -18,12 +18,14 @@ const look = (page) => page.evaluate(() => document.dispatchEvent(new Event("vis
 const profileOf = (page) => page.evaluate(() => localStorage.getItem("kino.profile"));
 
 async function profilePage(page) {
-  await page.getByTestId("rail-profile").click();
+  await page.getByTestId("tv-account-chip").click();
   await page.locator('[data-testid="tv-browse"][data-view="profile"]').waitFor();
 }
 async function place(page, where) {
   if ((await page.getByTestId("tv-browse").getAttribute("data-view")) !== "profile") await profilePage(page);
-  await page.locator(`[data-entry="profile:${where}"]`).click();
+  // (Settings is a button of the profile page's top, the other places are its tiles)
+  if (where === "settings") await page.getByTestId("tv-profile-settings").click();
+  else await page.locator(`[data-entry="profile:${where}"]`).click();
 }
 
 /** A new screen with its own account, signed up with the form a keyboard fills in, friends switched on. */
@@ -34,6 +36,7 @@ async function screen(browser, name, { viewport = HD, shotAt } = {}) {
   await page.getByTestId("tv-browse").waitFor();
   await page.getByTestId("tv-welcome").waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
   await page.getByTestId("tv-account-chip").click();
+  await page.getByTestId("tv-profile-signin").click();
   await page.getByTestId("tv-signin-email").click();
   await page.getByTestId("auth-switch").click();
   await page.getByTestId("auth-form").and(page.locator('[data-mode="signUp"]')).waitFor();
@@ -201,6 +204,7 @@ await step(device, "s12-history", async () => {
 });
 await step(device, "s13-account-panel", async () => {
   await ana.page.getByTestId("tv-account-chip").click();
+  await ana.page.getByTestId("tv-profile-settings").click();
   await ana.page.getByTestId("tv-account").waitFor();
   await away();
   await snap(ana.page, device, "s13-account-panel");

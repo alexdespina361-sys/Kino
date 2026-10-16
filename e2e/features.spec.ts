@@ -183,13 +183,15 @@ test.describe("pairing", () => {
     await expect(button).not.toBeFocused(); // a stray OK press must not disconnect anything
     await expect(browse).not.toBeFocused();
 
-    await tv.keyboard.press("ArrowDown"); // the first press only lands on the first button
-    await expect(browse).toBeFocused();
-    await tv.keyboard.press("ArrowRight");
+    await tv.keyboard.press("ArrowDown"); // the first press only lands on the first button: Copy, under the code
+    await expect(tv.getByTestId("tv-join-code-copy")).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
     await expect(button).toBeFocused();
-    await tv.keyboard.press("ArrowLeft");
+    await tv.keyboard.press("ArrowUp");
+    await tv.keyboard.press("ArrowUp"); // the way out is the pill in the corner, above
     await expect(browse).toBeFocused();
-    await tv.keyboard.press("ArrowRight");
+    await tv.keyboard.press("ArrowDown");
+    await expect(button).toBeFocused();
     await expect(tv.getByTestId("tv-paired")).toBeVisible();
     await tv.keyboard.press("Enter");
 
@@ -1727,7 +1729,7 @@ test.describe("a watch party started on a TV", () => {
     // The page: the whole link under the code, and OK on its button puts it on the clipboard and says so, then it says Copy link again.
     await expect(host.getByTestId("tv-party-link-url")).toHaveText(link);
     await expect(host.getByTestId("tv-back-to-library")).toBeFocused();
-    await host.keyboard.press("ArrowUp");
+    await host.keyboard.press("ArrowDown"); // (the pill is in the corner, above the link)
     await expect(copy).toBeFocused();
     await host.keyboard.press("Enter");
     await expect(copy).toHaveText("Link copied");
@@ -2136,7 +2138,8 @@ test.describe("a watch party started on a TV", () => {
     await host.keyboard.press("Enter");
     await expect(host.getByTestId("tv-party-code")).toBeVisible();
     await expect(host.getByTestId("tv-back-to-library")).toBeFocused();
-    await host.keyboard.press("ArrowRight");
+    await host.keyboard.press("ArrowDown"); // the link to copy
+    await host.keyboard.press("ArrowDown");
     await expect(host.getByTestId("tv-party-end")).toBeFocused();
     await host.keyboard.press("Enter");
     await expect(host.getByTestId("tv-party-start")).toBeFocused();

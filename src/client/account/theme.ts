@@ -11,8 +11,8 @@ export function applyAccent(accent: Accent | undefined): void {
 /** What each accent looks like in the picker (the same colours as the stylesheet's `--accent`). */
 export const ACCENT_SWATCH: Record<Accent, string> = {
   red: "#e50914",
-  blue: "#2b7fff",
-  purple: "#9b5cff",
+  blue: "#2772e5",
+  purple: "#8e54ea",
   green: "#1fb86a",
   orange: "#ff8a1f",
   pink: "#ff4f9a",

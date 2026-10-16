@@ -190,6 +190,12 @@ export const ChevronIcon = (props: Props) => (
   </Icon>
 );
 
+export const ChevronLeftIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M15 6l-6 6 6 6" />
+  </Icon>
+);
+
 export const SearchIcon = (props: Props) => (
   <Icon {...props}>
     <circle cx="11" cy="11" r="7" />
@@ -212,6 +218,14 @@ export const GridIcon = (props: Props) => (
 export const BackspaceIcon = (props: Props) => (
   <Icon {...props}>
     <path d="M21 5H9l-6 7 6 7h12a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1zM17 9l-6 6M11 9l6 6" />
+  </Icon>
+);
+
+/** A round button with a cross: empty the box (Delete takes one letter, this takes them all). */
+export const ClearIcon = (props: Props) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9 9l6 6M15 9l-6 6" />
   </Icon>
 );
 
@@ -261,15 +275,17 @@ export const LogoutIcon = (props: Props) => (
 
 export const GearIcon = (props: Props) => (
   <Icon {...props}>
+    {/* A cog, not a sun: six teeth whose tips and valleys follow two circles (radii 10 and 7.2), the hub a circle in the middle. */}
+    <path d="M9.89 5.11L10.18 2.17A10 10 0 0 1 13.82 2.17L14.11 5.11A7.2 7.2 0 0 1 16.91 6.73L19.6 5.51A10 10 0 0 1 21.43 8.66L19.02 10.38A7.2 7.2 0 0 1 19.02 13.62L21.43 15.34A10 10 0 0 1 19.6 18.49L16.91 17.27A7.2 7.2 0 0 1 14.11 18.89L13.82 21.83A10 10 0 0 1 10.18 21.83L9.89 18.89A7.2 7.2 0 0 1 7.09 17.27L4.4 18.49A10 10 0 0 1 2.57 15.34L4.98 13.62A7.2 7.2 0 0 1 4.98 10.38L2.57 8.66A10 10 0 0 1 4.4 5.51L7.09 6.73A7.2 7.2 0 0 1 9.89 5.11Z" />
     <circle cx="12" cy="12" r="3" />
-    <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1" />
   </Icon>
 );
 
+/** A phone upright, a little over three parts high to two wide (the first one drawn was one to two: it read as a ruler beside the menu's other icons). */
 export const PhoneIcon = (props: Props) => (
   <Icon {...props}>
-    <rect x="7" y="2" width="10" height="20" rx="2.5" />
-    <path d="M11 18h2" />
+    <rect x="5.5" y="3" width="13" height="18" rx="3" />
+    <path d="M10.5 17.2h3" />
   </Icon>
 );
 

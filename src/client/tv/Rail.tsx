@@ -1,5 +1,6 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
+import { Logo } from "../shared/Logo";
 
 /** One line of the library's menu. */
 export interface RailEntry {
@@ -54,6 +55,10 @@ export function Rail({
       onPointerEnter={(event) => event.pointerType !== "touch" && setResting(true)}
       onPointerLeave={() => setResting(false)}
     >
+      {/* Open, the menu covers the page's wordmark: it carries the name itself, where the page has it (the stylesheet shows it only while the menu is open). */}
+      <span className="tv-rail-brand" aria-hidden="true">
+        <Logo />
+      </span>
       {entries.map((entry, row) =>
         !wide && !entry.icon ? null : (
           <Fragment key={entry.id}>

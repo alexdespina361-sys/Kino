@@ -123,7 +123,7 @@ async function guestTv(browser, viewport, device, deep) {
   });
 
   await step(device, "17-profile-guest", async () => {
-    await page.getByTestId("rail-profile").click();
+    await page.getByTestId("tv-account-chip").click();
     await page.getByTestId("tv-browse").and(page.locator('[data-view="profile"]')).waitFor();
     await away();
     await snap(page, device, "17-profile-guest");
@@ -142,7 +142,7 @@ async function guestTv(browser, viewport, device, deep) {
       await page.keyboard.press("Escape");
     });
     await step(device, "20-settings", async () => {
-      await page.locator('[data-entry="profile:settings"]').click();
+      await page.getByTestId("tv-profile-settings").click();
       await page.getByTestId("tv-account").waitFor();
       await away();
       await snap(page, device, "20-settings");

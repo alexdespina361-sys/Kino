@@ -515,7 +515,7 @@ test.describe("a sheet on the phone is pulled down to close", () => {
   });
 
   test("on a list that is scrolled down a pull is the list scrolling; at the top of it, the sheet", async ({ browser, baseURL }) => {
-    const { phone, sheet } = await withSheet(browser, baseURL!, 380); // low enough for the options not to fit
+    const { phone, sheet } = await withSheet(browser, baseURL!, 420); // upright (higher than wide), and low enough for the options not to fit: held sideways they sit two to a row, and do
     const body = sheet.locator(".sheet-body");
     expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
     await body.evaluate((el) => el.scrollTo(0, el.scrollHeight));

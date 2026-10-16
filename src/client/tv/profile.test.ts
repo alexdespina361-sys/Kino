@@ -14,33 +14,30 @@ const tiles = (changes?: Partial<ProfileFacts>) => profileRows(facts(changes))[0
 const ids = (changes?: Partial<ProfileFacts>) => tiles(changes).map((entry) => entry.id);
 
 describe("the profile's page", () => {
-  it("is one row of tiles named for the profile in use: what it rated, its friends, History and the settings", () => {
+  it("is one row of tiles named for the profile in use: what it rated, its friends and History (Settings is a button of the page's top, not a tile)", () => {
     const rows = profileRows(facts());
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ id: "profile", layout: "categories", title: "Ann" });
-    expect(ids()).toEqual(["profile:ratings", "profile:friends", "profile:history", "profile:settings"]);
+    expect(ids()).toEqual(["profile:ratings", "profile:friends", "profile:history"]);
   });
 
-  it("opens the three pages it holds, and the settings through an action of its own", () => {
-    const [ratings, friends, history, settings] = tiles();
+  it("opens the three pages it holds", () => {
+    const [ratings, friends, history] = tiles();
     expect(ratings).toMatchObject({ url: "", opens: { kind: "ratings" } });
     expect(friends).toMatchObject({ url: "", opens: { kind: "friends" } });
     expect(history).toMatchObject({ url: "", opens: { kind: "history" } });
-    expect(settings).toMatchObject({ url: "", action: "settings" });
-    expect(settings?.opens).toBeUndefined();
   });
 
   it("has no tile for ratings once they are off, nor for friends once they are off", () => {
-    expect(ids({ ratingsOn: false })).toEqual(["profile:friends", "profile:history", "profile:settings"]);
-    expect(ids({ friendsOn: false })).toEqual(["profile:ratings", "profile:history", "profile:settings"]);
-    expect(ids({ ratingsOn: false, friendsOn: false })).toEqual(["profile:history", "profile:settings"]);
+    expect(ids({ ratingsOn: false })).toEqual(["profile:friends", "profile:history"]);
+    expect(ids({ friendsOn: false })).toEqual(["profile:ratings", "profile:history"]);
+    expect(ids({ ratingsOn: false, friendsOn: false })).toEqual(["profile:history"]);
   });
 
-  it("is, for a guest, History and the settings with a way to sign in between: a guest has no friends", () => {
+  it("is, for a guest, what it rated and History: a guest has no friends (and the way to sign in is a button of the page's top)", () => {
     const rows = profileRows(facts({ signedIn: false, name: "", friendsOn: false }));
     expect(rows[0]?.title).toBe(t("profile.guest"));
-    expect(rows[0]?.entries.map((entry) => entry.id)).toEqual(["profile:ratings", "profile:history", "profile:signin", "profile:settings"]);
-    expect(rows[0]?.entries[2]).toMatchObject({ url: "", action: "signIn" });
+    expect(rows[0]?.entries.map((entry) => entry.id)).toEqual(["profile:ratings", "profile:history"]);
     // (a name that is left over from a profile that signed out is not shown)
     expect(profileRows(facts({ signedIn: false, name: "Ann" }))[0]?.title).toBe(t("profile.guest"));
     expect(ids({ signedIn: false })).not.toContain("profile:friends");

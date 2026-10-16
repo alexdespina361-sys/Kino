@@ -35,6 +35,9 @@
   max-height: min(86vh, calc(100% - 8px)); /* (86vh is the screen with a browser's bar gone; the backdrop is what is there to be seen) */
 }
 :root[data-ui="polish"] .phone-ui .sheet-grip { width: 36px; background: rgba(255, 255, 255, 0.24); }
+/* what comes up from the edge, or in from the side, slows down as it lands: the one ease, as on the TV */
+:root[data-ui="polish"] .phone-ui .sheet,
+:root[data-ui="polish"] .phone-ui .page { animation-timing-function: var(--p-ease); }
 :root[data-ui="polish"] .phone-ui .sheet-head h2 { font-size: var(--p-fs-4); font-weight: 700; }
 
 /* ------------------------------ writing ------------------------------ */
@@ -133,6 +136,7 @@
 :root[data-ui="polish"] .phone-ui .inbox-item .btn,
 :root[data-ui="polish"] .phone-ui .friend-party .btn,
 :root[data-ui="polish"] .phone-ui .your-tag .copy-link-button,
+:root[data-ui="polish"] .phone-ui .code-card .copy-code .copy-link-button,
 :root[data-ui="polish"] .phone-ui .delay-buttons .btn { min-height: 44px; }
 :root[data-ui="polish"] .phone-ui .btn-red:active:not(:disabled) { background: var(--accent-hover); }
 /* What cannot be pressed yet is not an error: grey, not the accent at half strength (that is what a failure looks like). */
@@ -252,6 +256,35 @@
 :root[data-ui="polish"] .phone-ui .menu-row:active,
 :root[data-ui="polish"] .phone-ui .choice:active:not(.active),
 :root[data-ui="polish"] .phone-ui .friend-row:active { background: var(--surface-3); }
+
+/* ------------------------------ lists and cards ------------------------------ */
+
+/*
+ * What belongs together is one card with a hairline between its rows, and cards are told apart by the space between them (a card to every row is a stack of
+ * ten the same, which a thumb has to read to the end): rows that lead somewhere (a chevron), rows that switch something (the words of each inside its row,
+ * so a tap on them is a tap on the row), and the one thing that takes something away, on its own at the end.
+ */
+:root[data-ui="polish"] .phone-ui .menu-groups { display: flex; flex-direction: column; gap: 16px; }
+/* (a card in a sheet keeps all its rows and the sheet scrolls: a card that clips what it holds would let the sheet squeeze it instead) */
+:root[data-ui="polish"] .phone-ui .sheet-body > .menu { flex: none; }
+:root[data-ui="polish"] .phone-ui .switch-row { min-height: 52px; padding: 14px 16px; }
+:root[data-ui="polish"] .phone-ui .switch-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+:root[data-ui="polish"] .phone-ui .switch-hint { color: var(--muted); font-weight: 400; line-height: 1.4; }
+/* (the switch stays level with the first line of the words, however many lines the hint under them takes) */
+:root[data-ui="polish"] .phone-ui .switch-row.has-hint { align-items: flex-start; }
+:root[data-ui="polish"] .phone-ui .switch-row.has-hint .switch { margin-top: -2px; }
+:root[data-ui="polish"] .phone-ui .menu > .switch-row { border-radius: 0; border-bottom: 1px solid var(--p-line); background: transparent; }
+:root[data-ui="polish"] .phone-ui .menu > .switch-row:last-child { border-bottom: 0; }
+:root[data-ui="polish"] .phone-ui .menu > .switch-row:active { transform: none; background: var(--surface-3); }
+:root[data-ui="polish"] .phone-ui .menu-row:focus-visible,
+:root[data-ui="polish"] .phone-ui .menu > .switch-row:focus-visible { outline: none; background: var(--surface-3); box-shadow: inset 0 0 0 2px #fff; }
+/* On a sheet every card is the one tone (the code and the way out are, and so are the lists). */
+:root[data-ui="polish"] .phone-ui .sheet .menu { background: var(--surface-2); }
+/* The colours are a card, as the language is, the six spread across it. */
+:root[data-ui="polish"] .phone-ui .swatches { justify-content: space-between; padding: 12px 14px; border-radius: var(--p-r-2); background: var(--surface); }
+:root[data-ui="polish"] .phone-ui .swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px #fff; }
+/* Each of the settings' groups has room round it, so that the heading of the next is not taken for a line of the one before. */
+:root[data-ui="polish"] .phone-ui .page-stack[data-testid="settings-page"] { gap: 28px; }
 
 /* ------------------------------ remote ------------------------------ */
 
@@ -395,7 +428,7 @@
   :root[data-ui="polish"] .phone-ui .page-stack[data-testid="settings-page"] > * { break-inside: avoid; margin-bottom: 18px; }
   :root[data-ui="polish"] .phone-ui .account-hub { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-rows: auto auto 1fr; gap: 12px 32px; align-items: start; max-width: none; }
   :root[data-ui="polish"] .phone-ui .account-hub > .account-card { grid-column: 1; grid-row: 1; }
-  :root[data-ui="polish"] .phone-ui .account-hub > .menu { grid-column: 2; grid-row: 1 / span 3; }
+  :root[data-ui="polish"] .phone-ui .account-hub > .menu-groups { grid-column: 2; grid-row: 1 / span 3; }
   :root[data-ui="polish"] .phone-ui .account-hub > .btn { grid-column: 1; grid-row: 2; }
   :root[data-ui="polish"] .phone-ui .menu-row { min-height: 44px; padding-block: 10px; }
   /* (the same for someone who is not signed in: what the account is for on one side, the way in on the other) */

@@ -80,27 +80,21 @@ describe("a tap", () => {
     expect(calls).toEqual(["tap:touch:away", "tap:touch:away"]);
   });
 
-  it("is a click at once for a mouse, with no wait and no double", () => {
+  it("is a click for a mouse as well, acted on after the same wait", () => {
     const { calls, tap } = setup();
     tap(LEFT, { kind: "mouse" });
-    expect(calls).toEqual(["tap:mouse:away"]);
-    tap(LEFT, { kind: "mouse" });
-    expect(calls).toEqual(["tap:mouse:away", "tap:mouse:away"]);
-  });
-
-  it("does not hold for a mouse, however long the button is down", () => {
-    const { calls, tap } = setup();
-    tap(MIDDLE, { kind: "mouse", after: HOLD_MS * 4 });
+    expect(calls).toEqual([]);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
     expect(calls).toEqual(["tap:mouse:away"]);
   });
 
-  it("leaves nothing waiting behind a click that follows a tap", () => {
+  it("is no pair with a click that follows it: a finger's tap and a mouse's click each stand by themselves", () => {
     const { calls, tap } = setup();
     tap(LEFT);
-    tap(RIGHT, { kind: "mouse" });
+    tap(LEFT, { kind: "mouse" });
+    expect(calls).toEqual(["tap:touch:away"]); // (the click waits, as any does)
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
     expect(calls).toEqual(["tap:touch:away", "tap:mouse:away"]);
-    vi.advanceTimersByTime(DOUBLE_TAP_MS * 2);
-    expect(calls).toHaveLength(2);
   });
 
   it("is not one when the pointer was dragged", () => {
@@ -397,6 +391,109 @@ describe("a hold", () => {
     vi.advanceTimersByTime(HOLD_MS);
     gestures.reset();
     expect(calls).toEqual(["hold", "release"]);
+  });
+});
+
+describe("a mouse", () => {
+  it("skips on a double click at a side, as two taps of a finger do, and the first click is not a click of its own", () => {
+    const { calls, tap } = setup();
+    tap(LEFT, { kind: "mouse" });
+    vi.advanceTimersByTime(DOUBLE_TAP_MS - 20);
+    tap(LEFT, { kind: "mouse", after: 20 });
+    vi.advanceTimersByTime(DOUBLE_TAP_MS * 2);
+    expect(calls).toEqual(["double:back"]);
+  });
+
+  it("skips forward on the other side", () => {
+    const { calls, tap } = setup();
+    tap(RIGHT, { kind: "mouse" });
+    tap(RIGHT + 5, { kind: "mouse" });
+    expect(calls).toEqual(["double:forward"]);
+  });
+
+  it("goes full screen on a double click in the middle, which is no skip", () => {
+    const { calls, tap } = setup();
+    tap(MIDDLE, { kind: "mouse" });
+    tap(MIDDLE, { kind: "mouse" });
+    expect(calls).toEqual(["double:middle"]);
+  });
+
+  it("runs on: a click soon after a double click skips again, and a run of a mouse is a mouse's alone", () => {
+    const { calls, tap } = setup();
+    tap(RIGHT, { kind: "mouse" });
+    tap(RIGHT, { kind: "mouse" });
+    tap(RIGHT, { kind: "mouse" });
+    expect(calls).toEqual(["double:forward", "double:forward"]);
+    tap(RIGHT); // (a finger's tap on that side is the first of its own pair)
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["double:forward", "double:forward", "tap:touch:away"]);
+  });
+
+  it("is two clicks when they are on different sides, the first standing by itself", () => {
+    const { calls, tap } = setup();
+    tap(LEFT, { kind: "mouse" });
+    tap(RIGHT, { kind: "mouse" });
+    expect(calls).toEqual(["tap:mouse:away"]);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["tap:mouse:away", "tap:mouse:away"]);
+  });
+
+  it("is two clicks when the second comes too late", () => {
+    const { calls, tap } = setup();
+    tap(LEFT, { kind: "mouse" });
+    vi.advanceTimersByTime(DOUBLE_TAP_MS + 10);
+    tap(LEFT, { kind: "mouse" });
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["tap:mouse:away", "tap:mouse:away"]);
+  });
+
+  it("holds with the button down long enough, and lifting it ends the hold with no click", () => {
+    const { calls, gestures, press } = setup();
+    const id = press(MIDDLE, "mouse");
+    vi.advanceTimersByTime(HOLD_MS - 1);
+    expect(calls).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(calls).toEqual(["hold"]);
+    gestures.end(id);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS * 2);
+    expect(calls).toEqual(["hold", "release"]);
+  });
+
+  it("is an ordinary slow click when the page says a hold means nothing now (the picture is paused)", () => {
+    const { calls, tap } = setup(false);
+    tap(MIDDLE, { kind: "mouse", after: HOLD_MS + 100 });
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["hold", "tap:mouse:away"]);
+  });
+
+  it("takes back a click that was waiting for a second when the button is held down instead", () => {
+    const { calls, gestures, press, tap } = setup();
+    tap(LEFT, { kind: "mouse" });
+    const id = press(LEFT, "mouse");
+    vi.advanceTimersByTime(HOLD_MS);
+    gestures.end(id);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS * 2);
+    expect(calls).toEqual(["hold", "release"]);
+  });
+
+  it("is no click when dragged, and no hold either", () => {
+    const { calls, gestures, press } = setup();
+    const id = press(MIDDLE, "mouse");
+    gestures.move(id, MIDDLE + MOVE_PX + 1, 300);
+    vi.advanceTimersByTime(HOLD_MS * 2);
+    gestures.end(id);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS * 2);
+    expect(calls).toEqual([]);
+  });
+
+  it("does not hold on the bars, however long the button rests: on its way to a button it is no wish to play faster", () => {
+    const { calls, gestures, press } = setup();
+    const id = press(MIDDLE, "mouse", "bar");
+    vi.advanceTimersByTime(HOLD_MS * 3);
+    expect(calls).toEqual([]);
+    gestures.end(id);
+    vi.advanceTimersByTime(DOUBLE_TAP_MS);
+    expect(calls).toEqual(["tap:mouse:away"]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendTo, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, mergeItems, typedCharacter } from "./librarySearch";
+import { appendTo, editBox, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, mergeItems, typedCharacter } from "./librarySearch";
 
 const item = (id: string, title: string) => ({ id, title, url: `/${id}` });
 const rows = [
@@ -48,9 +48,9 @@ describe("mergeAnswers", () => {
 });
 
 describe("the keyboard", () => {
-  it("has every letter and digit once, in rows of six with a last row of three wide keys", () => {
+  it("has every letter and digit once, in rows of six, and under them the caret's two keys, Space, Delete and Clear", () => {
     expect(new Set(KEYBOARD_KEYS).size).toBe(36);
-    expect(KEYBOARD_SHAPE).toEqual([6, 6, 6, 6, 6, 6, 3]);
+    expect(KEYBOARD_SHAPE).toEqual([6, 6, 6, 6, 6, 6, 5]);
   });
 
   it("types letters, digits and spaces from a physical keyboard, and nothing else", () => {
@@ -69,5 +69,51 @@ describe("the keyboard", () => {
     expect(appendTo("ab ", " ")).toBe("ab ");
     expect(appendTo("ab ", "c")).toBe("ab c");
     expect(appendTo("x".repeat(60), "y")).toBe("x".repeat(60));
+  });
+});
+
+describe("editBox", () => {
+  const box = (text: string, caret = text.length) => ({ text, caret });
+
+  it("types where the caret is, not only at the end, and the caret goes on after what was typed", () => {
+    expect(editBox(box("nght", 1), { kind: "type", char: "i" })).toEqual(box("night", 2));
+    expect(editBox(box("nigh"), { kind: "type", char: "t" })).toEqual(box("night"));
+    expect(editBox(box(""), { kind: "type", char: "a" })).toEqual(box("a"));
+  });
+
+  it("keeps the text tidy wherever the caret is: no leading space, no double space, a limit", () => {
+    expect(editBox(box("", 0), { kind: "type", char: " " })).toEqual(box("", 0));
+    expect(editBox(box("a b", 2), { kind: "type", char: " " })).toEqual(box("a b", 2)); // (right after a space)
+    expect(editBox(box("a b", 1), { kind: "type", char: " " })).toEqual(box("a b", 1)); // (right before one)
+    expect(editBox(box("ab", 1), { kind: "type", char: " " })).toEqual(box("a b", 2));
+    expect(editBox(box("x".repeat(60), 3), { kind: "type", char: "y" })).toEqual(box("x".repeat(60), 3));
+  });
+
+  it("takes out the character before the caret (Backspace) or after it (Delete), and does nothing at the edges", () => {
+    expect(editBox(box("nigght", 4), { kind: "backspace" })).toEqual(box("night", 3));
+    expect(editBox(box("nigght", 3), { kind: "delete" })).toEqual(box("night", 3));
+    expect(editBox(box("night", 0), { kind: "backspace" })).toEqual(box("night", 0));
+    expect(editBox(box("night"), { kind: "delete" })).toEqual(box("night"));
+  });
+
+  it("closes the gap a taken-out letter leaves between two spaces, and the caret stays among the letters", () => {
+    expect(editBox(box("a b c", 3), { kind: "backspace" })).toEqual(box("a c", 2));
+    expect(editBox(box("a b c", 2), { kind: "delete" })).toEqual(box("a c", 2));
+    expect(editBox(box("a b", 1), { kind: "backspace" })).toEqual(box("b", 0));
+  });
+
+  it("moves the caret one place, to either end or to a place, and never off the text", () => {
+    expect(editBox(box("night", 3), { kind: "move", to: "left" })).toEqual(box("night", 2));
+    expect(editBox(box("night", 3), { kind: "move", to: "right" })).toEqual(box("night", 4));
+    expect(editBox(box("night", 0), { kind: "move", to: "left" })).toEqual(box("night", 0));
+    expect(editBox(box("night"), { kind: "move", to: "right" })).toEqual(box("night"));
+    expect(editBox(box("night", 2), { kind: "move", to: "start" })).toEqual(box("night", 0));
+    expect(editBox(box("night", 2), { kind: "move", to: "end" })).toEqual(box("night"));
+    expect(editBox(box("night", 2), { kind: "move", to: 99 })).toEqual(box("night"));
+    expect(editBox(box("night", 2), { kind: "move", to: 4 })).toEqual(box("night", 4));
+  });
+
+  it("empties the box", () => {
+    expect(editBox(box("night", 2), { kind: "clear" })).toEqual(box("", 0));
   });
 });

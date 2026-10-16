@@ -152,7 +152,7 @@ export const it: Dictionary = {
   "settings.tapToPauseHelp": "Disattivato: un tocco o un clic sull'immagine mostra o nasconde soltanto i comandi. Attivato: mette in pausa e riprende (un tocco a comandi nascosti prima li mostra soltanto). Il pulsante grande al centro e il tasto OK del telecomando mettono in pausa e riprendono comunque.",
   "settings.adaptiveQuality": "Adatta la qualità dell'immagine alla connessione",
   "settings.adaptiveQualityHelp": "Attivato: il film parte nella qualità più bassa, così inizia subito, e prosegue nella migliore che la connessione regge: più bassa quando non ce la fa, più alta quando può. Disattivato: sempre la qualità più alta disponibile. Vale dal film successivo; una qualità scelta nel lettore resta.",
-  "settings.playbackHelp": "Su uno schermo tattile: tocca due volte il lato sinistro o destro dell'immagine per andare indietro o avanti, e tieni premuto sull'immagine per la velocità doppia.",
+  "settings.playbackHelp": "Tocca due volte o fai doppio clic sul lato sinistro o destro dell'immagine per andare indietro o avanti, e tieni premuto sull'immagine con il dito o con il tasto del mouse per la velocità doppia.",
   "settings.pasteLink": "Incolla un link",
   "settings.pasteLinkSwitch": "Mostra nella schermata iniziale la casella per incollare un link",
   "settings.linkBoxHelp": "Una casella nella schermata iniziale dove incollare il link di un video o di una pagina, da riprodurre sul televisore. La scelta resta solo su questo telefono.",
@@ -239,6 +239,8 @@ export const it: Dictionary = {
 
   /* the account pages: settings, devices, signing another device in */
   "settings.playback": "Riproduzione",
+  "settings.appearance": "Aspetto",
+  "settings.ratingsFriends": "Valutazioni e amici",
   "settings.subtitleDefaults": "Vengono mostrate per prime: {languages}. Aggiungi le tue per cambiare.",
   "settings.addLanguage": "Aggiungi una lingua",
   "settings.moveUp": "Sposta su",
@@ -308,6 +310,8 @@ export const it: Dictionary = {
   "tv.space": "Spazio",
   "tv.delete": "Cancella",
   "tv.clear": "Cancella tutto",
+  "tv.caretLeft": "Sposta il cursore a sinistra",
+  "tv.caretRight": "Sposta il cursore a destra",
   "tv.openCategory": "Apri",
 
   /* the player: menus, sheets and the controls over the picture */
@@ -614,8 +618,6 @@ export const it: Dictionary = {
   "profile.friendsNone": "Ancora nessun amico",
   "profile.friendsNew_one": "{count} da leggere",
   "profile.friendsNew_other": "{count} da leggere",
-  "profile.settingsNote": "Account, lingua, riproduzione e altro",
-  "profile.signInNote": "Tieni le liste e i voti su ogni schermo",
   "tv.listEmpty": "Ancora niente qui. Apri un titolo e aggiungilo a questa lista.",
   "list.favourites": "Preferiti",
   "lists.new": "Nuova lista",

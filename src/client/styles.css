@@ -11,7 +11,7 @@
   --accent: #e50914;
   --accent-hover: #f6121d;
   --accent-rgb: 229 9 20;
-  /* The words on top of --accent: white, but orange, green and pink are too light for it (under 3:1), so they get a dark one. */
+  /* The words on top of --accent: white, but orange, green and pink are too light for it (under 3:1), so they get a dark one. (Blue and purple are a little deeper than they were, so that white on them reaches 4.5:1: it was 3.8 and 3.9.) */
   --accent-ink: #fff;
   --brand-gradient: linear-gradient(150deg, #ff3b46 0%, #c40812 55%, #8f040b 100%);
   --ok: #46d369;
@@ -20,8 +20,8 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-:root[data-accent="blue"] { --accent: #2b7fff; --accent-hover: #4d95ff; --accent-rgb: 43 127 255; --brand-gradient: linear-gradient(150deg, #5aa0ff 0%, #1f62d6 55%, #14418f 100%); }
-:root[data-accent="purple"] { --accent: #9b5cff; --accent-hover: #b07dff; --accent-rgb: 155 92 255; --brand-gradient: linear-gradient(150deg, #b98aff 0%, #7a3fe0 55%, #52289b 100%); }
+:root[data-accent="blue"] { --accent: #2772e5; --accent-hover: #3d85f0; --accent-rgb: 39 114 229; --brand-gradient: linear-gradient(150deg, #5aa0ff 0%, #1f62d6 55%, #14418f 100%); }
+:root[data-accent="purple"] { --accent: #8e54ea; --accent-hover: #a06cf2; --accent-rgb: 142 84 234; --brand-gradient: linear-gradient(150deg, #b98aff 0%, #7a3fe0 55%, #52289b 100%); }
 :root[data-accent="green"] { --accent: #1fb86a; --accent-hover: #34d17f; --accent-rgb: 31 184 106; --accent-ink: #111; --brand-gradient: linear-gradient(150deg, #4fe39a 0%, #14925a 55%, #0b6038 100%); }
 :root[data-accent="orange"] { --accent: #ff8a1f; --accent-hover: #ffa047; --accent-rgb: 255 138 31; --accent-ink: #111; --brand-gradient: linear-gradient(150deg, #ffb35c 0%, #e26a00 55%, #a14a00 100%); }
 :root[data-accent="pink"] { --accent: #ff4f9a; --accent-hover: #ff72b0; --accent-rgb: 255 79 154; --accent-ink: #111; --brand-gradient: linear-gradient(150deg, #ff86bb 0%, #e02479 55%, #9d1455 100%); }

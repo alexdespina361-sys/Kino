@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CheckIcon, PlayIcon } from "../shared/icons";
-import { hueOf } from "../shared/Poster";
+import { comesIn, hueOf } from "../shared/Poster";
 
 export interface EpisodeCard {
   number: number;
@@ -23,7 +23,7 @@ export function EpisodeRow({ number, name, still, overview, meta, state, fractio
     <>
       <span className="tv-ep-no">{number}</span>
       <span className="tv-ep-still" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
-        {still && !broken && <img src={still} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} />}
+        {still && !broken && <img src={still} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
         <span className="tv-ep-play" aria-hidden="true">
           <PlayIcon />
         </span>
