@@ -1,4 +1,5 @@
 import type Hls from "hls.js";
+import { prepareBrowserStream } from "./browserStream";
 import {
   IDLE_STATE,
   type PlayerQualityLevel,
@@ -57,6 +58,11 @@ export const DIRECT_START_MS = 12_000;
 
 /** 1080p and above: what `formatQualityLabel` calls those (a film's own shape counts: 1920x804 is 1080p, 1280x536 is 720p). */
 const isHighDefinition = (width = 0, height = 0): boolean => width >= 1800 || height >= 800;
+
+function usesWebsiteProxy(src: string): boolean {
+  const url = new URL(src, location.href);
+  return url.origin === new URL(location.href).origin && url.pathname === "/api/proxy";
+}
 
 /**
  * Where the quality that the player picks by itself stops while the picture comes through this server (`/api/proxy`), which is where
@@ -168,7 +174,21 @@ export class PlayerEngine {
     this.emit();
 
     // Media may be root-relative (local fixtures); resolve against the TV's own origin.
-    const src = new URL(url, location.href).href;
+    let src = new URL(url, location.href).href;
+    const browserStream = type === "hls" ? prepareBrowserStream(directUrl ?? src) : undefined;
+    if (browserStream) {
+      try {
+        src = await browserStream;
+        if (generation !== this.generation) return;
+        directUrl = undefined;
+      } catch (error) {
+        if (generation === this.generation) {
+          console.warn("[Kino direct playback]", error instanceof Error ? error.message : "Could not prepare video");
+          this.fail(PlayerError.NotDirectlyPlayable);
+        }
+        return;
+      }
+    }
 
     // Attach external subtitle tracks if provided
     if (subtitles?.length) {
@@ -197,14 +217,13 @@ export class PlayerEngine {
       const hls = new HlsLib({
         startPosition: resumeAt ?? -1,
         capLevelToPlayerSize: false,
-        ...bufferPolicy(this.inParty, src.includes("/api/proxy")),
+        ...bufferPolicy(this.inParty, usesWebsiteProxy(src)),
         lowLatencyMode: false,
         // (The first piece in the lowest quality, which is the first one the player lists: it drops the variants that have no picture when there are some that do.)
         ...(adaptive ? { startLevel: 0 } : {}),
       });
       this.hls = hls;
       hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
-      let retriedProxy = false;
       let mediaRecoverAttempts = 0;
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
         console.warn("[HLS EVENT ERROR]", {
@@ -215,15 +234,6 @@ export class PlayerEngine {
           response: data.response ? { code: data.response.code, text: data.response.text } : undefined,
         });
         if (data.fatal) {
-          if (!retriedProxy && !src.includes("/api/proxy") && (src.startsWith("http://") || src.startsWith("https://"))) {
-            retriedProxy = true;
-            console.log("[HLS] Retrying via proxy:", src);
-            Object.assign(hls.config, bufferPolicy(this.inParty, true));
-            const proxied = new URL(`/api/proxy?url=${encodeURIComponent(src)}`, location.href).href;
-            hls.loadSource(proxied);
-            return;
-          }
-
           if (data.type === HlsLib.ErrorTypes.MEDIA_ERROR && mediaRecoverAttempts < 2) {
             mediaRecoverAttempts++;
             console.log("[HLS] Recovering from media error, attempt:", mediaRecoverAttempts);
@@ -249,7 +259,7 @@ export class PlayerEngine {
             }
           });
           hls.currentLevel = highestIdx;
-        } else if (data?.levels && (hls.url ?? src).includes("/api/proxy")) {
+        } else if (data?.levels && usesWebsiteProxy(hls.url ?? src)) {
           // Adaptive, through this server: its own choice stops at 720p (a quality picked from the menu still goes higher). See `proxiedQualityCap`.
           hls.autoLevelCapping = proxiedQualityCap(data.levels);
         }
@@ -277,7 +287,8 @@ export class PlayerEngine {
 
   /** Plays with the browser's own player: a direct address, when there is one, goes first and `src` (the server's own) is what it falls back to. */
   private playNatively(src: string, directUrl: string | undefined, generation: number): void {
-    if (directUrl && directUrl !== src) {
+    // Only the website's explicitly configured proxy has a direct-first path. A separate relay owns its tokens and must be used on Safari too.
+    if (directUrl && directUrl !== src && usesWebsiteProxy(src)) {
       this.nativeFallbackSrc = src;
       this.video.src = directUrl;
       this.watchDirectStart(generation);
@@ -312,7 +323,7 @@ export class PlayerEngine {
   setInParty(inParty: boolean): void {
     this.inParty = inParty;
     if (this.hls) {
-      const isProxied = Boolean(this.video.src?.includes("/api/proxy") || this.hls.url?.includes("/api/proxy"));
+      const isProxied = usesWebsiteProxy(this.hls.url || this.video.src || location.href);
       Object.assign(this.hls.config, bufferPolicy(inParty, isProxied));
     }
   }

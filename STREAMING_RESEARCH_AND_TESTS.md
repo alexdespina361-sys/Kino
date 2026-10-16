@@ -1,5 +1,56 @@
 # Kino Streaming Research, Implementation, and Test Log
 
+**Current result, 16 October 2026:** the [Kino Direct Playback extension](extensions/kino-direct/README.md) played the live source in Chromium
+with Kino's HUD, pause, seek and resume, with no relay and no website video traffic. The companion website update must be present on the
+server; installing the extension alone cannot upgrade an older website build. For browsers without extensions, the Cloudflare Worker remains rejected. The separate Node relay described in
+[STREAM_RELAY_SETUP.md](STREAM_RELAY_SETUP.md) played the original live stream in Chromium with Kino's HUD, pause, seek and resume;
+the local website carried zero video requests and zero video bytes. Public deployment still requires a reachable relay host.
+Earlier test entries below are historical and include approaches later reverted.
+
+## 16 October 2026: verified extension route, no hosted video relay
+
+- Confirmed that background `fetch` with explicit extension host permissions sends neither Origin nor Referer on the tested GET requests.
+  A control request from an ordinary page included its Origin. The background process obtained a fresh token, master, variant and 292,152-byte
+  video segment, all HTTP 200.
+- Independently tested Manifest V3 declarative rules removing Origin **and** Referer and setting readable CORS response headers. Ordinary page
+  fetches then read the live master, variant and segment successfully, all HTTP 200. This supersedes the broad failure conclusion in historical Test 5:
+  an Origin-removal-only attempt does not establish that this complete extension arrangement is impossible.
+- Added `extensions/kino-direct`, restricted to Kino and the two current provider domains. It prepares viewer-IP tokens; the website's HLS.js
+  fetches media directly under the scoped header rules. The player detects the extension and bypasses its selected relay using the raw stream address.
+- Full browser check: normal `PLAY_URL`/Filmpire resolution, 153 decoded/rendered frames, Kino HUD visible, native controls disabled, pause,
+  a 10-second seek, and resume. Only `farragoandfulcrum.website` received media requests, all HTTP 200. Relay requests were empty; the local
+  website reported `bytes: 0, requests: 0, refused: 0, video: off`. No relay process was running.
+- The test used Chromium 156 and an isolated profile. A development copy added localhost to the extension's site permissions; the packaged
+  extension contains only the production Kino origin. Brave was not runtime-tested.
+- Validation: **74 test files, 1,432 passing tests**, TypeScript check and production build. Tests include spoofed helper responses, substituted
+  source rejection, timeout, provider errors and preventing late token responses from replacing a newer movie.
+- Free hosting research: [Oracle Always Free](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm) includes
+  VM resources and 10 TB outbound/month but can reclaim idle VMs. [Render Free](https://render.com/docs/free) and [Koyeb Free](https://www.koyeb.com/docs/run-and-scale/scale-to-zero)
+  sleep on inactivity. These are not guarantees of uninterrupted free hosting. The accepted extension route removes that hosting requirement.
+- Remaining rollout step: deploy the companion website update and install the extension once on each playback browser. No public deployment
+  or installation into the user's existing browser profile was performed during these tests.
+
+## 16 October 2026: separate Node relay and verified Chromium playback
+
+- Reproduced both logged Cloudflare Worker master requests and a fresh-token request returning HTTP 403. The body was an upstream block
+  page showing Worker IP `2a06:98c0:3600::103`. The Worker added CORS headers but could not make the upstream accept its requests.
+- The logged JWT contains `ip_cidr: 74.220.51.0/24`. The website previously issued it and handed it to a different machine, the Worker.
+  This is a separate token/egress mismatch in the architecture; the live Worker block prevents establishing which check rejected the original token.
+- Removed the player's automatic fallback that nested the Worker URL inside the website's `/api/proxy`. Native playback also stays on a
+  separate relay, and the website's 720p bandwidth cap is applied only to its own proxy origin.
+- Added `pnpm relay`, an independent Node service, with expiring HMAC links, private-address/DNS/redirect protection, Range support and HLS
+  resource rewriting. It obtains and refreshes IP-bound upstream tokens itself. Filmpire skips website token generation when the signed relay is configured.
+- Verified the normal `/api/resolve` path for `https://filmpire.sc/watch/1058424`: success via Filmpire, a signed relay stream with
+  `hostToken=1`, two alternate sources and 50 subtitles. The freshly resolved master, variant and video segment all returned HTTP 200;
+  the segment contained 292,152 bytes.
+- In real Chromium, the original live video rendered 124 frames in the first five seconds (duration 9,421 seconds). Kino's own HUD was
+  present, native video controls were disabled, and Kino controls paused, sought exactly 10 seconds and resumed playback.
+- The browser requested media only from the separate local relay. The local website's health counters stayed at zero proxy bytes,
+  zero proxy requests and zero refused requests, with video off.
+- Validation: **73 test files, 1,422 passing tests**, TypeScript check and production build. Safari/Firefox were not runtime-tested.
+- Deployment status: source, production browser build, Dockerfile and [setup guide](STREAM_RELAY_SETUP.md) are prepared locally. The public
+  website and deployed Cloudflare Worker were not changed. A separate reachable host and matching server-side keys are still required.
+
 This document tracks all investigations, hypotheses, implementations, empirical tests, and results for achieving native streaming with Kino's custom HUD on `https://kino.24-7.ro/`.
 
 ---

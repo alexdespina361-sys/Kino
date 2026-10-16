@@ -13,13 +13,16 @@ export function srtToVtt(srt: string): string {
   return `WEBVTT\n\n${clean}`;
 }
 
-export function rewriteM3u8(content: string, playlistUrl: string, referer?: string): string {
+export function rewriteM3u8(content: string, playlistUrl: string, referer?: string, rewriteUrl?: (target: URL) => string): string {
   const lines = content.split(/\r?\n/);
   const out: string[] = [];
 
   const toProxyUrl = (target: string): string => {
     try {
-      const abs = new URL(target, playlistUrl).href;
+      const url = new URL(target, playlistUrl);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return target;
+      if (rewriteUrl) return rewriteUrl(url);
+      const abs = url.href;
       let res = `/api/proxy?url=${encodeURIComponent(abs)}`;
       if (referer) res += `&referer=${encodeURIComponent(referer)}`;
       return res;
@@ -37,7 +40,7 @@ export function rewriteM3u8(content: string, playlistUrl: string, referer?: stri
 
     if (trimmed.startsWith("#")) {
       // Tags that reference external resources via URI="..."
-      if (trimmed.startsWith("#EXT-X-KEY:") || trimmed.startsWith("#EXT-X-MAP:") || trimmed.startsWith("#EXT-X-MEDIA:")) {
+      if (trimmed.startsWith("#EXT")) {
         const rewrittenTag = line.replace(/URI=["']([^"']+)["']/g, (_match, uri: string) => {
           return `URI="${toProxyUrl(uri)}"`;
         });
@@ -68,6 +71,10 @@ export interface ProxyStats {
 }
 
 export interface ProxyOptions {
+  /** A dedicated relay supplies signed links back to itself for every playlist resource. */
+  rewriteUrl?: (target: URL) => string;
+  /** Server-to-server relays send the provider's Referer without forwarding a browser Origin. */
+  omitOrigin?: boolean;
   /**
    * False when this server is not to carry film (env `PROXY_VIDEO=off`), for a host that charges for what it sends: a playlist, a piece of a
    * film or a file is turned away (403, whoever asks, and the player's own second try through here included), and only a subtitle goes through.
@@ -119,7 +126,7 @@ function poolFor(isAllowedAddress: (address: string) => boolean): Agent {
 }
 
 /** The answer to a GET of `target`. Redirects are followed here, not by `fetch`, so that each address on the way is looked at as the first one was. */
-async function openUpstream(
+export async function openUpstream(
   target: URL,
   headers: Record<string, string>,
   isAllowedAddress: (address: string) => boolean,
@@ -265,9 +272,9 @@ export async function handleStreamProxy(
   const headers: Record<string, string> = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     referer,
-    origin: new URL(referer).origin,
     accept: "*/*",
   };
+  if (!options.omitOrigin) headers.origin = new URL(referer).origin;
 
   if (request.headers.range) {
     headers.range = request.headers.range;
@@ -325,11 +332,21 @@ export async function handleStreamProxy(
     return turnAway();
   }
 
+  if (!upstreamResponse.ok) {
+    reply.code(upstreamResponse.status).header("Cache-Control", "no-store");
+    if (contentType) reply.header("Content-Type", contentType);
+    const text = await textUpTo(upstreamResponse, 64 * 1024);
+    const message = text ?? `Upstream returned HTTP ${upstreamResponse.status}`;
+    if (stats) stats.bytes += Buffer.byteLength(message);
+    return reply.send(message);
+  }
+
   if (isM3u8) {
     const text = await upstreamResponse.text();
     // Verify it actually looks like an m3u8
     if (text.includes("#EXTM3U")) {
-      const rewritten = rewriteM3u8(text, upstreamUrl.href, referer);
+      const rewritten = rewriteM3u8(text, upstreamUrl.href, referer, options.rewriteUrl);
+      reply.header("Cache-Control", "no-store");
       if (stats) stats.bytes += Buffer.byteLength(rewritten);
       reply.header("Content-Type", "application/vnd.apple.mpegurl");
       return reply.code(upstreamResponse.status).send(rewritten);

@@ -1,0 +1,22 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "Origin", "operation": "remove" },
+        { "header": "Referer", "operation": "remove" }
+      ],
+      "responseHeaders": [
+        { "header": "Access-Control-Allow-Origin", "operation": "set", "value": "*" },
+        { "header": "Access-Control-Expose-Headers", "operation": "set", "value": "Content-Length, Content-Range, Accept-Ranges" }
+      ]
+    },
+    "condition": {
+      "initiatorDomains": ["kino.24-7.ro"],
+      "requestDomains": ["farragoandfulcrum.website", "diaphanousdogma.website"],
+      "resourceTypes": ["xmlhttprequest", "media"]
+    }
+  }
+]

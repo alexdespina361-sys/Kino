@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Kino Direct Playback",
+  "description": "Plays Kino streams directly from the video provider while keeping Kino's controls.",
+  "version": "1.0.0",
+  "minimum_chrome_version": "111",
+  "permissions": ["declarativeNetRequestWithHostAccess"],
+  "host_permissions": ["https://kino.24-7.ro/*", "https://farragoandfulcrum.website/*", "https://diaphanousdogma.website/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{ "matches": ["https://kino.24-7.ro/*"], "js": ["content.js"], "run_at": "document_start" }],
+  "declarative_net_request": { "rule_resources": [{ "id": "kino", "enabled": true, "path": "rules.json" }] }
+}

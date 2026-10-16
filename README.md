@@ -46,7 +46,8 @@ pnpm build && pnpm start     # http://localhost:8787
 | `TRUST_PROXY` | `1` on Render, else off | How many proxies sit in front (a number, `true` or `false`), so the rate limits see the real address. |
 | `LIBRARY` | on | `off` starts without the browsing library. |
 | `TMDB_API_KEY` | built-in key of the Filmpire source | The library's TMDB key. Set your own; the built-in one is shared by everybody who runs this. |
-| `EDGE_STREAM_PROXY_URL` | – | The address of the edge relay (`scripts/edge-stream-worker.js` on Cloudflare), so that the films come through it and not through this server. See [The film and the host's bandwidth](#the-film-and-the-hosts-bandwidth). |
+| `EDGE_STREAM_PROXY_URL` | – | The separate video relay endpoint. For the signed Node relay use `https://YOUR-RELAY-HOST/api/proxy`; see [relay setup](STREAM_RELAY_SETUP.md). |
+| `EDGE_STREAM_PROXY_KEY` | – | Server-side signing secret shared with the separate relay's `STREAM_RELAY_KEY`. Never expose it in browser code. |
 | `PROXY_VIDEO` | `on` | `off`: this server never carries a film (`/api/proxy` passes subtitles and nothing else), so the host's bandwidth cannot go on one. |
 | `DIRECT_STREAMING` | off | `true`: a source's own address is handed to the screen (unless there is a relay). Only for sources that let pages of other websites in; see below before you use it. |
 
@@ -519,6 +520,10 @@ does for the extra streams a page declares. The TV and the phone show a Source p
 
 ## The film and the host's bandwidth
 
+For a few desktop viewers willing to install an extension, [Kino Direct Playback](extensions/kino-direct/README.md) is a verified alternative:
+Kino keeps its HUD while the browser fetches the film directly, with no relay hosting or website video traffic. Install the extension per
+playback browser and deploy the companion website update. Browsers without extension support can use the separate relay described below.
+
 The pages, the library and the sync are small (a first visit is about 0.3 MB packed, a revisit a few hundred bytes, an idle screen about 20 KB an
 hour). **The film is the bandwidth**: through `/api/proxy` an hour is about 0.4 GB in 360p, 1.2 GB in 720p and 2.4 GB in 1080p (a test film at
 0.8, 2.6 and 5.3 Mbit/s), and a plan with 5 GB a month is gone in a few hours of 720p. Making the picture smaller only stretches that. What
@@ -526,31 +531,28 @@ works is that the film never comes through the server.
 
 **Why the screen cannot just ask the film's own place.** The places that the library's sources get their films from turn away a page of another
 website (they look at the `Origin` and at the `Referer`, and send no CORS headers), and want to see the address of their own player. A
-browser cannot send either, so with `DIRECT_STREAMING=true` the screen's first ask fails (one red request in the browser's Network tab), and
-the player then asks `/api/proxy` instead, as it always did when an address does not answer: **the server carries the film after all**, and
-the host counts it. That is why the Network tab can show the film's own place and the host's graph still goes up. (Safari and iPhones play
-a stream with the browser's own player, which sends no `Origin`: those screens try the direct address first and fall back to the stream's
-own address, which is the relay's or the server's.)
+browser cannot set arbitrary Origin or Referer headers. `DIRECT_STREAMING=true` therefore works only when the provider permits the browser's
+requests. A failed external HLS stream now stays off the website proxy; there is no automatic website fallback. Native HLS browsers also
+use a configured separate relay from the start.
 
-**The way that works: the edge relay.** A Cloudflare Worker that is not a browser asks for the film with the address the place wants to see, and
-hands it on with the CORS headers the page needs; the screen asks the Worker, and the server never sees the film.
+**Use a separate relay whose IP the upstream accepts.** The existing Cloudflare Worker was reproduced returning upstream 403 blocks on
+16 October 2026, including at the token endpoint. It is not a working solution for this provider. The Node relay obtains IP-bound tokens
+on the same machine that downloads the media, signs all child links, and returns the CORS headers needed by the browser.
 
-1. `npx wrangler deploy scripts/edge-stream-worker.js --name kino-stream-edge --compatibility-date 2026-01-01` (a free Cloudflare account).
-2. On the host set `EDGE_STREAM_PROXY_URL=https://kino-stream-edge.<your-subdomain>.workers.dev`. Do not set `DIRECT_STREAMING` (a relay
-   is used first; the direct address only costs a failed ask on a place that turns pages away).
-3. Set `PROXY_VIDEO=off`. With it the server carries no film whatever goes wrong (a relay that is down, a blocked address, a second try
-   of the player), so the host's bandwidth cannot be used up by one: a film that the relay cannot give then does not play ("This video can't
-   be played on the TV") instead of coming through the server. Subtitles still go through the server (they are some tens of kilobytes).
+1. Deploy the separate Node service with `pnpm relay` and `STREAM_RELAY_KEY`, on a host verified to reach the upstream.
+2. Set `EDGE_STREAM_PROXY_URL=https://YOUR-RELAY-HOST/api/proxy` and the matching `EDGE_STREAM_PROXY_KEY` on the website host.
+3. Keep `PROXY_VIDEO=off`. Subtitles can still use the website; video uses the separate relay.
+
+The [deployment and verification guide](STREAM_RELAY_SETUP.md) includes environment settings and a container definition. Kino's native HUD
+remains in use; viewers need no extensions or local software.
 
 To see that it works: open the Network tab on the TV page (the *Domain* column) while a film plays; every piece should come from your
-`workers.dev` address, none from the app's own. `/api/health` says the same from the server's side: `proxy.bytes` stays where it was,
+separate relay address, none from the app's own. `/api/health` says the same from the server's side: `proxy.bytes` stays where it was,
 `proxy.video` is `"off"`, and `proxy.refused` counts what was turned away. A host's own graph can lag by an hour (Render's is hourly).
 
-What to know: the library's sources (Filmpire, Sitefilme) use the relay; a link pasted into the phone is asked for directly first and, if that
-place turns the page away, goes to the server, which with `PROXY_VIDEO=off` says no. The relay does not ask who is asking: anyone who learns
-its address (it is in every stream address that the page uses) can have it fetch an address for them, so keep an eye on its request count (the free plan
-allows 100,000 a day at the time of writing; a film is one to two thousand), and read Cloudflare's terms on carrying video that is not hosted on Cloudflare. If a
-place also turns Cloudflare away, no relay helps, and the film needs a host whose plan has the traffic for it (a small VPS usually has terabytes).
+The library adapters use the relay; generic pasted links retain their resolver's selected delivery path. The new Node relay accepts only
+signed, unexpired links and refuses private destinations. Video bandwidth belongs to its separate host. A relay IP that the provider blocks
+will still fail, so validate the upstream token, playlist and segment from the chosen host before deployment.
 
 **When the server has to carry the film** (no relay, `PROXY_VIDEO` on): the player's own quality choice stops at 720p on a stream that comes
 through `/api/proxy` (`proxiedQualityCap` in `src/client/tv/engine.ts`; a quality picked from the menu still goes higher), it keeps only

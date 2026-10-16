@@ -460,8 +460,10 @@ export function createFilmpireAdapter(): SiteAdapter {
       // 7. Request host token with cache & fallback across streams
       let chosenStream = streamUrls[0]!;
       let chosenToken = "";
+      // The dedicated relay obtains its own IP-bound token. A website-issued token cannot authorize another machine's media requests.
+      const relayOwnsToken = Boolean(process.env.EDGE_STREAM_PROXY_URL?.trim() && process.env.EDGE_STREAM_PROXY_KEY);
 
-      for (const sUrl of streamUrls) {
+      for (const sUrl of relayOwnsToken ? [] : streamUrls) {
         try {
           const origin = new URL(sUrl).origin;
           const tok = await getHostToken(origin, playerUrl);
@@ -483,7 +485,7 @@ export function createFilmpireAdapter(): SiteAdapter {
       }
 
       // 8. Through the edge relay, the provider's own address or /api/proxy (see `streamAddress`)
-      const proxiedUrl = streamAddress(finalStreamUrl, playerUrl);
+      const proxiedUrl = streamAddress(finalStreamUrl, playerUrl, process.env, relayOwnsToken);
 
       // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
       const alternates: AlternateSource[] = [];
@@ -493,7 +495,7 @@ export function createFilmpireAdapter(): SiteAdapter {
         try {
           const origin = new URL(sUrl).origin;
           const hostName = new URL(sUrl).hostname.split(".")[0] || "Server";
-          const altToken = await getHostToken(origin, playerUrl);
+          const altToken = relayOwnsToken ? "" : await getHostToken(origin, playerUrl);
           const altDelim = sUrl.includes("?") ? "&" : "?";
           const altFinalUrl = altToken
             ? `${sUrl}${altDelim}token=${encodeURIComponent(altToken)}&bypass_localize=true`
@@ -501,7 +503,7 @@ export function createFilmpireAdapter(): SiteAdapter {
           alternates.push({
             label: `Server ${alternates.length + 2} (${hostName})`,
             stream: {
-              url: streamAddress(altFinalUrl, playerUrl),
+              url: streamAddress(altFinalUrl, playerUrl, process.env, relayOwnsToken),
               type: "hls",
               directUrl: altFinalUrl,
             },

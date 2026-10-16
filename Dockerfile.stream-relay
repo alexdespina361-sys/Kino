@@ -1,0 +1,9 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+RUN npm install --global pnpm@11.2.2
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --prod --frozen-lockfile
+COPY src ./src
+ENV PORT=8789
+EXPOSE 8789
+CMD ["pnpm", "relay"]

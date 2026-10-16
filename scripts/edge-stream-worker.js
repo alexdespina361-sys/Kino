@@ -1,5 +1,6 @@
 /**
- * Cloudflare Worker: Zero-Server-Bandwidth Edge Video Streaming Relay
+ * Legacy Cloudflare Worker relay, for upstreams that accept Worker traffic.
+ * The current Filmpire upstream rejects its IP with HTTP 403. Use the separate Node relay instead; see STREAM_RELAY_SETUP.md.
  *
  * The film goes screen -> this worker -> the film's own place, and never through the Kino server, whose host charges for what it sends.
  * (A screen cannot ask the film's own place itself: most of them turn away a page of another website, and want to see their own player's address.

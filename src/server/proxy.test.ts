@@ -294,7 +294,7 @@ describe("handleStreamProxy", () => {
     const answer = await ask(at(OKAY, "/missing.ts"));
     expect(answer.statusCode).toBe(404);
     expect(answer.body).toBe("nothing here");
-    expect(answer.headers["cache-control"]).toBeUndefined();
+    expect(answer.headers["cache-control"]).toBe("no-store");
     expect((await ask(at(OKAY, "/seg.ts"))).headers["cache-control"]).toBe("public, max-age=86400, immutable");
   });
 
