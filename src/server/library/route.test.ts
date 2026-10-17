@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { LibrarySchema } from "../../shared";
+import { LibraryMoreSchema, LibraryRowsSchema, LibrarySchema } from "../../shared";
 import { buildApp } from "../app";
 import type { LibrarySource } from "./library";
 
@@ -86,12 +86,73 @@ describe("GET /api/library/search", () => {
     // Local cached match
     const res1 = await app.inject({ url: "/api/library/search?q=casa" });
     expect(res1.statusCode).toBe(200);
-    expect(res1.json()).toEqual({ items: [{ id: "i1", title: "Casablanca", url: "https://x.example/1" }] });
+    expect(res1.json()).toEqual({ items: [{ id: "i1", title: "Casablanca", url: "https://x.example/1" }], exact: 1 });
 
     // Remote source match
     const res2 = await app.inject({ url: "/api/library/search?q=night" });
     expect(res2.statusCode).toBe(200);
-    expect(res2.json()).toEqual({ items: [{ id: "i2", title: "A Night to Remember", url: "https://x.example/2" }] });
+    expect(res2.json()).toEqual({ items: [{ id: "i2", title: "A Night to Remember", url: "https://x.example/2" }], exact: 1 });
+  });
+});
+
+describe("GET /api/library/rows and /more", () => {
+  const item = (id: string, title: string) => ({ id, title, url: `https://x.example/${id}` });
+  const paging: LibrarySource = {
+    ...source,
+    shelves: async (kind, cursor) => ({ rows: [{ id: `shelf-${kind ?? "all"}-${cursor}`, title: "Shelf", source: "Fake", items: [item(`a${cursor}`, "Alpha")] }], next: cursor < 5 ? cursor + 5 : null }),
+    more: async (rowId, page) => (rowId === "shelf" ? { items: [item(`p${page}`, `Page ${page}`)], last: page >= 3 } : { items: [], last: true }),
+  };
+
+  it("brings the next rows of the library from where the last answer said to go on, which a phone may keep for a few minutes", async () => {
+    app = await buildApp({ librarySources: [paging] });
+    const first = await app.inject({ url: "/api/library/rows" });
+    expect(first.statusCode).toBe(200);
+    expect(first.headers["cache-control"]).toBe("public, max-age=300");
+    expect(LibraryRowsSchema.parse(first.json())).toEqual({ rows: [{ id: "shelf-all-0", title: "Shelf", source: "Fake", items: [item("a0", "Alpha")] }], next: 5 });
+
+    const films = await app.inject({ url: "/api/library/rows?kind=movie&cursor=5" });
+    expect(LibraryRowsSchema.parse(films.json())).toMatchObject({ rows: [{ id: "shelf-movie-5" }], next: null });
+  });
+
+  it("wants a cursor that is a number, and a kind that is one of the two", async () => {
+    app = await buildApp({ librarySources: [paging] });
+    for (const bad of ["cursor=-1", "cursor=1.5", "cursor=abc", "cursor=100001", "kind=anime"]) {
+      expect((await app.inject({ url: `/api/library/rows?${bad}` })).statusCode, bad).toBe(400);
+    }
+  });
+
+  it("is empty, and reaches nowhere, when no place has more", async () => {
+    app = await buildApp({ librarySources: [source] });
+    expect((await app.inject({ url: "/api/library/rows" })).json()).toEqual({ rows: [], next: null });
+    expect((await app.inject({ url: "/api/library/more?row=shelf&page=2" })).json()).toEqual({ items: [], last: true });
+  });
+
+  it("brings more titles of a row, and says when there are no more", async () => {
+    app = await buildApp({ librarySources: [paging] });
+    const next = await app.inject({ url: "/api/library/more?row=shelf&page=2" });
+    expect(next.statusCode).toBe(200);
+    expect(next.headers["cache-control"]).toBe("public, max-age=300");
+    expect(LibraryMoreSchema.parse(next.json())).toEqual({ items: [item("p2", "Page 2")], last: false });
+    expect((await app.inject({ url: "/api/library/more?row=shelf&page=3" })).json()).toMatchObject({ last: true });
+    expect((await app.inject({ url: "/api/library/more?row=other&page=2" })).json()).toEqual({ items: [], last: true });
+  });
+
+  it("wants a row, and a page from the second to the hundredth", async () => {
+    app = await buildApp({ librarySources: [paging] });
+    for (const bad of ["", "row=shelf", "row=shelf&page=1", "row=shelf&page=101", "row=shelf&page=x", "row=shelf&page=2.5", `row=${"x".repeat(101)}&page=2`]) {
+      expect((await app.inject({ url: `/api/library/more?${bad}` })).statusCode, bad).toBe(400);
+    }
+  });
+
+  it("says so, and keeps nothing of it, when the places cannot be reached", async () => {
+    const down: LibrarySource = { ...source, shelves: async () => Promise.reject(new Error("down")), more: async () => Promise.reject(new Error("down")) };
+    app = await buildApp({ librarySources: [down] });
+    const rows = await app.inject({ url: "/api/library/rows" });
+    expect(rows.statusCode).toBe(502);
+    expect(rows.headers["cache-control"]).toBe("no-store");
+    const more = await app.inject({ url: "/api/library/more?row=shelf&page=2" });
+    expect(more.statusCode).toBe(502);
+    expect(more.headers["cache-control"]).toBe("no-store");
   });
 });
 

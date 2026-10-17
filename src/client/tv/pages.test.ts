@@ -17,7 +17,7 @@ const saved = (key: string, list?: string): LiveListItem => ({ key, at: 1, id: k
 const rated = (key: string, score: number, ratedAt: number, extra: Partial<LiveRating> = {}): LiveRating => ({ key: `rate:${key}`, at: ratedAt, title: `Rated ${key}`, url: `https://x.example/${key}`, score, ratedAt, ...extra });
 
 const FIRST: ListInfo = { id: DEFAULT_LIST };
-const data = (overrides: Partial<PageData> = {}): PageData => ({ rows: [], progress: [], lists: [FIRST], list: [], ratings: [], similar: null, ...overrides });
+const data = (overrides: Partial<PageData> = {}): PageData => ({ rows: [], all: overrides.rows ?? [], progress: [], lists: [FIRST], list: [], ratings: [], because: [], ...overrides });
 const library = [row("m1", "movie"), row("s1", "series"), row("m2", "movie"), row("s2", "series"), row("m3", "movie"), row("s3", "series")];
 
 describe("viewKey", () => {
@@ -77,28 +77,32 @@ describe("viewKey", () => {
 });
 
 describe("rowsOfPage: home", () => {
-  it("starts with what is part way through, then titles like the last one watched, then its lists, then the library", () => {
+  it("starts with what is part way through, then titles like the ones watched last or loved, then its lists, then the library", () => {
     const rows = rowsOfPage(
       "home",
       data({
         rows: library,
         progress: [card("a"), card("b", { done: true })],
         list: [saved("l1")],
-        similar: { title: "Card a", items: [item("sim")] },
+        because: [
+          { key: "https://x.example/a", title: "Card a", why: "watched", items: [item("sim")] },
+          { key: "https://x.example/z", title: "Rated z", why: "loved", items: [item("sim2")] },
+        ],
       }),
     );
-    expect(rows.slice(0, 3).map((r) => r.id)).toEqual(["continue", "similar", `list:${DEFAULT_LIST}`]);
+    expect(rows.slice(0, 4).map((r) => r.id)).toEqual(["continue", "because:https://x.example/a", "because:https://x.example/z", `list:${DEFAULT_LIST}`]);
     expect(rows[0]!.entries.map((e) => e.title)).toEqual(["Card a"]); // the finished one is not part way through
     expect(rows[1]!.title).toBe(t("rows.because", { title: "Card a" }));
-    expect(rows.slice(3, 6).map((r) => r.id)).toEqual(["m1", "s1", "m2"]);
+    expect(rows[2]!.title).toBe(t("rows.loved", { title: "Rated z" }));
+    expect(rows.slice(4, 7).map((r) => r.id)).toEqual(["m1", "s1", "m2"]);
   });
 
   it("leaves out the rows this profile has nothing for", () => {
-    const rows = rowsOfPage("home", data({ rows: library }));
+    const rows = rowsOfPage("home", data({ rows: library, because: [{ key: "k", title: "T", why: "watched", items: [] }] }));
     expect(rows[0]!.id).toBe("m1");
     expect(rows.map((r) => r.id)).not.toContain("continue");
     expect(rows.map((r) => r.id).some((id) => id.startsWith("list:"))).toBe(false);
-    expect(rows.map((r) => r.id)).not.toContain("similar");
+    expect(rows.map((r) => r.id).some((id) => id.startsWith("because:"))).toBe(false);
   });
 
   it("has a row for each list that has a title in it, named as the list is, and none for an empty one", () => {
@@ -159,10 +163,10 @@ describe("rowsOfPage: movies and series", () => {
     expect(rowsOfPage("series", data({ rows: many, progress }))[0]!.entries.map((e) => e.title)).toEqual(["Card show"]);
   });
 
-  it("has no list or similar rows of its own: those are on Home", () => {
-    const rows = rowsOfPage("movies", data({ rows: many, list: [saved("l")], similar: { title: "x", items: [item("s")] } }));
+  it("has no list or because rows of its own: those are on Home", () => {
+    const rows = rowsOfPage("movies", data({ rows: many, list: [saved("l")], because: [{ key: "k", title: "x", why: "watched", items: [item("s")] }] }));
     expect(rows.map((r) => r.id).some((id) => id.startsWith("list:"))).toBe(false);
-    expect(rows.map((r) => r.id)).not.toContain("similar");
+    expect(rows.map((r) => r.id).some((id) => id.startsWith("because:"))).toBe(false);
   });
 
   it("is empty when the library has nothing of that kind (a source that does not say what its titles are)", () => {

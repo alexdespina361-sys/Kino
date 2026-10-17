@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ARCHIVE_ROWS } from "../../server/library/internet-archive";
 import { FILMPIRE_CATEGORIES } from "../../server/library/filmpire";
+import { FILMPIRE_SHELVES } from "../../server/library/shelves";
 import { DICTIONARIES, detectLanguage, hasKey, rowTitle, translate } from "./index";
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
@@ -86,11 +87,12 @@ describe("the dictionaries", () => {
 describe("rowTitle", () => {
   const sourceRows = [
     ...FILMPIRE_CATEGORIES.map((category) => ({ id: `filmpire-${category.id}`, title: category.title })),
+    ...FILMPIRE_SHELVES.map((shelf) => ({ id: `filmpire-${shelf.id}`, title: shelf.title })),
     ...ARCHIVE_ROWS.map((row) => ({ id: `archive-${row.collection}`, title: row.title })),
   ];
 
   it("says every row the sources list in the language asked for, and English as the sources name it", () => {
-    expect(sourceRows.length).toBeGreaterThan(30);
+    expect(sourceRows.length).toBeGreaterThan(130);
     for (const row of sourceRows) {
       expect(rowTitle(row, "en"), row.id).toBe(row.title);
       expect(rowTitle(row, "ro"), row.id).not.toBe("");
@@ -99,6 +101,8 @@ describe("rowTitle", () => {
     expect(rowTitle({ id: "filmpire-trending-movies", title: "Trending Movies" }, "ro")).toBe("Filme în tendințe");
     expect(rowTitle({ id: "filmpire-trending-movies", title: "Trending Movies" }, "it")).toBe("Film di tendenza");
     expect(rowTitle({ id: "archive-SciFi_Horror", title: "Sci-fi & horror" }, "ro")).toBe("SF și groază");
+    expect(rowTitle({ id: "filmpire-best-movies-1950s", title: "Best Movies of the 1950s" }, "ro")).toBe("Cele mai bune filme din anii 1950");
+    expect(rowTitle({ id: "filmpire-best-movies-1950s", title: "Best Movies of the 1950s" }, "it")).toBe("I migliori film degli anni Cinquanta");
   });
 
   it("names the rows of one language apart: nothing is left in English in Romanian or Italian, and no two rows share a name", () => {

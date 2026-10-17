@@ -275,7 +275,7 @@ describe("createLibrary search", () => {
       },
     };
   };
-  const titlesOf = (items: { title: string }[]) => items.map((found) => found.title);
+  const titlesOf = (answer: { items: { title: string }[] }) => answer.items.map((found) => found.title);
 
   it("finds what is listed, with a slip of a letter or a word not finished, before what the places answer, each title once", async () => {
     const source = searching([listed("Stranger Things", "Dune")], { dune: [item("remote-1", "Dune: Part Two"), item("listed-1", "Dune")] });
@@ -300,13 +300,15 @@ describe("createLibrary search", () => {
     expect(source.asked).toEqual(["lord of the rings"]); // enough was found: not asked again in other words
   });
 
-  it("asks a place that found little the words without each of them, and with a long one cut short, and keeps only the titles that match what was typed", async () => {
+  it("asks a place that found little the words without each of them, and with a long one cut short, and puts the titles with every word typed before the others that have only some of them", async () => {
     const source = searching([], {
-      things: [item("1", "Things We Lost in the Fire"), item("2", "Stranger Things")],
+      things: [item("1", "Things We Lost in the Fire"), item("2", "Stranger Things"), item("5", "Dune")],
       "things stra": [item("2", "Stranger Things"), item("3", "Stranger Things: Tales from 85"), item("4", "Strawberry Things")],
     });
     const { library } = setup([source]);
-    expect(titlesOf(await library.search("strager things"))).toEqual(["Stranger Things", "Stranger Things: Tales from 85"]);
+    const found = await library.search("strager things");
+    expect(titlesOf(found)).toEqual(["Stranger Things", "Stranger Things: Tales from 85", "Strawberry Things", "Things We Lost in the Fire"]); // (Dune has none of the words)
+    expect(found.exact).toBe(2); // (the rest are the closest others)
     expect(source.asked).toEqual(["strager things", "things", "strager", "things stra", "strager thin", "things strag"]);
   });
 
@@ -326,8 +328,8 @@ describe("createLibrary search", () => {
     const source = searching([listed("Dune")]);
     const { library } = setup([source]);
     await library.get();
-    expect(await library.search("   ")).toEqual([]);
-    expect(await library.search("?!")).toEqual([]);
+    expect((await library.search("   ")).items).toEqual([]);
+    expect((await library.search("?!")).items).toEqual([]);
     expect(source.asked).toEqual([]);
   });
 
@@ -345,7 +347,215 @@ describe("createLibrary search", () => {
     const { library } = setup([broken, plain]);
     await library.get();
     expect(titlesOf(await library.search("dune"))).toEqual(["Dune"]);
-    expect(await library.search("nothing like it")).toEqual([]);
+    expect((await library.search("nothing like it")).items).toEqual([]);
+  });
+});
+
+describe("createLibrary search, further", () => {
+  const item = (id: string, title: string) => ({ id, title, url: `https://x.example/${id}` });
+  const answering = (answers: Record<string, ReturnType<typeof item>[]> = {}, rows: LibraryRow[] = []): LibrarySource & { asked: string[] } => {
+    const asked: string[] = [];
+    return {
+      id: "s",
+      name: "s",
+      load: gives(...rows),
+      asked,
+      search: (query: string) => {
+        asked.push(query);
+        return Promise.resolve(answers[query] ?? []);
+      },
+    };
+  };
+  const listed = (...titles: string[]): LibraryRow => ({ id: "r", title: "R", source: "Test", items: titles.map((title, at) => item(`listed-${at}`, title)) });
+  const titlesOf = (answer: { items: { title: string }[] }) => answer.items.map((found) => found.title);
+
+  it("asks a place once for words typed in capitals or with marks, as typed", async () => {
+    const source = answering({ "Dune!": [item("1", "Dune")] });
+    const { library } = setup([source]);
+    expect(titlesOf(await library.search("Dune!"))).toEqual(["Dune"]);
+    expect(source.asked).toEqual(["Dune!"]);
+  });
+
+  it("also asks without the words that say what is wanted and are no part of a title, and puts first the title that is what is left", async () => {
+    const source = answering({ dune: [item("1", "Dune: Part Two"), item("2", "Dune"), item("3", "Dunerider")] });
+    const { library } = setup([source]);
+    const found = await library.search("watch Dune full movie");
+    expect(source.asked.slice(0, 2)).toEqual(["watch Dune full movie", "dune"]);
+    expect(titlesOf(found)).toEqual(["Dune", "Dune: Part Two", "Dunerider"]);
+    expect(found.exact).toBe(3);
+  });
+
+  it("keeps a title that has those words in its name first when the words typed are that title", async () => {
+    const source = answering({ "full metal jacket": [item("1", "Full Metal Alchemist"), item("2", "Full Metal Jacket")], "metal jacket": [item("3", "Metal Jacket Blues")] }, [listed("Full Metal Jacket")]);
+    const { library } = setup([source]);
+    await library.get();
+    const found = await library.search("full metal jacket");
+    expect(titlesOf(found)[0]).toBe("Full Metal Jacket");
+    expect(titlesOf(found)).toEqual(expect.arrayContaining(["Metal Jacket Blues"]));
+  });
+
+  it("finds a title it has seen before from what a place no longer answers, with a slip or a half-typed word", async () => {
+    const source = answering({ dune: [item("1", "Dune")], "the office": [item("2", "The Office")] });
+    const { library } = setup([source]);
+    await library.search("dune");
+    await library.search("the office");
+    expect(titlesOf(await library.search("dun"))).toEqual(["Dune"]);
+    expect(titlesOf(await library.search("dnue"))).toEqual(["Dune"]);
+    expect(titlesOf(await library.search("teh office"))).toEqual(["The Office"]);
+  });
+
+  it("finds what the rows brought, and what a page of a row brought, and the titles like another, with nothing asked of a place that cannot search", async () => {
+    const source: LibrarySource = {
+      id: "p",
+      name: "p",
+      load: gives(listed("Casablanca")),
+      shelves: async () => ({ rows: [{ id: "s", title: "S", source: "Test", items: [item("shelf-1", "The Third Man")] }], next: null }),
+      more: async () => ({ items: [item("more-1", "Rear Window")], last: true }),
+      similar: async () => [item("alike-1", "Double Indemnity")],
+    };
+    const { library } = setup([source]);
+    await library.get();
+    await library.rows(undefined, 0);
+    await library.more("s", 2);
+    await library.similar("https://x.example/watch/1");
+    const wanted: ReadonlyArray<readonly [string, string]> = [["casablanca", "Casablanca"], ["third man", "The Third Man"], ["rear window", "Rear Window"], ["double indemnity", "Double Indemnity"]];
+    for (const [typed, title] of wanted) {
+      expect(titlesOf(await library.search(typed)), typed).toEqual([title]);
+    }
+  });
+
+  it("puts the titles that have only some of the words after the others, as the closest, and says how many have them all", async () => {
+    const source = answering({}, [listed("The Dark Knight", "The Dark Tower", "Knight Rider", "Dark Waters")]);
+    const { library } = setup([source]);
+    await library.get();
+    const none = await library.search("dark knight returns");
+    expect(titlesOf(none)).toEqual(["The Dark Knight"]); // (two of the three words; a title with one of them is not close enough)
+    expect(none.exact).toBe(0);
+
+    const some = await library.search("dark knight");
+    expect(some.exact).toBe(1);
+    expect(titlesOf(some)[0]).toBe("The Dark Knight");
+  });
+
+  it("offers nothing for words that are in no title, and not the titles that only have a short word of them", async () => {
+    const source = answering({}, [listed("The Movie", "A Show", "Quiet Place")]);
+    const { library } = setup([source]);
+    await library.get();
+    expect((await library.search("zzz xyzzy")).items).toEqual([]);
+    expect((await library.search("qq zzz")).items).toEqual([]);
+  });
+
+  it("gives no more than a hundred and twenty titles", async () => {
+    const many = Array.from({ length: 300 }, (_, at) => item(`m${at}`, `Boon ${at}`));
+    const { library } = setup([answering({ boon: many })]);
+    const found = await library.search("boon");
+    expect(found.items).toHaveLength(120);
+    expect(found.exact).toBe(120);
+  });
+});
+
+describe("createLibrary rows and more", () => {
+  const item = (id: string, title: string) => ({ id, title, url: `https://x.example/${id}` });
+  const shelf = (id: string, ...titles: string[]): LibraryRow => ({ id, title: id, source: "Test", items: titles.map((title, at) => item(`${id}-${at}`, title)) });
+  const paged = (shelves: NonNullable<LibrarySource["shelves"]>, more: NonNullable<LibrarySource["more"]> = async () => ({ items: [], last: true }), id = "p") => {
+    const calls = { shelves: vi.fn(shelves), more: vi.fn(more) };
+    const source: LibrarySource = { id, name: id, load: gives(row("R")), shelves: calls.shelves, more: calls.more };
+    return { source, calls };
+  };
+  const goingOn = async (_kind: unknown, cursor: number) => ({ rows: [shelf(`s${cursor}`, "A", "B")], next: cursor < 10 ? cursor + 5 : null });
+
+  it("brings the next rows of a place, and where they go on from", async () => {
+    const { source } = paged(goingOn);
+    const { library } = setup([source]);
+    expect(await library.rows(undefined, 0)).toEqual({ rows: [shelf("s0", "A", "B")], next: 5 });
+    expect(await library.rows(undefined, 10)).toEqual({ rows: [shelf("s10", "A", "B")], next: null });
+  });
+
+  it("asks a place once while the answer is fresh, once for each kind and cursor, and once for those who ask at once", async () => {
+    const { source, calls } = paged(goingOn);
+    const { library, advance } = setup([source]);
+    await Promise.all([library.rows(undefined, 0), library.rows(undefined, 0), library.rows(undefined, 0)]);
+    expect(calls.shelves).toHaveBeenCalledTimes(1);
+    await library.rows(undefined, 0);
+    expect(calls.shelves).toHaveBeenCalledTimes(1);
+    await library.rows("movie", 0);
+    await library.rows(undefined, 5);
+    expect(calls.shelves).toHaveBeenCalledTimes(3);
+    advance(1000);
+    await library.rows(undefined, 0);
+    expect(calls.shelves).toHaveBeenCalledTimes(4);
+    expect(calls.shelves).toHaveBeenLastCalledWith(undefined, 0);
+  });
+
+  it("has nothing, asking nobody, when no place has rows to bring", async () => {
+    const { library } = setup([fakeSource("plain", [gives(row("R"))])]);
+    expect(await library.rows(undefined, 0)).toEqual({ rows: [], next: null });
+    expect(await library.more("anything", 2)).toEqual({ items: [], last: true });
+  });
+
+  it("leaves out the titles that have no video, and a row left with none", async () => {
+    const { source } = paged(async () => ({ rows: [shelf("s", "A", "B"), shelf("t", "C")], next: null }));
+    const { library } = setup([source]);
+    library.played("https://x.example/s-0", "none");
+    expect((await library.rows(undefined, 0)).rows).toEqual([{ ...shelf("s", "A", "B"), items: [item("s-1", "B")] }, shelf("t", "C")]);
+    library.played("https://x.example/t-0", "none");
+    expect((await library.rows(undefined, 0)).rows.map((one) => one.id)).toEqual(["s"]);
+  });
+
+  it("goes on with the places that answer, and fails only when none does, remembering no failure", async () => {
+    const broken = paged(async () => Promise.reject(new Error("down")), async () => Promise.reject(new Error("down")), "broken");
+    const working = paged(goingOn, async () => ({ items: [item("m", "More")], last: true }), "working");
+    const { library } = setup([broken.source, working.source]);
+    expect((await library.rows(undefined, 0)).rows.map((one) => one.id)).toEqual(["s0"]);
+    expect((await library.more("x", 2)).items.map((found) => found.title)).toEqual(["More"]);
+
+    let up = false;
+    const flaky = paged(async (kind, cursor) => (up ? goingOn(kind, cursor) : Promise.reject(new Error("down"))), async () => (up ? { items: [item("m", "More")], last: true } : Promise.reject(new Error("down"))));
+    const again = setup([flaky.source]).library;
+    await expect(again.rows(undefined, 0)).rejects.toThrow(/no place/);
+    await expect(again.more("x", 2)).rejects.toThrow(/no place/);
+    up = true;
+    expect((await again.rows(undefined, 0)).rows).toHaveLength(1);
+    expect((await again.more("x", 2)).items).toHaveLength(1);
+    expect(flaky.calls.shelves).toHaveBeenCalledTimes(2);
+  });
+
+  it("goes on from the furthest place when places differ", async () => {
+    const near = paged(async () => ({ rows: [shelf("n", "A")], next: 5 }), undefined, "near");
+    const far = paged(async () => ({ rows: [shelf("f", "B")], next: 15 }), undefined, "far");
+    const done = paged(async () => ({ rows: [shelf("d", "C")], next: null }), undefined, "done");
+    const { library } = setup([near.source, far.source, done.source]);
+    const answer = await library.rows(undefined, 0);
+    expect(answer.rows.map((one) => one.id)).toEqual(["n", "f", "d"]);
+    expect(answer.next).toBe(15);
+  });
+
+  it("brings more titles of a row from the first place that has them, once while the answer is fresh", async () => {
+    const none = paged(goingOn, async () => ({ items: [], last: true }), "none");
+    const has = paged(goingOn, async (rowId, page) => ({ items: [item(`${rowId}-${page}`, `Page ${page}`)], last: page >= 3 }), "has");
+    const { library, advance } = setup([none.source, has.source]);
+    expect(await library.more("row", 2)).toEqual({ items: [item("row-2", "Page 2")], last: false });
+    await Promise.all([library.more("row", 2), library.more("row", 2)]);
+    expect(has.calls.more).toHaveBeenCalledTimes(1);
+    expect((await library.more("row", 3)).last).toBe(true);
+    expect(has.calls.more).toHaveBeenCalledTimes(2);
+    advance(1000);
+    await library.more("row", 2);
+    expect(has.calls.more).toHaveBeenCalledTimes(3);
+  });
+
+  it("takes a page of nothing with more pages after it for an answer, and nothing with no more for the end of the row", async () => {
+    const { source } = paged(goingOn, async (_row, page) => ({ items: [], last: page >= 4 }));
+    const { library } = setup([source]);
+    expect(await library.more("row", 3)).toEqual({ items: [], last: false });
+    expect(await library.more("row", 4)).toEqual({ items: [], last: true });
+  });
+
+  it("leaves out of a page the titles that have no video", async () => {
+    const { source } = paged(goingOn, async () => ({ items: [item("a", "A"), item("b", "B")], last: false }));
+    const { library } = setup([source]);
+    library.played("https://x.example/a", "none");
+    expect((await library.more("row", 2)).items.map((found) => found.title)).toEqual(["B"]);
   });
 });
 
@@ -398,9 +608,9 @@ describe("createLibrary titles with no video", () => {
     library.played(found.url, "failed");
     advance(STRIKE_GAP_MS);
     library.played(found.url, "failed");
-    expect((await library.search("remote title")).map((one) => one.id)).toEqual(["r"]);
+    expect((await library.search("remote title")).items.map((one) => one.id)).toEqual(["r"]);
     library.played(found.url, "none");
-    expect(await library.search("remote title")).toEqual([]);
+    expect((await library.search("remote title")).items).toEqual([]);
   });
 
   it("does not let a try that failed to be reached soften a title that has no video", async () => {
@@ -432,9 +642,9 @@ describe("createLibrary titles with no video", () => {
       similar: () => Promise.resolve([remote, { id: "other", title: "Other", url: "https://x.example/other" }]),
     };
     const { library } = setup([source]);
-    expect((await library.search("remote title")).map((found) => found.id)).toEqual(["remote"]);
+    expect((await library.search("remote title")).items.map((found) => found.id)).toEqual(["remote"]);
     library.played(remote.url, "none");
-    expect(await library.search("remote title")).toEqual([]);
+    expect((await library.search("remote title")).items).toEqual([]);
     expect((await library.similar(first)).map((found) => found.id)).toEqual(["other"]);
   });
 

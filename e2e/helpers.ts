@@ -141,12 +141,38 @@ export const serverUp = (page: Page) =>
     (window as unknown as { __server: ServerSwitch }).__server.up = true;
   });
 
-/** Answer the library's requests with `library` (and the search with `search`): the server the tests run against has no library of its own. */
+/** What the library says to the rows that come after the first ones and to more titles of a row, when a test has it do so. */
+export interface LibraryFeed {
+  /** The rows after the first ones: `{ rows, next }`, asked from `cursor` (for the films or the shows only, or both). */
+  rows?: (cursor: number, kind: string | null) => unknown;
+  /** More titles of a row, from page 2: `{ items, last }`. */
+  more?: (row: string, page: number) => unknown;
+}
+
+/**
+ * Answer the library's requests with `library` (and the search with `search`: a list of titles, or `{ items, exact }` to say how many have every word): the server
+ * the tests run against has no library of its own. The rows that come after the first ones, and the pages of a row, are `feed`'s; without it there are none.
+ */
 export const withLibrary =
-  (library: unknown, search?: (query: string) => unknown) =>
+  (library: unknown, search?: (query: string) => unknown, feed?: LibraryFeed) =>
   async (context: BrowserContext): Promise<void> => {
     await context.route("**/api/library", (route) => route.fulfill({ json: library }));
-    await context.route(/\/api\/library\/search/, (route) => route.fulfill({ json: { items: search?.(new URL(route.request().url()).searchParams.get("q") ?? "") ?? [] } }));
+    await context.route(/\/api\/library\/search/, (route) => {
+      const found = search?.(new URL(route.request().url()).searchParams.get("q") ?? "") ?? [];
+      return route.fulfill({ json: Array.isArray(found) ? { items: found } : found });
+    });
+    if (feed?.rows) {
+      await context.route(/\/api\/library\/rows/, (route) => {
+        const query = new URL(route.request().url()).searchParams;
+        return route.fulfill({ json: feed.rows!(Number(query.get("cursor") ?? 0), query.get("kind")) });
+      });
+    }
+    if (feed?.more) {
+      await context.route(/\/api\/library\/more/, (route) => {
+        const query = new URL(route.request().url()).searchParams;
+        return route.fulfill({ json: feed.more!(query.get("row") ?? "", Number(query.get("page"))) });
+      });
+    }
   };
 
 /** Open /tv in its own browser context (its own storage, like a separate device): it opens on the library, with nothing to press first. */

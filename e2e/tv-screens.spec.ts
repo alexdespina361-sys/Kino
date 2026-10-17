@@ -1986,10 +1986,12 @@ test.describe("categories and search on the TV", () => {
     const tv = await open(browser);
     await choose(tv, "rail-search");
     await tv.keyboard.type("secnd row frist"); // a letter missing, two letters swapped
-    await expect(tiles(tv)).toHaveCount(1);
+    await expect(tiles(tv)).toHaveCount(2); // the title that has all three words, and under "Closest matches" the one that has two of them
     await expect(tiles(tv).first()).toHaveAttribute("title", "Second row first");
-    await expect.poll(() => asked.at(-1)).toBe("secnd row frist"); // the server was asked as typed, and had nothing: the title stays
-    await expect(tiles(tv)).toHaveCount(1);
+    await expect(tiles(tv).last()).toHaveAttribute("title", "Second row second");
+    await expect(tv.getByTestId("tv-closest")).toHaveText("Closest matches");
+    await expect.poll(() => asked.at(-1)).toBe("secnd row frist"); // the server was asked as typed, and had nothing: the titles stay
+    await expect(tiles(tv)).toHaveCount(2);
 
     for (let i = 0; i < 15; i++) await tv.keyboard.press("Backspace");
     await tv.keyboard.type("secondrowsec"); // no spaces, and the last word not finished
