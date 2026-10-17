@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t, useT } from "../i18n";
 import { CloseIcon } from "../shared/icons";
-import { useBackToClose } from "./backButton";
+import { useBackToClose } from "../shared/backButton";
 import { codeFromScan } from "./scan";
 
 /** The browser's own QR reader (Chrome and Android WebViews). Not in TypeScript's DOM types yet. */

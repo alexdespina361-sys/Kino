@@ -12,7 +12,7 @@ import { Logo } from "../shared/Logo";
 import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { LinkApprove } from "../account/LinkApprove";
-import { useBackToClose } from "./backButton";
+import { useBackToClose } from "../shared/backButton";
 import { FriendPage, FriendsPage } from "./Friends";
 import { RatingsSheet } from "./RatingsSheet";
 import { keepFocusIn, sheetIsOpen } from "./Sheet";

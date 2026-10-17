@@ -48,17 +48,25 @@ export interface PhoneInput {
 /** Below this a screen is a phone's. A tablet is big enough to be somebody's screen, with a phone for its remote. */
 const PHONE_SHORT_SIDE = 600;
 
-/** A phone: held in the hand, where a TV, a monitor, a laptop or a tablet is not. The remote is what such a device is for. */
-export const isPhone = (input: PhoneInput): boolean =>
-  input.touchPoints > 0 && input.coarsePointer && input.shortSide < PHONE_SHORT_SIDE && !TV_AGENT.test(input.userAgent);
+/**
+ * Held in the hand, or on a lap, and worked with a finger: a phone or a tablet. Its Back is the system's (a button, or a swipe from the edge)
+ * and the page is told by the history; a TV's is a key, which the page hears itself, and a laptop with a touch screen besides its pad is not
+ * worked with a finger.
+ */
+export const isHandHeld = (input: Omit<PhoneInput, "shortSide">): boolean => input.touchPoints > 0 && input.coarsePointer && !TV_AGENT.test(input.userAgent);
 
-export const thisIsPhone = (): boolean =>
-  isPhone({
-    userAgent: navigator.userAgent,
-    touchPoints: navigator.maxTouchPoints ?? 0,
-    coarsePointer: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
-    shortSide: Math.min(screen.width, screen.height),
-  });
+/** A phone: held in the hand, where a TV, a monitor, a laptop or a tablet is not. The remote is what such a device is for. */
+export const isPhone = (input: PhoneInput): boolean => isHandHeld(input) && input.shortSide < PHONE_SHORT_SIDE;
+
+const thisDevice = () => ({
+  userAgent: navigator.userAgent,
+  touchPoints: navigator.maxTouchPoints ?? 0,
+  coarsePointer: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
+});
+
+export const thisIsPhone = (): boolean => isPhone({ ...thisDevice(), shortSide: Math.min(screen.width, screen.height) });
+
+export const thisIsHandHeld = (): boolean => isHandHeld(thisDevice());
 
 export const roleOfThisPage = (): Role =>
   chooseRole({

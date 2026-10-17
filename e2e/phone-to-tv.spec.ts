@@ -48,6 +48,9 @@ test.describe("phone UI -> server -> TV player", () => {
     await phone.getByTestId("play-url").click();
     await expect(phone.getByTestId("player-state")).toHaveAttribute("data-state", "playing");
     const address = phone.url();
+    // (How many things are open on the page, as the history says: the remote is one of them, a sheet over it another. The exit guard under them is none.)
+    const layers = () => phone.evaluate(() => (history.state as { layers?: number } | null)?.layers ?? 0);
+    const remote = await layers();
 
     await phone.getByTestId("chip-speed").click();
     await expect(phone.getByTestId("speed-sheet")).toBeVisible();
@@ -60,7 +63,7 @@ test.describe("phone UI -> server -> TV player", () => {
     await phone.getByTestId("chip-speed").click();
     await phone.getByTestId("sheet-close").click();
     await expect(phone.getByTestId("speed-sheet")).toHaveCount(0);
-    await expect.poll(() => phone.evaluate(() => history.state)).toBeNull();
+    await expect.poll(layers).toBe(remote);
 
     // The account's pages go back one at a time, and the last Back closes it.
     await phone.getByTestId("account-button").click();

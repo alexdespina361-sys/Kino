@@ -223,6 +223,11 @@ pnpm build && pnpm start     # http://localhost:8787
   a sign-in that was opened from the settings and back to the settings, out of the code that is still on its way. A screen that watches a party along has nowhere to
   go back to, so Back lands on its **Leave** button and leaving stays a press of OK. The Close and Back buttons stay for those with a mouse
   (`e2e/remote-back.spec.ts` opens each of them and presses Back)
+- **A phone's or a tablet's own Back** (the button, the swipe from the edge) goes back one page everywhere instead of leaving the site: out of a film to
+  the library (or a show's page), out of a title's page and the pages of the profile, out of a sheet; the phone as a remote puts the remote away to the
+  library, with a line that brings it back, and the film plays on. At the library the first Back asks (**Press Back again to leave**, a line that runs
+  down 2.5 s) and a second one leaves; a Back that would stop a party for others asks first. Desktops and TVs keep Back as a key
+  (`src/client/shared/backButton.ts`, `docs/android-back.md`, `e2e/android-back.spec.ts`)
 - The controls are one line on any screen, in any language, with every button present (series, subtitles, sources, quality, party). The row
   measures itself (`src/client/tv/fit.ts`) and gives up only as much as it must, in this order: the room between the buttons, the labels of Watch
   party and Audio & subtitles, the episode names under Previous / Next, the labels of Previous / Next, the label of Episodes (each label becomes its

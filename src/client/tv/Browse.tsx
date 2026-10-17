@@ -14,6 +14,7 @@ import { useBell } from "../friends/useBell";
 import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
+import { useHandHeldBack } from "../shared/backButton";
 import { BackspaceIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { allRows, failedShelves, feed, GRID_CAP, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
@@ -407,6 +408,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     setDetail(null);
     setPending(CONTENT);
   };
+  // A phone or a tablet has no Back key: its own Back does what the remote's does, out of a title's page first, then from a page of the library to the
+  // one it is a step in from (Home at the end). Home is as far back as the library goes: the site asks there before it is left (see shared/backButton.ts).
+  useHandHeldBack(view.kind !== "home" ? () => choose(backOf(view) ?? { kind: "home" }) : undefined);
+  useHandHeldBack(detail ? closeDetail : undefined);
 
   // The menu: the places (search, home, films, shows, the categories, the lists), then what is done from here (the party, a phone). A few lines, so that
   // none has to be scrolled to. Who is watching is not in it: the button in the corner is, and opens the profile, which holds what the profile rated,

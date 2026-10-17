@@ -34,7 +34,13 @@ interface RemoteProps {
   onOpen: (sheet: SheetKind) => void;
 }
 
-function stateLabel(player: PlayerState, tvName: string): string {
+/** What the title is called on the remote (a show without the episode, which has a line of its own). */
+export function mediaTitle(media: NormalizedMedia): string {
+  const raw = media.title ?? hostOf(media.stream.url) ?? media.stream.url;
+  return media.series && raw.includes("·") ? raw.split("·")[0]!.trim() : raw;
+}
+
+export function stateLabel(player: PlayerState, tvName: string): string {
   if (player.state === "error") return friendlyError(player.error);
   if (player.state === "loading") return t("common.loading");
   if (player.buffering) return t("remote.buffering");
@@ -45,7 +51,7 @@ function stateLabel(player: PlayerState, tvName: string): string {
   return "";
 }
 
-function Chip({ icon, label, value, onClick, testId }: { icon?: ReactNode; label: string; value: string; onClick: () => void; testId: string }) {
+export function Chip({ icon, label, value, onClick, testId }: { icon?: ReactNode; label: string; value: string; onClick: () => void; testId: string }) {
   return (
     <button className="chip" onClick={onClick} data-testid={testId}>
       {icon}
@@ -66,8 +72,7 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
     window.scrollTo(0, 0);
   }, []);
   const series = media.series;
-  const rawTitle = media.title ?? hostOf(media.stream.url) ?? media.stream.url;
-  const title = series && rawTitle.includes("·") ? rawTitle.split("·")[0]!.trim() : rawTitle;
+  const title = mediaTitle(media);
   const playing = player.state === "playing";
   // A TV can't be sent into full screen without a press on the TV itself; if it hasn't gone in shortly after the tap, say so.
   const [fsHint, setFsHint] = useState(false);
