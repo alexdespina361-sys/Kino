@@ -9,5 +9,6 @@ export * from "./progress";
 export * from "./protocol";
 export * from "./rating";
 export * from "./search";
+export * from "./subsync";
 export * from "./tracks";
 export * from "./watched";

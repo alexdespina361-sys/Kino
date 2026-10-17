@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { hold, isHeld } from "../subsync/hold";
+import { AudioTap } from "../subsync/tap";
 import { prepareBrowserStream } from "./browserStream";
 import {
   DIRECT_START_MS,
@@ -10,6 +12,8 @@ import {
   bufferPolicy,
   lostTheConnection,
   proxiedQualityCap,
+  type SyncFilm,
+  type SyncStarter,
 } from "./engine";
 
 /** hls.js stands in for itself: the engine's wiring to it is what is looked at, not the library. */
@@ -19,7 +23,18 @@ const FakeHls = vi.hoisted(() => {
     static supported = true;
     static instances: FakeHls[] = [];
     static isSupported = () => FakeHls.supported;
-    static Events = { ERROR: "error", MANIFEST_PARSED: "manifestParsed", LEVEL_SWITCHED: "ls", LEVEL_LOADED: "ll", SUBTITLE_TRACK_SWITCH: "sts", SUBTITLE_TRACKS_UPDATED: "stu", AUDIO_TRACK_SWITCHED: "ats", AUDIO_TRACKS_UPDATED: "atu" };
+    static Events = {
+      ERROR: "error",
+      MANIFEST_PARSED: "manifestParsed",
+      LEVEL_SWITCHED: "ls",
+      LEVEL_LOADED: "ll",
+      SUBTITLE_TRACK_SWITCH: "sts",
+      SUBTITLE_TRACKS_UPDATED: "stu",
+      AUDIO_TRACK_SWITCHED: "ats",
+      AUDIO_TRACKS_UPDATED: "atu",
+      BUFFER_APPENDING: "bufferAppending",
+      AUDIO_TRACK_SWITCHING: "audioTrackSwitching",
+    };
     static ErrorTypes = { MEDIA_ERROR: "mediaError", NETWORK_ERROR: "networkError" };
     handlers = new Map<string, Handler[]>();
     url: string | null = null;
@@ -32,6 +47,9 @@ const FakeHls = vi.hoisted(() => {
     }
     on(event: string, handler: Handler) {
       this.handlers.set(event, [...(this.handlers.get(event) ?? []), handler]);
+    }
+    off(event: string, handler: Handler) {
+      this.handlers.set(event, (this.handlers.get(event) ?? []).filter((each) => each !== handler));
     }
     emit(event: string, data: unknown) {
       for (const handler of this.handlers.get(event) ?? []) handler(event, data);
@@ -310,6 +328,320 @@ describe("a direct address that the browser plays itself", () => {
     expect(states.at(-1)?.state).not.toBe("error");
     video.dispatchEvent(new Event("error"));
     expect(states.at(-1)).toMatchObject({ state: "error", error: "SOURCE_NOT_DIRECTLY_PLAYABLE" });
+    engine.destroy();
+  });
+});
+
+describe("the subtitle aligner", () => {
+  const HLS = "https://cdn.example/a.m3u8";
+  beforeEach(() => {
+    FakeHls.instances.length = 0;
+    FakeHls.supported = true;
+    stubBrowser();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  /** An aligner that does nothing but record how it was used. */
+  const fakeAligner = () => {
+    const films: SyncFilm[] = [];
+    const handles: Array<{ close: ReturnType<typeof vi.fn> }> = [];
+    const addressWhenStarted: Array<string | null> = [];
+    const starter: SyncStarter = (film) => {
+      films.push(film);
+      addressWhenStarted.push((film.hls as unknown as { url: string | null }).url);
+      const handle = { close: vi.fn() };
+      handles.push(handle);
+      return handle;
+    };
+    const loader = vi.fn(() => Promise.resolve(starter));
+    return { films, handles, addressWhenStarted, loader };
+  };
+  /** The video knows the film now (until then the state says only that it is loading). */
+  const known = (video: FakeVideo) => void video.dispatchEvent(new Event("loadedmetadata"));
+  /** The aligner's code has arrived (it is fetched along with the film, which does not wait for it) and has been started `count` times. */
+  const started = (aligner: ReturnType<typeof fakeAligner>, count = 1) => vi.waitFor(() => expect(aligner.films).toHaveLength(count));
+  const withTracks = (video: FakeVideo, tracks: Array<{ label: string; language: string; mode: string }>) => {
+    (video as unknown as { textTracks: unknown }).textTracks = tracks;
+    return tracks;
+  };
+
+  it("says nothing of an aligner on a TV that has none", async () => {
+    const { video, engine } = newEngine();
+    await engine.load(HLS, "hls");
+    known(video);
+    expect("subtitleSync" in engine.getState()).toBe(false);
+    engine.destroy();
+  });
+
+  it("starts along with hls.js, and says how it is going", async () => {
+    const { video, engine } = newEngine();
+    const aligner = fakeAligner();
+    engine.useSubtitleSync(aligner.loader);
+    await engine.load(HLS, "hls");
+    known(video);
+    await started(aligner);
+    expect(aligner.films[0]!.hls).toBe(FakeHls.instances.at(-1));
+    expect(aligner.films[0]!.events).toEqual({ audioSwitching: "audioTrackSwitching" });
+    expect(aligner.films[0]!.tap).toBeInstanceOf(AudioTap);
+    expect(FakeHls.instances.at(-1)!.url).toBe(HLS);
+    expect(engine.getState().subtitleSync).toBe("ready");
+    aligner.films[0]!.report("syncing");
+    expect(engine.getState().subtitleSync).toBe("syncing");
+    aligner.films[0]!.report("synced");
+    expect(engine.getState().subtitleSync).toBe("synced");
+    engine.destroy();
+  });
+
+  it("listens to the sound from the first piece, before its code has arrived, and hands what it heard to it", async () => {
+    const { video, engine } = newEngine();
+    const aligner = fakeAligner();
+    let arrive: () => void = () => {};
+    const arrived = new Promise<void>((resolve) => (arrive = resolve));
+    engine.useSubtitleSync(() => arrived.then(() => aligner.loader()));
+    await engine.load(HLS, "hls");
+    known(video);
+    const hls = FakeHls.instances.at(-1)!;
+    expect(hls.url).toBe(HLS); // (the film did not wait for it)
+    expect(aligner.films).toHaveLength(0);
+    const init = Uint8Array.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]);
+    const media = Uint8Array.from([0, 0, 0, 16, 0x6d, 0x6f, 0x6f, 0x66, 1]);
+    hls.emit("bufferAppending", { type: "audio", data: init, frag: { start: 0, duration: 4 } });
+    hls.emit("bufferAppending", { type: "audio", data: media, frag: { start: 0, duration: 4 } });
+    arrive();
+    await started(aligner);
+    const heard: number[] = [];
+    aligner.films[0]!.tap.connect((piece) => heard.push(piece.start));
+    expect(heard).toEqual([0]);
+    hls.emit("bufferAppending", { type: "audio", data: media, frag: { start: 4, duration: 4 } });
+    expect(heard).toEqual([0, 4]);
+    engine.destroy();
+  });
+
+  it("still has the init segments of the sound when the viewer turns the aligner on in the middle of a film", async () => {
+    const { video, engine } = newEngine();
+    const aligner = fakeAligner();
+    engine.useSubtitleSync(aligner.loader);
+    engine.setSubtitleSync(false);
+    await engine.load(HLS, "hls");
+    known(video);
+    const hls = FakeHls.instances.at(-1)!;
+    // (The init segment comes once, at the start; the aligner was not there to hear it.)
+    hls.emit("bufferAppending", { type: "audio", data: Uint8Array.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]), frag: { start: 0, duration: 4 } });
+    engine.setSubtitleSync(true);
+    await started(aligner);
+    const heard: number[] = [];
+    aligner.films[0]!.tap.connect((piece) => heard.push(piece.start));
+    hls.emit("bufferAppending", { type: "audio", data: Uint8Array.from([0, 0, 0, 16, 0x6d, 0x6f, 0x6f, 0x66, 1]), frag: { start: 400, duration: 4 } });
+    expect(heard).toEqual([400]);
+    engine.destroy();
+  });
+
+  it("is not even fetched for a viewer who turned it off", async () => {
+    const { video, engine } = newEngine();
+    const aligner = fakeAligner();
+    engine.useSubtitleSync(aligner.loader);
+    engine.setSubtitleSync(false);
+    await engine.load(HLS, "hls");
+    known(video);
+    expect(aligner.loader).not.toHaveBeenCalled();
+    expect(engine.getState().subtitleSync).toBe("off");
+    engine.destroy();
+  });
+
+  it("puts the lines back when it is switched off, and starts again, for what is still to come, when it is switched on", async () => {
+    const { video, engine } = newEngine();
+    const aligner = fakeAligner();
+    engine.useSubtitleSync(aligner.loader);
+    await engine.load(HLS, "hls");
+    known(video);
+    await started(aligner);
+    aligner.films[0]!.report("synced");
+    engine.setSubtitleSync(false);
+    expect(aligner.handles[0]!.close).toHaveBeenCalledWith(true);
+    expect(engine.getState().subtitleSync).toBe("off");
+    aligner.films[0]!.report("syncing"); // (a late word from the one that was closed)
+    expect(engine.getState().subtitleSync).toBe("off");
+    engine.setSubtitleSync(true);
+    await started(aligner, 2);
+    expect(aligner.films[1]!.hls).toBe(aligner.films[0]!.hls);
+    expect(aligner.films[1]!.tap).toBe(aligner.films[0]!.tap); // (the player's own: it has listened all along)
+    expect(engine.getState().subtitleSync).toBe("ready");
+    engine.destroy();
+  });
+
+  it("does nothing when it is switched to what it already is", async () => {
+    const { video, engine } = newEngine();
+    const aligner = fakeAligner();
+    engine.useSubtitleSync(aligner.loader);
+    await engine.load(HLS, "hls");
+    known(video);
+    await started(aligner);
+    engine.setSubtitleSync(true);
+    await Promise.resolve();
+    expect(aligner.films).toHaveLength(1);
+    expect(aligner.handles[0]!.close).not.toHaveBeenCalled();
+    engine.destroy();
+  });
+
+  it("goes with the film it was for, and nothing a closed one says is heard", async () => {
+    const { video, engine } = newEngine();
+    const aligner = fakeAligner();
+    engine.useSubtitleSync(aligner.loader);
+    await engine.load(HLS, "hls");
+    known(video);
+    await started(aligner);
+    const first = aligner.films[0]!;
+    await engine.load("https://cdn.example/b.m3u8", "hls");
+    known(video);
+    expect(aligner.handles[0]!.close).toHaveBeenCalledWith(); // (closed as it is: the lines of a film that is gone need no putting back)
+    await started(aligner, 2);
+    first.report("synced");
+    first.show(0);
+    expect(engine.getState().subtitleSync).toBe("ready");
+    expect(engine.quiet()).toBe(false);
+    engine.destroy();
+    expect(aligner.handles[1]!.close).toHaveBeenCalled();
+  });
+
+  it("has none for a picture the browser's own player plays: it gives no access to the sound", async () => {
+    const aligner = fakeAligner();
+    for (const play of [
+      async (engine: PlayerEngine) => engine.load("https://cdn.example/a.mp4", "mp4"),
+      async (engine: PlayerEngine) => {
+        FakeHls.supported = false;
+        await engine.load(HLS, "hls");
+      },
+    ]) {
+      const { video, engine } = newEngine();
+      engine.useSubtitleSync(aligner.loader);
+      await play(engine);
+      known(video);
+      expect(engine.getState().subtitleSync).toBe("unavailable");
+      engine.setSubtitleSync(false);
+      engine.setSubtitleSync(true); // (nothing to start on: still "unavailable")
+      expect(engine.getState().subtitleSync).toBe("unavailable");
+      engine.destroy();
+    }
+    expect(aligner.loader).not.toHaveBeenCalled();
+  });
+
+  it("plays on, without it, when it cannot be fetched or the device cannot run it", async () => {
+    const offline = newEngine();
+    offline.engine.useSubtitleSync(() => Promise.reject(new Error("offline")));
+    await offline.engine.load(HLS, "hls");
+    known(offline.video);
+    expect(FakeHls.instances).toHaveLength(1);
+    expect(FakeHls.instances[0]!.url).toBe(HLS);
+    await vi.waitFor(() => expect(offline.engine.getState().subtitleSync).toBe("unavailable"));
+    offline.engine.destroy();
+
+    const unable = newEngine();
+    unable.engine.useSubtitleSync(() => Promise.resolve(() => undefined));
+    await unable.engine.load(HLS, "hls");
+    known(unable.video);
+    await vi.waitFor(() => expect(unable.engine.getState().subtitleSync).toBe("unavailable"));
+    unable.engine.destroy();
+  });
+
+  it("does not hold the film back for an aligner that is slow to arrive", async () => {
+    const { video, engine } = newEngine();
+    engine.useSubtitleSync(() => new Promise(() => {})); // (never arrives)
+    await engine.load(HLS, "hls");
+    known(video);
+    expect(FakeHls.instances.at(-1)!.url).toBe(HLS);
+    expect(engine.getState().subtitleSync).toBe("ready");
+    engine.destroy();
+  });
+
+  it("starts nothing for a film that is gone, or a switch that was turned off, by the time its code arrives", async () => {
+    const aligner = fakeAligner();
+    let arrive: () => void = () => {};
+    const arrived = new Promise<void>((resolve) => (arrive = resolve));
+    const loader = () => arrived.then(() => aligner.loader());
+
+    const gone = newEngine();
+    gone.engine.useSubtitleSync(loader);
+    await gone.engine.load(HLS, "hls");
+    await gone.engine.load("https://cdn.example/b.m3u8", "mp4");
+    const off = newEngine();
+    off.engine.useSubtitleSync(loader);
+    await off.engine.load(HLS, "hls");
+    off.engine.setSubtitleSync(false);
+    arrive();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    known(off.video);
+    expect(aligner.films).toHaveLength(0);
+    expect(off.engine.getState().subtitleSync).toBe("off");
+    gone.engine.destroy();
+    off.engine.destroy();
+  });
+
+  it("is told the viewer's own subtitle delay, as it stands now", async () => {
+    const { video, engine } = newEngine();
+    const aligner = fakeAligner();
+    let delay = 0;
+    engine.useSubtitleSync(aligner.loader, () => delay);
+    await engine.load(HLS, "hls");
+    known(video);
+    await started(aligner);
+    delay = 1.5;
+    expect(aligner.films[0]!.delay?.()).toBe(1.5);
+    engine.destroy();
+  });
+
+  it("puts a track on screen when it asks, and keeps the page quiet about a change nobody made", async () => {
+    vi.useFakeTimers();
+    const { video, engine } = newEngine();
+    const tracks = withTracks(video, [
+      { label: "English", language: "en", mode: "hidden" },
+      { label: "Română", language: "ro", mode: "disabled" },
+    ]);
+    const aligner = fakeAligner();
+    engine.useSubtitleSync(aligner.loader);
+    await engine.load(HLS, "hls");
+    known(video);
+    await vi.waitFor(() => expect(aligner.films).toHaveLength(1));
+    expect(engine.quiet()).toBe(false);
+    aligner.films[0]!.show(1);
+    expect(tracks.map((track) => track.mode)).toEqual(["disabled", "hidden"]);
+    expect(engine.getState().subtitles?.current).toBe(1);
+    expect(engine.quiet()).toBe(true);
+    vi.advanceTimersByTime(3000);
+    expect(engine.quiet()).toBe(false);
+    engine.destroy();
+  });
+
+  it("does not offer a track the aligner has only loaded to try as the one the viewer chose, and gives it up when the viewer picks", async () => {
+    const { video, engine } = newEngine();
+    const tracks = withTracks(video, [
+      { label: "English", language: "en", mode: "hidden" },
+      { label: "Română", language: "ro", mode: "hidden" }, // (loaded for the aligner)
+      { label: "Français", language: "fr", mode: "disabled" },
+    ]);
+    hold(tracks[1]!);
+    await engine.load(HLS, "hls");
+    known(video);
+    expect(engine.getState().subtitles?.current).toBe(0);
+    engine.setSubtitle(1);
+    expect(isHeld(tracks[1]!)).toBe(false);
+    expect(tracks.map((track) => track.mode)).toEqual(["disabled", "hidden", "disabled"]);
+    expect(engine.getState().subtitles?.current).toBe(1);
+    engine.setSubtitle(-1);
+    expect(engine.getState().subtitles?.current).toBe(-1);
+    engine.destroy();
+  });
+
+  it("reports no track chosen while the only one that is loaded is held", async () => {
+    const { video, engine } = newEngine();
+    const tracks = withTracks(video, [{ label: "English", language: "en", mode: "hidden" }]);
+    hold(tracks[0]!);
+    await engine.load(HLS, "hls");
+    known(video);
+    expect(engine.getState().subtitles).toMatchObject({ current: -1 });
     engine.destroy();
   });
 });

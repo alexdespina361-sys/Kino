@@ -34,4 +34,18 @@ ffmpeg([
   "fixtures/hls/stream.m3u8",
 ]);
 
+// 4. HLS with sound (fMP4 segments, 4s each, a tone with the picture): what the subtitle aligner listens to. Tiny, since a test only needs it to arrive.
+rmSync("fixtures/hls-sound", { recursive: true, force: true });
+mkdirSync("fixtures/hls-sound", { recursive: true });
+ffmpeg([
+  "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=10:duration=12", "-f", "lavfi", "-i", "sine=frequency=330:duration=12",
+  "-c:v", "libvpx-vp9", "-b:v", "20k", "-deadline", "realtime", "-cpu-used", "8", "-g", "40", "-pix_fmt", "yuv420p",
+  "-c:a", "libopus", "-b:a", "16k",
+  "-f", "hls", "-hls_time", "4", "-hls_playlist_type", "vod",
+  "-hls_segment_type", "fmp4", "-hls_fmp4_init_filename", "init.mp4",
+  "-hls_segment_filename", "fixtures/hls-sound/seg_%03d.m4s",
+  "-master_pl_name", "master.m3u8",
+  "fixtures/hls-sound/stream.m3u8",
+]);
+
 console.log("fixtures written to ./fixtures");

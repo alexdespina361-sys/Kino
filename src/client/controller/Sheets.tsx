@@ -39,7 +39,7 @@ import { comesIn, hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { RoleSwitch } from "../shared/RoleSwitch";
-import { captionLabel, captionTitle, statusWords, trackName } from "../shared/words";
+import { captionLabel, captionTitle, statusWords, syncWords, trackName } from "../shared/words";
 import { Rows, Switch } from "./AccountPages";
 import { InviteFriendsButton } from "./Friends";
 import { codeFromScan } from "./scan";
@@ -114,6 +114,7 @@ export function TracksSheet({
   onAudio,
   onStyle,
   onDelay,
+  onSync,
   onClose,
 }: Close & {
   player: PlayerState;
@@ -121,12 +122,17 @@ export function TracksSheet({
   onAudio: (track: number) => void;
   onStyle: () => void;
   onDelay?: (delay: number) => void;
+  /** Turn the timing of the subtitles to the sound, by itself, on or off. */
+  onSync?: (on: boolean) => void;
 }) {
   useT();
   const subtitles = player.subtitles;
   const audio = player.audio;
   const delay = player.subtitleDelay ?? 0;
   const nudge = (by: number) => onDelay?.(Math.round((delay + by) * 10) / 10);
+  // A TV without the aligner reports nothing about it, and then there is nothing to switch. While it is on, the line under the switch says how it is going.
+  const sync = player.subtitleSync;
+  const syncHint = sync === undefined || sync === "off" || sync === "ready" ? t("player.autoSyncHelp") : syncWords(sync);
 
   // The profile's own languages first; the rest are one tap away, and "Show all" lifts a profile's "only these".
   const tracks = subtitles?.tracks ?? NO_TRACKS;
@@ -237,6 +243,11 @@ export function TracksSheet({
           </div>
           <ChoiceList choices={releases} />
         </>
+      )}
+      {onSync && sync !== undefined && (
+        <Rows>
+          <Switch label={t("player.autoSyncLabel")} hint={syncHint} checked={sync !== "off"} onChange={onSync} testId="subtitle-sync" />
+        </Rows>
       )}
       {onDelay && (subtitles?.current ?? -1) !== -1 && (
         <div className="delay-row" data-testid="subtitle-delay">

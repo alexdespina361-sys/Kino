@@ -77,7 +77,8 @@ export interface SqlClient {
 }
 
 export class PostgresPersistence implements Persistence {
-  constructor(private readonly db: SqlClient) {}
+  /** (Public: the shared subtitle timings keep a table in the same database.) */
+  constructor(readonly db: SqlClient) {}
 
   async load() {
     await this.db.query("create table if not exists kino_docs (key text primary key, value jsonb not null)");

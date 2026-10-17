@@ -4,6 +4,7 @@ import { buildApp, defaultClientDir, defaultFixturesDir } from "./app";
 import { filmpireSource } from "./library/filmpire";
 import { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
+import { subsyncStoreFor } from "./subsync/store";
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -35,6 +36,8 @@ const app = await buildApp({
   registry,
   pairings,
   storage: kind,
+  // (The subtitle timings that screens share live next to the accounts, in the same database or folder.)
+  subsync: subsyncStoreFor(persistence, kind),
   // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),

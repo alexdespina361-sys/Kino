@@ -17,6 +17,8 @@ import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
 import { Hub, type HubOptions } from "./websocket/hub";
 import type { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
+import { subsyncRoutes, type SubsyncStats } from "./subsync/routes";
+import { MemorySubsyncStore, type SubsyncStore } from "./subsync/store";
 
 export interface AppOptions {
   /** Accounts, profiles and what they watched. Without it the server has no sign-in and every screen just keeps its own history. The app closes it when it stops. */
@@ -25,6 +27,8 @@ export interface AppOptions {
   pairings?: PairingStore;
   /** Where all of that is kept ("Postgres", "a file", "memory only"): `/api/health` says so, which is how to tell whether a host keeps anything between restarts. */
   storage?: "postgres" | "file" | "memory";
+  /** Where the subtitle timings that screens share are kept (memory, gone with the server, unless set): see `shared/subsync.ts`. */
+  subsync?: SubsyncStore;
   /** `closed` stops new accounts being made. */
   registration?: Registration;
   maxAccounts?: number;
@@ -143,6 +147,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // Screens watching a film together ask for the same pieces of it: the proxy fetches each once and shares it (see `SegmentCache`).
   const segments = new SegmentCache(options.segmentCache ?? segmentCacheFromEnv());
   const proxyStats: ProxyStats = { bytes: 0, requests: 0, refused: 0 };
+  const subsyncStats: SubsyncStats = { found: 0, missed: 0, stored: 0 };
+  subsyncRoutes(app, { store: options.subsync ?? new MemorySubsyncStore(), stats: subsyncStats });
   const isProxyOff = process.env.PROXY_VIDEO === "off" || process.env.PROXY_VIDEO === "false" || process.env.PROXY_VIDEO === "0";
   const proxyVideo = options.proxyVideo ?? !isProxyOff;
   // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.
@@ -156,6 +162,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     // (`proxy` is what the proxy has sent on to the screens, in bytes: the films are most of what a host's bandwidth goes on, and this is how much that was.
     // `video` says whether it carries films at all, and `refused` how many asks it turned away because it does not.)
     proxy: { bytes: proxyStats.bytes, requests: proxyStats.requests, refused: proxyStats.refused, video: proxyVideo ? "on" : "off" },
+    // (`subsync` counts the asks for a shared subtitle timing that found one and the ones that did not, and the timings screens have left.)
+    subsync: subsyncStats,
   }));
   app.get("/api/library", async (request, reply) => {
     const body = JSON.stringify(await library.get());
@@ -253,13 +261,15 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const clientDir = options.clientDir && path.resolve(options.clientDir);
   if (clientDir && existsSync(path.join(clientDir, "index.html"))) {
     const assetsDir = path.join(clientDir, "assets") + path.sep;
+    const alignerDir = path.join(clientDir, "subtitle-sync") + path.sep;
     await app.register(fastifyStatic, {
       root: clientDir,
       prefix: "/",
       // Vite names the files in /assets after what is in them, so a changed file has a new name and an old one can be kept for good.
+      // The subtitle aligner's model and worker are the same: a changed one goes in a new numbered folder (public/subtitle-sync/1/README.md).
       // The page itself is always checked again, which is how a new build reaches a screen that still has the old one.
       setHeaders: (reply, filePath) => {
-        if (filePath.startsWith(assetsDir)) {
+        if (filePath.startsWith(assetsDir) || filePath.startsWith(alignerDir)) {
           reply.header("Cache-Control", "public, max-age=31536000, immutable");
         } else if (filePath.endsWith("index.html")) {
           reply.header("Cache-Control", "no-cache, must-revalidate");

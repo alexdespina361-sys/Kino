@@ -698,6 +698,7 @@ export function Controller() {
           onSubtitle={(track) => send({ type: "SET_SUBTITLE", track })}
           onAudio={(track) => send({ type: "SET_AUDIO", track })}
           onDelay={(delay) => send({ type: "SET_SUBTITLE_DELAY", delay })}
+          onSync={(on) => send({ type: "SET_SUBTITLE_SYNC", on })}
           onStyle={() => setSheet("captions")}
         />
       )}

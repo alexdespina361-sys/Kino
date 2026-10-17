@@ -38,6 +38,21 @@ describe("serving the built page", () => {
     }
   });
 
+  it("keeps the subtitle aligner's model for good too (a changed one goes in a new numbered folder)", async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
+    await mkdir(path.join(dir, "subtitle-sync", "1"), { recursive: true });
+    await writeFile(path.join(dir, "index.html"), "<!doctype html><title>Kino</title>");
+    await writeFile(path.join(dir, "subtitle-sync", "1", "whistle.cact"), "model");
+    const app = await buildApp({ clientDir: dir });
+    try {
+      const model = await app.inject({ url: "/subtitle-sync/1/whistle.cact" });
+      expect(model.statusCode).toBe(200);
+      expect(model.headers["cache-control"]).toMatch(/max-age=31536000.*immutable/);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("does not treat a folder named assets higher up as the assets", async () => {
     dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
     const inside = path.join(dir, "assets", "site");

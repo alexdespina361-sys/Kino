@@ -17,6 +17,8 @@ const PrefsSchema = z
     /** Only what the viewer changed; the rest is the default look. */
     captionStyle: CaptionStyleSchema.partial().optional(),
     subtitleDelay: z.number().optional(),
+    /** Whether the subtitles are timed to the sound by themselves while a video plays (on unless the viewer turned it off). */
+    subtitleSync: z.boolean().optional(),
     /** Older versions stored just a size. */
     subtitleSize: z.enum(["small", "medium", "large"]).optional(),
   })
