@@ -1,4 +1,4 @@
-import { EVIDENCE_SECONDS, wordShare, type Evidence } from "./pick";
+import { EVIDENCE_SECONDS, heardRate, wordShare, type Evidence } from "./pick";
 import type { Silero } from "./silero";
 import { Signals, type Word } from "./signals";
 import { TrackSolver, type Outcome } from "./solve";
@@ -50,10 +50,10 @@ export class SyncCore {
     return { words: heard.words, seconds: heard.heardSeconds };
   }
 
-  /** How well a track's words fit what was heard (the tracks the aligner is not following can be tried this way). */
-  score(cues: readonly Cue[], latest = false): { share: number; words: number; seconds: number } {
+  /** How well a track's words fit what was heard (the tracks the aligner is not following can be tried this way), and how much speech there was to fit them to. */
+  score(cues: readonly Cue[], latest = false): { share: number; words: number; seconds: number; rate: number } {
     const evidence = this.evidence(latest);
-    return { share: wordShare(cues, evidence), words: evidence.words.length, seconds: evidence.seconds };
+    return { share: wordShare(cues, evidence), words: evidence.words.length, seconds: evidence.seconds, rate: heardRate(evidence.words, evidence.seconds) };
   }
 
   /** Forget the sound and what was heard (another audio track), keeping the subtitle tracks. */

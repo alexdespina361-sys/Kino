@@ -7,6 +7,8 @@ export interface Score {
   share: number;
   words: number;
   seconds: number;
+  /** Sure words per second of the sound listened to: how much speech there was (see `heardRate`). */
+  rate: number;
 }
 
 /**

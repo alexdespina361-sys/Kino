@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { SyncCore } from "./core";
+import { MIN_HEARD_RATE } from "./pick";
 import { SAMPLE_RATE } from "./signals";
-import { LoudnessVad, makeAudio, makeFilm, misTimed, type Film } from "./synth";
+import { dubbed, LoudnessVad, makeAudio, makeFilm, misTimed, type Film } from "./synth";
 import type { Cue } from "./cues";
 
 const PIECE = 6; // seconds of sound that arrive together
@@ -12,6 +13,8 @@ interface Run {
   within(tolerance: number): number;
   result: Cue[];
   core: SyncCore;
+  /** How the solves placed the lines (see `Method`). */
+  methods: Set<string>;
 }
 
 /** Play the film through the aligner the way the player would feed it: sound in pieces, the recogniser a window at a time, a solve after each window. */
@@ -19,6 +22,7 @@ function play(film: Film, track: Cue[], options: { words?: (window: number) => b
   const core = new SyncCore(new LoudnessVad());
   core.setTrack("t", track, options.useWords ?? true);
   const result = track.map((cue) => ({ ...cue }));
+  const methods = new Set<string>();
   const until = options.until ?? film.seconds;
   let heardTo = 0;
   for (let t = 0; t + PIECE <= until; t += PIECE) {
@@ -31,6 +35,7 @@ function play(film: Film, track: Cue[], options: { words?: (window: number) => b
       }
       heardTo += WINDOW;
       const outcome = core.solve("t", covered);
+      if (outcome) methods.add(outcome.method);
       for (const update of outcome?.updates ?? []) {
         const cue = result[update.index] as Cue;
         cue.start = update.start;
@@ -42,6 +47,7 @@ function play(film: Film, track: Cue[], options: { words?: (window: number) => b
   return {
     core,
     result,
+    methods,
     within: (tolerance) => finished.filter(({ cue, got }) => Math.abs(got.start - cue.start) <= tolerance).length / Math.max(1, finished.length),
   };
 }
@@ -97,5 +103,35 @@ describe("TrackSolver and SyncCore, played through like a film", { timeout: 60_0
   it("leaves a track that is already right alone", () => {
     const run = play(film, misTimed(film, () => 0));
     expect(run.within(0.2)).toBeGreaterThan(0.95);
+  });
+
+  it("says a track is timed by the heard words when it has them, and not as a dub", () => {
+    const run = play(film, misTimed(film, () => -3.2));
+    expect(run.methods.has("whistle+silero")).toBe(true);
+    expect(run.methods.has("dub")).toBe(false);
+  });
+});
+
+// A dub: the speech is English at a steady rate and the subtitles are another translation's, so none of their words is heard.
+describe("TrackSolver and SyncCore with subtitles that are not the words that are said (a dub)", { timeout: 60_000 }, () => {
+  it("puts the lines of a dub's subtitles, which the file has 3.2 s late, where the English is said", () => {
+    const track = dubbed(film, () => -3.2);
+    const run = play(film, track);
+    expect(run.methods.has("dub")).toBe(true);
+    expect(run.core.score(track).rate).toBeGreaterThan(MIN_HEARD_RATE);
+    expect(run.within(0.5)).toBeGreaterThan(0.85);
+  });
+
+  it("leaves a dub's subtitles that are already where the English is said alone", () => {
+    const run = play(film, dubbed(film, () => 0));
+    expect(run.methods.has("dub")).toBe(true);
+    expect(run.within(0.2)).toBeGreaterThan(0.95);
+  });
+
+  it("is no dub where the recogniser heard too few sure words to call it speech: the voice detector alone", () => {
+    const unsure: Film = { ...film, words: film.words.map((w) => ({ ...w, probability: 0.3 })) };
+    const run = play(unsure, dubbed(film, () => -3.2));
+    expect(run.methods.has("dub")).toBe(false);
+    expect(run.methods.has("silero")).toBe(true);
   });
 });

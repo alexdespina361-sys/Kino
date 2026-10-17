@@ -38,6 +38,16 @@ describe("the aligner's numbers for the debug panel", () => {
     expect(line).not.toContain("English track");
   });
 
+  it("say how the solves placed the lines, so that a dub can be told from the voice detector alone", () => {
+    Object.assign(alignerStats, { started: true, status: "synced", solves: 9, methods: { "whistle+silero": 2, dub: 6, silero: 1 }, placed: 40, lines: 50, tests: 1, verdict: "dub", share: 0.05 });
+    const line = describeAligner(alignerStats)!;
+    expect(line).toContain("solves 9 (words 2, dub 6, voice 1), 40/50 lines placed");
+    expect(line).toContain("tests 1: dub 0.05, switches 0");
+    resetAlignerStats();
+    Object.assign(alignerStats, { started: true, solves: 3 });
+    expect(describeAligner(alignerStats)).toContain("solves 3, 0/0 lines placed");
+  });
+
   it("say why it gave up, and when a track is timed from the English one", () => {
     Object.assign(alignerStats, { started: true, status: "unavailable", gaveUp: "The sound of this film cannot be read here", bridged: true });
     const line = describeAligner(alignerStats)!;

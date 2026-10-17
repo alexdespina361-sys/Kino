@@ -1,3 +1,4 @@
+import { heardRate, MIN_HEARD_RATE } from "./pick";
 import { mergeRanges, type Range, type Signals, type Word } from "./signals";
 import { AsrAnchor, Timing2, type Anchor } from "./vendor/subtitle-sync.js";
 import { plainText, type Cue } from "./cues";
@@ -19,7 +20,7 @@ const MIN_WORDS = 12;
 const MIN_PROBE = 3;
 /** How far from where the track is expected to be a caption can be found when the track's offset is not known yet (file seconds). */
 const PROBE_RANGE = 90;
-/** Below this share of the captions the recogniser listened to being matched, the words say nothing about this track, and the voice detector alone is used. */
+/** Below this share of the captions the recogniser listened to being matched, the words say nothing about this track: the voice detector alone is used, or, where speech is heard at a steady rate (`MIN_HEARD_RATE`), the dub timing. */
 const MIN_SHARE = 0.3;
 /** If the moves of the captions in a window differ by more than this between the 10th and 90th percentile, the window is not trusted. */
 const MAX_SPREAD = 20;
@@ -27,7 +28,8 @@ const MAX_SPREAD = 20;
 /** The kit's own settings, as its `align()` uses them. */
 const C = AsrAnchor.combinedNext;
 
-export type Method = "whistle+silero" | "silero" | "none";
+/** `dub`: speech is heard but these are not its words (the English dub of a film whose subtitles translate the original): the file's timing, put on where people speak. */
+export type Method = "whistle+silero" | "dub" | "silero" | "none";
 
 export interface Update {
   index: number;
@@ -176,6 +178,11 @@ export class TrackSolver {
       if (covered >= MIN_PROBE && anchored / covered >= MIN_SHARE) {
         out = AsrAnchor.place(cues, anchors, silero, { ...C.place, base });
         method = "whistle+silero";
+      } else if (covered >= MIN_PROBE && heardRate(heard.words, heard.heardSeconds) >= MIN_HEARD_RATE) {
+        // (Speech is heard, and it is not these words: a dub, or another translation. The voice detector alone follows the wrong speech there, some
+        // seconds late; the kit's answer, since its update 2, is the file's own timing - it was made for the same picture - put on the phrases heard.)
+        out = AsrAnchor.dub(cues, relative, silero).cues;
+        method = "dub";
       }
     }
 
