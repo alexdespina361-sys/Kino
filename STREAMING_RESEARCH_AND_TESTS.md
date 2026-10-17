@@ -330,34 +330,6 @@ This document tracks all investigations, hypotheses, implementations, empirical 
   - Re-verified test suite: 72 test suites, 1412 tests passed (100%).
   - Pushed revert commit `a616ff8` to `main`.
 
-### Test 15: Root Cause Analysis for Unindexed Titles ("Dragon Ball Super: Beerus") & filmpire.cc Architecture
-- **Problem Statement**:
-  - Certain titles (e.g., "Dragon Ball Super: Beerus") fail to play or appear unplayable in Kino.
-  - Investigated upstream resolution, TMDB desynchronization, `filmpire.cc` multi-server architecture, and how to scale backend sources without generating duplicate search results.
-- **Root Cause Analysis (Dragon Ball Super: Beerus)**:
-  1. On October 11, 2026, TMDB created a new standalone TV entry: `Dragon Ball Super: Beerus` (TMDB ID `312359`, TV, 19 episodes).
-  2. Piracy streaming CDNs (`data.vidsrc.sh`, `screenfetch`, `vidsrc.me`) index streams strictly by TMDB ID and have not ingested ID `312359`, returning `{"status_code": 404}`.
-  3. The exact playable streams are already live under the canonical entries:
-     - `Dragon Ball Super` (TMDB ID `62715`), Season 1 Episodes 1–14 (God of Destruction Beerus saga) $\rightarrow$ `data.vidsrc.sh` returns `200 OK` with full streams.
-     - `Dragon Ball Z: Battle of Gods` (TMDB ID `126963`, Movie) $\rightarrow$ `data.vidsrc.sh` returns `200 OK` with full streams.
-  4. In `src/server/library/filmpire.ts`, `search()` probes page 1 against `data.vidsrc.sh`. Because ID `312359` returns 404, Kino filters it out to prevent broken tiles.
-- **Reverse-Engineering `filmpire.cc`**:
-  - `filmpire.cc` is a Next.js front-end (`0q4t1f7.eu.7f.js`) with an embed switcher routing TMDB IDs to 9 backend servers:
-    1. `vidapi` (`vidapi.xyz`)
-    2. `screenfetch` (`screenfetch2.xyz`) $\rightarrow$ Same provider family as `filmpire.sc`.
-    3. `vsrc` (`vsrc.su`)
-    4. `vidsrc` (`vidsrc.me` / `api.rypr.ru`)
-    5. `twoembed` (`2embed.cc` / `vidsrc.xyz`)
-    6. `vidlink` (`vidlink.pro` / `vidsrc.xyz`)
-    7. `vidcore` (`vidcore.net` -> `vidcore.io`)
-    8. `vidking` (`vidking.net`)
-    9. `videasy` (`player.videasy.net` -> `api.speedracelight.com`)
-  - Both sites share identical TMDB IDs (`/watch/:id`). Adding `filmpire.cc` to Kino's adapter domains and link parsers enables direct resolution.
-- **Multi-Source Deduplication Strategy**:
-  - Current deduplication in `library.ts` keys on `item.id` (`filmpire-movie-12345`). Multiple sources indexing the same title would create duplicate tiles.
-  - Recommended solution: Deduplicate via canonical metadata key `tmdb:${kind}:${tmdbId}` or `imdb:${imdbId}`. Merge multiple backend streams into `NormalizedMedia.alternates` (supporting up to 8 alternate streams in Kino's HUD) so users see exactly one search tile with multiple backend sources.
-
-
 
 
 

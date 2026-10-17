@@ -210,49 +210,15 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
 }
 
 /** The TMDB id and kind of a title from its Filmpire link (`/watch/603`, or `/watch/1399?s=1&e=1` for a show), or null for any other link. */
-export function parseWatchLink(link: string): { id: number; type: "movie" | "tv" } | null {
+function parseWatchLink(link: string): { id: number; type: "movie" | "tv" } | null {
   try {
     const url = new URL(link);
     const match = /^\/watch\/(\d+)$/.exec(url.pathname);
-    if (!match || !/(^|\.)filmpire\.(sc|cc)$/i.test(url.hostname)) return null;
-    return { id: Number(match[1]), type: url.searchParams.has("s") || url.searchParams.get("type") === "series" ? "tv" : "movie" };
+    if (!match || !/(^|\.)filmpire\.sc$/.test(url.hostname)) return null;
+    return { id: Number(match[1]), type: url.searchParams.has("s") ? "tv" : "movie" };
   } catch {
     return null;
   }
-}
-
-export async function findLibraryCanonicalAlias(
-  type: "movie" | "tv",
-  id: number,
-  title: string,
-  apiKey: string,
-  tmdbFetcher: typeof fetch,
-  probeFetcher: typeof fetch,
-  cache: Map<string, ProbeRecord>,
-  now: () => number,
-  timeoutMs: number,
-): Promise<{ id: number; seasons?: number[] } | null> {
-  const parts = title.split(/[:\-\–]/).map((p) => p.trim()).filter(Boolean);
-  if (parts.length <= 1) return null;
-  const parentQuery = parts[0]!;
-  try {
-    const res = await tmdbFetcher(`${BASE_URL}/search/${type}?api_key=${apiKey}&query=${encodeURIComponent(parentQuery)}`, {
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: { accept: "application/json" },
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { results?: Array<{ id: number }> };
-    for (const match of data.results || []) {
-      if (match.id === id) continue;
-      const probe = await probePlayback(match.id, type, probeFetcher, cache, now, timeoutMs);
-      if (probe.ok) {
-        return { id: match.id, seasons: probe.seasons };
-      }
-    }
-  } catch {
-    return null;
-  }
-  return null;
 }
 
 function isTrashItem(raw: unknown): boolean {
@@ -362,37 +328,11 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
             const parsed = parseWatchLink(item.url);
             if (!parsed) return item;
             const probe = await probePlayback(parsed.id, parsed.type, probeFetcher, probeCache, now, probeTimeout);
-            if (probe.ok) {
-              if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
-                preloadedSeasons.set(parsed.id, probe.seasons);
-              }
-              return item;
+            if (!probe.ok) return null;
+            if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
+              preloadedSeasons.set(parsed.id, probe.seasons);
             }
-            // If probe returned 404, check for canonical parent alias
-            const alias = await findLibraryCanonicalAlias(
-              parsed.type,
-              parsed.id,
-              item.title,
-              apiKey,
-              get,
-              probeFetcher,
-              probeCache,
-              now,
-              probeTimeout,
-            );
-            if (alias) {
-              const canonicalUrl = parsed.type === "tv"
-                ? `https://filmpire.sc/watch/${alias.id}?s=1&e=1`
-                : `https://filmpire.sc/watch/${alias.id}`;
-              if (parsed.type === "tv" && alias.seasons && alias.seasons.length > 0) {
-                preloadedSeasons.set(alias.id, alias.seasons);
-              }
-              return {
-                ...item,
-                url: canonicalUrl,
-              };
-            }
-            return null;
+            return item;
           }),
         );
 

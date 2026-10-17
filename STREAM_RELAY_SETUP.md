@@ -1,9 +1,5 @@
 # Separate video relay for Kino
 
-For account creation, free VM settings, the prepared public SSH key and what to send back, start with [ORACLE_RELAY_ONBOARDING.md](ORACLE_RELAY_ONBOARDING.md).
-
-The current Oracle deployment and live browser verification are recorded in [ORACLE_RELAY_DEPLOYMENT.md](ORACLE_RELAY_DEPLOYMENT.md).
-
 **Alternative for desktop viewers:** [Kino Direct Playback](extensions/kino-direct/README.md) now provides a verified extension route with
 no relay hosting. The relay in this guide remains useful for browsers that cannot install the extension.
 
@@ -15,7 +11,7 @@ The upstream token also contains `ip_cidr`. It must be obtained by the machine t
 
 ## Deploy the relay
 
-Use a separate host with an outbound IP the provider accepts. **Verify upstream access on that host before switching the website.** Playback is verified through this PC and the deployed Oracle VM; acceptance of another VPS IP still needs its own check. Do not deploy this Node service as a Cloudflare Worker.
+Use a separate host with an outbound IP the provider accepts. **Verify upstream access on that host before switching the website.** Playback was verified through this PC's connection; an arbitrary VPS IP has not been verified. Do not deploy this Node service as a Cloudflare Worker.
 
 For current free-host research, network sizing and the browser-only limitations, see [STREAMING_WITHOUT_EXTENSIONS.md](STREAMING_WITHOUT_EXTENSIONS.md).
 With Node 22 or newer on the candidate machine, run `node scripts/check-stream-relay-host.mjs` before deploying. It checks that machine's token,
