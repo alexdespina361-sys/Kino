@@ -194,7 +194,9 @@ describe("/api/subsync", () => {
 
   it("takes a timing and gives it back to the next screen", async () => {
     await open();
-    expect((await app!.inject(`/api/subsync/${key(1)}`)).statusCode).toBe(404);
+    const none = await app!.inject(`/api/subsync/${key(1)}`);
+    expect(none.statusCode).toBe(204); // (nobody has yet: not a 404, which a browser prints as an error in its console)
+    expect(none.body).toBe("");
     expect((await put(timing(9, [0, 1, -1, 0], [4, 40, 40, 1]))).statusCode).toBe(204);
     const reply = await app!.inject(`/api/subsync/${key(1)}`);
     expect(reply.statusCode).toBe(200);
@@ -226,7 +228,7 @@ describe("/api/subsync", () => {
     for (const body of [{}, { v: 1, lines: 9, placed: [] }, { v: 1, lines: 9, placed: [[9, 0, 0, 0]] }, { v: 1, lines: 9, placed: [[1, 99999, 0, 0]] }, { v: 1, lines: 9, placed: "all" }]) {
       expect((await put(body)).statusCode, JSON.stringify(body)).toBe(400);
     }
-    expect((await app!.inject(`/api/subsync/${key(1)}`)).statusCode).toBe(404);
+    expect((await app!.inject(`/api/subsync/${key(1)}`)).statusCode).toBe(204); // (and none of it was kept)
   });
 
   it("keeps only the numbers, whatever else comes with them", async () => {

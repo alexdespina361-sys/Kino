@@ -258,7 +258,7 @@ export function httpShared(base = ""): Shared {
       const timer = setTimeout(() => control.abort(), ASK_MS);
       try {
         const response = await fetch(`${base}/api/subsync/${name}`, { signal: control.signal });
-        if (!response.ok) return undefined;
+        if (response.status !== 200) return undefined; // (204: nobody has timed this file yet; a server of before that said 404)
         const parsed = SharedTimingSchema.safeParse(await response.json());
         return parsed.success ? parsed.data : undefined;
       } catch {

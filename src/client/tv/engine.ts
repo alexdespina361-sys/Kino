@@ -53,6 +53,38 @@ export function lostTheConnection(data: { type?: string; details?: string; respo
   return code === undefined || code < 100;
 }
 
+/** Where an address leads, short: the host, the one behind it when the address is a proxy's (or the relay's) and carries the real one, and the file. Never the query or the rest of the path: those hold links' tokens and signatures. */
+function whereIs(raw: string | undefined): string {
+  if (!raw) return "";
+  const file = (address: URL) => address.pathname.split("/").filter(Boolean).pop() ?? "";
+  try {
+    const address = new URL(raw, typeof location === "undefined" ? undefined : location.href);
+    const behind = address.searchParams.get("url");
+    let real: URL | undefined;
+    if (behind) {
+      try {
+        real = new URL(behind);
+      } catch {
+        /* not an address */
+      }
+    }
+    return real ? `${address.host} → ${real.host} ${file(real)}`.trim() : `${address.host} ${file(address)}`.trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * One line for the console about an hls.js error: what it was, whether it ended the video, what the other end answered and where from. A line pasted
+ * from a viewer's console is then enough to tell a link that is gone (HTTP 404 from the film's host) from a connection that dropped (no answer).
+ */
+export function describeHlsError(data: { type?: string; details?: string; fatal?: boolean; url?: string; response?: { code?: number } }): string {
+  const code = data.response?.code;
+  const answer = code ? `HTTP ${code}` : data.type === "networkError" ? "no answer" : "";
+  const where = whereIs(data.url);
+  return `[HLS] ${data.details ?? data.type ?? "error"}${data.fatal ? " (fatal)" : ""}${answer || where ? ":" : ""}${answer ? ` ${answer}` : ""}${where ? ` from ${where}` : ""}`;
+}
+
 /**
  * How far ahead of the picture a screen downloads, in the three numbers hls.js wants (it aims at `max(8 * maxBufferSize / bitrate, maxBufferLength)`
  * seconds, and never more than `maxMaxBufferLength`). Alone, a screen takes a good part of the film in at once (minutes ahead): nothing else
@@ -263,7 +295,7 @@ export class PlayerEngine {
       hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
       let mediaRecoverAttempts = 0;
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
-        console.warn("[HLS EVENT ERROR]", {
+        console.warn(describeHlsError(data), {
           type: data.type,
           details: data.details,
           fatal: data.fatal,
@@ -278,7 +310,7 @@ export class PlayerEngine {
             return;
           }
 
-          console.error("[HLS FATAL ERROR]", data.type, data.details);
+          console.error("[HLS FATAL ERROR]", data.type, data.details, ...(data.response?.code ? [`HTTP ${data.response.code}`] : []));
           this.fail(lostTheConnection(data) ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
         }
       });

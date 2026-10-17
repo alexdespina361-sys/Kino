@@ -37,7 +37,8 @@ export function subsyncRoutes(app: FastifyInstance, { store, stats }: { store: S
     const timing = await store.get(key);
     if (!timing) {
       stats.missed++;
-      return reply.code(404).header("Cache-Control", "no-store").send({ error: "not_found" });
+      // (Nobody has timed this file yet is the usual answer, so it is 204 and not 404: a browser prints every 404 in the console as an error, one for each subtitle file a screen shows.)
+      return reply.code(204).header("Cache-Control", "no-store").send();
     }
     stats.found++;
     // (A minute is enough to spare the store a screen that asks again, and short enough for what others add to reach the next one.)
