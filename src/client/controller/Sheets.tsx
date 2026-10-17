@@ -3,6 +3,7 @@ import {
   CAPTION_SETTINGS,
   CAPTION_VALUES,
   DEFAULT_CAPTION_STYLE,
+  defaultTrack,
   describeStatus,
   episodeName,
   episodeStatus,
@@ -183,7 +184,7 @@ export function TracksSheet({
         data-testid={`subtitle-lang-${group.key}`}
         onClick={() => {
           setLanguage(group.key);
-          if (!active) onSubtitle(group.tracks[0]!.id);
+          if (!active) onSubtitle((defaultTrack(group.tracks) ?? group.tracks[0]!).id); // the best-fitting release of it
         }}
       >
         {group.name}
