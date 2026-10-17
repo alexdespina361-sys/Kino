@@ -1907,8 +1907,11 @@ test.describe("categories and search on the TV", () => {
     await expect(query).toHaveAttribute("data-caret", "3"); // at the end, where typing leaves it
 
     // A click puts it before a letter when the left half of the letter is hit, and after it when the right half is.
-    const l = (await query.locator('[data-at="1"]').boundingBox())!;
-    await tv.mouse.click(l.x + l.width * 0.25, l.y + l.height / 2);
+    // (The click is the locator's, which waits until the letter can be hit: the menu that was used to get here is still sliding shut over the
+    // first letters a moment after the page opens, and a click at a measured spot in that moment lands on the menu, not on the letter.)
+    const letter = query.locator('[data-at="1"]');
+    const l = (await letter.boundingBox())!;
+    await letter.click({ position: { x: l.width * 0.25, y: l.height / 2 } });
     await expect(query).toHaveAttribute("data-caret", "1");
     await tv.keyboard.type("i");
     await expect(query).toHaveText("film");
