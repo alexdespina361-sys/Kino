@@ -10,6 +10,7 @@ import {
   PARTY_BUFFER_BYTES,
   PlayerEngine,
   bufferPolicy,
+  describeHlsError,
   lostTheConnection,
   proxiedQualityCap,
   type SyncFilm,
@@ -661,5 +662,34 @@ describe("lostTheConnection", () => {
     expect(lostTheConnection({ type: "mediaError", details: "fragParsingError" })).toBe(false);
     expect(lostTheConnection({ type: "otherError", details: "internalException" })).toBe(false);
     expect(lostTheConnection({})).toBe(false);
+  });
+});
+
+describe("describeHlsError", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const relay =
+    "https://relay.example/api/proxy?url=" + encodeURIComponent("https://videos.example/pl/SECRETTOKEN/master.m3u8") + "&referer=https%3A%2F%2Fembed.example%2Fplayer&expires=1&sig=SIGNATURE";
+
+  it("says what happened, what the other end answered and from where, so a pasted console line tells a link that is gone from a connection that dropped", () => {
+    expect(describeHlsError({ type: "networkError", details: "manifestLoadError", fatal: true, url: relay, response: { code: 404 } })).toBe(
+      "[HLS] manifestLoadError (fatal): HTTP 404 from relay.example → videos.example master.m3u8",
+    );
+    expect(describeHlsError({ type: "networkError", details: "fragLoadError", url: "https://cdn.example/a/b/seg_001.m4s?token=SECRET" })).toBe("[HLS] fragLoadError: no answer from cdn.example seg_001.m4s");
+    expect(describeHlsError({ type: "networkError", details: "fragLoadError", url: "https://cdn.example/seg.m4s", response: { code: 0 } })).toBe("[HLS] fragLoadError: no answer from cdn.example seg.m4s");
+    expect(describeHlsError({ type: "mediaError", details: "bufferStalledError" })).toBe("[HLS] bufferStalledError");
+    expect(describeHlsError({ type: "mediaError", details: "bufferAppendError", fatal: true })).toBe("[HLS] bufferAppendError (fatal)");
+    expect(describeHlsError({})).toBe("[HLS] error");
+  });
+
+  it("leaves out what is a secret: the link's token and signature, the rest of its path and who it was fetched for", () => {
+    const line = describeHlsError({ type: "networkError", details: "manifestLoadError", fatal: true, url: relay, response: { code: 404 } });
+    for (const secret of ["SECRETTOKEN", "SIGNATURE", "embed.example", "referer", "expires"]) expect(line, secret).not.toContain(secret);
+  });
+
+  it("copes with an address of this site's own, and with one that is not an address", () => {
+    vi.stubGlobal("location", { href: "http://kino.test/tv" });
+    const own = "/api/proxy?url=" + encodeURIComponent("https://videos.example/x/index.m3u8");
+    expect(describeHlsError({ type: "networkError", details: "levelLoadError", url: own, response: { code: 502 } })).toBe("[HLS] levelLoadError: HTTP 502 from kino.test → videos.example index.m3u8");
+    expect(describeHlsError({ type: "networkError", details: "levelLoadError", url: "http://", response: { code: 500 } })).toBe("[HLS] levelLoadError: HTTP 500");
   });
 });
