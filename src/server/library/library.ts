@@ -142,10 +142,22 @@ export function createLibrary(options: LibraryOptions): LibraryService {
   const listedRows = (rows: LibraryRow[]): LibraryRow[] =>
     rows.flatMap((row) => {
       const rowSeen = new Set<string>();
+      const rowTitles = new Map<string, Array<{ year?: number }>>();
       const items = row.items.filter((item) => {
         if (!listed(item)) return false;
         const key = canonicalItemKey(item);
         if (rowSeen.has(key)) return false;
+        const titleKey = `${item.kind ?? ""}:${normalizeQuery(item.title)}`;
+        const matches = rowTitles.get(titleKey);
+        if (matches) {
+          const isDuplicate = matches.some(
+            (existing) => existing.year === undefined || item.year === undefined || existing.year === item.year
+          );
+          if (isDuplicate) return false;
+          matches.push({ year: item.year });
+        } else {
+          rowTitles.set(titleKey, [{ year: item.year }]);
+        }
         rowSeen.add(key);
         return true;
       });
@@ -248,12 +260,24 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       const noisy = quiet !== normalizeQuery(text); // (it has words that say what is wanted and are no part of a title: "full movie dune" is looked for as "dune" too)
 
       const seen = new Set<string>();
+      const seenTitles = new Map<string, Array<{ year?: number }>>();
       const exact: LibraryItem[] = [];
       const closest: LibraryItem[] = [];
       const take = (items: LibraryItem[], into = exact) => {
         for (const item of items) {
           const key = canonicalItemKey(item);
           if (seen.has(key) || !listed(item, true)) continue;
+          const titleKey = `${item.kind ?? ""}:${normalizeQuery(item.title)}`;
+          const matches = seenTitles.get(titleKey);
+          if (matches) {
+            const isDuplicate = matches.some(
+              (existing) => existing.year === undefined || item.year === undefined || existing.year === item.year
+            );
+            if (isDuplicate) continue;
+            matches.push({ year: item.year });
+          } else {
+            seenTitles.set(titleKey, [{ year: item.year }]);
+          }
           seen.add(key);
           into.push(item);
         }

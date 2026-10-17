@@ -700,4 +700,48 @@ describe("createLibrary titles with no video", () => {
     expect(lib.rows[0]?.items).toHaveLength(1);
     expect(lib.rows[0]?.items[0]?.title).toBe("The Matrix");
   });
+
+  it("deduplicates cross-source items with matching titles when one lacks an explicit year", async () => {
+    const source1: LibrarySource = {
+      id: "filmpire",
+      name: "Filmpire",
+      load: gives(row("One")),
+      search: () =>
+        Promise.resolve([
+          { id: "tmdb-series-62715", title: "Dragon Ball Super", year: 2015, kind: "series", url: "https://filmpire.sc/watch/62715" },
+        ]),
+    };
+    const source2: LibrarySource = {
+      id: "animeheaven",
+      name: "AnimeHeaven",
+      load: gives(row("Two")),
+      search: () =>
+        Promise.resolve([
+          { id: "animeheaven:dragon-ball-super", title: "Dragon Ball Super", kind: "series", url: "https://animeheaven.me/anime.php?dragon-ball-super" },
+        ]),
+    };
+    const { library } = setup([source1, source2]);
+    const answer = await library.search("dragon ball super");
+    expect(answer.items).toHaveLength(1);
+    expect(answer.items[0]?.title).toBe("Dragon Ball Super");
+  });
+
+  it("preserves separate items when same title has different release years", async () => {
+    const source: LibrarySource = {
+      id: "filmpire",
+      name: "Filmpire",
+      load: gives(row("One")),
+      search: () =>
+        Promise.resolve([
+          { id: "tmdb-movie-841", title: "Dune", year: 1984, kind: "movie", url: "https://filmpire.sc/watch/841" },
+          { id: "tmdb-movie-438631", title: "Dune", year: 2021, kind: "movie", url: "https://filmpire.sc/watch/438631" },
+        ]),
+    };
+    const { library } = setup([source]);
+    const answer = await library.search("dune");
+    const duneItems = answer.items.filter((i) => i.title === "Dune");
+    expect(duneItems).toHaveLength(2);
+    expect(duneItems.map((i) => i.year).sort()).toEqual([1984, 2021]);
+  });
 });
+

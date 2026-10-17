@@ -1,6 +1,7 @@
 import { persistenceFromEnv } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
 import { buildApp, defaultClientDir, defaultFixturesDir } from "./app";
+import { animeHeavenSource } from "./library/animeheaven";
 import { filmpireSource } from "./library/filmpire";
 import { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
@@ -31,7 +32,7 @@ const app = await buildApp({
   clientDir: defaultClientDir(),
   fixturesDir: defaultFixturesDir(),
   // LIBRARY=off: no browsing library (the e2e server, or anyone who would rather not fetch external library).
-  librarySources: process.env.LIBRARY === "off" ? [] : [filmpireSource()],
+  librarySources: process.env.LIBRARY === "off" ? [] : [filmpireSource(), animeHeavenSource()],
   accounts,
   registry,
   pairings,

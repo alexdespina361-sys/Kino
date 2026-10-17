@@ -1,3 +1,4 @@
+import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
 import { createFilmpireAdapter } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 import { createGenericResolver } from "./generic";
@@ -18,6 +19,6 @@ export interface ResolverSetup {
 export function createResolver({ log, allowPrivateNetwork = false, adapters }: ResolverSetup): ResolveFn {
   const fetchOptions = { isAllowedAddress: allowPrivateNetwork ? () => true : isPublicAddress };
   const generic = createGenericResolver({ fetch: safeFetch, fetchOptions });
-  const activeAdapters = adapters ?? [createFilmpireAdapter(), createSitefilmeAdapter()];
+  const activeAdapters = adapters ?? [createFilmpireAdapter(), createSitefilmeAdapter(), createAnimeHeavenAdapter()];
   return new ResolverRegistry(activeAdapters, generic, log).resolve;
 }
