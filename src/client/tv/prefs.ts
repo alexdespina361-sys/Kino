@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CaptionStyleSchema, normalizeLang, type PlayerTrack } from "../../shared";
+import { CaptionStyleSchema, defaultTrack, normalizeLang, type PlayerTrack } from "../../shared";
 
 /**
  * What the TV remembers about how you like to watch, so the second episode starts the way the first one ended:
@@ -47,11 +47,9 @@ export function describeTrack(track: PlayerTrack): ChosenTrack {
   return { ...(lang ? { lang } : {}), label: track.label };
 }
 
-/** The track that best matches what the viewer chose before: same language, else same name. */
+/** The track that best matches what the viewer chose before: the same one by name, else the best-fitting release of the same language. */
 export function pickTrack(tracks: readonly PlayerTrack[], wanted: ChosenTrack): number | undefined {
-  if (wanted.lang) {
-    const byLang = tracks.find((track) => normalizeLang(track.lang) === wanted.lang);
-    if (byLang) return byLang.id;
-  }
-  return tracks.find((track) => track.label.toLowerCase() === wanted.label.toLowerCase())?.id;
+  const byLabel = tracks.find((track) => track.label.toLowerCase() === wanted.label.toLowerCase());
+  if (byLabel || !wanted.lang) return byLabel?.id;
+  return defaultTrack(tracks.filter((track) => normalizeLang(track.lang) === wanted.lang))?.id;
 }

@@ -18,6 +18,17 @@ describe("pickTrack", () => {
     expect(pickTrack(tracks, { lang: "de", label: "Deutsch" })).toBe(2);
   });
 
+  it("takes the release the viewer chose when the video has it, else the best-fitting one of their language", () => {
+    const releases = [
+      { id: 0, label: "English · Boondocks S01E10 The Itis.DVD.NonHI.cc.en.SNY", lang: "en" },
+      { id: 1, label: "English (2) · The Boondocks S01E10 - Eng - HMAX WEBRIP x265 HEVC", lang: "en" },
+      { id: 2, label: "English (3) · The.Boondocks.S01E10.Eng-Songs.WEB", lang: "en" },
+    ];
+    expect(pickTrack(releases, { lang: "en", label: "English · Boondocks S01E10 The Itis.DVD.NonHI.cc.en.SNY" })).toBe(0);
+    expect(pickTrack(releases, { lang: "en", label: "English · Boondocks S01E09 The Itis.DVD.NonHI.cc.en.SNY" })).toBe(1); // (the next episode)
+    expect(pickTrack([releases[2]!], { lang: "en", label: "English" })).toBeUndefined(); // (never the songs by themselves)
+  });
+
   it("finds nothing rather than guessing", () => {
     expect(pickTrack(tracks, { lang: "fr", label: "Français" })).toBeUndefined();
     expect(pickTrack([], { lang: "en", label: "English" })).toBeUndefined();
