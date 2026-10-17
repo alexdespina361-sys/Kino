@@ -23,6 +23,8 @@ const fresh = () => ({
   solves: 0,
   placed: 0,
   lines: 0,
+  /** The solves by how they placed the lines: with the heard words, as a dub (the file's timing put where people speak), or by the voice detector alone. */
+  methods: {} as Record<string, number>,
   /** Tests of the track on screen against the words (the last one's verdict and share), tracks switched to, and whether it is timed from an English one. */
   tests: 0,
   verdict: "",
@@ -44,15 +46,22 @@ export function resetAlignerStats(): void {
   Object.assign(alignerStats, fresh());
 }
 
+/** What the debug panel calls the ways a solve places lines. */
+const METHOD_NAMES: Record<string, string> = { "whistle+silero": "words", dub: "dub", silero: "voice" };
+
 /** The aligner's doings in a line, or null while it has not started (this page plays nothing the aligner works on). */
 export function describeAligner(stats: AlignerStats): string | null {
   if (!stats.started) return null;
   const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+  const ways = Object.entries(stats.methods)
+    .filter(([, count]) => count > 0)
+    .map(([method, count]) => `${METHOD_NAMES[method] ?? method} ${count}`)
+    .join(", ");
   const parts = [
     `aligner: ${stats.status || "starting"}${stats.gaveUp ? ` (${stats.gaveUp})` : ""}`,
     `sound ${stats.pieces} pieces, ${Math.round(stats.decodedSeconds)}s decoded in ${seconds(stats.decodeMs)}, ${Math.round(stats.vadSeconds)}s through the voice detector in ${seconds(stats.vadMs)}`,
     `recogniser ${stats.recogniser}: ${stats.words} words, ${stats.windows} windows (${Math.round(stats.heardSeconds)}s)${stats.speed > 0 ? ` at ${stats.speed.toFixed(1)}x` : ""}`,
-    `solves ${stats.solves}, ${stats.placed}/${stats.lines} lines placed${stats.bridged ? " (from the English track)" : ""}`,
+    `solves ${stats.solves}${ways ? ` (${ways})` : ""}, ${stats.placed}/${stats.lines} lines placed${stats.bridged ? " (from the English track)" : ""}`,
     `tests ${stats.tests}${stats.verdict ? `: ${stats.verdict} ${stats.share.toFixed(2)}` : ""}, switches ${stats.switches}`,
     ...(stats.shared ? [`shared timing: ${stats.shared}${stats.sent > 0 ? `, left ${stats.sent} lines` : ""}`] : []),
   ];

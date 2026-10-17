@@ -31,6 +31,25 @@ export function wordShare(cues: readonly Cue[], evidence: Evidence): number {
   return Math.min(1, matched / words.length);
 }
 
+/** A heard word counts when the recogniser was at least this sure of it (the kit counts the same). */
+const SURE = 0.5;
+/** Fewest seconds of listening that tell a rate (the kit's `align()` takes less as none). */
+const MIN_RATE_SECONDS = 10;
+/**
+ * From this many sure words per second of sound listened to, speech is there and in English. If a track's words are not what is said then,
+ * it is not a track of another film or a sound the recogniser cannot read but a dub (or another translation of the film): its lines can still
+ * be put where people speak, which is the kit's "dub" timing. The kit's own line (`MIN_HEARD_RATE` in its `align()`).
+ */
+export const MIN_HEARD_RATE = 0.25;
+
+/** The sure words per second of the sound the recogniser listened to. */
+export function heardRate(words: readonly Word[], seconds: number): number {
+  if (seconds < MIN_RATE_SECONDS) return 0;
+  let sure = 0;
+  for (const word of words) if ((word.probability ?? 1) >= SURE) sure++;
+  return sure / seconds;
+}
+
 /** Enough was heard to say anything about the track (the first minutes of a film are often song, which counts for nothing here). */
 export const MIN_WORDS = 200;
 export const MIN_SECONDS = 120;

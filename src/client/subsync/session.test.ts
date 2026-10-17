@@ -9,7 +9,7 @@ import { timingKeys, type Sent, type Shared } from "./share";
 import type { Word } from "./signals";
 import { alignerStats } from "./stats";
 import { AudioTap } from "./tap";
-import { LoudnessVad, makeAudio, makeFilm, misTimed, type Film } from "./synth";
+import { dubbed, LoudnessVad, makeAudio, makeFilm, misTimed, type Film } from "./synth";
 import type { Recogniser } from "./whistle";
 
 const PIECE = 10;
@@ -455,6 +455,63 @@ describe("testing a track against the words", () => {
     const rig = new Rig({ tracks: [track("English", late(3))], shown: 0, backend: async () => new Thin(new SyncCore(new LoudnessVad())) });
     await rig.play(SECONDS);
     expect(alignerStats.verdict).toBe("right");
+    rig.session.close();
+  });
+});
+
+// A dub: English is said at a steady rate, and the film's English tracks are translations of the original - none of them has the words that are said.
+describe("subtitles that are not the words of the English that is said (a dub)", () => {
+  it("keeps the track and times it as a dub; it does not look for another English track, and goes on listening", { timeout: 240_000 }, async () => {
+    const heard: number[] = [];
+    const shared = new FakeShared();
+    const rig = new Rig({
+      tracks: [track("English", dubbed(film, () => -3)), track("English 2", dubbed(film, () => -5))],
+      shown: 0,
+      recogniser: async () => listener({ heard }),
+      shared,
+    });
+    await rig.play(SECONDS);
+    expect(alignerStats.verdict).toBe("dub");
+    expect(alignerStats.methods.dub).toBeGreaterThan(0);
+    expect(rig.shows).toEqual([]);
+    expect(rig.shown).toBe(0);
+    expect(alignerStats.recogniser).not.toBe("stopped");
+    expect(Math.max(...heard)).toBeGreaterThanOrEqual(270);
+    expect(rig.within(0, 0.6, 60, 250)).toBeGreaterThan(0.8);
+    // (A dub is held like the voice detector alone: it is the file's timing put on the phrases heard, not the film's, so other screens are not left it.)
+    rig.pass(10 * 60_000);
+    rig.session.tick();
+    rig.session.flush();
+    await quiet();
+    expect(shared.puts).toEqual([]);
+    rig.session.close();
+  });
+
+  it("still switches to an English track that has the words that are said, when there is one", { timeout: 240_000 }, async () => {
+    const rig = new Rig({ tracks: [track("English", dubbed(film, () => -1)), track("English 2", late(2.5))], shown: 0 });
+    await rig.play(SECONDS);
+    expect(rig.shows).toEqual([1]);
+    expect(rig.shown).toBe(1);
+    expect(rig.within(1, 0.5, 190, 250)).toBeGreaterThan(0.85);
+    rig.session.close();
+  });
+
+  it("is no dub where the recogniser is not sure of what it hears: the verdict stays wrong and the voice detector times the lines", { timeout: 240_000 }, async () => {
+    const unsure = async (): Promise<Recogniser> => {
+      const real = listener();
+      return {
+        async hear(pcm: Float32Array): Promise<Word[]> {
+          return (await real.hear(pcm)).map((word) => ({ ...word, probability: 0.3 }));
+        },
+        close() {
+          real.close();
+        },
+      };
+    };
+    const rig = new Rig({ tracks: [track("English", dubbed(film, () => -3))], shown: 0, recogniser: unsure });
+    await rig.play(SECONDS);
+    expect(alignerStats.verdict).toBe("wrong");
+    expect(alignerStats.methods.dub).toBeUndefined();
     rig.session.close();
   });
 });

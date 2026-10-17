@@ -84,3 +84,17 @@ export class LoudnessVad {
 export function misTimed(film: Film, offset: (t: number) => number): Cue[] {
   return film.truth.map((cue) => ({ start: cue.start - offset(cue.start), end: cue.end - offset(cue.start), text: cue.text }));
 }
+
+/**
+ * The track of a dub: the lines of the film at the times `misTimed` gives, but the words are another translation's - none that the film's
+ * speech has (each word turned around: the film's words all begin with a consonant, so none of them reads the same backwards).
+ */
+export function dubbed(film: Film, offset: (t: number) => number): Cue[] {
+  return misTimed(film, offset).map((cue) => ({
+    ...cue,
+    text: cue.text
+      .split(" ")
+      .map((word) => [...word].reverse().join(""))
+      .join(" "),
+  }));
+}

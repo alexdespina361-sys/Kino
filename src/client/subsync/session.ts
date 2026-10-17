@@ -5,7 +5,7 @@ import type { Backend } from "./backend";
 import { pairCaptions, timeFromEnglish } from "./bridge";
 import type { Cue } from "./cues";
 import { hasNoLanguage, hold, isHeld, release } from "./hold";
-import { bestAlternative, EVIDENCE_SECONDS, MAX_TESTS, MIN_SECONDS, MIN_WORDS, RETEST_GROWTH, verdict, type Verdict } from "./pick";
+import { bestAlternative, EVIDENCE_SECONDS, MAX_TESTS, MIN_HEARD_RATE, MIN_SECONDS, MIN_WORDS, RETEST_GROWTH, verdict, type Verdict } from "./pick";
 import { nextWindow, rest, WINDOW } from "./schedule";
 import { Borrowed, Lent, timingKeys, type Sent, type Shared } from "./share";
 import { mergeRanges, SAMPLE_RATE, type Range } from "./signals";
@@ -226,6 +226,8 @@ export class SyncSession {
   /** The seconds the recogniser had heard when a test last found too little to say anything. */
   private waitedAt = -1;
   private wrongRounds = 0;
+  /** How many English tracks the film had when no one of them had the words that are said while English was heard (a dub): they are not looked into again until there are more. -1: not so. */
+  private dubbedWith = -1;
   /** The track that has just been put on screen by the aligner was found right. */
   private verifiedNext = false;
 
@@ -375,6 +377,7 @@ export class SyncSession {
     this.lastTestWords = 0;
     this.waitedAt = -1;
     this.wrongRounds = 0;
+    this.dubbedWith = -1;
     this.listeningUseless = false;
     this.bridge = undefined;
     for (const follow of this.followed.values()) {
@@ -689,6 +692,7 @@ export class SyncSession {
     this.lastTestWords = automatic ? this.heardWords : 0;
     this.waitedAt = -1;
     this.wrongRounds = 0;
+    this.dubbedWith = -1;
     // A track in another language is timed from an English one: that one is loaded at once.
     if (!isEnglish(track)) this.wantEnglish(1);
     // There is something to time now: the worker starts, and the sound that was kept is decoded.
@@ -830,8 +834,10 @@ export class SyncSession {
 
   /** Writes what a solve found: lines it placed go there, the others get the track's general shift. */
   private absorb(follow: Followed, outcome: Outcome): void {
+    if (outcome.method !== "none") stats.methods[outcome.method] = (stats.methods[outcome.method] ?? 0) + 1;
+    // (A dub is held like the voice detector alone: its lines are the file's, put on the phrases heard, so it says nothing of the film that others could use.)
     if (outcome.method === "whistle+silero") follow.trusted = true;
-    else if (outcome.method === "silero" && outcome.shift !== null) {
+    else if ((outcome.method === "silero" || outcome.method === "dub") && outcome.shift !== null) {
       follow.agreed = follow.offset !== null && Math.abs(outcome.shift - follow.offset) < 0.5 ? follow.agreed + 1 : 0;
       if (follow.agreed >= 3) follow.trusted = true;
     }
@@ -932,6 +938,8 @@ export class SyncSession {
     if (!this.backend || !current || !this.recogniser || !this.wantsWords() || current.borrowed?.state === "trusted") return false;
     if (this.heardWords < MIN_WORDS || this.heardSeconds < MIN_SECONDS || this.tests >= MAX_TESTS) return false;
     if (this.tests > 0 && this.heardWords < this.lastTestWords * RETEST_GROWTH) return false;
+    // (A dub is not looked into again, for another track to put in its place, until the film has more English tracks than it had: more sound does not make the ones it has any better.)
+    if (this.dubbedWith === this.englishTracks().length) return false;
     // (A test that found too little to say anything is not made again until the recogniser has heard more.)
     if (this.heardSeconds === this.waitedAt) return false;
     return current.english ? this.judgeEnglish(current) : this.judgeOther(current);
@@ -942,7 +950,7 @@ export class SyncSession {
    * wrong track shows soonest); if they hold too few words to say anything, and never will (the recogniser has been through more than they
    * are, by a quiet opening or by hearing only some of the windows), the newest words are looked at instead.
    */
-  private async fit(cues: Cue[], latest: boolean): Promise<{ share: number; state: Verdict; latest: boolean }> {
+  private async fit(cues: Cue[], latest: boolean): Promise<{ share: number; state: Verdict; latest: boolean; rate: number }> {
     const backend = this.backend as Backend;
     let score = await backend.score(cues, latest);
     let state = verdict(score.share, score.words, score.seconds);
@@ -952,12 +960,12 @@ export class SyncSession {
       state = verdict(score.share, score.words, score.seconds);
     }
     if (state === "waiting") this.waitedAt = this.heardSeconds;
-    return { share: score.share, state, latest };
+    return { share: score.share, state, latest, rate: score.rate };
   }
 
   private async judgeEnglish(current: Followed): Promise<boolean> {
     const backend = this.backend as Backend;
-    const { share, state, latest } = await this.fit(current.cues, this.tests > 0);
+    const { share, state, latest, rate } = await this.fit(current.cues, this.tests > 0);
     if (this.current !== current) return true;
     if (state === "waiting") return false;
     this.noteTest(state, share);
@@ -970,19 +978,19 @@ export class SyncSession {
       return true;
     }
     // Not right. A track the viewer chose themselves stays, whatever the words say (and no other is loaded to be tried).
-    if (this.manual) return this.finishTest(state, undefined);
+    if (this.manual) return this.finishTest(state, undefined, rate);
     // Otherwise the other English tracks, once they have loaded.
     if (this.wanted.size === 0) this.wantEnglish(MAX_CANDIDATES);
-    if (this.wanted.size === 0) return this.finishTest(state, undefined);
+    if (this.wanted.size === 0) return this.finishTest(state, undefined, rate);
     const loaded = this.loadedWanted();
     if (loaded.length < this.wanted.size && this.clock() - this.wantedSince < LOAD_WAIT_MS) return false;
     const others: Array<{ id: number; share: number }> = [];
     for (const follow of loaded) others.push({ id: this.idOf(follow.track) ?? follow.id, share: (await backend.score(follow.cues, latest)).share });
     if (this.current !== current) return true;
-    return this.finishTest(state, bestAlternative(share, others));
+    return this.finishTest(state, bestAlternative(share, others), rate);
   }
 
-  private finishTest(state: "wrong" | "unsure", better: number | undefined): boolean {
+  private finishTest(state: "wrong" | "unsure", better: number | undefined, rate: number): boolean {
     if (this.current) this.current.verified = false;
     this.tests++;
     this.lastTestWords = this.heardWords;
@@ -990,6 +998,13 @@ export class SyncSession {
     if (better !== undefined && !this.manual) {
       this.switchTo = { id: better, since: this.clock() };
       this.wrongRounds = 0;
+    } else if (state === "wrong" && rate >= MIN_HEARD_RATE) {
+      // No track has the words that are said, and English is said at a steady rate: a dub, or another translation of the film. The track on screen
+      // stays (a track that is right would have replaced it), the sound is not given up on - the lines are put on it, as the kit's dub timing - and
+      // the film's other tracks are not looked into again until it has more of them.
+      this.wrongRounds = 0;
+      this.dubbedWith = this.englishTracks().length;
+      stats.verdict = "dub";
     } else {
       this.wrongRounds = state === "wrong" ? this.wrongRounds + 1 : 0;
       this.stopIfUseless();

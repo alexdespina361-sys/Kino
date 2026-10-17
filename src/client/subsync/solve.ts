@@ -1,3 +1,4 @@
+import { heardRate, MIN_HEARD_RATE } from "./pick";
 import { mergeRanges, type Range, type Signals, type Word } from "./signals";
 import { AsrAnchor, Timing2, type Anchor } from "./vendor/subtitle-sync.js";
 import { plainText, type Cue } from "./cues";
@@ -19,7 +20,7 @@ const MIN_WORDS = 12;
 const MIN_PROBE = 3;
 /** How far from where the track is expected to be a caption can be found when the track's offset is not known yet (file seconds). */
 const PROBE_RANGE = 90;
-/** Below this share of the captions the recogniser listened to being matched, the words say nothing about this track, and the voice detector alone is used. */
+/** Below this share of the captions the recogniser listened to being matched, the words say nothing about this track: the voice detector alone is used, or, where speech is heard at a steady rate (`MIN_HEARD_RATE`), the dub timing. */
 const MIN_SHARE = 0.3;
 /** If the moves of the captions in a window differ by more than this between the 10th and 90th percentile, the window is not trusted. */
 const MAX_SPREAD = 20;
@@ -27,7 +28,8 @@ const MAX_SPREAD = 20;
 /** The kit's own settings, as its `align()` uses them. */
 const C = AsrAnchor.combinedNext;
 
-export type Method = "whistle+silero" | "silero" | "none";
+/** `dub`: speech is heard but these are not its words (the English dub of a film whose subtitles translate the original): the file's timing, put on where people speak. */
+export type Method = "whistle+silero" | "dub" | "silero" | "none";
 
 export interface Update {
   index: number;
@@ -72,6 +74,11 @@ export class TrackSolver {
   private shift: number | null = null;
   /** Heard words at the last probe that found nothing: do not probe again until there are many more. */
   private failedAt = 0;
+  /**
+   * The last solve found the track to be a dub: the solves after it look at the long window. A dub's one offset is learned from how many of
+   * the lines fall on a phrase that is heard, and a minute of sound holds too few lines for that (a wrong offset learned there stays).
+   */
+  private dubbed = false;
   private solved: Range[] = [];
 
   /** `useWords`: the words of this track can be compared with what the recogniser hears (English subtitles over English speech). */
@@ -91,6 +98,7 @@ export class TrackSolver {
   forget(): void {
     this.shift = null;
     this.failedAt = 0;
+    this.dubbed = false;
     this.solved = [];
   }
 
@@ -136,7 +144,7 @@ export class TrackSolver {
     const stretch = signals.stretchAt(end);
     if (!stretch || this.input.length === 0) return none;
     const to = Math.min(end, stretch.to);
-    const narrow = this.useWords && signals.wordsIn(to - WINDOW_WITH_WORDS, to).words.length >= MIN_WORDS;
+    const narrow = this.useWords && !this.dubbed && signals.wordsIn(to - WINDOW_WITH_WORDS, to).words.length >= MIN_WORDS;
     const from = Math.max(stretch.from, to - (narrow ? WINDOW_WITH_WORDS : WINDOW_VOICE_ONLY));
     if (to - from < 20) return none;
 
@@ -176,8 +184,17 @@ export class TrackSolver {
       if (covered >= MIN_PROBE && anchored / covered >= MIN_SHARE) {
         out = AsrAnchor.place(cues, anchors, silero, { ...C.place, base });
         method = "whistle+silero";
+      } else if (covered >= MIN_PROBE && heardRate(heard.words, heard.heardSeconds) >= MIN_HEARD_RATE) {
+        // (Speech is heard, and it is not these words: a dub, or another translation. The voice detector alone follows the wrong speech there, some
+        // seconds late; the kit's answer, since its update 2, is the file's own timing - it was made for the same picture - put on the phrases heard.)
+        out = AsrAnchor.dub(cues, relative, silero).cues;
+        method = "dub";
       }
     }
+
+    // (A window that the words place again makes it an ordinary track again; one that only the voice detector placed says nothing either way.)
+    if (method === "dub") this.dubbed = true;
+    else if (method === "whistle+silero") this.dubbed = false;
 
     const moves = out.map((cue, k) => cue.start - (cues[k] as Cue).start);
     if (moves.length >= 5 && percentile(moves, 0.9) - percentile(moves, 0.1) > MAX_SPREAD) return { ...none, shift: this.shift };
