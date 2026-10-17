@@ -4,12 +4,14 @@ import path from "node:path";
 import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { isHttpUrl, type Registration } from "../shared";
 import type { PasswordCost } from "./accounts/password";
-import { accountRoutes } from "./accounts/routes";
+import { accountRoutes, COOKIE, readCookie } from "./accounts/routes";
 import { ScreenProofs, screenProfiles } from "./accounts/screens";
 import type { AccountStore } from "./accounts/store";
+import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
+import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy, type ProxyStats } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
@@ -29,6 +31,10 @@ export interface AppOptions {
   storage?: "postgres" | "file" | "memory";
   /** Where the subtitle timings that screens share are kept (memory, gone with the server, unless set): see `shared/subsync.ts`. */
   subsync?: SubsyncStore;
+  /** Where the feedback people send from the profile is kept (memory, gone with the server, unless set): see `shared/reports.ts`. */
+  feedback?: FeedbackStore;
+  /** The team's token for reading and answering feedback (env FEEDBACK_ADMIN_TOKEN, at least 24 characters). Without it nobody can read what is sent. */
+  feedbackAdminToken?: string;
   /** `closed` stops new accounts being made. */
   registration?: Registration;
   maxAccounts?: number;
@@ -149,6 +155,21 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const proxyStats: ProxyStats = { bytes: 0, requests: 0, refused: 0 };
   const subsyncStats: SubsyncStats = { found: 0, missed: 0, stored: 0 };
   subsyncRoutes(app, { store: options.subsync ?? new MemorySubsyncStore(), stats: subsyncStats });
+  const feedback = options.feedback ?? (await FeedbackStore.open({ backend: new MemoryFeedbackBackend() }));
+  app.addHook("onClose", async () => feedback.close());
+  await app.register(feedbackRoutes, {
+    store: feedback,
+    adminToken: options.feedbackAdminToken,
+    // (A report sent while signed in is on all of the account's devices.)
+    ...(accounts
+      ? {
+          accountOf: (request: FastifyRequest) => {
+            const token = readCookie(request.headers.cookie, COOKIE);
+            return token ? accounts.getSession(token)?.accountId : undefined;
+          },
+        }
+      : {}),
+  });
   const isProxyOff = process.env.PROXY_VIDEO === "off" || process.env.PROXY_VIDEO === "false" || process.env.PROXY_VIDEO === "0";
   const proxyVideo = options.proxyVideo ?? !isProxyOff;
   // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.
@@ -164,6 +185,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     proxy: { bytes: proxyStats.bytes, requests: proxyStats.requests, refused: proxyStats.refused, video: proxyVideo ? "on" : "off" },
     // (`subsync` counts the asks for a shared subtitle timing that found one and the ones that did not, and the timings screens have left.)
     subsync: subsyncStats,
+    // (`feedback` is how many reports are kept and whether the team can read them: `team` is false while FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more.)
+    feedback: { reports: feedback.size, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },
   }));
   app.get("/api/library", async (request, reply) => {
     const body = JSON.stringify(await library.get());
