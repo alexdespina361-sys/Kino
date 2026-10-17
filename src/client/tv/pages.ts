@@ -2,6 +2,7 @@ import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type AvatarId, type Library
 import { continueNote, listName, unfinished } from "../account/cards";
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
+import type { Because } from "../shared/recommend";
 
 /**
  * What the TV's library shows on each of its pages, worked out from the library's rows and from what this profile has watched
@@ -146,8 +147,10 @@ export interface GridPage {
 
 /** Everything the pages are made of. */
 export interface PageData {
-  /** The library's rows that have titles. */
+  /** The library's rows that have titles, as the page that is open lays them out: the first ones, then the ones brought after them as it is scrolled. */
   rows: readonly LibraryRow[];
+  /** Every row the library has listed so far, each whole: a category opens any of them. */
+  all: readonly LibraryRow[];
   /** This profile's cards, newest first. */
   progress: readonly LiveProgress[];
   /** The profile's lists, the first one always, and every title saved in any of them. */
@@ -155,8 +158,8 @@ export interface PageData {
   list: readonly LiveListItem[];
   /** What this profile rated (nothing at all when it has turned ratings off). */
   ratings: readonly LiveRating[];
-  /** "Because you watched ...": the title, and the titles like it. */
-  similar: { title: string; items: readonly LibraryItem[] } | null;
+  /** "Because you watched ..." and "Because you loved ...": a title, and the titles like it. */
+  because: readonly Because[];
 }
 
 export const entryOfItem = (item: LibraryItem): Entry => ({
@@ -308,6 +311,8 @@ const isShowCard = (card: LiveProgress) => card.season !== undefined;
 /** A row of Home that is made of one of this profile's lists is named after it. */
 const LIST_ROW = "list:";
 export const listOfRow = (rowId: string): string | undefined => (rowId.startsWith(LIST_ROW) ? rowId.slice(LIST_ROW.length) : undefined);
+/** ...and one of titles like a title the profile watched or loved. */
+const BECAUSE_ROW = "because:";
 
 /** The first row of a page is shown as a ranking of this many. */
 const RANKED = 10;
@@ -322,7 +327,7 @@ function categoriesRow(rows: readonly LibraryRow[], of: LibraryKind | undefined)
 }
 
 /**
- * The rows under the banner. Home has what this profile is part way through, titles like the last one it watched, a row for each of
+ * The rows under the banner. Home has what this profile is part way through, titles like the ones it watched last or loved, a row for each of
  * its lists that has a title in it, then the library's rows with a row of categories among them. Movies and Series have the library's rows of that kind, and what is
  * part way through of that kind.
  */
@@ -332,7 +337,11 @@ export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
 
   const going = unfinished(data.progress).filter((card) => !kind || isShowCard(card) === (kind === "series"));
   if (going.length > 0) out.push({ id: "continue", layout: "continue", title: t("rows.continue"), entries: going.map(entryOfProgress) });
-  if (!kind && data.similar && data.similar.items.length > 0) out.push({ id: "similar", layout: "wide", title: t("rows.because", { title: data.similar.title }), entries: data.similar.items.map(entryOfItem) });
+  if (!kind) {
+    for (const like of data.because) {
+      if (like.items.length > 0) out.push({ id: `${BECAUSE_ROW}${like.key}`, layout: "wide", title: t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title }), entries: like.items.map(entryOfItem) });
+    }
+  }
   if (!kind) {
     for (const info of data.lists) {
       const saved = data.list.filter((item) => listOf(item) === info.id);
@@ -361,14 +370,14 @@ export function gridOf(view: View, data: PageData): GridPage | null {
     case "ratings":
       return { title: t("rating.mine"), meta: ratingSummary(t, getLanguage(), data.ratings) || t("rating.mineHelp"), layout: "wide", entries: sortRatings(data.ratings, "new").map(entryOfRating), empty: t("rating.empty") };
     case "category": {
-      const row = data.rows.find((candidate) => candidate.id === view.rowId);
-      return row ? { title: rowTitle(row), meta: [t("tv.titles", { count: row.items.length }), sourceOf(data.rows, row).source].filter(Boolean).join(" · "), layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
+      const row = data.all.find((candidate) => candidate.id === view.rowId);
+      return row ? { title: rowTitle(row), meta: [t("tv.titles", { count: row.items.length }), sourceOf(data.all, row).source].filter(Boolean).join(" · "), layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
     }
     case "categories": {
-      const rows = data.rows.filter((row) => !view.of || row.kind === view.of);
+      const rows = data.all.filter((row) => !view.of || row.kind === view.of);
       const title = view.of === "movie" ? t("tv.movieCategories") : view.of === "series" ? t("tv.seriesCategories") : t("tv.allCategories");
       const ordered = view.of ? rows : KIND_ORDER.flatMap((kind) => rows.filter((row) => row.kind === kind));
-      return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, data.rows, !view.of)), empty: "" };
+      return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, data.all, !view.of)), empty: "" };
     }
     default:
       return null;

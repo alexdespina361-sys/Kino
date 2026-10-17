@@ -306,6 +306,8 @@ export const it: Dictionary = {
   "tv.nothingMatches": "Nessun risultato per “{query}”.",
   "tv.searchFailed": "La ricerca non risponde in questo momento. Riprova da sola tra poco.",
   "tv.searchOffline": " · il resto della ricerca non risponde",
+  "tv.closest": "Risultati più vicini",
+  "tv.closestOnly": "Nessuna corrispondenza esatta per “{query}”. Questi sono i più vicini.",
   "tv.keyboard": "Tastiera",
   "tv.space": "Spazio",
   "tv.delete": "Cancella",
@@ -639,6 +641,8 @@ export const it: Dictionary = {
   "tv.filterSeries": "Serie TV",
   "tv.backToLibrary": "Torna alla libreria",
   "rows.because": "Perché hai guardato {title}",
+  "rows.loved": "Perché ti è piaciuto {title}",
+  "rows.moreFailed": "Impossibile caricare altri titoli. Riprovo…",
 
   /* ratings: a score out of ten, why, and what was watched */
   "rating.mine": "Le mie valutazioni",

@@ -284,6 +284,9 @@ export const hasMoreShelves = (snap: FeedSnapshot, kind: LibraryKind | undefined
 /** Whether the next rows are being asked for (a screen shows a row of empty tiles in their place). */
 export const loadingShelves = (snap: FeedSnapshot, kind: LibraryKind | undefined): boolean => Boolean(snap.status.busy[shelvesId(shelfKey(kind))]);
 
+/** Whether the last question for the next rows failed and is waiting to be asked again. */
+export const failedShelves = (snap: FeedSnapshot, kind: LibraryKind | undefined): boolean => Boolean(snap.status.failed[shelvesId(shelfKey(kind))]);
+
 /** Whether a row can have more titles than it shows: it is not known to have none (a row of a place that has no further pages finds out when it is asked). */
 export const hasMoreTitles = (snap: FeedSnapshot, rowId: string, shown: number, cap = ROW_CAP): boolean => {
   const more = snap.data.more[rowId];

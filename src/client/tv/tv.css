@@ -1161,6 +1161,10 @@
 .tv-skeleton { height: 8.44em; border-radius: 0.6em; background: linear-gradient(90deg, #17171a, #232328, #17171a); background-size: 200% 100%; animation: tv-shimmer 1.4s linear infinite; }
 .tv-skeleton-title { width: 12em; height: 1.4em; border-radius: 0.3em; background: #17171a; }
 @keyframes tv-shimmer { to { background-position: -200% 0; } }
+/* Under the last row of a page that goes on as it is scrolled: a line when the rows that come next could not be had (they are asked for again in a moment). */
+.tv-rows-note { margin: 0.4em 2.4em 1.4em 4.1em; font-size: 1.4em; color: var(--muted); }
+/* In a search: the titles with every word typed, then this heading, then the closest others. It runs the width of the grid. */
+.tv-results-closest { grid-column: 1 / -1; margin: 0.6em 0 -0.2em; font-size: 1.7em; font-weight: 700; color: #e8e8ec; }
 
 /* ------------------------------ library: menu, categories, search ------------------------------ */
 

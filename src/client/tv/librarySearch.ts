@@ -1,24 +1,45 @@
-import { itemsOf, rankByQuery, searchItems, type LibraryItem, type LibraryRow } from "../../shared";
+import { CLOSEST_MAX, itemsOf, rankByQuery, searchItems, type LibraryItem, type LibraryKind, type LibraryRow, type TitleIndex } from "../../shared";
 
-/** Titles already on screen that match what was typed (a slip of a letter or an unfinished word included), best first: instant, before the server is asked. Each title once. */
-export function matchLocal(rows: readonly LibraryRow[], query: string): LibraryItem[] {
-  return rankByQuery(searchItems(itemsOf(rows), query), query);
+/** What a search found: the titles, the first `exact` of which have every word that was typed and the rest are the closest others (some of the words, or a letter off). */
+export interface Answers {
+  items: LibraryItem[];
+  exact: number;
+}
+export const NO_ANSWERS: Answers = { items: [], exact: 0 };
+
+/** Answers that are all exact: what a place that knows no better found. */
+export const allExact = (items: readonly LibraryItem[]): Answers => ({ items: [...items], exact: items.length });
+
+/**
+ * Titles already on screen or met on the way that match what was typed (a slip of a letter or an unfinished word included), the likeliest first,
+ * and after them the closest others: instant, before the server is asked. Each title once. A single letter is looked for among the titles of the
+ * rows only (every title that has a word beginning with it is too many to weigh at each key).
+ */
+export function matchLocal(index: TitleIndex, rows: readonly LibraryRow[], query: string): Answers {
+  if (query.trim().length < 2) return allExact(rankByQuery(searchItems(itemsOf(rows), query), query));
+  return index.search(query);
 }
 
 /** What is shown, as far as it still matches the words as they are now: while the server is asked again, the list does not empty and fill up with every letter. */
-export function keepMatching(shown: readonly LibraryItem[], query: string): LibraryItem[] {
-  return searchItems(shown, query);
+export function keepMatching(shown: Answers, query: string): Answers {
+  return allExact(searchItems(shown.items, query));
 }
 
-/** What was matched on screen, then what the server found beyond it, each title once. */
-export function mergeItems(first: readonly LibraryItem[], more: readonly LibraryItem[]): LibraryItem[] {
-  const seen = new Set(first.map((item) => item.id));
-  return [...first, ...more.filter((item) => !seen.has(item.id) && seen.add(item.id))];
+/** What was found on screen and what the server found, each title once, the likeliest to be what was typed first and then the closest others. */
+export function mergeAnswers(first: Answers, more: Answers, query: string): Answers {
+  const seen = new Set<string>();
+  const once = (items: readonly LibraryItem[]) => items.filter((item) => !seen.has(item.id) && seen.add(item.id));
+  const exact = rankByQuery(once([...first.items.slice(0, first.exact), ...more.items.slice(0, more.exact)]), query);
+  const closest = rankByQuery(once([...first.items.slice(first.exact), ...more.items.slice(more.exact)]), query).slice(0, CLOSEST_MAX);
+  return { items: [...exact, ...closest], exact: exact.length };
 }
 
-/** What was found on screen and what the server found, each title once, the likeliest to be what was typed first. */
-export function mergeAnswers(first: readonly LibraryItem[], more: readonly LibraryItem[], query: string): LibraryItem[] {
-  return rankByQuery(mergeItems(first, more), query);
+/** Only the films or only the shows of an answer (the closest others stay the closest). */
+export function onlyKind(answers: Answers, kind: LibraryKind | "all"): Answers {
+  if (kind === "all") return answers;
+  const keep = (items: readonly LibraryItem[]) => items.filter((item) => item.kind === kind);
+  const exact = keep(answers.items.slice(0, answers.exact));
+  return { items: [...exact, ...keep(answers.items.slice(answers.exact))], exact: exact.length };
 }
 
 /** The letters, then the digits: six keys to a row, which is what the TV's keyboard is laid out in. */

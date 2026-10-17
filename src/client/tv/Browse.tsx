@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { canAskTogether, DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryItem, type PlayHint, type Person } from "../../shared";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
+import { canAskTogether, DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryKind, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
@@ -15,10 +15,12 @@ import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { BackspaceIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { allRows, failedShelves, feed, GRID_CAP, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
 import { comesIn, hueOf } from "../shared/Poster";
+import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
@@ -26,8 +28,8 @@ import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, UnfriendTv } from "./Friends";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
-import { editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, typedCharacter, type BoxEdit, type SearchBox } from "./librarySearch";
-import { asOpened, backOf, entryOfItem, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, listOfRow, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
+import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlyKind, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
+import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, listOfRow, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
 import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
@@ -68,7 +70,7 @@ const remembered = {
   /** The list the lists page showed last: the menu's entry for it opens that one. */
   list: DEFAULT_LIST as string,
   query: "",
-  results: [] as LibraryItem[],
+  results: NO_ANSWERS as Answers,
   /** The query `results` answers. */
   resultsFor: "",
   filter: "all" as KindFilter,
@@ -78,8 +80,6 @@ const remembered = {
   row: {} as Record<string, string>,
   /** The title in that row (tiles come and go as well: the profile's, with friends turned on or off, move along). */
   tile: {} as Record<string, string>,
-  /** The titles like what a card is about, by the card's key. Nothing found is remembered too. */
-  similar: {} as Record<string, LibraryItem[]>,
   /** The page of a show that an episode was started from, and the season it was showing: the library comes back to it, to pick the next one (or another, when that one would not play). */
   detail: null as { page: Focused; season: number | undefined } | null,
 };
@@ -96,6 +96,12 @@ const BANNER_DELAY_MS = 200;
 const SEARCH_DELAY_MS = 350;
 /** A search the server did not answer is asked again after this long. */
 const SEARCH_RETRY_MS = 5000;
+/** A page of rows, or a grid, asks the library for what comes next when it is scrolled to within this many of its own heights of its end... */
+const NEAR_BOTTOM = 1.5;
+/** ...and the remote, which moves a title at a time, when it is this many rows (or, along a row, this many titles) from the end. */
+const ROWS_AHEAD = 3;
+const TITLES_AHEAD = 6;
+const nearBottom = (box: HTMLElement | null): boolean => box !== null && box.clientHeight > 0 && box.scrollHeight - box.clientHeight - box.scrollTop <= box.clientHeight * NEAR_BOTTOM;
 const GRID_COLUMNS = 5;
 const RESULT_COLUMNS = 3;
 /** A phone, a tablet or a narrow window (the same width tv.css lays out for a hand-held screen): grids are as many titles wide as fit, and search is typed on the device's own keyboard. */
@@ -240,7 +246,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const [box, setBox] = useState<SearchBox>(() => ({ text: remembered.query, caret: remembered.query.length }));
   const query = box.text;
   const edit = (change: BoxEdit) => setBox((before) => editBox(before, change));
-  const [results, setResults] = useState<LibraryItem[]>(remembered.results);
+  const [results, setResults] = useState<Answers>(remembered.results);
   const [filter, setFilter] = useState<KindFilter>(remembered.filter);
   const [searching, setSearching] = useState(false);
   /** The query the server could not answer (it is asked again in a moment), so "nothing matches" is not said of a search that did not happen. */
@@ -267,11 +273,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   /** Somewhere to put the focus once the next render has put it on screen. */
   const [pending, setPending] = useState<Target>(null);
-  const newest = progress[0];
-  const [similarItems, setSimilarItems] = useState<LibraryItem[]>(() => (newest ? (remembered.similar[newest.key] ?? []) : []));
   const bannerTimer = useRef<number>(0);
   const rootRef = useRef<HTMLElement>(null);
   const rowsRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -282,6 +287,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         const parsed = LibrarySchema.parse(data);
         if (!live) return;
         remembered.library = parsed;
+        feed.setBase(parsed.rows.filter((row) => row.items.length > 0)); // (the rows that come after these, and more of each, are asked for as the page is scrolled: see the feed)
         if (attempt > 0) remembered.resultsFor = ""; // what a search showed is asked for again against the new list
         setLibrary(parsed);
         setStatus("ready");
@@ -294,33 +300,19 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     };
   }, [attempt]);
 
-  // "Because you watched ...": the server knows titles like the one this profile watched last.
-  useEffect(() => {
-    if (!newest) return setSimilarItems([]);
-    const known = remembered.similar[newest.key];
-    if (known) return setSimilarItems(known);
-    let live = true;
-    fetch(`/api/library/similar?url=${encodeURIComponent(newest.url)}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: unknown) => {
-        const parsed = LibraryItemsSchema.safeParse(data);
-        const items = parsed.success ? parsed.data.items : [];
-        remembered.similar[newest.key] = items;
-        if (live) setSimilarItems(items);
-      })
-      .catch(() => {}); // not remembered, so the next visit asks again
-    return () => {
-      live = false;
-    };
-  }, [newest?.key]);
-
-  const rows = useMemo(() => (library?.rows ?? []).filter((row) => row.items.length > 0), [library]);
+  // The library as it has grown: its first rows, the ones brought after them and more of each row (see the feed). A TV that comes back from a film finds it as it was.
+  const feeding = useFeed();
+  const rows = feeding.data.base;
   const hasTiles = status === "ready" && rows.length > 0;
-  const similar = useMemo(() => {
-    const items = newest ? freshSimilar(similarItems, progress, list) : [];
-    return newest && items.length > 0 ? { title: newest.title, items } : null;
-  }, [newest, similarItems, progress, list]);
-  const data = useMemo<PageData>(() => ({ rows, progress, lists, list, ratings: ratingsOn ? ratings : [], similar }), [rows, progress, lists, list, ratings, ratingsOn, similar]);
+  // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
+  const because = useBecause();
+  /** What kind of titles the rows of this page are: Home has both. */
+  const pageKind: LibraryKind | undefined = view.kind === "movies" ? "movie" : view.kind === "series" ? "series" : undefined;
+  const pageLibraryRows = useMemo(() => pageRows(feeding.data, pageKind), [feeding.data, pageKind]);
+  /** The rows of this page that the library can add titles to as they are scrolled (the ranking of ten, which is not scrolled, is not one). */
+  const growing = useMemo(() => new Set(pageLibraryRows.filter((row) => hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP)).map((row) => row.id)), [pageLibraryRows, feeding]);
+  const everyRow = useMemo(() => (view.kind === "category" || view.kind === "categories" ? allRows(feeding.data) : pageLibraryRows), [feeding.data, pageLibraryRows, view.kind]);
+  const data = useMemo<PageData>(() => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? ratings : [], because }), [pageLibraryRows, everyRow, progress, lists, list, ratings, ratingsOn, because]);
 
   const rowsPage = hasRows(view);
   // A friend's page shows what they share, asked of the server while the page is open: the lists they keep, or what they rated.
@@ -339,7 +331,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   }, [view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, ratings, progress.length]);
   const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings), [view, data, language, friends.state, sharedLists, sharedRatings]);
   /* eslint-enable react-hooks/exhaustive-deps */
-  const shownResults = useMemo(() => ofKind(results, filter), [results, filter]);
+  // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.
+  const shownAnswers = useMemo(() => onlyKind(results, filter), [results, filter]);
+  const shownResults = shownAnswers.items;
+  /** The rows of the results' grid: those of the exact titles, then (a block of their own, under a heading) those of the closest others. */
+  const resultRowsOf = (columns: number) => [...gridRows(shownAnswers.exact, columns), ...gridRows(shownResults.length - shownAnswers.exact, columns)];
 
   // Where the remote starts on a page of rows: the first title, or on a return from a film, the one it left.
   const homeFocus = rowsPage ? savedPos(view, homeRows) : undefined;
@@ -450,7 +446,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     top: topButtons > 0 ? [topButtons] : [],
     ...(rowsPage ? { hero: profileButtons > 0 ? [profileButtons] : !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
     ...(grid ? { grid: gridRows(grid.entries.length, gridColumns) } : {}),
-    ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: gridRows(shownResults.length, resultColumns) } : {}),
+    ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: resultRowsOf(resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
     // A friend's page: the way back, their lists and their ratings over the titles, and under them the button that takes them off the friends.
@@ -464,8 +460,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         }
       : {}),
   };
-  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn });
-  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn };
+  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageKind, growing });
+  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageKind, growing };
 
   /**
    * Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. `leaving` is the block of buttons
@@ -522,6 +518,20 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (!at || at.zone === "top") setPending(fresh(latest.current.detail ? DETAIL : CONTENT));
   }, [hasTiles, status, view.kind, library]);
 
+  // The library is asked for more when a page is scrolled near its end, whatever scrolled it (see the handlers on the rows and the grid), and when the page does not
+  // fill the screen yet: an answer, or a question that failed and may be asked again, looks again.
+  useEffect(() => {
+    if (status !== "ready") return;
+    if (isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageKind);
+    if (view.kind === "category" && nearBottom(gridRef.current)) feed.loadMore(view.rowId, GRID_CAP);
+  }, [feeding, status, view, pageKind, homeRows.length, grid?.entries.length]);
+  const askShelves = () => {
+    if (status === "ready" && isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageKind);
+  };
+  const askTitles = () => {
+    if (status === "ready" && view.kind === "category" && nearBottom(gridRef.current)) feed.loadMore(view.rowId, GRID_CAP);
+  };
+
   // A video that would not play may take its title off the server's lists: ask for them again.
   useEffect(() => {
     if (notice) setAttempt((n) => n + 1);
@@ -568,10 +578,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (text === remembered.resultsFor) return setSearching(false); // coming back to answers already shown
     if (!text) {
       remembered.resultsFor = "";
-      setResults([]);
+      setResults(NO_ANSWERS);
       return setSearching(false);
     }
-    const local = matchLocal(rows, text);
+    const local = matchLocal(feed.index, rows, text); // (every title this TV has met, not only the ones on screen)
     setResults((before) => (text.length < 2 ? local : mergeAnswers(local, keepMatching(before, text), text))); // (what the server found for the words a letter ago stays while it is asked again)
     if (text.length < 2) {
       remembered.resultsFor = text;
@@ -585,7 +595,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
         .then((answer: unknown) => {
           const parsed = LibraryItemsSchema.parse(answer);
-          setResults(mergeAnswers(local, parsed.items, text));
+          feed.learn(parsed.items); // (found next time without asking)
+          setResults(mergeAnswers(local, { items: parsed.items, exact: parsed.exact ?? parsed.items.length }, text));
           remembered.resultsFor = text;
           setFailedFor(null);
           setSearching(false);
@@ -682,9 +693,17 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       if (edge.left < box.left + room) scroller.scrollBy({ left: edge.left - box.left - room, behavior: "smooth" });
       else if (edge.right > box.right - room) scroller.scrollBy({ left: edge.right - box.right + room, behavior: "smooth" });
       rowsRef.current?.scrollTo({ top: scroller.closest<HTMLElement>(".tv-row")!.offsetTop, behavior: "smooth" }); // (the row itself, with its name: not the box round its titles)
+      // The remote moves a title at a time and a script scrolls: nothing here is a scroll the page could notice from far off, so the library is asked for more as the remote nears the end,
+      // of the page (the rows that come next) and of the row (more of its titles).
+      const { homeRows: laid, view: page, pageKind: kind, growing: more } = latest.current;
+      const row = laid[pos.row];
+      if (status === "ready" && isRowsPage(page) && pos.row >= laid.length - ROWS_AHEAD) feed.loadShelves(kind);
+      if (row && row.layout === "wide" && more.has(row.id) && pos.col >= row.entries.length - TITLES_AHEAD) feed.loadMore(row.id, ROW_CAP);
     } else {
       const container = element.closest<HTMLElement>(".tv-grid");
       if (container) keepInView(container, element);
+      const { view: page, shape: laid } = latest.current;
+      if (page.kind === "category" && pos.zone === "grid" && pos.row >= (laid.grid?.length ?? 0) - ROWS_AHEAD) feed.loadMore(page.rowId, GRID_CAP);
     }
 
     window.clearTimeout(bannerTimer.current);
@@ -974,12 +993,14 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             )}
           </div>
 
-          <div className="tv-rows" ref={rowsRef}>
+          <div className="tv-rows" ref={rowsRef} onScroll={askShelves}>
             {homeRows.length > 0
               ? homeRows.map((row, r) => (
                   <section className="tv-row" key={row.id} data-layout={row.layout} aria-label={row.title}>
                     <h2 className="tv-row-title">{row.title}</h2>
-                    <RowTiles>{row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id)))}</RowTiles>
+                    <RowTiles {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
+                      {row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id)))}
+                    </RowTiles>
                   </section>
                 ))
               : status === "loading" && (
@@ -992,6 +1013,22 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                     </div>
                   </section>
                 )}
+            {/* Under the last row: empty tiles while the rows that come next are on their way, and a line when they could not be had (they are asked for again in a moment). */}
+            {homeRows.length > 0 && isRowsPage(view) && failedShelves(feeding, pageKind) && (
+              <p className="tv-rows-note" role="status" data-testid="tv-rows-failed">
+                {t("rows.moreFailed")}
+              </p>
+            )}
+            {homeRows.length > 0 && isRowsPage(view) && loadingShelves(feeding, pageKind) && (
+              <section className="tv-row tv-row-waiting" aria-hidden="true" data-testid="tv-rows-waiting">
+                <h2 className="tv-row-title tv-skeleton-title" />
+                <div className="tv-row-tiles">
+                  {Array.from({ length: 8 }, (_, i) => (
+                    <div className="tv-tile tv-skeleton" key={i} />
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         </>
       )}
@@ -1096,8 +1133,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             </div>
           )}
           {grid.entries.length > 0 ? (
-            <div className="tv-grid" style={{ "--cols": gridColumns } as CSSProperties}>
+            <div className="tv-grid" ref={gridRef} onScroll={askTitles} style={{ "--cols": gridColumns } as CSSProperties}>
               {grid.entries.map((entry, i) => tile(entry, { zone: "grid", row: Math.floor(i / gridColumns), col: i % gridColumns }, grid.title, grid.layout, undefined, view.kind === "list" ? shownId : undefined))}
+              {/* (A category goes on with its titles as it is scrolled: empty tiles hold the place of the next ones.) */}
+              {view.kind === "category" &&
+                loadingTitles(feeding, view.rowId) &&
+                Array.from({ length: gridColumns }, (_, i) => <div className="tv-tile tv-skeleton" data-testid="tv-grid-waiting" aria-hidden="true" key={`waiting-${i}`} />)}
             </div>
           ) : (
             <p className="tv-view-empty" data-testid="tv-view-empty">
@@ -1195,7 +1236,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               {!query.trim()
                 ? t("tv.typeToSearch")
                 : shownResults.length > 0
-                  ? `${t("tv.found", { count: shownResults.length, query: query.trim() })}${searchFailed ? t("tv.searchOffline") : searching ? t("tv.stillLooking") : ""}`
+                  ? `${shownAnswers.exact > 0 ? t("tv.found", { count: shownAnswers.exact, query: query.trim() }) : t("tv.closestOnly", { query: query.trim() })}${searchFailed ? t("tv.searchOffline") : searching ? t("tv.stillLooking") : ""}`
                   : searchFailed
                     ? t("tv.searchFailed")
                     : searching
@@ -1203,7 +1244,22 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                       : t("tv.nothingMatches", { query: query.trim() })}
             </p>
             <div className="tv-grid tv-results" style={{ "--cols": resultColumns } as CSSProperties}>
-              {shownResults.map((item, i) => tile(entryOfItem(item), { zone: "results", row: Math.floor(i / resultColumns), col: i % resultColumns }, t("tv.search"), "wide"))}
+              {shownResults.map((item, i) => {
+                // The titles with every word typed come first; under a heading of their own, the closest others (see `resultRowsOf`).
+                const close = i >= shownAnswers.exact;
+                const at = close ? i - shownAnswers.exact : i;
+                const row = Math.floor(at / resultColumns) + (close ? Math.ceil(shownAnswers.exact / resultColumns) : 0);
+                return (
+                  <Fragment key={item.id}>
+                    {i === shownAnswers.exact && i > 0 && (
+                      <h2 className="tv-results-closest" data-testid="tv-closest">
+                        {t("tv.closest")}
+                      </h2>
+                    )}
+                    {tile(entryOfItem(item), { zone: "results", row, col: at % resultColumns }, t("tv.search"), "wide")}
+                  </Fragment>
+                );
+              })}
             </div>
           </div>
         </div>

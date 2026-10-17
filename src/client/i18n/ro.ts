@@ -309,6 +309,8 @@ export const ro: Dictionary = {
   "tv.nothingMatches": "Nimic nu se potrivește cu „{query}”.",
   "tv.searchFailed": "Căutarea nu răspunde acum. Încearcă din nou singură într-un moment.",
   "tv.searchOffline": " · restul căutării nu răspunde",
+  "tv.closest": "Cele mai apropiate rezultate",
+  "tv.closestOnly": "Nimic nu se potrivește exact cu „{query}”. Acestea sunt cele mai apropiate.",
   "tv.keyboard": "Tastatură",
   "tv.space": "Spațiu",
   "tv.delete": "Șterge",
@@ -646,6 +648,8 @@ export const ro: Dictionary = {
   "tv.filterSeries": "Seriale",
   "tv.backToLibrary": "Înapoi la bibliotecă",
   "rows.because": "Pentru că ai urmărit {title}",
+  "rows.loved": "Pentru că ți-a plăcut {title}",
+  "rows.moreFailed": "Nu s-au putut încărca mai multe titluri. Se încearcă din nou…",
 
   /* ratings: a score out of ten, why, and what was watched */
   "rating.mine": "Notele mele",

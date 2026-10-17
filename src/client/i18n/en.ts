@@ -307,6 +307,8 @@ export const en = {
   "tv.nothingMatches": "Nothing matches “{query}”.",
   "tv.searchFailed": "Search can't be reached right now. It tries again in a moment.",
   "tv.searchOffline": " · the rest of the search can't be reached",
+  "tv.closest": "Closest matches",
+  "tv.closestOnly": "Nothing matches “{query}” exactly. These are the closest.",
   "tv.keyboard": "Keyboard",
   "tv.space": "Space",
   "tv.delete": "Delete",
@@ -639,6 +641,8 @@ export const en = {
   "tv.filterSeries": "Series",
   "tv.backToLibrary": "Back to the library",
   "rows.because": "Because you watched {title}",
+  "rows.loved": "Because you loved {title}",
+  "rows.moreFailed": "Couldn't load more titles. Trying again…",
 
   /* ratings: a score out of ten, why, and what was watched */
   "rating.mine": "My ratings",

@@ -1,49 +1,90 @@
 import { describe, expect, it } from "vitest";
-import { appendTo, editBox, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, mergeItems, typedCharacter } from "./librarySearch";
+import { itemsOf, TitleIndex } from "../../shared";
+import { allExact, appendTo, editBox, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, onlyKind, typedCharacter } from "./librarySearch";
 
-const item = (id: string, title: string) => ({ id, title, url: `/${id}` });
+const item = (id: string, title: string, kind?: "movie" | "series") => ({ id, title, url: `/${id}`, ...(kind ? { kind } : {}) });
 const rows = [
   { id: "r1", title: "One", source: "S", items: [item("a", "The Night Of The Hunter"), item("b", "Nosferatu")] },
   { id: "r2", title: "Two", source: "S", items: [item("a", "The Night Of The Hunter"), item("c", "Night Train")] },
 ];
+const index = new TitleIndex(itemsOf(rows));
+const ids = (list: readonly { id: string }[]) => list.map((found) => found.id);
 
 describe("matchLocal", () => {
   it("finds titles with the words typed, ignoring case, each title once, the closest first", () => {
-    expect(matchLocal(rows, "NIGHT").map((found) => found.id)).toEqual(["c", "a"]);
-    expect(matchLocal(rows, "nos").map((found) => found.id)).toEqual(["b"]);
+    expect(ids(matchLocal(index, rows, "NIGHT").items)).toEqual(["c", "a"]);
+    expect(ids(matchLocal(index, rows, "nos").items)).toEqual(["b"]);
   });
   it("forgives a slip of a letter, and finds a title whose name is typed without its spaces", () => {
-    expect(matchLocal(rows, "nosferatoo").map((found) => found.id)).toEqual(["b"]);
-    expect(matchLocal(rows, "night trian").map((found) => found.id)).toEqual(["c"]);
-    expect(matchLocal(rows, "nighttrain").map((found) => found.id)).toEqual(["c"]);
+    expect(ids(matchLocal(index, rows, "nosferatoo").items)).toEqual(["b"]);
+    expect(ids(matchLocal(index, rows, "nighttrain").items)).toEqual(["c"]);
+    const slip = matchLocal(index, rows, "night trian");
+    expect(ids(slip.items.slice(0, slip.exact))).toEqual(["c"]);
+  });
+  it("puts the titles that have only some of the words after those that have them all", () => {
+    const answers = matchLocal(index, rows, "night trian");
+    expect(answers.exact).toBe(1);
+    expect(ids(answers.items)).toEqual(["c", "a"]);
   });
   it("finds nothing for nothing", () => {
-    expect(matchLocal(rows, "")).toEqual([]);
-    expect(matchLocal(rows, "   ")).toEqual([]);
-    expect(matchLocal(rows, "zzz")).toEqual([]);
+    expect(matchLocal(index, rows, "")).toEqual({ items: [], exact: 0 });
+    expect(matchLocal(index, rows, "   ")).toEqual({ items: [], exact: 0 });
+    expect(matchLocal(index, rows, "zzz")).toEqual({ items: [], exact: 0 });
+  });
+  it("looks for a single letter among the titles of the rows, and for more in everything that was met", () => {
+    const met = new TitleIndex([...itemsOf(rows), item("q", "Quiet Place")]);
+    expect(ids(matchLocal(met, rows, "q").items)).toEqual([]);
+    expect(ids(matchLocal(met, rows, "qu").items)).toEqual(["q"]);
+    expect(ids(matchLocal(met, rows, "n").items).sort()).toEqual(["a", "b", "c"]);
   });
 });
 
 describe("keepMatching", () => {
-  const shown = [item("x", "Stranger Things"), item("y", "Strangers on a Train"), item("z", "The Strain")];
+  const shown = allExact([item("x", "Stranger Things"), item("y", "Strangers on a Train"), item("z", "The Strain")]);
   it("keeps what is shown as far as it still matches the words typed since, so a list does not empty with every letter", () => {
-    expect(keepMatching(shown, "stranger things").map((found) => found.id)[0]).toBe("x");
-    expect(keepMatching(shown, "strangers on").map((found) => found.id)[0]).toBe("y");
-    expect(keepMatching(shown, "zzz")).toEqual([]);
-  });
-});
-
-describe("mergeItems", () => {
-  it("puts what the server found after what was on screen, without repeating a title", () => {
-    expect(mergeItems([item("a", "A"), item("b", "B")], [item("b", "B"), item("c", "C"), item("c", "C")]).map((found) => found.id)).toEqual(["a", "b", "c"]);
+    expect(ids(keepMatching(shown, "stranger things").items)[0]).toBe("x");
+    expect(ids(keepMatching(shown, "strangers on").items)[0]).toBe("y");
+    expect(keepMatching(shown, "zzz")).toEqual({ items: [], exact: 0 });
   });
 });
 
 describe("mergeAnswers", () => {
   it("merges the screen's titles and the server's the same way, and puts the likeliest first whichever found it", () => {
-    const screen = [item("w", "Welcome to the Boondocks"), item("n", "Boonie Bears")];
-    const server = [item("w", "Welcome to the Boondocks"), item("b", "Boon"), item("d", "The Boondocks"), item("x", "Baboon")];
-    expect(mergeAnswers(screen, server, "boon").map((found) => found.id)).toEqual(["b", "n", "d", "w", "x"]);
+    const screen = allExact([item("w", "Welcome to the Boondocks"), item("n", "Boonie Bears")]);
+    const server = allExact([item("w", "Welcome to the Boondocks"), item("b", "Boon"), item("d", "The Boondocks"), item("x", "Baboon")]);
+    const merged = mergeAnswers(screen, server, "boon");
+    expect(ids(merged.items)).toEqual(["b", "n", "d", "w", "x"]);
+    expect(merged.exact).toBe(5);
+  });
+
+  it("keeps the closest others apart, after the exact ones, and a title that is exact for one is not among them", () => {
+    const screen = { items: [item("a", "Dune"), item("c1", "Dust"), item("c2", "Dunk")], exact: 1 };
+    const server = { items: [item("a2", "Dune Part Two"), item("c1", "Dust")], exact: 1 };
+    const merged = mergeAnswers(screen, server, "dune");
+    expect(merged.exact).toBe(2);
+    expect(ids(merged.items)).toEqual(["a", "a2", "c1", "c2"]);
+    // a title the server calls close that the screen has as exact is exact
+    const swapped = mergeAnswers({ items: [item("a", "Dune")], exact: 1 }, { items: [item("a", "Dune"), item("c1", "Dust")], exact: 0 }, "dune");
+    expect(swapped.exact).toBe(1);
+    expect(ids(swapped.items)).toEqual(["a", "c1"]);
+  });
+
+  it("shows no more than thirty of the closest others", () => {
+    const close = Array.from({ length: 50 }, (_, at) => item(`c${at}`, `Dust ${at}`));
+    expect(mergeAnswers({ items: close, exact: 0 }, { items: [], exact: 0 }, "dune").items).toHaveLength(30);
+  });
+});
+
+describe("onlyKind", () => {
+  const answers = { items: [item("a", "A", "movie"), item("b", "B", "series"), item("c", "C", "movie"), item("d", "D", "series")], exact: 2 };
+  it("keeps the films or the shows, and how many of the first are exact", () => {
+    expect(onlyKind(answers, "all")).toBe(answers);
+    const films = onlyKind(answers, "movie");
+    expect(ids(films.items)).toEqual(["a", "c"]);
+    expect(films.exact).toBe(1);
+    const shows = onlyKind(answers, "series");
+    expect(ids(shows.items)).toEqual(["b", "d"]);
+    expect(shows.exact).toBe(1);
   });
 });
 
