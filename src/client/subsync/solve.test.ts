@@ -15,6 +15,8 @@ interface Run {
   core: SyncCore;
   /** How the solves placed the lines (see `Method`). */
   methods: Set<string>;
+  /** Of each solve that placed lines: the sound it had reached, how it placed them, and where the earliest of them lay. */
+  reaches: Array<{ end: number; method: string; earliest: number }>;
 }
 
 /** Play the film through the aligner the way the player would feed it: sound in pieces, the recogniser a window at a time, a solve after each window. */
@@ -23,6 +25,7 @@ function play(film: Film, track: Cue[], options: { words?: (window: number) => b
   core.setTrack("t", track, options.useWords ?? true);
   const result = track.map((cue) => ({ ...cue }));
   const methods = new Set<string>();
+  const reaches: Run["reaches"] = [];
   const until = options.until ?? film.seconds;
   let heardTo = 0;
   for (let t = 0; t + PIECE <= until; t += PIECE) {
@@ -36,6 +39,7 @@ function play(film: Film, track: Cue[], options: { words?: (window: number) => b
       heardTo += WINDOW;
       const outcome = core.solve("t", covered);
       if (outcome) methods.add(outcome.method);
+      if (outcome && outcome.updates.length > 0) reaches.push({ end: covered, method: outcome.method, earliest: Math.min(...outcome.updates.map((update) => update.start)) });
       for (const update of outcome?.updates ?? []) {
         const cue = result[update.index] as Cue;
         cue.start = update.start;
@@ -48,6 +52,7 @@ function play(film: Film, track: Cue[], options: { words?: (window: number) => b
     core,
     result,
     methods,
+    reaches,
     within: (tolerance) => finished.filter(({ cue, got }) => Math.abs(got.start - cue.start) <= tolerance).length / Math.max(1, finished.length),
   };
 }
@@ -120,6 +125,17 @@ describe("TrackSolver and SyncCore with subtitles that are not the words that ar
     expect(run.methods.has("dub")).toBe(true);
     expect(run.core.score(track).rate).toBeGreaterThan(MIN_HEARD_RATE);
     expect(run.within(0.5)).toBeGreaterThan(0.85);
+  });
+
+  it("looks at the long window once the track is found to be a dub, as it does for the voice detector alone, and at the short one while the words place it", () => {
+    // (From a minute and a half of sound on, a short window starts a minute back and a long one at the start: the long one places the lines again from there.)
+    const later = (run: Run, method: string) => run.reaches.filter((reach) => reach.method === method && reach.end > 80 && reach.end <= 150);
+    const dub = later(play(film, dubbed(film, () => -3.2)), "dub");
+    expect(dub.length).toBeGreaterThan(0);
+    expect(dub.every((reach) => reach.earliest < reach.end - 60)).toBe(true);
+    const words = later(play(film, misTimed(film, () => -3.2)), "whistle+silero");
+    expect(words.length).toBeGreaterThan(0);
+    expect(words.every((reach) => reach.earliest >= reach.end - 60)).toBe(true);
   });
 
   it("leaves a dub's subtitles that are already where the English is said alone", () => {

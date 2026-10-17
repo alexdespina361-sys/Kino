@@ -74,6 +74,11 @@ export class TrackSolver {
   private shift: number | null = null;
   /** Heard words at the last probe that found nothing: do not probe again until there are many more. */
   private failedAt = 0;
+  /**
+   * The last solve found the track to be a dub: the solves after it look at the long window. A dub's one offset is learned from how many of
+   * the lines fall on a phrase that is heard, and a minute of sound holds too few lines for that (a wrong offset learned there stays).
+   */
+  private dubbed = false;
   private solved: Range[] = [];
 
   /** `useWords`: the words of this track can be compared with what the recogniser hears (English subtitles over English speech). */
@@ -93,6 +98,7 @@ export class TrackSolver {
   forget(): void {
     this.shift = null;
     this.failedAt = 0;
+    this.dubbed = false;
     this.solved = [];
   }
 
@@ -138,7 +144,7 @@ export class TrackSolver {
     const stretch = signals.stretchAt(end);
     if (!stretch || this.input.length === 0) return none;
     const to = Math.min(end, stretch.to);
-    const narrow = this.useWords && signals.wordsIn(to - WINDOW_WITH_WORDS, to).words.length >= MIN_WORDS;
+    const narrow = this.useWords && !this.dubbed && signals.wordsIn(to - WINDOW_WITH_WORDS, to).words.length >= MIN_WORDS;
     const from = Math.max(stretch.from, to - (narrow ? WINDOW_WITH_WORDS : WINDOW_VOICE_ONLY));
     if (to - from < 20) return none;
 
@@ -185,6 +191,10 @@ export class TrackSolver {
         method = "dub";
       }
     }
+
+    // (A window that the words place again makes it an ordinary track again; one that only the voice detector placed says nothing either way.)
+    if (method === "dub") this.dubbed = true;
+    else if (method === "whistle+silero") this.dubbed = false;
 
     const moves = out.map((cue, k) => cue.start - (cues[k] as Cue).start);
     if (moves.length >= 5 && percentile(moves, 0.9) - percentile(moves, 0.1) > MAX_SPREAD) return { ...none, shift: this.shift };
