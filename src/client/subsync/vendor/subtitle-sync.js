@@ -502,6 +502,135 @@ const AsrAnchor = (() => {
     }
     return r;
   }
+  // dub: subtitles whose words are not what is said, while the recogniser does hear speech (the English dub of a film the subtitles
+  // translate from the original, or another translation). Too few lines match for `place`, and Silero alone can follow the wrong speech
+  // (it missed the announcer under crowd noise in Dragon Ball Z: Bojack Unbound and moved the opening 4-8 s late). The file was timed to
+  // the same picture, and a dub speaks where the mouths move, so the file's timing is the prior:
+  //  1. the whole track moves by the offset that puts the most line starts on a phrase start (0 unless clearly better);
+  //  2. a line sharing `minShared` rarer words (one of `keyLen`+ letters) with what is heard near it (any order, within `span` s), or
+  //     one word of `longWord`+ letters heard once near it, starts on the phrase holding them, unless it crosses another such line that
+  //     shares more, or would push more than `maxCross` lines out of their place (a chance match: names come back in every scene);
+  //  3. any other line starts on the phrase start nearest to it, within `snap` s, or, if it would start where nothing is heard, on
+  //     the next phrase start within `wait` s;
+  //  4. lines keep their order and length (then `tidy`).
+  // Phrase starts: a heard word after a pause of `gap` s or a heard sentence end, and Silero onsets. Short heard phrases on their own
+  // where Silero hears nothing are dropped (the recogniser says "Thank you." over music).
+  // a heard phrase with nothing else heard within 1.5 s on either side
+  const isolated = (phrases, k) => (k === 0 || phrases[k][0].start - phrases[k - 1][phrases[k - 1].length - 1].end >= 1.5) && (k + 1 >= phrases.length || phrases[k + 1][0].start - phrases[k][phrases[k].length - 1].end >= 1.5);
+  function dub(cues, words, prob, opt) {
+    // Settings chosen on Bojack Unbound's first 5.5 min (both English tracks) and The Boondocks 0-20 min with the text shuffled
+    // (the file's timing, other words), the track moved by 0 / +3 / -2 / +6 s.
+    const o = { minProb: 0.5, gap: 0.25, lead: 0.08, maxShift: 10, step: 0.02, hit: 0.3, better: 0.1, snap: 0.6, minLen: 5, minShared: 2, keyLen: 7, maxCross: 3, longWord: 8, span: 6, far: 15, back: 4, room: 0.3, wait: 2.5, silero: true, ...(opt || {}) };
+    const H = 0.01, meanAt = (a, b) => { a = Math.max(0, Math.round(a / H)); b = Math.min(prob.length, Math.round(b / H)); if (b <= a) return 0; let s = 0; for (let k = a; k < b; k++) s += prob[k]; return s / (b - a); };
+    let W = words.filter(w => (w.probability === undefined ? 1 : w.probability) >= o.minProb && norm(w.word).length).sort((a, b) => a.start - b.start);
+    const phrases = []; W.forEach((w, i) => { if (!i || w.start - W[i - 1].end >= o.gap) phrases.push([]); phrases[phrases.length - 1].push(w); });
+    W = phrases.filter((p, k) => p.length > 2 || meanAt(p[0].start, p[p.length - 1].end) >= 0.15 || !isolated(phrases, k)).flat();
+    // phrase starts: after a pause, or after a heard sentence end (the recogniser often runs its words together with no gap)
+    const on = [];
+    const ends = w => /[.?!]["')]*$/.test(w.trim()) && !/(mr|mrs|ms|dr|st|jr|sr|vs).$/i.test(w.trim());
+    W.forEach((w, i) => { if (!i || w.start - W[i - 1].end >= o.gap || ends(W[i - 1].word)) on.push(w.start - o.lead); });
+    if (o.silero) for (const t of onsetsIn(prob, 0, prob.length * H, {})) on.push(t - o.lead);
+    on.sort((a, b) => a - b);
+    const nearest = t => { if (!on.length) return null; let lo = 0, hi = on.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (on[m] < t) lo = m + 1; else hi = m; } return lo > 0 && Math.abs(on[lo - 1] - t) < Math.abs(on[lo] - t) ? on[lo - 1] : on[lo]; };
+    const hits = d => cues.reduce((n, c) => { const t = nearest(c.start + d); return n + (t !== null && Math.abs(t - c.start - d) <= o.hit ? 1 : 0); }, 0);
+    // 1. the track's offset
+    let shift = 0, top = -1;
+    for (let d = -o.maxShift; d <= o.maxShift + 1e-9; d += o.step) { const n = hits(d); if (n > top || (n === top && Math.abs(d) < Math.abs(shift))) { top = n; shift = Math.round(d * 100) / 100; } }
+    const atZero = hits(0);
+    if (top < atZero + Math.max(2, o.better * cues.length)) shift = 0;
+    // 2. lines that share rarer words with what is heard nearby
+    const common = new Set('about after again always another anything around because before being better could every everybody everyone everything first going gonna great little maybe might never nothing other people really right should something still there these thing things think those three today until wanna where which while would world years your yours yourself'.split(' '));
+    const rare = t => t.length >= o.minLen && !t.includes("'") && !common.has(t);
+    const heard = []; for (const w of W) for (const t of norm(w.word)) if (rare(t)) heard.push({ t, start: w.start });
+    const fixed = cues.map(() => null), how = cues.map(() => 'file'), strength = cues.map(() => 0);
+    cues.forEach((c, i) => {
+      const mine = [...new Set(normCue(c.text).filter(rare))]; if (!mine.length) return;
+      const p = c.start + shift, near = heard.filter(h => Math.abs(h.start - p) <= o.far).map(h => ({ ...h, k: mine.findIndex(m => close(m, h.t)) })).filter(h => h.k >= 0);
+      let best = null;
+      for (let a = 0; a < near.length; a++) { const ks = new Set(); for (let b = a; b < near.length && near[b].start - near[a].start <= o.span; b++) ks.add(near[b].k); if (!best || ks.size > best.n) best = { n: ks.size, first: near[a].start, long: [...ks].some(k => mine[k].length >= o.keyLen) }; }
+      // one shared word is enough when it is long (`longWord` letters) and heard only once near the line
+      const single = o.longWord && best && best.n === 1 && near.length === 1 && near[0].t.length >= o.longWord && mine[near[0].k].length >= o.longWord;
+      if (!best || ((best.n < o.minShared || !best.long) && !single)) return;
+      const before = on.filter(t => t <= best.first - o.lead + 1e-6 && t >= best.first - o.back);
+      fixed[i] = before.length ? before[before.length - 1] : best.first - o.lead; how[i] = 'shared words'; strength[i] = best.n;
+    });
+    // anchored lines must keep their order: of two that cross, the one sharing more words stays
+    const kept = [];
+    for (const i of cues.map((c, i) => i).filter(i => fixed[i] !== null).sort((a, b) => strength[b] - strength[a] || a - b)) {
+      // and one that would push more than `maxCross` other lines out of their place (a chance match far away) goes
+      const crossed = cues.filter((c, j) => j !== i && fixed[j] === null && (j < i ? c.start + shift > fixed[i] - o.room : c.start + shift < fixed[i] + o.room)).length;
+      if (crossed <= o.maxCross && kept.every(j => (j < i ? fixed[j] <= fixed[i] - o.room : fixed[i] <= fixed[j] - o.room))) kept.push(i); else { fixed[i] = null; how[i] = 'file'; }
+    }
+    // 3. the rest: the file's time + the offset, on the nearest phrase start
+    // A line that would start where nothing is heard (no word, Silero quiet) goes to the next phrase start, up to `wait` s later.
+    const allW = words.filter(w => norm(w.word).length);
+    const quiet = t => meanAt(t, t + 0.3) < 0.3 && !allW.some(w => w.start < t + 0.3 + o.lead && w.end > t + o.lead);
+    const start = cues.map((c, i) => {
+      if (fixed[i] !== null) return fixed[i];
+      const p = c.start + shift, t = nearest(p);
+      if (t !== null && Math.abs(t - p) <= o.snap) { how[i] = 'phrase'; return t; }
+      if (o.wait && quiet(p)) { const next = on.find(x => x > p); if (next !== undefined && next - p <= o.wait && (i + 1 >= cues.length || next < cues[i + 1].start + shift)) { how[i] = 'after quiet'; return next; } }
+      return p;
+    });
+    // 4. order: lines between two fixed ones are kept inside them, `room` s apart
+    for (let i = 1; i < cues.length; i++) if (fixed[i] === null && start[i] < start[i - 1] + o.room) start[i] = start[i - 1] + o.room;
+    for (let i = cues.length - 2; i >= 0; i--) if (fixed[i] === null && start[i] > start[i + 1] - o.room) start[i] = start[i + 1] - o.room;
+    const out = tidy(cues.map((c, i) => ({ ...c, start: start[i], end: start[i] + Math.max(0.3, c.end - c.start), how: how[i] })));
+    return { cues: out, shift, hits: top, hitsAtZero: atZero };
+  }
+  // generate: subtitles made from the recogniser's own words, for a film that has none in the language that is spoken. Lower quality
+  // than a real file (the words are what the recogniser understood) but usable.
+  //  - Left out: short phrases on their own where Silero hears nothing (the recogniser's "Thank you." over music), a phrase repeated back to back (a
+  //    recogniser stuck in a loop: only the first stays), phrases it was unsure of (mean word probability below `minPhraseProb`).
+  //  - Lines: the words in order, broken at a pause of `pause` s, at a sentence end once the line has `minChars`, before `maxChars`
+  //    (two rows of at most `rowChars`, split near the middle) or `maxDur` s. A line cut for length is cut after its last comma when
+  //    that keeps a third of it.
+  //  - Times: `place` with `preset` (the text is what was heard, so the lines anchor like a matching file: start on the voice onset,
+  //    end after the last word), then each line stays up long enough to read (`cps` characters per second, at least `minHold` s), never
+  //    into the next one.
+  function generate(words, prob, opt) {
+    const o = { minPhraseProb: 0.45, phraseGap: 0.25, pause: 0.7, minChars: 16, maxChars: 84, rowChars: 42, maxDur: 6, cps: 17, minHold: 1, preset: null, ...(opt || {}) };
+    const H = 0.01, meanAt = (a, b) => { a = Math.max(0, Math.round(a / H)); b = Math.min(prob.length, Math.round(b / H)); if (b <= a) return 0; let s = 0; for (let k = a; k < b; k++) s += prob[k]; return s / (b - a); };
+    const pr = w => (w.probability === undefined ? 1 : w.probability);
+    let W = words.filter(w => norm(w.word).length).map(w => ({ ...w, word: String(w.word).trim() })).sort((a, b) => a.start - b.start);
+    // phrases (pauses of phraseGap): drop the music hallucinations and the unsure ones
+    const phrases = []; W.forEach((w, i) => { if (!i || w.start - W[i - 1].end >= o.phraseGap) phrases.push([]); phrases[phrases.length - 1].push(w); });
+    W = phrases.filter((p, k) => (p.length > 2 || meanAt(p[0].start, p[p.length - 1].end) >= 0.15 || !isolated(phrases, k)) && p.reduce((s, w) => s + pr(w), 0) / p.length >= o.minPhraseProb).flat();
+    // loops: a run of 2-8 words said again right after itself is dropped (as often as it repeats)
+    const key = w => norm(w.word).join(' ');
+    for (let i = 0; i < W.length; i++) for (let n = 8; n >= 2; n--) {
+      while (i + 2 * n <= W.length && W.slice(i, i + n).every((w, k) => key(w) === key(W[i + n + k]))) W.splice(i + n, n);
+    }
+    const ends = w => /[.?!]["')]*$/.test(w) && !/\b(mr|mrs|ms|dr|st|jr|sr|vs)\.$/i.test(w);
+    const text = ws => ws.map(w => w.word).join(' ');
+    const lines = []; let cur = [];
+    const flush = () => { if (cur.length) lines.push(cur); cur = []; };
+    for (const w of W) {
+      if (cur.length) {
+        const prev = cur[cur.length - 1], t = text(cur);
+        const over = (t + ' ' + w.word).length > o.maxChars || w.end - cur[0].start > o.maxDur;
+        // a sentence's last word stays on its line when it only just does not fit
+        const last = ends(w.word) && (t + ' ' + w.word).length <= o.maxChars + 6 && w.end - cur[0].start <= o.maxDur + 1.5 && w.start - prev.end < o.pause;
+        if (w.start - prev.end >= o.pause || (ends(prev.word) && t.length >= o.minChars)) flush();
+        else if (over && !last) {
+          let k = cur.map(x => ends(x.word)).lastIndexOf(true);
+          if (k < 0 || text(cur.slice(0, k + 1)).length < t.length / 3) k = cur.map(x => /[,;:]$/.test(x.word)).lastIndexOf(true);
+          if (k >= 0 && k < cur.length - 1 && text(cur.slice(0, k + 1)).length >= t.length / 3) { const rest = cur.slice(k + 1); cur = cur.slice(0, k + 1); flush(); cur = rest; } else flush();
+        }
+      }
+      cur.push(w);
+    }
+    flush();
+    // capital letter where a sentence starts (the first line, or after a line that ended one)
+    const cap = (t, i) => (i === 0 || ends(lines[i - 1][lines[i - 1].length - 1].word) ? t.replace(/^./, c => c.toUpperCase()) : t);
+    // two rows: split at the space nearest the middle, preferring one after a comma
+    const rows = t => { if (t.length <= o.rowChars) return t; let best = -1, score = Infinity; for (let i = 0; i < t.length; i++) if (t[i] === ' ') { const a = i, b = t.length - i - 1; const s = (Math.max(a, b) > o.rowChars + 4 ? 1000 : 0) + Math.abs(a - b) - (/[,;:]/.test(t[i - 1]) ? 12 : 0); if (s < score) { score = s; best = i; } } return best < 0 ? t : t.slice(0, best) + '\n' + t.slice(best + 1); };
+    const cues = lines.map((ws, i) => ({ id: i, start: ws[0].start, end: ws[ws.length - 1].end, text: rows(cap(text(ws), i)) }));
+    if (!cues.length) return [];
+    const P = o.preset || combinedNext, placed = place(cues, anchors(cues, words, P.anchors), prob, P.place);
+    const held = placed.map(({ how, ...c }) => ({ ...c, end: Math.max(c.end, c.start + Math.max(o.minHold, c.text.replace(/\n/g, ' ').length / o.cps)) }));
+    return tidy(held);
+  }
   // place: the whole combination. Anchored captions: snap (or `base` when baseFirst and base lands inside the snap's window).
   // Captions the recogniser could not anchor (one-word lines, misheard lines): the offset interpolated between the anchored neighbours,
   // kept between the captions around them, so a caption can never jump past the next one; `base` (another method's output for the same
@@ -559,18 +688,21 @@ const AsrAnchor = (() => {
   // The candidate after the user's listening of 2026-10-17 (round 5): the same, plus the in-word onset for words that swallowed a pause
   // and the short-caption onset. `combined` stays the stable version (the one in subtitle-sync-kit).
   const combinedNext = { anchors: combined.anchors, place: { ...combined.place, snap: { ...combined.place.snap, inWord: { long: 0.35, tail: 0.1 } }, short: { minProb: 0.8, maxWords: 2, maxMove: 1.5, tail: 0.1 } } };
-  return { norm, anchors, shift, snap, tidy, place, median, combined, combinedNext };
+  return { norm, anchors, shift, snap, tidy, place, median, combined, combinedNext, dub, generate };
 })();
 
 
 // ---- the entry point (everything above is the lab's aligner-v2.js and asr-anchor.js, unchanged) -------------------------------
 
 /** Which timing this module gives. Put it in the cache key of synced subtitles, so results saved by an older version are redone. */
-export const VERSION = '2026-10-17.2';
+export const VERSION = '2026-10-17.3';
 /** Languages the speech recogniser (Whistle) was tested with. Other languages fall back to Silero alone. */
 const TESTED_LANGUAGES = ['en'];
 /** Below this share of captions matched to heard words, the subtitles probably do not match the audio (other language, other cut). */
 const MIN_MATCHED_SHARE = 0.3;
+/** Heard words per second (recogniser probability >= 0.5) from which subtitles that do not match are taken as another script of
+ * speech that is there (a dub, another translation), so "dub" timing is used instead of Silero alone. */
+const MIN_HEARD_RATE = 0.25;
 
 /**
  * Sync subtitle cues to the speech in the audio.
@@ -579,7 +711,9 @@ const MIN_MATCHED_SHARE = 0.3;
  * @param {Float32Array|number[]} signals.silero  Silero VAD speech probability every 10 ms from the start of the audio
  * @param {{word:string,start:number,end:number,probability?:number}[]|null} [signals.words]  Whistle's words (seconds), or null
  * @param {string} [signals.language]  the subtitles' language ('en', 'eng', 'ro', ...); recognised words are only used for 'en'
- * @returns {{cues:{start:number,end:number,text:string}[], method:'whistle+silero'|'silero'|'none', matchedShare:number, moved:number}}
+ * @returns {{cues:{start:number,end:number,text:string}[], method:'whistle+silero'|'dub'|'silero'|'none', matchedShare:number, moved:number}}
+ *   method 'dub' (update 2): the words heard are English but not the subtitles' words (the English dub of a film whose subtitles
+ *   translate the original, another translation); the file's timing is kept, moved onto where people speak.
  *   new cue objects in the same order (input objects are not changed). Ends never run into the next caption. Captions that start
  *   more than 5 s after the end of the audio are returned unchanged (`moved` = how many were synced), so a long file can be synced in parts.
  */
@@ -602,9 +736,20 @@ export function align(cues, signals) {
   // combinedNext (update 1): the first version plus two corrections that only act where it had no evidence (see UPDATE.md)
   const C = AsrAnchor.combinedNext, anchors = AsrAnchor.anchors(input, words, C.anchors);
   const matchedShare = anchors.filter(a => a.accepted).length / input.length;
-  if (matchedShare < MIN_MATCHED_SHARE) return finish(base, 'silero', matchedShare);
+  if (matchedShare < MIN_MATCHED_SHARE) {
+    // update 2: speech is heard but it is not these words -> the file's timing, moved onto where people speak (AsrAnchor.dub)
+    if (heardRate(words, input, seconds) >= MIN_HEARD_RATE) return finish(AsrAnchor.dub(input, words, silero).cues.map(({ how, ...c }) => c), 'dub', matchedShare);
+    return finish(base, 'silero', matchedShare);
+  }
   const out = AsrAnchor.place(input, anchors, silero, { ...C.place, base });
   return finish(out.map(({ how, ...c }) => c), 'whistle+silero', matchedShare);
+}
+
+/** Heard words per second over the stretch the cues cover (and the audio has). */
+function heardRate(words, cues, seconds) {
+  const a = Math.max(0, cues[0].start - 5), b = Math.min(seconds, cues[cues.length - 1].end + 5);
+  if (b - a < 10) return 0;
+  return words.filter(w => (w.probability === undefined ? 1 : w.probability) >= 0.5 && w.start >= a && w.start < b).length / (b - a);
 }
 
 export { Timing2, AsrAnchor };
