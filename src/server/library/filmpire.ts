@@ -1,6 +1,9 @@
 import { z } from "zod";
-import type { EpisodeDetail, LibraryItem, LibraryRow } from "../../shared";
+import type { EpisodeDetail, LibraryItem, LibraryKind, LibraryRow } from "../../shared";
 import type { LibrarySource } from "./library";
+import { SHELF_GROUPS, shelfPlan, type FilmpireCategory } from "./shelves";
+
+export type { FilmpireCategory };
 
 export const FILMPIRE_TMDB_API_KEY = process.env.TMDB_API_KEY ?? "90b2cae8d7161e8ba0f3836240d7d352";
 const BASE_URL = "https://api.themoviedb.org/3";
@@ -8,12 +11,10 @@ const IMAGE_BASE = "https://image.tmdb.org/t/p/w500";
 const BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
 const STILL_BASE = "https://image.tmdb.org/t/p/w300";
 
-export interface FilmpireCategory {
-  id: string;
-  title: string;
-  path: string;
-  type: "movie" | "tv";
-}
+/** TMDB gives twenty titles to a page and will not go past the 500th; a row is asked for this many pages at most (300 titles). */
+export const MAX_PAGE = 15;
+/** How many shelves one question about the rows after the first ones brings. */
+export const SHELF_BATCH = 5;
 
 export const FILMPIRE_CATEGORIES: FilmpireCategory[] = [
   // Trending & Highlights
@@ -55,6 +56,8 @@ export const FILMPIRE_CATEGORIES: FilmpireCategory[] = [
 export interface FilmpireSourceOptions {
   apiKey?: string;
   categories?: FilmpireCategory[];
+  /** The shelves that come after the categories as the page is scrolled, in groups (see `shelfPlan`). */
+  shelves?: ReadonlyArray<readonly FilmpireCategory[]>;
   fetch?: typeof fetch;
   probeFetch?: typeof fetch;
   timeoutMs?: number;
@@ -142,6 +145,13 @@ const TmdbResponseSchema = z.object({
 });
 
 const TmdbSearchSchema = TmdbResponseSchema.extend({ total_pages: z.number().int().optional() });
+
+/** A TMDB path with the page asked for (any `page` it had is replaced) and the key. */
+function pageUrl(path: string, page: number, apiKey: string): string {
+  const [route = "", query = ""] = path.split("?");
+  const rest = query.split("&").filter((part) => part && !part.startsWith("page=") && !part.startsWith("api_key="));
+  return `${BASE_URL}${route}?${[...rest, `page=${page}`, `api_key=${apiKey}`].join("&")}`;
+}
 
 /** A search reads this many pages of TMDB's answers at most (twenty titles to a page): a word that begins many titles has more to show than the first twenty. */
 const SEARCH_PAGES = 3;
@@ -239,26 +249,25 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
   const probeFetcher = options.probeFetch ?? (options.fetch ?? fetch);
   const probeTimeout = options.probeTimeoutMs ?? 1500;
 
-  const loadCategory = async (cat: FilmpireCategory): Promise<LibraryRow> => {
-    const separator = cat.path.includes("?") ? "&" : "?";
-    const fullUrl = `${BASE_URL}${cat.path}${separator}api_key=${apiKey}`;
-
-    const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+  const shelfGroups = options.shelves ?? SHELF_GROUPS;
+  const rowOf = (cat: FilmpireCategory, items: LibraryItem[]): LibraryRow => ({
+    id: `filmpire-${cat.id}`,
+    title: cat.title,
+    source: "Filmpire",
+    kind: cat.type === "tv" ? "series" : "movie",
+    items,
+  });
+  /** One page of a category or shelf. `tidy` leaves out what looks like rubbish (the shelves and further pages: the first pages of the old categories were never sifted). */
+  const askPage = async (cat: FilmpireCategory, page: number, tidy: boolean): Promise<{ items: LibraryItem[]; last: boolean }> => {
+    const res = await get(pageUrl(cat.path, page, apiKey), { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
     if (!res.ok) throw new Error(`${cat.id}: HTTP ${res.status}`);
-    const data = TmdbResponseSchema.parse(await res.json());
-
-    const items = data.results
-      .map((item) => toLibraryItem(item, cat.type))
-      .filter((item): item is LibraryItem => item !== null);
-
-    return {
-      id: `filmpire-${cat.id}`,
-      title: cat.title,
-      source: "Filmpire",
-      kind: cat.type === "tv" ? "series" : "movie",
-      items,
-    };
+    const data = TmdbSearchSchema.parse(await res.json());
+    const results = tidy && shouldFilterTrash ? data.results.filter((item) => !isTrashItem(item)) : data.results;
+    const items = results.map((item) => toLibraryItem(item, cat.type)).filter((item): item is LibraryItem => item !== null);
+    return { items, last: data.results.length === 0 || page >= Math.min(data.total_pages ?? MAX_PAGE, MAX_PAGE) };
   };
+  const loadCategory = async (cat: FilmpireCategory): Promise<LibraryRow> => rowOf(cat, (await askPage(cat, 1, false)).items);
+  const known = new Map([...categories, ...shelfGroups.flat()].map((cat) => [`filmpire-${cat.id}`, cat]));
 
   return {
     id: "filmpire",
@@ -270,19 +279,34 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       if (loaded.length === 0 && failed) throw failed.reason;
       return loaded;
     },
+    async shelves(kind: LibraryKind | undefined, cursor: number) {
+      const plan = shelfPlan(kind, shelfGroups);
+      const batch = plan.slice(cursor, cursor + SHELF_BATCH);
+      if (batch.length === 0) return { rows: [], next: null };
+      const settled = await Promise.allSettled(batch.map(async (cat) => rowOf(cat, (await askPage(cat, 1, true)).items)));
+      const rows = settled.flatMap((r) => (r.status === "fulfilled" && r.value.items.length > 0 ? [r.value] : []));
+      const failed = settled.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (rows.length === 0 && failed) throw failed.reason; // (a bad moment is not "nothing more": the page asks again)
+      return { rows, next: cursor + batch.length < plan.length ? cursor + batch.length : null };
+    },
+    async more(rowId: string, page: number) {
+      const cat = known.get(rowId);
+      if (!cat || page < 2 || page > MAX_PAGE) return { items: [], last: true };
+      return askPage(cat, page, true);
+    },
     async search(queryText: string): Promise<LibraryItem[]> {
       const q = queryText.trim();
       if (!q) return [];
       try {
-        const askPage = async (page: number) => {
+        const askSearchPage = async (page: number) => {
           const fullUrl = `${BASE_URL}/search/multi?api_key=${apiKey}&query=${encodeURIComponent(q)}&page=${page}`;
           const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
           return res.ok ? TmdbSearchSchema.parse(await res.json()) : null;
         };
-        const first = await askPage(1);
+        const first = await askSearchPage(1);
         if (!first) return [];
         // The rest of the pages are asked together once the first says there are any; one that cannot be had is left out.
-        const rest = await Promise.all(Array.from({ length: Math.min(first.total_pages ?? 1, SEARCH_PAGES) - 1 }, (_, at) => askPage(at + 2).catch(() => null)));
+        const rest = await Promise.all(Array.from({ length: Math.min(first.total_pages ?? 1, SEARCH_PAGES) - 1 }, (_, at) => askSearchPage(at + 2).catch(() => null)));
 
         const toItems = (results: unknown[]) =>
           (shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results)

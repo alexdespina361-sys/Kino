@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { LibraryRowSchema } from "../../shared";
-import { filmpireSource, type FilmpireCategory } from "./filmpire";
+import { filmpireSource, MAX_PAGE, type FilmpireCategory } from "./filmpire";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -138,6 +138,139 @@ describe("filmpireSource", () => {
     const tvCats = FILMPIRE_CATEGORIES.filter((c) => c.type === "tv");
     expect(movieCats.length).toBeGreaterThanOrEqual(10);
     expect(tvCats.length).toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe("filmpireSource shelves and more", () => {
+  const movie = (id: number, title: string, extra: object = {}) => ({ id, title, release_date: "1985-01-01", poster_path: "/p.jpg", ...extra });
+  const shelf = (id: string, type: "movie" | "tv" = "movie"): FilmpireCategory => ({ id, title: id.toUpperCase(), path: `/discover/${type}?with_genres=1&sort_by=vote_count.desc`, type });
+  /** Seven shelves in groups of one each, so that the plan is the order they are given in. */
+  const groups = ["s1", "s2", "s3", "s4", "s5", "s6", "s7"].map((id) => [shelf(id)]);
+  /** TMDB answering a discover question with the titles of the shelf (by the `with_genres` it was asked for), page by page. */
+  const answering = (results: (page: number, url: URL) => unknown[] | number, totalPages = 4) => {
+    const asked: URL[] = [];
+    const get = vi.fn(async (url: string | URL) => {
+      const asking = new URL(String(url));
+      asked.push(asking);
+      const answer = results(Number(asking.searchParams.get("page")), asking);
+      return typeof answer === "number" ? json({}, answer) : json({ results: answer, total_pages: totalPages });
+    });
+    return { asked, get };
+  };
+
+  it("brings the shelves five at a time from where the last ones ended, one page of each, and says where the next begin", async () => {
+    const { asked, get } = answering(() => [movie(1, "A Title")]);
+    const source = filmpireSource({ apiKey: "k", categories: [], shelves: groups, fetch: get as never });
+
+    const first = await source.shelves!(undefined, 0);
+    expect(first.rows.map((one) => [one.id, one.title, one.source, one.kind])).toEqual([1, 2, 3, 4, 5].map((n) => [`filmpire-s${n}`, `S${n}`, "Filmpire", "movie"]));
+    expect(first.next).toBe(5);
+    expect(asked).toHaveLength(5);
+    for (const url of asked) {
+      expect(url.pathname).toBe("/3/discover/movie");
+      expect(url.searchParams.getAll("page")).toEqual(["1"]);
+      expect(url.searchParams.get("with_genres")).toBe("1");
+      expect(url.searchParams.get("sort_by")).toBe("vote_count.desc");
+    }
+    for (const one of first.rows) expect(LibraryRowSchema.safeParse(one).success).toBe(true);
+
+    const last = await source.shelves!(undefined, 5);
+    expect(last.rows.map((one) => one.id)).toEqual(["filmpire-s6", "filmpire-s7"]);
+    expect(last.next).toBeNull();
+    expect(await source.shelves!(undefined, 7)).toEqual({ rows: [], next: null });
+    expect(asked).toHaveLength(7);
+  });
+
+  it("brings only films or only series when asked", async () => {
+    const mixed = [[shelf("m1")], [shelf("t1", "tv")], [shelf("m2")], [shelf("t2", "tv")]];
+    const { get } = answering(() => [movie(1, "A Title", { first_air_date: "1985-01-01" })]);
+    const source = filmpireSource({ categories: [], shelves: mixed, fetch: get as never });
+    expect((await source.shelves!("series", 0)).rows.map((one) => one.id)).toEqual(["filmpire-t1", "filmpire-t2"]);
+    expect((await source.shelves!("movie", 0)).rows.map((one) => [one.id, one.kind])).toEqual([["filmpire-m1", "movie"], ["filmpire-m2", "movie"]]);
+  });
+
+  it("leaves out a shelf that has nothing to show or cannot be had, and fails only when none could", async () => {
+    let count = 0;
+    const get = vi.fn(async () => {
+      count++; // (the five are asked in the order of the shelves)
+      if (count === 2) return json({}, 500); // (one that cannot be had)
+      if (count === 3) return json({ results: [], total_pages: 0 }); // (one with nothing in it)
+      return json({ results: [movie(count, `Fine ${count}`)], total_pages: 3 });
+    });
+    const source = filmpireSource({ categories: [], shelves: groups, fetch: get as never });
+    const answer = await source.shelves!(undefined, 0);
+    expect(answer.rows.map((one) => one.id)).toEqual(["filmpire-s1", "filmpire-s4", "filmpire-s5"]);
+    expect(answer.next).toBe(5);
+
+    const down = filmpireSource({ categories: [], shelves: groups, fetch: (async () => json({}, 503)) as never });
+    await expect(down.shelves!(undefined, 0)).rejects.toThrow(/HTTP 503/);
+  });
+
+  it("leaves out rubbish, titles not out yet and what is not a title, in the shelves and in the pages after them", async () => {
+    const results = [
+      movie(1, "Fine", { vote_count: 900 }),
+      { id: 2, title: "Official Podcast", release_date: "1990-01-01", poster_path: "/p.jpg" },
+      { id: 3, title: "Stub", release_date: "1990-01-01", vote_count: 0, popularity: 0.1 },
+      { id: 4, title: "Future", release_date: "2999-01-01", poster_path: "/p.jpg" },
+      { id: 5, media_type: "person", name: "Someone" },
+    ];
+    const { get } = answering(() => results);
+    const source = filmpireSource({ categories: [], shelves: [[shelf("s1")]], fetch: get as never, filterTrash: true });
+    expect((await source.shelves!(undefined, 0)).rows[0]!.items.map((one) => one.title)).toEqual(["Fine"]);
+    expect((await source.more!("filmpire-s1", 2)).items.map((one) => one.title)).toEqual(["Fine"]);
+  });
+
+  it("brings the next pages of a shelf, or of a first category, up to the fifteenth, and says when there are no more", async () => {
+    const { asked, get } = answering((page) => [movie(page * 10, `Page ${page}`)], 3);
+    const source = filmpireSource({ categories: [{ id: "pop", title: "Pop", path: "/movie/popular?language=en-US&page=1", type: "movie" }], shelves: groups, fetch: get as never });
+
+    expect(await source.more!("filmpire-s1", 2)).toEqual({ items: [expect.objectContaining({ id: "filmpire-movie-20", title: "Page 2" })], last: false });
+    expect((await source.more!("filmpire-s1", 3)).last).toBe(true); // (TMDB has three pages of it)
+    expect((await source.more!("filmpire-pop", 2)).items.map((one) => one.title)).toEqual(["Page 2"]);
+    expect(asked.map((url) => url.searchParams.getAll("page"))).toEqual([["2"], ["3"], ["2"]]); // (once, whatever the path said)
+    expect(asked[2]!.pathname).toBe("/3/movie/popular");
+    expect(asked[2]!.searchParams.get("language")).toBe("en-US");
+
+    const deep = answering((page) => [movie(page, `Page ${page}`)], 500);
+    const wide = filmpireSource({ categories: [], shelves: groups, fetch: deep.get as never });
+    expect((await wide.more!("filmpire-s1", MAX_PAGE)).last).toBe(true); // (TMDB would go on; the shelf does not)
+    expect(await wide.more!("filmpire-s1", MAX_PAGE + 1)).toEqual({ items: [], last: true });
+    expect(deep.asked).toHaveLength(1);
+  });
+
+  it("knows nothing of a row it does not have, or of the first page, and asks nobody", async () => {
+    const get = vi.fn();
+    const source = filmpireSource({ categories: [], shelves: groups, fetch: get as never });
+    expect(await source.more!("filmpire-nothing", 2)).toEqual({ items: [], last: true });
+    expect(await source.more!("s1", 2)).toEqual({ items: [], last: true }); // (a row's id on the wire has "filmpire-" in front)
+    expect(await source.more!("filmpire-s1", 1)).toEqual({ items: [], last: true });
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("fails when a page cannot be had, so that nothing is remembered of it", async () => {
+    const source = filmpireSource({ categories: [], shelves: groups, fetch: (async () => json({}, 502)) as never });
+    await expect(source.more!("filmpire-s1", 2)).rejects.toThrow(/HTTP 502/);
+    const odd = filmpireSource({ categories: [], shelves: groups, fetch: (async () => json({ nope: true })) as never });
+    await expect(odd.more!("filmpire-s1", 2)).rejects.toThrow();
+  });
+
+  it("asks for the first page of a first category as it always did, with the page once and the key", async () => {
+    const { asked, get } = answering(() => [movie(1, "Fine")]);
+    const source = filmpireSource({
+      apiKey: "k",
+      categories: [
+        { id: "a", title: "A", path: "/trending/movie/week", type: "movie" },
+        { id: "b", title: "B", path: "/movie/popular?language=en-US&page=1", type: "movie" },
+        { id: "c", title: "C", path: "/discover/movie?with_genres=28&sort_by=popularity.desc", type: "movie" },
+      ],
+      fetch: get as never,
+    });
+    expect((await source.load()).map((one) => one.id)).toEqual(["filmpire-a", "filmpire-b", "filmpire-c"]);
+    expect(asked.map((url) => [url.pathname, url.searchParams.getAll("page"), url.searchParams.get("api_key")])).toEqual([
+      ["/3/trending/movie/week", ["1"], "k"],
+      ["/3/movie/popular", ["1"], "k"],
+      ["/3/discover/movie", ["1"], "k"],
+    ]);
   });
 });
 

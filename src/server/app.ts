@@ -168,7 +168,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   app.get<{ Querystring: { q?: string } }>("/api/library/search", async (request, reply) => {
     const q = request.query.q ?? "";
-    const items = await library.search(q);
+    const { items, exact } = await library.search(q);
     const topItem = items[0];
     if (topItem?.url && process.env.PRELOAD_SEARCH !== "0" && isHttpUrl(topItem.url)) {
       const timer = setTimeout(() => {
@@ -176,7 +176,29 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       }, 200);
       timer.unref?.();
     }
-    return reply.send({ items });
+    return reply.send({ items, exact });
+  });
+  // The rest of the library for a page that is scrolled: the next few rows (`cursor` is where the last answer said to go on from), and the next
+  // twenty titles of one row. A place that cannot be reached is a 502, so the page tries again later instead of taking it for the end.
+  app.get<{ Querystring: { cursor?: string; kind?: string } }>("/api/library/rows", async (request, reply) => {
+    const cursor = Number(request.query.cursor ?? 0);
+    const kind = request.query.kind;
+    if (!Number.isInteger(cursor) || cursor < 0 || cursor > 100000 || (kind !== undefined && kind !== "movie" && kind !== "series")) return reply.code(400).send({ error: "Bad 'cursor' or 'kind' parameter" });
+    try {
+      return reply.header("Cache-Control", "public, max-age=300").send(await library.rows(kind, cursor));
+    } catch {
+      return reply.code(502).header("Cache-Control", "no-store").send({ error: "The library could not be reached" });
+    }
+  });
+  app.get<{ Querystring: { row?: string; page?: string } }>("/api/library/more", async (request, reply) => {
+    const row = request.query.row ?? "";
+    const page = Number(request.query.page);
+    if (!row || row.length > 100 || !Number.isInteger(page) || page < 2 || page > 100) return reply.code(400).send({ error: "Missing 'row' or 'page' parameter" });
+    try {
+      return reply.header("Cache-Control", "public, max-age=300").send(await library.more(row, page));
+    } catch {
+      return reply.code(502).header("Cache-Control", "no-store").send({ error: "The library could not be reached" });
+    }
   });
   app.get<{ Querystring: { url?: string } }>("/api/library/similar", async (request, reply) => {
     const link = request.query.url ?? "";

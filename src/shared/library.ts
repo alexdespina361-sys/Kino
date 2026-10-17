@@ -26,8 +26,8 @@ export const LibraryItemSchema = z.object({
 });
 export type LibraryItem = z.infer<typeof LibraryItemSchema>;
 
-/** What the library's search and "like this" answer with. */
-export const LibraryItemsSchema = z.object({ items: z.array(LibraryItemSchema) });
+/** What the library's search and "like this" answer with. A search also says how many of the first titles have all the words typed: the rest are the closest others. */
+export const LibraryItemsSchema = z.object({ items: z.array(LibraryItemSchema), exact: z.number().int().min(0).optional() });
 
 export const LibraryRowSchema = z.object({
   id: z.string().max(100),
@@ -39,6 +39,12 @@ export const LibraryRowSchema = z.object({
   items: z.array(LibraryItemSchema).max(100),
 });
 export type LibraryRow = z.infer<typeof LibraryRowSchema>;
+
+/** The rows that come after the first ones, a few at a time as the page is scrolled: `next` is where to ask for the following ones (none: that was the last). */
+export const LibraryRowsSchema = z.object({ rows: z.array(LibraryRowSchema).max(20), next: z.number().int().min(0).nullable() });
+
+/** More titles of one row (the first twenty are in the row): `last` says there are no more. */
+export const LibraryMoreSchema = z.object({ items: z.array(LibraryItemSchema).max(100), last: z.boolean() });
 
 /** What a place knows about one episode of a show besides its number: a name, a line about it, a still from it, how long it runs. */
 export const EpisodeDetailSchema = z.object({
