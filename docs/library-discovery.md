@@ -68,16 +68,34 @@ A bigger pool helps every line (+5 points from 35 % to 70 %), which is a reason 
 2. **Paging in the server, not in the page.** `GET /api/library/rows?cursor=&kind=` gives the next five shelves (page 1 of each);
    `GET /api/library/more?row=&page=` gives the next 20 titles of one row. Both are remembered for the library's six hours, share one request between
    askers, leave out titles the library hides (`played()`), and never cache a failure.
-3. **The page asks when it is near the end**, whichever way it got there: remote, mouse wheel, finger. A row asks for 20 more when it is two screens from its
-   end; the page asks for five more rows when it is three rows from the bottom. A row holds 100 titles at most, a category grid 300, the feed 60 rows. Titles
-   already on the page are not shown again in a later row (a row left with under 8 is dropped).
-4. **Recommendations come from what TMDB already knows**: up to three "Because you watched/loved X" rows (the last titles watched, then the best rated),
-   and one "Top picks for you" that ranks the titles several of those seeds agree on. No tracking of anything else, no genre model.
+3. **The page asks when it is near the end**, whichever way it got there: remote, mouse wheel, finger. A row asks for 20 more when it is within one and a half
+   widths of its end, a page for five more rows within one and a half screens of its bottom (the TV also when the remote is three rows from the last, or six titles
+   from a row's end, since an old TV browser may lack the observers). It asks again after each answer while the end is still near, so a page that does not fill the
+   screen fills it. A row holds 100 titles at most (`ROW_CAP`), a category grid 300 (`GRID_CAP`), the feed 60 rows (`SHELF_CAP`); the server reads 15 pages of a row at most.
+   Titles already on the page are not shown again in a later row (a row left with under 8 is dropped). A question that failed is asked again after 4 s, 8 s ... up to 30 s,
+   and the page says so in a line; empty tiles stand where the next ones will be.
+4. **Recommendations come from what TMDB already knows**: up to three "Because you watched/loved X" rows (the last titles watched, interleaved with the best rated,
+   a title that is both is "loved"), none of the titles started or saved, on Home and on the phone's library. No tracking of anything else, no genre model (the
+   "Top picks for you" row that would rank what several seeds agree on was left out: it needs more than the library says).
 5. **The search**: one cached index that grows with every title the server has seen (rows, pages, answers; 30,000 at most); three tiers (strict,
    relaxed, loose); noise words ("movie", "full", "watch"...) left out of what places are asked; the old blind guesses stay as the last rescue. The answer says
    how many titles are exact (`exact`); the rest are "closest matches", shown after, and said so when nothing is exact.
 6. **Translations**: one name per shelf in `category.*` like the 31 before, in en, ro and it (the test that guards the existing names takes in the new ones).
-7. **TMDB's notice** is added to the library's credit line.
+7. **TMDB's notice** is added to the phone's credit line wherever a source named in `TMDB_SOURCES` (Filmpire) lists the titles, in TMDB's own words, which are
+   not translated.
+
+## What was built
+
+- **Server**: `shelves.ts` (102 shelves: 65 of films, 37 of shows), `GET /api/library/rows` and `/more`, the title index that grows with everything the server meets,
+  the search with its three tiers and its `exact` count, noise words left out of what places are asked (`filmpire.ts`, `library.ts`, `src/shared/search.ts`).
+  With a source that has no shelves the two endpoints answer "nothing more", so the other sources are not touched.
+- **Both screens**: one store (`src/client/shared/feed.ts`) that the TV and the phone read, so a phone that comes back from a film finds its rows as they were;
+  `recommend.ts` for the "Because you ..." rows; `rowTitle` names for every shelf.
+- **TV** (`Browse.tsx`, `RowTiles.tsx`, `pages.ts`, `librarySearch.ts`): rows, titles and categories that go on; the search matches among everything the TV has met
+  and shows the closest others in a block of their own, which the remote walks as one grid.
+- **Phone** (`controller/Library.tsx`): the same, down the window or the sheet it is in, with the credit line's notice.
+- **Measured** (scratch harness, 1,800 slipped queries over 1,434 titles): top-ten hits from 80.5 % to 98.7 % with the whole corpus in the pool, 73.1 % to 89.6 % with
+  a pool of a third of it (the usual state of a young server). Not measured: anything against the real TMDB.
 
 ## Not done on purpose
 
@@ -87,8 +105,16 @@ A bigger pool helps every line (+5 points from 35 % to 70 %), which is a reason 
 - **Genre taste** (a model of what a profile likes by genre): needs genres in every item; the seeds approach gets most of the value without it.
 - The provider probe in `search`/`similar` is untouched (not extended to the new shelves; titles that never play are learned from failed plays as before).
   Three "because" rows ask `similar` up to three times as often as the one row did: each is remembered for six hours.
+- **The list of all categories** shows the rows that have been loaded, so its counts grow as the page is scrolled; the page of a category opens any loaded row whole.
+- **A title struck from the lists by failed plays** stays in rows that were fetched already until the next reload.
+- **Words the search cannot mend**: two slips in different words of a title it has never seen, a title typed as two words that is one (or the other way round) when the pool
+  does not know it, and a slip in the first letters of an unseen word. They are found when the title is in the pool (it has been met) and the places answer.
+- **"Picks for you"** (ranking what several seeds agree on) and a **taste model** by genre: the library does not say what is liked, only what is alike.
+- **A real run against TMDB**: this machine has no key of its own. The shelves' queries follow TMDB's documented `/discover` parameters and are tested with injected
+  answers; the first run with a key of your own (`TMDB_API_KEY`) is the first real look at them.
 
 ## Checking it
 
-`pnpm vitest` for `shelves`, `filmpire`, `library`, `search`, `feed`, `recommend`, `pages`, `i18n`; Playwright `e2e/library-discovery.spec.ts` (TV and phone, with
-the server's answers faked, as the other library specs do). `docs/library-discovery.md` is updated at the end of the round with what was built.
+`node node_modules/vitest/vitest.mjs run src/shared src/server/library src/client/shared src/client/tv src/client/i18n` (shelves, filmpire, library, search, feed,
+recommend, pages, librarySearch, i18n); Playwright `e2e/library-feed.spec.ts` (TV and phone, with the server's answers faked, as the other library specs do), and the
+library specs of `e2e/tv-screens.spec.ts` and `e2e/features.spec.ts`.

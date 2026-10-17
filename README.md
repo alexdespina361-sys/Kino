@@ -45,7 +45,7 @@ pnpm build && pnpm start     # http://localhost:8787
 | `SIGNUPS_PER_HOUR` | `10` | How many accounts one address may make in an hour (a household or a school behind one address may want more). |
 | `TRUST_PROXY` | `1` on Render, else off | How many proxies sit in front (a number, `true` or `false`), so the rate limits see the real address. |
 | `LIBRARY` | on | `off` starts without the browsing library. |
-| `TMDB_API_KEY` | built-in key of the Filmpire source | The library's TMDB key. Set your own; the built-in one is shared by everybody who runs this. |
+| `TMDB_API_KEY` | built-in key of the Filmpire source | The library's TMDB key. Set your own; the built-in one is shared by everybody who runs this. TMDB's free licence is for non-commercial use and asks for a notice, which the phone's library shows (see [Library](#library)). |
 | `EDGE_STREAM_PROXY_URL` | – | The separate video relay endpoint. For the signed Node relay use `https://YOUR-RELAY-HOST/api/proxy`; see [relay setup](STREAM_RELAY_SETUP.md). |
 | `EDGE_STREAM_PROXY_KEY` | – | Server-side signing secret shared with the separate relay's `STREAM_RELAY_KEY`. Never expose it in browser code. |
 | `PROXY_VIDEO` | `on` | `off`: this server never carries a film (`/api/proxy` passes subtitles and nothing else), so the host's bandwidth cannot go on one. |
@@ -435,9 +435,24 @@ that hosts gets the same button). **Full screen** is on the waiting page and in 
 The phone's home screen (and "Change video") shows rows of titles to tap, like a streaming app. The server collects them from places that
 offer video openly, keeps them for six hours, and serves the old list at once while it fetches a new one (or when the place is down).
 A title is only a link: tapping it is the same as pasting it, so the existing resolver finds the video and the TV plays it.
-The phone's search answers from the titles on the page at once and, from the second letter, adds what the library knows; when the library
+The phone's search answers from every title the phone has met at once and, from the second letter, adds what the library knows; when the library
 cannot be asked it says so (keeping what the page had) and asks again every few seconds. A play that fails is said in a line at the bottom as
 well as in the page's own status, which can be far above a library that is scrolled down.
+
+- **The library goes on as it is scrolled** (`src/client/shared/feed.ts`, one store that the TV and the phone read; what was scrolled to is still there when a film is
+  closed). The first rows are the source's own categories. When a page is scrolled near its end the next rows are asked for (`GET /api/library/rows?cursor=&kind=`, five at a time,
+  at most sixty, none that shows nothing new), and a row that is scrolled sideways near its end brings its next twenty (`GET /api/library/more?row=&page=`) up to a hundred titles;
+  a category's page goes on to three hundred. A page asks again after each answer while its end is still near (so a page that does not fill the screen fills it),
+  shows empty tiles where the next ones will be, and says so when they could not be had, asking again after four seconds, then eight, up to half a minute. Whatever scrolls
+  is enough: the remote, a wheel, a finger. A title is on a page once.
+  **The rows come from small tables** (`src/server/library/shelves.ts`, a hundred further TMDB queries: nothing in them is a title, a person or a franchise):
+  decades by the number of votes and by score, the classics and the best of every genre, hidden gems, cult classics, anime, miniseries, and the cinema of other countries.
+  A window of dates sorted by the number of votes is what finds the titles that are old and not popular now, but were. The server remembers every title it has met in an
+  index for the search, 30,000 at most, and nothing here asks the video provider about a title (titles that never play are still learned from failed plays and hidden).
+  **Because you watched …** and **Because you loved …** are up to three rows of titles like the ones this profile watched last or gave 8 or more
+  (`GET /api/library/similar`), none of them started or saved, at the top of Home on the TV and of the phone's library (one that has both a watched and a loved
+  title in it is "loved"); the library knows which titles are alike, not what is liked, so there is nothing else to be a model of.
+  TMDB's free licence asks for a notice, and the phone's credit line carries it where the titles are TMDB's.
 
 - The default library source is Filmpire (`src/server/library/filmpire.ts`), presenting live categories (Trending Movies & Series, Popular Movies & Series, Top Rated, Animation & Anime, Action & Sci-Fi) and TMDB multi-search. Each title resolves directly to `https://filmpire.sc/watch/:id` (or `?s=1&e=1` for TV shows) which the built-in Filmpire resolver decrypts and plays automatically.
 - An alternative source is the Internet Archive's film collections (`src/server/library/internet-archive.ts`).
@@ -489,7 +504,10 @@ well as in the page's own status, which can be far above a library that is scrol
   search has to be in the title, but a word may be unfinished (`strang thi`), a letter off (`strager things`), have two letters swapped (`thigns`, and
   `teh office`: a word of three letters too, when another word of the search is longer), a title may
   be typed as one word (`spiderman`), without its accents or apostrophes, with its year (`dune 2021`; a number is not forgiven), or by a short name that starts the search
-  (`lotr`, `got`, `hp`). The titles already on screen are matched this way on the TV and the phone; on the server the same ranking is applied to what the
+  (`lotr`, `got`, `hp`). **When a title has only some of the words** (a word that is no part of its name, as in `harry potter movie`, or one slip too many) it is one of
+  the **closest matches**: listed after the titles that have every word, under a heading of their own, and alone under a line that says nothing matches exactly. A word of the search that
+  says nothing about a title ("movie", "full", "watch") is left out of what the places are asked. Every title the TV or the phone has met (rows, pages, answers, titles like another)
+  is matched this way, not only the ones on screen; on the server the same ranking is applied to what the
   places answer, and when a place finds little (TMDB's search forgives nothing: "strager things" finds nothing there) it is asked again without each
   word (a slip in one leaves the rest to find the title: `better call sual`), and with a long word cut to its first letters or all but its last two
   (`gladiater`), six questions at most, and the titles that come back are kept only if they match what was typed. **A search lists the likeliest first** (`rankByQuery`):
