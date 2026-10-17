@@ -14,3 +14,6 @@ data/
 .claude/
 # the screenshot walk's pictures and comparisons (scripts/ui-walk)
 .ui-polish/
+# the feedback tool's token and the pictures it saves from what people send (scripts/feedback.mjs, docs/feedback.md)
+.kino-feedback.json
+.feedback/
