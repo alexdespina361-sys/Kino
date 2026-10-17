@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LibraryItem } from "./library";
-import { guessesFor, itemsOf, normalizeQuery, rankByQuery, searchItems, spelledOut } from "./search";
+import { guessesFor, itemsOf, normalizeQuery, rankByQuery, searchItems, spelledOut, TitleIndex, withoutNoise } from "./search";
 
 const titles = [
   "Stranger Things",
@@ -194,5 +194,107 @@ describe("guessesFor", () => {
   });
   it("takes a short name as what it stands for", () => {
     expect(guessesFor("hp")).toEqual(["potter", "harry", "harry pott", "potter harr"]);
+  });
+});
+
+describe("withoutNoise", () => {
+  it("leaves out the words that say what is wanted and are no part of a title", () => {
+    expect(withoutNoise("Watch Dune full movie online")).toBe("dune");
+    expect(withoutNoise("stranger things season 2")).toBe("stranger things 2");
+  });
+  it("is the words as they are when none of them is noise, or all of them are", () => {
+    expect(withoutNoise("Game of Thrones")).toBe("game of thrones");
+    expect(withoutNoise("movie")).toBe("movie");
+    expect(withoutNoise("full movie")).toBe("full movie");
+    expect(withoutNoise("Free HD Films")).toBe("free hd films");
+    expect(withoutNoise("")).toBe("");
+  });
+});
+
+describe("TitleIndex", () => {
+  const index = () => new TitleIndex(items);
+  const names = (found: LibraryItem[]) => found.map((item) => item.title);
+
+  it("is what searchItems looks in, a title once", () => {
+    const own = index();
+    expect(own.size).toBe(items.length);
+    own.add(items);
+    expect(own.size).toBe(items.length);
+    expect(names(own.find("strager things"))).toEqual(find("strager things"));
+    expect(names(own.find("dune", "strict"))).toEqual(["Dune", "Dune: Part Two"]);
+  });
+
+  it("takes more titles as they are met, and finds them at once", () => {
+    const own = index();
+    expect(own.find("casablanca")).toEqual([]);
+    own.add([{ id: "new", title: "Casablanca", url: "/new" }]);
+    expect(names(own.find("casablanca"))).toEqual(["Casablanca"]);
+    expect(names(own.find("casablnca"))).toEqual(["Casablanca"]);
+    expect(own.size).toBe(items.length + 1);
+  });
+
+  it("forgives a letter more in the relaxed tier: a word of four letters one off, and two off in a word of six", () => {
+    const own = index();
+    expect(own.find("dunr")).toEqual([]);
+    expect(names(own.find("dunr", "relaxed"))).toEqual(["Dune", "Dune: Part Two"]);
+    expect(own.find("ovotar")).toEqual([]); // (two letters off Avatar)
+    expect(names(own.find("ovotar", "relaxed"))).toEqual(["Avatar", "Avatar: The Way of Water"]);
+    expect(own.find("zzz", "relaxed")).toEqual([]);
+  });
+
+  it("wants only half of the words in the loose tier, and not the noise words", () => {
+    const own = index();
+    expect(own.find("dune zzzz")).toEqual([]);
+    expect(names(own.find("dune zzzz", "loose"))).toEqual(["Dune", "Dune: Part Two"]);
+    expect(names(own.find("dune part zzzz", "loose"))).toEqual(["Dune: Part Two"]); // (two of the three)
+    expect(own.find("watch full movie", "loose")).toEqual([]); // (nothing but noise)
+    expect(own.find("zzzz qqqq", "loose")).toEqual([]);
+    expect(own.find("   ", "loose")).toEqual([]);
+  });
+
+  it("counts the words a title has, not the spellings of one word that were asked for", () => {
+    const own = new TitleIndex([
+      { id: "a", title: "The Dark Knight", url: "/a" },
+      { id: "b", title: "Knight Rider", url: "/b" },
+      { id: "c", title: "Dark Waters", url: "/c" },
+    ]);
+    // ("knight" is asked in each of its swapped spellings too, and all of them find "knight": that is still one word of the three.)
+    expect(names(own.find("dark knight returns", "loose"))).toEqual(["The Dark Knight"]);
+  });
+
+  it("does not take a word that is in a great many titles for a word they have in common with what was typed", () => {
+    const own = index();
+    expect(own.find("the zzzzz", "loose")).toEqual([]); // (not every title with "The")
+    expect(own.find("the of and a", "loose")).toEqual([]);
+    expect(names(own.find("the zzzzz night", "loose")).sort()).toEqual(["Night Train", "The Night of the Hunter"]); // (the word that is left is what they have)
+  });
+
+  it("searches the tiers in turn until there are enough, and says how many have all the words", () => {
+    const own = index();
+    const found = own.search("strager things");
+    expect(names(found.items)).toEqual(["Stranger Things", "Things We Lost in the Fire"]);
+    expect(found.exact).toBe(1); // (the other has only one of the two words)
+
+    expect(own.search("dunr")).toMatchObject({ exact: 2 }); // (the relaxed tier has all the words of a title too)
+    expect(own.search("zzzz")).toEqual({ items: [], exact: 0 });
+    expect(own.search("")).toEqual({ items: [], exact: 0 });
+  });
+
+  it("does not look further when there are enough titles that have all the words", () => {
+    const many = Array.from({ length: 9 }, (_, at) => ({ id: `n${at}`, title: `Night ${at}`, url: `/n${at}` }));
+    const own = new TitleIndex([...many, { id: "other", title: "Day or Night Moves", url: "/o" }]);
+    expect(own.search("night moves", 6).exact).toBe(1);
+    expect(own.search("night", 6)).toMatchObject({ exact: 10 });
+  });
+
+  it("forgets the oldest titles when it holds more than it was given room for, and keeps the rest findable", () => {
+    const words = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet", "kilo", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray", "yankee"];
+    const own = new TitleIndex([], 10);
+    own.add(words.map((word, at) => ({ id: word, title: `Film ${word}`, url: `/${at}` })));
+    expect(own.size).toBeLessThanOrEqual(10);
+    expect(own.find("alpha")).toEqual([]);
+    expect(names(own.find("yankee"))).toEqual(["Film yankee"]);
+    own.add([{ id: "alpha", title: "Film alpha", url: "/again" }]); // (one that was forgotten is taken again)
+    expect(names(own.find("alpha"))).toEqual(["Film alpha"]);
   });
 });

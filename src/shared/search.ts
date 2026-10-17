@@ -64,37 +64,128 @@ function swaps(word: string): string[] {
 
 const isNumber = (word: string) => /^\d+$/.test(word);
 
-/**
- * The titles that have every word of the query, the best match first. A word may be unfinished, have its neighbouring letters
- * swapped (a word of three letters too, when another word of the query is longer: "teh office"), or (when it is long enough) be a
- * letter or two off. A number is a year, and is what it is. Exact words come before those, a word of the title before its year, then the
- * titles that came first (the popular ones, as the places list them).
- */
-export function searchItems(items: readonly LibraryItem[], query: string): LibraryItem[] {
-  const q = normalizeQuery(query);
-  const byId = new Map<string, LibraryItem>();
-  for (const item of items) if (!byId.has(item.id)) byId.set(item.id, item);
-  if (!q || byId.size === 0) return [];
+/** Words that say what is wanted and no part of what a title is called: "harry potter full movie", "watch dune online". */
+const NOISE = new Set(["movie", "movies", "film", "films", "series", "show", "shows", "tv", "full", "watch", "online", "free", "hd", "streaming", "season", "seasons", "episode", "episodes"]);
 
-  const index = new MiniSearch<LibraryItem>({ fields: ["title", "joined", "year"], extractField: fieldOf });
-  index.addAll([...byId.values()]);
-  const place = new Map([...byId.keys()].map((id, at) => [id, at]));
-  const words = q.split(" ");
-  const typed = new Set(words);
-  const held = words.length > 1 && words.some((word) => word.length >= 4); // (a short word alone is too little to go on)
-  const wordOrSwapped = (word: string): Query => ({ combineWith: "OR", queries: [word, ...(word.length >= (held ? 3 : 4) && !isNumber(word) ? swaps(word) : [])] });
-  return index
-    .search(
-      { combineWith: "AND", queries: words.map(wordOrSwapped) },
-      {
-        boost: { title: 10, year: 3 },
-        prefix: true,
-        fuzzy: (term) => (term.length >= 5 ? 0.2 : false),
-        boostTerm: (term) => (typed.has(term) ? 1 : 0.5),
-        boostDocument: (id) => 1 + (byId.size - (place.get(id) ?? byId.size)) / (byId.size * 10),
-      },
-    )
-    .map((hit) => byId.get(hit.id)!);
+/** Words that are in a great many titles and tell nothing about which: no title is close to "the farewell" for having "the". */
+const COMMON = new Set(["the", "a", "an", "of", "and", "in", "on", "at", "to", "for", "with", "is", "it", "my", "me", "you", "we", "la", "le", "el", "de", "les", "der", "die", "das", "il", "lo", "los", "las", "un", "una", "et"]);
+
+/** What was typed without those words (the query as it is when there would be nothing left, or none of them). */
+export function withoutNoise(query: string): string {
+  const words = normalizeQuery(query).split(" ").filter(Boolean);
+  const kept = words.filter((word) => !NOISE.has(word));
+  return kept.length > 0 && kept.length < words.length ? kept.join(" ") : normalizeQuery(query);
+}
+
+/** How a title is looked for: as typed (`strict`), a letter more forgiven (`relaxed`), or by any of the words, half of them at least (`loose`). */
+export type Tier = "strict" | "relaxed" | "loose";
+
+/** The titles of one index are remembered up to this many; when there are more, the oldest tenth goes. */
+const CAPACITY = 30000;
+/** A search that finds fewer than this many titles looks further (a tier more forgiving at a time). */
+const WANTED = 6;
+/** The closest others (titles with only some of the words) are shown up to this many: past the first few they are no help. */
+export const CLOSEST_MAX = 30;
+
+/**
+ * Titles to look for a title among. One index that is made once and takes more titles as they are met (the server remembers every title it
+ * has listed, the screens every one they were sent), instead of one made from the titles on the screen at each question.
+ */
+export class TitleIndex {
+  private readonly index = new MiniSearch<LibraryItem>({ fields: ["title", "joined", "year"], extractField: fieldOf });
+  private readonly titles = new Map<string, LibraryItem>();
+  /** When each was added, the first to be met being the likeliest to be the popular ones (the places list those first). */
+  private readonly order = new Map<string, number>();
+  private count = 0;
+  private readonly capacity: number;
+
+  constructor(items: Iterable<LibraryItem> = [], capacity = CAPACITY) {
+    this.capacity = capacity;
+    this.add(items);
+  }
+
+  get size(): number {
+    return this.titles.size;
+  }
+
+  /** Takes the titles that are not in yet (a title is known by its id). */
+  add(items: Iterable<LibraryItem>): void {
+    for (const item of items) {
+      if (this.titles.has(item.id)) continue;
+      this.index.add(item);
+      this.titles.set(item.id, item);
+      this.order.set(item.id, this.count++);
+    }
+    if (this.titles.size > this.capacity) {
+      // (the oldest go, down to nine tenths of the capacity, so that this is not done again at every few titles)
+      for (const id of [...this.titles.keys()].slice(0, this.titles.size - this.capacity + Math.ceil(this.capacity / 10))) {
+        this.index.discard(id);
+        this.titles.delete(id);
+        this.order.delete(id);
+      }
+    }
+  }
+
+  /**
+   * The titles that have the words of the query, the best match first. A word may be unfinished, have its neighbouring letters swapped (a word
+   * of three letters too, when another word of the query is longer: "teh office"), or (when it is long enough) be a letter or two off; the looser
+   * tiers forgive one more letter and the last wants only half of the words. A number is a year, and is what it is. Exact words come before
+   * those, a word of the title before its year, then the titles that came first.
+   */
+  find(query: string, tier: Tier = "strict"): LibraryItem[] {
+    const q = normalizeQuery(query);
+    if (!q || this.titles.size === 0) return [];
+    const words = q.split(" ");
+    const typed = new Set(words);
+    const held = words.length > 1 && words.some((word) => word.length >= 4); // (a short word alone is too little to go on)
+    const spellings = (word: string): string[] => [word, ...(word.length >= (held ? 3 : 4) && !isNumber(word) ? swaps(word) : [])];
+    const wordOrSwapped = (word: string): Query => ({ combineWith: "OR", queries: spellings(word) });
+    const base = {
+      boost: { title: 10, year: 3 },
+      prefix: true,
+      boostTerm: (term: string) => (typed.has(term) ? 1 : 0.5),
+      boostDocument: (id: string) => 1 + 0.1 * (1 - Math.min(1, (this.order.get(id) ?? 0) / Math.max(1, this.count))),
+    };
+    if (tier === "strict") return this.index.search({ combineWith: "AND", queries: words.map(wordOrSwapped) }, { ...base, fuzzy: (term) => (term.length >= 5 ? 0.2 : false) }).map((hit) => this.titles.get(hit.id)!);
+    if (tier === "relaxed") return this.index.search({ combineWith: "AND", queries: words.map(wordOrSwapped) }, { ...base, fuzzy: (term) => (term.length >= 4 ? 0.25 : false) }).map((hit) => this.titles.get(hit.id)!);
+    const significant = words.filter((word) => !NOISE.has(word) && !COMMON.has(word) && word.length >= 2);
+    if (significant.length === 0) return [];
+    const need = Math.ceil(significant.length / 2);
+    // (a hit counts the words it has, not the spellings of one word it matched: a long word is asked in each of its swapped spellings too)
+    const wordOf = new Map<string, number>();
+    significant.forEach((word, at) => spellings(word).forEach((spelling) => wordOf.has(spelling) || wordOf.set(spelling, at)));
+    return this.index
+      .search({ combineWith: "OR", queries: significant.map(wordOrSwapped) }, { ...base, fuzzy: (term) => (term.length >= 5 ? 0.2 : false) })
+      .filter((hit) => significant.length === 1 || new Set(hit.queryTerms.flatMap((term) => (wordOf.has(term) ? [wordOf.get(term)!] : []))).size >= need)
+      .map((hit) => this.titles.get(hit.id)!);
+  }
+
+  /**
+   * What `find` finds in the tiers in turn, until there are enough. `exact` is how many of the first have all the words (the strict and the
+   * relaxed tier): the rest have only some of them, the closest others.
+   */
+  search(query: string, wanted = WANTED): { items: LibraryItem[]; exact: number } {
+    const seen = new Set<string>();
+    const take = (items: LibraryItem[], into: LibraryItem[]) => {
+      for (const item of items) {
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        into.push(item);
+      }
+    };
+    const exact: LibraryItem[] = [];
+    const closest: LibraryItem[] = [];
+    take(this.find(query, "strict"), exact);
+    if (exact.length < wanted) take(this.find(query, "relaxed"), exact);
+    if (exact.length < wanted) take(this.find(query, "loose"), closest);
+    const ranked = rankByQuery(exact, query);
+    return { items: [...ranked, ...rankByQuery(closest, query).slice(0, CLOSEST_MAX)], exact: ranked.length };
+  }
+}
+
+/** The titles that have every word of the query, the best match first (see `TitleIndex.find`): for titles met once, as the page's. */
+export function searchItems(items: readonly LibraryItem[], query: string): LibraryItem[] {
+  return new TitleIndex(items).find(query, "strict");
 }
 
 /** Words as they are compared: folded, nothing but letters and digits, and without "The" in front (when it is not all there is). */
