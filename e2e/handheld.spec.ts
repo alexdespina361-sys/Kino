@@ -1,6 +1,6 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { FIRST_VISIT, openDevice, openLibrary, openPairedPhone, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, test, tvRoot, tvTime, withLibrary } from "./helpers";
+import { FIRST_VISIT, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, test, tvRoot, tvTime, withLibrary } from "./helpers";
 
 /** Any device is a screen, and any phone can bring another screen in: the TV page on a phone or a tablet, and the QR codes between devices. */
 
@@ -66,6 +66,19 @@ test.describe("a phone used as the screen", () => {
     await expect(phone.getByTestId("tv-account")).toBeVisible();
     await phone.getByTestId("tv-account-back").tap();
     await expect(phone.getByTestId("tv-browse")).toBeVisible();
+  });
+
+  test("the banner's buttons stay on the screen: the long one goes under Resume (and its words wrap, on the narrowest) instead of past the edge", async ({ browser }) => {
+    const resume = guestStorage({ progress: [{ key: "url:https://films.example/night-train", at: Date.now() - 60_000, title: "Night Train", url: "https://films.example/night-train", position: 1500, duration: 6000 }] });
+    for (const language of ["en", "it"]) {
+      for (const width of [430, 360, 320]) {
+        const phone = await openDevice(browser, { ...PHONE, viewport: { width, height: 760 } }, { ...resume, "kino.lang": language }, withFilms);
+        await phone.goto("/tv");
+        for (const action of ["play", "remove"]) await expect(phone.getByTestId(`tv-hero-${action}`), `${action} at ${width} wide in ${language}`).toBeInViewport({ ratio: 1 });
+        expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
+        await phone.context().close();
+      }
+    }
   });
 
   test("a finger gets no corner buttons on the titles (a title's own page keeps and clears them), and a tap on the menu's icons still goes there", async ({ browser }) => {

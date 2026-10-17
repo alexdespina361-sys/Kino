@@ -53,7 +53,9 @@ test.describe("the profile's page", () => {
     await expect(place(tv, "ratings")).toBeFocused();
     await tv.keyboard.press("ArrowUp");
     await expect(tv.getByTestId("tv-profile-signin")).toBeFocused();
-    await tv.keyboard.press("ArrowUp"); // (and above the top buttons, the corner's)
+    await tv.keyboard.press("ArrowUp"); // (and above the top buttons, the corner's: the way back is the first of them, the account button the next)
+    await expect(tv.getByTestId("tv-page-back")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("tv-account-chip")).toBeFocused();
   });
 

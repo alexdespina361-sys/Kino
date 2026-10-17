@@ -104,7 +104,7 @@ Clipped content (UI-001, UI-002, UI-003), a first screen that goes dead for a re
 ### UI-002 TV page on a phone: "Remove from Continue watching" is cut at the right edge
 
 - **Where:** classic `tv.css:1011` (`.tv-hero-actions { display: flex; gap: 0.9em }` without wrap; the detail page wraps at `:1064-1065`); audit F `data/p-herobtn.json`, `sheets/hh-A.png`
-- **Category:** TV layout & fit. **Severity:** P0 (audit: F10 P2; raised). **Scope:** both. **Status:** open.
+- **Category:** TV layout & fit. **Severity:** P0 (audit: F10 P2; raised). **Scope:** both. **Status:** fixed (2026-10-17, D38: `flex-wrap: wrap` on `.tv-hero-actions`, and the words of a button wider than the room wrap on the narrowest phones; `e2e/handheld.spec.ts`).
 - **Problem:** Phones at /tv ("Watch on this device"), portrait: the "Remove from Continue watching" button is cut at the right edge, visible 58 / 74 / 86 / 100 % at 320 / 360 / 390 / 430 (ro 67 / 82 / 94 / 100 %); refined look 54 / 69 / 80 / 94 %. At 844x390 and 568x320 it fits.
 - **Why it feels unpolished:** A half-visible destructive button with a cut label, on the Watch-on-this-device path.
 - **Proposed fix:** `flex-wrap: wrap` as at `tv.css:1064` (no new CSS features, fine on Chromium 68) or a shorter label under 400 px.

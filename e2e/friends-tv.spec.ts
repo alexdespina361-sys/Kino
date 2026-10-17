@@ -1009,6 +1009,32 @@ test.describe("walking the friends' pages with the remote", () => {
     await page.keyboard.press("Escape");
     await expect(tile(page, "Friends settings")).toBeFocused();
   });
+
+  test("the friends' page has a Back button in the corner, first before the bell and the account button; a click on it, or OK on it, goes to the profile's page, on the card it came from", async ({ browser }) => {
+    const ann = await screenWithFriends(browser, "Ann");
+    const page = ann.page;
+    await openFriends(page);
+    const back = page.getByTestId("tv-page-back");
+    await expect(back).toBeVisible();
+    await expect(back).toHaveAttribute("data-col", "0");
+    await expect(page.getByTestId("tv-bell")).toHaveAttribute("data-col", "1"); // (the buttons after it moved along by one)
+    await expect(page.getByTestId("tv-account-chip")).toHaveAttribute("data-col", "2");
+
+    await back.click();
+    await expect(view(page)).toHaveAttribute("data-view", "profile");
+    await expect(place(page, "friends")).toBeFocused();
+
+    await place(page, "friends").click();
+    await expect(view(page)).toHaveAttribute("data-view", "friends");
+    await page.keyboard.press("ArrowUp"); // (the first button of the page's top is the way back, then the bell)
+    await expect(back).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("tv-bell")).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Enter");
+    await expect(view(page)).toHaveAttribute("data-view", "profile");
+    await expect(place(page, "friends")).toBeFocused();
+  });
 });
 
 test.describe("walking a friend's page with the remote", () => {

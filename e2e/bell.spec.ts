@@ -144,18 +144,22 @@ async function screenWithFriends(browser: Browser, name: string, options: { lang
 /** The remote walks up from the titles to the bell, the first of the corner's buttons. */
 async function upToBell(page: Page) {
   const button = page.getByTestId("tv-bell");
-  for (let step = 0; step < 4 && !(await button.evaluate((element) => element === document.activeElement)); step++) await page.keyboard.press("ArrowUp");
+  for (let step = 0; step < 4 && !(await button.evaluate((element) => element === document.activeElement)); step++) {
+    // (Up reaches the corner; on a page that has the way back there, that is its first button, and the bell is the next along.)
+    const inCorner = await page.evaluate(() => document.activeElement?.getAttribute("data-zone") === "top");
+    await page.keyboard.press(inCorner ? "ArrowRight" : "ArrowUp");
+  }
   await expect(button).toBeFocused();
 }
 
 /**
  * What is out of place in the library's corner: a button that leaves the screen, two that cover each other, or one that covers the logo.
- * (A name of the longest length makes the account button as wide as it gets.)
+ * (A name of the longest length makes the account button as wide as it gets, and the profile's pages have the way back there as well.)
  */
 const cornerProblems = (page: Page) =>
   page.evaluate(() => {
     const problems: string[] = [];
-    const parts = [...document.querySelectorAll<HTMLElement>('[data-testid="tv-bell"], [data-testid="tv-account-chip"], [data-testid="fullscreen-toggle"], .tv-browse-logo')].map((part) => ({
+    const parts = [...document.querySelectorAll<HTMLElement>('[data-testid="tv-page-back"], [data-testid="tv-bell"], [data-testid="tv-account-chip"], [data-testid="fullscreen-toggle"], .tv-browse-logo')].map((part) => ({
       name: part.getAttribute("data-testid") ?? "logo",
       box: part.getBoundingClientRect(),
     }));
