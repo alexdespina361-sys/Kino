@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupOf, groupTracks, orderGroups, preferredLanguages, versionLabel } from "./tracks";
+import { byRelease, defaultTrack, groupOf, groupTracks, orderGroups, preferredLanguages, releaseRank, versionLabel } from "./tracks";
 
 const track = (id: number, label: string, lang?: string) => ({ id, label, ...(lang ? { lang } : {}) });
 
@@ -108,5 +108,92 @@ describe("groupOf", () => {
     expect(groupOf(groups, 1)?.key).toBe("ro");
     expect(groupOf(groups, -1)).toBeUndefined();
     expect(groupOf(groups, undefined)).toBeUndefined();
+  });
+});
+
+describe("releaseRank", () => {
+  // Real labels, as the site's resolver gave them for The Bad Guys and The Boondocks (the subtitle lab's pick test).
+  const rank = (labels: string[]) => labels.map(releaseRank);
+
+  it("puts WEB releases first, however their name says it", () => {
+    expect(
+      rank([
+        "English (6) · The Boondocks S01E01 - Eng - HMAX WEBRIP x265 HEVC",
+        "English (3) · The.Bad.Guys.2022.720p.AMZN.WEBRip.800MB.x264-GalaxyRG",
+        "English (7) · The Boondocks (2005) - S01E01 - The Garden Party (1080p HMAX WEB-DL x265 YOGI)",
+        "English (9) · The.Bad.Guys.2022.NORDiC.1080p.WEB.H.264-NiDHUG.en",
+        "English (4) · The.Boondocks.S01E01.1080p.WEB.H264-BLACKHAT[eztv.io]_track3_[eng]",
+        "English (4) · The Boondocks - S02E03 (2005) WEB.eng",
+        "Film.2023.1080p.NF.WEBDL",
+        "Film.2023.DSNP",
+        "Film.2023.ATVP",
+        "Film.2023.hulu",
+      ]),
+    ).toEqual(Array(10).fill(0));
+  });
+
+  it("then BluRay, then DVD, then everything else", () => {
+    expect(releaseRank("English (5) · The.Bad.Guys.2022.BDRip.x264-KNiVES [NON-HI]")).toBe(1);
+    expect(releaseRank("Film.2023.1080p.BluRay.x264")).toBe(1);
+    expect(releaseRank("Film.2023.Blu-ray.BDRemux")).toBe(1);
+    expect(releaseRank("English · Boondocks S01E10 The Itis.DVD.NonHI.cc.en.SNY")).toBe(2);
+    expect(releaseRank("English (3) · The.Boondocks.S01E10.The.Itis.DVDRip.XviD-TOPAZ.English")).toBe(2);
+    expect(releaseRank("English · The.Bad.Guys.2022.HDRip.XviD.AC3-EVO")).toBe(3);
+    expect(releaseRank("English (8) · THE-BAD-GUYS-2022-ENGCP")).toBe(3);
+    expect(releaseRank("Film.2023.CAM")).toBe(3);
+    expect(releaseRank("English")).toBe(3);
+  });
+
+  it("does not take a WEB or a DVD that is part of another word", () => {
+    expect(releaseRank("Film.Webster.2023")).toBe(3);
+    expect(releaseRank("Film.2023.Info.SNF")).toBe(3);
+    expect(releaseRank("Film.2023.AMZNx")).toBe(3);
+    expect(releaseRank("Film.2023.SDVD")).toBe(3);
+  });
+
+  it("puts a track of only the songs or only the forced lines last, whatever its release", () => {
+    expect(releaseRank("English (7) · The Bad Guys.2022.BDRemux.1080p.3D-MVC.Eng-Songs")).toBe(4);
+    expect(releaseRank("Film.2023.WEB-DL.Forced")).toBe(4);
+    expect(releaseRank("English (FORCED)")).toBe(4);
+  });
+});
+
+describe("byRelease", () => {
+  it("orders by kind of release and keeps the order within a kind", () => {
+    const tracks = [
+      track(0, "English · The.Bad.Guys.2022.HDRip.XviD.AC3-EVO"),
+      track(1, "English (2) · The.Bad.Guys.2022.HDRip.XviD.AC3-EVO-HI"),
+      track(2, "English (3) · The.Bad.Guys.2022.720p.AMZN.WEBRip.800MB.x264-GalaxyRG"),
+      track(3, "English (4) · The.Bad.Guys.2022.720p.AMZN.WEBRip.800MB.x264-GalaxyRG-HI"),
+      track(4, "English (5) · The.Bad.Guys.2022.BDRip.x264-KNiVES [NON-HI]"),
+      track(5, "English (6) · The.Bad.Guys.2022.BDRip.x264-KNiVES [HI]"),
+      track(6, "English (7) · The Bad Guys.2022.BDRemux.1080p.3D-MVC.Eng-Songs"),
+      track(7, "English (8) · THE-BAD-GUYS-2022-ENGCP"),
+      track(8, "English (9) · The.Bad.Guys.2022.NORDiC.1080p.WEB.H.264-NiDHUG.en"),
+      track(9, "English (10) · The.Bad.Guys.2022.BDRip.x264-KNiVES"),
+      track(10, "English (11) · The.Bad.Guys.2022.DVDRip"),
+    ];
+    expect(byRelease(tracks).map((t) => t.id)).toEqual([2, 3, 8, 4, 5, 9, 10, 0, 1, 7, 6]);
+    expect(tracks.map((t) => t.id)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]); // (a new list: the one given is left as it was)
+  });
+});
+
+describe("defaultTrack", () => {
+  it("is the best-fitting release, not the first listed", () => {
+    const boondocks = [
+      track(0, "English · Boondocks S01E10 The Itis.DVD.NonHI.cc.en.SNY"),
+      track(1, "English (2) · Boondocks S01E10 The Itis.DVD.HI.cc.en.SNY"),
+      track(2, "English (3) · The.Boondocks.S01E10.The.Itis.DVDRip.XviD-TOPAZ.English"),
+      track(3, "English (4) · The Boondocks S01E10 - Eng - HMAX WEBRIP x265 HEVC"),
+      track(4, "English (5) · The Boondocks (2005) - S01E10 - The Itis (1080p HMAX WEB-DL x265 YOGI)"),
+    ];
+    expect(defaultTrack(boondocks)?.id).toBe(3);
+    expect(defaultTrack([track(0, "English"), track(1, "English (2)")])?.id).toBe(0); // (names that say nothing: the first, as before)
+  });
+
+  it("is never a track of only the songs or the forced lines", () => {
+    expect(defaultTrack([track(0, "Film.2023.WEB.Forced"), track(1, "Film.2023.HDRip")])?.id).toBe(1);
+    expect(defaultTrack([track(0, "English (7) · The Bad Guys.2022.BDRemux.1080p.3D-MVC.Eng-Songs")])).toBeUndefined();
+    expect(defaultTrack([])).toBeUndefined();
   });
 });

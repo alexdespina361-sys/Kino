@@ -77,6 +77,39 @@ export function versionLabel(track: TrackLike, languageNames: string | readonly 
   return label || fallback;
 }
 
+// A word of a release's name: nothing but letters or digits may touch it on either side. (No lookbehind: older TV browsers cannot parse one.)
+const word = (pattern: string) => new RegExp(`(?:^|[^a-z0-9])(?:${pattern})(?![a-z0-9])`, "i");
+/** The kinds of release, best fitting first: WEB, then BluRay, then DVD. A name that says none of these comes after them all. */
+const RELEASES = [word("web(?:-?dl|-?rip)?|amzn|nf|hmax|dsnp|atvp|hulu"), word("blu-?ray|bdrip|brrip|bdremux"), word("dvd[a-z0-9]*")];
+/** A track of only the songs, or only the forced lines: last of all, and never the one turned on by itself. */
+const PARTIAL = word("songs?|forced");
+const PARTIAL_RANK = RELEASES.length + 1;
+
+/**
+ * How well a release's subtitles fit the site's streams as downloaded, 0 best. Measured on 27 English tracks of four titles (the
+ * subtitle lab's pick test, 2026-10-17): WEB releases had 93 % of their lines within 1 s, BluRay ones are 1 s early, DVD ones drift
+ * (up to minutes by the end), HDRip ones are 0.84 s early.
+ */
+export function releaseRank(label: string): number {
+  if (PARTIAL.test(label)) return PARTIAL_RANK;
+  const rank = RELEASES.findIndex((kind) => kind.test(label));
+  return rank < 0 ? RELEASES.length : rank;
+}
+
+/** The tracks best-fitting release first; within a kind of release, in the order they came. */
+export function byRelease<T extends { label: string }>(tracks: readonly T[]): T[] {
+  return tracks
+    .map((track, index) => ({ track, index, rank: releaseRank(track.label) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ track }) => track);
+}
+
+/** The track to turn on when a language is asked for and no release of it: the best-fitting one, never one of only songs or forced lines. */
+export function defaultTrack<T extends { label: string }>(tracks: readonly T[]): T | undefined {
+  const best = byRelease(tracks)[0];
+  return best && releaseRank(best.label) < PARTIAL_RANK ? best : undefined;
+}
+
 /** "+0.5s", "−1.0s", "0.0s": a subtitle delay as people read it (positive means later). */
 export const formatDelay = (delay: number): string => `${delay > 0 ? "+" : delay < 0 ? "−" : ""}${Math.abs(delay).toFixed(1)}s`;
 

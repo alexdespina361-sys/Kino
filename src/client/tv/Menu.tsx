@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import {
   CAPTION_SETTINGS,
   CAPTION_VALUES,
+  defaultTrack,
   describeStatus,
   episodeName,
   episodeStatus,
@@ -286,9 +287,9 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
       label: group.name,
       ...(group.tracks.length > 1 ? { detail: String(group.tracks.length) } : {}),
       active: playing?.key === group.key,
-      // Passing a language lists its releases; OK turns it on (the release already chosen in it, else the first).
+      // Passing a language lists its releases; OK turns it on (the release already chosen in it, else the best-fitting one).
       onFocus: () => setLanguage(group.key),
-      pick: () => p.onSubtitle(playing?.key === group.key ? subtitles!.current : group.tracks[0]!.id),
+      pick: () => p.onSubtitle(playing?.key === group.key ? subtitles!.current : (defaultTrack(group.tracks) ?? group.tracks[0]!).id),
     });
     columns.push({
       title: t("player.language"),

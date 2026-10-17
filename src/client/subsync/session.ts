@@ -1,4 +1,4 @@
-import { normalizeLang } from "../../shared";
+import { byRelease, normalizeLang } from "../../shared";
 import { CueEditor, type EditableCue } from "./apply";
 import { AudioFeed } from "./audio";
 import type { Backend } from "./backend";
@@ -561,14 +561,15 @@ export class SyncSession {
 
   /* ------------------------------------ the tracks ------------------------------------ */
 
+  /** The best-fitting releases first: they are the ones loaded to be tried, and the one a track in another language is timed from. */
   private englishTracks(): Array<{ track: TrackLike; id: number }> {
-    const out: Array<{ track: TrackLike; id: number }> = [];
+    const out: Array<{ track: TrackLike; id: number; label: string }> = [];
     const list = this.deps.video.textTracks;
     for (let id = 0; id < list.length; id++) {
       const track = list[id] as TrackLike;
-      if (track.kind === "subtitles" && isEnglish(track)) out.push({ track, id });
+      if (track.kind === "subtitles" && isEnglish(track)) out.push({ track, id, label: track.label });
     }
-    return out;
+    return byRelease(out);
   }
 
   /** Finds the track on screen, makes sure the ones that are wanted are loaded (and kept off screen), and takes the lines of those that have loaded. */
