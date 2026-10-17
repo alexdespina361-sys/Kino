@@ -1,16 +1,19 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { itemsOf, LibrarySchema, rankByQuery, searchItems, type Library as LibraryData, type LibraryItem } from "../../shared";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { LibraryItemsSchema, LibrarySchema, type Library as LibraryData, type LibraryItem, type LibraryKind } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
 import { rowTitle, useT } from "../i18n";
+import { failedShelves, feed, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { Poster } from "../shared/Poster";
+import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
+import { keepMatching, matchLocal, mergeAnswers, type Answers } from "../tv/librarySearch";
 import { entryOfItem, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
 import { ListButton, useListToggle, type ListToggle } from "./Round";
 
-/** What the server last listed, so a visit to the home screen after the first shows it at once. */
+/** What the server last listed, so a visit to the home screen after the first shows it at once. (The rows are the feed's, which brings the rest as they are scrolled.) */
 let remembered: LibraryData | null = null;
 
 type Status = "loading" | "ready" | "failed";
@@ -19,11 +22,20 @@ type Filter = "all" | "movies" | "series";
 /** A search that could not be made is made again this long after. */
 const SEARCH_RETRY_MS = 5000;
 
+/** The rows that come next are asked for when the end of the library is within this many screens of the bottom of what can be seen. */
+const NEAR_END = 1.5;
+/** A row that can have more titles asks for them when its end is within this many widths of the row, and shows this many empty tiles there while they are on their way. */
+const ROW_NEAR_END = 1.5;
+const WAITING_TILES = 3;
+
+/** The sources whose titles are TMDB's, which asks for a notice wherever they are shown. */
+const TMDB_SOURCES = new Set(["Filmpire"]);
+
 /**
  * The search that was open when the home screen went away (a video was started from it, and then stopped): the words, the filter, what
  * the library answered, and how far down the list the page was scrolled. Coming back is coming back to the same list, not to an empty box.
  */
-const kept: { query: string; filter: Filter; found: { query: string; items: LibraryItem[] } | null; scroll: number | null } = { query: "", filter: "all", found: null, scroll: null };
+const kept: { query: string; filter: Filter; found: { query: string; answers: Answers } | null; scroll: number | null } = { query: "", filter: "all", found: null, scroll: null };
 
 /** What a row is: what its place says, else what its name suggests ("Feature films", "Classic TV"). Rows that are both, or neither, are only in All. */
 const isMovies = (row: LibraryData["rows"][number]) => (row.kind ? row.kind === "movie" : /movie|film/i.test(`${row.id} ${row.title}`));
@@ -32,11 +44,17 @@ const isSeries = (row: LibraryData["rows"][number]) => (row.kind ? row.kind === 
 /** What is typed, as it is looked for. */
 const wanted = (query: string) => query.trim().toLowerCase();
 
-/** The titles on the page that have the words in their name (a slip of a letter or an unfinished word included), best first: what a search shows before the library has answered. */
-const onThePage = (library: LibraryData | null, q: string): LibraryItem[] => rankByQuery(searchItems(itemsOf(library?.rows ?? []), q), q);
+/** Whether the end of the library is within `NEAR_END` screens of the bottom of what can be seen: the window, or the sheet the library is in. */
+function endIsNear(section: HTMLElement): boolean {
+  const sheet = section.closest<HTMLElement>(".sheet-body");
+  const view = sheet ? sheet.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+  const height = view.bottom - view.top;
+  return height > 0 && section.getBoundingClientRect().bottom - view.bottom <= height * NEAR_END;
+}
 
 /**
- * Rows of titles from the server's library, to scroll through, and a search that lists what it finds one under another. A tap on a title
+ * Rows of titles from the server's library, to scroll through (sideways for more of a row, down for more rows: both go on for as long as the
+ * library has any), rows of titles like the ones this profile watched or loved, and a search that lists what it finds one under another. A tap on a title
  * opens its page (`onOpen`), a hold puts it in a list, and so does the round button on it; with more than one list that asks which
  * (`onPick`). Absent when there is no library, unless there is something (`fallback`) to say instead.
  */
@@ -47,9 +65,9 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
   const [library, setLibrary] = useState<LibraryData | null>(remembered);
   const [status, setStatus] = useState<Status>(remembered ? "ready" : "loading");
   const [query, setQuery] = useState(kept.query);
-  const [searchResults, setSearchResults] = useState<LibraryItem[] | null>(() => {
+  const [answers, setAnswers] = useState<Answers | null>(() => {
     const q = wanted(kept.query);
-    return !q ? null : kept.found?.query === q ? kept.found.items : onThePage(remembered, q);
+    return !q ? null : kept.found?.query === q ? kept.found.answers : matchLocal(feed.index, remembered?.rows ?? [], q);
   });
   const [searching, setSearching] = useState(() => Boolean(wanted(kept.query)) && kept.found?.query !== wanted(kept.query));
   const [filter, setFilter] = useState<Filter>(kept.filter);
@@ -58,12 +76,15 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
   const [searchTry, setSearchTry] = useState(0);
   const root = useRef<HTMLElement>(null);
 
+  // The library as it has grown: its first rows, the ones brought after them as the page is scrolled, and more of each row (see the feed).
+  const feeding = useFeed();
+  // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
+  const because = useBecause();
+  const kind: LibraryKind | undefined = filter === "movies" ? "movie" : filter === "series" ? "series" : undefined;
   const displayedRows = useMemo(() => {
-    if (!library) return [];
-    if (filter === "movies") return library.rows.filter(isMovies);
-    if (filter === "series") return library.rows.filter(isSeries);
-    return library.rows;
-  }, [library, filter]);
+    const rows = pageRows(feeding.data, kind);
+    return filter === "movies" ? rows.filter(isMovies) : filter === "series" ? rows.filter(isSeries) : rows;
+  }, [feeding.data, kind, filter]);
 
   useEffect(() => {
     kept.filter = filter;
@@ -97,6 +118,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
         if (!live) return;
         if (parsed.success) {
           remembered = parsed.data;
+          feed.setBase(parsed.data.rows.filter((row) => row.items.length > 0)); // (the rows that come after these, and more of each, are asked for as the page is scrolled: see the feed)
           if (attempt > 0) kept.found = null; // what a search found is asked for again against the new list
           setLibrary(parsed.data);
           setStatus("ready");
@@ -112,7 +134,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
     kept.query = query;
     const q = wanted(query);
     if (!q) {
-      setSearchResults(null);
+      setAnswers(null);
       setSearching(false);
       return;
     }
@@ -120,49 +142,41 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
 
     // What the library answered to these very words before is still good.
     if (kept.found?.query === q) {
-      setSearchResults(kept.found.items);
+      setAnswers(kept.found.answers);
       setSearching(false);
       return;
     }
 
-    // 1. Instant local search from loaded rows
-    const local = onThePage(library, q);
-    const seen = new Set(local.map((item) => item.id));
-    setSearchResults(local);
+    // 1. Instant local search among every title this phone has met, not only the ones on the page. (What the server found for the words a letter ago stays while it is asked again.)
+    const local = matchLocal(feed.index, library?.rows ?? [], q);
+    setAnswers((before) => (before && q.length >= 2 ? mergeAnswers(local, keepMatching(before, q), q) : local));
     if (q.length < 2) return setSearching(false); // a letter is too little to ask the server about
     setSearching(true);
 
     // 2. Debounced remote search
-    let live = true;
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetch(`/api/library/search?q=${encodeURIComponent(q)}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data: { items?: LibraryItem[] }) => {
-          if (!live) return;
+      Promise.resolve() // (encodeURIComponent throws for a lone half of a pair: inside the chain it is a failed search)
+        .then(() => fetch(`/api/library/search?q=${encodeURIComponent(q)}`, { signal: controller.signal }))
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
+        .then((body: unknown) => {
+          const parsed = LibraryItemsSchema.parse(body);
+          feed.learn(parsed.items); // (found next time without asking)
+          const found = mergeAnswers(local, { items: parsed.items, exact: parsed.exact ?? parsed.items.length }, q); // (the likeliest first, whether the page or the library found it, and then the closest others)
+          kept.found = { query: q, answers: found };
+          setAnswers(found);
           setSearching(false);
-          if (Array.isArray(data?.items)) {
-            const combined = [...local];
-            for (const item of data.items) {
-              if (!seen.has(item.id)) {
-                seen.add(item.id);
-                combined.push(item);
-              }
-            }
-            const ranked = rankByQuery(combined, q); // (the likeliest first, whether the page or the library found it)
-            kept.found = { query: q, items: ranked };
-            setSearchResults(ranked);
-          } else setSearchFailed(true);
         })
         .catch(() => {
-          if (!live) return;
+          if (controller.signal.aborted) return;
           setSearching(false);
           setSearchFailed(true);
         });
     }, 350);
 
     return () => {
-      live = false;
       clearTimeout(timer);
+      controller.abort();
     };
   }, [query, library, searchTry]);
 
@@ -172,6 +186,30 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
     const timer = setTimeout(() => setSearchTry((n) => n + 1), SEARCH_RETRY_MS);
     return () => clearTimeout(timer);
   }, [searchFailed, searchTry]);
+
+  // The rows that come next are asked for when the page is scrolled near its end, whatever scrolled it (the window, or the sheet the library is in), and when the
+  // page does not fill the screen yet: an answer, or a question that failed and may be asked again, looks again. A search is a list of its own and is not paged.
+  const paging = status === "ready" && shown && answers === null;
+  const latest = useRef({ paging, kind });
+  latest.current = { paging, kind };
+  useEffect(() => {
+    const askRows = () => {
+      const section = root.current;
+      if (section && latest.current.paging && endIsNear(section)) feed.loadShelves(latest.current.kind);
+    };
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Node && root.current && event.target.contains(root.current)) askRows(); // (a row scrolled sideways says nothing about the page)
+    };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    window.addEventListener("resize", askRows);
+    return () => {
+      document.removeEventListener("scroll", onScroll, { capture: true });
+      window.removeEventListener("resize", askRows);
+    };
+  }, []);
+  useEffect(() => {
+    if (paging && root.current && endIsNear(root.current)) feed.loadShelves(kind);
+  }, [feeding, paging, kind, displayedRows.length]);
 
   if (status === "loading") {
     return (
@@ -223,52 +261,117 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
         )}
       </div>
 
-      {searchResults === null && (
+      {answers === null && (
         <div className="lib-pills" role="group" aria-label={t("library.filter")}>
-          {(["all", "movies", "series"] as const).map((kind) => (
-            <button key={kind} type="button" className="lib-pill" aria-pressed={filter === kind} onClick={() => setFilter(kind)} data-testid={`filter-${kind}`}>
-              {t(`library.${kind}`)}
+          {(["all", "movies", "series"] as const).map((each) => (
+            <button key={each} type="button" className="lib-pill" aria-pressed={filter === each} onClick={() => setFilter(each)} data-testid={`filter-${each}`}>
+              {t(`library.${each}`)}
             </button>
           ))}
         </div>
       )}
 
-      {searchResults !== null ? (
+      {answers !== null ? (
         <div className="lib-row" data-testid="library-search-results">
           <h3>
-            {searchResults.length > 0
-              ? t("library.resultsFor", { query }) + (searchFailed ? t("tv.searchOffline") : "")
+            {answers.items.length > 0
+              ? (answers.exact > 0 ? t("library.resultsFor", { query: query.trim() }) : t("tv.closestOnly", { query: query.trim() })) + (searchFailed ? t("tv.searchOffline") : "")
               : searching
                 ? t("tv.looking")
                 : searchFailed
                   ? t("tv.searchFailed")
-                  : t("library.noMatches", { query })}
+                  : t("library.noMatches", { query: query.trim() })}
             {searching && <span className="spinner" style={{ marginLeft: 8 }} />}
           </h3>
-          {searchResults.length > 0 && (
+          {answers.items.length > 0 && (
             <ul className="lib-list">
-              {searchResults.map((item) => (
-                <li key={item.id}>
-                  <Result item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
-                </li>
+              {answers.items.map((item, at) => (
+                <Fragment key={item.id}>
+                  {at === answers.exact && at > 0 && (
+                    <li>
+                      <h4 className="lib-closest" data-testid="library-closest">
+                        {t("tv.closest")}
+                      </h4>
+                    </li>
+                  )}
+                  <li>
+                    <Result item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
+                  </li>
+                </Fragment>
               ))}
             </ul>
           )}
         </div>
       ) : (
-        displayedRows.map((row) => (
-          <div className="lib-row" key={row.id} data-testid="library-row">
-            <h3>{rowTitle(row)}</h3>
-            <div className="lib-scroller">
-              {row.items.map((item) => (
-                <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
-              ))}
+        <>
+          {filter === "all" &&
+            because.map((like) => (
+              <div className="lib-row" key={`because:${like.key}`} data-testid="library-because">
+                <h3>{t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title })}</h3>
+                <Scroller>
+                  {like.items.map((item) => (
+                    <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
+                  ))}
+                </Scroller>
+              </div>
+            ))}
+          {displayedRows.map((row) => (
+            <div className="lib-row" key={row.id} data-testid="library-row">
+              <h3>{rowTitle(row)}</h3>
+              <Scroller {...(hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
+                {row.items.map((item) => (
+                  <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
+                ))}
+              </Scroller>
             </div>
-          </div>
-        ))
+          ))}
+          {/* Under the last row: empty tiles while the rows that come next are on their way, and a line when they could not be had (they are asked for again in a moment). */}
+          {failedShelves(feeding, kind) && (
+            <p className="muted small" role="status" data-testid="library-rows-failed">
+              {t("rows.moreFailed")}
+            </p>
+          )}
+          {loadingShelves(feeding, kind) && (
+            <div className="lib-row" aria-hidden="true" data-testid="library-rows-waiting">
+              <span className="lib-waiting-title" />
+              <div className="lib-scroller">
+                {Array.from({ length: WAITING_TILES + 1 }, (_, at) => (
+                  <div className="lib-tile lib-waiting" key={at}>
+                    <span className="lib-art" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
-      <p className="muted small">{t("library.credit", { sources: [...new Set(library.rows.map((row) => row.source))].join(", ") })}</p>
+      <p className="muted small">
+        {t("library.credit", { sources: [...new Set(library.rows.map((row) => row.source))].join(", ") })}
+        {library.rows.some((row) => TMDB_SOURCES.has(row.source)) && ` ${t("library.tmdb")}`}
+      </p>
     </section>
+  );
+}
+
+/**
+ * A row's tiles, to scroll sideways. A row the library can add titles to (`onNearEnd`) asks for them as its end comes near, whoever scrolled it (a finger, or the
+ * page growing under it), and asks again after each answer while the end is still near (so a row that does not fill the screen fills it). `loading` shows empty tiles at its end.
+ */
+function Scroller({ children, onNearEnd, loading }: { children: ReactNode; onNearEnd?: () => void; loading?: boolean }) {
+  const box = useRef<HTMLDivElement>(null);
+  const wantsMore = useRef(onNearEnd);
+  wantsMore.current = onNearEnd;
+  const measure = () => {
+    const row = box.current;
+    if (row && row.clientWidth > 0 && row.scrollWidth - row.clientWidth - row.scrollLeft <= row.clientWidth * ROW_NEAR_END) wantsMore.current?.();
+  };
+  // (The titles of a row come as the library fills in, and the window changes size: look again each time.)
+  useEffect(measure);
+  return (
+    <div className="lib-scroller" ref={box} onScroll={measure}>
+      {children}
+      {loading && Array.from({ length: WAITING_TILES }, (_, at) => <div className="lib-tile lib-waiting" aria-hidden="true" data-testid="library-waiting" key={`waiting-${at}`}><span className="lib-art" /></div>)}
+    </div>
   );
 }
 

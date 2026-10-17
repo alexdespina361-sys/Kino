@@ -1,5 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
-import { guestStorage, openLibrary, withLibrary } from "./helpers";
+import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { guestStorage, openDevice, openLibrary, openTv, PHONE, readPairingCode, test, withLibrary } from "./helpers";
 
 /** The library as it grows while a page is scrolled: the rows after the first ones, more titles of a row, and a search that forgives (see src/client/shared/feed.ts). */
 
@@ -146,5 +146,128 @@ test.describe("the TV's library goes on as it is scrolled", () => {
     const loved = tv.getByRole("region", { name: "Because you loved Loved Film" });
     await expect(loved).toBeVisible();
     await expect(loved.getByTestId("tv-browse-tile")).toHaveText([/Like Loved One/, /Like Loved Two/]);
+  });
+});
+
+test.describe("the phone's library goes on as it is scrolled", () => {
+  /** Twenty rows are far more than a phone's screen shows: nothing more is asked for until the page is scrolled near its end. */
+  const long = { updatedAt: Date.now(), rows: Array.from({ length: 20 }, (_, i) => rowOf(`b${i}`, `Base ${i + 1}`, 20)) };
+
+  /** A phone that is paired with a TV, its library answered by `setup`, and what it kept (`seed`) like a device that has watched and scored things. */
+  async function pairedPhone(browser: Browser, setup: (context: BrowserContext) => Promise<unknown>, seed: Record<string, string> = {}) {
+    const tv = await openTv(browser);
+    const phone = await openDevice(browser, PHONE, seed, setup);
+    await phone.goto("/");
+    await phone.getByTestId("code-input").fill(await readPairingCode(tv)); // connects by itself on the sixth digit
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    return phone;
+  }
+  const toTheEnd = (phone: Page) => phone.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+
+  test("the rows that come next are asked for as the page is scrolled near its end, to the last ones", async ({ browser }) => {
+    const asked: number[] = [];
+    const shelves = (from: number, count: number) => Array.from({ length: count }, (_, i) => rowOf(`s${from + i}`, `Shelf ${from + i}`, 12));
+    const phone = await pairedPhone(
+      browser,
+      withLibrary(long, undefined, {
+        rows: (cursor) => {
+          asked.push(cursor);
+          return cursor === 0 ? { rows: shelves(1, 10), next: 10 } : { rows: shelves(11, 1), next: null };
+        },
+      }),
+    );
+    const rows = phone.getByTestId("library-row");
+    await expect(rows).toHaveCount(20);
+    expect(asked).toEqual([]);
+
+    await toTheEnd(phone);
+    await expect(rows).toHaveCount(30); // ten rows are a long way to the new end: the page waits for the finger
+    await expect(rows.nth(20).locator("h3")).toHaveText("Shelf 1");
+    expect(asked).toEqual([0]);
+
+    await toTheEnd(phone);
+    await expect(rows).toHaveCount(31);
+    await expect(rows.nth(30).locator("h3")).toHaveText("Shelf 11");
+    expect(asked).toEqual([0, 10]);
+
+    await toTheEnd(phone); // that was the last: the page ends there, and nothing more is asked for
+    await phone.waitForTimeout(300);
+    await expect(rows).toHaveCount(31);
+    expect(asked).toEqual([0, 10]);
+  });
+
+  test("a row brings more of its titles as it is scrolled sideways, to its last page", async ({ browser }) => {
+    const asked: number[] = [];
+    const phone = await pairedPhone(
+      browser,
+      withLibrary(base, undefined, {
+        more: (row, page) => {
+          if (row === "b1") asked.push(page);
+          return { items: Array.from({ length: 20 }, (_, i) => film(`${row}-p${page}-${i}`, `${row} page ${page} title ${i + 1}`)), last: page === 3 };
+        },
+      }),
+    );
+    const row = phone.getByTestId("library-row").nth(1);
+    const titles = row.getByTestId("library-tile");
+    const toTheRight = () => row.locator(".lib-scroller").evaluate((box) => box.scrollTo(box.scrollWidth, 0));
+    await expect(titles).toHaveCount(20);
+    expect(asked).toEqual([]); // the end of the row is far off
+
+    await toTheRight();
+    await expect(titles).toHaveCount(40);
+    await expect(row.getByTitle("b1 page 2 title 1", { exact: true })).toBeAttached();
+    await toTheRight();
+    await expect(titles).toHaveCount(60);
+    await toTheRight(); // the third page was the last: no more is asked for
+    await phone.waitForTimeout(300);
+    await expect(titles).toHaveCount(60);
+    expect(asked).toEqual([2, 3]);
+  });
+
+  test("a search with a slip lists the title that has the words, and the closest others under a heading of their own", async ({ browser }) => {
+    const phone = await pairedPhone(
+      browser,
+      withLibrary(base, (query) => (query.includes("strager") ? { items: [film("st", "Stranger Things"), film("c1", "Strange World"), film("c2", "Stranger Than Fiction")], exact: 1 } : [])),
+    );
+    await phone.getByTestId("library-search-input").fill("strager things");
+    const results = phone.getByTestId("library-search-results");
+    await expect(results.locator("h3")).toHaveText("Results for “strager things”");
+    await expect(results.locator("li")).toHaveText([/Stranger Things/, "Closest matches", /Strange World/, /Stranger Than Fiction/]);
+    await expect(phone.getByTestId("library-result")).toHaveCount(3);
+  });
+
+  test("a search that only the closest titles answer says so", async ({ browser }) => {
+    const phone = await pairedPhone(browser, withLibrary(base, (query) => (query.includes("zq") ? { items: [film("c1", "Zorro Quest")], exact: 0 } : [])));
+    await phone.getByTestId("library-search-input").fill("zq");
+    await expect(phone.getByTestId("library-search-results").locator("h3")).toHaveText("Nothing matches “zq” exactly. These are the closest.");
+    await expect(phone.getByTestId("library-result")).toHaveCount(1);
+    await expect(phone.getByTestId("library-closest")).toHaveCount(0); // (the line above the title says it)
+  });
+
+  test("titles a profile scored high get a row of titles like them, above the library's own", async ({ browser }) => {
+    const url = "https://films.example/loved-film";
+    const phone = await pairedPhone(
+      browser,
+      async (context) => {
+        await withLibrary(base)(context);
+        await context.route(/\/api\/library\/similar/, (route) => route.fulfill({ json: { items: [film("l1", "Like Loved One"), film("l2", "Like Loved Two")] } }));
+      },
+      guestStorage({ ratings: [{ key: `rate:${url}`, at: Date.now(), title: "Loved Film", url, score: 9, ratedAt: Date.now() }] }),
+    );
+    const loved = phone.getByTestId("library-because");
+    await expect(loved.locator("h3")).toHaveText("Because you loved Loved Film");
+    await expect(loved.getByTestId("library-tile")).toHaveText([/Like Loved One/, /Like Loved Two/]);
+    await expect(phone.locator('[data-testid="library-because"], [data-testid="library-row"]').first()).toHaveAttribute("data-testid", "library-because");
+  });
+
+  test("names TMDB where the titles are its", async ({ browser }) => {
+    const filmpire = { updatedAt: Date.now(), rows: [{ ...rowOf("f1", "Filmpire row", 4), source: "Filmpire" }] };
+    const phone = await pairedPhone(browser, withLibrary(filmpire));
+    await expect(phone.getByTestId("library")).toContainText("From Filmpire.");
+    await expect(phone.getByTestId("library")).toContainText("This product uses the TMDB API but is not endorsed or certified by TMDB.");
+
+    const other = await pairedPhone(browser, withLibrary(base));
+    await expect(other.getByTestId("library")).toContainText("From Test Source.");
+    await expect(other.getByTestId("library")).not.toContainText("TMDB");
   });
 });

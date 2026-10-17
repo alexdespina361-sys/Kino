@@ -538,6 +538,13 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .lib-result > .lib-round.lib-add[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .lib-result > .lib-round.lib-add[aria-pressed="true"]:focus-visible { background: var(--accent-hover); }
 @media (hover: hover) { .lib-result > .lib-round.lib-add[aria-pressed="true"]:hover { background: var(--accent-hover); } }
+/* The heading over the closest others, under the titles that have every word that was typed. */
+.lib-closest { margin: 12px 0 2px; font-size: 1rem; font-weight: 700; }
+
+/* Empty tiles at the end of a row, and a row of them under the last one, while the titles that come next are on their way. */
+.lib-waiting { pointer-events: none; }
+.lib-waiting .lib-art { background: var(--surface-2); }
+.lib-waiting-title { display: block; width: 9em; height: 1.1em; border-radius: 6px; background: var(--surface-2); }
 
 /* A title's own page (a sheet): its picture, Play and the lists, what it is about, and a show's episodes. */
 .title-art { position: relative; display: block; flex: none; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 12px; background: var(--surface-2); }

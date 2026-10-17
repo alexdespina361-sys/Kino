@@ -111,6 +111,7 @@
 
 /* Over a group of things, one way of saying what the group is: in words, not capitals (a capital label wraps into an orphan the moment it has a count in it). A heading of a group is as large as the body and bold, in a lighter grey than the words it heads, so that it is told from the label of a field (smaller, quiet) without a capital's help. */
 :root[data-ui="polish"] .phone-ui .group h3,
+:root[data-ui="polish"] .phone-ui .lib-closest,
 :root[data-ui="polish"] .phone-ui .sheet-section {
   color: var(--p-label);
   font-size: var(--p-fs-3);
