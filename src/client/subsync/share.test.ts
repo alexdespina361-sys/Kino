@@ -296,7 +296,9 @@ describe("httpShared", () => {
   });
 
   it("says nothing was found when the server has none, says something odd, or cannot be reached", async () => {
-    vi.stubGlobal("fetch", async () => reply(404, { error: "not_found" }));
+    vi.stubGlobal("fetch", async () => reply(204));
+    expect(await httpShared().get(key)).toBeUndefined();
+    vi.stubGlobal("fetch", async () => reply(404, { error: "not_found" })); // (what a server of before said)
     expect(await httpShared().get(key)).toBeUndefined();
     vi.stubGlobal("fetch", async () => reply(200, { v: 1, lines: 3, placed: [[9, 0, 0, 0]] }));
     expect(await httpShared().get(key)).toBeUndefined();

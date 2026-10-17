@@ -137,7 +137,7 @@ test.describe("the server's shared subtitle timings", () => {
 
   test("keep what a screen leaves, join what another leaves, and give it back", async ({ request }) => {
     const key = randomBytes(16).toString("hex");
-    expect((await request.get(`/api/subsync/${key}`)).status()).toBe(404);
+    expect((await request.get(`/api/subsync/${key}`)).status()).toBe(204); // (nobody has yet: a 404 would be an error in every viewer's console)
     expect((await request.put(`/api/subsync/${key}`, { data: timing })).status()).toBe(204);
     expect((await request.put(`/api/subsync/${key}`, { data: { v: 1, lines: 40, placed: [[9, -250, -240, 1]] } })).status()).toBe(204);
     const kept = await request.get(`/api/subsync/${key}`);
@@ -153,6 +153,6 @@ test.describe("the server's shared subtitle timings", () => {
     expect((await request.put(`/api/subsync/${key}`, { headers: { "content-type": "application/json" }, data: '"Hello there"' })).status()).toBe(400);
     expect((await request.put(`/api/subsync/${key}`, { data: "Hello there" })).status()).toBe(415); // (not JSON at all)
     expect((await request.get(`/api/subsync/not-a-key`)).status()).toBe(400);
-    expect((await request.get(`/api/subsync/${key}`)).status()).toBe(404);
+    expect((await request.get(`/api/subsync/${key}`)).status()).toBe(204); // (and none of it was kept)
   });
 });
