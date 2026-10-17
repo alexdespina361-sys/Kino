@@ -655,3 +655,85 @@ describe("createLibrary titles with no video", () => {
     expect(urls((await library.get()).rows)).toEqual([first, second]);
   });
 });
+
+describe("canonicalItemKey and cross-source deduplication", () => {
+  it("computes canonical keys across various URL schemes and metadata", async () => {
+    const { canonicalItemKey } = await import("./library");
+
+    expect(canonicalItemKey({ id: "1", title: "Matrix", kind: "movie", url: "https://filmpire.sc/watch/603" })).toBe("tmdb:movie:603");
+    expect(canonicalItemKey({ id: "2", title: "Matrix", kind: "movie", url: "https://filmpire.cc/watch/603?type=movie" })).toBe("tmdb:movie:603");
+    expect(canonicalItemKey({ id: "3", title: "Matrix", kind: "movie", url: "https://stream.example/embed?tmdb=603" })).toBe("tmdb:movie:603");
+    expect(canonicalItemKey({ id: "4", title: "Matrix", kind: "movie", url: "https://stream.example/watch?imdb=tt0133093" })).toBe("imdb:tt0133093");
+    expect(canonicalItemKey({ id: "5", title: "The Dark Knight", kind: "movie", year: 2008, url: "https://arbitrary.site/movie/dark-knight" })).toBe("meta:movie:thedarkknight:2008");
+  });
+
+  it("deduplicates identical titles from multiple backend sources in search results", async () => {
+    const source1: LibrarySource = {
+      id: "filmpire",
+      name: "Filmpire",
+      load: () => Promise.resolve([]),
+      search: () => Promise.resolve([
+        { id: "filmpire-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "https://filmpire.sc/watch/603" },
+      ]),
+    };
+
+    const source2: LibrarySource = {
+      id: "filmpire-cc",
+      name: "Filmpire CC",
+      load: () => Promise.resolve([]),
+      search: () => Promise.resolve([
+        { id: "filmpire-cc-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "https://filmpire.cc/watch/603?type=movie" },
+      ]),
+    };
+
+    const { createLibrary } = await import("./library");
+    const library = createLibrary({ sources: [source1, source2] });
+    const searchRes = await library.search("matrix");
+
+    expect(searchRes.items).toHaveLength(1);
+    expect(searchRes.items[0]!.title).toBe("The Matrix");
+  });
+
+  it("deduplicates identical items within rows across sources", async () => {
+    const source1: LibrarySource = {
+      id: "source1",
+      name: "Source 1",
+      load: () => Promise.resolve([
+        {
+          id: "row-popular",
+          title: "Popular",
+          source: "Source 1",
+          items: [
+            { id: "s1-603", title: "The Matrix", year: 1999, kind: "movie", url: "https://filmpire.sc/watch/603" },
+            { id: "s1-604", title: "The Matrix Reloaded", year: 2003, kind: "movie", url: "https://filmpire.sc/watch/604" },
+          ],
+        },
+      ]),
+    };
+
+    const source2: LibrarySource = {
+      id: "source2",
+      name: "Source 2",
+      load: () => Promise.resolve([
+        {
+          id: "row-popular-2",
+          title: "Popular Mirror",
+          source: "Source 2",
+          items: [
+            { id: "s2-603", title: "The Matrix", year: 1999, kind: "movie", url: "https://filmpire.cc/watch/603?type=movie" }, // duplicate of 603
+            { id: "s2-605", title: "The Matrix Revolutions", year: 2003, kind: "movie", url: "https://filmpire.cc/watch/605" },
+          ],
+        },
+      ]),
+    };
+
+    const { createLibrary } = await import("./library");
+    const library = createLibrary({ sources: [source1, source2] });
+    const libData = await library.get();
+
+    // Row 1 has 603 and 604
+    expect(libData.rows[0]!.items.map((i) => i.id)).toEqual(["s1-603", "s1-604"]);
+    // Row 2 has 603 and 605
+    expect(libData.rows[1]!.items.map((i) => i.id)).toEqual(["s2-603", "s2-605"]);
+  });
+});

@@ -567,3 +567,105 @@ describe("filmpireSource seasons", () => {
     await expect(filmpireSource({ fetch: (async () => Promise.reject(new Error("offline"))) as never }).seasons!(link)).rejects.toThrow();
   });
 });
+
+describe("filmpire.cc support and canonical alias fallback", () => {
+  it("parses watch links from both filmpire.sc and filmpire.cc with movie/series types", async () => {
+    const { parseWatchLink } = await import("./filmpire");
+    expect(parseWatchLink("https://filmpire.sc/watch/603")).toEqual({ id: 603, type: "movie" });
+    expect(parseWatchLink("https://filmpire.sc/watch/1396?s=1&e=1")).toEqual({ id: 1396, type: "tv" });
+    expect(parseWatchLink("https://filmpire.cc/watch/1236045?type=movie")).toEqual({ id: 1236045, type: "movie" });
+    expect(parseWatchLink("https://www.filmpire.cc/watch/312359?type=series")).toEqual({ id: 312359, type: "tv" });
+    expect(parseWatchLink("https://filmpire.cc/watch/62715?s=1&e=1")).toEqual({ id: 62715, type: "tv" });
+    expect(parseWatchLink("https://unknown.com/watch/603")).toBeNull();
+  });
+
+  it("finds canonical alias for sub-arcs when the standalone entry returns 404", async () => {
+    const { findLibraryCanonicalAlias } = await import("./filmpire");
+    const tmdbFetcher = vi.fn(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/search/tv") && urlStr.includes("query=Dragon%20Ball%20Super")) {
+        return json({
+          results: [
+            { id: 312359, name: "Dragon Ball Super: Beerus" },
+            { id: 62715, name: "Dragon Ball Super" },
+          ],
+        });
+      }
+      return json({ results: [] });
+    });
+
+    const probeFetcher = vi.fn(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("tmdb=62715")) {
+        return json({ status_code: "200", data: { eps: { "1": [1, 2], "2": [1] } } });
+      }
+      return json({ status_code: 404 });
+    });
+
+    const cache = new Map();
+    const alias = await findLibraryCanonicalAlias(
+      "tv",
+      312359,
+      "Dragon Ball Super: Beerus",
+      "test-key",
+      tmdbFetcher as never,
+      probeFetcher as never,
+      cache,
+      Date.now,
+      1500,
+    );
+
+    expect(alias).toEqual({ id: 62715, seasons: [1, 2] });
+    expect(tmdbFetcher).toHaveBeenCalledTimes(1);
+    expect(probeFetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("search preserves unindexed title when canonical parent alias exists", async () => {
+    const searchResults = [
+      { id: 312359, media_type: "tv", name: "Dragon Ball Super: Beerus", first_air_date: "2026-10-11" },
+    ];
+
+    const tmdbGet = vi.fn(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/search/multi")) {
+        return json({ results: searchResults });
+      }
+      if (urlStr.includes("/search/tv") && urlStr.includes("query=Dragon%20Ball%20Super")) {
+        return json({
+          results: [
+            { id: 312359, name: "Dragon Ball Super: Beerus" },
+            { id: 62715, name: "Dragon Ball Super" },
+          ],
+        });
+      }
+      return json({ results: [] });
+    });
+
+    const probe = vi.fn(async (url: string | URL) => {
+      const urlStr = String(url);
+      if (urlStr.includes("tmdb=312359")) {
+        return json({ status_code: 404 });
+      }
+      if (urlStr.includes("tmdb=62715")) {
+        return json({ status_code: "200", data: { eps: { "1": [1, 2, 3] } } });
+      }
+      return json({ status_code: 404 });
+    });
+
+    const source = filmpireSource({ fetch: tmdbGet as never, probeFetch: probe as never, verifyPlayback: true });
+    const results = await source.search!("dragon ball super:beerus");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({
+      id: "filmpire-tv-312359",
+      title: "Dragon Ball Super: Beerus",
+      year: 2026,
+      kind: "series",
+      url: "https://filmpire.sc/watch/62715?s=1&e=1",
+    });
+
+    // Verify seasons is preloaded for the canonical alias
+    const seasons = await source.seasons!("https://filmpire.sc/watch/62715?s=1&e=1");
+    expect(seasons).toEqual([1]);
+  });
+});

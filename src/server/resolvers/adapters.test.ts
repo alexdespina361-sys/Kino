@@ -97,4 +97,40 @@ describe("adapters streaming proxy configuration", () => {
       expect(res.media.stream.url).toMatch(/^https:\/\/kino-edge\.workers\.dev\?url=/);
     }
   });
+
+  it("includes filmpire.cc in filmpire adapter domains", async () => {
+    const { createFilmpireAdapter } = await import("./adapters/filmpire");
+    const adapter = createFilmpireAdapter();
+    expect(adapter.domains).toContain("filmpire.cc");
+    expect(adapter.domains).toContain("filmpire.sc");
+  });
+
+  it("resolves filmpire.cc links and dispatches appropriately", async () => {
+    const { createResolver } = await import("./index");
+    const mockAdapter = {
+      id: "filmpire",
+      domains: ["filmpire.sc", "filmpire.cc"],
+      resolve: vi.fn(async (url: URL) => ({
+        status: "success" as const,
+        resolver: "filmpire",
+        media: {
+          title: "Test Movie",
+          stream: { url: "https://stream.example/video.m3u8", type: "hls" as const },
+        },
+      })),
+    };
+
+    const resolve = createResolver({
+      log: { info() {} },
+      adapters: [mockAdapter as never],
+    });
+
+    const res = await resolve("https://filmpire.cc/watch/1236045?type=movie");
+    expect(res.status).toBe("success");
+    expect(mockAdapter.resolve).toHaveBeenCalledWith(new URL("https://filmpire.cc/watch/1236045?type=movie"));
+
+    const resTv = await resolve("https://www.filmpire.cc/watch/312359?type=series");
+    expect(resTv.status).toBe("success");
+    expect(mockAdapter.resolve).toHaveBeenCalledWith(new URL("https://www.filmpire.cc/watch/312359?type=series"));
+  });
 });

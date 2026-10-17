@@ -22,6 +22,30 @@ export interface LibrarySource {
 /** How a try at playing a link went: it played, the place has no video of it, or the video could not be reached this time. */
 export type PlayOutcome = "found" | "none" | "failed";
 
+/**
+ * Canonical key for deduplicating media across diverse sources (Filmpire, Filmpire.cc, mirrors, etc.).
+ * Strips provider-specific URLs and IDs down to the underlying content identity.
+ */
+export function canonicalItemKey(item: LibraryItem): string {
+  try {
+    const url = new URL(item.url);
+    const watchMatch = url.pathname.match(/\/(?:watch|movie|tv|series|film)\/([a-zA-Z0-9_-]+)/i);
+    const id = url.searchParams.get("tmdb") || url.searchParams.get("id") || watchMatch?.[1];
+    if (id && /^\d+$/.test(id)) {
+      return `tmdb:${item.kind ?? "media"}:${id}`;
+    }
+    const imdb = url.searchParams.get("imdb") || (id && /^tt\d+$/i.test(id) ? id : undefined);
+    if (imdb) {
+      return `imdb:${imdb.toLowerCase()}`;
+    }
+  } catch {
+    // not a valid URL
+  }
+  const normTitle = item.title.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const year = item.year ?? "";
+  return `meta:${item.kind ?? "media"}:${normTitle}:${year}`;
+}
+
 /** What a search found: the titles, the likeliest first, of which the first `exact` have all the words that were typed and the rest are the closest others. */
 export interface SearchAnswer {
   items: LibraryItem[];
@@ -116,13 +140,25 @@ export function createLibrary(options: LibraryOptions): LibraryService {
     return failure.strikes < STRIKES_TO_HIDE || (asked && !failure.hard);
   };
   /** The rows without the titles that are left out; a row left with nothing goes too. */
-  const listedRows = (rows: LibraryRow[]): LibraryRow[] =>
-    failures.size === 0
-      ? rows
-      : rows.flatMap((row) => {
-          const items = row.items.filter((item) => listed(item));
-          return items.length === row.items.length ? [row] : items.length > 0 ? [{ ...row, items }] : [];
-        });
+  const listedRows = (rows: LibraryRow[]): LibraryRow[] => {
+    const filtered =
+      failures.size === 0
+        ? rows
+        : rows.flatMap((row) => {
+            const items = row.items.filter((item) => listed(item));
+            return items.length === row.items.length ? [row] : items.length > 0 ? [{ ...row, items }] : [];
+          });
+    return filtered.map((row) => {
+      const rowSeen = new Set<string>();
+      const dedupedItems = row.items.filter((item) => {
+        const canonKey = canonicalItemKey(item);
+        if (rowSeen.has(canonKey)) return false;
+        rowSeen.add(canonKey);
+        return true;
+      });
+      return dedupedItems.length === row.items.length ? row : { ...row, items: dedupedItems };
+    });
+  };
 
   /**
    * A question about a link, put to the places in turn: the first one that knows the link answers. An empty answer is
@@ -224,8 +260,10 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       const closest: LibraryItem[] = [];
       const take = (items: LibraryItem[], into = exact) => {
         for (const item of items) {
-          if (seen.has(item.id) || !listed(item, true)) continue;
+          const canonKey = canonicalItemKey(item);
+          if (seen.has(item.id) || seen.has(canonKey) || !listed(item, true)) continue;
           seen.add(item.id);
+          seen.add(canonKey);
           into.push(item);
         }
       };

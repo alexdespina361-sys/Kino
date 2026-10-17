@@ -128,10 +128,37 @@ async function getHostToken(streamOrigin: string, playerUrl: string): Promise<st
   return cached?.token || "";
 }
 
+async function findCanonicalAlias(
+  contentType: "tv" | "movie",
+  tmdbId: string | number,
+  name: string,
+): Promise<{ id: number; name: string } | null> {
+  const parts = name.split(/[:\-\–]/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return null;
+  const parentName = parts[0]!;
+  try {
+    const res = await fetchJson<{ results?: Array<{ id: number; name?: string; title?: string }> }>(
+      `https://api.themoviedb.org/3/search/${contentType}?api_key=90b2cae8d7161e8ba0f3836240d7d352&query=${encodeURIComponent(parentName)}`,
+    );
+    for (const match of res.results || []) {
+      if (String(match.id) === String(tmdbId)) continue;
+      const probeRes = await fetchJson<{ status_code?: string | number }>(
+        `https://data.vidsrc.sh/api.php?type=${contentType}&tmdb=${match.id}`,
+      );
+      if (String(probeRes.status_code) === "200") {
+        return { id: match.id, name: match.name || match.title || parentName };
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export function createFilmpireAdapter(): SiteAdapter {
-  return {
+  const adapter: SiteAdapter = {
     id: "filmpire",
-    domains: ["filmpire.sc", "filmpire.net", "filmpire.to", "filmpire.vip", "vidsrc.me", "screenfetch4.cyou"],
+    domains: ["filmpire.sc", "filmpire.cc", "filmpire.net", "filmpire.to", "filmpire.vip", "vidsrc.me", "screenfetch4.cyou"],
     async resolve(url: URL): Promise<ResolveResult> {
       // 1. Parse movie / series info
       const pathMatch = url.pathname.match(/\/(?:watch|movie|tv|series|embed)\/([a-zA-Z0-9_-]+)/i);
@@ -144,7 +171,7 @@ export function createFilmpireAdapter(): SiteAdapter {
 
       const s = url.searchParams.get("s") || url.searchParams.get("season");
       const e = url.searchParams.get("e") || url.searchParams.get("episode");
-      const isTv = Boolean((s && e) || url.pathname.includes("/tv") || url.pathname.includes("/series"));
+      const isTv = Boolean((s && e) || url.searchParams.get("type") === "series" || url.pathname.includes("/tv") || url.pathname.includes("/series"));
       const contentType = isTv ? "tv" : "movie";
 
       // 2. Fetch metadata from TMDB
@@ -187,6 +214,17 @@ export function createFilmpireAdapter(): SiteAdapter {
       }
 
       if (!containerUrl) {
+        if (title && !url.searchParams.has("_aliased")) {
+          const cleanTitle = title.replace(/\s*·\s*S\d+\s*E\d+.*$/, "").trim();
+          const alias = await findCanonicalAlias(contentType, id, cleanTitle);
+          if (alias) {
+            const aliasUrl = new URL(url.href);
+            aliasUrl.pathname = aliasUrl.pathname.replace(new RegExp(`/${id}(?=[/?#]|$)`), `/${alias.id}`);
+            aliasUrl.searchParams.set("id", String(alias.id));
+            aliasUrl.searchParams.set("_aliased", "1");
+            return adapter.resolve(aliasUrl);
+          }
+        }
         return { status: "unsupported", reason: "Video source currently unavailable." };
       }
 
@@ -454,6 +492,17 @@ export function createFilmpireAdapter(): SiteAdapter {
       }
 
       if (streamUrls.length === 0) {
+        if (title && !url.searchParams.has("_aliased")) {
+          const cleanTitle = title.replace(/\s*·\s*S\d+\s*E\d+.*$/, "").trim();
+          const alias = await findCanonicalAlias(contentType, id, cleanTitle);
+          if (alias) {
+            const aliasUrl = new URL(url.href);
+            aliasUrl.pathname = aliasUrl.pathname.replace(new RegExp(`/${id}(?=[/?#]|$)`), `/${alias.id}`);
+            aliasUrl.searchParams.set("id", String(alias.id));
+            aliasUrl.searchParams.set("_aliased", "1");
+            return adapter.resolve(aliasUrl);
+          }
+        }
         return { status: "unsupported", reason: "No video streams found." };
       }
 
@@ -530,4 +579,5 @@ export function createFilmpireAdapter(): SiteAdapter {
       };
     },
   };
+  return adapter;
 }
