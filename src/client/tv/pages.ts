@@ -56,6 +56,28 @@ export const hasRows = (view: View): boolean => isRowsPage(view) || view.kind ==
 /** The pages that belong to the profile: the corner button that opens the first of them stands for them all, and Back from any but the first goes to the first. */
 export const isProfilePage = (view: View): boolean => view.kind === "profile" || view.kind === "ratings" || view.kind === "history" || view.kind === "friends" || view.kind === "friend";
 
+/**
+ * The page Back goes to from this one, for the remote's Back key and for the button that says it: a category opened from the list of every category
+ * goes back to that list, a friend's page to the friends', what the profile rated, its History and its friends to the profile's, and any other page
+ * but Home to Home. Home is as far back as it goes (the menu is the next step), so it has none.
+ */
+export function backOf(view: View): View | null {
+  switch (view.kind) {
+    case "home":
+      return null;
+    case "category":
+      return view.from === "categories" ? { kind: "categories" } : { kind: "home" };
+    case "friend":
+      return { kind: "friends" };
+    case "ratings":
+    case "history":
+    case "friends":
+      return { kind: "profile" };
+    default:
+      return { kind: "home" };
+  }
+}
+
 /** How a row is laid out: wide tiles, a numbered ranking of posters, wide "continue" cards with a progress bar, or tiles of categories. */
 export type Layout = "wide" | "continue" | "ranked" | "categories";
 

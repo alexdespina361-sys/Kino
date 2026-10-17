@@ -979,7 +979,7 @@
 }
 .tv-hero-text { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.4em; min-height: 0; animation: tv-rise 0.4s ease both; }
 @keyframes tv-rise { from { opacity: 0; transform: translateY(0.9em); } }
-.tv-hero-actions { display: flex; gap: 0.9em; margin-top: 0.3em; padding: 0.25em; }
+.tv-hero-actions { display: flex; flex-wrap: wrap; gap: 0.9em; margin-top: 0.3em; padding: 0.25em; } /* (wraps: on a phone, "Remove from Continue watching" beside "Resume" was cut off at the edge) */
 .tv-hero-button {
   display: inline-flex;
   align-items: center;
@@ -1104,8 +1104,9 @@
 }
 .tv-tile-year { font-size: 1.25em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tv-tile:hover { color: #fff; }
-.tv-tile:focus-visible { color: #fff; transform: scale(1.1); outline: none; z-index: 2; }
-.tv-tile:focus-visible .tv-tile-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
+/* A title (or category, or card) that has the focus shows it, whatever gave it: a press takes none (see Tile), so a title is only ever focused by the arrow keys or by the click that opened it, and the ring is where the remote is. (:focus-visible would hide it after a mouse click or a tap, and the title that was clicked, and is where the remote stands on the way back, would look like any other.) */
+.tv-tile:focus { color: #fff; transform: scale(1.1); outline: none; z-index: 2; }
+.tv-tile:focus .tv-tile-art { box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
 
 /*
  * For a mouse: a small round button in the corner of a picture keeps the title (＋), lets it go (× in the accent colour, once it is
@@ -1154,7 +1155,7 @@
   .tv-tile-corner:hover { background: #fff; box-shadow: none; color: #000; transform: scale(1.14); }
   .tv-tile-corner:active { transform: scale(0.9); }
   /* (The corner is part of the tile, so pressing it presses the tile too; only the corner should sink.) */
-  .tv-tile:has(.tv-tile-corner:active):not(:focus-visible) { transform: none; }
+  .tv-tile:has(.tv-tile-corner:active):not(:focus) { transform: none; }
 }
 
 .tv-skeleton { height: 8.44em; border-radius: 0.6em; background: linear-gradient(90deg, #17171a, #232328, #17171a); background-size: 200% 100%; animation: tv-shimmer 1.4s linear infinite; }
@@ -1560,7 +1561,7 @@
   paint-order: stroke fill;
   transition: -webkit-text-stroke-color 0.18s ease;
 }
-.tv-tile-ranked:focus-visible .tv-rank b { -webkit-text-stroke-color: #fff; }
+.tv-tile-ranked:focus .tv-rank b { -webkit-text-stroke-color: #fff; }
 
 /* What is part way through: a little wider, with a play badge and a bar for how far it got. */
 .tv-tile-continue { width: 17em; }
@@ -1597,7 +1598,7 @@
 .tv-category-name { font-size: 1.6em; font-weight: 800; line-height: 1.1; letter-spacing: -0.01em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* (What a place of the profile's page says under its name is a line or two, and the banner says all of it; a third line would push the name out of the tile.) */
 .tv-category-count { font-size: 1.1em; font-weight: 600; color: rgba(255, 255, 255, 0.78); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tv-tile-category:focus-visible { transform: scale(1.1); box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
+.tv-tile-category:focus { transform: scale(1.1); box-shadow: 0 0 0 0.2em #fff, 0 0.8em 2em rgba(0, 0, 0, 0.7); }
 /* A friend: the picture they chose beside their name, with a green dot on it while they are online. The tile is wider than a category's, to keep as much room for the words. */
 .tv-tile-person { width: 21em; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0.9em; }
 .tv-person-pic { position: relative; z-index: 1; flex: none; font-size: 4.6em; line-height: 0; }
@@ -1994,5 +1995,5 @@
   .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }
   .tv-hero { transition: none; }
   .tv-tile, .tv-tile-category, .tv-end-tile, .tv-action, .tv-hero-button, .tv-choice, .tv-swatch, .tv-switch-row, .tv-key, .tv-tile-corner { transition: none; }
-  .tv-tile:focus-visible, .tv-tile-category:focus-visible, .tv-end-tile:focus-visible { transform: none; }
+  .tv-tile:focus, .tv-tile-category:focus, .tv-end-tile:focus-visible { transform: none; }
 }

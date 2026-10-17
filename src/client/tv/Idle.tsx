@@ -61,11 +61,14 @@ export function Screen({ children, testId, compact = false, focus = false, onBac
  * wherever it stands in the page), level with the wordmark. What a page is for is the accent's colour; leaving it never is. `label` says
  * where it goes when that is worth saying ("Back to the library").
  */
-export function BackButton({ onClick, testId, label, autoFocus = false }: { onClick: () => void; testId: string; label?: string; autoFocus?: boolean }) {
+export function BackButton({ onClick, testId, label, autoFocus = false, col }: { onClick: () => void; testId: string; label?: string; autoFocus?: boolean; /** In the library's top bar: its place among the corner's buttons, which the library's own arrow keys walk (a page that fills the screen is walked by `data-nav`). */ col?: number }) {
   const t = useT();
+  const text = label ?? t("common.back");
+  // (In the library's top bar its name goes on a small screen, where the account button needs the room: the button then keeps it for a screen reader.)
+  const place = col === undefined ? { "data-nav": true } : { "data-zone": "top", "data-row": 0, "data-col": col, "aria-label": text };
   return (
-    <button className="tv-action tv-back" onClick={onClick} data-nav {...(autoFocus ? { "data-autofocus": true } : {})} data-testid={testId}>
-      <ChevronLeftIcon /> {label ?? t("common.back")}
+    <button className="tv-action tv-back" onClick={onClick} {...place} {...(autoFocus ? { "data-autofocus": true } : {})} data-testid={testId}>
+      <ChevronLeftIcon /> {col === undefined ? text : <span className="tv-back-label">{text}</span>}
     </button>
   );
 }

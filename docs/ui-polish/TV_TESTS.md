@@ -88,5 +88,5 @@ Browser automation proves the logic and the look in Chromium; it does not prove 
 8. Open the search keyboard: is the key under the remote easy to follow when you move fast? Type a word, press the ◀ key under the letters: does the caret move between the letters, and does a letter typed next go there?
 9. Pair a phone: the code and the QR are readable from the sofa, and the phone scans it. The code can be selected, and Copy says it copied.
 10. On a slow connection the pictures of titles come in late: they should fade in (an old set may show them at once, which is fine).
-11. If the set has an air mouse (or you use a computer on the TV): the arrows at the end of a row, a click on a picture to pause and play, a double click on the left or right half to skip ten seconds, the dot of the progress bar dragged.
+11. If the set has an air mouse (or you use a computer on the TV): the arrows at the end of a row, a click on a picture to pause and play, a double click on the left or right half to skip ten seconds, the dot of the progress bar dragged. Click a title and close its page with a click: the ring is on the title that was clicked, and the arrow keys go on from it. The profile's pages (My ratings, History, Friends) have a Back button in the corner.
 12. Anything that looks different on the set from the pictures in this folder: write it down with the screen.

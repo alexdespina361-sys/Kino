@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { cardOf, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
+import { backOf, cardOf, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
 const row = (id: string, kind: "movie" | "series" | undefined, count = 3): LibraryRow => ({
@@ -61,6 +61,18 @@ describe("viewKey", () => {
     expect(viewKey({ kind: "profile" })).toBe("profile");
     expect(["profile", "ratings", "history", "friends", "friend"].every((kind) => isProfilePage({ kind } as never))).toBe(true);
     expect(["home", "movies", "series", "list", "search", "category", "categories"].some((kind) => isProfilePage({ kind } as never))).toBe(false);
+  });
+
+  it("says where Back goes from each page: one step out for the pages that are a step in, Home for the rest, nowhere from Home", () => {
+    expect(backOf({ kind: "ratings" })).toEqual({ kind: "profile" });
+    expect(backOf({ kind: "history" })).toEqual({ kind: "profile" });
+    expect(backOf({ kind: "friends" })).toEqual({ kind: "profile" });
+    expect(backOf({ kind: "friend", id: "f1" })).toEqual({ kind: "friends" });
+    expect(backOf({ kind: "profile" })).toEqual({ kind: "home" });
+    expect(backOf({ kind: "category", rowId: "r1", from: "categories" })).toEqual({ kind: "categories" });
+    expect(backOf({ kind: "category", rowId: "r1" })).toEqual({ kind: "home" });
+    for (const kind of ["movies", "series", "list", "search", "categories"] as const) expect(backOf({ kind })).toEqual({ kind: "home" });
+    expect(backOf({ kind: "home" })).toBeNull();
   });
 });
 

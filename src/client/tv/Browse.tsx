@@ -24,10 +24,10 @@ import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, UnfriendTv } from "./Friends";
-import { AccountChip, BellChip, Screen } from "./Idle";
+import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, typedCharacter, type BoxEdit, type SearchBox } from "./librarySearch";
-import { asOpened, entryOfItem, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, listOfRow, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
+import { asOpened, backOf, entryOfItem, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, listOfRow, ofKind, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
 import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
@@ -434,7 +434,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const canSignIn = accountStatus === "ready"; // (a server without accounts has nobody to sign in, but its TV has Settings, which the corner button leads to)
   const showAccount = accountStatus !== "loading";
   const showBell = canSignIn && bell.on;
-  const topButtons = (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the bell, the account button, then the full screen one
+  // The profile's page and the pages under it (what it rated, its friends, History) have the way back in the corner, the first of its buttons: a mouse and a
+  // finger have no key for it. (A friend's page has its own, the first button of its row.)
+  const wayBack = view.kind !== "friend" && isProfilePage(view) ? backOf(view) : null;
+  const lead = wayBack ? 1 : 0;
+  const topButtons = lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the way back, the bell, the account button, then the full screen one
   const signedIn = Boolean(me && profile);
   /** The profile's page has buttons where the other pages have a banner: Settings, and for a guest the way to sign in before it. */
   const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 1 : 2) : 0;
@@ -636,11 +640,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           if (text) return edit({ kind: "backspace" }); // (at the very start of the text there is nothing before the caret: nothing goes, and the page is not left either)
           if (event.repeat) return; // (holding it down empties the box and stops there: the repeats must not go on to leave the page)
         }
+        const back = backOf(page); // (a page that is a step in from another goes back to that one, the others to Home, also from the menu when the page has no title to go back to)
         if (posOf(document.activeElement)?.zone === "rail" && resolve(CONTENT)) go(CONTENT);
-        else if (page.kind === "category" && page.from === "categories") choose({ kind: "categories" }); // (one step in from the list it was chosen from)
-        else if (page.kind === "friend") choose({ kind: "friends" }); // (a friend's page is one step in from the friends')
-        else if (page.kind === "ratings" || page.kind === "history" || page.kind === "friends") choose({ kind: "profile" }); // (and these are one step in from the profile's)
-        else if (page.kind !== "home") choose({ kind: "home" }); // (also from the menu, when the page has no title to go back to)
+        else if (back) choose(back);
         else go(RAIL); // home is as far back as it goes: the menu is the next step
         return;
       }
@@ -901,9 +903,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           </p>
         )}
         <div className="tv-browse-corner">
-          {showBell && <BellChip onOpen={() => setOverlay({ kind: "bell", back: { zone: "top", row: 0, col: 0 } })} col={0} />}
-          {showAccount && <AccountChip onOpen={() => choose({ kind: "profile" })} current={isProfilePage(view)} zone col={showBell ? 1 : 0} />}
-          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": (showBell ? 1 : 0) + (showAccount ? 1 : 0) }} />
+          {wayBack && <BackButton onClick={() => choose(wayBack)} testId="tv-page-back" col={0} />}
+          {showBell && <BellChip onOpen={() => setOverlay({ kind: "bell", back: { zone: "top", row: 0, col: lead } })} col={lead} />}
+          {showAccount && <AccountChip onOpen={() => choose({ kind: "profile" })} current={isProfilePage(view)} zone col={lead + (showBell ? 1 : 0)} />}
+          <FullscreenToggle className="tv-corner-button" data={{ "data-zone": "top", "data-row": 0, "data-col": lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) }} />
         </div>
       </header>
 
