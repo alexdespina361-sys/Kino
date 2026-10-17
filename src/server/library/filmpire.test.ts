@@ -566,4 +566,15 @@ describe("filmpireSource seasons", () => {
     await expect(filmpireSource({ fetch: (async () => json({ nope: true })) as never }).seasons!(link)).rejects.toThrow();
     await expect(filmpireSource({ fetch: (async () => Promise.reject(new Error("offline"))) as never }).seasons!(link)).rejects.toThrow();
   });
+
+  it("recognises filmpire.cc links and type=series query parameters", async () => {
+    const get = vi.fn(async () => json({ seasons: [{ season_number: 1, episode_count: 10 }] }));
+    const source = filmpireSource({ fetch: get as never });
+    const seasons = await source.seasons!("https://filmpire.cc/watch/1396?type=series");
+    expect(seasons).toEqual([1]);
+    expect(get).toHaveBeenCalledWith(
+      expect.stringContaining("/tv/1396?"),
+      expect.anything(),
+    );
+  });
 });

@@ -131,7 +131,7 @@ async function getHostToken(streamOrigin: string, playerUrl: string): Promise<st
 export function createFilmpireAdapter(): SiteAdapter {
   return {
     id: "filmpire",
-    domains: ["filmpire.sc", "filmpire.net", "filmpire.to", "filmpire.vip", "vidsrc.me", "screenfetch4.cyou"],
+    domains: ["filmpire.sc", "filmpire.cc", "www.filmpire.cc", "filmpire.net", "filmpire.to", "filmpire.vip", "vidsrc.me", "screenfetch4.cyou"],
     async resolve(url: URL): Promise<ResolveResult> {
       // 1. Parse movie / series info
       const pathMatch = url.pathname.match(/\/(?:watch|movie|tv|series|embed)\/([a-zA-Z0-9_-]+)/i);
@@ -144,7 +144,13 @@ export function createFilmpireAdapter(): SiteAdapter {
 
       const s = url.searchParams.get("s") || url.searchParams.get("season");
       const e = url.searchParams.get("e") || url.searchParams.get("episode");
-      const isTv = Boolean((s && e) || url.pathname.includes("/tv") || url.pathname.includes("/series"));
+      const isTv = Boolean(
+        (s && e) ||
+        url.pathname.includes("/tv") ||
+        url.pathname.includes("/series") ||
+        url.searchParams.get("type") === "series" ||
+        url.searchParams.get("type") === "tv"
+      );
       const contentType = isTv ? "tv" : "movie";
 
       // 2. Fetch metadata from TMDB

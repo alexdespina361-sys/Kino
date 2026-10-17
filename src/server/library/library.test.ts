@@ -654,4 +654,50 @@ describe("createLibrary titles with no video", () => {
     library.played(`https://elsewhere.example/${"x".repeat(3000)}`, "none");
     expect(urls((await library.get()).rows)).toEqual([first, second]);
   });
+
+  it("deduplicates search results across multiple sources for the same title", async () => {
+    const source1: LibrarySource = {
+      id: "source1",
+      name: "Source 1",
+      load: gives(row("One")),
+      search: () =>
+        Promise.resolve([
+          { id: "s1-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "https://filmpire.sc/watch/603" },
+        ]),
+    };
+    const source2: LibrarySource = {
+      id: "source2",
+      name: "Source 2",
+      load: gives(row("Two")),
+      search: () =>
+        Promise.resolve([
+          { id: "s2-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "https://filmpire.cc/watch/603?type=movie" },
+        ]),
+    };
+    const { library } = setup([source1, source2]);
+    const answer = await library.search("matrix");
+    expect(answer.items).toHaveLength(1);
+    expect(answer.items[0]?.title).toBe("The Matrix");
+  });
+
+  it("deduplicates identical items within a row when listed", async () => {
+    const duplicateRow: LibraryRow = {
+      id: "trending",
+      title: "Trending",
+      source: "Multi",
+      items: [
+        { id: "s1-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "https://filmpire.sc/watch/603" },
+        { id: "s2-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "https://filmpire.cc/watch/603?type=movie" },
+      ],
+    };
+    const source: LibrarySource = {
+      id: "multi",
+      name: "Multi",
+      load: gives(duplicateRow),
+    };
+    const { library } = setup([source]);
+    const lib = await library.get();
+    expect(lib.rows[0]?.items).toHaveLength(1);
+    expect(lib.rows[0]?.items[0]?.title).toBe("The Matrix");
+  });
 });

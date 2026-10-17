@@ -209,13 +209,18 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   };
 }
 
-/** The TMDB id and kind of a title from its Filmpire link (`/watch/603`, or `/watch/1399?s=1&e=1` for a show), or null for any other link. */
+/** The TMDB id and kind of a title from its Filmpire link (`/watch/603`, `/watch/1399?s=1&e=1`, or `/watch/1399?type=series`), or null for any other link. */
 function parseWatchLink(link: string): { id: number; type: "movie" | "tv" } | null {
   try {
     const url = new URL(link);
     const match = /^\/watch\/(\d+)$/.exec(url.pathname);
-    if (!match || !/(^|\.)filmpire\.sc$/.test(url.hostname)) return null;
-    return { id: Number(match[1]), type: url.searchParams.has("s") ? "tv" : "movie" };
+    if (!match || !/(^|\.)filmpire\.(sc|cc)$/i.test(url.hostname)) return null;
+    const isTv =
+      url.searchParams.has("s") ||
+      url.searchParams.has("season") ||
+      url.searchParams.get("type") === "series" ||
+      url.searchParams.get("type") === "tv";
+    return { id: Number(match[1]), type: isTv ? "tv" : "movie" };
   } catch {
     return null;
   }

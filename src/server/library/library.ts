@@ -115,14 +115,42 @@ export function createLibrary(options: LibraryOptions): LibraryService {
     }
     return failure.strikes < STRIKES_TO_HIDE || (asked && !failure.hard);
   };
-  /** The rows without the titles that are left out; a row left with nothing goes too. */
+  /**
+   * A stable key for a title so that search results and rows from different sources
+   * do not produce duplicate tiles for the same movie or series.
+   */
+  const canonicalItemKey = (item: LibraryItem): string => {
+    const idMatch = /(?:tmdb|filmpire)-(movie|tv|series)-(\d+)/i.exec(item.id);
+    if (idMatch?.[1] && idMatch[2]) {
+      const kind = idMatch[1].toLowerCase() === "movie" ? "movie" : "series";
+      return `tmdb:${kind}:${idMatch[2]}`;
+    }
+    const urlMatch = /\/watch\/(\d+)/.exec(item.url);
+    if (urlMatch?.[1]) {
+      const kind = item.kind ?? "media";
+      return `tmdb:${kind}:${urlMatch[1]}`;
+    }
+    const imdbMatch = /(tt\d{7,10})/i.exec(item.id) || /(tt\d{7,10})/i.exec(item.url);
+    if (imdbMatch?.[1]) {
+      return `imdb:${imdbMatch[1].toLowerCase()}`;
+    }
+    const normTitle = normalizeQuery(item.title);
+    return `meta:${item.kind ?? ""}:${normTitle}:${item.year ?? ""}`;
+  };
+
+  /** The rows without the titles that are left out; duplicate titles within a row are deduplicated. A row left with nothing goes too. */
   const listedRows = (rows: LibraryRow[]): LibraryRow[] =>
-    failures.size === 0
-      ? rows
-      : rows.flatMap((row) => {
-          const items = row.items.filter((item) => listed(item));
-          return items.length === row.items.length ? [row] : items.length > 0 ? [{ ...row, items }] : [];
-        });
+    rows.flatMap((row) => {
+      const rowSeen = new Set<string>();
+      const items = row.items.filter((item) => {
+        if (!listed(item)) return false;
+        const key = canonicalItemKey(item);
+        if (rowSeen.has(key)) return false;
+        rowSeen.add(key);
+        return true;
+      });
+      return items.length === row.items.length ? [row] : items.length > 0 ? [{ ...row, items }] : [];
+    });
 
   /**
    * A question about a link, put to the places in turn: the first one that knows the link answers. An empty answer is
@@ -224,8 +252,9 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       const closest: LibraryItem[] = [];
       const take = (items: LibraryItem[], into = exact) => {
         for (const item of items) {
-          if (seen.has(item.id) || !listed(item, true)) continue;
-          seen.add(item.id);
+          const key = canonicalItemKey(item);
+          if (seen.has(key) || !listed(item, true)) continue;
+          seen.add(key);
           into.push(item);
         }
       };

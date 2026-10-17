@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createFilmpireAdapter } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 
 describe("adapters streaming proxy configuration", () => {
@@ -96,5 +97,20 @@ describe("adapters streaming proxy configuration", () => {
     if (res.status === "success") {
       expect(res.media.stream.url).toMatch(/^https:\/\/kino-edge\.workers\.dev\?url=/);
     }
+  });
+});
+
+describe("createFilmpireAdapter", () => {
+  it("includes filmpire.cc and www.filmpire.cc in supported domains", () => {
+    const adapter = createFilmpireAdapter();
+    expect(adapter.domains).toContain("filmpire.cc");
+    expect(adapter.domains).toContain("www.filmpire.cc");
+    expect(adapter.domains).toContain("filmpire.sc");
+  });
+
+  it("returns invalid_url when TMDB ID is absent", async () => {
+    const adapter = createFilmpireAdapter();
+    const res = await adapter.resolve(new URL("https://filmpire.cc/browse"));
+    expect(res.status).toBe("invalid_url");
   });
 });
