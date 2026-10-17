@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { CAPTION_SETTINGS, CAPTION_VALUES, MAX_FOLLOWERS, type ResolveStatus } from "../../shared";
-import { setLanguage } from "../i18n";
-import { captionLabel, captionTitle, friendlyError, noticeText, qualityName, resolveFailure, socketError, statusWords, trackName } from "./words";
+import { setLanguage, t } from "../i18n";
+import { captionLabel, captionTitle, friendlyError, noticeText, qualityName, resolveFailure, socketError, statusWords, syncWords, trackName } from "./words";
 
 const LANGUAGES = ["en", "ro", "it"] as const;
 afterEach(() => setLanguage("en", false));
@@ -73,6 +73,40 @@ describe("qualityName", () => {
     expect(qualityName(undefined)).toBe("Auto");
     setLanguage("ro", false);
     expect(qualityName({ levels, current: -1, active: 2 })).toBe("Automată · 1080p");
+  });
+});
+
+describe("syncWords", () => {
+  it("says On or Off, and while it is on how it is going, in each language", () => {
+    expect(syncWords("off")).toBe("Off");
+    expect(syncWords("ready")).toBe("On");
+    expect(syncWords("syncing")).toBe("Syncing…");
+    expect(syncWords("synced")).toBe("In sync");
+    expect(syncWords("unavailable")).toBe("Not available for this video");
+    for (const language of ["ro", "it"] as const) {
+      setLanguage(language, false);
+      const words = (["off", "ready", "syncing", "synced", "unavailable"] as const).map(syncWords);
+      for (const word of words) expect(word, language).not.toMatch(/^player\.|^common\./); // (a missing word would show as its key)
+      expect(new Set(words).size, language).toBe(words.length); // (every state reads differently)
+      expect(words, language).not.toContain("Syncing…");
+    }
+  });
+
+  it("agrees with the name of the switch, a feminine noun in Romanian and Italian", () => {
+    setLanguage("ro", false);
+    expect([syncWords("off"), syncWords("ready")]).toEqual(["Oprită", "Pornită"]);
+    setLanguage("it", false);
+    expect([syncWords("off"), syncWords("ready")]).toEqual(["Disattivata", "Attiva"]);
+  });
+
+  it("has a notice for each way of switching it, in each language", () => {
+    for (const language of LANGUAGES) {
+      setLanguage(language, false);
+      expect(t("notice.syncOn"), language).not.toBe(t("notice.syncOff"));
+      expect(t("notice.syncOn"), language).not.toMatch(/^notice\./);
+      expect(t("player.autoSync"), language).not.toMatch(/^player\./);
+      expect(t("player.autoSyncHelp"), language).not.toMatch(/^player\./);
+    }
   });
 });
 

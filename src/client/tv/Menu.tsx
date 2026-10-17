@@ -25,7 +25,7 @@ import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { useEpisodeDetails, type SeasonDetails } from "../shared/episodeDetails";
 import { formatLeft } from "../shared/format";
 import { CheckIcon, CloseIcon } from "../shared/icons";
-import { captionLabel, captionTitle, statusWords, trackName } from "../shared/words";
+import { captionLabel, captionTitle, statusWords, syncWords, trackName } from "../shared/words";
 import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
 
 export type MenuKind = "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes";
@@ -63,6 +63,8 @@ interface MenuProps {
   captionStyle: CaptionStyle;
   subtitleDelay?: number;
   onSubtitleDelay?: (delay: number) => void;
+  /** Turn the timing of the subtitles to the sound, by itself, on or off (a TV without it has no such row). */
+  onSubtitleSync?: (on: boolean) => void;
   /** The show's key and what has been watched, to mark the episode list. */
   show: string | undefined;
   watched: readonly WatchedEntry[];
@@ -308,6 +310,12 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
 
   const delay = p.subtitleDelay ?? 0;
   const nudge = (by: number) => p.onSubtitleDelay?.(Math.round((delay + by) * 10) / 10);
+  // On by default, and the only place to turn it off: a TV that cannot do it says nothing about it.
+  const sync = player.subtitleSync;
+  const autoSync: Option[] =
+    sync !== undefined && p.onSubtitleSync
+      ? [{ key: "sub-sync", label: t("player.autoSync"), detail: syncWords(sync), active: false, pick: () => p.onSubtitleSync?.(sync === "off") }]
+      : [];
   columns.push({
     title: t("player.adjust"),
     size: "narrow",
@@ -317,6 +325,8 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
       { key: "sub-earlier", label: t("player.earlier"), detail: "−0.5s", active: false, pick: () => nudge(-0.5) },
       { key: "sub-later", label: t("player.later"), detail: "+0.5s", active: false, pick: () => nudge(0.5) },
       { key: "sub-reset", label: t("player.resetDelay"), detail: formatDelay(delay), active: false, pick: () => p.onSubtitleDelay?.(0) },
+      // (After the delay, which the remote reaches first, as it always did.)
+      ...autoSync,
       { key: "style", label: t("player.captionStyleMore"), active: false, pick: () => p.onKind("captions") },
     ],
   });

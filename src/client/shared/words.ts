@@ -32,6 +32,22 @@ export function noticeText(notice: ChangeNotice): string {
   }
 }
 
+/** What the switch for timing the subtitles to the sound by itself says: On or Off (its own words: the name of the switch is a feminine noun in Romanian and Italian), and while it is on, how it is going. */
+export function syncWords(state: PlayerState["subtitleSync"]): string {
+  switch (state) {
+    case "off":
+      return t("player.autoSyncOff");
+    case "syncing":
+      return t("player.syncSyncing");
+    case "synced":
+      return t("player.syncDone");
+    case "unavailable":
+      return t("player.syncUnavailable");
+    default:
+      return t("player.autoSyncOn");
+  }
+}
+
 /** What the quality button says: the quality that was picked, or "Auto" with the one the player has chosen for itself after it once that is known ("Auto · 720p"). */
 export function qualityName(quality: PlayerState["quality"]): string {
   if (!quality) return t("player.auto");

@@ -1,3 +1,4 @@
+import { alignerStats, describeAligner } from "../subsync/stats";
 import { describeSync, syncStats } from "../tv/sync";
 import { isHisense } from "./browser";
 import { readStorage } from "./format";
@@ -153,6 +154,7 @@ function startDebug(): void {
       ? `paused ${video.paused} at ${video.currentTime.toFixed(1)}s ready ${video.readyState} net ${video.networkState} controls ${video.controls} size ${video.videoWidth}x${video.videoHeight} error ${video.error?.code ?? "-"}`
       : "none";
     const sync = describeSync(syncStats); // (only on a screen that has watched along with a host)
+    const aligner = describeAligner(alignerStats); // (only once a film has started the subtitle aligner)
     return [
       "KINO DEBUG  (?debug=0 turns it off)",
       `UA ${navigator.userAgent}`,
@@ -164,6 +166,7 @@ function startDebug(): void {
       `page: ${root ? `tv state ${root.dataset.state} controls ${root.dataset.hud}` : "no TV screen"}  focus ${describeElement(document.activeElement)}`,
       `video: ${video_}`,
       ...(sync ? [sync] : []),
+      ...(aligner ? [aligner] : []),
     ];
   };
 

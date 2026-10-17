@@ -196,6 +196,7 @@ export function Tv() {
   const [subtitleDelay, setSubtitleDelay] = useState<number>(() => initialPrefs.subtitleDelay ?? 0);
   const subtitleDelayRef = useRef(subtitleDelay);
   subtitleDelayRef.current = subtitleDelay;
+  const subtitleSyncRef = useRef<boolean>(initialPrefs.subtitleSync ?? true);
   /** Sends the TV's current state to the phone again (set once the player exists). */
   const republishRef = useRef<() => void>(() => {});
   // Whether the remembered choice has been applied to the video that is loaded now (once per video).
@@ -514,6 +515,14 @@ export function Tv() {
     toastIdRef.current += 1;
     setToast({ id: toastIdRef.current, text: t("notice.delay", { value: formatDelay(clamped) }) });
   };
+  /** The switch for timing the subtitles to the sound by itself (the engine reports whether it is on, and what it is doing, in the state). */
+  const chooseSubtitleSync = (on: boolean) => {
+    subtitleSyncRef.current = on;
+    remember({ subtitleSync: on });
+    engineRef.current?.setSubtitleSync(on);
+    toastIdRef.current += 1;
+    setToast({ id: toastIdRef.current, text: t(on ? "notice.syncOn" : "notice.syncOff"), notice: true });
+  };
   useEffect(() => republishRef.current(), [captionStyle, subtitleDelay]); // the phone's sheet shows what the TV really uses
   const streamUrl = currentMedia?.stream.url;
   useEffect(() => republishRef.current(), [streamUrl, sourceIndex]); // a state names its media and source, and those can change without the video doing so
@@ -593,7 +602,8 @@ export function Tv() {
   useEffect(() => {
     const change = describeChange(lastPlayerRef.current, player, noticeText);
     lastPlayerRef.current = player;
-    if (change && !followingRef.current) notify(change); // a follower is nudged in speed all the time; that is not news
+    // (A follower is nudged in speed all the time; that is not news. Nor is a subtitle track that the aligner put on screen itself.)
+    if (change && !followingRef.current && !engineRef.current?.quiet()) notify(change);
   }, [player]);
 
   /* ------------------------------ wiring ------------------------------ */
@@ -622,6 +632,12 @@ export function Tv() {
       },
     );
     engineRef.current = engine;
+    // The subtitle aligner is fetched when a film starts (not before), unless the viewer turned it off.
+    engine.useSubtitleSync(
+      () => import("../subsync/start").then((module) => module.startSync),
+      () => subtitleDelayRef.current,
+    );
+    engine.setSubtitleSync(subtitleSyncRef.current);
     republishRef.current = () => publish(engine.getState());
 
     // Only the first hello of this page says it has just been opened: a socket that reconnects, or says hello again when the page comes back to the front, belongs to a page that has been on.
@@ -802,6 +818,7 @@ export function Tv() {
             } else if (command.type === "SET_QUALITY") engine.setQuality(command.level);
             else if (command.type === "SET_SUBTITLE") chooseSubtitle(command.track);
             else if (command.type === "SET_SUBTITLE_DELAY") chooseSubtitleDelay(command.delay);
+            else if (command.type === "SET_SUBTITLE_SYNC") chooseSubtitleSync(command.on);
             else if (command.type === "SET_CAPTION_STYLE") changeCaptions(command.style);
             else if (command.type === "SET_SPEED") engine.setPlaybackRate(command.rate);
             else if (command.type === "SET_AUDIO") chooseAudio(command.track);
@@ -1630,6 +1647,7 @@ export function Tv() {
           captionStyle={captionStyle}
           subtitleDelay={subtitleDelay}
           onSubtitleDelay={chooseSubtitleDelay}
+          onSubtitleSync={chooseSubtitleSync}
           rootRef={menuRef}
           onClose={() => setMenu(null)}
           onSubtitle={chooseSubtitle}

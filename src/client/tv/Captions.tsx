@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { CaptionStyle } from "../../shared";
 import { captionBottom, captionTextStyle } from "../shared/captionCss";
+import { isHeld } from "../subsync/hold";
 
 /** One subtitle line as markup: <i>, <b> and the like from the file are kept, nothing else gets through. */
 function CueText({ cue }: { cue: TextTrackCue }) {
@@ -36,7 +37,7 @@ export function Captions({ videoRef, style, delay = 0 }: { videoRef: RefObject<H
       const matchTime = now - delay;
       const active: TextTrackCue[] = [];
       for (const track of Array.from(video.textTracks)) {
-        if (track.mode === "disabled" || !isCaptionTrack(track)) continue;
+        if (track.mode === "disabled" || !isCaptionTrack(track) || isHeld(track)) continue; // (a held track is loaded for the aligner, not shown)
         for (const cue of Array.from(track.cues ?? [])) if (cue.startTime <= matchTime && matchTime < cue.endTime) active.push(cue);
       }
       setCues((current) => (sameCues(current, active) ? current : active));
