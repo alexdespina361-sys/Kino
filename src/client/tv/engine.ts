@@ -9,6 +9,29 @@ import {
   type SubtitleTrack,
   trackLabel,
 } from "../../shared";
+import { isHeld, markNoLanguage, release } from "../subsync/hold";
+import type { SyncStatus } from "../subsync/session";
+import { AudioTap, type HlsEvents } from "../subsync/tap";
+
+/** What the subtitle aligner is given of a film that plays through hls.js (see `subsync/start.ts`), and the handle it gives back. */
+export interface SyncFilm {
+  hls: Hls;
+  video: HTMLVideoElement;
+  /** hls.js's name for the event it listens to. */
+  events: { audioSwitching: string };
+  /** The film's sound as hls.js downloads it: the player has listened since the film began, so that the aligner has all of it however late it starts. */
+  tap: AudioTap;
+  /** Puts subtitle track `id` on screen. */
+  show(id: number): void;
+  report(status: SyncStatus): void;
+  /** The viewer's own subtitle delay. */
+  delay?: () => number;
+}
+export interface SyncHandle {
+  /** `restore`: the lines go back to the file's times (the viewer turned it off). */
+  close(restore?: boolean): void;
+}
+export type SyncStarter = (film: SyncFilm) => SyncHandle | undefined;
 
 /** Error codes surfaced in PlayerState.error. */
 export const PlayerError = {
@@ -122,6 +145,17 @@ export class PlayerEngine {
   /** Gives up on a direct address that has not started playing (see `watchDirectStart`). */
   private directTimer?: ReturnType<typeof setTimeout>;
   private readonly ticker: ReturnType<typeof setInterval>;
+  /** The subtitle aligner (see `useSubtitleSync`): fetched when a film starts, if the viewer has it on. */
+  private syncLoader: (() => Promise<SyncStarter>) | undefined;
+  private syncDelay: (() => number) | undefined;
+  private syncOn = true;
+  private syncHandle: SyncHandle | undefined;
+  private syncStatus: SyncStatus = "ready";
+  /** What listens to the sound hls.js downloads, whether or not the aligner is on (see `AudioTap`), and the name of the event for a switch of the sound track. */
+  private tap: AudioTap | undefined;
+  private audioSwitching: string | undefined;
+  /** The aligner has just put another subtitle track on screen: the page says nothing about it (see `quiet`). */
+  private quietUntil = 0;
 
   constructor(
     private readonly video: HTMLVideoElement,
@@ -197,12 +231,15 @@ export class PlayerEngine {
         track.kind = "subtitles";
         track.label = sub.label;
         track.srclang = sub.lang || "en";
+        // (A track needs a language, so this one says English; the aligner is told that it is not known to be.)
+        if (!sub.lang && track.track) markNoLanguage(track.track);
         track.src = new URL(sub.url, location.href).href;
         this.video.appendChild(track);
       }
     }
 
     if (type === "mp4") {
+      this.syncStatus = "unavailable"; // (the browser's own player gives no access to the sound)
       this.playNatively(src, directUrl, generation);
       return;
     }
@@ -276,9 +313,17 @@ export class PlayerEngine {
       hls.on(HlsLib.Events.AUDIO_TRACK_SWITCHED, () => this.emit());
       hls.on(HlsLib.Events.AUDIO_TRACKS_UPDATED, () => this.emit());
 
+      // (The sound is listened to from the first piece, which comes as soon as the source is loaded, whether or not the aligner is there by then: the film does not wait for it.)
+      if (this.syncLoader) {
+        // (hls.js types its events and listeners more narrowly than the tap needs.)
+        this.tap = new AudioTap(hls as unknown as HlsEvents, HlsLib.Events.BUFFER_APPENDING);
+        this.audioSwitching = HlsLib.Events.AUDIO_TRACK_SWITCHING;
+        this.attachSync(hls, generation);
+      }
       hls.loadSource(src);
       hls.attachMedia(this.video);
     } else if (this.video.canPlayType("application/vnd.apple.mpegurl")) {
+      this.syncStatus = "unavailable"; // (the browser's own player gives no access to the sound)
       this.playNatively(src, directUrl, generation);
     } else {
       this.fail(PlayerError.HlsUnsupported);
@@ -338,6 +383,75 @@ export class PlayerEngine {
    */
   setAdaptive(adaptive: boolean): void {
     this.adaptive = adaptive;
+  }
+
+  /**
+   * Where the subtitle aligner comes from (a dynamic import: the page does not carry it until a film plays through hls.js), and the
+   * viewer's own subtitle delay. Without this, there is no aligner and the state says nothing of one.
+   */
+  useSubtitleSync(loader: () => Promise<SyncStarter>, delay?: () => number): void {
+    this.syncLoader = loader;
+    this.syncDelay = delay;
+  }
+
+  /**
+   * The viewer's switch for the aligner. Turned off, the lines go back where the file had them; turned on in the middle of a film,
+   * it starts from what the player downloads from then on (the init segments of the sound were learned all along, so it can read it).
+   */
+  setSubtitleSync(on: boolean): void {
+    if (on === this.syncOn) return;
+    this.syncOn = on;
+    if (!on) {
+      this.syncHandle?.close(true);
+      this.syncHandle = undefined;
+      this.tap?.keep(false);
+    } else if (this.hls && this.hasSource) {
+      this.attachSync(this.hls, this.generation);
+    }
+    this.emit();
+  }
+
+  /** True for a moment after the aligner put another subtitle track on screen, so that the page does not announce a change nobody made. */
+  quiet(): boolean {
+    return Date.now() < this.quietUntil;
+  }
+
+  /**
+   * Gets the aligner going on a film that plays through hls.js. Its code is fetched without the film waiting for it (the tap keeps the
+   * first pieces of sound until it is there); nothing happens when the film is gone, or the viewer has turned it off, by then.
+   */
+  private attachSync(hls: Hls, generation: number): void {
+    const { syncLoader: loader, tap, audioSwitching } = this;
+    if (!loader || !this.syncOn || !tap || !audioSwitching || this.syncHandle) return;
+    this.syncStatus = "ready";
+    tap.keep(true);
+    void Promise.resolve()
+      .then(() => loader())
+      .catch(() => undefined)
+      .then((starter) => {
+        if (generation !== this.generation || this.hls !== hls || !this.syncOn || this.syncHandle) return;
+        const handle = starter?.({
+          hls,
+          video: this.video,
+          events: { audioSwitching },
+          tap,
+          show: (id) => {
+            if (generation !== this.generation) return;
+            this.quietUntil = Date.now() + 2500;
+            this.setSubtitle(id);
+          },
+          report: (status) => {
+            if (generation !== this.generation || !this.syncOn) return;
+            this.syncStatus = status;
+            this.emit();
+          },
+          ...(this.syncDelay ? { delay: this.syncDelay } : {}),
+        });
+        this.syncHandle = handle;
+        this.syncStatus = handle ? "ready" : "unavailable";
+        if (!handle) tap.keep(false);
+        this.emit();
+      });
   }
 
   play(): void {
@@ -401,6 +515,7 @@ export class PlayerEngine {
     if (this.video.textTracks && this.video.textTracks.length > 0) {
       for (let i = 0; i < this.video.textTracks.length; i++) {
         const t = this.video.textTracks[i]!;
+        release(t); // (a track the aligner loaded to try is the viewer's, or off, from here on)
         t.mode = i === trackIndex ? "hidden" : "disabled"; // hidden: loaded and timed, drawn by the page itself (Captions.tsx)
       }
     }
@@ -460,6 +575,7 @@ export class PlayerEngine {
       quality: this.getQualityState(),
       subtitles: this.getSubtitleState(),
       audio: this.getAudioState(),
+      ...(this.syncLoader ? { subtitleSync: this.syncOn ? this.syncStatus : ("off" as const) } : {}),
     };
   }
 
@@ -527,7 +643,7 @@ export class PlayerEngine {
           label: trackLabel(t.label, t.language, `Subtitle ${i + 1}`),
           lang: t.language,
         });
-        if (t.mode !== "disabled") current = i;
+        if (t.mode !== "disabled" && !isHeld(t)) current = i; // (a held track is loaded for the aligner, not chosen)
       }
       return { tracks, current };
     }
@@ -566,6 +682,12 @@ export class PlayerEngine {
     this.requestedStart = undefined;
     this.nativeFallbackSrc = undefined;
     clearTimeout(this.directTimer);
+    this.syncHandle?.close();
+    this.syncHandle = undefined;
+    this.syncStatus = "ready";
+    this.tap?.stop();
+    this.tap = undefined;
+    this.audioSwitching = undefined;
     this.hls?.destroy();
     this.hls = null;
     this.hasSource = false;

@@ -57,6 +57,8 @@ export const CommandSchema = z.discriminatedUnion("type", [
   /** The phone signed devices out of the account: the TV looks at its own sign-in now, not at its next regular exchange with the server. */
   z.object({ type: z.literal("REFRESH_ACCOUNT") }),
   z.object({ type: z.literal("SET_SUBTITLE_DELAY"), delay: z.number().finite().min(-60).max(60) }),
+  /** The switch for timing the subtitles to the sound by itself (on unless the viewer turned it off). */
+  z.object({ type: z.literal("SET_SUBTITLE_SYNC"), on: z.boolean() }),
 ]);
 export type Command = z.infer<typeof CommandSchema>;
 
@@ -89,6 +91,11 @@ export const PlayerStateSchema = z.object({
   captionStyle: CaptionStyleSchema.optional(),
   /** Subtitle delay in seconds, positive for later, negative for earlier. */
   subtitleDelay: z.number().finite().optional(),
+  /**
+   * The aligner that times the subtitles to the sound while the video plays: off (the viewer's choice), on and waiting for something to time,
+   * timing, timed, or not possible here (a video the browser plays by itself, a device that cannot read the sound). Absent: this TV has no aligner.
+   */
+  subtitleSync: z.enum(["off", "ready", "syncing", "synced", "unavailable"]).optional(),
   quality: z
     .object({
       levels: z.array(PlayerQualityLevelSchema),
