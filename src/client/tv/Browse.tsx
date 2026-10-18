@@ -1114,7 +1114,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             </div>
           )}
           {view.kind === "friend" && friend && (
-            <div className="tv-filters" role="radiogroup" aria-label={friend.name} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+            <div className="tv-filters tv-filters-friend" role="radiogroup" aria-label={friend.name} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
               <button
                 className="tv-choice"
                 data-testid="tv-friend-back"

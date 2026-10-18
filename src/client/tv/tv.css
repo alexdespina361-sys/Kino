@@ -1252,6 +1252,8 @@
 .tv-filters { display: flex; flex: none; gap: 0.8em; padding: 0.8em; margin: -0.5em; overflow-x: auto; scrollbar-width: none; }
 .tv-filters::-webkit-scrollbar { display: none; }
 .tv-filters > * { flex: none; }
+/* A friend's page has up to six buttons in its line (the way back, their lists and ratings, to ask them to watch and to plan it, the chat): in Romanian the words of the long ones are as wide as the screen with the usual room round them, so there is less of it, and all six show without sliding. */
+.tv-filters-friend > .tv-choice { padding-inline: 0.85em; }
 .tv-grid {
   position: relative;
   flex: 1 1 0;
