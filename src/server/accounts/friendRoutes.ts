@@ -283,6 +283,8 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
       .flatMap((friend) => watchedBy(friend.id, now, ownHost))
       .sort((a, b) => b.at - a.at)
       .slice(0, ACTIVITY_MAX);
+    // (What waits in the chats rides with the rest, a friend at a time: the messages themselves are only asked for by a page that has the chat open.)
+    const waiting = store.chats.unread(profileId).filter((notice) => known.has(notice.friend));
     return {
       friends,
       inbox: book
@@ -300,6 +302,7 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
         const person = personOf(to);
         return person ? [{ to: person, at }] : [];
       }),
+      ...(waiting.length > 0 ? { chat: waiting } : {}),
     };
   }
 
@@ -452,7 +455,9 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
   app.delete<{ Params: { id: string; fid: string } }>(`${base}/:fid`, async (request, reply) => {
     const me = asker(request, reply, readsByAccount, true);
     if (!me) return reply;
-    return book.unfriend(me.profileId, request.params.fid) ? reply.code(204).send() : refuse(reply, "not_friends");
+    const was = book.unfriend(me.profileId, request.params.fid);
+    store.chats.dropChat(me.profileId, request.params.fid); // (what they wrote to each other goes with the friendship)
+    return was ? reply.code(204).send() : refuse(reply, "not_friends");
   });
 
   /* ------------------------------ looking at a friend ------------------------------ */

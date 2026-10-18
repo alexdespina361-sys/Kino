@@ -4,6 +4,7 @@ import {
   COLLECTIONS,
   fillListItem,
   fillProgress,
+  friendChoices,
   LIMITS,
   MAX_PROFILES,
   mergeCollection,
@@ -14,6 +15,7 @@ import {
   plainText,
   resolveSettings,
   SETTING_SCHEMAS,
+  takesMessages,
   type AvatarId,
   type CollectionName,
   type DeviceKind,
@@ -27,6 +29,7 @@ import {
   type SyncRequest,
   type SyncResponse,
 } from "../../shared";
+import { ChatBook } from "./chat";
 import { FriendBook } from "./friends";
 import type { Persistence } from "./persistence";
 
@@ -111,6 +114,15 @@ export class AccountStore {
   private readonly tags = new Map<string, Map<number, string>>();
   /** Who is whose friend, the codes that make friends and the inboxes (see friends.ts); kept and written like the rest. */
   private readonly book = new FriendBook({ touch: (key) => this.touch(key), drop: (key) => this.drop(key), now: () => this.now() });
+  /** What friends have written to each other (see chat.ts); kept and written like the rest. Who may write to whom is read from the friends and the settings as they are. */
+  private readonly talk = new ChatBook({
+    touch: (key) => this.touch(key),
+    drop: (key) => this.drop(key),
+    now: () => this.now(),
+    areFriends: (a, b) => this.book.areFriends(a, b),
+    on: (profileId) => friendChoices(this.settingsOf(profileId)).friends,
+    takes: (profileId) => takesMessages(this.settingsOf(profileId)),
+  });
 
   private readonly dirty = new Set<string>();
   private readonly removed = new Set<string>();
@@ -150,6 +162,8 @@ export class AccountStore {
           if (doc.expiresAt > this.now()) this.sessions.set(doc.id, doc);
         } else if (FriendBook.owns(key)) {
           this.book.load(key, value);
+        } else if (ChatBook.owns(key)) {
+          this.talk.load(key, value);
         }
       } catch {
         this.options.log?.warn(`Skipped an unreadable record (${key}).`);
@@ -224,6 +238,7 @@ export class AccountStore {
     if (key.startsWith("account:")) return this.accounts.get(key.slice("account:".length));
     if (key.startsWith("session:")) return this.sessions.get(key.slice("session:".length));
     if (FriendBook.owns(key)) return this.book.docFor(key);
+    if (ChatBook.owns(key)) return this.talk.docFor(key);
     if (key.startsWith("pdata:")) {
       const profileData = this.data.get(key.slice("pdata:".length));
       if (!profileData) return undefined;
@@ -314,6 +329,7 @@ export class AccountStore {
       this.profileOwner.delete(profile.id);
       this.drop(`pdata:${profile.id}`);
       this.book.forget(profile.id);
+      this.talk.forget(profile.id);
     }
     this.emails.delete(account.email);
     this.accounts.delete(accountId);
@@ -374,6 +390,7 @@ export class AccountStore {
     this.touch(`account:${accountId}`);
     this.drop(`pdata:${profileId}`);
     this.book.forget(profileId);
+    this.talk.forget(profileId);
     return ok(null);
   }
 
@@ -384,6 +401,11 @@ export class AccountStore {
   /** Friendships, the codes that make them and the inboxes (see friends.ts). */
   get friends(): FriendBook {
     return this.book;
+  }
+
+  /** What friends have written to each other (see chat.ts). */
+  get chats(): ChatBook {
+    return this.talk;
   }
 
   /** The time as the store keeps it (what tests move). */

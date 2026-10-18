@@ -10,6 +10,7 @@ import type { PasswordCost } from "./accounts/password";
 import { accountRoutes, COOKIE, readCookie } from "./accounts/routes";
 import { ScreenProofs, screenProfiles } from "./accounts/screens";
 import type { AccountStore } from "./accounts/store";
+import { chatReporter } from "./feedback/chatReport";
 import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { createLibrary, type LibrarySource } from "./library/library";
@@ -111,6 +112,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
       ...(options.passwordCost ? { passwordCost: options.passwordCost } : {}),
       ...(screens ? { screens } : {}),
+      // (A chat reported by one of the two friends goes to the team as feedback does. The store is made below, after the accounts: it is looked at when a report is sent.)
+      chatReport: (report) => chatReporter(feedback)(report),
       // (What friends are invited to: the screen whose party a code is open with, and the code a party is joined with now.)
       parties: {
         hostOf: (code) => registry.hostOfPartyCode(code)?.publicId,

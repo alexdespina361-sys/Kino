@@ -68,10 +68,4 @@ export const ChatReportPreviewSchema = z.object({ rev: z.number().int().nonnegat
 export type ChatReportPreview = z.infer<typeof ChatReportPreviewSchema>;
 export const ChatReportSchema = z.object({ rev: z.number().int().nonnegative() });
 
-/** Messages waiting from a friend (that were not looked at, and that are not muted): what the friends page and the bell tell. */
-export interface ChatNotice {
-  friend: string;
-  count: number;
-  /** When the newest of them was sent. */
-  at: number;
-}
+// (What waits in a chat, a friend at a time - `ChatNotice` - is told with the friends, so it is in friends.ts: this file needs that one, not the other way round.)

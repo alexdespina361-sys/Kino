@@ -1,4 +1,4 @@
-import { CHAT_KEEP_MAX, CHAT_KEEP_MS, CHAT_REPORT_LINES, CHAT_SENDS_PER_MINUTE, checkChatText, type ChatLine, type ChatNotice, type ChatTextProblem } from "../../shared/chat";
+import { CHAT_KEEP_MAX, CHAT_KEEP_MS, CHAT_REPORT_LINES, CHAT_SENDS_PER_MINUTE, checkChatText, type ChatLine, type ChatNotice, type ChatTextProblem } from "../../shared";
 import { RateLimiter } from "./rateLimit";
 
 /**

@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { friendChoices, tagLabel } from "../../shared";
-import { ChatMuteSchema, ChatReportSchema, ChatSendSchema, type ChatReportPreview, type ChatThread } from "../../shared/chat";
+import { ChatMuteSchema, ChatReportSchema, ChatSendSchema, friendChoices, tagLabel, type ChatReportPreview, type ChatThread } from "../../shared";
 import type { ChatBook, ChatError, ChatOutcome } from "./chat";
 import type { FriendRouteHelpers } from "./friendRoutes";
 import { RateLimiter } from "./rateLimit";

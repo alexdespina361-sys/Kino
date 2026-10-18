@@ -4,7 +4,7 @@ import { isHttpUrl } from "./media";
 
 /**
  * Friends: two profiles that agreed to be, through a code one gave and the other typed (or a link with it). A friend can look at
- * the other's lists and ratings, send titles, watch-party invitations and plans for a day and time to their inbox, and hear what the other watches, each of
+ * the other's lists and ratings, send titles, watch-party invitations and plans for a day and time to their inbox, write to them (see chat.ts), and hear what the other watches, each of
  * those only as far as the other's switches allow. All of it is optional: with `friends` off in the settings of a profile nothing
  * of it shows, is shared or arrives, and the friends themselves are kept for when it is turned on again.
  */
@@ -68,6 +68,8 @@ export const FRIEND_DEFAULTS = {
   friendsInbox: true,
   /** Friends can see when I am online (and I can see when they are). Off, I am never shown as online: the one switch for "appear offline" and "always offline". */
   friendsPresence: true,
+  /** Friends can write to me (a small chat between two friends: see chat.ts). Off, they are told so, and nothing they wrote before can be added to. */
+  friendsMessages: true,
 } as const;
 export type FriendSetting = keyof typeof FRIEND_DEFAULTS;
 export const FRIEND_SETTINGS = Object.keys(FRIEND_DEFAULTS) as FriendSetting[];
@@ -84,7 +86,14 @@ export function friendChoices(settings: Settings): FriendChoices {
     friendsGet: choice("friendsGet"),
     friendsInbox: choice("friendsInbox"),
     friendsPresence: choice("friendsPresence"),
+    friendsMessages: choice("friendsMessages"),
   };
+}
+
+/** Whether a profile takes messages from its friends: friends are on, and it has not turned that switch off. */
+export function takesMessages(settings: Settings): boolean {
+  const choices = friendChoices(settings);
+  return choices.friends && choices.friendsMessages;
 }
 
 /** Whether a profile lets its lists be looked at: friends are on, and it shares them. */
@@ -357,8 +366,16 @@ export const SentRequestSchema = z.object({ to: PersonSchema, at: z.number() });
 export type SentRequest = z.infer<typeof SentRequestSchema>;
 
 /**
+ * Messages waiting from a friend (that this profile has not looked at, and that it has not muted): how many, and when the newest was written. It is what the
+ * Friends page and the bell tell of a chat, quietly; the messages themselves are only asked for by a page that has the chat open (see chat.ts).
+ */
+export const ChatNoticeSchema = z.object({ friend: IdSchema, count: z.number().int().positive(), at: z.number() });
+export type ChatNotice = z.infer<typeof ChatNoticeSchema>;
+
+/**
  * Everything a profile with friends turned on asks for, in one answer. `requests` are the ones who asked this profile to be friends and wait
- * for an answer; `sent` are the ones this profile asked.
+ * for an answer; `sent` are the ones this profile asked. `chat` is what waits in the chats, a friend at a time (absent: nothing does, and a
+ * server that does not know of chats says nothing of them).
  */
 export const FriendsStateSchema = z.object({
   friends: z.array(FriendSchema),
@@ -367,6 +384,7 @@ export const FriendsStateSchema = z.object({
   invites: z.array(OpenInviteSchema),
   requests: z.array(RequestSchema),
   sent: z.array(SentRequestSchema),
+  chat: z.array(ChatNoticeSchema).optional(),
 });
 export type FriendsState = z.infer<typeof FriendsStateSchema>;
 
