@@ -4,7 +4,7 @@ import { isHttpUrl } from "./media";
 
 /**
  * Friends: two profiles that agreed to be, through a code one gave and the other typed (or a link with it). A friend can look at
- * the other's lists and ratings, send titles and watch-party invitations to their inbox, and hear what the other watches, each of
+ * the other's lists and ratings, send titles, watch-party invitations and plans for a day and time to their inbox, and hear what the other watches, each of
  * those only as far as the other's switches allow. All of it is optional: with `friends` off in the settings of a profile nothing
  * of it shows, is shared or arrives, and the friends themselves are kept for when it is turned on again.
  */
@@ -28,6 +28,16 @@ export const MAX_REQUESTS = 30;
 /** A watch-party code is no use after the party, so an invitation to one is dropped after this. */
 export const PARTY_INVITE_KEEP_MS = 12 * 3600 * 1000;
 export const FRIEND_NOTE_MAX = 200;
+/** A plan to watch together is put at least this far ahead (a party can be started at once, so a plan is for later), and at most this far. */
+export const PLAN_MIN_AHEAD_MS = 5 * 60 * 1000;
+export const PLAN_MAX_AHEAD_MS = 30 * 24 * 3600 * 1000;
+/** How many plans one friend can have waiting for an answer from another, and how many one profile can have waiting from all of its friends together. */
+export const PLAN_OPEN_PER_PAIR = 3;
+export const PLAN_OPEN_PER_SENDER = 10;
+/** A plan that was said yes to stays this long after its time: that is how long a page that opens late still says the time has come. */
+export const PLAN_KEEP_AFTER_MS = 2 * 3600 * 1000;
+/** A party the two start up to this long before the time of a plan they agreed to is that plan: it is done (and a phone whose clock runs a little fast is no trouble). */
+export const PLAN_SETTLE_AHEAD_MS = 30 * 60 * 1000;
 /** What friends are told of what somebody watched: the last two weeks, from a minute in (a title tried and left is not "watched"). */
 export const ACTIVITY_KEEP_MS = 14 * 24 * 3600 * 1000;
 export const ACTIVITY_MIN_SECONDS = 60;
@@ -261,12 +271,26 @@ export const PartyInviteSchema = z.object({
 });
 /** "Let's watch together": a friend asks for a party (nothing more; the answer is an invitation to one). */
 export const TogetherSchema = z.object({ kind: z.literal("together") });
+/**
+ * "Let's watch together on a day and time": a friend proposes when (`when`, in epoch milliseconds, which every screen shows in its own local time;
+ * it is not `at`, which an item of the inbox already has for the time it arrived), with a few words if they like. The friend answers yes or no
+ * (see `PlanAnswerSchema`), and the time is put at least `PLAN_MIN_AHEAD_MS` and at most `PLAN_MAX_AHEAD_MS` from now (see `planTimeProblem`).
+ */
+export const PlanSchema = z.object({ kind: z.literal("plan"), when: z.number().int().positive(), note: shownText(0, FRIEND_NOTE_MAX).optional() });
+/** What a friend says to a plan. */
+export const PlanAnswerSchema = z.enum(["yes", "no"]);
+export type PlanAnswer = z.infer<typeof PlanAnswerSchema>;
 /** What one friend sends another. */
-export type Message = z.infer<typeof RecommendationSchema> | z.infer<typeof PartyInviteSchema> | z.infer<typeof TogetherSchema>;
+export type Message = z.infer<typeof RecommendationSchema> | z.infer<typeof PartyInviteSchema> | z.infer<typeof TogetherSchema> | z.infer<typeof PlanSchema>;
 
 const To = { to: z.array(IdSchema).min(1).max(MAX_FRIENDS) };
-/** What a profile sends to friends (to each of `to`). */
-export const SendSchema = z.discriminatedUnion("kind", [RecommendationSchema.extend(To), PartyInviteSchema.extend(To), TogetherSchema.extend(To)]);
+/** What a profile sends to friends (to each of `to`). A plan goes to one friend: it is a question for them, and each answer is their own. */
+export const SendSchema = z.discriminatedUnion("kind", [
+  RecommendationSchema.extend(To),
+  PartyInviteSchema.extend(To),
+  TogetherSchema.extend(To),
+  PlanSchema.extend({ to: z.array(IdSchema).length(1) }),
+]);
 export type SendRequest = z.infer<typeof SendSchema>;
 /** Who it was delivered to and who is not taking things. */
 export const SentSchema = z.object({ sent: z.array(IdSchema), declined: z.array(IdSchema) });
@@ -282,6 +306,8 @@ export const InboxItemSchema = z.discriminatedUnion("kind", [
   RecommendationSchema.extend(Delivered),
   PartyInviteSchema.extend(Delivered).extend({ open: z.boolean().optional() }),
   TogetherSchema.extend(Delivered),
+  // (A plan in an inbox says what became of it: no `answer` is a question for this profile, "yes" a plan that is on (in both inboxes), "no" the news for the one who asked.)
+  PlanSchema.extend(Delivered).extend({ answer: PlanAnswerSchema.optional() }),
 ]);
 export type InboxItem = z.infer<typeof InboxItemSchema>;
 
@@ -388,6 +414,21 @@ export const reachable = (friends: readonly Friend[]): Friend[] => friends.filte
 
 /** Whether the party an invitation is to can be joined: what the server said of it, else by the clock. */
 export const partyOpen = (invitation: { open?: boolean | undefined; endsAt: number }, now: number): boolean => invitation.open ?? invitation.endsAt > now;
+
+/** A plan as it is in an inbox. */
+export type PlanItem = Extract<InboxItem, { kind: "plan" }>;
+
+/** Why a time cannot be put to a friend from `now`, when it cannot: it is too near (a party can be started instead) or too far off. */
+export function planTimeProblem(when: number, now: number): "too_soon" | "too_far" | undefined {
+  if (when < now + PLAN_MIN_AHEAD_MS) return "too_soon";
+  return when > now + PLAN_MAX_AHEAD_MS ? "too_far" : undefined;
+}
+
+/** Whether a plan in an inbox waits for this profile's answer: it has none yet, and the time it is for has not come. */
+export const planAsks = (item: Pick<PlanItem, "answer" | "when">, now: number): boolean => item.answer === undefined && item.when > now;
+
+/** Whether a plan that is on has its time come, and not long gone: the moment to start the party. */
+export const planDue = (item: Pick<PlanItem, "answer" | "when">, now: number): boolean => item.answer === "yes" && item.when <= now && now < item.when + PLAN_KEEP_AFTER_MS;
 
 /**
  * Whether asking a friend to watch together makes sense: they take things in the inbox (the switch that lets a friend send titles and invitations: this is

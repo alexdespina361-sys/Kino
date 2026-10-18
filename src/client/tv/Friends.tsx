@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { friendChoices, friendLink, parseTag, reachable, tagLabel, type FriendSetting, type Message, type OpenInvite, type Person } from "../../shared";
+import { friendChoices, friendLink, parseTag, reachable, tagLabel, type FriendSetting, type Message, type OpenInvite, type Person, type PlanItem } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
 import { useSettings } from "../account/settings";
-import { formatDay } from "../account/time";
+import { clockTime, dayChip, formatDay } from "../account/time";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { bellRows, type BellRow } from "../friends/pages";
+import { PLAN_DAYS, PLAN_HOURS, defaultPlan, planLines, planMoment, planOffered, planStatus, whenLabel } from "../friends/plans";
 import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
 import { useBell } from "../friends/useBell";
 import { usePeek } from "../friends/usePeek";
 import { useLanguage, useT, type Key } from "../i18n";
 import { CopyCode } from "../shared/CopyLink";
-import { CheckIcon, PlayIcon, PlusIcon, SearchIcon, UsersIcon } from "../shared/icons";
+import { CheckIcon, ClockIcon, PlayIcon, PlusIcon, SearchIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
 import { BackButton, Screen } from "./Idle";
@@ -442,6 +443,177 @@ export function FriendRequestTv({ person, onClose }: { person: Person; onClose: 
   );
 }
 
+/* ------------------------------ plans to watch together ------------------------------ */
+
+/**
+ * A plan to watch together that a friend put, or the news of one (a tile of the friends page): yes or no while it asks; once it is on, or was turned down, a
+ * word to read; and when its time has come, the button that starts the party. Back leaves it as it is. It reads what the server last said, so an answer
+ * given on a phone changes it here, and it goes when the plan does (the friendship ended, or its time passed with nobody saying yes).
+ */
+export function PlanTv({ id, onStartParty, onClose }: { id: string; onStartParty: (friendId: string) => void; onClose: () => void }) {
+  const t = useT();
+  const account = useAccount();
+  const friends = useFriends();
+  const [busy, setBusy] = useState(false);
+  const item = friends.state?.inbox.find((each): each is PlanItem => each.id === id && each.kind === "plan");
+  const now = Date.now();
+  const status = item ? planStatus(item, now) : "lapsed";
+  useEffect(() => {
+    if (friends.state && status === "lapsed") onClose();
+  }, [friends.state, status]);
+  if (!item || status === "lapsed") return null;
+  const lines = planLines(item, nameOf(friends.state?.friends ?? [], item.from), now);
+
+  const answer = async (yes: boolean) => {
+    setBusy(true);
+    try {
+      await friends.answerPlan(item.id, yes);
+      onClose();
+    } catch (error) {
+      account.say(describeError(error));
+      void friends.refresh(); // (a plan that is gone is gone from the page)
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Screen testId="tv-plan" compact focus onBack={onClose}>
+      <h1 className="tv-headline tv-headline-small" data-testid="tv-plan-heading">
+        {lines.heading}
+      </h1>
+      <p className="tv-lead" data-testid="tv-plan-detail">
+        {lines.detail}
+      </p>
+      <div className="tv-actions">
+        {status === "asks" ? (
+          <>
+            <button className="tv-action tv-action-primary" disabled={busy} onClick={() => void answer(true)} data-nav data-autofocus data-testid="tv-plan-accept">
+              {t("friends.accept")}
+            </button>
+            <button className="tv-action" disabled={busy} onClick={() => void answer(false)} data-nav data-testid="tv-plan-decline">
+              {t("friends.decline")}
+            </button>
+          </>
+        ) : (
+          <>
+            {status === "due" && (
+              <button className="tv-action tv-action-primary" onClick={() => onStartParty(item.from)} data-nav data-autofocus data-testid="tv-plan-start">
+                {t("friends.startParty")}
+              </button>
+            )}
+            <button className={status === "due" ? "tv-action" : "tv-action tv-action-primary"} onClick={onClose} data-nav {...(status === "due" ? {} : { "data-autofocus": true })} data-testid="tv-plan-ok">
+              {t("common.done")}
+            </button>
+            <button
+              className="tv-action"
+              onClick={() => {
+                void friends.dismiss(item.id).catch(() => undefined);
+                onClose();
+              }}
+              data-nav
+              data-testid="tv-plan-dismiss"
+            >
+              {t("friends.dismiss")}
+            </button>
+          </>
+        )}
+      </div>
+      <BackButton onClick={onClose} testId="tv-plan-back" />
+    </Screen>
+  );
+}
+
+/**
+ * Plans a watch together with a friend, with the remote: a row of days (today and the six after it), a row of hours, and the button that sends the plan.
+ * No typing: the arrow keys choose, and what was chosen reads out under them. What cannot be sent (an hour that has gone, or is under five minutes off) is
+ * not offered. A phone can say a few words with a plan; a TV has no keyboard to do it with.
+ */
+export function PlanPickerTv({ friendId, onClose }: { friendId: string; onClose: () => void }) {
+  const t = useT();
+  const language = useLanguage();
+  const account = useAccount();
+  const friends = useFriends();
+  const name = nameOf(friends.state?.friends ?? [], friendId);
+  /** The days are those from the day this page was opened. */
+  const [opened] = useState(() => Date.now());
+  const [chosen, setChosen] = useState(() => defaultPlan(opened));
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const offered = (day: number, hour: number) => planOffered(planMoment(opened, day, hour), Date.now());
+  const pickDay = (day: number) => setChosen((now) => ({ day, hour: offered(day, now.hour) ? now.hour : (PLAN_HOURS.find((hour) => offered(day, hour)) ?? now.hour) }));
+  const when = planMoment(opened, chosen.day, chosen.hour);
+
+  const send = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const answer = await friends.send([friendId], { kind: "plan", when });
+      if (answer.sent.length === 0) {
+        setProblem(t("friends.declined", { names: name }));
+        void friends.refresh();
+        setBusy(false);
+        return;
+      }
+      account.say(t("friends.planSent", { name }));
+      onClose();
+    } catch (error) {
+      setProblem(describeError(error));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Screen testId="tv-plan-picker" compact focus onBack={onClose}>
+      <h1 className="tv-headline tv-headline-small">{t("friends.planTitle", { name })}</h1>
+      <div className="tv-plan-picks" role="radiogroup" aria-label={t("friends.planDay")} data-testid="tv-plan-days">
+        {Array.from({ length: PLAN_DAYS }, (_, day) => (
+          <button
+            key={day}
+            className="tv-action"
+            role="radio"
+            aria-checked={chosen.day === day}
+            disabled={!PLAN_HOURS.some((hour) => offered(day, hour))}
+            onClick={() => pickDay(day)}
+            data-nav
+            {...(chosen.day === day ? { "data-autofocus": true } : {})}
+            data-testid="tv-plan-day"
+            data-day={day}
+          >
+            {dayChip(planMoment(opened, day, 12), opened, language)}
+          </button>
+        ))}
+      </div>
+      <div className="tv-plan-picks" role="radiogroup" aria-label={t("friends.planTime")} data-testid="tv-plan-hours">
+        {PLAN_HOURS.map((hour) => (
+          <button key={hour} className="tv-action" role="radio" aria-checked={chosen.hour === hour} disabled={!offered(chosen.day, hour)} onClick={() => setChosen({ ...chosen, hour })} data-nav data-testid="tv-plan-hour" data-hour={hour}>
+            {clockTime(planMoment(opened, chosen.day, hour), language)}
+          </button>
+        ))}
+      </div>
+      <p className="tv-lead tv-plan-summary" data-testid="tv-plan-summary">
+        <ClockIcon /> {whenLabel(when, Date.now())}
+      </p>
+      {problem && (
+        <p className="tv-lead tv-signin-status is-problem" role="alert" data-testid="tv-plan-error">
+          {problem}
+        </p>
+      )}
+      <p className="tv-hint tv-plan-notice" data-testid="tv-plan-notice">
+        {t("friends.planNotice", { name })}
+      </p>
+      <div className="tv-actions">
+        <button className="tv-action tv-action-primary" disabled={busy || !offered(chosen.day, chosen.hour)} onClick={() => void send()} data-nav data-testid="tv-plan-send">
+          {t("friends.planSend")}
+        </button>
+        <button className="tv-action" onClick={onClose} data-nav data-testid="tv-plan-cancel">
+          {t("common.cancel")}
+        </button>
+      </div>
+    </Screen>
+  );
+}
+
 /* ------------------------------ the bell ------------------------------ */
 
 /** A line of the bell's list: pressing it does what pressing the same tile of the friends page does. */
@@ -450,7 +622,7 @@ function BellLine({ row, onPress }: { row: BellRow; onPress: (entry: Entry) => v
   return (
     <li>
       <button className="tv-bell-line" onClick={() => onPress(entry)} data-nav data-testid="tv-bell-item" data-entry={entry.id}>
-        <span className="tv-bell-icon">{row.avatar ? <Avatar id={row.avatar} className="tv-bell-avatar" /> : entry.party || entry.wants || entry.ask ? <UsersIcon /> : <PlayIcon />}</span>
+        <span className="tv-bell-icon">{row.avatar ? <Avatar id={row.avatar} className="tv-bell-avatar" /> : entry.plan ? <ClockIcon /> : entry.party || entry.wants || entry.ask ? <UsersIcon /> : <PlayIcon />}</span>
         <span className="tv-bell-text">
           <b>{row.heading}</b>
           {row.detail && <small>{row.detail}</small>}

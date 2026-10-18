@@ -41,6 +41,14 @@
 .tv-bell-text small { color: var(--muted); font-size: 0.75em; }
 .tv-bell-line:focus-visible .tv-bell-text small { color: #333; }
 
+/* Planning a watch together (see PlanPickerTv): a row of days and a row of hours, each button a little smaller than the page's others so that seven fit in a row, the choice ringed, and what was chosen read out under them. */
+.tv-plan-picks { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.7em; max-width: 100%; }
+.tv-plan-picks .tv-action { min-width: 0; padding: 0.55em 0.9em; font-size: 1.4em; white-space: nowrap; }
+.tv-plan-picks .tv-action[aria-checked="true"]:not(:focus-visible) { background: rgb(var(--accent-rgb) / 0.3); color: #fff; box-shadow: inset 0 0 0 0.1em var(--accent); }
+.tv-plan-summary { display: flex; align-items: center; justify-content: center; gap: 0.5em; color: #fff; }
+.tv-plan-summary svg { flex: none; color: var(--accent); }
+.tv-plan-notice { max-width: 44em; }
+
 /* What is shared: the switches, two to a row where there is room for it. */
 .tv-friend-help { max-width: 44em; text-align: center; }
 .tv-friend-switches { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8em 1.2em; width: min(100%, 88em); }

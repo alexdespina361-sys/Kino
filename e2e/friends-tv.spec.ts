@@ -134,6 +134,13 @@ async function seed(page: Page, data: Record<string, unknown[]>) {
   expect(response.ok()).toBe(true);
 }
 
+/** `from` plans a watch together with `to`, the way a phone's sheet does it (the remote's own picker is tried in its own test). */
+async function proposes(from: Screen, to: Screen, when: number, note?: string) {
+  const profile = (page: Page) => page.evaluate(() => localStorage.getItem("kino.profile"));
+  const response = await from.page.request.post(`/api/profiles/${await profile(from.page)}/friends/send`, { data: { kind: "plan", when, ...(note ? { note } : {}), to: [await profile(to.page)] } });
+  expect(response.ok()).toBe(true);
+}
+
 const FILM = "https://films.example/watch/17";
 const filmCards = () => {
   const at = Date.now();
@@ -1136,6 +1143,152 @@ test.describe("walking a friend's page with the remote", () => {
   });
 });
 
+test.describe("plans to watch together on the TV", () => {
+  /** "Saturday at 19:00": how the pages word a moment that is `days` off (two to six days off is said by the name of the weekday). */
+  const wordsFor = (days: number, hour: number) => {
+    const at = new Date();
+    at.setDate(at.getDate() + days);
+    return `${at.toLocaleDateString("en-GB", { weekday: "long" })} at ${String(hour).padStart(2, "0")}:00`;
+  };
+  const focusedId = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("data-testid"));
+
+  test("the remote plans with the arrow keys; the friend answers with OK from the page of friends and from the bell; the one who planned is told", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    const page = ann.page;
+    const planned = wordsFor(2, 19);
+
+    // Ann: Bob's page has a button that plans, after the one that asks. OK opens the picker with the remote on the day it starts on.
+    await tile(page, bob.name).click();
+    const chip = page.getByTestId("friend-plan");
+    await expect(chip).toBeVisible();
+    await expect(page.getByTestId("friend-together")).toBeVisible();
+    await chip.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("tv-plan-picker")).toBeVisible();
+    const chosen = page.locator('[data-testid="tv-plan-day"][aria-checked="true"]');
+    await expect(chosen).toBeFocused();
+    await expect(page.getByTestId("tv-plan-day")).toHaveCount(7);
+
+    // The arrow keys walk the days (to the day after tomorrow), OK picks one; Down goes to the hours, OK picks one; the words under them say what was picked
+    const day = (n: number) => page.locator(`[data-testid="tv-plan-day"][data-day="${n}"]`);
+    for (let step = Number(await chosen.getAttribute("data-day")); step < 2; step++) await page.keyboard.press("ArrowRight");
+    await expect(day(2)).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(day(2)).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("ArrowDown");
+    expect(await focusedId(page)).toBe("tv-plan-hour");
+    const seven = page.locator('[data-testid="tv-plan-hour"][data-hour="19"]');
+    await seven.focus();
+    await page.keyboard.press("Enter");
+    await expect(seven).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("tv-plan-summary")).toHaveText(planned);
+    await expect(page.getByTestId("tv-plan-notice")).toContainText(`${bob.name} sees this`);
+
+    // Down from the hours reaches the buttons below; Send sends, and the remote is back on the button that opened the picker
+    await page.keyboard.press("ArrowDown");
+    if ((await focusedId(page)) !== "tv-plan-send") await page.keyboard.press("ArrowLeft");
+    await expect(page.getByTestId("tv-plan-send")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("tv-account-toast")).toContainText(`Plan sent to ${bob.name}`);
+    await expect(page.getByTestId("tv-plan-picker")).toHaveCount(0);
+    await expect(chip).toBeFocused();
+
+    // Bob: told in a line, and the plan is a tile of its own on his page of friends, with the words and the time
+    await look(bob.page);
+    await expect(bob.page.getByTestId("tv-account-toast")).toContainText(`${ann.name} proposes to watch together: ${planned}`);
+    const asked = tile(bob.page, `${ann.name} proposes to watch together`);
+    await expect(asked).toBeVisible();
+    await expect(asked).toContainText(planned);
+
+    // OK on the tile asks yes or no, with the remote on Yes; Back leaves it waiting
+    await asked.click();
+    const question = bob.page.getByTestId("tv-plan");
+    await expect(question).toBeVisible();
+    await expect(question.getByTestId("tv-plan-heading")).toHaveText(`${ann.name} proposes to watch together`);
+    await expect(question.getByTestId("tv-plan-detail")).toHaveText(planned);
+    await expect(question.getByTestId("tv-plan-accept")).toBeFocused();
+    await bob.page.keyboard.press("Escape");
+    await expect(question).toHaveCount(0);
+    await expect(asked).toBeVisible();
+    await asked.focus();
+    await bob.page.keyboard.press("Enter");
+    await expect(question.getByTestId("tv-plan-accept")).toBeFocused();
+    await bob.page.keyboard.press("Enter");
+    await expect(question).toHaveCount(0);
+    await expect(asked).toHaveCount(0);
+    await expect(tile(bob.page, `Watching together with ${ann.name}`)).toContainText(planned);
+
+    // Ann is told yes; the plan is on her page of friends, and a line of her bell, which opens the same window (with nothing to answer: it is read, and can go)
+    await look(ann.page);
+    await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`${bob.name} said yes to watching together: ${planned}`);
+    await page.keyboard.press("Escape");
+    await expect(view(page)).toHaveAttribute("data-view", "friends");
+    await expect(tile(page, `Watching together with ${bob.name}`)).toContainText(planned);
+    await page.getByTestId("tv-bell").click();
+    const line = page.getByTestId("tv-bell-item");
+    await expect(line).toHaveCount(1);
+    await expect(line).toContainText(`Watching together with ${bob.name}`);
+    await line.click();
+    const mine = page.getByTestId("tv-plan");
+    await expect(mine.getByTestId("tv-plan-heading")).toHaveText(`Watching together with ${bob.name}`);
+    await expect(mine.getByTestId("tv-plan-accept")).toHaveCount(0);
+    await expect(mine.getByTestId("tv-plan-ok")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(mine).toHaveCount(0);
+    await expect(page.getByTestId("tv-bell")).toBeFocused();
+  });
+
+  test("a no is a window with Decline, and the news of it can be read and sent away; a plan whose friendship ends is gone with it", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    const day = 3;
+    const when = new Date();
+    when.setDate(when.getDate() + day);
+    when.setHours(21, 0, 0, 0);
+    const planned = wordsFor(day, 21);
+
+    // Ann plans (as a phone does, with a few words), Bob says no
+    await proposes(ann, bob, when.getTime(), "Bring snacks");
+    await look(bob.page);
+    const asked = tile(bob.page, `${ann.name} proposes to watch together`);
+    await expect(asked).toContainText(`${planned} · Bring snacks`);
+    await asked.click();
+    await expect(bob.page.getByTestId("tv-plan-detail")).toHaveText(`${planned} · Bring snacks`);
+    await bob.page.getByTestId("tv-plan-decline").click();
+    await expect(bob.page.getByTestId("tv-plan")).toHaveCount(0);
+    await expect(asked).toHaveCount(0); // (a no takes it away from the one who said it)
+
+    // Ann is told; the news is a tile, its window has OK and Remove, and Remove takes it away
+    await look(ann.page);
+    await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`${bob.name} can't make it: ${planned}`);
+    const news = tile(ann.page, `${bob.name} can't make it`);
+    await expect(news).toContainText(planned);
+    await news.click();
+    await expect(ann.page.getByTestId("tv-plan-ok")).toBeFocused();
+    await ann.page.getByTestId("tv-plan-dismiss").click();
+    await expect(ann.page.getByTestId("tv-plan")).toHaveCount(0);
+    await expect(news).toHaveCount(0);
+
+    // A plan that is on goes when they stop being friends: Ann's page of friends has no tile for it, and the window that was open on it closes by itself
+    await proposes(ann, bob, when.getTime());
+    await look(bob.page);
+    await tile(bob.page, `${ann.name} proposes to watch together`).click();
+    await expect(bob.page.getByTestId("tv-plan")).toBeVisible();
+    const profile = await ann.page.evaluate(() => localStorage.getItem("kino.profile"));
+    const bobsProfile = await bob.page.evaluate(() => localStorage.getItem("kino.profile"));
+    const parted = await ann.page.request.delete(`/api/profiles/${profile}/friends/${bobsProfile}`);
+    expect(parted.ok()).toBe(true);
+    await look(bob.page);
+    await expect(bob.page.getByTestId("tv-plan")).toHaveCount(0);
+    await expect(tile(bob.page, `${ann.name} proposes to watch together`)).toHaveCount(0);
+  });
+});
+
 test.describe("everything of friends fits the screen", () => {
   for (const screen of [
     { name: "720p", width: 1280, height: 720 },
@@ -1181,7 +1334,7 @@ test.describe("everything of friends fits the screen", () => {
       await tile(page, bob.name).click();
       await expect(tile(page, "Alpha Film")).toBeVisible();
       // (the buttons are one row, like the lists' on a narrow screen: that row slides to the one the remote is on)
-      for (const id of ["tv-friend-back", "friend-tab-lists", "friend-tab-ratings", "friend-together", "friend-remove"]) {
+      for (const id of ["tv-friend-back", "friend-tab-lists", "friend-tab-ratings", "friend-together", "friend-plan", "friend-remove"]) {
         await page.getByTestId(id).focus();
         await expect
           .poll(async () => {
@@ -1190,6 +1343,12 @@ test.describe("everything of friends fits the screen", () => {
           }, { message: `${id} inside the screen` })
           .toBe(true);
       }
+      // the page that plans a watch together: the days, the hours, what was picked, the words that say how the friend hears of it, the buttons
+      await page.getByTestId("friend-plan").click();
+      await expect(page.getByTestId("tv-plan-picker")).toBeVisible();
+      await fits("tv-plan-picker", "the page that plans a watch together");
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("tv-plan-picker")).toHaveCount(0);
       await page.getByTestId("friend-remove").click();
       await fits("tv-friend-unfriend", "the question before a friend goes");
       await page.keyboard.press("Escape");
@@ -1260,7 +1419,7 @@ test.describe("everything of friends fits the screen", () => {
       expect(line.x + line.width, "the line to the right").toBeLessThanOrEqual(screen.width + 0.5);
       expect(line.y + line.height, "the line to the bottom").toBeLessThanOrEqual(screen.height + 0.5);
       if (wide) expect(await outsideTheScreen(page, "tv-browse"), "the page of a friend").toEqual([]); // (a narrow screen has its buttons in one row that slides to the one the remote is on: the loop below)
-      for (const id of ["tv-friend-back", "friend-tab-lists", "friend-tab-ratings", "friend-together", "friend-remove"]) {
+      for (const id of ["tv-friend-back", "friend-tab-lists", "friend-tab-ratings", "friend-together", "friend-plan", "friend-remove"]) {
         await page.getByTestId(id).focus();
         await expect
           .poll(async () => {
@@ -1268,6 +1427,49 @@ test.describe("everything of friends fits the screen", () => {
             return at.x >= -0.5 && at.x + at.width <= screen.width + 0.5 && at.y + at.height <= screen.height + 0.5;
           }, { message: `${id} inside the screen` })
           .toBe(true);
+      }
+    });
+  }
+
+  // (a plan a friend put: its tile on the page of friends and the window that answers it, with a few words as long as a friend may write; the longest words, and the narrowest screens)
+  for (const screen of [
+    { name: "720p", width: 1280, height: 720 },
+    { name: "720p in Romanian", width: 1280, height: 720, language: "ro" as Language },
+    { name: "a small window in Italian", width: 800, height: 600, language: "it" as Language },
+    { name: "a phone's width in Romanian", width: 390, height: 844, language: "ro" as Language },
+  ]) {
+    test(`a plan to answer, as a tile and as a window, is on the screen: ${screen.name}`, async ({ browser }) => {
+      test.setTimeout(180_000);
+      const viewport = { width: screen.width, height: screen.height };
+      const words = WORDS[screen.language ?? "en"];
+      const language = screen.language ? { language: screen.language } : {};
+      const ann = await screenWithFriends(browser, "Ann", { viewport, ...language });
+      const bob = await screenWithFriends(browser, "Bob", { viewport, ...language });
+      await meet(ann, bob, words["friends.add"]);
+      const page = ann.page;
+      const wide = screen.width >= 900;
+      const when = new Date();
+      when.setDate(when.getDate() + 2);
+      when.setHours(19, 0, 0, 0);
+      await proposes(bob, ann, when.getTime(), "Ne uităm la un film cu multe explozii, cu floricele de porumb și suc, și vorbim după aceea despre ce ne-a plăcut");
+      await look(page);
+
+      const asked = tile(page, say(words["friends.planOf"], { name: bob.name }));
+      await expect(asked).toBeVisible();
+      const at = (await asked.boundingBox())!;
+      expect(at.x, "the plan's tile from the left").toBeGreaterThanOrEqual(0);
+      expect(at.x + at.width, "the plan's tile to the right").toBeLessThanOrEqual(screen.width + 0.5);
+      if (wide) expect(at.y + at.height, "the plan's tile to the bottom").toBeLessThanOrEqual(screen.height + 0.5);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+      await asked.click();
+      await expect(page.getByTestId("tv-plan-heading")).toHaveText(say(words["friends.planOf"], { name: bob.name }));
+      expect(await outsideTheScreen(page, "tv-plan", wide), "the window that answers a plan").toEqual([]);
+      for (const id of ["tv-plan-accept", "tv-plan-decline", "tv-plan-back"]) {
+        await page.getByTestId(id).focus();
+        const box = (await page.getByTestId(id).boundingBox())!;
+        expect(box.x, `${id} from the left`).toBeGreaterThanOrEqual(-0.5);
+        expect(box.x + box.width, `${id} to the right`).toBeLessThanOrEqual(screen.width + 0.5);
       }
     });
   }

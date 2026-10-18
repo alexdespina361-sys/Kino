@@ -415,4 +415,41 @@ test.describe("the bell on the TV", () => {
       }
     }
   });
+
+  test("a plan to watch together is a line of the list with a clock, and keeps clear of the screen's edges, in every language", async ({ browser }) => {
+    test.setTimeout(240_000);
+    const bob = await phoneWithFriends(browser, "Bob");
+    const bobProfile = await profileOf(bob.page);
+    for (const language of ["en", "ro", "it"] as const) {
+      const words = WORDS[language];
+      const cy = await screenWithFriends(browser, "Maximilia", { language });
+      const cyProfile = await profileOf(cy.page);
+      // (Bob asks to be Cy's friend and Cy says yes, as the buttons do; then Bob plans a watch together with a few words)
+      await askBy(bob.page, tagOf(cy.name));
+      const accepted = await cy.page.request.post(`/api/profiles/${cyProfile}/friends/requests/${bobProfile}/accept`);
+      expect(accepted.ok()).toBe(true);
+      const sent = await bob.page.request.post(`/api/profiles/${bobProfile}/friends/send`, {
+        data: { kind: "plan", when: Date.now() + 2 * 86_400_000, note: "Un film cu multe explozii, cu floricele de porumb", to: [cyProfile] },
+      });
+      expect(sent.ok()).toBe(true);
+      await look(cy.page);
+      await expect(cy.page.getByTestId("tv-bell-badge")).toHaveText("1");
+      for (const size of [HD, SMALL]) {
+        const where = `${language} at ${size.width} wide`;
+        await cy.page.setViewportSize(size);
+        await cy.page.getByTestId("tv-bell").click();
+        const list = cy.page.getByTestId("tv-bell-page");
+        await expect(list).toBeVisible();
+        const line = list.getByTestId("tv-bell-item");
+        await expect(line).toHaveCount(1);
+        await expect(line).toContainText(say(words["friends.planOf"], { name: bob.name }));
+        await expect(line).toContainText("Un film cu multe explozii");
+        expect(await rowProblems(cy.page, ".tv-bell-line", ".tv-bell-icon, .tv-bell-text"), `the line, ${where}`).toEqual([]);
+        expect(await rowProblems(cy.page, '[data-testid="tv-bell-page"] .tv-actions', ".tv-action"), `the buttons, ${where}`).toEqual([]);
+        expect(await cy.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `sideways, ${where}`).toBe(true);
+        await cy.page.keyboard.press("Escape");
+        await expect(list).toHaveCount(0);
+      }
+    }
+  });
 });
