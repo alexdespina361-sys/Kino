@@ -389,8 +389,11 @@ export const reachable = (friends: readonly Friend[]): Friend[] => friends.filte
 /** Whether the party an invitation is to can be joined: what the server said of it, else by the clock. */
 export const partyOpen = (invitation: { open?: boolean | undefined; endsAt: number }, now: number): boolean => invitation.open ?? invitation.endsAt > now;
 
-/** Whether asking a friend to watch together makes sense: they take things in the inbox, and tell this profile what they watch (so they are somebody to ask). */
-export const canAskTogether = (friend: Friend): boolean => friend.on && friend.inbox && friend.activity;
+/**
+ * Whether asking a friend to watch together makes sense: they take things in the inbox (the switch that lets a friend send titles and invitations: this is
+ * an invitation in the making). Telling what they watch is not needed: it was, and by default nobody does, so the button was never there.
+ */
+export const canAskTogether = (friend: Friend): boolean => friend.on && friend.inbox;
 
 /** The address that adds the friend whose code this is (`/?friend=ABCD2345`): what the link in a message holds. */
 export const friendLink = (code: string, origin: string): string => `${origin}/?friend=${code}`;

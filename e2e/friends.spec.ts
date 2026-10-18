@@ -597,6 +597,52 @@ test.describe("what a friend can see", () => {
     await expect(bob.page.getByTestId("friends-activity")).toHaveCount(0);
   });
 
+  test("with the switches as they come, the page of friends says what friends watch is off and a button goes to the settings and back; a friend's page says why nothing of it is shown and can still be asked to watch together; with the switch on it says the friend is the one who does not tell", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(ann.page, bob.page);
+    const page = ann.page;
+
+    // the page of friends: it is her switch that is off. The button goes to the settings, and Back comes to the page of friends again.
+    await openFriends(page);
+    await expect(page.getByTestId("friends-activity-off")).toContainText("You don't see what friends watch yet");
+    await page.getByTestId("friends-activity-settings").click();
+    await expect(page.getByTestId("friends-get")).toHaveAttribute("aria-checked", "false");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("friends-page")).toBeVisible();
+
+    // a friend's page: nothing of what Bob watches is shown, and it says why; the button to ask is there, and the request reaches him
+    await page.getByTestId("friend-row").click();
+    await expect(page.getByTestId("friend-hint")).toContainText(`To see what ${bob.name} is watching, turn on “Tell me what friends watch” in the Friends settings.`);
+    await page.getByTestId("friend-together").click();
+    await expect(page.getByTestId("account-toast")).toContainText(`Asked ${bob.name} to watch together`);
+    await openFriends(bob.page);
+    await look(bob.page);
+    await expect(bob.page.getByTestId("inbox-together")).toContainText(`${ann.name} wants to watch together`);
+
+    // with "Tell me what friends watch" on, the notice on the page of friends is gone and the reason is Bob's
+    await page.keyboard.press("Escape"); // (the page of friends)
+    await page.getByTestId("friends-activity-settings").click();
+    await page.getByTestId("friends-get").click();
+    await expect(page.getByTestId("friends-get")).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("friends-page")).toBeVisible();
+    await expect(page.getByTestId("friends-activity-off")).toHaveCount(0);
+    await page.getByTestId("friend-row").click();
+    await expect(page.getByTestId("friend-hint")).toHaveText(`${bob.name} isn't sharing what they watch.`);
+
+    // Bob starts telling what he watches: the page says nothing of it any more
+    await bob.page.keyboard.press("Escape"); // (his page of friends, to his account page)
+    await bob.page.getByTestId("menu-settings").click();
+    await bob.page.getByTestId("friends-give").click();
+    await expect(bob.page.getByTestId("friends-give")).toHaveAttribute("aria-checked", "true");
+    await expect(async () => {
+      await look(page);
+      await expect(page.getByTestId("friend-hint")).toHaveCount(0, { timeout: 1500 });
+    }).toPass({ timeout: 20_000 });
+  });
+
   test("who is online: a friend with the page open has a green dot and 'Online', and one who turned that switch off has neither", async ({ browser }) => {
     test.setTimeout(90_000);
     const ann = await phoneWithFriends(browser, "Ann");

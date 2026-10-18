@@ -127,6 +127,8 @@
 /* On the first screens: small, and out of the way of the main button. */
 .segmented.compact { width: min(100%, 300px); margin: 0 auto; font-size: 0.85rem; }
 .segmented.compact button { padding: 8px 6px; }
+/* Two choices share the width (the grid is made for three: with two, the third place would stand empty). */
+.segmented.pair { grid-template-columns: repeat(2, 1fr); }
 
 /* All six in one row, whatever the width: the gap gives a little first, then the swatches themselves (never a second line with one left over). */
 .swatches { display: flex; align-items: flex-start; gap: 14px; }

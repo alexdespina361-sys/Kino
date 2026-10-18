@@ -23,6 +23,16 @@ export function friendLine(friend: Friend, activity: readonly ActivityItem[], no
   return friend.online ? t("friends.online") : "";
 }
 
+/**
+ * Why what a friend watches is not shown, when it is not (a friend who has turned friends off has a line of their own): this profile has not turned on being
+ * told, else the friend does not tell. The server takes the two choices together and says only that it is not told, so this profile's own switch says
+ * whose is the one that is off.
+ */
+export function activityHint(friend: Friend, iGet: boolean): string | undefined {
+  if (!friend.on || friend.activity) return undefined;
+  return iGet ? t("friends.hintTheirs", { name: friend.name }) : t("friends.hintMine", { name: friend.name, switch: t("friends.switchGet") });
+}
+
 /** The episode a card is at ("S2:E5"), when it is of a show. */
 const episodeOf = (card: { season?: number | undefined; episode?: number | undefined }): string | undefined => (card.season !== undefined && card.episode !== undefined ? `S${card.season}:E${card.episode}` : undefined);
 

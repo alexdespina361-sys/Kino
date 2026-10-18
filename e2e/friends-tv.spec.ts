@@ -75,6 +75,9 @@ const tile = (page: Page, title: string) => page.locator(`.tv-tile[title="${titl
 
 const view = (page: Page) => page.getByTestId("tv-browse");
 
+/** A line of the words of a language with its blanks filled in: `{name}` and the like. */
+const say = (text: string, params: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_, key: string) => params[key] ?? "");
+
 async function openFriends(page: Page) {
   await openProfilePlace(page, "friends");
   await expect(view(page)).toHaveAttribute("data-view", "friends");
@@ -271,7 +274,8 @@ test.describe("making friends on the TV", () => {
     const code = await meet(ann, bob);
     await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`You and ${bob.name} are now friends`);
     await expect(bob.page.getByTestId("tv-account-toast")).toContainText(`You and ${ann.name} are now friends`);
-    await expect(ann.page.locator(".tv-tile-category")).toHaveCount(3);
+    await expect(ann.page.locator(".tv-tile-category")).toHaveCount(4); // (Bob's, the two that start things, and the one that turns on what friends watch: that is off, as it comes)
+    await expect(tile(ann.page, WORDS.en["friends.turnOn"])).toBeVisible();
 
     // typed as it was read, but the code is spent
     await openFriends(cy.page);
@@ -507,6 +511,47 @@ test.describe("a friend's page", () => {
     await expect(bob.page.getByTestId("tv-view-empty")).toContainText(`${ann.name} has turned friends off`);
     await expect(tile(bob.page, "Alpha Film")).toHaveCount(0);
   });
+
+  test("with the switches as they come, the page of friends says what friends watch is off and a tile turns it on; a friend's page says why nothing of it is shown and can still be asked to watch together; with the switch on it says the friend is the one who does not tell", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    const hint = ann.page.getByTestId("tv-view-hint");
+
+    // the page of friends has a row of its own for it, with a tile that turns it on (the friend's tile is on the page too)
+    const turnOn = tile(ann.page, en["friends.turnOn"]);
+    await expect(turnOn).toBeVisible();
+    await expect(turnOn).toContainText(en["friends.switchGet"]);
+    await expect(tile(ann.page, bob.name)).toBeVisible();
+
+    // a friend's page says what is off and where; the button to ask is there, and the request reaches Bob, who tells nothing of what he watches
+    await tile(ann.page, bob.name).click();
+    await expect(hint).toContainText(`To see what ${bob.name} is watching, turn on “${en["friends.switchGet"]}” in the Friends settings.`);
+    await ann.page.getByTestId("friend-together").click();
+    await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`Asked ${bob.name} to watch together`);
+    await look(bob.page);
+    await expect(tile(bob.page, `${ann.name} wants to watch together`)).toBeVisible();
+
+    // the tile opens the settings; with "Tell me what friends watch" on the row is gone, and the reason is the friend's
+    await ann.page.getByTestId("tv-friend-back").click();
+    await turnOn.click();
+    await ann.page.getByTestId("tv-friends-get").click();
+    await expect(ann.page.getByTestId("tv-friends-get")).toHaveAttribute("aria-checked", "true");
+    await ann.page.getByTestId("tv-friend-settings-done").click();
+    await expect(turnOn).toHaveCount(0);
+    await tile(ann.page, bob.name).click();
+    await expect(hint).toHaveText(`${bob.name} isn't sharing what they watch.`);
+
+    // Bob starts telling what he watches: the page says nothing of it any more
+    await tile(bob.page, en["friends.settingsTile"]).click();
+    await bob.page.getByTestId("tv-friends-give").click();
+    await bob.page.getByTestId("tv-friend-settings-done").click();
+    await expect(async () => {
+      await look(ann.page);
+      await expect(hint).toHaveCount(0, { timeout: 1500 });
+    }).toPass({ timeout: 20_000 });
+  });
 });
 
 test.describe("what is shared", () => {
@@ -678,11 +723,16 @@ test.describe("sending things to friends from the TV", () => {
     await expect(ann.page.getByTestId("tv-party-member")).toHaveCount(2);
   });
 
-  test("a friend who does not tell what they watch is not asked: the ended party's card is gone, not a question", async ({ browser }) => {
+  test("a friend who does not take invitations is not asked: the ended party's card is gone, not a question", async ({ browser }) => {
     test.setTimeout(150_000);
     const ann = await screenWithFriends(browser, "Ann");
     const bob = await screenWithFriends(browser, "Bob");
     await meet(ann, bob);
+    // (Ann stops taking titles and invitations; she can still invite Bob, who is not asked to tell what he watches, nor does she tell)
+    await tile(ann.page, "Friends settings").click();
+    await ann.page.getByTestId("tv-friends-inbox").click();
+    await expect(ann.page.getByTestId("tv-friends-inbox")).toHaveAttribute("aria-checked", "false");
+    await ann.page.getByTestId("tv-friend-settings-done").click();
 
     await ann.page.getByTestId("rail-party").click();
     await ann.page.getByTestId("tv-party-start").click();
@@ -694,8 +744,10 @@ test.describe("sending things to friends from the TV", () => {
 
     await ann.page.getByTestId("tv-party-end").click();
     await expect(ann.page.getByTestId("tv-party-start")).toBeVisible();
-    await look(bob.page);
-    await expect(tile(bob.page, `${ann.name}'s party`)).toHaveCount(0);
+    await expect(async () => {
+      await look(bob.page); // (looked at again until the server's word on Ann's switch has reached him)
+      await expect(tile(bob.page, `${ann.name}'s party`)).toHaveCount(0, { timeout: 1500 });
+    }).toPass({ timeout: 20_000 });
   });
 
   /** A screen that plays the first film of its library and has the party's panel open over it (Start is not pressed yet). */
@@ -1174,6 +1226,49 @@ test.describe("everything of friends fits the screen", () => {
       await page.getByTestId("tv-detail-recommend").click();
       await expect(page.getByTestId("tv-friend-picker")).toBeVisible();
       await fits("tv-friend-picker", "the page that sends a title");
+    });
+  }
+
+  // (the line that says why nothing of what a friend watches is shown, and the tile that turns it on: the longest words, and the narrowest screen)
+  for (const screen of [
+    { name: "720p in Romanian", width: 1280, height: 720, language: "ro" as Language },
+    { name: "a phone's width in Italian", width: 390, height: 844, language: "it" as Language },
+  ]) {
+    test(`the tile that turns on what friends watch and the line that says why a friend's is not shown are on the screen: ${screen.name}`, async ({ browser }) => {
+      test.setTimeout(180_000);
+      const viewport = { width: screen.width, height: screen.height };
+      const words = WORDS[screen.language];
+      const ann = await screenWithFriends(browser, "Ann", { viewport, language: screen.language });
+      const bob = await screenWithFriends(browser, "Bob", { viewport, language: screen.language });
+      await meet(ann, bob, words["friends.add"]);
+      const page = ann.page;
+      const wide = screen.width >= 900;
+
+      const turnOn = tile(page, words["friends.turnOn"]);
+      await expect(turnOn).toBeVisible();
+      for (const target of [turnOn, tile(page, bob.name)]) {
+        const at = (await target.boundingBox())!;
+        expect(at.x, "the tile from the left").toBeGreaterThanOrEqual(0);
+        if (wide) expect(at.y + at.height, "the tile to the bottom").toBeLessThanOrEqual(screen.height + 0.5);
+      }
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+      await tile(page, bob.name).click();
+      await expect(page.getByTestId("tv-view-hint")).toContainText(say(words["friends.hintMine"], { name: bob.name, switch: words["friends.switchGet"] }));
+      const line = (await page.getByTestId("tv-view-hint").boundingBox())!;
+      expect(line.x, "the line from the left").toBeGreaterThanOrEqual(0);
+      expect(line.x + line.width, "the line to the right").toBeLessThanOrEqual(screen.width + 0.5);
+      expect(line.y + line.height, "the line to the bottom").toBeLessThanOrEqual(screen.height + 0.5);
+      if (wide) expect(await outsideTheScreen(page, "tv-browse"), "the page of a friend").toEqual([]); // (a narrow screen has its buttons in one row that slides to the one the remote is on: the loop below)
+      for (const id of ["tv-friend-back", "friend-tab-lists", "friend-tab-ratings", "friend-together", "friend-remove"]) {
+        await page.getByTestId(id).focus();
+        await expect
+          .poll(async () => {
+            const at = (await page.getByTestId(id).boundingBox())!;
+            return at.x >= -0.5 && at.x + at.width <= screen.width + 0.5 && at.y + at.height <= screen.height + 0.5;
+          }, { message: `${id} inside the screen` })
+          .toBe(true);
+      }
     });
   }
 });

@@ -101,10 +101,16 @@ export function AccountScreen({
   const [friendId, setFriendId] = useState<string | null>(null);
   const [friendsFrom, setFriendsFrom] = useState<View | "close">(initial === "friends" ? "close" : "main"); // (opened on the friends from the bell: Back leaves the account)
   const { me, profile } = account;
+  /** The page the settings were opened from (the account's menu, or the friends' page that says what to turn on): Back goes there. */
+  const [settingsFrom, setSettingsFrom] = useState<View>("main");
   const back = () => setView("main");
   const openFriends = (from: View) => {
     setFriendsFrom(from);
     setView("friends");
+  };
+  const openSettings = (from: View) => {
+    setSettingsFrom(from);
+    setView("settings");
   };
 
   // Signed in just now: the page for guests (the form) gives way to the page of the account.
@@ -133,8 +139,13 @@ export function AccountScreen({
   }
   if (view === "settings") {
     return (
-      <Page title={t("settings.title")} onBack={back}>
-        <SettingsPage onOpenFriends={() => openFriends("settings")} />
+      <Page title={t("settings.title")} onBack={() => setView(settingsFrom)}>
+        <SettingsPage
+          onOpenFriends={() => {
+            setSettingsFrom("main"); // (the friends' page leads back here, and from here Back goes to the menu: not round again)
+            openFriends("settings");
+          }}
+        />
       </Page>
     );
   }
@@ -154,6 +165,7 @@ export function AccountScreen({
             setView("friend");
           }}
           onOpenTitle={onOpenTitle}
+          onOpenSettings={() => openSettings("friends")}
           {...(onStartParty ? { onStartParty } : {})}
         />
       </Page>
@@ -260,7 +272,7 @@ export function AccountScreen({
               </nav>
             )}
             <nav className="menu">
-              <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
+              <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => openSettings("main")} testId="menu-settings" />
               {feedbackRow}
               <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
               <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
@@ -290,7 +302,7 @@ export function AccountScreen({
           <AuthForm onDone={() => undefined} />
           <nav className="menu">
             {ratingsRow}
-            <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
+            <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => openSettings("main")} testId="menu-settings" />
             {feedbackRow}
           </nav>
           <p className="muted small center">{t("account.guestNote")}</p>

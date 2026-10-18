@@ -223,11 +223,12 @@ describe("what is sent", () => {
     expect(partyOpen({ endsAt: 10, open: false }, 9)).toBe(false);
   });
 
-  it("offers asking to watch together to a friend who takes things and tells what they watch, and no other", () => {
+  it("offers asking to watch together to a friend who takes things, whether or not they tell what they watch, and to no other", () => {
+    expect(canAskTogether(friend())).toBe(true); // (what they watch is not told by default: the button must not wait for that)
     expect(canAskTogether(friend({ activity: true }))).toBe(true);
-    expect(canAskTogether(friend())).toBe(false); // (they do not tell what they watch)
+    expect(canAskTogether(friend({ inbox: false }))).toBe(false);
     expect(canAskTogether(friend({ activity: true, inbox: false }))).toBe(false);
-    expect(canAskTogether(friend({ activity: true, on: false }))).toBe(false);
+    expect(canAskTogether(friend({ on: false }))).toBe(false);
   });
 });
 
