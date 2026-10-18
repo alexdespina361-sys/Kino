@@ -10,6 +10,9 @@ import {
   InboxItemSchema,
   KeptFriendsSchema,
   AskedSchema,
+  PLAN_KEEP_AFTER_MS,
+  PLAN_MAX_AHEAD_MS,
+  PLAN_MIN_AHEAD_MS,
   RequestSchema,
   SendSchema,
   SentRequestSchema,
@@ -24,6 +27,9 @@ import {
   friendLink,
   parseTag,
   partyOpen,
+  planAsks,
+  planDue,
+  planTimeProblem,
   plainText,
   reachable,
   sameTag,
@@ -208,6 +214,33 @@ describe("what is sent", () => {
     expect(InboxItemSchema.safeParse({ kind: "together", id: "m_abc", at: 5, from: "pro_1", read: false }).success).toBe(true);
   });
 
+  it("takes a plan for a day and a time for one friend, with a few words tidied; an answer or anything else a screen adds does not get through", () => {
+    const when = 1_900_000_000_000;
+    expect(SendSchema.parse({ to: ["pro_2"], kind: "plan", when, note: "  after dinner ", answer: "yes", host: "tv_x", at: 1 })).toEqual({ to: ["pro_2"], kind: "plan", when, note: "after dinner" });
+    expect(SendSchema.parse({ to: ["pro_2"], kind: "plan", when })).toEqual({ to: ["pro_2"], kind: "plan", when });
+    for (const bad of [
+      { to: ["pro_2"], kind: "plan" },
+      { to: ["pro_2"], kind: "plan", when: "soon" },
+      { to: ["pro_2"], kind: "plan", when: when + 0.5 },
+      { to: ["pro_2"], kind: "plan", when: 0 },
+      { to: ["pro_2"], kind: "plan", when: -when },
+      { to: ["pro_2"], kind: "plan", when, note: "x".repeat(201) },
+      { to: [], kind: "plan", when },
+      { to: ["pro_2", "pro_3"], kind: "plan", when }, // (a plan is a question for one friend: each answer is their own)
+    ]) {
+      expect(SendSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it("holds a plan in an inbox with what became of it: no answer yet, yes, or no", () => {
+    const plan = { kind: "plan", when: 1_900_000_000_000, id: "m_abc", at: 5, from: "pro_1", read: false };
+    expect(InboxItemSchema.parse(plan)).not.toHaveProperty("answer");
+    expect(InboxItemSchema.parse({ ...plan, answer: "yes", note: "after dinner" })).toMatchObject({ answer: "yes", note: "after dinner", when: plan.when, at: 5 });
+    expect(InboxItemSchema.parse({ ...plan, answer: "no" })).toMatchObject({ answer: "no" });
+    expect(InboxItemSchema.safeParse({ ...plan, answer: "maybe" }).success).toBe(false);
+    expect(InboxItemSchema.safeParse({ ...plan, when: undefined }).success).toBe(false);
+  });
+
   it("takes an invitation to a party as the server answers it: whether the party is open, but never which screen hosts it, and never as a thing to send", () => {
     const invitation = { kind: "party", code: "482731", endsAt: 5, id: "m_abc", at: 5, from: "pro_1", read: false };
     expect(InboxItemSchema.parse({ ...invitation, open: false })).toMatchObject({ open: false });
@@ -221,6 +254,31 @@ describe("what is sent", () => {
     expect(partyOpen({ endsAt: 10 }, 10)).toBe(false);
     expect(partyOpen({ endsAt: 10, open: true }, 99)).toBe(true);
     expect(partyOpen({ endsAt: 10, open: false }, 9)).toBe(false);
+  });
+
+  it("puts a plan at least five minutes ahead and at most thirty days, to the millisecond", () => {
+    const now = 1_000_000_000_000;
+    expect(PLAN_MIN_AHEAD_MS).toBe(5 * 60_000);
+    expect(PLAN_MAX_AHEAD_MS).toBe(30 * 24 * 3600_000);
+    expect(planTimeProblem(now + PLAN_MIN_AHEAD_MS - 1, now)).toBe("too_soon");
+    expect(planTimeProblem(now - 1, now)).toBe("too_soon");
+    expect(planTimeProblem(now + PLAN_MIN_AHEAD_MS, now)).toBeUndefined();
+    expect(planTimeProblem(now + PLAN_MAX_AHEAD_MS, now)).toBeUndefined();
+    expect(planTimeProblem(now + PLAN_MAX_AHEAD_MS + 1, now)).toBe("too_far");
+  });
+
+  it("asks for an answer until the plan's time, and is due from its time for a while, only once it was said yes to", () => {
+    const at = 1_000;
+    expect(planAsks({ when: at }, at - 1)).toBe(true);
+    expect(planAsks({ when: at }, at)).toBe(false); // (a time that has come cannot be said yes to)
+    expect(planAsks({ when: at, answer: "yes" }, at - 1)).toBe(false);
+    expect(planAsks({ when: at, answer: "no" }, at - 1)).toBe(false);
+    expect(planDue({ when: at, answer: "yes" }, at - 1)).toBe(false);
+    expect(planDue({ when: at, answer: "yes" }, at)).toBe(true);
+    expect(planDue({ when: at, answer: "yes" }, at + PLAN_KEEP_AFTER_MS - 1)).toBe(true);
+    expect(planDue({ when: at, answer: "yes" }, at + PLAN_KEEP_AFTER_MS)).toBe(false);
+    expect(planDue({ when: at }, at)).toBe(false);
+    expect(planDue({ when: at, answer: "no" }, at)).toBe(false);
   });
 
   it("offers asking to watch together to a friend who takes things, whether or not they tell what they watch, and to no other", () => {

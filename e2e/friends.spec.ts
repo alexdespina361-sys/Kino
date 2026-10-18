@@ -1,4 +1,5 @@
 import { expect, type Browser, type Locator, type Page } from "@playwright/test";
+import { en } from "../src/client/i18n/en";
 import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
 import { openDevice, openTv, PHONE, readPairingCode, test, withLibrary } from "./helpers";
@@ -16,7 +17,7 @@ const fresh = (name: string) => ({ email: `${name}${++counter}x${Date.now().toSt
 type Account = ReturnType<typeof fresh>;
 const nameOf = (account: Account) => account.email.charAt(0).toUpperCase() + account.email.slice(1);
 
-const newPhone = (browser: Browser) => openDevice(browser, { ...PHONE, locale: "en-US" });
+const newPhone = (browser: Browser, locale = "en-US") => openDevice(browser, { ...PHONE, locale });
 
 async function signUp(page: Page, account: Account) {
   await page.getByTestId("account-button").click();
@@ -76,9 +77,9 @@ const keepClear = (card: Locator, parts: Locator[], width: number, room: number)
     .toBe("fits");
 
 /** A new phone, signed up, with friends on: left on the account page. */
-async function phoneWithFriends(browser: Browser, name: string) {
+async function phoneWithFriends(browser: Browser, name: string, locale = "en-US") {
   const account = fresh(name);
-  const page = await newPhone(browser);
+  const page = await newPhone(browser, locale);
   await page.goto("/");
   await signUp(page, account);
   await turnOnFriends(page);
@@ -106,6 +107,31 @@ async function seed(page: Page, data: Record<string, unknown[]>) {
   const response = await page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0, ...data } });
   expect(response.ok()).toBe(true);
 }
+
+/** What the server keeps in a profile's inbox, by kind (asked without the page looking: what the page shows stays as it was). */
+async function inboxKinds(page: Page) {
+  const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
+  const state = (await (await page.request.get(`/api/profiles/${profile}/friends`)).json()) as { inbox: { kind: string }[] };
+  return state.inbox.map((item) => item.kind);
+}
+
+/** A moment as the value of a date input and of a time input, by the clock of this machine (which the pages under test go by too). */
+const two = (n: number) => String(n).padStart(2, "0");
+const dateValue = (at: Date) => `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}`;
+const timeValue = (at: Date) => `${two(at.getHours())}:${two(at.getMinutes())}`;
+
+/** The ids of the parts that leave the screen's sides, or the page that scrolls sideways. */
+const outsideTheSides = (page: Page, ids: string[]) =>
+  page.evaluate((testIds) => {
+    const problems: string[] = [];
+    for (const id of testIds) {
+      const box = document.querySelector(`[data-testid="${id}"]`)?.getBoundingClientRect();
+      if (!box) problems.push(`(no ${id})`);
+      else if (box.left < -0.5 || box.right > innerWidth + 0.5) problems.push(`${id} leaves the screen`);
+    }
+    if (document.documentElement.scrollWidth > innerWidth) problems.push("(the page scrolls sideways)");
+    return problems;
+  }, ids);
 
 const FILM = "https://films.example/watch/17";
 const filmCards = () => {
@@ -678,11 +704,14 @@ test.describe("sending things to friends", () => {
     rows: [{ id: "r", title: "Classics", source: "Test Source", kind: "movie", items: [{ id: "a", title: "Alpha Film", year: 1931, kind: "movie", url: `${baseURL}/fixtures/sample.mp4?n=1` }] }],
   });
 
-  /** A phone paired to a TV, showing a one-film library, signed up with friends on (in English, unless its language is given). */
-  async function pairedPhone(browser: Browser, baseURL: string, name: string, locale = "en-US") {
+  /** A phone paired to a TV, showing a one-film library, signed up with friends on (in English, unless its language is given; with a clock of the test's, if that is asked). */
+  async function pairedPhone(browser: Browser, baseURL: string, name: string, locale = "en-US", fakeClock = false) {
     const account = fresh(name);
     const tv = await openTv(browser);
-    const page = await openDevice(browser, { ...PHONE, locale }, {}, withLibrary(films(baseURL)));
+    const page = await openDevice(browser, { ...PHONE, locale }, {}, async (context) => {
+      if (fakeClock) await context.clock.install(); // (the minutes until the time of a plan are skipped with `fastForward`)
+      await withLibrary(films(baseURL))(context);
+    });
     await page.goto("/");
     await page.getByTestId("code-input").fill(await readPairingCode(tv));
     await expect(page.getByTestId("tv-online")).toHaveClass(/\bok\b/);
@@ -897,5 +926,197 @@ test.describe("sending things to friends", () => {
     await look(cy.page);
     await cy.page.getByTestId("friends-play").click();
     await expect(cy.page.getByTestId("title-sheet")).toContainText("You will like the ending");
+  });
+
+  test("a plan that is on says when its time has come, with a button that starts a party and invites the friend; the sheet that plans and the lines that tell it fit the narrowest phone in Romanian", async ({ browser, baseURL }) => {
+    test.setTimeout(240_000);
+    const ann = await pairedPhone(browser, baseURL!, "Ann", "ro-RO", true); // (her clock is the test's: the minutes until the time are skipped)
+    const bob = await pairedPhone(browser, baseURL!, "Bob", "ro-RO");
+    await meet(bob.page, ann.page);
+
+    // Bob plans from her page, for ten minutes from now: the sheet keeps clear of the sides on any phone
+    await bob.page.getByTestId("account-button").click();
+    await openFriends(bob.page);
+    await bob.page.getByTestId("friend-row").click();
+    await bob.page.getByTestId("friend-plan").click();
+    const sheet = bob.page.getByTestId("plan-sheet");
+    await expect(sheet).toBeVisible();
+    const when = new Date(Date.now() + 10 * 60_000);
+    when.setSeconds(0, 0);
+    await sheet.getByTestId("plan-date").fill(dateValue(when));
+    await sheet.getByTestId("plan-time").fill(timeValue(when));
+    await sheet.getByTestId("plan-note").fill("Cu floricele de porumb");
+    for (const width of [320, 360, 390]) {
+      await bob.page.setViewportSize({ width, height: 800 });
+      await expect.poll(() => outsideTheSides(bob.page, ["plan-date", "plan-time", "plan-summary", "plan-note", "plan-notice", "plan-send"]), { message: `the sheet, ${width} wide` }).toEqual([]);
+    }
+    await sheet.getByTestId("plan-send").click();
+    await expect(bob.page.getByTestId("account-toast")).toContainText(say(ro["friends.planSent"], { name: ann.name }));
+    await expect(sheet).toHaveCount(0);
+    for (let back = 0; back < 3; back++) await bob.page.keyboard.press("Escape"); // (the friend's page, the friends, the account page)
+    await expect(bob.page.getByTestId("account-screen")).toHaveCount(0);
+
+    // Ann has it on her page of friends, the words and the buttons kept inside the line on any phone; she says yes
+    await look(ann.page);
+    await ann.page.getByTestId("account-button").click();
+    await openFriends(ann.page);
+    const row = ann.page.getByTestId("inbox-plan");
+    await expect(row).toContainText(say(ro["friends.planOf"], { name: bob.name }));
+    await expect(row).toContainText("Cu floricele de porumb");
+    await expect(row).toContainText(timeValue(when));
+    for (const width of [320, 360, 390]) {
+      await ann.page.setViewportSize({ width, height: 800 });
+      await keepClear(row, [row.locator(".inbox-text"), row.getByTestId("plan-accept"), row.getByTestId("plan-decline")], width, 150);
+    }
+    await row.getByTestId("plan-accept").click();
+    await expect(row).toHaveAttribute("data-status", "agreed");
+    await expect(row).toContainText(say(ro["friends.planAgreed"], { name: bob.name }));
+    for (let back = 0; back < 2; back++) await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("account-screen")).toHaveCount(0);
+
+    // The time comes, by her clock: her home screen says so with a button, kept inside the banner on any phone
+    const banner = ann.page.getByTestId("friend-plan-banner");
+    await expect(banner).toHaveCount(0);
+    await expect(ann.page.getByTestId("bell-badge")).toHaveCount(0); // (a plan that is on waits for nothing)
+    await ann.page.clock.fastForward(12 * 60_000);
+    await expect(banner).toContainText(say(ro["friends.planDue"], { name: bob.name }));
+    await expect(ann.page.getByTestId("bell-badge")).toHaveText("1"); // (its time has come: it waits for a party)
+    await expect(ann.page.getByTestId("account-toast")).toContainText(say(ro["friends.news.planDue"], { name: bob.name }));
+    const start = ann.page.getByTestId("friend-plan-start");
+    for (const width of [320, 360, 390]) {
+      await ann.page.setViewportSize({ width, height: 800 });
+      await keepClear(banner, [banner.locator("span").first(), start, ann.page.getByTestId("friend-plan-dismiss")], width, 150);
+    }
+
+    // Her button opens the party of her TV and invites Bob to it; the plan is done, for Bob as well (the party is the plan)
+    await start.click();
+    await expect(ann.page.getByTestId("party-sheet")).toBeVisible();
+    await expect(ann.page.getByTestId("party-join-code")).toBeVisible();
+    await expect(ann.page.getByTestId("account-toast")).toContainText(say(ro["friends.inviteSent"], { names: bob.name }));
+    await expect(banner).toHaveCount(0);
+    await expect(ann.page.getByTestId("bell-badge")).toHaveCount(0);
+    await expect.poll(() => inboxKinds(bob.page)).toEqual(["party"]);
+    await look(bob.page);
+    await expect(bob.page.getByTestId("friend-party-banner")).toBeVisible();
+  });
+});
+
+test.describe("plans to watch together", () => {
+  /** A moment `days` from today at `hour`:`minute`, by the clock of this machine (which the pages under test go by too). */
+  const inDays = (days: number, hour: number, minute = 0) => {
+    const at = new Date();
+    at.setDate(at.getDate() + days);
+    at.setHours(hour, minute, 0, 0);
+    return at;
+  };
+  /** "Saturday at 19:30": how the pages word a moment that is a few days off. */
+  const wordsFor = (at: Date) => `${at.toLocaleDateString("en-GB", { weekday: "long" })} at ${timeValue(at)}`;
+
+  /** Two phones signed up with friends on and friends with each other (a friend can be planned with unless they stopped taking things). Both are left on the account page. */
+  async function planners(browser: Browser) {
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(bob.page, ann.page); // Bob gives a code, Ann types it
+    return { ann, bob };
+  }
+
+  /** The friend's page (the only friend), with the button that plans on it. */
+  async function friendPage(page: Page) {
+    await openFriends(page);
+    await page.getByTestId("friend-row").click();
+    await expect(page.getByTestId("friend-plan")).toBeVisible();
+  }
+
+  test("a plan is proposed from a friend's page, answered in the bell and on the page of friends, and what the friend said comes back to the one who proposed", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const { ann, bob } = await planners(browser);
+    await ann.page.keyboard.press("Escape"); // (Ann is at her home screen, where the bell is)
+    await expect(ann.page.getByTestId("account-screen")).toHaveCount(0);
+    const saturday = inDays(2, 19, 30); // (two days off is always said by the name of the weekday)
+    const sunday = inDays(3, 21);
+
+    // Bob plans from her page. The sheet starts on a time that can be sent, says who sees it and how, and refuses a time that is too near or too far before the server is asked.
+    await friendPage(bob.page);
+    await bob.page.getByTestId("friend-plan").click();
+    const sheet = bob.page.getByTestId("plan-sheet");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByTestId("plan-summary")).toBeVisible();
+    await expect(sheet.getByTestId("plan-notice")).toContainText(`${ann.name} sees this`);
+    await expect(sheet.getByTestId("plan-notice")).toContainText("no push messages or emails");
+    const put = async (at: Date) => {
+      await sheet.getByTestId("plan-date").fill(dateValue(at));
+      await sheet.getByTestId("plan-time").fill(timeValue(at));
+    };
+    await put(new Date(Date.now() - 3_600_000));
+    await sheet.getByTestId("plan-send").click();
+    await expect(sheet.getByTestId("plan-error")).toHaveText(en["error.plan_soon"]);
+    await put(inDays(45, 20));
+    await sheet.getByTestId("plan-send").click();
+    await expect(sheet.getByTestId("plan-error")).toHaveText(en["error.plan_far"]);
+    await put(saturday);
+    await expect(sheet.getByTestId("plan-summary")).toHaveText(wordsFor(saturday));
+    await sheet.getByTestId("plan-note").fill("Bring snacks");
+    await sheet.getByTestId("plan-send").click();
+    await expect(bob.page.getByTestId("account-toast")).toContainText(`Plan sent to ${ann.name}`);
+    await expect(sheet).toHaveCount(0);
+
+    // Ann: told in a line, a number on her bell, and the plan in the bell's list with its words and its buttons. Looking does not answer.
+    await look(ann.page);
+    await expect(ann.page.getByTestId("account-toast")).toContainText(`${bob.name} proposes to watch together: ${wordsFor(saturday)}`);
+    await expect(ann.page.getByTestId("bell-badge")).toHaveText("1");
+    await ann.page.getByTestId("bell-button").click();
+    const inBell = ann.page.getByTestId("bell-sheet").getByTestId("inbox-plan");
+    await expect(inBell).toHaveAttribute("data-status", "asks");
+    await expect(inBell.getByTestId("inbox-plan-heading")).toHaveText(`${bob.name} proposes to watch together`);
+    await expect(inBell.getByTestId("inbox-plan-detail")).toHaveText(`${wordsFor(saturday)} · Bring snacks`);
+    await expect(inBell.getByTestId("plan-accept")).toBeVisible();
+    await ann.page.keyboard.press("Escape");
+    await expect(ann.page.getByTestId("bell-sheet")).toHaveCount(0);
+
+    // On her page of friends it is the same line; Accept makes it a plan that is on, in the words that both of them read
+    await ann.page.getByTestId("account-button").click();
+    await openFriends(ann.page);
+    const row = ann.page.getByTestId("friends-inbox").getByTestId("inbox-plan");
+    await expect(row).toHaveAttribute("data-status", "asks");
+    await row.getByTestId("plan-accept").click();
+    await expect(row).toHaveAttribute("data-status", "agreed");
+    await expect(row.getByTestId("inbox-plan-heading")).toHaveText(`Watching together with ${bob.name}`);
+    await expect(row.getByTestId("inbox-plan-detail")).toHaveText(`${wordsFor(saturday)} · Bring snacks`);
+    await expect(row.getByTestId("plan-accept")).toHaveCount(0);
+
+    // Bob is told yes, and has the plan on his page of friends (the few words stay with the one who wrote them)
+    await look(bob.page);
+    await expect(bob.page.getByTestId("account-toast")).toContainText(`${ann.name} said yes to watching together: ${wordsFor(saturday)}`);
+    await bob.page.keyboard.press("Escape"); // (the friend's page, then the page of friends)
+    const bobsRow = bob.page.getByTestId("friends-inbox").getByTestId("inbox-plan");
+    await expect(bobsRow).toHaveAttribute("data-status", "agreed");
+    await expect(bobsRow.getByTestId("inbox-plan-heading")).toHaveText(`Watching together with ${ann.name}`);
+    await expect(bobsRow.getByTestId("inbox-plan-detail")).toHaveText(wordsFor(saturday));
+
+    // Another plan, and a no: it goes from Ann's page at once, and Bob has the news (to dismiss), while the plan that is on stays
+    await bob.page.keyboard.press("Escape");
+    await expect(bob.page.getByTestId("menu-friends")).toBeVisible();
+    await friendPage(bob.page);
+    await bob.page.getByTestId("friend-plan").click();
+    await put(sunday);
+    await bob.page.getByTestId("plan-send").click();
+    await expect(bob.page.getByTestId("account-toast")).toContainText(`Plan sent to ${ann.name}`);
+    await look(ann.page);
+    await expect(ann.page.getByTestId("friends-inbox").getByTestId("inbox-plan")).toHaveCount(2);
+    const asks = ann.page.getByTestId("friends-inbox").locator('[data-testid="inbox-plan"][data-status="asks"]');
+    await expect(asks.getByTestId("inbox-plan-detail")).toHaveText(wordsFor(sunday));
+    await asks.getByTestId("plan-decline").click();
+    await expect(ann.page.getByTestId("friends-inbox").getByTestId("inbox-plan")).toHaveCount(1);
+    await expect(ann.page.getByTestId("friends-inbox").getByTestId("inbox-plan")).toHaveAttribute("data-status", "agreed");
+
+    await look(bob.page);
+    await expect(bob.page.getByTestId("account-toast")).toContainText(`${ann.name} can't make it: ${wordsFor(sunday)}`);
+    await bob.page.keyboard.press("Escape"); // (the sheet is shut already: the friend's page, then the page of friends)
+    const declined = bob.page.getByTestId("friends-inbox").locator('[data-testid="inbox-plan"][data-status="declined"]');
+    await expect(declined.getByTestId("inbox-plan-heading")).toHaveText(`${ann.name} can't make it`);
+    await expect(declined.getByTestId("inbox-plan-detail")).toHaveText(wordsFor(sunday));
+    await declined.getByTestId("inbox-dismiss").click();
+    await expect(declined).toHaveCount(0);
+    await expect(bob.page.getByTestId("friends-inbox").getByTestId("inbox-plan")).toHaveCount(1); // (the plan that is on stays)
   });
 });

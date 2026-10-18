@@ -10,9 +10,17 @@ import {
   MAX_OPEN_INVITES,
   MAX_REQUESTS,
   PARTY_INVITE_KEEP_MS,
+  PLAN_KEEP_AFTER_MS,
+  PLAN_OPEN_PER_PAIR,
+  PLAN_OPEN_PER_SENDER,
+  PLAN_SETTLE_AHEAD_MS,
   REQUEST_KEEP_MS,
+  planAsks,
+  planTimeProblem,
   type InboxItem,
   type Message,
+  type PlanAnswer,
+  type PlanItem,
 } from "../../shared";
 import { normalise } from "./links";
 
@@ -32,7 +40,7 @@ export interface FriendHost {
   now(): number;
 }
 
-export type FriendError = "invite_gone" | "own_invite" | "already_friends" | "friends_full" | "own_request" | "request_gone";
+export type FriendError = "invite_gone" | "own_invite" | "already_friends" | "friends_full" | "own_request" | "request_gone" | "plan_soon" | "plan_far" | "plan_full" | "plan_gone";
 export type Outcome<T> = { ok: true; value: T } | { ok: false; error: FriendError };
 
 interface FriendsDoc {
@@ -57,8 +65,25 @@ export interface Invite {
   from: string;
   expiresAt: number;
 }
+/** What a friend says to a plan, as it is put in the inbox of the one who put it. */
+export interface PlanReply {
+  kind: "plan";
+  when: number;
+  answer: PlanAnswer;
+}
 
 const PREFIXES = ["friends:", "inbox:", "finvite:", "frequests:"] as const;
+
+/**
+ * When something in an inbox is let go: a title after a month, an invitation or a request for a party after half a day, a plan once its time has
+ * gone (one that was said yes to a little later, for the note that says its time has come; the news that it was turned down after half a day).
+ */
+const keptUntil = (item: StoredItem): number => {
+  if (item.kind === "recommend") return item.at + INBOX_KEEP_MS;
+  if (item.kind !== "plan") return item.at + PARTY_INVITE_KEEP_MS;
+  if (item.answer === "yes") return item.when + PLAN_KEEP_AFTER_MS;
+  return item.answer === "no" ? item.at + PARTY_INVITE_KEEP_MS : item.when;
+};
 
 const newItemId = () => `m_${randomBytes(9).toString("base64url")}`;
 const newCode = () => Array.from({ length: INVITE_CODE_LENGTH }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join("");
@@ -331,26 +356,89 @@ export class FriendBook {
     const items = this.inboxes.get(profileId);
     if (!items) return [];
     const now = this.host.now();
-    const fresh = items.filter((item) => now - item.at < (item.kind === "recommend" ? INBOX_KEEP_MS : PARTY_INVITE_KEEP_MS));
+    const fresh = items.filter((item) => now < keptUntil(item));
     if (fresh.length !== items.length) this.setInbox(profileId, fresh);
     return fresh;
   }
 
   /**
-   * Put something in an inbox. The same title from the same friend, or a newer invitation or request from them for a party, replaces the old
-   * one and is new again; but one that has not been looked at yet keeps its id, so that sending it over and over is not announced over and
-   * over (a screen announces what it has not seen the id of). A friend has only so many things in an inbox (the newest): they cannot fill it
-   * and push out what the others sent. `host` is the screen an invitation's party is on (see `StoredItem`).
+   * Put something in an inbox. The same title from the same friend, or a newer invitation or request from them for a party, or a plan for the same
+   * time, replaces the old one and is new again; but one that has not been looked at yet keeps its id, so that sending it over and over is not announced
+   * over and over (a screen announces what it has not seen the id of). A friend has only so many things in an inbox (the newest): they cannot fill it
+   * and push out what the others sent (plans are held to their own limits: see `propose`). `host` is the screen an invitation's party is on (see `StoredItem`).
    */
-  deliver(to: string, from: string, message: Message, host?: string): StoredItem {
-    const sameThing = (old: InboxItem) => old.from === from && old.kind === message.kind && (message.kind !== "recommend" || (old.kind === "recommend" && old.url === message.url));
+  deliver(to: string, from: string, message: Message | PlanReply, host?: string): StoredItem {
+    const sameThing = (old: InboxItem) => {
+      if (old.from !== from || old.kind !== message.kind) return false;
+      if (message.kind === "recommend") return old.kind === "recommend" && old.url === message.url;
+      // (A plan put again does not take the place of one that was answered, though: that is for `propose` to see.)
+      if (message.kind === "plan") return old.kind === "plan" && old.when === message.when && ("answer" in message || old.answer === undefined);
+      return true;
+    };
     const items = this.inboxOf(to);
     const before = items.find(sameThing);
     const item = { ...message, ...(host ? { host } : {}), id: before && !before.read ? before.id : newItemId(), at: this.host.now(), from, read: false } as StoredItem;
     let theirs = 1; // (this one is the first of the friend's)
-    const kept = items.filter((old) => !sameThing(old) && (old.from !== from || ++theirs <= INBOX_PER_SENDER));
+    const kept = items.filter((old) => !sameThing(old) && (old.kind === "plan" || old.from !== from || ++theirs <= INBOX_PER_SENDER));
     this.setInbox(to, [item, ...kept].slice(0, INBOX_MAX));
     return item;
+  }
+
+  /* ------------------------------ plans ------------------------------ */
+
+  /** The plans `from` has put that wait for an answer from `owner`. */
+  private waitingFor(owner: string, from: string): Array<StoredItem & PlanItem> {
+    const now = this.host.now();
+    return this.inboxOf(owner).filter((item): item is StoredItem & PlanItem => item.kind === "plan" && item.from === from && planAsks(item, now));
+  }
+
+  /**
+   * `from` puts a plan to watch together to `to`. The time has to be one that can be put (`planTimeProblem`), and only so many plans wait for an answer:
+   * from one friend to another (`PLAN_OPEN_PER_PAIR`) and from one profile to all its friends (`PLAN_OPEN_PER_SENDER`). The same time put again
+   * takes the place of the old plan and is not counted twice; when the friend has said yes to it already, it is on and nothing is sent. A plan has its own
+   * limits, so that it is not pushed out by what else the friend sends (see `deliver`).
+   */
+  propose(to: string, from: string, plan: Extract<Message, { kind: "plan" }>): Outcome<StoredItem> {
+    const problem = planTimeProblem(plan.when, this.host.now());
+    if (problem) return { ok: false, error: problem === "too_soon" ? "plan_soon" : "plan_far" };
+    const on = this.inboxOf(to).find((item) => item.kind === "plan" && item.from === from && item.when === plan.when && item.answer === "yes");
+    if (on) return { ok: true, value: on };
+    const waiting = this.waitingFor(to, from);
+    if (!waiting.some((item) => item.when === plan.when)) {
+      if (waiting.length >= PLAN_OPEN_PER_PAIR) return { ok: false, error: "plan_full" };
+      const inAll = this.friendsOf(from).reduce((sum, friend) => sum + this.waitingFor(friend.id, from).length, 0);
+      if (inAll >= PLAN_OPEN_PER_SENDER) return { ok: false, error: "plan_full" };
+    }
+    return { ok: true, value: this.deliver(to, from, plan) };
+  }
+
+  /** The plan in an inbox that waits for an answer, if it still does (one whose time has come, or that was answered, is no question any more). */
+  openPlan(owner: string, itemId: string): (StoredItem & PlanItem) | undefined {
+    const now = this.host.now();
+    return this.inboxOf(owner).find((item): item is StoredItem & PlanItem => item.id === itemId && item.kind === "plan" && planAsks(item, now));
+  }
+
+  /**
+   * `owner` answers a plan a friend put to them (see `openPlan`). Yes: it stays in the inbox as a plan that is on, already seen, and the friend is told
+   * in theirs. No: it goes, and the friend is told. `tell`: whether the friend is told (a friend who takes nothing just now is not).
+   */
+  answerPlan(owner: string, plan: PlanItem, answer: PlanAnswer, tell: boolean): void {
+    const items = this.inboxOf(owner);
+    this.setInbox(owner, answer === "yes" ? items.map((item) => (item.id === plan.id && item.kind === "plan" ? { ...item, answer, read: true } : item)) : items.filter((item) => item.id !== plan.id));
+    if (tell) this.deliver(plan.from, owner, { kind: "plan", when: plan.when, answer });
+  }
+
+  /**
+   * Two friends are about to watch together (one invited the other to a party): a plan between them that is on and whose time has come, or is
+   * within `PLAN_SETTLE_AHEAD_MS` of it, is done (the party is the plan), in both inboxes.
+   */
+  settlePlans(a: string, b: string): void {
+    const now = this.host.now();
+    for (const [owner, other] of [[a, b], [b, a]] as const) {
+      const items = this.inboxOf(owner);
+      const kept = items.filter((item) => !(item.kind === "plan" && item.from === other && item.answer === "yes" && item.when <= now + PLAN_SETTLE_AHEAD_MS));
+      if (kept.length !== items.length) this.setInbox(owner, kept);
+    }
   }
 
   /** Take back what a friend asked of `owner` for a party (they have been answered). Whether there was a request. */

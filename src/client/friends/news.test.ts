@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityItem, Friend, FriendsState, InboxItem } from "../../shared";
+import type { ActivityItem, Friend, FriendsState, InboxItem, PlanItem } from "../../shared";
 import { NEWS_RECENT_MS, describeNews, isUrgent, known, whatsNew, type News, type Translate } from "./news";
 
 const NOW = 50_000_000;
@@ -7,6 +7,7 @@ const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1, on: t
 const robin: Friend = { ...sam, id: "pro_robin", name: "Robin" };
 const recommendation = (id: string, from = "pro_sam", read = false): InboxItem => ({ kind: "recommend", id, from, at: NOW, read, title: "Dune", url: "https://filmpire.sc/watch/1" });
 const invitation = (id: string, from = "pro_sam", endsAt = NOW + 1): InboxItem => ({ kind: "party", id, from, at: NOW, read: false, code: "482731", endsAt });
+const plan = (id: string, when: number, extra: Partial<PlanItem> = {}, from = "pro_sam"): InboxItem => ({ kind: "plan", id, from, at: NOW, read: false, when, ...extra });
 const watched = (friend: string, key: string, extra: Partial<ActivityItem> = {}): ActivityItem => ({ friend, key, title: "Alien", url: "https://filmpire.sc/watch/2", at: NOW - 60_000, ...extra });
 const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], requests: [], sent: [], ...changes });
 
@@ -41,6 +42,33 @@ describe("what is new", () => {
       { kind: "together", name: "Sam" },
       { kind: "recommend", name: "Sam", title: "Dune" },
     ]);
+  });
+
+  it("is a plan a friend proposes, with when, after a request to watch together and before a request to be friends", () => {
+    const together: InboxItem = { kind: "together", id: "w", from: "pro_sam", at: NOW, read: false };
+    const kim = { from: { id: "pro_kim", name: "Kim", avatar: "cat" as const, tag: 2 }, at: NOW };
+    const news = whatsNew(known(state()), state({ inbox: [recommendation("a"), plan("p", NOW + 3_600_000), together], requests: [kim] }), NOW);
+    expect(news).toEqual([
+      { kind: "together", name: "Sam" },
+      { kind: "plan", name: "Sam", when: NOW + 3_600_000 },
+      { kind: "request", name: "Kim#2" },
+      { kind: "recommend", name: "Sam", title: "Dune" },
+    ]);
+  });
+
+  it("is a friend's answer to a plan of ours, yes or no, with the time we proposed", () => {
+    const news = whatsNew(known(state()), state({ inbox: [plan("y", NOW + 3_600_000, { answer: "yes" }), plan("n", NOW + 7_200_000, { answer: "no" })] }), NOW);
+    expect(news).toEqual([
+      { kind: "planYes", name: "Sam", when: NOW + 3_600_000 },
+      { kind: "planNo", name: "Sam", when: NOW + 7_200_000 },
+    ]);
+  });
+
+  it("is not a plan that is over, one already read, or one that was there before", () => {
+    const seen = plan("old", NOW + 3_600_000);
+    expect(whatsNew(known(state({ inbox: [seen] })), state({ inbox: [seen] }), NOW)).toEqual([]);
+    expect(whatsNew(known(state()), state({ inbox: [plan("late", NOW)] }), NOW)).toEqual([]); // (no answer by its time: nothing to say yes to)
+    expect(whatsNew(known(state()), state({ inbox: [plan("read", NOW + 3_600_000, { read: true })] }), NOW)).toEqual([]);
   });
 
   it("is somebody who asked to be friends and has not been told of before, by their tag, after a request for a party and before the rest", () => {
@@ -87,6 +115,27 @@ describe("saying it", () => {
     expect(describeNews([{ kind: "activity", name: "Sam", title: "Alien", verb: "finished" }], t)).toBe('friends.finished {"name":"Sam","title":"Alien"}');
   });
 
+  it("says a plan with its time, put into words by the screen", () => {
+    const when = (at: number) => `at ${at}`;
+    expect(describeNews([{ kind: "plan", name: "Sam", when: 5 }], t, when)).toBe('friends.news.plan {"name":"Sam","when":"at 5"}');
+    expect(describeNews([{ kind: "planYes", name: "Sam", when: 5 }], t, when)).toBe('friends.news.planYes {"name":"Sam","when":"at 5"}');
+    expect(describeNews([{ kind: "planNo", name: "Sam", when: 5 }], t, when)).toBe('friends.news.planNo {"name":"Sam","when":"at 5"}');
+  });
+
+  it("says a plan that asks among other news, after an invitation and a request to watch together, before a request to be friends", () => {
+    const news: News[] = [
+      { kind: "recommend", name: "Sam", title: "Dune" },
+      { kind: "friend", name: "Robin" },
+    ];
+    const proposal: News = { kind: "plan", name: "Sam", when: 5 };
+    expect(describeNews([...news, proposal], t)).toBe('friends.news.plan {"name":"Sam","when":""}');
+    expect(describeNews([{ kind: "request", name: "Kim#2" }, proposal], t)).toBe('friends.news.plan {"name":"Sam","when":""}');
+    expect(describeNews([proposal, { kind: "together", name: "Robin" }], t)).toBe('friends.news.together {"name":"Robin"}');
+    expect(describeNews([proposal, { kind: "party", name: "Robin" }], t)).toBe('friends.news.party {"name":"Robin"}');
+    // (an answer is no question: with other news it counts among the rest)
+    expect(describeNews([...news, { kind: "planYes", name: "Sam", when: 5 }], t)).toBe('friends.news.many {"count":3}');
+  });
+
   it("says how many when there are several, except that an invitation to a party is always said", () => {
     const news: News[] = [
       { kind: "recommend", name: "Sam", title: "Dune" },
@@ -108,6 +157,9 @@ describe("what is let over a film", () => {
     { kind: "recommend", name: "Sam", title: "Dune" },
     { kind: "friend", name: "Robin" },
     { kind: "request", name: "Kim#2" },
+    { kind: "plan", name: "Sam", when: 5 },
+    { kind: "planYes", name: "Sam", when: 5 },
+    { kind: "planNo", name: "Sam", when: 5 },
     { kind: "activity", name: "Sam", title: "Alien", verb: "watching" },
   ];
 

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { titleLink, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InboxItem } from "../../shared";
+import { PLAN_KEEP_AFTER_MS, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InboxItem, type PlanItem } from "../../shared";
 import { formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
-import { friendGrid, friendRows } from "./pages";
+import { bellRows, friendGrid, friendRows } from "./pages";
+import { planLines } from "./plans";
 
 const NOW = 50_000_000;
 const sam: Friend = { id: "pro_sam", name: "Sam", avatar: "fox", since: 1_700_000_000_000, on: true, lists: true, ratings: true, activity: true, inbox: true };
@@ -10,6 +11,7 @@ const robin: Friend = { ...sam, id: "pro_robin", name: "Robin" };
 const recommendation = (id: string, from = "pro_sam", extra: { note?: string } = {}): InboxItem => ({ kind: "recommend", id, from, at: NOW - 60_000, read: false, title: "Dune", url: "https://filmpire.sc/watch/1", ...extra });
 const invitation = (id: string, endsAt = NOW + 3_600_000, from = "pro_sam", open?: boolean): InboxItem => ({ kind: "party", id, from, at: NOW - 60_000, read: false, code: "482731", endsAt, ...(open === undefined ? {} : { open }) });
 const request = (id: string, from = "pro_sam"): InboxItem => ({ kind: "together", id, from, at: NOW - 120_000, read: false });
+const plan = (id: string, when: number, extra: Partial<PlanItem> = {}, from = "pro_sam"): InboxItem => ({ kind: "plan", id, from, at: NOW - 90_000, read: false, when, ...extra });
 const watched = (friend: string, key: string, extra: Partial<ActivityItem> = {}): ActivityItem => ({ friend, key, title: "Alien", url: "https://filmpire.sc/watch/2", at: NOW - 60_000, ...extra });
 const state = (changes: Partial<FriendsState> = {}): FriendsState => ({ friends: [sam], inbox: [], activity: [], invites: [], requests: [], sent: [], ...changes });
 const since = (friend: Friend) => t("friends.since", { day: formatDay(friend.since, getLanguage()) });
@@ -117,6 +119,51 @@ describe("the rows of the friends page", () => {
     expect(parties?.entries[0]).toMatchObject({ id: "together:t1", title: t("friends.togetherOf", { name: "Sam" }), url: "", wants: "pro_sam", inboxId: "t1" });
   });
 
+  it("show a plan to watch together as a tile that asks yes or no, with who proposes and when", () => {
+    const when = NOW + 3_600_000;
+    const rows = friendRows(state({ inbox: [plan("p1", when, { note: "popcorn" })] }), NOW);
+    const plans = rows.find((row) => row.id === "friend-plans");
+    expect(plans).toMatchObject({ layout: "wide", title: t("friends.plansRow") });
+    expect(plans?.entries).toHaveLength(1);
+    const { heading, detail } = planLines({ kind: "plan", id: "p1", from: "pro_sam", at: NOW, read: false, when, note: "popcorn" }, "Sam", NOW);
+    expect(plans?.entries[0]).toMatchObject({ id: "plan:p1", title: heading, note: detail, url: "", plan: "p1", inboxId: "p1" });
+    expect(plans?.entries[0]?.note).toContain("popcorn");
+    expect(plans?.entries[0]).not.toHaveProperty("wants"); // (it is no request for a party yet)
+  });
+
+  it("show a plan whose time has come as a tile that starts the party for them, as a request to watch together does", () => {
+    const entry = friendRows(state({ inbox: [plan("p1", NOW - 60_000, { answer: "yes" })] }), NOW).find((row) => row.id === "friend-plans")?.entries[0];
+    expect(entry).toMatchObject({ id: "plan:p1", title: t("friends.planDue", { name: "Sam" }), url: "", wants: "pro_sam", inboxId: "p1" });
+    expect(entry).not.toHaveProperty("plan");
+  });
+
+  it("show a plan that is on, or that a friend cannot make, as a tile that tells it", () => {
+    const entries = (item: InboxItem) => friendRows(state({ inbox: [item] }), NOW).find((row) => row.id === "friend-plans")?.entries ?? [];
+    expect(entries(plan("on", NOW + 3_600_000, { answer: "yes" }))[0]).toMatchObject({ title: t("friends.planAgreed", { name: "Sam" }), plan: "on" });
+    expect(entries(plan("no", NOW + 3_600_000, { answer: "no" }))[0]).toMatchObject({ title: t("friends.planDeclined", { name: "Sam" }), plan: "no" });
+  });
+
+  it("order the plans by what asks for something first: the time that has come, the question, the plans that are on (the soonest first), then the news of a no", () => {
+    const inbox = [
+      plan("no", NOW + 1000, { answer: "no" }),
+      plan("later", NOW + 7_200_000, { answer: "yes" }),
+      plan("ask", NOW + 3_600_000),
+      plan("sooner", NOW + 1_800_000, { answer: "yes" }),
+      plan("due", NOW - 1000, { answer: "yes" }),
+    ];
+    expect(friendRows(state({ inbox }), NOW).find((row) => row.id === "friend-plans")?.entries.map((entry) => entry.inboxId)).toEqual(["due", "ask", "sooner", "later", "no"]);
+  });
+
+  it("leave out a plan that is over", () => {
+    const inbox = [plan("unanswered", NOW - 1), plan("done", NOW - PLAN_KEEP_AFTER_MS - 1, { answer: "yes" })];
+    expect(friendRows(state({ inbox }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+  });
+
+  it("put the plans after the parties and before what friends sent", () => {
+    const rows = friendRows(state({ inbox: [recommendation("r"), plan("p", NOW + 3_600_000), invitation("i")], activity: [watched("pro_sam", "k")] }), NOW);
+    expect(rows.map((row) => row.id)).toEqual(["friend-parties", "friend-plans", "friend-sent", "friend-activity", "friend-people"]);
+  });
+
   it("show a title a friend sent as a card that plays it, says who sent it, and is taken off the row by its item of the inbox", () => {
     const sent = friendRows(state({ inbox: [recommendation("r1", "pro_sam", { note: "Slow but worth it" })] }), NOW).find((row) => row.id === "friend-sent");
     expect(sent?.entries).toHaveLength(1);
@@ -129,6 +176,21 @@ describe("the rows of the friends page", () => {
     expect(activity?.entries[0]?.url).toBe("https://filmpire.sc/watch/2");
     expect(activity?.entries[0]?.note).toMatch(/^Sam · /);
     expect(activity?.entries[1]?.note).toMatch(/^Robin · /);
+  });
+});
+
+describe("the bell on a TV", () => {
+  it("is nothing before the server has answered", () => {
+    expect(bellRows(null, NOW)).toEqual({ waiting: [], lately: [], more: 0 });
+  });
+
+  it("lists a plan among what waits for an answer, with who proposes and when, between the request to watch together and what was sent", () => {
+    const { waiting } = bellRows(state({ inbox: [recommendation("r"), plan("p", NOW + 3_600_000), request("w")] }), NOW);
+    expect(waiting.map((row) => row.entry.id)).toEqual(["together:w", "plan:p", "from:r"]);
+    const line = waiting[1]!;
+    expect(line.heading).toBe(t("friends.planOf", { name: "Sam" }));
+    expect(line.detail).toBe(line.entry.note);
+    expect(line.entry).toMatchObject({ plan: "p", inboxId: "p" });
   });
 });
 

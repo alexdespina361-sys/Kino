@@ -119,6 +119,8 @@ export interface Entry {
   wants?: string;
   /** Somebody's request to be friends: pressing it asks whether to say yes. */
   request?: Person;
+  /** A plan to watch together, or the news of one: the item of the inbox that pressing the tile asks about (to say yes or no to, or to read). */
+  plan?: string;
   /** A tile that opens a page over the library, instead of a title or a page of the library. */
   action?: "addFriend" | "friendSettings";
   /** A person's tile (a friend): the picture they chose, and whether they are online now. */
@@ -395,7 +397,7 @@ export function freshSimilar(items: readonly LibraryItem[], progress: readonly L
 /** What the buttons under the banner can do for a title. */
 export type HeroAction = "play" | "list" | "remove" | "rate" | "recommend" | "dismiss" | "join" | "ask" | "start";
 export const heroActions = (entry: Entry | undefined): HeroAction[] => {
-  if (!entry || entry.opens || entry.action || entry.request) return []; // (somebody who asks to be friends is no film: pressing the tile answers)
+  if (!entry || entry.opens || entry.action || entry.request || entry.plan) return []; // (somebody who asks to be friends, or a plan to watch together, is no film: pressing the tile answers)
   if (entry.party) return ["join", "dismiss"]; // an invitation to a watch party
   if (entry.ask) return ["ask", "dismiss"]; // ...one that has ended: the friend can be asked for another
   if (entry.wants) return ["start", "dismiss"]; // a friend asks for a party

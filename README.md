@@ -116,6 +116,24 @@ pnpm build && pnpm start     # http://localhost:8787
   together"* with a **Start a party** button, which starts a party on their screen (the TV, or the TV their phone controls) and invites the one who asked, which takes
   the request away. The server sends a request (`kind: "together"`, a newer one replaces an older, gone after 12 hours) only to a friend who takes things,
   and refuses an invitation to a party that is not open (`409 party_closed`). Friends: `/api/profiles/:id/friends…`.
+  **Plan a watch together.** A friend who takes things (the rule for *Ask to watch together*: friends on, *Friends can send me titles and invitations* on) can be given a
+  **day and time**: *Plan a watch together*, the button beside *Ask to watch together* on their page. On the phone it is a sheet with the phone's own date and time pickers and
+  a few words to add; on the TV it is a page with a row of the next 7 days and a row of hours (15:00, then 18:00 to 22:00), where the arrow keys choose and OK sends (a TV has
+  no keyboard to type a note with). It starts on 20:00 today, or on the next of 21:00 and 22:00 that is at least 5 minutes ahead, else on 20:00 tomorrow. The friend gets
+  *"Sam proposes to watch together: Saturday at 20:00"* as a line, in the bell and on the Friends page (a row of its own on the TV, *Plans to watch together*) with **Accept** and **Decline**.
+  A plan is an inbox item of its own kind (`kind: "plan"`; its time is `when`, one number of epoch milliseconds, because `at` is when an item was delivered), and each one who reads it
+  reads it in their own time zone, as *today*, *tomorrow*, the name of the weekday for the six days after, else the date. The server takes a time from 5 minutes to 30 days ahead
+  (`plan_soon`, `plan_far`), for one friend at a time, and keeps at most 3 plans waiting for an answer from one friend to another and 10 from one profile to all of its friends
+  (`plan_full`; the same time sent again takes the place of the old plan and is not counted twice); a note is made fit to show, and a plan counts against the same rate limit as the
+  other things sent. A **yes** keeps the plan on in both inboxes, read in the same words by both (*"Watching together with Sam"*), and tells the one who asked; a **no** takes it away from
+  the one who said it and tells the other (*"Sam can't make it"*, kept 12 hours, and it can be sent away); a plan nobody answers goes at its time, and one that was said yes to stays
+  for two hours after it. A plan that was sent cannot be taken back (the friend's no, or its time, ends it). **When the time comes** a page of either friend that is open says so, once: a
+  note, and on the phone a banner on the home screen; the plan's line has a **Start a party** button (on the TV, OK on the plan's tile), which does what it does for a request to watch
+  together: it starts a party on that friend's screen and invites the other. Starting a party for a friend from 30 minutes before a plan's time on **ends the plan** in both inboxes (the
+  party is the plan; it also covers a phone whose clock runs fast). **Kino sends no push messages or emails, so nothing rings:** the note is shown only by a page of Kino that is open at the
+  time (a page asks the server every 30 seconds and when it comes to the front, and sets a timer for the next moment a plan changes; a phone that slept says it when it wakes up), and the
+  sheet that plans says so. Taking a friend off the friends takes the plans between them away. A page loaded before this version cannot read an inbox item of a kind it does not know:
+  reload it once.
   **Why nothing of what a friend watches is shown** is said where one would look for it: when *Tell me what friends watch* is off for you, the page of friends has a
   row for it (a **Turn on** tile on the TV, a notice with a button to the settings on the phone; Back from those settings comes to the page of friends again) and a friend's page
   says *"To see what Sam is watching, turn on …"*; when it is on for you and the friend still shows nothing, their page says *"Sam isn't sharing what they watch"*
@@ -139,8 +157,8 @@ pnpm build && pnpm start     # http://localhost:8787
   and 30 can be sent an hour. `GET /api/profiles/:id/friends/tags/:tag`, `POST …/friends/requests` (`{tag}`), `POST …/friends/requests/:from/accept`, `DELETE …/friends/requests/:from`.
   **The bell.** A profile with friends on has a small bell beside its picture, in the phone's header and in the corner of the TV's library (the first button of the corner for the remote:
   Up from the titles reaches it, Right goes on to the picture, and OK opens its list). A **number** on it is what waits for an answer from this profile, the same count the Profile
-  line of the TV's menu carries (requests to be friends, invitations, requests to watch together, titles friends sent); a **quiet dot** only says that a friend watched something since
-  this device last opened the bell. The list shows up to 8 of what waits (requests first, then open invitations, requests to watch together, titles sent, and invitations that are over),
+  line of the TV's menu carries (requests to be friends, invitations, requests to watch together, plans to answer, titles friends sent, and a plan whose time has come until its party starts); a **quiet dot** only says that a friend watched something since
+  this device last opened the bell. The list shows up to 8 of what waits (requests first, then open invitations and plans whose time has come, requests to watch together and plans that ask, titles sent, and last the plans that are on or turned down and invitations that are over),
   with the buttons they have on the Friends page (on the TV a line does what the same tile of that page does, so a request opens its question, an invitation joins, a title opens its page),
   then up to 4 things friends watched lately, a line saying how many more wait on the Friends page, and an **Open Friends** button; Back from the Friends page it was opened from goes
   home, not to the account page it was never on. Opening the list is looking: it marks the inbox read and puts the dot out (when it was put out is kept per profile on each device, in

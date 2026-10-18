@@ -72,3 +72,8 @@
 
 /* The button that asks a second time before a friend goes. */
 .btn-danger[data-asking="true"] { background: var(--bad); color: #0b0b0c; }
+
+/* Planning a watch together (see PlanSheet): the day and time are the phone's own pickers, kept as wide as a text box, and the time that was chosen reads out under them. */
+.auth-field input[type="date"], .auth-field input[type="time"] { min-width: 0; min-height: 3.25rem; text-align: left; }
+.plan-when { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
+.plan-when svg { flex: none; color: var(--muted); }

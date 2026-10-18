@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { canAskTogether, FRIEND_NOTE_MAX, friendChoices, friendLink, MAX_OPEN_INVITES, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite } from "../../shared";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { canAskTogether, FRIEND_NOTE_MAX, PLAN_MAX_AHEAD_MS, planTimeProblem, friendChoices, friendLink, MAX_OPEN_INVITES, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite, type PlanItem } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -9,13 +9,14 @@ import { useSettings } from "../account/settings";
 import { ago, formatDay } from "../account/time";
 import { activityHint, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
+import { dateValue, defaultPlan, duePlans, inboxToShow, momentOf, planLines, planMoment, planStatus, timeValue, whenLabel } from "../friends/plans";
 import { usePeek } from "../friends/usePeek";
 import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { CopyCode, CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
-import { ChevronIcon, CloseIcon, PlusIcon, StarIcon, UsersIcon } from "../shared/icons";
+import { ChevronIcon, ClockIcon, CloseIcon, PlusIcon, StarIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, partyLink, typedLinkCode } from "../shared/launch";
 import { Poster } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
@@ -382,6 +383,57 @@ function useAskTogether(): (friendId: string, ended?: string) => Promise<void> {
   };
 }
 
+/**
+ * A plan to watch together, as a line of the inbox: it asks for an answer (Accept, Decline), is on (a line to read, and to dismiss), is due (the button that
+ * starts the party, when there is a TV to start it on), or was turned down (news to read). Answering is for the server to accept: a plan that is gone says so.
+ */
+function PlanRow({ item, from, onStartParty, dismiss }: { item: PlanItem; from: string; onStartParty: ((friendId: string) => void) | undefined; dismiss: ReactNode }) {
+  const t = useT();
+  const account = useAccount();
+  const friends = useFriends();
+  const [busy, setBusy] = useState(false);
+  const now = Date.now();
+  const status = planStatus(item, now);
+  const lines = planLines(item, from, now);
+  const answer = async (yes: boolean) => {
+    setBusy(true);
+    try {
+      await friends.answerPlan(item.id, yes);
+    } catch (error) {
+      account.say(describeError(error));
+      void friends.refresh(); // (a plan that is gone is gone from the list)
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li className="inbox-item" data-testid="inbox-plan" data-status={status}>
+      <span className="inbox-text">
+        <b data-testid="inbox-plan-heading">{lines.heading}</b>
+        <small data-testid="inbox-plan-detail">{lines.detail}</small>
+      </span>
+      <span className="inbox-actions">
+        {status === "asks" && (
+          <>
+            <button className="btn btn-red" disabled={busy} onClick={() => void answer(true)} data-testid="plan-accept">
+              {t("friends.accept")}
+            </button>
+            <button className="mini" disabled={busy} onClick={() => void answer(false)} aria-label={t("friends.decline")} title={t("friends.decline")} data-testid="plan-decline">
+              <CloseIcon />
+            </button>
+          </>
+        )}
+        {status === "due" && onStartParty && (
+          <button className="btn btn-red" onClick={() => onStartParty(item.from)} data-testid="plan-start">
+            {t("friends.startParty")}
+          </button>
+        )}
+        {status !== "asks" && dismiss}
+      </span>
+    </li>
+  );
+}
+
 export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }: { item: InboxItem; friend: Friend | undefined; onOpenTitle: OpenTitle; onStartParty: ((friendId: string) => void) | undefined; onDismiss: () => void }) {
   const t = useT();
   const language = useLanguage();
@@ -437,6 +489,7 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
       </li>
     );
   }
+  if (item.kind === "plan") return <PlanRow item={item} from={from} onStartParty={onStartParty} dismiss={dismiss} />;
   const entry = entryOfRecommendation(item, from);
   return (
     <li className="inbox-item" data-testid="inbox-recommendation">
@@ -492,6 +545,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
   }
 
   const now = Date.now();
+  const inbox = inboxToShow(state.inbox, now);
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   return (
     <div className="page-stack" data-testid="friends-page">
@@ -505,10 +559,10 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
           </ul>
         </Group>
       )}
-      {state.inbox.length > 0 && (
+      {inbox.length > 0 && (
         <Group title={t("friends.inbox")}>
           <ul className="inbox-list" data-testid="friends-inbox">
-            {state.inbox.map((item) => (
+            {inbox.map((item) => (
               <InboxRow key={item.id} item={item} friend={state.friends.find((each) => each.id === item.from)} onOpenTitle={onOpenTitle} onStartParty={onStartParty} onDismiss={() => void friends.dismiss(item.id).catch(() => undefined)} />
             ))}
           </ul>
@@ -644,6 +698,84 @@ function SharedRatings({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: O
   );
 }
 
+/**
+ * Plans a watch together with a friend: the day and the time (the phone's own pickers, in this phone's own time) and a few words if there are some. It
+ * starts on this evening or the next one, and refuses a time the server would (not under five minutes ahead, not over thirty days). The friend
+ * answers in their bell, and says whether the plan is on.
+ */
+function PlanSheet({ friend, onClose }: { friend: Friend; onClose: () => void }) {
+  const t = useT();
+  const account = useAccount();
+  const friends = useFriends();
+  const begin = useRef<number | null>(null);
+  if (begin.current === null) {
+    const now = Date.now();
+    const start = defaultPlan(now);
+    begin.current = planMoment(now, start.day, start.hour);
+  }
+  const [date, setDate] = useState(dateValue(begin.current));
+  const [time, setTime] = useState(timeValue(begin.current));
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const now = Date.now();
+  const when = momentOf(date, time);
+
+  const send = async () => {
+    const wrong = planTimeProblem(when, Date.now());
+    if (wrong) return setProblem(t(wrong === "too_soon" ? "error.plan_soon" : "error.plan_far"));
+    setBusy(true);
+    setProblem(null);
+    try {
+      const answer = await friends.send([friend.id], { kind: "plan", when, ...(note.trim() ? { note: note.trim() } : {}) });
+      if (answer.sent.length === 0) {
+        setProblem(t("friends.declined", { names: friend.name }));
+        void friends.refresh(); // (what the server just said is what the page shows from now on)
+        setBusy(false);
+        return;
+      }
+      account.say(t("friends.planSent", { name: friend.name }));
+      onClose();
+    } catch (error) {
+      setProblem(describeError(error));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Sheet title={t("friends.planTitle", { name: friend.name })} onClose={onClose} testId="plan-sheet">
+      <label className="auth-field">
+        <span>{t("friends.planDay")}</span>
+        <input type="date" value={date} min={dateValue(now)} max={dateValue(now + PLAN_MAX_AHEAD_MS)} onChange={(event) => setDate(event.target.value)} data-testid="plan-date" />
+      </label>
+      <label className="auth-field">
+        <span>{t("friends.planTime")}</span>
+        <input type="time" value={time} onChange={(event) => setTime(event.target.value)} data-testid="plan-time" />
+      </label>
+      {!Number.isNaN(when) && (
+        <p className="plan-when" data-testid="plan-summary">
+          <ClockIcon /> {whenLabel(when, now)}
+        </p>
+      )}
+      <label className="auth-field">
+        <span>{t("friends.planNoteLabel")}</span>
+        <textarea className="rating-note" rows={2} maxLength={FRIEND_NOTE_MAX} value={note} autoCapitalize="sentences" enterKeyHint="done" onChange={(event) => setNote(event.target.value)} data-testid="plan-note" />
+      </label>
+      <p className="muted small" data-testid="plan-notice">
+        {t("friends.planNotice", { name: friend.name })}
+      </p>
+      <button className="btn btn-red btn-block" disabled={busy || Number.isNaN(when)} onClick={() => void send()} data-testid="plan-send">
+        {t("friends.planSend")}
+      </button>
+      {problem && (
+        <p className="auth-error" role="alert" data-testid="plan-error">
+          {problem}
+        </p>
+      )}
+    </Sheet>
+  );
+}
+
 /** A friend's page: their lists and their ratings (as far as they share them), and a way to stop being friends. */
 export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string; onOpenTitle: OpenTitle; onGone: () => void }) {
   const t = useT();
@@ -655,6 +787,7 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   const ask = useAskTogether();
   const [tab, setTab] = useState<"lists" | "ratings">("lists");
   const [asking, setAsking] = useState(false);
+  const [planning, setPlanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -695,10 +828,16 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
         </p>
       )}
       {canAskTogether(friend) && (
-        <button className="btn btn-block" onClick={() => void ask(friend.id)} data-testid="friend-together">
-          <UsersIcon /> {t("friends.askTogether")}
-        </button>
+        <>
+          <button className="btn btn-block" onClick={() => void ask(friend.id)} data-testid="friend-together">
+            <UsersIcon /> {t("friends.askTogether")}
+          </button>
+          <button className="btn btn-block" onClick={() => setPlanning(true)} data-testid="friend-plan">
+            <ClockIcon /> {t("friends.planButton")}
+          </button>
+        </>
       )}
+      {planning && <PlanSheet friend={friend} onClose={() => setPlanning(false)} />}
       <div className="segmented compact pair" role="radiogroup" aria-label={friend.name}>
         {(["lists", "ratings"] as const).map((value) => (
           <button key={value} role="radio" aria-checked={tab === value} onClick={() => setTab(value)} data-testid={`friend-tab-${value}`}>
@@ -877,6 +1016,7 @@ export function FriendsHome({ onOpenTitle, onStartParty }: { onOpenTitle: OpenTi
   const { state } = friends;
   const parties = state.inbox.filter((item): item is PartyInvitation => item.kind === "party" && partyOpen(item, now));
   const requests = state.inbox.filter((item): item is TogetherRequest => item.kind === "together");
+  const due = duePlans(state.inbox, now);
   const recommended = state.inbox.filter((item): item is Recommendation => item.kind === "recommend");
   const open: (entry: Entry) => void = onOpenTitle ?? (() => undefined);
   const dismiss = (id: string) => void friends.dismiss(id).catch(() => undefined);
@@ -900,6 +1040,19 @@ export function FriendsHome({ onOpenTitle, onStartParty }: { onOpenTitle: OpenTi
             {t("friends.startParty")}
           </button>
           <button className="mini" onClick={() => dismiss(item.id)} aria-label={t("friends.dismiss")} data-testid="friend-together-dismiss">
+            <CloseIcon />
+          </button>
+        </div>
+      ))}
+      {due.map((item) => (
+        <div className="banner friend-party" key={item.id} data-testid="friend-plan-banner">
+          <span>
+            <b>{t("friends.planDue", { name: nameOf(state.friends, item.from) })}</b> · {whenLabel(item.when, now)}
+          </span>
+          <button className="btn btn-red" onClick={() => onStartParty(item.from)} data-testid="friend-plan-start">
+            {t("friends.startParty")}
+          </button>
+          <button className="mini" onClick={() => dismiss(item.id)} aria-label={t("friends.dismiss")} data-testid="friend-plan-dismiss">
             <CloseIcon />
           </button>
         </div>

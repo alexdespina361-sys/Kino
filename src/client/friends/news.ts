@@ -1,4 +1,4 @@
-import { activityVerb, partyOpen, tagLabel, type ActivityItem, type FriendsState } from "../../shared";
+import { activityVerb, partyOpen, planAsks, tagLabel, type ActivityItem, type FriendsState } from "../../shared";
 import type { Key, Params } from "../i18n";
 
 /**
@@ -30,6 +30,9 @@ export type News =
   | { kind: "party"; name: string }
   | { kind: "together"; name: string }
   | { kind: "request"; name: string }
+  | { kind: "plan"; name: string; when: number }
+  | { kind: "planYes"; name: string; when: number }
+  | { kind: "planNo"; name: string; when: number }
   | { kind: "recommend"; name: string; title: string }
   | { kind: "friend"; name: string }
   | { kind: "activity"; name: string; title: string; verb: "watching" | "watched" | "finished" };
@@ -49,6 +52,12 @@ export function whatsNew(before: Known | null, state: FriendsState, now: number)
     // (an invitation to a party that is over is not news: a screen that was asleep for the evening wakes up to it)
     ...fresh.flatMap((item): News[] => (item.kind === "party" && partyOpen(item, now) ? [{ kind: "party", name: name(item.from) }] : [])),
     ...fresh.flatMap((item): News[] => (item.kind === "together" ? [{ kind: "together", name: name(item.from) }] : [])),
+    // (a plan asks for an answer; a friend's answer to one of ours is news that is read to the end: yes, or no)
+    ...fresh.flatMap((item): News[] => {
+      if (item.kind !== "plan") return [];
+      if (item.answer === undefined) return planAsks(item, now) ? [{ kind: "plan", name: name(item.from), when: item.when }] : [];
+      return [{ kind: item.answer === "yes" ? "planYes" : "planNo", name: name(item.from), when: item.when }];
+    }),
     ...state.requests.filter((request) => !before.requests.has(request.from.id)).map((request): News => ({ kind: "request", name: tagLabel(request.from.name, request.from.tag) })),
     ...fresh.flatMap((item): News[] => (item.kind === "recommend" ? [{ kind: "recommend", name: name(item.from), title: item.title }] : [])),
     ...state.friends.filter((friend) => !before.friends.has(friend.id)).map((friend): News => ({ kind: "friend", name: friend.name })),
@@ -66,10 +75,13 @@ export const isUrgent = (news: readonly News[]): boolean => news.some((item) => 
 
 export type Translate = (key: Key, params?: Params) => string;
 
-/** One line for the news: an invitation or a request (for a party, to be friends) if there is one, else the one thing that happened, else how many things. */
-export function describeNews(news: readonly News[], t: Translate): string | undefined {
-  const asked = (item: News) => item.kind === "party" || item.kind === "together" || item.kind === "request";
-  const first = news.find((item) => item.kind === "party") ?? news.find((item) => item.kind === "together") ?? news.find((item) => item.kind === "request") ?? news[0];
+/**
+ * One line for the news: an invitation or a request (for a party, to be friends, for a plan) if there is one, else the one thing that happened, else how many things.
+ * `when` puts the time of a plan into words (the viewer's own).
+ */
+export function describeNews(news: readonly News[], t: Translate, when: (at: number) => string = () => ""): string | undefined {
+  const asked = (item: News) => item.kind === "party" || item.kind === "together" || item.kind === "plan" || item.kind === "request";
+  const first = news.find((item) => item.kind === "party") ?? news.find((item) => item.kind === "together") ?? news.find((item) => item.kind === "plan") ?? news.find((item) => item.kind === "request") ?? news[0];
   if (!first) return undefined;
   if (!asked(first) && news.length > 1) return t("friends.news.many", { count: news.length });
   switch (first.kind) {
@@ -77,6 +89,12 @@ export function describeNews(news: readonly News[], t: Translate): string | unde
       return t("friends.news.party", { name: first.name });
     case "together":
       return t("friends.news.together", { name: first.name });
+    case "plan":
+      return t("friends.news.plan", { name: first.name, when: when(first.when) });
+    case "planYes":
+      return t("friends.news.planYes", { name: first.name, when: when(first.when) });
+    case "planNo":
+      return t("friends.news.planNo", { name: first.name, when: when(first.when) });
     case "request":
       return t("friends.news.request", { name: first.name });
     case "recommend":

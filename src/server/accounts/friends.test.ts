@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { CODE_ALPHABET, INBOX_KEEP_MS, INBOX_MAX, INBOX_PER_SENDER, INVITE_TTL_MS, MAX_FRIENDS, MAX_OPEN_INVITES, MAX_REQUESTS, PARTY_INVITE_KEEP_MS, REQUEST_KEEP_MS, type Message } from "../../shared";
-import { FriendBook } from "./friends";
+import {
+  CODE_ALPHABET,
+  INBOX_KEEP_MS,
+  INBOX_MAX,
+  INBOX_PER_SENDER,
+  INVITE_TTL_MS,
+  MAX_FRIENDS,
+  MAX_OPEN_INVITES,
+  MAX_REQUESTS,
+  PARTY_INVITE_KEEP_MS,
+  PLAN_KEEP_AFTER_MS,
+  PLAN_MAX_AHEAD_MS,
+  PLAN_MIN_AHEAD_MS,
+  PLAN_OPEN_PER_PAIR,
+  PLAN_OPEN_PER_SENDER,
+  PLAN_SETTLE_AHEAD_MS,
+  REQUEST_KEEP_MS,
+  type Message,
+} from "../../shared";
+import { FriendBook, type Outcome, type StoredItem } from "./friends";
 
 /** A book with a clock to move, and a record of what it asked the store to write down. */
 function book() {
@@ -419,6 +437,204 @@ describe("the inbox", () => {
   });
 });
 
+describe("plans to watch together", () => {
+  const HOUR = 3_600_000;
+  type PlanMessage = Extract<Message, { kind: "plan" }>;
+  const plan = (when: number, note?: string): PlanMessage => ({ kind: "plan", when, ...(note ? { note } : {}) });
+  /** The id of what `propose` put (or found). */
+  const idOf = (outcome: Outcome<StoredItem>) => {
+    expect(outcome.ok).toBe(true);
+    return outcome.ok ? outcome.value.id : "";
+  };
+  /** What the plans in an inbox say, newest first: the time (from the start of the test) and the answer, if there is one. */
+  const plansIn = (world: ReturnType<typeof befriended>, who: string, start: number) =>
+    world.friends.inboxOf(who).map((item) => (item.kind === "plan" ? [item.when - start, item.answer] : null));
+  /** Alex puts a plan to Sam; this is the question as Sam has it. */
+  function asked(world: ReturnType<typeof befriended>, when: number) {
+    const put = world.friends.propose("sam", "alex", plan(when));
+    expect(put.ok).toBe(true);
+    return world.friends.openPlan("sam", idOf(put))!;
+  }
+
+  it("puts a plan in a friend's inbox, unread, with its time and a few words; the same time put again takes its place and, while unread, keeps its id", () => {
+    const { friends, clock } = befriended();
+    const when = clock.now + HOUR;
+    const first = friends.propose("sam", "alex", plan(when, "after dinner"));
+    expect(first).toMatchObject({ ok: true, value: { kind: "plan", from: "alex", when, note: "after dinner", read: false, at: clock.now } });
+    expect(friends.inboxOf("sam")).toHaveLength(1);
+    expect(friends.inboxOf("sam")[0]).not.toHaveProperty("answer");
+    expect(friends.inboxOf("alex")).toEqual([]);
+
+    clock.now += 1000;
+    const again = friends.propose("sam", "alex", plan(when, "or later"));
+    expect(again).toMatchObject({ ok: true, value: { note: "or later" } });
+    expect(idOf(again)).toBe(idOf(first));
+    expect(friends.inboxOf("sam")).toHaveLength(1);
+
+    friends.markRead("sam");
+    expect(idOf(friends.propose("sam", "alex", plan(when)))).not.toBe(idOf(first)); // (it has been seen: this is news again)
+    expect(friends.inboxOf("sam")).toHaveLength(1);
+  });
+
+  it("refuses a time less than five minutes away, one that has gone, or one more than thirty days off, to the millisecond, and puts nothing in the inbox", () => {
+    const { friends, clock } = befriended();
+    expect(friends.propose("sam", "alex", plan(clock.now + PLAN_MIN_AHEAD_MS - 1))).toEqual({ ok: false, error: "plan_soon" });
+    expect(friends.propose("sam", "alex", plan(clock.now - HOUR))).toEqual({ ok: false, error: "plan_soon" });
+    expect(friends.propose("sam", "alex", plan(clock.now + PLAN_MAX_AHEAD_MS + 1))).toEqual({ ok: false, error: "plan_far" });
+    expect(friends.inboxOf("sam")).toEqual([]);
+    expect(friends.propose("sam", "alex", plan(clock.now + PLAN_MIN_AHEAD_MS)).ok).toBe(true);
+    expect(friends.propose("sam", "alex", plan(clock.now + PLAN_MAX_AHEAD_MS)).ok).toBe(true);
+  });
+
+  it("holds a profile to three plans that wait on one friend and ten in all; the same time again is not another, and one that was answered no longer waits", () => {
+    const world = befriended();
+    const { friends, clock } = world;
+    const when = (i: number) => clock.now + (i + 1) * HOUR;
+    for (let i = 0; i < PLAN_OPEN_PER_PAIR; i++) expect(friends.propose("sam", "alex", plan(when(i))).ok).toBe(true);
+    expect(friends.propose("sam", "alex", plan(when(PLAN_OPEN_PER_PAIR)))).toEqual({ ok: false, error: "plan_full" });
+    expect(friends.propose("sam", "alex", plan(when(1), "again")).ok).toBe(true); // (the same time takes the old one's place)
+    expect(friends.inboxOf("sam")).toHaveLength(PLAN_OPEN_PER_PAIR);
+
+    friends.answerPlan("sam", friends.openPlan("sam", friends.inboxOf("sam")[0]!.id)!, "no", true);
+    expect(friends.propose("sam", "alex", plan(when(PLAN_OPEN_PER_PAIR))).ok).toBe(true); // (an answered one frees a place)
+
+    // Ten in all: Sam has three waiting; the other friends take the rest, and the eleventh waits for nobody.
+    const others = ["b", "c", "d"];
+    for (const name of others) expect(friends.redeem(name, friends.createInvite("alex").code).ok).toBe(true);
+    let waiting = PLAN_OPEN_PER_PAIR;
+    for (const name of others) {
+      for (let i = 0; i < PLAN_OPEN_PER_PAIR && waiting < PLAN_OPEN_PER_SENDER; i++, waiting++) {
+        expect(friends.propose(name, "alex", plan(when(20 + waiting))).ok).toBe(true);
+      }
+    }
+    expect(waiting).toBe(PLAN_OPEN_PER_SENDER);
+    expect(friends.propose("d", "alex", plan(when(40)))).toEqual({ ok: false, error: "plan_full" });
+    expect(friends.propose("sam", "alex", plan(when(41)))).toEqual({ ok: false, error: "plan_full" });
+    // The same time again is not one more, even now.
+    const theirs = friends.inboxOf("b").find((item) => item.kind === "plan");
+    expect(friends.propose("b", "alex", plan((theirs as PlanMessage).when, "changed")).ok).toBe(true);
+    // What somebody else has put is not counted against Alex.
+    expect(friends.redeem("sam", friends.createInvite("robin").code).ok).toBe(true);
+    expect(friends.propose("sam", "robin", plan(when(50))).ok).toBe(true);
+  });
+
+  it("is answered: yes keeps it in the inbox as a plan that is on, already seen, and tells the friend in theirs; no takes it away and tells the friend", () => {
+    const world = befriended();
+    const { friends, clock } = world;
+    const start = clock.now;
+    const yes = asked(world, start + HOUR);
+    const no = asked(world, start + 2 * HOUR);
+
+    friends.answerPlan("sam", yes, "yes", true);
+    friends.answerPlan("sam", no, "no", true);
+    expect(friends.inboxOf("sam")).toMatchObject([{ kind: "plan", from: "alex", when: start + HOUR, answer: "yes", read: true, id: yes.id }]);
+    const told = friends.inboxOf("alex");
+    expect(told).toMatchObject([
+      { kind: "plan", from: "sam", when: start + 2 * HOUR, answer: "no", read: false },
+      { kind: "plan", from: "sam", when: start + HOUR, answer: "yes", read: false },
+    ]);
+    // An answered plan is no question any more, for either of them.
+    expect(friends.openPlan("sam", yes.id)).toBeUndefined();
+    expect(friends.openPlan("sam", no.id)).toBeUndefined();
+    expect(friends.openPlan("alex", told[0]!.id)).toBeUndefined();
+    expect(friends.openPlan("alex", told[1]!.id)).toBeUndefined();
+  });
+
+  it("does not tell a friend who takes nothing just now, and a plan put again for a time they said yes to is already on", () => {
+    const world = befriended();
+    const { friends, clock } = world;
+    const when = clock.now + HOUR;
+    friends.answerPlan("sam", asked(world, when), "yes", false);
+    expect(friends.inboxOf("alex")).toEqual([]);
+    expect(friends.inboxOf("sam")).toMatchObject([{ answer: "yes" }]);
+
+    expect(friends.propose("sam", "alex", plan(when))).toMatchObject({ ok: true, value: { answer: "yes" } });
+    expect(friends.inboxOf("sam")).toHaveLength(1); // (not a question again)
+  });
+
+  it("lets go of a plan at its time if nobody answered, a little after if it is on, and half a day after the news that it is off", () => {
+    const world = befriended();
+    const { friends, clock } = world;
+    const start = clock.now;
+    const open = asked(world, start + HOUR);
+    friends.answerPlan("sam", asked(world, start + 2 * HOUR), "yes", true);
+    friends.answerPlan("sam", asked(world, start + 3 * HOUR), "no", true);
+    expect(plansIn(world, "sam", start)).toEqual([[2 * HOUR, "yes"], [HOUR, undefined]]);
+
+    clock.now = start + HOUR - 1;
+    expect(friends.openPlan("sam", open.id)).toBeDefined();
+    clock.now = start + HOUR;
+    expect(friends.openPlan("sam", open.id)).toBeUndefined(); // (its time has come: nobody can say yes to it now, and it goes)
+    expect(plansIn(world, "sam", start)).toEqual([[2 * HOUR, "yes"]]);
+
+    clock.now = start + 2 * HOUR + PLAN_KEEP_AFTER_MS - 1;
+    expect(friends.inboxOf("sam")).toHaveLength(1);
+    expect(friends.inboxOf("alex")).toHaveLength(2);
+    clock.now = start + 2 * HOUR + PLAN_KEEP_AFTER_MS;
+    expect(friends.inboxOf("sam")).toEqual([]);
+    expect(plansIn(world, "alex", start)).toEqual([[3 * HOUR, "no"]]); // (the news that it was turned down is kept for half a day)
+    clock.now = start + PARTY_INVITE_KEEP_MS - 1;
+    expect(friends.inboxOf("alex")).toHaveLength(1);
+    clock.now = start + PARTY_INVITE_KEEP_MS;
+    expect(friends.inboxOf("alex")).toEqual([]);
+  });
+
+  it("is not pushed out by what the same friend sends after it", () => {
+    const world = befriended();
+    const { friends, clock } = world;
+    asked(world, clock.now + 24 * HOUR);
+    for (let i = 0; i < INBOX_PER_SENDER + 5; i++) {
+      clock.now += 1;
+      friends.deliver("sam", "alex", { kind: "recommend", title: `Film ${i}`, url: `https://filmpire.sc/watch/${i}` });
+    }
+    const items = friends.inboxOf("sam");
+    expect(items.filter((item) => item.kind === "recommend")).toHaveLength(INBOX_PER_SENDER);
+    expect(items.filter((item) => item.kind === "plan")).toHaveLength(1);
+  });
+
+  it("is done, in both inboxes, when the two go to a party, if it is on and its time has come or is near; one for later, and a question, stay", () => {
+    const world = befriended();
+    const { friends, clock } = world;
+    const start = clock.now;
+    const soon = asked(world, start + HOUR);
+    const later = asked(world, start + 24 * HOUR);
+    asked(world, start + 48 * HOUR); // (a question)
+    friends.answerPlan("sam", soon, "yes", true);
+    friends.answerPlan("sam", later, "yes", true);
+
+    friends.settlePlans("alex", "sam");
+    expect(friends.inboxOf("sam")).toHaveLength(3); // (nothing has come yet)
+    expect(friends.inboxOf("alex")).toHaveLength(2);
+
+    clock.now = start + HOUR - PLAN_SETTLE_AHEAD_MS - 1; // (a little too early for a party to be this plan)
+    friends.settlePlans("alex", "sam");
+    expect(friends.inboxOf("sam")).toHaveLength(3);
+    expect(friends.inboxOf("alex")).toHaveLength(2);
+
+    clock.now = start + HOUR - PLAN_SETTLE_AHEAD_MS; // (a party that is started a little early is this plan)
+    friends.settlePlans("alex", "sam");
+    expect(plansIn(world, "sam", start)).toEqual([[48 * HOUR, undefined], [24 * HOUR, "yes"]]);
+    expect(plansIn(world, "alex", start)).toEqual([[24 * HOUR, "yes"]]);
+
+    clock.now = start + 24 * HOUR + 60_000; // (and one whose time has come)
+    friends.settlePlans("alex", "sam");
+    expect(plansIn(world, "sam", start)).toEqual([[48 * HOUR, undefined]]);
+    expect(plansIn(world, "alex", start)).toEqual([]);
+  });
+
+  it("goes when the friends part, from both inboxes", () => {
+    const world = befriended();
+    const { friends, clock } = world;
+    friends.answerPlan("sam", asked(world, clock.now + HOUR), "yes", true);
+    asked(world, clock.now + 2 * HOUR);
+    expect(friends.inboxOf("sam")).toHaveLength(2);
+    expect(friends.inboxOf("alex")).toHaveLength(1);
+    friends.unfriend("sam", "alex");
+    expect(friends.inboxOf("sam")).toEqual([]);
+    expect(friends.inboxOf("alex")).toEqual([]);
+  });
+});
+
 describe("a profile that goes", () => {
   it("is nobody's friend any more, has nothing left in an inbox, and its codes are void", () => {
     const { friends } = befriended();
@@ -465,6 +681,12 @@ describe("being kept", () => {
     const first = befriended();
     first.friends.deliver("sam", "alex", dune);
     first.friends.deliver("alex", "sam", party);
+    // (A plan with its answer, and one still waiting for it.)
+    const when = first.clock.now + 3_600_000;
+    const asked = first.friends.propose("sam", "alex", { kind: "plan", when, note: "after dinner" });
+    expect(asked.ok).toBe(true);
+    first.friends.answerPlan("sam", first.friends.openPlan("sam", asked.ok ? asked.value.id : "")!, "yes", true);
+    expect(first.friends.propose("sam", "alex", { kind: "plan", when: when + 3_600_000 }).ok).toBe(true);
     const open = first.friends.createInvite("alex");
 
     const second = book();
