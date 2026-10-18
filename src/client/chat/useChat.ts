@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CHAT_POLL_MS, type ChatReportPreview, type ChatThread } from "../../shared/chat";
+import { CHAT_POLL_MS, type ChatReportPreview, type ChatThread } from "../../shared";
 import { chatApi } from "./api";
 import { applyThread, endsChat, FRESH_CHAT, problemOf, type ChatProblem, type ChatState } from "./state";
 

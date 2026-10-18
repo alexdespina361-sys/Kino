@@ -121,6 +121,8 @@ export interface Entry {
   request?: Person;
   /** A plan to watch together, or the news of one: the item of the inbox that pressing the tile asks about (to say yes or no to, or to read). */
   plan?: string;
+  /** A friend who wrote and is not answered yet (a line of the bell): pressing it opens the chat with them. */
+  chat?: string;
   /** A tile that opens a page over the library, instead of a title or a page of the library. */
   action?: "addFriend" | "friendSettings";
   /** A person's tile (a friend): the picture they chose, and whether they are online now. */

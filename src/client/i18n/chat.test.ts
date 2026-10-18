@@ -1,8 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { chatWord } from "../chat/words";
-import { hasKey } from "./index";
+import { en } from "./en";
+import { hasKey, translate } from "./index";
+import { it as italian } from "./it";
+import { ro as romanian } from "./ro";
 import { chatEn } from "./chat.en";
 import { chatIt } from "./chat.it";
 import { chatRo } from "./chat.ro";
@@ -35,42 +37,48 @@ describe("the words of the chat", () => {
     });
   }
 
-  it("never reuse a key of the rest of the website", () => {
-    for (const key of Object.keys(english)) expect(hasKey(key), key).toBe(false);
+  it("are the website's own words: each is in its dictionary, in each language, as the chat's file has it (and none is a key the website had)", () => {
+    const own: Record<string, string> = en;
+    for (const [language, words, dictionary] of [["en", chatEn, own], ["ro", chatRo, romanian], ["it", chatIt, italian]] as const) {
+      for (const [key, text] of Object.entries(words)) expect(dictionary[key], `${language} ${key}`).toBe(text);
+    }
+    // (a key twice in the spread would be the last one winning: the chat's file must not be quietly overriding a word of the website)
+    const source = readFileSync(join(__dirname, "en.ts"), "utf8");
+    for (const key of Object.keys(english)) expect(source.includes(`"${key}":`), `en.ts has its own ${key}`).toBe(false);
   });
 
-  it("are all the words the views ask for: every `t(\"...\")` of client/chat is a word of the chat or of the website", () => {
+  it("are all the words the views ask for: every `t(\"...\")` of client/chat is a word of the website", () => {
     const folder = join(__dirname, "..", "chat");
     const asked = new Set<string>();
     for (const file of readdirSync(folder).filter((name) => /\.tsx?$/.test(name) && !/\.test\./.test(name))) {
       for (const match of readFileSync(join(folder, file), "utf8").matchAll(/\bt\(\s*"([\w.]+)"/g)) asked.add(match[1]!);
     }
     expect(asked.size).toBeGreaterThan(20);
-    const unknown = [...asked].filter((key) => !(key in english) && !(`${key}_other` in english) && !hasKey(key));
+    const unknown = [...asked].filter((key) => !hasKey(key));
     expect(unknown).toEqual([]);
   });
 
   it("are said in the language asked, with counts and names filled in", () => {
-    expect(chatWord("en", "chat.title", { name: "Sam" })).toBe("Chat with Sam");
-    expect(chatWord("ro", "chat.title", { name: "Sam" })).toBe("Chat cu Sam");
-    expect(chatWord("en", "chat.unread", { count: 1, name: "Sam" })).toBe("1 new message from Sam");
-    expect(chatWord("en", "chat.unread", { count: 2, name: "Sam" })).toBe("2 new messages from Sam");
-    expect(chatWord("ro", "chat.unread", { count: 1, name: "Sam" })).toBe("1 mesaj nou de la Sam");
-    expect(chatWord("ro", "chat.unread", { count: 3, name: "Sam" })).toBe("3 mesaje noi de la Sam");
-    expect(chatWord("ro", "chat.unread", { count: 20, name: "Sam" })).toBe("20 de mesaje noi de la Sam");
-    expect(chatWord("it", "chat.unread", { count: 2, name: "Sam" })).toBe("2 nuovi messaggi da Sam");
+    expect(translate("en", "chat.title", { name: "Sam" })).toBe("Chat with Sam");
+    expect(translate("ro", "chat.title", { name: "Sam" })).toBe("Chat cu Sam");
+    expect(translate("en", "chat.unread", { count: 1, name: "Sam" })).toBe("1 new message from Sam");
+    expect(translate("en", "chat.unread", { count: 2, name: "Sam" })).toBe("2 new messages from Sam");
+    expect(translate("ro", "chat.unread", { count: 1, name: "Sam" })).toBe("1 mesaj nou de la Sam");
+    expect(translate("ro", "chat.unread", { count: 3, name: "Sam" })).toBe("3 mesaje noi de la Sam");
+    expect(translate("ro", "chat.unread", { count: 20, name: "Sam" })).toBe("20 de mesaje noi de la Sam");
+    expect(translate("it", "chat.unread", { count: 2, name: "Sam" })).toBe("2 nuovi messaggi da Sam");
   });
 
-  it("fall back to the website's own words for a word that is not the chat's", () => {
-    expect(chatWord("en", "common.close")).toBe("Close");
-    expect(chatWord("ro", "common.close")).toBe("Închide");
-    expect(chatWord("en", "error.offline")).toBe("Can't reach the server. Check your connection.");
+  it("sit beside the website's other words, which the chat uses too", () => {
+    expect(translate("en", "common.close")).toBe("Close");
+    expect(translate("ro", "common.close")).toBe("Închide");
+    expect(translate("en", "error.offline")).toBe("Can't reach the server. Check your connection.");
   });
 
   it("say the limits from the server's own numbers", () => {
-    expect(chatWord("en", "chat.privacy", { messages: 200, days: 30 })).toContain("200 messages");
-    expect(chatWord("en", "chat.privacy", { messages: 200, days: 30 })).toContain("30 days");
-    expect(chatWord("en", "chat.privacy", { messages: 200, days: 30 })).toContain("without encryption");
-    expect(chatWord("ro", "chat.privacy", { messages: 200, days: 30 })).toContain("30 de zile");
+    expect(translate("en", "chat.privacy", { messages: 200, days: 30 })).toContain("200 messages");
+    expect(translate("en", "chat.privacy", { messages: 200, days: 30 })).toContain("30 days");
+    expect(translate("en", "chat.privacy", { messages: 200, days: 30 })).toContain("without encryption");
+    expect(translate("ro", "chat.privacy", { messages: 200, days: 30 })).toContain("30 de zile");
   });
 });

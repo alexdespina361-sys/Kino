@@ -1,12 +1,13 @@
 import { useRef, useState, type FormEvent } from "react";
-import { checkChatText, CHAT_TEXT_MAX } from "../../shared/chat";
+import { checkChatText, CHAT_TEXT_MAX } from "../../shared";
 import { Sheet } from "../controller/Sheet";
+import { useT } from "../i18n";
 import { SendIcon, ShieldIcon } from "../shared/icons";
 import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS } from "./state";
 import type { ChatReport, ChatSession } from "./useChat";
-import { problemText, useChatT } from "./words";
+import { problemText } from "./words";
 import "./chat.css";
 
 export interface ChatPhoneProps {
@@ -26,7 +27,7 @@ export interface ChatPhoneProps {
  * in; Mute and Report on top. A message of one's own can be pressed, and taken back. The sheet closes with the phone's Back, like the others.
  */
 export function ChatPhone({ name, session, report, receiving = true, onClose, now = Date.now() }: ChatPhoneProps) {
-  const t = useChatT();
+  const t = useT();
   const { state } = session;
   const [picked, setPicked] = useState<number | null>(null);
   const blocked = whyNotWrite(session);
@@ -87,7 +88,7 @@ export function ChatPhone({ name, session, report, receiving = true, onClose, no
 
 /** The box a message is written in, and the button that sends it. Enter sends too. What is sent is the text as the server will keep it. */
 function Composer({ session }: { session: ChatSession }) {
-  const t = useChatT();
+  const t = useT();
   const [text, setText] = useState("");
   const input = useRef<HTMLInputElement>(null);
   const checked = checkChatText(text);
@@ -127,7 +128,7 @@ function Composer({ session }: { session: ChatSession }) {
 
 /** What a report would hold, shown in full, and the one button that sends it. Nothing is sent before the button. */
 export function ChatReportSheet({ name, report, now }: { name: string; report: ChatReport; now: number }) {
-  const t = useChatT();
+  const t = useT();
   const lines = report.preview?.lines ?? [];
   const sent = report.stage === "sent";
   return (

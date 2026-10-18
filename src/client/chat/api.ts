@@ -1,4 +1,4 @@
-import { ChatMuteSchema, ChatReportPreviewSchema, ChatThreadSchema } from "../../shared/chat";
+import { ChatMuteSchema, ChatReportPreviewSchema, ChatThreadSchema } from "../../shared";
 import { ask, request } from "../account/api";
 
 const base = (profileId: string, friendId: string) => `/api/profiles/${encodeURIComponent(profileId)}/friends/${encodeURIComponent(friendId)}/chat`;

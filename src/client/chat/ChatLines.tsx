@@ -1,9 +1,8 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
-import type { ChatLine } from "../../shared/chat";
-import { useLanguage } from "../i18n";
+import type { ChatLine } from "../../shared";
+import { useLanguage, useT } from "../i18n";
 import { actionForKey } from "../tv/keys";
 import { dayOf, stampOf, startsDay } from "./state";
-import { useChatT } from "./words";
 
 export interface ChatLinesProps {
   lines: readonly ChatLine[];
@@ -30,7 +29,7 @@ const AT_END = 48;
  * then it stays where it was). A message is text (never a link, never markup) in a bubble: one's own on the right, the friend's on the left.
  */
 export function ChatLines({ lines, name, now, showWriter = false, picked = null, onPick, onTakeBack, remote = false, testId = "chat-lines" }: ChatLinesProps) {
-  const t = useChatT();
+  const t = useT();
   const language = useLanguage();
   const box = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLOListElement>(null);

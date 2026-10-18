@@ -1,5 +1,6 @@
 import { activityVerb, canAskTogether, partyOpen, tagLabel, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendRequest, type FriendsState, type PlanItem } from "../../shared";
 import { listName } from "../account/cards";
+import { chatWaiting, waitingFrom } from "../chat/notices";
 import { sortRatings } from "../account/ratingText";
 import { ago, formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
@@ -65,15 +66,27 @@ const entryOfFriendRequest = (item: FriendRequest): Entry => ({
   note: t("friends.requestWants"),
 });
 
-/** A friend, as a tile that opens their page, with the picture they chose; the line under the name is what they are watching, else that they are online, else since when they are friends. */
-const entryOfFriend = (friend: Friend, activity: readonly ActivityItem[], now: number): Entry => ({
+/**
+ * A friend, as a tile that opens their page, with the picture they chose; the line under the name is how many messages wait from them (quietly: a line, not a
+ * popup), else what they are watching, else that they are online, else since when they are friends.
+ */
+const entryOfFriend = (friend: Friend, activity: readonly ActivityItem[], now: number, unread = 0): Entry => ({
   id: `friend:${friend.id}`,
   title: friend.name,
   url: "",
   opens: { kind: "friend", id: friend.id },
   avatar: friend.avatar,
   ...(friend.on && friend.online ? { online: true } : {}),
-  note: friendLine(friend, activity, now) || t("friends.since", { day: formatDay(friend.since, getLanguage()) }),
+  note: (unread > 0 ? t("chat.unreadShort", { count: unread }) : friendLine(friend, activity, now)) || t("friends.since", { day: formatDay(friend.since, getLanguage()) }),
+});
+
+/** A friend who wrote, as a line of the bell: pressing it opens the chat with them. */
+const entryOfChat = (friend: Friend, count: number): Entry => ({
+  id: `chat:${friend.id}`,
+  title: t("chat.unread", { count, name: friend.name }),
+  url: "",
+  chat: friend.id,
+  avatar: friend.avatar,
 });
 
 /** The last two tiles of the friends row: they open a page of their own over the library. */
@@ -117,7 +130,7 @@ export function friendRows(state: FriendsState | null, now: number, iGet = true)
 
   if (activity.length > 0) rows.push({ id: "friend-activity", layout: "wide", title: t("friends.activity"), entries: activity.map((item) => entryOfActivity(item, nameOf(friends, item.friend), now)) });
 
-  rows.push({ id: "friend-people", layout: "categories", title: t("friends.yours"), entries: [...friends.map((friend) => entryOfFriend(friend, activity, now)), addTile(), settingsTile()] });
+  rows.push({ id: "friend-people", layout: "categories", title: t("friends.yours"), entries: [...friends.map((friend) => entryOfFriend(friend, activity, now, waitingFrom(state, friend.id))), addTile(), settingsTile()] });
   // (below the friends, so that the remote still starts on them: it is a reminder, and a friend's page says it again)
   if (activity.length === 0 && !iGet && friends.some((friend) => friend.on)) rows.push({ id: "friend-activity-off", layout: "categories", title: t("friends.activity"), entries: [activityOffTile()] });
   return rows;
@@ -139,7 +152,13 @@ export interface BellRow {
 export function bellRows(state: FriendsState | null, now: number): { waiting: BellRow[]; lately: BellRow[]; more: number } {
   if (!state) return { waiting: [], lately: [], more: 0 };
   const rows = friendRows(state, now);
-  const waiting = rows.filter((row) => row.id === "friend-requests" || row.id === "friend-parties" || row.id === "friend-plans" || row.id === "friend-sent").flatMap((row) => row.entries);
+  const asking = rows.filter((row) => row.id === "friend-requests" || row.id === "friend-parties" || row.id === "friend-plans" || row.id === "friend-sent").flatMap((row) => row.entries);
+  // (The friends who wrote come after what asks for an answer, with the same few places: see `bellView`.)
+  const wrote = chatWaiting(state).flatMap(({ friend: id, count }) => {
+    const friend = state.friends.find((each) => each.id === id);
+    return friend ? [entryOfChat(friend, count)] : [];
+  });
+  const waiting = [...asking, ...wrote];
   const lately = bellView(state, now).lately.flatMap((item): BellRow[] => {
     const friend = state.friends.find((each) => each.id === item.friend);
     if (!friend) return [];

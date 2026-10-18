@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChatLine, ChatThread } from "../../shared/chat";
+import type { ChatLine, ChatThread } from "../../shared";
 import { ApiError } from "../account/api";
 import { applyThread, CHAT_FACTS, dayOf, endsChat, FRESH_CHAT, lastOwn, problemOf, stampOf, startsDay, type ChatState } from "./state";
 

@@ -3,6 +3,12 @@
  * rem and pixels, the TV in em, where 1em is 1% of the screen's width (tv.css), and every TV rule is under .tv.
  */
 
+/* ------------------------------ what waits ------------------------------ */
+
+/* A chat that has something waiting is told of quietly: a line under the friend's name on the phone's page, and a number after the label of the TV's chip. */
+.friend-text small.friend-unread { color: var(--accent); font-weight: 600; }
+.tv-choice small { font-size: 0.8em; font-weight: 600; opacity: 0.9; }
+
 /* ------------------------------ the messages ------------------------------ */
 
 /* The box the list scrolls in, and the list in it (the box is what is watched for the end to stay in view: see ChatLines.tsx). */

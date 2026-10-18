@@ -19,6 +19,7 @@ import { useAccount } from "../account/AccountProvider";
 import { describeError } from "../account/errors";
 import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
+import { PhoneChat } from "../chat/PhoneChat";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
@@ -119,6 +120,8 @@ export function Controller() {
   /** The account page opens on its menu, or on the friends when the bell sent it there. */
   const [accountAt, setAccountAt] = useState<"main" | "friends">("main");
   const [showBell, setShowBell] = useState(false);
+  /** The friend whose chat the bell opened (the chat from a friend's page is that page's own). */
+  const [chatWith, setChatWith] = useState<string | null>(null);
   const closeAccount = () => {
     setShowAccount(false);
     setAccountAt("main");
@@ -440,8 +443,10 @@ export function Controller() {
             setAccountAt("friends");
             setShowAccount(true);
           }}
+          onOpenChat={setChatWith}
         />
       )}
+      {chatWith && !showAccount && !approveCode && <PhoneChat key={chatWith} friendId={chatWith} onClose={() => setChatWith(null)} />}
       {friendCode && !showAccount && !approveCode && !account.choosing && (
         <FriendInvite
           code={friendCode}

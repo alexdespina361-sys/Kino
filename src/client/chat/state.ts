@@ -1,4 +1,4 @@
-import { CHAT_KEEP_MAX, CHAT_KEEP_MS, CHAT_TEXT_MAX, type ChatLine, type ChatThread } from "../../shared/chat";
+import { CHAT_KEEP_MAX, CHAT_KEEP_MS, CHAT_TEXT_MAX, type ChatLine, type ChatThread } from "../../shared";
 import { ApiError } from "../account/api";
 
 /** What can go wrong with a chat, in the few words the views know how to say. */

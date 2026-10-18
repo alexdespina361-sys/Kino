@@ -1,3 +1,4 @@
+import { chatRo } from "./chat.ro";
 import type { Dictionary } from "./en";
 
 /** Română. Aceleași chei ca în en.ts (compilatorul verifică); formele de plural sunt `_one`, `_few`, `_other`. */
@@ -1209,4 +1210,7 @@ export const ro: Dictionary = {
   "feedback.leave.text_other": "Cuvintele tale se păstrează ca ciornă, dar cele {count} de imagini se vor pierde.",
   "feedback.leave.stay": "Continuă editarea",
   "feedback.leave.go": "Închide oricum",
+
+  /* chat între doi prieteni (client/chat): într-un fișier separat, adăugat aici */
+  ...chatRo,
 };

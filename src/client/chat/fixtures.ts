@@ -1,4 +1,4 @@
-import type { ChatLine } from "../../shared/chat";
+import type { ChatLine } from "../../shared";
 import { FRESH_CHAT, type ChatState } from "./state";
 import type { ChatReport, ChatSession } from "./useChat";
 

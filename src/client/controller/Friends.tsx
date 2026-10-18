@@ -7,6 +7,8 @@ import { useScores } from "../account/ratings";
 import { factLines, scoreOf, scoreWord, sortRatings, storedFacts } from "../account/ratingText";
 import { useSettings } from "../account/settings";
 import { ago, formatDay } from "../account/time";
+import { waitingFrom } from "../chat/notices";
+import { PhoneChat } from "../chat/PhoneChat";
 import { activityHint, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { dateValue, defaultPlan, duePlans, inboxToShow, momentOf, planLines, planMoment, planStatus, timeValue, whenLabel } from "../friends/plans";
@@ -16,7 +18,7 @@ import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { CopyCode, CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
-import { ChevronIcon, ClockIcon, CloseIcon, PlusIcon, StarIcon, UsersIcon } from "../shared/icons";
+import { ChevronIcon, ClockIcon, CloseIcon, MessageIcon, PlusIcon, StarIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, partyLink, typedLinkCode } from "../shared/launch";
 import { Poster } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
@@ -577,6 +579,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
           <ul className="friend-list" data-testid="friends-list">
             {state.friends.map((friend) => {
               const line = friendLine(friend, state.activity, now);
+              const unread = waitingFrom(state, friend.id);
               return (
                 <li key={friend.id}>
                   <button className="friend-row" onClick={() => onOpenFriend(friend.id)} data-testid="friend-row" data-friend={friend.id}>
@@ -584,6 +587,11 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
                     <span className="friend-text">
                       <b>{friend.name}</b>
                       {line && <small>{line}</small>}
+                      {unread > 0 && (
+                        <small className="friend-unread" data-testid="friend-unread">
+                          {t("chat.unreadShort", { count: unread })}
+                        </small>
+                      )}
                     </span>
                     <ChevronIcon />
                   </button>
@@ -788,6 +796,7 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   const [tab, setTab] = useState<"lists" | "ratings">("lists");
   const [asking, setAsking] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [chatting, setChatting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -798,6 +807,7 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
 
   if (!friend) return null;
   const hint = activityHint(friend, friendChoices(settings).friendsGet);
+  const unread = waitingFrom(friends.state, friend.id);
 
   const remove = async () => {
     setBusy(true);
@@ -827,6 +837,11 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
           {hint}
         </p>
       )}
+      <button className="btn btn-block" onClick={() => setChatting(true)} data-testid="friend-chat">
+        <MessageIcon /> {t("chat.open")}
+        {unread > 0 && <small data-testid="friend-chat-unread">{t("chat.unreadShort", { count: unread })}</small>}
+      </button>
+      {chatting && <PhoneChat friendId={friend.id} onClose={() => setChatting(false)} />}
       {canAskTogether(friend) && (
         <>
           <button className="btn btn-block" onClick={() => void ask(friend.id)} data-testid="friend-together">

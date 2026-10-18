@@ -5,6 +5,7 @@ import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
 import { useSettings } from "../account/settings";
 import { clockTime, dayChip, formatDay } from "../account/time";
+import { CHAT_FACTS } from "../chat/state";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { bellRows, type BellRow } from "../friends/pages";
@@ -754,6 +755,7 @@ const SWITCHES: ReadonlyArray<{ key: FriendSetting; label: Key; testId: string }
   { key: "friendsGet", label: "friends.switchGet", testId: "tv-friends-get" },
   { key: "friendsInbox", label: "friends.switchInbox", testId: "tv-friends-inbox" },
   { key: "friendsPresence", label: "friends.switchPresence", testId: "tv-friends-presence" },
+  { key: "friendsMessages", label: "chat.settingsSwitch", testId: "tv-friends-messages" },
 ];
 
 /** Choosing what friends may see and send, and whether what each watches is told. Each change reaches the server at once: it is what decides what a friend is shown. */
@@ -797,6 +799,10 @@ export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
           <span className="tv-switch" aria-hidden="true" />
         </button>
       </div>
+      {/* (What a chat is kept as, said where the switch for it is: plain text, on the server, unencrypted, for so long.) */}
+      <p className="tv-hint tv-friend-help" data-testid="tv-friends-messages-hint">
+        {t("chat.settingsHint", CHAT_FACTS)}
+      </p>
       <div className="tv-actions">
         <button className="tv-action tv-action-primary" onClick={onClose} data-nav data-testid="tv-friend-settings-done">
           {t("common.done")}

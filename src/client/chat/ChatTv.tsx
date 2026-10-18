@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { checkChatText, CHAT_TEXT_MAX } from "../../shared/chat";
+import { checkChatText, CHAT_TEXT_MAX } from "../../shared";
+import { useT } from "../i18n";
 import { MessageIcon, ShieldIcon, TrashIcon } from "../shared/icons";
 import { BackButton, Screen } from "../tv/Idle";
 import { appendTo } from "../tv/librarySearch";
@@ -8,7 +9,7 @@ import { ChatLines } from "./ChatLines";
 import { ChatNotices, whyNotWrite } from "./ChatNotices";
 import { CHAT_FACTS, lastOwn } from "./state";
 import type { ChatReport, ChatSession } from "./useChat";
-import { problemText, useChatT } from "./words";
+import { problemText } from "./words";
 import "./chat.css";
 
 /** The marks a message can use besides letters and digits, on keys of the page (six: with the letters of Romanian or Italian they still fit in four rows). */
@@ -61,7 +62,7 @@ export function ChatTv({ name, session, report, receiving = true, narrow = false
 }
 
 export function ReadTv({ name, session, report, receiving, now, onWrite, onClose }: { name: string; session: ChatSession; report: ChatReport; receiving: boolean; now: number; onWrite: () => void; onClose: () => void }) {
-  const t = useChatT();
+  const t = useT();
   const { state } = session;
   const blocked = whyNotWrite(session);
   const mine = lastOwn(state.lines);
@@ -128,7 +129,7 @@ export function WriteTv({
   onBack: () => void;
   onSent: () => void;
 }) {
-  const t = useChatT();
+  const t = useT();
   const checked = checkChatText(draft);
   /** The last message in the chat, there to be answered. */
   const last = session.state.lines[session.state.lines.length - 1];
@@ -190,7 +191,7 @@ export function WriteTv({
 }
 
 export function ReportTv({ name, report, now }: { name: string; report: ChatReport; now: number }) {
-  const t = useChatT();
+  const t = useT();
   const lines = report.preview?.lines ?? [];
   const sent = report.stage === "sent";
   return (

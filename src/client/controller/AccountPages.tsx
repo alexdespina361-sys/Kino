@@ -8,6 +8,7 @@ import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
 import { ago } from "../account/time";
+import { CHAT_FACTS } from "../chat/state";
 import { friendsApi } from "../friends/api";
 import { useFriends } from "../friends/FriendsProvider";
 import { LANGUAGE_NAMES, useLanguage, useT, type Key } from "../i18n";
@@ -242,6 +243,8 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
             {FRIEND_SWITCHES.filter(({ key }) => key !== "friendsRatings" || settings.ratings !== false).map(({ key, label, testId }) => (
               <Switch key={key} label={t(label)} checked={choices[key]} onChange={(on) => change(key, on)} testId={testId} />
             ))}
+            {/* (The one that says honestly what a chat is kept as: plain text, on the server, unencrypted, for so long.) */}
+            <Switch label={t("chat.settingsSwitch")} hint={t("chat.settingsHint", CHAT_FACTS)} checked={choices.friendsMessages} onChange={(on) => change("friendsMessages", on)} testId="friends-messages" />
             <Switch label={t("friends.popups")} hint={t("friends.popupsHelp")} checked={settings.newsPopups !== false} onChange={(on) => set("newsPopups", on ? undefined : false)} testId="news-popups-switch" />
           </Rows>
           <button className="btn btn-block" onClick={onOpen} data-testid="friends-open">
