@@ -406,6 +406,9 @@ describe("heroActions", () => {
   it("offers Ask to watch together for an invitation to a party that is over, and Start a party for a friend's request", () => {
     expect(heroActions({ id: "p", title: "Ann's party", url: "", ask: "pro_ann", inboxId: "i1" })).toEqual(["ask", "dismiss"]);
     expect(heroActions({ id: "t", title: "Ann wants to watch together", url: "", wants: "pro_ann", inboxId: "i3" })).toEqual(["start", "dismiss"]);
+    // A plan to watch together is no film and has no buttons under the banner (pressing the tile asks yes or no); once its time has come it starts the party like a request.
+    expect(heroActions({ id: "plan:i4", title: "Ann proposes to watch together", url: "", plan: "i4", inboxId: "i4" })).toEqual([]);
+    expect(heroActions({ id: "plan:i5", title: "Time to watch with Ann", url: "", wants: "pro_ann", inboxId: "i5" })).toEqual(["start", "dismiss"]);
   });
 
   it("offers nothing for a tile that opens a screen over the library", () => {

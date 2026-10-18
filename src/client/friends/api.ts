@@ -41,6 +41,8 @@ export const friendsApi = {
   lists: (profileId: string, friendId: string) => ask(FriendListsSchema, "GET", `${base(profileId)}/${part(friendId)}/lists`),
   ratings: (profileId: string, friendId: string) => ask(FriendRatingsSchema, "GET", `${base(profileId)}/${part(friendId)}/ratings`),
   send: (profileId: string, body: SendRequest) => ask(SentSchema, "POST", `${base(profileId)}/send`, body),
+  /** Say yes or no to a plan to watch together that a friend put (an item of the inbox). */
+  answerPlan: async (profileId: string, itemId: string, yes: boolean): Promise<void> => void (await request("POST", `${base(profileId)}/plans/${part(itemId)}/${yes ? "accept" : "decline"}`, {})),
   read: async (profileId: string): Promise<void> => void (await request("POST", `${base(profileId)}/inbox/read`, {})),
   dismiss: async (profileId: string, itemId: string): Promise<void> => void (await request("DELETE", `${base(profileId)}/inbox/${part(itemId)}`)),
 };

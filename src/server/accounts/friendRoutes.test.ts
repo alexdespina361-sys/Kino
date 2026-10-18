@@ -1,6 +1,18 @@
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
-import { ACTIVITY_KEEP_MS, INVITE_TTL_MS, MAX_OPEN_INVITES, ONLINE_MS, type FriendsState } from "../../shared";
+import {
+  ACTIVITY_KEEP_MS,
+  INVITE_TTL_MS,
+  MAX_OPEN_INVITES,
+  ONLINE_MS,
+  PARTY_INVITE_KEEP_MS,
+  PLAN_KEEP_AFTER_MS,
+  PLAN_MAX_AHEAD_MS,
+  PLAN_MIN_AHEAD_MS,
+  PLAN_OPEN_PER_PAIR,
+  PLAN_OPEN_PER_SENDER,
+  type FriendsState,
+} from "../../shared";
 import { buildApp } from "../app";
 import { Registry } from "../sessions/registry";
 import { MemoryPersistence } from "./persistence";
@@ -784,6 +796,273 @@ describe("recommendations and invitations to a party", () => {
     await alex.client.post(mine(alex, "/send"), { to: [sam.id], ...dune });
     await sam.client.delete(mine(sam, `/${alex.id}`));
     expect((await sam.state()).inbox).toEqual([]);
+  });
+});
+
+describe("plans to watch together", () => {
+  const HOUR = 3_600_000;
+  /** `from` puts a plan to `to` for a time `hours` from now (with a few words, if there are any). */
+  const put = (from: Person, to: Person, hours: number, note?: string) =>
+    from.client.post(mine(from, "/send"), { to: [to.id], kind: "plan", when: clock.now + hours * HOUR, ...(note ? { note } : {}) });
+  /** The ids of what is in a bell, newest first. */
+  const idsOf = async (who: Person) => (await who.state()).inbox.map((item) => item.id);
+  const reply = (who: Person, itemId: string, yes: boolean) => who.client.post(mine(who, `/plans/${itemId}/${yes ? "accept" : "decline"}`));
+  /** What the plans in a bell say, newest first: when (in hours from `start`) and the answer, if there is one. */
+  const plansOf = async (who: Person, start: number) =>
+    (await who.state()).inbox.map((item) => (item.kind === "plan" ? [(item.when - start) / HOUR, item.answer] : item.kind));
+
+  it("puts a plan to a friend: its time and a few words, made fit to show, unread, and who it is from", async () => {
+    const { alex, sam } = await friends();
+    const when = clock.now + 2 * HOUR;
+    const sent = await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "plan", when, note: "After dinner.‮" });
+    expect(sent.statusCode).toBe(200);
+    expect(sent.data).toEqual({ sent: [sam.id], declined: [] });
+    const { inbox } = await sam.state();
+    expect(inbox).toMatchObject([{ kind: "plan", from: alex.id, when, note: "After dinner.", read: false }]);
+    expect(inbox[0]).not.toHaveProperty("answer");
+    expect(inbox[0]).not.toHaveProperty("host");
+    expect((await alex.state()).inbox).toEqual([]);
+
+    // The same time again takes the place of the plan, and is not announced twice.
+    expect((await put(alex, sam, 2, "Or later.")).statusCode).toBe(200);
+    const [again, ...rest] = (await sam.state()).inbox;
+    expect(rest).toEqual([]);
+    expect(again).toMatchObject({ id: inbox[0]!.id, when, note: "Or later.", read: false });
+  });
+
+  it("goes to any friend who takes invitations, though they tell nothing of what they watch, and to nobody else", async () => {
+    const { app, alex, sam } = await friends(); // (what they watch is not told by default)
+    expect((await put(alex, sam, 2)).data).toEqual({ sent: [sam.id], declined: [] });
+    await sam.client.delete(mine(sam, `/inbox/${(await sam.state()).inbox[0]!.id}`));
+
+    const stranger = await person(app, "stranger");
+    await stranger.choose({ friends: true });
+    expect((await put(alex, stranger, 2)).data).toEqual({ sent: [], declined: [stranger.id] }); // (not a friend)
+    expect((await alex.client.post(mine(alex, "/send"), { to: ["nobody"], kind: "plan", when: clock.now + 2 * HOUR })).data).toEqual({ sent: [], declined: ["nobody"] });
+
+    await sam.choose({ friendsInbox: false });
+    expect((await put(alex, sam, 2)).data).toEqual({ sent: [], declined: [sam.id] });
+    await sam.choose({ friendsInbox: true, friends: false });
+    expect((await put(alex, sam, 2)).data).toEqual({ sent: [], declined: [sam.id] });
+    await sam.choose({ friends: true });
+    expect((await sam.state()).inbox).toEqual([]);
+    expect((await stranger.state()).inbox).toEqual([]);
+  });
+
+  it("is for a time from five minutes to thirty days away, to the millisecond, and says which when it is not", async () => {
+    const { alex, sam } = await friends();
+    const at = (when: number) => alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "plan", when });
+    for (const [when, error] of [
+      [clock.now + PLAN_MIN_AHEAD_MS - 1, "plan_soon"],
+      [clock.now - HOUR, "plan_soon"],
+      [clock.now + PLAN_MAX_AHEAD_MS + 1, "plan_far"],
+    ] as const) {
+      const refused = await at(when);
+      expect(refused.statusCode, error).toBe(400);
+      expect(refused.data).toEqual({ error });
+    }
+    expect((await sam.state()).inbox).toEqual([]);
+    expect((await at(clock.now + PLAN_MIN_AHEAD_MS)).data.sent).toEqual([sam.id]);
+    expect((await at(clock.now + PLAN_MAX_AHEAD_MS)).data.sent).toEqual([sam.id]);
+  });
+
+  it("refuses what is not a plan: no time, a time that is no time, a note that is too long, or not exactly one friend", async () => {
+    const { alex, sam } = await friends();
+    const when = clock.now + 2 * HOUR;
+    for (const body of [
+      { to: [sam.id], kind: "plan" },
+      { to: [sam.id], kind: "plan", when: "tomorrow" },
+      { to: [sam.id], kind: "plan", when: 1.5 },
+      { to: [sam.id], kind: "plan", when: 0 },
+      { to: [sam.id], kind: "plan", when: -5 },
+      { to: [sam.id], kind: "plan", when, note: "x".repeat(201) },
+      { to: [sam.id, "someone"], kind: "plan", when },
+      { to: [], kind: "plan", when },
+      { kind: "plan", when },
+    ]) {
+      expect((await alex.client.post(mine(alex, "/send"), body)).statusCode, JSON.stringify(body)).toBe(400);
+    }
+    expect((await sam.state()).inbox).toEqual([]);
+  });
+
+  it("holds a profile to three plans that wait on one friend and ten in all; the same time put again is not one more, and an answered one is no longer waiting", async () => {
+    const { app, alex, sam } = await friends();
+    for (const hours of Array.from({ length: PLAN_OPEN_PER_PAIR }, (_, i) => i + 1)) expect((await put(alex, sam, hours)).statusCode).toBe(200);
+    const full = await put(alex, sam, 10);
+    expect(full.statusCode).toBe(409);
+    expect(full.data).toEqual({ error: "plan_full" });
+    expect((await put(alex, sam, 2, "Again.")).statusCode).toBe(200);
+    expect((await sam.state()).inbox).toHaveLength(PLAN_OPEN_PER_PAIR);
+
+    expect((await reply(sam, (await sam.state()).inbox[0]!.id, false)).statusCode).toBe(204);
+    expect((await put(alex, sam, 10)).statusCode).toBe(200);
+
+    // Ten in all, over several friends.
+    const others: Person[] = [];
+    for (const name of ["b", "c", "d"]) {
+      const other = await person(app, name);
+      await other.choose({ friends: true });
+      const { data: made } = await alex.client.post(mine(alex, "/invites"));
+      expect((await other.client.post(mine(other, "/accept"), { code: made.code })).statusCode).toBe(201);
+      others.push(other);
+    }
+    let waiting = PLAN_OPEN_PER_PAIR;
+    for (const other of others) {
+      for (let i = 0; i < PLAN_OPEN_PER_PAIR && waiting < PLAN_OPEN_PER_SENDER; i++, waiting++) expect((await put(alex, other, 20 + waiting)).statusCode).toBe(200);
+    }
+    expect(waiting).toBe(PLAN_OPEN_PER_SENDER);
+    const [, , last] = others as [Person, Person, Person];
+    expect((await put(alex, last, 40)).data).toEqual({ error: "plan_full" });
+    expect((await put(alex, last, 20 + PLAN_OPEN_PER_SENDER - 1, "Changed.")).statusCode).toBe(200); // (the same time: not one more)
+  });
+
+  it("is answered by the friend it was put to: yes makes it a plan that is on and seen, no takes it away; the one who put it is told either way, in their bell", async () => {
+    const { alex, sam } = await friends();
+    const start = clock.now;
+    await put(alex, sam, 2);
+    await put(alex, sam, 3);
+    const [no, yes] = await idsOf(sam); // (the newest first: the plan for three hours from now)
+
+    expect((await reply(sam, yes!, true)).statusCode).toBe(204);
+    expect((await reply(sam, no!, false)).statusCode).toBe(204);
+    expect(await plansOf(sam, start)).toEqual([[2, "yes"]]);
+    expect((await sam.state()).inbox).toMatchObject([{ id: yes, from: alex.id, answer: "yes", read: true }]);
+    expect(await plansOf(alex, start)).toEqual([[3, "no"], [2, "yes"]]);
+    expect((await alex.state()).inbox).toMatchObject([{ from: sam.id, read: false }, { from: sam.id, read: false }]);
+  });
+
+  it("is answered only while it waits for an answer from that profile: once, by its friend, and not after its time", async () => {
+    const { app, alex, sam } = await friends();
+    await put(alex, sam, 2);
+    await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "recommend", title: "Dune", url: url(1) });
+    const items = (await sam.state()).inbox;
+    const planId = items.find((item) => item.kind === "plan")!.id;
+    const dune = items.find((item) => item.kind === "recommend")!.id;
+
+    for (const [who, id] of [[alex, planId], [sam, "m_nothing"], [sam, dune]] as const) {
+      for (const yes of [true, false]) {
+        const refused = await reply(who, id, yes);
+        expect(refused.statusCode).toBe(404);
+        expect(refused.data).toEqual({ error: "plan_gone" });
+      }
+    }
+    const robin = await person(app, "robin");
+    await robin.choose({ friends: true });
+    expect((await reply(robin, planId, true)).statusCode).toBe(404); // (it is not in Robin's bell)
+    expect((await robin.client.post(mine(sam, `/plans/${planId}/accept`))).statusCode).toBe(404); // (nor is Sam's profile Robin's to answer for)
+    expect((await new Client(app).post(mine(sam, `/plans/${planId}/accept`))).statusCode).toBe(401);
+    expect(await plansOf(sam, 0)).toHaveLength(2);
+
+    expect((await reply(sam, planId, true)).statusCode).toBe(204);
+    for (const yes of [true, false]) expect((await reply(sam, planId, yes)).data).toEqual({ error: "plan_gone" }); // (answered once)
+    expect((await sam.state()).inbox.find((item) => item.id === planId)).toMatchObject({ answer: "yes" });
+
+    await put(alex, sam, 1, "A second one.");
+    const second = (await sam.state()).inbox.find((item) => item.kind === "plan" && item.answer === undefined)!;
+    clock.now += HOUR; // (its time has come: nobody can say yes to a time that is here)
+    expect((await reply(sam, second.id, true)).data).toEqual({ error: "plan_gone" });
+  });
+
+  it("takes a no from a friend who is not taking things now, and tells nobody; a yes it refuses, so the two never hold different plans", async () => {
+    const { alex, sam } = await friends();
+    await put(alex, sam, 2);
+    const [plan] = await idsOf(sam);
+    await alex.choose({ friendsInbox: false });
+    expect((await reply(sam, plan!, true)).data).toEqual({ error: "plan_gone" });
+    expect(await plansOf(sam, 0)).toHaveLength(1);
+    expect((await reply(sam, plan!, false)).statusCode).toBe(204);
+    await alex.choose({ friendsInbox: true });
+    expect((await alex.state()).inbox).toEqual([]);
+    expect((await sam.state()).inbox).toEqual([]);
+
+    // A profile that turned friends off answers nothing.
+    await put(alex, sam, 3);
+    const [again] = await idsOf(sam);
+    await sam.choose({ friends: false });
+    const off = await reply(sam, again!, true);
+    expect(off.statusCode).toBe(403);
+    expect(off.data).toEqual({ error: "friends_off" });
+  });
+
+  it("goes when the friends part, from both bells", async () => {
+    const { alex, sam } = await friends();
+    await put(alex, sam, 2);
+    const [plan] = await idsOf(sam);
+    await reply(sam, plan!, true);
+    await put(alex, sam, 3);
+    expect(await plansOf(alex, 0)).toHaveLength(1);
+    expect((await sam.client.delete(mine(sam, `/${alex.id}`))).statusCode).toBe(204);
+    expect((await sam.state()).inbox).toEqual([]);
+    expect((await alex.state()).inbox).toEqual([]);
+  });
+
+  it("is let go of by the clock: at its time if nobody answered, a little after it if it is on, and half a day after the news that it is off", async () => {
+    const { alex, sam } = await friends();
+    const start = clock.now;
+    await put(alex, sam, 1);
+    await put(alex, sam, 2);
+    await put(alex, sam, 3);
+    const [third, second] = await idsOf(sam);
+    await reply(sam, second!, true);
+    await reply(sam, third!, false);
+    expect(await plansOf(sam, start)).toEqual([[2, "yes"], [1, undefined]]);
+
+    clock.now = start + HOUR;
+    expect(await plansOf(sam, start)).toEqual([[2, "yes"]]);
+    clock.now = start + 2 * HOUR + PLAN_KEEP_AFTER_MS - 1;
+    expect(await plansOf(sam, start)).toEqual([[2, "yes"]]);
+    expect(await plansOf(alex, start)).toEqual([[3, "no"], [2, "yes"]]);
+    clock.now = start + 2 * HOUR + PLAN_KEEP_AFTER_MS;
+    expect(await plansOf(sam, start)).toEqual([]);
+    expect(await plansOf(alex, start)).toEqual([[3, "no"]]);
+    clock.now = start + PARTY_INVITE_KEEP_MS;
+    expect(await plansOf(alex, start)).toEqual([]);
+  });
+
+  it("is done when the two go to a party at its time: the invitation takes its place in both bells, and one sent too early leaves it", async () => {
+    const { alex, sam, registry } = await friends();
+    const start = clock.now;
+    await put(alex, sam, 2);
+    const [plan] = await idsOf(sam);
+    await reply(sam, plan!, true);
+
+    const early = openParty(registry);
+    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code: early.code, endsAt: clock.now + 600_000 })).statusCode).toBe(200);
+    expect(await plansOf(sam, start)).toEqual(["party", [2, "yes"]]);
+    expect(await plansOf(alex, start)).toEqual([[2, "yes"]]);
+
+    clock.now = start + 2 * HOUR + 60_000; // (the time has come)
+    const party = openParty(registry);
+    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code: party.code, endsAt: clock.now + 600_000 })).statusCode).toBe(200);
+    expect(await plansOf(sam, start)).toEqual(["party"]);
+    expect(await plansOf(alex, start)).toEqual([]);
+  });
+
+  it("is still there after the server restarts, answered or not", async () => {
+    const persistence = new MemoryPersistence();
+    const first = await start(persistence);
+    const alex = await person(first.app, "alex");
+    const sam = await person(first.app, "sam");
+    await alex.choose({ friends: true });
+    await sam.choose({ friends: true });
+    const { data: made } = await alex.client.post(mine(alex, "/invites"));
+    await sam.client.post(mine(sam, "/accept"), { code: made.code });
+    const begun = clock.now;
+    await put(alex, sam, 2, "After dinner.");
+    await put(alex, sam, 3);
+    await reply(sam, (await sam.state()).inbox[1]!.id, true);
+    await first.store.flush();
+
+    const second = await start(persistence);
+    const backSam = new Client(second.app);
+    backSam.cookie = sam.client.cookie;
+    expect(((await backSam.get(mine(sam))).data as FriendsState).inbox).toMatchObject([
+      { kind: "plan", when: begun + 3 * HOUR, read: false },
+      { kind: "plan", when: begun + 2 * HOUR, note: "After dinner.", answer: "yes", read: true },
+    ]);
+    const backAlex = new Client(second.app);
+    backAlex.cookie = alex.client.cookie;
+    expect(((await backAlex.get(mine(alex))).data as FriendsState).inbox).toMatchObject([{ kind: "plan", from: sam.id, when: begun + 2 * HOUR, answer: "yes" }]);
   });
 });
 

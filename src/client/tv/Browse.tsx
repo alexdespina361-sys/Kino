@@ -26,7 +26,7 @@ import { ScoreBadge } from "../shared/ScoreBadge";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
-import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, UnfriendTv } from "./Friends";
+import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlyKind, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
@@ -145,6 +145,8 @@ type Overlay =
   | { kind: "friendSettings"; back: Target }
   | { kind: "unfriend"; id: string; name: string; back: Target }
   | { kind: "friendRequest"; person: Person; back: Target }
+  | { kind: "plan"; id: string; back: Target }
+  | { kind: "planPick"; friend: string; back: Target }
   | { kind: "bell"; back: Target };
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
@@ -457,7 +459,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
     // A friend's page: the way back, their lists and their ratings over the titles, and under them the button that takes them off the friends.
-    ...(view.kind === "friend" && friend ? { chips: [canAskTogether(friend) ? 4 : 3], foot: [1] } : {}),
+    ...(view.kind === "friend" && friend ? { chips: [canAskTogether(friend) ? 5 : 3], foot: [1] } : {}),
     ...(detail
       ? {
           close: [1],
@@ -560,6 +562,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (overlay?.kind === "unfriend" && friends.state && !friends.state.friends.some((each) => each.id === overlay.id)) setOverlay(null);
     // (Likewise a request that was answered on a phone, or taken back, while its question was on the screen.)
     if (overlay?.kind === "friendRequest" && friends.state && !friends.state.requests.some((each) => each.from.id === overlay.person.id)) closeOverlay();
+    // (And the plan to watch together with a friend who was taken off the friends meanwhile.)
+    if (overlay?.kind === "planPick" && friends.state && !friends.state.friends.some((each) => each.id === overlay.friend)) closeOverlay();
     // (And the bell once friends are turned off from another device: there is nothing left for it to list.)
     if (overlay?.kind === "bell" && !bell.on) closeOverlay();
   }, [overlay, friends.state, bell.on]);
@@ -755,6 +759,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     const { entry } = title;
     if (entry.action) return setOverlay({ kind: entry.action, back: from });
     if (entry.request) return setOverlay({ kind: "friendRequest", person: entry.request, back: from });
+    if (entry.plan) return setOverlay({ kind: "plan", id: entry.plan, back: from });
     if (entry.party) return onJoinParty(entry.party);
     if (entry.wants) return onStartTogether(entry.wants);
     if (entry.ask) return void askToWatch(entry.ask, entry.inboxId);
@@ -1132,17 +1137,30 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 </button>
               ))}
               {canAskTogether(friend) && (
-                <button
-                  className="tv-choice"
-                  data-testid="friend-together"
-                  data-zone="chips"
-                  data-row={0}
-                  data-col={1 + FRIEND_TABS.length}
-                  onClick={() => void askToWatch(friend.id)}
-                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 1 + FRIEND_TABS.length })}
-                >
-                  <UsersIcon /> {t("friends.askTogether")}
-                </button>
+                <>
+                  <button
+                    className="tv-choice"
+                    data-testid="friend-together"
+                    data-zone="chips"
+                    data-row={0}
+                    data-col={1 + FRIEND_TABS.length}
+                    onClick={() => void askToWatch(friend.id)}
+                    onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 1 + FRIEND_TABS.length })}
+                  >
+                    <UsersIcon /> {t("friends.askTogether")}
+                  </button>
+                  <button
+                    className="tv-choice"
+                    data-testid="friend-plan"
+                    data-zone="chips"
+                    data-row={0}
+                    data-col={2 + FRIEND_TABS.length}
+                    onClick={() => setOverlay({ kind: "planPick", friend: friend.id, back: { zone: "chips", row: 0, col: 2 + FRIEND_TABS.length } })}
+                    onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 2 + FRIEND_TABS.length })}
+                  >
+                    <ClockIcon /> {t("friends.planButton")}
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -1367,6 +1385,17 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       {overlay?.kind === "addFriend" && <AddFriendTv onClose={closeOverlay} />}
       {overlay?.kind === "friendSettings" && <FriendSettingsTv onClose={closeOverlay} />}
       {overlay?.kind === "friendRequest" && <FriendRequestTv person={overlay.person} onClose={closeOverlay} />}
+      {overlay?.kind === "plan" && (
+        <PlanTv
+          id={overlay.id}
+          onStartParty={(friendId) => {
+            setOverlay(null);
+            onStartTogether(friendId);
+          }}
+          onClose={closeOverlay}
+        />
+      )}
+      {overlay?.kind === "planPick" && <PlanPickerTv friendId={overlay.friend} onClose={closeOverlay} />}
       {overlay?.kind === "bell" && (
         <NotificationsTv
           onPress={(entry) => {

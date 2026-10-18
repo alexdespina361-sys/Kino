@@ -74,6 +74,10 @@ const STATUS: Record<FriendError | "friends_off" | "not_shared" | "not_friends" 
   not_shared: 403,
   not_friends: 404,
   party_closed: 409,
+  plan_soon: 400,
+  plan_far: 400,
+  plan_full: 409,
+  plan_gone: 404,
 };
 
 type Asked = FastifyRequest & { params: { id: string; fid?: string } };
@@ -520,13 +524,38 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
         answer.declined.push(id);
         continue;
       }
-      book.deliver(id, me.profileId, message, host);
-      // (An invitation answers a request for a party that came the other way.)
-      if (message.kind === "party") book.answerTogether(me.profileId, id);
+      if (message.kind === "plan") {
+        // (The time and the limits are the server's to hold to, whatever a screen let through. A plan goes to one friend, so nothing is half sent.)
+        const put = book.propose(id, me.profileId, message);
+        if (!put.ok) return refuse(reply, put.error);
+      } else book.deliver(id, me.profileId, message, host);
+      // (An invitation answers a request for a party that came the other way, and is the party of a plan whose time has come.)
+      if (message.kind === "party") {
+        book.answerTogether(me.profileId, id);
+        book.settlePlans(me.profileId, id);
+      }
       answer.sent.push(id);
     }
     return reply.send(answer);
   });
+
+  /**
+   * Say yes or no to a plan a friend put (an item of the inbox). Yes keeps it as a plan that is on, in both inboxes; no takes it away; the friend is
+   * told which in their bell. A yes the friend could not be told of (they take nothing now) is refused, so the two never hold different plans.
+   */
+  for (const [path, answer] of [["accept", "yes"], ["decline", "no"]] as const) {
+    app.post<{ Params: { id: string; itemId: string } }>(`${base}/plans/:itemId/${path}`, async (request, reply) => {
+      const me = asker(request, reply, acceptsByAccount);
+      if (!me) return reply;
+      const plan = book.openPlan(me.profileId, request.params.itemId);
+      if (!plan) return refuse(reply, "plan_gone");
+      const theirs = friendChoices(store.settingsOf(plan.from));
+      const takes = book.areFriends(me.profileId, plan.from) && theirs.friends && theirs.friendsInbox;
+      if (answer === "yes" && !takes) return refuse(reply, "plan_gone");
+      book.answerPlan(me.profileId, plan, answer, takes);
+      return reply.code(204).send();
+    });
+  }
 
   app.post<{ Params: { id: string } }>(`${base}/inbox/read`, async (request, reply) => {
     const me = asker(request, reply);

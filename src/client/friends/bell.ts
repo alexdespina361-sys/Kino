@@ -1,4 +1,5 @@
 import { partyOpen, type ActivityItem, type FriendRequest, type FriendsState, type InboxItem } from "../../shared";
+import { inboxToShow, planStatus } from "./plans";
 
 /**
  * What the bell shows: the things that wait for an answer from this profile (requests to be friends, invitations to a watch party, requests to
@@ -13,7 +14,7 @@ export const BELL_LATELY = 4;
 export interface BellView {
   /** Requests to be friends, the newest first. */
   requests: FriendRequest[];
-  /** What friends sent: an invitation to a party that is on first, then a request to watch together, then titles, then invitations to parties that are over; the newest first within each. */
+  /** What friends sent: an invitation to a party that is on first (and a plan whose time has come), then a request to watch together and a plan that asks for an answer, then titles, then news of plans and invitations to parties that are over; the newest first within each. */
   inbox: InboxItem[];
   /** What friends watch, the newest first, from friends this profile still has. */
   lately: ActivityItem[];
@@ -21,11 +22,17 @@ export interface BellView {
   more: number;
 }
 
-const rank = (item: InboxItem, now: number): number => (item.kind === "party" ? (partyOpen(item, now) ? 0 : 3) : item.kind === "together" ? 1 : 2);
+function rank(item: InboxItem, now: number): number {
+  if (item.kind === "party") return partyOpen(item, now) ? 0 : 3;
+  if (item.kind === "together") return 1;
+  if (item.kind !== "plan") return 2;
+  const status = planStatus(item, now);
+  return status === "due" ? 0 : status === "asks" ? 1 : 3;
+}
 
 export function bellView(state: FriendsState, now: number): BellView {
   const requests = [...state.requests].sort((a, b) => b.at - a.at);
-  const inbox = [...state.inbox].sort((a, b) => rank(a, now) - rank(b, now) || b.at - a.at);
+  const inbox = inboxToShow(state.inbox, now).sort((a, b) => rank(a, now) - rank(b, now) || b.at - a.at);
   const shownRequests = requests.slice(0, BELL_WAITING);
   const shownInbox = inbox.slice(0, BELL_WAITING - shownRequests.length);
   const lately = state.activity

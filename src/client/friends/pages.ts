@@ -1,4 +1,4 @@
-import { activityVerb, canAskTogether, partyOpen, tagLabel, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendRequest, type FriendsState } from "../../shared";
+import { activityVerb, canAskTogether, partyOpen, tagLabel, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendRequest, type FriendsState, type PlanItem } from "../../shared";
 import { listName } from "../account/cards";
 import { sortRatings } from "../account/ratingText";
 import { ago, formatDay } from "../account/time";
@@ -6,6 +6,7 @@ import { getLanguage, t } from "../i18n";
 import { formatCode } from "../shared/format";
 import { entryOfRating, type Entry, type GridPage, type HomeRow, type View } from "../tv/pages";
 import { BELL_WAITING, bellView } from "./bell";
+import { inboxToShow, planLines, planStatus, type PlanStatus } from "./plans";
 import { activityHint, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
 
 /**
@@ -43,6 +44,17 @@ const entryOfRequest = (item: TogetherRequest, from: string, now: number): Entry
   note: ago(item.at, now, getLanguage()),
 });
 
+/**
+ * A plan to watch together, as a tile: pressing it asks the question (yes or no) or tells the news. One whose time has come starts the party instead,
+ * as a friend's request for one does.
+ */
+const entryOfPlan = (item: PlanItem, from: string, now: number): Entry => {
+  const { heading, detail } = planLines(item, from, now);
+  return { id: `plan:${item.id}`, title: heading, url: "", note: detail, inboxId: item.id, ...(planStatus(item, now) === "due" ? { wants: item.from } : { plan: item.id }) };
+};
+/** The plans in the order they matter: the ones whose time has come, the ones that ask, the ones that are on (the soonest first), the news that one was turned down. */
+const PLAN_ORDER: Record<PlanStatus, number> = { due: 0, asks: 1, agreed: 2, declined: 3, lapsed: 4 };
+
 /** Somebody who asked to be friends, as a tile with the picture they chose: pressing it asks whether to say yes. */
 const entryOfFriendRequest = (item: FriendRequest): Entry => ({
   id: `request:${item.from.id}`,
@@ -72,7 +84,7 @@ const activityOffTile = (): Entry => ({ id: "activity-off", title: t("friends.tu
 
 /**
  * The rows of the friends page: the requests to be friends that wait for an answer, invitations to the watch parties that are on (and the
- * ones that are over, from a friend who can be asked for another), requests to watch together, what friends sent, what they watch, and the
+ * ones that are over, from a friend who can be asked for another), requests to watch together, plans to watch together, what friends sent, what they watch, and the
  * friends themselves (with the tiles to add one and to choose what is shared). Before the server has answered there are only the last two.
  * While this profile has not turned on being told what friends watch (`iGet`: the one thing that is off until somebody turns it on, and what makes the
  * row of what they watch never appear) a row below the friends has a tile that says so and opens the settings.
@@ -94,6 +106,11 @@ export function friendRows(state: FriendsState | null, now: number, iGet = true)
     return from && canAskTogether(from) ? [entryOfEndedParty(item, from, now)] : [];
   });
   if (parties.length > 0) rows.push({ id: "friend-parties", layout: "wide", title: t("friends.partiesRow"), entries: parties });
+
+  const plans = inboxToShow(inbox, now)
+    .filter((item): item is PlanItem => item.kind === "plan")
+    .sort((a, b) => PLAN_ORDER[planStatus(a, now)] - PLAN_ORDER[planStatus(b, now)] || a.when - b.when);
+  if (plans.length > 0) rows.push({ id: "friend-plans", layout: "wide", title: t("friends.plansRow"), entries: plans.map((item) => entryOfPlan(item, nameOf(friends, item.from), now)) });
 
   const sent = inbox.filter((item): item is Recommendation => item.kind === "recommend");
   if (sent.length > 0) rows.push({ id: "friend-sent", layout: "wide", title: t("friends.inbox"), entries: sent.map((item) => ({ ...entryOfRecommendation(item, nameOf(friends, item.from)), inboxId: item.id })) });
@@ -122,7 +139,7 @@ export interface BellRow {
 export function bellRows(state: FriendsState | null, now: number): { waiting: BellRow[]; lately: BellRow[]; more: number } {
   if (!state) return { waiting: [], lately: [], more: 0 };
   const rows = friendRows(state, now);
-  const waiting = rows.filter((row) => row.id === "friend-requests" || row.id === "friend-parties" || row.id === "friend-sent").flatMap((row) => row.entries);
+  const waiting = rows.filter((row) => row.id === "friend-requests" || row.id === "friend-parties" || row.id === "friend-plans" || row.id === "friend-sent").flatMap((row) => row.entries);
   const lately = bellView(state, now).lately.flatMap((item): BellRow[] => {
     const friend = state.friends.find((each) => each.id === item.friend);
     if (!friend) return [];
