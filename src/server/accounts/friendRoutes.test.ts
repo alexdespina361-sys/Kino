@@ -722,12 +722,11 @@ describe("recommendations and invitations to a party", () => {
     expect((await alex.state()).inbox).toMatchObject([{ kind: "party", from: sam.id, code, open: true }]);
   });
 
-  it("does not take a request to watch together to a friend who does not tell what they watch, or does not take things", async () => {
+  it("takes a request to watch together to any friend who takes things, though they tell nothing of what they watch, and not to one who does not take things", async () => {
     const { alex, sam } = await friends(); // (what they watch is not told by default)
-    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" })).data).toEqual({ sent: [], declined: [sam.id] });
-    await sam.choose({ friendsGive: true });
-    await alex.choose({ friendsGet: true });
+    expect((await alex.state()).friends[0]).toMatchObject({ activity: false, inbox: true });
     expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" })).data).toEqual({ sent: [sam.id], declined: [] });
+    expect((await sam.state()).inbox).toMatchObject([{ kind: "together", from: alex.id, read: false }]);
     await sam.client.delete(mine(sam, `/inbox/${(await sam.state()).inbox[0]!.id}`));
     await sam.choose({ friendsInbox: false });
     expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "together" })).data).toEqual({ sent: [], declined: [sam.id] });

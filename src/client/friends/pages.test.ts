@@ -83,12 +83,25 @@ describe("the rows of the friends page", () => {
     expect(entries[1]).toMatchObject({ party: "482731" });
   });
 
-  it("leave out an invitation to a party that is over when the friend cannot be asked: they do not tell what they watch, or do not take things", () => {
+  it("leave out an invitation to a party that is over when the friend cannot be asked: they do not take things, or have turned friends off", () => {
     const over = [invitation("old", NOW - 1)];
-    for (const friend of [{ ...sam, activity: false }, { ...sam, inbox: false }, { ...sam, on: false }]) {
+    for (const friend of [{ ...sam, inbox: false }, { ...sam, on: false }]) {
       expect(friendRows(state({ friends: [friend], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
     }
     expect(friendRows(state({ friends: [], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+    // (telling what they watch is not needed to be asked: it is off until it is turned on)
+    expect(friendRows(state({ friends: [{ ...sam, activity: false }], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-parties", "friend-people"]);
+  });
+
+  it("say, in a tile that opens the settings, that being told what friends watch is off: only while it is off, with a friend to hear from, and nothing to show", () => {
+    const row = (changes: Partial<FriendsState>, iGet: boolean) => friendRows(state(changes), NOW, iGet).find((each) => each.id === "friend-activity-off");
+    expect(row({}, false)).toMatchObject({ layout: "categories", title: t("friends.activity") });
+    expect(row({}, false)?.entries).toEqual([{ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGet"), action: "friendSettings" }]);
+    expect(friendRows(state(), NOW, false).map((each) => each.id)).toEqual(["friend-people", "friend-activity-off"]); // (below the friends: the remote starts on them)
+    expect(row({}, true)).toBeUndefined(); // (on: as before, the row is there when there is something to show)
+    expect(row({ friends: [{ ...sam, on: false }] }, false)).toBeUndefined(); // (nobody who could be heard from)
+    expect(row({ friends: [] }, false)).toBeUndefined();
+    expect(friendRows(state({ activity: [watched("pro_sam", "k")] }), NOW, false).map((each) => each.id)).toEqual(["friend-activity", "friend-people"]);
   });
 
   it("go by what the server says of a party, when it says: open is open whatever the clock, and over is over", () => {
@@ -147,6 +160,20 @@ describe("a friend's page", () => {
   it("is headed by the friend's name and since when they are friends", () => {
     const grid = friendGrid(view, state(), { data: lists() }, null);
     expect(grid).toMatchObject({ title: "Sam", meta: since(sam), layout: "wide" });
+  });
+
+  it("says under the name what the friend is doing: watching, when it is told, else online", () => {
+    const doing = state({ activity: [watched("pro_sam", "k")] });
+    expect(friendGrid(view, doing, { data: lists() }, null, true, NOW)?.meta).toBe(`${t("friends.line.watching", { title: "Alien" })}  ·  ${since(sam)}`);
+    expect(friendGrid(view, { ...doing, friends: [{ ...sam, online: true }] }, { data: lists() }, null, true, NOW)?.meta).toContain(t("friends.line.watching", { title: "Alien" })); // (watching says more than online)
+  });
+
+  it("says, when what a friend watches is not shown, why: this profile is not told, else the friend does not tell", () => {
+    const quiet = state({ friends: [{ ...sam, activity: false }] });
+    expect(friendGrid(view, quiet, { data: lists() }, null, false)?.hint).toBe(t("friends.hintMine", { name: "Sam", switch: t("friends.switchGet") }));
+    expect(friendGrid(view, quiet, { data: lists() }, null, true)?.hint).toBe(t("friends.hintTheirs", { name: "Sam" }));
+    expect(friendGrid(view, state(), { data: lists() }, null, false)).not.toHaveProperty("hint"); // (it is shown: nothing to explain)
+    expect(friendGrid(view, state({ friends: [{ ...sam, on: false, activity: false }] }), null, null, false)).not.toHaveProperty("hint"); // (friends off has a line of its own)
   });
 
   it("shows the titles in the lists they keep, each marked with its list, and none that were taken out", () => {

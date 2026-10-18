@@ -6,7 +6,7 @@ import { getLanguage, t } from "../i18n";
 import { formatCode } from "../shared/format";
 import { entryOfRating, type Entry, type GridPage, type HomeRow, type View } from "../tv/pages";
 import { BELL_WAITING, bellView } from "./bell";
-import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
+import { activityHint, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
 
 /**
  * What the TV's friends pages are made of, worked out from what the server says of the friends: pure, like tv/pages.ts, so what
@@ -67,13 +67,17 @@ const entryOfFriend = (friend: Friend, activity: readonly ActivityItem[], now: n
 /** The last two tiles of the friends row: they open a page of their own over the library. */
 const addTile = (): Entry => ({ id: "add-friend", title: t("friends.add"), url: "", action: "addFriend" });
 const settingsTile = (): Entry => ({ id: "friend-settings", title: t("friends.settingsTile"), url: "", action: "friendSettings" });
+/** "Turn on: Tell me what friends watch": what is missing from the row of what they watch, and the way to the switch that makes it appear. */
+const activityOffTile = (): Entry => ({ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGet"), action: "friendSettings" });
 
 /**
  * The rows of the friends page: the requests to be friends that wait for an answer, invitations to the watch parties that are on (and the
  * ones that are over, from a friend who can be asked for another), requests to watch together, what friends sent, what they watch, and the
  * friends themselves (with the tiles to add one and to choose what is shared). Before the server has answered there are only the last two.
+ * While this profile has not turned on being told what friends watch (`iGet`: the one thing that is off until somebody turns it on, and what makes the
+ * row of what they watch never appear) a row below the friends has a tile that says so and opens the settings.
  */
-export function friendRows(state: FriendsState | null, now: number): HomeRow[] {
+export function friendRows(state: FriendsState | null, now: number, iGet = true): HomeRow[] {
   const friends = state?.friends ?? [];
   const inbox = state?.inbox ?? [];
   const activity = state?.activity ?? [];
@@ -97,6 +101,8 @@ export function friendRows(state: FriendsState | null, now: number): HomeRow[] {
   if (activity.length > 0) rows.push({ id: "friend-activity", layout: "wide", title: t("friends.activity"), entries: activity.map((item) => entryOfActivity(item, nameOf(friends, item.friend), now)) });
 
   rows.push({ id: "friend-people", layout: "categories", title: t("friends.yours"), entries: [...friends.map((friend) => entryOfFriend(friend, activity, now)), addTile(), settingsTile()] });
+  // (below the friends, so that the remote still starts on them: it is a reminder, and a friend's page says it again)
+  if (activity.length === 0 && !iGet && friends.some((friend) => friend.on)) rows.push({ id: "friend-activity-off", layout: "categories", title: t("friends.activity"), entries: [activityOffTile()] });
   return rows;
 }
 
@@ -135,13 +141,16 @@ export type Asked<T> = { data?: T; problem?: string } | null;
 /**
  * A friend's page: the titles in the lists they keep (the list each is in under it) or the ones they rated, the newest first.
  * Null for a friend who is gone. When there is nothing to show, `empty` says why: not shared, turned off, still asked, or nothing yet.
+ * Under the name: what they are doing (watching, else online) and since when they are friends; and, when what they watch is not shown, the line that says why.
  */
-export function friendGrid(view: View, state: FriendsState | null, lists: Asked<FriendLists>, ratings: Asked<FriendRatings>): GridPage | null {
+export function friendGrid(view: View, state: FriendsState | null, lists: Asked<FriendLists>, ratings: Asked<FriendRatings>, iGet = true, now = Date.now()): GridPage | null {
   if (view.kind !== "friend") return null;
   const friend = state?.friends.find((each) => each.id === view.id);
   if (!friend) return null;
   const since = t("friends.since", { day: formatDay(friend.since, getLanguage()) });
-  const page = { title: friend.name, meta: friend.on ? (friend.online ? `${t("friends.online")}  ·  ${since}` : since) : t("friends.paused"), layout: "wide" as const };
+  const hint = activityHint(friend, iGet);
+  const doing = friend.on ? friendLine(friend, state?.activity ?? [], now) : "";
+  const page = { title: friend.name, meta: friend.on ? [doing, since].filter(Boolean).join("  ·  ") : t("friends.paused"), layout: "wide" as const, ...(hint ? { hint } : {}) };
   const none = (empty: string): GridPage => ({ ...page, entries: [], empty });
   if (!friend.on) return none(t("friends.theirsOff", { name: friend.name }));
 

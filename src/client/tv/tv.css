@@ -1245,6 +1245,8 @@
 .tv-view { flex-direction: column; }
 .tv-view-title { margin: 0; font-size: 3em; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
 .tv-view-meta { margin: 0.2em 0 0; font-size: 1.5em; font-weight: 600; color: #b4b4bb; }
+/* What the page cannot show, and why (a friend's page, when what they watch is not told): smaller than the line above it, and never wider than a line can be read. */
+.tv-view-hint { margin: 0.3em 0 0.6em; max-width: 38em; font-size: 1.15em; font-weight: 500; line-height: 1.35; color: #9a9aa4; }
 .tv-view-empty { margin: 1.4em 0 0; max-width: 28em; font-size: 1.8em; line-height: 1.4; color: var(--muted); }
 /* One line of buttons however many there are (a screenful of lists would wrap into rows the arrow keys do not follow); it slides to the one with the focus. The padding is room for its ring. */
 .tv-filters { display: flex; flex: none; gap: 0.8em; padding: 0.8em; margin: -0.5em; overflow-x: auto; scrollbar-width: none; }

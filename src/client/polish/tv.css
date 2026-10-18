@@ -306,6 +306,7 @@
 :root[data-ui="polish"] .tv-hint { font-size: var(--fs-2); color: var(--text-3); }
 :root[data-ui="polish"] .tv-view-title { font-size: var(--fs-6); font-weight: 700; letter-spacing: -0.015em; }
 :root[data-ui="polish"] .tv-view-meta { font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
+:root[data-ui="polish"] .tv-view-hint { font-size: var(--fs-1); font-weight: 500; color: var(--text-3); }
 :root[data-ui="polish"] .tv-view-empty { font-size: var(--fs-4); color: var(--text-3); }
 :root[data-ui="polish"] .tv-welcome p { font-weight: 600; letter-spacing: 0.04em; text-transform: none; font-size: var(--fs-4); color: var(--text-2); }
 

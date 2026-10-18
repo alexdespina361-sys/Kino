@@ -111,10 +111,16 @@ pnpm build && pnpm start     # http://localhost:8787
   friend who does not hear what you watch sees none of it. **Watching together**: an invitation to a watch party is worked out when a friend reads it, not when it is
   sent: it carries the host's code *as it is now* (a party's code lasts ten minutes and is renewed only while the host's screen shows it, so the one an invitation was
   sent with would be refused after a while) and says whether the party is still open. Pressing one that is not says *That party is not open any more*, and the
-  invitation becomes **Ask to watch together** (a button on that friend's page too) when that friend tells what they watch to you: they get *"Sam wants to watch
+  invitation becomes **Ask to watch together** (a button on that friend's page too) when that friend takes things (*Friends can send me titles and invitations*, on
+  unless they turned it off), whether or not they tell what they watch: they get *"Sam wants to watch
   together"* with a **Start a party** button, which starts a party on their screen (the TV, or the TV their phone controls) and invites the one who asked, which takes
-  the request away. The server sends a request (`kind: "together"`, a newer one replaces an older, gone after 12 hours) only to a friend who takes things and gives
-  what they watch to the one asking, and refuses an invitation to a party that is not open (`409 party_closed`). Friends: `/api/profiles/:id/friends…`.
+  the request away. The server sends a request (`kind: "together"`, a newer one replaces an older, gone after 12 hours) only to a friend who takes things,
+  and refuses an invitation to a party that is not open (`409 party_closed`). Friends: `/api/profiles/:id/friends…`.
+  **Why nothing of what a friend watches is shown** is said where one would look for it: when *Tell me what friends watch* is off for you, the page of friends has a
+  row for it (a **Turn on** tile on the TV, a notice with a button to the settings on the phone; Back from those settings comes to the page of friends again) and a friend's page
+  says *"To see what Sam is watching, turn on …"*; when it is on for you and the friend still shows nothing, their page says *"Sam isn't sharing what they watch"*
+  (the server tells only whether a friend's activity is shown, not which of the two switches is off, so this is said once yours is on). What a friend is doing shows
+  under their name when they share it: *Watching Alien* for 15 minutes after it was last seen, *Online* while their page is open.
   Things to know: *Friends can see my ratings* does nothing, and is not shown, while ratings themselves are switched off (they stay kept, and are seen by nobody).
   What friends send is made fit to show (no characters that turn text around or hide in it; a friend's picture is shown only if it is the address of some other
   web site, never a path, an address on this site or one that only a private network answers to, such as `localhost` or `192.168.x.x`), and an inbox holds the newest 100 things, at most 20 from one friend; the same title sent again while it is

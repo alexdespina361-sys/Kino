@@ -139,6 +139,8 @@ export interface GridPage {
   title: string;
   /** The line under the title. */
   meta: string;
+  /** A smaller line under that one: what the page cannot show and why (what a friend watches, when it is not told). */
+  hint?: string;
   layout: Layout;
   entries: Entry[];
   /** What to say when there is nothing to show. */

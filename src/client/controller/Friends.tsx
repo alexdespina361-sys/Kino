@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { canAskTogether, FRIEND_NOTE_MAX, friendLink, MAX_OPEN_INVITES, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite } from "../../shared";
+import { canAskTogether, FRIEND_NOTE_MAX, friendChoices, friendLink, MAX_OPEN_INVITES, parseTag, partyOpen, reachable, tagLabel, type Friend, type FriendLists, type FriendProgress, type FriendRatings, type FriendRequest, type InboxItem, type Message, type OpenInvite } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -7,7 +7,7 @@ import { useScores } from "../account/ratings";
 import { factLines, scoreOf, scoreWord, sortRatings, storedFacts } from "../account/ratingText";
 import { useSettings } from "../account/settings";
 import { ago, formatDay } from "../account/time";
-import { entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
+import { activityHint, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { usePeek } from "../friends/usePeek";
 import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
@@ -453,10 +453,15 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
   );
 }
 
-/** Everything friends: what they sent, who they are, what they are watching, and how to add another. */
-export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty }: { onOpenFriend: (id: string) => void; onOpenTitle: OpenTitle; onStartParty?: (friendId: string) => void }) {
+/**
+ * Everything friends: what they sent, who they are, what they are watching, and how to add another. While this profile is not told what friends watch (off until
+ * it is turned on), a card says so and leads to the settings, where the switch is (`onOpenSettings`).
+ */
+export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSettings }: { onOpenFriend: (id: string) => void; onOpenTitle: OpenTitle; onStartParty?: (friendId: string) => void; onOpenSettings?: () => void }) {
   const t = useT();
   const friends = useFriends();
+  const { settings } = useSettings();
+  const iGet = friendChoices(settings).friendsGet;
   const { state } = friends;
 
   // Opening the page is seeing what is in the inbox, and how things stand now (a switch just turned on changes what is told).
@@ -541,6 +546,16 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty }: { onOpe
             return <Card key={entry.id} testId="activity" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.note} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />;
           })}
         </CardRow>
+      )}
+      {state.activity.length === 0 && !iGet && onOpenSettings && state.friends.some((friend) => friend.on) && (
+        <Group title={t("friends.activity")}>
+          <p className="muted" data-testid="friends-activity-off">
+            {t("friends.activityOff", { switch: t("friends.switchGet") })}
+          </p>
+          <button className="btn btn-block" onClick={onOpenSettings} data-testid="friends-activity-settings">
+            {t("friends.settingsTile")}
+          </button>
+        </Group>
       )}
       <AddFriend />
     </div>
@@ -635,6 +650,7 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   const language = useLanguage();
   const account = useAccount();
   const friends = useFriends();
+  const { settings } = useSettings();
   const friend = friends.state?.friends.find((each) => each.id === friendId);
   const ask = useAskTogether();
   const [tab, setTab] = useState<"lists" | "ratings">("lists");
@@ -648,6 +664,7 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
   }, [friends.on, friends.state, friend, onGone]);
 
   if (!friend) return null;
+  const hint = activityHint(friend, friendChoices(settings).friendsGet);
 
   const remove = async () => {
     setBusy(true);
@@ -668,16 +685,21 @@ export function FriendPage({ friendId, onOpenTitle, onGone }: { friendId: string
         <FriendPic friend={friend} size="big" />
         <div className="account-who">
           <h1 data-testid="friend-name">{friend.name}</h1>
-          <p className="muted">{[friend.on && friend.online ? t("friends.online") : "", t("friends.since", { day: formatDay(friend.since, language) })].filter(Boolean).join(" · ")}</p>
+          <p className="muted" data-testid="friend-status">{[friend.on ? friendLine(friend, friends.state?.activity ?? [], Date.now()) : "", t("friends.since", { day: formatDay(friend.since, language) })].filter(Boolean).join(" · ")}</p>
         </div>
       </section>
       {!friend.on && <p className="banner" data-testid="friend-off">{t("friends.theirsOff", { name: friend.name })}</p>}
+      {hint && (
+        <p className="muted small" data-testid="friend-hint">
+          {hint}
+        </p>
+      )}
       {canAskTogether(friend) && (
         <button className="btn btn-block" onClick={() => void ask(friend.id)} data-testid="friend-together">
           <UsersIcon /> {t("friends.askTogether")}
         </button>
       )}
-      <div className="segmented compact" role="radiogroup" aria-label={friend.name}>
+      <div className="segmented compact pair" role="radiogroup" aria-label={friend.name}>
         {(["lists", "ratings"] as const).map((value) => (
           <button key={value} role="radio" aria-checked={tab === value} onClick={() => setTab(value)} data-testid={`friend-tab-${value}`}>
             {t(value === "lists" ? "friends.tabLists" : "friends.tabRatings")}

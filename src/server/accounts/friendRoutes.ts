@@ -514,9 +514,9 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     const answer: Sent = { sent: [], declined: [] };
     for (const id of new Set(to)) {
       const theirs = friendChoices(store.settingsOf(id));
-      // (Somebody who is not a friend is told apart from nobody no more than a friend who is not taking things. Asking to watch together is asking somebody
-      // who tells what they watch: that is what makes them somebody to ask.)
-      if (!book.areFriends(me.profileId, id) || !theirs.friends || !theirs.friendsInbox || (message.kind === "together" && !tellsWhatTheyWatch(me.profileId, id))) {
+      // (Somebody who is not a friend is told apart from nobody no more than a friend who is not taking things. Asking to watch together is an invitation
+      // in the making, so it goes to any friend who takes invitations: telling what they watch is another choice, off until it is made.)
+      if (!book.areFriends(me.profileId, id) || !theirs.friends || !theirs.friendsInbox) {
         answer.declined.push(id);
         continue;
       }

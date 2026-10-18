@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { canAskTogether, DEFAULT_LIST, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryKind, type PlayHint, type Person } from "../../shared";
+import { canAskTogether, DEFAULT_LIST, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryKind, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
@@ -236,6 +236,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const bell = useBell();
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
   const ratingsOn = settings.ratings ?? true;
+  /** Whether this profile is told what friends watch (off until it is turned on: the friends' pages say so while it is). */
+  const iGet = friendChoices(settings).friendsGet;
   const narrowColumns = useNarrowColumns();
   const narrow = narrowColumns > 0;
   const gridColumns = narrowColumns || GRID_COLUMNS;
@@ -326,11 +328,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   /* eslint-disable react-hooks/exhaustive-deps */
   const homeRows = useMemo<HomeRow[]>(() => {
     if (isRowsPage(view)) return rowsOfPage(view.kind, data);
-    if (view.kind === "friends") return friendRows(friends.state, Date.now());
+    if (view.kind === "friends") return friendRows(friends.state, Date.now(), iGet);
     if (view.kind !== "profile") return [];
     return profileRows({ name: profile?.name ?? "", signedIn: Boolean(me && profile), ratingsOn, ratings, friendsOn: friends.on, friends: friends.state, unread: friends.attention, watched: progress.length });
-  }, [view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, ratings, progress.length]);
-  const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings), [view, data, language, friends.state, sharedLists, sharedRatings]);
+  }, [view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, ratings, progress.length, iGet]);
+  const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet), [view, data, language, friends.state, sharedLists, sharedRatings, iGet]);
   /* eslint-enable react-hooks/exhaustive-deps */
   // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.
   const shownAnswers = useMemo(() => onlyKind(results, filter), [results, filter]);
@@ -1046,6 +1048,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             {grid.title}
           </h1>
           {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
+          {grid.hint && (
+            <p className="tv-view-hint" data-testid="tv-view-hint">
+              {grid.hint}
+            </p>
+          )}
           {view.kind === "list" && !canAdd && (
             <p className="tv-view-meta" data-testid="lists-full">
               {t("lists.full", { count: MAX_LISTS })}
