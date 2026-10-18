@@ -139,6 +139,10 @@ export interface Feed {
   setBase(rows: readonly LibraryRow[]): void;
   /** Titles from anywhere else (like the ones a title is "like"), to be found by the search. */
   learn(items: readonly LibraryItem[]): void;
+  /** Take a title out of the search index. */
+  forget?(id: string): void;
+  /** Take titles matching a condition out of the search index. */
+  prune?(predicate: (item: LibraryItem) => boolean): void;
   /** Ask for the next rows of Home (no kind), Movies or Series, if there are any and none are being asked for. */
   loadShelves(kind?: LibraryKind): void;
   /** Ask for the next page of a row, if there is one and the row has fewer than `cap` titles. */
@@ -211,11 +215,17 @@ export function createFeed(options: FeedOptions = {}): Feed {
     },
     setBase(rows) {
       if (rows === snapshot.data.base) return;
-      index.add(itemsOf(rows));
+      index = new TitleIndex(itemsOf(rows));
       update({ data: (data) => ({ ...data, base: rows }) });
     },
     learn(items) {
       index.add(items);
+    },
+    forget(id) {
+      index.remove(id);
+    },
+    prune(predicate) {
+      index.discardWhere(predicate);
     },
     loadShelves(kind) {
       const key = shelfKey(kind);

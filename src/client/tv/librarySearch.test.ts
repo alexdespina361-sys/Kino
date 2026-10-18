@@ -73,6 +73,22 @@ describe("mergeAnswers", () => {
     const close = Array.from({ length: 50 }, (_, at) => item(`c${at}`, `Dust ${at}`));
     expect(mergeAnswers({ items: close, exact: 0 }, { items: [], exact: 0 }, "dune").items).toHaveLength(30);
   });
+
+  it("filters out items with empty image strings and deduplicates matching titles", () => {
+    const screen = allExact([
+      { ...item("a1", "Dragon Ball", "series"), image: "" },
+      { ...item("a2", "Dragon Ball", "series"), image: "https://img/valid.jpg" },
+    ]);
+    const server = allExact([
+      { ...item("b1", "Dragon Ball", "series"), image: "https://img/server.jpg" },
+      { ...item("b2", "Dragon Ball Z", "series"), image: "https://img/dbz.jpg" },
+    ]);
+    const merged = mergeAnswers(screen, server, "dragon");
+    expect(merged.items.every((i) => i.image !== "")).toBe(true);
+    // Server's verified item should win or duplicate title is resolved once
+    expect(merged.items.filter((i) => i.title === "Dragon Ball")).toHaveLength(1);
+    expect(merged.items.filter((i) => i.title === "Dragon Ball Z")).toHaveLength(1);
+  });
 });
 
 describe("onlyKind", () => {

@@ -201,7 +201,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     return reply.type("application/json; charset=utf-8").send(body);
   });
   app.get<{ Querystring: { q?: string } }>("/api/library/search", async (request, reply) => {
-    reply.header("Cache-Control", "no-cache, no-store, must-revalidate");
     const q = request.query.q ?? "";
     const { items, exact } = await library.search(q);
     const topItem = items[0];

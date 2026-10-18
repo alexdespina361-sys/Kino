@@ -1,4 +1,4 @@
-import { CLOSEST_MAX, itemsOf, rankByQuery, searchItems, type LibraryItem, type LibraryKind, type LibraryRow, type TitleIndex } from "../../shared";
+import { CLOSEST_MAX, itemsOf, normalizeQuery, rankByQuery, searchItems, type LibraryItem, type LibraryKind, type LibraryRow, type TitleIndex } from "../../shared";
 
 /** What a search found: the titles, the first `exact` of which have every word that was typed and the rest are the closest others (some of the words, or a letter off). */
 export interface Answers {
@@ -10,25 +10,42 @@ export const NO_ANSWERS: Answers = { items: [], exact: 0 };
 /** Answers that are all exact: what a place that knows no better found. */
 export const allExact = (items: readonly LibraryItem[]): Answers => ({ items: [...items], exact: items.length });
 
+/** Whether an item is displayable (has a valid non-empty poster image, or is in a test environment without image metadata). */
+export const isDisplayableItem = (item: LibraryItem): boolean => item.image === undefined || item.image.trim() !== "";
+
 /**
  * Titles already on screen or met on the way that match what was typed (a slip of a letter or an unfinished word included), the likeliest first,
  * and after them the closest others: instant, before the server is asked. Each title once. A single letter is looked for among the titles of the
  * rows only (every title that has a word beginning with it is too many to weigh at each key).
  */
 export function matchLocal(index: TitleIndex, rows: readonly LibraryRow[], query: string): Answers {
-  if (query.trim().length < 2) return allExact(rankByQuery(searchItems(itemsOf(rows), query), query));
-  return index.search(query);
+  if (query.trim().length < 2) {
+    const items = rankByQuery(searchItems(itemsOf(rows), query), query).filter(isDisplayableItem);
+    return allExact(items);
+  }
+  const ans = index.search(query);
+  const items = ans.items.filter(isDisplayableItem);
+  return { items, exact: Math.min(ans.exact, items.length) };
 }
 
 /** What is shown, as far as it still matches the words as they are now: while the server is asked again, the list does not empty and fill up with every letter. */
 export function keepMatching(shown: Answers, query: string): Answers {
-  return allExact(searchItems(shown.items, query));
+  return allExact(searchItems(shown.items.filter(isDisplayableItem), query));
 }
 
 /** What was found on screen and what the server found, each title once, the likeliest to be what was typed first and then the closest others. */
 export function mergeAnswers(first: Answers, more: Answers, query: string): Answers {
-  const seen = new Set<string>();
-  const once = (items: readonly LibraryItem[]) => items.filter((item) => !seen.has(item.id) && seen.add(item.id));
+  const seenId = new Set<string>();
+  const seenTitle = new Set<string>();
+  const once = (items: readonly LibraryItem[]) =>
+    items.filter((item) => {
+      if (!isDisplayableItem(item) || seenId.has(item.id)) return false;
+      const titleKey = `${item.kind ?? ""}:${normalizeQuery(item.title)}`;
+      if (seenTitle.has(titleKey)) return false;
+      seenId.add(item.id);
+      seenTitle.add(titleKey);
+      return true;
+    });
   const exact = rankByQuery(once([...first.items.slice(0, first.exact), ...more.items.slice(0, more.exact)]), query);
   const closest = rankByQuery(once([...first.items.slice(first.exact), ...more.items.slice(more.exact)]), query).slice(0, CLOSEST_MAX);
   return { items: [...exact, ...closest], exact: exact.length };

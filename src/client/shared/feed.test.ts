@@ -339,4 +339,28 @@ describe("the feed", () => {
     await settle();
     expect(feed.getSnapshot().data.shelves.all.rows.map((r) => r.id)).toEqual(["late"]);
   });
+
+  it("reinitializes search index on setBase and supports forget and prune", () => {
+    feed = createFeed();
+    feed.setBase([row("a", ["1", "2"])]);
+    feed.learn([{ id: "stale", title: "Stale Dragon Ball", url: "/stale" }]);
+    expect(feed.index.find("dragon")).toHaveLength(1);
+
+    // forget specific item
+    feed.forget?.("stale");
+    expect(feed.index.find("dragon")).toHaveLength(0);
+
+    // prune by predicate
+    feed.learn([{ id: "broken", title: "Broken Anime", url: "/broken" }]);
+    expect(feed.index.find("broken")).toHaveLength(1);
+    feed.prune?.((i) => i.title.includes("Broken"));
+    expect(feed.index.find("broken")).toHaveLength(0);
+
+    // setBase with new rows replaces index
+    feed.learn([{ id: "extra", title: "Extra Item", url: "/extra" }]);
+    expect(feed.index.find("extra")).toHaveLength(1);
+    feed.setBase([row("b", ["3", "4"])]);
+    expect(feed.index.find("extra")).toHaveLength(0);
+    expect(feed.index.find("title 3")).toHaveLength(1);
+  });
 });
