@@ -1,11 +1,14 @@
 import type { AlternateSource, EpisodeRef, SeriesInfo } from "../../../shared";
+import { fetchTmdbAnimeSeasonDetails } from "../../library/animeheaven";
+import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
 import type { ResolveResult, SiteAdapter } from "../types";
 import { streamAddress } from "./streamAddress";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const BASE = "https://animeheaven.me";
 
-export function createAnimeHeavenAdapter(): SiteAdapter {
+export function createAnimeHeavenAdapter(options: { fetch?: typeof fetch } = {}): SiteAdapter {
+  const get = options.fetch ?? fetch;
   return {
     id: "animeheaven",
     domains: ["animeheaven.me", "www.animeheaven.me"],
@@ -35,7 +38,7 @@ export function createAnimeHeavenAdapter(): SiteAdapter {
 
         if (slug) {
           try {
-            const pageRes = await fetch(`${BASE}/anime.php?${slug}`, {
+            const pageRes = await get(`${BASE}/anime.php?${slug}`, {
               headers: { "user-agent": UA },
             });
             if (pageRes.ok) {
@@ -78,7 +81,7 @@ export function createAnimeHeavenAdapter(): SiteAdapter {
         }
 
         // 3. Fetch gate.php with key cookie
-        const gateRes = await fetch(`${BASE}/gate.php`, {
+        const gateRes = await get(`${BASE}/gate.php`, {
           headers: {
             "user-agent": UA,
             Cookie: `key=${episodeKey}`,
@@ -145,7 +148,12 @@ export function createAnimeHeavenAdapter(): SiteAdapter {
 
         // 6. Build series info if slug and episode are available
         let seriesInfo: SeriesInfo | undefined;
+        let episodeTitle: string | undefined;
         if (slug && animeHtml) {
+          const tmdbData = animeTitle
+            ? await fetchTmdbAnimeSeasonDetails(animeTitle, 1, FILMPIRE_TMDB_API_KEY, get, 5000)
+            : null;
+
           const epMatches = [...animeHtml.matchAll(/<a[^>]+id\s*=\s*['"]([a-f0-9]{32})['"][^>]*>([\s\S]*?)<\/a>/g)];
           const episodeList: EpisodeRef[] = [];
           for (const m of epMatches) {
@@ -153,10 +161,11 @@ export function createAnimeHeavenAdapter(): SiteAdapter {
             const inner = m[2];
             if (!epKey || !inner) continue;
             const epNum = Number(inner.match(/watch2[^>]*>(\d+)<\/div>/)?.[1] || "1");
+            const epName = tmdbData?.episodes.get(epNum)?.name;
             episodeList.push({
               season: 1,
               episode: epNum,
-              title: `Episode ${epNum}`,
+              title: epName || `Episode ${epNum}`,
               url: `${BASE}/anime.php?${slug}&s=1&e=${epNum}&key=${epKey}`,
             });
           }
@@ -165,6 +174,7 @@ export function createAnimeHeavenAdapter(): SiteAdapter {
           const currentIndex = episodeList.findIndex((ep) => ep.episode === requestedEp);
           const nextEpisode = currentIndex !== -1 && currentIndex < episodeList.length - 1 ? episodeList[currentIndex + 1] : undefined;
 
+          episodeTitle = tmdbData?.episodes.get(requestedEp)?.name;
           seriesInfo = {
             season: 1,
             episode: requestedEp,
@@ -173,7 +183,11 @@ export function createAnimeHeavenAdapter(): SiteAdapter {
           };
         }
 
-        const title = requestedEp > 0 ? `${animeTitle} · Episode ${requestedEp}` : animeTitle;
+        const title = requestedEp > 0
+          ? episodeTitle
+            ? `${animeTitle} · S1 E${requestedEp} · ${episodeTitle}`
+            : `${animeTitle} · Episode ${requestedEp}`
+          : animeTitle;
 
         return {
           status: "success",

@@ -34,7 +34,7 @@ import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { CopyLink } from "../shared/CopyLink";
 import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatCode, formatLeft } from "../shared/format";
-import { CheckIcon, ChevronIcon, PlusIcon, ScanIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { CheckIcon, ChevronIcon, PlayIcon, PlusIcon, ScanIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { controlLink, partyLink } from "../shared/launch";
 import { comesIn, hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
@@ -322,13 +322,20 @@ export function CaptionStyleSheet({
   );
 }
 
-/** A picture from an episode; without one (or when it does not load) a colour made from its name. */
+/** A picture from an episode; without one (or when it does not load) a colour made from its name with a fallback icon. */
 export function Still({ src, name }: { src: string | undefined; name: string }) {
   const [broken, setBroken] = useState(false);
   const hue = hueOf(name);
+  const hasImage = Boolean(src && !broken);
   return (
     <span className="episode-still" style={{ background: `linear-gradient(135deg, hsl(${hue} 40% 26%), hsl(${(hue + 40) % 360} 45% 12%))` }}>
-      {src && !broken && <img src={src} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />}
+      {hasImage ? (
+        <img src={src} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(true)} {...comesIn} />
+      ) : (
+        <span className="episode-still-fallback" aria-hidden="true">
+          <PlayIcon />
+        </span>
+      )}
     </span>
   );
 }

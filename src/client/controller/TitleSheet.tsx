@@ -126,10 +126,11 @@ function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; /** None o
         <ul className="episodes">
           {episodes.map((episode) => {
             const card = episode.card;
+            const isRich = Boolean(card.still || card.overview);
             return (
               <li key={`${episode.season}-${episode.episode}`}>
                 <Row
-                  className="episode rich"
+                  className={`episode${isRich ? " rich" : ""}`}
                   data-testid="title-episode"
                   data-season={episode.season}
                   data-episode={episode.episode}
@@ -138,7 +139,7 @@ function Episodes({ page, onPlay, seasonRating }: { page: SeriesPage; /** None o
                   {...(onPlay ? { onClick: () => onPlay(episode) } : {})}
                 >
                   <span className="episode-no">{card.number}</span>
-                  <Still src={card.still} name={card.name} />
+                  {isRich && <Still src={card.still} name={card.name} />}
                   <span className="episode-text">
                     <span className="episode-title">{card.name}</span>
                     {card.meta && (

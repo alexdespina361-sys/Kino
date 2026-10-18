@@ -235,7 +235,7 @@ function isTrashItem(raw: unknown): boolean {
   if (!title) return true;
   const lower = title.toLowerCase();
   if (lower.includes("podcast")) return true;
-  if (!doc.poster_path && !doc.backdrop_path && (doc.vote_count === 0 || (doc.popularity !== undefined && doc.popularity < 1.0))) {
+  if (!doc.poster_path && !doc.backdrop_path) {
     return true;
   }
   return false;

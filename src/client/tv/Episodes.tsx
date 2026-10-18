@@ -78,8 +78,8 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
         card: {
           number: detail.episode,
           name,
-          still: detail.still,
-          overview: detail.overview,
+          still: detail.still || entry?.backdrop || entry?.image,
+          overview: detail.overview || (entry?.description && entry.description.length <= 400 ? entry.description : undefined),
           meta: describeStatus(status, statusWords()) ?? (detail.runtime ? formatLeft(detail.runtime * 60) : undefined),
           state: status.kind,
           fraction: status.kind === "started" ? status.fraction : undefined,
