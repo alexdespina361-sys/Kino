@@ -1,7 +1,8 @@
 import type { AvatarId } from "../../shared";
 import { Avatar } from "../account/Avatar";
+import { useFeedbackEntry } from "../feedback/entry";
 import { useT } from "../i18n";
-import { GearIcon, UserIcon } from "../shared/icons";
+import { GearIcon, MessageIcon, UserIcon } from "../shared/icons";
 
 interface ProfileHeadProps {
   /** Whoever is watching: the profile in use, or a guest (no account on this TV). */
@@ -20,11 +21,14 @@ interface ProfileHeadProps {
 
 /**
  * The top of the profile's page, where the other pages have a banner: who is watching, Settings in the corner (the button for the remote,
- * the keyboard and the mouse alike), and for a guest the way to sign in, which is what the guest has come to this page for.
+ * the keyboard and the mouse alike) with Feedback next to it, and for a guest the way to sign in, which is what the guest has come to this page for.
+ * (Feedback comes after Settings, so the remote still starts where it did.)
  */
 export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn, onSettings, onArrive }: ProfileHeadProps) {
   const t = useT();
+  const feedback = useFeedbackEntry();
   const at = (col: number) => ({ "data-zone": "hero", "data-row": 0, "data-col": col, onFocus: () => onArrive(col) });
+  const settingsCol = signedIn || !canSignIn ? 0 : 1; // (a guest's Sign in is the button before it)
   return (
     <div className="tv-profile-head">
       {signedIn && avatar ? (
@@ -45,9 +49,19 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
           </button>
         )}
       </div>
-      <button className="tv-hero-button tv-profile-settings" onClick={onSettings} data-testid="tv-profile-settings" {...at(signedIn || !canSignIn ? 0 : 1)}>
-        <GearIcon /> {t("tv.settings")}
-      </button>
+      <div className="tv-profile-actions">
+        <button className="tv-hero-button tv-profile-settings" onClick={onSettings} data-testid="tv-profile-settings" {...at(settingsCol)}>
+          <GearIcon /> {t("tv.settings")}
+        </button>
+        <button className="tv-hero-button tv-profile-feedback" onClick={feedback.open} data-testid="tv-profile-feedback" {...at(settingsCol + 1)}>
+          <MessageIcon /> {t("feedback.entry")}
+          {feedback.unread > 0 && (
+            <span className="tv-profile-badge" data-testid="tv-profile-feedback-unread">
+              {feedback.unread}
+            </span>
+          )}
+        </button>
+      </div>
     </div>
   );
 }

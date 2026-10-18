@@ -504,6 +504,9 @@
 .tv-fail .hud-error h2 { max-width: 12em; font-size: 3.2em; line-height: 1.1; }
 .tv-fail .tv-actions { margin-top: 1.6em; }
 .tv-fail .tv-action { white-space: nowrap; }
+/* The way to tell the team, below the two ways on: quieter, so OK on the card still means "try again". */
+.tv-fail .tv-report { margin-top: 0.5em; min-width: 0; padding: 0.55em 1.1em; font-size: 1.35em; }
+.tv-fail .tv-report:not(:hover):not(:focus-visible) { background: transparent; box-shadow: inset 0 0 0 0.08em rgba(255, 255, 255, 0.28); }
 
 .hud-toast {
   position: absolute;
@@ -1876,6 +1879,7 @@
   .hud-toast.notice { font-size: 1.8em; }
   .hud-error { max-width: calc(100% - 3em); padding: 1.6em; }
   .hud-error h2 { font-size: 1.9em; }
+  .tv-fail .tv-report { font-size: 1.1em; white-space: normal; }
   .hud-stuck { padding: 1em 1.4em 1.2em; }
   .hud-stuck p { font-size: 1.4em; }
   .hud-upnext { left: 1.6em; right: 1.6em; width: auto; bottom: 15em; }

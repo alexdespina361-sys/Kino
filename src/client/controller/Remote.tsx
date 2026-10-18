@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { episodeLabel, previousEpisode, type Command, type NormalizedMedia, type PlayerState, type TvInfo } from "../../shared";
+import { reportWontPlay } from "../feedback/store";
 import { Rich } from "../i18n/Rich";
 import { t, useT } from "../i18n";
 import { hostOf } from "../shared/format";
@@ -116,6 +117,12 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
             {busy && <span className="spinner" />}
             {stateLabel(player, tv.name)}
           </p>
+          {/* The video would not play: telling the team is one press away (the form begins with what the line says). */}
+          {player.state === "error" && (
+            <button className="state-action" data-testid="remote-report" aria-label={t("feedback.report")} onClick={() => reportWontPlay(friendlyError(player.error))}>
+              {t("feedback.reportShort")}
+            </button>
+          )}
           {/* The TV is about to start the next episode by itself: the way to say no is here too, not only on the TV's remote. */}
           {player.upNext && player.upNext.seconds !== null && (
             <button className="state-action" data-testid="upnext-cancel" onClick={() => send({ type: "DISMISS_UP_NEXT" })} disabled={!online}>

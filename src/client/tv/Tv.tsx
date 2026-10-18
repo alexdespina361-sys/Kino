@@ -22,6 +22,7 @@ import {
 import { useAccount } from "../account/AccountProvider";
 import { describeError } from "../account/errors";
 import { profileStore, useProfileData } from "../account/store";
+import { reportWontPlay } from "../feedback/store";
 import { friendsApi } from "../friends/api";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
@@ -1589,6 +1590,7 @@ export function Tv() {
             stopPlayback();
             setScreen("library");
           }}
+          onReport={() => reportWontPlay(friendlyError(player.error))}
         />
       )}
 

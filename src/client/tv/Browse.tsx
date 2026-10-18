@@ -441,8 +441,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const lead = wayBack ? 1 : 0;
   const topButtons = lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (canFullscreen() ? 1 : 0); // the way back, the bell, the account button, then the full screen one
   const signedIn = Boolean(me && profile);
-  /** The profile's page has buttons where the other pages have a banner: Settings, and for a guest the way to sign in before it. */
-  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 1 : 2) : 0;
+  /** The profile's page has buttons where the other pages have a banner: Settings and Feedback, and for a guest the way to sign in before them. */
+  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) : 0;
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   // Movies or Series of a library that has titles, none of them of that kind (a source that does not say which): not "nothing yet", which Retry could not mend.
   const kindEmpty = showRetry && hasTiles && (view.kind === "movies" || view.kind === "series");

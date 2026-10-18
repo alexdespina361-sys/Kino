@@ -14,6 +14,7 @@ import {
   FullscreenIcon,
   HomeIcon,
   ListIcon,
+  MessageIcon,
   MutedIcon,
   NextIcon,
   PauseIcon,
@@ -739,11 +740,14 @@ interface ErrorCardProps {
   message: string;
   onRetry: () => void;
   onLibrary: () => void;
+  /** Tells the team (the feedback form, with the problem in it). */
+  onReport: () => void;
 }
 
 /**
  * What the TV shows when a video would not play from any of its sources: what it was, what went wrong, and two ways on (OK is the
- * first, trying again; Back is the second, leaving). The player's controls are of no use then, so this takes their place.
+ * first, trying again; Back is the second, leaving), with a quieter third below them for telling the team. The player's controls are of
+ * no use then, so this takes their place.
  */
 export function ErrorCard(p: ErrorCardProps) {
   useT();
@@ -759,7 +763,7 @@ export function ErrorCard(p: ErrorCardProps) {
   return (
     <div className="tv-fail" ref={rootRef}>
       <div className="hud-error" data-testid="tv-error" role="alert">
-        <small>{p.title}</small>
+        <small data-testid="error-title">{p.title}</small>
         <h2>{p.message}</h2>
         <div className="tv-actions">
           <button className="tv-action tv-action-primary" onClick={p.onRetry} data-testid="error-retry" data-nav>
@@ -769,6 +773,9 @@ export function ErrorCard(p: ErrorCardProps) {
             <HomeIcon /> {t("tv.backToLibrary")}
           </button>
         </div>
+        <button className="tv-action tv-report" onClick={p.onReport} data-testid="error-report" data-nav>
+          <MessageIcon /> {t("feedback.report")}
+        </button>
       </div>
     </div>
   );
