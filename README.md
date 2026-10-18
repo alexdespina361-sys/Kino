@@ -167,6 +167,28 @@ pnpm build && pnpm start     # http://localhost:8787
   **Quiet while something plays.** A screen that is playing a film puts nothing over the picture for friends' news (requests, titles sent, what a friend watches) except an *invitation*, as a
   small note in the corner for 4.5 seconds (a screen with nothing playing shows the usual toast); all of it waits in the bell. A profile's switch *Show friends' news on screen*
   (`newsPopups`, on by default; on the phone's account page and on the TV's Friends page) turns even the note off, and the bell is never muted.
+  **Chat.** Two friends can write to each other: a **Chat** button on the friend's page on the phone (a sheet over the page) and a **Chat** chip, last in the row of buttons of the friend's page,
+  on the TV (a page of its own, with a **Write** button that opens the page where the message is typed with the keys of the page, as the note of a rating is; a hand-held screen types on its
+  own keyboard instead, and Back goes back a page at a time). It is a first, small chat: plain text, one friend at a time, the newest message at the bottom.
+  **Who can write:** only two current friends who both have friends on and *Friends can message me* on (a switch in the settings next to the others, and on the TV's page of what is shared;
+  **on until it is turned off**). A friend whose switch is off is not written to (`403 chat_off`; the chat says *"Sam isn't taking messages"* and has no box), and a profile whose own switch is off
+  is told in its chats that the friend can't answer. **What a message is:** at most 500 characters, trimmed, not empty, made fit to show like everything friends send (no characters that turn
+  text around or hide in it), and shown as text only: a link cannot be pressed and nothing is previewed. A sender may send 20 messages a minute (`429 rate_limited`), a pair keeps the newest 200 and
+  nothing older than 30 days, a message can be taken back by whoever wrote it (press it on the phone; *Take back last message* on the TV) and is then gone for both, and **ending a
+  friendship deletes the chat** (so does deleting an account or a profile). A chat that has nothing left in it stays for a day as a revision and nothing else, so that a screen that has the chat open
+  is told that the message it shows is gone. **How it arrives:** there is no push, no email and no socket. A chat that is open asks the server every 3 seconds with the revision it has (a chat that
+  did not change is answered in a few bytes), and a page that is out of sight asks for nothing. A chat that is not open is told of quietly, by the refresh of friends that the page already makes (every
+  30 seconds and when it comes to the front): *"2 new messages"* under the friend's name (phone) or on their tile (TV), a number on the **Chat** button and chip, a row in the bell (*"2 new messages
+  from Sam"*, which opens the chat) and one count on the bell's number for each friend who wrote. The bell's few places go to what asks for an answer first (requests, invitations, plans);
+  the rest of the messages are counted in the line that says how many more wait. **Never a popup, and nothing over a film.** A message counts as read when the chat is opened, and what a
+  profile writes counts as having read everything before it. The count is a field of the friends answer (`chat`, there only when something waits); it is not in the inbox, so a page loaded before
+  this version, which cannot read an inbox item of a kind it does not know, is not hurt by it (it only does not show chats until it is reloaded). **Mute** (on the chat) stops a friend's messages from
+  being counted anywhere, without telling the friend; they are in the chat when it is opened. **Report** shows exactly what would be sent (the last 20 messages, with who wrote each) and sends
+  nothing until *Send to the Kino team* is pressed; then it reaches the team as a feedback report (a problem, area friends, the messages in a file `chat.txt` with both names, not answerable: the
+  friend is not told, and the team reads the part of a chat that somebody chose to send, never chats). **Messages are stored on the server as written, without encryption:** whoever runs the
+  server can read them, so the settings line and the empty chat say *"don't send anything private"*. They are kept like friends and inboxes are (a document for each pair, `chat:…`, in the
+  data folder or the database). Routes: `GET|POST /api/profiles/:id/friends/:fid/chat` (`?since=<rev>` on the GET), `DELETE …/chat/:n`, `PUT …/chat/mute`, `GET|POST …/chat/report`.
+  **Not in this first chat:** groups, pictures, files, link previews, reactions, typing marks, read receipts, a chat in a party, push or email notifications, search, attachments.
 - **Signed out, the device keeps the same things as a guest** (`localStorage`). Signing in **combines** them with the profile that is chosen:
   per item the newest copy wins, a removal is remembered for 45 days so another device cannot bring the item back, and nothing is counted
   twice. Whatever was watched while signed out is on the account afterwards.
@@ -698,7 +720,7 @@ several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page
 phone, a tablet and a phone held sideways, a finger on the picture (taps, double taps, a hold, the big button, the landscape lock, the episode's name:
 `e2e/player-touch.spec.ts`; the recognizer on its own in `src/client/tv/gestures.test.ts`), the end card and mute, full screen (at the first press, kept for the next visit, the buttons),
 ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV, and the score on a title's picture), the TV's menu and its Profile page (`e2e/profile-hub.spec.ts`, which also checks that what the page says fits its tiles in the three languages at four screen sizes), the Feedback button on a phone and on a TV (`e2e/feedback.spec.ts`: what is sent, the picture of the screen and its marks, what the team reads with its token, the answer that comes back), friends (made with a code or a link, what a friend can see,
-what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`; tags, requests and the Add button of a party, with the fit of its rows: `e2e/friend-tags.spec.ts`; the bell on the phone and the TV, with the fit of the header, the corner and the list: `e2e/bell.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
+what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`; tags, requests and the Add button of a party, with the fit of its rows: `e2e/friend-tags.spec.ts`; the bell on the phone and the TV, with the fit of the header, the corner and the list: `e2e/bell.spec.ts`; the chat between two friends on the phone and the TV, what waits, the switch, mute, report and the fit in the longest words on the narrowest screens: `e2e/chat.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
 itself; the tests of full screen start from nothing (`FIRST_VISIT` in `e2e/helpers.ts`). A Hisense browser is imitated by its user agent
@@ -714,11 +736,11 @@ Android TV remotes, the wake lock, an iPhone's camera and browsers, and the home
 
 ```
 src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge), rating.ts (what a rating remembers of the watching),
-               friends.ts (the friends' switches, what travels between them)
+               friends.ts (the friends' switches, what travels between them), chat.ts (the chat's limits and the rule for a message)
 src/server/    sessions/ (registry: devices, codes, controllers; pairings: which phone goes with which TV, kept between restarts), websocket/hub.ts,
-               resolvers/, accounts/ (store, routes, persistence, friends: codes, inboxes, what a friend may see), feedback/ (what people send with the Feedback button, and the team's side of it), app.ts
+               resolvers/, accounts/ (store, routes, persistence, friends: codes, inboxes, what a friend may see, chat.ts and chatRoutes.ts: the chat between two friends), feedback/ (what people send with the Feedback button, and the team's side of it), app.ts
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),
-               friends/ (the state both screens share, what is new, the friends' pages of the TV), feedback/ (the Feedback form, the picture of the screen and its marks),
+               friends/ (the state both screens share, what is new, the friends' pages of the TV), chat/ (the chat of two friends: the phone's sheet, the TV's pages, what waits), feedback/ (the Feedback form, the picture of the screen and its marks),
                i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
 public/        copied as it is into the built page: the web app manifest and its icons
 fixtures/      sample.mp4, long.mp4 (40 s, for Up Next), hls/ (VP9, so Playwright's Chromium can decode them)

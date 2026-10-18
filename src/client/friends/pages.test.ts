@@ -179,6 +179,25 @@ describe("the rows of the friends page", () => {
   });
 });
 
+describe("what waits in the chats, on a TV", () => {
+  const waiting = (count: number, friend = "pro_sam") => ({ chat: [{ friend, count, at: NOW - 1000 }] });
+  const tileOf = (rows: ReturnType<typeof friendRows>, friend: Friend) => rows.find((row) => row.id === "friend-people")!.entries.find((entry) => entry.id === `friend:${friend.id}`)!;
+
+  it("is a quiet line under the name of the friend who wrote, in place of what they are doing, and not a row of its own", () => {
+    const rows = friendRows(state({ ...waiting(2), activity: [watched("pro_sam", "k")] }), NOW);
+    expect(rows.map((row) => row.id)).toEqual(["friend-activity", "friend-people"]);
+    expect(tileOf(rows, sam).note).toBe(t("chat.unreadShort", { count: 2 }));
+    expect(tileOf(friendRows(state({ activity: [watched("pro_sam", "k")] }), NOW), sam).note).toBe(t("friends.line.watching", { title: "Alien" }));
+  });
+
+  it("leaves the other friends as they were, and a friend who wrote and has been read is the same as one who did not", () => {
+    const rows = friendRows(state({ friends: [sam, robin], ...waiting(1) }), NOW);
+    expect(tileOf(rows, sam).note).toBe(t("chat.unreadShort", { count: 1 }));
+    expect(tileOf(rows, robin).note).toBe(since(robin));
+    expect(tileOf(friendRows(state({ friends: [sam, robin] }), NOW), sam).note).toBe(since(sam));
+  });
+});
+
 describe("the bell on a TV", () => {
   it("is nothing before the server has answered", () => {
     expect(bellRows(null, NOW)).toEqual({ waiting: [], lately: [], more: 0 });
@@ -191,6 +210,28 @@ describe("the bell on a TV", () => {
     expect(line.heading).toBe(t("friends.planOf", { name: "Sam" }));
     expect(line.detail).toBe(line.entry.note);
     expect(line.entry).toMatchObject({ plan: "p", inboxId: "p" });
+  });
+
+  it("lists the friends who wrote after what asks for an answer, a line for each that opens the chat with them, the newest first", () => {
+    const view = state({ friends: [sam, robin], inbox: [recommendation("r")], chat: [{ friend: "pro_sam", count: 2, at: NOW - 5000 }, { friend: "pro_robin", count: 1, at: NOW - 1000 }] });
+    const { waiting } = bellRows(view, NOW);
+    expect(waiting.map((row) => row.entry.id)).toEqual(["from:r", "chat:pro_robin", "chat:pro_sam"]);
+    expect(waiting[2]).toMatchObject({ heading: t("chat.unread", { count: 2, name: "Sam" }), avatar: "fox" });
+    expect(waiting[2]!.entry).toMatchObject({ chat: "pro_sam", url: "" });
+    expect(waiting[1]!.heading).toBe(t("chat.unread", { count: 1, name: "Robin" }));
+  });
+
+  it("keeps the same few places for them, and counts the rest as left for the friends page", () => {
+    const inbox = Array.from({ length: 7 }, (_, at) => recommendation(`t${at}`));
+    const view = state({ friends: [sam, robin], inbox, chat: [{ friend: "pro_sam", count: 2, at: NOW - 5000 }, { friend: "pro_robin", count: 1, at: NOW - 1000 }] });
+    const bell = bellRows(view, NOW);
+    expect(bell.waiting).toHaveLength(8);
+    expect(bell.waiting.at(-1)?.entry.id).toBe("chat:pro_robin");
+    expect(bell.more).toBe(1);
+  });
+
+  it("says nothing of a friend who is gone", () => {
+    expect(bellRows(state({ chat: [{ friend: "pro_gone", count: 4, at: NOW }] }), NOW).waiting).toEqual([]);
   });
 });
 

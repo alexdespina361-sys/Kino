@@ -36,6 +36,7 @@ import {
   sharesLists,
   sharesRatings,
   tagLabel,
+  takesMessages,
   type Friend,
 } from "./friends";
 import { SETTING_SCHEMAS } from "./account";
@@ -45,7 +46,7 @@ const friend = (changes: Partial<Friend> = {}): Friend => ({ id: "pro_1", name: 
 describe("the switches", () => {
   it("are all settings of a profile, and are all off or on as the defaults say until they are set", () => {
     for (const key of FRIEND_SETTINGS) expect(SETTING_SCHEMAS[key]).toBeDefined();
-    expect(friendChoices({})).toEqual({ friends: false, friendsLists: true, friendsRatings: true, friendsGive: false, friendsGet: false, friendsInbox: true, friendsPresence: true });
+    expect(friendChoices({})).toEqual({ friends: false, friendsLists: true, friendsRatings: true, friendsGive: false, friendsGet: false, friendsInbox: true, friendsPresence: true, friendsMessages: true });
     expect(FRIEND_DEFAULTS.friends).toBe(false);
   });
 
@@ -58,6 +59,7 @@ describe("the switches", () => {
       friendsGet: false,
       friendsInbox: true,
       friendsPresence: true,
+      friendsMessages: true,
     });
     expect(friendChoices({ friendsPresence: false })).toMatchObject({ friendsPresence: false, friends: false }); // (being seen as online is its own switch, on until it is turned off)
   });
@@ -76,6 +78,14 @@ describe("the switches", () => {
     expect(sharesLists({ friends: true })).toBe(true);
     expect(sharesLists({ friends: true, friendsLists: false })).toBe(false);
     expect(sharesLists({ friends: false, friendsLists: true })).toBe(false);
+  });
+
+  it("let a friend write to a profile only when friends are on and messages are not turned off (they are on until they are)", () => {
+    expect(friendChoices({}).friendsMessages).toBe(true);
+    expect(takesMessages({})).toBe(false); // (friends are off until they are turned on)
+    expect(takesMessages({ friends: true })).toBe(true);
+    expect(takesMessages({ friends: true, friendsMessages: false })).toBe(false);
+    expect(takesMessages({ friends: false, friendsMessages: true })).toBe(false);
   });
 
   it("let ratings be looked at only when friends are on, they are shared, and ratings are not turned off for the profile itself", () => {
@@ -206,6 +216,15 @@ describe("what is sent", () => {
     expect(InboxItemSchema.safeParse(item).success).toBe(true);
     expect(InboxItemSchema.safeParse({ ...item, read: undefined }).success).toBe(false);
     expect(FriendsStateSchema.safeParse({ friends: [friend()], inbox: [item], activity: [], invites: [{ code: "ABCD2345", expiresAt: 9 }], requests: [], sent: [] }).success).toBe(true);
+  });
+
+  it("tells what waits in the chats a friend at a time, and a server that does not know of chats says nothing of them", () => {
+    const rest = { friends: [friend()], inbox: [], activity: [], invites: [], requests: [], sent: [] };
+    expect(FriendsStateSchema.parse({ ...rest, chat: [{ friend: "pro_1", count: 2, at: 9 }] }).chat).toEqual([{ friend: "pro_1", count: 2, at: 9 }]);
+    expect(FriendsStateSchema.parse(rest).chat).toBeUndefined();
+    // (nothing waiting is not a notice, and a notice is for a friend)
+    expect(FriendsStateSchema.safeParse({ ...rest, chat: [{ friend: "pro_1", count: 0, at: 9 }] }).success).toBe(false);
+    expect(FriendsStateSchema.safeParse({ ...rest, chat: [{ count: 1, at: 9 }] }).success).toBe(false);
   });
 
   it("takes a request to watch together, which is nothing but who it is for, and holds it in an inbox", () => {

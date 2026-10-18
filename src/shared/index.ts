@@ -1,5 +1,6 @@
 export * from "./account";
 export * from "./captions";
+export * from "./chat";
 export * from "./feedback";
 export * from "./friends";
 export * from "./lang";

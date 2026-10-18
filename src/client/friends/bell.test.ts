@@ -14,7 +14,7 @@ const watched = (key: string, at: number, friend = "pro_sam"): ActivityItem => (
 
 describe("what the bell lists", () => {
   it("is nothing when nothing waits and nothing was watched", () => {
-    expect(bellView(state(), NOW)).toEqual({ requests: [], inbox: [], lately: [], more: 0 });
+    expect(bellView(state(), NOW)).toEqual({ requests: [], inbox: [], chat: [], lately: [], more: 0 });
   });
 
   it("puts an invitation to a party that is on first, then a request to watch together, then titles, then a party that is over, the newest first within each", () => {
@@ -54,6 +54,29 @@ describe("what the bell lists", () => {
     expect(view.inbox).toHaveLength(BELL_WAITING - 3);
     expect(view.more).toBe(3);
     expect(bellView(state({ requests: Array.from({ length: BELL_WAITING + 2 }, (_, at) => ask(`q${at}`, NOW - at)) }), NOW)).toMatchObject({ inbox: [], more: 2 });
+  });
+
+  it("lists the friends who wrote after what asks for an answer, the newest first, in the same few places, with the rest counted in what is left", () => {
+    const waiting = [
+      { friend: "pro_sam", count: 2, at: NOW - 100 },
+      { friend: "pro_kim", count: 1, at: NOW - 10 },
+    ];
+    const kim: Friend = { ...sam, id: "pro_kim", name: "Kim" };
+    const view = bellView(state({ friends: [sam, kim], chat: waiting, inbox: [recommendation("a", NOW)], requests: [ask("r", NOW)] }), NOW);
+    expect(view.chat.map((notice) => notice.friend)).toEqual(["pro_kim", "pro_sam"]);
+    expect(view.more).toBe(0);
+
+    // (what asks for an answer keeps its places: messages take what is left of them)
+    const full = bellView(state({ friends: [sam, kim], chat: waiting, inbox: Array.from({ length: BELL_WAITING - 1 }, (_, at) => recommendation(`t${at}`, NOW - at)) }), NOW);
+    expect(full.inbox).toHaveLength(BELL_WAITING - 1);
+    expect(full.chat.map((notice) => notice.friend)).toEqual(["pro_kim"]);
+    expect(full.more).toBe(1);
+    expect(bellView(state({ chat: waiting, requests: Array.from({ length: BELL_WAITING }, (_, at) => ask(`q${at}`, NOW - at)) }), NOW)).toMatchObject({ chat: [], more: 1 });
+  });
+
+  it("leaves out the messages of a friend this profile no longer has, and says nothing of chats when the server says nothing of them", () => {
+    expect(bellView(state({ chat: [{ friend: "pro_gone", count: 3, at: NOW }] }), NOW)).toMatchObject({ chat: [], more: 0 });
+    expect(bellView(state(), NOW).chat).toEqual([]);
   });
 
   it("lists what friends watched, the newest first, a few of it, and leaves out whoever is not a friend any more", () => {

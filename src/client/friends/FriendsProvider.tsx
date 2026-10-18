@@ -3,6 +3,7 @@ import { ONLINE_MS, planDue, type AskOutcome, type Friend, type FriendLists, typ
 import { useAccount } from "../account/AccountProvider";
 import { ApiError } from "../account/api";
 import { useProfileData } from "../account/store";
+import { chatWaiting } from "../chat/notices";
 import { t } from "../i18n";
 import { friendsApi } from "./api";
 import { describeNews, isUrgent, known, whatsNew, type Known } from "./news";
@@ -25,7 +26,7 @@ export interface FriendsValue {
   state: FriendsState | null;
   /** How many things in the inbox have not been seen. */
   unread: number;
-  /** How many things wait for this profile: what is new in the inbox, plans whose time has come, and the requests to be friends that are not answered (what a badge counts). */
+  /** How many things wait for this profile: what is new in the inbox, plans whose time has come, the requests to be friends that are not answered, and the friends who wrote and have not been answered by a look at the chat (what a badge counts). */
   attention: number;
   refresh(): Promise<void>;
   /** A new code to give to a friend. */
@@ -191,7 +192,7 @@ export function FriendsProvider({ children }: { children: ReactNode }) {
       status,
       state,
       unread,
-      attention: waiting + (state?.requests.length ?? 0),
+      attention: waiting + (state?.requests.length ?? 0) + chatWaiting(state).length,
       refresh: () => lookRef.current(),
       invite: () => then(friendsApi.invite(id())),
       revoke: (code) => then(friendsApi.revoke(id(), code)),

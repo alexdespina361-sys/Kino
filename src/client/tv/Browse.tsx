@@ -8,6 +8,8 @@ import { ListEditor } from "../account/Lists";
 import { ratingFor, scoreOf } from "../account/ratingText";
 import { useScores } from "../account/ratings";
 import { profileStore, useProfileData } from "../account/store";
+import { waitingFrom } from "../chat/notices";
+import { TvChat } from "../chat/TvChat";
 import { nameOf, recommendationOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { useBell } from "../friends/useBell";
@@ -15,7 +17,7 @@ import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { useHandHeldBack } from "../shared/backButton";
-import { BackspaceIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { BackspaceIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { allRows, failedShelves, feed, GRID_CAP, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
@@ -147,6 +149,7 @@ type Overlay =
   | { kind: "friendRequest"; person: Person; back: Target }
   | { kind: "plan"; id: string; back: Target }
   | { kind: "planPick"; friend: string; back: Target }
+  | { kind: "chat"; friend: string; back: Target }
   | { kind: "bell"; back: Target };
 
 const CONTENT: Target = { zone: "content", row: -1, col: -1 };
@@ -324,6 +327,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const friendId = view.kind === "friend" ? view.id : "";
   const friendTab: FriendTab = view.kind === "friend" ? (view.tab ?? "lists") : "lists";
   const friend = friends.state?.friends.find((each) => each.id === friendId);
+  /** Where the chat chip is in the row of a friend's page: after the way back, the tabs and (for a friend who takes invitations) the two buttons to watch together. */
+  const chatChip = (friend && canAskTogether(friend) ? 3 : 1) + FRIEND_TABS.length;
   const sharedLists = useShared(friendId, Boolean(friendTab === "lists" && friend?.on && friend.lists), askLists, friend?.activity);
   const sharedRatings = useShared(friendId, Boolean(friendTab === "ratings" && friend?.on && friend.ratings), askRatings, friend?.activity);
   // `language` is not read, but the rows' titles and notes are words in it
@@ -458,8 +463,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: resultRowsOf(resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
-    // A friend's page: the way back, their lists and their ratings over the titles, and under them the button that takes them off the friends.
-    ...(view.kind === "friend" && friend ? { chips: [canAskTogether(friend) ? 5 : 3], foot: [1] } : {}),
+    // A friend's page: the way back, their lists and their ratings over the titles (and, for a friend who takes invitations, to ask them to watch and to plan it), the chat, and under them the button that takes them off the friends.
+    ...(view.kind === "friend" && friend ? { chips: [canAskTogether(friend) ? 6 : 4], foot: [1] } : {}),
     ...(detail
       ? {
           close: [1],
@@ -760,6 +765,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     if (entry.action) return setOverlay({ kind: entry.action, back: from });
     if (entry.request) return setOverlay({ kind: "friendRequest", person: entry.request, back: from });
     if (entry.plan) return setOverlay({ kind: "plan", id: entry.plan, back: from });
+    if (entry.chat) return setOverlay({ kind: "chat", friend: entry.chat, back: from });
     if (entry.party) return onJoinParty(entry.party);
     if (entry.wants) return onStartTogether(entry.wants);
     if (entry.ask) return void askToWatch(entry.ask, entry.inboxId);
@@ -1108,7 +1114,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             </div>
           )}
           {view.kind === "friend" && friend && (
-            <div className="tv-filters" role="radiogroup" aria-label={friend.name} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+            <div className="tv-filters tv-filters-friend" role="radiogroup" aria-label={friend.name} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
               <button
                 className="tv-choice"
                 data-testid="tv-friend-back"
@@ -1162,6 +1168,19 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   </button>
                 </>
               )}
+              {/* (Last, so that the others keep their places: a friend who does not take invitations still has a chat.) */}
+              <button
+                className="tv-choice"
+                data-testid="friend-chat"
+                data-zone="chips"
+                data-row={0}
+                data-col={chatChip}
+                onClick={() => setOverlay({ kind: "chat", friend: friend.id, back: { zone: "chips", row: 0, col: chatChip } })}
+                onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: chatChip })}
+              >
+                <MessageIcon /> {t("chat.open")}
+                {waitingFrom(friends.state, friend.id) > 0 && <small data-testid="friend-chat-unread"> · {waitingFrom(friends.state, friend.id)}</small>}
+              </button>
             </div>
           )}
           {grid.entries.length > 0 ? (
@@ -1396,6 +1415,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         />
       )}
       {overlay?.kind === "planPick" && <PlanPickerTv friendId={overlay.friend} onClose={closeOverlay} />}
+      {overlay?.kind === "chat" && <TvChat key={overlay.friend} friendId={overlay.friend} narrow={narrow} onClose={closeOverlay} />}
       {overlay?.kind === "bell" && (
         <NotificationsTv
           onPress={(entry) => {

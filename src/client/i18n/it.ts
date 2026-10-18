@@ -1,3 +1,4 @@
+import { chatIt } from "./chat.it";
 import type { Dictionary } from "./en";
 
 /** Italiano. Stesse chiavi di en.ts (le controlla il compilatore); le forme del plurale sono `_one` e `_other`. */
@@ -1192,4 +1193,7 @@ export const it: Dictionary = {
   "feedback.leave.text_other": "Le tue parole restano come bozza, ma le {count} immagini andranno perse.",
   "feedback.leave.stay": "Continua a modificare",
   "feedback.leave.go": "Chiudi comunque",
+
+  /* la chat tra due amici (client/chat): in un file a parte, aggiunto qui */
+  ...chatIt,
 };

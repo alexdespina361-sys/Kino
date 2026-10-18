@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { activityVerb, type ActivityItem, type Friend } from "../../shared";
+import { activityVerb, type ActivityItem, type ChatNotice, type Friend } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { ago } from "../account/time";
 import { bellView } from "../friends/bell";
@@ -49,21 +49,40 @@ function LatelyRow({ item, friend, onOpen }: { item: ActivityItem; friend: Frien
   );
 }
 
+/** A friend who wrote, as a row that opens the chat with them (their messages are not read here: the bell only says how many wait). */
+function ChatRow({ notice, friend, onOpen }: { notice: ChatNotice; friend: Friend; onOpen: () => void }) {
+  const t = useT();
+  return (
+    <li className="inbox-item" data-testid="bell-chat-item" data-friend={friend.id}>
+      <button className="bell-lately" onClick={onOpen}>
+        <Avatar id={friend.avatar} className="friend-avatar" />
+        <span className="inbox-text">
+          <b>{t("chat.unread", { count: notice.count, name: friend.name })}</b>
+        </span>
+      </button>
+    </li>
+  );
+}
+
 /**
  * What the bell opens: what waits for an answer from this profile (requests to be friends, invitations, requests to watch together, titles
- * friends sent, each with its buttons) and what friends watch lately, with a way on to the Friends page for the rest. Opening it is looking.
+ * friends sent, each with its buttons), the friends who wrote (a row each, that opens the chat) and what friends watch lately, with a way on to
+ * the Friends page for the rest. Opening it is looking.
  */
 export function NotificationsSheet({
   onClose,
   onOpenTitle,
   onStartParty,
   onOpenFriends,
+  onOpenChat,
 }: {
   onClose: () => void;
   onOpenTitle: (entry: Entry) => void;
   /** Not given on a phone that has no TV to host a party on. */
   onStartParty?: (friendId: string) => void;
   onOpenFriends: () => void;
+  /** A row of a friend who wrote was pressed: the chat with them is opened, over whatever the bell was over. */
+  onOpenChat: (friendId: string) => void;
 }) {
   const t = useT();
   const friends = useFriends();
@@ -80,7 +99,7 @@ export function NotificationsSheet({
   }, [friends.unread]);
 
   const view = state ? bellView(state, Date.now()) : null;
-  const waiting = view !== null && view.requests.length + view.inbox.length > 0;
+  const waiting = view !== null && view.requests.length + view.inbox.length + view.chat.length > 0;
   return (
     <Sheet title={t("bell.title")} onClose={onClose} testId="bell-sheet">
       {!state || !view ? (
@@ -125,6 +144,17 @@ export function NotificationsSheet({
                         : undefined
                     }
                     onDismiss={() => void friends.dismiss(item.id).catch(() => undefined)}
+                  />
+                ))}
+                {view.chat.map((notice) => (
+                  <ChatRow
+                    key={`chat:${notice.friend}`}
+                    notice={notice}
+                    friend={state.friends.find((each) => each.id === notice.friend)!}
+                    onOpen={() => {
+                      onClose();
+                      onOpenChat(notice.friend);
+                    }}
                   />
                 ))}
               </ul>

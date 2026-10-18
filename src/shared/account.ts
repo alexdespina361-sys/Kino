@@ -256,6 +256,7 @@ export const SETTING_SCHEMAS = {
   friendsGet: z.boolean(),
   friendsInbox: z.boolean(),
   friendsPresence: z.boolean(),
+  friendsMessages: z.boolean(),
   /**
    * What friends say on the screen when they send something or ask for something (on unless turned off). Off, nothing of it is shown over the
    * page or the film: it waits in the bell (and its number), which is never muted. This is only this screen's manner, so the server does not read it.

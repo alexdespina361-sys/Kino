@@ -2,6 +2,8 @@
  * English: the source of the words, and the list of keys that Romanian (ro.ts) and Italian (it.ts) must also have. A key with a
  * count has one form per plural category the language uses (`_one`, `_few`, `_other`): English needs two, Romanian three.
  */
+import { chatEn } from "./chat.en";
+
 export const en = {
   /* common */
   "common.back": "Back",
@@ -1193,6 +1195,9 @@ export const en = {
   "feedback.leave.text_other": "Your words are kept as a draft, but the {count} pictures will be lost.",
   "feedback.leave.stay": "Keep editing",
   "feedback.leave.go": "Close anyway",
+
+  /* the chat between two friends (client/chat): kept in a file of its own, spread in here */
+  ...chatEn,
 } as const;
 
 export type Dictionary = Record<keyof typeof en, string> & Record<string, string>;

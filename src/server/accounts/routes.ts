@@ -15,6 +15,7 @@ import {
   type Registration,
   type SessionState,
 } from "../../shared";
+import { chatRoutes, type ChatReporter } from "./chatRoutes";
 import { describeDevice } from "./device";
 import { friendRoutes, type PartyLookup } from "./friendRoutes";
 import { LinkRegistry } from "./links";
@@ -38,6 +39,8 @@ export interface AccountRoutesOptions {
   parties?: PartyLookup;
   /** The proofs a screen gives a watch party to say whose it is. */
   screens?: ScreenProofs;
+  /** Hands a reported chat to the team (see feedback/chatReport.ts). Without it a chat cannot be reported. */
+  chatReport?: ChatReporter;
 }
 
 export const COOKIE = "kino_session";
@@ -340,7 +343,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
 
   /* ------------------------------ friends ------------------------------ */
 
-  friendRoutes(app, {
+  const friendHelpers = {
     store,
     authenticate,
     signedOut,
@@ -349,5 +352,8 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     refused,
     ...(options.parties ? { parties: options.parties } : {}),
     ...(options.screens ? { screens: options.screens } : {}),
-  });
+  };
+  friendRoutes(app, friendHelpers);
+  // (A small chat between two friends: the same helpers, since who is asking and who is a friend are decided the same way.)
+  chatRoutes(app, friendHelpers, { chat: store.chats, ...(options.chatReport ? { report: options.chatReport } : {}) });
 };
