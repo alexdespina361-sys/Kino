@@ -1,4 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
+import { useHandHeldBack } from "../shared/backButton";
 import { actionForKey } from "./keys";
 
 export type Direction = "up" | "down" | "left" | "right";
@@ -107,8 +108,12 @@ export function moveFocus(root: ParentNode, direction: Direction): boolean {
   return true;
 }
 
-/** Back on a screen of its own: Escape, the remote's Back, and Backspace outside a text field. Without a handler, Back is left alone. */
-export function useBack(onBack: (() => void) | undefined): void {
+/**
+ * Back on a screen of its own: Escape, the remote's Back, and Backspace outside a text field. Without a handler, Back is left alone.
+ * A phone or a tablet has no such key: its system Back (the button, the swipe from the edge) calls this too. `leaving` is what that calls
+ * where a key has more to do than a finger has (Backspace takes the last digit off a code that is being typed).
+ */
+export function useBack(onBack: (() => void) | undefined, leaving: (() => void) | undefined = onBack): void {
   const latest = useRef(onBack);
   latest.current = onBack;
   const active = onBack !== undefined;
@@ -122,6 +127,7 @@ export function useBack(onBack: (() => void) | undefined): void {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [active]);
+  useHandHeldBack(active ? leaving : undefined);
 }
 
 /**
@@ -143,6 +149,7 @@ export function useBackFirst(onBack: (() => void) | undefined): void {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [active]);
+  useHandHeldBack(onBack); // (its layer opens after the page's own, so the system's Back answers the question first, too)
 }
 
 /**

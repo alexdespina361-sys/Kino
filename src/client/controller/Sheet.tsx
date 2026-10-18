@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import { t, useT } from "../i18n";
 import { CloseIcon } from "../shared/icons";
-import { useBackToClose } from "./backButton";
+import { useBackToClose } from "../shared/backButton";
 
 /** The sheets that are open, the one on top last: Escape closes that one, not all of them. */
 const open: object[] = [];

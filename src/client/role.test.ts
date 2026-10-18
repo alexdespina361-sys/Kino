@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chooseRole, isPhone, type RoleInput } from "./role";
+import { chooseRole, isHandHeld, isPhone, type RoleInput } from "./role";
 
 const DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
@@ -92,5 +92,20 @@ describe("isPhone", () => {
 
   it("is not a TV, whatever it claims about touch", () => {
     for (const userAgent of [FIRE_TV, TIZEN, WEBOS, VIDAA, ANDROID_TV]) expect(isPhone({ userAgent, touchPoints: 1, coarsePointer: true, shortSide: 360 })).toBe(false);
+  });
+});
+
+describe("isHandHeld", () => {
+  it("is a phone or a tablet: the system's Back is what they have", () => {
+    expect(isHandHeld({ userAgent: PIXEL, touchPoints: 5, coarsePointer: true })).toBe(true);
+    expect(isHandHeld({ userAgent: IPAD, touchPoints: 5, coarsePointer: true })).toBe(true);
+    expect(isHandHeld({ userAgent: FIRE_TABLET, touchPoints: 10, coarsePointer: true })).toBe(true);
+  });
+
+  it("is not a computer, with or without a touch screen, nor a TV, whatever it says about touch (their Back is a key the page hears)", () => {
+    expect(isHandHeld({ userAgent: DESKTOP, touchPoints: 0, coarsePointer: false })).toBe(false);
+    expect(isHandHeld({ userAgent: DESKTOP, touchPoints: 10, coarsePointer: false })).toBe(false);
+    expect(isHandHeld({ userAgent: DESKTOP, touchPoints: 0, coarsePointer: true })).toBe(false); // (a coarse pointer and nothing to touch)
+    for (const userAgent of [FIRE_TV, TIZEN, WEBOS, VIDAA, ANDROID_TV]) expect(isHandHeld({ userAgent, touchPoints: 1, coarsePointer: true })).toBe(false);
   });
 });

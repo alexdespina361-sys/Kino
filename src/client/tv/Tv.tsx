@@ -22,10 +22,12 @@ import {
 import { useAccount } from "../account/AccountProvider";
 import { describeError } from "../account/errors";
 import { profileStore, useProfileData } from "../account/store";
+import { reportWontPlay } from "../feedback/store";
 import { friendsApi } from "../friends/api";
 import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { t, useT } from "../i18n";
+import { handHeld, pressAgain, useBackWhile } from "../shared/backButton";
 import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatClock, readStorage, writeStorage } from "../shared/format";
 import { readKept, writeKept } from "../shared/kept";
@@ -1015,7 +1017,7 @@ export function Tv() {
   useEffect(() => {
     if (!linkCode || !unlocked || connection !== "open" || linkTriedRef.current) return;
     linkTriedRef.current = true;
-    history.replaceState(null, "", location.pathname);
+    history.replaceState(history.state, "", location.pathname); // (the entry keeps what the back button put on it)
     invitedWithRef.current = linkCode;
     socketRef.current?.send({ type: "TV_PARTY_JOIN", code: linkCode });
   }, [linkCode, unlocked, connection]);
@@ -1116,6 +1118,11 @@ export function Tv() {
     putMedia(null);
     setUpNextCountdown(null);
     engineRef.current?.stop();
+  };
+  /** ...and the library shows, on the page the film was chosen from (see `keepPageFor`). */
+  const leaveFilm = () => {
+    stopPlayback();
+    setScreen("library");
   };
   /** The next subtitle track, and off after the last. Works for a TV that watches along too: what is read is its own choice. */
   const cycleSubtitles = () => {
@@ -1362,6 +1369,19 @@ export function Tv() {
   /** A film is what the screen is for right now (not its end card, nor an error): nothing is to land on it that can wait. */
   const filmIsOn = showVideo && !finished && !failed;
 
+  // A phone or a tablet that is the screen has no Back key: its own Back goes out of a film a step at a time, the way a remote's does (the menu over
+  // it, the countdown to the next episode), and then to where the film was chosen. It does not ask first: the place it was left at is kept, and the
+  // next press of Play picks it up. A film that others are watching is the exception, a Back is too easy to make by mistake for that.
+  const hosting = party?.role === "host" && party.guests.length > 0;
+  useBackWhile(handHeld() && unlocked && showVideo, () => {
+    if (menu) setMenu(menu === "captions" ? "tracks" : menu === "partyInvite" ? "party" : null);
+    else if (upNextCountdown !== null) dismissUpNext();
+    else if (following) pressAgain("exit.leaveParty") && leaveParty();
+    else if (stuck) cancelLoad();
+    else if (hosting) pressAgain("exit.stopParty") && leaveFilm();
+    else leaveFilm();
+  });
+
   /** A finger (or a mouse button) is held on the picture and it plays faster for as long as it stays. */
   const [boosting, setBoosting] = useState(false);
   const holdPicture = (): boolean => {
@@ -1570,6 +1590,7 @@ export function Tv() {
             stopPlayback();
             setScreen("library");
           }}
+          onReport={() => reportWontPlay(friendlyError(player.error))}
         />
       )}
 

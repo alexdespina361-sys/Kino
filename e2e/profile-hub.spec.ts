@@ -136,9 +136,9 @@ test.describe("the profile's page", () => {
         expect(cut).toEqual([]);
         expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
-        // The head: its two buttons are on the screen and do not lie over the corner's buttons.
+        // The head: its buttons (Sign in, Settings, Feedback) are on the screen and do not lie over the corner's buttons.
         const corner = (await tv.getByTestId("tv-account-chip").boundingBox())!;
-        for (const id of ["tv-profile-signin", "tv-profile-settings"]) {
+        for (const id of ["tv-profile-signin", "tv-profile-settings", "tv-profile-feedback"]) {
           await expect(tv.getByTestId(id)).toBeInViewport({ ratio: 1 });
           const box = (await tv.getByTestId(id).boundingBox())!;
           const apart = box.y >= corner.y + corner.height - 0.5 || box.y + box.height <= corner.y + 0.5 || box.x >= corner.x + corner.width - 0.5 || box.x + box.width <= corner.x + 0.5;

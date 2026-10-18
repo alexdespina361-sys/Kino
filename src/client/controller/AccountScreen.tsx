@@ -5,14 +5,15 @@ import { Avatar } from "../account/Avatar";
 import { AuthForm } from "../account/AuthForm";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
 import { useProfileData } from "../account/store";
+import { useFeedbackEntry } from "../feedback/entry";
 import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
-import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, PencilIcon, PhoneIcon, ScanIcon, StarIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, MessageIcon, PencilIcon, PhoneIcon, ScanIcon, StarIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
 import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
 import { LinkApprove } from "../account/LinkApprove";
-import { useBackToClose } from "./backButton";
+import { useBackToClose } from "../shared/backButton";
 import { FriendPage, FriendsPage } from "./Friends";
 import { RatingsSheet } from "./RatingsSheet";
 import { keepFocusIn, sheetIsOpen } from "./Sheet";
@@ -88,6 +89,7 @@ export function AccountScreen({
   const t = useT();
   const account = useAccount();
   const friends = useFriends();
+  const feedback = useFeedbackEntry();
   const { ratings, settings } = useProfileData();
   const ratingsOn = settings.ratings ?? true;
   /** What this profile rated, over the account's page: it is the profile's, so it is kept here with the friends and the settings. */
@@ -233,6 +235,8 @@ export function AccountScreen({
 
   /** What this profile rated is there for a guest too: a guest rates, and keeps it, until it signs in. */
   const ratingsRow = ratingsOn && <MenuRow icon={<StarIcon />} label={t("rating.mine")} detail={ratings.length > 0 ? String(ratings.length) : undefined} onClick={() => setRatingsOpen(true)} testId="menu-ratings" />;
+  /** Next to Settings, for a guest too: anybody may say what is wrong (the number is how many answers from the team wait). */
+  const feedbackRow = <MenuRow icon={<MessageIcon />} label={t("feedback.entry")} detail={feedback.unread > 0 ? String(feedback.unread) : undefined} onClick={feedback.open} testId="menu-feedback" />;
   return (
     <Page title={t("account.title")} onBack={onClose} testId="account-screen">
       {me && profile ? (
@@ -257,6 +261,7 @@ export function AccountScreen({
             )}
             <nav className="menu">
               <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
+              {feedbackRow}
               <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
               <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
               <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
@@ -286,6 +291,7 @@ export function AccountScreen({
           <nav className="menu">
             {ratingsRow}
             <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => setView("settings")} testId="menu-settings" />
+            {feedbackRow}
           </nav>
           <p className="muted small center">{t("account.guestNote")}</p>
         </div>

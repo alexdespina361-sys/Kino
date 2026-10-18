@@ -3,6 +3,7 @@ import { tagLabel, type Message, type PartyTv, type PartyView } from "../../shar
 import { useFriends } from "../friends/FriendsProvider";
 import { useAddable, useAddFromParty } from "../friends/useRequests";
 import { useT } from "../i18n";
+import { pressAgain } from "../shared/backButton";
 import { CopyLink } from "../shared/CopyLink";
 import { formatCode } from "../shared/format";
 import { BackspaceIcon, CheckIcon, CloseIcon, FullscreenIcon, PlusIcon, UsersIcon } from "../shared/icons";
@@ -172,8 +173,8 @@ export function PartyPage(p: PageProps) {
   // A screen that watches along: the host chooses what plays, so there is nothing to do but wait, or leave.
   if (p.following) {
     return (
-      // (Back has nowhere to go from a page that only waits: it points at the way out, and leaving stays a press of OK.)
-      <Screen testId="tv-party-guest" onBack={() => leaveRef.current?.focus()}>
+      // (Back has nowhere to go from a page that only waits: it points at the way out, and leaving stays a press of OK. A phone's own Back asks, and the second press leaves.)
+      <Screen testId="tv-party-guest" onBack={() => leaveRef.current?.focus()} leaving={() => void (pressAgain("exit.leaveParty") && p.onLeave())}>
         <span className="tv-ready-icon">
           <CheckIcon />
         </span>
@@ -301,7 +302,7 @@ function JoinPage({ error, initial, onJoin, onBack }: { error: PageProps["error"
   const back = () => (latest.current ? remove() : onBack());
 
   return (
-    <Screen testId="tv-party-join-page" compact focus onBack={back}>
+    <Screen testId="tv-party-join-page" compact focus onBack={back} leaving={onBack}>
       <h1 className="tv-headline tv-headline-small">{t("party.join")}</h1>
       <p className="tv-hint">{t("party.joinHint")}</p>
       <p className="tv-code-boxes" data-testid="tv-party-digits" aria-live="polite">

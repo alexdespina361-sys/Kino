@@ -1,6 +1,8 @@
 import { persistenceFromEnv } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
 import { buildApp, defaultClientDir, defaultFixturesDir } from "./app";
+import { FEEDBACK_TOKEN_MIN } from "./feedback/routes";
+import { feedbackBackendFor, feedbackMaxBytes, FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { animeHeavenSource } from "./library/animeheaven";
 import { filmpireSource } from "./library/filmpire";
 import { PairingStore } from "./sessions/pairings";
@@ -23,6 +25,18 @@ const accounts = await AccountStore.open({ persistence, log: console });
 const registry = new Registry();
 const pairings = await PairingStore.open({ registry, persistence, log: console });
 
+// What people send from the profile's Feedback button lives in the same place too. A home that cannot be opened must not take the site down with it:
+// reports then wait in memory (and the log says so) until the next start.
+const feedback = await FeedbackStore.open({ backend: feedbackBackendFor(persistence, kind), ...(feedbackMaxBytes() ? { maxBytes: feedbackMaxBytes()! } : {}), log: console }).catch((error: Error) => {
+  console.warn(`Feedback could not be opened (${error.message}); reports are kept in memory only until the server restarts.`);
+  return FeedbackStore.open({ backend: new MemoryFeedbackBackend() });
+});
+// FEEDBACK_ADMIN_TOKEN is what the team reads and answers reports with (docs/feedback.md); without it reports are kept and nobody can read them.
+const feedbackAdminToken = process.env.FEEDBACK_ADMIN_TOKEN?.trim() || undefined;
+if (feedbackAdminToken && feedbackAdminToken.length < FEEDBACK_TOKEN_MIN) {
+  console.warn(`FEEDBACK_ADMIN_TOKEN is shorter than ${FEEDBACK_TOKEN_MIN} characters, so it is not used: the team's side of the feedback is off.`);
+}
+
 // DIRECT_STREAMING is "on" by default to bypass the server middleman and stream directly to viewers.
 if (process.env.DIRECT_STREAMING === undefined) {
   process.env.DIRECT_STREAMING = "on";
@@ -39,6 +53,9 @@ const app = await buildApp({
   storage: kind,
   // (The subtitle timings that screens share live next to the accounts, in the same database or folder.)
   subsync: subsyncStoreFor(persistence, kind),
+  feedback,
+  ...(feedbackAdminToken ? { feedbackAdminToken } : {}),
+  ...(Number(process.env.FEEDBACK_SENDS_PER_10_MIN) > 0 ? { feedbackSendsPer10Min: Number(process.env.FEEDBACK_SENDS_PER_10_MIN) } : {}),
   // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),

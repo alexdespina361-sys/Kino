@@ -8,6 +8,7 @@ export * from "./media";
 export * from "./progress";
 export * from "./protocol";
 export * from "./rating";
+export * from "./reports";
 export * from "./search";
 export * from "./subsync";
 export * from "./tracks";

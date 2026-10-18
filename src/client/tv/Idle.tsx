@@ -3,6 +3,7 @@ import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { useBell } from "../friends/useBell";
 import { useT } from "../i18n";
+import { useHandHeldBack } from "../shared/backButton";
 import { formatCode } from "../shared/format";
 import { enterFullscreen, useFullscreen } from "../shared/fullscreen";
 import { BellIcon, CheckIcon, ChevronLeftIcon, UserIcon } from "../shared/icons";
@@ -37,13 +38,15 @@ interface ScreenProps {
   focus?: boolean;
   /** What the remote's Back does here. Without it, Back is left to whoever listens. */
   onBack?: (() => void) | undefined;
+  /** What the system's Back of a phone or a tablet does here, where it is not what the remote's does (see `useBack`). */
+  leaving?: (() => void) | undefined;
 }
 
 /** A full-screen page the remote can walk around: its `[data-nav]` buttons are reached with the arrow keys. */
-export function Screen({ children, testId, compact = false, focus = false, onBack }: ScreenProps) {
+export function Screen({ children, testId, compact = false, focus = false, onBack, leaving }: ScreenProps) {
   const ref = useRef<HTMLElement>(null);
   useDpad(ref);
-  useBack(onBack);
+  useBack(onBack, leaving);
   useEffect(() => {
     if (!focus || !ref.current) return;
     (ref.current.querySelector<HTMLElement>("[data-autofocus]:not(:disabled)") ?? navItems(ref.current)[0])?.focus();
@@ -158,6 +161,7 @@ export function TvWelcome({ ask, onDone }: { ask: boolean; onDone: () => void })
     enterFullscreen();
     setLeaving(true);
   };
+  useHandHeldBack(ask && !leaving ? () => setLeaving(true) : undefined); // (a phone's own Back says not now, as the remote's does)
   useEffect(() => {
     const leave = () => setLeaving(true);
     if (!ask) {

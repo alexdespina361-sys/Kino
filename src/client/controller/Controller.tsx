@@ -23,6 +23,7 @@ import { nameOf } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
+import { useBackWhile } from "../shared/backButton";
 import { readKept, writeKept } from "../shared/kept";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { MoreIcon, TvIcon } from "../shared/icons";
@@ -40,7 +41,7 @@ import { Library } from "./Library";
 import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
 import { PlayLink } from "./PlayLink";
-import { Remote, type SheetKind } from "./Remote";
+import { Chip, mediaTitle, Remote, stateLabel, type SheetKind } from "./Remote";
 import { LINE_EVENT } from "./Round";
 import { RatingsSheet } from "./RatingsSheet";
 import { ContinueRow, ListRows, RatingsRow } from "./Rows";
@@ -128,7 +129,7 @@ export function Controller() {
   useLayoutEffect(() => {
     // A sign-in code is for one use: it does not stay in the address (a reload or a bookmark would offer it again). Nor does a friend's.
     // (Before the sheet that asks about it adds its own step to the history: that one would be changed, and the first would keep the code.)
-    if (launchRef.current.link || launchRef.current.friend) window.history.replaceState(null, "", location.pathname);
+    if (launchRef.current.link || launchRef.current.friend) window.history.replaceState(window.history.state, "", location.pathname);
   }, []);
 
   /** A video was found: it moves to the front of "Continue watching" (keeping its place if it was left unfinished). */
@@ -178,7 +179,7 @@ export function Controller() {
             }
 
             const launch = launchRef.current;
-            if (launch.code || launch.control || launch.url) window.history.replaceState(null, "", location.pathname);
+            if (launch.code || launch.control || launch.url) window.history.replaceState(window.history.state, "", location.pathname);
             const scanned = launch.code ?? launch.control;
             if (scanned && message.tv && !message.tv.online && message.tv.controlCode !== scanned) {
               // The TV this phone had is off, so there is nothing to ask: another TV's code is the answer. The first stays on the list.
@@ -262,6 +263,7 @@ export function Controller() {
     setResolve(null);
     // (The server cannot read a longer one, and would answer with the words for a page that is newer than it: a signed link of a file host can be that long.)
     if (link.length > MAX_LINK_LENGTH) return setError(t("phone.linkTooLong"));
+    setRemoteShown(true); // (a title picked while another plays: the remote is for that one)
     socketRef.current?.send({ type: "PLAY_URL", url: link, ...(startAt ? { startAt } : {}), ...(hint ? { hint } : {}) });
   };
 
@@ -370,6 +372,15 @@ export function Controller() {
   }, [player.state]);
 
   const active = player.state !== "idle" && media !== null;
+  // The remote is the page while something plays, as it has been; the phone's own Back puts it away, to the library, and the film plays on (a line
+  // at the top of the library brings the remote back). A film that starts (here, or on the TV) brings it up again.
+  const [remoteShown, setRemoteShown] = useState(true);
+  const wasActive = useRef(false);
+  useEffect(() => {
+    if (active && !wasActive.current) setRemoteShown(true);
+    wasActive.current = active;
+  }, [active]);
+  useBackWhile(active && remoteShown && !(connection === "open" && tv !== null && !tv.online), () => setRemoteShown(false));
   useEffect(() => {
     if (!active) setSheet((open) => (open && open !== "menu" && open !== "party" && open !== "tvs" ? null : open));
   }, [active]);
@@ -589,7 +600,7 @@ export function Controller() {
         </section>
       )}
 
-      {away && active ? null : active && media ? (
+      {away && active ? null : active && media && remoteShown ? (
         <Remote
           tv={tv}
           online={online}
@@ -606,6 +617,9 @@ export function Controller() {
         />
       ) : (
         <section className="home">
+          {active && media && (
+            <Chip icon={<TvIcon />} label={stateLabel(player, tv.name)} value={mediaTitle(media)} onClick={() => setRemoteShown(true)} testId="playing-bar" />
+          )}
           <h2>{t("phone.homeTitle")}</h2>
           {linkBox && <p className="muted">{t("phone.homeHelp", { tv: tv.name })}</p>}
           {link}

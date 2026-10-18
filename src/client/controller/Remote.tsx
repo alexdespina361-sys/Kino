@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { episodeLabel, previousEpisode, type Command, type NormalizedMedia, type PlayerState, type TvInfo } from "../../shared";
+import { reportWontPlay } from "../feedback/store";
 import { Rich } from "../i18n/Rich";
 import { t, useT } from "../i18n";
 import { hostOf } from "../shared/format";
@@ -34,7 +35,13 @@ interface RemoteProps {
   onOpen: (sheet: SheetKind) => void;
 }
 
-function stateLabel(player: PlayerState, tvName: string): string {
+/** What the title is called on the remote (a show without the episode, which has a line of its own). */
+export function mediaTitle(media: NormalizedMedia): string {
+  const raw = media.title ?? hostOf(media.stream.url) ?? media.stream.url;
+  return media.series && raw.includes("·") ? raw.split("·")[0]!.trim() : raw;
+}
+
+export function stateLabel(player: PlayerState, tvName: string): string {
   if (player.state === "error") return friendlyError(player.error);
   if (player.state === "loading") return t("common.loading");
   if (player.buffering) return t("remote.buffering");
@@ -45,7 +52,7 @@ function stateLabel(player: PlayerState, tvName: string): string {
   return "";
 }
 
-function Chip({ icon, label, value, onClick, testId }: { icon?: ReactNode; label: string; value: string; onClick: () => void; testId: string }) {
+export function Chip({ icon, label, value, onClick, testId }: { icon?: ReactNode; label: string; value: string; onClick: () => void; testId: string }) {
   return (
     <button className="chip" onClick={onClick} data-testid={testId}>
       {icon}
@@ -66,8 +73,7 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
     window.scrollTo(0, 0);
   }, []);
   const series = media.series;
-  const rawTitle = media.title ?? hostOf(media.stream.url) ?? media.stream.url;
-  const title = series && rawTitle.includes("·") ? rawTitle.split("·")[0]!.trim() : rawTitle;
+  const title = mediaTitle(media);
   const playing = player.state === "playing";
   // A TV can't be sent into full screen without a press on the TV itself; if it hasn't gone in shortly after the tap, say so.
   const [fsHint, setFsHint] = useState(false);
@@ -111,6 +117,12 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
             {busy && <span className="spinner" />}
             {stateLabel(player, tv.name)}
           </p>
+          {/* The video would not play: telling the team is one press away (the form begins with what the line says). */}
+          {player.state === "error" && (
+            <button className="state-action" data-testid="remote-report" aria-label={t("feedback.report")} onClick={() => reportWontPlay(friendlyError(player.error))}>
+              {t("feedback.reportShort")}
+            </button>
+          )}
           {/* The TV is about to start the next episode by itself: the way to say no is here too, not only on the TV's remote. */}
           {player.upNext && player.upNext.seconds !== null && (
             <button className="state-action" data-testid="upnext-cancel" onClick={() => send({ type: "DISMISS_UP_NEXT" })} disabled={!online}>

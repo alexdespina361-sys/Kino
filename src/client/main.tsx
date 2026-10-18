@@ -2,8 +2,12 @@ import "./shared/debug"; // first: with ?debug in the address it shows what the 
 import { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AccountProvider } from "./account/AccountProvider";
+import { installDiagnostics } from "./feedback/diagnostics";
+import { FeedbackGate } from "./feedback/FeedbackGate";
 import { FriendsProvider } from "./friends/FriendsProvider";
-import { roleOfThisPage } from "./role";
+import { roleOfThisPage, thisIsHandHeld } from "./role";
+import { installExitGuard } from "./shared/backButton";
+import { ExitHint } from "./shared/ExitHint";
 import { setUpFullscreen } from "./shared/fullscreen";
 import "./styles.css";
 import "./polish/base.css";
@@ -16,10 +20,16 @@ const Controller = lazy(() => import("./controller/Controller").then((module) =>
 const role = roleOfThisPage();
 // A screen goes full screen at its first press; the remote leaves that to its button (it is where a code gets typed).
 setUpFullscreen({ byItself: role === "tv" });
+// On a phone or a tablet the system's Back would leave the site from its first page: it asks first (see shared/backButton.ts).
+if (thisIsHandHeld()) installExitGuard();
+// What the page can say about itself if somebody sends feedback is kept from the start (nothing leaves the page unless it is sent: see feedback/diagnostics.ts).
+installDiagnostics();
 createRoot(document.getElementById("root")!).render(
   <AccountProvider device={role === "tv" ? "tv" : "remote"}>
     <FriendsProvider>
       <Suspense fallback={null}>{role === "tv" ? <Tv /> : <Controller />}</Suspense>
     </FriendsProvider>
+    <ExitHint />
+    <FeedbackGate />
   </AccountProvider>,
 );

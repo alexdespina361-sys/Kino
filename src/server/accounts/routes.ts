@@ -40,7 +40,7 @@ export interface AccountRoutesOptions {
   screens?: ScreenProofs;
 }
 
-const COOKIE = "kino_session";
+export const COOKIE = "kino_session";
 const MINUTE = 60_000;
 
 const PasswordChangeSchema = z.object({ current: z.string().max(200), next: NewPasswordSchema });
@@ -52,7 +52,7 @@ const FORM_ERRORS = new Set(["invalid_email", "weak_password", "invalid_name"]);
 
 const STORE_STATUS: Record<StoreError, number> = { email_taken: 409, profile_limit: 409, name_taken: 409, last_profile: 409, not_found: 404 };
 
-function readCookie(header: string | undefined, name: string): string | undefined {
+export function readCookie(header: string | undefined, name: string): string | undefined {
   for (const part of header?.split(";") ?? []) {
     const eq = part.indexOf("=");
     if (eq < 0 || part.slice(0, eq).trim() !== name) continue;
