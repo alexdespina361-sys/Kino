@@ -55,6 +55,7 @@ const app = await buildApp({
   subsync: subsyncStoreFor(persistence, kind),
   feedback,
   ...(feedbackAdminToken ? { feedbackAdminToken } : {}),
+  ...(Number(process.env.FEEDBACK_SENDS_PER_10_MIN) > 0 ? { feedbackSendsPer10Min: Number(process.env.FEEDBACK_SENDS_PER_10_MIN) } : {}),
   // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),

@@ -34,6 +34,8 @@ export interface FeedbackRoutesOptions {
   adminToken?: string | undefined;
   /** The account that is signed in with this request, when one is (a report sent from an account is on all of its devices). */
   accountOf?: (request: FastifyRequest) => string | undefined;
+  /** How many reports one address may send in ten minutes (6 unless set; a household or a school behind one address, or a suite of tests, may want more). */
+  sendsPer10Min?: number | undefined;
 }
 
 const KeysSchema = z.object({ keys: z.array(z.string().regex(FEEDBACK_KEY)).max(40) });
@@ -133,10 +135,10 @@ const digest = (value: string) => createHash("sha256").update(value).digest();
  * which takes the team's token and nothing else. The sender's side has no sign-in: a report is the one who has its key (made on the page and
  * kept there; the server keeps only a hash of it), and a signed-in account sees its reports on all of its devices.
  */
-export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (app, { store, adminToken, accountOf }) => {
-  const perAddress = new RateLimiter(6, 10 * MINUTE);
-  const perAddressDay = new RateLimiter(40, DAY);
-  const everyone = new RateLimiter(200, HOUR);
+export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (app, { store, adminToken, accountOf, sendsPer10Min = 6 }) => {
+  const perAddress = new RateLimiter(sendsPer10Min, 10 * MINUTE);
+  const perAddressDay = new RateLimiter(Math.max(40, sendsPer10Min * 7), DAY);
+  const everyone = new RateLimiter(Math.max(200, sendsPer10Min * 30), HOUR);
   const replies = new RateLimiter(30, 10 * MINUTE);
   const reads = new RateLimiter(120, MINUTE);
   const triedToken = new RateLimiter(10, 15 * MINUTE);

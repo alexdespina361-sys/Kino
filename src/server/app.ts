@@ -35,6 +35,8 @@ export interface AppOptions {
   feedback?: FeedbackStore;
   /** The team's token for reading and answering feedback (env FEEDBACK_ADMIN_TOKEN, at least 24 characters). Without it nobody can read what is sent. */
   feedbackAdminToken?: string;
+  /** How many reports one address may send in ten minutes (6 unless set; env FEEDBACK_SENDS_PER_10_MIN). */
+  feedbackSendsPer10Min?: number;
   /** `closed` stops new accounts being made. */
   registration?: Registration;
   maxAccounts?: number;
@@ -160,6 +162,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   await app.register(feedbackRoutes, {
     store: feedback,
     adminToken: options.feedbackAdminToken,
+    sendsPer10Min: options.feedbackSendsPer10Min,
     // (A report sent while signed in is on all of the account's devices.)
     ...(accounts
       ? {
