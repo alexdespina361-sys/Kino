@@ -79,7 +79,10 @@ export class ChatBook {
 
   load(key: string, value: unknown): void {
     const doc = value as ChatDoc;
-    if (typeof doc.a !== "string" || typeof doc.b !== "string" || !Array.isArray(doc.lines) || !Array.isArray(doc.muted)) throw new Error("not a chat");
+    const well = (line: Written) => typeof line?.n === "number" && typeof line.from === "string" && typeof line.at === "number" && typeof line.text === "string";
+    if (typeof doc?.a !== "string" || typeof doc.b !== "string" || typeof doc.rev !== "number" || !Array.isArray(doc.lines) || !doc.lines.every(well) || !Array.isArray(doc.muted) || typeof doc.seen !== "object" || doc.seen === null) {
+      throw new Error("not a chat"); // (the store skips it and says so: one record that is not right must not stop the others from loading)
+    }
     this.chats.set(key, doc);
     for (const profile of [doc.a, doc.b]) this.of.set(profile, (this.of.get(profile) ?? new Set()).add(key));
     // (What ran out while the server was off is let go now, not whenever somebody next looks.)

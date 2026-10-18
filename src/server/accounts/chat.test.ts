@@ -449,5 +449,9 @@ describe("keeping it between starts", () => {
     const { chat } = trio();
     expect(() => chat.load("chat:x:y", { v: 1 })).toThrow();
     expect(() => chat.load("chat:x:y", { a: "x", b: "y", lines: "no", muted: [] })).toThrow();
+    const good = { v: 1, a: "x", b: "y", rev: 5, lines: [{ n: 5, from: "x", at: 1, text: "hi" }], seen: {}, muted: [] };
+    for (const broken of [{ ...good, seen: undefined }, { ...good, seen: null }, { ...good, rev: "5" }, { ...good, lines: [{ n: 5, from: "x", at: 1 }] }, { ...good, lines: [null] }, null, "chat"]) {
+      expect(() => chat.load("chat:x:y", broken), JSON.stringify(broken)).toThrow();
+    }
   });
 });
