@@ -52,7 +52,9 @@ Reports reach the server at `/api/feedback`, and **the team reads them with a to
 2. Set it on the host as `FEEDBACK_ADMIN_TOKEN` (Render: Environment). Reports are kept without it, but nobody can read or answer them, and
    `/api/health` says `"feedback":{"team":false}`.
 3. Keep the same token **on the machine that reads**: `FEEDBACK_ADMIN_TOKEN` and `KINO_URL` in the environment, or `.kino-feedback.json`
-   (`{ "url": "https://your-site", "token": "..." }`, which git ignores). **Never commit it, never paste it in a report or a reply.**
+   (`{ "url": "https://your-site", "token": "..." }`, which git ignores; the token alone is not enough, the address goes with it). The reader looks
+   for the file beside `scripts/`, then in the repository's main folder (one file serves every git worktree), or where `KINO_FEEDBACK_FILE` points;
+   a file it cannot read as JSON is named, never shown. **Never commit it, never paste it in a report or a reply.**
 
 | Variable | Default | |
 | --- | --- | --- |
@@ -141,9 +143,11 @@ does not give a page anyway): only what is on screen is copied, scrolled parts a
 
 - `src/server/feedback/feedback.test.ts` (28): the intake, the key and its hash, accounts, pictures and their limits, the team's token, rates,
   the budget, the long-poll, a thread's lines.
+- `src/server/feedback/cli.test.ts` (4): where `scripts/feedback.mjs` finds its address and token (a file with the token alone is named and not shown;
+  a byte-order mark, a missing `https://` and stray spaces are forgiven; a git worktree reads the main folder's file; the nearer file wins).
 - `src/client/feedback/feedback.test.ts` (37): what is left out of an address and a line, receipts and drafts, the form's payload, which
   pictures go and which are held back, the marks and how they are drawn, which words on a seeded form are the person's own.
-- `e2e/feedback.spec.ts` (15): a phone sends a circled picture and the team reads it with the plain one, a covered picture goes without its
+- `e2e/feedback.spec.ts` (19): a phone sends a circled picture and the team reads it with the plain one, a covered picture goes without its
   original, a file and a photo's note, switching what goes along off, a send that fails twice and one that is turned away, a draft, Back, an
   answer that comes back and the reply; a TV with a remote only, the keys that never reach the TV behind the form, a TV's screen captured with a
   mouse; the card of a title that would not play (the remote reaches *Report this problem*, the form is on that problem, Back returns to the card)
