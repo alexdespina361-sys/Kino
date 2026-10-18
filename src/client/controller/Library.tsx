@@ -37,13 +37,6 @@ const TMDB_SOURCES = new Set(["Filmpire"]);
  */
 const kept: { query: string; filter: Filter; found: { query: string; answers: Answers } | null; scroll: number | null } = { query: "", filter: "all", found: null, scroll: null };
 
-if (typeof window !== "undefined" && !sessionStorage.getItem("kino_search_reset_v3")) {
-  sessionStorage.setItem("kino_search_reset_v3", "1");
-  kept.query = "";
-  kept.found = null;
-  kept.scroll = null;
-}
-
 /** What a row is: what its place says, else what its name suggests ("Feature films", "Classic TV"). Rows that are both, or neither, are only in All. */
 const isMovies = (row: LibraryData["rows"][number]) => (row.kind ? row.kind === "movie" : /movie|film/i.test(`${row.id} ${row.title}`));
 const isSeries = (row: LibraryData["rows"][number]) => (row.kind ? row.kind === "series" : /series|shows|docuseries|anime|(^|[^a-z])tv([^a-z]|$)/i.test(`${row.id} ${row.title}`));
@@ -164,12 +157,12 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
     const controller = new AbortController();
     const timer = setTimeout(() => {
       Promise.resolve() // (encodeURIComponent throws for a lone half of a pair: inside the chain it is a failed search)
-        .then(() => fetch(`/api/library/search?q=${encodeURIComponent(q)}`, { signal: controller.signal, cache: "no-store" }))
+        .then(() => fetch(`/api/library/search?q=${encodeURIComponent(q)}`, { signal: controller.signal }))
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
         .then((body: unknown) => {
           const parsed = LibraryItemsSchema.parse(body);
           feed.learn(parsed.items); // (found next time without asking)
-          const found: Answers = { items: parsed.items, exact: parsed.exact ?? parsed.items.length };
+          const found = mergeAnswers(local, { items: parsed.items, exact: parsed.exact ?? parsed.items.length }, q);
           kept.found = { query: q, answers: found };
           setAnswers(found);
           setSearching(false);

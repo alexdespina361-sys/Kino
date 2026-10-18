@@ -297,4 +297,18 @@ describe("TitleIndex", () => {
     own.add([{ id: "alpha", title: "Film alpha", url: "/again" }]); // (one that was forgotten is taken again)
     expect(names(own.find("alpha"))).toEqual(["Film alpha"]);
   });
+
+  it("removes a title by id, and discards titles by predicate", () => {
+    const own = new TitleIndex([
+      { id: "a", title: "Dragon Ball", url: "/a" },
+      { id: "b", title: "Dragon Ball Z", url: "/b" },
+      { id: "c", title: "One Piece", url: "/c" },
+    ]);
+    expect(names(own.find("dragon"))).toEqual(["Dragon Ball", "Dragon Ball Z"]);
+    own.remove("a");
+    expect(names(own.find("dragon"))).toEqual(["Dragon Ball Z"]);
+    own.discardWhere((item) => item.title.includes("Dragon"));
+    expect(names(own.find("dragon"))).toEqual([]);
+    expect(names(own.find("piece"))).toEqual(["One Piece"]);
+  });
 });

@@ -144,7 +144,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       const rowSeen = new Set<string>();
       const rowTitles = new Map<string, Array<{ year?: number }>>();
       const items = row.items.filter((item) => {
-        if (!listed(item)) return false;
+        if (!listed(item) || (item.image !== undefined && item.image.trim() === "")) return false;
         const key = canonicalItemKey(item);
         if (rowSeen.has(key)) return false;
         const titleKey = `${item.kind ?? ""}:${normalizeQuery(item.title)}`;
@@ -266,7 +266,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       const take = (items: LibraryItem[], into = exact) => {
         for (const item of items) {
           const key = canonicalItemKey(item);
-          if (seen.has(key) || !listed(item, true)) continue;
+          if (seen.has(key) || !listed(item, true) || (item.image !== undefined && item.image.trim() === "")) continue;
           const titleKey = `${item.kind ?? ""}:${normalizeQuery(item.title)}`;
           const matches = seenTitles.get(titleKey);
           if (matches) {

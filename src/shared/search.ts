@@ -126,6 +126,25 @@ export class TitleIndex {
     }
   }
 
+  /** Takes an item out of the index. */
+  remove(id: string): void {
+    if (!this.titles.has(id)) return;
+    this.index.discard(id);
+    this.titles.delete(id);
+    this.order.delete(id);
+  }
+
+  /** Takes items that match a condition out of the index. */
+  discardWhere(predicate: (item: LibraryItem) => boolean): void {
+    for (const [id, item] of this.titles) {
+      if (predicate(item)) {
+        this.index.discard(id);
+        this.titles.delete(id);
+        this.order.delete(id);
+      }
+    }
+  }
+
   /**
    * The titles that have the words of the query, the best match first. A word may be unfinished, have its neighbouring letters swapped (a word
    * of three letters too, when another word of the query is longer: "teh office"), or (when it is long enough) be a letter or two off; the looser

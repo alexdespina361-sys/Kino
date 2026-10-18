@@ -207,6 +207,28 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
       });
     }
 
+    if (items.length === 0) {
+      const linkBlocks = [...html.matchAll(/<a[^>]+href=['"]anime\.php\?([a-z0-9]+)['"][^>]*>([\s\S]*?)<\/a>/gi)];
+      for (const m of linkBlocks) {
+        const slug = m[1]!;
+        if (seen.has(slug)) continue;
+        const inner = m[2]!;
+        const imgPath = inner.match(/<img[^>]+src=['"]([^'"]+)['"]/i)?.[1];
+        if (!imgPath) continue;
+        const rawTitle = inner.match(/alt=['"]([^'"]+)['"]/i)?.[1]?.replace(/Anime Poster/i, "").trim();
+        if (!rawTitle) continue;
+        seen.add(slug);
+        const image = imgPath.startsWith("http") ? imgPath : `${BASE}/${imgPath.replace(/^\//, "")}`;
+        items.push({
+          id: `animeheaven-series-${slug}`,
+          title: decodeHtmlEntities(rawTitle),
+          kind: "series",
+          image,
+          url: `${BASE}/anime.php?${slug}&s=1&e=1`,
+        });
+      }
+    }
+
     return items;
   };
 
