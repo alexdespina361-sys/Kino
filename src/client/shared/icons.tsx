@@ -356,3 +356,139 @@ export const StarIcon = ({ filled, ...props }: Props & { filled?: boolean }) => 
     <polygon points="12 2.5 15.1 8.8 22 9.8 17 14.6 18.2 21.5 12 18.2 5.8 21.5 7 14.6 2 9.8 8.9 8.8" {...(filled ? { fill: "currentColor" } : {})} />
   </Icon>
 );
+
+/* ---- the feedback: what kind it is, how a picture is added and marked ---- */
+
+/** A bug: head, shell, six legs and two feelers. */
+export const BugIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M9.2 7.4a2.8 2.8 0 0 1 5.6 0M8 3.6l1.6 1.9M16 3.6l-1.6 1.9" />
+    <rect x="6.8" y="7.4" width="10.4" height="12.6" rx="5.2" />
+    <path d="M12 7.6V20M6.8 12H3M17.2 12H21M7.2 16.6l-3 1.6M16.8 16.6l3 1.6M7.2 8.6 4.4 7M16.8 8.6 19.6 7" />
+  </Icon>
+);
+
+export const WarningIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M12 3.4 2.6 19.6h18.8z" />
+    <path d="M12 10v4.4M12 17.2h.01" />
+  </Icon>
+);
+
+/** A spark: something that is there, made better. */
+export const SparkleIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M10.5 4.5 12.4 10l5.6 1.9-5.6 1.9-1.9 5.6-1.9-5.6L3 11.9 8.6 10z" />
+    <path d="M19 3.5v4M17 5.5h4M18.5 15.5v3.5M16.8 17.2h3.4" />
+  </Icon>
+);
+
+/** A bulb: a new idea. */
+export const BulbIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M9.4 18.2h5.2M10.2 21h3.6" />
+    <path d="M12 3a6 6 0 0 0-3.6 10.8c.7.5 1 1.2 1 2v.4h5.2v-.4c0-.8.3-1.5 1-2A6 6 0 0 0 12 3z" />
+  </Icon>
+);
+
+export const MessageIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+    <path d="M8 9h8M8 12.5h5" />
+  </Icon>
+);
+
+export const QuestionIcon = (props: Props) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.4 9.4a2.6 2.6 0 1 1 3.7 2.3c-.7.4-1.1 1-1.1 1.8M12 16.8h.01" />
+  </Icon>
+);
+
+export const CameraIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M4 8h3l1.5-2.6h7L17 8h3a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+    <circle cx="12" cy="13.2" r="3.6" />
+  </Icon>
+);
+
+export const ImageIcon = (props: Props) => (
+  <Icon {...props}>
+    <rect x="3" y="4" width="18" height="16" rx="2.5" />
+    <circle cx="8.6" cy="9.4" r="1.7" />
+    <path d="M3.5 17l5-5 4 4 3-3 5 5" />
+  </Icon>
+);
+
+export const PaperclipIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M20.5 11.6l-8.3 8.3a5.2 5.2 0 0 1-7.4-7.4l8.6-8.6a3.5 3.5 0 0 1 5 5L10 17.5a1.8 1.8 0 0 1-2.5-2.5l7.7-7.7" />
+  </Icon>
+);
+
+/** The four corners of what is on the screen, and a dot in the middle: a picture of the screen. */
+export const ScreenshotIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M4 8.5V6a2 2 0 0 1 2-2h2.5M15.5 4H18a2 2 0 0 1 2 2v2.5M20 15.5V18a2 2 0 0 1-2 2h-2.5M8.5 20H6a2 2 0 0 1-2-2v-2.5" />
+    <circle cx="12" cy="12" r="2.6" />
+  </Icon>
+);
+
+/** The tools that mark a picture: a circle (drawn as an oval), an arrow, a box, a line by hand (the pencil), a word, a cover. */
+export const OvalIcon = (props: Props) => (
+  <Icon {...props}>
+    <ellipse cx="12" cy="12" rx="9" ry="6.4" />
+  </Icon>
+);
+
+export const ArrowIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M5 19 19 5M9 5h10v10" />
+  </Icon>
+);
+
+export const BoxIcon = (props: Props) => (
+  <Icon {...props}>
+    <rect x="4" y="5.5" width="16" height="13" rx="1.6" />
+  </Icon>
+);
+
+export const TextIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M5 7V4.8h14V7M12 4.8v14.4M9 19.2h6" />
+  </Icon>
+);
+
+/** A solid block: what covers the private part of a picture. */
+export const CoverIcon = (props: Props) => (
+  <Icon {...props}>
+    <rect x="4" y="6" width="16" height="12" rx="1.6" fill="currentColor" />
+  </Icon>
+);
+
+export const UndoIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M9 14 4 9l5-5" />
+    <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+  </Icon>
+);
+
+export const RedoIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="m15 14 5-5-5-5" />
+    <path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" />
+  </Icon>
+);
+
+export const SendIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M21 3 10.4 13.6M21 3l-6.6 18-4-7.4L3 9.6z" />
+  </Icon>
+);
+
+export const ShieldIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M12 3 4.6 6v5.6c0 4.4 3 7.9 7.4 9.4 4.4-1.5 7.4-5 7.4-9.4V6z" />
+    <path d="m9 12 2.2 2.2L15.4 10" />
+  </Icon>
+);
