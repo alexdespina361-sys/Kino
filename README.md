@@ -50,6 +50,9 @@ pnpm build && pnpm start     # http://localhost:8787
 | `EDGE_STREAM_PROXY_KEY` | – | Server-side signing secret shared with the separate relay's `STREAM_RELAY_KEY`. Never expose it in browser code. |
 | `PROXY_VIDEO` | `on` | `off`: this server never carries a film (`/api/proxy` passes subtitles and nothing else), so the host's bandwidth cannot go on one. |
 | `DIRECT_STREAMING` | off | `true`: a source's own address is handed to the screen (unless there is a relay). Only for sources that let pages of other websites in; see below before you use it. |
+| `FEEDBACK_ADMIN_TOKEN` | – | The team's token (24 characters or more) for reading and answering what people send with the **Feedback** button. Without it reports are kept and nobody can read them. Keep it secret; see [docs/feedback.md](docs/feedback.md). |
+| `FEEDBACK_MAX_MB` | `150` | What the reports (their pictures, nearly all of it) may take up before the oldest closed ones make room. |
+| `FEEDBACK_SENDS_PER_10_MIN` | `6` | How many reports one address may send in ten minutes. |
 
 ## What it does
 
@@ -157,6 +160,15 @@ pnpm build && pnpm start     # http://localhost:8787
   account, and the box for pasting a link, are on the phone's page only.
 - **Settings per profile:** website language, accent colour (the red can be any of several colours), whether the next episode follows by
   itself, whether a tap or click on the picture pauses it (below), whether titles can be rated, friends and what they may do, and the subtitle languages (below).
+- **Feedback** is a button next to Settings (the phone's account page, the TV's profile page; a guest has it too, and a title that would not play has
+  *Report this problem* on its card and on the phone's line that says so) that opens a form for **a problem**,
+  **something to make better**, **a feature** or **anything else**: where in the app it is (a guess, and a list of 33 places), the words, a few questions that
+  fit the kind, and **a picture of the screen** (captured by the page, or added, or a photo) that can be circled, arrowed, boxed, drawn on, written on or
+  **covered where it is private**. What the page knows (device, last steps, errors, what was playing) goes along only as far as each switch is on, and
+  the form shows the text. The team reads reports with a token, asks the sender when something is not clear and answers; the answer is in **Your
+  messages** (no email: the report is kept by the browser under a key of its own, or by the account). Words are kept as a draft; Back goes a step back, then
+  closes. How it is set up, read and judged, what is collected and left out, and what could not be tested: [docs/feedback.md](docs/feedback.md)
+  (`src/client/feedback/`, `src/server/feedback/`, `scripts/feedback.mjs`, `e2e/feedback.spec.ts`)
 
 **Phone**
 - Pair by QR scan (camera) or by code; a QR link opened from the phone's camera app pairs by itself. A phone that already has a TV is asked
@@ -661,7 +673,7 @@ several TVs (`e2e/several-tvs.spec.ts`), a server that is slow to answer (a page
 `sleepingServer` in `e2e/helpers.ts`, with the page's clock skipped ahead), the TV page on a
 phone, a tablet and a phone held sideways, a finger on the picture (taps, double taps, a hold, the big button, the landscape lock, the episode's name:
 `e2e/player-touch.spec.ts`; the recognizer on its own in `src/client/tv/gestures.test.ts`), the end card and mute, full screen (at the first press, kept for the next visit, the buttons),
-ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV, and the score on a title's picture), the TV's menu and its Profile page (`e2e/profile-hub.spec.ts`, which also checks that what the page says fits its tiles in the three languages at four screen sizes), friends (made with a code or a link, what a friend can see,
+ratings (scores, notes, seasons and the facts kept with them, on the phone and the TV, and the score on a title's picture), the TV's menu and its Profile page (`e2e/profile-hub.spec.ts`, which also checks that what the page says fits its tiles in the three languages at four screen sizes), the Feedback button on a phone and on a TV (`e2e/feedback.spec.ts`: what is sent, the picture of the screen and its marks, what the team reads with its token, the answer that comes back), friends (made with a code or a link, what a friend can see,
 what is sent and told, on the phone and between two TVs: `e2e/friends.spec.ts`, `e2e/friends-tv.spec.ts`; tags, requests and the Add button of a party, with the fit of its rows: `e2e/friend-tags.spec.ts`; the bell on the phone and the TV, with the fit of the header, the corner and the list: `e2e/bell.spec.ts`), and accounts: registering, profiles (on the phone, and made, renamed and removed on the TV), guest progress combined into an account, a second
 device picking up where the first stopped, a TV signed in from a phone or from another screen, and the three languages. The pages in these
 tests start as if full screen had been left on an earlier visit (`playwright.config.ts`), so a key press never takes one full screen by
@@ -680,9 +692,10 @@ Android TV remotes, the wake lock, an iPhone's camera and browsers, and the home
 src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge), rating.ts (what a rating remembers of the watching),
                friends.ts (the friends' switches, what travels between them)
 src/server/    sessions/ (registry: devices, codes, controllers; pairings: which phone goes with which TV, kept between restarts), websocket/hub.ts,
-               resolvers/, accounts/ (store, routes, persistence, friends: codes, inboxes, what a friend may see), app.ts
+               resolvers/, accounts/ (store, routes, persistence, friends: codes, inboxes, what a friend may see), feedback/ (what people send with the Feedback button, and the team's side of it), app.ts
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),
-               friends/ (the state both screens share, what is new, the friends' pages of the TV), i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
+               friends/ (the state both screens share, what is new, the friends' pages of the TV), feedback/ (the Feedback form, the picture of the screen and its marks),
+               i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
 public/        copied as it is into the built page: the web app manifest and its icons
 fixtures/      sample.mp4, long.mp4 (40 s, for Up Next), hls/ (VP9, so Playwright's Chromium can decode them)
 e2e/           Playwright specs and helpers
