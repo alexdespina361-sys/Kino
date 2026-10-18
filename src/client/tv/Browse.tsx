@@ -85,6 +85,13 @@ const remembered = {
   detail: null as { page: Focused; season: number | undefined } | null,
 };
 
+if (typeof window !== "undefined" && !sessionStorage.getItem("kino_search_reset_v3")) {
+  sessionStorage.setItem("kino_search_reset_v3", "1");
+  remembered.query = "";
+  remembered.results = NO_ANSWERS;
+  remembered.resultsFor = "";
+}
+
 /** Something else than that show plays: the library comes back to its tile, not to the page. (`link` is the page the video came from.) */
 export function keepPageFor(link: string | undefined) {
   const kept = remembered.detail;
@@ -596,12 +603,14 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       Promise.resolve() // (encodeURIComponent throws for a lone half of a pair: inside the chain it is a failed search, outside it an error that leaves "searching" on)
-        .then(() => fetch(`/api/library/search?q=${encodeURIComponent(text)}`, { signal: controller.signal }))
+        .then(() => fetch(`/api/library/search?q=${encodeURIComponent(text)}`, { signal: controller.signal, cache: "no-store" }))
         .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`search answered ${res.status}`))))
         .then((answer: unknown) => {
           const parsed = LibraryItemsSchema.parse(answer);
           feed.learn(parsed.items); // (found next time without asking)
-          setResults(mergeAnswers(local, { items: parsed.items, exact: parsed.exact ?? parsed.items.length }, text));
+          const authoritative: Answers = { items: parsed.items, exact: parsed.exact ?? parsed.items.length };
+          setResults(authoritative);
+          remembered.results = authoritative;
           remembered.resultsFor = text;
           setFailedFor(null);
           setSearching(false);
