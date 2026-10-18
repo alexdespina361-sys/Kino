@@ -56,6 +56,9 @@ interface ChatDoc {
   muted: string[];
 }
 
+/** How long a chat with nothing left in it is still there as a revision (see `tidy`). */
+export const EMPTY_CHAT_KEEP_MS = 24 * 3600 * 1000;
+
 const PREFIX = "chat:";
 const keyOf = (a: string, b: string) => (a < b ? `${PREFIX}${a}:${b}` : `${PREFIX}${b}:${a}`);
 const no = (error: ChatError, waitMs?: number): { ok: false; error: ChatError; waitMs?: number } => ({ ok: false, error, ...(waitMs ? { waitMs } : {}) });
@@ -114,8 +117,10 @@ export class ChatBook {
   }
 
   /**
-   * Let go of what has been kept too long, and of what there are too many of. A chat with nothing in it and nothing muted is not kept at all.
-   * Whether the chat is still there.
+   * Let go of what has been kept too long, and of what there are too many of. A chat with nothing in it and nothing muted is not kept for long:
+   * for a day after its last change it stays as a revision and nothing else, so that a screen which has the chat open, and shows a message that
+   * was just taken back, is told that it is gone (an empty chat that was already forgotten would read as revision 0, older than what the
+   * screen has, and would be taken for a late answer). Whether the chat is still there.
    */
   private tidy(key: string, doc: ChatDoc): boolean {
     const now = this.host.now();
@@ -125,7 +130,7 @@ export class ChatBook {
       doc.rev = this.next(doc);
       this.host.touch(key);
     }
-    if (doc.lines.length === 0 && doc.muted.length === 0) {
+    if (doc.lines.length === 0 && doc.muted.length === 0 && now - doc.rev >= EMPTY_CHAT_KEEP_MS) {
       this.discard(key);
       return false;
     }

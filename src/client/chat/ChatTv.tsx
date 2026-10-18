@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { checkChatText, CHAT_TEXT_MAX } from "../../shared";
 import { useT } from "../i18n";
 import { MessageIcon, ShieldIcon, TrashIcon } from "../shared/icons";
@@ -66,6 +66,16 @@ export function ReadTv({ name, session, report, receiving, now, onWrite, onClose
   const { state } = session;
   const blocked = whyNotWrite(session);
   const mine = lastOwn(state.lines);
+
+  // The page opens before it knows whether the friend takes messages, with the remote on Write; when it finds out that they do not (or that the
+  // friendship is over) Write goes, and the remote must not be left on nothing: it stands on Back, unless it had already moved on to another button.
+  useEffect(() => {
+    if (!blocked) return;
+    const on = document.activeElement;
+    if (on && on !== document.body && on.closest("[data-testid='tv-chat']")) return;
+    document.querySelector<HTMLElement>("[data-testid='tv-chat-back']")?.focus();
+  }, [blocked]);
+
   return (
     <Screen key="read" testId="tv-chat" compact focus onBack={onClose}>
       <h1 className="tv-headline tv-headline-small">{t("chat.title", { name })}</h1>

@@ -142,8 +142,12 @@ export function Sheet({
     if (panel.current && !panel.current.contains(opener)) panel.current.focus({ preventScroll: true });
     const onKey = (event: KeyboardEvent) => {
       if (open[open.length - 1] !== me) return;
-      if (event.key === "Escape") close.current();
-      else if (event.key === "Tab" && panel.current) keepFocusIn(panel.current, event);
+      if (event.key === "Escape") {
+        // (Escape is the sheet's alone. The page under it listens on the window too, and when it was drawn again after this sheet opened it listens
+        // after it: it would find the sheet gone by then and go back a page as well.)
+        event.stopImmediatePropagation();
+        close.current();
+      } else if (event.key === "Tab" && panel.current) keepFocusIn(panel.current, event);
     };
     window.addEventListener("keydown", onKey);
     return () => {

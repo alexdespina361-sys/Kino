@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CHAT_KEEP_MAX, CHAT_KEEP_MS, CHAT_REPORT_LINES, CHAT_SENDS_PER_MINUTE, CHAT_TEXT_MAX } from "../../shared/chat";
-import { ChatBook, type ChatError, type ChatOutcome, type ChatView } from "./chat";
+import { ChatBook, EMPTY_CHAT_KEEP_MS, type ChatError, type ChatOutcome, type ChatView } from "./chat";
 
 const pair = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
@@ -181,7 +181,10 @@ describe("how much is kept", () => {
     expect(after.rev).toBeGreaterThan(before.rev); // (a screen that has the old one is told)
     clock.now += 10 * 24 * 3600 * 1000;
     expect(value(chat.read("alex", "sam")).lines).toEqual([]);
-    expect(dropped.has("chat:alex:sam")).toBe(true); // (a chat with nothing in it is not kept)
+    expect(dropped.has("chat:alex:sam")).toBe(false); // (a chat with nothing in it is kept for a day, as a revision: see the take-back below)
+    clock.now += EMPTY_CHAT_KEEP_MS;
+    expect(value(chat.read("alex", "sam")).lines).toEqual([]);
+    expect(dropped.has("chat:alex:sam")).toBe(true); // (and then it is not kept)
   });
 
   it("lets go of what ran out while the server was off, when it starts, and keeps the rest", () => {
@@ -200,8 +203,10 @@ describe("how much is kept", () => {
     const gone = trio();
     gone.clock.now = first.clock.now + 60 * 24 * 3600 * 1000;
     gone.chat.load("chat:alex:sam", doc);
-    expect(gone.dropped.has("chat:alex:sam")).toBe(true);
     expect(value(gone.chat.read("alex", "sam")).lines).toEqual([]);
+    gone.clock.now += EMPTY_CHAT_KEEP_MS;
+    expect(value(gone.chat.read("alex", "sam")).lines).toEqual([]);
+    expect(gone.dropped.has("chat:alex:sam")).toBe(true);
   });
 });
 
@@ -250,12 +255,26 @@ describe("taking a message back", () => {
     expect(refusal(chat.takeBack("alex", "sam", 12345))).toBe("gone");
   });
 
-  it("takes the chat with it when it was the only message", () => {
-    const { chat, dropped } = trio();
+  it("leaves the chat empty when it was the only message, with the revision it came to, so that a screen that shows the message is told it is gone", () => {
+    const { chat, clock, dropped } = trio();
     const sent = value(chat.send("alex", "sam", "oops"));
-    value(chat.takeBack("alex", "sam", sent.lines[0]!.id));
+    const shown = value(chat.read("sam", "alex")); // (Sam has the chat open, and the message in it)
+    expect(shown.lines).toHaveLength(1);
+    const taken = value(chat.takeBack("alex", "sam", sent.lines[0]!.id));
+    expect(taken.rev).toBeGreaterThan(shown.rev);
+    clock.now += 3000;
+    const after = value(chat.read("sam", "alex"));
+    expect(after.lines).toEqual([]);
+    expect(after.rev).toBe(taken.rev); // (not 0, which a screen would take for an answer that is older than what it has)
+    expect(after.rev).toBeGreaterThan(shown.rev);
+    expect(dropped.has("chat:alex:sam")).toBe(false);
+    expect(chat.unread("sam")).toEqual([]);
+
+    // a day later nothing is kept of it, and a new message goes on from the clock, above the numbers there were
+    clock.now += EMPTY_CHAT_KEEP_MS;
+    expect(value(chat.read("sam", "alex")).rev).toBe(0);
     expect(dropped.has("chat:alex:sam")).toBe(true);
-    expect(value(chat.read("alex", "sam")).lines).toEqual([]);
+    expect(value(chat.send("alex", "sam", "again")).rev).toBeGreaterThan(taken.rev);
   });
 
   it("does not make what Sam has not read count for Alex any more", () => {
