@@ -62,9 +62,14 @@ interface Draft {
   keepOut: Rect[];
   targets: Target[];
   shelves: Map<string, PageTile[]>;
+  /** The names under the cards (see `World.soft`). */
+  soft: Rect[];
   focus?: Rect;
   focusId?: string;
 }
+
+/** How many cards' names are kept for the cat to settle clear of (a page has more cards than a screen shows; the ones in view come first). */
+const MAX_SOFT = 80;
 
 const tileId = (el: HTMLElement): string | undefined => el.dataset.entry || undefined;
 
@@ -148,7 +153,7 @@ export class TvPage {
     const vh = viewport.h;
     const L = Math.max(40, Math.round(bodyLengthFor(vw, vh) * (this.context.size?.() ?? 1)));
     const em = tv ? parseFloat(getComputedStyle(tv).fontSize) || L / BODY_EMS : L / BODY_EMS;
-    const draft: Draft = { surfaces: [], keepOut: [], targets: [], shelves: new Map() };
+    const draft: Draft = { surfaces: [], keepOut: [], targets: [], shelves: new Map(), soft: [] };
     let mode: World["mode"] = "away";
     let player: PlayerMode = "none";
     let controlsUp = false;
@@ -200,6 +205,7 @@ export class TvPage {
       reducedMotion: typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches,
     };
     if (draft.focus) world.focus = draft.focus;
+    if (draft.soft.length > 0) world.soft = draft.soft;
 
     // The world is a new object only when the page really is another one (the engine works its ledges out again for a new object); a page that only
     // sits there is the very same, so the cat is not made to look afresh at a page that has not changed.
@@ -208,6 +214,8 @@ export class TvPage {
     if (same) {
       // (the posters moved by less than a pixel, or not at all: the cat's world stands; only the targets, which are not geometry the cat walks on, follow)
       this.world!.targets = draft.targets;
+      if (draft.soft.length > 0) this.world!.soft = draft.soft;
+      else delete this.world!.soft;
       if (draft.focus) this.world!.focus = draft.focus;
       else delete this.world!.focus;
     } else {
@@ -277,6 +285,7 @@ export class TvPage {
       if (tops.length < 3) tops.push(lay.y);
       seen.push({ el: child, id: entry, surfaceId: id, x0: lay.x, x1: lay.x + lay.w });
       if (draft.targets.length < 90) draft.targets.push({ id: entry, rect: rectOf(child), surfaceId: id });
+      this.names(child, c.em, draft);
     }
     if (tops.length === 0) return;
     tops.sort((a, b) => a - b);
@@ -301,6 +310,7 @@ export class TvPage {
       line.x1 = Math.max(line.x1, lay.x + lay.w);
       line.tiles.push({ el, id: entry, surfaceId: "", x0: lay.x, x1: lay.x + lay.w });
       if (draft.targets.length < 90) draft.targets.push({ id: entry, rect: rectOf(el) });
+      this.names(el, c.em, draft);
     }
     for (const line of lines.values()) {
       if (line.y < clip.y - 1) continue;
@@ -309,6 +319,15 @@ export class TvPage {
       for (const target of draft.targets) if (line.tiles.some((tile) => tile.id === target.id)) target.surfaceId ??= id;
       draft.surfaces.push({ id, kind: "shelfTop", y: line.y, x0: Math.max(line.x0, 0, clip.x), x1: Math.min(line.x1, c.vw, clip.x + clip.w), weight: 0.85 });
       draft.shelves.set(id, line.tiles);
+    }
+  }
+
+  /** The words under a card (its name, and its year or the time left), as wide as the words are and not as wide as the card: for the cat to settle clear of. */
+  private names(tile: HTMLElement, em: number, draft: Draft): void {
+    if (draft.soft.length >= MAX_SOFT) return;
+    for (const el of tile.querySelectorAll<HTMLElement>(".tv-tile-name, .tv-tile-year")) {
+      const box = textRect(el);
+      if (box) draft.soft.push(inflate(box, 0.06 * em));
     }
   }
 

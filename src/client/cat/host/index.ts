@@ -2,10 +2,11 @@ import { isTvAgent } from "../../role";
 import { onCat } from "../bus";
 import { BODY_EMS } from "../math";
 import { CatEngine, type EngineDebug } from "../engine/engine";
+import { covered, type RestPose } from "../engine/ledges";
 import { CatRig } from "../render/rig";
 import { createRng } from "../rng";
 import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, readCatSettings, subscribeCatSettings, type CatCoat } from "../settings";
-import type { CatEvent, CatFrame, PlayerMode, Rect, Vec, World } from "../types";
+import type { CatEvent, CatFrame, Clip, PlayerMode, Rect, Vec, World } from "../types";
 import "./cat.css";
 import { createDebugView, type DebugView } from "./debug";
 import { inflate, rectOf, takesRoom } from "./dom";
@@ -61,6 +62,9 @@ export interface CatSnapshot {
   places: number;
   keepOut: number;
   posters: number;
+  /** How many names under the cards the cat knows of, and how much of them its body covers just now (in squares of its body length). */
+  names: number;
+  covers: number;
 }
 
 declare global {
@@ -68,6 +72,9 @@ declare global {
     __kinoCat?: CatHandle;
   }
 }
+
+/** How much room a clip takes on the screen: the lying and sitting ones are low, any other is a cat on its feet. */
+const postureOf = (clip: Clip): RestPose => (clip === "sit" || clip === "loaf" || clip === "curl" ? clip : "stand");
 
 const seedOf = (search: string): number => {
   const asked = Number(new URLSearchParams(search).get("catseed"));
@@ -473,6 +480,8 @@ export function mountCat(): { stop: () => void } {
         places: read?.world.surfaces.length ?? 0,
         keepOut: read?.world.keepOut.length ?? 0,
         posters: read?.world.targets.length ?? 0,
+        names: read?.world.soft?.length ?? 0,
+        covers: read ? covered(frame.x, frame.y, read.world.bodyLength, postureOf(frame.clip), read.world.soft ?? []) / read.world.bodyLength ** 2 : 0,
       }),
     };
   }

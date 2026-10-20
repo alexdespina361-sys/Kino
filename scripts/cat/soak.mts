@@ -17,6 +17,7 @@ const variants: Array<[string, Parameters<typeof runSession>[0] extends infer O 
   ["reduced", { chaos: all, reducedMotion: true }],
   ["quiet", { chaos: all, quiet: true }],
   ["scroll-focus", { chaos: { scroll: true, focus: true, touch: true } }],
+  ["names", { chaos: all, names: true }],
 ];
 let bad = 0;
 const started = Date.now();

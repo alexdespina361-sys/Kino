@@ -5,7 +5,8 @@ import type { PageRead } from "./page";
 
 /**
  * What `?cat=debug` shows: a few lines of the cat's state, and a map of what the cat sees of the page (the places it can stand on in green, what it
- * keeps out of in red, the posters it can point to in blue, and where its feet are). Only built when asked for.
+ * keeps out of in red, the names it would rather not settle in front of in orange, the posters it can point to in blue, and where its feet are).
+ * Only built when asked for.
  */
 
 export interface DebugInfo {
@@ -70,6 +71,8 @@ export function createDebugView(): DebugView {
       }
       ctx.strokeStyle = "rgba(255,70,70,0.85)";
       for (const rect of w.keepOut) ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      ctx.strokeStyle = "rgba(255,170,40,0.85)";
+      for (const word of w.soft ?? []) ctx.strokeRect(word.x, word.y, word.w, word.h);
       ctx.strokeStyle = "rgba(80,170,255,0.85)";
       for (const target of w.targets) ctx.strokeRect(target.rect.x, target.rect.y, target.rect.w, target.rect.h);
       ctx.strokeStyle = "rgba(255,230,0,1)";

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../rng";
-import type { CatFrame, World } from "../types";
+import type { CatFrame, Rect, World } from "../types";
 import { JUMP_LANDING, JUMP_TAKEOFF } from "../types";
 import { CatEngine } from "./engine";
-import { boxHits, computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, stepFlight } from "./ledges";
+import { boxHits, computeLedges, covered, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, stepFlight, type Ledge, type RestPose } from "./ledges";
 import { browseWorld, defaultPage, playerWorld, runSession, stepCat } from "./sim";
 
 const L = 92;
@@ -76,6 +76,68 @@ describe("ledges", () => {
     expect(boxHits(500, 800, L, { x: 450, y: 760, w: 20, h: 20 })).toBe(true);
     expect(boxHits(500, 800, L, { x: 900, y: 760, w: 20, h: 20 })).toBe(false);
     expect(boxHits(500, 800, L, { x: 450, y: 100, w: 20, h: 20 })).toBe(false);
+  });
+
+  describe("settling clear of words", () => {
+    const ledge: Ledge = { id: "row#0", surfaceId: "row", kind: "shelfTop", y: 800, x0: 100, x1: 1500, weight: 1 };
+    /** A name as wide as a card's, hanging where a cat sitting up on the shelf has its head. */
+    const name = (x: number, tall = 0.4): Rect => ({ x, y: 800 - 0.3 * L - tall * L / 2, w: 1.6 * L, h: tall * L });
+
+    it("counts how much of the words a cat settled in a posture would cover, and a cat lying down covers less than one sitting up", () => {
+      const word = { x: 480, y: 740, w: 40, h: 20 };
+      expect(covered(500, 800, L, "sit", [word])).toBeCloseTo(40 * 20, 6);
+      expect(covered(900, 800, L, "sit", [word])).toBe(0);
+      // (half of the word is under the cat's side)
+      expect(covered(500 + 0.36 * L, 800, L, "sit", [word])).toBeCloseTo(20 * 20, 6);
+      // (a word above the head is not covered)
+      expect(covered(500, 800, L, "sit", [{ x: 480, y: 800 - 0.72 * L - 30, w: 40, h: 20 }])).toBe(0);
+      const high = { x: 480, y: 800 - 0.62 * L, w: 40, h: 0.1 * L };
+      expect(covered(500, 800, L, "sit", [high])).toBeGreaterThan(0);
+      for (const lying of ["loaf", "curl"] as const) expect(covered(500, 800, L, lying, [high]), lying).toBe(0);
+    });
+
+    it("has nothing to say when there are no words, or none under the cat", () => {
+      expect(restSpot(ledge, 700, L, "sit", undefined)).toBeUndefined();
+      expect(restSpot(ledge, 700, L, "sit", [])).toBeUndefined();
+      expect(restSpot(ledge, 700, L, "sit", [name(1000)])).toBeUndefined();
+      // (a name that is above a cat lying down is no reason to move it)
+      expect(restSpot(ledge, 700, L, "loaf", [{ x: 700 - 0.8 * L, y: 800 - 0.62 * L, w: 1.6 * L, h: 0.1 * L }])).toBeUndefined();
+    });
+
+    it("finds a place on the shelf where the cat covers (nearly) none of them, and not a long walk off", () => {
+      const words = [name(700 - 0.8 * L), name(1000), name(1300)];
+      const here = covered(700, 800, L, "sit", words);
+      expect(here).toBeGreaterThan(0.25 * L * L);
+      const spot = restSpot(ledge, 700, L, "sit", words)!;
+      expect(spot).toBeDefined();
+      expect(covered(spot, 800, L, "sit", words)).toBeLessThan(here / 2);
+      expect(Math.abs(spot - 700)).toBeGreaterThanOrEqual(0.25 * L);
+      expect(Math.abs(spot - 700)).toBeLessThanOrEqual(3.5 * L + 1);
+      expect(spot).toBeGreaterThanOrEqual(ledge.x0);
+      expect(spot).toBeLessThanOrEqual(ledge.x1);
+    });
+
+    it("prefers the nearer of two clear places", () => {
+      const words = [name(700 - 0.8 * L)];
+      const left = restSpot(ledge, 690, L, "sit", words)!;
+      const right = restSpot(ledge, 710, L, "sit", words)!;
+      expect(left).toBeLessThan(690);
+      expect(right).toBeGreaterThan(710);
+      // (a hair's breadth of a letter under its side is not covering it)
+      expect(covered(left, 800, L, "sit", words)).toBeLessThan(0.01 * L * L);
+      expect(covered(right, 800, L, "sit", words)).toBeLessThan(0.01 * L * L);
+    });
+
+    it("stays on its shelf, and leaves it be when words are everywhere", () => {
+      const nearTheEnd = restSpot(ledge, ledge.x0 + 5, L, "sit", [name(ledge.x0 - 0.2 * L)])!;
+      expect(nearTheEnd).toBeGreaterThanOrEqual(ledge.x0);
+      expect(restSpot(ledge, 700, L, "sit", [{ x: 0, y: 800 - 0.8 * L, w: 1600, h: 0.7 * L }])).toBeUndefined();
+    });
+
+    it("knows every posture it can settle in", () => {
+      const poses: RestPose[] = ["stand", "sit", "loaf", "curl"];
+      for (const pose of poses) expect(covered(500, 800, L, pose, [{ x: 0, y: 0, w: 2000, h: 2000 }]), pose).toBeGreaterThan(0);
+    });
   });
 
   it("finds the way between shelves, and nothing that is too far up", () => {
@@ -444,8 +506,61 @@ describe("its little scenes", () => {
   });
 });
 
+describe("settling clear of the names", () => {
+  /** How many frames, over a few afternoons on a page with names hanging over its shelves, the cat spent at rest (sitting, lying, asleep) with its body over them, and how many at rest in all. */
+  const afternoons = (told: boolean): { covering: number; resting: number } => {
+    let covering = 0;
+    let resting = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const page = defaultPage();
+      page.rows = 2;
+      page.names = true;
+      const world = browseWorld(page);
+      const { soft, ...blind } = world;
+      const engine = new CatEngine(seed);
+      for (let i = 0; i < 300 * 30; i++) {
+        const f = engine.update(told ? world : blind, 1 / 30);
+        const act = engine.debug().act;
+        const pose: RestPose | null = act === "rest:sit" ? "sit" : act === "rest:loaf" ? "loaf" : act === "rest:stand" ? "stand" : act === "sleep" ? "curl" : null;
+        if (!pose || f.appear < 0.99 || !f.grounded) continue;
+        resting++;
+        if (covered(f.x, f.y, world.bodyLength, pose, soft!) > 0.05 * world.bodyLength ** 2) covering++;
+      }
+    }
+    return { covering, resting };
+  };
+
+  it("rests in the gaps between them, where a cat that has not been told about them rests in front of them", () => {
+    const told = afternoons(true);
+    const blind = afternoons(false);
+    expect(blind.resting).toBeGreaterThan(2000);
+    expect(told.resting).toBeGreaterThan(2000);
+    // (by chance, about two thirds of the cat's rests are in front of a name on this page; told, it is one in ten or fewer)
+    const [shareBlind, shareTold] = [blind.covering / blind.resting, told.covering / told.resting];
+    expect(shareBlind).toBeGreaterThan(0.4);
+    expect(shareTold).toBeLessThan(0.2);
+    expect(shareTold).toBeLessThan(shareBlind / 3);
+  });
+
+  it("keeps to everything it must keep to on such a page, through the same bad afternoons", () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const stats = runSession({ seed, seconds: 600, chaos: { scroll: true, focus: true, resize: true, modal: true, film: true, touch: true, route: true, visibility: true }, names: true });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      expect(stats.maxAppear).toBeGreaterThan(0.9);
+    }
+  });
+
+  it("does not walk to find a place when the viewer wants quiet or less motion", () => {
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const stats = runSession({ seed: 4, seconds: 600, names: true, ...(flag === "quiet" ? { quiet: true } : { reducedMotion: true }) });
+      expect(stats.violations, flag).toEqual([]);
+      expect(stats.acts["walk"] ?? 0, flag).toBe(0);
+    }
+  });
+});
+
 describe("the cat in a film", () => {
-  const film = (state: World["player"] = "playing", controls = false, captions = false) => playerWorld(1920, 1080, state, controls, captions);
+  const film =(state: World["player"] = "playing", controls = false, captions = false) => playerWorld(1920, 1080, state, controls, captions);
 
   it("goes to its perch while the page changes, and sleeps there", () => {
     const engine = new CatEngine(1);

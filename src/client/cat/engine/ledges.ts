@@ -75,6 +75,53 @@ export function computeLedges(world: World): Ledge[] {
   return out;
 }
 
+/* ------------------------------ settling ------------------------------ */
+
+/** What a cat settled in a posture takes of the screen: half its width and how tall it is, in body lengths (lying down it is low, and the words above it can still be read). */
+export const POSE_BOX = { stand: [HALF_WIDTH, HEIGHT], sit: [0.36, 0.72], loaf: [0.5, 0.46], curl: [0.42, 0.4] } as const;
+export type RestPose = keyof typeof POSE_BOX;
+
+/** How much of the words, in square pixels, a cat settled in `pose` with its middle at `x` on the line `y` would cover. */
+export function covered(x: number, y: number, bodyLength: number, pose: RestPose, soft: readonly Rect[]): number {
+  const [half, tall] = POSE_BOX[pose];
+  const left = x - half * bodyLength;
+  const right = x + half * bodyLength;
+  const top = y - tall * bodyLength;
+  let area = 0;
+  for (const word of soft) {
+    const across = Math.min(right, word.x + word.w) - Math.max(left, word.x);
+    const down = Math.min(y, word.y + word.h) - Math.max(top, word.y);
+    if (across > 0 && down > 0) area += across * down;
+  }
+  return area;
+}
+
+/**
+ * Where on `ledge` to settle for a while, when where the cat is would cover words: the spot within `reach` body lengths that covers the least (and of
+ * those the nearest), if it covers at most half of what here does and is worth a walk. Undefined when where it is will do, or nothing is better.
+ */
+export function restSpot(ledge: Ledge, from: number, bodyLength: number, pose: RestPose, soft: readonly Rect[] | undefined, reach = 3.5): number | undefined {
+  if (!soft || soft.length === 0) return undefined;
+  const unit = bodyLength * bodyLength;
+  const here = covered(from, ledge.y, bodyLength, pose, soft);
+  // (the edge of a letter under a paw is not covering it)
+  if (here < 0.02 * unit) return undefined;
+  let best: number | undefined;
+  let bestArea = Infinity;
+  let bestAway = Infinity;
+  for (let x = Math.max(ledge.x0, from - reach * bodyLength); x <= Math.min(ledge.x1, from + reach * bodyLength); x += 0.12 * bodyLength) {
+    const area = covered(x, ledge.y, bodyLength, pose, soft);
+    const away = Math.abs(x - from);
+    if (away < 0.25 * bodyLength || area > here * 0.5) continue;
+    if (area < bestArea - 0.01 * unit || (area <= bestArea + 0.01 * unit && away < bestAway)) {
+      best = x;
+      bestArea = area;
+      bestAway = away;
+    }
+  }
+  return best;
+}
+
 /** The ledge of this surface that has `x`, or the nearest piece of it. */
 export function ledgeAt(ledges: readonly Ledge[], surfaceId: string, x: number): Ledge | undefined {
   let best: Ledge | undefined;

@@ -1,7 +1,7 @@
 import { clamp, clamp01, finite, lerp } from "../math";
 import { createRng, type Rng } from "../rng";
 import { JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Rect, type Vec, type World } from "../types";
-import { boxHits, clampToLedge, computeLedges, findPath, HALF_WIDTH, HEIGHT, ledgeAt, planJump, reshape, stepFlight, type JumpPlan, type Ledge } from "./ledges";
+import { boxHits, clampToLedge, computeLedges, findPath, HALF_WIDTH, HEIGHT, ledgeAt, planJump, reshape, restSpot, stepFlight, type JumpPlan, type Ledge, type RestPose } from "./ledges";
 
 /**
  * The cat's mind and legs. Each frame it is given the page as a `World` (plain numbers) and the time that passed, and it says what the cat
@@ -753,12 +753,19 @@ export class CatEngine {
     }
     const options: Option[] = [];
 
+    // (a cat that is going to settle for a while does it where its body does not cover the names under the cards, if the shelf has such a place; it only walks for it when it is free to roam)
+    const spotFor = (pose: RestPose, from = this.x): number | undefined => (roaming && here ? restSpot(here, from, L, pose, world.soft) : undefined);
+    const walkToSpot = (pose: RestPose): Act[] => {
+      const spot = spotFor(pose);
+      return spot === undefined ? [] : [{ k: "walk", x: spot, run: false, maxT: 25 }];
+    };
+
     options.push({
       name: "rest",
       score: 1.0 + tired * 0.8,
       plan: () => {
         const pose = this.rng.weighted<Pose>(["sit", "loaf", "stand"], (p) => (p === "sit" ? 0.5 : p === "loaf" ? 0.3 + tired * 0.4 : 0.2)) ?? "sit";
-        return [{ k: "rest", pose, dur: this.rng.range(4, 12) }];
+        return [...walkToSpot(pose), { k: "rest", pose, dur: this.rng.range(4, 12) }];
       },
     });
 
@@ -772,7 +779,10 @@ export class CatEngine {
             if (Math.abs(x - this.x) > 1.3 * L) {
               // (a cat that has walked somewhere often smells it before it settles)
               const sniff: Act[] = tired < 0.7 && this.rng.chance(0.4) ? [{ k: "shot", clip: "sniff", dur: this.rng.range(2.2, 3.4) }] : [];
-              return [{ k: "walk", x, run: false, maxT: 40 }, ...sniff, { k: "rest", pose: this.rng.chance(0.6) ? "sit" : "stand", dur: this.rng.range(2, 7) }];
+              const pose: Pose = this.rng.chance(0.6) ? "sit" : "stand";
+              const dur = this.rng.range(2, 7);
+              // (it stops where it was going, or a little off that if the names are there)
+              return [{ k: "walk", x: spotFor(pose, x) ?? x, run: false, maxT: 40 }, ...sniff, { k: "rest", pose, dur }];
             }
           }
           return null;
@@ -875,7 +885,7 @@ export class CatEngine {
       name: "sleep",
       score: idle > 40 ? 0.08 + tired * 1.8 : 0.0,
       // (and before it lies down for good, a cat will often tread its place into shape)
-      plan: () => [{ k: "rest", pose: "loaf", dur: 2.5 }, ...(this.rng.chance(0.5) ? [{ k: "shot", clip: "knead", dur: this.rng.range(4, 7) } as const] : []), { k: "sleep", dur: this.rng.range(25, 70) }, { k: "shot", clip: "stretch", dur: 2.4 }],
+      plan: () => [...walkToSpot("loaf"), { k: "rest", pose: "loaf", dur: 2.5 }, ...(this.rng.chance(0.5) ? [{ k: "shot", clip: "knead", dur: this.rng.range(4, 7) } as const] : []), { k: "sleep", dur: this.rng.range(25, 70) }, { k: "shot", clip: "stretch", dur: 2.4 }],
     });
     // a card has just been given the focus: the cat sits near it and watches
     if (here && roaming && this.now - this.lastFocusAt < 6 && world.focus && this.cooled("watch")) {

@@ -67,6 +67,11 @@ export interface World {
   /** Where the cat must not be (text, buttons, menus, subtitles, what has the focus). The cat never stands where its body would cover one. */
   keepOut: Rect[];
   targets: Target[];
+  /**
+   * Words the cat may cross but would rather not settle in front of (the names under the cards). Unlike `keepOut` they cut nothing: a cat that is going to
+   * rest for a while looks along its shelf for a spot where its body, in the posture it takes, covers none of them, and takes it if there is one.
+   */
+  soft?: Rect[];
   /** What has the remote's focus (or the pointer), where the viewer is looking. */
   focus?: Rect;
   /** Where the pointer is, when it moved lately. */

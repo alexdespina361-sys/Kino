@@ -25,6 +25,8 @@ export interface PageOptions {
   page: number;
   reducedMotion: boolean;
   quiet: boolean;
+  /** Names hanging right above each shelf, over the cards (the worst case: where a cat standing on the shelf would sit), as the page's `soft` words. */
+  names?: boolean;
 }
 
 export const defaultPage = (): PageOptions => ({ width: 1920, height: 1080, scroll: 0, rows: 4, tilesPerRow: 6, tile: 330, focus: null, page: 1, reducedMotion: false, quiet: false });
@@ -38,6 +40,7 @@ export function browseWorld(page: PageOptions, extra: { pointer?: { x: number; y
   const surfaces: Surface[] = [];
   const targets: Target[] = [];
   const keepOut: Rect[] = [];
+  const soft: Rect[] = [];
   let focus: Rect | undefined;
   for (let row = 0; row < page.rows; row++) {
     const top = 511 + 350 * row - page.scroll;
@@ -47,6 +50,7 @@ export function browseWorld(page: PageOptions, extra: { pointer?: { x: number; y
     for (let col = 0; col < page.tilesPerRow; col++) {
       const rect = { x: x0 + col * (page.tile + 24), y: top, w: page.tile, h: 190 };
       targets.push({ id: `p${page.page}:r${row}c${col}`, rect, surfaceId: `p${page.page}:row${row}` });
+      if (page.names) soft.push({ x: rect.x + 10, y: top - 0.55 * L, w: page.tile * 0.7, h: 0.4 * L });
       if (page.focus && page.focus.row === row && page.focus.col === col) focus = { x: rect.x - 12, y: rect.y - 12, w: rect.w + 24, h: rect.h + 24 };
     }
   }
@@ -68,6 +72,7 @@ export function browseWorld(page: PageOptions, extra: { pointer?: { x: number; y
     reducedMotion: page.reducedMotion,
   };
   if (focus) world.focus = focus;
+  if (soft.length > 0) world.soft = soft;
   if (extra.pointer) world.pointer = extra.pointer;
   return world;
 }
@@ -105,6 +110,8 @@ export interface SimOptions {
   chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean };
   reducedMotion?: boolean;
   quiet?: boolean;
+  /** The page has names over its shelves (see `PageOptions.names`). */
+  names?: boolean;
   /** Stop at the first thing that must not happen. */
   stopOnViolation?: boolean;
   /** How many frames before the first violation to keep for `context` (default 14). */
@@ -123,6 +130,7 @@ export function runSession(options: SimOptions): SimStats {
   const page = defaultPage();
   page.reducedMotion = options.reducedMotion ?? false;
   page.quiet = options.quiet ?? false;
+  page.names = options.names ?? false;
   const stats: SimStats = { seconds: 0, frames: 0, acts: {}, hops: 0, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
   const trail: string[] = [];
   const seen = new Set<string>();
