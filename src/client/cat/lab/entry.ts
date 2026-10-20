@@ -1,5 +1,5 @@
 import { drawCat, MARMALADE } from "../render/draw";
-import { CatRig } from "../render/rig";
+import { CatRig, GALLOP_STRIDE, WALK_STRIDE } from "../render/rig";
 import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame } from "../types";
 
 /**
@@ -103,7 +103,7 @@ export const POSES: Cell[] = [
 export function walkStrip(canvas: HTMLCanvasElement, frames = 8, run = false, scale = 1): void {
   const cells: Cell[] = [];
   const px = 150 * scale;
-  const stride = (run ? 0.92 : 0.6) * px;
+  const stride = (run ? GALLOP_STRIDE : WALK_STRIDE) * px;
   for (let i = 0; i < frames; i++) {
     cells.push({ label: `${run ? "run" : "walk"} ${i + 1}/${frames}`, frame: { clip: run ? "run" : "walk", odometer: (stride * i) / frames + stride * 3, vx: run ? 300 : 100 }, settle: 0.8, run: 1 });
   }
@@ -122,7 +122,7 @@ function sheetWalking(canvas: HTMLCanvasElement, cells: Cell[], columns: number,
   const speed = (run ? 2.6 : 1.0) * px;
   let odo = 0;
   // run up to the first phase, then paint evenly through one cycle
-  const stride = (run ? 0.92 : 0.6) * px;
+  const stride = (run ? GALLOP_STRIDE : WALK_STRIDE) * px;
   const dt = 1 / 60;
   const warm = Math.round(1.4 / dt);
   for (let i = 0; i < warm; i++) {

@@ -82,6 +82,26 @@ const HIND_LOWER = 0.24;
 /** How the four legs share a stride: near hind, near front, far hind, far front (a cat walks on one leg at a time, in that order). */
 const GAIT_OFFSET = { hn: 0, fn: 0.25, hf: 0.5, ff: 0.75 } as const;
 
+/** The ground a walk covers while the legs go once round (the lengths of the body), and what a gallop does: further, with each paw down for less of it. */
+export const WALK_STRIDE = 0.6;
+export const GALLOP_STRIDE = 1.05;
+/** The gallop's paws land in pairs, not one at a time: the two hind (one a little after the other), then the two front, with the body in the air between. */
+const GALLOP_OFFSET = { hn: 0, hf: 0.1, ff: 0.4, fn: 0.5 } as const;
+const GALLOP_DUTY = 0.3;
+const GALLOP_LIFT = 0.17;
+/** How far ahead of where it comes down a paw is put out in the air: the leg stretches out, and the paw is drawn back as it lands. */
+const GALLOP_REACH = { fn: 0.1, ff: 0.1, hn: 0.06, hf: 0.06 } as const;
+
+/** Where a paw is in a gallop, by the ground covered: down and still while the body goes over it, then quickly out ahead and down again. */
+function gallopPaw(key: "fn" | "ff" | "hn" | "hf", homeX: number, odoL: number): { x: number; y: number } {
+  const ph = fract(fract(odoL / GALLOP_STRIDE) + GALLOP_OFFSET[key]);
+  const half = (GALLOP_STRIDE * GALLOP_DUTY) / 2;
+  if (ph < GALLOP_DUTY) return { x: homeX + half * (1 - (2 * ph) / GALLOP_DUTY), y: 0 };
+  const t = (ph - GALLOP_DUTY) / (1 - GALLOP_DUTY);
+  const out = 1 - (1 - t) ** 2.2;
+  return { x: homeX - half + 2 * half * out + GALLOP_REACH[key] * Math.sin(Math.PI * out), y: -GALLOP_LIFT * Math.sin(Math.PI * t) ** 0.8 };
+}
+
 const legOf = (front: boolean): Leg => ({ root: { x: 0, y: 0 }, mid: { x: 0, y: 0 }, hock: { x: 0, y: 0 }, toe: { x: 0, y: 0 }, front, lift: 0 });
 
 export class CatRig {
@@ -97,6 +117,9 @@ export class CatRig {
   private breathPhase = 0;
   private prevVx = 0;
   private gait = dyn(0);
+  private gallopDyn = dyn(0);
+  /** How far the tail has gone out behind it: slower than the body, which is the rest of what a run changes. */
+  private gallopTail = dyn(0);
   private eyeX = dyn(0);
   private eyeY = dyn(0);
   private yaw = dyn(0);
@@ -339,15 +362,24 @@ export class CatRig {
     smooth(this.gait, walking ? 1 : 0, walking ? 8 : 5, dt);
     const gaitW = clamp01(this.gait.x);
     const odoL = frame.odometer / px;
-    const running = clip === "run";
+    // (a run is a gallop, and is eased into and out of: a cat that breaks into one does not jump from one gait to the other)
+    smooth(this.gallopDyn, clip === "run" ? 1 : 0, clip === "run" ? 5 : 4, dt);
+    const gallop = clamp01(this.gallopDyn.x);
+    const gat = gaitW * gallop;
+    smooth(this.gallopTail, gat, 2.4, dt);
     // (a creeping cat takes short, slow steps, each foot lifted a little and set down with care)
-    const stride = running ? 0.92 : stalking ? 0.36 : 0.6;
-    const duty = running ? 0.46 : stalking ? 0.8 : 0.68;
-    const lift = running ? 0.12 : stalking ? 0.05 : 0.07;
+    const stride = stalking ? 0.36 : WALK_STRIDE;
+    const duty = stalking ? 0.8 : 0.68;
+    const lift = stalking ? 0.05 : 0.07;
     const cycle = odoL / stride;
     const base = fract(cycle);
-    const bob = gaitW * (running ? 0.03 : stalking ? 0.004 : 0.012) * (1 - Math.cos(base * TAU * 2)) * 0.5;
-    const roll = gaitW * Math.sin(base * TAU) * (running ? 0.03 : stalking ? 0.006 : 0.012);
+    const bob = gaitW * (1 - gallop) * (stalking ? 0.004 : 0.012) * (1 - Math.cos(base * TAU * 2)) * 0.5;
+    const roll = gaitW * (1 - gallop) * Math.sin(base * TAU) * (stalking ? 0.006 : 0.012);
+    // (where it is in the gallop's one beat: 0 is the hind feet coming down; gathered, with the feet under it, is the end of it, stretched out the middle)
+    const gbeat = fract(odoL / GALLOP_STRIDE);
+    const gather = gat > 0.001 ? Math.cos(TAU * (gbeat - 0.92)) : 0;
+    const rearUp = gat > 0.001 ? 0.5 - 0.5 * Math.cos(TAU * (gbeat - 0.55)) : 0;
+    const foreUp = gat > 0.001 ? 0.5 - 0.5 * Math.cos(TAU * (gbeat - 0.05)) : 0;
 
     // --- the whole body, tilted in the air and bowing to what it does
     const pitchTarget = jumping ? clamp(frame.vy / 1400, -0.5, 0.5) : 0;
@@ -358,6 +390,23 @@ export class CatRig {
     }
     p.neckTop.y -= roll * 0.5;
     p.rumpTop.y += roll * 0.5;
+    if (gat > 0.001) {
+      // (a cat that runs is lower on its legs, and rocks over them: the rump is down as the hind feet take the weight and up as the forefeet do, and the
+      // shoulders the other way about; gathered, its back is arched and its body short, stretched out, it is long and flat)
+      const rearDy = (0.035 - 0.065 * rearUp) * gat;
+      const foreDy = (0.04 - 0.065 * foreUp) * gat;
+      for (const k of ["rumpBack", "rumpTop", "groin", "rumpBottom", "hip", "tailRoot"] as const) {
+        p[k].y += rearDy;
+        p[k].x += 0.045 * gather * gat;
+      }
+      for (const k of ["shoulderTop", "neckTop", "chestFront", "chestBottom", "shoulder", "head"] as const) {
+        p[k].y += foreDy;
+        p[k].x -= 0.012 * gather * gat;
+      }
+      const arch = Math.max(0, gather) * gat;
+      p.backMid.y += (rearDy + foreDy) / 2 - 0.05 * arch;
+      p.bellyMid.y += (rearDy + foreDy) / 2 - 0.03 * arch;
+    }
 
     // --- where each paw is (a step when walking, the posture's own rest place when not)
     const pawTarget = (key: "fn" | "ff" | "hn" | "hf") => {
@@ -373,6 +422,11 @@ export class CatRig {
         const t = (ph - duty) / (1 - duty);
         gx = home.x - half + 2 * half * easeInOut(t);
         gy = -lift * Math.sin(Math.PI * t) ** 0.8;
+      }
+      if (gallop > 0.001) {
+        const g = gallopPaw(key, home.x, odoL);
+        gx = lerp(gx, g.x, gallop);
+        gy = lerp(gy, g.y, gallop);
       }
       return { x: lerp(home.x, gx, gaitW), y: lerp(home.y, gy, gaitW) };
     };
@@ -424,6 +478,12 @@ export class CatRig {
       headRotExtra = -0.6 * open;
       headShiftX = 0.012 * open;
       headShiftY = -0.03 * open;
+    }
+    if (gat > 0.001) {
+      // (the neck is stretched out and the head low, the nose down, and it comes up a little with the shoulders)
+      headShiftX += 0.03 * gat;
+      headShiftY += (0.025 + 0.02 * (1 - foreUp)) * gat;
+      headRotExtra += 0.1 * gat;
     }
     const pawOn = clip === "groom" || clip === "point" ? 1 : 0;
     smooth(this.pawOn, pawOn, 6, dt);
@@ -596,7 +656,8 @@ export class CatRig {
     }
     const alert = clamp01(frame.energy * 0.6 + (attending ? 0.3 : 0));
     // (in a yawn the ears go back)
-    const earRest = lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0) + this.jawDyn.x * 0.3 + this.groomDyn.x * 0.12;
+    // (and in a run they are laid back)
+    const earRest = lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0) + this.jawDyn.x * 0.3 + this.groomDyn.x * 0.12 + gat * 0.22;
     smooth(this.earBaseL, earRest, 4, dt);
     smooth(this.earBaseR, earRest, 4, dt);
     bounce(this.earKickL, 0, 9, 0.35, dt);
@@ -641,8 +702,11 @@ export class CatRig {
     // (the tip of a hunting cat's tail twitches, quickly)
     const swayAmp = lerp(0.09, 0.02, sleepy) + frame.energy * 0.22 + (frame.petted ? 0.12 : 0) + hunt * 0.12;
     const swayRate = lerp(0.55, 0.2, sleepy) + frame.energy * 0.9 + hunt * 0.9;
-    let a = pose.s.tailAngle + (frame.petted ? -0.45 : 0);
-    const curl = pose.s.tailCurl;
+    // (in a run the tail streams out behind it, nearly straight, instead of going up and over)
+    const streaming = clamp01(this.gallopTail.x);
+    const tailBase = lerp(pose.s.tailAngle, 3.35, streaming);
+    let a = tailBase + (frame.petted ? -0.45 : 0);
+    const curl = lerp(pose.s.tailCurl, 0.1, streaming);
     const wrap = clamp01(pose.s.tailFront);
     let tx = p.tailRoot.x;
     let ty = p.tailRoot.y;
@@ -660,7 +724,7 @@ export class CatRig {
       carry = d.x;
       // (a tail that is wrapped round the cat goes back for a moment and then turns, quickly, to lie forward along its side)
       const along01 = lerp(f * f * 0.6 + f * 0.4, smoothstep(0.1, 0.32, f), wrap);
-      a = pose.s.tailAngle + (frame.petted ? -0.45 : 0) + curl * along01 + d.x * (0.4 + f);
+      a = tailBase + (frame.petted ? -0.45 : 0) + curl * along01 + d.x * (0.4 + f);
       let dx = Math.cos(a) * segLen;
       let dy = Math.sin(a) * segLen;
       if (ty + dy > TAIL_FLOOR) {

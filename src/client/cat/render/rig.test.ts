@@ -171,6 +171,99 @@ describe("the cat's little scenes", () => {
     expect(awake).toBeLessThan(0.012);
   });
 
+  /** A cat covering ground in `clip` at `perSecond` body lengths a second for `seconds`, 60 frames a second (px = 100): `watch` sees each frame after the first second. */
+  const covering = (steps: { clip: Clip; perSecond: number; seconds: number }[], watch: (s: Solved, clip: Clip) => void, seed = 3): void => {
+    const rig = new CatRig(seed);
+    let odometer = 0;
+    let t = 0;
+    for (const step of steps) {
+      for (let k = 0; k < Math.round(step.seconds * 60); k++) {
+        odometer += (step.perSecond * 100) / 60;
+        t += 1 / 60;
+        rig.update(frame({ clip: step.clip, odometer, vx: step.perSecond * 100, clipTime: t }), 1 / 60, 100);
+        if (t > 1) watch(rig.solved, step.clip);
+      }
+    }
+  };
+  const correlation = (a: number[], b: number[]): number => {
+    const n = a.length;
+    const ma = a.reduce((x, y) => x + y, 0) / n;
+    const mb = b.reduce((x, y) => x + y, 0) / n;
+    let ab = 0;
+    let aa = 0;
+    let bb = 0;
+    for (let i = 0; i < n; i++) {
+      ab += (a[i]! - ma) * (b[i]! - mb);
+      aa += (a[i]! - ma) ** 2;
+      bb += (b[i]! - mb) ** 2;
+    }
+    return ab / Math.sqrt(aa * bb || 1);
+  };
+
+  it("gallops when it runs: the paws land in pairs with the body in the air between, the body rocks over them, and the tail streams out behind", () => {
+    const lifts = { fn: [] as number[], ff: [] as number[], hn: [] as number[], hf: [] as number[] };
+    const rump: number[] = [];
+    const shoulder: number[] = [];
+    let allUp = 0;
+    let tail = { dx: 0, dy: 0 };
+    covering([{ clip: "run", perSecond: 2.6, seconds: 6 }], (s) => {
+      for (const key of ["fn", "ff", "hn", "hf"] as const) lifts[key].push(s.legs[key].lift);
+      rump.push(s.pose.p.rumpTop.y);
+      shoulder.push(s.pose.p.shoulderTop.y);
+      if ((["fn", "ff", "hn", "hf"] as const).every((key) => s.legs[key].lift > 0.02)) allUp++;
+      tail = { dx: s.tail[s.tail.length - 1]!.x - s.tail[0]!.x, dy: s.tail[s.tail.length - 1]!.y - s.tail[0]!.y };
+    });
+    // (the two hind paws go together, and the two front, and the pairs take turns)
+    expect(correlation(lifts.hn, lifts.hf)).toBeGreaterThan(0.5);
+    expect(correlation(lifts.fn, lifts.ff)).toBeGreaterThan(0.5);
+    expect(correlation(lifts.hn, lifts.fn)).toBeLessThan(0.2);
+    // (a walk's paws go one at a time: the two hind ones against each other)
+    const walkLifts = { hn: [] as number[], hf: [] as number[] };
+    let walkAllUp = 0;
+    covering([{ clip: "walk", perSecond: 1, seconds: 6 }], (s) => {
+      walkLifts.hn.push(s.legs.hn.lift);
+      walkLifts.hf.push(s.legs.hf.lift);
+      if ((["fn", "ff", "hn", "hf"] as const).every((key) => s.legs[key].lift > 0.02)) walkAllUp++;
+    });
+    expect(correlation(walkLifts.hn, walkLifts.hf)).toBeLessThan(0);
+    expect(walkAllUp).toBe(0);
+    // (and a gallop has a time when every paw is off the ground)
+    expect(allUp / lifts.hn.length).toBeGreaterThan(0.05);
+    // (the rump and the shoulders rock the opposite ways, by a few hundredths of the body)
+    expect(Math.max(...rump) - Math.min(...rump)).toBeGreaterThan(0.04);
+    expect(correlation(rump, shoulder)).toBeLessThan(-0.2);
+    // (the tail is out behind, not up and over)
+    expect(tail.dx).toBeLessThan(-0.45);
+    expect(tail.dy).toBeGreaterThan(-0.3);
+  });
+
+  it("does not jump when it breaks into a run, slows to a walk or stops (no joint moves more than a fifth of the body in one frame: a leg used to go by 0.4)", () => {
+    let previous: number[] | null = null;
+    let biggest = 0;
+    const joints = (s: Solved): number[] => [
+      ...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe.x, s.legs[key].toe.y, s.legs[key].mid.x, s.legs[key].mid.y, s.legs[key].hock.x, s.legs[key].hock.y]),
+      s.head.x,
+      s.head.y,
+      s.tail[s.tail.length - 1]!.x,
+      s.tail[s.tail.length - 1]!.y,
+    ];
+    covering(
+      [
+        { clip: "walk", perSecond: 1, seconds: 3 },
+        { clip: "run", perSecond: 2.6, seconds: 3 },
+        { clip: "walk", perSecond: 1, seconds: 3 },
+        { clip: "run", perSecond: 2.6, seconds: 3 },
+        { clip: "stand", perSecond: 0, seconds: 3 },
+      ],
+      (s) => {
+        const now = joints(s);
+        if (previous) for (let i = 0; i + 1 < now.length; i += 2) biggest = Math.max(biggest, Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!));
+        previous = now;
+      },
+    );
+    expect(biggest).toBeLessThan(0.2);
+  });
+
   it("keeps every number finite in every scene, however it is entered and left", () => {
     const clips: Clip[] = ["scratch", "knead", "sniff", "stalk", "wiggle", "sit", "loaf", "stand", "crouch"];
     const rig = new CatRig(9);

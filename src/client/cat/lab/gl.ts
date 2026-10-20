@@ -1,6 +1,6 @@
 import type { CatCoat } from "../settings";
 import { GlCat, type View } from "../render/gl/renderer";
-import { CatRig } from "../render/rig";
+import { CatRig, GALLOP_STRIDE, WALK_STRIDE } from "../render/rig";
 import type { CatFrame } from "../types";
 import { frameOf, POSES } from "./entry";
 
@@ -20,7 +20,7 @@ interface GlCell {
   cycle?: number;
 }
 
-const STRIDE = { walk: 0.6, run: 0.92 };
+const STRIDE = { walk: WALK_STRIDE, run: GALLOP_STRIDE };
 
 const BG = "#15151b";
 const GROUND = "#2a2a35";
@@ -246,7 +246,7 @@ export const SCENES: GlCell[] = [
 const cycleOf = (clip: "walk" | "run", n: number): GlCell[] =>
   Array.from({ length: n }, (_, i) => ({ label: `${clip} ${i}/${n}`, frame: { clip, vx: clip === "run" ? 380 : 150 }, cycle: i / n, view: { tilt: 0 }, settle: 1 }));
 export const WALK: GlCell[] = cycleOf("walk", 8);
-export const RUN: GlCell[] = cycleOf("run", 8);
+export const RUN: GlCell[] = cycleOf("run", 12);
 
 export const FACES2: GlCell[] = [
   { label: "no fur", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, shells: 0 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
