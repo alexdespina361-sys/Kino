@@ -141,10 +141,17 @@ float stripes(vec3 p, float limb, float u) {
   float onLimb = sstep(0.35, 0.75, limb);
   float tail = onLimb * step(p.x, -0.43) * step(0.42, p.y);
   float leg = onLimb * (1.0 - tail);
-  float warp = 0.04 * sin(p.y * 13.0 + p.x * 5.0) + 0.03 * (noise(p * 8.0) - 0.5);
-  float band = abs(fract((p.x + warp) * 15.0) - 0.5);
-  float st = sstep(0.31, 0.2, band);
-  st *= sstep(0.36, 0.5, p.y);
+  // the ribs: stripes down the flank that lean back as they go down and wander a little, each with a thickness and a length of its own (a cat's
+  // stripes are not a comb): thicker at the back, thinning toward the belly, and some stop short of it
+  float lean = 0.16 * (0.58 - p.y);
+  float warp = 0.035 * sin(p.y * 13.0 + p.x * 5.0) + 0.03 * (noise(p * 8.0) - 0.5) + 0.012 * sin(p.x * 41.0 + 2.0);
+  float x = (p.x + lean + warp) * 15.0;
+  float own = hash(vec3(floor(x), 1.7, 3.1));
+  float band = abs(fract(x) - 0.5);
+  float thick = mix(0.21, 0.33, sstep(0.38, 0.6, p.y)) * (0.8 + 0.4 * own);
+  float st = sstep(thick, thick - 0.11, band);
+  float reach = 0.33 + 0.13 * own;
+  st *= sstep(reach, reach + 0.13, p.y);
   st *= 0.72 + 0.28 * noise(p * 21.0);
   // the line down the spine
   st = max(st, sstep(0.045, 0.02, abs(p.z)) * sstep(0.55, 0.6, p.y) * 0.8);
