@@ -396,6 +396,48 @@ test("a mesh that is missing, or is not a mesh, gives the simple cat and the pag
   }
 });
 
+test("a cat's file that does not come leaves the library whole, and a page that is a whole page", async ({ browser }) => {
+  const problems: string[] = [];
+  const tv = await openLibrary(
+    browser,
+    async (context) => {
+      await setup()(context);
+      await context.route(/\/assets\/host-[^/]*\.js(\?|$)/, (route) => route.abort());
+    },
+    undefined,
+    WANTS(),
+  );
+  const refused: string[] = [];
+  tv.on("pageerror", (error) => problems.push(error.message));
+  tv.on("requestfailed", (request) => /\/assets\/host-/.test(request.url()) && refused.push(request.url()));
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+  await expect.poll(() => refused.length, { timeout: 8_000 }).toBeGreaterThan(0);
+  await tv.waitForTimeout(1000);
+  await expect(tv.getByTestId("cat")).toHaveCount(0);
+  // (the corner's button only opens the cat's panel: with no cat to open it for, it is taken away rather than left to do nothing)
+  await expect(tv.getByTestId("tv-cat-chip")).toHaveCount(0);
+  await tv.keyboard.press("ArrowRight");
+  await expect(tv.getByTestId("tv-browse-tile").nth(1)).toBeFocused();
+  expect(problems).toEqual([]);
+});
+
+test("a screen that cannot spare even the simple cat has none, and no button in the corner that would open a panel for it", async ({ browser }) => {
+  test.setTimeout(75_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  // (a budget nothing can keep to: the cost is over it for a stretch, at the lower quality for another, and the cat is no more)
+  await tv.goto("/tv?cat=debug&catbudget=0.0001");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await expect(tv.getByTestId("tv-cat-chip")).toBeVisible();
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).quality, { timeout: 50_000 }).toBe("off"));
+  await expect(tv.getByTestId("tv-cat-chip")).toHaveCount(0);
+  await expect(tv.getByTestId("cat")).toBeHidden();
+  await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+  await tv.keyboard.press("ArrowRight");
+  await expect(tv.getByTestId("tv-browse-tile").nth(1)).toBeFocused();
+});
+
 test("a screen that cannot afford the detailed cat is given the simple one, and keeps it", async ({ browser }) => {
   test.setTimeout(75_000);
   const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true }));

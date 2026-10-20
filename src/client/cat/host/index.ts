@@ -5,7 +5,7 @@ import { CatEngine, type EngineDebug } from "../engine/engine";
 import { covered, type RestPose } from "../engine/ledges";
 import { CatRig } from "../render/rig";
 import { createRng } from "../rng";
-import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, readCatSettings, subscribeCatSettings, type CatCoat } from "../settings";
+import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, readCatSettings, setCatGone, subscribeCatSettings, type CatCoat } from "../settings";
 import type { CatEvent, CatFrame, Clip, PlayerMode, Rect, Vec, World } from "../types";
 import "./cat.css";
 import { createDebugView, type DebugView } from "./debug";
@@ -407,7 +407,7 @@ export function mountCat(): { stop: () => void } {
     }
   };
 
-  /** The cat is not worth what it costs on this screen: it goes, and the rest of the page does not notice. */
+  /** The cat is not worth what it costs on this screen: it goes, and the rest of the page does not notice (the corner's button goes with it). */
   const halt = (): void => {
     stopped = true;
     cancelAnimationFrame(raf);
@@ -415,6 +415,7 @@ export function mountCat(): { stop: () => void } {
     brush?.dispose();
     closePanel();
     clearPointed();
+    setCatGone(true);
   };
 
   /* ------------------------------ the viewer's hand ------------------------------ */

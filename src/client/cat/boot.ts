@@ -1,4 +1,4 @@
-import { catAsk, catOffered, readCatSettings, subscribeCatSettings, wantsCat } from "./settings";
+import { catAsk, catOffered, readCatSettings, setCatGone, subscribeCatSettings, wantsCat } from "./settings";
 
 /**
  * Starts the cat on a screen that wants one, and takes it away again when that is turned off. Nothing of the cat is downloaded before this says
@@ -13,6 +13,7 @@ export function bootCat(role: "tv" | "remote"): void {
     if (!wantsCat(readCatSettings(), catAsk())) {
       running?.stop();
       running = undefined;
+      setCatGone(false);
       return;
     }
     if (running || !(await catOffered()) || mine !== latest || running) return;
@@ -20,13 +21,16 @@ export function bootCat(role: "tv" | "remote"): void {
     try {
       host = await import("./host");
     } catch {
-      return; // (the file did not come: a page without a cat is a whole page)
+      setCatGone(true); // (the file did not come: a page without a cat is a whole page, and the corner's button has nothing to open)
+      return;
     }
     if (mine !== latest || running) return;
     try {
       running = host.mountCat();
+      setCatGone(false);
     } catch (error) {
       console.warn("[kino] the cat could not start", error);
+      setCatGone(true);
     }
   };
   void sync();

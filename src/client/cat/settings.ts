@@ -122,11 +122,29 @@ export function catOffered(): Promise<boolean> {
 }
 
 /**
+ * Whether the cat is gone from this page although it was wanted: its file did not come, it could not start, or the screen could not afford it. The
+ * library's corner button only opens the cat's panel, so it is taken away then rather than left to do nothing. Turning the cat off and on again, or
+ * loading the page again, gives it another try.
+ */
+const GONE = "kino:cat-gone";
+let gone = false;
+export function setCatGone(value: boolean): void {
+  if (gone === value) return;
+  gone = value;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(GONE));
+}
+const subscribeGone = (listener: () => void): (() => void) => {
+  window.addEventListener(GONE, listener);
+  return () => window.removeEventListener(GONE, listener);
+};
+
+/**
  * For the library's corner: whether the cat's button is to be there. The host is asked only by a screen that wants a cat, so a screen that does not
  * costs the host nothing.
  */
 export function useCatWanted(): boolean {
   const raw = useSyncExternalStore(subscribeCatSettings, rawSettings, () => "");
+  const away = useSyncExternalStore(subscribeGone, () => gone, () => false);
   const wants = useMemo(() => wantsCat(parseCatSettings(raw || undefined, onTv()), catAsk()), [raw]);
   const [allowed, setAllowed] = useState(false);
   useEffect(() => {
@@ -137,7 +155,7 @@ export function useCatWanted(): boolean {
       live = false;
     };
   }, [wants]);
-  return wants && allowed;
+  return wants && allowed && !away;
 }
 
 /** For the settings page: whether the switches are to be shown, what they say, and how to change them. */
