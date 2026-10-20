@@ -1,7 +1,7 @@
-// Pictures of the solid cat for looking at it: bundles src/client/cat/lab/gl.ts for the browser, runs it in Chromium (with the card's own driver
-// if there is one, else the software one) and saves a PNG.
+// Pictures of the solid cat for looking at it: bundles src/client/cat/lab/gl.ts for the browser, runs it in Chromium (with the software driver, or
+// with the machine's graphics card with --gpu=real) and saves a PNG.
 //
-//   node scripts/cat/glsheet.mjs views|poses|scenes|faces|faces2|faces3|detail|walk|run <out.png> [--scale=2] [--mesh=src/client/cat/render/gl/cat.mesh] [--cols=4] [--pick=0,3]
+//   node scripts/cat/glsheet.mjs views|poses|scenes|faces|faces2|faces3|detail|walk|run <out.png> [--scale=2] [--mesh=src/client/cat/render/gl/cat.mesh] [--cols=4] [--pick=0,3] [--gpu=real]
 //   node scripts/cat/glsheet.mjs film <out.png> --session=<recording.json> [--mode=strip|onion] [--from=0] [--to=10] [--every=6] [--cols=4] [--scale=1]
 //
 // Development tooling (the cat lab): nothing it makes is part of the app.
@@ -25,7 +25,10 @@ const film = session ? JSON.parse(readFileSync(resolve(root, session), "utf8")) 
 const filmOptions = { mode: flag("mode", "strip"), cols, scale, from: Number(flag("from", 0)), to: Number(flag("to", 10)), every: Number(flag("every", 6)), cellW: Number(flag("cellw", 260)), cellH: Number(flag("cellh", 220)), coat: flag("coat", "ginger") };
 
 const code = await bundle(resolve(root, "src/client/cat/lab/gl.ts"), "CatLabGl");
-const browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
+// (the software driver by default, so a sheet looks the same on every machine; --gpu=real is the machine's own graphics card, as a viewer's screen would draw it)
+const browser = await chromium.launch(
+  flag("gpu", "soft") === "real" ? { channel: "chromium", args: ["--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist"] } : { args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] },
+);
 const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
 await page.setContent('<!doctype html><body style="margin:0;background:#000"><canvas id="c"></canvas></body>');
 await page.addScriptTag({ content: code });
