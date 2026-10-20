@@ -213,7 +213,7 @@ describe("the bones of the solid cat", () => {
   });
 
   it("keep every number finite and the body from being turned inside out, in every posture the cat has", () => {
-    for (const clip of ["stand", "walk", "sit", "loaf", "curl", "crouch", "stretch", "groom", "yawn"] as const) {
+    for (const clip of ["stand", "walk", "sit", "loaf", "curl", "crouch", "stretch", "groom", "yawn", "scratch", "knead", "sniff", "stalk", "wiggle"] as const) {
       const out = bones(solvedIn({ clip, progress: 0.3, drowsy: clip === "curl" ? 1 : 0 }), 0.8);
       for (let i = 0; i < out.length; i++) expect(Number.isFinite(out[i]!), `${clip} number ${i}`).toBe(true);
       for (let bone = 0; bone < BONE_COUNT; bone++) {

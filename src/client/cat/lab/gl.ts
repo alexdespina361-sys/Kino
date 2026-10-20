@@ -226,6 +226,23 @@ export const DETAIL: GlCell[] = [
   { label: "silhouette edge", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { at: [-0.4, 0.55], by: 7 } },
 ];
 
+/** The little scenes (scratching, kneading, sniffing, the stalk and the wiggle), close, at a few moments of each. */
+const scene = (label: string, frame: Partial<CatFrame>, settle: number, turn = 0): GlCell => ({ label, frame, settle, view: { tilt: 0.05, turn }, zoom: { at: [0.15, 0.42], by: 2 } });
+export const SCENES: GlCell[] = [
+  scene("scratch 1.0 s", { clip: "scratch" }, 1.0),
+  scene("scratch 1.06 s", { clip: "scratch" }, 1.06),
+  scene("scratch (3/4)", { clip: "scratch" }, 1.0, -0.55),
+  scene("knead 1.0 s", { clip: "knead" }, 1.0),
+  scene("knead 1.3 s", { clip: "knead" }, 1.3),
+  scene("knead (3/4)", { clip: "knead" }, 1.0, -0.55),
+  scene("sniff", { clip: "sniff" }, 1.0),
+  scene("sniff (3/4)", { clip: "sniff" }, 1.0, -0.55),
+  scene("wiggle 1.0 s", { clip: "wiggle" }, 1.0),
+  scene("wiggle 1.1 s", { clip: "wiggle" }, 1.1),
+  scene("stalk", { clip: "stalk", odometer: 20 }, 1.0),
+  scene("stalk (3/4)", { clip: "stalk", odometer: 20 }, 1.0, -0.55),
+];
+
 const cycleOf = (clip: "walk" | "run", n: number): GlCell[] =>
   Array.from({ length: n }, (_, i) => ({ label: `${clip} ${i}/${n}`, frame: { clip, vx: clip === "run" ? 380 : 150 }, cycle: i / n, view: { tilt: 0 }, settle: 1 }));
 export const WALK: GlCell[] = cycleOf("walk", 8);

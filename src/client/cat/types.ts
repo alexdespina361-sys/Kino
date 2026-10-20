@@ -84,10 +84,29 @@ export interface World {
 /* ------------------------------ what the cat is doing ------------------------------ */
 
 /**
- * The cat's postures and actions, which the renderer draws. One-shot clips (`jump`, `stretch`, `yawn`) say how far along they are in `progress`.
+ * The cat's postures and actions, which the renderer draws. One-shot clips (`jump`, `stretch`, `yawn`, and the little scenes `groom`, `scratch`,
+ * `knead`, `sniff` and `wiggle`) say how far along they are in `progress`. `stalk` is a walk, low, and slow, at something.
  * (Turning around, appearing and fading are not clips: the renderer works them out from `facing` and `appear`.)
  */
-export type Clip = "stand" | "walk" | "run" | "sit" | "loaf" | "curl" | "crouch" | "jump" | "stretch" | "yawn" | "groom" | "pet" | "point";
+export type Clip =
+  | "stand"
+  | "walk"
+  | "run"
+  | "sit"
+  | "loaf"
+  | "curl"
+  | "crouch"
+  | "jump"
+  | "stretch"
+  | "yawn"
+  | "groom"
+  | "pet"
+  | "point"
+  | "scratch"
+  | "knead"
+  | "sniff"
+  | "stalk"
+  | "wiggle";
 
 /** How a jump's `progress` is shared out: crouching to push off, the flight, then the landing and settling. */
 export const JUMP_TAKEOFF = 0.22;

@@ -19,9 +19,11 @@ type Act =
   | { k: "relocate"; where: "home" | "perch" }
   | { k: "rest"; pose: Pose; dur: number }
   | { k: "sleep"; dur: number }
-  | { k: "walk"; x: number; run: boolean; maxT: number }
+  /** `stalk`: creeping, low and slow, at the thing it is stalking (the point it looks at). */
+  | { k: "walk"; x: number; run: boolean; maxT: number; stalk?: Vec }
   | { k: "jump"; toSurface: string; toX: number }
-  | { k: "shot"; clip: "stretch" | "yawn" | "groom"; dur: number }
+  /** A little scene with a length of its own; `at` is what the cat looks at while it lasts. */
+  | { k: "shot"; clip: "stretch" | "yawn" | "groom" | "scratch" | "knead" | "sniff" | "wiggle"; dur: number; at?: Vec }
   | { k: "point"; target: Rect; dur: number };
 
 /** A leap in progress: a crouch, the flight along the arc of `plan`, and the settling after the landing. */
@@ -64,6 +66,7 @@ export interface EngineDebug {
 
 /** Speeds in body lengths per second, and how quickly the cat gets up to them. */
 const WALK_SPEED = 0.95;
+const STALK_SPEED = 0.4;
 const RUN_SPEED = 2.5;
 const ACCEL = 3.2;
 /** How long the cat takes to appear and to fade away, and what it does at most for any act (the watchdog). */
@@ -75,7 +78,7 @@ const RIDE = 0.7;
 const OVERLAP = 1.6;
 
 const label = (act: Act): string =>
-  act.k === "rest" ? `rest:${act.pose}` : act.k === "shot" ? `shot:${act.clip}` : act.k === "fade" ? (act.to === 0 ? "fade:out" : "fade:in") : act.k;
+  act.k === "rest" ? `rest:${act.pose}` : act.k === "shot" ? `shot:${act.clip}` : act.k === "fade" ? (act.to === 0 ? "fade:out" : "fade:in") : act.k === "walk" && act.stalk ? "stalk" : act.k;
 const centre = (rect: Rect): Vec => ({ x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 });
 
 export class CatEngine {
@@ -706,6 +709,17 @@ export class CatEngine {
         if (Math.abs(this.reach.x - this.x) > 1) this.facing = this.reach.x > this.x ? 1 : -1;
         break;
       }
+      case "walk":
+        // (a cat that stalks has its eyes on what it stalks, all the way)
+        if (act.stalk) this.lookAt(act.stalk, act.maxT);
+        break;
+      case "shot":
+        if (act.at) {
+          // (through the pounce that follows, too: the leap is a second or so)
+          this.lookAt(act.at, act.dur + 1.2);
+          if (Math.abs(act.at.x - this.x) > 1) this.facing = act.at.x > this.x ? 1 : -1;
+        }
+        break;
       default:
         break;
     }
@@ -755,7 +769,11 @@ export class CatEngine {
         plan: () => {
           for (let tries = 0; tries < 6; tries++) {
             const x = lerp(here.x0, here.x1, this.rng.range(0.05, 0.95));
-            if (Math.abs(x - this.x) > 1.3 * L) return [{ k: "walk", x, run: false, maxT: 40 }, { k: "rest", pose: this.rng.chance(0.6) ? "sit" : "stand", dur: this.rng.range(2, 7) }];
+            if (Math.abs(x - this.x) > 1.3 * L) {
+              // (a cat that has walked somewhere often smells it before it settles)
+              const sniff: Act[] = tired < 0.7 && this.rng.chance(0.4) ? [{ k: "shot", clip: "sniff", dur: this.rng.range(2.2, 3.4) }] : [];
+              return [{ k: "walk", x, run: false, maxT: 40 }, ...sniff, { k: "rest", pose: this.rng.chance(0.6) ? "sit" : "stand", dur: this.rng.range(2, 7) }];
+            }
           }
           return null;
         },
@@ -796,6 +814,48 @@ export class CatEngine {
       },
     });
     options.push({
+      name: "scratch",
+      // (a busy little scene: not for a viewer who asked for quiet or for less motion)
+      score: roaming && this.cooled("scratch") && tired < 0.85 ? 0.3 : 0,
+      plan: () => {
+        this.cool.scratch = this.now + this.rng.range(70, 140);
+        return [{ k: "rest", pose: "sit", dur: 1 }, { k: "shot", clip: "scratch", dur: this.rng.range(3.2, 5) }];
+      },
+    });
+    // a poster on this shelf, a few lengths off: stalked, low and slow, with a wiggle, and pounced on (it lands on it, and sits as if it meant to)
+    if (here && roaming && world.targets.length > 0 && this.cooled("prowl")) {
+      options.push({
+        name: "prowl",
+        score: 0.34 * (0.4 + m.energy) * (0.6 + m.curiosity),
+        plan: () => {
+          // (a poster a few lengths off, with the whole run-up and the landing on this stretch of the shelf, not off the end of it or under the bar)
+          const inside = (x: number): boolean => x >= here.x0 && x <= here.x1;
+          const prey = world.targets
+            .filter((t) => t.surfaceId === here.surfaceId)
+            .map((t) => ({ at: centre(t.rect), gap: Math.abs(centre(t.rect).x - this.x) }))
+            .filter((t) => t.gap >= 3.2 * L && t.gap <= 5.6 * L)
+            .filter((t) => inside(t.at.x - Math.sign(t.at.x - this.x) * 1.8 * L) && inside(t.at.x - Math.sign(t.at.x - this.x) * 0.2 * L));
+          const one = this.rng.pick(prey);
+          if (!one) return null;
+          const dir: 1 | -1 = one.at.x > this.x ? 1 : -1;
+          // (it creeps to a leap's length from it, and springs from there to just short of its middle)
+          const from = clampToLedge(here, one.at.x - dir * 1.8 * L);
+          const to = clampToLedge(here, one.at.x - dir * 0.2 * L);
+          if (Math.abs(from - this.x) < 1.3 * L || !planJump(from, here.y, to, here.y, L)) return null;
+          this.cool.prowl = this.now + this.rng.range(90, 160);
+          const plan: Act[] = [
+            { k: "walk", x: from, run: false, maxT: 25, stalk: one.at },
+            { k: "shot", clip: "wiggle", dur: this.rng.range(1, 1.5), at: one.at },
+            { k: "jump", toSurface: here.surfaceId, toX: to },
+            { k: "rest", pose: "sit", dur: this.rng.range(1.5, 3) },
+          ];
+          // (as if it had meant to)
+          if (this.rng.chance(0.5)) plan.push({ k: "shot", clip: "groom", dur: this.rng.range(2.5, 4) });
+          return plan;
+        },
+      });
+    }
+    options.push({
       name: "stretch",
       score: this.cooled("stretch") ? 0.32 : 0.01,
       plan: () => {
@@ -814,7 +874,8 @@ export class CatEngine {
     options.push({
       name: "sleep",
       score: idle > 40 ? 0.08 + tired * 1.8 : 0.0,
-      plan: () => [{ k: "rest", pose: "loaf", dur: 2.5 }, { k: "sleep", dur: this.rng.range(25, 70) }, { k: "shot", clip: "stretch", dur: 2.4 }],
+      // (and before it lies down for good, a cat will often tread its place into shape)
+      plan: () => [{ k: "rest", pose: "loaf", dur: 2.5 }, ...(this.rng.chance(0.5) ? [{ k: "shot", clip: "knead", dur: this.rng.range(4, 7) } as const] : []), { k: "sleep", dur: this.rng.range(25, 70) }, { k: "shot", clip: "stretch", dur: 2.4 }],
     });
     // a card has just been given the focus: the cat sits near it and watches
     if (here && roaming && this.now - this.lastFocusAt < 6 && world.focus && this.cooled("watch")) {
@@ -920,7 +981,7 @@ export class CatEngine {
     const goal = clampToLedge(ledge, act.x);
     const dist = Math.abs(goal - this.x);
     const dir: 1 | -1 = goal >= this.x ? 1 : -1;
-    this.setClip(act.run ? "run" : "walk");
+    this.setClip(act.stalk ? "stalk" : act.run ? "run" : "walk");
     // a cat going one way that must go the other brakes first, then turns
     if (dir !== this.facing) {
       if (Math.abs(this.vx) > 0.25 * L) {
@@ -929,7 +990,7 @@ export class CatEngine {
       }
       this.facing = dir;
     }
-    const cruise = (act.run ? RUN_SPEED : WALK_SPEED) * L;
+    const cruise = (act.stalk ? STALK_SPEED : act.run ? RUN_SPEED : WALK_SPEED) * L;
     const brake = Math.sqrt(2 * ACCEL * 0.7 * L * dist);
     const want = Math.min(cruise, brake) * dir;
     this.vx += clamp(want - this.vx, -dt * ACCEL * L, dt * ACCEL * L);

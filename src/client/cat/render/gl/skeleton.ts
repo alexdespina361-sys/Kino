@@ -344,19 +344,21 @@ export class Skeleton {
     for (const [key, first] of legs) {
       const rest = R.legs[key];
       const now = upLeg(s.legs[key]);
-      // a front paw held up (to the face, to point) comes out toward the viewer, so that it is seen against the face and not lost against the chest
-      const held = key === "fn" ? clamp((now.toe.y - 0.25) / 0.3, 0, 1) : 0;
+      // a front paw held up (to the face, to point) comes out toward the viewer, so that it is seen against the face and not lost against the chest;
+      // a hind foot lifted to the ear (a scratch) comes out further still, for it has the whole side of the cat to clear
+      const held = key === "fn" ? clamp((now.toe.y - 0.25) / 0.3, 0, 1) : key === "hn" ? clamp((now.toe.y - 0.3) / 0.25, 0, 1) : 0;
+      const out = key === "hn" ? [0.05, 0.11, 0.15] : [0.015, 0.045, 0.07];
       segment(m, rest.root, rest.mid, now.root, now.mid, false);
-      m[11] = (m[11] ?? 0) + held * 0.015;
+      m[11] = (m[11] ?? 0) + held * out[0]!;
       bone(first, m);
       segment(m, rest.mid, rest.hock, now.mid, now.hock, false);
-      m[11] = (m[11] ?? 0) + held * 0.045;
+      m[11] = (m[11] ?? 0) + held * out[1]!;
       bone(first + 1, m);
       const restLower = Math.atan2(rest.hock.y - rest.mid.y, rest.hock.x - rest.mid.x);
       const lowerTurn = Math.atan2(now.hock.y - now.mid.y, now.hock.x - now.mid.x) - restLower;
       // (a paw that has no foot to speak of, held up, carries on from the forearm, bent a little toward the face)
       segment(m, rest.hock, rest.toe, now.hock, now.toe, false, true, lowerTurn + restLower + 0.2);
-      m[11] = (m[11] ?? 0) + held * 0.07;
+      m[11] = (m[11] ?? 0) + held * out[2]!;
       bone(first + 2, m);
     }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createRng } from "../rng";
-import type { World } from "../types";
+import type { CatFrame, World } from "../types";
 import { JUMP_LANDING, JUMP_TAKEOFF } from "../types";
 import { CatEngine } from "./engine";
 import { boxHits, computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, stepFlight } from "./ledges";
@@ -220,7 +220,8 @@ describe("the cat on a page", () => {
     const world = browseWorld(defaultPage());
     const { frames } = run(engine, world, 400);
     for (const f of frames) {
-      expect(Math.abs(f.vx)).toBeLessThan(3 * L);
+      // (on its feet: a leap goes as fast as its arc needs)
+      if (f.grounded) expect(Math.abs(f.vx)).toBeLessThan(3 * L);
       if (f.clip === "walk" && Math.abs(f.vx) > 0.3 * L) expect(Math.sign(f.vx)).toBe(f.facing);
     }
   });
@@ -370,6 +371,75 @@ describe("the cat on a page", () => {
       expect(moved.length).toBe(0);
       const xs = frames.filter((f) => f.appear > 0.5).map((f) => f.x);
       expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(1);
+    }
+  });
+});
+
+describe("its little scenes", () => {
+  /** A cat on the made-up page, its frames copied (the engine gives the same object every time) with the act each was in. */
+  const watch = (seed: number, seconds: number) => {
+    const engine = new CatEngine(seed);
+    const world = browseWorld(defaultPage());
+    const log: Array<{ act: string; f: CatFrame; surface: string | null }> = [];
+    for (let i = 0; i < seconds * 30; i++) {
+      const f = engine.update(world, 1 / 30);
+      log.push({ act: engine.debug().act, f: { ...f, ...(f.look ? { look: { ...f.look } } : {}) }, surface: engine.debug().surfaceId });
+    }
+    return { world, log };
+  };
+
+  it("scratches, kneads, sniffs, and stalks and pounces, over a long afternoon, with its feet on a shelf whenever it stands to one", () => {
+    const seconds: Record<string, number> = {};
+    for (const seed of [5, 7, 11, 21]) {
+      const stats = runSession({ seed, seconds: 900, chaos: { scroll: true, focus: true } });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      for (const [act, s] of Object.entries(stats.acts)) seconds[act] = (seconds[act] ?? 0) + s;
+    }
+    for (const act of ["shot:scratch", "shot:knead", "shot:sniff", "stalk", "shot:wiggle"]) expect(seconds[act] ?? 0, act).toBeGreaterThan(1);
+    const { log } = watch(11, 900);
+    for (const { act, f } of log) if (act.startsWith("shot:") && f.appear > 0.5) expect(f.grounded, act).toBe(true);
+  });
+
+  it("stalks a poster at a creep, wiggles, springs, lands by it on the same shelf, and sits as if it had meant to", () => {
+    let stalked = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const { world, log } = watch(seed, 600);
+      const L = world.bodyLength;
+      const start = log.findIndex((e) => e.act === "stalk");
+      // (not every cat stalks in ten minutes: it needs a poster the right distance off)
+      if (start < 0) continue;
+      stalked++;
+      const until = (from: number, act: string): number => {
+        let i = from;
+        while (i < log.length && log[i]!.act === act) i++;
+        return i;
+      };
+      const creepEnd = until(start, "stalk");
+      // a creep: slower than a walk (0.95 L/s), all the way, and it looks at what it stalks
+      for (let i = start; i < creepEnd; i++) expect(Math.abs(log[i]!.f.vx), `seed ${seed}`).toBeLessThan(0.55 * L);
+      const prey = log[start + 1]!.f.look!;
+      expect(prey, `seed ${seed}`).toBeDefined();
+      // ...then the wiggle, the leap, and the sit
+      expect(log[creepEnd]!.act, `seed ${seed}`).toBe("shot:wiggle");
+      const wiggled = until(creepEnd, "shot:wiggle");
+      expect(log[wiggled]!.act, `seed ${seed}`).toBe("jump");
+      const leapt = until(wiggled, "jump");
+      expect(log[leapt]!.act, `seed ${seed}`).toBe("rest:sit");
+      // it lands on the shelf it left, close to the poster
+      const landed = log[leapt]!;
+      expect(landed.surface, `seed ${seed}`).toBe(log[start]!.surface);
+      expect(landed.f.y, `seed ${seed}`).toBeCloseTo(log[start]!.f.y, 0);
+      expect(Math.abs(landed.f.x - prey.x), `seed ${seed}`).toBeLessThan(0.6 * L);
+      // (the leap was across the poster's way, not a hop on the spot)
+      expect(Math.abs(landed.f.x - log[wiggled]!.f.x), `seed ${seed}`).toBeGreaterThan(1 * L);
+    }
+    expect(stalked).toBeGreaterThanOrEqual(5);
+  });
+
+  it("is not busy with them when the viewer wants quiet or less motion: no scratching, stalking, sniffing", () => {
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const stats = runSession({ seed: 7, seconds: 900, chaos: { scroll: true }, ...(flag === "quiet" ? { quiet: true } : { reducedMotion: true }) });
+      for (const act of ["shot:scratch", "stalk", "shot:wiggle", "shot:sniff"]) expect(stats.acts[act] ?? 0, `${flag} ${act}`).toBe(0);
     }
   });
 });
