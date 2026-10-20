@@ -35,6 +35,8 @@ interface Snap {
   view: string;
   why: string;
   art: "solid" | "classic" | "none";
+  coat: string;
+  body: number;
   quality: string;
   panel: boolean;
   visible: boolean;
@@ -424,6 +426,48 @@ test("the settings page has a switch for the detailed cat: off is the simple cat
   await detail.click();
   await expect(detail).toHaveAttribute("aria-checked", "true");
   await artIs(tv, "solid");
+});
+
+test("the settings page has the cat's coat and size: they are worn at once and kept for the device, and the simple cat has no coat to choose", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true }));
+  await tv.goto("/tv?cat=debug&catbudget=100000");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await artIs(tv, "solid");
+  const before = await snap(tv);
+  expect(before.coat).toBe("ginger");
+  expect(before.body).toBeGreaterThan(40);
+  await openTvSettings(tv);
+  await expect(tv.getByTestId("tv-cat-coat-ginger")).toHaveAttribute("aria-checked", "true");
+  await expect(tv.getByTestId("tv-cat-size-normal")).toHaveAttribute("aria-checked", "true");
+  await tv.getByTestId("tv-cat-coat-tuxedo").click();
+  await expect(tv.getByTestId("tv-cat-coat-tuxedo")).toHaveAttribute("aria-checked", "true");
+  await expect(tv.getByTestId("tv-cat-coat-ginger")).toHaveAttribute("aria-checked", "false");
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).coat, { timeout: 6_000 }).toBe("tuxedo"));
+  await tv.getByTestId("tv-cat-size-large").click();
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).body, { timeout: 6_000 }).toBeGreaterThan(before.body * 1.2));
+  await tv.getByTestId("tv-cat-size-small").click();
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).body, { timeout: 6_000 }).toBeLessThan(before.body * 0.9));
+  // (kept by the device, and the cat is still there and still the detailed one)
+  expect(JSON.parse(await tv.evaluate(() => localStorage.getItem("kino.cat") ?? "{}"))).toMatchObject({ coat: "tuxedo", size: "small", detail: true });
+  expect((await snap(tv)).art).toBe("solid");
+  // the simple cat has the one coat, so there is none to choose; the size is still there
+  await tv.getByTestId("tv-cat-detail").click();
+  await expect(tv.getByTestId("tv-cat-coat-grey")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-size-large")).toBeVisible();
+});
+
+test("the address can ask for the coat and the size, whatever the device says", async ({ browser }) => {
+  const usual = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true }));
+  await usual.goto("/tv?cat=debug&catbudget=100000");
+  await expect(usual.getByTestId("tv-browse")).toBeVisible();
+  await artIs(usual, "solid");
+  const normal = await snap(usual);
+  const asked = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true, coat: "ginger", size: "normal" }));
+  await asked.goto("/tv?cat=debug&catbudget=100000&catcoat=calico&catsize=large");
+  await expect(asked.getByTestId("tv-browse")).toBeVisible();
+  await artIs(asked, "solid");
+  await saying(asked, () => expect.poll(async () => (await snap(asked)).coat, { timeout: 6_000 }).toBe("calico"));
+  await saying(asked, () => expect.poll(async () => (await snap(asked)).body, { timeout: 6_000 }).toBeGreaterThan(normal.body * 1.2));
 });
 
 test("the address can ask for either cat, whatever the device says", async ({ browser }) => {

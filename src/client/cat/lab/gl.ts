@@ -1,3 +1,4 @@
+import type { CatCoat } from "../settings";
 import { GlCat, type View } from "../render/gl/renderer";
 import { CatRig } from "../render/rig";
 import type { CatFrame } from "../types";
@@ -31,7 +32,7 @@ const fromBase64 = (text: string): ArrayBuffer => {
   return bytes.buffer;
 };
 
-export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220): void {
+export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220, coat: CatCoat = "ginger"): void {
   const cw = cellW * scale;
   const ch = cellH * scale;
   const rows = Math.ceil(cells.length / columns);
@@ -41,6 +42,7 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly
   const glCanvas = document.createElement("canvas");
   const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
   if (!cat) throw new Error("no WebGL");
+  cat.setCoat(coat);
   cat.resize(cw, ch, 1);
   const px = 150 * scale;
   cells.forEach((cell, i) => {
@@ -89,6 +91,7 @@ export interface FilmOptions {
   seed?: number;
   cellW?: number;
   cellH?: number;
+  coat?: CatCoat;
 }
 
 /**
@@ -113,6 +116,7 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
   const glCanvas = document.createElement("canvas");
   const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
   if (!cat) throw new Error("no WebGL");
+  cat.setCoat(o.coat ?? "ginger");
   const picks: number[] = [];
   for (let i = i0; i <= i1; i += o.every) picks.push(i);
   const ctx = canvas.getContext("2d")!;

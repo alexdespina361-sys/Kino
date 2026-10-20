@@ -126,10 +126,14 @@ vec4 mouthInside(vec3 h, float open, out float depth) {
   return vec4(col, a);
 }
 
-const vec3 GINGER = vec3(0.90, 0.56, 0.25);
-const vec3 GINGER_LIGHT = vec3(0.98, 0.78, 0.52);
-const vec3 STRIPE = vec3(0.70, 0.34, 0.12);
-const vec3 WHITE = vec3(1.0, 0.95, 0.88);
+// the coat (see coats.ts): the colours, and how much of each marking this cat has (stripes, white, a tuxedo's white, patches)
+uniform vec3 uBase;
+uniform vec3 uLight;
+uniform vec3 uStripeC;
+uniform vec3 uWhiteC;
+uniform vec3 uPatchA;
+uniform vec3 uPatchB;
+uniform vec4 uCoat;
 const vec3 PINK = vec3(0.95, 0.60, 0.60);
 
 /** How much of a point is the tabby's stripe (0..1), from where it stood in the rest. */
@@ -290,30 +294,55 @@ void main() {
   float leg = onLimb * (1.0 - tail);
   float isHead = sstep(0.25, 0.2, length(h)) * sstep(-0.02, 0.01, h.x) * (1.0 - onEar);
 
-  vec3 alb = GINGER;
-  float belly = sstep(0.42, 0.33, p.y) * (1.0 - onLimb);
-  alb = mix(alb, GINGER_LIGHT, belly * 0.9);
-  float st = stripes(p, limb, u) * (1.0 - sstep(0.235, 0.19, length(h * vec3(1.0, 0.85, 1.0))));
-  alb = mix(alb, STRIPE, st * (1.0 - belly * 0.8));
+  float tux = uCoat.z;
+  vec3 alb = uBase;
+  // the underside is the lighter colour (a tuxedo's white goes up the flank in a ragged line)
+  float rag = 0.035 * (noise(p * 7.0) - 0.5);
+  // (a ginger's colours run into each other; a tuxedo's white has an edge)
+  float edge = mix(0.045, 0.014, tux);
+  float belly = sstep(0.375 + 0.07 * tux + edge, 0.375 + 0.07 * tux - edge, p.y + rag) * (1.0 - onLimb);
+  alb = mix(alb, uLight, belly * mix(0.9, 1.0, tux));
+  float st = stripes(p, limb, u) * (1.0 - sstep(0.235, 0.19, length(h * vec3(1.0, 0.85, 1.0)))) * uCoat.x;
+  alb = mix(alb, uStripeC, st * (1.0 - belly * 0.8));
 
-  // white: the chest, the chin and the muzzle, the socks
-  float bib = 1.0 - sstep(0.55, 1.0, length((p.xy - vec2(0.405, 0.43)) / vec2(0.095, 0.16)));
+  // a patched coat: blotches of two colours over the back, the head and the tail, and not over the legs and the belly
+  if (uCoat.w > 0.01) {
+    float pa = noise(p * vec3(4.2, 4.8, 4.0) + 7.0) + 0.4 * noise(p * 12.0 + 1.0);
+    float pb = noise(p * vec3(3.4, 4.0, 4.4) + 19.0) + 0.4 * noise(p * 11.0 + 5.0);
+    float orangeP = sstep(0.8, 0.84, pa);
+    float blackP = sstep(0.82, 0.86, pb) * (1.0 - orangeP);
+    float where = max(sstep(0.3, 0.42, p.y) * (1.0 - onLimb), onLimb * sstep(0.28, 0.4, p.y)) * (1.0 - sstep(0.3, 0.24, length(h)));
+    alb = mix(alb, uPatchA, orangeP * where * uCoat.w);
+    alb = mix(alb, uPatchB, blackP * where * uCoat.w);
+    // the face is not the same on both sides: one has an orange cap over its eye and ear, the other a black one, and a white strip is left between them
+    float cap = sstep(0.27, 0.21, length(h)) * sstep(0.0, 0.03, h.y);
+    alb = mix(alb, uPatchA, cap * sstep(0.014, 0.03, h.z) * uCoat.w);
+    alb = mix(alb, uPatchB, cap * sstep(-0.014, -0.03, h.z) * uCoat.w);
+  }
+
+  // white: the chest, the chin and the muzzle, the socks (a tuxedo's boots go up the leg, and its blaze up the nose)
+  float bib = 1.0 - sstep(mix(0.55, 0.85, tux), 1.0, length((p.xy - vec2(0.405, 0.43 - 0.03 * tux)) / (vec2(0.095, 0.16) * uCoat.y)));
   bib *= (1.0 - onLimb) * (1.0 - sstep(0.04, 0.09, abs(p.z) - 0.04));
   float white = bib;
-  float pad = 1.0 - sstep(0.72, 1.05, length((h - vec3(0.105, -0.052, 0.0)) / vec3(0.075, 0.034, 0.066)));
-  float chin = 1.0 - sstep(0.72, 1.05, length((h - vec3(0.088, -0.084, 0.0)) / vec3(0.058, 0.042, 0.05)));
+  float pad = 1.0 - sstep(mix(0.72, 0.9, tux), 1.05, length((h - vec3(0.105, -0.052, 0.0)) / (vec3(0.075, 0.034, 0.066) * uCoat.y)));
+  float chin = 1.0 - sstep(mix(0.72, 0.9, tux), 1.05, length((h - vec3(0.088, -0.084, 0.0)) / (vec3(0.058, 0.042, 0.05) * uCoat.y)));
   white = max(white, max(pad, chin) * 0.96 * isHead);
+  float blazeW = 0.009 + 0.0011 * clamp((h.y + 0.02) / 0.01, 0.0, 10.0);
+  float blaze = sstep(blazeW + 0.003, blazeW - 0.002, abs(h.z)) * sstep(0.0, 0.03, h.x) * sstep(0.115, 0.095, h.y) * sstep(-0.045, -0.02, h.y);
+  white = max(white, blaze * isHead * tux);
   // the forehead's three strokes, and a line out from each eye along the cheek
   float inFront = sstep(-0.03, 0.03, h.x) * sstep(0.045, 0.075, h.y) * sstep(0.11, 0.08, h.y + max(0.0, -h.x) * 2.0);
   float stroke = max(sstep(0.0055, 0.002, abs(h.z)), max(sstep(0.0055, 0.002, abs(h.z - 0.03)), sstep(0.0055, 0.002, abs(h.z + 0.03))));
-  alb = mix(alb, STRIPE, stroke * inFront * isHead * 0.7);
+  alb = mix(alb, uStripeC, stroke * inFront * isHead * 0.7 * uCoat.x);
   float cheek = sstep(0.007, 0.002, abs(h.y - 0.005 + (abs(h.z) - 0.085) * 0.9)) * sstep(0.078, 0.1, abs(h.z)) * sstep(0.1, 0.04, h.x);
-  alb = mix(alb, STRIPE, cheek * isHead * 0.3);
-  white = max(white, leg * sstep(0.125, 0.085, p.y));
+  alb = mix(alb, uStripeC, cheek * isHead * 0.3 * uCoat.x);
+  float sock = 0.105 + 0.12 * tux;
+  float sockEdge = mix(0.02, 0.008, tux);
+  white = max(white, leg * sstep(sock + sockEdge, sock - sockEdge, p.y + rag * 1.2 * tux));
   white = max(white, leg * sstep(0.06, 0.035, p.y) * 2.0);
-  // the ear: ginger and dark at the rim, pink inside
-  alb = mix(alb, STRIPE * 0.85, onEar * 0.4);
-  alb = mix(alb, WHITE, clamp(white, 0.0, 1.0));
+  // the ear: darker at the rim, pink inside
+  alb = mix(alb, alb * 0.75, onEar * 0.4);
+  alb = mix(alb, uWhiteC, clamp(white, 0.0, 1.0));
   alb = mix(alb, mix(PINK, vec3(1.0, 0.86, 0.8), 0.3), earIn);
 
   vec4 f = vec4(0.0);
@@ -342,6 +371,9 @@ void main() {
   // a coat has a soft sheen where the light grazes it
   float sheen = pow(clamp(dot(N, normalize(L + vec3(0.0, 0.0, 1.0))), 0.0, 1.0), 14.0);
   lit += vec3(1.0, 0.88, 0.7) * sheen * 0.1 * (1.0 - st * 0.6) * (1.0 - white);
+  // a dark coat takes almost nothing from the light as a colour, and would be a flat shape: the shine of its fur, cool, is what shows its form
+  float dark = 1.0 - clamp(dot(alb, vec3(0.3, 0.55, 0.15)) * 2.6, 0.0, 1.0);
+  lit += vec3(0.5, 0.58, 0.72) * dark * (0.012 * key + 0.1 * sheen + 0.07 * rim + 0.01 * sky);
   lit += vec3(0.5, 0.18, 0.12) * onEar * (0.18 + 0.3 * rim) * (1.0 - key * 0.4);
   vec3 col = pow(lit, vec3(1.0 / 2.2));
   // paint that is itself light (the eye) is not darkened by the fur's shade

@@ -758,6 +758,9 @@
 :root[data-ui="polish"] .tv-segmented .tv-choice:focus-visible,
 :root[data-ui="polish"] .tv-segmented .tv-choice[aria-checked="true"]:focus-visible { z-index: 2; background: #fff; color: #0b0b0c; }
 :root[data-ui="polish"] .tv-segmented .tv-choice[aria-checked="true"]:focus-visible { box-shadow: inset 0 0 0 calc(var(--em) * 0.2) var(--accent), var(--focus-ring), var(--lift); }
+/* (a field with more or longer names than the languages have, such as the cat's coats: two by two, so that no name is cut in another language) */
+:root[data-ui="polish"] .tv-segmented-grid { flex-wrap: wrap; }
+:root[data-ui="polish"] .tv-segmented-grid .tv-choice { flex: 1 1 calc(50% - var(--em) * 0.2); }
 :root[data-ui="polish"] .tv-set .tv-swatches { gap: calc(var(--em) * 1); padding: calc(var(--em) * 0.4) calc(var(--em) * 0.3); }
 :root[data-ui="polish"] .tv-set .tv-swatch { width: calc(var(--em) * 3.5); height: calc(var(--em) * 3.5); font-size: calc(var(--em) * 1.6); }
 

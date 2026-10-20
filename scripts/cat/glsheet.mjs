@@ -22,7 +22,7 @@ const pick = flag("pick", "").split(",").filter(Boolean).map(Number);
 // (the film: a recording made by scripts/cat/record.mts, and which part of it: --session=<file.json> --from=<s> --to=<s> --every=<frames> --mode=strip|onion)
 const session = flag("session", "");
 const film = session ? JSON.parse(readFileSync(resolve(root, session), "utf8")) : null;
-const filmOptions = { mode: flag("mode", "strip"), cols, scale, from: Number(flag("from", 0)), to: Number(flag("to", 10)), every: Number(flag("every", 6)), cellW: Number(flag("cellw", 260)), cellH: Number(flag("cellh", 220)) };
+const filmOptions = { mode: flag("mode", "strip"), cols, scale, from: Number(flag("from", 0)), to: Number(flag("to", 10)), every: Number(flag("every", 6)), cellW: Number(flag("cellw", 260)), cellH: Number(flag("cellh", 220)), coat: flag("coat", "ginger") };
 
 const code = await bundle(resolve(root, "src/client/cat/lab/gl.ts"), "CatLabGl");
 const browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"] });
@@ -40,14 +40,14 @@ await page.evaluate(
     const lab = window.CatLabGl;
     const sel = (list) => (chosen.length ? chosen.map((i) => list[i]) : list);
     if (which === "film") lab.glFilm(canvas, data, recording, options);
-    else if (which === "views") lab.glSheet(canvas, data, sel(lab.VIEWS), c, s, 7, 300, 260);
-    else if (which === "poses") lab.glSheet(canvas, data, sel(lab.GL_POSES), c, s, 7, options.cellW, options.cellH);
-    else if (which === "faces2") lab.glSheet(canvas, data, sel(lab.FACES2), c, s, 7, 400, 340);
-    else if (which === "faces") lab.glSheet(canvas, data, sel(lab.FACES), c, s, 7, 400, 340);
-    else if (which === "faces3") lab.glSheet(canvas, data, sel(lab.FACES3), c, s, 7, 400, 340);
-    else if (which === "detail") lab.glSheet(canvas, data, sel(lab.DETAIL), c, s, 7, 400, 340);
-    else if (which === "walk") lab.glSheet(canvas, data, sel(lab.WALK), c, s, 7, 300, 230);
-    else if (which === "run") lab.glSheet(canvas, data, sel(lab.RUN), c, s, 7, 300, 230);
+    else if (which === "views") lab.glSheet(canvas, data, sel(lab.VIEWS), c, s, 7, 300, 260, options.coat);
+    else if (which === "poses") lab.glSheet(canvas, data, sel(lab.GL_POSES), c, s, 7, options.cellW, options.cellH, options.coat);
+    else if (which === "faces2") lab.glSheet(canvas, data, sel(lab.FACES2), c, s, 7, 400, 340, options.coat);
+    else if (which === "faces") lab.glSheet(canvas, data, sel(lab.FACES), c, s, 7, 400, 340, options.coat);
+    else if (which === "faces3") lab.glSheet(canvas, data, sel(lab.FACES3), c, s, 7, 400, 340, options.coat);
+    else if (which === "detail") lab.glSheet(canvas, data, sel(lab.DETAIL), c, s, 7, 400, 340, options.coat);
+    else if (which === "walk") lab.glSheet(canvas, data, sel(lab.WALK), c, s, 7, 300, 230, options.coat);
+    else if (which === "run") lab.glSheet(canvas, data, sel(lab.RUN), c, s, 7, 300, 230, options.coat);
   },
   [kind, mesh, scale, cols, pick, film, filmOptions],
 );

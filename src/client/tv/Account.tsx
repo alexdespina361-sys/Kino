@@ -4,7 +4,7 @@ import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
-import { useCatSettings } from "../cat/settings";
+import { CAT_COATS, CAT_SIZES, useCatSettings } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
@@ -563,6 +563,32 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
                       <SettingsSwitch label={t("cat.settings.quiet")} on={cat.settings.quiet} onToggle={() => cat.set({ quiet: !cat.settings.quiet })} testId="tv-cat-quiet" />
                       <SettingsSwitch label={t("cat.settings.films")} on={cat.settings.films} onToggle={() => cat.set({ films: !cat.settings.films })} testId="tv-cat-films" />
                       <SettingsSwitch label={t("cat.settings.detail")} on={cat.settings.detail} onToggle={() => cat.set({ detail: !cat.settings.detail })} testId="tv-cat-detail" />
+                      {cat.settings.detail && (
+                        <div className="tv-field">
+                          <span className="tv-field-label" aria-hidden="true">
+                            {t("cat.settings.coat")}
+                          </span>
+                          <div className="tv-segmented tv-segmented-grid" role="radiogroup" aria-label={t("cat.settings.coat")}>
+                            {CAT_COATS.map((coat) => (
+                              <button key={coat} className="tv-choice" role="radio" aria-checked={cat.settings.coat === coat} onClick={() => cat.set({ coat })} data-nav data-testid={`tv-cat-coat-${coat}`}>
+                                {t(`cat.coat.${coat}`)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <div className="tv-field">
+                        <span className="tv-field-label" aria-hidden="true">
+                          {t("cat.settings.size")}
+                        </span>
+                        <div className="tv-segmented" role="radiogroup" aria-label={t("cat.settings.size")}>
+                          {CAT_SIZES.map((size) => (
+                            <button key={size} className="tv-choice" role="radio" aria-checked={cat.settings.size === size} onClick={() => cat.set({ size })} data-nav data-testid={`tv-cat-size-${size}`}>
+                              {t(`cat.size.${size}`)}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </>
                   )}
                 </SettingsGroup>

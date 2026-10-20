@@ -40,6 +40,15 @@ export const catEn = {
   "cat.settings.quiet": "Quiet cat (it rests and does not wander)",
   "cat.settings.films": "Keep me company during films",
   "cat.settings.detail": "Detailed cat (off: simpler, lighter)",
+  "cat.settings.coat": "Coat",
+  "cat.coat.ginger": "Ginger tabby",
+  "cat.coat.tuxedo": "Tuxedo",
+  "cat.coat.grey": "Grey tabby",
+  "cat.coat.calico": "Calico",
+  "cat.settings.size": "Size",
+  "cat.size.small": "Small",
+  "cat.size.normal": "Normal",
+  "cat.size.large": "Large",
   "cat.settings.help": "A cat that lives on the screen: it walks along the rows of titles, naps in a corner of the film and can be petted. It never plays anything by itself.",
 } as const;
 

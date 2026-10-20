@@ -51,6 +51,8 @@ export interface PageRead {
 export interface PageContext {
   films: () => boolean;
   quiet: () => boolean;
+  /** How big the cat is against what the screen's size makes of it (1 if not given). */
+  size?: () => number;
   /** More places the cat keeps out of, that are not part of the screen's own page (the cat's own panel). */
   extra?: () => Rect[];
 }
@@ -144,7 +146,7 @@ export class TvPage {
     const viewport = tv ? rectOf(tv) : { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
     const vw = viewport.w;
     const vh = viewport.h;
-    const L = bodyLengthFor(vw, vh);
+    const L = Math.max(40, Math.round(bodyLengthFor(vw, vh) * (this.context.size?.() ?? 1)));
     const em = tv ? parseFloat(getComputedStyle(tv).fontSize) || L / BODY_EMS : L / BODY_EMS;
     const draft: Draft = { surfaces: [], keepOut: [], targets: [], shelves: new Map() };
     let mode: World["mode"] = "away";
@@ -201,7 +203,7 @@ export class TvPage {
 
     // The world is a new object only when the page really is another one (the engine works its ledges out again for a new object); a page that only
     // sits there is the very same, so the cat is not made to look afresh at a page that has not changed.
-    const signature = JSON.stringify([mode, player, controlsUp, vw, vh, world.quiet, world.reducedMotion, draft.surfaces.map((s) => [s.id, round(s.y), round(s.x0), round(s.x1)]), draft.keepOut.map((r) => [round(r.x), round(r.y), round(r.w), round(r.h)]), draft.focus && [round(draft.focus.x), round(draft.focus.y)]]);
+    const signature = JSON.stringify([mode, player, controlsUp, vw, vh, L, world.quiet, world.reducedMotion, draft.surfaces.map((s) => [s.id, round(s.y), round(s.x0), round(s.x1)]), draft.keepOut.map((r) => [round(r.x), round(r.y), round(r.w), round(r.h)]), draft.focus && [round(draft.focus.x), round(draft.focus.y)]]);
     const same = this.world && signature === this.signature;
     if (same) {
       // (the posters moved by less than a pixel, or not at all: the cat's world stands; only the targets, which are not geometry the cat walks on, follow)

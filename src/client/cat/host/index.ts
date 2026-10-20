@@ -4,7 +4,7 @@ import { BODY_EMS } from "../math";
 import { CatEngine, type EngineDebug } from "../engine/engine";
 import { CatRig } from "../render/rig";
 import { createRng } from "../rng";
-import { catAsk, catLook, readCatSettings, subscribeCatSettings } from "../settings";
+import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, readCatSettings, subscribeCatSettings, type CatCoat } from "../settings";
 import type { CatEvent, CatFrame, PlayerMode, Rect, Vec, World } from "../types";
 import "./cat.css";
 import { createDebugView, type DebugView } from "./debug";
@@ -50,6 +50,9 @@ export interface CatSnapshot {
   why: string;
   /** Which cat is painted: the solid one, the simple one, or none yet (the solid one is still being fetched). */
   art: "solid" | "classic" | "none";
+  /** The coat the detailed cat wears, and how long its body is on this screen, in pixels. */
+  coat: CatCoat;
+  body: number;
   quality: Quality;
   cost: number;
   fps: number;
@@ -90,9 +93,12 @@ export function mountCat(): { stop: () => void } {
   let panelHost: HTMLElement | null = null;
   let opener: Element | null = null;
   let emLast = 12;
+  // (what the address asks of the coat and the size is for this load only, and wins over what the device keeps)
+  const coatNow = () => catCoatAsk() ?? settings.coat;
   const page = new TvPage({
     films: () => settings.films,
     quiet: () => settings.quiet,
+    size: () => CAT_SIZE_FACTOR[catSizeAsk() ?? settings.size],
     extra: () => {
       const box = panel?.element();
       return box && takesRoom(box) ? [inflate(rectOf(box), 0.3 * emLast)] : [];
@@ -179,6 +185,7 @@ export function mountCat(): { stop: () => void } {
   const install = (next: Brush): void => {
     const old = brush;
     brush = next;
+    next.setCoat(coatNow());
     wrap.insertBefore(next.canvas, old ? old.canvas : hit);
     if (old) {
       old.canvas.remove();
@@ -442,7 +449,8 @@ export function mountCat(): { stop: () => void } {
   const offSettings = subscribeCatSettings(() => {
     settings = readCatSettings();
     choose(); // (the detailed cat may have been switched on or off)
-    page.touch();
+    brush?.setCoat(coatNow());
+    page.touch(); // (and the size: the page is read again, and the cat's body length with it)
   });
 
   if (debugging) {
@@ -455,6 +463,8 @@ export function mountCat(): { stop: () => void } {
         view: read?.view ?? "",
         why: read?.why ?? "",
         art: brush?.art ?? "none",
+        coat: coatNow(),
+        body: read?.world.bodyLength ?? 0,
         quality,
         cost: governor.average,
         fps,

@@ -1,5 +1,7 @@
 import { clamp, lerp } from "../../math";
+import type { CatCoat } from "../../settings";
 import type { Solved } from "../rig";
+import { COATS } from "./coats";
 import { decodeMesh, type CatMesh } from "./format";
 import { FRAGMENT, SHADOW_FRAGMENT, SHADOW_VERTEX, VERTEX } from "./shader";
 import { EARS } from "./model";
@@ -22,6 +24,8 @@ export interface View {
   shells?: number;
   /** Draw the whiskers (default: yes). */
   whiskers?: boolean;
+  /** Wear this coat for this picture (default: the one the cat was given with `setCoat`). */
+  coat?: CatCoat;
 }
 
 export interface Box {
@@ -77,6 +81,7 @@ export class GlCat {
   private cssH = 1;
   private dpr = 1;
   private gone = false;
+  private coat: CatCoat = "ginger";
   lost = false;
 
   private constructor(canvas: HTMLCanvasElement, gl: WebGLRenderingContext, mesh: CatMesh) {
@@ -100,7 +105,9 @@ export class GlCat {
     this.indexBuffer = buffer(gl.ELEMENT_ARRAY_BUFFER, mesh.index);
     this.cornerBuffer = buffer(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]));
     for (const name of ["aPos", "aNor", "aSkin", "aWgt", "aPaint"]) this.loc[name] = gl.getAttribLocation(this.main, name);
-    for (const name of ["uBones", "uProj", "uShell", "uShells", "uFreq", "uFurLen", "uAppear", "uDebug", "uWhisker", "uHead", "uEyes", "uEyes2", "uKey", "uFill", "uEarA"]) this.loc[name] = gl.getUniformLocation(this.main, name);
+    for (const name of ["uBones", "uProj", "uShell", "uShells", "uFreq", "uFurLen", "uAppear", "uDebug", "uWhisker", "uHead", "uEyes", "uEyes2", "uKey", "uFill", "uEarA", "uBase", "uLight", "uStripeC", "uWhiteC", "uPatchA", "uPatchB", "uCoat"]) {
+      this.loc[name] = gl.getUniformLocation(this.main, name);
+    }
     // the whiskers have buffers of their own and are drawn with the same program
     const w = makeWhiskers();
     this.whiskerCount = w.count;
@@ -132,6 +139,11 @@ export class GlCat {
     event.preventDefault();
     this.lost = true;
   };
+
+  /** The coat the cat wears from the next picture on. */
+  setCoat(coat: CatCoat): void {
+    this.coat = coat;
+  }
 
   resize(cssW: number, cssH: number, dpr: number): void {
     this.cssW = cssW;
@@ -249,6 +261,14 @@ export class GlCat {
     gl.uniform4f(this.loc.uEyes as WebGLUniformLocation, h.openL, h.openR, h.pupil, h.happy > 0.5 ? 1 : 0);
     gl.uniform4f(this.loc.uEyes2 as WebGLUniformLocation, clamp(-s.flip * (h.eyeX - h.yaw * 0.9), -1, 1), clamp(-h.eyeY, -1, 1), h.asleep > 0.5 ? 1 : 0, h.jaw);
     gl.uniform3fv(this.loc.uEarA as WebGLUniformLocation, EAR_UNIFORM);
+    const coat = COATS[view.coat ?? this.coat];
+    gl.uniform3f(this.loc.uBase as WebGLUniformLocation, coat.base[0], coat.base[1], coat.base[2]);
+    gl.uniform3f(this.loc.uLight as WebGLUniformLocation, coat.light[0], coat.light[1], coat.light[2]);
+    gl.uniform3f(this.loc.uStripeC as WebGLUniformLocation, coat.stripe[0], coat.stripe[1], coat.stripe[2]);
+    gl.uniform3f(this.loc.uWhiteC as WebGLUniformLocation, coat.white[0], coat.white[1], coat.white[2]);
+    gl.uniform3f(this.loc.uPatchA as WebGLUniformLocation, coat.patchA[0], coat.patchA[1], coat.patchA[2]);
+    gl.uniform3f(this.loc.uPatchB as WebGLUniformLocation, coat.patchB[0], coat.patchB[1], coat.patchB[2]);
+    gl.uniform4f(this.loc.uCoat as WebGLUniformLocation, coat.stripes, coat.whites, coat.tuxedo, coat.patches);
     gl.uniform3f(this.loc.uKey as WebGLUniformLocation, -0.45, 0.75, 0.55);
     gl.uniform3f(this.loc.uFill as WebGLUniformLocation, 0.7, 0.2, 0.4);
     gl.uniform1f(this.loc.uFurLen as WebGLUniformLocation, Math.max(0.01, 1.3 / box.px));

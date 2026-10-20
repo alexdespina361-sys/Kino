@@ -2,6 +2,7 @@ import { drawCat, MARMALADE } from "../render/draw";
 import meshUrl from "../render/gl/cat.mesh?url";
 import { GlCat } from "../render/gl/renderer";
 import type { Solved } from "../render/rig";
+import type { CatCoat } from "../settings";
 import type { Quality } from "./governor";
 
 /**
@@ -30,6 +31,8 @@ export interface Brush {
   readonly lost: boolean;
   /** The most the canvas is made finer than the screen's own pixels (a finer canvas costs a card more than a TV can spare). */
   readonly maxDpr: number;
+  /** The coat the cat wears from the next picture on (the simple cat has the one coat). */
+  setCoat(coat: CatCoat): void;
   resize(side: number, dpr: number): void;
   /**
    * Paints one frame. With `probe`, waits until the card has finished it and says how long that took (a card is asked for a picture and answers
@@ -62,6 +65,9 @@ export function classicBrush(): Brush | null {
     canvas,
     lost: false,
     maxDpr: 2,
+    setCoat() {
+      /* the simple cat is marmalade */
+    },
     resize(next, dpr) {
       side = next;
       scale = dpr;
@@ -98,6 +104,9 @@ export function solidBrush(mesh: ArrayBuffer): Brush | null {
       return cat.lost;
     },
     maxDpr: 1.5,
+    setCoat(coat) {
+      cat.setCoat(coat);
+    },
     resize(side, dpr) {
       cat.resize(side, side, dpr);
       sized(canvas, side);

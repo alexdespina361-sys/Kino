@@ -9,6 +9,14 @@ import { readStorage, writeStorage } from "../shared/format";
  * website's first download: the cat itself is another file, fetched only for a screen that wants one.
  */
 
+/** The coats the detailed cat can wear (the simple drawn cat has the one). */
+export const CAT_COATS = ["ginger", "tuxedo", "grey", "calico"] as const;
+export type CatCoat = (typeof CAT_COATS)[number];
+/** How big the cat is on the screen, against what the screen's size makes of it: smaller where the picture is busy, bigger to see it better. */
+export const CAT_SIZES = ["small", "normal", "large"] as const;
+export type CatSize = (typeof CAT_SIZES)[number];
+export const CAT_SIZE_FACTOR: Record<CatSize, number> = { small: 0.8, normal: 1, large: 1.35 };
+
 export interface CatSettings {
   /** This device shows the cat. */
   on: boolean;
@@ -18,6 +26,10 @@ export interface CatSettings {
   films: boolean;
   /** It is the detailed, solid cat where this screen can do one (off: the simple drawn cat, which costs a screen a tenth as much). */
   detail: boolean;
+  /** The detailed cat's coat. */
+  coat: CatCoat;
+  /** How big the cat is. */
+  size: CatSize;
 }
 
 export const CAT_KEY = "kino.cat";
@@ -40,9 +52,19 @@ export function catLook(search: string = typeof location === "undefined" ? "" : 
   return value === "classic" || value === "solid" ? value : undefined;
 }
 
+/** What the address asks of the coat (`?catcoat=tuxedo`) and the size (`?catsize=large`), for this load only. */
+export function catCoatAsk(search: string = typeof location === "undefined" ? "" : location.search): CatCoat | undefined {
+  const value = new URLSearchParams(search).get("catcoat");
+  return CAT_COATS.find((coat) => coat === value);
+}
+export function catSizeAsk(search: string = typeof location === "undefined" ? "" : location.search): CatSize | undefined {
+  const value = new URLSearchParams(search).get("catsize");
+  return CAT_SIZES.find((size) => size === value);
+}
+
 /** The settings as stored (anything that is not understood is the default), for a browser that is a TV's or not. */
 export function parseCatSettings(raw: string | undefined, tv: boolean): CatSettings {
-  const settings: CatSettings = { on: false, quiet: tv, films: true, detail: true };
+  const settings: CatSettings = { on: false, quiet: tv, films: true, detail: true, coat: "ginger", size: "normal" };
   if (!raw) return settings;
   try {
     const stored: unknown = JSON.parse(raw);
@@ -52,6 +74,8 @@ export function parseCatSettings(raw: string | undefined, tv: boolean): CatSetti
       if (typeof each.quiet === "boolean") settings.quiet = each.quiet;
       if (typeof each.films === "boolean") settings.films = each.films;
       if (typeof each.detail === "boolean") settings.detail = each.detail;
+      settings.coat = CAT_COATS.find((coat) => coat === each.coat) ?? settings.coat;
+      settings.size = CAT_SIZES.find((size) => size === each.size) ?? settings.size;
     }
   } catch {
     /* a value nobody wrote: the defaults */
