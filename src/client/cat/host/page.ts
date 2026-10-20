@@ -1,4 +1,4 @@
-import { bodyLengthFor } from "../math";
+import { BODY_EMS, bodyLengthFor } from "../math";
 import type { PlayerMode, Rect, Surface, Target, World } from "../types";
 import { inflate, nameOf, rectOf, takesRoom, textRect } from "./dom";
 
@@ -145,7 +145,7 @@ export class TvPage {
     const vw = viewport.w;
     const vh = viewport.h;
     const L = bodyLengthFor(vw, vh);
-    const em = tv ? parseFloat(getComputedStyle(tv).fontSize) || L / 4.8 : L / 4.8;
+    const em = tv ? parseFloat(getComputedStyle(tv).fontSize) || L / BODY_EMS : L / BODY_EMS;
     const draft: Draft = { surfaces: [], keepOut: [], targets: [], shelves: new Map() };
     let mode: World["mode"] = "away";
     let player: PlayerMode = "none";

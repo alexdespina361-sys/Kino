@@ -16,6 +16,8 @@ export interface CatSettings {
   quiet: boolean;
   /** It keeps the viewer company during a film too (asleep in a corner of the picture, away from the controls and the subtitles). */
   films: boolean;
+  /** It is the detailed, solid cat where this screen can do one (off: the simple drawn cat, which costs a screen a tenth as much). */
+  detail: boolean;
 }
 
 export const CAT_KEY = "kino.cat";
@@ -32,9 +34,15 @@ export function catAsk(search: string = typeof location === "undefined" ? "" : l
   return undefined;
 }
 
+/** What the address asks of the cat's look: `?catart=classic` is the simple cat, `?catart=solid` the detailed one, for this load only. */
+export function catLook(search: string = typeof location === "undefined" ? "" : location.search): "solid" | "classic" | undefined {
+  const value = new URLSearchParams(search).get("catart");
+  return value === "classic" || value === "solid" ? value : undefined;
+}
+
 /** The settings as stored (anything that is not understood is the default), for a browser that is a TV's or not. */
 export function parseCatSettings(raw: string | undefined, tv: boolean): CatSettings {
-  const settings: CatSettings = { on: false, quiet: tv, films: true };
+  const settings: CatSettings = { on: false, quiet: tv, films: true, detail: true };
   if (!raw) return settings;
   try {
     const stored: unknown = JSON.parse(raw);
@@ -43,6 +51,7 @@ export function parseCatSettings(raw: string | undefined, tv: boolean): CatSetti
       if (typeof each.on === "boolean") settings.on = each.on;
       if (typeof each.quiet === "boolean") settings.quiet = each.quiet;
       if (typeof each.films === "boolean") settings.films = each.films;
+      if (typeof each.detail === "boolean") settings.detail = each.detail;
     }
   } catch {
     /* a value nobody wrote: the defaults */

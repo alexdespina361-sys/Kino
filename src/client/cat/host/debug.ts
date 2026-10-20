@@ -16,6 +16,8 @@ export interface DebugInfo {
   cost: number;
   fps: number;
   panel: boolean;
+  /** Which cat is painted. */
+  art: string;
 }
 
 export interface DebugView {
@@ -36,13 +38,13 @@ export function createDebugView(): DebugView {
   document.body.append(map, text);
 
   return {
-    update({ read, frame, engine, quality, cost, fps, panel }) {
+    update({ read, frame, engine, quality, cost, fps, panel, art }) {
       const w = read.world;
       text.textContent = [
         `cat   ${engine.act}${engine.queue.length ? ` > ${engine.queue.join(", ")}` : ""}   mode ${engine.mode}   placed ${engine.placed}`,
         `at    x ${Math.round(frame.x)}  y ${Math.round(frame.y)}  ${frame.clip}  appear ${two(frame.appear)}  on ${engine.surfaceId ?? "-"}${engine.jumpTo ? `  leaping to ${engine.jumpTo}` : ""}`,
         `page  ${read.view}   ${read.why ? `away: ${read.why}` : "here"}   ${w.surfaces.length} places, ${w.keepOut.length} keep-outs, ${w.targets.length} posters`,
-        `perf  ${quality}   ${two(cost)} ms   ${Math.round(fps)} fps   body ${w.bodyLength}px`,
+        `perf  ${quality}   ${two(cost)} ms   ${Math.round(fps)} fps   body ${w.bodyLength}px   art ${art}`,
         `mood  sleepy ${two(engine.mood.sleepiness)}  lively ${two(engine.mood.energy)}  fond ${two(engine.mood.affection)}  curious ${two(engine.mood.curiosity)}`,
         `panel ${panel ? "open" : "closed"}   player ${w.player}   quiet ${w.quiet}   reduced ${w.reducedMotion}`,
       ].join("\n");

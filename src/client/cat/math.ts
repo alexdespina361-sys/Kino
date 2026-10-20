@@ -26,11 +26,14 @@ export const angleDelta = (a: number, b: number): number => {
   return d;
 };
 
+/** How many of the TV's `em`s (a hundredth of the width of a 16:9 screen) the cat's body is long: big enough for the fur and the face to be seen. */
+export const BODY_EMS = 5.8;
+
 /**
- * How long the cat's body is, in pixels, for a screen of this size: 4.8 of the TV's `em` (a hundredth of the width of a 16:9 screen), so it
- * is the same share of the picture on every TV, and never smaller than a thumb on a small window.
+ * How long the cat's body is, in pixels, for a screen of this size: `BODY_EMS` of the TV's `em`, so it is the same share of the picture on every TV,
+ * and never smaller than a thumb on a small window.
  */
-export const bodyLengthFor = (width: number, height: number): number => Math.max(40, Math.round(4.8 * Math.max(9, Math.min(width / 100, (height * 1.7778) / 100))));
+export const bodyLengthFor = (width: number, height: number): number => Math.max(40, Math.round(BODY_EMS * Math.max(9, Math.min(width / 100, (height * 1.7778) / 100))));
 
 /** A value that chases a target with a spring: `x` is where it is, `v` how fast it is moving. */
 export interface Dyn {

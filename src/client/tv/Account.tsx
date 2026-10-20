@@ -562,6 +562,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
                     <>
                       <SettingsSwitch label={t("cat.settings.quiet")} on={cat.settings.quiet} onToggle={() => cat.set({ quiet: !cat.settings.quiet })} testId="tv-cat-quiet" />
                       <SettingsSwitch label={t("cat.settings.films")} on={cat.settings.films} onToggle={() => cat.set({ films: !cat.settings.films })} testId="tv-cat-films" />
+                      <SettingsSwitch label={t("cat.settings.detail")} on={cat.settings.detail} onToggle={() => cat.set({ detail: !cat.settings.detail })} testId="tv-cat-detail" />
                     </>
                   )}
                 </SettingsGroup>

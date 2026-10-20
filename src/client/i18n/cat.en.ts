@@ -39,6 +39,7 @@ export const catEn = {
   "cat.settings.on": "A cat on this screen",
   "cat.settings.quiet": "Quiet cat (it rests and does not wander)",
   "cat.settings.films": "Keep me company during films",
+  "cat.settings.detail": "Detailed cat (off: simpler, lighter)",
   "cat.settings.help": "A cat that lives on the screen: it walks along the rows of titles, naps in a corner of the film and can be petted. It never plays anything by itself.",
 } as const;
 

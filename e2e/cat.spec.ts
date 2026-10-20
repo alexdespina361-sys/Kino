@@ -1,4 +1,5 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
+import { PNG } from "pngjs";
 import { openLibrary, openTvSettings, playFirst, test, withLibrary } from "./helpers";
 
 /**
@@ -22,14 +23,18 @@ const setup = (yes = true) => async (context: BrowserContext) => {
   await offered(yes)(context);
   await withLibrary(library)(context);
 };
-/** A device that has turned the cat on (as its settings page does), in the way it starts: not quiet. */
-const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, ...over }) });
+/**
+ * A device that has turned the cat on (as its settings page does), in the way it starts: not quiet. The detailed cat is off for these tests, but the ones
+ * that are about it: a headless browser's card is a software one, so the tests of the cat's behaviour are made without it (it would only be slower).
+ */
+const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, detail: false, ...over }) });
 
 interface Snap {
   frame: { x: number; y: number; clip: string; appear: number; petted: boolean; grounded: boolean };
   engine: { act: string; surfaceId: string | null; mode: string; placed: boolean };
   view: string;
   why: string;
+  art: "solid" | "classic" | "none";
   quality: string;
   panel: boolean;
   visible: boolean;
@@ -302,4 +307,132 @@ test("the settings page has the cat's switches only on a host that offers a cat,
   await other.keyboard.press("Escape");
   await expect(other.getByTestId("cat")).toHaveCount(0);
   await expect(other.getByTestId("tv-cat-chip")).toHaveCount(0);
+});
+
+/* ------------------------------ the detailed (solid) cat and the simple one it falls back to ------------------------------ */
+
+/** How many pixels of a picture are the cat's orange (the colours of the library's posters have none like it). */
+const gingerIn = (picture: Buffer): number => {
+  const { data } = PNG.sync.read(picture);
+  let count = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i]!;
+    const g = data[i + 1]!;
+    const b = data[i + 2]!;
+    if (r > 170 && g > 80 && g < 190 && b < 120 && r - b > 100) count++;
+  }
+  return count;
+};
+/** A picture of the library around the cat. */
+const around = async (tv: Page): Promise<Buffer> => {
+  const seen = await snap(tv);
+  const side = await tv.evaluate(() => document.querySelector(".kino-cat-canvas")!.getBoundingClientRect().width);
+  const L = side / 4;
+  const x = Math.max(0, Math.round(seen.frame.x - 1.6 * L));
+  const y = Math.max(0, Math.round(seen.frame.y - 1.6 * L));
+  return tv.screenshot({ clip: { x, y, width: Math.round(3.2 * L), height: Math.round(1.8 * L) } });
+};
+const artIs = (tv: Page, art: Snap["art"], timeout = 12_000) => saying(tv, () => expect.poll(async () => (await snap(tv)).art, { timeout }).toBe(art));
+const MESH = /\.mesh(\?|$)/;
+
+test("the detailed cat: a screen that can do WebGL gets the solid cat, painted by the card from a file that is fetched once, and it is on the screen", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true }));
+  const meshes: string[] = [];
+  tv.on("request", (request) => MESH.test(request.url()) && meshes.push(request.url()));
+  await tv.goto("/tv?cat=debug&catbudget=100000");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await artIs(tv, "solid");
+  await catIsOnTheScreen(tv);
+  // a canvas that has a WebGL context can have no 2d one: this is the card's picture
+  expect(await tv.evaluate(() => document.querySelector<HTMLCanvasElement>(".kino-cat-canvas")!.getContext("2d"))).toBeNull();
+  await expect.poll(async () => gingerIn(await around(tv)), { timeout: 8_000 }).toBeGreaterThan(250);
+  expect(meshes).toHaveLength(1);
+  // the library keeps its own focus and keys under the solid cat too
+  await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+  await tv.keyboard.press("ArrowRight");
+  await expect(tv.getByTestId("tv-browse-tile").nth(1)).toBeFocused();
+});
+
+test("a screen without WebGL gets the simple cat, and its mesh is not asked for twice", async ({ browser }) => {
+  const tv = await openLibrary(
+    browser,
+    async (context) => {
+      await setup()(context);
+      await context.addInitScript(() => {
+        const original = HTMLCanvasElement.prototype.getContext as (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) => unknown;
+        HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {
+          return /webgl/.test(kind) ? null : original.call(this, kind, ...rest);
+        } as typeof HTMLCanvasElement.prototype.getContext;
+      });
+    },
+    undefined,
+    WANTS({ detail: true, quiet: true }),
+  );
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await artIs(tv, "classic");
+  await catIsOnTheScreen(tv);
+  await expect.poll(async () => gingerIn(await around(tv)), { timeout: 8_000 }).toBeGreaterThan(150);
+});
+
+test("a mesh that is missing, or is not a mesh, gives the simple cat and the page carries on", async ({ browser }) => {
+  for (const answer of [{ status: 500, body: "no" }, { status: 200, body: "<!doctype html><title>Kino</title>" }]) {
+    const tv = await openLibrary(
+      browser,
+      async (context) => {
+        await setup()(context);
+        await context.route(MESH, (route) => route.fulfill({ ...answer, contentType: "application/octet-stream" }));
+      },
+      undefined,
+      WANTS({ detail: true, quiet: true }),
+    );
+    await tv.goto("/tv?cat=debug");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await artIs(tv, "classic");
+    await catIsOnTheScreen(tv);
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+  }
+});
+
+test("a screen that cannot afford the detailed cat is given the simple one, and keeps it", async ({ browser }) => {
+  test.setTimeout(75_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true }));
+  await tv.goto("/tv?cat=debug&catslow=40");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await artIs(tv, "solid");
+  // (the cost is told every frame: two stretches of being over budget, the second at the lower quality, and the detailed cat is no more)
+  await artIs(tv, "classic", 50_000);
+  await catIsOnTheScreen(tv);
+  await tv.waitForTimeout(3000);
+  const later = await snap(tv);
+  expect(later.art).toBe("classic");
+  expect(later.quality).toBe("full");
+  expect(later.visible).toBe(true);
+});
+
+test("the settings page has a switch for the detailed cat: off is the simple cat at once, and on is the detailed one again", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true }));
+  await tv.goto("/tv?cat=debug&catbudget=100000");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await artIs(tv, "solid");
+  await openTvSettings(tv);
+  const detail = tv.getByTestId("tv-cat-detail");
+  await expect(detail).toHaveAttribute("aria-checked", "true");
+  await detail.click();
+  await expect(detail).toHaveAttribute("aria-checked", "false");
+  await artIs(tv, "classic", 6_000);
+  await detail.click();
+  await expect(detail).toHaveAttribute("aria-checked", "true");
+  await artIs(tv, "solid");
+});
+
+test("the address can ask for either cat, whatever the device says", async ({ browser }) => {
+  const simple = await openLibrary(browser, setup(), undefined, WANTS({ detail: true }));
+  await simple.goto("/tv?cat=debug&catart=classic");
+  await expect(simple.getByTestId("tv-browse")).toBeVisible();
+  await artIs(simple, "classic");
+  const solid = await openLibrary(browser, setup(), undefined, WANTS({ detail: false }));
+  await solid.goto("/tv?cat=debug&catart=solid&catbudget=100000");
+  await expect(solid.getByTestId("tv-browse")).toBeVisible();
+  await artIs(solid, "solid");
 });

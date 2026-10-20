@@ -1,10 +1,10 @@
 import { isTvAgent } from "../../role";
 import { onCat } from "../bus";
+import { BODY_EMS } from "../math";
 import { CatEngine, type EngineDebug } from "../engine/engine";
-import { drawCat, MARMALADE } from "../render/draw";
 import { CatRig } from "../render/rig";
 import { createRng } from "../rng";
-import { catAsk, readCatSettings, subscribeCatSettings } from "../settings";
+import { catAsk, catLook, readCatSettings, subscribeCatSettings } from "../settings";
 import type { CatEvent, CatFrame, PlayerMode, Rect, Vec, World } from "../types";
 import "./cat.css";
 import { createDebugView, type DebugView } from "./debug";
@@ -15,6 +15,7 @@ import { Hand } from "./hand";
 import { tileOf } from "./assistant";
 import { TvPage, type PageRead } from "./page";
 import { mountPanel, type PanelHandle } from "./panel";
+import { classicBrush, fetchMesh, solidBrush, type Brush } from "./render";
 
 /**
  * The cat on a screen: the loop that reads the page, lets the cat's brain decide, and paints it. This is the only file that touches both the page
@@ -47,6 +48,8 @@ export interface CatSnapshot {
   engine: EngineDebug;
   view: string;
   why: string;
+  /** Which cat is painted: the solid one, the simple one, or none yet (the solid one is still being fetched). */
+  art: "solid" | "classic" | "none";
   quality: Quality;
   cost: number;
   fps: number;
@@ -71,11 +74,17 @@ const seedOf = (search: string): number => {
 export function mountCat(): { stop: () => void } {
   const debugging = catAsk() === "debug";
   const seed = seedOf(location.search);
+  const params = new URLSearchParams(location.search);
   const engine = new CatEngine(seed);
   const rig = new CatRig(seed);
   const rng = createRng(seed).fork("assistant");
   const hand = new Hand();
-  const governor = new Governor({ budget: isTvAgent(navigator.userAgent) ? 4 : 2 });
+  // (`?catbudget=N`: how many milliseconds a frame may cost before the cat is made cheaper; a large number keeps a slow screen's cat as it is, for looking at it)
+  // (`?catslow=N`: the detailed cat is taken to cost N milliseconds more a frame than it does, for seeing what a screen that cannot afford it is given)
+  const asked = Number(params.get("catbudget"));
+  const budget = Number.isFinite(asked) && asked > 0 ? asked : isTvAgent(navigator.userAgent) ? 4 : 2;
+  const pretend = Math.max(0, Number(params.get("catslow")) || 0);
+  let governor = new Governor({ budget });
   let settings = readCatSettings();
   let panel: PanelHandle | null = null;
   let panelHost: HTMLElement | null = null;
@@ -99,15 +108,13 @@ export function mountCat(): { stop: () => void } {
   wrap.hidden = true;
   // (the library puts a rule on everything it holds that makes it a block in the flow: this is a layer over it)
   wrap.style.setProperty("position", "absolute", "important");
-  const canvas = document.createElement("canvas");
-  canvas.className = "kino-cat-canvas";
   const hit = document.createElement("div");
   hit.className = "kino-cat-hit";
   hit.setAttribute("data-off", "");
   hit.setAttribute("data-testid", "cat-hit");
-  wrap.append(canvas, hit);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return { stop: () => undefined }; // (a browser that cannot draw has no cat)
+  wrap.append(hit);
+  // (the cat's canvas goes in front of the box that takes a hand once there is a brush to paint it; which brush it is, is decided below)
+  let brush: Brush | null = null;
 
   const debug: DebugView | null = debugging ? createDebugView() : null;
 
@@ -118,6 +125,9 @@ export function mountCat(): { stop: () => void } {
   let dpr = 1;
   let layoutKey = "";
   let quality: Quality = "full";
+  let frames = 0;
+  /** What the card was last seen to take for a frame, in milliseconds (a smoothed number; 0 until it has been timed). */
+  let gpu = 0;
   let shown = false;
   let raf = 0;
   let stopped = false;
@@ -149,12 +159,56 @@ export function mountCat(): { stop: () => void } {
     side = Math.ceil(CANVAS_BODIES * L);
     ox = side / 2;
     oy = side * GROUND_AT;
-    canvas.width = Math.round(side * dpr);
-    canvas.height = Math.round(side * dpr);
-    canvas.style.width = `${side}px`;
-    canvas.style.height = `${side}px`;
+    brush?.resize(side, dpr);
     hit.style.width = `${HIT_W * L}px`;
     hit.style.height = `${HIT_H * L}px`;
+  };
+
+  /* ------------------------------ which cat is painted ------------------------------ */
+
+  // The detailed (solid) cat is wanted where the device and the address do not say otherwise. Its mesh is fetched, and the cat is not shown until it
+  // is there (a cat that changed its look in front of the viewer would be a bad moment); a screen that cannot do it, cannot get it, loses its picture
+  // of it or cannot afford it gets the simple one, once, and is not asked again until the page is loaded anew.
+  const wantsSolid = (): boolean => {
+    const look = catLook();
+    return look ? look === "solid" : settings.detail;
+  };
+  let solidFailed = false;
+  let fetching = false;
+
+  const install = (next: Brush): void => {
+    const old = brush;
+    brush = next;
+    wrap.insertBefore(next.canvas, old ? old.canvas : hit);
+    if (old) {
+      old.canvas.remove();
+      old.dispose();
+    }
+    layoutKey = ""; // (the new canvas is sized at the next frame)
+  };
+
+  const choose = (): void => {
+    if (stopped) return;
+    if (!wantsSolid() || solidFailed) {
+      if (brush?.art === "classic") return;
+      const simple = classicBrush();
+      if (simple) install(simple);
+      else if (!brush) halt(); // (a browser that cannot draw has no cat)
+      return;
+    }
+    if (brush?.art === "solid" || fetching) return;
+    fetching = true;
+    void fetchMesh().then((data) => {
+      fetching = false;
+      if (stopped) return;
+      const made = data ? solidBrush(data) : null;
+      if (!made) solidFailed = true;
+      if (made && wantsSolid()) install(made);
+      else {
+        made?.dispose();
+        choose();
+      }
+    });
   };
 
   /* ------------------------------ the panel ------------------------------ */
@@ -214,7 +268,7 @@ export function mountCat(): { stop: () => void } {
   /** The page was read again: what changed on it that the cat is told of. */
   const onRead = (now: PageRead): void => {
     const world = now.world;
-    emLast = world.bodyLength / 4.8;
+    emLast = world.bodyLength / BODY_EMS;
     if (now.focusId !== prevFocus) {
       prevFocus = now.focusId;
       if (now.focusId) engine.send({ type: "catalog.itemFocused", id: now.focusId });
@@ -264,25 +318,32 @@ export function mountCat(): { stop: () => void } {
 
     frame = engine.update(world, dt);
     const L = world.bodyLength;
-    const wanted = quality === "low" ? 1 : Math.min(2, window.devicePixelRatio || 1);
+    if (brush?.lost) {
+      // the card took the picture away (it was reset, or needed for something else): the simple cat carries on
+      solidFailed = true;
+      choose();
+    }
+    const wanted = quality === "low" || !brush ? 1 : Math.min(brush.maxDpr, window.devicePixelRatio || 1);
     const key = `${L}|${wanted}`;
     if (key !== layoutKey) {
       layoutKey = key;
       layout(L, wanted);
     }
 
-    const visible = frame.appear > 0.01 && wrap.isConnected;
-    if (visible) {
+    const visible = frame.appear > 0.01 && wrap.isConnected && brush !== null;
+    let waited = 0;
+    if (visible && brush) {
       if (!shown) rig.snapTo(frame, L); // (a cat that comes in is already in its pose: it does not settle into it in front of the viewer)
       rig.update(frame, dt, L);
       const px = frame.x - origin.x - ox;
       const py = frame.y - origin.y - oy;
       const ix = Math.floor(px * dpr) / dpr;
       const iy = Math.floor(py * dpr) / dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, side, side);
-      drawCat(ctx, MARMALADE, rig.solved, { ox: ox + (px - ix), oy: oy + (py - iy), px: L });
-      canvas.style.transform = `translate3d(${ix}px, ${iy}px, 0)`;
+      // (a card is asked for a picture and answers later: twice a second the host waits for the answer, to know what the picture costs)
+      frames++;
+      waited = brush.paint(rig.solved, { ox: ox + (px - ix), oy: oy + (py - iy), px: L }, quality, frames % 30 === 0);
+      if (waited > 0) gpu = gpu === 0 ? waited : gpu * 0.7 + waited * 0.3;
+      brush.canvas.style.transform = `translate3d(${ix}px, ${iy}px, 0)`;
       hit.style.transform = `translate3d(${frame.x - origin.x - (HIT_W * L) / 2}px, ${frame.y - origin.y - HIT_H * L}px, 0)`;
     }
     if (visible !== shown) {
@@ -307,18 +368,28 @@ export function mountCat(): { stop: () => void } {
     }
     pointing = reaching;
 
-    cost = performance.now() - t0;
+    // (the host's own time, less the wait for the card where there was one, plus what the card was last seen to take)
+    cost = performance.now() - t0 - waited + gpu + (brush?.art === "solid" ? pretend : 0);
     const next = governor.note(cost, gap);
     if (next !== quality) {
-      quality = next;
-      if (quality === "off") {
-        halt();
-        return;
+      if (next === "off" && brush?.art === "solid") {
+        // the detailed cat is more than this screen can spare; the simple one is a tenth of it, and is judged afresh
+        solidFailed = true;
+        governor = new Governor({ budget });
+        gpu = 0;
+        quality = "full";
+        choose();
+      } else {
+        quality = next;
+        if (quality === "off") {
+          halt();
+          return;
+        }
       }
     }
     if (debug && time - lastDebug > 150) {
       lastDebug = time;
-      debug.update({ read: now, frame, engine: engine.debug(), quality, cost: governor.average, fps, panel: panel !== null });
+      debug.update({ read: now, frame, engine: engine.debug(), quality, cost: governor.average, fps, panel: panel !== null, art: brush?.art ?? "none" });
     }
   };
 
@@ -327,6 +398,7 @@ export function mountCat(): { stop: () => void } {
     stopped = true;
     cancelAnimationFrame(raf);
     wrap.hidden = true;
+    brush?.dispose();
     closePanel();
     clearPointed();
   };
@@ -369,6 +441,7 @@ export function mountCat(): { stop: () => void } {
   });
   const offSettings = subscribeCatSettings(() => {
     settings = readCatSettings();
+    choose(); // (the detailed cat may have been switched on or off)
     page.touch();
   });
 
@@ -381,6 +454,7 @@ export function mountCat(): { stop: () => void } {
         engine: engine.debug(),
         view: read?.view ?? "",
         why: read?.why ?? "",
+        art: brush?.art ?? "none",
         quality,
         cost: governor.average,
         fps,
@@ -394,6 +468,7 @@ export function mountCat(): { stop: () => void } {
   }
 
   engine.send({ type: "cat.enable" });
+  choose();
   raf = requestAnimationFrame(loop);
 
   return {
@@ -401,6 +476,7 @@ export function mountCat(): { stop: () => void } {
       stopped = true;
       cancelAnimationFrame(raf);
       window.clearTimeout(pointRetry);
+      brush?.dispose();
       window.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerdown", onOutside, true);
       hit.removeEventListener("pointerenter", onEnter);
