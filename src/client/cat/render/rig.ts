@@ -85,6 +85,25 @@ const GAIT_OFFSET = { hn: 0, fn: 0.25, hf: 0.5, ff: 0.75 } as const;
 /** The ground a walk covers while the legs go once round (the lengths of the body), and what a gallop does: further, with each paw down for less of it. */
 export const WALK_STRIDE = 0.6;
 export const GALLOP_STRIDE = 1.05;
+
+/** A gait of one leg at a time: the ground one round of the legs covers, the share of it that a paw is down for, and how high it is lifted. */
+interface Gait {
+  stride: number;
+  duty: number;
+  lift: number;
+}
+const WALK_GAIT: Gait = { stride: WALK_STRIDE, duty: 0.68, lift: 0.07 };
+/** A creeping cat takes short, slow steps, each foot lifted a little and set down with care. */
+const STALK_GAIT: Gait = { stride: 0.36, duty: 0.8, lift: 0.05 };
+
+/** Where a paw is in a gait, by the ground covered (so that a foot on the ground stays where it is while the body walks past it). */
+function gaitPaw(key: "fn" | "ff" | "hn" | "hf", homeX: number, odoL: number, gait: Gait): { x: number; y: number } {
+  const ph = fract(fract(odoL / gait.stride) + GAIT_OFFSET[key]);
+  const half = (gait.stride * gait.duty) / 2;
+  if (ph < gait.duty) return { x: homeX + half * (1 - (2 * ph) / gait.duty), y: 0 };
+  const t = (ph - gait.duty) / (1 - gait.duty);
+  return { x: homeX - half + 2 * half * easeInOut(t), y: -gait.lift * Math.sin(Math.PI * t) ** 0.8 };
+}
 /** The gallop's paws land in pairs, not one at a time: the two hind (one a little after the other), then the two front, with the body in the air between. */
 const GALLOP_OFFSET = { hn: 0, hf: 0.1, ff: 0.4, fn: 0.5 } as const;
 const GALLOP_DUTY = 0.3;
@@ -367,14 +386,12 @@ export class CatRig {
     const gallop = clamp01(this.gallopDyn.x);
     const gat = gaitW * gallop;
     smooth(this.gallopTail, gat, 2.4, dt);
-    // (a creeping cat takes short, slow steps, each foot lifted a little and set down with care)
-    const stride = stalking ? 0.36 : WALK_STRIDE;
-    const duty = stalking ? 0.8 : 0.68;
-    const lift = stalking ? 0.05 : 0.07;
-    const cycle = odoL / stride;
-    const base = fract(cycle);
-    const bob = gaitW * (1 - gallop) * (stalking ? 0.004 : 0.012) * (1 - Math.cos(base * TAU * 2)) * 0.5;
-    const roll = gaitW * (1 - gallop) * Math.sin(base * TAU) * (stalking ? 0.006 : 0.012);
+    // (the creeping walk is the same: both are worked out from the ground covered and blended, so that the change from one to the other, or to a stop, does not jump a paw)
+    const stalkW = clamp01(this.stalkDyn.x);
+    const walkBeat = fract(odoL / WALK_GAIT.stride);
+    const stalkBeat = fract(odoL / STALK_GAIT.stride);
+    const bob = gaitW * (1 - gallop) * lerp(0.012 * (1 - Math.cos(walkBeat * TAU * 2)) * 0.5, 0.004 * (1 - Math.cos(stalkBeat * TAU * 2)) * 0.5, stalkW);
+    const roll = gaitW * (1 - gallop) * lerp(Math.sin(walkBeat * TAU) * 0.012, Math.sin(stalkBeat * TAU) * 0.006, stalkW);
     // (where it is in the gallop's one beat: 0 is the hind feet coming down; gathered, with the feet under it, is the end of it, stretched out the middle)
     const gbeat = fract(odoL / GALLOP_STRIDE);
     const gather = gat > 0.001 ? Math.cos(TAU * (gbeat - 0.92)) : 0;
@@ -411,17 +428,13 @@ export class CatRig {
     // --- where each paw is (a step when walking, the posture's own rest place when not)
     const pawTarget = (key: "fn" | "ff" | "hn" | "hf") => {
       const home = p[key];
-      const ph = fract(base + GAIT_OFFSET[key]);
-      const half = (stride * duty) / 2;
-      let gx: number;
-      let gy: number;
-      if (ph < duty) {
-        gx = home.x + half * (1 - (2 * ph) / duty);
-        gy = 0;
-      } else {
-        const t = (ph - duty) / (1 - duty);
-        gx = home.x - half + 2 * half * easeInOut(t);
-        gy = -lift * Math.sin(Math.PI * t) ** 0.8;
+      const step = gaitPaw(key, home.x, odoL, WALK_GAIT);
+      let gx = step.x;
+      let gy = step.y;
+      if (stalkW > 0.001) {
+        const creep = gaitPaw(key, home.x, odoL, STALK_GAIT);
+        gx = lerp(gx, creep.x, stalkW);
+        gy = lerp(gy, creep.y, stalkW);
       }
       if (gallop > 0.001) {
         const g = gallopPaw(key, home.x, odoL);

@@ -237,7 +237,7 @@ describe("the cat's little scenes", () => {
     expect(tail.dy).toBeGreaterThan(-0.3);
   });
 
-  it("does not jump when it breaks into a run, slows to a walk or stops (no joint moves more than a fifth of the body in one frame: a leg used to go by 0.4)", () => {
+  it("does not jump when it breaks into a run, slows to a walk, creeps up on something or stops (no joint moves more than a fifth of the body in one frame: a leg used to go by 0.4)", () => {
     let previous: number[] | null = null;
     let biggest = 0;
     const joints = (s: Solved): number[] => [
@@ -254,6 +254,11 @@ describe("the cat's little scenes", () => {
         { clip: "walk", perSecond: 1, seconds: 3 },
         { clip: "run", perSecond: 2.6, seconds: 3 },
         { clip: "stand", perSecond: 0, seconds: 3 },
+        // (the hunt: a walk, the creep, the wiggle before the pounce, and a walk again)
+        { clip: "walk", perSecond: 1, seconds: 3 },
+        { clip: "stalk", perSecond: 0.4, seconds: 3 },
+        { clip: "wiggle", perSecond: 0, seconds: 2 },
+        { clip: "walk", perSecond: 1, seconds: 3 },
       ],
       (s) => {
         const now = joints(s);
