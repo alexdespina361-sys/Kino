@@ -81,6 +81,7 @@ export class GlCat {
   private cssH = 1;
   private dpr = 1;
   private gone = false;
+  private readonly probe = new Uint8Array(4);
   private coat: CatCoat = "ginger";
   lost = false;
 
@@ -323,9 +324,12 @@ export class GlCat {
     for (const name of ["aPos", "aNor", "aSkin", "aWgt", "aPaint"]) gl.disableVertexAttribArray(this.loc[name] as number);
   }
 
-  /** Waits until the card has finished what it was given (a card answers later than it is asked: this is for timing it). */
+  /**
+   * Waits until the card has finished what it was given (a card answers later than it is asked: this is for timing it). Reading back one pixel is what
+   * makes a browser wait: `finish()` is only a flush in the browsers that TVs have (Chrome's), and a flush returns at once whatever the picture costs.
+   */
   finish(): void {
-    if (!this.gone && !this.lost) this.gl.finish();
+    if (!this.gone && !this.lost) this.gl.readPixels(0, 0, 1, 1, this.gl.RGBA, this.gl.UNSIGNED_BYTE, this.probe);
   }
 
   dispose(): void {
