@@ -18,6 +18,9 @@ export interface RoleInput {
 /** TV browsers say so in their user agent: Fire TV ("AFTM"), Tizen, webOS, VIDAA (Hisense), Android TV sets, Chromecast, Apple TV, Roku... */
 const TV_AGENT = /smart-?tv|hbbtv|netcast|googletv|android ?tv|bravia|\bAFT[A-Z0-9]*\b|crkey|appletv|web0s|webos|tizen|vidaa|roku|viera|nettv/i;
 
+/** Whether the browser says it is a TV's (see `TV_AGENT`). */
+export const isTvAgent = (userAgent: string): boolean => TV_AGENT.test(userAgent);
+
 /**
  * One page, two screens. In order: an address that asks for one ("/tv", "?role=remote", the "?party=" link of a watch party,
  * which is for a screen that plays, or the "?code=" / "?link=" / "?friend=" / "?url=" links made for the phone), then what was chosen with

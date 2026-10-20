@@ -2,6 +2,7 @@ import "./shared/debug"; // first: with ?debug in the address it shows what the 
 import { lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { AccountProvider } from "./account/AccountProvider";
+import { bootCat } from "./cat/boot";
 import { installDiagnostics } from "./feedback/diagnostics";
 import { FeedbackGate } from "./feedback/FeedbackGate";
 import { FriendsProvider } from "./friends/FriendsProvider";
@@ -24,6 +25,8 @@ setUpFullscreen({ byItself: role === "tv" });
 if (thisIsHandHeld()) installExitGuard();
 // What the page can say about itself if somebody sends feedback is kept from the start (nothing leaves the page unless it is sent: see feedback/diagnostics.ts).
 installDiagnostics();
+// A cat on the TV's screen, for a device that asked for one and a host that offers it (nothing of it is downloaded otherwise: see cat/boot.ts).
+bootCat(role);
 createRoot(document.getElementById("root")!).render(
   <AccountProvider device={role === "tv" ? "tv" : "remote"}>
     <FriendsProvider>

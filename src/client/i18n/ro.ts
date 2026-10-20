@@ -1,4 +1,5 @@
 import { chatRo } from "./chat.ro";
+import { catRo } from "./cat.ro";
 import type { Dictionary } from "./en";
 
 /** Română. Aceleași chei ca în en.ts (compilatorul verifică); formele de plural sunt `_one`, `_few`, `_other`. */
@@ -1213,4 +1214,7 @@ export const ro: Dictionary = {
 
   /* chat între doi prieteni (client/chat): într-un fișier separat, adăugat aici */
   ...chatRo,
+
+  /* the cat companion (client/cat): kept in a file of its own, spread in here */
+  ...catRo,
 };

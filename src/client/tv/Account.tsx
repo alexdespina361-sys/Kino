@@ -4,6 +4,7 @@ import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
+import { useCatSettings } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
@@ -449,6 +450,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const ratingsOn = settings.ratings ?? true;
   const friendsOn = friendChoices(settings).friends;
   const several = Boolean(me && me.profiles.length > 1);
+  const cat = useCatSettings(); // (the cat's switches are there only on a host that offers a cat)
   return (
     <Screen testId="tv-account" focus onBack={onClose}>
       <div className="tv-set">
@@ -551,6 +553,23 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
                 />
               )}
             </SettingsGroup>
+
+            {cat.offered && (
+              <>
+                <SettingsGroup title={t("cat.settings.title")} testId="tv-group-cat">
+                  <SettingsSwitch label={t("cat.settings.on")} on={cat.settings.on} onToggle={() => cat.set({ on: !cat.settings.on })} testId="tv-cat-switch" />
+                  {cat.settings.on && (
+                    <>
+                      <SettingsSwitch label={t("cat.settings.quiet")} on={cat.settings.quiet} onToggle={() => cat.set({ quiet: !cat.settings.quiet })} testId="tv-cat-quiet" />
+                      <SettingsSwitch label={t("cat.settings.films")} on={cat.settings.films} onToggle={() => cat.set({ films: !cat.settings.films })} testId="tv-cat-films" />
+                    </>
+                  )}
+                </SettingsGroup>
+                <p className="tv-hint tv-set-hint" data-testid="tv-cat-help">
+                  <InfoIcon /> <span>{t("cat.settings.help")}</span>
+                </p>
+              </>
+            )}
           </div>
 
           <div className="tv-set-col" data-nav-column>

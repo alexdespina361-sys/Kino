@@ -1,0 +1,39 @@
+import type { CatDictionary } from "./cat.en";
+
+/** Română: aceleași chei ca în cat.en.ts (compilatorul verifică). */
+export const catRo: CatDictionary = {
+  "cat.chip": "Pisica",
+  "cat.panel": "Pisica de companie",
+  "cat.come": "Vino încoace",
+  "cat.pet": "Mângâie",
+  "cat.sit": "Stai jos",
+  "cat.sleep": "Culcă-te",
+  "cat.play": "Joacă-te",
+  "cat.away": "Trimite-o departe",
+  "cat.find": "Caută-mi ceva",
+  "cat.close": "Închide",
+  "cat.back": "Înapoi",
+
+  "cat.findAsk": "Ce ți-ar plăcea acum?",
+  "cat.mood.funny": "Ceva amuzant",
+  "cat.mood.scary": "Ceva de groază",
+  "cat.mood.exciting": "Ceva palpitant",
+  "cat.mood.romantic": "O poveste de dragoste",
+  "cat.mood.family": "Pentru toată familia",
+  "cat.mood.scifi": "SF și fantasy",
+  "cat.mood.classic": "Un film clasic",
+  "cat.mood.new": "Ceva nou",
+  "cat.mood.any": "Surprinde-mă",
+  "cat.pick": "Ce zici de „{title}”?",
+  "cat.pickYear": "Ce zici de „{title}” ({year})?",
+  "cat.pickWhere": "Din „{shelf}”",
+  "cat.open": "Deschide",
+  "cat.another": "Alta",
+  "cat.nothing": "Nu găsesc nimic de felul acesta pe pagina asta. Încearcă altă dispoziție sau altă pagină.",
+
+  "cat.settings.title": "Pisica de companie",
+  "cat.settings.on": "O pisică pe acest ecran",
+  "cat.settings.quiet": "Pisică liniștită (stă pe loc, nu se plimbă)",
+  "cat.settings.films": "Să-mi țină companie în timpul filmelor",
+  "cat.settings.help": "O pisică ce trăiește pe ecran: se plimbă pe rândurile de titluri, moțăie într-un colț al filmului și poate fi mângâiată. Nu pornește niciodată nimic singură.",
+};

@@ -1,0 +1,144 @@
+/*
+ * The cat companion's part of the screen: the layer it is drawn on, the hand that can stroke it, the glow of the poster it points at, and its panel.
+ * Fetched together with the cat, so a screen without a cat never loads it. Sized in em like the rest of the TV (1em here is 1% of the screen's width),
+ * in the tokens of the refined look (polish/tv.css) where the page has them, and in plain values where it has not.
+ * (Nothing here uses what the oldest TV browsers drop: see cat.test.ts.)
+ */
+
+/* The layer: the cat's canvas and the box that takes a hand, over the page it is on. The page's own rules for the children of its screens are matched
+   by the host's inline style, which is why the position is set there too. */
+.kino-cat {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout paint style;
+}
+.kino-cat[hidden] { display: none; }
+.kino-cat-canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; will-change: transform; }
+.kino-cat-hit {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.kino-cat-hit[data-off] { pointer-events: none; }
+
+/* The poster the cat points at. */
+[data-cat-pointed] {
+  outline: 0.2em solid rgb(var(--accent-rgb, 255 255 255) / 0.95);
+  outline-offset: 0.25em;
+  animation: kino-cat-glow 1.3s ease-in-out infinite;
+}
+@keyframes kino-cat-glow {
+  0%, 100% { outline-color: rgb(var(--accent-rgb, 255 255 255) / 0.95); }
+  50% { outline-color: rgb(var(--accent-rgb, 255 255 255) / 0.3); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-cat-pointed] { animation: none; }
+}
+
+/* The panel, in the corner under the buttons. It is a card on the page, not a dialog: the cat and the library stay where they are. */
+.cat-panel {
+  position: absolute;
+  right: 5em;
+  top: 8em;
+  z-index: 70;
+  box-sizing: border-box;
+  width: 19em;
+  max-width: calc(100% - 2em);
+  padding: 0.8em 0.9em 0.9em;
+  border-radius: var(--r-3, 1.1em);
+  background: var(--surf-1, #18181b);
+  color: var(--text-1, #f5f5f7);
+  font-size: var(--fs-2, 1.5em);
+  box-shadow: var(--lift, 0 0.8em 2.4em rgba(0, 0, 0, 0.65)), inset 0 0 0 0.05em var(--fill-2, rgba(255, 255, 255, 0.14));
+  outline: none;
+}
+.cat-panel[data-screen="mood"] { width: 24em; }
+.cat-panel[data-screen="pick"] { width: 22em; }
+.cat-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6em; margin-bottom: 0.6em; }
+.cat-panel-title { margin: 0; font-size: 1em; font-weight: 700; line-height: 1.2; }
+.cat-x {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 1.9em;
+  height: 1.9em;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--fill-1, rgba(255, 255, 255, 0.1));
+  color: var(--text-2, #e6e6e6);
+  transition: background var(--t-base, 0.15s) var(--ease, ease), color var(--t-base, 0.15s) var(--ease, ease), transform var(--t-base, 0.15s) var(--ease, ease);
+}
+.cat-x svg { width: 1em; height: 1em; }
+.cat-x:hover { background: var(--fill-2, rgba(255, 255, 255, 0.2)); color: var(--text-1, #fff); }
+.cat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5em; }
+.cat-grid[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.cat-wide { grid-column: 1 / -1; }
+.cat-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 2.5em;
+  padding: 0.45em 0.7em;
+  border-radius: var(--r-2, 0.7em);
+  background: var(--fill-1, rgba(255, 255, 255, 0.12));
+  color: var(--text-2, #d8d8d8);
+  font-size: 0.82em;
+  font-weight: 600;
+  line-height: 1.15;
+  text-align: center;
+  transition: background var(--t-base, 0.15s) var(--ease, ease), color var(--t-base, 0.15s) var(--ease, ease), transform var(--t-base, 0.15s) var(--ease, ease);
+}
+.cat-btn:hover { background: var(--fill-3, rgba(255, 255, 255, 0.22)); color: var(--text-1, #fff); }
+.cat-btn-primary { background: var(--accent, #e50914); color: var(--accent-ink, #fff); }
+.cat-btn-primary:hover { background: var(--accent-hover, var(--accent, #e50914)); color: var(--accent-ink, #fff); }
+.cat-quiet:not(:hover):not(:focus-visible) { background: transparent; box-shadow: inset 0 0 0 0.08em var(--fill-3, rgba(255, 255, 255, 0.24)); }
+.cat-btn:focus-visible,
+.cat-x:focus-visible {
+  background: #fff;
+  color: #0b0b0c;
+  outline: none;
+  box-shadow: var(--focus-ring, 0 0 0 0.1em #000, 0 0 0 0.3em #fff);
+  transform: scale(1.05);
+}
+.cat-foot { display: grid; grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr)); gap: 0.5em; margin-top: 0.7em; }
+.cat-foot[data-cols="3"] { --cols: 3; }
+.cat-foot[data-cols="1"] { --cols: 1; }
+.cat-card { display: flex; align-items: center; gap: 0.8em; }
+.cat-card-art { flex: none; width: 4.4em; border-radius: var(--r-1, 0.35em); object-fit: cover; background: var(--fill-1, rgba(255, 255, 255, 0.08)); }
+.cat-card-line { margin: 0; min-width: 0; font-size: 0.9em; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.cat-card-where { display: block; margin-top: 0.35em; font-size: 0.78em; font-weight: 500; color: var(--text-3, #a8a8a8); }
+.cat-nothing { margin: 0.2em 0 0; font-size: 0.85em; line-height: 1.35; color: var(--text-2, #cfcfcf); }
+
+/* A hand-held screen lays the TV out narrower: the panel then sits under the top bar across most of the width. */
+@media (max-width: 760px) {
+  .cat-panel { right: 1em; left: 1em; top: 6.6em; width: auto; font-size: 1.7em; }
+  .cat-panel[data-screen="mood"], .cat-panel[data-screen="pick"] { width: auto; }
+}
+
+/* What the cat shows of itself with ?cat=debug. */
+.kino-cat-debug {
+  position: fixed;
+  left: 0.6rem;
+  bottom: 0.6rem;
+  z-index: 2147483000;
+  max-width: 46ch;
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.3rem;
+  background: rgba(0, 0, 0, 0.78);
+  color: #8fe;
+  font: 11px/1.35 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+.kino-cat-debug-map { position: fixed; inset: 0; z-index: 2147482999; pointer-events: none; }

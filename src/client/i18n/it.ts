@@ -1,4 +1,5 @@
 import { chatIt } from "./chat.it";
+import { catIt } from "./cat.it";
 import type { Dictionary } from "./en";
 
 /** Italiano. Stesse chiavi di en.ts (le controlla il compilatore); le forme del plurale sono `_one` e `_other`. */
@@ -1196,4 +1197,7 @@ export const it: Dictionary = {
 
   /* la chat tra due amici (client/chat): in un file a parte, aggiunto qui */
   ...chatIt,
+
+  /* the cat companion (client/cat): kept in a file of its own, spread in here */
+  ...catIt,
 };

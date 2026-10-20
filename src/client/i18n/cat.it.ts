@@ -1,0 +1,39 @@
+import type { CatDictionary } from "./cat.en";
+
+/** Italiano: le stesse chiavi di cat.en.ts (lo controlla il compilatore). */
+export const catIt: CatDictionary = {
+  "cat.chip": "Gatto",
+  "cat.panel": "Gatto compagno",
+  "cat.come": "Vieni qui",
+  "cat.pet": "Accarezza",
+  "cat.sit": "Siediti",
+  "cat.sleep": "Dormi",
+  "cat.play": "Gioca",
+  "cat.away": "Mandalo via",
+  "cat.find": "Trovami qualcosa",
+  "cat.close": "Chiudi",
+  "cat.back": "Indietro",
+
+  "cat.findAsk": "Che cosa ti va?",
+  "cat.mood.funny": "Qualcosa di divertente",
+  "cat.mood.scary": "Qualcosa di spaventoso",
+  "cat.mood.exciting": "Qualcosa di emozionante",
+  "cat.mood.romantic": "Una storia d'amore",
+  "cat.mood.family": "Per tutta la famiglia",
+  "cat.mood.scifi": "Fantascienza e fantasy",
+  "cat.mood.classic": "Un classico",
+  "cat.mood.new": "Qualcosa di nuovo",
+  "cat.mood.any": "Sorprendimi",
+  "cat.pick": "Che ne dici di «{title}»?",
+  "cat.pickYear": "Che ne dici di «{title}» ({year})?",
+  "cat.pickWhere": "Da «{shelf}»",
+  "cat.open": "Aprilo",
+  "cat.another": "Un altro",
+  "cat.nothing": "Non trovo niente del genere in questa pagina. Prova un altro umore o un'altra pagina.",
+
+  "cat.settings.title": "Gatto compagno",
+  "cat.settings.on": "Un gatto su questo schermo",
+  "cat.settings.quiet": "Gatto tranquillo (riposa e non gira)",
+  "cat.settings.films": "Tienimi compagnia durante i film",
+  "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in un angolo del film e si lascia accarezzare. Non avvia mai niente da solo.",
+};
