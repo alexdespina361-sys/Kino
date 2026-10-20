@@ -7,8 +7,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BONE_COUNT, restStamp } from "../../../src/client/cat/render/gl/skeleton";
+import { BONE, BONE_COUNT, restStamp } from "../../../src/client/cat/render/gl/skeleton";
 import { encodeMesh } from "../../../src/client/cat/render/gl/format";
+import { jawShare } from "../../../src/client/cat/render/gl/mouth";
 import { buildModel, REGION } from "./cat-model.mts";
 import { makeField, sample, surfaceNets, type Lattice } from "./sdf.mts";
 
@@ -166,6 +167,18 @@ for (let v = 0; v < nV; v++) {
     if (part.region === REGION.foreleg || part.region === REGION.hindleg || part.region === REGION.paw || part.region === REGION.tail) {
       limbW += w;
       limbU += w * (part.u?.(x, y, z) ?? 0);
+    }
+  }
+  // the lower jaw: the lip line cuts the face in two, by where a point stands rather than by the nearest shape (so the skin between the lips is a thin
+  // band that stretches when the jaw drops)
+  {
+    let all = 0;
+    for (let b = 0; b < BONE_COUNT; b++) all += wsum[b]!;
+    const moved = (wsum[BONE.head] ?? 0) + (wsum[BONE.jaw] ?? 0);
+    if (all > 0 && moved / all > 0.35) {
+      const jaw = jawShare(x - model.head[0], y - model.head[1], z - model.head[2]);
+      wsum[BONE.head] = moved * (1 - jaw);
+      wsum[BONE.jaw] = moved * jaw;
     }
   }
   const order = Array.from(wsum.keys())

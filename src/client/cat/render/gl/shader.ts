@@ -1,3 +1,5 @@
+import { LIP_GLSL, MOUTH } from "./mouth";
+
 /**
  * The shaders of the solid cat. The vertex shader skins the mesh (up to four bones a point) and puffs the points out along their normals for the
  * shells of the fur; the fragment shader paints the cat from where a point stood in the rest (so that the stripes, the white socks and the
@@ -19,24 +21,30 @@ varying vec3 vRN;
 varying vec3 vN;
 varying vec4 vPaint;
 varying float vBone;
+varying float vFar;
 void main() {
   vec3 p = vec3(0.0);
   vec3 n = vec3(0.0);
   vec4 q = vec4(aPos, 1.0);
   float top = -1.0;
   float lead = 0.0;
+  float far = 0.0;
   for (int i = 0; i < 4; i++) {
     float w = aWgt[i];
     if (w > 0.0) {
-      int b = int(aSkin[i] + 0.5) * 3;
+      float id = aSkin[i];
+      int b = int(id + 0.5) * 3;
       vec4 r0 = uBones[b];
       vec4 r1 = uBones[b + 1];
       vec4 r2 = uBones[b + 2];
       p += w * vec3(dot(r0, q), dot(r1, q), dot(r2, q));
       n += w * vec3(dot(r0.xyz, aNor), dot(r1.xyz, aNor), dot(r2.xyz, aNor));
-      if (w > top) { top = w; lead = aSkin[i]; }
+      if (w > top) { top = w; lead = id; }
+      // the legs on the far side of the body (bones 13..15 and 19..21): they are seen darker, as what is further from the light and the eye is
+      if ((id > 12.5 && id < 15.5) || (id > 18.5 && id < 21.5)) far += w;
     }
   }
+  vFar = far;
   n = normalize(n);
   p += n * (uShell * uFurLen * aPaint.g * 2.55);
   vRest = aPos;
@@ -59,6 +67,7 @@ varying vec3 vRN;
 varying vec3 vN;
 varying vec4 vPaint;
 varying float vBone;
+varying float vFar;
 uniform float uShell;
 uniform float uShells;
 uniform float uFreq;
@@ -89,6 +98,32 @@ vec3 lin(vec3 c) { return pow(c, vec3(2.2)); }
 float sstep(float a, float b, float x) {
   float t = clamp((x - a) / (b - a), 0.0, 1.0);
   return t * t * (3.0 - 2.0 * t);
+}
+
+${LIP_GLSL}
+
+/**
+ * The inside of the mouth, painted on the band of skin between the lips (the jaw stretches it when it drops): the colour, and in a how much of the point it
+ * is. v runs from +1 at the upper lip to -1 at the lower one, in the rest, so a stretched band is painted from one lip to the other whatever its size.
+ */
+vec4 mouthInside(vec3 h, float open, out float depth) {
+  float v = (h.y - lipY(h.x, h.z)) / ${MOUTH.band.toFixed(4)};
+  float inBand = sstep(1.55, 1.05, abs(v));
+  float region = sstep(0.045, 0.065, h.x) * sstep(0.172, 0.152, h.x) * sstep(0.074, 0.06, abs(h.z));
+  float a = inBand * region * sstep(0.03, 0.12, open);
+  depth = sstep(0.15, 0.06, h.x);
+  float az = abs(h.z);
+  // the roof of the mouth and the throat: red at the lips, dark deeper in
+  vec3 col = mix(vec3(0.66, 0.2, 0.22), vec3(0.21, 0.03, 0.045), clamp(0.3 + 0.7 * depth + 0.25 * (1.0 - abs(v)), 0.0, 1.0));
+  // the tongue: pink, rising from the lower lip, with a groove down its middle
+  float tongue = sstep(-0.1, -0.7, v) * sstep(0.05, 0.03, az) * sstep(0.162, 0.128, h.x);
+  vec3 tc = mix(vec3(0.96, 0.54, 0.58), vec3(0.78, 0.34, 0.4), sstep(0.004, 0.0, az) * 0.8);
+  col = mix(col, tc * (0.75 + 0.25 * (1.0 - depth)), tongue);
+  // the fangs: a white point from each lip, at each side of the front
+  float upper = sstep(0.0085 * (1.0 - clamp((0.95 - v) / 0.85, 0.0, 1.0)) + 0.0005, 0.0, abs(h.x - 0.119)) * sstep(0.0095, 0.004, abs(az - 0.031)) * step(0.1, v);
+  float lower = sstep(0.0065 * (1.0 - clamp((0.95 + v) / 0.6, 0.0, 1.0)) + 0.0005, 0.0, abs(h.x - 0.113)) * sstep(0.008, 0.003, abs(az - 0.027)) * step(v, -0.35);
+  col = mix(col, vec3(0.97, 0.94, 0.88), max(upper, lower));
+  return vec4(col, a);
 }
 
 const vec3 GINGER = vec3(0.90, 0.56, 0.25);
@@ -187,11 +222,11 @@ vec4 face(vec3 h) {
   float nose = sstep(nw + 0.002, nw - 0.002, abs(h.z)) * sstep(-0.05, 0.15, ny) * sstep(1.12, 0.9, ny) * sstep(0.12, 0.15, h.x);
   vec3 nc = mix(vec3(0.82, 0.42, 0.46), vec3(0.96, 0.62, 0.64), clamp(ny, 0.0, 1.0));
   c = mix(c, vec4(nc, 1.0), nose);
-  // the mouth: a line down from the nose, and a curve to each side
-  float xin = sstep(0.1, 0.13, h.x);
-  float phil = sstep(0.0032, 0.0012, abs(h.z)) * sstep(-0.056, -0.05, h.y) * sstep(-0.026, -0.032, h.y);
-  float ym = -0.05 - 0.014 * sin(min(abs(h.z), 0.052) * 60.4);
-  float mouth = sstep(0.0034, 0.0012, abs(h.y - ym)) * sstep(0.056, 0.046, abs(h.z));
+  // the mouth: a line down from the nose, and a curve to each side that runs back to the corner (an open mouth is painted over it)
+  float xin = sstep(0.055, 0.085, h.x);
+  float phil = sstep(0.0032, 0.0012, abs(h.z)) * sstep(-0.056, -0.05, h.y) * sstep(-0.026, -0.032, h.y) * sstep(0.1, 0.13, h.x);
+  float ym = lipY(h.x, h.z);
+  float mouth = sstep(0.0034, 0.0012, abs(h.y - ym)) * sstep(0.056 + 0.03 * sstep(0.1, 0.05, h.x), 0.046 + 0.03 * sstep(0.1, 0.05, h.x), abs(h.z));
   c = mix(c, vec4(0.30, 0.15, 0.12, 1.0), max(phil, mouth) * xin * 0.8);
   // the whisker pads: two rows of three small dark spots on each side of the muzzle
   float sideZ = abs(h.z);
@@ -236,10 +271,18 @@ void main() {
     float n2 = noise(p * uFreq * 0.5 + 3.1);
     float len = 0.42 + 0.58 * (0.65 * n1 + 0.35 * n2);
     cover = sstep(shellT - 0.22, shellT + 0.1, len);
+    // (where the coat is seen edge-on the outer shells would show as rows of dashes: they thin out there, and the inner ones make the edge soft)
+    cover *= mix(1.0, sstep(0.04, 0.42, abs(N.z)), sstep(0.35, 0.85, shellT));
     if (cover < 0.01) discard;
   }
 
   vec3 h = p - uHead;
+  float mouthDepth = 0.0;
+  vec4 mo = vec4(0.0);
+  // (only while the jaw is open, and only near the head)
+  if (uEyes2.w > 0.03 && dot(h, h) < 0.05) mo = mouthInside(h, uEyes2.w, mouthDepth);
+  // (there is no fur inside a mouth)
+  if (uShell > 0.5 && mo.a > 0.04) discard;
   float onEar;
   float earIn = earInside(p, onEar);
   float onLimb = sstep(0.35, 0.75, limb);
@@ -277,6 +320,7 @@ void main() {
   if (isHead > 0.5 && h.x > 0.03) f = face(h);
   if (uShell > 0.5 && f.a > 0.2) discard;
   alb = mix(alb, f.rgb, f.a);
+  alb = mix(alb, mo.rgb, mo.a);
 
   // light: a warm key from above and the front, a cool fill from the sky; the fur holds light along its edges
   vec3 A = lin(alb);
@@ -287,8 +331,10 @@ void main() {
   float sky = N.y * 0.5 + 0.5;
   // (a face is shaded less by its hollows than a flank is: the muzzle and the chin would be grey)
   float ao = mix(mix(0.5, 0.76, isHead), 1.0, vPaint.r);
+  ao *= 1.0 - 0.45 * mo.a * mouthDepth;
   float root = uShell < 0.5 ? 0.86 : mix(0.84, 1.08, shellT);
   vec3 lit = A * (vec3(1.0, 0.94, 0.86) * key * 1.05 + vec3(0.66, 0.7, 0.8) * (0.2 + 0.26 * sky) * (0.6 + 0.4 * fill)) * ao * root;
+  lit *= mix(1.0, 0.7, clamp(vFar, 0.0, 1.0));
   float rim = pow(1.0 - clamp(N.z, 0.0, 1.0), 2.2);
   lit += A * rim * 0.5 * (0.5 + 0.5 * key) + vec3(1.0, 0.85, 0.65) * rim * 0.06;
   // what the floor gives back to the underside: warm, so that a chin and a belly are not grey
