@@ -136,7 +136,7 @@ export function buildModel(): Model {
     const f0 = i / TAIL_BONES;
     const f1 = (i + 1) / TAIL_BONES;
     const r = (f: number) => 0.047 - 0.006 * f - 0.004 * f * f;
-    add(`tail${i}`, roundCone([a.x, a.y, 0], [b.x, b.y, 0], r(f0), r(f1)), { bone: BONE.tail0 + i, k: i === 0 ? 0.06 : 0.02, tau: 0.035, region: REGION.tail, fur: 1.35, u0: f0, u1: f1 });
+    add(`tail${i}`, roundCone([a.x, a.y, 0], [b.x, b.y, 0], r(f0), r(f1)), { bone: BONE.tail0 + i, k: i === 0 ? 0.06 : 0, tau: 0.035, region: REGION.tail, fur: 1.35, u0: f0, u1: f1 });
   }
 
   return { scene: { prims, cuts }, head: H, ears: [earL, earR], jawHinge: at(-0.01, -0.06, 0) };
