@@ -808,7 +808,7 @@ export class CatEngine {
       score: this.cooled("yawn") && tired > 0.3 ? 0.4 : 0.01,
       plan: () => {
         this.cool.yawn = this.now + this.rng.range(40, 80);
-        return [{ k: "rest", pose: "sit", dur: 1 }, { k: "shot", clip: "yawn", dur: 1.9 }];
+        return [{ k: "rest", pose: "sit", dur: 1 }, { k: "shot", clip: "yawn", dur: 2.8 }];
       },
     });
     options.push({

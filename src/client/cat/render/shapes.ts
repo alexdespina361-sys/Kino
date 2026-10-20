@@ -70,6 +70,27 @@ export type ScalarKey = (typeof SCALAR_KEYS)[number];
 
 export const SHAPE_LENGTH = POINT_KEYS.length * 2 + SCALAR_KEYS.length;
 
+/**
+ * Which part of the cat each number of a flat shape belongs to: 0 the front (head, chest, forelegs), 1 the rear (haunches, hind legs, tail), 2 the
+ * middle of the body. The rig moves the parts with springs of their own, so that a cat that lowers itself folds its rear first and one that rises
+ * lifts its front first, instead of the whole body going from one posture to the other as one piece.
+ */
+export const PART: Uint8Array = (() => {
+  const rear = new Set<string>(["rumpBack", "rumpTop", "groin", "rumpBottom", "hip", "hn", "hf", "hock", "tailRoot", "thighR", "tailAngle", "tailCurl", "tailFront"]);
+  const middle = new Set<string>(["backMid", "bellyMid"]);
+  const part = new Uint8Array(POINT_KEYS.length * 2 + SCALAR_KEYS.length);
+  let at = 0;
+  for (const key of POINT_KEYS) {
+    part[at++] = rear.has(key) ? 1 : middle.has(key) ? 2 : 0;
+    part[at++] = rear.has(key) ? 1 : middle.has(key) ? 2 : 0;
+  }
+  for (const key of SCALAR_KEYS) part[at++] = rear.has(key) ? 1 : middle.has(key) ? 2 : 0;
+  return part;
+})();
+
+/** How high each posture holds the body (for knowing whether the cat is lowering itself or rising). */
+export const SHAPE_HEIGHT: Record<string, number> = { stand: 1, stretch: 0.9, air: 1, sit: 0.62, crouch: 0.45, loaf: 0.4, curl: 0.3 };
+
 export type ShapeName = "stand" | "sit" | "loaf" | "curl" | "crouch" | "stretch" | "air";
 export const SHAPE_NAMES: readonly ShapeName[] = ["stand", "sit", "loaf", "curl", "crouch", "stretch", "air"];
 
@@ -130,7 +151,8 @@ const STAND: ShapeDef = {
   hock: [-0.07, -0.17],
   tailRoot: [-0.46, -0.47],
   headRot: 0,
-  tailAngle: -2.25,
+  // (angles of the tail are kept in one turn, 2.9 to 4.6 radians (back, and back and up), so that blending two postures turns the tail the short way)
+  tailAngle: 4.0332,
   tailCurl: 1.0,
   thighR: 0.1,
   tailFront: 0,
@@ -157,10 +179,10 @@ const SIT: ShapeDef = {
   hock: [-0.2, -0.015],
   tailRoot: [-0.35, -0.08],
   headRot: 0,
-  tailAngle: 2.9,
-  tailCurl: -2.6,
+  tailAngle: 2.95,
+  tailCurl: 0.9,
   thighR: 0.17,
-  tailFront: 1,
+  tailFront: 0,
 };
 
 const LOAF: ShapeDef = {
@@ -184,10 +206,10 @@ const LOAF: ShapeDef = {
   hock: [-0.2, -0.015],
   tailRoot: [-0.47, -0.1],
   headRot: 0.06,
-  tailAngle: 3.0,
-  tailCurl: -2.3,
+  tailAngle: 3.05,
+  tailCurl: 0.6,
   thighR: 0.16,
-  tailFront: 1,
+  tailFront: 0,
 };
 
 const CURL: ShapeDef = {
@@ -203,16 +225,16 @@ const CURL: ShapeDef = {
   rumpBottom: [-0.46, -0.04],
   shoulder: [0.28, -0.17],
   hip: [-0.3, -0.15],
-  head: [0.36, -0.2],
-  fn: [0.52, -0.01],
-  ff: [0.44, 0],
+  head: [0.5, -0.2],
+  fn: [0.64, -0.01],
+  ff: [0.56, 0],
   hn: [0.02, 0],
   hf: [-0.08, 0],
   hock: [-0.2, -0.015],
   tailRoot: [-0.47, -0.12],
-  headRot: 0.55,
+  headRot: 0.3,
   tailAngle: 3.0,
-  tailCurl: -2.8,
+  tailCurl: -3.0,
   thighR: 0.17,
   tailFront: 1,
 };
@@ -265,7 +287,7 @@ const STRETCH: ShapeDef = {
   hock: [-0.07, -0.16],
   tailRoot: [-0.5, -0.64],
   headRot: 0.35,
-  tailAngle: -1.7,
+  tailAngle: 4.5832,
   tailCurl: 0.5,
   thighR: 0.1,
   tailFront: 0,
@@ -287,13 +309,13 @@ const AIR: ShapeDef = {
   head: [0.6, -0.64],
   fn: [0.74, -0.22],
   ff: [0.64, -0.3],
-  hn: [-0.66, -0.12],
-  hf: [-0.54, -0.2],
-  hock: [-0.1, -0.1],
+  hn: [-0.74, -0.16],
+  hf: [-0.62, -0.27],
+  hock: [-0.1, -0.12],
   tailRoot: [-0.5, -0.42],
   headRot: -0.1,
-  tailAngle: 3.0,
-  tailCurl: 0.2,
+  tailAngle: 3.35,
+  tailCurl: 0.3,
   thighR: 0.1,
   tailFront: 0,
 };

@@ -40,6 +40,8 @@ export const BONE = {
   tail0: 22,
 } as const;
 export const TAIL_BONES = 10;
+/** How far out of the middle of the cat (toward the viewer) a tail that is wrapped round it lies, in body lengths. */
+const TAIL_AROUND = 0.15;
 export const BONE_COUNT = BONE.tail0 + TAIL_BONES;
 /** Numbers in a bone: a 3 x 4 matrix, row after row. */
 export const BONE_FLOATS = 12;
@@ -317,8 +319,8 @@ export class Skeleton {
     mul(this.tmp3, this.head, this.tmp2);
     bone(BONE.earR, this.tmp3);
 
-    // the jaw: a turn about the hinge (a line along z through it): the chin drops, the mouth opens
-    const open = clamp(s.head.jaw, 0, 1) * 0.55;
+    // the jaw: a turn about the hinge (a line along z through it): the chin drops, the mouth opens (a yawn is wide: about 45 degrees)
+    const open = clamp(s.head.jaw, 0, 1) * 0.8;
     const cj = Math.cos(open);
     const sj = Math.sin(open);
     this.tmp2.fill(0);
@@ -342,19 +344,29 @@ export class Skeleton {
     for (const [key, first] of legs) {
       const rest = R.legs[key];
       const now = upLeg(s.legs[key]);
+      // a front paw held up (to the face, to point) comes out toward the viewer, so that it is seen against the face and not lost against the chest
+      const held = key === "fn" ? clamp((now.toe.y - 0.25) / 0.3, 0, 1) : 0;
       segment(m, rest.root, rest.mid, now.root, now.mid, false);
+      m[11] = (m[11] ?? 0) + held * 0.015;
       bone(first, m);
       segment(m, rest.mid, rest.hock, now.mid, now.hock, false);
+      m[11] = (m[11] ?? 0) + held * 0.045;
       bone(first + 1, m);
-      const lowerTurn = Math.atan2(now.hock.y - now.mid.y, now.hock.x - now.mid.x) - Math.atan2(rest.hock.y - rest.mid.y, rest.hock.x - rest.mid.x);
-      segment(m, rest.hock, rest.toe, now.hock, now.toe, false, true, lowerTurn);
+      const restLower = Math.atan2(rest.hock.y - rest.mid.y, rest.hock.x - rest.mid.x);
+      const lowerTurn = Math.atan2(now.hock.y - now.mid.y, now.hock.x - now.mid.x) - restLower;
+      // (a paw that has no foot to speak of, held up, carries on from the forearm, bent a little toward the face)
+      segment(m, rest.hock, rest.toe, now.hock, now.toe, false, true, lowerTurn + restLower + 0.2);
+      m[11] = (m[11] ?? 0) + held * 0.07;
       bone(first + 2, m);
     }
 
     // --- the tail: ten pieces
+    const around = clamp(s.pose.s.tailFront, 0, 1) * TAIL_AROUND;
     for (let i = 0; i < TAIL_BONES; i++) {
       // (a piece of the tail is as long as the rig makes it: it curls in a sit, and the pieces do not come apart)
       segment(m, R.tail[i]!, R.tail[i + 1]!, up(s.tail[i]!), up(s.tail[i + 1]!), true);
+      // a tail that is wrapped round the cat lies on the near side of it: the further along, the further out from the middle
+      m[11] = (m[11] ?? 0) + around * clamp((i - 0.5) / 2.5, 0, 1);
       bone(BONE.tail0 + i, m);
     }
   }

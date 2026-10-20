@@ -1,7 +1,7 @@
 import { bounce, clamp, clamp01, dyn, easeInOut, fract, lerp, smooth, smoothstep, twoBone, TAU, type Dyn } from "../math";
 import { createRng, type Rng } from "../rng";
 import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame } from "../types";
-import { FLAT, makePose, SHAPE_LENGTH, SHAPE_NAMES, unflatten, type Pose, type ShapeName } from "./shapes";
+import { FLAT, makePose, PART, SHAPE_HEIGHT, SHAPE_LENGTH, SHAPE_NAMES, unflatten, type Pose, type ShapeName } from "./shapes";
 
 /**
  * The cat's body, worked out each frame from what the engine says it is doing (a CatFrame): which posture, how far along, where it looks, how
@@ -69,6 +69,8 @@ export interface Solved {
 
 const TAIL_SEGMENTS = 10;
 const TAIL_LENGTH = 0.64;
+/** The height of the ground for the tail (the tail's own thickness above the ground line, so that it lies on it and does not sink in). */
+const TAIL_FLOOR = -0.045;
 
 /** Legs: the front is shoulder to elbow to wrist; the hind is hip to knee to hock, then the foot. Lengths in body lengths. */
 const FRONT_UPPER = 0.2;
@@ -85,8 +87,12 @@ const legOf = (front: boolean): Leg => ({ root: { x: 0, y: 0 }, mid: { x: 0, y: 
 export class CatRig {
   readonly solved: Solved;
   private readonly rng: Rng;
+  /** The weight of each posture, for the front of the cat and for the rear (see the posture springs in `update`). */
   private readonly weights: Record<ShapeName, Dyn>;
+  private readonly rearWeights: Record<ShapeName, Dyn>;
   private readonly values = new Float64Array(SHAPE_LENGTH);
+  private readonly valuesFront = new Float64Array(SHAPE_LENGTH);
+  private readonly valuesRear = new Float64Array(SHAPE_LENGTH);
   private time = 0;
   private breathPhase = 0;
   private prevVx = 0;
@@ -115,12 +121,17 @@ export class CatRig {
   private pawX = dyn(0);
   private pawY = dyn(0);
   private pawOn = dyn(0);
+  private groomDyn = dyn(0);
   private facing: 1 | -1 = 1;
 
   constructor(seed = 1) {
     this.rng = createRng(seed);
     this.weights = {} as Record<ShapeName, Dyn>;
-    for (const name of SHAPE_NAMES) this.weights[name] = dyn(name === "stand" ? 1 : 0);
+    this.rearWeights = {} as Record<ShapeName, Dyn>;
+    for (const name of SHAPE_NAMES) {
+      this.weights[name] = dyn(name === "stand" ? 1 : 0);
+      this.rearWeights[name] = dyn(name === "stand" ? 1 : 0);
+    }
     this.nextTwitch = this.rng.range(2, 6);
     this.nextBlink = this.rng.range(1.5, 4);
     this.tailAngles = Array.from({ length: TAIL_SEGMENTS }, () => dyn(0));
@@ -142,10 +153,12 @@ export class CatRig {
   /** Put the cat straight into the posture of a frame, with nothing left to settle (for the first frame, and for pictures of a pose). */
   snapTo(frame: CatFrame, px: number): void {
     this.update(frame, 0.001, px);
+    const target = this.targetWeights(frame);
     for (const name of SHAPE_NAMES) {
-      const d = this.weights[name];
-      d.x = this.targetWeights(frame)[name];
-      d.v = 0;
+      for (const d of [this.weights[name], this.rearWeights[name]]) {
+        d.x = target[name];
+        d.v = 0;
+      }
     }
     this.flipDyn.x = frame.facing;
     this.facing = frame.facing;
@@ -205,22 +218,47 @@ export class CatRig {
     const sleepy = frame.drowsy;
     const clip = frame.clip;
 
-    // --- posture: a spring moves the weight from one shape to another
+    // --- posture: a spring moves the weight from one shape to another, one for the front of the cat and one for the rear. A cat that lowers itself
+    // folds its rear first (and its front follows); one that rises lifts its front first. A jump is all at once.
     const target = this.targetWeights(frame);
     const jumping = clip === "jump";
-    const freq = jumping ? 9 : clip === "stretch" ? 4 : clip === "curl" || clip === "loaf" || clip === "sit" ? 3.4 : 5;
-    let total = 0;
+    // (a jump gathers itself first, then goes all at once)
+    const postureHz = jumping ? (frame.progress < JUMP_TAKEOFF - 0.04 ? 3.2 : 9) : clip === "stretch" ? 3 : clip === "curl" ? 1.1 : clip === "loaf" ? 1.3 : clip === "crouch" ? 3 : clip === "stand" || clip === "walk" || clip === "run" ? 1.8 : 1.6;
+    let goal = 0;
+    let here = 0;
     for (const name of SHAPE_NAMES) {
-      const d = this.weights[name];
-      smooth(d, target[name], freq, dt);
-      total += Math.max(0, d.x);
+      goal += target[name] * SHAPE_HEIGHT[name]!;
+      here += Math.max(0, this.weights[name].x) * SHAPE_HEIGHT[name]!;
     }
-    this.values.fill(0);
+    const lowering = !jumping && goal < here - 0.03;
+    const rising = !jumping && goal > here + 0.03;
+    const frontFreq = postureHz * (lowering ? 0.6 : 1);
+    const rearFreq = postureHz * (rising ? 0.6 : 1);
+    let total = 0;
+    let totalRear = 0;
     for (const name of SHAPE_NAMES) {
-      const wt = Math.max(0, this.weights[name].x) / (total || 1);
-      if (wt < 1e-4) continue;
+      smooth(this.weights[name], target[name], frontFreq, dt);
+      smooth(this.rearWeights[name], target[name], rearFreq, dt);
+      total += Math.max(0, this.weights[name].x);
+      totalRear += Math.max(0, this.rearWeights[name].x);
+    }
+    const front = this.valuesFront;
+    const rear = this.valuesRear;
+    front.fill(0);
+    rear.fill(0);
+    for (const name of SHAPE_NAMES) {
+      const wf = Math.max(0, this.weights[name].x) / (total || 1);
+      const wr = Math.max(0, this.rearWeights[name].x) / (totalRear || 1);
+      if (wf < 1e-4 && wr < 1e-4) continue;
       const flat = FLAT[name];
-      for (let i = 0; i < SHAPE_LENGTH; i++) this.values[i] = (this.values[i] ?? 0) + (flat[i] ?? 0) * wt;
+      for (let i = 0; i < SHAPE_LENGTH; i++) {
+        front[i] = (front[i] ?? 0) + (flat[i] ?? 0) * wf;
+        rear[i] = (rear[i] ?? 0) + (flat[i] ?? 0) * wr;
+      }
+    }
+    for (let i = 0; i < SHAPE_LENGTH; i++) {
+      const part = PART[i];
+      this.values[i] = part === 1 ? rear[i]! : part === 2 ? (front[i]! + rear[i]!) / 2 : front[i]!;
     }
     const pose = unflatten(this.values, s.pose);
     const p = pose.p;
@@ -313,23 +351,30 @@ export class CatRig {
     let headShiftX = 0;
     let headShiftY = 0;
     if (clip === "yawn") {
+      // slowly open, hold, close more quickly: the head goes back and up as the jaw drops
       const t = frame.progress;
-      const open = smoothstep(0.1, 0.35, t) * (1 - smoothstep(0.62, 0.9, t));
+      const open = smoothstep(0.08, 0.4, t) * (1 - smoothstep(0.7, 0.94, t));
       jawTarget = open;
-      headRotExtra = -0.5 * open;
-      headShiftY = -0.02 * open;
+      headRotExtra = -0.6 * open;
+      headShiftX = 0.012 * open;
+      headShiftY = -0.03 * open;
     }
     const pawOn = clip === "groom" || clip === "point" ? 1 : 0;
     smooth(this.pawOn, pawOn, 6, dt);
     let pawGoalX = p.fn.x;
     let pawGoalY = 0;
+    smooth(this.groomDyn, clip === "groom" ? 1 : 0, 3, dt);
     if (clip === "groom") {
-      const t = frame.clipTime * TAU * 1.5;
-      pawGoalX = headX - 0.02 + Math.sin(t) * 0.03;
-      pawGoalY = headY + 0.1 + Math.max(0, Math.cos(t)) * -0.02 - 0.01 * Math.sin(t * 0.5);
-      headRotExtra += 0.32 + Math.sin(t) * 0.05;
-      headShiftX += -0.025;
-      headShiftY += 0.035;
+      // washing its face: the head bows to a paw held up at the cheek, the paw goes up over the ear and back down to the mouth, and the head nods with it
+      const t = frame.clipTime * TAU * 0.8;
+      const rub = Math.sin(t);
+      const bow = clamp01(this.groomDyn.x);
+      headShiftX += 0.035 * bow;
+      headShiftY += (0.15 + 0.014 * rub) * bow;
+      headRotExtra += (0.3 - 0.06 * rub) * bow;
+      // (the wrist is where it is aimed, and the paw reaches on up the face from there)
+      pawGoalX = headX + headShiftX + 0.05 - 0.012 * rub;
+      pawGoalY = headY + headShiftY + 0.045 - 0.05 * rub;
     } else if (clip === "point" && frame.reach) {
       const dx = ((frame.reach.x - frame.x) * frame.facing) / px;
       const dy = (frame.reach.y - frame.y) / px;
@@ -351,7 +396,7 @@ export class CatRig {
       headShiftY += -0.03;
       headRotExtra += -0.25;
     }
-    smooth(this.jawDyn, jawTarget, 12, dt);
+    smooth(this.jawDyn, jawTarget, clip === "yawn" ? 6 : 12, dt);
     smooth(this.happyDyn, frame.petted ? 1 : 0, 6, dt);
     smooth(this.asleepDyn, clamp01((sleepy - 0.55) / 0.35), 4, dt);
 
@@ -407,7 +452,8 @@ export class CatRig {
       this.nextTwitch = this.time + this.rng.range(2.5, 9) * (1 + sleepy);
     }
     const alert = clamp01(frame.energy * 0.6 + (attending ? 0.3 : 0));
-    const earRest = lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0);
+    // (in a yawn the ears go back)
+    const earRest = lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0) + this.jawDyn.x * 0.3 + this.groomDyn.x * 0.12;
     smooth(this.earBaseL, earRest, 4, dt);
     smooth(this.earBaseR, earRest, 4, dt);
     bounce(this.earKickL, 0, 9, 0.35, dt);
@@ -432,7 +478,8 @@ export class CatRig {
     hd.eyeX = clamp(this.eyeX.x, -1, 1);
     hd.eyeY = clamp(this.eyeY.x, -1, 1);
     const lidBase = lerp(1, 0.08, clamp01((sleepy - 0.3) / 0.6));
-    const open = lidBase * (1 - blink);
+    // (the eyes screw shut in a yawn, and are half shut in a wash)
+    const open = lidBase * (1 - blink) * (1 - 0.92 * smoothstep(0.1, 0.5, this.jawDyn.x)) * (1 - 0.7 * clamp01(this.groomDyn.x));
     hd.openL = open;
     hd.openR = open;
     hd.pupil = this.pupilDyn.x;
@@ -450,6 +497,7 @@ export class CatRig {
     const swayRate = lerp(0.55, 0.2, sleepy) + frame.energy * 0.9;
     let a = pose.s.tailAngle + (frame.petted ? -0.45 : 0);
     const curl = pose.s.tailCurl;
+    const wrap = clamp01(pose.s.tailFront);
     let tx = p.tailRoot.x;
     let ty = p.tailRoot.y;
     const segLen = TAIL_LENGTH / TAIL_SEGMENTS;
@@ -457,17 +505,27 @@ export class CatRig {
     joints[0]!.x = tx;
     joints[0]!.y = ty;
     let carry = this.tailRoot.x;
+    let along = -1;
     for (let i = 0; i < TAIL_SEGMENTS; i++) {
       const f = i / (TAIL_SEGMENTS - 1);
       const d = this.tailAngles[i]!;
       const sway = Math.sin(this.time * TAU * swayRate - i * 0.55) * swayAmp * (0.25 + f);
       smooth(d, carry * 0.55 + sway, lerp(5, 2.2, f), dt);
       carry = d.x;
-      a = pose.s.tailAngle + (frame.petted ? -0.45 : 0) + curl * (f * f * 0.6 + f * 0.4) + d.x * (0.4 + f);
-      tx += Math.cos(a) * segLen;
-      ty += Math.sin(a) * segLen;
-      // (the tail lies on the ground, not in it)
-      if (ty > -0.012) ty = -0.012;
+      // (a tail that is wrapped round the cat goes back for a moment and then turns, quickly, to lie forward along its side)
+      const along01 = lerp(f * f * 0.6 + f * 0.4, smoothstep(0.1, 0.32, f), wrap);
+      a = pose.s.tailAngle + (frame.petted ? -0.45 : 0) + curl * along01 + d.x * (0.4 + f);
+      let dx = Math.cos(a) * segLen;
+      let dy = Math.sin(a) * segLen;
+      if (ty + dy > TAIL_FLOOR) {
+        // (the tail lies on the ground, not in it: a piece that would go into it slides along it, as long as it is, towards where it was heading)
+        dy = TAIL_FLOOR - ty;
+        const run = Math.sqrt(Math.max(0, segLen * segLen - dy * dy));
+        dx = (Math.abs(Math.cos(a)) > 0.12 ? Math.sign(Math.cos(a)) : along) * run;
+      }
+      if (dx !== 0) along = Math.sign(dx);
+      tx += dx;
+      ty += dy;
       const j = joints[i + 1]!;
       j.x = tx;
       j.y = ty;
