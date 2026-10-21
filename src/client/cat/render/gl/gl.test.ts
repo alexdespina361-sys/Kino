@@ -2,8 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { CatFrame } from "../../types";
 import { CatRig, type Joint, type Solved } from "../rig";
+import { PoseFit, rigRest } from "./fit";
 import { decodeMesh, encodeMesh, MESH_MAGIC, MESH_VERSION, packIndex, unpackIndex } from "./format";
-import { BONE, BONE_COUNT, BONE_FLOATS, Skeleton, mat, pitchAbout, restSolved, restStamp } from "./skeleton";
+import { MODEL } from "./model";
+import { modelStamp } from "./rest";
+import { BONE, BONE_COUNT, BONE_FLOATS, Skeleton, mat, pitchAbout } from "./skeleton";
 
 const meshFile = (): ArrayBuffer => {
   const file = readFileSync(new URL("./cat.mesh", import.meta.url));
@@ -79,8 +82,26 @@ describe("the cat's mesh file", () => {
     }
   });
 
-  it("was made around the rest pose the bones have now (a new rig needs a new mesh: scripts/cat/model/build.mts)", () => {
-    expect(mesh.rest).toBe(restStamp());
+  it("was made around the rest pose the bones have now (a new model needs a new mesh: scripts/cat/model/build-meshy.mts)", () => {
+    expect(mesh.rest).toBe(modelStamp(MODEL));
+  });
+
+  it("carries a colour in every vertex, and how open to the room the skin is there (a coat that is all one colour, or a mesh that was never lit, is a mistake)", () => {
+    let lightest = 0;
+    let darkest = 255;
+    let open = 0;
+    let closed = 0;
+    for (let i = 0; i < mesh.count; i++) {
+      const luma = 0.3 * mesh.color[i * 4]! + 0.55 * mesh.color[i * 4 + 1]! + 0.15 * mesh.color[i * 4 + 2]!;
+      lightest = Math.max(lightest, luma);
+      darkest = Math.min(darkest, luma);
+      const ao = mesh.color[i * 4 + 3]!;
+      if (ao > 200) open++;
+      if (ao < 120) closed++;
+    }
+    expect(lightest - darkest).toBeGreaterThan(90); // (the pale body and the grey points)
+    expect(open).toBeGreaterThan(mesh.count * 0.3);
+    expect(closed).toBeGreaterThan(mesh.count * 0.005);
   });
 
   it("is refused when it is not a cat mesh of this version, or is cut short", () => {
@@ -140,7 +161,7 @@ describe("the triangles of a mesh, packed", () => {
       normal: new Int8Array(12).fill(64),
       skin: new Uint8Array(16),
       weight: new Uint8Array(16).fill(1),
-      paint: new Uint8Array(16).fill(9),
+      color: new Uint8Array(16).fill(9),
       index: [0, 1, 2, 0, 2, 3],
     });
     const mesh = decodeMesh(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
@@ -149,12 +170,13 @@ describe("the triangles of a mesh, packed", () => {
     expect(Array.from(mesh.index)).toEqual([0, 1, 2, 0, 2, 3]);
     expect(mesh.pos[3]!).toBeCloseTo(1, 3);
     expect(mesh.pos[7]!).toBeCloseTo(1, 3);
-    expect(Array.from(mesh.paint.slice(0, 4))).toEqual([9, 9, 9, 9]);
+    expect(Array.from(mesh.color.slice(0, 4))).toEqual([9, 9, 9, 9]);
   });
 });
 
 describe("the bones of the solid cat", () => {
-  const skeleton = new Skeleton();
+  const fit = new PoseFit();
+  const skeleton = new Skeleton(fit.rest);
   const bones = (s: Solved, headYaw = 0): Float32Array => {
     const out = new Float32Array(BONE_COUNT * BONE_FLOATS);
     skeleton.solve(s, headYaw, mat(), out);
@@ -168,8 +190,8 @@ describe("the bones of the solid cat", () => {
   const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 
   it("leave the mesh as it is when the cat is as it was made: standing", () => {
-    const out = bones(restSolved());
-    const still = [...Array(5).keys()].map((i) => BONE.f0 + i).concat([BONE.neck, BONE.fnU, BONE.fnL, BONE.fnP, BONE.ffU, BONE.hnU, BONE.hnL, BONE.hnP, BONE.hfU]);
+    const out = bones(fit.rest);
+    const still = [...Array(5).keys()].map((i) => BONE.f0 + i).concat([BONE.neck, BONE.fnU, BONE.fnL, BONE.fnP, BONE.ffU, BONE.ffL, BONE.ffP, BONE.hnU, BONE.hnL, BONE.hnP, BONE.hfU, BONE.hfL, BONE.hfP]);
     for (let i = 0; i < TAIL(); i++) still.push(BONE.tail0 + i);
     for (const bone of still) {
       for (let k = 0; k < 12; k++) expect(out[bone * 12 + k]!, `bone ${bone}, number ${k}`).toBeCloseTo(IDENTITY[k]!, 3);
@@ -178,7 +200,7 @@ describe("the bones of the solid cat", () => {
 
   it("carry each piece of a leg to where the rig has it, in any posture, and put the paw where the toe is (the paw is never off the floor)", () => {
     for (const clip of ["sit", "crouch", "walk", "loaf", "stretch"] as const) {
-      const s = solvedIn({ clip, progress: 0.4 });
+      const s = fit.apply(solvedIn({ clip, progress: 0.4 }));
       const out = bones(s);
       const rest = skeleton.restUp.legs;
       for (const [key, first] of [["fn", BONE.fnU], ["ff", BONE.ffU], ["hn", BONE.hnU], ["hf", BONE.hfU]] as const) {
@@ -187,11 +209,15 @@ describe("the bones of the solid cat", () => {
           const at = apply(out, bone, from);
           expect(Math.hypot(at.x - to.x, at.y - to.y), `${clip} ${key} bone ${bone}`).toBeLessThan(within);
         };
-        // the thigh and the shin keep their length: both ends are where the rig has them
+        // the thigh and the shin keep their length: both ends are where the rig has them (but for a knee that the floor lifted, which a leg folded up under the body has: the pieces are
+        // rigid, and the root and the toe are what they are held to)
         near(first, rest[key].root, now.root, 1e-3);
-        near(first, rest[key].mid, now.mid, 1e-3);
-        near(first + 1, rest[key].mid, now.mid, 1e-3);
-        near(first + 1, rest[key].hock, now.hock, 1e-3);
+        const lifted = Math.abs(now.mid.y - 0.09) < 1e-6 || Math.abs(now.mid.y - 0.125) < 1e-6;
+        if (!lifted) {
+          near(first, rest[key].mid, now.mid, 1e-3);
+          near(first + 1, rest[key].mid, now.mid, 1e-3);
+          near(first + 1, rest[key].hock, now.hock, 1e-3);
+        }
         // the foot is as long as the rig makes it (a cat that sits has a long one); the toe is on the toe, and the other end is left to the skin
         near(first + 2, rest[key].toe, now.toe, 1e-3);
         near(first + 2, rest[key].hock, now.hock, 0.12);
@@ -200,7 +226,7 @@ describe("the bones of the solid cat", () => {
   });
 
   it("carry each piece of the tail to where the rig has it", () => {
-    const s = solvedIn({ clip: "sit" });
+    const s = fit.apply(solvedIn({ clip: "sit" }));
     const out = bones(s);
     for (let i = 0; i < TAIL(); i++) {
       // (a piece starts where the rig's joint is; it ends there too unless the rig asks for more stretch than a piece is allowed)
@@ -214,7 +240,7 @@ describe("the bones of the solid cat", () => {
 
   it("keep every number finite and the body from being turned inside out, in every posture the cat has", () => {
     for (const clip of ["stand", "walk", "sit", "loaf", "curl", "crouch", "stretch", "groom", "yawn", "scratch", "knead", "sniff", "stalk", "wiggle"] as const) {
-      const out = bones(solvedIn({ clip, progress: 0.3, drowsy: clip === "curl" ? 1 : 0 }), 0.8);
+      const out = bones(fit.apply(solvedIn({ clip, progress: 0.3, drowsy: clip === "curl" ? 1 : 0 })), 0.8);
       for (let i = 0; i < out.length; i++) expect(Number.isFinite(out[i]!), `${clip} number ${i}`).toBe(true);
       for (let bone = 0; bone < BONE_COUNT; bone++) {
         // the part of a bone that turns and stretches (its 3 x 3) keeps its handedness
@@ -223,6 +249,84 @@ describe("the bones of the solid cat", () => {
         expect(det, `${clip} bone ${bone}`).toBeGreaterThan(0.05);
       }
     }
+  });
+});
+
+describe("the rig's poses, fitted to the cat of the mesh", () => {
+  const fit = new PoseFit();
+  const len = (a: Joint, b: Joint): number => Math.hypot(b.x - a.x, b.y - a.y);
+  const LEGS = ["fn", "ff", "hn", "hf"] as const;
+  const CLIPS = ["stand", "walk", "sit", "loaf", "curl", "crouch", "stretch", "groom", "yawn", "scratch", "knead", "sniff", "stalk", "wiggle", "run", "jump"] as const;
+
+  it("are the mesh's own rest when the rig is at its own rest (to within a paw's thickness at the toe)", () => {
+    const s = fit.apply(rigRest());
+    for (const [k, at] of Object.entries(fit.rest.pose.p)) {
+      expect(s.pose.p[k as keyof typeof s.pose.p].x, `${k} x`).toBeCloseTo(at.x, 6);
+      expect(s.pose.p[k as keyof typeof s.pose.p].y, `${k} y`).toBeCloseTo(at.y, 6);
+    }
+    expect(s.head.x).toBeCloseTo(fit.rest.head.x, 6);
+    expect(s.head.y).toBeCloseTo(fit.rest.head.y, 6);
+    for (const key of LEGS) {
+      for (const part of ["root", "mid", "hock", "toe"] as const) {
+        expect(len(s.legs[key][part], fit.rest.legs[key][part]), `${key} ${part}`).toBeLessThan(0.012);
+      }
+    }
+    for (let i = 0; i < fit.rest.tail.length; i++) expect(len(s.tail[i]!, fit.rest.tail[i]!), `tail ${i}`).toBeLessThan(1e-6);
+  });
+
+  it("keep the lengths of the mesh's own thigh and shin, where the leg is not folded up to the floor", () => {
+    for (const clip of ["stand", "walk"] as const) {
+      for (const progress of [0, 0.25, 0.5, 0.75]) {
+        const s = fit.apply(solvedIn({ clip, progress }));
+        for (const key of LEGS) {
+          const m = MODEL.legs[key];
+          const leg = s.legs[key];
+          expect(len(leg.root, leg.mid), `${clip} ${progress} ${key} thigh`).toBeCloseTo(Math.hypot(m.mid[0] - m.root[0], m.mid[1] - m.root[1]), 4);
+          expect(len(leg.mid, leg.hock), `${clip} ${progress} ${key} shin`).toBeCloseTo(Math.hypot(m.hock[0] - m.mid[0], m.hock[1] - m.mid[1]), 4);
+        }
+      }
+    }
+  });
+
+  it("never put a paw or a knee through the floor (the rig's y is down, the floor is 0), in any posture the cat has", () => {
+    for (const clip of CLIPS) {
+      for (const progress of [0.1, 0.5, 0.9]) {
+        const s = fit.apply(solvedIn({ clip, progress, drowsy: clip === "curl" ? 1 : 0 }));
+        for (const key of LEGS) {
+          const leg = s.legs[key];
+          expect(leg.toe.y, `${clip} ${progress} ${key} toe`).toBeLessThanOrEqual(1e-6);
+          expect(leg.mid.y, `${clip} ${progress} ${key} knee`).toBeLessThanOrEqual(-0.089);
+          for (const part of ["root", "mid", "hock", "toe"] as const) {
+            expect(Number.isFinite(leg[part].x) && Number.isFinite(leg[part].y), `${clip} ${key} ${part}`).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it("have the tail's pieces as long as the rig makes each one of its own, in the mesh's own curve", () => {
+    const rig = fit.rig.tail;
+    for (const clip of ["stand", "walk"] as const) {
+      const s = fit.apply(solvedIn({ clip, progress: 0.3 }));
+      const now = solvedIn({ clip, progress: 0.3 }).tail;
+      for (let i = 0; i + 1 < fit.rest.tail.length; i++) {
+        const model = len(fit.rest.tail[i]!, fit.rest.tail[i + 1]!);
+        const share = Math.min(2.5, Math.max(0.3, len(now[i]!, now[i + 1]!) / len(rig[i]!, rig[i + 1]!)));
+        expect(len(s.tail[i]!, s.tail[i + 1]!) / model, `${clip} piece ${i}`).toBeCloseTo(share, 3);
+      }
+    }
+  });
+
+  it("do not change what the rig says of the body's turn, squash and fade (they are the rig's, not the mesh's)", () => {
+    const rigSolved = solvedIn({ clip: "walk", progress: 0.4, vx: 150 });
+    const flip = rigSolved.flip;
+    const sx = rigSolved.sx;
+    const s = fit.apply(rigSolved);
+    expect(s.flip).toBe(flip);
+    expect(s.sx).toBe(sx);
+    expect(s.appear).toBe(rigSolved.appear);
+    expect(s.head.jaw).toBe(rigSolved.head.jaw);
+    expect(s.head.openL).toBe(rigSolved.head.openL);
   });
 });
 

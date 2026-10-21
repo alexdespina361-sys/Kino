@@ -3,7 +3,7 @@ import { isTvAgent } from "../role";
 import { CAT_SIZE_FACTOR, CAT_SIZES, catAsk, catCoatAsk, catLook, catSizeAsk, parseCatSettings, wantsCat, type CatSettings } from "./settings";
 
 /** What a device that has said nothing gets, a TV's browser being quiet. */
-const base = (over: Partial<CatSettings> = {}): CatSettings => ({ on: false, quiet: false, films: true, detail: true, coat: "ginger", size: "normal", ...over });
+const base = (over: Partial<CatSettings> = {}): CatSettings => ({ on: false, quiet: false, films: true, detail: true, coat: "ragdoll", size: "normal", ...over });
 
 describe("what this device says about the cat", () => {
   it("is off on every device until somebody turns it on, and quiet on a TV's browser", () => {
@@ -29,8 +29,8 @@ describe("what this device says about the cat", () => {
   it("keeps a device's coat and size, and a coat or a size that is not one of ours is the usual one", () => {
     expect(parseCatSettings(JSON.stringify({ coat: "tuxedo", size: "large" }), false)).toMatchObject({ coat: "tuxedo", size: "large" });
     expect(parseCatSettings(JSON.stringify({ coat: "calico", size: "small" }), true)).toMatchObject({ coat: "calico", size: "small" });
-    expect(parseCatSettings(JSON.stringify({ coat: "purple", size: "huge" }), false)).toMatchObject({ coat: "ginger", size: "normal" });
-    expect(parseCatSettings(JSON.stringify({ on: true }), false)).toMatchObject({ coat: "ginger", size: "normal" });
+    expect(parseCatSettings(JSON.stringify({ coat: "purple", size: "huge" }), false)).toMatchObject({ coat: "ragdoll", size: "normal" });
+    expect(parseCatSettings(JSON.stringify({ on: true }), false)).toMatchObject({ coat: "ragdoll", size: "normal" });
   });
 
   it("is told what the address asks for", () => {

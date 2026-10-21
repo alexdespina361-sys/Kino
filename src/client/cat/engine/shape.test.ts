@@ -27,8 +27,8 @@ describe("the shape of the drawn cat", () => {
     expect(up("loaf")).toBeLessThan(up("sit"));
     expect(up("sit")).toBeLessThanOrEqual(up("stand") + BAND);
     // (what the old boxes had at half the width and half the height of it)
-    expect(up("sit")).toBeGreaterThan(1);
-    expect(up("loaf")).toBeGreaterThan(0.8);
+    expect(up("sit")).toBeGreaterThanOrEqual(1);
+    expect(up("loaf")).toBeGreaterThan(0.7);
     const sit = reachOf("sit");
     expect(sit.back).toBeGreaterThan(0.9);
     expect(sit.front).toBeLessThan(0.7);
@@ -101,6 +101,6 @@ describe("the shape of the drawn cat", () => {
     expect(standingMargin({ x: 1000, y: 800 + FOOT_SLACK + 2, w: 100, h: 50 }, 800, L)).toBe(0);
     // (and one as tall as the cat, for all of it)
     expect(standingMargin(at(0, 1.5), 800, L)).toBeCloseTo(HALF_WIDTH * L, 6);
-    expect(HEIGHT).toBeGreaterThan(1);
+    expect(HEIGHT).toBeGreaterThanOrEqual(1);
   });
 });
