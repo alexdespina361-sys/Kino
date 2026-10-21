@@ -13,7 +13,6 @@ attribute vec3 aNor;
 attribute vec4 aSkin;
 attribute vec4 aWgt;
 attribute vec4 aPaint;
-attribute vec4 aLock;
 uniform vec4 uBones[96];
 uniform vec4 uProj;
 uniform float uShell;
@@ -24,7 +23,6 @@ varying vec3 vRN;
 varying vec3 vN;
 varying vec3 vFlow;
 varying vec4 vPaint;
-varying vec4 vLock;
 varying float vBone;
 varying float vFar;
 void main() {
@@ -61,8 +59,8 @@ void main() {
   // the fur: each shell is a layer further out (h is how far up the hair it is, 0 to 1), the hair is as long as this part of the cat's is, and it sags
   // a little towards the floor and lies along the way it grows
   float h = uShell / max(uShells, 1.0);
-  // (the shells are the short hair under the locks: half what the mesh calls the fur, and not more than a coat's undercoat is)
-  float fur = clamp(aPaint.g * 2.55, 0.25, 1.6);
+  // (the shells are the coat: half what the mesh calls the fur, kept within bounds)
+  float fur = clamp(aPaint.g * 3.8, 0.35, 3.2);
   vec3 tang = normalize(fl - n * dot(fl, n) + vec3(0.0001));
   p += n * (h * uFurLen * fur * 0.8) + tang * (h * h * uFurLen * fur * 1.1);
   p.y -= h * h * uFurLen * fur * 0.25;
@@ -71,7 +69,6 @@ void main() {
   vN = n;
   vFlow = tang;
   vPaint = aPaint;
-  vLock = aLock;
   vBone = lead;
   gl_Position = vec4(p.x * uProj.x + uProj.z, p.y * uProj.y + uProj.w, -p.z * 0.4, 1.0);
 }
@@ -88,14 +85,11 @@ varying vec3 vRN;
 varying vec3 vN;
 varying vec3 vFlow;
 varying vec4 vPaint;
-varying vec4 vLock;
 varying float vBone;
 varying float vFar;
 uniform float uShell;
 uniform float uShells;
 uniform float uFreq;
-uniform float uLock;
-uniform float uUnder;
 uniform float uAppear;
 uniform float uDebug;
 uniform float uWhisker;
@@ -344,9 +338,6 @@ void main() {
   float limb = vPaint.a;
   float u = vPaint.b;
   vec3 p = vRest;
-  // (a lock of the coat: a ribbon of hair drawn over the mesh; it is seen from both sides, and what is on its back is in the shade)
-  bool onLock = uLock > 0.5;
-  bool hairy = uShell > 0.5 || onLock;
   vec3 N = normalize(vN);
   if (!gl_FrontFacing) N = -N;
 
@@ -363,11 +354,7 @@ void main() {
   float cover = 1.0;
   float shellT = uShell / max(uShells, 1.0);
   float strandOwn = 0.5;
-  if (onLock) {
-    // (how far along the lock this is takes the place of how far up the hair: dark at the root, light at the tip; and each lock has a number of its own)
-    shellT = vLock.x;
-    strandOwn = vLock.z;
-  } else if (uShell > 0.5) {
+  if (uShell > 0.5) {
     vec3 q = p * uFreq;
     vec3 c = floor(q);
     vec3 f = q - c;
@@ -387,7 +374,7 @@ void main() {
   float mouthDepth = 0.0;
   vec4 mo = vec4(0.0);
   // (only while the jaw is open, and only near the head)
-  if (!onLock && uEyes2.w > 0.03 && dot(h, h) < 0.05) mo = mouthInside(h, uEyes2.w, mouthDepth);
+  if (uEyes2.w > 0.03 && dot(h, h) < 0.05) mo = mouthInside(h, uEyes2.w, mouthDepth);
   // (there is no fur inside a mouth)
   if (uShell > 0.5 && mo.a > 0.04) discard;
   float onEar;
@@ -473,7 +460,7 @@ void main() {
   alb = mix(alb, mix(mix(PINK, vec3(1.0, 0.86, 0.8), 0.3), vec3(0.66, 0.47, 0.49), uPoints), earIn);
 
   vec4 f = vec4(0.0);
-  if (!onLock && isHead > 0.5 && h.x > 0.03) f = face(h);
+  if (isHead > 0.5 && h.x > 0.03) f = face(h);
   if (uShell > 0.5 && f.a > 0.2) discard;
   alb = mix(alb, f.rgb, f.a);
   alb = mix(alb, mo.rgb, mo.a);
@@ -494,16 +481,8 @@ void main() {
   // (the hair is darker where it leaves the skin and lighter at its tip, and each strand is a little lighter or darker than the next)
   // (a light coat has less to show between its hairs than a dark one: its strands are not as far apart in tone)
   float bright = clamp(dot(alb, vec3(0.3, 0.55, 0.15)) * 1.15, 0.0, 1.0);
-  float root = !hairy ? mix(0.66, 0.8, bright) : mix(mix(0.62, 0.78, bright), mix(1.1, 1.0, bright), pow(shellT, 0.6));
+  float root = uShell < 0.5 ? mix(0.66, 0.8, bright) : mix(mix(0.62, 0.78, bright), mix(1.1, 1.0, bright), pow(shellT, 0.6));
   root *= 0.94 + 0.12 * strandOwn;
-  // (a lock: each a little lighter or darker than the next, with fine strands running along it; the side of it that lies on the coat is in shade; and what is under the locks is in their shade)
-  if (onLock) {
-    float across = vLock.y * 2.0 - 1.0;
-    root *= (0.9 + 0.2 * vLock.z) * (0.95 + 0.05 * sin(across * 19.0 + vLock.z * 41.0 + shellT * 5.0));
-    if (!gl_FrontFacing) root *= 0.72;
-  } else {
-    root *= uUnder;
-  }
   vec3 lit = A * (vec3(1.0, 0.94, 0.86) * key * 1.05 + vec3(0.66, 0.7, 0.8) * (0.2 + 0.26 * sky) * (0.6 + 0.4 * fill)) * ao * root;
   lit *= mix(1.0, 0.7, clamp(vFar, 0.0, 1.0));
   float rim = pow(1.0 - clamp(N.z, 0.0, 1.0), 2.2);
@@ -528,7 +507,7 @@ void main() {
   // (strand by strand: each hair catches the light of its own, so the shine is a glitter of hairs and not a band of plastic)
   // (and a coat is not equally glossy all over: where it is cleaner or flatter it shines, and elsewhere it does not, in patches the size of a hand)
   float patchy = dark > 0.02 ? 0.5 + 1.0 * noise(p * 4.5 + 3.0) : 1.0;
-  float glint = (hairy ? 0.35 + 1.3 * strandOwn : 0.7) * patchy;
+  float glint = (uShell > 0.5 ? 0.35 + 1.3 * strandOwn : 0.7) * patchy;
   lit += vec3(0.5, 0.58, 0.72) * dark * (0.012 * key + 0.12 * pow(sheen, 1.5) * glint + 0.07 * rim + 0.01 * sky);
   lit += vec3(0.5, 0.18, 0.12) * onEar * (0.18 + 0.3 * rim) * (1.0 - key * 0.4) * (1.0 - 0.8 * uPoints);
   vec3 col = pow(lit, vec3(1.0 / 2.2));
