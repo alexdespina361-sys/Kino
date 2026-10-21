@@ -1,10 +1,10 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { PNG } from "pngjs";
-import { openLibrary, openTvSettings, playFirst, test, withLibrary } from "./helpers";
+import { openLibrary, openTvSettings, playFirst, RawPhone, readPairingCode, test, withLibrary } from "./helpers";
 
 /**
  * The cat companion (client/cat): a cat that lives on the TV's screen, only for a screen that asks for one and a host that offers it. It walks along the
- * rows of posters, rests in a corner of the film away from the controls and the subtitles, is stroked by a hand, and finds a title on the page on
+ * rows of posters, sleeps in a corner of the film under the controls and the subtitles, is stroked by a hand, and finds a title on the page on
  * request; it never starts anything. The tests offer the cat the way the host does (`/api/features`) and use the cat's own diagnostics (?cat=debug).
  */
 
@@ -201,7 +201,47 @@ test("a title's page over the library sends the cat away, and it is back when th
   await catIsOnTheShelves(tv);
 });
 
-test("in a film the cat rests in a corner of the picture, out of the controls' way, and the film plays on", async ({ browser }) => {
+/**
+ * What the cat does over `ms` (sampled by the page itself, twenty times a second): the least it was drawn (1 is fully there), how many times it came or went,
+ * and how many lines of subtitles came up in that time.
+ */
+const watchedFor = (tv: Page, ms: number): Promise<{ least: number; changes: number; lines: number }> =>
+  tv.evaluate(
+    (span) =>
+      new Promise<{ least: number; changes: number; lines: number }>((resolve) => {
+        const handle = (window as unknown as { __kinoCat: { snapshot(): { frame: { appear: number } } } }).__kinoCat;
+        const said = () => document.querySelector('[data-testid="caption"]') !== null;
+        let [least, changes, lines] = [1, 0, 0];
+        let [here, saying] = [handle.snapshot().frame.appear > 0.5, said()];
+        const timer = setInterval(() => {
+          const { appear } = handle.snapshot().frame;
+          least = Math.min(least, appear);
+          if (appear > 0.5 !== here) changes++;
+          here = appear > 0.5;
+          if (said() && !saying) lines++;
+          saying = said();
+        }, 50);
+        setTimeout(() => {
+          clearInterval(timer);
+          resolve({ least, changes, lines });
+        }, span);
+      }),
+    ms,
+  );
+
+/** Subtitles for a film of forty seconds: two long lines for two and a half seconds out of every four, as a film's are. */
+const talk = () => {
+  const at = (s: number) => `00:00:${s.toFixed(3).padStart(6, "0")}`;
+  const lines = [
+    ["I told you we should have left the harbour before the storm came in,", "but you never listen to anybody, not even the weather."],
+    ["The last ferry leaves at midnight, and if we miss it again tonight", "we will be sleeping on the pier with the gulls and the nets."],
+  ];
+  let vtt = "WEBVTT\n\n";
+  for (let i = 0, t = 1; t < 38; i++, t += 4) vtt += `${i + 1}\n${at(t)} --> ${at(t + 2.5)}\n${lines[i % lines.length]!.join("\n")}\n\n`;
+  return vtt;
+};
+
+test("in a film the cat rests in a corner of the picture, under the controls, and neither it nor the film is disturbed when they come up", async ({ browser }) => {
   const tv = await openLibrary(browser, setup(), undefined, WANTS());
   await tv.goto("/tv?cat=debug");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
@@ -209,12 +249,12 @@ test("in a film the cat rests in a corner of the picture, out of the controls' w
   await playFirst(tv);
   await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
   await catIsOnItsPerch(tv);
-  // in the picture's own box, straight after the picture, so that every control and every line of the subtitles is drawn over the cat
+  // in the picture's own box, straight after the picture and no higher than the page's own level, so that everything the player draws after it is over the cat
   const place = await tv.evaluate(() => {
     const layer = document.querySelector('[data-testid="cat"]')!;
-    return { parent: layer.parentElement?.getAttribute("data-testid"), after: layer.previousElementSibling?.tagName.toLowerCase() };
+    return { parent: layer.parentElement?.getAttribute("data-testid"), after: layer.previousElementSibling?.tagName.toLowerCase(), z: getComputedStyle(layer).zIndex };
   });
-  expect(place).toEqual({ parent: "tv", after: "video" });
+  expect(place).toEqual({ parent: "tv", after: "video", z: "0" });
   const seen = await snap(tv);
   const screen = tv.viewportSize()!;
   expect(seen.frame.y).toBeGreaterThan(screen.height * 0.85); // (the foot of the picture, in a corner)
@@ -222,10 +262,15 @@ test("in a film the cat rests in a corner of the picture, out of the controls' w
   // it settles to sleep while the film plays, and the film is the viewer's: it is still playing
   await expect.poll(async () => (await snap(tv)).frame.clip, { timeout: 15_000 }).toMatch(/loaf|curl/);
   await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
-  // the controls come up: the cat is gone from where they are (nothing of the film's is covered), and it is back when they have gone
+  // the controls come up over it: it stays where it is, asleep (it covers nothing, so there is nothing to leave for), and the film plays on
+  const where = await snap(tv);
   await tv.keyboard.press("ArrowDown");
   await expect(tv.getByTestId("tv")).toHaveAttribute("data-hud", "visible");
-  await expect.poll(async () => (await snap(tv)).frame.appear, { timeout: 5_000 }).toBeLessThan(0.05);
+  const up = await watchedFor(tv, 2_000);
+  expect(up.least).toBeGreaterThan(0.95);
+  expect(up.changes).toBe(0);
+  const still = await snap(tv);
+  expect([Math.round(still.frame.x), Math.round(still.frame.y)]).toEqual([Math.round(where.frame.x), Math.round(where.frame.y)]);
   await expect(tv.getByTestId("tv")).not.toHaveAttribute("data-hud", "visible", { timeout: 20_000 });
   await catIsOnItsPerch(tv);
   await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
@@ -235,6 +280,53 @@ test("in a film the cat rests in a corner of the picture, out of the controls' w
     await expect(tv.getByTestId("tv-browse")).toBeVisible({ timeout: 1_500 });
   }).toPass({ timeout: 15_000 });
   await catIsOnTheShelves(tv);
+});
+
+test("the words of a film and the controls are drawn over the cat, and the lines coming and going do not make it come and go", async ({ browser, baseURL }) => {
+  test.setTimeout(90_000);
+  const tv = await openLibrary(browser, async (context) => {
+    await setup()(context);
+    await context.route("**/fixtures/sample.vtt", (route) => route.fulfill({ contentType: "text/vtt", body: talk() }));
+  }, undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheScreen(tv);
+  await tv.getByTestId("rail-connect").click();
+  const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+  phone.cmd({ type: "LOAD", media: { title: "A film with words", stream: { url: "/fixtures/long.mp4", type: "mp4" }, subtitles: [{ id: "en", label: "English", lang: "en", url: "/fixtures/sample.vtt" }] } });
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", /paused|playing/);
+  phone.cmd({ type: "SET_SUBTITLE", track: 0 });
+  phone.cmd({ type: "PLAY" });
+  await catIsOnItsPerch(tv);
+
+  // at a moment when words are on the screen, what is on top of what, at a point of the words, with the cat's layer made to take the pointer as well: the words, then the cat, then the film
+  await expect(tv.getByTestId("caption").first()).toBeVisible({ timeout: 10_000 });
+  const stack = await tv.evaluate(() => {
+    const style = document.createElement("style");
+    style.textContent = ".kino-cat, .kino-cat *, .tv-captions, .tv-captions *, .tv video { pointer-events: auto !important; }";
+    document.head.append(style);
+    const box = document.querySelector('[data-testid="caption"]')!.getBoundingClientRect();
+    const seen = document.elementsFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    style.remove();
+    const where = (match: (element: Element) => boolean) => seen.findIndex(match);
+    return { words: where((element) => element.closest('[data-testid="captions"]') !== null), cat: where((element) => element.closest(".kino-cat") !== null), film: where((element) => element.tagName === "VIDEO") };
+  });
+  expect(stack.words).toBeGreaterThanOrEqual(0);
+  expect(stack.cat).toBeGreaterThan(stack.words);
+  expect(stack.film).toBeGreaterThan(stack.cat);
+
+  // over the next stretch of the film lines come and go, and the controls come up once: the cat is there the whole time, and does not come or go
+  const key = async () => {
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByTestId("tv")).toHaveAttribute("data-hud", "visible");
+  };
+  const [stretch] = await Promise.all([watchedFor(tv, 14_000), tv.waitForTimeout(3_000).then(key)]);
+  expect(stretch.lines).toBeGreaterThanOrEqual(3);
+  expect(stretch.changes).toBe(0);
+  expect(stretch.least).toBeGreaterThan(0.95);
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
+  expect((await snap(tv)).engine.surfaceId ?? "").toMatch(/^perch/);
+  phone.close();
 });
 
 test("a device that asked for no cat in films has the cat on the shelves only", async ({ browser }) => {
@@ -269,6 +361,58 @@ test("a hand rests on the cat and it is stroked; a pointer that only passes over
   await expect.poll(async () => (await snap(tv)).frame.petted, { timeout: 4_000 }).toBe(true);
   await tv.mouse.move(at.x - 300, at.y - 100, { steps: 3 });
   await expect.poll(async () => (await snap(tv)).frame.petted, { timeout: 4_000 }).toBe(false);
+});
+
+test("a press on the cat is the cat's and takes nothing from the page; a press on the poster beside it is the page's", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheScreen(tv);
+  const screen = tv.viewportSize()!;
+  const tell = (event: unknown) => tv.evaluate((e) => (window as unknown as { __kinoCat: { send(event: unknown): void } }).__kinoCat.send(e), event);
+  // (asked to the foot of the screen, which is under the last row of posters, and to sit there: its body is over a poster)
+  await tell({ type: "cat.call", at: { x: screen.width / 2, y: screen.height - 8 } });
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return seen.frame.grounded && seen.frame.appear > 0.95 && Math.abs(seen.frame.y - (screen.height - 8)) < 60 && !/walk|run|jump/.test(seen.frame.clip);
+      }, { timeout: 20_000 })
+      .toBe(true),
+  );
+  await tell({ type: "cat.command", command: "sit" });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.clip, { timeout: 10_000 }).toBe("sit"));
+
+  const box = (await tv.getByTestId("cat-hit").boundingBox())!;
+  const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const under = (at: { x: number; y: number }) =>
+    tv.evaluate(({ x, y }) => {
+      const stack = document.elementsFromPoint(x, y);
+      const tile = stack.find((element) => !element.closest(".kino-cat"))?.closest('[data-testid="tv-browse-tile"]');
+      const rect = tile?.getBoundingClientRect();
+      return { first: stack[0]?.getAttribute("data-testid") ?? "", tile: tile?.getAttribute("data-entry") ?? null, rect: rect ? { left: rect.left, right: rect.right, top: rect.top } : null };
+    }, at);
+  const there = await under(middle);
+  expect(there.first).toBe("cat-hit");
+  expect(there.tile).not.toBeNull(); // (the poster that the cat is sitting on)
+  const focused = () => tv.evaluate(() => document.activeElement?.getAttribute("data-entry") ?? document.activeElement?.tagName ?? "");
+  const before = await focused();
+
+  // a click on the cat: the cat is stroked; the poster is not opened, and the remote's focus is where it was
+  await tv.mouse.click(middle.x, middle.y);
+  await expect.poll(async () => (await snap(tv)).frame.petted, { timeout: 3_000 }).toBe(true);
+  await tv.waitForTimeout(400);
+  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  expect(await focused()).toBe(before);
+
+  // a click on the same poster beside the cat (its body ends well inside the poster): the poster is opened
+  const rect = there.rect!;
+  const beside = { x: box.x - rect.left > rect.right - (box.x + box.width) ? rect.left + 10 : rect.right - 10, y: rect.top + 40 };
+  expect((await under(beside)).first).not.toBe("cat-hit");
+  expect((await under(beside)).tile).toBe(there.tile);
+  await tv.mouse.click(beside.x, beside.y);
+  await expect(tv.getByTestId("tv-detail")).toBeVisible();
 });
 
 test("a viewer who asked for less motion has a cat that rests where it is", async ({ browser }) => {
@@ -430,12 +574,17 @@ test("a screen that cannot spare even the simple cat has none, and no button in 
   await tv.goto("/tv?cat=debug&catbudget=0.0001");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   await expect(tv.getByTestId("tv-cat-chip")).toBeVisible();
-  await saying(tv, () => expect.poll(async () => (await snap(tv)).quality, { timeout: 50_000 }).toBe("off"));
+  // (gone is gone: what the cat put on the page goes with it, the diagnostics handle too; so "off" is not a quality that can be read, it is the handle that has gone)
+  await saying(tv, () => expect.poll(() => tv.evaluate(() => (window as unknown as { __kinoCat?: unknown }).__kinoCat === undefined), { timeout: 50_000 }).toBe(true));
   await expect(tv.getByTestId("tv-cat-chip")).toHaveCount(0);
-  await expect(tv.getByTestId("cat")).toBeHidden();
+  await expect(tv.getByTestId("cat")).toHaveCount(0);
+  expect(await tv.evaluate(() => document.querySelectorAll(".kino-cat, .kino-cat-hit, .kino-cat-debug, .kino-cat-debug-map, [data-cat-pointed]").length)).toBe(0);
   await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
   await tv.keyboard.press("ArrowRight");
   await expect(tv.getByTestId("tv-browse-tile").nth(1)).toBeFocused();
+  // and it does not come back by itself: the page is left as it was, with its keys and its focus
+  await tv.waitForTimeout(1500);
+  await expect(tv.getByTestId("cat")).toHaveCount(0);
 });
 
 test("a screen that cannot afford the detailed cat is given the simple one, and keeps it", async ({ browser }) => {
