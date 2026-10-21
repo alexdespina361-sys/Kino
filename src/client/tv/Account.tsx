@@ -4,8 +4,9 @@ import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
+import { emitCat } from "../cat/bus";
 import { CatIcon } from "../cat/Chip";
-import { CAT_COATS, CAT_SIZES, useCatSettings } from "../cat/settings";
+import { CAT_LOOKS, CAT_SIZES, useCatSettings, useCatShown } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
@@ -589,6 +590,9 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
 export function TvCatSettings({ onBack }: { onBack: () => void }) {
   const t = useT();
   const cat = useCatSettings();
+  const shown = useCatShown();
+  // (what is really drawn, when the white and grey cat was chosen: said, so that a screen that gives the simple version is not left to look like a choice that did nothing)
+  const said = cat.settings.look === "ragdoll" && shown.art === "solid" ? t("cat.shown.solid") : cat.settings.look === "ragdoll" && shown.art === "classic" && shown.why ? t(`cat.shown.${shown.why}`) : "";
   return (
     <Screen testId="tv-cat-settings" focus onBack={onBack}>
       <div className="tv-set tv-set-cat">
@@ -620,20 +624,28 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
           <div className="tv-set-col" data-nav-column>
             {cat.settings.on && (
               <SettingsGroup title={t("cat.settings.look")} testId="tv-group-cat-look">
-                <SettingsSwitch label={t("cat.settings.detail")} on={cat.settings.detail} onToggle={() => cat.set({ detail: !cat.settings.detail })} testId="tv-cat-detail" />
-                {cat.settings.detail && (
-                  <div className="tv-field">
-                    <span className="tv-field-label" aria-hidden="true">
-                      {t("cat.settings.coat")}
-                    </span>
-                    <div className="tv-segmented tv-segmented-grid" role="radiogroup" aria-label={t("cat.settings.coat")}>
-                      {CAT_COATS.map((coat) => (
-                        <button key={coat} className="tv-choice" role="radio" aria-checked={cat.settings.coat === coat} onClick={() => cat.set({ coat })} data-nav data-testid={`tv-cat-coat-${coat}`}>
-                          {t(`cat.coat.${coat}`)}
-                        </button>
-                      ))}
-                    </div>
+                <div className="tv-field">
+                  <span className="tv-field-label" aria-hidden="true">
+                    {t("cat.settings.cat")}
+                  </span>
+                  <div className="tv-segmented" role="radiogroup" aria-label={t("cat.settings.cat")}>
+                    {CAT_LOOKS.map((look) => (
+                      <button key={look} className="tv-choice" role="radio" aria-checked={cat.settings.look === look} onClick={() => cat.set({ look })} data-nav data-testid={`tv-cat-look-${look}`}>
+                        {t(`cat.look.${look}`)}
+                      </button>
+                    ))}
                   </div>
+                </div>
+                <p className="tv-hint tv-set-hint" data-testid="tv-cat-look-help">
+                  <span>{t(`cat.look.${cat.settings.look}.help`)}</span>
+                </p>
+                {said && (
+                  <p className="tv-hint tv-set-hint" role="status" data-testid="tv-cat-shown" data-art={shown.art} data-why={shown.why}>
+                    <InfoIcon /> <span>{said}</span>
+                  </p>
+                )}
+                {cat.settings.look === "ragdoll" && shown.art === "classic" && shown.why && (
+                  <SettingsLine icon={<CatIcon />} label={t("cat.shown.retry")} onPress={() => emitCat({ type: "retry" })} testId="tv-cat-retry" />
                 )}
                 <div className="tv-field">
                   <span className="tv-field-label" aria-hidden="true">

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isTvAgent } from "../role";
-import { CAT_SIZE_FACTOR, CAT_SIZES, catAsk, catCoatAsk, catLook, catSizeAsk, parseCatSettings, wantsCat, type CatSettings } from "./settings";
+import { CAT_LOOKS, CAT_SIZE_FACTOR, CAT_SIZES, catAsk, catCoatAsk, catLook, catSizeAsk, coatOfLook, parseCatSettings, wantsCat, type CatSettings } from "./settings";
 
 /** What a device that has said nothing gets, a TV's browser being quiet. */
-const base = (over: Partial<CatSettings> = {}): CatSettings => ({ on: false, quiet: false, films: true, detail: true, coat: "ragdoll", size: "normal", ...over });
+const base = (over: Partial<CatSettings> = {}): CatSettings => ({ on: false, quiet: false, films: true, look: "ragdoll", size: "normal", ...over });
 
 describe("what this device says about the cat", () => {
   it("is off on every device until somebody turns it on, and quiet on a TV's browser", () => {
@@ -15,22 +15,39 @@ describe("what this device says about the cat", () => {
   it("reads what was stored, and takes anything it does not understand for the default", () => {
     expect(parseCatSettings(JSON.stringify({ on: true, quiet: false, films: false }), true)).toEqual(base({ on: true, films: false }));
     expect(parseCatSettings(JSON.stringify({ on: true }), true)).toEqual(base({ on: true, quiet: true }));
-    expect(parseCatSettings(JSON.stringify({ on: "yes", quiet: 1, films: null, detail: "no", coat: 4, size: {} }), false)).toEqual(base());
+    expect(parseCatSettings(JSON.stringify({ on: "yes", quiet: 1, films: null, look: 4, detail: "no", coat: 4, size: {} }), false)).toEqual(base());
     expect(parseCatSettings("{not json", true)).toEqual(base({ quiet: true }));
     expect(parseCatSettings("[1,2]", false)).toEqual(base());
     expect(parseCatSettings("null", false)).toEqual(base());
   });
 
-  it("keeps a device's choice of the simple cat, and a cat that was saved before there was a choice is the detailed one", () => {
-    expect(parseCatSettings(JSON.stringify({ on: true, detail: false }), false).detail).toBe(false);
-    expect(parseCatSettings(JSON.stringify({ on: true, quiet: false, films: true }), false).detail).toBe(true);
+  it("keeps a device's choice between the two cats, and a cat that was saved before there was a choice is the ragdoll", () => {
+    expect([...CAT_LOOKS]).toEqual(["ragdoll", "ginger"]);
+    expect(parseCatSettings(JSON.stringify({ on: true, look: "ginger" }), false).look).toBe("ginger");
+    expect(parseCatSettings(JSON.stringify({ on: true, look: "ragdoll" }), false).look).toBe("ragdoll");
+    expect(parseCatSettings(JSON.stringify({ on: true, look: "tuxedo" }), false).look).toBe("ragdoll");
+    expect(parseCatSettings(JSON.stringify({ on: true, quiet: false, films: true }), false).look).toBe("ragdoll");
   });
 
-  it("keeps a device's coat and size, and a coat or a size that is not one of ours is the usual one", () => {
-    expect(parseCatSettings(JSON.stringify({ coat: "tuxedo", size: "large" }), false)).toMatchObject({ coat: "tuxedo", size: "large" });
-    expect(parseCatSettings(JSON.stringify({ coat: "calico", size: "small" }), true)).toMatchObject({ coat: "calico", size: "small" });
-    expect(parseCatSettings(JSON.stringify({ coat: "purple", size: "huge" }), false)).toMatchObject({ coat: "ragdoll", size: "normal" });
-    expect(parseCatSettings(JSON.stringify({ on: true }), false)).toMatchObject({ coat: "ragdoll", size: "normal" });
+  it("takes what a device kept before there were two cats to choose from: the simple cat was the ginger, and the detailed one, in whatever coat, the ragdoll", () => {
+    expect(parseCatSettings(JSON.stringify({ on: true, detail: false, coat: "ragdoll" }), false).look).toBe("ginger");
+    expect(parseCatSettings(JSON.stringify({ on: true, detail: true, coat: "tuxedo" }), false).look).toBe("ragdoll");
+    expect(parseCatSettings(JSON.stringify({ on: true, detail: true }), false).look).toBe("ragdoll");
+    // (and a choice made since wins over what was kept before)
+    expect(parseCatSettings(JSON.stringify({ on: true, detail: false, look: "ragdoll" }), false).look).toBe("ragdoll");
+    expect(parseCatSettings(JSON.stringify({ on: true, detail: true, look: "ginger" }), false).look).toBe("ginger");
+  });
+
+  it("keeps a device's size, and a size that is not one of ours is the usual one", () => {
+    expect(parseCatSettings(JSON.stringify({ size: "large" }), false)).toMatchObject({ size: "large" });
+    expect(parseCatSettings(JSON.stringify({ size: "small" }), true)).toMatchObject({ size: "small" });
+    expect(parseCatSettings(JSON.stringify({ size: "huge" }), false)).toMatchObject({ size: "normal" });
+    expect(parseCatSettings(JSON.stringify({ on: true }), false)).toMatchObject({ size: "normal" });
+  });
+
+  it("wears the coat of the cat that was chosen", () => {
+    expect(coatOfLook("ragdoll")).toBe("ragdoll");
+    expect(coatOfLook("ginger")).toBe("ginger");
   });
 
   it("is told what the address asks for", () => {

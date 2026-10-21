@@ -2,7 +2,10 @@
  * What the rest of the website can ask of the cat (the button in the library's corner opens its panel), without knowing whether there is a cat:
  * a command nobody hears is dropped. In the website's first download, with the settings; the cat itself listens from its own file.
  */
-export type CatCommand = { type: "panel" };
+export type CatCommand =
+  | { type: "panel" }
+  /** The settings page asks for the detailed cat to be tried again (it was given up on for this load: the screen was slow, or the browser would not draw it). */
+  | { type: "retry" };
 
 const EVENT = "kino:cat-command";
 /** A command sent as the cat is still being fetched (the button was pressed in the first moments after the switch) waits this long for it. */

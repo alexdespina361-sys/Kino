@@ -6,7 +6,7 @@
 
 import { runSession } from "../../src/client/cat/engine/sim.ts";
 
-const all = { scroll: true, focus: true, resize: true, modal: true, film: true, touch: true, route: true, visibility: true, hand: true };
+const all = { scroll: true, focus: true, resize: true, modal: true, film: true, touch: true, route: true, visibility: true, hand: true, slide: true };
 const [, , fromArg = "13", toArg = "212", secondsArg = "600"] = process.argv;
 const from = Number(fromArg);
 const to = Number(toArg);
@@ -18,14 +18,18 @@ const variants: Array<[string, Parameters<typeof runSession>[0] extends infer O 
   ["reduced", { chaos: all, reducedMotion: true }],
   ["quiet", { chaos: all, quiet: true }],
   ["scroll-focus", { chaos: { scroll: true, focus: true, touch: true, hand: true } }],
+  ["slide", { chaos: { slide: true, touch: true, focus: true } }],
   ["names", { chaos: all, names: true }],
 ];
 let bad = 0;
 const started = Date.now();
+/** What the cats chose to do of their own accord, over every session (how many times each). */
+const chosen: Record<string, number> = {};
 for (const [name, extra] of variants) {
   let found = 0;
   for (let seed = from; seed <= to; seed++) {
     const stats = runSession({ seed, seconds, ...(extra as object) } as Parameters<typeof runSession>[0]);
+    for (const [choice, count] of Object.entries(stats.choices)) chosen[choice] = (chosen[choice] ?? 0) + count;
     if (stats.violations.length > 0) {
       found++;
       bad++;
@@ -39,5 +43,6 @@ for (const [name, extra] of variants) {
   }
   console.log(`[${name}] seeds ${from}-${to}: ${found} with violations`);
 }
+console.log(`chosen: ${Object.entries(chosen).sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name || "-"} ${n}`).join(", ")}`);
 console.log(`done in ${((Date.now() - started) / 1000).toFixed(1)}s, ${bad} bad runs`);
 process.exit(bad > 0 ? 1 : 0);

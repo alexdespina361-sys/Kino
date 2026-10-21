@@ -1,7 +1,7 @@
 // Pictures of the solid cat for looking at it: bundles src/client/cat/lab/gl.ts for the browser, runs it in Chromium (with the software driver, or
 // with the machine's graphics card with --gpu=real) and saves a PNG.
 //
-//   node scripts/cat/glsheet.mjs views|eyes|poses|carried|scenes|faces|faces2|faces3|detail|walk|run <out.png> [--scale=2] [--mesh=src/client/cat/render/gl/cat.mesh] [--cols=4] [--pick=0,3] [--gpu=real]
+//   node scripts/cat/glsheet.mjs views|eyes|poses|carried|scenes|swat|faces|faces2|faces3|detail|walk|run <out.png> [--scale=2] [--mesh=src/client/cat/render/gl/cat.mesh] [--cols=4] [--pick=0,3] [--gpu=real]
 //   node scripts/cat/glsheet.mjs film <out.png> --session=<recording.json> [--mode=strip|onion] [--from=0] [--to=10] [--every=6] [--cols=4] [--scale=1]
 //
 // Development tooling (the cat lab): nothing it makes is part of the app.
@@ -58,6 +58,7 @@ await page.evaluate(
     else if (which === "faces3") lab.glSheet(canvas, data, sel(lab.FACES3), c, s, 7, 400, 340, options.coat);
     else if (which === "detail") lab.glSheet(canvas, data, sel(lab.DETAIL), c, s, 7, 400, 340, options.coat);
     else if (which === "scenes") lab.glSheet(canvas, data, sel(lab.SCENES), c, s, 7, options.cellW, options.cellH, options.coat);
+    else if (which === "swat") lab.glSheet(canvas, data, sel(lab.SWAT), c, s, 7, options.cellW, options.cellH, options.coat);
     else if (which === "walk") lab.glSheet(canvas, data, sel(lab.WALK), c, s, 7, 300, 230, options.coat);
     else if (which === "run") lab.glSheet(canvas, data, sel(lab.RUN), c, s, 7, 300, 230, options.coat);
   },
