@@ -377,7 +377,7 @@ export function drawCat(ctx: Ctx, pal: Palette, s: Solved, box: DrawBox): void {
   // shadow
   const sw = 0.5 * (1 - 0.35 * s.air);
   const shadow = ctx.createRadialGradient(ox, oy, 0, ox, oy, sw * px);
-  shadow.addColorStop(0, `rgba(0,0,0,${0.42 * (1 - 0.5 * s.air)})`);
+  shadow.addColorStop(0, `rgba(0,0,0,${0.42 * (1 - 0.5 * s.air) * s.shadow})`);
   shadow.addColorStop(1, "rgba(0,0,0,0)");
   ctx.save();
   ctx.translate(ox, oy + 0.01 * px);

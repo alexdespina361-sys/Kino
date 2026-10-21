@@ -47,5 +47,5 @@ export const catRo: CatDictionary = {
   "cat.size.small": "Mică",
   "cat.size.normal": "Normală",
   "cat.size.large": "Mare",
-  "cat.settings.help": "O pisică ce trăiește pe ecran: se plimbă pe rândurile de titluri, moțăie în josul filmului și poate fi mângâiată. Nu pornește niciodată nimic singură.",
+  "cat.settings.help": "O pisică ce trăiește pe ecran: se plimbă pe rândurile de titluri, moțăie în josul filmului și poate fi mângâiată. Cu mouse-ul o poți și ridica, ca s-o pui pe alt rând. Nu pornește niciodată nimic singură.",
 };

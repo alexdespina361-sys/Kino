@@ -47,5 +47,5 @@ export const catIt: CatDictionary = {
   "cat.size.small": "Piccolo",
   "cat.size.normal": "Normale",
   "cat.size.large": "Grande",
-  "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in fondo al film e si lascia accarezzare. Non avvia mai niente da solo.",
+  "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in fondo al film e si lascia accarezzare. Con il mouse puoi anche prenderlo e metterlo su un'altra fila. Non avvia mai niente da solo.",
 };

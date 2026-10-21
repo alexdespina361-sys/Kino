@@ -1,7 +1,7 @@
 import { clamp, clamp01, finite, lerp } from "../math";
 import { createRng, type Rng } from "../rng";
 import { JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Rect, type Vec, type World } from "../types";
-import { clampToLedge, computeLedges, findPath, ledgeAt, planJump, reshape, screenEdges, settle, settledCost, stepFlight, type JumpPlan, type Ledge, type RestPose, type Settling } from "./ledges";
+import { clampToLedge, computeLedges, findPath, GRAVITY, ledgeAt, planJump, reshape, screenEdges, settle, settledCost, stepFlight, type JumpPlan, type Ledge, type RestPose, type Settling } from "./ledges";
 import { HALF_WIDTH, shapeHits } from "./shape";
 
 /**
@@ -23,6 +23,9 @@ type Act =
   /** `stalk`: creeping, low and slow, at the thing it is stalking (the point it looks at). */
   | { k: "walk"; x: number; run: boolean; maxT: number; stalk?: Vec }
   | { k: "jump"; toSurface: string; toX: number }
+  /** A hand has it by the scruff (see `grab`); it is in the air until the hand lets go, and then it falls (`fall`) to the place it will land. */
+  | { k: "carried" }
+  | { k: "fall" }
   /** A little scene with a length of its own; `at` is what the cat looks at while it lasts. */
   | { k: "shot"; clip: "stretch" | "yawn" | "groom" | "scratch" | "knead" | "sniff" | "wiggle"; dur: number; at?: Vec }
   | { k: "point"; target: Rect; dur: number };
@@ -90,6 +93,28 @@ const EDGE_SLACK = 0.12;
 const UNTIDY = 0.1;
 const CLEAN = 0.04;
 const CLEANER = 0.4;
+/**
+ * Being carried (all in body lengths unless it says otherwise): where the cat's feet hang from the hand once it hangs by the scruff (below it, and a little
+ * further the way it faces: the scruff is behind the middle of the hanging cat, as the drawn pose has it), how fast the hang settles from wherever the hand took it
+ * (a second's reciprocal), the fastest the hand can take it along and how quickly it follows (the cat lags behind a hand that flicks), and how long a silent hand
+ * (a pointer that was lost) holds it before it is let go (seconds).
+ */
+export const HANG_DOWN = 0.73;
+export const HANG_AHEAD = 0.1;
+const HANG_RELAX = 7;
+const CARRY_SPEED = 16;
+const CARRY_FOLLOW = 16;
+const CARRY_SILENCE = 2.5;
+/**
+ * Letting go: the cat comes down on the first place under it, or springs up onto one that is a little above its feet (the hang puts its paws below the line
+ * of the shelf it was taken from) -- at most this far above, and at most this far across, steered to as it falls at `FALL_STEER` a second, no faster than
+ * `FALL_FASTEST` (air is not nothing to a cat); and settles for `FALL_SETTLE` seconds after the landing.
+ */
+const SPRING = 0.6;
+const FALL_ACROSS = 3;
+const FALL_STEER = 4;
+const FALL_FASTEST = 14;
+const FALL_SETTLE = 0.32;
 
 const label = (act: Act): string =>
   act.k === "rest" ? `rest:${act.pose}` : act.k === "shot" ? `shot:${act.clip}` : act.k === "fade" ? (act.to === 0 ? "fade:out" : "fade:in") : act.k === "walk" && act.stalk ? "stalk" : act.k;
@@ -144,6 +169,16 @@ export class CatEngine {
   private overlapT = 0;
   /** The page has asked the cat to be away since it last kept to its shelf. */
   private wasAway = false;
+  /** Where the hand that carries the cat has hold of it, when one does; where its feet hang from that (as it is now: it eases into the hang); when the hand last said anything. */
+  private hold: Vec | null = null;
+  private hangX = 0;
+  private hangY = 0;
+  /** How far below the hand the feet were, and how high, when the hand took hold. */
+  private hangY0 = 0;
+  private groundY = 0;
+  private heldAt = 0;
+  /** A cat that was let go of, on its way down to where it will land (see `runFall`). */
+  private fall: { toSurface: string; toX: number; vy: number; landed: boolean; settleT: number; placeY: number; missed: boolean } | null = null;
 
   constructor(seed = 1) {
     this.rng = createRng(seed).fork("director");
@@ -164,6 +199,7 @@ export class CatEngine {
       energy: 0.35,
       appear: 0,
       petted: false,
+      carried: false,
     };
   }
 
@@ -249,6 +285,7 @@ export class CatEngine {
     f.energy = this.mood.energy;
     f.appear = this.placed ? this.alpha : 0;
     f.petted = this.petted;
+    f.carried = this.hold !== null && this.act?.k === "carried";
     return f;
   }
 
@@ -273,6 +310,8 @@ export class CatEngine {
     // is given to do then would keep it from ever looking for a place)
     const unreachable = world.mode === "away" || this.leaving() || !this.placed;
     for (const event of events) {
+      // (a cat in a hand, or falling out of one, is not stroked, called or told: it is busy)
+      const inHand = this.act?.k === "carried" || this.act?.k === "fall";
       switch (event.type) {
         case "cat.disable":
           this.dismissed = true;
@@ -281,8 +320,21 @@ export class CatEngine {
         case "cat.enable":
           this.dismissed = false;
           break;
+        case "cat.grab":
+          if (unreachable || inHand || !this.canBeCarried(world)) break;
+          this.grab(world, event.at);
+          break;
+        case "cat.carry":
+          if (this.hold && this.act?.k === "carried") {
+            this.hold = this.insideScreen(world, event.at);
+            this.heldAt = this.now;
+          }
+          break;
+        case "cat.drop":
+          if (this.hold && this.act?.k === "carried") this.letGo(world);
+          break;
         case "cat.pet": {
-          if (unreachable) break;
+          if (unreachable || inHand) break;
           this.lastInteraction = this.now;
           this.petUntil = this.now + 1.3;
           this.mood.affection = clamp01(this.mood.affection + 0.04);
@@ -295,7 +347,7 @@ export class CatEngine {
           this.petUntil = Math.min(this.petUntil, this.now + 0.8);
           break;
         case "cat.call":
-          if (unreachable) break;
+          if (unreachable || inHand) break;
           this.lastInteraction = this.now;
           this.dismissed = false;
           this.mood.energy = clamp01(this.mood.energy + 0.25);
@@ -303,7 +355,7 @@ export class CatEngine {
           this.comeTo(world, event.at);
           break;
         case "cat.command":
-          if (unreachable && event.command !== "away") break;
+          if ((unreachable || inHand) && event.command !== "away") break;
           this.lastInteraction = this.now;
           this.command(world, event.command);
           break;
@@ -316,7 +368,7 @@ export class CatEngine {
           }
           break;
         case "cat.point":
-          if (unreachable) break;
+          if (unreachable || inHand) break;
           this.lastInteraction = this.now;
           this.pointAt(world, event.targetId);
           break;
@@ -336,16 +388,22 @@ export class CatEngine {
     }
   }
 
-  /** Replace the plan, unless the cat is in the air (it finishes its leap first). */
+  /** Replace the plan, unless the cat is in the air (it finishes its leap first) or in a hand (the hand lets go first). */
   private hardPlan(plan: Act[]): void {
     this.queue = plan;
-    if (this.act && this.act.k !== "jump") this.act = null;
+    if (!this.act) return;
+    // (a cat that has come down and is only settling is not in the air any more)
+    if (this.act.k === "jump" || this.act.k === "carried" || (this.act.k === "fall" && !this.fall?.landed)) return;
+    if (this.act.k === "fall") this.fall = null;
+    this.act = null;
   }
 
-  /** Out of the way at once (a menu has opened, the page is hidden, the viewer sent the cat away): even a leap in the air is cut short. */
+  /** Out of the way at once (a menu has opened, the page is hidden, the viewer sent the cat away): even a leap in the air, or a hand that has hold of it, is cut short. */
   private vanish(plan: Act[]): void {
-    if (this.act?.k === "jump") {
+    if (this.act?.k === "jump" || this.act?.k === "carried" || this.act?.k === "fall") {
       this.jump = null;
+      this.hold = null;
+      this.fall = null;
       this.act = null;
       this.grounded = true;
       this.vx = 0;
@@ -507,8 +565,9 @@ export class CatEngine {
     } else if (gap > 2.5 * L || world.reducedMotion) {
       // too far to walk (the window was made smaller, the shelf moved away), or the viewer wants no walking about: it goes, and comes back
       this.leaveGone(world);
-    } else if (this.act?.k !== "walk") {
+    } else if (this.act?.k !== "walk" || this.act.stalk) {
       // something has come up where the cat stands: it steps out of its way, briskly, and a little further than it has to, rather than stand in it
+      // (a cat that is stalking is not walking out of it: it creeps, and a window made smaller under it left it cut by the edge of the screen for more than two seconds)
       const away = clamp(to + Math.sign(to - this.x) * 0.5 * L, here.x0, here.x1);
       this.hardPlan([{ k: "walk", x: away, run: gap > 1.2 * L, maxT: 12 }]);
     }
@@ -612,6 +671,12 @@ export class CatEngine {
       return;
     }
     if (this.act?.k === "point") return;
+    if (this.act?.k === "carried") {
+      // (held up by the scruff, it stares out of the screen at whoever has it)
+      this.viewer = true;
+      this.lookPoint = undefined;
+      return;
+    }
     if (this.petted) {
       this.viewer = !world.pointer;
       this.lookPoint = world.pointer;
@@ -749,6 +814,223 @@ export class CatEngine {
       x = landX;
     }
     this.hardPlan([...plan, { k: "rest", pose: "sit", dur: 5 }]);
+  }
+
+  /* ------------------------------ in a hand ------------------------------ */
+
+  /** Whether a hand may take the cat up: in the library, a cat in plain sight, and not for a viewer who asked for quiet or for less motion (it then only rests, where it is). */
+  private canBeCarried(world: World): boolean {
+    return world.mode === "browse" && !world.reducedMotion && !world.quiet && this.placed && this.alpha > 0.5 && !this.dismissed;
+  }
+
+  /** The point of the screen nearest the hand: a hand cannot take the cat off the screen. */
+  private insideScreen(world: World, at: Vec): Vec {
+    const vp = world.viewport;
+    return { x: clamp(finite(at.x), vp.x, vp.x + vp.w), y: clamp(finite(at.y), vp.y + 0.2 * world.bodyLength, vp.y + vp.h) };
+  }
+
+  /**
+   * A hand takes hold of the cat, wherever it is (on a shelf, or in the air in a leap) and however it was taken: it hangs where the hand found it at first, and
+   * eases into the hang by the scruff from there (so a hand that only brushed it, and lets go, puts it back where it was).
+   */
+  private grab(world: World, at: Vec): void {
+    const hand = this.insideScreen(world, at);
+    this.lastInteraction = this.now;
+    this.mood.energy = clamp01(this.mood.energy + 0.2);
+    this.mood.affection = clamp01(this.mood.affection - 0.04);
+    this.mood.sleepiness = Math.max(0, this.mood.sleepiness - 0.2);
+    this.petUntil = -1;
+    this.jump = null;
+    this.fall = null;
+    this.finish();
+    this.queue = [];
+    this.hold = hand;
+    this.heldAt = this.now;
+    this.hangX = this.x - hand.x;
+    this.hangY = this.y - hand.y;
+    this.hangY0 = this.hangY;
+    this.groundY = this.y;
+    this.act = { k: "carried" };
+    this.actT = 0;
+    this.grounded = false;
+    this.startAct(world);
+  }
+
+  /** Carried: the cat's feet follow the hand, a little behind it and lagging, hanging from it by the scruff. */
+  private carry(world: World, dt: number): void {
+    const hold = this.hold;
+    if (!hold) {
+      this.finish();
+      return;
+    }
+    // (a hand that has said nothing for a while is gone: a pointer lost to a window that lost its focus, say)
+    if (this.now - this.heldAt > CARRY_SILENCE) {
+      this.letGo(world);
+      return;
+    }
+    const L = world.bodyLength;
+    this.lastInteraction = this.now;
+    this.setClip("stand");
+    this.grounded = false;
+    const ease = 1 - Math.exp(-HANG_RELAX * dt);
+    this.hangX += (HANG_AHEAD * L * this.facing - this.hangX) * ease;
+    this.hangY += (HANG_DOWN * L - this.hangY) * ease;
+    // (a cat taken up by the middle does not sink as the hang forms, below where it stood or below where the hand found it: it is the hand that lifts it)
+    const wantY = Math.min(hold.y + this.hangY, Math.max(hold.y + this.hangY0, this.groundY));
+    let vx = (hold.x + this.hangX - this.x) * CARRY_FOLLOW;
+    let vy = (wantY - this.y) * CARRY_FOLLOW;
+    const fastest = CARRY_SPEED * L;
+    const speed = Math.hypot(vx, vy);
+    if (speed > fastest) {
+      vx *= fastest / speed;
+      vy *= fastest / speed;
+    }
+    this.x += vx * dt;
+    this.y += vy * dt;
+    // (a window made smaller brings the cat in with it: a cat in a hand is never left off the screen, whatever it was following)
+    const vp = world.viewport;
+    this.x = clamp(this.x, vp.x, vp.x + vp.w);
+    this.y = clamp(this.y, vp.y + 0.2 * L, vp.y + vp.h + 0.8 * L);
+    this.vx = vx;
+    this.vy = vy;
+  }
+
+  /**
+   * Where a cat let go of here comes down: the place under its feet that it can steer to on the way (not further across than it has time for), or one a little
+   * above them (see `SPRING`). The nearest the best -- one it would spring up to a little less than one it would fall to, and the floor of a page less than a shelf.
+   */
+  private dropTarget(world: World, spring = SPRING * world.bodyLength): { ledge: Ledge; x: number } | null {
+    const L = world.bodyLength;
+    let best: { ledge: Ledge; x: number } | null = null;
+    let least = Infinity;
+    for (const ledge of this.ledges) {
+      const x = clampToLedge(ledge, this.x);
+      const across = Math.abs(x - this.x);
+      const below = ledge.y - this.y;
+      if (below < -spring) continue;
+      const time = 0.25 + Math.sqrt((2 * Math.max(0, below)) / (GRAVITY * L));
+      if (across > Math.min(FALL_ACROSS * L, FALL_STEER * L * time)) continue;
+      const score = (below >= 0 ? below : -2 * below) + 1.5 * across + (ledge.kind === "fallbackFloor" ? 0.3 * L : 0);
+      if (score < least) {
+        least = score;
+        best = { ledge, x };
+      }
+    }
+    return best;
+  }
+
+  /** Where the hand would put the cat down if it let go now (a point on a shelf), while a hand has it. */
+  landing(): Vec | null {
+    if (!this.hold || this.act?.k !== "carried" || !this.world) return null;
+    const target = this.dropTarget(this.world);
+    return target ? { x: target.x, y: target.ledge.y } : null;
+  }
+
+  /** The hand lets go: the cat falls to the place under it (or springs up onto one a little above its paws), or, with none, is gone from the page and back somewhere else. */
+  private letGo(world: World): void {
+    this.hold = null;
+    const target = this.dropTarget(world);
+    if (!target) {
+      this.finish();
+      this.grounded = true;
+      this.vx = 0;
+      this.vy = 0;
+      this.setClip("stand");
+      this.hardPlan([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
+      return;
+    }
+    const L = world.bodyLength;
+    // (a place above its feet: it springs up over its edge, and comes down on it)
+    const up = this.y - target.ledge.y;
+    this.fall = { toSurface: target.ledge.surfaceId, toX: target.x, vy: up > 0 ? -Math.sqrt(2 * GRAVITY * L * (up + 0.3 * L)) : 0, landed: false, settleT: 0, placeY: target.ledge.y, missed: false };
+    this.act = { k: "fall" };
+    this.actT = 0;
+    this.visited[target.ledge.surfaceId] = this.now;
+  }
+
+  /** Falling out of a hand to the place chosen as it let go: it steers across to it, falls as gravity and the air let it, lands, settles, and then does what a cat does. */
+  private runFall(world: World, dt: number): void {
+    const fall = this.fall;
+    if (!fall) {
+      this.finish();
+      return;
+    }
+    const L = world.bodyLength;
+    this.setClip("jump");
+    if (!fall.landed) {
+      let target = ledgeAt(this.ledges, fall.toSurface, fall.toX);
+      if (!target || fall.missed) {
+        // (the shelf it was falling to is gone, with the page changing, or the page took it away above the cat as it sprang up, and the cat is past the top of its spring and
+        // under it: it comes down on whatever is under it now, or is gone from the page and back somewhere else; a place above its feet only if it is still rising, and
+        // only as high as that rise takes it: a cat past the top of its spring is not lifted onto a shelf)
+        const again = this.dropTarget(world, fall.vy < 0 ? Math.min(SPRING * L, (fall.vy * fall.vy) / (2 * GRAVITY * L)) : 0);
+        fall.missed = false;
+        if (!again) {
+          this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
+          return;
+        }
+        fall.toSurface = again.ledge.surfaceId;
+        fall.toX = again.x;
+        fall.placeY = again.ledge.y;
+        target = again.ledge;
+      }
+      // (a window made smaller under a cat in the air leaves it off the screen, and too far from any place to steer to in time: it is gone, and back somewhere else)
+      const vp = world.viewport;
+      if (this.x < vp.x || this.x > vp.x + vp.w) {
+        this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
+        return;
+      }
+      const aim = clampToLedge(target, fall.toX);
+      fall.toX = aim;
+      // (it is steered so as to arrive over the place as it arrives at it, whatever the distance: the time left is the fall's own, from where it is and how fast it is going.
+      // A steer that only closed a part of what was left each frame left up to a third of a body's length to be put right at the touchdown)
+      const g = GRAVITY * L;
+      const left = Math.max(dt, (-fall.vy + Math.sqrt(Math.max(0, fall.vy * fall.vy + 2 * g * (target.y - this.y)))) / g);
+      const reach = FALL_STEER * 1.5 * L * dt;
+      const across = clamp((aim - this.x) * clamp01(dt / left), -reach, reach);
+      this.x += across;
+      this.vx = dt > 0 ? across / dt : 0;
+      fall.vy = Math.min(fall.vy + GRAVITY * L * dt, FALL_FASTEST * L);
+      this.y += fall.vy * dt;
+      this.vy = fall.vy;
+      this.grounded = false;
+      // (the legs reach down for the ground all the way, and the more as it comes near: the pose of the last of a leap's way down, not the stretched one of its top)
+      this.progress = fall.vy < 0 ? 0.4 : lerp(0.72, 0.62, clamp01((target.y - this.y) / L));
+      const placeWas = fall.placeY;
+      fall.placeY = target.y;
+      if (this.y < target.y || fall.vy < 0) return;
+      // a cat comes down on a place only if the two met in this frame (the cat falling on to it, or the place moving up to it); one that is further under it than that
+      // is not lifted on to it: the place got away from it as it sprang (the page was scrolled), and it comes down on what is under it now
+      if (this.y - target.y > fall.vy * dt + Math.abs(target.y - placeWas) + 1) {
+        fall.missed = true;
+        return;
+      }
+      // touchdown, where it is (a place that was moved from under it in the last moment is left to keepOnLedge, which steps the cat back on to it, and does not lurch it)
+      fall.landed = true;
+      this.y = target.y;
+      this.surfaceId = target.surfaceId;
+      this.grounded = true;
+      this.vx = 0;
+      this.vy = 0;
+    }
+    // settling (the rest of the clip): keepOnLedge keeps the feet on the shelf it landed on, which may be moving
+    fall.settleT += dt;
+    this.progress = JUMP_LANDING + (1 - JUMP_LANDING) * clamp01(fall.settleT / FALL_SETTLE);
+    // (what the steering could not close, a third of a body's length at most, is closed as it crouches: a landing that is nearly on its place is not snapped on to it in one frame)
+    const rest = fall.toX - this.x;
+    if (Math.abs(rest) < 0.3 * L) this.x += rest * (1 - Math.exp(-14 * dt));
+    if (fall.settleT < FALL_SETTLE) return;
+    this.fall = null;
+    this.finish();
+    // (as if it had meant to: it sits a moment, and washes; on a shelf with names it first goes where it hides none of them)
+    const here = this.here();
+    const spot = here && !world.reducedMotion && !world.quiet ? settle(here, this.x, this.facing, L, "sit", world).x : undefined;
+    this.cool.groom = this.now + this.rng.range(45, 90);
+    this.queue = [
+      ...(spot !== undefined ? ([{ k: "walk", x: spot, run: false, maxT: 25 }] as const) : []),
+      { k: "rest", pose: "sit", dur: this.rng.range(0.9, 1.6) },
+      ...(this.rng.chance(0.75) ? ([{ k: "shot", clip: "groom", dur: this.rng.range(3, 5) }] as const) : []),
+    ];
   }
 
   /* ------------------------------ choosing what to do ------------------------------ */
@@ -1063,8 +1345,10 @@ export class CatEngine {
   private runAct(world: World, dt: number): void {
     const act = this.act!;
     this.actT += dt;
-    if (this.actT > WATCHDOG) {
+    // (a hand may hold the cat as long as it likes: it is the hand's act, and the silence of a hand that is gone ends it)
+    if (this.actT > WATCHDOG && act.k !== "carried") {
       this.jump = null;
+      this.fall = null;
       this.finish();
       return;
     }
@@ -1103,6 +1387,12 @@ export class CatEngine {
         break;
       case "jump":
         this.runJump(world, dt);
+        break;
+      case "carried":
+        this.carry(world, dt);
+        break;
+      case "fall":
+        this.runFall(world, dt);
         break;
     }
   }

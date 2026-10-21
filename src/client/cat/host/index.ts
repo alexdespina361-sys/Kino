@@ -40,6 +40,11 @@ const PROBE_BURST_MS = 600;
 const PROBE_EVERY_MS = 5000;
 /** A cat asleep in a film is painted at about this many frames a second (it only breathes, and the film is the screen's work). */
 const ASLEEP_GAP_MS = 40;
+/** How far a pressed pointer goes (pixels) before the press is a hand taking hold of the cat and not a click that wobbled (which still strokes it). */
+const GRAB_SLOP = 8;
+/** How wide and how thick the mark of where the cat would be put down is, in body lengths. */
+const SPOT_WIDE = 0.95;
+const SPOT_THICK = 0.16;
 
 export interface CatHandle {
   /** Tells the cat something, as the page would. */
@@ -141,7 +146,11 @@ export function mountCat(): { stop: () => void } {
   hit.className = "kino-cat-hit";
   hit.setAttribute("data-off", "");
   hit.setAttribute("data-testid", "cat-hit");
-  wrap.append(hit);
+  // (where the cat would be put down, while a hand has it: a soft mark on the place, under the cat's own picture)
+  const spot = document.createElement("div");
+  spot.className = "kino-cat-spot";
+  spot.setAttribute("data-testid", "cat-spot");
+  wrap.append(spot, hit);
   // (the cat's canvas goes in front of the box that takes a hand once there is a brush to paint it; which brush it is, is decided below)
   let brush: Brush | null = null;
 
@@ -182,6 +191,8 @@ export function mountCat(): { stop: () => void } {
   let pointer: Vec | null = null;
   let pointerAt = -1e9;
   let over = false;
+  /** A pointer that is pressed on the cat: where it went down, where it is, and whether it has gone far enough to be a hand that holds the cat. */
+  let drag: { id: number; from: Vec; at: Vec; held: boolean } | null = null;
   let prevMode: World["mode"] = "away";
   let prevPlayer: PlayerMode = "none";
   let prevFocus: string | undefined;
@@ -209,6 +220,8 @@ export function mountCat(): { stop: () => void } {
     // (a square a body length on a side, which is stretched over the cat's body at every frame: see the transform below)
     hit.style.width = `${L}px`;
     hit.style.height = `${L}px`;
+    spot.style.width = `${SPOT_WIDE * L}px`;
+    spot.style.height = `${SPOT_THICK * L}px`;
   };
 
   /* ------------------------------ which cat is painted ------------------------------ */
@@ -368,9 +381,12 @@ export function mountCat(): { stop: () => void } {
     const world = now.world;
     if (pointer && time - pointerAt < 3000) world.pointer = pointer;
     else delete world.pointer;
-    const says = hand.step(time, over);
+    const held = drag?.held === true;
+    const says = hand.step(time, over && !held);
     if (says === "pet") engine.send({ type: "cat.pet" });
     else if (says === "end") engine.send({ type: "cat.petEnd" });
+    // (a hand that has the cat says so at every frame: a hand that goes quiet is a lost pointer, and the cat is let go)
+    if (drag && held) engine.send({ type: "cat.carry", at: drag.at });
 
     frame = engine.update(world, dt);
     const tThink = performance.now();
@@ -423,6 +439,13 @@ export function mountCat(): { stop: () => void } {
     }
     const handOk = visible && world.mode !== "away" && frame.appear > 0.5;
     if (handOk === hit.hasAttribute("data-off")) hit.toggleAttribute("data-off", !handOk);
+    // (a hand can take hold of the cat on the library's screen, and where the cat is let to move about; the cursor says so)
+    const carryable = handOk && world.mode === "browse" && !world.quiet && !world.reducedMotion;
+    if (carryable !== hit.hasAttribute("data-carry")) hit.toggleAttribute("data-carry", carryable);
+    // (and while it has the cat, the place the cat would be put down is marked)
+    const landing = held ? engine.landing() : null;
+    if (landing) spot.style.transform = `translate3d(${landing.x - origin.x - (SPOT_WIDE * L) / 2}px, ${landing.y - origin.y - (SPOT_THICK * L) / 2}px, 0)`;
+    if ((landing !== null) !== spot.hasAttribute("data-on")) spot.toggleAttribute("data-on", landing !== null);
 
     // the page answers the cat: a poster gives under its feet when it lands, and when it puts a paw out to one
     if (airborne && frame.grounded) {
@@ -490,7 +513,40 @@ export function mountCat(): { stop: () => void } {
     if (event.type === "mousedown") return;
     hand.press(performance.now());
     engine.send({ type: "cat.pet" });
+    // (and a hand that then moves, still pressed, takes hold of it: the pointer is kept for as long as it is down, wherever it goes)
+    const press = event as PointerEvent;
+    if (press.pointerId !== undefined && press.button === 0 && press.isPrimary !== false) {
+      drag = { id: press.pointerId, from: { x: press.clientX, y: press.clientY }, at: { x: press.clientX, y: press.clientY }, held: false };
+      try {
+        hit.setPointerCapture(press.pointerId);
+      } catch {
+        /* a pointer that is already gone cannot be kept */
+      }
+    }
   };
+  const onDrag = (event: PointerEvent): void => {
+    if (!drag || event.pointerId !== drag.id) return;
+    drag.at = { x: event.clientX, y: event.clientY };
+    if (!drag.held && Math.hypot(drag.at.x - drag.from.x, drag.at.y - drag.from.y) > GRAB_SLOP) {
+      drag.held = true;
+      hit.setAttribute("data-held", "");
+      engine.send({ type: "cat.grab", at: drag.at });
+    }
+  };
+  /** The hand lets go (the pointer came up, was taken away, or the window lost it): a cat that was held is put down where the engine says. */
+  const onRelease = (event?: PointerEvent): void => {
+    if (!drag || (event && event.pointerId !== drag.id)) return;
+    const was = drag;
+    drag = null;
+    hit.removeAttribute("data-held");
+    if (was.held) engine.send({ type: "cat.drop" });
+    try {
+      hit.releasePointerCapture(was.id);
+    } catch {
+      /* it was let go of already */
+    }
+  };
+  const onBlur = (): void => onRelease();
   const onContext = (event: Event): void => {
     event.preventDefault();
     togglePanel();
@@ -506,7 +562,13 @@ export function mountCat(): { stop: () => void } {
   hit.addEventListener("pointerleave", onLeave);
   hit.addEventListener("pointerdown", onPress);
   hit.addEventListener("mousedown", onPress);
+  hit.addEventListener("pointermove", onDrag);
+  hit.addEventListener("pointerup", onRelease);
+  hit.addEventListener("pointercancel", onRelease);
+  hit.addEventListener("lostpointercapture", onRelease);
   hit.addEventListener("contextmenu", onContext);
+  window.addEventListener("blur", onBlur);
+  document.addEventListener("visibilitychange", onBlur);
   document.addEventListener("pointerdown", onOutside, true);
   const offBus = onCat((command) => {
     if (command.type === "panel") togglePanel();
@@ -566,7 +628,13 @@ export function mountCat(): { stop: () => void } {
     hit.removeEventListener("pointerleave", onLeave);
     hit.removeEventListener("pointerdown", onPress);
     hit.removeEventListener("mousedown", onPress);
+    hit.removeEventListener("pointermove", onDrag);
+    hit.removeEventListener("pointerup", onRelease);
+    hit.removeEventListener("pointercancel", onRelease);
+    hit.removeEventListener("lostpointercapture", onRelease);
     hit.removeEventListener("contextmenu", onContext);
+    window.removeEventListener("blur", onBlur);
+    document.removeEventListener("visibilitychange", onBlur);
     offBus();
     offSettings();
     closePanel();

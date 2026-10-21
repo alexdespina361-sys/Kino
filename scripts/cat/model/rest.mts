@@ -1,7 +1,7 @@
 import { CatRig } from "../../../src/client/cat/render/rig";
 import type { CatFrame } from "../../../src/client/cat/types";
 
-const frame: CatFrame = { x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false };
+const frame: CatFrame = { x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false };
 const rig = new CatRig(1);
 rig.snapTo(frame, 100);
 const s = rig.solved;

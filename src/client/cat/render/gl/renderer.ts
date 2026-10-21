@@ -5,7 +5,7 @@ import { COATS } from "./coats";
 import { decodeMesh, type CatMesh } from "./format";
 import { FRAGMENT, SHADOW_FRAGMENT, SHADOW_VERTEX, VERTEX } from "./shader";
 import { EARS } from "./model";
-import { BONE_COUNT, BONE_FLOATS, Skeleton, mat, mul, restStamp } from "./skeleton";
+import { BONE_COUNT, BONE_FLOATS, Skeleton, mat, mul, pitchAbout, restStamp } from "./skeleton";
 import { makeWhiskers } from "./whiskers";
 
 /**
@@ -170,18 +170,8 @@ export class GlCat {
     const sx = g * s.sx;
     const sy = g * s.sy;
     const sz = g * (s.sx + s.sy) * 0.5;
-    // the pitch of a leap, about the middle of the body (the rig's angle is turned over: its y is down)
-    const a = -s.pitch;
-    const ca = Math.cos(a);
-    const sa = Math.sin(a);
-    const cy = 0.4;
-    w.fill(0);
-    w[0] = ca;
-    w[1] = -sa;
-    w[4] = sa;
-    w[5] = ca;
-    w[10] = 1;
-    w[7] = cy - (sa * 0 + ca * cy);
+    // the pitch of a leap, about the middle of the body (the rig's angle is turned over: its y is down), as the flat painter's is: that point stays where it is
+    pitchAbout(w, -s.pitch, 0.4);
     // squash and grow
     t.fill(0);
     t[0] = sx;
@@ -244,7 +234,7 @@ export class GlCat {
       const cx = box.ox;
       const cy = box.oy + 0.01 * box.px;
       gl.uniform4f(this.loc.sRect as WebGLUniformLocation, (2 * cx) / this.cssW - 1, 1 - (2 * cy) / this.cssH, (2 * sw) / this.cssW, (2 * sh) / this.cssH);
-      gl.uniform1f(this.loc.sStrength as WebGLUniformLocation, 0.42 * (1 - 0.5 * s.air) * appear);
+      gl.uniform1f(this.loc.sStrength as WebGLUniformLocation, 0.42 * (1 - 0.5 * s.air) * appear * s.shadow);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.cornerBuffer);
       const a = this.loc.aCorner as number;
       gl.enableVertexAttribArray(a);

@@ -27,12 +27,32 @@
   transform-origin: 0 0;
   pointer-events: auto;
   cursor: pointer;
-  touch-action: manipulation;
+  /* (a finger that goes on from the cat is a hand carrying it, not the page being scrolled) */
+  touch-action: none;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
 }
 .kino-cat-hit[data-off] { pointer-events: none; }
+/* Where a cat can be picked up, the cursor says so; and it closes while it holds one. */
+.kino-cat-hit[data-carry] { cursor: grab; }
+.kino-cat-hit[data-held] { cursor: grabbing; }
+/* Where a held cat would be put down: a soft mark on the place, under the cat's own picture. */
+.kino-cat-spot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(var(--accent-rgb, 255 255 255) / 0.7), rgb(var(--accent-rgb, 255 255 255) / 0.28) 55%, rgb(var(--accent-rgb, 255 255 255) / 0));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-out;
+}
+.kino-cat-spot[data-on] { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .kino-cat-spot { transition: none; }
+}
 
 /* The poster the cat points at. */
 [data-cat-pointed] {

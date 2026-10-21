@@ -1,3 +1,4 @@
+import { HANG_AHEAD, HANG_DOWN } from "../engine/engine";
 import type { CatCoat } from "../settings";
 import { GlCat, type View } from "../render/gl/renderer";
 import { CatRig, GALLOP_STRIDE, WALK_STRIDE } from "../render/rig";
@@ -18,6 +19,9 @@ interface GlCell {
   zoom?: { at: [number, number]; by: number };
   /** For the walk and the run: how far through a stride it is (0..1), which fixes where the feet are. */
   cycle?: number;
+  /** Draws the cat this many body lengths higher in its cell (one that hangs reaches below its feet line), and marks a point (x to the right, y up, from the feet) where a hand would be. */
+  raise?: number;
+  hand?: [number, number];
 }
 
 const STRIDE = { walk: WALK_STRIDE, run: GALLOP_STRIDE };
@@ -56,13 +60,26 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly
     for (let k = 0; k < steps; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
     ctx.fillStyle = BG;
     ctx.fillRect(x0, y0, cw, ch);
-    const oy = ch - 24 * scale;
+    const oy = ch - 24 * scale - (cell.raise ?? 0) * px;
     ctx.fillStyle = GROUND;
     ctx.fillRect(x0, y0 + oy, cw, 3 * scale);
     const z = cell.zoom;
     const box = z ? { px: px * z.by, ox: cw / 2 - z.at[0] * px * z.by, oy: ch / 2 + z.at[1] * px * z.by } : { ox: cw / 2, oy, px };
     cat.draw(rig.solved, box, cell.view);
     ctx.drawImage(glCanvas, x0, y0);
+    if (cell.hand) {
+      // (where the hand is: a cross)
+      const hx = x0 + box.ox + cell.hand[0] * box.px;
+      const hy = y0 + box.oy - cell.hand[1] * box.px;
+      ctx.strokeStyle = "#4df";
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(hx - 9 * scale, hy);
+      ctx.lineTo(hx + 9 * scale, hy);
+      ctx.moveTo(hx, hy - 9 * scale);
+      ctx.lineTo(hx, hy + 9 * scale);
+      ctx.stroke();
+    }
     ctx.fillStyle = "#9aa";
     ctx.font = `${13 * scale}px sans-serif`;
     ctx.fillText(cell.label, x0 + 8 * scale, y0 + 18 * scale);
@@ -384,5 +401,25 @@ export const FACES2: GlCell[] = [
 ];
 
 export const GL_POSES: GlCell[] = POSES.map((p) => ({ label: p.label, frame: p.frame }));
+
+/** Hanging by the scruff: from the side and from three quarters, the hand where the engine puts it (a cross), and the head close. */
+const hung = (label: string, over: Partial<CatFrame> = {}, extra: Partial<GlCell> = {}): GlCell => ({
+  label,
+  frame: { clip: "stand", carried: true, grounded: false, viewer: true, ...over },
+  raise: 0.85,
+  hand: [(over.facing === -1 ? 1 : -1) * HANG_AHEAD, HANG_DOWN],
+  view: { tilt: 0.05 },
+  ...extra,
+});
+export const CARRIED: GlCell[] = [
+  hung("carried, still", {}),
+  hung("carried, facing left", { facing: -1 }),
+  hung("carried, 3/4", {}, { view: { turn: -0.6, tilt: 0.05 } }),
+  hung("carried, looking at the hand", { viewer: false, look: { x: 0, y: -400 } }),
+  hung("head", {}, { zoom: { at: [-0.1, 0.95], by: 3.2 }, hand: undefined as never }),
+  hung("head, 3/4", {}, { zoom: { at: [-0.1, 0.95], by: 3.2 }, view: { turn: -0.6, tilt: 0.05 }, hand: undefined as never }),
+  hung("hind legs and tail", {}, { zoom: { at: [-0.1, 0.0], by: 2.6 }, hand: undefined as never }),
+  hung("forelegs and chest", {}, { zoom: { at: [0.0, 0.55], by: 2.6 }, hand: undefined as never }),
+];
 
 

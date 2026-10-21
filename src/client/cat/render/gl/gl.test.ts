@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { CatFrame } from "../../types";
 import { CatRig, type Joint, type Solved } from "../rig";
 import { decodeMesh, encodeMesh, MESH_MAGIC, MESH_VERSION, packIndex, unpackIndex } from "./format";
-import { BONE, BONE_COUNT, BONE_FLOATS, Skeleton, mat, restSolved, restStamp } from "./skeleton";
+import { BONE, BONE_COUNT, BONE_FLOATS, Skeleton, mat, pitchAbout, restSolved, restStamp } from "./skeleton";
 
 const meshFile = (): ArrayBuffer => {
   const file = readFileSync(new URL("./cat.mesh", import.meta.url));
   return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
 };
 
-const frame = (over: Partial<CatFrame>): CatFrame => ({ x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, ...over });
+const frame = (over: Partial<CatFrame>): CatFrame => ({ x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false, ...over });
 
 /** A cat in a clip, settled: what the rig has after a second of it. */
 const solvedIn = (over: Partial<CatFrame>): Solved => {
@@ -222,6 +222,23 @@ describe("the bones of the solid cat", () => {
         const det = m(0) * (m(5) * m(10) - m(6) * m(9)) - m(1) * (m(4) * m(10) - m(6) * m(8)) + m(2) * (m(4) * m(9) - m(5) * m(8));
         expect(det, `${clip} bone ${bone}`).toBeGreaterThan(0.05);
       }
+    }
+  });
+});
+
+describe("the pitch of the body", () => {
+  const at = (m: Float64Array, x: number, y: number): Joint => ({ x: m[0]! * x + m[1]! * y + m[3]!, y: m[4]! * x + m[5]! * y + m[7]! });
+
+  it("is a turn about the middle of the body, which stays where it is: a cat that tips over in a hand does not swing off to the side (the carried cat once hung 0.4 of its length from the hand)", () => {
+    for (const angle of [-1.2, -0.4, 0, 0.7, 1.2]) {
+      const m = pitchAbout(mat(), angle, 0.4);
+      const middle = at(m, 0, 0.4);
+      expect(middle.x, `angle ${angle}`).toBeCloseTo(0, 9);
+      expect(middle.y, `angle ${angle}`).toBeCloseTo(0.4, 9);
+      // (a turn: a point a body length in front of the middle goes round it on a circle of that radius)
+      const nose = at(m, 1, 0.4);
+      expect(nose.x, `angle ${angle}`).toBeCloseTo(Math.cos(angle), 9);
+      expect(nose.y - 0.4, `angle ${angle}`).toBeCloseTo(Math.sin(angle), 9);
     }
   });
 });

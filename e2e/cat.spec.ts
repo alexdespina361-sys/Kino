@@ -30,7 +30,7 @@ const setup = (yes = true) => async (context: BrowserContext) => {
 const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, detail: false, ...over }) });
 
 interface Snap {
-  frame: { x: number; y: number; clip: string; appear: number; petted: boolean; grounded: boolean };
+  frame: { x: number; y: number; facing: number; clip: string; appear: number; petted: boolean; carried: boolean; grounded: boolean };
   engine: { act: string; surfaceId: string | null; mode: string; placed: boolean };
   view: string;
   why: string;
@@ -491,6 +491,158 @@ test("a viewer who asked for less motion has a cat that rests where it is", asyn
   const later = await snap(tv);
   expect(Math.abs(later.frame.x - first.frame.x)).toBeLessThan(2);
   expect(later.frame.clip).not.toMatch(/walk|run|jump/);
+});
+
+/* ------------------------------ a hand that takes hold of the cat ------------------------------ */
+
+interface Surf {
+  id: string;
+  kind: string;
+  y: number;
+  x0: number;
+  x1: number;
+}
+const worldOf = (tv: Page) => tv.evaluate(() => (window as unknown as { __kinoCat: { world(): unknown } }).__kinoCat.world()) as Promise<{ bodyLength: number; surfaces: Surf[] }>;
+const tellCat = (tv: Page, event: unknown) => tv.evaluate((e) => (window as unknown as { __kinoCat: { send(event: unknown): void } }).__kinoCat.send(e), event);
+/** The cat sits where it is (a cat that is about to be taken by a hand is not on its way anywhere), and the middle of the box that takes a hand. */
+const catSitsAndWhere = async (tv: Page) => {
+  await tellCat(tv, { type: "cat.command", command: "sit" });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.clip, { timeout: 20_000 }).toBe("sit"));
+  await tv.waitForTimeout(400);
+  const box = (await tv.getByTestId("cat-hit").boundingBox())!;
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+
+test("a hand that takes hold of the cat carries it by the scruff, marks the shelf it would be put down on, and puts it there", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const middle = await catSitsAndWhere(tv);
+  const start = await snap(tv);
+  const world = await worldOf(tv);
+  const L = world.bodyLength;
+  // the shelf the cat is not on, and the furthest from it (a whole row of posters or two, not a corner of a card)
+  const here = world.surfaces.find((surface) => surface.id === start.engine.surfaceId)!;
+  const target = world.surfaces
+    .filter((surface) => surface.kind === "shelfTop" && Math.abs(surface.y - here.y) > 1.5 * L && surface.x1 - surface.x0 > 3 * L)
+    .sort((a, b) => b.x1 - b.x0 - (a.x1 - a.x0))[0];
+  expect(target, "another shelf with room on it").toBeDefined();
+  const hand = { x: (target!.x0 + target!.x1) / 2, y: target!.y - 1.2 * L - 0.73 * L };
+
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  // (a press does not take hold of the cat until the hand has gone a little way: it is a stroke until then)
+  await tv.mouse.move(middle.x + 4, middle.y - 4);
+  expect((await snap(tv)).frame.carried).toBe(false);
+  await tv.mouse.move(middle.x + 30, middle.y - 30, { steps: 5 });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.act, { timeout: 5_000 }).toBe("carried"));
+  await expect(tv.getByTestId("cat-hit")).toHaveAttribute("data-held", "");
+
+  await tv.mouse.move(hand.x, hand.y, { steps: 30 });
+  // it hangs below the hand, a little way before it, and the shelf under it is marked
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return seen.frame.carried && Math.abs(seen.frame.y - (hand.y + 0.73 * L)) < 0.15 * L && Math.abs(seen.frame.x - (hand.x + 0.1 * L * seen.frame.facing)) < 0.15 * L;
+      }, { timeout: 8_000 })
+      .toBe(true),
+  );
+  await expect(tv.getByTestId("cat-spot")).toHaveAttribute("data-on", "");
+  const mark = (await tv.getByTestId("cat-spot").boundingBox())!;
+  expect(Math.abs(mark.y + mark.height / 2 - target!.y)).toBeLessThan(0.2 * L);
+  expect(Math.abs(mark.x + mark.width / 2 - hand.x)).toBeLessThan(0.5 * L);
+  // (a hand that rests keeps the cat for as long as it is held: it is told at every frame, so it is not let go for being quiet)
+  await tv.waitForTimeout(3_500);
+  expect((await snap(tv)).engine.act).toBe("carried");
+
+  await tv.mouse.up();
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return !/carried|fall/.test(seen.engine.act) && seen.frame.grounded && seen.engine.surfaceId === target!.id;
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-held", "");
+  await expect(tv.getByTestId("cat-spot")).not.toHaveAttribute("data-on", "");
+  expect(Math.abs((await snap(tv)).frame.y - target!.y)).toBeLessThan(3);
+});
+
+test("a press that only wobbles is a stroke and lifts nothing; the page under it is not opened", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const middle = await catSitsAndWhere(tv);
+  const before = await snap(tv);
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  await tv.mouse.move(middle.x + 5, middle.y + 2, { steps: 3 });
+  await tv.mouse.move(middle.x - 3, middle.y - 4, { steps: 3 });
+  await tv.mouse.up();
+  await expect.poll(async () => (await snap(tv)).frame.petted, { timeout: 3_000 }).toBe(true);
+  const after = await snap(tv);
+  expect(after.frame.carried).toBe(false);
+  expect(after.engine.act).not.toMatch(/carried|fall/);
+  expect(Math.abs(after.frame.x - before.frame.x)).toBeLessThan(3);
+  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+});
+
+test("a viewer who asked for less motion, or for quiet, is not lifted, and the cursor does not offer it", async ({ browser }) => {
+  test.setTimeout(60_000);
+  for (const how of ["reduced motion", "quiet"] as const) {
+    const tv = await openLibrary(browser, setup(), undefined, WANTS({ quiet: how === "quiet" }));
+    if (how === "reduced motion") await tv.emulateMedia({ reducedMotion: "reduce" });
+    await tv.goto("/tv?cat=debug");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await catIsOnTheScreen(tv);
+    await tv.waitForTimeout(1_200);
+    await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-carry", "");
+    const box = (await tv.getByTestId("cat-hit").boundingBox())!;
+    const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const before = await snap(tv);
+    await tv.mouse.move(middle.x, middle.y);
+    await tv.mouse.down();
+    await tv.mouse.move(middle.x + 120, middle.y - 150, { steps: 12 });
+    await tv.waitForTimeout(500);
+    const during = await snap(tv);
+    await tv.mouse.up();
+    expect(during.frame.carried, how).toBe(false);
+    expect(during.engine.act, how).not.toMatch(/carried|fall/);
+    expect(Math.abs(during.frame.x - before.frame.x), how).toBeLessThan(3);
+    expect(Math.abs(during.frame.y - before.frame.y), how).toBeLessThan(3);
+    await tv.context().close();
+  }
+});
+
+test("a hand that is lost lets the cat go: the window losing the pointer puts it down on a shelf", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const middle = await catSitsAndWhere(tv);
+  const L = (await worldOf(tv)).bodyLength;
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  await tv.mouse.move(middle.x + 40, middle.y - 0.8 * L, { steps: 6 });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.act, { timeout: 5_000 }).toBe("carried"));
+  // (the window loses the focus with the button still down: no word about the button coming up ever arrives)
+  await tv.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return !/carried|fall/.test(seen.engine.act) && seen.frame.grounded && (seen.engine.surfaceId ?? "") !== "";
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-held", "");
+  await tv.mouse.up();
 });
 
 /** The cat's page of the settings: the settings page, then its row for the cat. */

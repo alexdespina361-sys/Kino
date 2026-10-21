@@ -107,7 +107,7 @@ export interface SimOptions {
   seconds: number;
   fps?: number;
   /** What may happen to the page. */
-  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean };
+  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean };
   reducedMotion?: boolean;
   quiet?: boolean;
   /** The page has names over its shelves (see `PageOptions.names`). */
@@ -142,6 +142,11 @@ export function runSession(options: SimOptions): SimStats {
   let modal = false;
   let hidden = false;
   let pointer: { x: number; y: number } | undefined;
+  /** A hand that has the cat (where it is, where it is going, and until when), if one does. */
+  let handAt: { x: number; y: number } | null = null;
+  let handGoal = { x: 0, y: 0 };
+  let handSpeed = 0;
+  let handUntil = 0;
   let world = browseWorld(page);
   let prev: { x: number; y: number; appear: number; onScreen: boolean; shelves: Map<string, number> } | null = null;
   let overlapSince = -1;
@@ -249,6 +254,35 @@ export function runSession(options: SimOptions): SimStats {
     }
     if (changed) rebuild();
 
+    // a hand now and then takes the cat up, carries it about (as fast as a hand goes: the cat follows as fast as it can) and puts it down, or is lost with it in it
+    if (chaos.hand) {
+      const L0 = world.bodyLength;
+      if (!handAt) {
+        if (world.mode === "browse" && engine.frame.appear > 0.9 && rng.chance(0.004)) {
+          handAt = { x: engine.frame.x, y: engine.frame.y - 0.4 * L0 };
+          handGoal = { x: rng.range(0, page.width), y: rng.range(0, page.height) };
+          handSpeed = rng.range(1, 30) * L0;
+          handUntil = t + rng.range(0.2, 6);
+          engine.send({ type: "cat.grab", at: { ...handAt } });
+        }
+      } else {
+        const dx: number = handGoal.x - handAt.x;
+        const dy: number = handGoal.y - handAt.y;
+        const gap: number = Math.hypot(dx, dy);
+        const step = Math.min(gap, handSpeed * dt);
+        if (gap > 1e-6) handAt = { x: handAt.x + (dx / gap) * step, y: handAt.y + (dy / gap) * step };
+        if (gap < 1 || rng.chance(0.02)) {
+          handGoal = { x: rng.range(0, page.width), y: rng.range(0, page.height) };
+          handSpeed = rng.range(1, 30) * L0;
+        }
+        if (t >= handUntil) {
+          // (and one hand in seven is lost with the cat in it: the cat is let go of by itself)
+          if (rng.chance(0.86)) engine.send({ type: "cat.drop" });
+          handAt = null;
+        } else engine.send({ type: "cat.carry", at: { ...handAt } });
+      }
+    }
+
     const frame = engine.update(world, dt);
     const dbg = engine.debug();
     stats.frames++;
@@ -298,7 +332,8 @@ export function runSession(options: SimOptions): SimStats {
         lostRun++;
         if (lostRun > 3) fail(`off the screen at ${frame.x.toFixed(0)},${frame.y.toFixed(0)} (${dbg.act})`);
       } else lostRun = 0;
-      if (cut) {
+      // (a cat in a hand is where the hand has it, edge of the screen or not)
+      if (cut && dbg.act !== "carried") {
         if (cutSince < 0) cutSince = t;
         else if (t - cutSince > 2) fail(`cut by the edge of the screen for ${(t - cutSince).toFixed(1)}s at ${frame.x.toFixed(0)},${frame.y.toFixed(0)} (${dbg.act})`);
       } else cutSince = -1;

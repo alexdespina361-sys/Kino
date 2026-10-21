@@ -14,8 +14,11 @@ An original animated cat for Kino, in the spirit of a desktop pet but for a stre
 | A title's page, a menu, a dialog over the library | is sent away and is back when they close |
 | A film | sleeps in a bottom corner of the picture, in a layer under the controls, the subtitles and the toasts (it never covers one, and none of them makes it come or go); a device can say "no cat in films" |
 | The corner button (cat's head, beside the bell and the profile) | opens its panel: come here, pet, sit, sleep, play, go away, and **find me something**: the cat picks a title that is on the page, by the mood and the shelf names (en/ro/it), the poster glows and the cat points at it; "Open it" opens its page like OK on the poster; nothing is ever played |
-| Settings → Cat companion (only where the host offers a cat) | on, quiet (it rests where it is: a TV starts with this on), films, detailed cat, coat (ginger tabby, tuxedo, grey tabby, calico), size |
+| Settings → Cat companion (its own page, only where the host offers a cat) | on, quiet (it rests where it is: a TV starts with this on), films, detailed cat, coat (ginger tabby, tuxedo, grey tabby, calico), size |
 | A mouse resting on the cat | strokes it |
+| A mouse pressed on the cat and moved (more than 8 px) | picks it up by the scruff: it hangs (paws dangling, tail down, a little swing), follows the hand and shows, as a soft ellipse on the shelf, where letting go would put it |
+| The hand lets go | the cat falls to that shelf (or the nearest one it can reach), lands, and sits or washes. A hand that is lost (a window that loses focus, a tab that is hidden, a pointer that vanishes) lets it go too, and so does 2.5 s of silence |
+| A press that only wobbles (a stroke), `prefers-reduced-motion`, quiet, a film | lifts nothing; the cursor does not offer a grab |
 | `prefers-reduced-motion` | the cat only rests, in one place |
 
 The phone as a *remote* has no cat. The cat lives on the screen that plays.
@@ -45,7 +48,7 @@ $env:CAT_COMPANION = "on"; $env:PORT = "8830"
 pnpm start
 ```
 
-Open `http://localhost:8830/tv?cat=on` (the cat for this load only; add `&catseed=7` for the same cat every time, `&cat=debug` instead of `cat=on` to see what it sees: green = places to stand, red = keep-outs, orange = names it would rather not sit in front of, blue = posters, and a text block with its act, quality, cost and fps). To keep it: Settings → Cat companion. `dist/client` must be current (the last commit of the branch rebuilds it).
+Open `http://localhost:8830/tv?cat=on` (the cat for this load only; add `&catseed=7` for the same cat every time, `&cat=debug` instead of `cat=on` to see what it sees: green = places to stand, red = keep-outs, orange = names it would rather not sit in front of, blue = posters, and a text block with its act, quality, cost and fps; with `cat=debug` only, `window.__kinoCat` offers `snapshot()`, `send(event)`, `panel` and `world()`, the same page the cat reads, for a script or the console). To keep it: Settings → Cat companion. `dist/client` must be current (the last commit of the branch rebuilds it).
 
 ## Code map
 

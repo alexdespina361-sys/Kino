@@ -1,4 +1,4 @@
-import { bounce, clamp, clamp01, dyn, easeInOut, fract, lerp, smooth, smoothstep, twoBone, TAU, type Dyn } from "../math";
+import { angleDelta, bounce, clamp, clamp01, dyn, easeInOut, fract, lerp, smooth, smoothstep, twoBone, TAU, type Dyn } from "../math";
 import { createRng, type Rng } from "../rng";
 import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame } from "../types";
 import { FLAT, makePose, PART, SHAPE_HEIGHT, SHAPE_LENGTH, SHAPE_NAMES, unflatten, type Pose, type ShapeName } from "./shapes";
@@ -62,10 +62,15 @@ export interface Solved {
   /** 0..1: how far above the ground it is (the shadow shrinks). */
   air: number;
   appear: number;
-  /** Rotation of the whole body, radians (leaping up or down). */
+  /** Rotation of the whole body, radians (leaping up or down; hanging by the scruff). */
   pitch: number;
   breath: number;
+  /** 1: the cat's shadow is on the ground under it; 0: none (it hangs in a hand, over no ground of its own). */
+  shadow: number;
 }
+
+/** Hanging by the scruff: how far the body is tipped (radians; a negative angle lifts the nose). */
+const CARRY_PITCH = -1.2;
 
 const TAIL_SEGMENTS = 10;
 const TAIL_LENGTH = 0.64;
@@ -145,6 +150,9 @@ export class CatRig {
   private tilt = dyn(0);
   private flipDyn = dyn(1);
   private pitchDyn = dyn(0);
+  /** How far it hangs from a hand (0..1, eased into and out of), and how far it swings under it (a pendulum, radians). */
+  private carriedDyn = dyn(0);
+  private swingDyn = dyn(0);
   private sqDyn = dyn(0);
   private jawDyn = dyn(0);
   private happyDyn = dyn(0);
@@ -201,6 +209,7 @@ export class CatRig {
       appear: 1,
       pitch: 0,
       breath: 0,
+      shadow: 1,
     };
   }
 
@@ -222,6 +231,12 @@ export class CatRig {
   private targetWeights(frame: CatFrame): Record<ShapeName, number> {
     const w: Record<ShapeName, number> = { stand: 0, sit: 0, loaf: 0, curl: 0, crouch: 0, stretch: 0, air: 0 };
     const p = frame.progress;
+    if (frame.carried) {
+      // (a cat that hangs by the scruff is a little longer than one that stands: its own weight pulls it out)
+      w.stand = 0.55;
+      w.air = 0.45;
+      return w;
+    }
     switch (frame.clip) {
       case "stand":
       case "walk":
@@ -280,13 +295,19 @@ export class CatRig {
     this.time += dt;
     const sleepy = frame.drowsy;
     const clip = frame.clip;
+    // --- in a hand: how far the cat hangs from it by the scruff (eased into, and out of: let go of, it rights itself in the air)
+    // (a third of a second to tip over, a little less to right itself: the tail's tip is a body length from the middle it turns about, and would snap if it were quicker)
+    smooth(this.carriedDyn, frame.carried ? 1 : 0, frame.carried ? 2.2 : 2.8, dt);
+    const held = clamp01(this.carriedDyn.x);
 
     // --- posture: a spring moves the weight from one shape to another, one for the front of the cat and one for the rear. A cat that lowers itself
     // folds its rear first (and its front follows); one that rises lifts its front first. A jump is all at once.
     const target = this.targetWeights(frame);
     const jumping = clip === "jump";
     // (a jump gathers itself first, then goes all at once)
-    const postureHz = jumping
+    const postureHz = frame.carried
+      ? 6
+      : jumping
       ? frame.progress < JUMP_TAKEOFF - 0.04
         ? 3.2
         : 9
@@ -401,7 +422,10 @@ export class CatRig {
     // --- the whole body, tilted in the air and bowing to what it does
     const pitchTarget = jumping ? clamp(frame.vy / 1400, -0.5, 0.5) : 0;
     smooth(this.pitchDyn, pitchTarget, 7, dt);
-    s.pitch = this.pitchDyn.x;
+    // (hanging by the scruff it is tipped nose up and swings under the hand like a pendulum: pushed by the hand's acceleration, and leaning back a little against its speed)
+    const handAx = ((frame.vx - this.prevVx) / dt / px) * frame.facing;
+    bounce(this.swingDyn, held > 0.5 ? clamp(handAx * 0.012 + (frame.vx / px) * frame.facing * 0.012, -0.55, 0.55) : 0, 1.5, 0.2, dt);
+    s.pitch = lerp(this.pitchDyn.x, CARRY_PITCH + this.swingDyn.x, held);
     for (const k of ["rumpBack", "rumpTop", "backMid", "shoulderTop", "neckTop", "chestFront", "chestBottom", "bellyMid", "groin", "rumpBottom", "shoulder", "hip", "head", "tailRoot"] as const) {
       p[k].y -= bob;
     }
@@ -610,6 +634,30 @@ export class CatRig {
       headShiftY += 0.01 * wiggling;
     }
 
+    // --- hanging by the scruff: the legs dangle straight down in the world, whichever way the body is tipped (the forelegs folded a little, the hind legs longer and loose),
+    // and sway a little, out of step with each other
+    if (held > 0.001) {
+      const dx = Math.sin(s.pitch);
+      const dy = Math.cos(s.pitch);
+      const loose = Math.sin(this.time * 2.1) * 0.012;
+      const dangle = (paw: { x: number; y: number }, root: { x: number; y: number }, reach: number, sway: number): void => {
+        paw.x = lerp(paw.x, root.x + dx * reach + dy * sway, held);
+        paw.y = lerp(paw.y, root.y + dy * reach - dx * sway, held);
+      };
+      dangle(fnTarget, p.shoulder, 0.3, loose);
+      dangle(ffTarget, p.shoulder, 0.33, -loose);
+      dangle(hnTarget, p.hip, 0.42, -loose * 1.3);
+      dangle(hfTarget, p.hip, 0.4, loose * 1.3);
+      // (and the feet hang from the hocks)
+      for (const h of [hockHind, hockFar]) {
+        h.x = lerp(h.x, -dx * 0.12, held);
+        h.y = lerp(h.y, -dy * 0.12, held);
+      }
+      // (the head is held level against the tipped body, chin up a little)
+      headRotExtra += 0.75 * held;
+      headShiftY -= 0.01 * held;
+    }
+
     if (frame.petted) {
       // (it pushes up into the hand, one way and then the other, and back)
       const bunt = Math.sin(this.time * TAU * 0.9);
@@ -650,8 +698,8 @@ export class CatRig {
       leg.toe.y = paw.y;
       leg.lift = -paw.y;
     };
-    solveFront(s.legs.fn, p.shoulder, fnTarget, pw > 0.5);
-    solveFront(s.legs.ff, { x: p.shoulder.x - 0.02, y: p.shoulder.y }, ffTarget, false);
+    solveFront(s.legs.fn, p.shoulder, fnTarget, pw > 0.5 || held > 0.5);
+    solveFront(s.legs.ff, { x: p.shoulder.x - 0.02, y: p.shoulder.y }, ffTarget, held > 0.5);
     solveHind(s.legs.hn, p.hip, hnTarget, hockHind, kneeUp);
     solveHind(s.legs.hf, { x: p.hip.x + 0.03, y: p.hip.y }, hfTarget, hockFar);
 
@@ -687,13 +735,13 @@ export class CatRig {
     const alert = clamp01(frame.energy * 0.6 + (attending ? 0.3 : 0));
     // (in a yawn the ears go back)
     // (and in a run they are laid back)
-    const earRest = lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0) + this.jawDyn.x * 0.3 + this.groomDyn.x * 0.12 + gat * 0.22;
+    const earRest = lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0) + this.jawDyn.x * 0.3 + this.groomDyn.x * 0.12 + gat * 0.22 + held * 0.4;
     smooth(this.earBaseL, earRest, 4, dt);
     smooth(this.earBaseR, earRest, 4, dt);
     bounce(this.earKickL, 0, 9, 0.35, dt);
     bounce(this.earKickR, 0, 9, 0.35, dt);
-    // (the pupils are wide in the hunt)
-    smooth(this.pupilDyn, Math.max(lerp(0.34, 0.9, clamp01(frame.energy * 0.8 + (attending ? 0.2 : 0))) * (1 - sleepy * 0.5), 0.95 * hunt), 4, dt);
+    // (the pupils are wide in the hunt, and when it is taken up by the scruff)
+    smooth(this.pupilDyn, Math.max(lerp(0.34, 0.9, clamp01(frame.energy * 0.8 + (attending ? 0.2 : 0))) * (1 - sleepy * 0.5), 0.95 * hunt, 0.92 * held), 4, dt);
 
     // --- the flip when it turns around: through a face-on moment, not a snap
     if (frame.facing !== this.facing) {
@@ -721,7 +769,8 @@ export class CatRig {
     hd.pupil = this.pupilDyn.x;
     hd.earL = this.earBaseL.x + this.earKickL.x;
     hd.earR = this.earBaseR.x + this.earKickR.x;
-    hd.jaw = this.jawDyn.x;
+    // (and a cat that is carried says what it thinks of it, now and then: the mouth opens for a moment, the eyes and the ears stay as they are)
+    hd.jaw = this.jawDyn.x + held * Math.max(0, Math.sin(this.time * TAU * 0.55)) ** 3 * 0.4;
     hd.happy = this.happyDyn.x;
     hd.asleep = this.asleepDyn.x;
 
@@ -730,14 +779,17 @@ export class CatRig {
     this.prevVx = frame.vx;
     smooth(this.tailRoot, clamp(-ax * 0.035, -0.6, 0.6), 5, dt);
     // (the tip of a hunting cat's tail twitches, quickly)
-    const swayAmp = lerp(0.09, 0.02, sleepy) + frame.energy * 0.22 + (frame.petted ? 0.12 : 0) + hunt * 0.12;
+    const swayAmp = lerp(0.09, 0.02, sleepy) + frame.energy * 0.22 + (frame.petted ? 0.12 : 0) + hunt * 0.12 + held * 0.1;
     const swayRate = lerp(0.55, 0.2, sleepy) + frame.energy * 0.9 + hunt * 0.9;
-    // (in a run the tail streams out behind it, nearly straight, instead of going up and over)
+    // (in a run the tail streams out behind it, nearly straight, instead of going up and over; hanging in a hand it hangs straight down in the world, whichever way the body is tipped)
     const streaming = clamp01(this.gallopTail.x);
-    const tailBase = lerp(pose.s.tailAngle, 3.35, streaming);
+    const running = lerp(pose.s.tailAngle, 3.35, streaming);
+    const tailBase = running + held * angleDelta(running, Math.PI / 2 - s.pitch);
     let a = tailBase + (frame.petted ? -0.45 : 0);
-    const curl = lerp(pose.s.tailCurl, 0.1, streaming);
-    const wrap = clamp01(pose.s.tailFront);
+    const curl = lerp(lerp(pose.s.tailCurl, 0.1, streaming), 0.05, held);
+    const wrap = clamp01(pose.s.tailFront) * (1 - held);
+    // (a tail lies on the ground, not in it; one that hangs in the air has no ground)
+    const tailFloor = lerp(TAIL_FLOOR, 9, held);
     let tx = p.tailRoot.x;
     let ty = p.tailRoot.y;
     const segLen = TAIL_LENGTH / TAIL_SEGMENTS;
@@ -757,9 +809,9 @@ export class CatRig {
       a = tailBase + (frame.petted ? -0.45 : 0) + curl * along01 + d.x * (0.4 + f);
       let dx = Math.cos(a) * segLen;
       let dy = Math.sin(a) * segLen;
-      if (ty + dy > TAIL_FLOOR) {
+      if (ty + dy > tailFloor) {
         // (the tail lies on the ground, not in it: a piece that would go into it slides along it, as long as it is, towards where it was heading)
-        dy = TAIL_FLOOR - ty;
+        dy = tailFloor - ty;
         const run = Math.sqrt(Math.max(0, segLen * segLen - dy * dy));
         dx = (Math.abs(Math.cos(a)) > 0.12 ? Math.sign(Math.cos(a)) : along) * run;
       }
@@ -774,9 +826,11 @@ export class CatRig {
     // --- the whole: squash on landing, a shadow that shrinks in the air, a fade in
     smooth(this.sqDyn, 0, 6, dt);
     const landing = jumping ? smoothstep(JUMP_LANDING, JUMP_LANDING + 0.06, frame.progress) * (1 - smoothstep(JUMP_LANDING + 0.06, 1, frame.progress)) : 0;
-    s.sx = 1 + 0.05 * landing;
-    s.sy = 1 - 0.07 * landing;
+    // (a cat that hangs by the scruff is a little longer for its weight)
+    s.sx = (1 + 0.05 * landing) * (1 - 0.03 * held);
+    s.sy = (1 - 0.07 * landing) * (1 + 0.05 * held);
     s.air = frame.grounded ? 0 : 1;
+    s.shadow = 1 - held;
     s.appear = clamp01(frame.appear);
   }
 }

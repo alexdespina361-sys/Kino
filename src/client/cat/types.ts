@@ -148,6 +148,8 @@ export interface CatFrame {
   appear: number;
   /** Something has a hand on it: it leans in and closes its eyes. */
   petted: boolean;
+  /** A hand has it by the scruff and is carrying it somewhere: it hangs from the hand (`x`,`y` are still its feet, a little below the grip). */
+  carried: boolean;
 }
 
 /* ------------------------------ what the page tells the cat ------------------------------ */
@@ -158,6 +160,10 @@ export type CatEvent =
   | { type: "cat.disable" }
   | { type: "cat.pet"; at?: Vec }
   | { type: "cat.petEnd" }
+  /** A hand takes hold of the cat (a pointer pressed on it and then moved), carries it (`at` is where the hand is, said again as it moves) and lets go. */
+  | { type: "cat.grab"; at: Vec }
+  | { type: "cat.carry"; at: Vec }
+  | { type: "cat.drop" }
   | { type: "cat.call"; at: Vec }
   | { type: "cat.command"; command: "sit" | "sleep" | "play" | "away" | "come" }
   | { type: "route.enter"; page: string }

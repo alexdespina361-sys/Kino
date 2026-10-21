@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CatFrame, Clip } from "../types";
 import { CatRig, type Solved } from "./rig";
 
-const frame = (over: Partial<CatFrame>): CatFrame => ({ x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, ...over });
+const frame = (over: Partial<CatFrame>): CatFrame => ({ x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false, ...over });
 
 /** A cat in a clip for `seconds`, 60 frames a second: what the rig has at the end, and what it had along the way (`watch` is looked at every frame). */
 function inClip(over: Partial<CatFrame>, seconds: number, watch?: (s: Solved, t: number) => void, seed = 3): Solved {
@@ -267,6 +267,77 @@ describe("the cat's little scenes", () => {
       },
     );
     expect(biggest).toBeLessThan(0.2);
+  });
+
+  /** Where a joint is seen once the whole cat is tipped (about the middle of its body): x the way it faces and y up, in body lengths from its feet. */
+  const seen = (s: Solved, j: { x: number; y: number }) => {
+    const c = Math.cos(s.pitch);
+    const si = Math.sin(s.pitch);
+    return { x: j.x * c - (j.y + 0.4) * si, y: -(j.x * si + (j.y + 0.4) * c - 0.4) };
+  };
+  const inHand = (seconds: number, over: Partial<CatFrame> = {}) => inClip({ clip: "stand", carried: true, grounded: false, viewer: true, ...over }, seconds);
+
+  it("hangs by the scruff: nearly upright, the head at the top, the hind legs and the tail below the body, the ears back, the eyes wide, and no shadow", () => {
+    const s = inHand(3);
+    const standing = inClip({ clip: "stand" }, 3);
+    expect(s.pitch).toBeLessThan(-1.0);
+    expect(s.pitch).toBeGreaterThan(-1.4);
+    const head = seen(s, s.head);
+    const hip = seen(s, s.pose.p.hip);
+    expect(head.y).toBeGreaterThan(hip.y + 0.6);
+    for (const key of ["hn", "hf"] as const) expect(seen(s, s.legs[key].toe).y).toBeLessThan(hip.y - 0.25);
+    const tail = s.tail.map((j) => seen(s, j));
+    expect(tail[tail.length - 1]!.y).toBeLessThan(tail[0]!.y - 0.4);
+    expect(s.head.earL).toBeGreaterThan(standing.head.earL + 0.2);
+    expect(s.head.pupil).toBeGreaterThan(standing.head.pupil + 0.3);
+    expect(s.shadow).toBeLessThan(0.05);
+    expect(standing.shadow).toBe(1);
+  });
+
+  it("tips over and rights itself in about a third of a second, and nothing snaps on the way (no joint moves more than 0.3 of the body in a frame; the tail's tip used to go by 0.7)", () => {
+    const rig = new CatRig(5);
+    rig.snapTo(frame({}), 100);
+    let previous: number[] | null = null;
+    let biggest = 0;
+    const joints = (s: Solved): number[] =>
+      [...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe, s.legs[key].mid, s.legs[key].hock]), s.head, s.tail[s.tail.length - 1]!].flatMap((j) => {
+        const at = seen(s, j);
+        return [at.x, at.y];
+      });
+    let t = 0;
+    const pitches: number[] = [];
+    for (const [carried, frames] of [[false, 60], [true, 120], [false, 120]] as const) {
+      for (let k = 0; k < frames; k++) {
+        t += 1 / 60;
+        rig.update(frame({ carried, grounded: !carried, viewer: carried, clipTime: t }), 1 / 60, 100);
+        const now = joints(rig.solved);
+        for (const n of now) expect(Number.isFinite(n)).toBe(true);
+        if (previous) for (let i = 0; i + 1 < now.length; i += 2) biggest = Math.max(biggest, Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!));
+        previous = now;
+        pitches.push(rig.solved.pitch);
+      }
+    }
+    expect(biggest).toBeLessThan(0.3);
+    // (the turn is mostly done a third of a second after the hand takes hold, and the cat is the right way up again a third of a second after it is let go)
+    expect(pitches[60 + 20]!).toBeLessThan(-0.9);
+    expect(pitches[60 + 120 + 20]!).toBeGreaterThan(-0.25);
+    expect(Math.abs(pitches[pitches.length - 1]!)).toBeLessThan(0.02);
+  });
+
+  it("swings under the hand like a pendulum: taken fast one way it is tipped further, and it hangs as it did once the hand is still", () => {
+    const rig = new CatRig(5);
+    const base = frame({ carried: true, grounded: false, viewer: true });
+    rig.snapTo(base, 100);
+    for (let k = 0; k < 120; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, 100);
+    const still = rig.solved.pitch;
+    let furthest = 0;
+    for (let k = 0; k < 40; k++) {
+      rig.update({ ...base, vx: 100 * (k / 40) * 8, clipTime: 2 + k / 60 }, 1 / 60, 100);
+      furthest = Math.max(furthest, Math.abs(rig.solved.pitch - still));
+    }
+    expect(furthest).toBeGreaterThan(0.05);
+    for (let k = 0; k < 240; k++) rig.update({ ...base, clipTime: 3 + k / 60 }, 1 / 60, 100);
+    expect(Math.abs(rig.solved.pitch - still)).toBeLessThan(0.02);
   });
 
   it("keeps every number finite in every scene, however it is entered and left", () => {

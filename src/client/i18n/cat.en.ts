@@ -51,7 +51,7 @@ export const catEn = {
   "cat.size.small": "Small",
   "cat.size.normal": "Normal",
   "cat.size.large": "Large",
-  "cat.settings.help": "A cat that lives on the screen: it walks along the rows of titles, naps at the foot of the film and can be petted. It never plays anything by itself.",
+  "cat.settings.help": "A cat that lives on the screen: it walks along the rows of titles, naps at the foot of the film and can be petted. With a mouse you can also pick it up and put it on another row. It never plays anything by itself.",
 } as const;
 
 export type CatDictionary = Record<keyof typeof catEn, string> & Record<string, string>;

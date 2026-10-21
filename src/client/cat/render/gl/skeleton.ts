@@ -95,6 +95,13 @@ function plane(out: Mat, a: number, b: number, c: number, d: number, tx: number,
   return out;
 }
 
+/** The pitch of the body by `angle` about the point (0, pivotY) of its own side view: that point stays where it is (a cat that tips over in a hand does not swing off sideways). */
+export function pitchAbout(out: Mat, angle: number, pivotY: number): Mat {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return plane(out, c, -s, s, c, s * pivotY, pivotY - c * pivotY);
+}
+
 /**
  * The rest of a segment a-b taken to where the segment p-q is now: a turn and a shift, and (if asked) a stretch along its length. A segment that is
  * not stretched is rigid, and one whose length the rig changes ends where it ends: `byEnd` has it land on q (the toe, which has to be on the floor)
@@ -200,7 +207,7 @@ const copyLeg = (l: Leg): Leg => ({ root: copyJoint(l.root), mid: copyJoint(l.mi
 /** The cat's rest: the standing posture the mesh is made around, as the rig has it. */
 export function restSolved(): Solved {
   const rig = new CatRig(1);
-  const frame: CatFrame = { x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false };
+  const frame: CatFrame = { x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false };
   rig.snapTo(frame, 100);
   const s = rig.solved;
   const snap = (j: Joint): Joint => ({ x: Math.round(j.x * 1e4) / 1e4, y: Math.round(j.y * 1e4) / 1e4 });
