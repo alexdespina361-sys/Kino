@@ -1,4 +1,4 @@
-// Makes the cat's mesh from the free model (Meshy AI, "Fluffy Blue Eyed Cat", CC BY 4.0: see docs/cat-companion-lab/06-risk-and-license-register.md). The model is research material and
+// Makes the cat's mesh from the free model (Meshy AI, "Fluffy Blue Eyed Cat", CC BY 4.0: see reports/kino-cat/06-risk-and-license-register.md). The model is research material and
 // lives outside the repository: it is read from the path given, and only what is made of it (the mesh, as its own file) is written to the app.
 //
 //   node build-meshy.mts MODEL.glb [--check]

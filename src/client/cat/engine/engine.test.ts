@@ -1004,11 +1004,13 @@ describe("picked up by a hand", () => {
     expect(end.x).toBeLessThanOrEqual(1300);
   });
 
-  it("is led in, not set on the edge in a frame, when the window is made smaller under a cat in a hand (the soak found a cat left off the screen taken by a hand: 64 px at once)", () => {
+  it("is led in, not set on the edge in a frame, when the window is made smaller under a cat in a hand and leaves part of it on the screen (the soak found 64 px at once)", () => {
     const { engine, world, body } = settled(4);
     lift(engine, world, { x: 1500, y: 300 });
     expect(engine.frame.x).toBeGreaterThan(1450);
-    const small: World = { ...world, viewport: { ...world.viewport, w: 1300 } };
+    // (the edge is 60 px from the middle of the cat, which is more than half a body from a cat's middle to its tail's end on the screen)
+    const edge = engine.frame.x - 60;
+    const small: World = { ...world, viewport: { ...world.viewport, w: edge } };
     let before = engine.frame.x;
     const frames = stepCat(engine, small, 1.5, 30).frames;
     frames.forEach((f, i) => {
@@ -1017,10 +1019,19 @@ describe("picked up by a hand", () => {
       before = f.x;
     });
     // (it is brought in over a few frames, not none and not a second)
-    const inside = frames.findIndex((f) => f.x <= 1300);
+    const inside = frames.findIndex((f) => f.x <= edge);
     expect(inside).toBeGreaterThan(1);
     expect(inside).toBeLessThan(15);
-    expect(frames.slice(inside).every((f) => f.x <= 1300)).toBe(true);
+    expect(frames.slice(inside).every((f) => f.x <= edge)).toBe(true);
+  });
+
+  it("is put back on the screen in the frame the window is made smaller when none of the cat in a hand is left on it: nobody sees that", () => {
+    const { engine, world } = settled(4);
+    lift(engine, world, { x: 1500, y: 300 });
+    const small: World = { ...world, viewport: { ...world.viewport, w: 900 } };
+    const frames = stepCat(engine, small, 0.5, 30).frames;
+    expect(frames[0]!.carried).toBe(true);
+    expect(frames[0]!.x).toBeLessThanOrEqual(900);
   });
 
   it("is deterministic: the same events give the same cat", () => {

@@ -1012,9 +1012,9 @@ export class CatEngine {
     this.hangX += (HANG_AHEAD * L * this.facing - this.hangX) * ease;
     this.hangY += (HANG_DOWN * L - this.hangY) * ease;
     // (a cat taken up by the middle does not sink as the hang forms, below where it stood or below where the hand found it: it is the hand that lifts it)
-    // (a window made smaller brings the cat in with it: a cat in a hand is never left off the screen, whatever it was following. It is led in as it follows the hand, as
-    // fast as a hand can carry it, and not set on the edge in a frame, which was seen as a jump of 64 px by the soak: it aims a hair inside the edge, so that it is
-    // inside in a few frames)
+    // (a window made smaller brings the cat in with it: a cat in a hand is never left off the screen, whatever it was following. One that is partly on the screen is led
+    // in as it follows the hand, as fast as a hand can carry it, and not set on the edge in a frame, which was seen as a jump of 64 px by the soak: it aims a hair
+    // inside the edge, so that it is inside in a few frames)
     const vp = world.viewport;
     const slack = 0.02 * L;
     const wantY = clamp(Math.min(hold.y + this.hangY, Math.max(hold.y + this.hangY0, this.groundY)), vp.y + 0.2 * L + slack, vp.y + vp.h + 0.8 * L - slack);
@@ -1028,6 +1028,11 @@ export class CatEngine {
     }
     this.x += vx * dt;
     this.y += vy * dt;
+    // (one that the window made smaller has left wholly off the screen is put back on it at once: nobody sees that, and the lead-in would show nothing for a second)
+    if (this.isUnseen(world)) {
+      this.x = clamp(this.x, vp.x, vp.x + vp.w);
+      this.y = clamp(this.y, vp.y + 0.2 * L, vp.y + vp.h + 0.8 * L);
+    }
     this.vx = vx;
     this.vy = vy;
   }

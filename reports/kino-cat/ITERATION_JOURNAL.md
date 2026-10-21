@@ -199,8 +199,45 @@ One entry per iteration of the branch `feat/kino-cat` (off main `5cf4704`, PR #2
 - **Run.** tsc, 119 cat unit tests.
 - **Reference research.** None.
 
+## 21 · A hand, and the things on the page (`90c68f1`, `20ce84d`, 2026-10-21 morning)
+
+- **Root issue.** The owner's first review: "a good start", and "implement everything else (using objects in the page, maybe animations, etc)" before the cat itself is upgraded. A cat that cannot be picked up, and that never notices what the page is doing, is a picture on a shelf.
+- **Technique.** A mouse can take the cat by the scruff (a press that moves more than 8 px), carry it and let go: the engine has an act `carried` (the feet hang from the hand, a lag, a fastest follow) and a fall to the place under it; the page host turns pointer events into `cat.grab / carry / drop`. The cat also peeks over the edge of a row, bats at a resting pointer, startles at a dash of the pointer, ponders at a poster and dozes through a film.
+- **Considered, not done.** A hand that works on a touch screen (a touch is already a stroke, and a long press has a meaning on the TV pages); throwing the cat.
+- **Seen / measured.** Soak with a hand in it (`hand: true`) found three failures that only a hand makes possible (ISSUE_LOG #45); the carried cat was drawn 0.4 body lengths aside (#42), popped at the pick-up (#43) and sank below its shelf as the hang formed (#44).
+- **Run.** Engine tests for the hand (11), the soak (seeds 13–80 × 7 kinds), the host's hand tests.
+- **Reference research.** None.
+
+## 22 · A model from the owner (Meshy AI), and the cat is rebuilt on it (`a960ad3` … `22813df`, 2026-10-21 morning)
+
+- **Root issue.** The signed-distance cat was still a toy ("it really doesn't look that high quality"; the owner's reference was a fluffy blue-eyed bicolour ragdoll, with eyes "almost 1:1" and the same colours). Hand-made meshes from primitives had reached their ceiling.
+- **Technique.** Offline: `scripts/cat/glb` reads the owner's GLB (the model stays outside the repository), `scripts/cat/model/build-meshy.mts` puts it in the rig's frame, joins the vertices the file split for its texture, bakes the texture's colours into the vertices (the eyes taken out), bakes how open to the room each point is, and skins every vertex to the engine's own 32 bones (`meshy-skin.mts`, with the thigh and the shoulder kept thin, soft smoothing at the joints). Live: `PoseFit` (`render/gl/fit.ts`) carries the rig's pose, as a change from the rig's own rest, to the model's rest (the body and head points keep the way they moved along the cat; a leg is solved again for the model's own bone lengths, with the foot where the rig has it; the tail keeps the model's own curve, bent as much as the rig bends its own), the vertex shader skins on the card, and the fragment shader draws what the model cannot: eyes that blink and look about, the nose, the mouth's inside, the other four coats over the light and dark of the model's colours. No fur shells any more (the model has its own fur modelled in).
+- **Considered, not done.** Playing the model's own animation clips (a fixed set that the engine cannot steer: it must stop at a shelf's end, turn to a poster, be carried); using the model's own rig (the tail needed work, and the engine drives one skeleton); a second GLB the owner offered (a TRELLIS-style model whose rights the file did not say: not adopted, not in the repository); sprite sheets (kept for the light tier: "Next").
+- **Seen / measured.** The ragdoll in 29 poses (`poses.jpg`), the walk (`walk-on-the-shelf-strip.jpg`) and five coats. `cat.mesh` 272 KB raw / 165 KB gzip (the signed-distance mesh was 344 KB / 218 KB). The silhouette table was made again from the pixels of the new cat (`extents.mjs --gpu=real --write`).
+- **Run.** The old builder and its tests are gone; unit tests for the mesh file, its packed triangles, the bones and the fit (`gl.test.ts`: finite and not turned inside out in every posture, no paw or knee through the floor, the lengths of the thigh and shin kept), `tsc`, the whole cat set.
+- **Regressions / open.** Small flaps of fur ("tuft shards") stand out of the shoulders at close range; the inside of the open mouth is a flat cavity (the yawn works, but is not pretty at three times the size); the knees leave a visible gap in a few poses (`knee-gap.mts` measures it, accepted).
+- **Licence.** CC BY 4.0, from the owner's word; the maker is named in the settings page and in 06.
+- **Reference research.** None.
+
+## 23 · The animations, one by one (`b8dc878` … `2d40582`, 2026-10-21 midday)
+
+- **Root issue.** "Focus on animations": with a good body, the motion looked like a puppet's. The owner also sent a plan (from another assistant) for better animation; its ideas were applied to our own rig, not to the model's clips.
+- **Technique.** Measured against the model's own gait (`scripts/cat/glb/anim-trace.mts` traces the clip: a walk rocks the body at twice the stride rate, the head thrusts with the chest, the tail lags the rump) and then written into the rig: a **walk** with the rock and the head's thrust; a **face wash** whose paw really rises to the cheek, with a bow of the head and a sweep, eased in and out; a **yawn** that opens the jaw and tips the head back on rate-limited springs; a **stretch** that creeps forward while it holds; a **scratch** where the cat folds to meet its own foot; **idle life** (the eyes wander before the head follows, the ears drift apart, a standing cat changes which foot it rests on); a **get-up** from a curl or a loaf that takes its time; a **leap** whose tail takes its pose on a spring and whose feet are held to 4.5 body lengths a second (a folded leg swings its knee by more than the foot moves). Each was judged on strips, then by the largest single-frame joint step (`.kino-cat/pop-probe.mts` over four 150 s recordings at 30 fps) and by a unit test.
+- **Considered, not done.** Smoothing the 3/4 view's edges (the owner tried it and preferred the unsmoothed look); the model's own clips as sprites for the light tier (the engine's poses are better for that: see "Next").
+- **Seen / measured.** Largest one-frame joint step at 30 fps: 0.23 of a body (a stretch's tail tip), 0.31 (the far hind knee at a landing, hidden behind the body), head turns up to 0.3 rad (a startle's look); at 60 fps the synthetic leap's biggest step is 0.15–0.19 for leaps of 0.9 to 1.8 s (before 0.20–0.23). The rig tests (32) include a leap with a hock and a knee watched at every frame and a loaf that must have risen before it steps.
+- **Run.** 189 cat unit tests, `tsc`, the silhouette check ("every band of the 120 pictures is inside the table"), mutation checks of the new logic (all killed but one tuning spring, `fallDyn`, whose effect is only visible on the engine's own recorded leaps).
+- **Regressions / open.** The tail tip of a stretch that starts from a curl moves 0.23 of a body in a 30 fps frame; the scratch's far foot 0.21.
+- **Reference research.** None.
+
+## 24 · A hand and a smaller window (2026-10-21 noon)
+
+- **Root issue.** The long soak (400 seeds × 7 kinds × 600 s) found two violations nobody had seen: a cat that a window made smaller had left half off the screen, taken by a hand, was set on the edge in one frame (40 px and 64 px, limit 32 and 25).
+- **Technique.** A cat in a hand aims a hair inside the screen's edge and is led in at the speed a hand can carry it; one that is wholly off the screen is put back on it at once (nobody sees that). A first version that led in *every* cat failed 81 runs of the 60 fps kind (a cat wholly below a shortened window was off the screen for 12 frames); the soak is what said so.
+- **Run.** Two new engine tests, the two seeds added to the list of afternoons that once found it out, mutation-checked; the soak again.
+- **Reference research.** None.
+
 ## What the later iterations should do first
 
 1. A person should watch it on a real TV or Fire Stick with `?cat=debug` and report `art`, `quality`, `cost`, `fps` (05, "Not tested").
 2. Judge motion at real frame rates (every entry above judged stills, strips and numbers; nobody has watched the cat move).
-3. Decide ISSUE_LOG #10 (the seats that are not chosen by what they cover) and #13 (the simple cat is a different cat from the detailed one).
+3. Decide ISSUE_LOG #10 (the seats that are not chosen by what they cover) and #13 (the simple cat is a different cat from the detailed one: the owner has asked for sprites of the detailed cat to take its place, "Next" in `docs/cat-companion.md`).
