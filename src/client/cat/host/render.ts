@@ -35,8 +35,13 @@ export interface Brush {
   setCoat(coat: CatCoat): void;
   resize(side: number, dpr: number): void;
   /**
-   * Paints one frame. With `probe`, waits until the card has finished it and says how long that took (a card is asked for a picture and answers
-   * later, so how long the host spent asking says little of what the picture costs); without, returns 0.
+   * What the card took for the last picture that was timed, in milliseconds: the picture's own work, with the time the card and the browser take to
+   * answer at all taken away (that is the same for any picture, and on a fast card it is most of what a read-back takes). 0 for the simple cat.
+   */
+  readonly gpuMs: number;
+  /**
+   * Paints one frame. With `probe`, waits until the card has finished it and says how long the host spent waiting (a card is asked for a picture and
+   * answers later, so how long the host spent asking says little of what the picture costs; `gpuMs` is what it does); without, returns 0.
    */
   paint(solved: Solved, place: Place, quality: Quality, probe: boolean): number;
   dispose(): void;
@@ -65,6 +70,7 @@ export function classicBrush(): Brush | null {
     canvas,
     lost: false,
     maxDpr: 2,
+    gpuMs: 0,
     setCoat() {
       /* the simple cat is marmalade */
     },
@@ -97,6 +103,7 @@ export function solidBrush(mesh: ArrayBuffer): Brush | null {
   const canvas = newCanvas();
   const cat = GlCat.create(canvas, mesh);
   if (!cat) return null;
+  let gpuMs = 0;
   return {
     art: "solid",
     canvas,
@@ -104,6 +111,9 @@ export function solidBrush(mesh: ArrayBuffer): Brush | null {
       return cat.lost;
     },
     maxDpr: 1.5,
+    get gpuMs() {
+      return gpuMs;
+    },
     setCoat(coat) {
       cat.setCoat(coat);
     },
@@ -114,9 +124,15 @@ export function solidBrush(mesh: ArrayBuffer): Brush | null {
     paint(solved, place, quality, probe) {
       cat.draw(solved, place, quality === "low" ? LEAN : FULL);
       if (!probe) return 0;
-      const from = performance.now();
+      // (the card is asked twice: for what it has been given, and again with nothing left to do. The second answer takes what the card and the browser take
+      // to answer at all, which is not the cat's: on a fast card it is nearly all of the first, and on a slow one the first is that and the cat's work)
+      const first = performance.now();
       cat.finish();
-      return performance.now() - from;
+      const second = performance.now();
+      cat.finish();
+      const end = performance.now();
+      gpuMs = Math.max(0, second - first - (end - second));
+      return end - first;
     },
     dispose() {
       cat.dispose();

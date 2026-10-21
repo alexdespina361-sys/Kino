@@ -139,7 +139,7 @@ export function mountCat(): { stop: () => void } {
   let layoutKey = "";
   let quality: Quality = "full";
   let frames = 0;
-  /** What the card was last seen to take for a frame, in milliseconds (a smoothed number; 0 until it has been timed). */
+  /** What the card was last seen to take for a frame, in milliseconds, without the time it takes to answer at all (a smoothed number; 0 until it has been timed). */
   let gpu = 0;
   let shown = false;
   let raf = 0;
@@ -356,7 +356,7 @@ export function mountCat(): { stop: () => void } {
       // (a card is asked for a picture and answers later: twice a second the host waits for the answer, to know what the picture costs)
       frames++;
       waited = brush.paint(rig.solved, { ox: ox + (px - ix), oy: oy + (py - iy), px: L }, quality, frames % 30 === 0);
-      if (waited > 0) gpu = gpu === 0 ? waited : gpu * 0.7 + waited * 0.3;
+      if (waited > 0) gpu = gpu === 0 ? brush.gpuMs : gpu * 0.7 + brush.gpuMs * 0.3;
       brush.canvas.style.transform = `translate3d(${ix}px, ${iy}px, 0)`;
       hit.style.transform = `translate3d(${frame.x - origin.x - (HIT_W * L) / 2}px, ${frame.y - origin.y - HIT_H * L}px, 0)`;
     }
