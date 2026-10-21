@@ -236,8 +236,20 @@ One entry per iteration of the branch `feat/kino-cat` (off main `5cf4704`, PR #2
 - **Run.** Two new engine tests, the two seeds added to the list of afternoons that once found it out, mutation-checked; the soak again.
 - **Reference research.** None.
 
+## 25 · The final pass on the new cat (2026-10-21 afternoon)
+
+- **Root issue.** The first full run of the browser tests on the new cat failed three: two still expected the old default coat, and one was a real bug (ISSUE_LOG #48): the cap that stops a freshly grabbed cat from sinking below its shelf while the hang forms was kept for the whole carry, so a cat carried **down** to a lower shelf stayed held up by its middle instead of hanging by the scruff.
+- **Technique.** The cap now fades out as the hand travels (from half a body to a body and a half from where it took hold: `grabAt`), so it only guards the grab; a unit test carries the cat level, down and sideways-down and expects the whole hang, and was mutation-checked both ways. The settings page names the model's author (en, ro, it) with its licence. The lab's throwaway probes were deleted and `scripts/cat/README.md` says what is left. The measurements, the soak, the evidence pictures and the reports were redone for the final cat.
+- **Considered, not done.** The sprite tier for light screens (a picture of the cat from its own animations: "Next" in `docs/cat-companion.md`); letting the governor look at the page's own frame rate before it gives up the detailed cat on a processor-drawn screen (it would have kept the cat on this PC; it would have been wrong on a weaker one).
+- **Seen / measured.** All of it is in 05. In short: real GPU 130 fps with the detailed cat, 0.16 ms of script and 0.14–0.33 ms of card per frame; software GL with the governor held off 59.6–60 fps (the first cat: 10–22), and with it on the cat is given up after 8–9 s; lifecycle flat over 25 cycles; soak 2,800 sessions, 0 violations, run again after the carry change; 191 unit and 31 end-to-end tests; the coverage of the names under the cards on the worst seed (11 at 1280×720) is **worse** than the first cat's (53 % of resting moments touch a name, the worst a sixth of the cat's square; the first cat: 33 %, the worst a quarter).
+- **Run.** `tsc`, the cat unit set, the whole cat browser file, the long soak, the silhouette check.
+- **Regressions / open.** ISSUE_LOG #50 (names), #11 (a flat tuxedo belly), #13 (the simple cat is another cat), #36.
+- **Reference research.** None.
+
 ## What the later iterations should do first
 
 1. A person should watch it on a real TV or Fire Stick with `?cat=debug` and report `art`, `quality`, `cost`, `fps` (05, "Not tested").
 2. Judge motion at real frame rates (every entry above judged stills, strips and numbers; nobody has watched the cat move).
 3. Decide ISSUE_LOG #10 (the seats that are not chosen by what they cover) and #13 (the simple cat is a different cat from the detailed one: the owner has asked for sprites of the detailed cat to take its place, "Next" in `docs/cat-companion.md`).
+4. ISSUE_LOG #50 (the successor of #9): on a page whose names run edge to edge the new cat, wider and with a longer tail, rests over a name more often than the first one did (53 % against 33 % of resting moments on the worst seed). The shelves have no better seat there; a seat that counts the tail's reach, or a smaller default size on such a page, is the thing to try.
+5. On a processor-drawn screen the governor reads 10–17 ms per detailed frame and gives the detailed cat up in 8–9 s. Measure what a real weak screen does with the detailed cat before changing it either way.

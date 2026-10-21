@@ -84,7 +84,7 @@ export class Bvh {
 
   private readonly rightOf = new Map<number, number>();
 
-  /** The distance along the ray to the nearest surface closer than `max`, or Infinity. A triangle that uses a vertex in `skip` is not counted. */
+  /** The distance along the ray to the nearest surface closer than `max`, or Infinity. */
   hit(ox: number, oy: number, oz: number, dx: number, dy: number, dz: number, max: number): number {
     let nearest = max;
     const stack: number[] = [0];

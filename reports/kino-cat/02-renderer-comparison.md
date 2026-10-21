@@ -38,17 +38,17 @@ The brief asks for the renderer to be chosen by measurement, not taste. Two rend
 
 | | classic (Canvas 2D) | solid (WebGL1) |
 |---|---|---|
-| Cat's JavaScript per frame (Ryzen 9 5900X) | about 0.1 ms | about 0.12 ms (`think` 0.02 + `paint` 0.10) |
-| What the page's frame rate does, real GPU (RTX 3090), 1080p/720p | no change (130 fps) | no change (129–130 fps), worst gap 8.8 ms |
-| Governor's reading, real GPU | – | 0.1–0.3 ms of the 2 ms budget (its own JavaScript plus what the card needs for the picture); stays on the detailed cat even with the processor 6× slower |
-| Software GL, governor held off, 1080p / 720p | 60 / 60 fps (no change) | **10 / 22 fps** (the page loses most of its frames; 12 fur layers at these sizes) |
-| Software GL, governor on | – | steps down: lean picture at 7–9 s, the simple cat at 15–18 s, page back at 60 fps |
-| Download | in the lazy chunk (below) | + 344 KB mesh (218 KB gzip), fetched once, only if WebGL works |
-| Look | a drawing; one coat | a body; four coats; a soft fur edge |
+| Cat's JavaScript per frame (Ryzen 9 5900X) | about 0.1 ms | about 0.16 ms (`think` 0.02 + `paint` 0.14) |
+| What the page's frame rate does, real GPU (RTX 3090), 1080p/720p | no change (130 fps) | no change (129.6–130.0 fps), worst gap 9.1 ms |
+| Governor's reading, real GPU | – | 0.14–0.33 ms of the 2 ms budget (its own JavaScript plus what the card needs for the picture); stays on the detailed cat even with the processor 6× slower (0.9–2.0 ms, 1.3 at the end) |
+| Software GL, governor held off, 1080p / 720p | 60 / 60 fps (no change) | **59.6 / 60.0 fps** (the first cat, with its shell fur, gave 10 / 22; this one is a single pass of one mesh) |
+| Software GL, governor on | – | still steps down, because the host reads 10–17 ms of drawing per frame: the lean picture at 3 s, the simple cat at 8–9 s, page at 60 fps. More cautious than this 24-thread PC needed (the drawing runs on other cores), right for a screen with fewer |
+| Download | in the lazy chunk (below) | + 272 KB mesh (165 KB gzip), fetched once, only if WebGL works |
+| Look | a drawing; one coat | a body from the owner's model; five coats |
 
-The numbers are from the final pass (2026-10-21) and replace the first version's (0.5–0.65 ms of JavaScript, a governor reading of 1.0–1.1 ms, 17 / 31 fps on software GL): the host now charges the governor with the cat's own work only, the model has about twice the vertices and up to 12 fur layers instead of 5, and the governor takes its time before it judges (ISSUE_LOG #21, #25, #32).
+The numbers are from the final pass (2026-10-21) for the cat made from the owner's model, and they replace the first cat's (0.5–0.65 ms of JavaScript, 17 / 31 and later 10 / 22 fps on software GL: up to 12 passes of shell fur): the host charges the governor with the cat's own work only, and the governor takes its time before it judges (ISSUE_LOG #21, #25, #32).
 
-Lazy chunk `host-*.js` (engine, rig, classic painter, GL renderer, shader, panel): **120.6 KB raw, 44.2 KB gzip, 39.1 KB brotli**, plus a 4.4 KB stylesheet (1.5 KB gzip). The plan's budget "< 150 KB before art" is met (44.2 KB gzip). What a page that never turns the cat on pays: **+4.7 KB gzip** across the always-loaded files (the switch, the corner button, the loader, the texts in three languages), measured by comparing the build with main's; no dependency was added.
+Lazy chunk `host-*.js` (engine, rig, classic painter, GL renderer, shader, panel, the hand): **140.3 KB raw, about 51 KB gzip**, plus a 4.9 KB stylesheet (1.7 KB gzip). The plan's budget "< 150 KB before art" is met (raw as well as gzipped, the raw one narrowly). What a page that never turns the cat on pays: **about +6.6 KB gzip** across the always-loaded files (the switch, the corner button, the loader, the texts in three languages, the model's credit), measured by comparing the build with main's from before the first cat; no dependency was added.
 
 ## Decision and conditions
 

@@ -1,7 +1,7 @@
 // Makes the cat's mesh from the free model (Meshy AI, "Fluffy Blue Eyed Cat", CC BY 4.0: see reports/kino-cat/06-risk-and-license-register.md). The model is research material and
 // lives outside the repository: it is read from the path given, and only what is made of it (the mesh, as its own file) is written to the app.
 //
-//   node build-meshy.mts MODEL.glb [--check]
+//   node node_modules/tsx/dist/cli.mjs scripts/cat/model/build-meshy.mts MODEL.glb
 //
 // What it does: reads the model, puts it in the rig's frame (x forward, y up, feet on the floor), joins the vertices that the file split only to give each its own
 // place in a texture, paints each vertex with the colour the texture has there (the eyes are taken out: they are drawn by the shader, which can blink), bakes how open
