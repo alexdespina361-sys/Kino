@@ -33,6 +33,8 @@ export const catRo: CatDictionary = {
 
   "cat.settings.title": "Pisica de companie",
   "cat.settings.on": "O pisică pe acest ecran",
+  "cat.settings.behaviour": "Ce face",
+  "cat.settings.look": "Cum arată",
   "cat.settings.quiet": "Pisică liniștită (stă pe loc, nu se plimbă)",
   "cat.settings.films": "Să-mi țină companie în timpul filmelor",
   "cat.settings.detail": "Pisică detaliată (oprit: mai simplă)",
@@ -45,5 +47,5 @@ export const catRo: CatDictionary = {
   "cat.size.small": "Mică",
   "cat.size.normal": "Normală",
   "cat.size.large": "Mare",
-  "cat.settings.help": "O pisică ce trăiește pe ecran: se plimbă pe rândurile de titluri, moțăie într-un colț al filmului și poate fi mângâiată. Nu pornește niciodată nimic singură.",
+  "cat.settings.help": "O pisică ce trăiește pe ecran: se plimbă pe rândurile de titluri, moțăie în josul filmului și poate fi mângâiată. Nu pornește niciodată nimic singură.",
 };

@@ -680,6 +680,9 @@
 :root[data-ui="polish"] .tv-flip { transform: scaleX(-1); }
 :root[data-ui="polish"] .tv-set-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: calc(var(--em) * 2.4); align-items: start; }
 :root[data-ui="polish"] .tv-set-col { display: flex; flex-direction: column; gap: calc(var(--em) * 2); min-width: 0; }
+/* The cat's page of the settings: two columns, on a page only as wide as the two of them (what it does, what it looks like) */
+:root[data-ui="polish"] .tv-set-cat { max-width: calc(var(--em) * 62); }
+:root[data-ui="polish"] .tv-set-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 :root[data-ui="polish"] .tv-group-title { margin: 0 0 calc(var(--em) * 0.6) calc(var(--em) * 0.5); color: var(--text-3); font-size: var(--fs-2); font-weight: 600; letter-spacing: 0; text-transform: none; }
 :root[data-ui="polish"] .tv-group-body {
   display: flex;
@@ -736,11 +739,13 @@
 }
 :root[data-ui="polish"] .tv-line-icon { display: grid; flex: none; place-items: center; width: calc(var(--em) * 3.2); height: calc(var(--em) * 3.2); border-radius: var(--r-1); background: var(--fill-1); color: var(--text-2); font-size: calc(var(--em) * 1.8); transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-line-text { flex: 1 1 0; min-width: 0; }
+:root[data-ui="polish"] .tv-line-value { flex: none; color: var(--text-3); font-size: var(--fs-2); font-weight: 500; }
 :root[data-ui="polish"] .tv-line-chevron { flex: none; color: var(--text-3); font-size: var(--fs-3); transition: color var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-line:hover { background: var(--fill-1); }
 :root[data-ui="polish"] .tv-line:focus-visible { z-index: 2; background: #fff; color: #0b0b0c; outline: none; box-shadow: var(--focus-ring), var(--lift); transform: scale(1.03); }
 :root[data-ui="polish"] .tv-line:focus-visible .tv-line-icon { background: rgba(11, 11, 12, 0.08); color: #0b0b0c; }
-:root[data-ui="polish"] .tv-line:focus-visible .tv-line-chevron { color: #55555c; }
+:root[data-ui="polish"] .tv-line:focus-visible .tv-line-chevron,
+:root[data-ui="polish"] .tv-line:focus-visible .tv-line-value { color: #55555c; }
 :root[data-ui="polish"] .tv-line:active { transform: scale(0.98); }
 :root[data-ui="polish"] .tv-line-danger { color: #ffb4b4; }
 :root[data-ui="polish"] .tv-line-danger .tv-line-icon { background: rgba(255, 107, 107, 0.16); color: #ffb4b4; }

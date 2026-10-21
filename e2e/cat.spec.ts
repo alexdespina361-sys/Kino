@@ -493,15 +493,25 @@ test("a viewer who asked for less motion has a cat that rests where it is", asyn
   expect(later.frame.clip).not.toMatch(/walk|run|jump/);
 });
 
-test("the settings page has the cat's switches only on a host that offers a cat, and the switch is the cat", async ({ browser }) => {
+/** The cat's page of the settings: the settings page, then its row for the cat. */
+const openCatSettings = async (tv: Page) => {
+  await openTvSettings(tv);
+  await tv.getByTestId("tv-cat-open").click();
+  await expect(tv.getByTestId("tv-cat-settings")).toBeVisible();
+};
+
+test("the settings page has a row for the cat only on a host that offers a cat, and its page has the switch that is the cat", async ({ browser }) => {
   const tv = await openLibrary(browser, setup(false));
   await openTvSettings(tv);
   await expect(tv.getByTestId("tv-group-cat")).toHaveCount(0);
 
   const other = await openLibrary(browser, setup());
   await openTvSettings(other);
-  const group = other.getByTestId("tv-group-cat");
-  await expect(group).toBeVisible();
+  const row = other.getByTestId("tv-cat-open");
+  await expect(other.getByTestId("tv-group-cat")).toBeVisible();
+  await expect(row).toContainText("Off");
+  await row.click();
+  await expect(other.getByTestId("tv-cat-settings")).toBeVisible();
   const on = other.getByTestId("tv-cat-switch");
   await expect(on).toHaveAttribute("aria-checked", "false");
   await expect(other.getByTestId("tv-cat-quiet")).toHaveCount(0);
@@ -509,15 +519,45 @@ test("the settings page has the cat's switches only on a host that offers a cat,
   await expect(on).toHaveAttribute("aria-checked", "true");
   await expect(other.getByTestId("tv-cat-quiet")).toBeVisible();
   await expect(other.getByTestId("tv-cat-films")).toHaveAttribute("aria-checked", "true");
+  // Back from the cat's page is the settings page, whose row says how it stands now; Back again is the library
+  await other.keyboard.press("Escape");
+  await expect(other.getByTestId("tv-account")).toBeVisible();
+  await expect(other.getByTestId("tv-cat-open")).toContainText("On");
   // the cat comes without the page being loaded again, and goes the same way
   await other.keyboard.press("Escape");
   await expect(other.getByTestId("cat")).toHaveAttribute("data-visible", "true", { timeout: 12_000 });
   await expect(other.getByTestId("tv-cat-chip")).toBeVisible();
-  await openTvSettings(other);
+  await openCatSettings(other);
   await other.getByTestId("tv-cat-switch").click();
+  await other.keyboard.press("Escape");
   await other.keyboard.press("Escape");
   await expect(other.getByTestId("cat")).toHaveCount(0);
   await expect(other.getByTestId("tv-cat-chip")).toHaveCount(0);
+});
+
+test("the settings page and the cat's page of it fit the screen of a TV and nothing is over their Back buttons, with the cat's switches all showing", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true }));
+  for (const [width, height] of [[1280, 720], [1920, 1080], [1366, 768], [1024, 768]] as const) {
+    await tv.setViewportSize({ width, height });
+    await openTvSettings(tv);
+    for (const page of ["tv-account", "tv-cat-settings"]) {
+      if (page === "tv-cat-settings") await tv.getByTestId("tv-cat-open").click();
+      await expect(tv.getByTestId(page)).toBeVisible();
+      const box = await tv.evaluate(() => {
+        const grid = document.querySelector(".tv-set-grid")!.getBoundingClientRect();
+        const back = document.querySelector(".tv-back")!;
+        const at = back.getBoundingClientRect();
+        const over = document.elementFromPoint(at.left + at.width / 2, at.top + at.height / 2);
+        return { top: grid.top, bottom: grid.bottom, height: innerHeight, free: over === back || back.contains(over) };
+      });
+      expect(box.top, `${page} at ${width}x${height}`).toBeGreaterThanOrEqual(0);
+      expect(box.bottom, `${page} at ${width}x${height}`).toBeLessThanOrEqual(box.height);
+      expect(box.free, `${page} at ${width}x${height}`).toBe(true);
+    }
+    await tv.keyboard.press("Escape");
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  }
 });
 
 /* ------------------------------ the detailed (solid) cat and the simple one it falls back to ------------------------------ */
@@ -673,7 +713,7 @@ test("the settings page has a switch for the detailed cat: off is the simple cat
   await tv.goto("/tv?cat=debug&catbudget=100000");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   await artIs(tv, "solid");
-  await openTvSettings(tv);
+  await openCatSettings(tv);
   const detail = tv.getByTestId("tv-cat-detail");
   await expect(detail).toHaveAttribute("aria-checked", "true");
   await detail.click();
@@ -692,7 +732,7 @@ test("the settings page has the cat's coat and size: they are worn at once and k
   const before = await snap(tv);
   expect(before.coat).toBe("ginger");
   expect(before.body).toBeGreaterThan(40);
-  await openTvSettings(tv);
+  await openCatSettings(tv);
   await expect(tv.getByTestId("tv-cat-coat-ginger")).toHaveAttribute("aria-checked", "true");
   await expect(tv.getByTestId("tv-cat-size-normal")).toHaveAttribute("aria-checked", "true");
   await tv.getByTestId("tv-cat-coat-tuxedo").click();

@@ -37,6 +37,8 @@ export const catEn = {
   /* the settings page */
   "cat.settings.title": "Cat companion",
   "cat.settings.on": "A cat on this screen",
+  "cat.settings.behaviour": "What it does",
+  "cat.settings.look": "What it looks like",
   "cat.settings.quiet": "Quiet cat (it rests and does not wander)",
   "cat.settings.films": "Keep me company during films",
   "cat.settings.detail": "Detailed cat (off: simpler, lighter)",
@@ -49,7 +51,7 @@ export const catEn = {
   "cat.size.small": "Small",
   "cat.size.normal": "Normal",
   "cat.size.large": "Large",
-  "cat.settings.help": "A cat that lives on the screen: it walks along the rows of titles, naps in a corner of the film and can be petted. It never plays anything by itself.",
+  "cat.settings.help": "A cat that lives on the screen: it walks along the rows of titles, naps at the foot of the film and can be petted. It never plays anything by itself.",
 } as const;
 
 export type CatDictionary = Record<keyof typeof catEn, string> & Record<string, string>;

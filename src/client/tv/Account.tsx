@@ -4,6 +4,7 @@ import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
+import { CatIcon } from "../cat/Chip";
 import { CAT_COATS, CAT_SIZES, useCatSettings } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { useLinkApproval } from "../account/LinkApprove";
@@ -18,8 +19,8 @@ import { QrCode } from "../shared/QrCode";
 import { BackButton, Screen } from "./Idle";
 import { TvCode } from "./TvCode";
 
-/** The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", and the same page for making and changing profiles. */
-export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage";
+/** The pages of the account on the TV: the panel (who, settings), signing in, signing another screen in, "Who's watching?", the same page for making and changing profiles, and the cat's page of the settings. */
+export type AccountView = "panel" | "signin" | "approve" | "profiles" | "manage" | "cat";
 
 /** How often the TV asks whether a phone has approved it. */
 const POLL_MS = 2000;
@@ -409,14 +410,15 @@ function SettingsGroup({ title, children, testId }: { title?: string; children: 
   );
 }
 
-/** A row of the settings page that leads on to another page, or does something to the account: an icon, what it does, and for a page, an arrow. */
-function SettingsLine({ icon, label, onPress, testId, autoFocus = false, tone = "plain" }: { icon: ReactNode; label: string; onPress: () => void; testId: string; autoFocus?: boolean; tone?: "plain" | "danger" }) {
+/** A row of the settings page that leads on to another page, or does something to the account: an icon, what it does, how it stands (on a page that leads on), and for a page, an arrow. */
+function SettingsLine({ icon, label, value, onPress, testId, autoFocus = false, tone = "plain" }: { icon: ReactNode; label: string; value?: string; onPress: () => void; testId: string; autoFocus?: boolean; tone?: "plain" | "danger" }) {
   return (
     <button className={`tv-line${tone === "danger" ? " tv-line-danger" : ""}`} onClick={onPress} data-nav {...(autoFocus ? { "data-autofocus": true } : {})} data-testid={testId}>
       <span className="tv-line-icon" aria-hidden="true">
         {icon}
       </span>
       <span className="tv-line-text">{label}</span>
+      {value !== undefined && <span className="tv-line-value">{value}</span>}
       {tone === "plain" && <ChevronIcon className="tv-line-chevron" />}
     </button>
   );
@@ -438,7 +440,7 @@ function SettingsSwitch({ label, on, onToggle, testId }: { label: string; on: bo
  * so that a language is chosen from a few words in a row, a colour from dots, and the rest are switches, and none of them looks like the next.
  * For a guest the first column is where signing in starts.
  */
-export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManage }: { onClose: () => void; onSignIn: () => void; onApprove: () => void; onSwitch: () => void; onManage: () => void }) {
+export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManage, onCat }: { onClose: () => void; onSignIn: () => void; onApprove: () => void; onSwitch: () => void; onManage: () => void; onCat: () => void }) {
   const t = useT();
   const language = useLanguage();
   const account = useAccount();
@@ -553,50 +555,6 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
                 />
               )}
             </SettingsGroup>
-
-            {cat.offered && (
-              <>
-                <SettingsGroup title={t("cat.settings.title")} testId="tv-group-cat">
-                  <SettingsSwitch label={t("cat.settings.on")} on={cat.settings.on} onToggle={() => cat.set({ on: !cat.settings.on })} testId="tv-cat-switch" />
-                  {cat.settings.on && (
-                    <>
-                      <SettingsSwitch label={t("cat.settings.quiet")} on={cat.settings.quiet} onToggle={() => cat.set({ quiet: !cat.settings.quiet })} testId="tv-cat-quiet" />
-                      <SettingsSwitch label={t("cat.settings.films")} on={cat.settings.films} onToggle={() => cat.set({ films: !cat.settings.films })} testId="tv-cat-films" />
-                      <SettingsSwitch label={t("cat.settings.detail")} on={cat.settings.detail} onToggle={() => cat.set({ detail: !cat.settings.detail })} testId="tv-cat-detail" />
-                      {cat.settings.detail && (
-                        <div className="tv-field">
-                          <span className="tv-field-label" aria-hidden="true">
-                            {t("cat.settings.coat")}
-                          </span>
-                          <div className="tv-segmented tv-segmented-grid" role="radiogroup" aria-label={t("cat.settings.coat")}>
-                            {CAT_COATS.map((coat) => (
-                              <button key={coat} className="tv-choice" role="radio" aria-checked={cat.settings.coat === coat} onClick={() => cat.set({ coat })} data-nav data-testid={`tv-cat-coat-${coat}`}>
-                                {t(`cat.coat.${coat}`)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <div className="tv-field">
-                        <span className="tv-field-label" aria-hidden="true">
-                          {t("cat.settings.size")}
-                        </span>
-                        <div className="tv-segmented" role="radiogroup" aria-label={t("cat.settings.size")}>
-                          {CAT_SIZES.map((size) => (
-                            <button key={size} className="tv-choice" role="radio" aria-checked={cat.settings.size === size} onClick={() => cat.set({ size })} data-nav data-testid={`tv-cat-size-${size}`}>
-                              {t(`cat.size.${size}`)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </SettingsGroup>
-                <p className="tv-hint tv-set-hint" data-testid="tv-cat-help">
-                  <InfoIcon /> <span>{t("cat.settings.help")}</span>
-                </p>
-              </>
-            )}
           </div>
 
           <div className="tv-set-col" data-nav-column>
@@ -610,6 +568,83 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
                 <InfoIcon /> <span>{t("tv.subtitlesHint")}</span>
               </p>
             )}
+            {/* (one row, and the cat's switches on a page of their own, in the column with the most room: the settings are no taller with a cat offered than without, on any screen) */}
+            {cat.offered && (
+              <SettingsGroup title={t("cat.settings.title")} testId="tv-group-cat">
+                <SettingsLine icon={<CatIcon />} label={t("cat.settings.on")} value={cat.settings.on ? t("common.on") : t("common.off")} onPress={onCat} testId="tv-cat-open" />
+              </SettingsGroup>
+            )}
+          </div>
+        </div>
+      </div>
+    </Screen>
+  );
+}
+
+/**
+ * The cat's page of the settings: whether there is a cat on this screen, whether it keeps still, whether it keeps the viewer company in films, whether it is the
+ * detailed one, what coat it wears and how big it is. A page of its own, two columns (what it does, and what it looks like), so that the settings page is no taller
+ * on a host that offers a cat than on one that does not.
+ */
+export function TvCatSettings({ onBack }: { onBack: () => void }) {
+  const t = useT();
+  const cat = useCatSettings();
+  return (
+    <Screen testId="tv-cat-settings" focus onBack={onBack}>
+      <div className="tv-set tv-set-cat">
+        <header className="tv-set-head" data-nav-column>
+          <h1 className="tv-set-title" data-testid="tv-cat-title">
+            {t("cat.settings.title")}
+          </h1>
+          <BackButton onClick={onBack} testId="tv-cat-back" />
+        </header>
+        <div className="tv-set-grid tv-set-grid-2">
+          <div className="tv-set-col" data-nav-column>
+            <SettingsGroup title={t("cat.settings.behaviour")} testId="tv-group-cat-behaviour">
+              <SettingsSwitch label={t("cat.settings.on")} on={cat.settings.on} onToggle={() => cat.set({ on: !cat.settings.on })} testId="tv-cat-switch" />
+              {cat.settings.on && (
+                <>
+                  <SettingsSwitch label={t("cat.settings.quiet")} on={cat.settings.quiet} onToggle={() => cat.set({ quiet: !cat.settings.quiet })} testId="tv-cat-quiet" />
+                  <SettingsSwitch label={t("cat.settings.films")} on={cat.settings.films} onToggle={() => cat.set({ films: !cat.settings.films })} testId="tv-cat-films" />
+                </>
+              )}
+            </SettingsGroup>
+            <p className="tv-hint tv-set-hint" data-testid="tv-cat-help">
+              <InfoIcon /> <span>{t("cat.settings.help")}</span>
+            </p>
+          </div>
+          <div className="tv-set-col" data-nav-column>
+            {cat.settings.on && (
+              <SettingsGroup title={t("cat.settings.look")} testId="tv-group-cat-look">
+                <SettingsSwitch label={t("cat.settings.detail")} on={cat.settings.detail} onToggle={() => cat.set({ detail: !cat.settings.detail })} testId="tv-cat-detail" />
+                {cat.settings.detail && (
+                  <div className="tv-field">
+                    <span className="tv-field-label" aria-hidden="true">
+                      {t("cat.settings.coat")}
+                    </span>
+                    <div className="tv-segmented tv-segmented-grid" role="radiogroup" aria-label={t("cat.settings.coat")}>
+                      {CAT_COATS.map((coat) => (
+                        <button key={coat} className="tv-choice" role="radio" aria-checked={cat.settings.coat === coat} onClick={() => cat.set({ coat })} data-nav data-testid={`tv-cat-coat-${coat}`}>
+                          {t(`cat.coat.${coat}`)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="tv-field">
+                  <span className="tv-field-label" aria-hidden="true">
+                    {t("cat.settings.size")}
+                  </span>
+                  <div className="tv-segmented" role="radiogroup" aria-label={t("cat.settings.size")}>
+                    {CAT_SIZES.map((size) => (
+                      <button key={size} className="tv-choice" role="radio" aria-checked={cat.settings.size === size} onClick={() => cat.set({ size })} data-nav data-testid={`tv-cat-size-${size}`}>
+                        {t(`cat.size.${size}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </SettingsGroup>
+            )}
           </div>
         </div>
       </div>
@@ -622,6 +657,7 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
   const [fromPanel, setFromPanel] = useState(false); // (signing in was opened from the panel: Back goes there, not out to the library)
   if (view === "signin") return <TvSignIn onClose={() => onView(null)} onBack={() => onView(fromPanel ? "panel" : null)} />;
   if (view === "approve") return <TvApprove onClose={() => onView("panel")} />;
+  if (view === "cat") return <TvCatSettings onBack={() => onView("panel")} />;
   if (view === "profiles" || view === "manage") return <TvProfiles forced={forced} manage={view === "manage"} onDone={() => onView(null)} onBack={() => onView("panel")} />;
   return (
     <TvAccountPanel
@@ -633,6 +669,7 @@ export function TvAccount({ view, onView, forced }: { view: AccountView; onView:
       onApprove={() => onView("approve")}
       onSwitch={() => onView("profiles")}
       onManage={() => onView("manage")}
+      onCat={() => onView("cat")}
     />
   );
 }

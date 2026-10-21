@@ -33,6 +33,8 @@ export const catIt: CatDictionary = {
 
   "cat.settings.title": "Gatto compagno",
   "cat.settings.on": "Un gatto su questo schermo",
+  "cat.settings.behaviour": "Cosa fa",
+  "cat.settings.look": "Come appare",
   "cat.settings.quiet": "Gatto tranquillo (riposa e non gira)",
   "cat.settings.films": "Tienimi compagnia durante i film",
   "cat.settings.detail": "Gatto dettagliato (spento: più semplice)",
@@ -45,5 +47,5 @@ export const catIt: CatDictionary = {
   "cat.size.small": "Piccolo",
   "cat.size.normal": "Normale",
   "cat.size.large": "Grande",
-  "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in un angolo del film e si lascia accarezzare. Non avvia mai niente da solo.",
+  "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in fondo al film e si lascia accarezzare. Non avvia mai niente da solo.",
 };
