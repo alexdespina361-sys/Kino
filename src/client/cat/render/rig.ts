@@ -1,6 +1,6 @@
 import { angleDelta, bounce, clamp, clamp01, dyn, easeInOut, fract, lerp, smooth, smoothstep, twoBone, TAU, type Dyn } from "../math";
 import { createRng, type Rng } from "../rng";
-import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame } from "../types";
+import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame, type Emote } from "../types";
 import { FLAT, makePose, PART, SHAPE_HEIGHT, SHAPE_LENGTH, SHAPE_NAMES, unflatten, type Pose, type ShapeName } from "./shapes";
 
 /**
@@ -76,6 +76,8 @@ const TAIL_SEGMENTS = 10;
 const TAIL_LENGTH = 0.64;
 /** The height of the ground for the tail (the tail's own thickness above the ground line, so that it lies on it and does not sink in). */
 const TAIL_FLOOR = -0.045;
+/** How steeply down a piece of tail may point, as the cosine of its angle from the ground, before it lies flat along the ground: pointing more steeply than this, it buckles up. */
+const TAIL_BUCKLE = 0.5;
 
 /** Legs: the front is shoulder to elbow to wrist; the hind is hip to knee to hock, then the foot. Lengths in body lengths. */
 const FRONT_UPPER = 0.2;
@@ -178,6 +180,19 @@ export class CatRig {
   private sniffDyn = dyn(0);
   private wiggleDyn = dyn(0);
   private stalkDyn = dyn(0);
+  /** The new little scenes: looking over an edge, batting at the pointer, nodding off, and a sleeper changing its place. */
+  private peekDyn = dyn(0);
+  private dozeDyn = dyn(0);
+  private shiftDyn = dyn(0);
+  /** How far into each feeling the cat is (see `Emote`), eased into and out of; which way a head is tilted; the tip of the tail's own kick (a dream). */
+  private readonly feel: Record<Exclude<Emote, "none">, Dyn> = { tilt: dyn(0), think: dyn(0), startle: dyn(0), joy: dyn(0), droop: dyn(0) };
+  private tiltSign: 1 | -1 = 1;
+  private lastEmote: Emote = "none";
+  /** The tail follows a fright a little behind the face (a tail is long, and a whole tail that went up in a frame would be seen to snap). */
+  private startleTail = dyn(0);
+  private tipKick = dyn(0);
+  private nextTip: number;
+  private prevProgress = 0;
   private nextSlow: number;
   private slowAt = -1;
   private nextDream: number;
@@ -196,6 +211,7 @@ export class CatRig {
     this.nextBlink = this.rng.range(1.5, 4);
     this.nextSlow = this.rng.range(4, 10);
     this.nextDream = this.rng.range(5, 12);
+    this.nextTip = this.rng.range(3, 9);
     this.tailAngles = Array.from({ length: TAIL_SEGMENTS }, () => dyn(0));
     this.solved = {
       pose: makePose(),
@@ -242,20 +258,30 @@ export class CatRig {
       case "walk":
       case "run":
       case "sniff":
+      case "peek":
         w.stand = 1;
         break;
       case "sit":
       case "groom":
       case "pet":
       case "point":
+      case "tap":
       case "yawn":
       case "scratch":
         w.sit = 1;
         break;
       case "loaf":
       case "knead":
+      case "doze":
         w.loaf = 1;
         break;
+      case "shift": {
+        // a sleeper half wakes: the curl opens a little toward a loaf, is held, and closes again
+        const open = smoothstep(0.1, 0.32, p) * (1 - smoothstep(0.62, 0.9, p));
+        w.curl = 1 - 0.65 * open;
+        w.loaf = 0.65 * open;
+        break;
+      }
       case "curl":
         w.curl = 1;
         break;
@@ -313,15 +339,15 @@ export class CatRig {
         : 9
       : clip === "stretch"
         ? 3
-        : clip === "curl"
+        : clip === "curl" || clip === "shift"
           ? 1.1
-          : clip === "loaf" || clip === "knead"
+          : clip === "loaf" || clip === "knead" || clip === "doze"
             ? 1.3
             : clip === "crouch" || clip === "wiggle"
               ? 3
               : clip === "stalk"
                 ? 2.4
-                : clip === "stand" || clip === "walk" || clip === "run" || clip === "sniff"
+                : clip === "stand" || clip === "walk" || clip === "run" || clip === "sniff" || clip === "peek"
                   ? 1.8
                   : 1.6;
     let goal = 0;
@@ -369,6 +395,28 @@ export class CatRig {
     smooth(this.sniffDyn, clip === "sniff" ? 1 : 0, 4, dt);
     smooth(this.wiggleDyn, clip === "wiggle" ? 1 : 0, 5, dt);
     smooth(this.stalkDyn, clip === "stalk" ? 1 : 0, 4, dt);
+    smooth(this.peekDyn, clip === "peek" ? 1 : 0, 4, dt);
+    smooth(this.dozeDyn, clip === "doze" ? 1 : 0, 2.2, dt);
+    smooth(this.shiftDyn, clip === "shift" ? 1 : 0, 6, dt);
+    const peeking = clamp01(this.peekDyn.x);
+    const dozing = clamp01(this.dozeDyn.x);
+    const shifting = clamp01(this.shiftDyn.x);
+    // --- how the cat feels, laid over whatever it is doing: quick to come on (a flinch is at once), slower to go
+    const emote: Emote = frame.emote ?? "none";
+    if (emote !== this.lastEmote) {
+      if (emote === "tilt") this.tiltSign = this.rng.chance(0.5) ? 1 : -1;
+      this.lastEmote = emote;
+    }
+    for (const name of ["tilt", "think", "startle", "joy", "droop"] as const) {
+      const on = emote === name;
+      // (a fright comes on fast, in a tenth of a second or so, and goes slowly: the tail would be seen to snap if it came on any faster)
+      smooth(this.feel[name], on ? 1 : 0, name === "startle" ? (on ? 10 : 2.2) : on ? 5 : 2.6, dt);
+    }
+    const tilting = clamp01(this.feel.tilt.x);
+    const thinking = clamp01(this.feel.think.x);
+    const startled = clamp01(this.feel.startle.x);
+    const joyful = clamp01(this.feel.joy.x);
+    const drooping = clamp01(this.feel.droop.x);
     const scratching = clamp01(this.scratchDyn.x);
     const kneading = clamp01(this.kneadDyn.x);
     const sniffing = clamp01(this.sniffDyn.x);
@@ -383,6 +431,12 @@ export class CatRig {
     }
     const dreamT = this.dreamAt >= 0 ? this.time - this.dreamAt : -1;
     const dream = dreamT >= 0 && dreamT < 0.35 ? Math.sin((dreamT / 0.35) * Math.PI) : 0;
+    // (and the tip of its tail flicks, now and then, once, and is still: a sleeper's tail is not as asleep as the rest of it)
+    if (sleepy >= 0.85 && this.time >= this.nextTip) {
+      this.tipKick.v += this.rng.range(7, 12) * (this.rng.chance(0.5) ? -1 : 1);
+      this.nextTip = this.time + this.rng.range(4, 13);
+    }
+    bounce(this.tipKick, 0, 5, 0.28, dt);
 
     // --- breathing: slower and deeper in sleep, quicker when excited; a purr is a faster, smaller pulse on top
     const breathRate = lerp(0.42, 0.28, sleepy) + frame.energy * 0.25;
@@ -479,9 +533,16 @@ export class CatRig {
     let wantX = 0.35;
     let wantY = 0;
     let attending = false;
-    if (frame.viewer) {
+    // (a cat with a tilted head has its face to whoever it is looking at: the tilt would not be seen in a side view)
+    const facingOut = frame.viewer || emote === "tilt";
+    if (facingOut) {
       wantX = 0;
       wantY = 0.12;
+      attending = true;
+    } else if (emote === "think") {
+      // (a look away and up, ahead of it: it is not looking at anything)
+      wantX = 0.85;
+      wantY = -0.9;
       attending = true;
     } else if (frame.look) {
       const baseX = frame.x + headX * px * frame.facing;
@@ -498,7 +559,7 @@ export class CatRig {
     }
     smooth(this.eyeX, wantX, 11, dt);
     smooth(this.eyeY, wantY, 11, dt);
-    const yawTarget = frame.viewer ? 0 : clamp(wantX * 0.8, -0.85, 0.85);
+    const yawTarget = facingOut ? 0 : clamp(wantX * 0.8, -0.85, 0.85);
     smooth(this.yaw, yawTarget, attending ? 3.2 : 1.6, dt);
     smooth(this.tilt, wantY * 0.28, 3, dt);
 
@@ -522,8 +583,9 @@ export class CatRig {
       headShiftY += (0.025 + 0.02 * (1 - foreUp)) * gat;
       headRotExtra += 0.1 * gat;
     }
-    const pawOn = clip === "groom" || clip === "point" ? 1 : 0;
-    smooth(this.pawOn, pawOn, 6, dt);
+    const pawOn = clip === "groom" || clip === "point" || clip === "tap" ? 1 : 0;
+    // (a paw goes up quickly and comes down gently: put down in a few frames, it would drop like a stone)
+    smooth(this.pawOn, pawOn, pawOn > 0.5 ? 6 : 2.2, dt);
     let pawGoalX = p.fn.x;
     let pawGoalY = 0;
     smooth(this.groomDyn, clip === "groom" ? 1 : 0, 3, dt);
@@ -538,15 +600,23 @@ export class CatRig {
       // (the wrist is where it is aimed, and the paw reaches on up the face from there)
       pawGoalX = headX + headShiftX + 0.05 - 0.012 * rub;
       pawGoalY = headY + headShiftY + 0.045 - 0.05 * rub;
-    } else if (clip === "point" && frame.reach) {
+    } else if ((clip === "point" || clip === "tap") && frame.reach) {
       const dx = ((frame.reach.x - frame.x) * frame.facing) / px;
       const dy = (frame.reach.y - frame.y) / px;
       const ox = p.shoulder.x;
       const oy = p.shoulder.y;
       const ang = Math.atan2(dy - oy, dx - ox);
       const a = clamp(ang, -1.4, 1.0);
-      pawGoalX = ox + Math.cos(a) * 0.37;
-      pawGoalY = oy + Math.sin(a) * 0.37;
+      // (a tap is the same reach, drawn back and put out again, quickly, a few times a second: the paw is out at the top of each, and back by half as much between)
+      const strike = clip === "tap" ? 0.5 + 0.5 * Math.sin(frame.clipTime * TAU * 2.4 - 0.6) : 1;
+      const len = 0.37 * (clip === "tap" ? 0.58 + 0.42 * strike ** 1.5 : 1);
+      pawGoalX = ox + Math.cos(a) * len;
+      pawGoalY = oy + Math.sin(a) * len;
+      if (clip === "tap") {
+        // (it leans into each, a little)
+        p.shoulderTop.x += 0.012 * strike * clamp01(this.pawOn.x);
+        p.chestFront.x += 0.012 * strike * clamp01(this.pawOn.x);
+      }
     }
     smooth(this.pawX, pawGoalX, 7, dt);
     smooth(this.pawY, pawGoalY, 7, dt);
@@ -564,6 +634,69 @@ export class CatRig {
       headShiftX += (0.09 + 0.008 * nose) * sniffing;
       headShiftY += (0.4 + 0.012 * nose) * sniffing;
       headRotExtra += 0.55 * sniffing;
+    }
+
+    // --- looking over an edge: the front of the cat goes down and forward, the neck out, the head out over what it looks at, the forepaws planted at the lip and the rump a
+    // little up as the weight comes forward
+    if (peeking > 0.001) {
+      for (const k of ["shoulderTop", "chestFront", "shoulder"] as const) p[k].y += 0.035 * peeking;
+      p.neckTop.y += 0.09 * peeking;
+      p.neckTop.x += 0.02 * peeking;
+      headShiftX += 0.085 * peeking;
+      headShiftY += 0.2 * peeking;
+      headRotExtra += 0.42 * peeking;
+      fnTarget.x += 0.035 * peeking;
+      ffTarget.x += 0.035 * peeking;
+      for (const k of ["rumpTop", "rumpBack"] as const) p[k].y -= 0.012 * peeking;
+    }
+
+    // --- nodding off: the head sinks slowly and comes up with a start, and sinks again, deeper each time; the lids go with it
+    let dozeLid = 0;
+    if (dozing > 0.001) {
+      const u = fract(frame.clipTime / 3.6);
+      const sink = u < 0.82 ? smoothstep(0, 0.82, u) ** 1.3 : 1 - smoothstep(0.82, 0.93, u);
+      const depth = (0.45 + 0.55 * clamp01(frame.clipTime / 9)) * dozing;
+      headShiftX += 0.02 * sink * depth;
+      headShiftY += 0.11 * sink * depth;
+      headRotExtra += 0.4 * sink * depth;
+      p.neckTop.y += 0.03 * sink * depth;
+      dozeLid = dozing * (0.3 + 0.55 * sink * depth);
+    }
+
+    // --- a sleeper changing its place: the head comes up, the eyes half open, an ear flicks, and the head goes down again (the body does the rest: see the posture's weights)
+    let shiftLift = 0;
+    if (shifting > 0.001) {
+      shiftLift = smoothstep(0.1, 0.3, frame.progress) * (1 - smoothstep(0.62, 0.86, frame.progress)) * shifting;
+      headShiftY -= 0.07 * shiftLift;
+      headRotExtra -= 0.25 * shiftLift;
+      if (this.prevProgress < 0.14 && frame.progress >= 0.14) (this.rng.chance(0.5) ? this.earKickL : this.earKickR).v += this.rng.range(8, 12) * (this.rng.chance(0.5) ? -1 : 1);
+    }
+    this.prevProgress = frame.progress;
+
+    // --- how it feels, on the face and the head (and a little of the body): see `Emote`
+    if (tilting > 0.001) headRotExtra += this.tiltSign * 0.34 * tilting;
+    if (thinking > 0.001) {
+      headRotExtra += -0.2 * thinking;
+      headShiftY -= 0.015 * thinking;
+    }
+    if (drooping > 0.001) {
+      headShiftY += 0.05 * drooping;
+      headShiftX -= 0.01 * drooping;
+      headRotExtra += 0.22 * drooping;
+    }
+    if (startled > 0.001) {
+      // (a flinch: the head back and up, the back arched and the whole of it drawn in)
+      headShiftX -= 0.04 * startled;
+      headShiftY -= 0.025 * startled;
+      p.backMid.y -= 0.035 * startled;
+      p.rumpTop.y -= 0.02 * startled;
+      p.shoulderTop.y += 0.015 * startled;
+    }
+    if (joyful > 0.001) {
+      // (a lift of the chest and of the head)
+      p.shoulderTop.y -= 0.014 * joyful;
+      p.chestFront.y -= 0.01 * joyful;
+      headShiftY -= 0.02 * joyful;
     }
 
     // --- scratching behind the ear: the head goes down to meet the hind foot, which comes up to it and works fast
@@ -667,11 +800,13 @@ export class CatRig {
     }
     smooth(this.jawDyn, jawTarget, clip === "yawn" ? 6 : 12, dt);
     smooth(this.happyDyn, frame.petted ? 1 : Math.max(kneading * 0.9, scratching * 0.5), 6, dt);
-    smooth(this.asleepDyn, clamp01((sleepy - 0.55) / 0.35), 4, dt);
+    // (a sleeper that half wakes has its eyes a little open: the closed line is for a face that is asleep)
+    smooth(this.asleepDyn, clamp01((sleepy - 0.55) / 0.35) * (1 - clamp01(shiftLift * 2.4)), 5, dt);
 
     // --- legs
-    const solveFront = (leg: Leg, root: { x: number; y: number }, paw: { x: number; y: number }, raised: boolean) => {
-      const wristY = raised ? paw.y : paw.y - FRONT_WRIST;
+    const solveFront = (leg: Leg, root: { x: number; y: number }, paw: { x: number; y: number }, raised: number) => {
+      // (a paw on the ground has its wrist a little above it; one that is raised is the end of the leg: eased between, not switched)
+      const wristY = paw.y - FRONT_WRIST * (1 - clamp01(raised));
       const j = twoBone(root.x, root.y, paw.x, wristY, FRONT_UPPER, FRONT_LOWER, 1);
       leg.root.x = root.x;
       leg.root.y = root.y;
@@ -698,8 +833,8 @@ export class CatRig {
       leg.toe.y = paw.y;
       leg.lift = -paw.y;
     };
-    solveFront(s.legs.fn, p.shoulder, fnTarget, pw > 0.5 || held > 0.5);
-    solveFront(s.legs.ff, { x: p.shoulder.x - 0.02, y: p.shoulder.y }, ffTarget, held > 0.5);
+    solveFront(s.legs.fn, p.shoulder, fnTarget, Math.max(pw, held));
+    solveFront(s.legs.ff, { x: p.shoulder.x - 0.02, y: p.shoulder.y }, ffTarget, held);
     solveHind(s.legs.hn, p.hip, hnTarget, hockHind, kneeUp);
     solveHind(s.legs.hf, { x: p.hip.x + 0.03, y: p.hip.y }, hfTarget, hockFar);
 
@@ -718,7 +853,7 @@ export class CatRig {
       } else blink = Math.sin(clamp01(t) * Math.PI);
     }
     // a slow blink at whoever is looking out of the screen: the eyes close gently, stay shut a moment, and open as gently (a cat's kiss)
-    if (frame.viewer && this.slowAt < 0 && this.time >= this.nextSlow && sleepy < 0.5 && this.blinkAt < 0) {
+    if (facingOut && this.slowAt < 0 && this.time >= this.nextSlow && sleepy < 0.5 && this.blinkAt < 0) {
       this.slowAt = this.time;
       this.nextSlow = this.time + this.rng.range(14, 30);
     }
@@ -735,13 +870,15 @@ export class CatRig {
     const alert = clamp01(frame.energy * 0.6 + (attending ? 0.3 : 0));
     // (in a yawn the ears go back)
     // (and in a run they are laid back)
-    const earRest = lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0) + this.jawDyn.x * 0.3 + this.groomDyn.x * 0.12 + gat * 0.22 + held * 0.4;
+    // (a flinch lays them flat back; a letdown lets them out to the sides; a cat that is pleased, or that asks itself something, has them up and forward)
+    const earRest =
+      lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0) + this.jawDyn.x * 0.3 + this.groomDyn.x * 0.12 + gat * 0.22 + held * 0.4 + 0.85 * startled + 0.34 * drooping - 0.1 * joyful - 0.08 * tilting - 0.05 * thinking;
     smooth(this.earBaseL, earRest, 4, dt);
     smooth(this.earBaseR, earRest, 4, dt);
     bounce(this.earKickL, 0, 9, 0.35, dt);
     bounce(this.earKickR, 0, 9, 0.35, dt);
     // (the pupils are wide in the hunt, and when it is taken up by the scruff)
-    smooth(this.pupilDyn, Math.max(lerp(0.34, 0.9, clamp01(frame.energy * 0.8 + (attending ? 0.2 : 0))) * (1 - sleepy * 0.5), 0.95 * hunt, 0.92 * held), 4, dt);
+    smooth(this.pupilDyn, Math.max(lerp(0.34, 0.9, clamp01(frame.energy * 0.8 + (attending ? 0.2 : 0))) * (1 - sleepy * 0.5), 0.95 * hunt, 0.92 * held, 1.0 * startled, 0.85 * joyful), startled > 0.3 ? 14 : 4, dt);
 
     // --- the flip when it turns around: through a face-on moment, not a snap
     if (frame.facing !== this.facing) {
@@ -763,7 +900,11 @@ export class CatRig {
     const lidBase = lerp(1, 0.08, clamp01((sleepy - 0.3) / 0.6));
     // (the eyes screw shut in a yawn, and are half shut in a wash)
     // (half shut in a scratch, and heavy in kneading)
-    const open = lidBase * (1 - blink) * (1 - 0.92 * smoothstep(0.1, 0.5, this.jawDyn.x)) * (1 - 0.7 * clamp01(this.groomDyn.x)) * (1 - 0.7 * scratching) * (1 - 0.55 * kneading);
+    // (nodding off, the lids are heavy, and heaviest as the head sinks; half waking, they are a little open; a slow blink in a letdown)
+    const open = Math.max(
+      lidBase * (1 - blink) * (1 - 0.92 * smoothstep(0.1, 0.5, this.jawDyn.x)) * (1 - 0.7 * clamp01(this.groomDyn.x)) * (1 - 0.7 * scratching) * (1 - 0.55 * kneading) * (1 - dozeLid) * (1 - 0.25 * drooping),
+      0.45 * shiftLift,
+    );
     hd.openL = open;
     hd.openR = open;
     hd.pupil = this.pupilDyn.x;
@@ -775,18 +916,22 @@ export class CatRig {
     hd.asleep = this.asleepDyn.x;
 
     // --- the tail trails what the body does
+    smooth(this.startleTail, startled, 4.5, dt);
+    const startledTail = clamp01(this.startleTail.x);
     const ax = ((frame.vx - this.prevVx) / dt / px) * frame.facing;
     this.prevVx = frame.vx;
     smooth(this.tailRoot, clamp(-ax * 0.035, -0.6, 0.6), 5, dt);
     // (the tip of a hunting cat's tail twitches, quickly)
-    const swayAmp = lerp(0.09, 0.02, sleepy) + frame.energy * 0.22 + (frame.petted ? 0.12 : 0) + hunt * 0.12 + held * 0.1;
-    const swayRate = lerp(0.55, 0.2, sleepy) + frame.energy * 0.9 + hunt * 0.9;
+    // (and quivers, held up, in joy; a flinch has it up and stiff; a letdown has it low and still)
+    const swayAmp = lerp(0.09, 0.02, sleepy) + frame.energy * 0.22 + (frame.petted ? 0.12 : 0) + hunt * 0.12 + held * 0.1 + 0.2 * joyful + 0.1 * startledTail - 0.05 * drooping;
+    const swayRate = lerp(0.55, 0.2, sleepy) + frame.energy * 0.9 + hunt * 0.9 + 1.4 * joyful;
     // (in a run the tail streams out behind it, nearly straight, instead of going up and over; hanging in a hand it hangs straight down in the world, whichever way the body is tipped)
     const streaming = clamp01(this.gallopTail.x);
     const running = lerp(pose.s.tailAngle, 3.35, streaming);
-    const tailBase = running + held * angleDelta(running, Math.PI / 2 - s.pitch);
+    let tailBase = running + held * angleDelta(running, Math.PI / 2 - s.pitch);
+    tailBase += (0.65 * joyful + 0.9 * startledTail) * angleDelta(tailBase, -1.45) + 0.5 * drooping * angleDelta(tailBase, 2.9);
     let a = tailBase + (frame.petted ? -0.45 : 0);
-    const curl = lerp(lerp(pose.s.tailCurl, 0.1, streaming), 0.05, held);
+    const curl = lerp(lerp(lerp(pose.s.tailCurl, 0.1, streaming), 0.05, held), 0.1, clamp01(0.7 * joyful + startledTail));
     const wrap = clamp01(pose.s.tailFront) * (1 - held);
     // (a tail lies on the ground, not in it; one that hangs in the air has no ground)
     const tailFloor = lerp(TAIL_FLOOR, 9, held);
@@ -797,11 +942,10 @@ export class CatRig {
     joints[0]!.x = tx;
     joints[0]!.y = ty;
     let carry = this.tailRoot.x;
-    let along = -1;
     for (let i = 0; i < TAIL_SEGMENTS; i++) {
       const f = i / (TAIL_SEGMENTS - 1);
       const d = this.tailAngles[i]!;
-      const sway = Math.sin(this.time * TAU * swayRate - i * 0.55) * swayAmp * (0.25 + f);
+      const sway = Math.sin(this.time * TAU * swayRate - i * 0.55) * swayAmp * (0.25 + f) + this.tipKick.x * smoothstep(0.5, 1, f);
       smooth(d, carry * 0.55 + sway, lerp(5, 2.2, f), dt);
       carry = d.x;
       // (a tail that is wrapped round the cat goes back for a moment and then turns, quickly, to lie forward along its side)
@@ -810,12 +954,14 @@ export class CatRig {
       let dx = Math.cos(a) * segLen;
       let dy = Math.sin(a) * segLen;
       if (ty + dy > tailFloor) {
-        // (the tail lies on the ground, not in it: a piece that would go into it slides along it, as long as it is, towards where it was heading)
-        dy = tailFloor - ty;
-        const run = Math.sqrt(Math.max(0, segLen * segLen - dy * dy));
-        dx = (Math.abs(Math.cos(a)) > 0.12 ? Math.sign(Math.cos(a)) : along) * run;
+        // (the tail lies on the ground, not in it: a piece that would go into it slides along it, as long as it is, towards where it was heading. One that points steeply down
+        // does not flip from lying one way to lying the other, which was a jump of the whole tip: it buckles up, and swings over, as a tail does when it is turned about)
+        const floorDy = tailFloor - ty;
+        const run = Math.sqrt(Math.max(0, segLen * segLen - floorDy * floorDy));
+        const side = clamp(Math.cos(a) / TAIL_BUCKLE, -1, 1);
+        dx = side * run;
+        dy = floorDy - run * Math.sqrt(1 - side * side);
       }
-      if (dx !== 0) along = Math.sign(dx);
       tx += dx;
       ty += dy;
       const j = joints[i + 1]!;
@@ -827,8 +973,9 @@ export class CatRig {
     smooth(this.sqDyn, 0, 6, dt);
     const landing = jumping ? smoothstep(JUMP_LANDING, JUMP_LANDING + 0.06, frame.progress) * (1 - smoothstep(JUMP_LANDING + 0.06, 1, frame.progress)) : 0;
     // (a cat that hangs by the scruff is a little longer for its weight)
-    s.sx = (1 + 0.05 * landing) * (1 - 0.03 * held);
-    s.sy = (1 - 0.07 * landing) * (1 + 0.05 * held);
+    // (a flinch draws the whole cat in a little, and a joy lengthens it)
+    s.sx = (1 + 0.05 * landing) * (1 - 0.03 * held) * (1 + 0.03 * startled);
+    s.sy = (1 - 0.07 * landing) * (1 + 0.05 * held) * (1 - 0.05 * startled + 0.015 * joyful);
     s.air = frame.grounded ? 0 : 1;
     s.shadow = 1 - held;
     s.appear = clamp01(frame.appear);

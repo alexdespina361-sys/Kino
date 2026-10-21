@@ -1050,7 +1050,8 @@ describe("the cat in a film", () => {
     const engine = new CatEngine(1);
     run(engine, browseWorld(defaultPage()), 4);
     const w = film();
-    const { frames } = stepCat(engine, w, 30);
+    // (it watches the picture a while first, and nods off: see "watches the picture" below)
+    const { frames } = stepCat(engine, w, 45);
     const last = frames[frames.length - 1]!;
     const perch = w.surfaces[0]!;
     expect(last.y).toBe(perch.y);
@@ -1066,7 +1067,7 @@ describe("the cat in a film", () => {
   it("wakes when the film is paused, and goes back to sleep when it plays", () => {
     const engine = new CatEngine(1);
     const w = film();
-    run(engine, w, 30);
+    run(engine, w, 45);
     engine.send({ type: "player.pause" });
     const paused = stepCat(engine, film("paused"), 5).frames;
     expect(paused[paused.length - 1]!.clip).toBe("loaf");
@@ -1078,7 +1079,7 @@ describe("the cat in a film", () => {
 
   it("stays where it is, asleep, when the controls come and go over it: the layer is under them, so it has no reason to go (and does not flicker with every key)", () => {
     const engine = new CatEngine(1);
-    run(engine, film(), 30);
+    run(engine, film(), 45);
     const where = { x: engine.frame.x, y: engine.frame.y };
     let fades = 0;
     let was = engine.frame.appear;
@@ -1094,7 +1095,8 @@ describe("the cat in a film", () => {
       }
     }
     expect(fades).toBe(0);
-    expect(engine.frame.clip).toBe("curl");
+    // (asleep, or turning over in its sleep: in place either way)
+    expect(["curl", "shift"]).toContain(engine.frame.clip);
   });
 
   it("finds its perch all the same when the film begins to play while the controls are over every place it could have", () => {
@@ -1109,8 +1111,74 @@ describe("the cat in a film", () => {
       const last = frames[frames.length - 1]!;
       expect(last.appear, `seed ${seed}`).toBe(1);
       expect(last.y, `seed ${seed}`).toBe(film().surfaces[0]!.y);
-      expect(last.clip, `seed ${seed}`).toBe("curl");
+      // (watching the picture, or nodding off, or asleep: not walking about the picture)
+      expect(["loaf", "doze", "curl"], `seed ${seed}`).toContain(last.clip);
     }
+  });
+
+  it("watches the picture from its perch, nods off, and sleeps; it does not watch the film all over again every time it wakes", () => {
+    const engine = new CatEngine(1);
+    const w = film();
+    const { frames } = stepCat(engine, w, 420);
+    const seen: string[] = [];
+    for (const f of frames) {
+      if (f.appear < 1) continue;
+      if (seen[seen.length - 1] !== f.clip) seen.push(f.clip);
+    }
+    expect(seen.slice(0, 3)).toEqual(["loaf", "doze", "curl"]);
+    expect(seen.filter((c) => c === "loaf")).toHaveLength(1);
+    expect(seen.filter((c) => c === "doze")).toHaveLength(1);
+    // (it looks at the picture while it watches it: the middle of the screen, a little above the middle)
+    const watching = frames.filter((f) => f.appear === 1 && f.clip === "loaf");
+    expect(watching.length).toBeGreaterThan(30 * 6);
+    for (const f of watching) {
+      expect(f.look?.x).toBeCloseTo(960, 0);
+      expect(f.look?.y).toBeCloseTo(0.38 * 1080, 0);
+    }
+    // (and as it nods off it gets sleepy by degrees, and is not asleep until it sleeps)
+    const dozing = frames.filter((f) => f.appear === 1 && f.clip === "doze");
+    expect(dozing.length).toBeGreaterThan(30 * 7);
+    expect(Math.max(...dozing.map((f) => f.drowsy))).toBeLessThan(0.75);
+    expect(Math.max(...dozing.map((f) => f.drowsy))).toBeGreaterThan(0.5);
+    expect(Math.min(...frames.filter((f) => f.appear === 1 && f.clip === "curl").map((f) => f.drowsy))).toBeGreaterThan(0.6);
+  });
+
+  it("turns over in its sleep now and then, in its place, without waking: the shift keeps it drowsy and does not move it", () => {
+    const engine = new CatEngine(1);
+    const w = film();
+    const { frames } = stepCat(engine, w, 420);
+    const shifts = frames.filter((f) => f.appear === 1 && f.clip === "shift");
+    expect(shifts.length).toBeGreaterThan(30 * 2.5);
+    const perch = frames.filter((f) => f.appear === 1 && f.clip === "curl")[0]!;
+    for (const f of shifts) {
+      expect(f.x).toBeCloseTo(perch.x, 3);
+      expect(f.y).toBeCloseTo(perch.y, 3);
+      expect(f.drowsy).toBeGreaterThan(0.85);
+    }
+    // (more than once in a long film, and after a good sleep each time)
+    let starts = 0;
+    let last = "";
+    let sleptFor = 0;
+    let shortest = Infinity;
+    for (const f of frames) {
+      if (f.appear < 1) continue;
+      if (f.clip === "curl") sleptFor += 1 / 30;
+      if (f.clip === "shift" && last !== "shift") {
+        starts++;
+        shortest = Math.min(shortest, sleptFor);
+        sleptFor = 0;
+      }
+      last = f.clip;
+    }
+    expect(starts).toBeGreaterThanOrEqual(2);
+    expect(shortest).toBeGreaterThan(30);
+  });
+
+  it("goes straight to sleep, and stays as it is, for a viewer who wants no motion: no watching, no nodding off, no turning over", () => {
+    const engine = new CatEngine(1);
+    const w = playerWorld(1920, 1080, "playing", false, { reducedMotion: true });
+    const { frames } = stepCat(engine, w, 300);
+    expect([...new Set(frames.filter((f) => f.appear === 1).map((f) => f.clip))]).toEqual(["curl"]);
   });
 
   it("is not left unseen by a command that comes as it is put in its new place, before it has faded in", () => {
@@ -1139,6 +1207,319 @@ describe("the cat in a film", () => {
     const none: World = { ...film(), surfaces: [] };
     const { frames } = stepCat(engine, none, 20);
     expect(frames.every((f) => f.appear === 0)).toBe(true);
+  });
+});
+
+describe("the cat and the things on the page", () => {
+  const page = (): World => browseWorld(defaultPage());
+
+  /** A cat that has come to rest somewhere on the page (sitting or standing, on a shelf, for a moment already), stepped there from a seed. */
+  const resting = (seed: number, w: World = page()): CatEngine => {
+    const engine = new CatEngine(seed);
+    let still = 0;
+    for (let i = 0; i < 30 * 180; i++) {
+      engine.update(w, 1 / 30);
+      const act = engine.debug().act;
+      still = engine.frame.appear > 0.99 && engine.frame.grounded && (act === "rest:sit" || act === "rest:stand") ? still + 1 : 0;
+      if (still > 15) return engine;
+    }
+    throw new Error(`seed ${seed}: the cat never came to rest`);
+  };
+
+  it("looks over a drop before it goes down it, and measures a climb before it goes up, when it is in no hurry", () => {
+    let drops = 0;
+    let climbs = 0;
+    for (const seed of [1, 2, 3, 4]) {
+      const w = page();
+      const engine = new CatEngine(seed);
+      let before = "";
+      for (let i = 0; i < 30 * 600; i++) {
+        engine.update(w, 1 / 30);
+        const dbg = engine.debug();
+        if (dbg.act === "jump" && before !== "jump") {
+          const to = w.surfaces.find((s) => s.id === dbg.jumpTo);
+          const from = w.surfaces.find((s) => s.id === dbg.surfaceId);
+          if (to && from) {
+            const fall = to.y - from.y;
+            if (fall >= 1.3 * w.bodyLength) {
+              drops++;
+              expect(before, `seed ${seed}: down ${fall.toFixed(0)}px`).toBe("shot:peek");
+            } else if (-fall >= 1.1 * w.bodyLength) {
+              climbs++;
+              expect(before, `seed ${seed}: up ${(-fall).toFixed(0)}px`).toBe("shot:wiggle");
+            }
+          }
+        }
+        before = dbg.act;
+      }
+    }
+    expect(drops).toBeGreaterThan(3);
+    expect(climbs).toBeGreaterThan(3);
+  });
+
+  it("is not made to look over the edge by a cat that is hurrying (called, sent to a poster)", () => {
+    const w = page();
+    const engine = new CatEngine(3);
+    stepCat(engine, w, 20);
+    const acts = new Set<string>();
+    const watch = (seconds: number) => {
+      for (let i = 0; i < 30 * seconds; i++) {
+        engine.update(w, 1 / 30);
+        acts.add(engine.debug().act);
+      }
+    };
+    // (called to the bottom of the screen, and then sent to a poster on another row)
+    engine.send({ type: "cat.call", at: { x: 900, y: 1070 } });
+    watch(12);
+    engine.send({ type: "cat.point", targetId: w.targets[0]!.id });
+    watch(12);
+    expect(acts.has("jump")).toBe(true);
+    expect(acts.has("shot:peek")).toBe(false);
+  });
+
+  /** The pointer goes from `from` body lengths ahead of the middle of the cat's back to `to`, `step` body lengths a frame; the feelings the cat shows meanwhile. */
+  const dash = (engine: CatEngine, w: World, from: number, to: number, step: number): string[] => {
+    const shown: string[] = [];
+    const cx = engine.frame.x;
+    const cy = engine.frame.y - 0.4 * w.bodyLength;
+    const frames = Math.ceil(Math.abs(to - from) / step);
+    for (let i = 0; i <= frames; i++) {
+      const d = from + Math.sign(to - from) * Math.min(Math.abs(to - from), i * step);
+      engine.update({ ...w, pointer: { x: cx + d * w.bodyLength, y: cy } }, 1 / 30);
+      shown.push(engine.frame.emote ?? "none");
+    }
+    return shown;
+  };
+
+  it("flinches when the pointer dashes at it, and freezes, then washes; not at one that drifts up to it or lands on it; and not again for a good while", () => {
+    const w = page();
+    for (const seed of [2, 3, 4]) {
+      const engine = resting(seed, w);
+      const shown = dash(engine, w, 2.4, 0.8, 0.5);
+      expect(shown, `seed ${seed}`).toContain("startle");
+      // (the fright is brief, and the cat stays where it was)
+      const after = stepCat(engine, w, 3).frames;
+      expect(after.some((f) => f.emote === "startle")).toBe(true);
+      expect(after[after.length - 1]!.emote).toBe("none");
+      // ...and a second dash a few seconds later is not another fright
+      expect(dash(engine, w, 2.4, 0.8, 0.5), `seed ${seed}, again`).not.toContain("startle");
+    }
+    // (a pointer that comes slowly, or lands on the cat, is not a fright)
+    for (const seed of [2, 3, 4]) {
+      expect(dash(resting(seed, w), w, 2.4, 0.8, 0.03), `seed ${seed}, slowly`).not.toContain("startle");
+      expect(dash(resting(seed, w), w, 3, 0.1, 3), `seed ${seed}, onto it`).not.toContain("startle");
+    }
+    // (nor does a cat that is asked for quiet, or for less motion, flinch)
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      expect(dash(resting(3, w), { ...w, [flag]: true }, 2.4, 0.8, 0.5), flag).not.toContain("startle");
+    }
+  });
+
+  it("bats at a pointer that rests up by its head, a little way off: goes to a paw's length from it, faces it, reaches at it, and not again for a while", () => {
+    let batted = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const w0 = page();
+      const engine = resting(seed, w0);
+      const pointer = { x: engine.frame.x + 1.8 * w0.bodyLength, y: engine.frame.y - 0.7 * w0.bodyLength };
+      const w: World = { ...w0, pointer };
+      const starts: number[] = [];
+      let inTap = false;
+      for (let i = 0; i < 30 * 220; i++) {
+        const f = engine.update(w, 1 / 30);
+        if (f.clip === "tap") {
+          if (!inTap) starts.push(i / 30);
+          inTap = true;
+          expect(f.facing, `seed ${seed}`).toBe(pointer.x > f.x ? 1 : -1);
+          expect(f.reach?.x).toBeCloseTo(pointer.x, 1);
+          expect(f.reach?.y).toBeCloseTo(pointer.y, 1);
+          expect(Math.abs(pointer.x - f.x) / w.bodyLength, `seed ${seed}`).toBeGreaterThan(0.45);
+          expect(Math.abs(pointer.x - f.x) / w.bodyLength, `seed ${seed}`).toBeLessThan(1.15);
+        } else inTap = false;
+      }
+      if (starts.length > 0) batted++;
+      for (let i = 1; i < starts.length; i++) expect(starts[i]! - starts[i - 1]!, `seed ${seed}`).toBeGreaterThan(70);
+    }
+    expect(batted).toBeGreaterThanOrEqual(4);
+  });
+
+  it("does not bat at a pointer that is on the cat, far from it, or down at its feet, nor when the viewer wants quiet or less motion (the pointer stays where it is to the cat, wherever the cat goes)", () => {
+    const L2 = page().bodyLength;
+    const tries: Array<[string, { dx: number; dy: number }, Partial<World>]> = [
+      ["on the cat", { dx: 0.2, dy: -0.5 }, {}],
+      ["far off", { dx: 4.5, dy: -0.7 }, {}],
+      ["at its feet", { dx: 1.8, dy: 0.2 }, {}],
+      ["quiet", { dx: 1.8, dy: -0.7 }, { quiet: true }],
+      ["reduced motion", { dx: 1.8, dy: -0.7 }, { reducedMotion: true }],
+    ];
+    for (const [name, off, flags] of tries) {
+      for (const seed of [1, 2, 3, 4]) {
+        const w0: World = { ...page(), ...flags };
+        const engine = resting(seed, w0);
+        for (let i = 0; i < 30 * 150; i++) {
+          const f = engine.update({ ...w0, pointer: { x: engine.frame.x + off.dx * L2, y: engine.frame.y + off.dy * L2 } }, 1 / 30);
+          if (f.clip === "tap") throw new Error(`${name}, seed ${seed}: batted at ${(i / 30).toFixed(1)} s`);
+        }
+      }
+    }
+    // (and the same pointer, a paw's length ahead of the cat's head, is something it does bat at: the cat is not simply deaf to it)
+    let batted = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const w0 = page();
+      const engine = resting(seed, w0);
+      for (let i = 0; i < 30 * 150; i++) {
+        const f = engine.update({ ...w0, pointer: { x: engine.frame.x + 1.8 * L2, y: engine.frame.y - 0.7 * L2 } }, 1 / 30);
+        if (f.clip === "tap") {
+          batted++;
+          break;
+        }
+      }
+    }
+    expect(batted).toBeGreaterThanOrEqual(3);
+  });
+
+  it("jumps for joy on the spot when it is told a title was found, and has a letdown when it is told there was none; the quiet ones feel it without the jump", () => {
+    const w = page();
+    for (const seed of [2, 3, 4]) {
+      const engine = resting(seed, w);
+      const x0 = engine.frame.x;
+      const y0 = engine.frame.y;
+      engine.send({ type: "cat.react", kind: "found" });
+      const frames = stepCat(engine, w, 3).frames;
+      expect(frames[1]!.emote, `seed ${seed}`).toBe("joy");
+      expect(frames.filter((f) => f.clip === "jump").length, `seed ${seed}`).toBeGreaterThan(8);
+      // (a hop on the spot: it comes down within half a body of where it went up, on the same shelf; what it does afterwards is its own affair)
+      const first = frames.findIndex((f) => f.clip === "jump");
+      let end = first;
+      while (end + 1 < frames.length && frames[end + 1]!.clip === "jump") end++;
+      expect(Math.max(...frames.slice(0, end + 1).map((f) => Math.abs(f.x - x0))), `seed ${seed}`).toBeLessThan(0.5 * w.bodyLength);
+      expect(frames[end]!.y, `seed ${seed}`).toBeCloseTo(y0, 1);
+      // (a joy is a moment)
+      expect(frames[frames.length - 1]!.emote).toBe("none");
+    }
+    for (const seed of [2, 3, 4]) {
+      const engine = resting(seed, w);
+      engine.send({ type: "cat.react", kind: "empty" });
+      const frames = stepCat(engine, w, 3.2).frames;
+      expect(frames[1]!.emote, `seed ${seed}`).toBe("droop");
+      for (const f of frames.slice(15, 70)) {
+        expect(f.clip, `seed ${seed}`).toBe("sit");
+        expect(f.emote).toBe("droop");
+      }
+      expect(frames[frames.length - 1]!.emote).toBe("none");
+    }
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const still = { ...w, [flag]: true };
+      const engine = resting(3, still);
+      engine.send({ type: "cat.react", kind: "found" });
+      const frames = stepCat(engine, still, 3).frames;
+      expect(frames[1]!.emote, flag).toBe("joy");
+      expect(frames.some((f) => f.clip === "jump"), flag).toBe(false);
+    }
+  });
+
+  it("does not take a joy for a reason to jump when it is not on its feet on a shelf (asleep, in a hand, away, or not yet there)", () => {
+    const w = page();
+    const asleep = new CatEngine(3);
+    stepCat(asleep, w, 20);
+    asleep.send({ type: "cat.command", command: "sleep" });
+    stepCat(asleep, w, 5);
+    asleep.send({ type: "cat.react", kind: "found" });
+    const slept = stepCat(asleep, w, 3).frames;
+    expect(slept.every((f) => f.clip === "curl")).toBe(true);
+    expect(slept.every((f) => (f.emote ?? "none") === "none")).toBe(true);
+    // (the page told it before it was there: nothing happens, and nothing is wrong)
+    const early = new CatEngine(3);
+    early.send({ type: "cat.react", kind: "found" });
+    expect(stepCat(early, w, 2).frames.every((f) => Number.isFinite(f.x) && (f.emote ?? "none") === "none")).toBe(true);
+  });
+
+  it("sometimes goes to the place above a poster on the next row and looks down at it, and sometimes cocks its head at a new card", () => {
+    let inspected = 0;
+    let tilts = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const w = page();
+      const engine = new CatEngine(seed);
+      let shot = false;
+      let was = "";
+      let peekLooks = 0;
+      let card = 0;
+      for (let i = 0; i < 30 * 600; i++) {
+        // (a new card gets the focus every twenty-odd seconds)
+        if (i % (30 * 23) === 0) {
+          card++;
+          const target = w.targets[card % w.targets.length]!;
+          engine.send({ type: "catalog.itemFocused", id: target.id });
+          w.focus = { x: target.rect.x - 12, y: target.rect.y - 12, w: target.rect.w + 24, h: target.rect.h + 24 };
+        }
+        const f = engine.update(w, 1 / 30);
+        const act = engine.debug().act;
+        if (f.emote === "tilt" && was !== "tilt") tilts++;
+        was = f.emote ?? "none";
+        if (act === "shot:peek") {
+          shot = true;
+          if (f.look && f.look.y > f.y) peekLooks++;
+        } else if (shot) {
+          shot = false;
+          // (a peek that is not followed by a leap was a cat looking at a poster, not at a drop)
+          if (act !== "jump" && peekLooks > 20) inspected++;
+          peekLooks = 0;
+        }
+      }
+    }
+    expect(inspected).toBeGreaterThanOrEqual(2);
+    expect(tilts).toBeGreaterThanOrEqual(1);
+  });
+
+  it("falls into a deeper sleep in the library now and then with a turn in it (a nap of a minute is not one stillness), and ponders now and then", () => {
+    let shifts = 0;
+    let thinks = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const stats = runSession({ seed, seconds: 900 });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      shifts += stats.acts["shot:shift"] ?? 0;
+    }
+    expect(shifts).toBeGreaterThan(0);
+    for (const seed of [1, 2, 3, 4]) {
+      const engine = new CatEngine(seed);
+      const w = page();
+      let was = false;
+      for (const f of stepCat(engine, w, 400).frames) {
+        const now = f.emote === "think";
+        if (now && !was) thinks++;
+        if (now) expect(["sit", "loaf", "stand"], `seed ${seed}`).toContain(f.clip);
+        was = now;
+      }
+    }
+    expect(thinks).toBeGreaterThanOrEqual(2);
+  });
+
+  it("goes through bad afternoons with a mouse about the page, hands, films and menus, and never does the wrong scene for the viewer", () => {
+    const chaos = { mouse: true, touch: true, hand: true, scroll: true, focus: true, film: true, modal: true, resize: true, route: true, visibility: true };
+    let peeks = 0;
+    let dozes = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const stats = runSession({ seed, seconds: 600, chaos });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      peeks += stats.acts["shot:peek"] ?? 0;
+      dozes += stats.acts["shot:doze"] ?? 0;
+    }
+    expect(peeks).toBeGreaterThan(0);
+    expect(dozes).toBeGreaterThan(0);
+    // (with all of that going on the pointer is seldom at rest in the cat's reach in a browsing page, so batting at it is counted on a page with only a mouse about)
+    let taps = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const stats = runSession({ seed, seconds: 600, chaos: { mouse: true } });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      taps += stats.acts["tap"] ?? 0;
+    }
+    expect(taps).toBeGreaterThan(0);
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      for (const some of [chaos, { mouse: true }]) {
+        const stats = runSession({ seed: 5, seconds: 600, chaos: some, [flag]: true });
+        expect(stats.violations, flag).toEqual([]);
+        expect(stats.acts["tap"] ?? 0, flag).toBe(0);
+      }
+    }
   });
 });
 

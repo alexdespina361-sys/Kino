@@ -341,7 +341,7 @@ describe("the cat's little scenes", () => {
   });
 
   it("keeps every number finite in every scene, however it is entered and left", () => {
-    const clips: Clip[] = ["scratch", "knead", "sniff", "stalk", "wiggle", "sit", "loaf", "stand", "crouch"];
+    const clips: Clip[] = ["scratch", "knead", "sniff", "stalk", "wiggle", "sit", "loaf", "stand", "crouch", "peek", "tap", "doze", "shift", "curl"];
     const rig = new CatRig(9);
     let t = 0;
     for (const clip of [...clips, ...[...clips].reverse()]) {
@@ -353,5 +353,150 @@ describe("the cat's little scenes", () => {
         for (const n of numbers) expect(Number.isFinite(n), `${clip} at ${t.toFixed(2)}`).toBe(true);
       }
     }
+  });
+});
+
+describe("the cat with the page: looking over an edge, batting at the pointer, nodding off, turning in its sleep, and what it feels", () => {
+  const tip = (s: Solved) => s.tail[s.tail.length - 1]!;
+
+  it("peeks over an edge: the front of it goes down and forward, the head low and out over what it looks at, and its feet stay where they were", () => {
+    const look = { x: 240, y: 230 };
+    const standing = inClip({ clip: "stand", look }, 1.5);
+    const peek = inClip({ clip: "peek", look }, 1.5);
+    // (y is down)
+    expect(peek.head.y).toBeGreaterThan(standing.head.y + 0.12);
+    expect(peek.head.x).toBeGreaterThan(standing.head.x + 0.05);
+    expect(peek.pose.p.chestFront.y).toBeGreaterThan(standing.pose.p.chestFront.y + 0.02);
+    for (const key of ["fn", "ff", "hn", "hf"] as const) expect(peek.legs[key].toe.y, key).toBeCloseTo(0, 2);
+  });
+
+  it("bats at the pointer: the forepaw is up at the height of what it reaches for, goes out and comes back again and again, and the other feet stay down", () => {
+    const reach = { x: 96, y: -72 };
+    const xs: number[] = [];
+    const s = inClip({ clip: "tap", reach, look: reach }, 3.5, (sol, t) => {
+      if (t > 1) xs.push(sol.legs.fn.toe.x);
+    });
+    const mid = (Math.max(...xs) + Math.min(...xs)) / 2;
+    let beats = 0;
+    for (let i = 1; i < xs.length; i++) if (xs[i - 1]! < mid && xs[i]! >= mid) beats++;
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.08);
+    // (about two and a half a second)
+    expect(beats).toBeGreaterThanOrEqual(4);
+    expect(s.legs.fn.toe.y).toBeLessThan(-0.3);
+    for (const key of ["ff", "hn", "hf"] as const) expect(Math.abs(s.legs[key].toe.y), key).toBeLessThan(0.03);
+  });
+
+  it("nods off: the head sinks and comes up with a jerk, the eyes heavy and then open a little, again and again", () => {
+    const ys: number[] = [];
+    const open: number[] = [];
+    inClip({ clip: "doze", drowsy: 0.62 }, 8, (s) => {
+      ys.push(s.head.y);
+      open.push(s.head.openL);
+    });
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(0.06);
+    expect(Math.min(...open)).toBeLessThan(0.22);
+    expect(Math.max(...open)).toBeGreaterThan(0.4);
+    // (a doze is not a sleep: the eyes are not shut for good, and the cat does not curl up)
+    const asleep = inClip({ clip: "curl", drowsy: 1 }, 2);
+    expect(Math.max(...ys)).toBeLessThan(asleep.head.y - 0.15);
+  });
+
+  it("turns in its sleep: the head comes up and an eye opens a little, and it is curled up just as it was when it is done", () => {
+    const rig = new CatRig(3);
+    const base = frame({ clip: "curl", drowsy: 1 });
+    rig.snapTo(base, 100);
+    for (let k = 0; k < 120; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, 100);
+    const asleep = { y: rig.solved.head.y, x: rig.solved.head.x, open: rig.solved.head.openL, tail: tip(rig.solved).x };
+    let highest = Infinity;
+    let widest = 0;
+    const total = 2.8;
+    for (let k = 0; k < total * 60; k++) {
+      rig.update({ ...base, clip: "shift", progress: k / 60 / total, clipTime: k / 60 }, 1 / 60, 100);
+      highest = Math.min(highest, rig.solved.head.y);
+      widest = Math.max(widest, rig.solved.head.openL);
+    }
+    expect(highest).toBeLessThan(asleep.y - 0.2);
+    expect(widest).toBeGreaterThan(asleep.open + 0.25);
+    for (let k = 0; k < 180; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, 100);
+    expect(rig.solved.head.y).toBeCloseTo(asleep.y, 2);
+    expect(rig.solved.head.x).toBeCloseTo(asleep.x, 2);
+    expect(rig.solved.head.openL).toBeCloseTo(asleep.open, 2);
+  });
+
+  it("shows what it feels in its face and its tail: ears up and the tail lifted for joy, ears flat and eyes wide for a fright, the head low and the eyes heavy for a letdown, the head cocked", () => {
+    for (const clip of ["sit", "stand"] as const) {
+      const none = inClip({ clip }, 1.5);
+      const joy = inClip({ clip, emote: "joy" }, 1.5);
+      expect(joy.head.earL, clip).toBeLessThan(none.head.earL - 0.05);
+      // (a sitting cat's tail lies along the floor, and is lifted high; a standing cat's is carried up already)
+      if (clip === "sit") expect(tip(joy).y).toBeLessThan(tip(none).y - 0.3);
+      else expect(tip(joy).y).toBeLessThanOrEqual(tip(none).y);
+      const startle = inClip({ clip, emote: "startle" }, 1.5);
+      expect(startle.head.earL, clip).toBeGreaterThan(0.8);
+      expect(startle.head.pupil, clip).toBeGreaterThan(0.95);
+      const droop = inClip({ clip, emote: "droop" }, 1.5);
+      expect(droop.head.y, clip).toBeGreaterThan(none.head.y + 0.03);
+      expect(droop.head.openL, clip).toBeLessThan(0.85);
+      expect(droop.head.earL, clip).toBeGreaterThan(none.head.earL + 0.2);
+      for (const emote of ["tilt", "think"] as const) {
+        const s = inClip({ clip, emote, viewer: emote === "tilt" }, 1.5);
+        expect(Math.abs(s.head.rot - none.head.rot), `${clip} ${emote}`).toBeGreaterThan(0.3);
+      }
+    }
+  });
+
+  it("goes into a feeling and out of it, into a scene and out of it, without a joint snapping (none moves more than a fifth of the body in one frame)", () => {
+    const rig = new CatRig(4);
+    rig.snapTo(frame({ clip: "sit" }), 100);
+    const joints = (s: Solved): number[] => [
+      ...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe.x, s.legs[key].toe.y, s.legs[key].mid.x, s.legs[key].mid.y]),
+      s.head.x,
+      s.head.y,
+      tip(s).x,
+      tip(s).y,
+    ];
+    let previous: number[] | null = null;
+    let biggest = 0;
+    let where = "";
+    let t = 0;
+    const scenes: Array<[Partial<CatFrame>, number]> = [
+      [{ clip: "sit" }, 1],
+      [{ clip: "sit", emote: "startle" }, 0.6],
+      [{ clip: "sit" }, 1],
+      [{ clip: "sit", emote: "joy" }, 1.5],
+      [{ clip: "stand", emote: "droop" }, 1.5],
+      [{ clip: "stand", emote: "tilt", viewer: true }, 1.5],
+      [{ clip: "stand", emote: "think" }, 1.5],
+      [{ clip: "stand" }, 1],
+      [{ clip: "peek", look: { x: 240, y: 230 } }, 2],
+      [{ clip: "stand" }, 1],
+      [{ clip: "tap", reach: { x: 96, y: -72 }, look: { x: 96, y: -72 } }, 2.5],
+      [{ clip: "sit" }, 1.5],
+      [{ clip: "loaf" }, 1],
+      [{ clip: "doze", drowsy: 0.62 }, 5],
+      [{ clip: "curl", drowsy: 1 }, 2],
+      [{ clip: "shift", drowsy: 1 }, 2.8],
+      [{ clip: "curl", drowsy: 1 }, 2],
+    ];
+    for (const [scene, [over, seconds]] of scenes.entries()) {
+      const n = Math.round(seconds * 60);
+      for (let k = 0; k < n; k++) {
+        t += 1 / 60;
+        rig.update(frame({ ...over, clipTime: t % 4, progress: over.clip === "shift" ? k / n : 0 }), 1 / 60, 100);
+        const now = joints(rig.solved);
+        for (const x of now) expect(Number.isFinite(x)).toBe(true);
+        if (previous) {
+          for (let i = 0; i + 1 < now.length; i += 2) {
+            const step = Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!);
+            if (step > biggest) {
+              biggest = step;
+              where = `scene ${scene} ${JSON.stringify(over)} frame ${k} joint ${i / 2}: ${step.toFixed(3)}`;
+            }
+          }
+        }
+        previous = now;
+      }
+    }
+    expect(biggest, where).toBeLessThan(0.2);
   });
 });

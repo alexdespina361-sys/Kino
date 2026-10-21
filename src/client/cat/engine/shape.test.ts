@@ -9,7 +9,7 @@ const CLIPS = Object.keys(BANDS) as Clip[];
 
 describe("the shape of the drawn cat", () => {
   it("is measured for every clip, from the feet up, with nothing missing in between", () => {
-    expect(CLIPS.length).toBe(18);
+    expect(CLIPS.length).toBe(22);
     for (const clip of CLIPS) {
       const bands = BANDS[clip];
       expect(bands.length, clip).toBeGreaterThanOrEqual(4);

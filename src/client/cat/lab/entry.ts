@@ -103,6 +103,15 @@ export const POSES: Cell[] = [
   { label: "crouch, wiggle", frame: { clip: "wiggle", progress: 0.5 } },
   { label: "stalk, facing left", frame: { clip: "stalk", odometer: 20, facing: -1 } },
   { label: "sit, facing left", frame: { clip: "sit", facing: -1 } },
+  { label: "peek, over an edge", frame: { clip: "peek", look: { x: 240, y: 230 } } },
+  { label: "tap, at the pointer", frame: { clip: "tap", clipTime: 0.45, reach: { x: 96, y: -72 }, look: { x: 96, y: -72 } } },
+  { label: "doze, head down", frame: { clip: "doze", clipTime: 2.7, drowsy: 0.62 } },
+  { label: "shift, half awake", frame: { clip: "shift", progress: 0.3, drowsy: 1 } },
+  { label: "sit, joy", frame: { clip: "sit", emote: "joy" } },
+  { label: "stand, startled", frame: { clip: "stand", emote: "startle", look: { x: 200, y: -80 } } },
+  { label: "sit, letdown", frame: { clip: "sit", emote: "droop" } },
+  { label: "sit, tilt", frame: { clip: "sit", emote: "tilt", viewer: true } },
+  { label: "sit, think", frame: { clip: "sit", emote: "think" } },
 ];
 
 /** The cat in a hand, in the simple painter too (the cells are taller, with the feet line high in them). */

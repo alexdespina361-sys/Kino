@@ -1,6 +1,6 @@
 import { clamp, clamp01, finite, lerp } from "../math";
 import { createRng, type Rng } from "../rng";
-import { JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Rect, type Vec, type World } from "../types";
+import { JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Emote, type Rect, type Vec, type World } from "../types";
 import { clampToLedge, computeLedges, findPath, GRAVITY, ledgeAt, planJump, reshape, screenEdges, settle, settledCost, stepFlight, type JumpPlan, type Ledge, type RestPose, type Settling } from "./ledges";
 import { HALF_WIDTH, shapeHits } from "./shape";
 
@@ -18,17 +18,20 @@ type Pose = "sit" | "loaf" | "stand";
 type Act =
   | { k: "fade"; to: 0 | 1; rate: number }
   | { k: "relocate"; where: "home" | "perch" }
-  | { k: "rest"; pose: Pose; dur: number }
+  /** `at`: what it looks at while it rests (the picture of a film, from its perch). */
+  | { k: "rest"; pose: Pose; dur: number; at?: Vec; feel?: Emote }
   | { k: "sleep"; dur: number }
-  /** `stalk`: creeping, low and slow, at the thing it is stalking (the point it looks at). */
-  | { k: "walk"; x: number; run: boolean; maxT: number; stalk?: Vec }
+  /** `stalk`: creeping, low and slow, at the thing it is stalking (the point it looks at). `look`: what it keeps its eyes on, going (where it is going next). */
+  | { k: "walk"; x: number; run: boolean; maxT: number; stalk?: Vec; look?: Vec }
   | { k: "jump"; toSurface: string; toX: number }
   /** A hand has it by the scruff (see `grab`); it is in the air until the hand lets go, and then it falls (`fall`) to the place it will land. */
   | { k: "carried" }
   | { k: "fall" }
   /** A little scene with a length of its own; `at` is what the cat looks at while it lasts. */
-  | { k: "shot"; clip: "stretch" | "yawn" | "groom" | "scratch" | "knead" | "sniff" | "wiggle"; dur: number; at?: Vec }
-  | { k: "point"; target: Rect; dur: number };
+  | { k: "shot"; clip: "stretch" | "yawn" | "groom" | "scratch" | "knead" | "sniff" | "wiggle" | "peek" | "doze" | "shift"; dur: number; at?: Vec }
+  | { k: "point"; target: Rect; dur: number }
+  /** Batting at what the pointer is over (it follows the pointer, while it is near; `at` is where it was when the cat began). */
+  | { k: "tap"; at: Vec; dur: number };
 
 /** A leap in progress: a crouch, the flight along the arc of `plan`, and the settling after the landing. */
 interface JumpState {
@@ -115,6 +118,20 @@ const FALL_ACROSS = 3;
 const FALL_STEER = 4;
 const FALL_FASTEST = 14;
 const FALL_SETTLE = 0.32;
+/**
+ * What the cat makes of the page around it (body lengths, and seconds): a drop of this much or more is looked over before the cat goes down it, and a climb of
+ * this much is measured (a wiggle, as a cat does); a pointer that goes faster than `FLINCH_SPEED` (body lengths a second) within `FLINCH_NEAR` of the cat makes it
+ * flinch, and not again for a while; a pointer that rests (slower than `PLAY_STILL`, for `PLAY_STILL_FOR`) within `PLAY_REACH` of it, up at the height of its head, is
+ * something to bat at.
+ */
+const PEEK_DROP = 1.3;
+const MEASURE_CLIMB = 1.1;
+const FLINCH_SPEED = 9;
+const FLINCH_NEAR = 1.7;
+const FLINCH_EVERY = 25;
+const PLAY_STILL = 2.5;
+const PLAY_STILL_FOR = 0.6;
+const PLAY_REACH = 2.6;
 
 const label = (act: Act): string =>
   act.k === "rest" ? `rest:${act.pose}` : act.k === "shot" ? `shot:${act.clip}` : act.k === "fade" ? (act.to === 0 ? "fade:out" : "fade:in") : act.k === "walk" && act.stalk ? "stalk" : act.k;
@@ -179,6 +196,15 @@ export class CatEngine {
   private heldAt = 0;
   /** A cat that was let go of, on its way down to where it will land (see `runFall`). */
   private fall: { toSurface: string; toX: number; vy: number; landed: boolean; settleT: number; placeY: number; missed: boolean } | null = null;
+  /** What it feels (see `Emote`) and until when. */
+  private emote: Emote = "none";
+  private emoteUntil = 0;
+  /** The pointer, as the cat has watched it: where it was, how fast it is going (body lengths a second, smoothed) and for how long it has been slow. */
+  private pointerPrev: Vec | null = null;
+  private pointerSpeed = 0;
+  private pointerStill = 0;
+  /** A film's cat has nodded off once (it does not watch the film all over again every time it wakes). */
+  private dozed = false;
 
   constructor(seed = 1) {
     this.rng = createRng(seed).fork("director");
@@ -234,7 +260,9 @@ export class CatEngine {
     }
     this.handleEvents(world);
     this.followMode(world);
+    this.watchPointer(world, dt);
     this.drift(dt);
+    if (this.emote !== "none" && this.now >= this.emoteUntil) this.emote = "none";
     if (!this.placed) {
       this.alpha = 0;
       this.alphaTarget = 0;
@@ -286,7 +314,14 @@ export class CatEngine {
     f.appear = this.placed ? this.alpha : 0;
     f.petted = this.petted;
     f.carried = this.hold !== null && this.act?.k === "carried";
+    f.emote = this.emote;
     return f;
+  }
+
+  /** What it feels, for this long (see `Emote`). */
+  private feel(kind: Emote, seconds: number): void {
+    this.emote = kind;
+    this.emoteUntil = this.now + seconds;
   }
 
   private setClip(clip: Clip): void {
@@ -365,7 +400,17 @@ export class CatEngine {
             this.lastFocusAt = this.now;
             this.mood.curiosity = clamp01(this.mood.curiosity + 0.2);
             if (world.focus && this.act?.k !== "sleep") this.lookAt(centre(world.focus), 2.5);
+            // (now and then a new card is a puzzle: a tilt of the head)
+            if (this.canFeel(world, unreachable || inHand) && this.cooled("tilt") && this.rngLook.chance(0.12)) {
+              this.cool.tilt = this.now + 20;
+              this.feel("tilt", 1.7);
+            }
           }
+          break;
+        case "cat.react":
+          if (unreachable || inHand || !this.placed) break;
+          this.lastInteraction = this.now;
+          this.react(world, event.kind);
           break;
         case "cat.point":
           if (unreachable || inHand) break;
@@ -374,13 +419,15 @@ export class CatEngine {
           break;
         case "player.play":
         case "player.resume":
-          if (world.mode === "player" && !unreachable) this.hardPlan([{ k: "rest", pose: "loaf", dur: 2.5 }, { k: "sleep", dur: 600 }]);
+          // (a film that goes on after a pause finds the cat awake for a moment; one that has only begun, watching it)
+          if (world.mode === "player" && !unreachable) this.hardPlan([...(this.dozed ? ([{ k: "rest", pose: "loaf", dur: 2.5 }] as const) : []), ...this.filmPlan(world)]);
           break;
         case "player.pause":
-          if (world.mode === "player" && !unreachable) this.hardPlan([{ k: "rest", pose: "loaf", dur: 18 }, { k: "sleep", dur: 600 }]);
+          if (world.mode === "player" && !unreachable) this.hardPlan([{ k: "rest", pose: "loaf", dur: 18 }, ...this.filmPlan(world)]);
           break;
         case "player.ended":
-          if (world.mode === "player" && !unreachable) this.hardPlan([{ k: "shot", clip: "stretch", dur: 2.4 }, { k: "rest", pose: "loaf", dur: 20 }]);
+          // (the end of the film wakes it: a yawn, a stretch, and it sits up for what comes next)
+          if (world.mode === "player" && !unreachable) this.hardPlan([{ k: "rest", pose: "loaf", dur: 1.2 }, { k: "shot", clip: "yawn", dur: 2.8 }, { k: "shot", clip: "stretch", dur: 2.4 }, { k: "rest", pose: "sit", dur: 20 }]);
           break;
         default:
           break;
@@ -442,6 +489,8 @@ export class CatEngine {
     if (world.mode === this.mode) return;
     const previous = this.mode;
     this.mode = world.mode;
+    // (a film that begins is watched from its start)
+    if (world.mode === "player") this.dozed = false;
     if (previous === "boot") return;
     if (world.mode === "away") {
       this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }]);
@@ -646,14 +695,95 @@ export class CatEngine {
   private drift(dt: number): void {
     const m = this.mood;
     const idle = this.now - this.lastInteraction;
-    const sleeping = this.act?.k === "sleep";
+    const act = this.act;
+    // (a sleeper that shifts in its sleep is still asleep, and one that nods off is on the way to it)
+    const sleeping = act?.k === "sleep" || (act?.k === "shot" && act.clip === "shift");
+    const dozing = act?.k === "shot" && act.clip === "doze";
     m.sleepiness = clamp01(m.sleepiness + dt * (sleeping ? -0.025 : idle > 30 ? 1 / 260 : 1 / 900));
     m.energy = clamp01(m.energy + (0.32 - m.energy) * Math.min(1, dt / 25));
     m.curiosity = clamp01(m.curiosity + (0.28 - m.curiosity) * Math.min(1, dt / 40));
     m.affection = clamp01(m.affection + (0.2 - m.affection) * Math.min(1, dt / 240));
-    const goal = sleeping ? 1 : this.petted ? 0.1 : 0;
+    const goal = sleeping ? 1 : dozing ? 0.62 : this.petted ? 0.1 : 0;
     this.drowsy = clamp01(this.drowsy + clamp(goal - this.drowsy, -dt * 0.9, dt * 0.3));
     this.clipT += dt;
+  }
+
+  /* ------------------------------ feelings, and what the pointer does ------------------------------ */
+
+  /** Whether the cat is in a state to show a feeling that nothing asked of it: awake, in sight, not in a hand, and not on the page at the page's say-so. */
+  private canFeel(world: World, busy: boolean): boolean {
+    const act = this.act;
+    if (busy || !this.placed || this.alpha < 0.5 || world.mode === "away" || act?.k === "sleep") return false;
+    return !(act?.k === "shot" && (act.clip === "shift" || act.clip === "doze"));
+  }
+
+  /** The page tells the cat what it found for the viewer: a title (joy, and a little bounce on the spot) or none (a letdown). */
+  private react(world: World, kind: "found" | "empty"): void {
+    // (a cat that is asleep does not hear it: the title it is shown, if there is one, is what wakes it)
+    if (!this.canFeel(world, false)) return;
+    if (kind === "found") {
+      this.feel("joy", 1.8);
+      const here = this.here();
+      if (here && world.mode === "browse" && !world.reducedMotion && !world.quiet && this.grounded && this.act?.k !== "jump") {
+        // (towards the side with room)
+        const dir: 1 | -1 = this.x - here.x0 > here.x1 - this.x ? -1 : 1;
+        this.hardPlan([{ k: "jump", toSurface: here.surfaceId, toX: clampToLedge(here, this.x + dir * 0.3 * world.bodyLength) }]);
+      }
+    } else {
+      this.feel("droop", 2.4);
+      this.hardPlan([{ k: "rest", pose: "sit", dur: 2.8 }]);
+    }
+  }
+
+  /** How fast the pointer goes, and how long it has been slow; a pointer that dashes close to the cat is a fright. */
+  private watchPointer(world: World, dt: number): void {
+    const point = world.pointer;
+    if (!point || dt <= 0) {
+      this.pointerPrev = point ? { x: point.x, y: point.y } : null;
+      this.pointerSpeed = 0;
+      this.pointerStill = 0;
+      return;
+    }
+    const L = world.bodyLength;
+    if (this.pointerPrev) {
+      const v = Math.hypot(point.x - this.pointerPrev.x, point.y - this.pointerPrev.y) / dt / L;
+      this.pointerSpeed += (v - this.pointerSpeed) * Math.min(1, dt * 14);
+    } else this.pointerSpeed = 0;
+    this.pointerStill = this.pointerSpeed < PLAY_STILL ? this.pointerStill + dt : 0;
+    this.pointerPrev = { x: point.x, y: point.y };
+    if (this.pointerSpeed > FLINCH_SPEED && this.cooled("flinch")) this.flinch(world, point);
+  }
+
+  private flinch(world: World, point: Vec): void {
+    const L = world.bodyLength;
+    const act = this.act;
+    if (world.mode !== "browse" || world.reducedMotion || world.quiet || !this.canFeel(world, this.leaving())) return;
+    if (act?.k === "carried" || act?.k === "fall" || act?.k === "jump" || act?.k === "fade" || act?.k === "relocate") return;
+    // (near the cat, and not on it: a hand that comes to stroke it is not a fright)
+    const away = Math.hypot(point.x - this.x, point.y - (this.y - 0.4 * L));
+    if (away > FLINCH_NEAR * L || away < 0.45 * L) return;
+    this.cool.flinch = this.now + FLINCH_EVERY + this.rngLook.range(0, 15);
+    this.feel("startle", 0.5);
+    this.lookAt({ x: point.x, y: point.y }, 1.8);
+    // (it freezes, and then, as if nothing had happened, it washes)
+    this.hardPlan([
+      { k: "rest", pose: act?.k === "walk" ? "stand" : "sit", dur: 0.9 },
+      ...(this.rngLook.chance(0.55) ? ([{ k: "shot", clip: "groom", dur: this.rngLook.range(2.4, 3.8) }] as const) : []),
+    ]);
+  }
+
+  /**
+   * A film's cat: it watches the picture a while from its perch (the first time it is on), nods off, and sleeps, shifting a little in its sleep now and then. A viewer who
+   * wants no motion has it asleep, still.
+   */
+  private filmPlan(world: World): Act[] {
+    if (world.reducedMotion) return [{ k: "sleep", dur: 600 }];
+    const sleep: Act[] = [{ k: "sleep", dur: this.rng.range(70, 150) }, { k: "shot", clip: "shift", dur: 2.8 }];
+    if (this.dozed) return sleep;
+    this.dozed = true;
+    const vp = world.viewport;
+    const picture = { x: vp.x + vp.w / 2, y: vp.y + vp.h * 0.38 };
+    return [{ k: "rest", pose: "loaf", dur: this.rng.range(7, 16), at: picture }, { k: "shot", clip: "doze", dur: this.rng.range(7.5, 11) }, ...sleep];
   }
 
   /* ------------------------------ looking ------------------------------ */
@@ -716,8 +846,14 @@ export class CatEngine {
     if (!path) return null;
     const plan: Act[] = [];
     let cursor = from;
+    const L = world.bodyLength;
+    // (a cat in no hurry looks where it is going, and looks over a drop before it goes down it and measures a climb before it goes up)
+    const calm = !run && !world.reducedMotion;
     for (const hop of path) {
-      plan.push({ k: "walk", x: hop.takeoffX, run, maxT: 30 });
+      const landing = { x: hop.landX, y: hop.ledge.y };
+      plan.push({ k: "walk", x: hop.takeoffX, run, maxT: 30, ...(calm ? { look: landing } : {}) });
+      if (calm && hop.ledge.y - cursor.y >= PEEK_DROP * L) plan.push({ k: "shot", clip: "peek", dur: this.rng.range(0.8, 1.4), at: landing });
+      else if (calm && cursor.y - hop.ledge.y >= MEASURE_CLIMB * L) plan.push({ k: "shot", clip: "wiggle", dur: this.rng.range(0.5, 0.8), at: landing });
       plan.push({ k: "jump", toSurface: hop.ledge.surfaceId, toX: hop.landX });
       cursor = hop.ledge;
     }
@@ -1048,7 +1184,8 @@ export class CatEngine {
       if (this.ledges.length > 0 && this.place(world, world.mode === "player" ? "perch" : "home")) {
         this.alphaTarget = 1;
         this.alphaRate = FADE_IN_RATE;
-        this.queue = [{ k: "rest", pose: "sit", dur: 3 }];
+        // (a cat that comes in during a film goes straight to what a film's cat does)
+        this.queue = world.mode === "player" ? [] : [{ k: "rest", pose: "sit", dur: 3 }];
       }
       return;
     }
@@ -1072,8 +1209,9 @@ export class CatEngine {
         this.alphaRate = act.rate;
         break;
       case "relocate":
-        // (a cat that changes places is never seen doing it: what is left of it is gone)
+        // (a cat that changes places is never seen doing it: what is left of it is gone, and it comes in sitting or lying, not in the middle of a scene of the last place)
         this.alpha = 0;
+        if (this.clip === "doze" || this.clip === "shift" || this.clip === "peek" || this.clip === "tap") this.setClip(act.where === "perch" ? "loaf" : "sit");
         if (!this.place(world, act.where)) this.placed = false;
         break;
       case "jump":
@@ -1085,9 +1223,25 @@ export class CatEngine {
         if (Math.abs(this.reach.x - this.x) > 1) this.facing = this.reach.x > this.x ? 1 : -1;
         break;
       }
+      case "rest":
+        // (resting with its eyes on something: the picture of a film, a card that has the focus)
+        if (act.at) {
+          this.lookAt(act.at, act.dur);
+          if (Math.abs(act.at.x - this.x) > 1) this.facing = act.at.x > this.x ? 1 : -1;
+        }
+        if (act.feel) this.feel(act.feel, Math.min(act.dur, 2.4));
+        break;
+      case "tap": {
+        // (it reaches at where the pointer is, and has its eyes on it)
+        this.reach = act.at;
+        this.lookAt(act.at, 0.5);
+        if (Math.abs(act.at.x - this.x) > 1) this.facing = act.at.x > this.x ? 1 : -1;
+        break;
+      }
       case "walk":
-        // (a cat that stalks has its eyes on what it stalks, all the way)
+        // (a cat that stalks has its eyes on what it stalks, all the way; one that is going somewhere looks at the place)
         if (act.stalk) this.lookAt(act.stalk, act.maxT);
+        else if (act.look && !act.run) this.lookAt(act.look, Math.min(act.maxT, 1.2 + Math.abs(act.x - this.x) / (WALK_SPEED * world.bodyLength)));
         break;
       case "shot":
         if (act.at) {
@@ -1103,11 +1257,11 @@ export class CatEngine {
     if (this.history.length > 8) this.history.shift();
   }
 
-  /** In a film the cat is asleep on its perch; it wakes a little when the film is paused. */
+  /** In a film the cat watches the picture a while from its perch, nods off and sleeps (see `filmPlan`); it is awake, and loafing, when the film is paused. */
   private choosePlayer(world: World): Act[] {
     if (world.player === "paused" || world.player === "loading" || world.player === "none") return [{ k: "rest", pose: "loaf", dur: 12 }];
     if (world.player === "ended" || world.player === "error") return [{ k: "rest", pose: "sit", dur: 20 }];
-    return [{ k: "sleep", dur: 600 }];
+    return this.filmPlan(world);
   }
 
   private cooled(name: string): boolean {
@@ -1297,11 +1451,17 @@ export class CatEngine {
       // (and before it lies down for good, a cat will often tread its place into shape; the place is chosen for all of it: lying down, treading, curled up)
       plan: () => {
         const tread = this.rng.chance(0.5);
+        const nap = this.rng.range(25, 70);
+        // (a long nap is not one stillness: part of the way through, the sleeper changes its position)
+        const turns = nap > 45 && this.rng.chance(0.55);
+        const asleep: Act[] = turns
+          ? [{ k: "sleep", dur: nap * this.rng.range(0.4, 0.6) }, { k: "shot", clip: "shift", dur: 2.6 }, { k: "sleep", dur: nap * this.rng.range(0.3, 0.45) }]
+          : [{ k: "sleep", dur: nap }];
         return [
           ...walkToSpot(tread ? ["loaf", "knead", "curl"] : ["loaf", "curl"]),
           { k: "rest", pose: "loaf", dur: 2.5 },
           ...(tread ? [{ k: "shot", clip: "knead", dur: this.rng.range(4, 7) } as const] : []),
-          { k: "sleep", dur: this.rng.range(25, 70) },
+          ...asleep,
           { k: "shot", clip: "stretch", dur: 2.4 },
         ];
       },
@@ -1316,10 +1476,75 @@ export class CatEngine {
           const cx = f.x + f.w / 2;
           const x = clampToLedge(here, cx + (this.x < cx ? -1 : 1) * (f.w / 2 + 0.8 * L));
           this.cool.watch = this.now + this.rng.range(25, 50);
-          return [{ k: "walk", x, run: false, maxT: 30 }, { k: "rest", pose: "sit", dur: this.rng.range(5, 10) }];
+          // (and now and then, as it looks at the card, it cocks its head)
+          const tilts = this.rngLook.chance(0.25);
+          return [{ k: "walk", x, run: false, maxT: 30, look: centre(f) }, { k: "rest", pose: "sit", dur: this.rng.range(5, 10), ...(tilts ? { feel: "tilt" as const } : {}) }];
         },
       });
     }
+
+    // a poster on a lower row, a few lengths down the page: the cat goes to the place above it and looks down at it, head out
+    if (here && roaming && world.targets.length > 0 && this.cooled("inspect")) {
+      options.push({
+        name: "inspect",
+        score: 0.3 * (0.4 + m.curiosity) * (1 - 0.6 * tired),
+        plan: () => {
+          const below = world.targets.filter((t) => {
+            if (!t.surfaceId || t.surfaceId === here.surfaceId) return false;
+            const at = centre(t.rect);
+            return at.y - here.y >= 1.2 * L && at.y - here.y <= 4.5 * L && Math.abs(at.x - this.x) <= 6 * L;
+          });
+          const one = this.rng.pick(below);
+          if (!one) return null;
+          const at = centre(one.rect);
+          // (above it, or as near to that as it can be without its body hiding a name)
+          const above = clampToLedge(here, at.x);
+          const x = spotFor("stand", above) ?? above;
+          this.cool.inspect = this.now + this.rng.range(50, 100);
+          return [
+            ...(Math.abs(x - this.x) < 0.5 * L ? [] : [{ k: "walk", x, run: false, maxT: 30, look: at } as const]),
+            { k: "shot", clip: "peek", dur: this.rng.range(2.2, 3.4), at },
+            { k: "rest", pose: cleanestPose("sit", x), dur: this.rng.range(1.5, 3) },
+          ];
+        },
+      });
+    }
+
+    // the pointer is resting up near the cat's head, a little way off: something to bat at (and not again for a while)
+    const lure = world.pointer;
+    if (here && roaming && lure && this.cooled("bat") && this.pointerStill >= PLAY_STILL_FOR) {
+      const dx = lure.x - this.x;
+      if (Math.abs(dx) >= 0.7 * L && Math.abs(dx) <= PLAY_REACH * L && lure.y <= here.y - 0.1 * L && lure.y >= here.y - 1.3 * L) {
+        options.push({
+          name: "bat",
+          score: 1.4 * (0.5 + m.energy) * (1 - 0.7 * tired),
+          plan: () => {
+            const dir: 1 | -1 = dx >= 0 ? 1 : -1;
+            const at = { x: lure.x, y: lure.y };
+            // (it stands a paw's length from it)
+            const from = clampToLedge(here, at.x - dir * 0.7 * L);
+            if (Math.abs(at.x - from) > 1.05 * L) return null;
+            this.cool.bat = this.now + this.rng.range(70, 130);
+            return [
+              ...(Math.abs(from - this.x) > 0.15 * L ? [{ k: "walk", x: from, run: false, maxT: 12, look: at } as const] : []),
+              { k: "tap", at, dur: this.rng.range(2.2, 3.4) },
+              { k: "rest", pose: "sit", dur: this.rng.range(1, 2.2) },
+            ];
+          },
+        });
+      }
+    }
+
+    // (a thoughtful moment, now and then: a look away and up; where it sits, and only if its body hides none of the names there)
+    const hides = Math.max(settledCost("sit", 1, this.x, this.y, L, world), settledCost("sit", -1, this.x, this.y, L, world));
+    options.push({
+      name: "ponder",
+      score: this.cooled("ponder") && tired < 0.8 && hides <= CLEAN * L * L ? 0.28 : 0,
+      plan: () => {
+        this.cool.ponder = this.now + this.rng.range(40, 90);
+        return [{ k: "rest", pose: "sit", dur: this.rng.range(3, 5.5), feel: "think" }];
+      },
+    });
 
     // (not the same thing twice in a row)
     const weighted = options.map((o) => ({ o, w: Math.max(0, o.score) * (last.startsWith(o.name) ? 0.35 : 1) }));
@@ -1382,6 +1607,20 @@ export class CatEngine {
         this.setClip("point");
         if (this.actT >= act.dur) this.finish();
         break;
+      case "tap": {
+        this.stop(dt, L);
+        this.setClip("tap");
+        // (the paw goes where the pointer goes, for as long as it is there to be batted at: not behind the cat, nor off out of reach)
+        const point = world.pointer;
+        const ahead = point ? (point.x - this.x) * this.facing : 0;
+        if (!point || this.actT >= act.dur || world.quiet || world.reducedMotion || world.mode !== "browse" || ahead < 0.25 * L || ahead > (PLAY_REACH + 0.4) * L || Math.abs(point.y - (this.y - 0.6 * L)) > 1.6 * L) {
+          this.finish();
+          break;
+        }
+        this.reach = { x: point.x, y: point.y };
+        this.lookAt(this.reach, 0.4);
+        break;
+      }
       case "walk":
         this.walk(world, act, dt);
         break;
@@ -1470,6 +1709,8 @@ export class CatEngine {
       baseFromY: plan.fromY,
     };
     if (Math.abs(toX - this.x) > 1) this.facing = toX > this.x ? 1 : -1;
+    // (the eyes are on the place it is going to, all the way)
+    this.lookAt({ x: toX, y: to.y - 0.35 * world.bodyLength }, total);
     this.vx = 0;
     this.visited[to.surfaceId] = this.now;
   }

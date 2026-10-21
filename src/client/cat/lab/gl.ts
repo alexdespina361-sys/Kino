@@ -210,6 +210,16 @@ export const EXTENT_CELLS: GlCell[] = (() => {
   }
   at("sniff", { clip: "sniff", progress: 0.5 });
   at("stalk", { clip: "stalk", odometer: 20 }, 1.0);
+  // (looking over an edge; the paw out at the pointer, level, high and low, at several moments of its beat; nodding off through its cycle; a sleeper shifting)
+  for (const s of [0.6, 1.4]) at(`peek@${s}`, { clip: "peek", look: { x: 240, y: 230 } }, s);
+  for (const [name, reach] of [["level", { x: 105, y: -60 }], ["high", { x: 70, y: -190 }], ["low", { x: 100, y: 40 }]] as const) {
+    at(`point@${name}`, { clip: "point", reach, look: reach }, 1.2);
+    for (const t of [0.15, 0.4, 0.65]) at(`tap@${name}${t}`, { clip: "tap", clipTime: t, reach, look: reach }, t);
+  }
+  for (const t of [0.9, 1.8, 2.7, 3.3]) at(`doze@${t}`, { clip: "doze", drowsy: 0.62 }, t);
+  for (const p of [0.15, 0.35, 0.6, 0.85]) at(`shift@${p}`, { clip: "shift", progress: p, drowsy: 1 });
+  // (and the feelings that last: the head cocked, and the look away and up; the flinch, the lift and the letdown are over in a moment and are not measured)
+  for (const clip of ["sit", "stand"] as const) for (const emote of ["tilt", "think"] as const) at(`${clip}@${emote}`, { clip, emote }, 1.0);
   for (let i = 0; i < 8; i++) cells.push({ label: `walk@${i}`, frame: { clip: "walk", vx: 150 }, cycle: i / 8, settle: 1 });
   for (let i = 0; i < 12; i++) cells.push({ label: `run@${i}`, frame: { clip: "run", vx: 380 }, cycle: i / 12, settle: 1 });
   return cells;
