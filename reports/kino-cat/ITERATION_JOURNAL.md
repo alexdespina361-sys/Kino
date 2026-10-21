@@ -154,6 +154,14 @@ One entry per iteration of the branch `feat/kino-cat` (off main `5cf4704`, PR #2
 - **Run.** 124 unit tests, the soak, all 26 end-to-end tests.
 - **Reference research.** None.
 
+## 16 · In a film the cat rests between the groups of the controls (`cfea260`, round 2)
+
+- **Root issue.** Found by magnifying the film pictures for the evidence (ISSUE_LOG #40): at 1280×720 the cat's corner was behind the right group of the controls, so a waking cat's head was behind the fullscreen icon. The layer is under the controls, so it was never over a button, but a face in a button's icon is clutter.
+- **Technique.** The perch is the stretch of the controls' row that has no button in it: the page reader takes the rectangles of the row's two groups (they are in the page whether the controls are up or not), and `perchesFor` (host/perch.ts) takes the widest gap between them, less the longest reach of the postures a film takes (loaf, curl, sit, knead, stretch, tail included) on both sides. Where the row leaves no such stretch (fewer than two groups, groups on two lines, a gap narrower than a third of the cat's length) the perches are the two corners as before.
+- **Considered, not done.** Moving the cat above the controls' row (the film's picture is the viewer's, and captions live there); drawing the cat over the controls (it would cover buttons, which the plan forbids).
+- **Seen / measured.** Three unit tests: the cat's silhouette (`shapeHits`) against each group in every posture a film takes, facing either way, at both ends of the perch; the corner fallback for each of the four reasons; `widestGap`. The mutant without the margin fails two of them (checked). The film end-to-end test now asserts the cat's body is between the groups, with the controls up or down. Pictures `film-1280x720-*-between-the-groups.jpg`: the head is in the clear in the paused state.
+- **Run.** tsc, 116 cat unit tests, the two film end-to-end tests.
+- **Reference research.** None.
 ## What the later iterations should do first
 
 1. A person should watch it on a real TV or Fire Stick with `?cat=debug` and report `art`, `quality`, `cost`, `fps` (05, "Not tested").
