@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatFrame, Clip } from "../types";
-import { CatRig, type Solved } from "./rig";
+import { CatRig, WALK_STRIDE, type Solved } from "./rig";
 
 const frame = (over: Partial<CatFrame>): CatFrame => ({ x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false, ...over });
 
@@ -498,5 +498,305 @@ describe("the cat with the page: looking over an edge, batting at the pointer, n
       }
     }
     expect(biggest, where).toBeLessThan(0.2);
+  });
+});
+
+describe("the cat's finer motion: a walk that rocks, a face-wash, a yawn, a stretch, a slow get-up, a fold to scratch, and the life of a cat at rest", () => {
+  const p2p = (a: number[]): number => Math.max(...a) - Math.min(...a);
+  const correlation = (a: number[], b: number[]): number => {
+    const n = a.length;
+    const ma = a.reduce((x, y) => x + y, 0) / n;
+    const mb = b.reduce((x, y) => x + y, 0) / n;
+    let ab = 0;
+    let aa = 0;
+    let bb = 0;
+    for (let i = 0; i < n; i++) {
+      ab += (a[i]! - ma) * (b[i]! - mb);
+      aa += (a[i]! - ma) ** 2;
+      bb += (b[i]! - mb) ** 2;
+    }
+    return ab / Math.sqrt(aa * bb || 1);
+  };
+  /** A clip played from its start to its end over `seconds` (progress runs 0 to 1), 60 frames a second, after a settled sit or stand. */
+  const play = (clip: Clip, seconds: number, watch: (s: Solved, t: number) => void, from: Clip = "sit", over: Partial<CatFrame> = {}): void => {
+    const rig = new CatRig(3);
+    rig.snapTo(frame({ clip: from }), 100);
+    for (let k = 0; k < 120; k++) rig.update(frame({ clip: from, clipTime: k / 60 }), 1 / 60, 100);
+    const steps = Math.round(seconds * 60);
+    for (let k = 0; k < steps; k++) {
+      rig.update(frame({ clip, clipTime: k / 60, progress: k / (steps - 1), ...over }), 1 / 60, 100);
+      watch(rig.solved, k / 60);
+    }
+  };
+
+  it("rocks over its feet as it walks: the shoulders rise and fall twice a stride, the rump the other way about, and the head goes forward with the shoulders", () => {
+    const rig = new CatRig(3);
+    const shoulders: number[] = [];
+    const rump: number[] = [];
+    const headX: number[] = [];
+    let odometer = 0;
+    for (let k = 0; k < 360; k++) {
+      odometer += 100 / 60;
+      rig.update(frame({ clip: "walk", odometer, vx: 100, clipTime: k / 60 }), 1 / 60, 100);
+      if (k >= 60) {
+        shoulders.push(rig.solved.pose.p.shoulderTop.y);
+        rump.push(rig.solved.pose.p.rumpTop.y);
+        headX.push(rig.solved.head.x);
+      }
+    }
+    expect(p2p(shoulders)).toBeGreaterThan(0.035);
+    expect(p2p(rump)).toBeGreaterThan(0.018);
+    // (y is down: the shoulders are up, a smaller y, as the head is forward)
+    expect(correlation(shoulders, rump)).toBeLessThan(-0.6);
+    expect(correlation(shoulders, headX)).toBeLessThan(-0.5);
+    // (a body length a second, five seconds, a stride of WALK_STRIDE of the body: two rocks to each)
+    const mean = shoulders.reduce((a, b) => a + b, 0) / shoulders.length;
+    let rocks = 0;
+    for (let i = 1; i < shoulders.length; i++) if (shoulders[i - 1]! < mean && shoulders[i]! >= mean) rocks++;
+    expect(Math.abs(rocks - (5 * 2) / WALK_STRIDE)).toBeLessThanOrEqual(2);
+    // (a cat that stands still does not rock)
+    const still = inClip({ clip: "stand" }, 3);
+    const stillShoulders: number[] = [];
+    inClip({ clip: "stand" }, 3, (s) => stillShoulders.push(s.pose.p.shoulderTop.y));
+    expect(p2p(stillShoulders)).toBeLessThan(0.02);
+    expect(still.pose.p.shoulderTop.y).toBeLessThan(0);
+  });
+
+  it("washes its face: the paw is licked at the mouth, drawn up the cheek to the eye and the ear, and the eye on that side is shut as it passes", () => {
+    const toeY: number[] = [];
+    const reach: number[] = [];
+    const open: number[] = [];
+    play("groom", 6, (s, t) => {
+      if (t < 1.5) return;
+      toeY.push(s.legs.fn.toe.y);
+      reach.push(Math.hypot(s.legs.fn.toe.x - s.head.x, s.legs.fn.toe.y - s.head.y));
+      open.push(s.head.openL);
+    });
+    // (the paw goes a long way up and down the face, and is at the head, not by it)
+    expect(p2p(toeY)).toBeGreaterThan(0.15);
+    expect(Math.min(...reach)).toBeLessThan(0.06);
+    // (the eyes are never wide open while it washes, and shut as the paw goes over them)
+    expect(Math.max(...open)).toBeLessThan(0.7);
+    expect(Math.min(...open)).toBeLessThan(0.2);
+  });
+
+  it("yawns wide: the head goes back and the jaw drops, the eyes screw shut and the chest is filled, and it is closed and still again at the end", () => {
+    const sitting = inClip({ clip: "sit" }, 2);
+    const jaw: number[] = [];
+    const rot: number[] = [];
+    const open: number[] = [];
+    const chest: number[] = [];
+    let last: Solved | null = null;
+    play("yawn", 2.8, (s) => {
+      jaw.push(s.head.jaw);
+      rot.push(s.head.rot);
+      open.push(s.head.openL);
+      chest.push(s.pose.p.chestFront.y);
+      last = s;
+    });
+    expect(Math.max(...jaw)).toBeGreaterThan(0.9);
+    expect(Math.min(...rot)).toBeLessThan(-0.45);
+    expect(Math.min(...open)).toBeLessThan(0.2);
+    // (the chest goes up with the breath taken: y is down)
+    expect(sitting.pose.p.chestFront.y - Math.min(...chest)).toBeGreaterThan(0.015);
+    expect(last!.head.jaw).toBeLessThan(0.12);
+    expect(Math.abs(last!.head.rot)).toBeLessThan(0.1);
+  });
+
+  it("stretches: the chest goes down and the forepaws out along the floor, the rump stays up, and it stands again after", () => {
+    const standing = inClip({ clip: "stand" }, 2);
+    const chest: number[] = [];
+    const paw: number[] = [];
+    const rump: number[] = [];
+    let last: Solved | null = null;
+    play(
+      "stretch",
+      2.6,
+      (s) => {
+        chest.push(s.pose.p.chestFront.y);
+        paw.push(s.legs.fn.toe.x);
+        rump.push(s.pose.p.rumpTop.y);
+        last = s;
+      },
+      "stand",
+    );
+    // (y is down)
+    expect(Math.max(...chest) - standing.pose.p.chestFront.y).toBeGreaterThan(0.2);
+    expect(Math.max(...paw) - standing.legs.fn.toe.x).toBeGreaterThan(0.25);
+    expect(standing.pose.p.rumpTop.y - Math.min(...rump)).toBeGreaterThan(0.1);
+    // (held, the forepaws go on sliding out: a little further at two thirds of the way through it than at two fifths)
+    expect(paw[Math.round(paw.length * 0.65)]! - paw[Math.round(paw.length * 0.4)]!).toBeGreaterThan(0.012);
+    expect(last!.pose.p.chestFront.y).toBeCloseTo(standing.pose.p.chestFront.y, 1);
+  });
+
+  it("takes its time getting up from lying curled up, less from a loaf, and hardly any from sitting", () => {
+    const standing = inClip({ clip: "stand" }, 4);
+    const sixtyPercent = (from: Clip, drowsy: number): number => {
+      const rig = new CatRig(3);
+      const lying = frame({ clip: from, drowsy });
+      rig.snapTo(lying, 100);
+      for (let k = 0; k < 120; k++) rig.update({ ...lying, clipTime: k / 60 }, 1 / 60, 100);
+      const low = rig.solved.head.y;
+      for (let k = 0; k < 600; k++) {
+        rig.update(frame({ clip: "stand", clipTime: k / 60 }), 1 / 60, 100);
+        if (Math.abs(rig.solved.head.y - standing.head.y) < 0.4 * Math.abs(low - standing.head.y)) return k / 60;
+      }
+      return Infinity;
+    };
+    const fromSit = sixtyPercent("sit", 0);
+    const fromLoaf = sixtyPercent("loaf", 0);
+    const fromCurl = sixtyPercent("curl", 1);
+    expect(fromLoaf).toBeGreaterThan(fromSit * 1.3);
+    expect(fromCurl).toBeGreaterThan(fromLoaf * 1.3);
+    expect(fromCurl).toBeGreaterThan(0.3);
+  });
+
+  it("folds to meet its foot when it scratches: the head goes back over the shoulder, and the neck and the chest lean back with it", () => {
+    const sitting = inClip({ clip: "sit" }, 2);
+    const s = inClip({ clip: "scratch" }, 2);
+    expect(s.head.x).toBeLessThan(sitting.head.x - 0.06);
+    expect(s.pose.p.neckTop.x).toBeLessThan(sitting.pose.p.neckTop.x - 0.02);
+    expect(s.pose.p.chestFront.x).toBeLessThan(sitting.pose.p.chestFront.x - 0.02);
+  });
+
+  it("looks about when it is at rest, and only then: its eyes go from one thing to another, and are still when it looks at something, or is asleep", () => {
+    const eyes: number[] = [];
+    inClip({ clip: "sit" }, 40, (s) => eyes.push(s.head.eyeX));
+    expect(p2p(eyes)).toBeGreaterThan(0.8);
+    const watching: number[] = [];
+    inClip({ clip: "sit", look: { x: 300, y: -40 } }, 20, (s, t) => {
+      if (t > 1.5) watching.push(s.head.eyeX);
+    });
+    expect(p2p(watching)).toBeLessThan(0.05);
+    const asleep: number[] = [];
+    inClip({ clip: "curl", drowsy: 1 }, 20, (s, t) => {
+      if (t > 1.5) asleep.push(s.head.eyeX);
+    });
+    expect(p2p(asleep)).toBeLessThan(0.05);
+  });
+
+  it("changes its feet when it stands still, one at a time, and puts them down again; a walking cat does not", () => {
+    const toes = { fn: [] as number[], ff: [] as number[], hn: [] as number[], hf: [] as number[] };
+    let two = 0;
+    let changes = 0;
+    let wasUp = false;
+    inClip({ clip: "stand" }, 60, (s) => {
+      let up = 0;
+      for (const key of ["fn", "ff", "hn", "hf"] as const) {
+        toes[key].push(s.legs[key].toe.x);
+        if (s.legs[key].toe.y < -0.012) up++;
+      }
+      if (up > 1) two++;
+      if (up > 0 && !wasUp) changes++;
+      wasUp = up > 0;
+    });
+    // (a paw comes up and goes a hair along, every five to fourteen seconds, and never two at once)
+    expect(changes).toBeGreaterThanOrEqual(3);
+    expect(changes).toBeLessThanOrEqual(14);
+    expect(two).toBe(0);
+    for (const key of ["fn", "ff", "hn", "hf"] as const) expect(p2p(toes[key]), key).toBeLessThan(0.1);
+    // (the feet are where the pose has them when it is asleep, or walking off in the middle of one)
+    const rig = new CatRig(3);
+    rig.snapTo(frame({ clip: "stand" }), 100);
+    let k = 0;
+    let lifted = false;
+    for (; k < 60 * 60 && !lifted; k++) {
+      rig.update(frame({ clip: "stand", clipTime: k / 60 }), 1 / 60, 100);
+      lifted = (["fn", "ff", "hn", "hf"] as const).some((key) => rig.solved.legs[key].toe.y < -0.02);
+    }
+    expect(lifted).toBe(true);
+    let previous: number[] | null = null;
+    let biggest = 0;
+    let odometer = 0;
+    for (let j = 0; j < 90; j++) {
+      odometer += 100 / 60;
+      rig.update(frame({ clip: "walk", odometer, vx: 100, clipTime: j / 60 }), 1 / 60, 100);
+      const now = (["fn", "ff", "hn", "hf"] as const).flatMap((key) => [rig.solved.legs[key].toe.x, rig.solved.legs[key].toe.y]);
+      if (previous) for (let i = 0; i + 1 < now.length; i += 2) biggest = Math.max(biggest, Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!));
+      previous = now;
+    }
+    expect(biggest).toBeLessThan(0.2);
+  });
+
+  it("goes into a wash, a yawn, a stretch and a scratch and out of each without a joint snapping (none moves more than a fifth of the body in one frame)", () => {
+    const rig = new CatRig(5);
+    rig.snapTo(frame({ clip: "sit" }), 100);
+    const joints = (s: Solved): number[] => [
+      ...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe.x, s.legs[key].toe.y, s.legs[key].mid.x, s.legs[key].mid.y]),
+      s.head.x,
+      s.head.y,
+      s.tail[s.tail.length - 1]!.x,
+      s.tail[s.tail.length - 1]!.y,
+    ];
+    let previous: number[] | null = null;
+    let biggest = 0;
+    let where = "";
+    const scenes: Array<[Clip, number]> = [
+      ["sit", 1],
+      ["groom", 4],
+      ["sit", 1],
+      ["yawn", 2.8],
+      ["sit", 1],
+      ["scratch", 3.5],
+      ["sit", 1],
+      ["stand", 1],
+      ["stretch", 2.6],
+      ["stand", 1],
+      ["loaf", 1.5],
+      ["stand", 2],
+      ["curl", 2],
+      ["stand", 2],
+    ];
+    for (const [clip, seconds] of scenes) {
+      const n = Math.round(seconds * 60);
+      for (let k = 0; k < n; k++) {
+        rig.update(frame({ clip, clipTime: k / 60, progress: k / (n - 1), drowsy: clip === "curl" ? 1 : 0 }), 1 / 60, 100);
+        const now = joints(rig.solved);
+        for (const x of now) expect(Number.isFinite(x)).toBe(true);
+        if (previous) {
+          for (let i = 0; i + 1 < now.length; i += 2) {
+            const step = Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!);
+            if (step > biggest) {
+              biggest = step;
+              where = `${clip} frame ${k} joint ${i / 2}: ${step.toFixed(3)}`;
+            }
+          }
+        }
+        previous = now;
+      }
+    }
+    expect(biggest, where).toBeLessThan(0.2);
+  });
+
+  it("is not thrown by a yawn, a wash, a stretch or a scratch being cut short (a click or a fright can end any of them at any moment): nothing snaps, and the head does not turn more than an eighth of a radian in a frame", () => {
+    for (const [clip, total, cutAt, back] of [
+      ["yawn", 2.8, 1.1, "sit"],
+      ["groom", 5, 1.7, "sit"],
+      ["stretch", 2.6, 1.1, "stand"],
+      ["scratch", 4, 1.6, "sit"],
+    ] as const) {
+      const rig = new CatRig(5);
+      rig.snapTo(frame({ clip: back }), 100);
+      let previous: number[] | null = null;
+      let previousRot = 0;
+      let biggest = 0;
+      let turned = 0;
+      const step = (over: Partial<CatFrame>): void => {
+        rig.update(frame(over), 1 / 60, 100);
+        const s = rig.solved;
+        const now = [...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe.x, s.legs[key].toe.y, s.legs[key].mid.x, s.legs[key].mid.y]), s.head.x, s.head.y];
+        if (previous) {
+          for (let i = 0; i + 1 < now.length; i += 2) biggest = Math.max(biggest, Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!));
+          turned = Math.max(turned, Math.abs(s.head.rot - previousRot));
+        }
+        previous = now;
+        previousRot = s.head.rot;
+      };
+      for (let k = 0; k < 120; k++) step({ clip: back, clipTime: k / 60 });
+      for (let k = 0; k < Math.round(cutAt * 60); k++) step({ clip, clipTime: k / 60, progress: k / 60 / total });
+      for (let k = 0; k < 150; k++) step({ clip: back, clipTime: k / 60 });
+      expect(biggest, `${clip}: a joint`).toBeLessThan(0.2);
+      expect(turned, `${clip}: the head`).toBeLessThan(0.12);
+    }
   });
 });

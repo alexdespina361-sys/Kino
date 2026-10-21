@@ -181,6 +181,11 @@ export class CatRig {
   private pawY = dyn(0);
   private pawOn = dyn(0);
   private groomDyn = dyn(0);
+  /** Where the paw is on its way up the face in a wash (0 at the mouth, 1 behind the ear), a spring after the clip's beat; and how far into a yawn and a stretch the cat is, the same. */
+  private sweepDyn = dyn(0);
+  private yawnDyn = dyn(0);
+  private stretchDyn = dyn(0);
+  private creepDyn = dyn(0);
   /** How far into each little scene the cat is (0..1, a spring each, so that a scene is eased into and out of). */
   private scratchDyn = dyn(0);
   private kneadDyn = dyn(0);
@@ -642,31 +647,36 @@ export class CatRig {
     let headRotExtra = -0.025 * rockLate;
     let headShiftX = 0.012 * rock;
     let headShiftY = -0.006 * rockLate;
-    if (clip === "yawn") {
+    // (a yawn and a stretch follow their own shapes, but are only let out of them at a pace: one that is cut short, by a click or a fright, is undone in a quarter of a second or so, not in a frame)
+    const yawning = clip === "yawn";
+    const yt = frame.progress;
+    this.yawnDyn.x += clamp((yawning ? smoothstep(0.08, 0.36, yt) * (1 - smoothstep(0.64, 0.86, yt)) : 0) - this.yawnDyn.x, -4 * dt, 6 * dt);
+    const yawnOpen = clamp01(this.yawnDyn.x);
+    if (yawnOpen > 0.001 || yawning) {
       // slowly open, hold (with a tremor at the top of it), close more quickly: the head goes back and up as the jaw drops and the chest is filled; the head is shaken when it is over
-      const t = frame.progress;
-      const open = smoothstep(0.08, 0.36, t) * (1 - smoothstep(0.64, 0.86, t));
-      const top = smoothstep(0.3, 0.42, t) * (1 - smoothstep(0.6, 0.7, t));
+      const top = yawning ? smoothstep(0.3, 0.42, yt) * (1 - smoothstep(0.6, 0.7, yt)) : 0;
       const tremor = Math.sin(frame.clipTime * TAU * 13) * top;
-      const shake = smoothstep(0.86, 0.9, t) * (1 - smoothstep(0.96, 1, t)) * Math.sin(((t - 0.86) / 0.14) * TAU * 2.5);
-      const lick = t > 0.9 ? Math.sin(((t - 0.9) / 0.1) * Math.PI) : 0;
-      jawTarget = open * (1 + 0.04 * tremor) + 0.1 * lick;
-      headRotExtra = -0.6 * open + 0.012 * tremor + 0.08 * shake;
-      headShiftX = 0.012 * open + 0.003 * tremor + 0.008 * shake;
-      headShiftY = -0.03 * open;
+      const shake = yawning ? smoothstep(0.86, 0.9, yt) * (1 - smoothstep(0.96, 1, yt)) * Math.sin(((yt - 0.86) / 0.14) * TAU * 2.5) : 0;
+      const lick = yawning && yt > 0.9 ? Math.sin(((yt - 0.9) / 0.1) * Math.PI) : 0;
+      jawTarget = yawnOpen * (1 + 0.04 * tremor) + 0.1 * lick;
+      headRotExtra = -0.6 * yawnOpen + 0.012 * tremor + 0.08 * shake;
+      headShiftX = 0.012 * yawnOpen + 0.003 * tremor + 0.008 * shake;
+      headShiftY = -0.03 * yawnOpen;
       // (the chest is filled: the front of the cat goes up and forward with the head)
-      p.chestFront.y -= 0.022 * open;
-      p.neckTop.y -= 0.014 * open;
-      p.shoulderTop.y -= 0.01 * open;
-      p.chestFront.x += 0.012 * open;
+      p.chestFront.y -= 0.022 * yawnOpen;
+      p.neckTop.y -= 0.014 * yawnOpen;
+      p.shoulderTop.y -= 0.01 * yawnOpen;
+      p.chestFront.x += 0.012 * yawnOpen;
     }
-    let stretchHold = 0;
-    if (clip === "stretch") {
-      // held, a stretch goes on: the chest sinks a little further, the forepaws slide out along the floor, and a tremor runs through the held pose
-      const t = frame.progress;
-      stretchHold = smoothstep(0.1, 0.34, t) * (1 - smoothstep(0.72, 0.92, t));
-      const creep = smoothstep(0.22, 0.7, t) * stretchHold;
-      const shiver = Math.sin(frame.clipTime * TAU * 9) * smoothstep(0.4, 0.6, t) * stretchHold;
+    // (held, a stretch goes on: the chest sinks a little further, the forepaws slide out along the floor, and a tremor runs through the held pose)
+    const stretching = clip === "stretch";
+    const st = frame.progress;
+    this.stretchDyn.x += clamp((stretching ? smoothstep(0.1, 0.34, st) * (1 - smoothstep(0.72, 0.92, st)) : 0) - this.stretchDyn.x, -3 * dt, 6 * dt);
+    const stretchHold = clamp01(this.stretchDyn.x);
+    this.creepDyn.x += clamp((stretching ? smoothstep(0.22, 0.7, st) * stretchHold : 0) - this.creepDyn.x, -3 * dt, 6 * dt);
+    if (stretchHold > 0.001) {
+      const creep = clamp01(this.creepDyn.x);
+      const shiver = Math.sin(frame.clipTime * TAU * 9) * (stretching ? smoothstep(0.4, 0.6, st) : 0) * stretchHold;
       p.chestFront.y += 0.014 * creep + 0.0015 * shiver;
       p.shoulderTop.y += 0.012 * creep + 0.0015 * shiver;
       p.neckTop.y += 0.012 * creep;
@@ -681,24 +691,37 @@ export class CatRig {
       headRotExtra += 0.1 * gat;
     }
     const pawOn = clip === "groom" || clip === "point" || clip === "tap" ? 1 : 0;
-    // (a paw goes up quickly and comes down gently: put down in a few frames, it would drop like a stone)
-    smooth(this.pawOn, pawOn, pawOn > 0.5 ? 6 : 2.2, dt);
-    let pawGoalX = p.fn.x;
-    let pawGoalY = 0;
+    // (a paw goes up quickly and comes down gently: put down in a few frames, it would drop like a stone; a wash takes its time raising it to the face)
+    smooth(this.pawOn, pawOn, pawOn > 0.5 ? (clip === "groom" ? 3.2 : 6) : 2.2, dt);
+    // (a paw that is let go of comes down from where it was, by its weight going: its goal is not moved to the floor ahead of it, which put it down in a tenth of a second)
+    let pawGoalX = pawOn > 0.5 ? p.fn.x : this.pawX.x;
+    let pawGoalY = pawOn > 0.5 ? 0 : this.pawY.x;
+    if (pawOn < 0.5 && this.pawOn.x < 0.004) {
+      // (down and weightless: ready for the next one to start from the floor)
+      pawGoalX = p.fn.x;
+      pawGoalY = 0;
+      this.pawX.x = pawGoalX;
+      this.pawX.v = 0;
+      this.pawY.x = pawGoalY;
+      this.pawY.v = 0;
+    }
     smooth(this.groomDyn, clip === "groom" ? 1 : 0, 3, dt);
-    let groomSweep = 0;
-    if (clip === "groom") {
-      // washing its face: the paw is licked at the mouth (the jaw works a little), then drawn up the cheek, over the eye and the ear, held a moment behind it, and drawn down again;
-      // the head bows to the paw at the mouth, tips into it as it goes over, and the eye on that side shuts as it passes
-      const u = fract(frame.clipTime / GROOM_BEAT);
-      const sweep = u < GROOM_LICK ? 0 : 0.5 - 0.5 * Math.cos(TAU * ((u - GROOM_LICK) / (1 - GROOM_LICK)));
-      groomSweep = sweep * clamp01(this.groomDyn.x);
-      const bow = clamp01(this.groomDyn.x);
+    // washing its face: the head bows to the paw at the mouth, tips into it as it goes over, and the eye on that side shuts as it passes. All of it is eased into and out of (the sweep
+    // too, which is a spring after the clip's own beat), so that a wash that is ended, or cut short, is not a head that snaps back
+    const bow = clamp01(this.groomDyn.x);
+    const beat = fract(frame.clipTime / GROOM_BEAT);
+    smooth(this.sweepDyn, clip === "groom" && beat >= GROOM_LICK ? 0.5 - 0.5 * Math.cos(TAU * ((beat - GROOM_LICK) / (1 - GROOM_LICK))) : 0, 9, dt);
+    const sweep = clamp01(this.sweepDyn.x);
+    const groomSweep = sweep * bow;
+    if (bow > 0.001) {
       headShiftX += (0.035 + 0.02 * sweep) * bow;
       headShiftY += (0.15 - 0.045 * sweep) * bow;
       headRotExtra += (0.3 + 0.16 * sweep) * bow;
+    }
+    if (clip === "groom") {
+      // the paw is licked at the mouth (the jaw works a little), then drawn up the cheek, over the eye and the ear, held a moment behind it, and drawn down again
       // (the licks: the jaw opens a little twice while the paw is at the mouth)
-      if (u < GROOM_LICK) jawTarget = Math.max(jawTarget, 0.2 * Math.sin((u / GROOM_LICK) * Math.PI * 2) ** 2 * bow);
+      if (beat < GROOM_LICK) jawTarget = Math.max(jawTarget, 0.2 * Math.sin((beat / GROOM_LICK) * Math.PI * 2) ** 2 * bow);
       // (the paw's way, in the head's own terms: forward along the face and up it, from the mouth through the cheek and the eye to behind the ear; the head's tilt is carried with it)
       const q = sweep * (GROOM_PATH.length - 1);
       const k0 = Math.min(GROOM_PATH.length - 2, Math.floor(q));
