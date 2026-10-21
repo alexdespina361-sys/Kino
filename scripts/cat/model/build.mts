@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { BONE, BONE_COUNT, restStamp } from "../../../src/client/cat/render/gl/skeleton";
 import { encodeMesh } from "../../../src/client/cat/render/gl/format";
 import { jawShare } from "../../../src/client/cat/render/gl/mouth";
-import { buildModel, REGION } from "./cat-model.mts";
+import { buildModel, EAR, REGION } from "./cat-model.mts";
 import { makeField, sample, surfaceNets, type Lattice } from "./sdf.mts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -245,6 +245,8 @@ writeFileSync(
     `/** The centre of the head in the rest (the point it turns about), and the ears: the ear at z < 0, then the one at z > 0. */\n` +
     `export const HEAD_REST = ${r4(model.head)} as const;\n` +
     `export const EARS = [${ear(model.ears[0])}, ${ear(model.ears[1])}] as const;\n` +
+    `/** How far an ear reaches from its base to its tip, how wide it is at the base, and how wide at the tip. */\n` +
+    `export const EAR_SHAPE = ${r4([EAR.length, EAR.radius, EAR.tip])} as const;\n` +
     `export const JAW_HINGE = ${r4(model.jawHinge)} as const;\n`,
 );
 

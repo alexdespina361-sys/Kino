@@ -36,6 +36,8 @@ export interface Box {
 }
 
 const TILT = 0.14;
+/** How long the hair is where the coat is of the usual length, in body lengths (the mesh says where it is longer or shorter). */
+const FUR_LENGTH = 0.03;
 /** The ears' frames, for the shader (the inside of an ear is painted by where a point is in the ear's own frame). */
 const EAR_UNIFORM = new Float32Array(EARS.flatMap((ear) => [...ear.base, ...ear.a, ...ear.b, ...ear.c]));
 
@@ -278,8 +280,9 @@ export class GlCat {
     gl.uniform4f(this.loc.uCoat as WebGLUniformLocation, coat.stripes, coat.whites, coat.tuxedo, coat.patches);
     gl.uniform3f(this.loc.uKey as WebGLUniformLocation, -0.45, 0.75, 0.55);
     gl.uniform3f(this.loc.uFill as WebGLUniformLocation, 0.7, 0.2, 0.4);
-    gl.uniform1f(this.loc.uFurLen as WebGLUniformLocation, Math.max(0.01, 1.3 / box.px));
-    gl.uniform1f(this.loc.uFreq as WebGLUniformLocation, clamp(box.px / 1.7, 40, 170));
+    // the hair is as long as this part of the cat's coat is (in body lengths, the longest the thickest: see the mesh), in as many layers as the screen can spare
+    gl.uniform1f(this.loc.uFurLen as WebGLUniformLocation, FUR_LENGTH);
+    gl.uniform1f(this.loc.uFreq as WebGLUniformLocation, clamp(box.px / 2.2, 40, 150));
 
     const bindAll = (from: WebGLBuffer[]): void => {
       const bind = (index: number, name: string, size: number, type: number, normalized: boolean) => {
@@ -297,7 +300,7 @@ export class GlCat {
     bindAll(this.buffers);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
 
-    const shells = view.shells ?? clamp(Math.round(box.px / 55), 1, 5);
+    const shells = view.shells ?? clamp(Math.round(box.px / 24), 3, 12);
     gl.uniform1f(this.loc.uShells as WebGLUniformLocation, shells);
     gl.uniform1f(this.loc.uShell as WebGLUniformLocation, 0);
     gl.disable(gl.BLEND);

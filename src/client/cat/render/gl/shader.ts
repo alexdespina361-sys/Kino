@@ -1,3 +1,4 @@
+import { EAR_SHAPE } from "./model";
 import { LIP_GLSL, MOUTH } from "./mouth";
 
 /**
@@ -15,17 +16,25 @@ attribute vec4 aPaint;
 uniform vec4 uBones[96];
 uniform vec4 uProj;
 uniform float uShell;
+uniform float uShells;
 uniform float uFurLen;
 varying vec3 vRest;
 varying vec3 vRN;
 varying vec3 vN;
+varying vec3 vFlow;
 varying vec4 vPaint;
 varying float vBone;
 varying float vFar;
 void main() {
   vec3 p = vec3(0.0);
   vec3 n = vec3(0.0);
+  vec3 fl = vec3(0.0);
   vec4 q = vec4(aPos, 1.0);
+  // which way the hair lies where this point stood in the rest: down a leg, out along the tail, back along the body
+  float limb = aPaint.a;
+  float onTail = limb * step(aPos.x, -0.43) * step(0.42, aPos.y);
+  vec3 flowRest = mix(vec3(-0.92, -0.3, 0.0), vec3(0.0, -1.0, 0.0), limb * (1.0 - onTail));
+  flowRest = mix(flowRest, normalize(vec3(aPos.x + 0.46, aPos.y - 0.47, 0.0) + vec3(0.001)), onTail);
   float top = -1.0;
   float lead = 0.0;
   float far = 0.0;
@@ -39,6 +48,7 @@ void main() {
       vec4 r2 = uBones[b + 2];
       p += w * vec3(dot(r0, q), dot(r1, q), dot(r2, q));
       n += w * vec3(dot(r0.xyz, aNor), dot(r1.xyz, aNor), dot(r2.xyz, aNor));
+      fl += w * vec3(dot(r0.xyz, flowRest), dot(r1.xyz, flowRest), dot(r2.xyz, flowRest));
       if (w > top) { top = w; lead = id; }
       // the legs on the far side of the body (bones 13..15 and 19..21): they are seen darker, as what is further from the light and the eye is
       if ((id > 12.5 && id < 15.5) || (id > 18.5 && id < 21.5)) far += w;
@@ -46,10 +56,17 @@ void main() {
   }
   vFar = far;
   n = normalize(n);
-  p += n * (uShell * uFurLen * aPaint.g * 2.55);
+  // the fur: each shell is a layer further out (h is how far up the hair it is, 0 to 1), the hair is as long as this part of the cat's is, and it sags
+  // a little towards the floor and lies along the way it grows
+  float h = uShell / max(uShells, 1.0);
+  float fur = aPaint.g * 2.55;
+  vec3 tang = normalize(fl - n * dot(fl, n) + vec3(0.0001));
+  p += n * (h * uFurLen * fur * 0.8) + tang * (h * h * uFurLen * fur * 1.1);
+  p.y -= h * h * uFurLen * fur * 0.25;
   vRest = aPos;
   vRN = aNor;
   vN = n;
+  vFlow = tang;
   vPaint = aPaint;
   vBone = lead;
   gl_Position = vec4(p.x * uProj.x + uProj.z, p.y * uProj.y + uProj.w, -p.z * 0.4, 1.0);
@@ -65,6 +82,7 @@ precision mediump float;
 varying vec3 vRest;
 varying vec3 vRN;
 varying vec3 vN;
+varying vec3 vFlow;
 varying vec4 vPaint;
 varying float vBone;
 varying float vFar;
@@ -136,29 +154,50 @@ uniform vec3 uPatchB;
 uniform vec4 uCoat;
 const vec3 PINK = vec3(0.95, 0.60, 0.60);
 
+/** Whether a hair with the random number own takes a marking of strength t (0 takes none, 1 takes all): the edge of a marking is a scatter of hairs. */
+float hairs(float t, float own) {
+  return sstep(own * 0.8, own * 0.8 + 0.22, clamp(t * 1.15, 0.0, 1.0));
+}
+
 /** How much of a point is the tabby's stripe (0..1), from where it stood in the rest. */
 float stripes(vec3 p, float limb, float u) {
   float onLimb = sstep(0.35, 0.75, limb);
   float tail = onLimb * step(p.x, -0.43) * step(0.42, p.y);
   float leg = onLimb * (1.0 - tail);
-  // the ribs: stripes down the flank that lean back as they go down and wander a little, each with a thickness and a length of its own (a cat's
-  // stripes are not a comb): thicker at the back, thinning toward the belly, and some stop short of it
-  float lean = 0.16 * (0.58 - p.y);
-  float warp = 0.035 * sin(p.y * 13.0 + p.x * 5.0) + 0.03 * (noise(p * 8.0) - 0.5) + 0.012 * sin(p.x * 41.0 + 2.0);
-  float x = (p.x + lean + warp) * 15.0;
-  float own = hash(vec3(floor(x), 1.7, 3.1));
-  float band = abs(fract(x) - 0.5);
-  float thick = mix(0.21, 0.33, sstep(0.38, 0.6, p.y)) * (0.8 + 0.4 * own);
-  float st = sstep(thick, thick - 0.11, band);
-  float reach = 0.33 + 0.13 * own;
-  st *= sstep(reach, reach + 0.13, p.y);
-  st *= 0.72 + 0.28 * noise(p * 21.0);
+  // (the other side of the cat has stripes of its own)
+  float side = p.z < 0.0 ? 7.3 : 0.0;
+  // the ribs: stripes that come down from the spine and lean back as they go down, in a sweep that follows the ribs (forward at the shoulders, back at the
+  // hips) and wanders a little. Each has a place, a thickness and a length of its own: they are not a comb. They are thickest at the spine, thin out as they
+  // go down, and some stop short of the belly; a few split in two near the top.
+  float drop = 0.63 - p.y;
+  float sweep = mix(0.2, 0.05, sstep(-0.35, 0.3, p.x)) * drop;
+  float warp = 0.03 * sin(p.y * 11.0 + p.x * 6.0 + side) + 0.04 * (noise(p * vec3(7.0, 5.0, 7.0) + side) - 0.5) + 0.011 * sin(p.x * 37.0 + 2.0);
+  float x = (p.x + sweep + warp) * 13.5 + 0.5;
+  float cell = floor(x);
+  float own = hash(vec3(cell, 1.7 + side, 3.1));
+  float own2 = hash(vec3(cell, 8.3 + side, 6.1));
+  float own3 = hash(vec3(cell, 2.9 + side, 9.7));
+  float centre = 0.5 + (own3 - 0.5) * 0.34;
+  float band = abs(fract(x) - centre);
+  float thick = (0.16 + 0.13 * own) * (1.0 - 0.5 * sstep(0.02, 0.26, drop));
+  float st = sstep(thick, thick * 0.35, band);
+  // the lower part of a stripe fades out where it stops (some stop higher than others)
+  float reach = 0.1 + 0.2 * own2;
+  st *= sstep(reach + 0.1, reach - 0.02, drop);
+  // a split near the top: a second, thinner stripe beside the first
+  float split = sstep(0.11, 0.07, abs(fract(x * 2.1 + own * 4.0) - 0.5)) * sstep(0.12, 0.02, drop) * step(0.55, own3);
+  st = max(st, split * 0.7);
+  st *= 0.78 + 0.22 * noise(p * 23.0 + side);
   // the line down the spine
-  st = max(st, sstep(0.045, 0.02, abs(p.z)) * sstep(0.55, 0.6, p.y) * 0.8);
+  float spine = sstep(0.05 + 0.012 * sin(p.x * 31.0), 0.012, abs(p.z)) * sstep(0.56, 0.61, p.y) * (0.65 + 0.35 * noise(p * 14.0));
+  st = max(st, spine * 0.85);
   st *= 1.0 - onLimb;
-  float bars = mix(sstep(0.17, 0.09, abs(fract(u * 5.0 + 0.1) - 0.5)) * sstep(0.02, 0.3, u) * 0.8,
-                   sstep(0.16, 0.08, abs(fract(u * 4.0 + 0.1) - 0.5)) * sstep(0.1, 0.25, u) * 0.85, step(0.0, p.x));
-  float rings = max(sstep(0.3, 0.2, abs(fract(u * 9.0) - 0.5)) * 0.95, sstep(0.84, 0.92, u));
+  // the legs: bars that wrap them (a few, uneven, not reaching the paws), the tail: rings, thicker near the tip, which is dark
+  float barPhase = u * 5.0 + 0.1 + 0.12 * sin(u * 23.0 + p.x * 9.0);
+  float bars = mix(sstep(0.16, 0.07, abs(fract(barPhase) - 0.5)) * sstep(0.02, 0.3, u) * 0.85,
+                   sstep(0.15, 0.06, abs(fract(u * 4.0 + 0.1 + 0.1 * sin(u * 19.0)) - 0.5)) * sstep(0.1, 0.25, u) * 0.85, step(0.0, p.x));
+  float ringPhase = u * 8.5 + 0.2 * sin(u * 15.0 + 1.0) - 0.1;
+  float rings = max(sstep(0.3, 0.18, abs(fract(ringPhase) - 0.5) + 0.04 * (1.0 - u)) * 0.95, sstep(0.84, 0.92, u));
   st = max(st, leg * bars);
   st = max(st, tail * rings);
   return clamp(st, 0.0, 1.0);
@@ -173,9 +212,9 @@ float earInside(vec3 p, out float onEar) {
     float ta = dot(d, uEarA[e * 4 + 1]);
     float ts = dot(d, uEarA[e * 4 + 2]);
     float tc = dot(d, uEarA[e * 4 + 3]);
-    float width = 0.056 * (1.0 - ta / 0.175);
-    float on = step(-0.012, ta) * step(ta, 0.17) * step(abs(ts), width + 0.012) * step(abs(tc), 0.055);
-    float in_ = sstep(0.0, 0.01, tc) * sstep(width * 0.82, width * 0.5, abs(ts)) * sstep(0.01, 0.04, ta) * sstep(0.165, 0.12, ta);
+    float width = mix(${EAR_SHAPE[1].toFixed(4)}, ${EAR_SHAPE[2].toFixed(4)}, clamp(ta / ${EAR_SHAPE[0].toFixed(4)}, 0.0, 1.0));
+    float on = step(-0.012, ta) * step(ta, ${(EAR_SHAPE[0] + EAR_SHAPE[2]).toFixed(4)}) * step(abs(ts), width + 0.012) * step(abs(tc), 0.055);
+    float in_ = sstep(0.0, 0.01, tc) * sstep(width * 0.82, width * 0.5, abs(ts)) * sstep(0.01, 0.04, ta) * sstep(${(EAR_SHAPE[0] * 0.96).toFixed(4)}, ${(EAR_SHAPE[0] * 0.72).toFixed(4)}, ta);
     onEar = max(onEar, on);
     inside = max(inside, in_ * on);
   }
@@ -184,35 +223,43 @@ float earInside(vec3 p, out float onEar) {
 
 /** One eye, painted on a point of the face: q is the place in the eye (across, up), o how open it is. */
 vec4 eye(vec2 q, float o, vec2 gaze) {
-  const float A = 0.041;
-  const float B = 0.034;
-  q.y -= 0.16 * q.x;
+  const float A = 0.037;
+  const float B = 0.027;
+  q.y -= 0.17 * q.x;
   float uu = q.x / A;
-  float hh = B * pow(max(1.0 - pow(abs(uu), 2.4), 0.0), 0.7);
+  // (the corner next to the nose is the more pointed one, the outer corner is rounder)
+  float hh = B * pow(max(1.0 - pow(abs(uu), uu < 0.0 ? 2.0 : 2.6), 0.0), 0.72);
   float openH = hh * o;
   float closed = max(uEyes2.z, uEyes.w);
   // the lid line of a closed eye: lifted when content, lowered when asleep
-  float bow = (uEyes.w > 0.5 ? 0.014 : -0.007) * (1.0 - uu * uu);
-  float line = sstep(0.0048, 0.0018, abs(q.y - bow)) * sstep(1.0, 0.86, abs(uu));
-  if (closed > 0.5) return vec4(0.16, 0.08, 0.05, line);
-  float inside = sstep(0.002, -0.002, abs(q.y) - openH) * sstep(1.0, 0.9, abs(uu)) * sstep(0.0015, 0.004, openH);
-  vec2 d = q - gaze * vec2(0.014, 0.011);
+  float bow = (uEyes.w > 0.5 ? 0.012 : -0.006) * (1.0 - uu * uu);
+  float line = sstep(0.0036, 0.0014, abs(q.y - bow)) * sstep(1.0, 0.86, abs(uu));
+  if (closed > 0.5) return vec4(0.13, 0.07, 0.045, line);
+  float inside = sstep(0.0018, -0.0018, abs(q.y) - openH) * sstep(1.0, 0.92, abs(uu)) * sstep(0.0012, 0.0035, openH);
+  vec2 d = q - gaze * vec2(0.011, 0.008);
   float r = length(d);
-  vec3 iris = mix(vec3(0.98, 0.82, 0.22), vec3(0.50, 0.70, 0.16), sstep(0.004, 0.024, r));
-  iris = mix(iris, vec3(0.14, 0.24, 0.07), sstep(0.022, 0.031, r));
-  iris *= 0.9 + 0.1 * noise(vec3(atan(d.y, d.x) * 2.5, r * 80.0, 1.7));
-  float pw = mix(0.0032, 0.021, uEyes.z);
-  float pup = sstep(1.0, 0.7, length(vec2(d.x / pw, d.y / 0.029)));
-  vec3 col = mix(vec3(0.95, 0.92, 0.84), iris, sstep(0.034, 0.029, r));
-  col = mix(col, vec3(0.015, 0.01, 0.01), pup);
-  // the upper lid shades the eye; a glint makes it wet
-  col *= 1.0 - 0.5 * sstep(0.1, 1.0, q.y / max(openH, 0.002));
-  float glint = sstep(0.0085, 0.0035, length(q - vec2(-0.011, 0.0125) - gaze * vec2(0.004, 0.003)));
-  float glint2 = sstep(0.0045, 0.0015, length(q - vec2(0.012, -0.011))) * 0.55;
-  col = mix(col, vec3(1.0), max(glint, glint2) * 0.95);
-  float rim = sstep(0.0058, 0.0016, abs(abs(q.y) - openH)) * sstep(1.0, 0.8, abs(uu));
-  col = mix(col, vec3(0.14, 0.07, 0.04), rim * 0.9);
-  float a = max(inside, rim * sstep(0.0015, 0.004, openH) * 0.9);
+  float ang = atan(d.y, d.x);
+  // the iris: gold round the pupil, green out to a dark ring at its edge, with fibres running out from the pupil
+  float fib = noise(vec3(ang * 4.0, r * 70.0, 1.7)) * 0.6 + noise(vec3(ang * 9.0, r * 140.0, 5.1)) * 0.4;
+  vec3 iris = mix(vec3(0.99, 0.8, 0.24), vec3(0.76, 0.7, 0.16), sstep(0.005, 0.018, r));
+  iris = mix(iris, vec3(0.42, 0.48, 0.11), sstep(0.016, 0.029, r));
+  iris *= 0.78 + 0.44 * fib;
+  iris = mix(iris, vec3(0.05, 0.08, 0.03), sstep(0.025, 0.034, r));
+  float pw = mix(0.0026, 0.017, uEyes.z);
+  float pup = sstep(1.0, 0.62, length(vec2(d.x / pw, d.y / 0.026)));
+  // (the white of a cat's eye is mostly lid: what shows of it, in the corners, is in shade, and the corner by the nose is pink)
+  vec3 corner = mix(vec3(0.42, 0.26, 0.2), vec3(0.78, 0.46, 0.44), sstep(-0.01, -0.03, q.x));
+  vec3 col = mix(corner, iris, sstep(0.036, 0.031, r));
+  col = mix(col, vec3(0.01, 0.006, 0.006), pup);
+  // the upper lid shades the eye, and the eye takes the light from the floor along its lower lid
+  col *= 1.0 - 0.55 * sstep(0.05, 1.0, q.y / max(openH, 0.002));
+  col += vec3(0.12, 0.1, 0.05) * sstep(-0.3, -1.0, q.y / max(openH, 0.002)) * (1.0 - pup);
+  float glint = sstep(0.0075, 0.003, length(q - vec2(-0.011, 0.0105) - gaze * vec2(0.004, 0.003)));
+  float glint2 = sstep(0.004, 0.0013, length(q - vec2(0.011, -0.009))) * 0.5;
+  col = mix(col, vec3(1.0), max(glint, glint2) * 0.92);
+  float rim = sstep(0.0046, 0.0012, abs(abs(q.y) - openH)) * sstep(1.0, 0.8, abs(uu));
+  col = mix(col, vec3(0.1, 0.055, 0.03), rim * 0.92);
+  float a = max(inside, rim * sstep(0.0012, 0.0035, openH) * 0.9);
   return vec4(col, a);
 }
 
@@ -227,18 +274,26 @@ vec4 face(vec3 h) {
     ec.a *= front;
     c = mix(c, vec4(ec.rgb, 1.0), ec.a);
   }
-  // the nose: a rounded triangle, pointing down
-  float ny = (h.y + 0.028) / 0.028;
-  float nw = 0.019 * (0.4 + 0.6 * clamp(ny, 0.0, 1.0));
-  float nose = sstep(nw + 0.002, nw - 0.002, abs(h.z)) * sstep(-0.05, 0.15, ny) * sstep(1.12, 0.9, ny) * sstep(0.12, 0.15, h.x);
-  vec3 nc = mix(vec3(0.82, 0.42, 0.46), vec3(0.96, 0.62, 0.64), clamp(ny, 0.0, 1.0));
+  // the nose: leather, a rounded triangle with its point down; lighter on top where it is wet, darker at its edge, with a nostril on each side
+  float ny = (h.y + 0.03) / 0.03;
+  float cy = clamp(ny, 0.0, 1.0);
+  float nw = 0.021 * (0.38 + 0.62 * cy);
+  float inNose = sstep(nw + 0.0015, nw - 0.0015, abs(h.z)) * sstep(-0.04, 0.1, ny) * sstep(1.1, 0.93, ny);
+  inNose *= sstep(1.05, 0.78, length(vec2(h.z / 0.023, (h.y + 0.0125) / 0.0195)));
+  float nose = inNose * sstep(0.12, 0.15, h.x);
+  float nedge = sstep(0.62, 1.0, abs(h.z) / max(nw, 0.001)) * 0.5 + sstep(0.2, -0.05, ny) * 0.45;
+  vec3 nc = mix(vec3(0.74, 0.38, 0.4), vec3(0.94, 0.62, 0.62), cy);
+  nc = mix(nc, nc * vec3(0.62, 0.5, 0.52), nedge);
+  float nostril = sstep(0.0042, 0.0016, length(vec2(abs(h.z) - 0.0105, (h.y + 0.0225) * 1.8)));
+  nc = mix(nc, vec3(0.22, 0.09, 0.1), nostril * 0.85);
+  nc += vec3(0.2) * sstep(0.006, 0.0015, length(vec2(h.z + 0.005, (h.y + 0.0045) * 1.5)));
   c = mix(c, vec4(nc, 1.0), nose);
   // the mouth: a line down from the nose, and a curve to each side that runs back to the corner (an open mouth is painted over it)
   float xin = sstep(0.055, 0.085, h.x);
-  float phil = sstep(0.0032, 0.0012, abs(h.z)) * sstep(-0.056, -0.05, h.y) * sstep(-0.026, -0.032, h.y) * sstep(0.1, 0.13, h.x);
+  float phil = sstep(0.0024, 0.0009, abs(h.z)) * sstep(-0.056, -0.05, h.y) * sstep(-0.026, -0.032, h.y) * sstep(0.1, 0.13, h.x);
   float ym = lipY(h.x, h.z);
-  float mouth = sstep(0.0034, 0.0012, abs(h.y - ym)) * sstep(0.056 + 0.03 * sstep(0.1, 0.05, h.x), 0.046 + 0.03 * sstep(0.1, 0.05, h.x), abs(h.z));
-  c = mix(c, vec4(0.30, 0.15, 0.12, 1.0), max(phil, mouth) * xin * 0.8);
+  float mouth = sstep(0.0026, 0.0009, abs(h.y - ym)) * sstep(0.056 + 0.03 * sstep(0.1, 0.05, h.x), 0.046 + 0.03 * sstep(0.1, 0.05, h.x), abs(h.z));
+  c = mix(c, vec4(0.32, 0.16, 0.13, 1.0), max(phil, mouth) * xin * 0.62);
   // the whisker pads: two rows of three small dark spots on each side of the muzzle
   float sideZ = abs(h.z);
   float onPad = sstep(0.026, 0.034, sideZ) * sstep(0.074, 0.06, sideZ) * sstep(0.07, 0.082, h.x) * sstep(0.14, 0.128, h.x);
@@ -274,16 +329,24 @@ void main() {
     return;
   }
 
-  // the fur: the shells keep the points where a strand is (it is the longer where the noise is high); the base keeps all
+  // the fur: each shell is one layer of the hair and keeps the places where a strand reaches that high. A strand stands where it was put on a lattice laid
+  // in the rest (so it stays on the body as the body moves), has a length of its own and is thinner towards its tip; the lengths run in tufts, as a coat's do
   float cover = 1.0;
-  float shellT = uShell / (uShells + 1.0);
+  float shellT = uShell / max(uShells, 1.0);
+  float strandOwn = 0.5;
   if (uShell > 0.5) {
-    float n1 = noise(p * uFreq);
-    float n2 = noise(p * uFreq * 0.5 + 3.1);
-    float len = 0.42 + 0.58 * (0.65 * n1 + 0.35 * n2);
-    cover = sstep(shellT - 0.22, shellT + 0.1, len);
-    // (where the coat is seen edge-on the outer shells would show as rows of dashes: they thin out there, and the inner ones make the edge soft)
-    cover *= mix(1.0, sstep(0.04, 0.42, abs(N.z)), sstep(0.35, 0.85, shellT));
+    vec3 q = p * uFreq;
+    vec3 c = floor(q);
+    vec3 f = q - c;
+    vec3 jit = vec3(hash(c + 5.3), hash(c + 9.7), hash(c + 13.1));
+    strandOwn = hash(c + 3.1);
+    float tuft = noise(p * uFreq * 0.11 + 4.0);
+    float len = clamp(0.3 + 0.62 * strandOwn + 0.4 * (tuft - 0.5), 0.15, 1.0);
+    float dist = length(f - (0.2 + 0.6 * jit));
+    float rad = 0.5 * (1.0 - 0.72 * shellT / len);
+    cover = step(shellT, len) * sstep(rad, rad * 0.5, dist);
+    // (seen edge-on the outer layers would be rows of dashes: they thin out there, and the inner layers make the edge soft)
+    cover *= mix(1.0, sstep(0.02, 0.5, abs(N.z)), sstep(0.3, 0.9, shellT));
     if (cover < 0.01) discard;
   }
 
@@ -310,7 +373,9 @@ void main() {
   float belly = sstep(0.375 + 0.07 * tux + edge, 0.375 + 0.07 * tux - edge, p.y + rag) * (1.0 - onLimb);
   alb = mix(alb, uLight, belly * mix(0.9, 1.0, tux));
   float st = stripes(p, limb, u) * (1.0 - sstep(0.235, 0.19, length(h * vec3(1.0, 0.85, 1.0)))) * uCoat.x;
-  alb = mix(alb, uStripeC, st * (1.0 - belly * 0.8));
+  // (each hair is dark or light by itself: the edge of a marking is a scatter of hairs, not a line; the base layer is the smooth mean of them)
+  float stH = uShell > 0.5 ? hairs(st, strandOwn) : st;
+  alb = mix(alb, uStripeC, stH * (1.0 - belly * 0.8));
 
   // a patched coat: blotches of two colours over the back, the head and the tail, and not over the legs and the belly
   if (uCoat.w > 0.01) {
@@ -333,7 +398,7 @@ void main() {
   float white = bib;
   float pad = 1.0 - sstep(mix(0.72, 0.9, tux), 1.05, length((h - vec3(0.105, -0.052, 0.0)) / (vec3(0.075, 0.034, 0.066) * uCoat.y)));
   float chin = 1.0 - sstep(mix(0.72, 0.9, tux), 1.05, length((h - vec3(0.088, -0.084, 0.0)) / (vec3(0.058, 0.042, 0.05) * uCoat.y)));
-  white = max(white, max(pad, chin) * 0.96 * isHead);
+  white = max(white, max(pad, chin) * mix(0.72, 0.96, tux) * isHead);
   float blazeW = 0.009 + 0.0011 * clamp((h.y + 0.02) / 0.01, 0.0, 10.0);
   float blaze = sstep(blazeW + 0.003, blazeW - 0.002, abs(h.z)) * sstep(0.0, 0.03, h.x) * sstep(0.115, 0.095, h.y) * sstep(-0.045, -0.02, h.y);
   white = max(white, blaze * isHead * tux);
@@ -349,7 +414,9 @@ void main() {
   white = max(white, leg * sstep(0.06, 0.035, p.y) * 2.0);
   // the ear: darker at the rim, pink inside
   alb = mix(alb, alb * 0.75, onEar * 0.4);
-  alb = mix(alb, uWhiteC, clamp(white, 0.0, 1.0));
+  // (the white and the pink have a scatter of hairs at their edge too)
+  float whiteH = uShell > 0.5 ? hairs(white, strandOwn) : clamp(white, 0.0, 1.0);
+  alb = mix(alb, uWhiteC, whiteH);
   alb = mix(alb, mix(PINK, vec3(1.0, 0.86, 0.8), 0.3), earIn);
 
   vec4 f = vec4(0.0);
@@ -368,7 +435,11 @@ void main() {
   // (a face is shaded less by its hollows than a flank is: the muzzle and the chin would be grey)
   float ao = mix(mix(0.5, 0.76, isHead), 1.0, vPaint.r);
   ao *= 1.0 - 0.45 * mo.a * mouthDepth;
-  float root = uShell < 0.5 ? 0.86 : mix(0.84, 1.08, shellT);
+  // (the hair is darker where it leaves the skin and lighter at its tip, and each strand is a little lighter or darker than the next)
+  // (a light coat has less to show between its hairs than a dark one: its strands are not as far apart in tone)
+  float bright = clamp(dot(alb, vec3(0.3, 0.55, 0.15)) * 1.15, 0.0, 1.0);
+  float root = uShell < 0.5 ? mix(0.66, 0.8, bright) : mix(mix(0.62, 0.78, bright), mix(1.1, 1.0, bright), pow(shellT, 0.6));
+  root *= 0.94 + 0.12 * strandOwn;
   vec3 lit = A * (vec3(1.0, 0.94, 0.86) * key * 1.05 + vec3(0.66, 0.7, 0.8) * (0.2 + 0.26 * sky) * (0.6 + 0.4 * fill)) * ao * root;
   lit *= mix(1.0, 0.7, clamp(vFar, 0.0, 1.0));
   float rim = pow(1.0 - clamp(N.z, 0.0, 1.0), 2.2);
@@ -378,8 +449,16 @@ void main() {
   // a coat has a soft sheen where the light grazes it
   float sheen = pow(clamp(dot(N, normalize(L + vec3(0.0, 0.0, 1.0))), 0.0, 1.0), 14.0);
   lit += vec3(1.0, 0.88, 0.7) * sheen * 0.1 * (1.0 - st * 0.6) * (1.0 - white);
-  // a dark coat takes almost nothing from the light as a colour, and would be a flat shape: the shine of its fur, cool, is what shows its form
+  // (and a band of light across the hair, where its strands are turned to the light: the way a coat shines)
+  vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
+  float th = dot(normalize(vFlow), H);
+  float strandShine = pow(sqrt(max(0.0, 1.0 - th * th)), 30.0) * clamp(dot(N, L) + 0.3, 0.0, 1.0);
+  // (it is the colour of the hair that shines: a black coat that took it as a light, whatever its colour, would be blotched where the hair's direction changes)
   float dark = 1.0 - clamp(dot(alb, vec3(0.3, 0.55, 0.15)) * 2.6, 0.0, 1.0);
+  lit += vec3(1.0, 0.86, 0.66) * strandShine * 0.16 * (1.0 - dark) * mix(0.5, 1.0, shellT) * (1.0 - white * 0.5);
+  // the edge of a coat glows where the light comes through the hair: the outer layers, seen at a slant, are lit from behind
+  lit += A * vec3(1.0, 0.8, 0.55) * pow(1.0 - clamp(abs(N.z), 0.0, 1.0), 1.5) * shellT * 0.5 * (0.4 + 0.6 * clamp(N.y * 0.5 + 0.7, 0.0, 1.0));
+  // a dark coat takes almost nothing from the light as a colour, and would be a flat shape: the shine of its fur, cool, is what shows its form
   lit += vec3(0.5, 0.58, 0.72) * dark * (0.012 * key + 0.1 * sheen + 0.07 * rim + 0.01 * sky);
   lit += vec3(0.5, 0.18, 0.12) * onEar * (0.18 + 0.3 * rim) * (1.0 - key * 0.4);
   vec3 col = pow(lit, vec3(1.0 / 2.2));
