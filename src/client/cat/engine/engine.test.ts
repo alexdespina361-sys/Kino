@@ -3,7 +3,7 @@ import { createRng } from "../rng";
 import type { CatFrame, Rect, World } from "../types";
 import { JUMP_LANDING, JUMP_TAKEOFF } from "../types";
 import { CatEngine } from "./engine";
-import { computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, stepFlight, type Clutter, type Ledge, type RestPose } from "./ledges";
+import { computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, screenEdges, settledCost, stepFlight, type Clutter, type Ledge, type RestPose } from "./ledges";
 import { shapeCovers, shapeHits } from "./shape";
 import { browseWorld, defaultPage, playerWorld, runSession, stepCat } from "./sim";
 
@@ -149,8 +149,23 @@ describe("ledges", () => {
     });
 
     it("knows every posture it can settle in", () => {
-      const poses: RestPose[] = ["stand", "sit", "loaf", "curl"];
+      const poses: RestPose[] = ["stand", "sit", "loaf", "curl", "knead"];
       for (const pose of poses) expect(covers(500, 1, [{ x: 0, y: 0, w: 2000, h: 2000 }], pose), pose).toBeGreaterThan(0);
+    });
+
+    it("settles for the worst of the postures it goes through: a place for a long sleep is one where lying down and treading fit as well as curling up", () => {
+      // (a shelf that ends where the cat's feet may still be on the screen: curled up it fits at the very end, lying out with its tail along the floor it does not)
+      const end: Ledge = { ...ledge, x0: 100, x1: 1920 - 0.78 * L };
+      const around0 = around();
+      const worst = settledCost(["loaf", "knead", "curl"], -1, end.x1, 800, L, around0);
+      expect(worst).toBe(Math.max(settledCost("loaf", -1, end.x1, 800, L, around0), settledCost("knead", -1, end.x1, 800, L, around0), settledCost("curl", -1, end.x1, 800, L, around0)));
+      expect(settledCost("curl", -1, end.x1, 800, L, around0)).toBe(0);
+      expect(worst).toBeGreaterThan(0);
+      expect(restSpot(end, end.x1, -1, L, "curl", around0)).toBeUndefined();
+      const spot = restSpot(end, end.x1, -1, L, ["loaf", "knead", "curl"], around0)!;
+      expect(spot).toBeDefined();
+      expect(spot).toBeLessThan(end.x1);
+      expect(settledCost(["loaf", "knead", "curl"], -1, spot, 800, L, around0)).toBeLessThan(0.02 * L * L);
     });
   });
 
@@ -408,6 +423,33 @@ describe("the cat on a page", () => {
     const { frames } = stepCat(engine, world, 4);
     for (const f of frames.slice(4)) if (f.appear > 0.05) expect(f.x).toBeLessThanOrEqual(world.viewport.w + 0.6 * world.bodyLength);
     expect(frames[frames.length - 1]!.appear).toBeGreaterThan(0.9);
+  });
+
+  it("turns round when the window is made smaller and puts it down at the end of a shelf with its tail over the edge of the screen, and is not left lying so", () => {
+    const engine = new CatEngine(2);
+    const page = defaultPage();
+    page.rows = 0;
+    run(engine, browseWorld(page), 5);
+    // (to the far end of the floor, and then back a little way, so that it sits facing the other way, with its tail out behind it towards the edge)
+    engine.send({ type: "cat.call", at: { x: 1900, y: 1074 } });
+    run(engine, browseWorld(page), 6);
+    engine.send({ type: "cat.call", at: { x: 1700, y: 1074 } });
+    run(engine, browseWorld(page), 0.2);
+    expect(engine.debug().act).toBe("walk");
+    for (let i = 0; i < 400 && !engine.debug().act.startsWith("rest:"); i++) run(engine, browseWorld(page), 0.05);
+    expect(engine.debug().act).toBe("rest:sit");
+    expect(engine.frame.facing).toBe(-1);
+    // the window is made smaller under it: it is put back at the end of the shelf, still sitting
+    const small = defaultPage();
+    small.rows = 0;
+    small.width = 1280;
+    small.height = 720;
+    const world = browseWorld(small);
+    const { frames } = stepCat(engine, world, 3);
+    expect(engine.debug().act).toBe("rest:sit");
+    const last = frames[frames.length - 1]!;
+    expect(last.facing).toBe(1);
+    for (const edge of screenEdges(world.viewport, world.bodyLength, 0.12)) expect(shapeHits(last.clip, last.facing, last.x, last.y, world.bodyLength, edge)).toBe(false);
   });
 
   it("is not brought back by a touch, a call or a command while a menu has sent it away", () => {

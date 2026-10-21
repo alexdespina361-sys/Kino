@@ -73,7 +73,7 @@ export function computeLedges(world: World): Ledge[] {
 /* ------------------------------ settling ------------------------------ */
 
 /** The postures a cat settles in (a clip each). */
-export type RestPose = Extract<Clip, "stand" | "sit" | "loaf" | "curl">;
+export type RestPose = Extract<Clip, "stand" | "sit" | "loaf" | "curl" | "knead">;
 
 /** What a cat settling somewhere is to keep clear of: the zones (and the edges of the screen) it is not to be in, and the words it would rather not cover. */
 export interface Clutter {
@@ -85,17 +85,32 @@ export interface Clutter {
 /** A zone covered is this many times worse than a word covered. */
 const ZONE_WEIGHT = 6;
 
-/** What a cat settled in `pose` with its middle at `x` on the line `y`, facing `facing`, would cover: words once, and zones and the edges of the screen more. */
-export function settledCost(pose: Clip, facing: 1 | -1, x: number, y: number, bodyLength: number, around: Clutter): number {
-  return shapeCovers(pose, facing, x, y, bodyLength, around.soft ?? []) + ZONE_WEIGHT * shapeCovers(pose, facing, x, y, bodyLength, avoided(around, bodyLength));
+/**
+ * What a cat settled in `pose` with its middle at `x` on the line `y`, facing `facing`, would cover: words once, and zones and the edges of the screen more.
+ * Given several postures (the ones it goes through on the way to a long sleep: it lies down, kneads, curls up) it is the worst of them.
+ */
+export function settledCost(pose: Clip | readonly Clip[], facing: 1 | -1, x: number, y: number, bodyLength: number, around: Clutter): number {
+  const zones = avoided(around, bodyLength);
+  const words = around.soft ?? [];
+  const one = (clip: Clip): number => shapeCovers(clip, facing, x, y, bodyLength, words) + ZONE_WEIGHT * shapeCovers(clip, facing, x, y, bodyLength, zones);
+  return typeof pose === "string" ? one(pose) : Math.max(0, ...pose.map(one));
 }
 
-/** What the cat keeps out of, with the edges of the screen as two more zones (the part of the cat that is off the screen is not seen). */
-const avoided = (around: Clutter, bodyLength: number): Rect[] => {
-  const vp = around.viewport;
+/**
+ * The two edges of the screen as zones, the part of the cat that is off the screen not being seen. `slack` (body lengths) is how much of it may be: the tip
+ * of a tail a little over an edge is not worth a cat's turning round for.
+ */
+export const screenEdges = (viewport: Rect, bodyLength: number, slack = 0): Rect[] => {
   const wide = 6 * bodyLength;
-  return [...around.keepOut, { x: vp.x - wide, y: vp.y - wide, w: wide, h: vp.h + 2 * wide }, { x: vp.x + vp.w, y: vp.y - wide, w: wide, h: vp.h + 2 * wide }];
+  const gap = slack * bodyLength;
+  return [
+    { x: viewport.x - wide - gap, y: viewport.y - wide, w: wide, h: viewport.h + 2 * wide },
+    { x: viewport.x + viewport.w + gap, y: viewport.y - wide, w: wide, h: viewport.h + 2 * wide },
+  ];
 };
+
+/** What the cat keeps out of, with the edges of the screen as two more zones. */
+const avoided = (around: Clutter, bodyLength: number): Rect[] => [...around.keepOut, ...screenEdges(around.viewport, bodyLength)];
 
 /** Where to settle (a place to walk to, or none: where the cat is will do) and what that costs (see `settledCost`). */
 export interface Settling {
@@ -108,7 +123,7 @@ export interface Settling {
  * (and of those the nearest), if that is at most half of what here covers and is worth a walk. It faces the way it walked there. No spot when where it is
  * will do, or nothing is better; the cost is that of the place it settles in either way.
  */
-export function settle(ledge: Ledge, from: number, facing: 1 | -1, bodyLength: number, pose: RestPose, around: Clutter, reach = 3.5): Settling {
+export function settle(ledge: Ledge, from: number, facing: 1 | -1, bodyLength: number, pose: RestPose | readonly RestPose[], around: Clutter, reach = 3.5): Settling {
   const unit = bodyLength * bodyLength;
   const here = settledCost(pose, facing, from, ledge.y, bodyLength, around);
   // (the edge of a letter under a paw is not covering it)
@@ -131,7 +146,8 @@ export function settle(ledge: Ledge, from: number, facing: 1 | -1, bodyLength: n
 }
 
 /** Where on `ledge` to settle (see `settle`), if it is somewhere else than where the cat is. */
-export const restSpot = (ledge: Ledge, from: number, facing: 1 | -1, bodyLength: number, pose: RestPose, around: Clutter, reach = 3.5): number | undefined => settle(ledge, from, facing, bodyLength, pose, around, reach).x;
+export const restSpot = (ledge: Ledge, from: number, facing: 1 | -1, bodyLength: number, pose: RestPose | readonly RestPose[], around: Clutter, reach = 3.5): number | undefined =>
+  settle(ledge, from, facing, bodyLength, pose, around, reach).x;
 
 /** The ledge of this surface that has `x`, or the nearest piece of it. */
 export function ledgeAt(ledges: readonly Ledge[], surfaceId: string, x: number): Ledge | undefined {
