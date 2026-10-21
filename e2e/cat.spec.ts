@@ -42,6 +42,7 @@ interface Snap {
   visible: boolean;
   places: number;
   posters: number;
+  reads: number;
 }
 const snap = (tv: Page) => tv.evaluate(() => (window as unknown as { __kinoCat: { snapshot(): unknown } }).__kinoCat.snapshot()) as Promise<Snap>;
 /** Whatever the cat itself says it is doing is told with a failure, for whoever reads it. */
@@ -121,9 +122,14 @@ test("the remote opens the cat's panel from the corner, walks it, and Back puts 
   const chip = tv.getByTestId("tv-cat-chip");
   for (let step = 0; step < 8 && !(await chip.evaluate((element) => element === document.activeElement)); step++) await tv.keyboard.press(step < 3 ? "ArrowUp" : "ArrowRight");
   await expect(chip).toBeFocused();
+  await expect(chip).toHaveAttribute("aria-expanded", "false");
+  await expect(chip).not.toHaveAttribute("aria-controls", /.+/);
   await tv.keyboard.press("Enter");
   const panel = tv.getByTestId("cat-panel");
   await expect(panel).toBeVisible();
+  // a reader is told the button opened something, and what
+  await expect(chip).toHaveAttribute("aria-expanded", "true");
+  await expect(chip).toHaveAttribute("aria-controls", (await panel.getAttribute("id"))!);
   await expect(tv.getByTestId("cat-find")).toBeFocused();
   // the arrows are the panel's while it is open: nothing behind it moves
   await tv.keyboard.press("ArrowDown");
@@ -140,6 +146,7 @@ test("the remote opens the cat's panel from the corner, walks it, and Back puts 
   await tv.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   await expect(chip).toBeFocused();
+  await expect(chip).toHaveAttribute("aria-expanded", "false");
   // the panel is not a dialog: the cat was never sent away for it
   expect((await snap(tv).catch(() => null))?.why ?? "").toBe("");
 });
@@ -158,6 +165,12 @@ test("find me something: the cat picks a title from a shelf of that mood, points
   await expect(card).toContainText("Horror Movies");
   const id = await card.getAttribute("data-id");
   expect(id).toMatch(/^h\d$/);
+  // and it is said to a reader as it is found, from a place that was already on the page (a polite one: it does not break in)
+  const said = tv.getByTestId("cat-said");
+  await expect(said).toHaveAttribute("role", "status");
+  await expect(said).toHaveAttribute("aria-live", "polite");
+  await expect(said).toContainText("Scary film");
+  await expect(said).toContainText("Horror Movies");
   // the poster glows, and the cat goes to it (briskly: somebody waits) and puts a paw out
   await expect(tv.locator(`[data-entry="${id}"][data-cat-pointed]`)).toHaveCount(1);
   await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.clip, { timeout: 25_000 }).toBe("point"));
@@ -181,6 +194,7 @@ test("a mood that no shelf of the page has finds nothing, and says so", async ({
   await tv.getByTestId("cat-find").click();
   await tv.getByTestId("cat-mood-romantic").click();
   await expect(tv.getByTestId("cat-nothing")).toBeVisible();
+  await expect(tv.getByTestId("cat-said")).toHaveText(await tv.getByTestId("cat-nothing").innerText());
   await expect(tv.getByTestId("cat-card")).toHaveCount(0);
   await expect(tv.getByTestId("cat-back")).toBeFocused();
 });
@@ -413,6 +427,23 @@ test("a press on the cat is the cat's and takes nothing from the page; a press o
   expect((await under(beside)).tile).toBe(there.tile);
   await tv.mouse.click(beside.x, beside.y);
   await expect(tv.getByTestId("tv-detail")).toBeVisible();
+});
+
+test("a page that only sits there is read about twice a second: the cat's own layer does not wake the reader again and again", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ quiet: true }));
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheScreen(tv);
+  // (a cat that sits still: what it does to the posters as it moves about is the page changing, and is read for)
+  await tv.evaluate(() => (window as unknown as { __kinoCat: { send(event: unknown): void } }).__kinoCat.send({ type: "cat.command", command: "sit" }));
+  await expect.poll(async () => (await snap(tv)).frame.clip, { timeout: 20_000 }).toBe("sit");
+  await tv.waitForTimeout(1500);
+  const before = (await snap(tv)).reads;
+  await tv.waitForTimeout(5000);
+  const read = (await snap(tv)).reads - before;
+  // (twice a second is ten; the reader waking itself ten times a second was fifty)
+  expect(read).toBeGreaterThanOrEqual(5);
+  expect(read).toBeLessThanOrEqual(25);
 });
 
 test("a viewer who asked for less motion has a cat that rests where it is", async ({ browser }) => {

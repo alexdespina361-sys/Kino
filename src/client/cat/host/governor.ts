@@ -12,12 +12,16 @@ export interface GovernorOptions {
   budget: number;
 }
 
+/** How many frames after the start, or a change of quality, are not counted. */
+const WARM_UP = 8;
+
 export class Governor {
   quality: Quality = "full";
   private cost = 0;
   private samples = 0;
   private slow = 0;
   private fast = 0;
+  private warm = 0;
 
   constructor(private readonly options: GovernorOptions) {}
 
@@ -26,6 +30,11 @@ export class Governor {
     if (this.quality === "off") return "off";
     // a frame that was waited for (the tab was in the background, the screen slept) says nothing of what the cat costs
     if (gapMs > 250) return this.quality;
+    // the first few pictures after the start (or a change of picture) are the browser getting ready for them: they are not what the cat costs
+    if (this.warm < WARM_UP) {
+      this.warm++;
+      return this.quality;
+    }
     this.cost = this.samples === 0 ? costMs : this.cost * 0.95 + costMs * 0.05;
     this.samples++;
     if (this.samples < 30) return this.quality;
@@ -33,7 +42,7 @@ export class Governor {
     if (this.cost > over) {
       this.slow++;
       this.fast = 0;
-    } else if (this.cost < this.options.budget * 0.5 && this.quality === "low") {
+    } else if (this.cost < this.options.budget * 0.75 && this.quality === "low") {
       this.fast++;
       this.slow = 0;
     } else {
@@ -44,7 +53,7 @@ export class Governor {
     if (this.slow > 120) {
       this.quality = this.quality === "full" ? "low" : "off";
       this.reset();
-    } else if (this.fast > 900) {
+    } else if (this.fast > 600) {
       this.quality = "full";
       this.reset();
     }
@@ -60,5 +69,6 @@ export class Governor {
     this.samples = 0;
     this.slow = 0;
     this.fast = 0;
+    this.warm = 0;
   }
 }

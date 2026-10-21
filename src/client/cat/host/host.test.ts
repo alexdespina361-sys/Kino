@@ -76,8 +76,20 @@ describe("the governor", () => {
     expect(governor.quality).toBe("low");
     run(governor, 300, 0.4);
     expect(governor.quality).toBe("low");
-    run(governor, 1200, 0.4);
+    run(governor, 500, 0.4);
     expect(governor.quality).toBe("full");
+  });
+
+  it("gives it back to a cat that is comfortably inside its budget, not only to one that is nearly free; not to one that is only just inside", () => {
+    const comfortable = new Governor({ budget: 2 });
+    run(comfortable, 200, 3);
+    expect(comfortable.quality).toBe("low");
+    run(comfortable, 900, 1.3); // (0.65 of the budget)
+    expect(comfortable.quality).toBe("full");
+    const close = new Governor({ budget: 2 });
+    run(close, 200, 3);
+    run(close, 3000, 1.7); // (0.85 of it)
+    expect(close.quality).toBe("low");
   });
 
   it("does not count a frame the screen waited for (the tab was in the background)", () => {

@@ -1,5 +1,6 @@
+import { useSyncExternalStore } from "react";
 import { useT } from "../i18n";
-import { emitCat } from "./bus";
+import { CAT_PANEL_ID, emitCat, panelIsOpen, subscribePanel } from "./bus";
 
 /**
  * The cat's button in the library's corner, beside the bell and the profile: it opens the cat's panel (come here, pet, sit, sleep, play, find me
@@ -22,6 +23,7 @@ export function CatIcon() {
 
 export function CatChip({ col }: { col: number }) {
   const t = useT();
+  const open = useSyncExternalStore(subscribePanel, panelIsOpen, () => false);
   return (
     <button
       type="button"
@@ -33,6 +35,8 @@ export function CatChip({ col }: { col: number }) {
       data-cat-chip
       data-testid="tv-cat-chip"
       aria-haspopup="true"
+      aria-expanded={open}
+      aria-controls={open ? CAT_PANEL_ID : undefined}
       aria-label={t("cat.panel")}
       title={t("cat.panel")}
     >

@@ -5,6 +5,7 @@ import { useHandHeldBack } from "../../shared/backButton";
 import { CloseIcon } from "../../shared/icons";
 import { moveFocus, navItems } from "../../tv/dpad";
 import { actionForKey } from "../../tv/keys";
+import { CAT_PANEL_ID } from "../bus";
 import type { Rng } from "../rng";
 import type { CatEvent } from "../types";
 import { fits, MOODS, pick, poolOfPage, tileOf, type Candidate, type Mood } from "./assistant";
@@ -121,13 +122,23 @@ function CatPanel({ send, point, rng, close }: PanelProps) {
 
   const title = screen.name === "mood" ? t("cat.findAsk") : screen.name === "pick" ? t("cat.find") : t("cat.panel");
 
+  // What the cat found, in words: shown on the card, and said to a reader as soon as it is found (a place that is on the page from the start, so that a change in it is heard)
+  const mood = screen.name === "pick" ? screen.mood : null;
+  const shelf = found && mood ? (found.rows.find((row) => fits(mood, row)) ?? found.rows[0]) : undefined;
+  const pickLine = found ? (found.year ? t("cat.pickYear", { title: found.title, year: found.year }) : t("cat.pick", { title: found.title })) : "";
+  const pickWhere = shelf ? t("cat.pickWhere", { shelf }) : "";
+  const said = screen.name !== "pick" ? "" : found ? `${pickLine}${pickWhere ? `. ${pickWhere}` : ""}` : t("cat.nothing");
+
   return (
-    <div ref={root} className="cat-panel" role="region" aria-label={t("cat.panel")} data-testid="cat-panel" data-screen={screen.name} tabIndex={-1} onKeyDown={onKeyDown}>
+    <div ref={root} id={CAT_PANEL_ID} className="cat-panel" role="region" aria-label={t("cat.panel")} data-testid="cat-panel" data-screen={screen.name} tabIndex={-1} onKeyDown={onKeyDown}>
       <div className="cat-panel-head">
         <h2 className="cat-panel-title">{title}</h2>
         <button type="button" className="cat-x" data-nav onClick={close} aria-label={t("cat.close")} title={t("cat.close")} data-testid="cat-close">
           <CloseIcon />
         </button>
+      </div>
+      <div className="cat-sr" role="status" aria-live="polite" aria-atomic="true" data-testid="cat-said">
+        {said}
       </div>
 
       {screen.name === "menu" && (
@@ -188,8 +199,8 @@ function CatPanel({ send, point, rng, close }: PanelProps) {
             <div className="cat-card" data-testid="cat-card" data-id={found.id}>
               {found.image && <img className="cat-card-art" src={found.image} alt="" loading="eager" draggable={false} />}
               <p className="cat-card-line">
-                {found.year ? t("cat.pickYear", { title: found.title, year: found.year }) : t("cat.pick", { title: found.title })}
-                {found.rows[0] && <small className="cat-card-where">{t("cat.pickWhere", { shelf: found.rows.find((row) => fits(screen.mood, row)) ?? found.rows[0] })}</small>}
+                {pickLine}
+                {pickWhere && <small className="cat-card-where">{pickWhere}</small>}
               </p>
             </div>
           ) : (

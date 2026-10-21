@@ -20,6 +20,9 @@ const BROWSE_FURNITURE = [".tv-browse-top", ".tv-rail", ".tv-hero-text", ".tv-he
 /** ...and the ones whose words are what take up the room (a heading is as wide as its row, the words as wide as they are). */
 const BROWSE_TEXT = [".tv-row-title", ".tv-view-title", ".tv-view-meta", ".tv-view-hint", ".tv-view-empty", ".tv-results-closest", ".tv-hero-eyebrow"];
 
+/** The longest, in milliseconds, that a page which is moving is left unread, however dear a read is. */
+const MOVING_GAP_MAX = 90;
+
 /** How much of the screen's width a corner of the picture takes for the cat to sit on in a film (in body lengths). */
 const PERCH_FROM = 0.7;
 const PERCH_TO = 3.6;
@@ -90,6 +93,7 @@ export class TvPage {
   private movingUntil = 0;
   private builtAt = -1e9;
   private built = 0;
+  private buildMs = 0;
   private readonly observer: MutationObserver | null;
   private readonly off: Array<() => void> = [];
   private signature = "";
@@ -144,17 +148,28 @@ export class TvPage {
     this.movingUntil = performance.now() + 450;
   }
 
-  /** The page now, read again if it has to be; the very same read otherwise. */
+  /**
+   * The page now, read again if it has to be; the very same read otherwise. While the page moves it is read at every frame, unless a read is dear: a read
+   * is not done again before ten times as long as the last took has passed, so that on a screen where it costs it never takes more than a tenth of the time.
+   */
   read(now: number): PageRead {
     const stale = now - this.builtAt;
-    const due = this.dirtyAt && (stale >= 100 || now < this.movingUntil);
+    const due = this.dirtyAt && (stale >= 100 || (now < this.movingUntil && stale >= Math.min(MOVING_GAP_MAX, this.buildMs * 10)));
     if (!this.last || due || stale >= 500) {
+      const started = performance.now();
       this.dirtyAt = false;
       this.builtAt = now;
       this.built++;
       this.last = this.build();
+      const took = performance.now() - started;
+      this.buildMs = this.buildMs === 0 ? took : this.buildMs * 0.8 + took * 0.2;
     }
     return this.last;
+  }
+
+  /** What a read of the page takes now, in milliseconds (smoothed), for the diagnostics. */
+  get readMs(): number {
+    return this.buildMs;
   }
 
   /** How many times the page has been read, for the diagnostics (a page that is only sitting there is read twice a second). */

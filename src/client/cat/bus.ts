@@ -16,6 +16,26 @@ export function emitCat(command: CatCommand): void {
   window.dispatchEvent(new CustomEvent<CatCommand>(EVENT, { detail: command }));
 }
 
+/** The id of the cat's panel on the page, for the button that opens it to point at. */
+export const CAT_PANEL_ID = "kino-cat-panel";
+
+let panelOpen = false;
+const panelListeners = new Set<() => void>();
+
+/** The cat's panel was opened or closed (the button that opens it says so to a reader). */
+export function setPanelOpen(open: boolean): void {
+  if (panelOpen === open) return;
+  panelOpen = open;
+  for (const listener of [...panelListeners]) listener();
+}
+
+export const panelIsOpen = (): boolean => panelOpen;
+
+export function subscribePanel(listener: () => void): () => void {
+  panelListeners.add(listener);
+  return () => panelListeners.delete(listener);
+}
+
 export function onCat(listener: (command: CatCommand) => void): () => void {
   const handler = (event: Event) => {
     waiting = null;

@@ -1,5 +1,5 @@
 import { isTvAgent } from "../../role";
-import { onCat } from "../bus";
+import { onCat, setPanelOpen } from "../bus";
 import { BODY_EMS } from "../math";
 import { CatEngine, type EngineDebug } from "../engine/engine";
 import { coreOf, shapeCovers } from "../engine/shape";
@@ -31,6 +31,15 @@ import { classicBrush, fetchMesh, solidBrush, type Brush } from "./render";
 /** The canvas is this many body lengths wide and tall, with the cat's feet this far down it. */
 const CANVAS_BODIES = 4;
 const GROUND_AT = 0.8;
+/**
+ * How long after the picture has changed the card is first asked what a picture costs (it is getting ready for it until then), how often it is asked for the
+ * next two, and how often after that (milliseconds). The ask empties the card's whole queue, the page's and a film's with it, so it is rare.
+ */
+const PROBE_AFTER_MS = 1500;
+const PROBE_BURST_MS = 600;
+const PROBE_EVERY_MS = 5000;
+/** A cat asleep in a film is painted at about this many frames a second (it only breathes, and the film is the screen's work). */
+const ASLEEP_GAP_MS = 40;
 
 export interface CatHandle {
   /** Tells the cat something, as the page would. */
@@ -64,6 +73,9 @@ export interface CatSnapshot {
   covers: number;
   /** How many times the page has been read (a page that only sits there is read twice a second). */
   reads: number;
+  /** Where a frame's time goes, smoothed, in milliseconds (reading the page, the cat's brain, painting without the wait for the card), and what the card was seen to take. */
+  phases: { read: number; think: number; paint: number };
+  gpu: number;
 }
 
 declare global {
@@ -140,7 +152,12 @@ export function mountCat(): { stop: () => void } {
   let dpr = 1;
   let layoutKey = "";
   let quality: Quality = "full";
-  let frames = 0;
+  let probedAt = -1e9;
+  /** When the first picture after a change (another cat, another quality, another size) was painted (-1: not yet), and how many times the card is still to be asked what that kind of picture costs, soon, before the long wait. */
+  let changedAt = -1;
+  let burst = 3;
+  /** What the card was seen to take at the last few probes (the first picture after a change includes the card getting ready for it: the middle one of them is taken). */
+  const taken: number[] = [];
   /** What the card was last seen to take for a frame, in milliseconds, without the time it takes to answer at all (a smoothed number; 0 until it has been timed). */
   let gpu = 0;
   let shown = false;
@@ -150,6 +167,8 @@ export function mountCat(): { stop: () => void } {
   let halt: () => void = () => undefined;
   let last = 0;
   let cost = 0;
+  /** Where a frame's time goes, smoothed (milliseconds): reading the page, the cat's brain, and painting (less the wait for the card). */
+  let phases = { read: 0, think: 0, paint: 0 };
   let fps = 60;
   let lastDebug = 0;
   let read: PageRead | null = null;
@@ -164,6 +183,14 @@ export function mountCat(): { stop: () => void } {
   let prevMode: World["mode"] = "away";
   let prevPlayer: PlayerMode = "none";
   let prevFocus: string | undefined;
+
+  /** What the card took for the last picture says nothing of the next one (another cat, another quality, another size): it is looked at afresh. */
+  const pictureChanged = (): void => {
+    changedAt = -1; // (the card gets ready for the picture when it is first asked for it: the time is counted from then)
+    burst = 3;
+    taken.length = 0;
+    gpu = 0;
+  };
 
   const attach = (home: NonNullable<PageRead["home"]>): void => {
     const { parent, after } = home;
@@ -197,6 +224,7 @@ export function mountCat(): { stop: () => void } {
   const install = (next: Brush): void => {
     const old = brush;
     brush = next;
+    pictureChanged();
     next.setCoat(coatNow());
     wrap.insertBefore(next.canvas, old ? old.canvas : hit);
     if (old) {
@@ -250,6 +278,7 @@ export function mountCat(): { stop: () => void } {
     const goneHost = panelHost;
     panel = null;
     panelHost = null;
+    setPanelOpen(false);
     window.clearTimeout(pointRetry);
     pointed = null;
     clearPointed();
@@ -273,6 +302,7 @@ export function mountCat(): { stop: () => void } {
     panelHost.className = "cat-panel-host";
     tv.appendChild(panelHost);
     panel = mountPanel(panelHost, { send: (event) => engine.send(event), point: askToPoint, rng, close: closePanel });
+    setPanelOpen(true);
     page.touch();
   };
 
@@ -318,12 +348,17 @@ export function mountCat(): { stop: () => void } {
     // a slow screen gets thirty frames a second; a screen where the cat is away (and not on its way back) is looked at a few times a second
     if (quality === "low" && gap < 30) return;
     if (read && !shown && prevMode === "away" && gap < 100) return;
+    // a cat asleep in a film only breathes: it is painted a third as often, and the film has the rest of the screen's time
+    if (shown && prevMode === "player" && frame.appear > 0.99 && (frame.clip === "curl" || frame.clip === "loaf") && !frame.petted && gap < ASLEEP_GAP_MS) return;
     last = time;
     fps = fps * 0.9 + (1000 / Math.max(1, gap)) * 0.1;
     const dt = Math.min(gap, 100) / 1000;
     const t0 = performance.now();
 
     const now = page.read(time);
+    // (what the page costs to read is the page's, laid out as it would be at the next frame whoever asked: it is kept to a tenth of the time by how often it is
+    // done (see TvPage.read), and is not counted against the cat)
+    const tRead = performance.now();
     if (now !== read) {
       read = now;
       onRead(now);
@@ -336,6 +371,7 @@ export function mountCat(): { stop: () => void } {
     else if (says === "end") engine.send({ type: "cat.petEnd" });
 
     frame = engine.update(world, dt);
+    const tThink = performance.now();
     const L = world.bodyLength;
     if (brush?.lost) {
       // the card took the picture away (it was reset, or needed for something else): the simple cat carries on
@@ -347,6 +383,7 @@ export function mountCat(): { stop: () => void } {
     if (key !== layoutKey) {
       layoutKey = key;
       layout(L, wanted);
+      pictureChanged();
     }
 
     const visible = frame.appear > 0.01 && wrap.isConnected && brush !== null;
@@ -358,10 +395,20 @@ export function mountCat(): { stop: () => void } {
       const py = frame.y - origin.y - oy;
       const ix = Math.floor(px * dpr) / dpr;
       const iy = Math.floor(py * dpr) / dpr;
-      // (a card is asked for a picture and answers later: twice a second the host waits for the answer, to know what the picture costs)
-      frames++;
-      waited = brush.paint(rig.solved, { ox: ox + (px - ix), oy: oy + (py - iy), px: L }, quality, frames % 30 === 0);
-      if (waited > 0) gpu = gpu === 0 ? brush.gpuMs : gpu * 0.7 + brush.gpuMs * 0.3;
+      // (a card is asked for a picture and answers later: now and then the host waits for the answer, to know what the picture costs. The wait empties the
+      // card's whole queue, the page's and a film's with it, so it is done soon after anything about the picture has changed, and only rarely after that)
+      if (changedAt < 0) changedAt = time;
+      const probe = time - changedAt > PROBE_AFTER_MS && time - probedAt > (burst > 0 ? PROBE_BURST_MS : PROBE_EVERY_MS);
+      if (probe) {
+        probedAt = time;
+        if (burst > 0) burst--;
+      }
+      waited = brush.paint(rig.solved, { ox: ox + (px - ix), oy: oy + (py - iy), px: L }, quality, probe);
+      if (waited > 0) {
+        taken.push(brush.gpuMs);
+        if (taken.length > 3) taken.shift();
+        gpu = [...taken].sort((a, b) => a - b)[(taken.length - 1) >> 1] ?? 0;
+      }
       brush.canvas.style.transform = `translate3d(${ix}px, ${iy}px, 0)`;
       // (the box a hand is on is the cat's body and head, as it is drawn now and the way it faces; its tail is not a thing to click)
       const [back, front, high] = coreOf(frame.clip);
@@ -390,8 +437,15 @@ export function mountCat(): { stop: () => void } {
     pointing = reaching;
 
     // (the host's own time, less the wait for the card where there was one, plus what the card was last seen to take)
-    cost = performance.now() - t0 - waited + gpu + (brush?.art === "solid" ? pretend : 0);
-    const next = governor.note(cost, gap);
+    const tEnd = performance.now();
+    cost = tEnd - tRead - waited + gpu + (brush?.art === "solid" ? pretend : 0);
+    phases = {
+      read: phases.read * 0.9 + (tRead - t0) * 0.1,
+      think: phases.think * 0.9 + (tThink - tRead) * 0.1,
+      paint: phases.paint * 0.9 + (tEnd - tThink - waited) * 0.1,
+    };
+    // (a cat that is not on the screen costs nothing worth judging: what its first pictures take is the card getting ready, and is not counted either)
+    const next = visible ? governor.note(cost, gap) : quality;
     if (next !== quality) {
       if (next === "off" && brush?.art === "solid") {
         // the detailed cat is more than this screen can spare; the simple one is a tenth of it, and is judged afresh
@@ -402,6 +456,7 @@ export function mountCat(): { stop: () => void } {
         choose();
       } else {
         quality = next;
+        pictureChanged();
         if (quality === "off") {
           halt();
           return;
@@ -485,6 +540,8 @@ export function mountCat(): { stop: () => void } {
         names: read?.world.soft?.length ?? 0,
         covers: read ? shapeCovers(frame.clip, frame.facing, frame.x, frame.y, read.world.bodyLength, read.world.soft ?? []) / read.world.bodyLength ** 2 : 0,
         reads: page.reads,
+        phases: { ...phases },
+        gpu,
       }),
     };
   }
