@@ -70,6 +70,98 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly
   cat.dispose();
 }
 
+/** How far the drawn cat reaches from its feet, in body lengths, as the pixels of a picture of it say (scripts/cat/extents.mjs). */
+export interface Extent {
+  label: string;
+  /** Furthest forward (the way it faces), furthest back (the tail), and how high; `down` is below the line its feet are on. */
+  ahead: number;
+  behind: number;
+  up: number;
+  down: number;
+  /** Per band of a tenth of a body length from the feet up: how far back and forward the cat reaches at that height (both 0 where nothing is drawn). */
+  profile: Array<[number, number]>;
+}
+
+/**
+ * Pictures of the cat in each cell, one after another on one canvas, and what each takes of it: the box round every pixel the cat is drawn in (not the
+ * faint ones: the fur's fringe and a whisker are not what covers a word). The cat faces right, its feet on a line at 0.8 of the canvas.
+ */
+export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat = "ginger", seed = 7, alphaMin = 80): Extent[] {
+  const W = 1200;
+  const H = 900;
+  const px = 150;
+  const glCanvas = document.createElement("canvas");
+  const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
+  if (!cat) throw new Error("no WebGL");
+  cat.setCoat(coat);
+  cat.resize(W, H, 1);
+  const flat = document.createElement("canvas");
+  flat.width = W;
+  flat.height = H;
+  const ctx = flat.getContext("2d", { willReadFrequently: true })!;
+  const ox = W / 2;
+  const oy = H * 0.8;
+  const out: Extent[] = [];
+  cells.forEach((cell, i) => {
+    const rig = new CatRig(seed + i);
+    const base = frameOf(cell.frame);
+    if (cell.cycle !== undefined) base.odometer = cell.cycle * STRIDE[base.clip === "run" ? "run" : "walk"] * px;
+    rig.snapTo(base, px);
+    const steps = Math.round((cell.settle ?? 1.2) * 60);
+    for (let k = 0; k < steps; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
+    cat.draw(rig.solved, { ox, oy, px }, cell.view);
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(glCanvas, 0, 0);
+    const data = ctx.getImageData(0, 0, W, H).data;
+    let x0 = W;
+    let x1 = -1;
+    let y0 = H;
+    let y1 = -1;
+    const bands = 16;
+    const lo: number[] = new Array(bands).fill(W);
+    const hi: number[] = new Array(bands).fill(-1);
+    for (let y = 0; y < H; y++) {
+      const band = Math.floor(((oy - y - 1) / px) * 10);
+      for (let x = 0; x < W; x++) {
+        if ((data[(y * W + x) * 4 + 3] ?? 0) < alphaMin) continue;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+        if (band >= 0 && band < bands) {
+          if (x < lo[band]!) lo[band] = x;
+          if (x > hi[band]!) hi[band] = x;
+        }
+      }
+    }
+    const profile = lo.map((l, b): [number, number] => (hi[b]! < 0 ? [0, 0] : [(ox - l) / px, (hi[b]! + 1 - ox) / px]));
+    out.push(x1 < 0 ? { label: cell.label, ahead: 0, behind: 0, up: 0, down: 0, profile } : { label: cell.label, ahead: (x1 + 1 - ox) / px, behind: (ox - x0) / px, up: (oy - y0) / px, down: (y1 + 1 - oy) / px, profile });
+  });
+  cat.dispose();
+  return out;
+}
+
+/** Every posture the engine puts the cat in, a few moments of each that moves, for `glExtents`. */
+export const EXTENT_CELLS: GlCell[] = (() => {
+  const cells: GlCell[] = [];
+  const at = (label: string, frame: Partial<CatFrame>, settle = 1.2): void => void cells.push({ label, frame, settle, view: { tilt: 0 } });
+  for (const clip of ["stand", "sit", "loaf", "curl", "crouch", "yawn", "point", "pet"] as const) at(clip, clip === "curl" ? { clip, drowsy: 1 } : clip === "pet" ? { clip: "sit", petted: true } : { clip, ...(clip === "yawn" ? { progress: 0.5 } : {}) });
+  at("sit,viewer", { clip: "sit", viewer: true });
+  for (const p of [0.25, 0.5, 0.75]) at(`stretch@${p}`, { clip: "stretch", progress: p });
+  for (const p of [0.2, 0.5, 0.8]) at(`jump@${p}`, { clip: "jump", progress: p, grounded: false, vy: -300, vx: 300 }, 0.6);
+  for (const t of [0.2, 0.6, 1.0, 1.4, 2.0]) at(`groom@${t}`, { clip: "groom", clipTime: t }, t);
+  for (const s of [0.6, 1.0, 1.06, 1.3, 1.6]) {
+    at(`scratch@${s}`, { clip: "scratch" }, s);
+    at(`knead@${s}`, { clip: "knead" }, s);
+    at(`wiggle@${s}`, { clip: "wiggle" }, s);
+  }
+  at("sniff", { clip: "sniff", progress: 0.5 });
+  at("stalk", { clip: "stalk", odometer: 20 }, 1.0);
+  for (let i = 0; i < 8; i++) cells.push({ label: `walk@${i}`, frame: { clip: "walk", vx: 150 }, cycle: i / 8, view: { tilt: 0 }, settle: 1 });
+  for (let i = 0; i < 12; i++) cells.push({ label: `run@${i}`, frame: { clip: "run", vx: 380 }, cycle: i / 12, view: { tilt: 0 }, settle: 1 });
+  return cells;
+})();
+
 /** A recording of what the engine made a cat do (scripts/cat/record.mts), and which part of it to look at. */
 export interface FilmFrame extends CatFrame {
   act?: string;

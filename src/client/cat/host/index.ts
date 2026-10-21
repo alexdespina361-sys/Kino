@@ -65,6 +65,8 @@ export interface CatSnapshot {
   /** How many names under the cards the cat knows of, and how much of them its body covers just now (in squares of its body length). */
   names: number;
   covers: number;
+  /** How many times the page has been read (a page that only sits there is read twice a second). */
+  reads: number;
 }
 
 declare global {
@@ -75,6 +77,11 @@ declare global {
 
 /** How much room a clip takes on the screen: the lying and sitting ones are low, any other is a cat on its feet. */
 const postureOf = (clip: Clip): RestPose => (clip === "sit" || clip === "loaf" || clip === "curl" ? clip : "stand");
+
+/** An attribute is written only when it changes (a write of the same value is still a change to anything that watches the page). */
+const setAttr = (element: Element, name: string, value: string): void => {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
+};
 
 const seedOf = (search: string): number => {
   const asked = Number(new URLSearchParams(search).get("catseed"));
@@ -105,6 +112,7 @@ export function mountCat(): { stop: () => void } {
   const page = new TvPage({
     films: () => settings.films,
     quiet: () => settings.quiet,
+    own: () => wrap,
     size: () => CAT_SIZE_FACTOR[catSizeAsk() ?? settings.size],
     extra: () => {
       const box = panel?.element();
@@ -144,6 +152,8 @@ export function mountCat(): { stop: () => void } {
   let shown = false;
   let raf = 0;
   let stopped = false;
+  /** Takes the cat away because the screen cannot spare it (set below, where everything it takes away is in reach). */
+  let halt: () => void = () => undefined;
   let last = 0;
   let cost = 0;
   let fps = 60;
@@ -296,8 +306,8 @@ export function mountCat(): { stop: () => void } {
     prevPlayer = world.player;
     if (panel && world.mode !== "browse") closePanel();
     if (now.home) attach(now.home);
-    wrap.setAttribute("data-mode", world.mode);
-    wrap.setAttribute("data-view", now.view);
+    setAttr(wrap, "data-mode", world.mode);
+    setAttr(wrap, "data-view", now.view);
   };
 
   /* ------------------------------ the loop ------------------------------ */
@@ -407,17 +417,6 @@ export function mountCat(): { stop: () => void } {
     }
   };
 
-  /** The cat is not worth what it costs on this screen: it goes, and the rest of the page does not notice (the corner's button goes with it). */
-  const halt = (): void => {
-    stopped = true;
-    cancelAnimationFrame(raf);
-    wrap.hidden = true;
-    brush?.dispose();
-    closePanel();
-    clearPointed();
-    setCatGone(true);
-  };
-
   /* ------------------------------ the viewer's hand ------------------------------ */
 
   const onMove = (event: PointerEvent): void => {
@@ -455,6 +454,7 @@ export function mountCat(): { stop: () => void } {
     if (command.type === "panel") togglePanel();
   });
   const offSettings = subscribeCatSettings(() => {
+    if (stopped) return;
     settings = readCatSettings();
     choose(); // (the detailed cat may have been switched on or off)
     brush?.setCoat(coatNow());
@@ -483,34 +483,47 @@ export function mountCat(): { stop: () => void } {
         posters: read?.world.targets.length ?? 0,
         names: read?.world.soft?.length ?? 0,
         covers: read ? covered(frame.x, frame.y, read.world.bodyLength, postureOf(frame.clip), read.world.soft ?? []) / read.world.bodyLength ** 2 : 0,
+        reads: page.reads,
       }),
     };
   }
+
+  /* ------------------------------ going ------------------------------ */
+
+  /** Everything the cat put on the page and everything it listens to, taken away; the same however it ends, and harmless if asked twice. */
+  let gone = false;
+  const teardown = (): void => {
+    if (gone) return;
+    gone = true;
+    stopped = true;
+    cancelAnimationFrame(raf);
+    window.clearTimeout(pointRetry);
+    brush?.dispose();
+    window.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerdown", onOutside, true);
+    hit.removeEventListener("pointerenter", onEnter);
+    hit.removeEventListener("pointerleave", onLeave);
+    hit.removeEventListener("pointerdown", onPress);
+    hit.removeEventListener("contextmenu", onContext);
+    offBus();
+    offSettings();
+    closePanel();
+    clearPointed();
+    page.dispose();
+    debug?.dispose();
+    wrap.remove();
+    if (window.__kinoCat) delete window.__kinoCat;
+  };
+
+  /** The cat is not worth what it costs on this screen: it goes with everything that was its own, and the rest of the page does not notice (the corner's button goes with it). */
+  halt = (): void => {
+    teardown();
+    setCatGone(true);
+  };
 
   engine.send({ type: "cat.enable" });
   choose();
   raf = requestAnimationFrame(loop);
 
-  return {
-    stop: () => {
-      stopped = true;
-      cancelAnimationFrame(raf);
-      window.clearTimeout(pointRetry);
-      brush?.dispose();
-      window.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerdown", onOutside, true);
-      hit.removeEventListener("pointerenter", onEnter);
-      hit.removeEventListener("pointerleave", onLeave);
-      hit.removeEventListener("pointerdown", onPress);
-      hit.removeEventListener("contextmenu", onContext);
-      offBus();
-      offSettings();
-      closePanel();
-      clearPointed();
-      page.dispose();
-      debug?.dispose();
-      wrap.remove();
-      if (window.__kinoCat) delete window.__kinoCat;
-    },
-  };
+  return { stop: teardown };
 }

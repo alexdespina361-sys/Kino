@@ -111,13 +111,28 @@ export function subscribeCatSettings(listener: () => void): () => void {
   };
 }
 
-/** Whether the host offers a cat at all: asked once per load, and only when somebody wants to know. A host that does not answer offers none. */
+/**
+ * Whether the host offers a cat at all: asked once per load, and only when somebody wants to know. A host that says no (or has never heard of cats) offers
+ * none for the rest of the load; one that does not answer (a server that is still waking up, a line that dropped) is asked again a moment later, twice,
+ * and then offers none for this load.
+ */
 let offered: Promise<boolean> | undefined;
+const RETRY_MS = [1500, 4000];
 export function catOffered(): Promise<boolean> {
-  offered ??= fetch("/api/features", { cache: "no-store" })
-    .then((answer) => (answer.ok ? (answer.json() as Promise<{ cat?: unknown }>) : { cat: false }))
-    .then((body) => body.cat === true)
-    .catch(() => false);
+  offered ??= (async () => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const answer = await fetch("/api/features", { cache: "no-store" });
+        if (answer.ok) return ((await answer.json()) as { cat?: unknown }).cat === true;
+        if (answer.status === 404) return false;
+      } catch {
+        /* no answer: the same as a server that is not ready */
+      }
+      const wait = RETRY_MS[attempt];
+      if (wait === undefined) return false;
+      await new Promise<void>((resolve) => setTimeout(resolve, wait));
+    }
+  })();
   return offered;
 }
 

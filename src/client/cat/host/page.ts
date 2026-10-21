@@ -51,6 +51,8 @@ export interface PageRead {
 export interface PageContext {
   films: () => boolean;
   quiet: () => boolean;
+  /** The cat's own layer: what it does to its own nodes (it moves its canvas at every frame) is not the page changing, and is not read again for. */
+  own?: () => Element | null;
   /** How big the cat is against what the screen's size makes of it (1 if not given). */
   size?: () => number;
   /** More places the cat keeps out of, that are not part of the screen's own page (the cat's own panel). */
@@ -87,6 +89,7 @@ export class TvPage {
   private dirtyAt = true;
   private movingUntil = 0;
   private builtAt = -1e9;
+  private built = 0;
   private readonly observer: MutationObserver | null;
   private readonly off: Array<() => void> = [];
   private signature = "";
@@ -108,7 +111,14 @@ export class TvPage {
     on(window, "animationend", move, true);
     on(document, "visibilitychange", touch);
     on(document, "fullscreenchange", touch);
-    this.observer = typeof MutationObserver === "undefined" ? null : new MutationObserver(touch);
+    // (the cat's layer is inside the page it reads, and its canvas is moved at every frame: if that counted, every read would ask for the next)
+    this.observer =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver((records) => {
+            const own = this.context.own?.();
+            if (!own || records.some((record) => !own.contains(record.target))) touch();
+          });
     this.observer?.observe(document.getElementById("root") ?? document.body, {
       childList: true,
       subtree: true,
@@ -141,9 +151,15 @@ export class TvPage {
     if (!this.last || due || stale >= 500) {
       this.dirtyAt = false;
       this.builtAt = now;
+      this.built++;
       this.last = this.build();
     }
     return this.last;
+  }
+
+  /** How many times the page has been read, for the diagnostics (a page that is only sitting there is read twice a second). */
+  get reads(): number {
+    return this.built;
   }
 
   private build(): PageRead {

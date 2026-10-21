@@ -121,18 +121,24 @@ export class GlCat {
 
   /** A solid cat on the canvas, or null if this browser cannot. */
   static create(canvas: HTMLCanvasElement, data: ArrayBuffer, options: { preserve?: boolean } = {}): GlCat | null {
+    let gl: WebGLRenderingContext | null = null;
+    // (a context that was made and is not going to be used is given back: a browser lets a page have only so many)
+    const refuse = (): null => {
+      gl?.getExtension("WEBGL_lose_context")?.loseContext();
+      return null;
+    };
     try {
       const attrs: WebGLContextAttributes = { alpha: true, premultipliedAlpha: true, antialias: true, depth: true, stencil: false, powerPreference: "low-power", preserveDrawingBuffer: options.preserve === true };
       const mesh = decodeMesh(data);
       if (mesh.rest !== restStamp()) return null; // (a mesh made around another rest pose would be worn crooked)
-      const gl = (canvas.getContext("webgl", attrs) ?? canvas.getContext("experimental-webgl", attrs)) as WebGLRenderingContext | null;
+      gl = (canvas.getContext("webgl", attrs) ?? canvas.getContext("experimental-webgl", attrs)) as WebGLRenderingContext | null;
       if (!gl) return null;
       // (what the shaders need of the card: room for the bones, and numbers that are not too coarse to make fur of)
-      if ((gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) as number) < 112) return null;
-      if ((gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT)?.precision ?? 0) < 16) return null;
+      if ((gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) as number) < 112) return refuse();
+      if ((gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT)?.precision ?? 0) < 16) return refuse();
       return new GlCat(canvas, gl, mesh);
     } catch {
-      return null;
+      return refuse();
     }
   }
 
