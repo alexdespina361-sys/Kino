@@ -1,10 +1,12 @@
 import { clamp } from "../math";
-import type { Rect, Surface, World } from "../types";
+import type { Clip, Rect, Surface, World } from "../types";
+import { FOOT_SLACK, HALF_WIDTH, HEIGHT, shapeCovers, standingMargin } from "./shape";
 
 /**
  * Where the cat can actually stand. The page offers surfaces (the line along the tops of a row of posters, the bottom of the screen); a ledge is
  * a stretch of one of them where the cat's whole body would fit: on the screen, and clear of everything the cat must keep out of (text the
- * viewer is reading, buttons, the card that has the focus, the subtitles). Pure geometry, no page: a hundred worlds can be tried in a test.
+ * viewer is reading, buttons, the card that has the focus). How much room the body takes is what the drawn cat takes (shape.ts). Pure geometry, no page:
+ * a hundred worlds can be tried in a test.
  */
 
 export interface Ledge {
@@ -19,13 +21,8 @@ export interface Ledge {
   weight: number;
 }
 
-/** How much room the cat's body takes, as a part of its body length: half its width, and how tall it is sitting up with its head raised. */
-export const HALF_WIDTH = 0.58;
-export const HEIGHT = 1.02;
 /** A ledge shorter than this (in body lengths) is not worth standing on. */
 export const MIN_LEDGE = 0.45;
-/** How far feet may sink into a zone before it counts as standing in it (pixels). */
-const FOOT_SLACK = 3;
 
 type Interval = [number, number];
 
@@ -41,13 +38,6 @@ function subtract(intervals: Interval[], from: number, to: number): Interval[] {
   return out;
 }
 
-/** Whether the cat standing with its middle at `x` on a line at `y` would overlap the rectangle. */
-export function boxHits(x: number, y: number, bodyLength: number, rect: Rect): boolean {
-  const halfW = HALF_WIDTH * bodyLength;
-  const top = y - HEIGHT * bodyLength;
-  return x + halfW > rect.x && x - halfW < rect.x + rect.w && y + FOOT_SLACK > rect.y && top < rect.y + rect.h;
-}
-
 export function computeLedges(world: World): Ledge[] {
   const L = world.bodyLength;
   const halfW = HALF_WIDTH * L;
@@ -57,13 +47,18 @@ export function computeLedges(world: World): Ledge[] {
   for (const surface of world.surfaces) {
     // the feet must be on the screen, with room above them for most of the cat
     if (!(surface.y >= vp.y + height * 0.55) || !(surface.y <= vp.y + vp.h)) continue;
-    const left = Math.max(surface.x0, vp.x) + halfW * 0.5;
-    const right = Math.min(surface.x1, vp.x + vp.w) - halfW * 0.5;
+    // (the middle may come a good way towards the end of a row of posters, the cat having a place to stand on the end card; the edge of the screen it does not
+    // come to: all of the cat is on it)
+    const left = Math.max(surface.x0 + halfW * 0.5, vp.x + halfW);
+    const right = Math.min(surface.x1 - halfW * 0.5, vp.x + vp.w - halfW);
     if (!(right > left)) continue;
     let intervals: Interval[] = [[left, right]];
     for (const zone of world.keepOut) {
-      if (zone.y > surface.y + FOOT_SLACK || zone.y + zone.h < surface.y - height) continue;
-      intervals = subtract(intervals, zone.x - halfW, zone.x + zone.w + halfW);
+      if (zone.y > surface.y + FOOT_SLACK) continue;
+      // (as far from it as the cat reaches at the heights the zone is at)
+      const margin = standingMargin(zone, surface.y, L);
+      if (margin === 0) continue;
+      intervals = subtract(intervals, zone.x - margin, zone.x + zone.w + margin);
       if (intervals.length === 0) break;
     }
     let n = 0;
@@ -77,50 +72,66 @@ export function computeLedges(world: World): Ledge[] {
 
 /* ------------------------------ settling ------------------------------ */
 
-/** What a cat settled in a posture takes of the screen: half its width and how tall it is, in body lengths (lying down it is low, and the words above it can still be read). */
-export const POSE_BOX = { stand: [HALF_WIDTH, HEIGHT], sit: [0.36, 0.72], loaf: [0.5, 0.46], curl: [0.42, 0.4] } as const;
-export type RestPose = keyof typeof POSE_BOX;
+/** The postures a cat settles in (a clip each). */
+export type RestPose = Extract<Clip, "stand" | "sit" | "loaf" | "curl">;
 
-/** How much of the words, in square pixels, a cat settled in `pose` with its middle at `x` on the line `y` would cover. */
-export function covered(x: number, y: number, bodyLength: number, pose: RestPose, soft: readonly Rect[]): number {
-  const [half, tall] = POSE_BOX[pose];
-  const left = x - half * bodyLength;
-  const right = x + half * bodyLength;
-  const top = y - tall * bodyLength;
-  let area = 0;
-  for (const word of soft) {
-    const across = Math.min(right, word.x + word.w) - Math.max(left, word.x);
-    const down = Math.min(y, word.y + word.h) - Math.max(top, word.y);
-    if (across > 0 && down > 0) area += across * down;
-  }
-  return area;
+/** What a cat settling somewhere is to keep clear of: the zones (and the edges of the screen) it is not to be in, and the words it would rather not cover. */
+export interface Clutter {
+  soft?: readonly Rect[] | undefined;
+  keepOut: readonly Rect[];
+  viewport: Rect;
+}
+
+/** A zone covered is this many times worse than a word covered. */
+const ZONE_WEIGHT = 6;
+
+/** What a cat settled in `pose` with its middle at `x` on the line `y`, facing `facing`, would cover: words once, and zones and the edges of the screen more. */
+export function settledCost(pose: Clip, facing: 1 | -1, x: number, y: number, bodyLength: number, around: Clutter): number {
+  return shapeCovers(pose, facing, x, y, bodyLength, around.soft ?? []) + ZONE_WEIGHT * shapeCovers(pose, facing, x, y, bodyLength, avoided(around, bodyLength));
+}
+
+/** What the cat keeps out of, with the edges of the screen as two more zones (the part of the cat that is off the screen is not seen). */
+const avoided = (around: Clutter, bodyLength: number): Rect[] => {
+  const vp = around.viewport;
+  const wide = 6 * bodyLength;
+  return [...around.keepOut, { x: vp.x - wide, y: vp.y - wide, w: wide, h: vp.h + 2 * wide }, { x: vp.x + vp.w, y: vp.y - wide, w: wide, h: vp.h + 2 * wide }];
+};
+
+/** Where to settle (a place to walk to, or none: where the cat is will do) and what that costs (see `settledCost`). */
+export interface Settling {
+  x: number | undefined;
+  cost: number;
 }
 
 /**
- * Where on `ledge` to settle for a while, when where the cat is would cover words: the spot within `reach` body lengths that covers the least (and of
- * those the nearest), if it covers at most half of what here does and is worth a walk. Undefined when where it is will do, or nothing is better.
+ * Where on `ledge` to settle for a while, when where the cat is would cover words or a zone: the spot within `reach` body lengths where it covers the least
+ * (and of those the nearest), if that is at most half of what here covers and is worth a walk. It faces the way it walked there. No spot when where it is
+ * will do, or nothing is better; the cost is that of the place it settles in either way.
  */
-export function restSpot(ledge: Ledge, from: number, bodyLength: number, pose: RestPose, soft: readonly Rect[] | undefined, reach = 3.5): number | undefined {
-  if (!soft || soft.length === 0) return undefined;
+export function settle(ledge: Ledge, from: number, facing: 1 | -1, bodyLength: number, pose: RestPose, around: Clutter, reach = 3.5): Settling {
   const unit = bodyLength * bodyLength;
-  const here = covered(from, ledge.y, bodyLength, pose, soft);
+  const here = settledCost(pose, facing, from, ledge.y, bodyLength, around);
   // (the edge of a letter under a paw is not covering it)
-  if (here < 0.02 * unit) return undefined;
+  if (here < 0.02 * unit) return { x: undefined, cost: here };
   let best: number | undefined;
   let bestArea = Infinity;
   let bestAway = Infinity;
   for (let x = Math.max(ledge.x0, from - reach * bodyLength); x <= Math.min(ledge.x1, from + reach * bodyLength); x += 0.12 * bodyLength) {
-    const area = covered(x, ledge.y, bodyLength, pose, soft);
     const away = Math.abs(x - from);
-    if (away < 0.25 * bodyLength || area > here * 0.5) continue;
+    if (away < 0.25 * bodyLength) continue;
+    const area = settledCost(pose, x > from ? 1 : -1, x, ledge.y, bodyLength, around);
+    if (area > here * 0.5) continue;
     if (area < bestArea - 0.01 * unit || (area <= bestArea + 0.01 * unit && away < bestAway)) {
       best = x;
       bestArea = area;
       bestAway = away;
     }
   }
-  return best;
+  return best === undefined ? { x: undefined, cost: here } : { x: best, cost: bestArea };
 }
+
+/** Where on `ledge` to settle (see `settle`), if it is somewhere else than where the cat is. */
+export const restSpot = (ledge: Ledge, from: number, facing: 1 | -1, bodyLength: number, pose: RestPose, around: Clutter, reach = 3.5): number | undefined => settle(ledge, from, facing, bodyLength, pose, around, reach).x;
 
 /** The ledge of this surface that has `x`, or the nearest piece of it. */
 export function ledgeAt(ledges: readonly Ledge[], surfaceId: string, x: number): Ledge | undefined {

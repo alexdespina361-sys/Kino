@@ -3,7 +3,8 @@ import { createRng } from "../rng";
 import type { CatFrame, Rect, World } from "../types";
 import { JUMP_LANDING, JUMP_TAKEOFF } from "../types";
 import { CatEngine } from "./engine";
-import { boxHits, computeLedges, covered, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, stepFlight, type Ledge, type RestPose } from "./ledges";
+import { computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, stepFlight, type Clutter, type Ledge, type RestPose } from "./ledges";
+import { shapeCovers, shapeHits } from "./shape";
 import { browseWorld, defaultPage, playerWorld, runSession, stepCat } from "./sim";
 
 const L = 92;
@@ -72,45 +73,45 @@ describe("ledges", () => {
     expect(computeLedges(world({ surfaces: [{ id: "high", kind: "shelfTop", y: 20, x0: 0, x1: 1900, weight: 1 }] }))).toHaveLength(0);
   });
 
-  it("knows whether the cat's box would touch a zone", () => {
-    expect(boxHits(500, 800, L, { x: 450, y: 760, w: 20, h: 20 })).toBe(true);
-    expect(boxHits(500, 800, L, { x: 900, y: 760, w: 20, h: 20 })).toBe(false);
-    expect(boxHits(500, 800, L, { x: 450, y: 100, w: 20, h: 20 })).toBe(false);
-  });
-
-  describe("settling clear of words", () => {
+  describe("settling clear of words and zones", () => {
     const ledge: Ledge = { id: "row#0", surfaceId: "row", kind: "shelfTop", y: 800, x0: 100, x1: 1500, weight: 1 };
-    /** A name as wide as a card's, hanging where a cat sitting up on the shelf has its head. */
+    const around = (over: Partial<Clutter> = {}): Clutter => ({ keepOut: [], viewport: { x: 0, y: 0, w: 1920, h: 1080 }, ...over });
+    /** A name as wide as a card's, hanging low over the shelf, where a cat sitting there has its haunches and its tail. */
     const name = (x: number, tall = 0.4): Rect => ({ x, y: 800 - 0.3 * L - tall * L / 2, w: 1.6 * L, h: tall * L });
+    const covers = (x: number, facing: 1 | -1, rects: Rect[], pose: RestPose = "sit"): number => shapeCovers(pose, facing, x, 800, L, rects);
 
-    it("counts how much of the words a cat settled in a posture would cover, and a cat lying down covers less than one sitting up", () => {
-      const word = { x: 480, y: 740, w: 40, h: 20 };
-      expect(covered(500, 800, L, "sit", [word])).toBeCloseTo(40 * 20, 6);
-      expect(covered(900, 800, L, "sit", [word])).toBe(0);
-      // (half of the word is under the cat's side)
-      expect(covered(500 + 0.36 * L, 800, L, "sit", [word])).toBeCloseTo(20 * 20, 6);
+    it("counts how much of the words a cat settled in a posture would cover: what is drawn of it, and a cat lying down covers less high up than one sitting up", () => {
+      // (a word in the middle of its body: all of it; one far off: none; one half under its side)
+      const inside = { x: 500 + 0.05 * L, y: 800 - 0.45 * L, w: 0.1 * L, h: 0.1 * L };
+      expect(covers(500, 1, [inside])).toBeCloseTo(0.01 * L * L, 6);
+      expect(covers(900, 1, [inside])).toBe(0);
+      // (the tail of a sitting cat lies out behind it along the floor, and is not where it faces)
+      const tail = { x: 500 - 0.9 * L, y: 800 - 0.15 * L, w: 0.1 * L, h: 0.1 * L };
+      expect(covers(500, 1, [tail])).toBeGreaterThan(0);
+      expect(covers(500, -1, [tail])).toBe(0);
       // (a word above the head is not covered)
-      expect(covered(500, 800, L, "sit", [{ x: 480, y: 800 - 0.72 * L - 30, w: 40, h: 20 }])).toBe(0);
-      const high = { x: 480, y: 800 - 0.62 * L, w: 40, h: 0.1 * L };
-      expect(covered(500, 800, L, "sit", [high])).toBeGreaterThan(0);
-      for (const lying of ["loaf", "curl"] as const) expect(covered(500, 800, L, lying, [high]), lying).toBe(0);
+      expect(covers(500, 1, [{ x: 480, y: 800 - 1.6 * L, w: 40, h: 20 }])).toBe(0);
+      // (a word at a height where the sitting cat's head is, and not the lying one's)
+      const high = { x: 500, y: 800 - 1.05 * L, w: 0.3 * L, h: 0.1 * L };
+      expect(covers(500, 1, [high])).toBeGreaterThan(0);
+      for (const lying of ["loaf", "curl"] as const) expect(covers(500, 1, [high], lying), lying).toBe(0);
     });
 
     it("has nothing to say when there are no words, or none under the cat", () => {
-      expect(restSpot(ledge, 700, L, "sit", undefined)).toBeUndefined();
-      expect(restSpot(ledge, 700, L, "sit", [])).toBeUndefined();
-      expect(restSpot(ledge, 700, L, "sit", [name(1000)])).toBeUndefined();
+      expect(restSpot(ledge, 700, 1, L, "sit", around())).toBeUndefined();
+      expect(restSpot(ledge, 700, 1, L, "sit", around({ soft: [] }))).toBeUndefined();
+      expect(restSpot(ledge, 700, 1, L, "sit", around({ soft: [name(1000)] }))).toBeUndefined();
       // (a name that is above a cat lying down is no reason to move it)
-      expect(restSpot(ledge, 700, L, "loaf", [{ x: 700 - 0.8 * L, y: 800 - 0.62 * L, w: 1.6 * L, h: 0.1 * L }])).toBeUndefined();
+      expect(restSpot(ledge, 700, 1, L, "loaf", around({ soft: [{ x: 700 - 0.8 * L, y: 800 - 1.15 * L, w: 1.6 * L, h: 0.1 * L }] }))).toBeUndefined();
     });
 
     it("finds a place on the shelf where the cat covers (nearly) none of them, and not a long walk off", () => {
       const words = [name(700 - 0.8 * L), name(1000), name(1300)];
-      const here = covered(700, 800, L, "sit", words);
+      const here = covers(700, 1, words);
       expect(here).toBeGreaterThan(0.25 * L * L);
-      const spot = restSpot(ledge, 700, L, "sit", words)!;
+      const spot = restSpot(ledge, 700, 1, L, "sit", around({ soft: words }))!;
       expect(spot).toBeDefined();
-      expect(covered(spot, 800, L, "sit", words)).toBeLessThan(here / 2);
+      expect(covers(spot, spot > 700 ? 1 : -1, words)).toBeLessThan(here / 2);
       expect(Math.abs(spot - 700)).toBeGreaterThanOrEqual(0.25 * L);
       expect(Math.abs(spot - 700)).toBeLessThanOrEqual(3.5 * L + 1);
       expect(spot).toBeGreaterThanOrEqual(ledge.x0);
@@ -119,24 +120,37 @@ describe("ledges", () => {
 
     it("prefers the nearer of two clear places", () => {
       const words = [name(700 - 0.8 * L)];
-      const left = restSpot(ledge, 690, L, "sit", words)!;
-      const right = restSpot(ledge, 710, L, "sit", words)!;
+      const left = restSpot(ledge, 690, 1, L, "sit", around({ soft: words }))!;
+      const right = restSpot(ledge, 710, 1, L, "sit", around({ soft: words }))!;
       expect(left).toBeLessThan(690);
       expect(right).toBeGreaterThan(710);
       // (a hair's breadth of a letter under its side is not covering it)
-      expect(covered(left, 800, L, "sit", words)).toBeLessThan(0.01 * L * L);
-      expect(covered(right, 800, L, "sit", words)).toBeLessThan(0.01 * L * L);
+      expect(covers(left, -1, words)).toBeLessThan(0.01 * L * L);
+      expect(covers(right, 1, words)).toBeLessThan(0.01 * L * L);
     });
 
     it("stays on its shelf, and leaves it be when words are everywhere", () => {
-      const nearTheEnd = restSpot(ledge, ledge.x0 + 5, L, "sit", [name(ledge.x0 - 0.2 * L)])!;
+      const nearTheEnd = restSpot(ledge, ledge.x0 + 5, -1, L, "sit", around({ soft: [name(ledge.x0 - 0.2 * L)] }))!;
       expect(nearTheEnd).toBeGreaterThanOrEqual(ledge.x0);
-      expect(restSpot(ledge, 700, L, "sit", [{ x: 0, y: 800 - 0.8 * L, w: 1600, h: 0.7 * L }])).toBeUndefined();
+      expect(restSpot(ledge, 700, 1, L, "sit", around({ soft: [{ x: 0, y: 800 - 1.3 * L, w: 1600, h: 1.2 * L }] }))).toBeUndefined();
+    });
+
+    it("settles clear of a zone it must keep out of as it settles: its tail too, and the edge of the screen", () => {
+      // a zone low down behind where it sits: its body does not reach it, its tail does
+      const zone = { x: 560, y: 760, w: 60, h: 50 };
+      expect(shapeHits("sit", 1, 700, 800, L, zone)).toBe(true);
+      const spot = restSpot(ledge, 700, 1, L, "sit", around({ keepOut: [zone] }))!;
+      expect(spot).toBeDefined();
+      expect(shapeHits("sit", spot > 700 ? 1 : -1, spot, 800, L, zone)).toBe(false);
+      // (the screen's edge is a zone: a cat that sits where its tail would be off the screen is moved in)
+      const edge = restSpot({ ...ledge, x0: 0 }, 20, 1, L, "sit", around());
+      expect(edge).toBeDefined();
+      expect(edge!).toBeGreaterThan(20);
     });
 
     it("knows every posture it can settle in", () => {
       const poses: RestPose[] = ["stand", "sit", "loaf", "curl"];
-      for (const pose of poses) expect(covered(500, 800, L, pose, [{ x: 0, y: 0, w: 2000, h: 2000 }]), pose).toBeGreaterThan(0);
+      for (const pose of poses) expect(covers(500, 1, [{ x: 0, y: 0, w: 2000, h: 2000 }], pose), pose).toBeGreaterThan(0);
     });
   });
 
@@ -330,7 +344,7 @@ describe("the cat on a page", () => {
     page.focus = focus;
     const { frames, world } = stepCat(engine, browseWorld(page), 5);
     const last = frames[frames.length - 1]!;
-    expect(boxHits(last.x, last.y, world.bodyLength, world.focus!)).toBe(false);
+    expect(shapeHits(last.clip, last.facing, last.x, last.y, world.bodyLength, world.focus!)).toBe(false);
     expect(last.appear).toBeGreaterThan(0.9);
   });
 
@@ -381,7 +395,7 @@ describe("the cat on a page", () => {
     const { frames } = stepCat(engine, world, 5);
     for (const f of frames.slice(0, 15)) expect(Math.abs(f.y - shelf.y)).toBeLessThan(1.5);
     const last = frames[frames.length - 1]!;
-    expect(world.keepOut.some((zone) => last.grounded && last.appear > 0.05 && boxHits(last.x, last.y, world.bodyLength, zone))).toBe(false);
+    expect(world.keepOut.some((zone) => last.grounded && last.appear > 0.05 && shapeHits(last.clip, last.facing, last.x, last.y, world.bodyLength, zone))).toBe(false);
   });
 
   it("is put back on the screen when the window is made smaller under it, and is not seen to be anywhere else", () => {
@@ -507,9 +521,9 @@ describe("its little scenes", () => {
 });
 
 describe("settling clear of the names", () => {
-  /** How many frames, over a few afternoons on a page with names hanging over its shelves, the cat spent at rest (sitting, lying, asleep) with its body over them, and how many at rest in all. */
-  const afternoons = (told: boolean): { covering: number; resting: number } => {
-    let covering = 0;
+  /** How much of the names, on average (in body-lengths squared), the cat's body hid while it rested (sat, lay, slept) over a few afternoons on a page with names hanging over its shelves, and how many frames it rested in all. */
+  const afternoons = (told: boolean): { hidden: number; resting: number } => {
+    let area = 0;
     let resting = 0;
     for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
       const page = defaultPage();
@@ -524,10 +538,10 @@ describe("settling clear of the names", () => {
         const pose: RestPose | null = act === "rest:sit" ? "sit" : act === "rest:loaf" ? "loaf" : act === "rest:stand" ? "stand" : act === "sleep" ? "curl" : null;
         if (!pose || f.appear < 0.99 || !f.grounded) continue;
         resting++;
-        if (covered(f.x, f.y, world.bodyLength, pose, soft!) > 0.05 * world.bodyLength ** 2) covering++;
+        area += shapeCovers(pose, f.facing, f.x, f.y, world.bodyLength, soft!) / world.bodyLength ** 2;
       }
     }
-    return { covering, resting };
+    return { hidden: area / resting, resting };
   };
 
   it("rests in the gaps between them, where a cat that has not been told about them rests in front of them", () => {
@@ -535,11 +549,11 @@ describe("settling clear of the names", () => {
     const blind = afternoons(false);
     expect(blind.resting).toBeGreaterThan(2000);
     expect(told.resting).toBeGreaterThan(2000);
-    // (by chance, about two thirds of the cat's rests are in front of a name on this page; told, it is one in ten or fewer)
-    const [shareBlind, shareTold] = [blind.covering / blind.resting, told.covering / told.resting];
-    expect(shareBlind).toBeGreaterThan(0.4);
-    expect(shareTold).toBeLessThan(0.2);
-    expect(shareTold).toBeLessThan(shareBlind / 3);
+    // (a shelf's names are tight and a lying cat is as long as it is: the best place a loaf can find on this page still hides 0.16 of a body-square of them, a sitting cat 0.05, a curled one 0.05, a standing one 0.01;
+    // told, the cat hides about a third of what it hides by chance: measured 0.06 against 0.20)
+    expect(blind.hidden).toBeGreaterThan(0.15);
+    expect(told.hidden).toBeLessThan(0.09);
+    expect(told.hidden).toBeLessThan(blind.hidden / 2.5);
   });
 
   it("keeps to everything it must keep to on such a page, through the same bad afternoons", () => {
@@ -560,7 +574,7 @@ describe("settling clear of the names", () => {
 });
 
 describe("the cat in a film", () => {
-  const film =(state: World["player"] = "playing", controls = false, captions = false) => playerWorld(1920, 1080, state, controls, captions);
+  const film = (state: World["player"] = "playing", controls = false) => playerWorld(1920, 1080, state, controls);
 
   it("goes to its perch while the page changes, and sleeps there", () => {
     const engine = new CatEngine(1);
@@ -592,18 +606,25 @@ describe("the cat in a film", () => {
     expect(resumed[resumed.length - 1]!.clip).toBe("curl");
   });
 
-  it("is out of sight when the controls are up, or subtitles are on its place, and back after", () => {
+  it("stays where it is, asleep, when the controls come and go over it: the layer is under them, so it has no reason to go (and does not flicker with every key)", () => {
     const engine = new CatEngine(1);
     run(engine, film(), 30);
-    const hidden = stepCat(engine, film("playing", true, false), 3).frames;
-    expect(hidden[hidden.length - 1]!.appear).toBe(0);
-    const back = stepCat(engine, film("playing", false, false), 5).frames;
-    expect(back[back.length - 1]!.appear).toBe(1);
-    // a subtitle where the perch is
-    const w = film("playing", false, false);
-    const onPerch = { ...w, keepOut: [{ x: 1500, y: 900, w: 420, h: 150 }] };
-    const gone = stepCat(engine, onPerch, 3).frames;
-    expect(gone[gone.length - 1]!.appear).toBe(0);
+    const where = { x: engine.frame.x, y: engine.frame.y };
+    let fades = 0;
+    let was = engine.frame.appear;
+    for (let round = 0; round < 12; round++) {
+      for (const up of [true, false]) {
+        const { frames } = stepCat(engine, film("playing", up), 2.5);
+        for (const f of frames) {
+          if (was >= 0.99 && f.appear < 0.99) fades++;
+          was = f.appear;
+          expect(f.x).toBeCloseTo(where.x, 3);
+          expect(f.y).toBeCloseTo(where.y, 3);
+        }
+      }
+    }
+    expect(fades).toBe(0);
+    expect(engine.frame.clip).toBe("curl");
   });
 
   it("finds its perch all the same when the film begins to play while the controls are over every place it could have", () => {

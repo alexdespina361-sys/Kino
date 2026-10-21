@@ -73,6 +73,8 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly
 /** How far the drawn cat reaches from its feet, in body lengths, as the pixels of a picture of it say (scripts/cat/extents.mjs). */
 export interface Extent {
   label: string;
+  /** The clip the engine calls it by (`walk@3` is a picture of `walk`). */
+  clip: string;
   /** Furthest forward (the way it faces), furthest back (the tail), and how high; `down` is below the line its feet are on. */
   ahead: number;
   behind: number;
@@ -80,7 +82,12 @@ export interface Extent {
   down: number;
   /** Per band of a tenth of a body length from the feet up: how far back and forward the cat reaches at that height (both 0 where nothing is drawn). */
   profile: Array<[number, number]>;
+  /** Where most of the cat is (all but the 12 % of its pixels furthest out at each end and the top 3 %: the body and the head, not the tail). */
+  core: { behind: number; ahead: number; up: number };
 }
+
+/** The clip a picture of the extent cells is of. */
+export const clipOfLabel = (label: string): string => (label.split("@")[0] ?? label).split(",")[0] ?? label;
 
 /**
  * Pictures of the cat in each cell, one after another on one canvas, and what each takes of it: the box round every pixel the cat is drawn in (not the
@@ -120,6 +127,9 @@ export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat 
     const bands = 16;
     const lo: number[] = new Array(bands).fill(W);
     const hi: number[] = new Array(bands).fill(-1);
+    const column: number[] = new Array(W).fill(0);
+    const row: number[] = new Array(H).fill(0);
+    let mass = 0;
     for (let y = 0; y < H; y++) {
       const band = Math.floor(((oy - y - 1) / px) * 10);
       for (let x = 0; x < W; x++) {
@@ -128,6 +138,9 @@ export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat 
         if (x > x1) x1 = x;
         if (y < y0) y0 = y;
         if (y > y1) y1 = y;
+        column[x]!++;
+        row[y]!++;
+        mass++;
         if (band >= 0 && band < bands) {
           if (x < lo[band]!) lo[band] = x;
           if (x > hi[band]!) hi[band] = x;
@@ -135,17 +148,39 @@ export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat 
       }
     }
     const profile = lo.map((l, b): [number, number] => (hi[b]! < 0 ? [0, 0] : [(ox - l) / px, (hi[b]! + 1 - ox) / px]));
-    out.push(x1 < 0 ? { label: cell.label, ahead: 0, behind: 0, up: 0, down: 0, profile } : { label: cell.label, ahead: (x1 + 1 - ox) / px, behind: (ox - x0) / px, up: (oy - y0) / px, down: (y1 + 1 - oy) / px, profile });
+    // the places at which a share of the pixels has been passed, counting in from one end
+    const share = (counts: number[], from: number, to: number, step: 1 | -1, part: number): number => {
+      let sum = 0;
+      for (let i = from; i !== to; i += step) {
+        sum += counts[i]!;
+        if (sum >= part * mass) return i;
+      }
+      return to;
+    };
+    const core = mass === 0 ? { behind: 0, ahead: 0, up: 0 } : { behind: (ox - share(column, 0, W, 1, 0.12)) / px, ahead: (share(column, W - 1, -1, -1, 0.12) + 1 - ox) / px, up: (oy - share(row, 0, H, 1, 0.03)) / px };
+    const clip = clipOfLabel(cell.label);
+    out.push(x1 < 0 ? { label: cell.label, clip, ahead: 0, behind: 0, up: 0, down: 0, profile, core } : { label: cell.label, clip, ahead: (x1 + 1 - ox) / px, behind: (ox - x0) / px, up: (oy - y0) / px, down: (y1 + 1 - oy) / px, profile, core });
   });
   cat.dispose();
   return out;
 }
 
-/** Every posture the engine puts the cat in, a few moments of each that moves, for `glExtents`. */
+/**
+ * Every posture the engine puts the cat in, a few moments of each that moves, for `glExtents`: as the page draws it (its own camera), the cat at rest at
+ * several moments (the tail swishes and the head turns to what the cat looks at), the lively and the sleepy, so that the reach measured is the most of them.
+ */
 export const EXTENT_CELLS: GlCell[] = (() => {
   const cells: GlCell[] = [];
-  const at = (label: string, frame: Partial<CatFrame>, settle = 1.2): void => void cells.push({ label, frame, settle, view: { tilt: 0 } });
-  for (const clip of ["stand", "sit", "loaf", "curl", "crouch", "yawn", "point", "pet"] as const) at(clip, clip === "curl" ? { clip, drowsy: 1 } : clip === "pet" ? { clip: "sit", petted: true } : { clip, ...(clip === "yawn" ? { progress: 0.5 } : {}) });
+  const at = (label: string, frame: Partial<CatFrame>, settle = 1.2): void => void cells.push({ label, frame, settle });
+  const base = (clip: string): Partial<CatFrame> => (clip === "curl" ? { clip: "curl", drowsy: 1 } : clip === "pet" ? { clip: "sit", petted: true } : clip === "yawn" ? { clip: "yawn", progress: 0.5 } : { clip: clip as CatFrame["clip"] });
+  for (const clip of ["stand", "sit", "loaf", "curl", "crouch", "yawn", "point", "pet"] as const) at(clip, base(clip));
+  // (a cat at rest for a while: the tail at other moments of its swish, a livelier tail, and the head turned up, down, forward and back)
+  for (const clip of ["stand", "sit", "loaf", "curl"] as const) {
+    for (const s of [0.6, 1.9, 2.6, 3.4]) at(`${clip}@t${s}`, base(clip), s);
+    for (const s of [1.2, 2.2]) at(`${clip}@lively${s}`, { ...base(clip), energy: 1 }, s);
+    if (clip === "curl") continue;
+    for (const [name, look] of [["upfront", { x: 300, y: -200 }], ["upback", { x: -300, y: -200 }], ["downfront", { x: 300, y: 200 }], ["downback", { x: -300, y: 160 }]] as const) at(`${clip}@look-${name}`, { ...base(clip), look: { x: look.x, y: look.y } }, 1.6);
+  }
   at("sit,viewer", { clip: "sit", viewer: true });
   for (const p of [0.25, 0.5, 0.75]) at(`stretch@${p}`, { clip: "stretch", progress: p });
   for (const p of [0.2, 0.5, 0.8]) at(`jump@${p}`, { clip: "jump", progress: p, grounded: false, vy: -300, vx: 300 }, 0.6);
@@ -157,8 +192,8 @@ export const EXTENT_CELLS: GlCell[] = (() => {
   }
   at("sniff", { clip: "sniff", progress: 0.5 });
   at("stalk", { clip: "stalk", odometer: 20 }, 1.0);
-  for (let i = 0; i < 8; i++) cells.push({ label: `walk@${i}`, frame: { clip: "walk", vx: 150 }, cycle: i / 8, view: { tilt: 0 }, settle: 1 });
-  for (let i = 0; i < 12; i++) cells.push({ label: `run@${i}`, frame: { clip: "run", vx: 380 }, cycle: i / 12, view: { tilt: 0 }, settle: 1 });
+  for (let i = 0; i < 8; i++) cells.push({ label: `walk@${i}`, frame: { clip: "walk", vx: 150 }, cycle: i / 8, settle: 1 });
+  for (let i = 0; i < 12; i++) cells.push({ label: `run@${i}`, frame: { clip: "run", vx: 380 }, cycle: i / 12, settle: 1 });
   return cells;
 })();
 

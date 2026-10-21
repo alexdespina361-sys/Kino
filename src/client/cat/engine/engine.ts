@@ -1,7 +1,8 @@
 import { clamp, clamp01, finite, lerp } from "../math";
 import { createRng, type Rng } from "../rng";
 import { JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Rect, type Vec, type World } from "../types";
-import { boxHits, clampToLedge, computeLedges, findPath, HALF_WIDTH, HEIGHT, ledgeAt, planJump, reshape, restSpot, stepFlight, type JumpPlan, type Ledge, type RestPose } from "./ledges";
+import { clampToLedge, computeLedges, findPath, ledgeAt, planJump, reshape, settle, settledCost, stepFlight, type JumpPlan, type Ledge, type RestPose, type Settling } from "./ledges";
+import { HALF_WIDTH, shapeHits } from "./shape";
 
 /**
  * The cat's mind and legs. Each frame it is given the page as a `World` (plain numbers) and the time that passed, and it says what the cat
@@ -73,9 +74,13 @@ const ACCEL = 3.2;
 const FADE_IN_RATE = 1 / 0.8;
 const FADE_OUT_RATE = 1 / 0.3;
 const WATCHDOG = 240;
-/** How long a cat rides a shelf that has no room for it before it goes, and how long it may stay where it should not be (seconds). */
+/**
+ * How long a cat rides a shelf that has no room for it before it goes, how long it may stay where it should not be (seconds), and after how much of that it
+ * steps aside if the shelf has room for it elsewhere (it goes only when there is none).
+ */
 const RIDE = 0.7;
 const OVERLAP = 1.6;
+const ASIDE = 0.5;
 
 const label = (act: Act): string =>
   act.k === "rest" ? `rest:${act.pose}` : act.k === "shot" ? `shot:${act.clip}` : act.k === "fade" ? (act.to === 0 ? "fade:out" : "fade:in") : act.k === "walk" && act.stalk ? "stalk" : act.k;
@@ -390,9 +395,25 @@ export class CatEngine {
       where === "perch"
         ? pool[0]!
         : (this.rng.weighted(pool, (ledge) => ledge.weight * (1 + Math.min(2, (ledge.x1 - ledge.x0) / (4 * L)))) ?? pool[0]!);
-    const x = where === "perch" ? (pick.x0 + pick.x1) / 2 : lerp(pick.x0, pick.x1, this.rng.range(0.25, 0.75));
-    this.putAt(pick, x);
+    this.putAt(pick, where === "perch" ? (pick.x0 + pick.x1) / 2 : this.startOn(pick, world));
     return true;
+  }
+
+  /** Where on a ledge a cat that comes to it settles: of a few places in its middle half, the one where it covers the least of the words and the zones. */
+  private startOn(ledge: Ledge, world: World): number {
+    const L = world.bodyLength;
+    let best = lerp(ledge.x0, ledge.x1, this.rng.range(0.25, 0.75));
+    let bestCost = Infinity;
+    for (let tries = 0; tries < 6; tries++) {
+      const x = tries === 0 ? best : lerp(ledge.x0, ledge.x1, this.rng.range(0.15, 0.85));
+      const cost = Math.max(settledCost("sit", 1, x, ledge.y, L, world), settledCost("sit", -1, x, ledge.y, L, world));
+      if (cost < bestCost - 0.01 * L * L) {
+        best = x;
+        bestCost = cost;
+      }
+      if (bestCost === 0) break;
+    }
+    return best;
   }
 
   private putAt(ledge: Ledge, x: number): void {
@@ -440,9 +461,19 @@ export class CatEngine {
     this.y = here.y;
     const to = clampToLedge(here, this.x);
     const gap = Math.abs(to - this.x);
-    // standing in something it should keep out of, for too long (it keeps being moved onto the cat): it goes elsewhere
-    if (gap > 0 || world.keepOut.some((zone) => boxHits(this.x, this.y, L, zone))) this.overlapT += dt;
+    // standing in something it should keep out of (any part of the cat as it is drawn now: the tail on the ground too), for too long: it goes elsewhere
+    const inside = world.keepOut.some((zone) => shapeHits(this.clip, this.facing, this.x, this.y, L, zone));
+    if (gap > 0 || inside) this.overlapT += dt;
     else this.overlapT = 0;
+    // (something has come up where the cat is, and the shelf has room for it a little way off: it steps there, as a cat would, rather than go)
+    if (inside && gap === 0 && this.overlapT > ASIDE && this.act?.k !== "walk" && !world.reducedMotion && !world.quiet) {
+      const free = this.clearSpot(world, here);
+      if (free !== undefined) {
+        this.overlapT = 0;
+        this.hardPlan([{ k: "walk", x: free, run: false, maxT: 12 }]);
+        return;
+      }
+    }
     if (this.overlapT > OVERLAP) {
       this.overlapT = 0;
       this.leaveGone(world);
@@ -459,6 +490,20 @@ export class CatEngine {
       const away = clamp(to + Math.sign(to - this.x) * 0.5 * L, here.x0, here.x1);
       this.hardPlan([{ k: "walk", x: away, run: gap > 1.2 * L, maxT: 12 }]);
     }
+  }
+
+  /** The nearest place on the ledge where the cat, as it is drawn now, keeps clear of every zone (facing the way it would walk there), if there is one near. */
+  private clearSpot(world: World, ledge: Ledge): number | undefined {
+    const L = world.bodyLength;
+    const sides: Array<1 | -1> = [this.facing, this.facing > 0 ? -1 : 1];
+    for (let d = 0.1; d <= 4; d += 0.1) {
+      for (const dir of sides) {
+        const x = this.x + dir * d * L;
+        if (x < ledge.x0 || x > ledge.x1) continue;
+        if (!world.keepOut.some((zone) => shapeHits(this.clip, dir, x, ledge.y, L, zone))) return x;
+      }
+    }
+    return undefined;
   }
 
   /** Whether no part of the cat is on the screen. */
@@ -754,17 +799,21 @@ export class CatEngine {
     const options: Option[] = [];
 
     // (a cat that is going to settle for a while does it where its body does not cover the names under the cards, if the shelf has such a place; it only walks for it when it is free to roam)
-    const spotFor = (pose: RestPose, from = this.x): number | undefined => (roaming && here ? restSpot(here, from, L, pose, world.soft) : undefined);
+    // (it faces the way it walks there: `from` is where it means to settle, and the spot is looked for round it)
+    const settling = (pose: RestPose, from = this.x): Settling | undefined => (roaming && here ? settle(here, from, from === this.x ? this.facing : from > this.x ? 1 : -1, L, pose, world) : undefined);
+    const spotFor = (pose: RestPose, from = this.x): number | undefined => settling(pose, from)?.x;
     const walkToSpot = (pose: RestPose): Act[] => {
       const spot = spotFor(pose);
       return spot === undefined ? [] : [{ k: "walk", x: spot, run: false, maxT: 25 }];
     };
+    // (a posture that the shelf has no room for, with the words as they are, is taken less: a cat lying out in front of a name when it could sit up between two)
+    const roomFor = (pose: RestPose): number => 1 / (1 + (6 * (settling(pose)?.cost ?? 0)) / (L * L));
 
     options.push({
       name: "rest",
       score: 1.0 + tired * 0.8,
       plan: () => {
-        const pose = this.rng.weighted<Pose>(["sit", "loaf", "stand"], (p) => (p === "sit" ? 0.5 : p === "loaf" ? 0.3 + tired * 0.4 : 0.2)) ?? "sit";
+        const pose = this.rng.weighted<Pose>(["sit", "loaf", "stand"], (p) => (p === "sit" ? 0.5 : p === "loaf" ? 0.3 + tired * 0.4 : 0.2) * roomFor(p)) ?? "sit";
         return [...walkToSpot(pose), { k: "rest", pose, dur: this.rng.range(4, 12) }];
       },
     });
@@ -884,8 +933,8 @@ export class CatEngine {
     options.push({
       name: "sleep",
       score: idle > 40 ? 0.08 + tired * 1.8 : 0.0,
-      // (and before it lies down for good, a cat will often tread its place into shape)
-      plan: () => [...walkToSpot("loaf"), { k: "rest", pose: "loaf", dur: 2.5 }, ...(this.rng.chance(0.5) ? [{ k: "shot", clip: "knead", dur: this.rng.range(4, 7) } as const] : []), { k: "sleep", dur: this.rng.range(25, 70) }, { k: "shot", clip: "stretch", dur: 2.4 }],
+      // (and before it lies down for good, a cat will often tread its place into shape; it is the place for the long sleep that is chosen, curled up)
+      plan: () => [...walkToSpot("curl"), { k: "rest", pose: "loaf", dur: 2.5 },...(this.rng.chance(0.5) ? [{ k: "shot", clip: "knead", dur: this.rng.range(4, 7) } as const] : []), { k: "sleep", dur: this.rng.range(25, 70) }, { k: "shot", clip: "stretch", dur: 2.4 }],
     });
     // a card has just been given the focus: the cat sits near it and watches
     if (here && roaming && this.now - this.lastFocusAt < 6 && world.focus && this.cooled("watch")) {

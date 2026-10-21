@@ -2,7 +2,7 @@ import { bodyLengthFor } from "../math";
 import { createRng, type Rng } from "../rng";
 import type { CatEvent, CatFrame, Rect, Surface, Target, World } from "../types";
 import { CatEngine } from "./engine";
-import { boxHits, HALF_WIDTH, HEIGHT } from "./ledges";
+import { HALF_WIDTH, reachOf, shapeHits } from "./shape";
 
 /**
  * The scenario simulator: a made-up page (rows of posters like the TV's home, a film's screen), made-up things happening to it (scrolling,
@@ -77,14 +77,14 @@ export function browseWorld(page: PageOptions, extra: { pointer?: { x: number; y
   return world;
 }
 
-/** A film's screen: the cat's perch is a corner of the picture, and the controls and the subtitles are zones to keep out of. */
-export function playerWorld(width: number, height: number, state: World["player"], controlsUp: boolean, captions: boolean): World {
+/**
+ * A film's screen, as the page reads it: the cat's perch is a corner of the picture, and there is nothing to keep out of (the cat's layer is under the controls
+ * and the subtitles, which come and go over it without it going anywhere).
+ */
+export function playerWorld(width: number, height: number, state: World["player"], controlsUp: boolean, viewer: { quiet?: boolean; reducedMotion?: boolean } = {}): World {
   const L = bodyLengthFor(width, height);
-  const keepOut: Rect[] = [];
-  if (controlsUp) keepOut.push({ x: 0, y: 0, w: width, h: height * 0.16 }, { x: 0, y: height * 0.72, w: width, h: height * 0.28 });
-  if (captions) keepOut.push({ x: width * 0.08, y: height * (controlsUp ? 0.62 : 0.8), w: width * 0.84, h: height * 0.1 });
   const perch: Surface = { id: "perch", kind: "playerPerch", y: height * 0.9, x0: width - 3.2 * L, x1: width - 0.6 * L, weight: 1 };
-  return { viewport: { x: 0, y: 0, w: width, h: height }, bodyLength: L, surfaces: [perch], keepOut, targets: [], mode: "player", player: state, controlsUp, quiet: false, reducedMotion: false };
+  return { viewport: { x: 0, y: 0, w: width, h: height }, bodyLength: L, surfaces: [perch], keepOut: [], targets: [], mode: "player", player: state, controlsUp, quiet: viewer.quiet ?? false, reducedMotion: viewer.reducedMotion ?? false };
 }
 
 export interface SimStats {
@@ -139,7 +139,6 @@ export function runSession(options: SimOptions): SimStats {
   let filmState: World["player"] = "playing";
   let playAt = -1;
   let controlsUp = false;
-  let captions = false;
   let modal = false;
   let hidden = false;
   let pointer: { x: number; y: number } | undefined;
@@ -159,7 +158,7 @@ export function runSession(options: SimOptions): SimStats {
   };
 
   const rebuild = () => {
-    world = inFilm ? playerWorld(page.width, page.height, filmState, controlsUp, captions) : browseWorld(page, { ...(pointer ? { pointer } : {}), modal });
+    world = inFilm ? playerWorld(page.width, page.height, filmState, controlsUp, { quiet: page.quiet, reducedMotion: page.reducedMotion }) : browseWorld(page, { ...(pointer ? { pointer } : {}), modal });
     if (hidden) world = { ...world, mode: "away" };
   };
 
@@ -217,7 +216,6 @@ export function runSession(options: SimOptions): SimStats {
       filmState = inFilm ? "loading" : "playing";
       playAt = inFilm ? t + rng.range(0, 3) : -1;
       controlsUp = inFilm && rng.chance(0.7);
-      captions = false;
       changed = true;
       if (!inFilm) engine.send({ type: "player.ended" });
     }
@@ -229,10 +227,6 @@ export function runSession(options: SimOptions): SimStats {
     if (inFilm) {
       if (rng.chance(0.01)) {
         controlsUp = !controlsUp;
-        changed = true;
-      }
-      if (rng.chance(0.02)) {
-        captions = !captions;
         changed = true;
       }
       if (filmState !== "loading" && rng.chance(0.003)) {
@@ -295,9 +289,10 @@ export function runSession(options: SimOptions): SimStats {
         else if (Math.abs(frame.y - surface.y) > 1.5) fail(`feet ${frame.y.toFixed(1)} are not on the surface at ${surface.y.toFixed(1)} (${dbg.act})`);
       }
       // on the screen: never wholly off it, and not cut by its edge for more than a moment (a window that was just made smaller)
+      // (as it is drawn: how far its tail and its nose reach, not the middle of it)
       const vw = world.viewport.w;
-      const edge = HALF_WIDTH * L * 0.4;
-      const cut = frame.x < -edge || frame.x > vw + edge;
+      const reach = reachOf(frame.clip);
+      const cut = frame.x - (frame.facing > 0 ? reach.back : reach.front) * L < -0.3 * L || frame.x + (frame.facing > 0 ? reach.front : reach.back) * L > vw + 0.3 * L;
       if (!onScreen) {
         // (a frame or two of it while the cat is put back after the window was made smaller is not seen; more is)
         lostRun++;
@@ -308,7 +303,7 @@ export function runSession(options: SimOptions): SimStats {
         else if (t - cutSince > 2) fail(`cut by the edge of the screen for ${(t - cutSince).toFixed(1)}s at ${frame.x.toFixed(0)},${frame.y.toFixed(0)} (${dbg.act})`);
       } else cutSince = -1;
       // keeps out of what it must keep out of: at most for a moment while it steps aside
-      const inside = world.keepOut.some((zone) => frame.grounded && boxHits(frame.x, frame.y, L, zone));
+      const inside = world.keepOut.some((zone) => frame.grounded && shapeHits(frame.clip, frame.facing, frame.x, frame.y, L, zone));
       if (inside) {
         if (overlapSince < 0) overlapSince = t;
         else if (t - overlapSince > 2.8) fail(`stood in a keep-out zone for ${(t - overlapSince).toFixed(1)}s (${dbg.act}) at ${frame.x.toFixed(0)},${frame.y.toFixed(0)}`);
@@ -345,7 +340,6 @@ export function runSession(options: SimOptions): SimStats {
       if (move > limit) fail(`jumped ${move.toFixed(0)}px in one frame (limit ${limit.toFixed(0)}, ${dbg.act})`);
     }
     prev = { x: frame.x, y: frame.y, appear: frame.appear, onScreen, shelves };
-    void HEIGHT;
     if (options.stopOnViolation && stats.violations.length > 0) break;
   }
   return stats;

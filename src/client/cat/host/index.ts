@@ -2,7 +2,7 @@ import { isTvAgent } from "../../role";
 import { onCat } from "../bus";
 import { BODY_EMS } from "../math";
 import { CatEngine, type EngineDebug } from "../engine/engine";
-import { covered, type RestPose } from "../engine/ledges";
+import { coreOf, shapeCovers } from "../engine/shape";
 import { CatRig } from "../render/rig";
 import { createRng } from "../rng";
 import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, readCatSettings, setCatGone, subscribeCatSettings, type CatCoat } from "../settings";
@@ -31,9 +31,6 @@ import { classicBrush, fetchMesh, solidBrush, type Brush } from "./render";
 /** The canvas is this many body lengths wide and tall, with the cat's feet this far down it. */
 const CANVAS_BODIES = 4;
 const GROUND_AT = 0.8;
-/** The box that takes a hand: this many body lengths wide and tall, with its foot at the cat's feet. */
-const HIT_W = 1.25;
-const HIT_H = 0.95;
 
 export interface CatHandle {
   /** Tells the cat something, as the page would. */
@@ -74,9 +71,6 @@ declare global {
     __kinoCat?: CatHandle;
   }
 }
-
-/** How much room a clip takes on the screen: the lying and sitting ones are low, any other is a cat on its feet. */
-const postureOf = (clip: Clip): RestPose => (clip === "sit" || clip === "loaf" || clip === "curl" ? clip : "stand");
 
 /** An attribute is written only when it changes (a write of the same value is still a change to anything that watches the page). */
 const setAttr = (element: Element, name: string, value: string): void => {
@@ -183,8 +177,9 @@ export function mountCat(): { stop: () => void } {
     ox = side / 2;
     oy = side * GROUND_AT;
     brush?.resize(side, dpr);
-    hit.style.width = `${HIT_W * L}px`;
-    hit.style.height = `${HIT_H * L}px`;
+    // (a square a body length on a side, which is stretched over the cat's body at every frame: see the transform below)
+    hit.style.width = `${L}px`;
+    hit.style.height = `${L}px`;
   };
 
   /* ------------------------------ which cat is painted ------------------------------ */
@@ -368,7 +363,9 @@ export function mountCat(): { stop: () => void } {
       waited = brush.paint(rig.solved, { ox: ox + (px - ix), oy: oy + (py - iy), px: L }, quality, frames % 30 === 0);
       if (waited > 0) gpu = gpu === 0 ? brush.gpuMs : gpu * 0.7 + brush.gpuMs * 0.3;
       brush.canvas.style.transform = `translate3d(${ix}px, ${iy}px, 0)`;
-      hit.style.transform = `translate3d(${frame.x - origin.x - (HIT_W * L) / 2}px, ${frame.y - origin.y - HIT_H * L}px, 0)`;
+      // (the box a hand is on is the cat's body and head, as it is drawn now and the way it faces; its tail is not a thing to click)
+      const [back, front, high] = coreOf(frame.clip);
+      hit.style.transform = `translate3d(${frame.x - origin.x - (frame.facing > 0 ? back : front) * L}px, ${frame.y - origin.y - high * L}px, 0) scale(${back + front}, ${high})`;
     }
     if (visible !== shown) {
       shown = visible;
@@ -430,7 +427,10 @@ export function mountCat(): { stop: () => void } {
   const onLeave = (): void => {
     over = false;
   };
-  const onPress = (): void => {
+  const onPress = (event: Event): void => {
+    // (a hand on the cat strokes the cat: it takes nothing else with it, and the remote's focus is where it was)
+    event.preventDefault();
+    if (event.type === "mousedown") return;
     hand.press(performance.now());
     engine.send({ type: "cat.pet" });
   };
@@ -448,6 +448,7 @@ export function mountCat(): { stop: () => void } {
   hit.addEventListener("pointerenter", onEnter);
   hit.addEventListener("pointerleave", onLeave);
   hit.addEventListener("pointerdown", onPress);
+  hit.addEventListener("mousedown", onPress);
   hit.addEventListener("contextmenu", onContext);
   document.addEventListener("pointerdown", onOutside, true);
   const offBus = onCat((command) => {
@@ -482,7 +483,7 @@ export function mountCat(): { stop: () => void } {
         keepOut: read?.world.keepOut.length ?? 0,
         posters: read?.world.targets.length ?? 0,
         names: read?.world.soft?.length ?? 0,
-        covers: read ? covered(frame.x, frame.y, read.world.bodyLength, postureOf(frame.clip), read.world.soft ?? []) / read.world.bodyLength ** 2 : 0,
+        covers: read ? shapeCovers(frame.clip, frame.facing, frame.x, frame.y, read.world.bodyLength, read.world.soft ?? []) / read.world.bodyLength ** 2 : 0,
         reads: page.reads,
       }),
     };
@@ -504,6 +505,7 @@ export function mountCat(): { stop: () => void } {
     hit.removeEventListener("pointerenter", onEnter);
     hit.removeEventListener("pointerleave", onLeave);
     hit.removeEventListener("pointerdown", onPress);
+    hit.removeEventListener("mousedown", onPress);
     hit.removeEventListener("contextmenu", onContext);
     offBus();
     offSettings();
