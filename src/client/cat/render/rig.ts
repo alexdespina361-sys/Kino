@@ -1,7 +1,8 @@
 import { angleDelta, bounce, clamp, clamp01, dyn, easeInOut, fract, lerp, smooth, smoothstep, twoBone, TAU, type Dyn } from "../math";
 import { createRng, type Rng } from "../rng";
-import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame, type Emote } from "../types";
+import { JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT, type CatFrame, type Emote } from "../types";
 import { FLAT, makePose, PART, SHAPE_HEIGHT, SHAPE_LENGTH, SHAPE_NAMES, unflatten, type Pose, type ShapeName } from "./shapes";
+import { swatPose } from "./swat";
 
 /**
  * The cat's body, worked out each frame from what the engine says it is doing (a CatFrame): which posture, how far along, where it looks, how
@@ -200,6 +201,8 @@ export class CatRig {
   private peekDyn = dyn(0);
   private dozeDyn = dyn(0);
   private shiftDyn = dyn(0);
+  /** How far the weight has gone forward onto the poster in a swat (a spring after the swat's own curve: a swat that is cut short is let out of, not snapped out of). */
+  private swatDyn = dyn(0);
   /** How far into each feeling the cat is (see `Emote`), eased into and out of; which way a head is tilted; the tip of the tail's own kick (a dream). */
   private readonly feel: Record<Exclude<Emote, "none">, Dyn> = { tilt: dyn(0), think: dyn(0), startle: dyn(0), joy: dyn(0), droop: dyn(0) };
   private tiltSign: 1 | -1 = 1;
@@ -342,6 +345,11 @@ export class CatRig {
         w.crouch = 0.85;
         w.stand = 0.15;
         break;
+      case "swat":
+        // (low on the front, nearly as low as the stalk: the paw has to reach over the lip of the shelf to the poster below it, and a sitting cat cannot)
+        w.crouch = 0.8;
+        w.stand = 0.2;
+        break;
       case "stretch": {
         // down on the forelegs, rump up, held, then up again
         const hold = smoothstep(0.08, 0.3, p) * (1 - smoothstep(0.72, 0.95, p));
@@ -395,9 +403,11 @@ export class CatRig {
               ? 3
               : clip === "stalk"
                 ? 2.4
-                : clip === "stand" || clip === "walk" || clip === "run" || clip === "sniff" || clip === "peek"
-                  ? 1.8
-                  : 1.6;
+                : clip === "swat"
+                  ? 3.4
+                  : clip === "stand" || clip === "walk" || clip === "run" || clip === "sniff" || clip === "peek"
+                    ? 1.8
+                    : 1.6;
     let goal = 0;
     let here = 0;
     let hereRear = 0;
@@ -713,7 +723,28 @@ export class CatRig {
       headShiftY += (0.025 + 0.02 * (1 - foreUp)) * gat;
       headRotExtra += 0.1 * gat;
     }
-    const pawOn = clip === "groom" || clip === "point" || clip === "tap" ? 1 : 0;
+    // --- a swat at a poster: the weight goes forward onto the front of the cat with the paw's cocking and its stroke (the shoulders sink, the head goes down and forward to the
+    // poster, the rump comes up a little and the other forepaw reaches out to take the weight), and is eased out of when the swat is over. The paw itself is placed below, with the others
+    const swing = clip === "swat" && frame.reach ? swatPose(frame.progress) : null;
+    smooth(this.swatDyn, swing ? swing.lean : 0, swing ? 14 : 5, dt);
+    const leaning = clamp(this.swatDyn.x, -0.6, 1);
+    if (Math.abs(leaning) > 0.001) {
+      for (const k of ["shoulder", "shoulderTop", "chestFront", "neckTop"] as const) {
+        p[k].x += 0.06 * leaning;
+        p[k].y += 0.09 * leaning;
+      }
+      headShiftX += 0.06 * leaning;
+      headShiftY += 0.1 * leaning;
+      headRotExtra += 0.3 * leaning;
+      for (const k of ["rumpTop", "rumpBack"] as const) p[k].y -= 0.025 * leaning;
+      ffTarget.x += 0.04 * Math.max(0, leaning);
+    }
+    // (and as the paw lands the tail lashes, and an ear goes back)
+    if (swing && this.prevProgress < SWAT_HIT && frame.progress >= SWAT_HIT) {
+      this.tipKick.v += this.rng.range(10, 14) * (this.rng.chance(0.5) ? -1 : 1);
+      (this.rng.chance(0.5) ? this.earKickL : this.earKickR).v -= this.rng.range(8, 12);
+    }
+    const pawOn = clip === "groom" || clip === "point" || clip === "tap" || clip === "swat" ? 1 : 0;
     // (a paw goes up quickly and comes down gently: put down in a few frames, it would drop like a stone; a wash takes its time raising it to the face)
     smooth(this.pawOn, pawOn, pawOn > 0.5 ? (clip === "groom" ? 2.6 : 6) : 2.2, dt);
     // (a paw that is let go of comes down from where it was, by its weight going: its goal is not moved to the floor ahead of it, which put it down in a tenth of a second)
@@ -775,9 +806,19 @@ export class CatRig {
         p.shoulderTop.x += 0.012 * strike * clamp01(this.pawOn.x);
         p.chestFront.x += 0.012 * strike * clamp01(this.pawOn.x);
       }
+    } else if (swing && frame.reach) {
+      // (the swat: the paw swung round the shoulder, off the line to the poster, and in and out along it: up and back to cock it, down through the line to land, back to rest)
+      const ox = p.shoulder.x;
+      const oy = p.shoulder.y;
+      const aim = clamp(Math.atan2((frame.reach.y - frame.y) / px - oy, ((frame.reach.x - frame.x) * frame.facing) / px - ox), -0.6, 1.5);
+      const a = Math.max(-2.2, aim + swing.turn);
+      pawGoalX = ox + Math.cos(a) * swing.reach;
+      pawGoalY = oy + Math.sin(a) * swing.reach;
     }
-    smooth(this.pawX, pawGoalX, clip === "groom" ? 11 : 7, dt);
-    smooth(this.pawY, pawGoalY, clip === "groom" ? 11 : 7, dt);
+    // (a swat is quick: the paw follows its stroke closely, not at the pace of a paw that is put out to point)
+    const pawHz = clip === "groom" ? 11 : swing ? 24 : 7;
+    smooth(this.pawX, pawGoalX, pawHz, dt);
+    smooth(this.pawY, pawGoalY, pawHz, dt);
     const pw = clamp01(this.pawOn.x);
     fnTarget.x = lerp(fnTarget.x, this.pawX.x, pw);
     fnTarget.y = lerp(fnTarget.y, this.pawY.x, pw);

@@ -116,6 +116,8 @@ export type Clip =
   | "peek"
   /** A forepaw batting at something (the pointer): the same reach as `point`, repeated. */
   | "tap"
+  /** One swat at a poster the cat found for the viewer: the paw drawn back, a quick stroke down onto it (`reach` is where it lands, at `SWAT_HIT` of the way), and drawn back again. */
+  | "swat"
   /** Nodding off: a loaf, the head dropping and jerking up again, the eyes heavy. */
   | "doze"
   /** A sleeper changing its position: it half wakes, lifts its head, and curls up again. */
@@ -131,6 +133,9 @@ export type Emote = "none" | "tilt" | "think" | "startle" | "joy" | "droop";
 /** How a jump's `progress` is shared out: crouching to push off, the flight, then the landing and settling. */
 export const JUMP_TAKEOFF = 0.22;
 export const JUMP_LANDING = 0.8;
+
+/** How far through a swat the paw lands: the page answers (the poster gives and rocks) as `progress` passes this. */
+export const SWAT_HIT = 0.44;
 
 /** Everything the renderer is told, every frame. */
 export interface CatFrame {

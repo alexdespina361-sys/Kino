@@ -23,13 +23,15 @@ export interface PanelProps {
   send: (event: CatEvent) => void;
   /** Asks the cat to go to a poster and point at it. */
   point: (targetId: string) => void;
+  /** How low, from the top of the screen, the line along the tops of a poster's row has to be for a cat to stand in front of the poster (see `bringIntoView`); nothing if not given. */
+  shelfRoom?: (tile: HTMLElement) => number;
   rng: Rng;
   close: () => void;
 }
 
 type Screen = { name: "menu" } | { name: "mood" } | { name: "pick"; mood: Mood; found: Candidate | null };
 
-function CatPanel({ send, point, rng, close }: PanelProps) {
+function CatPanel({ send, point, shelfRoom, rng, close }: PanelProps) {
   const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const [screen, setScreen] = useState<Screen>({ name: "menu" });
@@ -108,14 +110,14 @@ function CatPanel({ send, point, rng, close }: PanelProps) {
     if (!found) return;
     const tile = tileOf(found.id);
     if (!tile) return;
-    bringIntoView(tile);
+    bringIntoView(tile, shelfRoom?.(tile));
     markPointed(tile);
     const timer = window.setTimeout(() => point(found.id), 650); // (when the page has stopped moving to show it)
     return () => {
       window.clearTimeout(timer);
       clearPointed();
     };
-  }, [found, point]);
+  }, [found, point, shelfRoom]);
 
   const say = (command: "come" | "sit" | "sleep" | "play" | "away") => {
     send({ type: "cat.command", command });

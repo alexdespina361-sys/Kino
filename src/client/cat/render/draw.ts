@@ -23,6 +23,11 @@ export interface Palette {
   mouth: string;
   tongue: string;
   whisker: string;
+  /** For a cat whose ears, face, legs and tail are another colour than its body (a ragdoll's grey points): used in place of `fur` for them, and for the far ear and legs. */
+  points?: string;
+  pointsFar?: string;
+  /** How strong a tabby's stripes are, 0..1 (none: a cat of one colour; absent: as a tabby). */
+  stripes?: number;
 }
 
 /** The first cat: a ginger tabby with a white bib and socks. Drawn for Kino from nothing but the idea of a cat. */
@@ -42,6 +47,31 @@ export const MARMALADE: Palette = {
   mouth: "#4a2a1a",
   tongue: "#ee7f86",
   whisker: "rgba(255,247,235,0.9)",
+};
+
+/**
+ * The same drawn cat in the colours of the detailed one (a pale ragdoll with grey points and blue eyes), for a screen that cannot afford the detailed cat: the
+ * cat it is given then is the one that was chosen, simply drawn, and not another cat.
+ */
+export const RAGDOLL: Palette = {
+  id: "ragdoll",
+  fur: "#ebe5da",
+  furLight: "#fbf8f1",
+  furDark: "#8d8a90",
+  furFar: "#d3cdc3",
+  points: "#a8a5ac",
+  pointsFar: "#8f8c94",
+  stripes: 0,
+  white: "#ffffff",
+  outline: "#34323f",
+  earInner: "#eab8bb",
+  nose: "#dd9aa1",
+  eye: "#7fc3ee",
+  eyeRim: "#2f78b4",
+  pupil: "#14202c",
+  mouth: "#43343a",
+  tongue: "#ee7f86",
+  whisker: "rgba(255,255,255,0.92)",
 };
 
 type Ctx = CanvasRenderingContext2D;
@@ -124,7 +154,7 @@ function drawTail(ctx: Ctx, pal: Palette, tail: readonly Joint[]): void {
   ctx.beginPath();
   for (let i = 0; i < n; i++) capsule(ctx, tail[i]!.x, tail[i]!.y, width(i) + OUT, tail[i + 1]!.x, tail[i + 1]!.y, width(i + 1) + OUT);
   ctx.fill();
-  ctx.fillStyle = pal.fur;
+  ctx.fillStyle = pal.points ?? pal.fur;
   ctx.beginPath();
   for (let i = 0; i < n; i++) capsule(ctx, tail[i]!.x, tail[i]!.y, width(i), tail[i + 1]!.x, tail[i + 1]!.y, width(i + 1));
   ctx.fill();
@@ -189,7 +219,7 @@ function drawEar(ctx: Ctx, pal: Palette, side: -1 | 1, angle: number, far: boole
   path(1, 0, 0);
   ctx.stroke();
   ctx.fill();
-  ctx.fillStyle = far ? pal.furFar : pal.fur;
+  ctx.fillStyle = far ? (pal.pointsFar ?? pal.furFar) : (pal.points ?? pal.fur);
   ctx.beginPath();
   path(1, 0, 0);
   ctx.fill();
@@ -223,7 +253,9 @@ function drawHead(ctx: Ctx, pal: Palette, s: Solved): void {
   ctx.ellipse(cx + rx * 0.62, 0.062, 0.082 + OUT, 0.062 + OUT, -0.3, 0, TAU);
   ctx.fill();
   const grad = ctx.createLinearGradient(0, -ry, 0, ry);
-  grad.addColorStop(0, pal.fur);
+  // (a cat with points has them over the eyes and up: the face is darker on top and pale below, into the muzzle)
+  grad.addColorStop(0, pal.points ?? pal.fur);
+  if (pal.points) grad.addColorStop(0.62, pal.fur);
   grad.addColorStop(1, pal.furLight);
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -232,14 +264,16 @@ function drawHead(ctx: Ctx, pal: Palette, s: Solved): void {
   ctx.ellipse(cx + rx * 0.62, 0.062, 0.082, 0.062, -0.3, 0, TAU);
   ctx.fill();
   // forehead stripes
-  ctx.strokeStyle = pal.furDark;
-  ctx.lineCap = "round";
-  ctx.lineWidth = 0.016;
-  for (const dx of [-0.05, 0, 0.05]) {
-    ctx.beginPath();
-    ctx.moveTo(cx + dx * 1.1 + yaw * 0.03, -ry * 0.98);
-    ctx.lineTo(cx + dx * 1.0 + yaw * 0.03, -ry * 0.55 - (dx === 0 ? 0.03 : 0));
-    ctx.stroke();
+  if ((pal.stripes ?? 1) > 0) {
+    ctx.strokeStyle = pal.furDark;
+    ctx.lineCap = "round";
+    ctx.lineWidth = 0.016;
+    for (const dx of [-0.05, 0, 0.05]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + dx * 1.1 + yaw * 0.03, -ry * 0.98);
+      ctx.lineTo(cx + dx * 1.0 + yaw * 0.03, -ry * 0.55 - (dx === 0 ? 0.03 : 0));
+      ctx.stroke();
+    }
   }
   // muzzle
   ctx.fillStyle = pal.white;
@@ -405,8 +439,8 @@ export function drawCat(ctx: Ctx, pal: Palette, s: Solved, box: DrawBox): void {
   if (s.pose.s.tailFront < 0.5) drawTail(ctx, pal, s.tail);
 
   // far legs, then the body, then the near legs
-  limb(ctx, pal, legs.hf, pal.furFar, true, s.pose.s.thighR * 0.9);
-  limb(ctx, pal, legs.ff, pal.furFar, true, 0.06);
+  limb(ctx, pal, legs.hf, pal.pointsFar ?? pal.furFar, true, s.pose.s.thighR * 0.9);
+  limb(ctx, pal, legs.ff, pal.pointsFar ?? pal.furFar, true, 0.06);
 
   const torso: Joint[] = [p.rumpBack, p.rumpTop, p.backMid, p.shoulderTop, p.neckTop, p.chestFront, p.chestBottom, p.bellyMid, p.groin, p.rumpBottom];
   ctx.fillStyle = pal.outline;
@@ -431,11 +465,11 @@ export function drawCat(ctx: Ctx, pal: Palette, s: Solved, box: DrawBox): void {
   blob(ctx, torso);
   ctx.clip();
   ctx.strokeStyle = pal.furDark;
-  ctx.globalAlpha = appear * 0.62;
+  ctx.globalAlpha = appear * 0.62 * (pal.stripes ?? 1);
   ctx.lineWidth = 0.034;
   ctx.lineCap = "round";
   const spine: Joint[] = [p.rumpTop, p.backMid, p.shoulderTop];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < ((pal.stripes ?? 1) > 0 ? 6 : 0); i++) {
     const f = (i + 0.5) / 6;
     const a = f < 0.5 ? spine[0]! : spine[1]!;
     const b = f < 0.5 ? spine[1]! : spine[2]!;
@@ -454,8 +488,8 @@ export function drawCat(ctx: Ctx, pal: Palette, s: Solved, box: DrawBox): void {
   ctx.fill();
   ctx.restore();
 
-  limb(ctx, pal, legs.hn, pal.fur, true, s.pose.s.thighR);
-  limb(ctx, pal, legs.fn, pal.fur, true, 0.065);
+  limb(ctx, pal, legs.hn, pal.points ?? pal.fur, true, s.pose.s.thighR);
+  limb(ctx, pal, legs.fn, pal.points ?? pal.fur, true, 0.065);
 
   if (s.pose.s.tailFront >= 0.5) drawTail(ctx, pal, s.tail);
 

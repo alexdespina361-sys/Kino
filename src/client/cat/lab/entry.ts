@@ -105,6 +105,8 @@ export const POSES: Cell[] = [
   { label: "sit, facing left", frame: { clip: "sit", facing: -1 } },
   { label: "peek, over an edge", frame: { clip: "peek", look: { x: 240, y: 230 } } },
   { label: "tap, at the pointer", frame: { clip: "tap", clipTime: 0.45, reach: { x: 96, y: -72 }, look: { x: 96, y: -72 } } },
+  { label: "swat, cocked", frame: { clip: "swat", progress: 0.32, clipTime: 0.45, reach: { x: 92, y: 14 }, look: { x: 92, y: 14 } } },
+  { label: "swat, landing", frame: { clip: "swat", progress: 0.42, clipTime: 0.59, reach: { x: 92, y: 14 }, look: { x: 92, y: 14 } } },
   { label: "doze, head down", frame: { clip: "doze", clipTime: 2.7, drowsy: 0.62 } },
   { label: "shift, half awake", frame: { clip: "shift", progress: 0.3, drowsy: 1 } },
   { label: "sit, joy", frame: { clip: "sit", emote: "joy" } },

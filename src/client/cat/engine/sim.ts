@@ -1,7 +1,7 @@
 import { bodyLengthFor } from "../math";
 import { createRng, type Rng } from "../rng";
 import type { CatEvent, CatFrame, Rect, Surface, Target, World } from "../types";
-import { CatEngine } from "./engine";
+import { CatEngine, RIDE_EASE } from "./engine";
 import { HALF_WIDTH, reachOf, shapeHits } from "./shape";
 
 /**
@@ -27,6 +27,8 @@ export interface PageOptions {
   quiet: boolean;
   /** Names hanging right above each shelf, over the cards (the worst case: where a cat standing on the shelf would sit), as the page's `soft` words. */
   names?: boolean;
+  /** How far each row of posters is scrolled sideways, in pixels (the shelf itself stays where it is: the posters slide under it). */
+  slide?: number[];
 }
 
 export const defaultPage = (): PageOptions => ({ width: 1920, height: 1080, scroll: 0, rows: 4, tilesPerRow: 6, tile: 330, focus: null, page: 1, reducedMotion: false, quiet: false });
@@ -48,7 +50,7 @@ export function browseWorld(page: PageOptions, extra: { pointer?: { x: number; y
     const x1 = x0 + page.tilesPerRow * (page.tile + 24);
     surfaces.push({ id: `p${page.page}:row${row}`, kind: "shelfTop", y: top, x0, x1, weight: 1 });
     for (let col = 0; col < page.tilesPerRow; col++) {
-      const rect = { x: x0 + col * (page.tile + 24), y: top, w: page.tile, h: 190 };
+      const rect = { x: x0 + col * (page.tile + 24) + (page.slide?.[row] ?? 0), y: top, w: page.tile, h: 190 };
       targets.push({ id: `p${page.page}:r${row}c${col}`, rect, surfaceId: `p${page.page}:row${row}` });
       if (page.names) soft.push({ x: rect.x + 10, y: top - 0.55 * L, w: page.tile * 0.7, h: 0.4 * L });
       if (page.focus && page.focus.row === row && page.focus.col === col) focus = { x: rect.x - 12, y: rect.y - 12, w: rect.w + 24, h: rect.h + 24 };
@@ -94,6 +96,8 @@ export interface SimStats {
   acts: Record<string, number>;
   /** Seconds spent feeling each feeling (see `Emote`). */
   emotes: Record<string, number>;
+  /** How many times the cat chose each thing to do of its own accord (see `EngineDebug.choice`). */
+  choices: Record<string, number>;
   hops: number;
   surfaces: string[];
   minAppear: number;
@@ -112,7 +116,7 @@ export interface SimOptions {
    * What may happen to the page. `mouse`: a pointer that wanders the page, dashes about, rests, comes to the cat, and is put down (it is gone from the world three
    * seconds after it last moved, as the host has it).
    */
-  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean; mouse?: boolean };
+  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean; mouse?: boolean; slide?: boolean };
   reducedMotion?: boolean;
   quiet?: boolean;
   /** The page has names over its shelves (see `PageOptions.names`). */
@@ -136,7 +140,10 @@ export function runSession(options: SimOptions): SimStats {
   page.reducedMotion = options.reducedMotion ?? false;
   page.quiet = options.quiet ?? false;
   page.names = options.names ?? false;
-  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, emotes: {}, hops: 0, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
+  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, emotes: {}, choices: {}, hops: 0, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
+  let lastChoice = "";
+  /** Where each row of posters is being scrolled to sideways (see `chaos.slide`). */
+  const slideGoal: number[] = [];
   const trail: string[] = [];
   const seen = new Set<string>();
   let scrollGoal = 0;
@@ -163,6 +170,8 @@ export function runSession(options: SimOptions): SimStats {
   let goneSince = -1;
   let prevSize = "";
   let wasJumping = false;
+  /** How far the posters that were slid are still to carry a cat that is on them: the engine takes it in over a few frames (`RIDE_EASE`), so the frames after a slide are the row's movement too. */
+  let carryLeft = 0;
   const steps = Math.round(options.seconds * fps);
   const fail = (msg: string) => {
     if (stats.violations.length === 0) stats.context = [...trail];
@@ -177,12 +186,35 @@ export function runSession(options: SimOptions): SimStats {
   for (let i = 0; i < steps; i++) {
     const t = i * dt;
     let changed = false;
+    /** How far a row of posters was slid this frame (a cat on it goes with it: that is the row's movement, not the cat's own). */
+    let slideStep = 0;
     // --- things that happen to the page, at random
     if (chaos.scroll && rng.chance(0.004)) scrollGoal = rng.pick([0, 0, 170, 350, 520, 700]) ?? 0;
     if (page.scroll !== scrollGoal) {
       page.scroll += Math.sign(scrollGoal - page.scroll) * Math.min(Math.abs(scrollGoal - page.scroll), 40);
       changed = true;
     }
+    if (chaos.slide) {
+      // (a row is scrolled sideways now and then, by a wheel or a swipe: read about every tenth of a second, a good way each time)
+      if (rng.chance(0.003)) slideGoal[rng.int(0, Math.max(0, page.rows - 1))] = rng.pick([0, 0, 240, 480, -240, -480, 900]) ?? 0;
+      if (i % Math.max(1, Math.round(fps / 10)) === 0) {
+        const slide = page.slide ?? (page.slide = []);
+        for (let row = 0; row < page.rows; row++) {
+          const goal = slideGoal[row] ?? 0;
+          const at = slide[row] ?? 0;
+          if (at !== goal) {
+            const step = Math.min(Math.abs(goal - at), 70);
+            slide[row] = at + Math.sign(goal - at) * step;
+            slideStep = Math.max(slideStep, step);
+            changed = true;
+          }
+        }
+      }
+    }
+    // (what the posters that slid may carry a cat this frame: the share the engine takes of what is left, the most it could take)
+    carryLeft += slideStep;
+    const carryNow = carryLeft * Math.min(1, dt * RIDE_EASE);
+    carryLeft -= carryNow;
     if (chaos.focus && rng.chance(0.03)) {
       page.focus = rng.chance(0.1) ? null : { row: rng.int(0, page.rows - 1), col: rng.int(0, page.tilesPerRow - 1) };
       changed = true;
@@ -209,6 +241,8 @@ export function runSession(options: SimOptions): SimStats {
       page.scroll = 0;
       scrollGoal = 0;
       page.focus = null;
+      page.slide = [];
+      slideGoal.length = 0;
       changed = true;
       engine.send({ type: "route.enter", page: String(page.page) });
     }
@@ -336,6 +370,10 @@ export function runSession(options: SimOptions): SimStats {
     stats.frames++;
     stats.seconds = stats.frames * dt;
     stats.acts[dbg.act] = (stats.acts[dbg.act] ?? 0) + dt;
+    if (dbg.choice !== lastChoice) {
+      lastChoice = dbg.choice;
+      stats.choices[dbg.choice] = (stats.choices[dbg.choice] ?? 0) + 1;
+    }
     if (frame.emote && frame.emote !== "none") stats.emotes[frame.emote] = (stats.emotes[frame.emote] ?? 0) + dt;
     stats.lastDebug = JSON.stringify(dbg);
     stats.minAppear = Math.min(stats.minAppear, frame.appear);
@@ -365,6 +403,9 @@ export function runSession(options: SimOptions): SimStats {
     if (frame.appear > 0.05 && !fading) {
       if (frame.clip === "doze" && world.mode !== "player") fail(`dozing off outside a film (${dbg.act})`);
       if (frame.clip === "tap" && (world.quiet || world.reducedMotion)) fail(`batting at the pointer for a viewer who wants no motion (${dbg.act})`);
+      // (a swat is a leap's worth of motion: the paw is put down on a poster, on its feet, and for a viewer who wants less motion it is never swung)
+      if (frame.clip === "swat" && world.reducedMotion) fail(`swatting for a viewer who wants less motion (${dbg.act})`);
+      if (frame.clip === "swat" && (!frame.reach || !frame.grounded)) fail(`a swat at nothing, or off its feet (${dbg.act}, reach ${JSON.stringify(frame.reach)}, ${frame.grounded ? "ground" : "air"})`);
       if ((frame.emote ?? "none") !== "none" && !["tilt", "think", "startle", "joy", "droop"].includes(frame.emote ?? "")) fail(`a feeling that is not one: ${frame.emote}`);
     }
     const visible = frame.appear > 0.05;
@@ -426,7 +467,7 @@ export function runSession(options: SimOptions): SimStats {
         const after = id ? shelves.get(id) : undefined;
         if (before !== undefined && after !== undefined) shelfMove = Math.max(shelfMove, Math.abs(after - before));
       }
-      const limit = VMAX_L * L * dt + shelfMove + 1;
+      const limit = VMAX_L * L * dt + shelfMove + Math.max(slideStep, carryNow) + 1;
       const move = Math.hypot(frame.x - prev.x, frame.y - prev.y);
       if (move > limit) fail(`jumped ${move.toFixed(0)}px in one frame (limit ${limit.toFixed(0)}, ${dbg.act})`);
     }

@@ -4,7 +4,7 @@
 //   node node_modules/tsx/dist/cli.mjs scripts/cat/record.mts <seed> <seconds> <out.json> [time=event[:argument] ...]
 //
 // The events are what the page could say, at a time (seconds): `5=cat.pet`, `9=cat.petEnd`, `12=cat.command:sleep`, `20=cat.call:900,700`,
-// `30=player.play`. A hand has its own words: `6=cat.grab` takes hold of the cat at its scruff where it is (`6=cat.grab:900,700` takes hold of a
+// `30=player.play`, `4=cat.point:p1:r1c3` (show the viewer that poster). A hand has its own words: `6=cat.grab` takes hold of the cat at its scruff where it is (`6=cat.grab:900,700` takes hold of a
 // place), `6.5=hand:1000,650@2` takes the hand there over two seconds (it is told at every tick for as long as it holds the cat), and
 // `9=cat.drop` lets go. Development tooling: nothing in the app imports this file.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -20,8 +20,12 @@ const fps = 30;
 type Entry = { at: number; event: CatEvent } | { at: number; hand: { to: Vec; seconds: number } };
 const parse = (entry: string): Entry => {
   const [time = "0", rest = ""] = entry.split("=");
-  const [type = "", arg = ""] = rest.split(":");
+  // (the first colon ends the event's name: an argument may have more, as a poster's name has: `4=cat.point:p1:r1c3`)
+  const colon = rest.indexOf(":");
+  const type = colon < 0 ? rest : rest.slice(0, colon);
+  const arg = colon < 0 ? "" : rest.slice(colon + 1);
   const at = Number(time);
+  if (type === "cat.point") return { at, event: { type, targetId: arg } };
   if (type === "hand") {
     const [where = "0,0", seconds = "0"] = arg.split("@");
     const [x, y] = where.split(",").map(Number);

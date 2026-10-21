@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame, type Clip } from "../types";
+import { JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT, type CatFrame, type Clip } from "../types";
 import { CatRig, WALK_STRIDE, type Solved } from "./rig";
 
 const frame = (over: Partial<CatFrame>): CatFrame => ({ x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false, ...over });
@@ -874,5 +874,152 @@ describe("the cat's finer motion: a walk that rocks, a face-wash, a yawn, a stre
       previous = now;
     }
     expect(biggest, where).toBeLessThan(0.2);
+  });
+});
+
+describe("the cat's swat at a poster", () => {
+  // (a poster's place under the lip of the shelf, a paw's reach ahead: in pixels from the feet, the body being 100 of them long)
+  const reach = { x: 62, y: 8 };
+  const px = 100;
+  /** A swat from a settled stand, 60 frames a second, progress running 0 to 1 over `seconds`: the rig at every frame. */
+  const swat = (watch: (s: Solved, progress: number, k: number) => void, over: Partial<CatFrame> = {}, seconds = 1.45, at = reach): CatRig => {
+    const rig = new CatRig(3);
+    rig.snapTo(frame({ clip: "stand", facing: over.facing ?? 1 }), px);
+    for (let k = 0; k < 120; k++) rig.update(frame({ clip: "stand", clipTime: k / 60, facing: over.facing ?? 1 }), 1 / 60, px);
+    const n = Math.round(seconds * 60);
+    for (let k = 0; k < n; k++) {
+      const progress = k / (n - 1);
+      rig.update(frame({ clip: "swat", clipTime: k / 60, progress, reach: at, look: at, ...over }), 1 / 60, px);
+      watch(rig.solved, progress, k);
+    }
+    return rig;
+  };
+  const dist = (s: Solved): number => Math.hypot(s.legs.fn.toe.x * px - reach.x, s.legs.fn.toe.y * px - reach.y);
+
+  it("lifts the paw high behind the shoulder, brings it down on the poster at the hit, and has the paw there then", () => {
+    const stand = inClip({ clip: "stand" }, 2);
+    let highest = 0;
+    let highAt = 0;
+    let nearest = Infinity;
+    let nearestAt = 0;
+    let farAtRaise = Infinity;
+    swat((s, progress) => {
+      const up = -s.legs.fn.toe.y;
+      if (up > highest) {
+        highest = up;
+        highAt = progress;
+      }
+      if (progress >= SWAT_HIT - 0.01 && progress <= 0.55 && dist(s) < nearest) {
+        nearest = dist(s);
+        nearestAt = progress;
+      }
+      if (progress >= 0.28 && progress <= 0.35) farAtRaise = Math.min(farAtRaise, dist(s));
+    });
+    // (y is down: the paw is raised past the height of the shoulder, well before it lands, and far from the poster then)
+    expect(highest).toBeGreaterThan(0.5);
+    expect(highAt).toBeGreaterThan(0.2);
+    expect(highAt).toBeLessThan(0.4);
+    expect(farAtRaise).toBeGreaterThan(0.5 * px);
+    // (and it comes down on the place the poster is at, within a tenth of the body, at the hit or just after it)
+    expect(nearest).toBeLessThan(0.1 * px);
+    expect(nearestAt).toBeGreaterThanOrEqual(SWAT_HIT - 0.01);
+    expect(nearestAt).toBeLessThan(0.56);
+    // (a stand's forefoot is on the floor)
+    expect(stand.legs.fn.toe.y).toBeCloseTo(0, 2);
+  });
+
+  it("leans its weight onto the poster as it lands (the head goes forward and down) and sits back up afterwards", () => {
+    const stand = inClip({ clip: "stand" }, 2);
+    let low = -Infinity;
+    let forward = -Infinity;
+    const rig = swat((s) => {
+      low = Math.max(low, s.head.y);
+      forward = Math.max(forward, s.head.x);
+    });
+    // (y is down)
+    expect(low).toBeGreaterThan(stand.head.y + 0.2);
+    expect(forward).toBeGreaterThan(stand.head.x + 0.05);
+    // (the clip is over: a stand again, and it comes back to the stand's height)
+    const standing = frame({ clip: "stand" });
+    for (let k = 0; k < 150; k++) rig.update({ ...standing, clipTime: k / 60 }, 1 / 60, px);
+    expect(Math.abs(rig.solved.head.y - stand.head.y)).toBeLessThan(0.06);
+    expect(Math.abs(rig.solved.legs.fn.toe.y)).toBeLessThan(0.03);
+  });
+
+  it("keeps its other three feet where they were, down, all through it", () => {
+    swat((s, progress) => {
+      for (const key of ["ff", "hn", "hf"] as const) expect(Math.abs(s.legs[key].toe.y), `${key} at ${progress.toFixed(2)}`).toBeLessThan(0.03);
+    });
+  });
+
+  it("is the same turned round: a cat that faces left swats a poster to its left as one that faces right does one to its right", () => {
+    const right: number[] = [];
+    const left: number[] = [];
+    swat((s) => right.push(s.legs.fn.toe.x, s.legs.fn.toe.y, s.head.x, s.head.y));
+    swat((s) => left.push(s.legs.fn.toe.x, s.legs.fn.toe.y, s.head.x, s.head.y), { facing: -1 }, 1.45, { x: -reach.x, y: reach.y });
+    expect(left.length).toBe(right.length);
+    for (let i = 0; i < right.length; i++) expect(left[i]!, `${i}`).toBeCloseTo(right[i]!, 6);
+  });
+
+  it("goes into a swat and out of it without a joint snapping (none moves more than 0.4 of the body in one frame at 60 a second: the strike is a strike, and the rest much less)", () => {
+    const rig = new CatRig(5);
+    const standing = frame({ clip: "stand" });
+    rig.snapTo(standing, px);
+    for (let k = 0; k < 90; k++) rig.update({ ...standing, clipTime: k / 60 }, 1 / 60, px);
+    const joints = (s: Solved): number[] => [
+      ...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe.x, s.legs[key].toe.y, s.legs[key].mid.x, s.legs[key].mid.y]),
+      s.head.x,
+      s.head.y,
+      s.tail[s.tail.length - 1]!.x,
+      s.tail[s.tail.length - 1]!.y,
+    ];
+    let previous: number[] | null = null;
+    let biggest = 0;
+    let where = "";
+    let biggestElse = 0;
+    let elseWhere = "";
+    const step = (over: Partial<CatFrame>, label: string, k: number): void => {
+      rig.update(frame(over), 1 / 60, px);
+      const now = joints(rig.solved);
+      for (const x of now) expect(Number.isFinite(x), label).toBe(true);
+      if (previous) {
+        const strike = label === "swat" && (over.progress ?? 0) > SWAT_HIT - 0.12 && (over.progress ?? 0) < SWAT_HIT + 0.05;
+        for (let i = 0; i + 1 < now.length; i += 2) {
+          const moved = Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!);
+          if (moved > biggest) {
+            biggest = moved;
+            where = `${label} frame ${k} joint ${i / 2}: ${moved.toFixed(3)}`;
+          }
+          if (!strike && moved > biggestElse) {
+            biggestElse = moved;
+            elseWhere = `${label} frame ${k} joint ${i / 2}: ${moved.toFixed(3)}`;
+          }
+        }
+      }
+      previous = now;
+    };
+    // (a swat, another straight after it as the engine has them, a point, a sit)
+    for (const seconds of [1.45, 1.25]) {
+      const n = Math.round(seconds * 60);
+      for (let k = 0; k < n; k++) step({ clip: "swat", clipTime: k / 60, progress: k / (n - 1), reach, look: reach }, "swat", k);
+    }
+    for (let k = 0; k < 150; k++) step({ clip: "point", clipTime: k / 60, reach: { x: 150, y: -40 }, look: { x: 150, y: -40 } }, "point", k);
+    for (let k = 0; k < 150; k++) step({ clip: "sit", clipTime: k / 60 }, "sit", k);
+    expect(biggest, where).toBeLessThan(0.4);
+    expect(biggestElse, elseWhere).toBeLessThan(0.2);
+  });
+
+  it("keeps every number finite when the poster is behind it, on top of it, or a long way off, and the paw within a body's length and a half of the shoulder", () => {
+    for (const at of [{ x: -62, y: 8 }, { x: 0, y: 0 }, { x: 900, y: -700 }, { x: 62, y: 900 }]) {
+      swat(
+        (s) => {
+          for (const value of [s.legs.fn.toe.x, s.legs.fn.toe.y, s.legs.fn.mid.x, s.legs.fn.mid.y, s.head.x, s.head.y]) expect(Number.isFinite(value), JSON.stringify(at)).toBe(true);
+          expect(Math.hypot(s.legs.fn.toe.x - s.legs.fn.root.x, s.legs.fn.toe.y - s.legs.fn.root.y), JSON.stringify(at)).toBeLessThan(1.5);
+        },
+        {},
+        1.45,
+        at,
+      );
+    }
   });
 });

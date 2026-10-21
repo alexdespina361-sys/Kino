@@ -9,9 +9,17 @@ import { readStorage, writeStorage } from "../shared/format";
  * website's first download: the cat itself is another file, fetched only for a screen that wants one.
  */
 
-/** The coats the detailed cat can wear (the simple drawn cat has the one). */
+/**
+ * The two cats a screen can have, and they are all the settings offer: the white and grey ragdoll (the detailed one, a model drawn on the graphics card; on a screen
+ * that cannot afford that it is drawn simply, in its colours) and the ginger cartoon cat (flat shapes, light to draw on any screen).
+ */
+export const CAT_LOOKS = ["ragdoll", "ginger"] as const;
+export type CatLook = (typeof CAT_LOOKS)[number];
+/** The coats the detailed cat can wear; the settings offer the ragdoll's and the ginger's (the address can ask for the rest, to look at them). */
 export const CAT_COATS = ["ragdoll", "ginger", "tuxedo", "grey", "calico"] as const;
 export type CatCoat = (typeof CAT_COATS)[number];
+/** The coat a look wears. */
+export const coatOfLook = (look: CatLook): CatCoat => (look === "ginger" ? "ginger" : "ragdoll");
 /** How big the cat is on the screen, against what the screen's size makes of it: smaller where the picture is busy, bigger to see it better. */
 export const CAT_SIZES = ["small", "normal", "large"] as const;
 export type CatSize = (typeof CAT_SIZES)[number];
@@ -24,10 +32,8 @@ export interface CatSettings {
   quiet: boolean;
   /** It keeps the viewer company during a film too (asleep in a corner of the picture, away from the controls and the subtitles). */
   films: boolean;
-  /** It is the detailed, solid cat where this screen can do one (off: the simple drawn cat, which costs a screen a tenth as much). */
-  detail: boolean;
-  /** The detailed cat's coat. */
-  coat: CatCoat;
+  /** Which cat it is (see `CAT_LOOKS`). */
+  look: CatLook;
   /** How big the cat is. */
   size: CatSize;
 }
@@ -62,9 +68,12 @@ export function catSizeAsk(search: string = typeof location === "undefined" ? ""
   return CAT_SIZES.find((size) => size === value);
 }
 
-/** The settings as stored (anything that is not understood is the default), for a browser that is a TV's or not. */
+/**
+ * The settings as stored (anything that is not understood is the default), for a browser that is a TV's or not. A device that kept its settings before there were
+ * two cats to choose between kept "detailed cat: off" for the ginger one and "on" for the ragdoll (with a coat, which the settings do not offer any more).
+ */
 export function parseCatSettings(raw: string | undefined, tv: boolean): CatSettings {
-  const settings: CatSettings = { on: false, quiet: tv, films: true, detail: true, coat: "ragdoll", size: "normal" };
+  const settings: CatSettings = { on: false, quiet: tv, films: true, look: "ragdoll", size: "normal" };
   if (!raw) return settings;
   try {
     const stored: unknown = JSON.parse(raw);
@@ -73,8 +82,7 @@ export function parseCatSettings(raw: string | undefined, tv: boolean): CatSetti
       if (typeof each.on === "boolean") settings.on = each.on;
       if (typeof each.quiet === "boolean") settings.quiet = each.quiet;
       if (typeof each.films === "boolean") settings.films = each.films;
-      if (typeof each.detail === "boolean") settings.detail = each.detail;
-      settings.coat = CAT_COATS.find((coat) => coat === each.coat) ?? settings.coat;
+      settings.look = CAT_LOOKS.find((look) => look === each.look) ?? (each.detail === false ? "ginger" : settings.look);
       settings.size = CAT_SIZES.find((size) => size === each.size) ?? settings.size;
     }
   } catch {
@@ -163,6 +171,31 @@ const subscribeGone = (listener: () => void): (() => void) => {
   window.addEventListener(GONE, listener);
   return () => window.removeEventListener(GONE, listener);
 };
+
+/**
+ * Which cat is really drawn on this screen, and, when it is not the one that was chosen, why (for the settings page, so that a viewer who chose the detailed cat
+ * and sees the simple one is told why, and can have it tried again): `slow`: the screen could not keep up with it; `graphics`: this browser would not give the
+ * graphics it needs; `file`: its file did not come; `lost`: the browser took the picture away. The cat's host says it; before there is a cat it is `none`.
+ */
+export type CatArt = "solid" | "classic" | "none";
+export type CatWhy = "" | "slow" | "graphics" | "file" | "lost";
+export interface CatShown {
+  art: CatArt;
+  why: CatWhy;
+}
+const SHOWN = "kino:cat-shown";
+const NO_CAT: CatShown = { art: "none", why: "" };
+let shown: CatShown = NO_CAT;
+export function setCatShown(next: CatShown): void {
+  if (shown.art === next.art && shown.why === next.why) return;
+  shown = next;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(SHOWN));
+}
+const subscribeShown = (listener: () => void): (() => void) => {
+  window.addEventListener(SHOWN, listener);
+  return () => window.removeEventListener(SHOWN, listener);
+};
+export const useCatShown = (): CatShown => useSyncExternalStore(subscribeShown, () => shown, () => NO_CAT);
 
 /**
  * For the library's corner: whether the cat's button is to be there. The host is asked only by a screen that wants a cat, so a screen that does not

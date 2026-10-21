@@ -1,13 +1,13 @@
 # RELEASE_CHECKLIST
 
-**State: not switched on. The first cat (pull request #28) is merged and deployed with the flag off; this branch (`feat/kino-cat-2`, on top of that main) replaces its body, its animations and its hand. No environment variable has been set anywhere and no account on the live site was touched: `GET /api/features` on the live site says `{"cat":false}`.** Merged with `CAT_COMPANION` unset, the site behaves exactly as it does today: no screen fetches a byte of the cat, and the only visible difference in the code is a switch that is never shown.
+**State (2026-10-21 evening): the cat is on at the live site's host** (the owner set `CAT_COMPANION=on` after the second pull request, #29, was merged: `GET /api/features` says `{"cat":true}`), and every device is still off until its owner turns the cat on in Settings. This branch (`feat/kino-cat-3`, on top of that main) is round 3: exactly two cats to choose from, a line in Settings that says what is really drawn and why, the cat that goes to the title it is asked to find and swats at it, the cat that goes with its row when the viewer scrolls it and hops back or away, and a pat and the zoomies of its own accord. Nothing is deployed from it until the owner merges it. No account on the live site was touched and nothing was submitted to it. Merged with `CAT_COMPANION` unset, the site behaves exactly as before: no screen fetches a byte of the cat.
 
 ## 1 · What would go out
 
 | Part | Where | Size (gzip) | Loaded when |
 |---|---|---|---|
-| The switch, the corner button, the loader, the texts (en/ro/it) | the app's always-loaded files | + 6.6 KB over the whole app (measured against main after PR #27) | always (it is what lets the cat be asked for) |
-| The cat (engine, rig, both painters, panel) | `assets/host-*.js` + `host-*.css` (lazy chunk) | 50.7 KB + 1.7 KB | only when the host offers it **and** the screen plays **and** the device asked for it |
+| The switch, the corner button, the loader, the texts (en/ro/it) | the app's always-loaded files | + 6.9 KB over the whole app (measured against main after PR #27, at the end of round 3) | always (it is what lets the cat be asked for) |
+| The cat (engine, rig, both painters, panel) | `assets/host-*.js` + `host-*.css` (lazy chunk) | 54.2 KB + 1.7 KB | only when the host offers it **and** the screen plays **and** the device asked for it |
 | The detailed cat's body | `assets/cat-*.mesh` | 164.9 KB | only when the detailed cat is drawn, once |
 | Server | `/api/features`, `/api/health` `features.cat`, env `CAT_COMPANION` | – | – |
 
@@ -49,6 +49,8 @@ Go for "merge with `CAT_COMPANION` unset": yes, on the evidence above. Go for "s
 6. Sound: none was built; any sound must default to off and never play over a film.
 7. The model's licence: the owner says "Fluffy Blue-Eyed Cat" (Meshy AI) is CC BY 4.0; the credit is in the app. Before it goes to everybody, check on the page the model came from that the licence really is CC BY 4.0 for this model and that the credit as written is enough (the file itself carries no licence text), or say to take the detailed cat out (the simple cat does not use it). Also give the address of the model's page, for the credit to link to (ISSUE_LOG #57).
 8. Whether the sprite version for weak screens (rendered from the detailed cat with our own renderer, replacing the cartoon fallback) is the next piece of work (`docs/cat-companion.md`, "Next").
+9. How much the poster should do when the cat swats at it: today it rocks a few pixels and is put back (the page is not the cat's to change). A bigger reaction (a flip, a shake of the whole row) is a choice for after somebody has watched it (ISSUE_LOG #63).
+10. Whether a quiet cat (a TV starts quiet) should swat at all when asked to find something: today it does, because the viewer asked, but it does not hop about on the way.
 
 ## 5 · Trying it on a real screen (about ten minutes)
 
@@ -56,7 +58,8 @@ Go for "merge with `CAT_COMPANION` unset": yes, on the evidence above. Go for "s
 2. On the screen: open `/tv?cat=debug` (the debug view draws places to stand, keep-outs and posters, and a text block).
 3. Let it run for a minute, then read the text block (or `window.__kinoCat.snapshot()` in a console): `art` (solid/classic), `quality` (full/low), `cost` (ms), `fps`. Send those four, and whether it stayed `full`.
 4. Press OK on a poster, then Back: the cat is sent away and comes back. Start a film: it sleeps in a bottom corner, under the controls and the subtitles (they are drawn over it; it neither covers them nor leaves when they come).
-5. Settings → Cat companion: try the coat, the size and "detailed cat" off.
+5. Settings → Cat companion: choose each of the two cats and the size. When the white and grey cat is chosen and the screen draws the simple one, the page says why and has a "try again" button: send what it says.
+6. Corner button → find me something → a mood: the cat should go to the title (hopping along its shelf if it has to), creep up on it, swat at it twice (the poster rocks) and point. Then scroll the row the cat is on with the wheel, a swipe or the remote: it should go with the posters and hop back or away.
 
 ## 6 · Rollback
 

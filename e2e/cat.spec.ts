@@ -24,10 +24,11 @@ const setup = (yes = true) => async (context: BrowserContext) => {
   await withLibrary(library)(context);
 };
 /**
- * A device that has turned the cat on (as its settings page does), in the way it starts: not quiet. The detailed cat is off for these tests, but the ones
- * that are about it: a headless browser's card is a software one, so the tests of the cat's behaviour are made without it (it would only be slower).
+ * A device that has turned the cat on (as its settings page does), in the way it starts: not quiet. It has the ginger cat (the flat one) for these tests,
+ * but the ones that are about the white and grey one: a headless browser's card is a software one, so the tests of the cat's behaviour are made with the
+ * ginger one (the other would only be slower).
  */
-const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, detail: false, ...over }) });
+const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, look: "ginger", ...over }) });
 
 interface Snap {
   frame: { x: number; y: number; facing: number; clip: string; appear: number; petted: boolean; carried: boolean; grounded: boolean };
@@ -187,6 +188,102 @@ test("find me something: the cat picks a title from a shelf of that mood, points
   await expect(tv.getByTestId("tv")).not.toHaveAttribute("data-state", "playing");
 });
 
+test("find me something: the cat goes to the title, creeps up on it and swats at it twice, and the poster gives under the paw, before it points and sits by it", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openLibrary(
+    browser,
+    async (context) => {
+      await setup()(context);
+      // (what the page's elements are made to rock, by the title they are on: a swatted poster is rocked, with `rotate`, and no other thing the cat does to a poster is)
+      await context.addInitScript(() => {
+        const swatted: string[] = [];
+        (window as unknown as { __swatted: string[] }).__swatted = swatted;
+        const original = Element.prototype.animate;
+        Element.prototype.animate = function (this: Element, keyframes: Keyframe[] | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) {
+          const first = Array.isArray(keyframes) ? keyframes[0] : null;
+          if (first && "rotate" in first) swatted.push(this.closest("[data-entry]")?.getAttribute("data-entry") ?? "");
+          return original.call(this, keyframes, options);
+        } as typeof Element.prototype.animate;
+      });
+    },
+    undefined,
+    WANTS(),
+  );
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheScreen(tv);
+  await tv.getByTestId("tv-cat-chip").click();
+  await tv.getByTestId("cat-find").click();
+  await tv.getByTestId("cat-mood-scary").click();
+  const id = (await tv.getByTestId("cat-card").getAttribute("data-id"))!;
+  expect(id).toMatch(/^h\d$/);
+  const clip = () => snap(tv).then((seen) => seen.frame.clip);
+  // (it creeps up on the poster, and swats: in that order, and the paw lands on the poster, which gives)
+  await saying(tv, () => expect.poll(clip, { timeout: 30_000, intervals: [60] }).toBe("stalk"));
+  await saying(tv, () => expect.poll(clip, { timeout: 15_000, intervals: [60] }).toBe("swat"));
+  await saying(tv, () => expect.poll(() => tv.evaluate(() => (window as unknown as { __swatted: string[] }).__swatted), { timeout: 4_000 }).toContain(id));
+  // (and then it points at it, and sits, with its eyes on the viewer)
+  await saying(tv, () => expect.poll(clip, { timeout: 12_000, intervals: [60] }).toBe("point"));
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.clip, { timeout: 12_000, intervals: [100] }).toBe("sit"));
+  // nothing has started: it was shown, and only the viewer opens it
+  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  await expect(tv.getByTestId("tv")).not.toHaveAttribute("data-state", "playing");
+});
+
+test("a row of posters scrolled sideways under the cat takes the cat along with them, and then it hops back to where it was", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  // (called to the second row, wherever it was: it is on a row of posters, and not on the floor of the screen, where what the posters do is no concern of its)
+  const shelf = (await worldOf(tv)).surfaces.filter((surface) => surface.kind === "shelfTop").sort((a, b) => a.y - b.y)[1]!;
+  await tellCat(tv, { type: "cat.call", at: { x: 700, y: shelf.y } });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 15_000 }).toBe(shelf.id));
+  await catSitsAndWhere(tv);
+  const start = await snap(tv);
+  const L = (await worldOf(tv)).bodyLength;
+  // the row the cat is on, and what it does from now on (the changes of what it is doing, as they come)
+  const found = await tv.evaluate((y) => {
+    const scroller = [...document.querySelectorAll<HTMLElement>(".tv-row-tiles")].find((el) => {
+      const box = el.getBoundingClientRect();
+      return box.top <= y + 8 && box.bottom >= y + 8;
+    });
+    if (!scroller) return false;
+    const handle = (window as unknown as { __kinoCat: { snapshot(): { engine: { act: string } } } }).__kinoCat;
+    const seen: string[] = [];
+    (window as unknown as { __scroller: HTMLElement; __acts: string[] }).__scroller = scroller;
+    (window as unknown as { __acts: string[] }).__acts = seen;
+    scroller.style.scrollBehavior = "auto";
+    setInterval(() => {
+      const act = handle.snapshot().engine.act;
+      if (seen[seen.length - 1] !== act) seen.push(act);
+    }, 30);
+    return true;
+  }, start.frame.y);
+  expect(found, "the row of posters under the cat").toBe(true);
+  const slide = (by: number, reads: number) =>
+    tv.evaluate(
+      async ([step, times]) => {
+        const scroller = (window as unknown as { __scroller: HTMLElement }).__scroller;
+        for (let i = 0; i < times!; i++) {
+          scroller.scrollLeft += step!;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      },
+      [by, reads],
+    );
+  // a little way: the cat goes with the posters (to the left, as they go), sitting, and does not hop for that
+  await slide(0.15 * L, 4);
+  await saying(tv, () => expect.poll(async () => ((await snap(tv)).frame.x - start.frame.x) / L, { timeout: 4_000 }).toBeLessThan(-0.45));
+  const carried = ((await snap(tv)).frame.x - start.frame.x) / L;
+  expect(carried).toBeGreaterThan(-0.8);
+  expect(await tv.evaluate(() => (window as unknown as { __acts: string[] }).__acts.includes("jump"))).toBe(false);
+  // a good way: it hops back (or off to another shelf) and is on its feet and in sight again
+  await slide(0.5 * L, 6);
+  await saying(tv, () => expect.poll(() => tv.evaluate(() => (window as unknown as { __acts: string[] }).__acts.includes("jump")), { timeout: 8_000 }).toBe(true));
+  await catIsOnTheShelves(tv);
+});
 test("a mood that no shelf of the page has finds nothing, and says so", async ({ browser }) => {
   const tv = await openLibrary(browser, setup(), undefined, WANTS());
   await catIsOnTheScreen(tv);
@@ -705,7 +802,7 @@ test("the settings page and the cat's page of it fit the screen of a TV, in each
   test.setTimeout(120_000);
   // (the Romanian and Italian words, and the credit with the model's title in them, run longer than the English ones)
   for (const lang of ["en", "ro", "it"] as const) {
-    const tv = await openLibrary(browser, setup(), undefined, { ...WANTS({ detail: true }), "kino.lang": lang });
+    const tv = await openLibrary(browser, setup(), undefined, { ...WANTS({ look: "ragdoll" }), "kino.lang": lang });
     await expect(tv.locator("html")).toHaveAttribute("lang", lang);
     for (const [width, height] of [[1280, 720], [1920, 1080], [1366, 768], [1024, 768]] as const) {
       await tv.setViewportSize({ width, height });
@@ -760,11 +857,11 @@ const artIs = (tv: Page, art: Snap["art"], timeout = 12_000) => saying(tv, () =>
 const MESH = /\.mesh(\?|$)/;
 
 test("the detailed cat: a screen that can do WebGL gets the solid cat, painted by the card from a file that is fetched once, and it is on the screen", async ({ browser }) => {
-  // (the ginger coat: the pale ragdoll that is the default has no colour of its own to tell it from the page by, the posters have no orange)
-  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true, coat: "ginger" }));
+  // (the ginger coat, asked for by the address: the pale ragdoll has no colour of its own to tell it from the page by, the posters have no orange)
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ look: "ragdoll", quiet: true }));
   const meshes: string[] = [];
   tv.on("request", (request) => MESH.test(request.url()) && meshes.push(request.url()));
-  await tv.goto("/tv?cat=debug&catbudget=100000");
+  await tv.goto("/tv?cat=debug&catbudget=100000&catcoat=ginger");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   await artIs(tv, "solid");
   await catIsOnTheScreen(tv);
@@ -791,9 +888,10 @@ test("a screen without WebGL gets the simple cat, and its mesh is not asked for 
       });
     },
     undefined,
-    WANTS({ detail: true, quiet: true }),
+    WANTS({ look: "ragdoll", quiet: true }),
   );
-  await tv.goto("/tv?cat=debug");
+  // (the ginger coat, asked for by the address: the pale ragdoll the device chose has no colour of its own to tell it from the page by, the posters have no orange)
+  await tv.goto("/tv?cat=debug&catcoat=ginger");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   await artIs(tv, "classic");
   await catIsOnTheScreen(tv);
@@ -809,7 +907,7 @@ test("a mesh that is missing, or is not a mesh, gives the simple cat and the pag
         await context.route(MESH, (route) => route.fulfill({ ...answer, contentType: "application/octet-stream" }));
       },
       undefined,
-      WANTS({ detail: true, quiet: true }),
+      WANTS({ look: "ragdoll", quiet: true }),
     );
     await tv.goto("/tv?cat=debug");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
@@ -868,7 +966,7 @@ test("a screen that cannot spare even the simple cat has none, and no button in 
 
 test("a screen that cannot afford the detailed cat is given the simple one, and keeps it", async ({ browser }) => {
   test.setTimeout(75_000);
-  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true }));
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ look: "ragdoll" }));
   await tv.goto("/tv?cat=debug&catslow=40");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   await artIs(tv, "solid");
@@ -882,57 +980,119 @@ test("a screen that cannot afford the detailed cat is given the simple one, and 
   expect(later.visible).toBe(true);
 });
 
-test("the settings page has a switch for the detailed cat: off is the simple cat at once, and on is the detailed one again", async ({ browser }) => {
-  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true }));
+test("the settings page offers two cats, the white and grey one and the ginger one: the choice is worn at once and kept, and it is the same cat in every place that has one", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ look: "ragdoll", quiet: true }));
   await tv.goto("/tv?cat=debug&catbudget=100000");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   await artIs(tv, "solid");
+  expect((await snap(tv)).coat).toBe("ragdoll");
   await openCatSettings(tv);
-  const detail = tv.getByTestId("tv-cat-detail");
-  await expect(detail).toHaveAttribute("aria-checked", "true");
-  await detail.click();
-  await expect(detail).toHaveAttribute("aria-checked", "false");
+  // exactly two cats to choose between (and no coats to pick from any more), the white and grey one chosen, and the page says it is the one that is shown
+  await expect(tv.locator('[data-testid^="tv-cat-look-"][role="radio"]')).toHaveCount(2);
+  await expect(tv.locator('[data-testid^="tv-cat-coat-"]')).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-detail")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-look-ragdoll")).toHaveAttribute("aria-checked", "true");
+  await expect(tv.getByTestId("tv-cat-look-ginger")).toHaveAttribute("aria-checked", "false");
+  await expect(tv.getByTestId("tv-cat-shown")).toHaveAttribute("data-art", "solid");
+  await expect(tv.getByTestId("tv-cat-retry")).toHaveCount(0);
+  // the ginger cat is worn at once: the flat one, in its own colours, and nothing about it needs saying
+  await tv.getByTestId("tv-cat-look-ginger").click();
+  await expect(tv.getByTestId("tv-cat-look-ginger")).toHaveAttribute("aria-checked", "true");
   await artIs(tv, "classic", 6_000);
-  await detail.click();
-  await expect(detail).toHaveAttribute("aria-checked", "true");
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).coat, { timeout: 6_000 }).toBe("ginger"));
+  await expect(tv.getByTestId("tv-cat-shown")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-retry")).toHaveCount(0);
+  expect(JSON.parse(await tv.evaluate(() => localStorage.getItem("kino.cat") ?? "{}"))).toMatchObject({ look: "ginger" });
+  // and the white and grey one again, at once
+  await tv.getByTestId("tv-cat-look-ragdoll").click();
   await artIs(tv, "solid");
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).coat, { timeout: 6_000 }).toBe("ragdoll"));
+  await expect(tv.getByTestId("tv-cat-shown")).toHaveAttribute("data-art", "solid");
 });
 
-test("the settings page has the cat's coat and size: they are worn at once and kept for the device, and the simple cat has no coat to choose", async ({ browser }) => {
-  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true }));
-  await tv.goto("/tv?cat=debug&catbudget=100000");
+test("a device that kept the old settings keeps its cat: the detailed one is the white and grey cat, and the simple one is the ginger", async ({ browser }) => {
+  const old = (detail: boolean) => ({ "kino.cat": JSON.stringify({ on: true, quiet: true, films: true, detail, coat: detail ? "tuxedo" : "ragdoll", size: "large" }) });
+  const simple = await openLibrary(browser, setup(), undefined, old(false));
+  await simple.goto("/tv?cat=debug");
+  await expect(simple.getByTestId("tv-browse")).toBeVisible();
+  await artIs(simple, "classic");
+  await saying(simple, () => expect.poll(async () => (await snap(simple)).coat, { timeout: 6_000 }).toBe("ginger"));
+  const detailed = await openLibrary(browser, setup(), undefined, old(true));
+  await detailed.goto("/tv?cat=debug&catbudget=100000");
+  await expect(detailed.getByTestId("tv-browse")).toBeVisible();
+  await artIs(detailed, "solid");
+  await saying(detailed, () => expect.poll(async () => (await snap(detailed)).coat, { timeout: 6_000 }).toBe("ragdoll"));
+});
+
+test("the settings page has the cat's size: it is worn at once and kept for the device, whichever cat it is", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ look: "ginger", quiet: true }));
+  await tv.goto("/tv?cat=debug");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
-  await artIs(tv, "solid");
+  await artIs(tv, "classic");
   const before = await snap(tv);
-  expect(before.coat).toBe("ragdoll");
   expect(before.body).toBeGreaterThan(40);
   await openCatSettings(tv);
-  await expect(tv.getByTestId("tv-cat-coat-ragdoll")).toHaveAttribute("aria-checked", "true");
   await expect(tv.getByTestId("tv-cat-size-normal")).toHaveAttribute("aria-checked", "true");
-  await tv.getByTestId("tv-cat-coat-tuxedo").click();
-  await expect(tv.getByTestId("tv-cat-coat-tuxedo")).toHaveAttribute("aria-checked", "true");
-  await expect(tv.getByTestId("tv-cat-coat-ginger")).toHaveAttribute("aria-checked", "false");
-  await saying(tv, () => expect.poll(async () => (await snap(tv)).coat, { timeout: 6_000 }).toBe("tuxedo"));
   await tv.getByTestId("tv-cat-size-large").click();
   await saying(tv, () => expect.poll(async () => (await snap(tv)).body, { timeout: 6_000 }).toBeGreaterThan(before.body * 1.2));
   await tv.getByTestId("tv-cat-size-small").click();
   await saying(tv, () => expect.poll(async () => (await snap(tv)).body, { timeout: 6_000 }).toBeLessThan(before.body * 0.9));
-  // (kept by the device, and the cat is still there and still the detailed one)
-  expect(JSON.parse(await tv.evaluate(() => localStorage.getItem("kino.cat") ?? "{}"))).toMatchObject({ coat: "tuxedo", size: "small", detail: true });
-  expect((await snap(tv)).art).toBe("solid");
-  // the simple cat has the one coat, so there is none to choose; the size is still there
-  await tv.getByTestId("tv-cat-detail").click();
-  await expect(tv.getByTestId("tv-cat-coat-grey")).toHaveCount(0);
-  await expect(tv.getByTestId("tv-cat-size-large")).toBeVisible();
+  expect(JSON.parse(await tv.evaluate(() => localStorage.getItem("kino.cat") ?? "{}"))).toMatchObject({ look: "ginger", size: "small" });
+  expect((await snap(tv)).art).toBe("classic");
 });
 
+test("a white and grey cat that is drawn simply is said to be, with the reason, and the settings page has a button to try the detailed one again", async ({ browser }) => {
+  // (a browser that will not give the graphics, until the test says it does)
+  const tv = await openLibrary(
+    browser,
+    async (context) => {
+      await setup()(context);
+      await context.addInitScript(() => {
+        const original = HTMLCanvasElement.prototype.getContext as (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) => unknown;
+        HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string, ...rest: unknown[]) {
+          return /webgl/.test(kind) && (window as unknown as { __noGl?: boolean }).__noGl !== false ? null : original.call(this, kind, ...rest);
+        } as typeof HTMLCanvasElement.prototype.getContext;
+        (window as unknown as { __noGl?: boolean }).__noGl = true;
+      });
+    },
+    undefined,
+    WANTS({ look: "ragdoll", quiet: true }),
+  );
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await artIs(tv, "classic");
+  await openCatSettings(tv);
+  const said = tv.getByTestId("tv-cat-shown");
+  await expect(said).toHaveAttribute("data-art", "classic");
+  await expect(said).toHaveAttribute("data-why", "graphics");
+  await expect(said).toContainText("simply");
+  const retry = tv.getByTestId("tv-cat-retry");
+  await expect(retry).toBeVisible();
+  // (still no graphics: it is tried and it is the simple one again, with the same reason, and nothing breaks)
+  await retry.click();
+  await artIs(tv, "classic");
+  await expect(said).toHaveAttribute("data-why", "graphics");
+  // (and now the browser gives them: another try, and it is the detailed cat)
+  await tv.evaluate(() => {
+    (window as unknown as { __noGl?: boolean }).__noGl = false;
+  });
+  await retry.click();
+  await artIs(tv, "solid");
+  await expect(tv.getByTestId("tv-cat-shown")).toHaveAttribute("data-art", "solid");
+  await expect(tv.getByTestId("tv-cat-retry")).toHaveCount(0);
+  // the ginger cat is what was asked for when it is the ginger cat that is drawn: there is nothing to be sorry for
+  await tv.getByTestId("tv-cat-look-ginger").click();
+  await artIs(tv, "classic", 6_000);
+  await expect(tv.getByTestId("tv-cat-shown")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-retry")).toHaveCount(0);
+});
 test("the address can ask for the coat and the size, whatever the device says", async ({ browser }) => {
-  const usual = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true }));
+  const usual = await openLibrary(browser, setup(), undefined, WANTS({ look: "ragdoll", quiet: true }));
   await usual.goto("/tv?cat=debug&catbudget=100000");
   await expect(usual.getByTestId("tv-browse")).toBeVisible();
   await artIs(usual, "solid");
   const normal = await snap(usual);
-  const asked = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true, coat: "ginger", size: "normal" }));
+  const asked = await openLibrary(browser, setup(), undefined, WANTS({ look: "ragdoll", quiet: true, size: "normal" }));
   await asked.goto("/tv?cat=debug&catbudget=100000&catcoat=calico&catsize=large");
   await expect(asked.getByTestId("tv-browse")).toBeVisible();
   await artIs(asked, "solid");
@@ -941,11 +1101,11 @@ test("the address can ask for the coat and the size, whatever the device says", 
 });
 
 test("the address can ask for either cat, whatever the device says", async ({ browser }) => {
-  const simple = await openLibrary(browser, setup(), undefined, WANTS({ detail: true }));
+  const simple = await openLibrary(browser, setup(), undefined, WANTS({ look: "ragdoll" }));
   await simple.goto("/tv?cat=debug&catart=classic");
   await expect(simple.getByTestId("tv-browse")).toBeVisible();
   await artIs(simple, "classic");
-  const solid = await openLibrary(browser, setup(), undefined, WANTS({ detail: false }));
+  const solid = await openLibrary(browser, setup(), undefined, WANTS({ look: "ginger" }));
   await solid.goto("/tv?cat=debug&catart=solid&catbudget=100000");
   await expect(solid.getByTestId("tv-browse")).toBeVisible();
   await artIs(solid, "solid");

@@ -1,4 +1,4 @@
-import { drawCat, MARMALADE } from "../render/draw";
+import { drawCat, MARMALADE, RAGDOLL, type Palette } from "../render/draw";
 import meshUrl from "../render/gl/cat.mesh?url";
 import { GlCat } from "../render/gl/renderer";
 import type { Solved } from "../render/rig";
@@ -31,7 +31,7 @@ export interface Brush {
   readonly lost: boolean;
   /** The most the canvas is made finer than the screen's own pixels (a finer canvas costs a card more than a TV can spare). */
   readonly maxDpr: number;
-  /** The coat the cat wears from the next picture on (the simple cat has the one coat). */
+  /** The coat the cat wears from the next picture on (the simple cat has two: the ragdoll's colours, and the ginger's for any other coat). */
   setCoat(coat: CatCoat): void;
   resize(side: number, dpr: number): void;
   /**
@@ -65,14 +65,15 @@ export function classicBrush(): Brush | null {
   if (!ctx) return null;
   let side = 0;
   let scale = 1;
+  let palette: Palette = MARMALADE;
   return {
     art: "classic",
     canvas,
     lost: false,
     maxDpr: 2,
     gpuMs: 0,
-    setCoat() {
-      /* the simple cat is marmalade */
+    setCoat(coat) {
+      palette = coat === "ragdoll" ? RAGDOLL : MARMALADE;
     },
     resize(next, dpr) {
       side = next;
@@ -84,7 +85,7 @@ export function classicBrush(): Brush | null {
     paint(solved, place) {
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       ctx.clearRect(0, 0, side, side);
-      drawCat(ctx, MARMALADE, solved, place);
+      drawCat(ctx, palette, solved, place);
       return 0;
     },
     dispose() {

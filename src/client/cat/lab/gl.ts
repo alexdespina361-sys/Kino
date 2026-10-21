@@ -220,6 +220,10 @@ export const EXTENT_CELLS: GlCell[] = (() => {
     at(`point@${name}`, { clip: "point", reach, look: reach }, 1.2);
     for (const t of [0.15, 0.4, 0.65]) at(`tap@${name}${t}`, { clip: "tap", clipTime: t, reach, look: reach }, t);
   }
+  // (a swat at a poster: its beats, at the poster's lip -- just below the feet and a little ahead -- and, for the extent, level with the cat and high)
+  for (const [name, reach] of [["lip", { x: 92, y: 14 }], ["level", { x: 105, y: -60 }], ["high", { x: 70, y: -190 }]] as const) {
+    for (const p of [0.12, 0.3, 0.35, 0.44, 0.52, 0.66, 0.84]) at(`swat@${name}${p}`, { clip: "swat", progress: p, clipTime: p * 1.4, reach, look: reach }, 0.5 + p * 1.4);
+  }
   for (const t of [0.9, 1.8, 2.7, 3.3]) at(`doze@${t}`, { clip: "doze", drowsy: 0.62 }, t);
   for (const p of [0.15, 0.35, 0.6, 0.85]) at(`shift@${p}`, { clip: "shift", progress: p, drowsy: 1 });
   // (and the feelings that last: the head cocked, and the look away and up; the flinch, the lift and the letdown are over in a moment and are not measured)
@@ -409,6 +413,16 @@ export const SCENES: GlCell[] = [
   scene("stalk", { clip: "stalk", odometer: 20 }, 1.0),
   scene("stalk (3/4)", { clip: "stalk", odometer: 20 }, 1.0, -0.55),
 ];
+
+/** The beats of a swat at a poster's lip (just below the feet and a little ahead), close, the cat settled into each: the cocked paw, the stroke, the landing, the recoil. */
+const swatAt = (p: number, turn = 0): GlCell => ({
+  label: `swat ${p}${turn ? " (3/4)" : ""}`,
+  frame: { clip: "swat", progress: p, clipTime: p * 1.4, reach: { x: 92, y: 14 }, look: { x: 92, y: 14 } },
+  settle: 1.0,
+  view: { tilt: 0.05, turn },
+  zoom: { at: [0.3, 0.36], by: 2 },
+});
+export const SWAT: GlCell[] = [0, 0.12, 0.3, 0.35, 0.4, 0.44, 0.52, 0.66, 0.84].map((p) => swatAt(p)).concat([0.3, 0.44, 0.66].map((p) => swatAt(p, -0.55)));
 
 const cycleOf = (clip: "walk" | "run", n: number): GlCell[] =>
   Array.from({ length: n }, (_, i) => ({ label: `${clip} ${i}/${n}`, frame: { clip, vx: clip === "run" ? 380 : 150 }, cycle: i / n, view: { tilt: 0 }, settle: 1 }));

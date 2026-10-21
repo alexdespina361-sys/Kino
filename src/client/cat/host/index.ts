@@ -2,15 +2,15 @@ import { isTvAgent } from "../../role";
 import { onCat, setPanelOpen } from "../bus";
 import { BODY_EMS } from "../math";
 import { CatEngine, type EngineDebug } from "../engine/engine";
-import { coreOf, shapeCovers } from "../engine/shape";
+import { coreOf, HEIGHT, shapeCovers } from "../engine/shape";
 import { CatRig } from "../render/rig";
 import { createRng } from "../rng";
-import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, readCatSettings, setCatGone, subscribeCatSettings, type CatCoat } from "../settings";
-import type { CatEvent, CatFrame, Clip, PlayerMode, Rect, Vec, World } from "../types";
+import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, coatOfLook, readCatSettings, setCatGone, setCatShown, subscribeCatSettings, type CatCoat, type CatWhy } from "../settings";
+import { SWAT_HIT, type CatEvent, type CatFrame, type Clip, type PlayerMode, type Rect, type Vec, type World } from "../types";
 import "./cat.css";
 import { createDebugView, type DebugView } from "./debug";
 import { inflate, rectOf, takesRoom } from "./dom";
-import { clearPointed, dip } from "./effects";
+import { clearPointed, dip, swatPoster } from "./effects";
 import { Governor, type Quality } from "./governor";
 import { Hand } from "./hand";
 import { tileOf } from "./assistant";
@@ -45,6 +45,8 @@ const GRAB_SLOP = 8;
 /** How wide and how thick the mark of where the cat would be put down is, in body lengths. */
 const SPOT_WIDE = 0.95;
 const SPOT_THICK = 0.16;
+/** A screen that comes round at least this many times a second (smoothed) is keeping up: what the card says a picture costs does not count against the cat then. */
+const KEEPING_UP_FPS = 50;
 
 export interface CatHandle {
   /** Tells the cat something, as the page would. */
@@ -111,8 +113,11 @@ export function mountCat(): { stop: () => void } {
   const hand = new Hand();
   // (`?catbudget=N`: how many milliseconds a frame may cost before the cat is made cheaper; a large number keeps a slow screen's cat as it is, for looking at it)
   // (`?catslow=N`: the detailed cat is taken to cost N milliseconds more a frame than it does, for seeing what a screen that cannot afford it is given)
+  // (a TV's browser and a phone's or a tablet's, which have a finger and not a mouse, are given twice what a computer is: the work of a screen like that is the card's
+  // and the page's together, and the page is not the cat's to judge it by. A computer, whose cat is a small part of a screen that has room, is held to two)
   const asked = Number(params.get("catbudget"));
-  const budget = Number.isFinite(asked) && asked > 0 ? asked : isTvAgent(navigator.userAgent) ? 4 : 2;
+  const handheld = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  const budget = Number.isFinite(asked) && asked > 0 ? asked : isTvAgent(navigator.userAgent) || handheld ? 4 : 2;
   const pretend = Math.max(0, Number(params.get("catslow")) || 0);
   let governor = new Governor({ budget });
   let settings = readCatSettings();
@@ -121,7 +126,7 @@ export function mountCat(): { stop: () => void } {
   let opener: Element | null = null;
   let emLast = 12;
   // (what the address asks of the coat and the size is for this load only, and wins over what the device keeps)
-  const coatNow = () => catCoatAsk() ?? settings.coat;
+  const coatNow = () => catCoatAsk() ?? coatOfLook(settings.look);
   const page = new TvPage({
     films: () => settings.films,
     quiet: () => settings.quiet,
@@ -186,6 +191,8 @@ export function mountCat(): { stop: () => void } {
   let frame: CatFrame = engine.frame;
   let airborne = false;
   let pointing = false;
+  /** How far through a swat the last frame was (0 when it was not swatting), to see the paw land. */
+  let swatWas = 0;
   let pointed: string | null = null;
   let pointRetry = 0;
   let pointer: Vec | null = null;
@@ -226,15 +233,18 @@ export function mountCat(): { stop: () => void } {
 
   /* ------------------------------ which cat is painted ------------------------------ */
 
-  // The detailed (solid) cat is wanted where the device and the address do not say otherwise. Its mesh is fetched, and the cat is not shown until it
-  // is there (a cat that changed its look in front of the viewer would be a bad moment); a screen that cannot do it, cannot get it, loses its picture
-  // of it or cannot afford it gets the simple one, once, and is not asked again until the page is loaded anew.
+  // The detailed (solid) cat is wanted where the device and the address do not say otherwise: it is the ragdoll, one of the two cats of the settings. Its mesh is
+  // fetched, and the cat is not shown until it is there (a cat that changed its look in front of the viewer would be a bad moment); a screen that cannot do it,
+  // cannot get it, loses its picture of it or cannot afford it gets the same cat drawn simply, once, and is not asked again until the page is loaded anew, or
+  // somebody asks (the settings page says why the cat is the simple one, and has a button for another try).
   const wantsSolid = (): boolean => {
     const look = catLook();
-    return look ? look === "solid" : settings.detail;
+    return look ? look === "solid" : settings.look === "ragdoll";
   };
   let solidFailed = false;
   let fetching = false;
+  /** Why the detailed cat was given up for this load (see `CatWhy`), for the settings page. */
+  let failedWhy: CatWhy = "";
 
   const install = (next: Brush): void => {
     const old = brush;
@@ -247,24 +257,42 @@ export function mountCat(): { stop: () => void } {
       old.dispose();
     }
     layoutKey = ""; // (the new canvas is sized at the next frame)
+    // (the simple cat is the one that was wanted when it is the cat that was chosen, or the address asked for it; otherwise the page says why it is not the detailed one)
+    setCatShown({ art: next.art, why: next.art === "classic" && wantsSolid() ? failedWhy : "" });
+  };
+
+  /** The detailed cat is given up for this load, for this reason. */
+  const giveUp = (why: CatWhy): void => {
+    solidFailed = true;
+    failedWhy = why;
   };
 
   const choose = (): void => {
     if (stopped) return;
     if (!wantsSolid() || solidFailed) {
-      if (brush?.art === "classic") return;
+      if (brush?.art === "classic") {
+        // (and the coat of the one that is there, if the choice has been made again)
+        brush.setCoat(coatNow());
+        setCatShown({ art: "classic", why: wantsSolid() ? failedWhy : "" });
+        return;
+      }
       const simple = classicBrush();
       if (simple) install(simple);
       else if (!brush) halt(); // (a browser that cannot draw has no cat)
       return;
     }
-    if (brush?.art === "solid" || fetching) return;
+    if (brush?.art === "solid") {
+      brush.setCoat(coatNow());
+      setCatShown({ art: "solid", why: "" });
+      return;
+    }
+    if (fetching) return;
     fetching = true;
     void fetchMesh().then((data) => {
       fetching = false;
       if (stopped) return;
       const made = data ? solidBrush(data) : null;
-      if (!made) solidFailed = true;
+      if (!made) giveUp(data ? "graphics" : "file");
       if (made && wantsSolid()) install(made);
       else {
         made?.dispose();
@@ -285,6 +313,27 @@ export function mountCat(): { stop: () => void } {
       const now = engine.debug();
       if (!stopped && pointed === id && now.act !== "point" && !now.queue.includes("point")) engine.send({ type: "cat.point", targetId: id });
     }, 1800);
+  };
+
+  /**
+   * How low from the top of the screen the line along the tops of a found poster's row has to be, for the cat to have room to stand in front of the poster: under everything that is fixed
+   * over the top of the rows (the library's words, the top bar, the cat's own card; not what scrolls with the rows, or the tall strips down the sides), and a cat's height more.
+   */
+  const shelfRoom = (tile: HTMLElement): number => {
+    const world = read?.world;
+    const rows = tile.closest<HTMLElement>(".tv-rows");
+    if (!world || !rows) return 0;
+    const top = rows.getBoundingClientRect().top;
+    // (the card as it is now: it has just changed from the screen it was on, and the page has not been read since, so what the page has of it is not to be trusted: the zones it overlaps are left out)
+    const card = panel?.element();
+    const mine = card ? inflate(rectOf(card), 0.3 * emLast) : null;
+    let lowest = mine ? mine.y + mine.h : -Infinity;
+    for (const zone of world.keepOut) {
+      if (zone.y >= top || zone.h >= world.viewport.h / 2) continue;
+      if (mine && zone.x < mine.x + mine.w && zone.x + zone.w > mine.x && zone.y < mine.y + mine.h && zone.y + zone.h > mine.y) continue;
+      lowest = Math.max(lowest, zone.y + zone.h);
+    }
+    return Number.isFinite(lowest) ? lowest + (HEIGHT + 0.1) * world.bodyLength : 0;
   };
 
   const closePanel = (): void => {
@@ -316,7 +365,7 @@ export function mountCat(): { stop: () => void } {
     panelHost = document.createElement("div");
     panelHost.className = "cat-panel-host";
     tv.appendChild(panelHost);
-    panel = mountPanel(panelHost, { send: (event) => engine.send(event), point: askToPoint, rng, close: closePanel });
+    panel = mountPanel(panelHost, { send: (event) => engine.send(event), point: askToPoint, shelfRoom, rng, close: closePanel });
     setPanelOpen(true);
     page.touch();
   };
@@ -393,7 +442,7 @@ export function mountCat(): { stop: () => void } {
     const L = world.bodyLength;
     if (brush?.lost) {
       // the card took the picture away (it was reset, or needed for something else): the simple cat carries on
-      solidFailed = true;
+      giveUp("lost");
       choose();
     }
     const wanted = quality === "low" || !brush ? 1 : Math.min(brush.maxDpr, window.devicePixelRatio || 1);
@@ -463,10 +512,22 @@ export function mountCat(): { stop: () => void } {
       if (tile) dip(tile, 0.03 * L, world.reducedMotion);
     }
     pointing = reaching;
+    // (and when the paw lands in a swat the poster is swatted: it gives and rocks, the way the paw was going)
+    const swatNow = frame.clip === "swat" ? frame.progress : 0;
+    if (swatWas < SWAT_HIT && swatNow >= SWAT_HIT) {
+      // (the poster under the paw: on the shelf the cat stands on, and where the paw lands; the one the cat was asked to show, if the paw is not on a shelf's own)
+      const reach = frame.reach;
+      const under = reach ? now.shelves.get(engine.debug().surfaceId ?? "")?.find((tile) => reach.x >= tile.x0 && reach.x <= tile.x1)?.el : undefined;
+      const tile = under ?? (pointed ? tileOf(pointed) : null);
+      if (tile) swatPoster(tile, 0.07 * L, frame.facing, world.reducedMotion);
+    }
+    swatWas = swatNow;
 
-    // (the host's own time, less the wait for the card where there was one, plus what the card was last seen to take)
+    // (the host's own time, less the wait for the card where there was one, plus what the card was last seen to take, when the screen is not keeping up: what a probe
+    // costs on a card that is given a picture and has to answer for it at once -- a phone's, whose work is done in tiles at the end -- is mostly the answering, and a
+    // screen that is still coming round sixty times a second is a screen that is coping, whatever the answer took)
     const tEnd = performance.now();
-    cost = tEnd - tRead - waited + gpu + (brush?.art === "solid" ? pretend : 0);
+    cost = tEnd - tRead - waited + (fps < KEEPING_UP_FPS ? gpu : 0) + (brush?.art === "solid" ? pretend : 0);
     phases = {
       read: phases.read * 0.9 + (tRead - t0) * 0.1,
       think: phases.think * 0.9 + (tThink - tRead) * 0.1,
@@ -477,7 +538,7 @@ export function mountCat(): { stop: () => void } {
     if (next !== quality) {
       if (next === "off" && brush?.art === "solid") {
         // the detailed cat is more than this screen can spare; the simple one is a tenth of it, and is judged afresh
-        solidFailed = true;
+        giveUp("slow");
         governor = new Governor({ budget });
         gpu = 0;
         quality = "full";
@@ -576,14 +637,27 @@ export function mountCat(): { stop: () => void } {
   window.addEventListener("blur", onBlur);
   document.addEventListener("visibilitychange", onBlur);
   document.addEventListener("pointerdown", onOutside, true);
+  /** The detailed cat is given another chance, as if the page had just been loaded: its file again, and a screen that is judged afresh. */
+  const tryAgain = (): void => {
+    solidFailed = false;
+    failedWhy = "";
+    governor = new Governor({ budget });
+    gpu = 0;
+    quality = "full";
+    pictureChanged();
+    choose();
+  };
   const offBus = onCat((command) => {
     if (command.type === "panel") togglePanel();
+    else if (command.type === "retry" && !stopped) tryAgain();
   });
   const offSettings = subscribeCatSettings(() => {
     if (stopped) return;
+    const before = settings.look;
     settings = readCatSettings();
-    choose(); // (the detailed cat may have been switched on or off)
-    brush?.setCoat(coatNow());
+    // (another cat chosen is a new start: a screen that could not afford the ragdoll is not held to that for the ginger, and one that chose the ragdoll again is asking)
+    if (settings.look !== before) tryAgain();
+    else choose(); // (or the same cat, asked for again)
     page.touch(); // (and the size: the page is read again, and the cat's body length with it)
   });
 
@@ -648,6 +722,7 @@ export function mountCat(): { stop: () => void } {
     page.dispose();
     debug?.dispose();
     wrap.remove();
+    setCatShown({ art: "none", why: "" });
     if (window.__kinoCat) delete window.__kinoCat;
   };
 

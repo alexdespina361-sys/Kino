@@ -4,7 +4,9 @@ States, as the brief defines them: idea → specified → assets ready → imple
 
 Unattended behaviour on the made-up library page (20 seeds × 30 min, no viewer input, default settings, the final engine): asleep 38.8 %, sitting 17.7 %, walking 12.4 %, standing 6.4 %, lying (loaf) 6.0 %, little scenes 14.2 % (groom 3.6, stretch 3.2, knead 2.6, sniff 2.0, scratch 1.6, peek 1.5, shift 0.7, wiggle 0.6, yawn 0.4), leaps 1.5 % (44 an hour), stalks 0.8 %; no rule broken in any of the 20. (`tap` needs a pointer that rests near the cat, `doze` a picture to doze in front of: neither happens unattended on a shelf.)
 
-## The 22 clips
+Round 3 added two things the cat chooses to do of its own accord, a **pat** (it goes up to a poster on its shelf, looks over the lip and pats it once or twice, and the poster gives a little) and the **zoomies** (a run and two or three leaps from shelf to shelf, then a pleased sit). In the soak (seeds 13–60 × 8 kinds × 600 virtual seconds) they were 251 and 91 of the 8,240 things the cat chose to do (3.0 % and 1.1 % of its choices; the unattended shares above were measured before them and have not been measured again). Neither happens for a quiet cat or one for a viewer who wants less motion.
+
+## The 23 clips
 
 "Known flaws" are what was seen on a sheet or strip, or is plain from the code or from the numbers below; "–" means none was found, not that none exists.
 
@@ -32,6 +34,7 @@ Unattended behaviour on the made-up library page (20 seeds × 30 min, no viewer 
 | 20 | tap | scenario tested | rig "bats at the pointer"; engine pointer tests | only seen on the made-up page, never with a real mouse | try it with a real mouse |
 | 21 | doze | scenario tested | rig "nods off"; engine "loaf, doze, curl" | – | – |
 | 22 | shift | scenario tested | rig "turns in its sleep"; engine "turns over in its sleep" | – | – |
+| 23 | swat | scenario tested; strips looked at (round 3) | `render/swat.test.ts` (the beats; the contact at `SWAT_HIT`; finite and continuous at every phase), rig swat tests, engine tests of the journey, the pat, and a swat that is aimed again when the page moved the poster; e2e "goes to the title, creeps up on it and swats at it twice, and the poster gives under the paw" (it sees the poster's rock begin at the contact); a film strip of the real cat on the GPU (wiggle, then raised paw, swing, press, recoil) | the raised paw reads thin at the top of the swing (the model's forearm is thin, as with the scratch's leg, row 14); the simple (ginger) cat's paw is the cartoon's, and was not drawn at three times the size; **not watched in motion at a real frame rate** (ISSUE_LOG #63) | watch it on a real screen; a thicker forearm in the model build |
 
 The hand: **carried** (04) is scenario tested (engine "picked up by a hand", rig ×3, host, e2e) and visual reviewed on the `carried` sheet (it hangs nearly upright, the head at the top, the hind legs and the tail below, the ears back); judged on stills, so how the swing reads in motion is not known. The **feelings** (tilt, think, startle, joy, droop) are visual reviewed (`poses.jpg`: look viewer, tilt, think, joy, startled, letdown); startled turns the head up to 0.3 rad in a frame, which is what a startle looks like.
 
