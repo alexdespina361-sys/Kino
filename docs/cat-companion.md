@@ -12,13 +12,14 @@ An original animated cat for Kino, in the spirit of a desktop pet but for a stre
 |---|---|
 | The library (`/tv`, a computer's browser, a phone used as the screen) | walks along the tops of the posters, leaps to other rows, sits, lies, sleeps, washes, stretches, yawns, scratches, kneads, sniffs, stalks a poster and pounces; looks at the card that has the remote's focus and sits by it; keeps out of words, buttons and that card, and settles, when the shelf has such a place, where its body does not cover the names under the cards |
 | A title's page, a menu, a dialog over the library | is sent away and is back when they close |
-| A film | rests at the foot of the picture, between the groups of the controls, in a layer under the controls, the subtitles and the toasts (it never covers one, and none of them makes it come or go); a device can say "no cat in films" |
+| A film | rests at the foot of the picture, between the groups of the controls, in a layer under the controls, the subtitles and the toasts (it never covers one, and none of them makes it come or go); a device can say "no cat in films". It is nobody's to pick up there: the cat takes no hand, and a tap, a double-tap or a hold on that patch of the picture is the player's like anywhere else on it |
 | The corner button (cat's head, beside the bell and the profile) | opens its panel: come here, pet, sit, sleep, play, go away, and **find me something**: the cat picks a title that is on the page, by the mood and the shelf names (en/ro/it), the poster glows and the cat points at it; "Open it" opens its page like OK on the poster; nothing is ever played |
-| Settings → Cat companion (its own page, only where the host offers a cat) | on, quiet (it rests where it is: a TV starts with this on), films, detailed cat, coat (ragdoll, which is the default, ginger tabby, tuxedo, grey tabby, calico), size; and the model's credit (Meshy AI, CC BY 4.0) |
+| Settings → Cat companion (its own page, only where the host offers a cat) | on, quiet (it rests where it is: a TV starts with this on), films, detailed cat, coat (ragdoll, which is the default, ginger tabby, tuxedo, grey tabby, calico), size; and the model's credit ("Fluffy Blue-Eyed Cat" by Meshy AI, CC BY 4.0) |
 | A mouse resting on the cat | strokes it |
 | A mouse pressed on the cat and moved (more than 8 px) | picks it up by the scruff: it hangs (paws dangling, tail down, a little swing), follows the hand and shows, as a soft ellipse on the shelf, where letting go would put it |
 | The hand lets go | the cat falls to that shelf (or the nearest one it can reach), lands, and sits or washes. A hand that is lost (a window that loses focus, a tab that is hidden, a pointer that vanishes) lets it go too, and so does 2.5 s of silence |
-| A press that only wobbles (a stroke), `prefers-reduced-motion`, quiet, a film | lifts nothing; the cursor does not offer a grab |
+| A press that only wobbles (a stroke), `prefers-reduced-motion`, quiet | lifts nothing; the cursor does not offer a grab or close on the cat |
+| A second hand (a finger) while the mouse has the cat | changes nothing: the first hand keeps the cat until it lets go |
 | `prefers-reduced-motion` | the cat only rests, in one place |
 
 The phone as a *remote* has no cat. The cat lives on the screen that plays.
@@ -68,7 +69,7 @@ node node_modules/@playwright/test/cli.js test e2e/cat.spec.ts --reporter=list
 node node_modules/tsx/dist/cli.mjs scripts/cat/soak.mts 13 412 600
 ```
 
-191 unit tests (8 files), 31 end-to-end tests, and a soak that puts the brain through 2,800 bad afternoons (400 seeds × 7 kinds, 10 minutes each: a window made smaller, a hand that carries the cat, menus, films, a hidden tab, 20 and 60 fps) and checks that it is never stuck, never off the screen, never over a keep-out zone for long (the last run of it found nothing, about five minutes). The e2e run rebuilds `dist/client` (a tracked folder); the last commit of the branch is the final build.
+195 unit tests (8 files), 34 end-to-end tests, and a soak that puts the brain through 2,800 bad afternoons (400 seeds × 7 kinds, 10 minutes each: a window made smaller, a hand that carries the cat, menus, films, a hidden tab, 20 and 60 fps) and checks that it is never stuck, never off the screen, never over a keep-out zone for long (the last run of it found nothing, about five minutes). The e2e run rebuilds `dist/client` (a tracked folder); the last commit of the branch is the final build.
 
 ## Next
 

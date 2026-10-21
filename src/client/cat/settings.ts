@@ -112,13 +112,21 @@ export function subscribeCatSettings(listener: () => void): () => void {
 }
 
 /**
- * Whether the host offers a cat at all: asked once per load, and only when somebody wants to know. A host that says no (or has never heard of cats) offers
- * none for the rest of the load; one that does not answer (a server that is still waking up, a line that dropped) is asked again a moment later, twice,
- * and then offers none for this load.
+ * Whether the host offers a cat at all: asked when somebody wants to know (the cat's boot, the library's corner, and the settings page when it is opened,
+ * whether or not this device wants a cat: the page must show its row on a host that offers one). A host that says no (or has never heard of cats) offers
+ * none for the rest of the load. One that does not answer (a server that is still waking up, a line that dropped, a TV that started before its network was up)
+ * is asked again a moment later, twice, and then offers none for now: it is asked afresh the next time somebody wants to know, so that a screen that stays on
+ * for days is not left without a cat for a minute's trouble at its start (the cat's boot asks again when the line comes back or the page is looked at again).
  */
 let offered: Promise<boolean> | undefined;
+let unsure = false;
 const RETRY_MS = [1500, 4000];
 export function catOffered(): Promise<boolean> {
+  if (unsure) {
+    // (the last answer was a host that did not answer, not a host that said no)
+    unsure = false;
+    offered = undefined;
+  }
   offered ??= (async () => {
     for (let attempt = 0; ; attempt++) {
       try {
@@ -129,7 +137,10 @@ export function catOffered(): Promise<boolean> {
         /* no answer: the same as a server that is not ready */
       }
       const wait = RETRY_MS[attempt];
-      if (wait === undefined) return false;
+      if (wait === undefined) {
+        unsure = true;
+        return false;
+      }
       await new Promise<void>((resolve) => setTimeout(resolve, wait));
     }
   })();
@@ -162,6 +173,14 @@ export function useCatWanted(): boolean {
   const away = useSyncExternalStore(subscribeGone, () => gone, () => false);
   const wants = useMemo(() => wantsCat(parseCatSettings(raw || undefined, onTv()), catAsk()), [raw]);
   const [allowed, setAllowed] = useState(false);
+  // (a host that did not answer is asked again when the line comes back, so that the button is there with the cat that the boot then starts)
+  const [chance, setChance] = useState(0);
+  useEffect(() => {
+    if (!wants) return;
+    const again = () => setChance((n) => n + 1);
+    window.addEventListener("online", again);
+    return () => window.removeEventListener("online", again);
+  }, [wants]);
   useEffect(() => {
     if (!wants) return;
     let live = true;
@@ -169,7 +188,7 @@ export function useCatWanted(): boolean {
     return () => {
       live = false;
     };
-  }, [wants]);
+  }, [wants, chance]);
   return wants && allowed && !away;
 }
 

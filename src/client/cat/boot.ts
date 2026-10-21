@@ -35,4 +35,10 @@ export function bootCat(role: "tv" | "remote"): void {
   };
   void sync();
   subscribeCatSettings(() => void sync());
+  // (a screen that started before its network was up, or while the host was restarting, asks again when the line is back or the page is looked at again: a screen
+  // that has its cat, or was told no, asks nothing, since `sync` only goes to the host when it has not had an answer)
+  window.addEventListener("online", () => void sync());
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) void sync();
+  });
 }

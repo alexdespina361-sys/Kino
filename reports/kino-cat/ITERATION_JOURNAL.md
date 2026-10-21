@@ -246,6 +246,12 @@ One entry per iteration of the branch `feat/kino-cat` (off main `5cf4704`, PR #2
 - **Regressions / open.** ISSUE_LOG #50 (names), #11 (a flat tuxedo belly), #13 (the simple cat is another cat), #36.
 - **Reference research.** None.
 
+## 26 · What the second independent review found (2026-10-21 afternoon, after the branch was pushed)
+
+- **Root issue.** A read-only agent reviewed the pushed head (`50f1487`) after the hand-over, and its report came back after the user had been given the link. I checked each finding against the code before touching anything. The one that mattered (P1, ISSUE_LOG #51): the lines of a grid of posters (a category, a list, the results of a search) were named by their height on the screen, so a grid that scrolled under the cat gave every shelf a new name at every few pixels; a cat standing on one took it for a shelf that had gone. Five small ones were real too (#52–#56), one is by design (the settings page asks the host whether it offers a cat even for a device that does not want one: it has to, to show its row; the code now says so), and one is open (#57, the credit has no link to the model's page because the owner did not give the address).
+- **Technique.** A grid line is named by its first card, which stays the same as the line moves. The hand's box is out of the way in a film, where the picture's taps, double-taps and holds are the player's (#52). A press while the cat is held starts no second drag, so a finger cannot take the cat from the mouse (#53); a cat that cannot be carried is not shown as held (#54). A host that did not answer is asked again, when the line comes back or the page is looked at again, instead of being taken for a "no" until a reload (#55). The corner's button no longer says it opens a menu, and the credit names the model (#56).
+- **Run.** `tsc`; four new unit tests for the asking, with two mutations killed; three new browser tests (a real 60-title category scrolled by 37 px and back, a synthetic second finger, three aborted answers and an `online` event) and two changed (the film, and reduced motion / quiet); each fix reverted in turn and its test fails for the right reason (05); the whole cat browser file. The soak was not run again: the engine and the model were not touched.
+- **Reference research.** None.
 ## What the later iterations should do first
 
 1. A person should watch it on a real TV or Fire Stick with `?cat=debug` and report `art`, `quality`, `cost`, `fps` (05, "Not tested").

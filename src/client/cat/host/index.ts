@@ -437,10 +437,13 @@ export function mountCat(): { stop: () => void } {
       wrap.hidden = !visible;
       wrap.setAttribute("data-visible", String(visible));
     }
-    const handOk = visible && world.mode !== "away" && frame.appear > 0.5;
+    // (a hand is the library's: in a film the picture is the player's, with its taps, its double-taps to skip and its holds to speed up, and a box over the cat
+    // that took them would be a patch of the picture where none of those worked, and where the cursor came back)
+    const handOk = visible && world.mode === "browse" && frame.appear > 0.5;
     if (handOk === hit.hasAttribute("data-off")) hit.toggleAttribute("data-off", !handOk);
-    // (a hand can take hold of the cat on the library's screen, and where the cat is let to move about; the cursor says so)
-    const carryable = handOk && world.mode === "browse" && !world.quiet && !world.reducedMotion;
+    if (!handOk) over = false; // (a box that takes no pointer does not say that the pointer left it: a cat that cannot be touched is not being stroked)
+    // (a hand can take hold of the cat where the cat is let to move about; the cursor says so)
+    const carryable = handOk && !world.quiet && !world.reducedMotion;
     if (carryable !== hit.hasAttribute("data-carry")) hit.toggleAttribute("data-carry", carryable);
     // (and while it has the cat, the place the cat would be put down is marked)
     const landing = held ? engine.landing() : null;
@@ -514,8 +517,9 @@ export function mountCat(): { stop: () => void } {
     hand.press(performance.now());
     engine.send({ type: "cat.pet" });
     // (and a hand that then moves, still pressed, takes hold of it: the pointer is kept for as long as it is down, wherever it goes)
+    // (a second hand, a finger while the mouse has the cat, is not the one that lets it go: the first stays the hand until it comes up)
     const press = event as PointerEvent;
-    if (press.pointerId !== undefined && press.button === 0 && press.isPrimary !== false) {
+    if (press.pointerId !== undefined && press.button === 0 && press.isPrimary !== false && !drag?.held) {
       drag = { id: press.pointerId, from: { x: press.clientX, y: press.clientY }, at: { x: press.clientX, y: press.clientY }, held: false };
       try {
         hit.setPointerCapture(press.pointerId);
@@ -527,7 +531,9 @@ export function mountCat(): { stop: () => void } {
   const onDrag = (event: PointerEvent): void => {
     if (!drag || event.pointerId !== drag.id) return;
     drag.at = { x: event.clientX, y: event.clientY };
-    if (!drag.held && Math.hypot(drag.at.x - drag.from.x, drag.at.y - drag.from.y) > GRAB_SLOP) {
+    // (only where a hand can take hold of the cat, which the cursor says: for a quiet cat, or one that is to move as little as it can, the press stays a stroke,
+    // and the cursor does not close on a cat that was not lifted)
+    if (!drag.held && Math.hypot(drag.at.x - drag.from.x, drag.at.y - drag.from.y) > GRAB_SLOP && hit.hasAttribute("data-carry")) {
       drag.held = true;
       hit.setAttribute("data-held", "");
       engine.send({ type: "cat.grab", at: drag.at });

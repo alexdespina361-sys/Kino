@@ -62,3 +62,5 @@ Layers that are not clips: appearance (fade + growth), turning (head leads, body
 ## Independent review
 
 An independent read-only agent reviewed the branch at `c2abd52`, **before** the gait, the governor, the subtitle, the silhouette-table and the whole solid-cat work (ISSUE_LOG #20–#34), and long before the model of the final cat: it scored 27/50 (identity 3, natural movement 3, variety 3, spatial 2, contextual 3, recommendations 2, non-intrusiveness 2, device and accessibility 3, performance and lifecycle 2, reliability 4) and gave "plastic and toy-like" as the first visual flaw of the cat it saw. Its movement findings, the gallop that was a quick walk and the paw that jumped at a change of gait, are fixed and measured (#20). It never saw the cat as it is now. A review of the final head is in 05 if it has been done; the marks of the author are in 05 too, and they are lower than the plan's gate.
+
+A second read-only review of the pushed head of the second pull request found one P1 (a scrolling grid renamed its shelves under the cat) and seven P3; all but one are fixed or settled, with tests: 05, "Independent review", and ISSUE_LOG #51–#57.
