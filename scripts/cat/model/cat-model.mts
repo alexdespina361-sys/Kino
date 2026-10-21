@@ -63,20 +63,20 @@ export function buildModel(): Model {
 
   /* ------------------------------ the body ------------------------------ */
   // (stations of the barrel: where, how high and wide, and which bone carries it)
-  const station = (name: string, x: number, y: number, hh: number, hw: number, rx: number, bone: number, fur = 1) =>
-    add(name, ellipsoid([x, y, 0], [rx, hh, hw]), { bone, k: 0.08, tau: 0.07, region: REGION.body, fur });
+  const station = (name: string, x: number, y: number, hh: number, hw: number, rx: number, bone: number, fur = 1, tau = 0.07) =>
+    add(name, ellipsoid([x, y, 0], [rx, hh, hw]), { bone, k: 0.08, tau, region: REGION.body, fur });
   station("rump", -0.395, 0.468, 0.112, 0.112, 0.105, BONE.f0);
   station("hips", -0.27, 0.465, 0.122, 0.118, 0.11, BONE.f1);
   station("flank", -0.1, 0.462, 0.128, 0.104, 0.12, BONE.f2);
   station("ribs", 0.07, 0.46, 0.148, 0.116, 0.135, BONE.f2);
-  station("chest", 0.2, 0.465, 0.152, 0.116, 0.12, BONE.f3);
-  station("prow", 0.325, 0.485, 0.145, 0.102, 0.11, BONE.f4, 1.3);
+  station("chest", 0.2, 0.465, 0.152, 0.116, 0.12, BONE.f3, 1, 0.1);
+  station("prow", 0.325, 0.485, 0.145, 0.102, 0.11, BONE.f4, 1.3, 0.1);
   // the ruff at the chest, and the belly (a cat's hangs a little between the legs)
-  add("ruff", ellipsoid([0.385, 0.44, 0], [0.07, 0.11, 0.082]), { bone: BONE.f4, k: 0.06, tau: 0.06, region: REGION.body, fur: 1.8 });
+  add("ruff", ellipsoid([0.385, 0.44, 0], [0.07, 0.11, 0.082]), { bone: BONE.f4, k: 0.06, tau: 0.09, region: REGION.body, fur: 1.8 });
   add("belly", ellipsoid([-0.07, 0.35, 0], [0.19, 0.04, 0.085]), { bone: BONE.f2, k: 0.07, tau: 0.07, region: REGION.body, fur: 1.5 });
 
   /* ------------------------------ the neck and the head ------------------------------ */
-  add("neck", roundCone([0.33, 0.55, 0], [H[0] - 0.04, H[1] - 0.07, 0], 0.098, 0.074), { bone: BONE.neck, k: 0.06, tau: 0.05, region: REGION.body, fur: 1.25 });
+  add("neck", roundCone([0.33, 0.55, 0], [H[0] - 0.04, H[1] - 0.07, 0], 0.098, 0.074), { bone: BONE.neck, k: 0.06, tau: 0.09, region: REGION.body, fur: 1.25 });
   const head = (name: string, c: Vec3, r: Vec3, o: { bone?: number; fur?: number; k?: number; region?: number } = {}) =>
     add(name, ellipsoid(c, r), { bone: o.bone ?? BONE.head, k: o.k ?? 0.035, tau: 0.03, region: o.region ?? REGION.head, fur: o.fur ?? 0.55 });
   head("skull", at(-0.01, 0.012, 0), [0.114, 0.098, 0.112]);
