@@ -25,6 +25,8 @@ export interface Shot {
   height: number;
   /** Grid spacing in units (0: none). */
   grid?: number;
+  /** Samples across and down per pixel (default 1: hard edges; 3 gives the edges the graphics card would). */
+  ss?: number;
   label?: string;
   /** Mark these points (x, y, z) with a cross and the given text. */
   marks?: Array<{ p: [number, number, number]; text: string; color?: [number, number, number] }>;
@@ -97,7 +99,31 @@ function project(view: ViewName, x: number, y: number, z: number): [number, numb
   }
 }
 
+/** Draws the soup (with `shot.ss` times as many samples across and down as there are pixels, averaged down: the edges are smooth, as the graphics card's own are), then the grid, marks and label. */
 export function renderSoup(soup: Soup, shot: Shot): Uint8Array {
+  const ss = Math.max(1, Math.round(shot.ss ?? 1));
+  if (ss === 1) return overlay(rasterise(soup, shot), shot);
+  const big = rasterise(soup, { ...shot, width: shot.width * ss, height: shot.height * ss, scale: shot.scale * ss });
+  const { width: W, height: H } = shot;
+  const img = new Uint8Array(W * H * 4);
+  const BW = W * ss;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let r = 0, g = 0, b = 0;
+      for (let j = 0; j < ss; j++) {
+        for (let i = 0; i < ss; i++) {
+          const o = ((y * ss + j) * BW + x * ss + i) * 4;
+          r += big[o]!; g += big[o + 1]!; b += big[o + 2]!;
+        }
+      }
+      const o = (y * W + x) * 4;
+      img[o] = Math.round(r / (ss * ss)); img[o + 1] = Math.round(g / (ss * ss)); img[o + 2] = Math.round(b / (ss * ss)); img[o + 3] = 255;
+    }
+  }
+  return overlay(img, shot);
+}
+
+function rasterise(soup: Soup, shot: Shot): Uint8Array {
   const { width: W, height: H } = shot;
   const img = new Uint8Array(W * H * 4);
   for (let i = 0; i < W * H; i++) { img[i * 4] = 24; img[i * 4 + 1] = 24; img[i * 4 + 2] = 30; img[i * 4 + 3] = 255; }
@@ -173,6 +199,13 @@ export function renderSoup(soup: Soup, shot: Shot): Uint8Array {
       img[o * 4 + 2] = Math.round(255 * Math.min(1, bl * shade));
     }
   }
+  return img;
+}
+
+function overlay(img: Uint8Array, shot: Shot): Uint8Array {
+  const { width: W, height: H } = shot;
+  const px = (u: number) => W / 2 + (u - shot.centre[0]) * shot.scale;
+  const py = (v: number) => H / 2 - (v - shot.centre[1]) * shot.scale;
   // the grid, over the picture: thin lines, a thicker one at each whole unit, labelled
   if (shot.grid && shot.view !== "three" && shot.view !== "threeBack") {
     const g = shot.grid;

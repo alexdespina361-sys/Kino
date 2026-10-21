@@ -55,9 +55,9 @@ export function rounded(rest: ModelRest): ModelRest {
 
 export const MESHY_REST: ModelRest = rounded({
   stations: [
-    { top: [-0.5, 0.565], bottom: [-0.54, 0.22] },
-    { top: [-0.3, 0.58], bottom: [-0.3, 0.17] },
-    { top: [-0.05, 0.575], bottom: [-0.03, 0.145] },
+    { top: [-0.5, 0.565], bottom: [-0.54, 0.1] },
+    { top: [-0.3, 0.58], bottom: [-0.3, 0.13] },
+    { top: [-0.05, 0.575], bottom: [-0.03, 0.125] },
     { top: [0.15, 0.6], bottom: [0.16, 0.2] },
     { top: [0.26, 0.63], bottom: [0.33, 0.38] },
   ],
@@ -65,8 +65,8 @@ export const MESHY_REST: ModelRest = rounded({
   legs: {
     fn: { root: [0.268, 0.316], mid: [0.107, 0.161], hock: [0.088, 0.075], toe: [0.122, 0.007], z: 0.105 },
     ff: { root: [0.268, 0.316], mid: [0.107, 0.161], hock: [0.088, 0.075], toe: [0.122, 0.007], z: -0.105 },
-    hn: { root: [-0.5, 0.4], mid: [-0.36, 0.24], hock: [-0.62, 0.174], toe: [-0.591, 0.048], z: 0.115 },
-    hf: { root: [-0.5, 0.4], mid: [-0.36, 0.24], hock: [-0.62, 0.174], toe: [-0.591, 0.048], z: -0.115 },
+    hn: { root: [-0.5, 0.4], mid: [-0.36, 0.24], hock: [-0.62, 0.174], toe: [-0.56, 0.007], z: 0.115 },
+    hf: { root: [-0.5, 0.4], mid: [-0.36, 0.24], hock: [-0.62, 0.174], toe: [-0.56, 0.007], z: -0.115 },
   },
   tail: resample(TAIL_BY_EYE, 10),
   ears: [

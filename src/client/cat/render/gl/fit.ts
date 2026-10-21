@@ -22,7 +22,10 @@ import { STATION_MIX } from "./skeleton";
 type LegKey = "fn" | "ff" | "hn" | "hf";
 const LEGS: readonly LegKey[] = ["fn", "ff", "hn", "hf"];
 /** How high above the floor a knee or an elbow is kept (the legs are thick, and a knee on the floor is a knee in it). */
-const KNEE_FLOOR = 0.045;
+const KNEE_FLOOR_FRONT = 0.09;
+const KNEE_FLOOR_HIND = 0.125;
+/** The paw's half thickness: how far below the toe point its underside is when the foot lies flat. */
+const PAW_FLAT = 0.04;
 /** The points of the rig's pose that the body's stations are made of (skeleton.ts). */
 const BODY = ["rumpTop", "rumpBottom", "backMid", "groin", "bellyMid", "shoulderTop", "chestBottom", "neckTop", "chestFront"] as const;
 
@@ -48,10 +51,12 @@ export function rigRest(): Solved {
 /** A point of the model, as the rig's numbers have it (y down). */
 const down = (p: Pt): Joint => ({ x: p[0], y: -p[1] });
 
+type Station = ModelRest["stations"][number];
+
 /** The model's rest as a Solved (the body's points, the legs and the tail are the model's; what the rig has beyond those, the face and the rest, is the rig's own). */
 export function modelRest(model: ModelRest = MODEL, rig: Solved = rigRest()): Solved {
   const s = { ...rig, legs: { fn: copyLeg(rig.legs.fn), ff: copyLeg(rig.legs.ff), hn: copyLeg(rig.legs.hn), hf: copyLeg(rig.legs.hf) }, head: { ...rig.head }, pose: { p: Object.fromEntries(Object.entries(rig.pose.p).map(([k, v]) => [k, copyJoint(v)])) as Solved["pose"]["p"], s: { ...rig.pose.s } } } as Solved;
-  const [st0, st1, st2, st3, st4] = model.stations as [ModelRest["stations"][number], ...ModelRest["stations"]];
+  const [st0, st1, st2, st3, st4] = model.stations as unknown as [Station, Station, Station, Station, Station];
   const p = s.pose.p;
   p.rumpTop = down(st0.top);
   p.rumpBottom = down(st0.bottom);
@@ -195,7 +200,6 @@ export class PoseFit {
     to.root.x = m.root.x + (now.root.x - r.root.x);
     to.root.y = now.root.y * f.height;
     to.toe.x = m.toe.x + (now.toe.x - r.toe.x);
-    to.toe.y = now.toe.y * f.height;
 
     // the foot: the model's own, turned as far as the rig's has turned from its rest, and as long as the rig's is of its own (a paw that is lifted with no foot to speak of has none)
     const rigLen = Math.hypot(f.rigFoot.x, f.rigFoot.y) || 1;
@@ -207,23 +211,42 @@ export class PoseFit {
     const sn = Math.sin(turn);
     const fx = (f.foot.x * c - f.foot.y * sn) * share;
     const fy = (f.foot.x * sn + f.foot.y * c) * share;
-    const hockX = to.toe.x - fx;
-    const hockY = to.toe.y - fy;
 
-    // the knee or the elbow: where the model's own lengths put it, on the side the rig has it (a rig that is between its two sides is, too)
-    const a = twoBone(to.root.x, to.root.y, hockX, hockY, f.upper, f.lower, f.bend);
-    const b = twoBone(to.root.x, to.root.y, hockX, hockY, f.upper, f.lower, -f.bend as 1 | -1);
+    // where the rig has its two solutions of the leg, and how far between them its knee is
     const rigA = twoBone(now.root.x, now.root.y, now.hock.x, now.hock.y, f.rigUpper, f.rigLower, f.rigBend);
     const rigB = twoBone(now.root.x, now.root.y, now.hock.x, now.hock.y, f.rigUpper, f.rigLower, -f.rigBend as 1 | -1);
     const dx = rigB.jx - rigA.jx;
     const dy = rigB.jy - rigA.jy;
     const span = dx * dx + dy * dy;
     const t = span > 1e-8 ? clamp(((now.mid.x - rigA.jx) * dx + (now.mid.y - rigA.jy) * dy) / span, 0, 1) : 0;
-    to.mid.x = a.jx + (b.jx - a.jx) * t;
-    // (a knee that the lengths of a folded leg would put through the floor stays above it)
-    to.mid.y = Math.min(a.jy + (b.jy - a.jy) * t, -KNEE_FLOOR);
-    to.hock.x = a.ex + (b.ex - a.ex) * t;
-    to.hock.y = a.ey + (b.ey - a.ey) * t;
+    const kneeFloor = now.front ? -KNEE_FLOOR_FRONT : -KNEE_FLOOR_HIND;
+
+    // the knee or the elbow: where the model's own lengths put it, on the side the rig has it (a rig that is between its two sides is, too)
+    const solve = (): void => {
+      const hockX = to.toe.x - fx;
+      const hockY = to.toe.y - fy;
+      const a = twoBone(to.root.x, to.root.y, hockX, hockY, f.upper, f.lower, f.bend);
+      const b = twoBone(to.root.x, to.root.y, hockX, hockY, f.upper, f.lower, -f.bend as 1 | -1);
+      to.mid.x = a.jx + (b.jx - a.jx) * t;
+      // (a knee that the lengths of a folded leg would put through the floor stays above it, by the depth of the fur that hangs from it)
+      to.mid.y = Math.min(a.jy + (b.jy - a.jy) * t, kneeFloor);
+      to.hock.x = a.ex + (b.ex - a.ex) * t;
+      to.hock.y = a.ey + (b.ey - a.ey) * t;
+    };
+
+    // (the toe is the middle of the paw, not its underside: a foot that stands has the paw's underside as far below the toe as the model's own does, and a foot that lies down has
+    // half a paw's thickness below it, so the toe is kept that far above the floor. The foot that counts is the one the leg ends up with, which a deeply folded leg cannot bring to
+    // the one the rig has: solved, looked at, and solved again with the toe where it has to be)
+    to.toe.y = Math.min(now.toe.y * f.height, m.toe.y);
+    for (let pass = 0; pass < 2; pass++) {
+      solve();
+      const ax = to.toe.x - to.hock.x;
+      const ay = to.toe.y - to.hock.y;
+      const flat = (ax * ax) / (ax * ax + ay * ay || 1);
+      const drop = -m.toe.y + (PAW_FLAT + m.toe.y) * flat;
+      if (to.toe.y <= -drop + 1e-4) break;
+      to.toe.y = -drop;
+    }
   }
 
   private fitTail(now: readonly Joint[], to: Joint[]): void {

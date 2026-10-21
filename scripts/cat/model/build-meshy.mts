@@ -139,11 +139,11 @@ for (const side of [1, -1]) {
 }
 console.log(`eyes taken out of ${neutral} vertices`);
 
-// ---- how open to the room each vertex is (a fur-covered cat is lit mostly from outside: this is what the creases between tufts and the underside get)
-const ao = openness(P, N, tri, 0.06, 32);
-
 // ---- the bones round each vertex
 const { skin, weight } = skinPoints(P, tri, MESHY_REST);
+
+// ---- how open to the room each vertex is (a fur-covered cat is lit mostly from outside: this is what the creases between tufts and the underside get)
+const ao = openness(P, N, tri, 0.06, 32);
 
 // ---- the file
 const color = new Uint8Array(nV * 4);

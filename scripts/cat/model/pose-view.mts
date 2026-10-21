@@ -89,7 +89,7 @@ if (process.argv[1]?.endsWith("pose-view.mts")) {
     const bones = new Float32Array(BONE_COUNT * BONE_FLOATS);
     skeleton.solve(posed, 0, mat(), bones);
     const { pos, nor } = skinned(bones);
-    const shot: Shot = { view: (view || "side") as ViewName, scale: 460, centre: [-0.3, 0.5], width: W, height: H, grid: 0, label: spec };
+    const shot: Shot = { view: (view || "side") as ViewName, scale: 460, centre: [-0.3, 0.5], width: W, height: H, grid: 0, ss: 3, label: spec };
     const img = renderSoup({ pos, tri, color: mode === "bones" ? boneColour : colour, normal: nor, open }, shot);
     for (let y = 0; y < H; y++) sheet.set(img.subarray(y * W * 4, (y + 1) * W * 4), (y * W * specs.length + i * W) * 4);
   });
