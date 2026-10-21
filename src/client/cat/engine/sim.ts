@@ -99,6 +99,8 @@ export interface SimStats {
   /** How many times the cat chose each thing to do of its own accord (see `EngineDebug.choice`). */
   choices: Record<string, number>;
   hops: number;
+  /** How many times a page that was flung shook the cat off its shelf. */
+  flings: number;
   surfaces: string[];
   minAppear: number;
   maxAppear: number;
@@ -114,9 +116,10 @@ export interface SimOptions {
   fps?: number;
   /**
    * What may happen to the page. `mouse`: a pointer that wanders the page, dashes about, rests, comes to the cat, and is put down (it is gone from the world three
-   * seconds after it last moved, as the host has it).
+   * seconds after it last moved, as the host has it). `fling`: the scrolling (`scroll`) is that of a finger that flings the page, eight thousand pixels a second and as far as the whole
+   * page, and not the slow one of a wheel.
    */
-  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean; mouse?: boolean; slide?: boolean };
+  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean; mouse?: boolean; slide?: boolean; fling?: boolean };
   reducedMotion?: boolean;
   quiet?: boolean;
   /** The page has names over its shelves (see `PageOptions.names`). */
@@ -140,13 +143,15 @@ export function runSession(options: SimOptions): SimStats {
   page.reducedMotion = options.reducedMotion ?? false;
   page.quiet = options.quiet ?? false;
   page.names = options.names ?? false;
-  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, emotes: {}, choices: {}, hops: 0, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
+  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, emotes: {}, choices: {}, hops: 0, flings: 0, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
+  let wasFlung = false;
   let lastChoice = "";
   /** Where each row of posters is being scrolled to sideways (see `chaos.slide`). */
   const slideGoal: number[] = [];
   const trail: string[] = [];
   const seen = new Set<string>();
   let scrollGoal = 0;
+  let movedAt = -1e9;
   let inFilm = false;
   let filmState: World["player"] = "playing";
   let playAt = -1;
@@ -189,9 +194,9 @@ export function runSession(options: SimOptions): SimStats {
     /** How far a row of posters was slid this frame (a cat on it goes with it: that is the row's movement, not the cat's own). */
     let slideStep = 0;
     // --- things that happen to the page, at random
-    if (chaos.scroll && rng.chance(0.004)) scrollGoal = rng.pick([0, 0, 170, 350, 520, 700]) ?? 0;
+    if (chaos.scroll && rng.chance(0.004)) scrollGoal = rng.pick(chaos.fling ? [0, 0, 350, 700, 1400, 2800] : [0, 0, 170, 350, 520, 700]) ?? 0;
     if (page.scroll !== scrollGoal) {
-      page.scroll += Math.sign(scrollGoal - page.scroll) * Math.min(Math.abs(scrollGoal - page.scroll), 40);
+      page.scroll += Math.sign(scrollGoal - page.scroll) * Math.min(Math.abs(scrollGoal - page.scroll), chaos.fling ? 8000 * dt : 40);
       changed = true;
     }
     if (chaos.slide) {
@@ -334,7 +339,12 @@ export function runSession(options: SimOptions): SimStats {
         pointer = next;
       }
     }
-    if (changed) rebuild();
+    if (changed) {
+      rebuild();
+      movedAt = t;
+    }
+    // (the host reads the page at every frame while it moves, and for a moment after, and otherwise a few times a second; the world is the very same object when nothing has changed, and says it was read)
+    if (t - movedAt < 0.45 || i % Math.max(1, Math.round(fps / 10)) === 0) world.readAt = t * 1000;
 
     // a hand now and then takes the cat up, carries it about (as fast as a hand goes: the cat follows as fast as it can) and puts it down, or is lost with it in it
     if (chaos.hand) {
@@ -381,6 +391,8 @@ export function runSession(options: SimOptions): SimStats {
     const jumping = dbg.act === "jump";
     if (jumping && !wasJumping) stats.hops++;
     wasJumping = jumping;
+    if (dbg.flung && !wasFlung) stats.flings++;
+    wasFlung = dbg.flung;
     if (dbg.surfaceId && !seen.has(dbg.surfaceId)) {
       seen.add(dbg.surfaceId);
       stats.surfaces.push(dbg.surfaceId);

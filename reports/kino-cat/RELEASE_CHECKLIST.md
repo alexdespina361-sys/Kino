@@ -1,13 +1,13 @@
 # RELEASE_CHECKLIST
 
-**State (2026-10-21 evening): the cat is on at the live site's host** (the owner set `CAT_COMPANION=on` after the second pull request, #29, was merged: `GET /api/features` says `{"cat":true}`), and every device is still off until its owner turns the cat on in Settings. This branch (`feat/kino-cat-3`, on top of that main) is round 3: exactly two cats to choose from, a line in Settings that says what is really drawn and why, the cat that goes to the title it is asked to find and swats at it, the cat that goes with its row when the viewer scrolls it and hops back or away, and a pat and the zoomies of its own accord. Nothing is deployed from it until the owner merges it. No account on the live site was touched and nothing was submitted to it. Merged with `CAT_COMPANION` unset, the site behaves exactly as before: no screen fetches a byte of the cat.
+**State (2026-10-21 night): the cat is on at the live site's host** (the owner set `CAT_COMPANION=on` after the second pull request, #29, was merged: `GET /api/features` says `{"cat":true}`), and every device is still off until its owner turns the cat on in Settings. Round 3 (`feat/kino-cat-3`: exactly two cats to choose from, a line in Settings that says what is really drawn and why, the cat that goes to the title it is asked to find and swats at it, the cat that goes with its row when the viewer scrolls it and hops back or away, and a pat and the zoomies of its own accord) was merged as PR #30 (main `19319ea`) and is live (the page serves its build). This branch (`feat/kino-cat-4`, on top of that main) is the follow-up to the owner's three messages about it: the sleeping pose drawn as a loaf, the fall of a cat that a flung page shakes off its shelf, and the carrying on of the page between two readings so that the cat rides its shelf without steps. Nothing is deployed from it until the owner merges it. No account on the live site was touched and nothing was submitted to it. Merged with `CAT_COMPANION` unset, the site behaves exactly as before: no screen fetches a byte of the cat.
 
 ## 1 · What would go out
 
 | Part | Where | Size (gzip) | Loaded when |
 |---|---|---|---|
 | The switch, the corner button, the loader, the texts (en/ro/it) | the app's always-loaded files | + 6.9 KB over the whole app (measured against main after PR #27, at the end of round 3) | always (it is what lets the cat be asked for) |
-| The cat (engine, rig, both painters, panel) | `assets/host-*.js` + `host-*.css` (lazy chunk) | 54.2 KB + 1.7 KB | only when the host offers it **and** the screen plays **and** the device asked for it |
+| The cat (engine, rig, both painters, panel) | `assets/host-*.js` + `host-*.css` (lazy chunk) | 55.4 KB + 1.7 KB | only when the host offers it **and** the screen plays **and** the device asked for it |
 | The detailed cat's body | `assets/cat-*.mesh` | 164.9 KB | only when the detailed cat is drawn, once |
 | Server | `/api/features`, `/api/health` `features.cat`, env `CAT_COMPANION` | – | – |
 

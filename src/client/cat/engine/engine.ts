@@ -53,6 +53,19 @@ interface JumpState {
   baseFromY: number;
 }
 
+/** A cat that is falling (see `CatEngine.runFall`): where it is to come down, how fast it is going, whether it has, and how long it has been settling since. */
+interface FallState {
+  toSurface: string;
+  toX: number;
+  vy: number;
+  landed: boolean;
+  settleT: number;
+  placeY: number;
+  missed: boolean;
+  /** Shaken off a shelf by a page that is flung: it has no place it is falling to yet (see `freeFall`). */
+  free: boolean;
+}
+
 export interface Mood {
   sleepiness: number;
   energy: number;
@@ -75,6 +88,12 @@ export interface EngineDebug {
   choice: string;
   /** The poster it is waiting to be able to set out for (it was asked while in the air, say), if it is. */
   pending: string | null;
+  /** It was shaken off its shelf by a page that was flung, and has not come down on anything yet (see `SHAKE_SPEED`). */
+  flung: boolean;
+  /** How fast the page is scrolled just now, in body lengths a second (down the screen positive). */
+  scroll: number;
+  /** How many readings of the page in a row were fast enough to shake the cat off (see SHAKE_SPEED). */
+  fast: number;
 }
 
 /** Speeds in body lengths per second, and how quickly the cat gets up to them. */
@@ -163,6 +182,24 @@ const CARRIED_FORGET = 0.6;
 const RIDE_MOVING = 0.12;
 /** How fast the cat is carried the way the posters have slid (a share of what is left, for every second): the page is read a few times a second, and the carrying is eased in between. */
 export const RIDE_EASE = 22;
+/**
+ * A page that is flung (its shelves going by faster than `SHAKE_SPEED` body lengths a second, in `SHAKE_READINGS` readings of the page one after the other) does not take the cat up with the
+ * shelf it sits on: the cat is shaken off it and falls, in front of the page that goes by (so that, with the page still flying, it seems to hang there as it comes down). It comes down on the first
+ * place under it once the page has slowed to `CATCH_SPEED`, or on the foot of the screen, which it is handed to when it is within `HANDOVER` body lengths of it (or has been falling for
+ * `FREE_FALL_MAX` seconds). A speed is worked out between two readings of the page at least `SCROLL_SPAN` seconds apart (nearer than that, they are too near to tell a speed from), and a page that
+ * has not been read again for `SCROLL_STILL` seconds is thought to be still.
+ * (What the library's rows really do, in a browser, at the top of a step, in body lengths a second: one key of the remote 26 to 30, a wheel spun fast 32, three keys in quick succession 36, a page
+ * key 72, a key held down 85, so that a step of the remote or a wheel takes the cat with its shelf, and a held key or a flung page does not.)
+ */
+const SHAKE_SPEED = 40;
+const SHAKE_READINGS = 2;
+const CATCH_SPEED = 8;
+const HANDOVER = 2.2;
+const FREE_FALL_MAX = 3;
+const SCROLL_SPAN = 0.012;
+const SCROLL_STILL = 0.15;
+/** How far through a leap's way down the cat is drawn while it is in free fall: the legs reaching down (see `runFall`). */
+const FREE_FALL_POSE = 0.62;
 const FLINCH_SPEED = 9;
 const FLINCH_NEAR = 1.7;
 const FLINCH_EVERY = 25;
@@ -232,8 +269,11 @@ export class CatEngine {
   private groundY = 0;
   private grabAt: Vec = { x: 0, y: 0 };
   private heldAt = 0;
-  /** A cat that was let go of, on its way down to where it will land (see `runFall`). */
-  private fall: { toSurface: string; toX: number; vy: number; landed: boolean; settleT: number; placeY: number; missed: boolean } | null = null;
+  /**
+   * A cat that was let go of, on its way down to where it will land (see `runFall`); or, with `free`, one that a flung page shook off its shelf, and that has no place it is falling to yet
+   * (see `freeFall`).
+   */
+  private fall: FallState | null = null;
   /** What it feels (see `Emote`) and until when. */
   private emote: Emote = "none";
   private emoteUntil = 0;
@@ -258,6 +298,18 @@ export class CatEngine {
   private choice = "";
   /** Where the shelf the cat stands on was at the last frame (to see that it is moving: the page is scrolled). */
   private shelfY = Number.NaN;
+  /**
+   * How fast the page is scrolled (pixels a second, down the screen positive), as worked out between two readings of it (`measureScroll`): the page as it was at the last reading used, when that
+   * was, how big the screen was, whether the page is thought still, and how many readings in a row were fast.
+   */
+  private scrollSpeed = 0;
+  private scrollWorld: World | null = null;
+  private scrollRead: number | undefined;
+  private scrollAt = 0;
+  private scrollShelves = new Map<string, number>();
+  private scrollSize = "";
+  private scrollStill = true;
+  private fastRun = 0;
 
   constructor(seed = 1) {
     this.rng = createRng(seed).fork("director");
@@ -301,6 +353,9 @@ export class CatEngine {
       now: this.now,
       choice: this.choice,
       pending: this.pendingPoint?.id ?? null,
+      flung: this.fall?.free === true && !this.fall.landed,
+      scroll: this.world ? this.scrollSpeed / this.world.bodyLength : 0,
+      fast: this.fastRun,
     };
   }
 
@@ -333,6 +388,7 @@ export class CatEngine {
       else if (this.alphaTarget === 0 && this.alpha > 0) this.alpha = Math.max(0, this.alpha - dt * this.alphaRate);
     }
 
+    this.measureScroll(world);
     if (this.placed) {
       this.rideRow(world, dt);
       this.keepOnLedge(world, dt);
@@ -613,6 +669,9 @@ export class CatEngine {
       this.wasAway = true;
       return;
     }
+    // (a page that is flung does not take the cat up with its shelf: the cat is shaken off it, whatever it was about to do on it, or doing: the first look at a page that is being flung
+    // is of a shelf that has gone from under the cat already, and the cat has begun to leap to another one, which the page takes away from it again)
+    if (this.fastRun >= SHAKE_READINGS && this.shakeOff(world)) return;
     if (!this.grounded) return;
     // (not while leaping, but when the leap has landed and is only settling; nor while on the way out to come back somewhere else)
     if ((this.act?.k === "jump" && !this.jump?.landed) || this.queueHas("relocate") || (this.act?.k === "fade" && this.act.to === 0)) return;
@@ -685,6 +744,78 @@ export class CatEngine {
       const away = clamp(to + Math.sign(to - this.x) * 0.5 * L, here.x0, here.x1);
       this.hardPlan([{ k: "walk", x: away, run: gap > 1.2 * L, maxT: 12 }]);
     }
+  }
+
+  /**
+   * How fast the page is scrolled: how far the shelves it has in both of two readings went between them (the middle of those, so that a shelf which is not part of the scrolling does not
+   * count), over the time between the readings. The page is read when it has moved, at every frame while it does, and the cat is handed the very same world in between, so a reading is a
+   * new world, and one that is the same for `SCROLL_STILL` seconds is a page that is still (its reference is then taken at each frame, so that the reading when it starts is of the frame
+   * it started in). A page that was made over (another screen size, no shelf in common) is not one that was scrolled.
+   */
+  private measureScroll(world: World): void {
+    if (world === this.scrollWorld && world.readAt === this.scrollRead) {
+      if (this.scrollStill || this.now - this.scrollAt > SCROLL_STILL) {
+        this.scrollStill = true;
+        this.scrollAt = this.now;
+        this.scrollSpeed = 0;
+        this.fastRun = 0;
+      }
+      return;
+    }
+    this.scrollWorld = world;
+    this.scrollRead = world.readAt;
+    this.scrollStill = false;
+    const size = `${world.viewport.w}x${world.viewport.h}:${world.bodyLength}`;
+    const span = this.now - this.scrollAt;
+    if (world.mode === "browse" && size === this.scrollSize && span < SCROLL_SPAN) return;
+    const shelves = new Map<string, number>();
+    const moved: number[] = [];
+    if (world.mode === "browse") {
+      for (const surface of world.surfaces) {
+        if (surface.kind !== "shelfTop") continue;
+        shelves.set(surface.id, surface.y);
+        const was = size === this.scrollSize ? this.scrollShelves.get(surface.id) : undefined;
+        if (was !== undefined) moved.push(surface.y - was);
+      }
+    }
+    moved.sort((a, b) => a - b);
+    this.scrollSpeed = moved.length > 0 && span > 0 ? moved[moved.length >> 1]! / span : 0;
+    this.fastRun = Math.abs(this.scrollSpeed) >= SHAKE_SPEED * world.bodyLength ? this.fastRun + 1 : 0;
+    this.scrollShelves = shelves;
+    this.scrollSize = size;
+    this.scrollAt = this.now;
+  }
+
+  /**
+   * The page is flung under a cat that stands on a shelf, or is leaping from one to another (the shelves it leaps between fly off as it does): it is shaken off, and is in free fall (see
+   * `freeFall`), from where it is, as fast as it was going up or down. Not so for a cat that must not move about, or is showing a poster, or is on its way out; nor one on the foot of the
+   * screen, which does not go with the page.
+   */
+  private shakeOff(world: World): boolean {
+    const act = this.act;
+    if (world.mode !== "browse" || world.quiet || world.reducedMotion || this.dismissed || this.hold !== null || this.alpha < 0.5) return false;
+    if (act && (act.k === "carried" || act.k === "fall" || act.k === "fade" || act.k === "relocate")) return false;
+    if (this.queueHas("point") || this.queueHas("swat") || this.queueHas("relocate") || this.pendingPoint !== null) return false;
+    const kind = this.surfaceId ? world.surfaces.find((s) => s.id === this.surfaceId)?.kind : undefined;
+    if (kind === "fallbackFloor") return false;
+    // (a cat in the air keeps going the way it was going, and gravity takes it from there; one that was gathering itself for a leap, or standing, has no way it was going)
+    const going = this.grounded ? 0 : finite(this.vy);
+    this.jump = null;
+    this.finish();
+    this.queue = [];
+    this.act = { k: "fall" };
+    this.fall = { toSurface: "", toX: this.x, vy: going, landed: false, settleT: 0, placeY: this.y, missed: false, free: true };
+    this.grounded = false;
+    this.vx = 0;
+    this.vy = going;
+    this.rideT = 0;
+    this.overlapT = 0;
+    this.rowPending = 0;
+    this.rowRide = 0;
+    this.setClip("jump");
+    this.progress = FREE_FALL_POSE;
+    this.feel("startle", 1.3);
+    return true;
   }
 
   /**
@@ -1318,13 +1449,15 @@ export class CatEngine {
 
   /**
    * Where a cat let go of here comes down: the place under its feet that it can steer to on the way (not further across than it has time for), or one a little
-   * above them (see `SPRING`). The nearest the best -- one it would spring up to a little less than one it would fall to, and the floor of a page less than a shelf.
+   * above them (see `SPRING`). The nearest the best -- one it would spring up to a little less than one it would fall to, and the floor of a page less than a shelf. With `floorOnly`, the foot of the
+   * screen is the only place it would come down on.
    */
-  private dropTarget(world: World, spring = SPRING * world.bodyLength): { ledge: Ledge; x: number } | null {
+  private dropTarget(world: World, spring = SPRING * world.bodyLength, floorOnly = false): { ledge: Ledge; x: number } | null {
     const L = world.bodyLength;
     let best: { ledge: Ledge; x: number } | null = null;
     let least = Infinity;
     for (const ledge of this.ledges) {
+      if (floorOnly && ledge.kind !== "fallbackFloor") continue;
       const x = clampToLedge(ledge, this.x);
       const across = Math.abs(x - this.x);
       const below = ledge.y - this.y;
@@ -1363,7 +1496,7 @@ export class CatEngine {
     const L = world.bodyLength;
     // (a place above its feet: it springs up over its edge, and comes down on it)
     const up = this.y - target.ledge.y;
-    this.fall = { toSurface: target.ledge.surfaceId, toX: target.x, vy: up > 0 ? -Math.sqrt(2 * GRAVITY * L * (up + 0.3 * L)) : 0, landed: false, settleT: 0, placeY: target.ledge.y, missed: false };
+    this.fall = { toSurface: target.ledge.surfaceId, toX: target.x, vy: up > 0 ? -Math.sqrt(2 * GRAVITY * L * (up + 0.3 * L)) : 0, landed: false, settleT: 0, placeY: target.ledge.y, missed: false, free: false };
     this.act = { k: "fall" };
     this.actT = 0;
     this.visited[target.ledge.surfaceId] = this.now;
@@ -1379,6 +1512,8 @@ export class CatEngine {
     const L = world.bodyLength;
     this.setClip("jump");
     if (!fall.landed) {
+      // (shaken off its shelf by a page that is flung: it falls where it is, with no place it falls to, until the page has slowed, or it is down to the foot of the screen; then it is given one)
+      if (fall.free && this.freeFall(world, fall, dt)) return;
       let target = ledgeAt(this.ledges, fall.toSurface, fall.toX);
       if (!target || fall.missed) {
         // (the shelf it was falling to is gone, with the page changing, or the page took it away above the cat as it sprang up, and the cat is past the top of its spring and
@@ -1452,6 +1587,42 @@ export class CatEngine {
       { k: "rest", pose: "sit", dur: this.rng.range(0.9, 1.6) },
       ...(this.rng.chance(0.75) ? ([{ k: "shot", clip: "groom", dur: this.rng.range(3, 5) }] as const) : []),
     ];
+  }
+
+  /**
+   * A cat that a flung page shook off its shelf: it falls as gravity has it, where it is, in front of the page that goes by (a shelf that flies up at it does not catch it, nor does one that
+   * flies down from under it carry it off: the page is not what it stands on any more). Once the page has slowed it comes down on the first place under it, as a cat let go of does; and when it is
+   * down to the foot of the screen with the page still flying, on that. Says whether it is still in the air; if not, the fall is given the place it is to come down on, and goes on as a fall does.
+   */
+  private freeFall(world: World, fall: FallState, dt: number): boolean {
+    const L = world.bodyLength;
+    const vp = world.viewport;
+    // (a window made smaller under a cat in the air leaves it off the screen: it is gone, and back somewhere else)
+    if (this.x < vp.x || this.x > vp.x + vp.w) {
+      this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
+      return true;
+    }
+    const slow = Math.abs(this.scrollSpeed) < CATCH_SPEED * L;
+    if (slow || this.y >= vp.y + vp.h - HANDOVER * L || this.actT > FREE_FALL_MAX) {
+      const found = this.dropTarget(world, 0, !slow);
+      if (!found) {
+        this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
+        return true;
+      }
+      fall.free = false;
+      fall.toSurface = found.ledge.surfaceId;
+      fall.toX = found.x;
+      fall.placeY = found.ledge.y;
+      this.visited[found.ledge.surfaceId] = this.now;
+      return false;
+    }
+    fall.vy = Math.min(fall.vy + GRAVITY * L * dt, FALL_FASTEST * L);
+    this.y += fall.vy * dt;
+    this.vx = 0;
+    this.vy = fall.vy;
+    this.grounded = false;
+    this.progress = FREE_FALL_POSE;
+    return true;
   }
 
   /* ------------------------------ choosing what to do ------------------------------ */

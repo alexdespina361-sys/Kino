@@ -157,15 +157,15 @@ describe("ledges", () => {
       for (const pose of poses) expect(covers(500, 1, [{ x: 0, y: 0, w: 2000, h: 2000 }], pose), pose).toBeGreaterThan(0);
     });
 
-    it("settles for the worst of the postures it goes through: a place for a long sleep is one where lying down and treading fit as well as curling up", () => {
-      // (a shelf that ends where the cat's feet may still be on the screen: curled up it fits at the very end, lying out with its tail along the floor it does not)
+    it("settles for the worst of the postures it goes through: a place for a long sleep is one where lying down, treading and sleeping all fit", () => {
+      // (a shelf that ends where the cat's feet may still be on the screen: a cat lying out with its tail along the floor does not fit at the very end, and asleep it lies out too, the head down on its paws)
       const end: Ledge = { ...ledge, x0: 100, x1: 1920 - 0.78 * L };
       const around0 = around();
       const worst = settledCost(["loaf", "knead", "curl"], -1, end.x1, 800, L, around0);
       expect(worst).toBe(Math.max(settledCost("loaf", -1, end.x1, 800, L, around0), settledCost("knead", -1, end.x1, 800, L, around0), settledCost("curl", -1, end.x1, 800, L, around0)));
-      expect(settledCost("curl", -1, end.x1, 800, L, around0)).toBe(0);
+      expect(settledCost("curl", -1, end.x1, 800, L, around0)).toBeGreaterThan(0);
       expect(worst).toBeGreaterThan(0);
-      expect(restSpot(end, end.x1, -1, L, "curl", around0)).toBeUndefined();
+      expect(restSpot(end, end.x1, -1, L, "curl", around0)).toBeDefined();
       const spot = restSpot(end, end.x1, -1, L, ["loaf", "knead", "curl"], around0)!;
       expect(spot).toBeDefined();
       expect(spot).toBeLessThan(end.x1);
@@ -907,6 +907,259 @@ describe("the cat on a row of posters that is scrolled sideways", () => {
       return out;
     };
     expect(xs(true)).toEqual(xs(false));
+  });
+});
+
+describe("the cat on a page that is flung (scrolled fast)", () => {
+  interface Entry {
+    act: string;
+    flung: boolean;
+    surface: string | null;
+    jumpTo: string | null;
+    f: CatFrame;
+  }
+  /**
+   * A cat settled on the top row (right of the banner) or on the foot of the screen, the page then taken from `from` to `to` pixels of scroll at `perFrame` pixels a frame (at 60
+   * frames a second, a fresh read of the page at every frame), and held there for `after` seconds. What it did at every frame, from the first of the fling.
+   */
+  const fling = (seed: number, perFrame: number, to: number, options: { page?: PageOptions; from?: number; after?: number; on?: "row" | "floor"; ask?: (engine: CatEngine, world: World) => void; shape?: (world: World, shelf: string | null) => World } = {}) => {
+    const page = options.page ?? defaultPage();
+    page.scroll = options.from ?? 0;
+    const engine = new CatEngine(seed);
+    const base = browseWorld(page);
+    run(engine, base, 6);
+    engine.send({ type: "cat.call", at: options.on === "floor" ? { x: 1500, y: 1074 } : { x: 1500, y: 511 - page.scroll } });
+    run(engine, base, 8);
+    engine.send({ type: "cat.command", command: "sit" });
+    run(engine, base, 1);
+    const surface = engine.debug().surfaceId;
+    const y0 = engine.frame.y;
+    options.ask?.(engine, base);
+    const log: Entry[] = [];
+    const keep = (f: CatFrame): void => {
+      const d = engine.debug();
+      log.push({ act: d.act, flung: d.flung, surface: d.surfaceId, jumpTo: d.jumpTo, f: { ...f } });
+    };
+    let scroll = page.scroll;
+    let world = base;
+    let clock = 0;
+    const dir = Math.sign(to - scroll);
+    while (scroll !== to) {
+      scroll += dir * Math.min(perFrame, Math.abs(to - scroll));
+      world = { ...browseWorld({ ...page, scroll }), readAt: (clock += 1000 / 60) };
+      if (options.shape) world = options.shape(world, surface);
+      stepCat(engine, world, 1 / 60, 60, keep);
+    }
+    // (the host goes on reading the page, at every frame, for a moment after it stopped, and the world it hands the cat is the very same one, read again)
+    let held = 0;
+    stepCat(engine, world, options.after ?? 5, 60, (f) => {
+      keep(f);
+      if (held++ < 27) world.readAt = clock += 1000 / 60;
+    });
+    return { engine, log, surface, y0, world, L: base.bodyLength };
+  };
+
+  it("does not float up with its shelf: it is shaken off it, and falls as gravity has it, to the foot of the screen if the page keeps flying", () => {
+    for (const seed of [1, 2, 3, 4]) {
+      // (a fling of a second and a third: it is on the foot of the screen well before the page stops)
+      const { log, surface, y0, L } = fling(seed, 100, 8000);
+      const label = `seed ${seed}`;
+      expect(surface, label).toBe("p1:row0");
+      const first = log.findIndex((e) => e.flung);
+      // (within a few frames of the fling's start: two reads of a page that goes by that fast)
+      expect(first, label).toBeGreaterThanOrEqual(0);
+      expect(first, label).toBeLessThan(5);
+      const air = log.slice(first).filter((e) => e.flung);
+      expect(air.length, label).toBeGreaterThan(8);
+      expect(air.every((e) => e.act === "fall" && !e.f.grounded), label).toBe(true);
+      // (it went up with the shelf for one read at most -- it could not know -- and not a pixel after: from there on it only falls, a little more every frame, never faster than a cat can)
+      expect(Math.min(...log.map((e) => e.f.y)), label).toBeGreaterThan(y0 - 100 - 1);
+      for (let i = first + 1; i < log.length && log[i]!.flung; i++) {
+        const step = log[i]!.f.y - log[i - 1]!.f.y;
+        expect(step, label).toBeGreaterThanOrEqual(0);
+        expect(step, label).toBeLessThanOrEqual((14 * L) / 60 + 0.01);
+      }
+      // (and that hangs: it takes the better part of half a second to come down by the three lengths of itself that the shelf above the banner is from the foot of the screen)
+      expect(air.length, label).toBeGreaterThan(15);
+      // (as gravity has it: a quarter of a second in, it has fallen what a cat falls in that time, give or take the first frame)
+      expect(log[first + 15]!.f.y - log[first]!.f.y, label).toBeGreaterThan(0.8 * 0.5 * GRAVITY * L * 0.25 ** 2);
+      const end = log[log.length - 1]!;
+      expect(end.surface, label).toBe("floor");
+      expect(end.f.grounded, label).toBe(true);
+      expect(Math.abs(end.f.y - 1074), label).toBeLessThan(1);
+      // (it is handed to the foot of the screen as it comes down to it, with the page still flying, and does not go past it and out of sight)
+      expect(Math.max(...log.map((e) => e.f.y)), label).toBeLessThanOrEqual(1074.5);
+      expect(Math.min(...log.slice(first).map((e) => e.f.appear)), label).toBeGreaterThan(0.95);
+    }
+  });
+
+  it("comes down on the first shelf under it once the page has slowed, and carries on as a cat does that has come down", () => {
+    for (const seed of [1, 2, 3, 4]) {
+      // (four frames of it, and the page stops with the second row a little under the cat, which has been shaken off the top one)
+      const { log } = fling(seed, 100, 400);
+      const label = `seed ${seed}`;
+      const first = log.findIndex((e) => e.flung);
+      expect(first, label).toBeGreaterThanOrEqual(0);
+      const land = log.findIndex((e, i) => i > first && e.f.grounded);
+      expect(land, label).toBeGreaterThan(first);
+      expect(log[land]!.surface, label).toBe("p1:row1");
+      expect(log[land]!.f.y, label).toBeCloseTo(461, 0);
+      // (and it sits a moment, and washes, as it does when a hand has let it go)
+      expect(log.slice(land).some((e) => e.act === "rest:sit"), label).toBe(true);
+      expect(log[log.length - 1]!.f.grounded, label).toBe(true);
+    }
+  });
+
+  it("is shaken off by a page that is flung down from under it, too, and falls (it is not carried down faster than it would fall)", () => {
+    for (const seed of [1, 2]) {
+      const { log, surface, L } = fling(seed, 100, 0, { from: 700 });
+      const label = `seed ${seed}`;
+      expect(surface, label).toBe("p1:row2");
+      const first = log.findIndex((e) => e.flung);
+      expect(first, label).toBeGreaterThanOrEqual(0);
+      expect(first, label).toBeLessThan(5);
+      for (let i = first + 1; i < log.length && log[i]!.flung; i++) {
+        const step = log[i]!.f.y - log[i - 1]!.f.y;
+        expect(step, label).toBeGreaterThanOrEqual(0);
+        expect(step, label).toBeLessThanOrEqual((14 * L) / 60 + 0.01);
+      }
+      expect(log[log.length - 1]!.f.grounded, label).toBe(true);
+    }
+  });
+
+  it("is shaken off even when the first look at the fling finds its shelf gone (slid up out of the rows) and it has begun to leap to another: the leap is given up, and it falls from where it was", () => {
+    // (the page drops a shelf that has slid above the top of the rows: the cat sees a shelf that is gone, and leaps to the next, which the fling takes away from it as well)
+    const gone = (world: World, shelf: string | null): World => ({ ...world, surfaces: world.surfaces.filter((s) => s.id !== shelf), targets: world.targets.filter((t) => t.surfaceId !== shelf) });
+    for (const seed of [1, 2, 3, 4]) {
+      const { log, y0, L } = fling(seed, 100, 8000, { shape: gone });
+      const label = `seed ${seed}`;
+      expect(log[0]!.act, label).toBe("jump");
+      const first = log.findIndex((e) => e.flung);
+      expect(first, label).toBeGreaterThan(0);
+      expect(first, label).toBeLessThan(4);
+      // (it did not go up a pixel after that, nor chase the shelf it was to leap to: it hung where it was, and fell, and the page, which has no shelf to be on, took no part in it)
+      expect(Math.min(...log.map((e) => e.f.y)), label).toBeGreaterThan(y0 - 1);
+      for (let i = first + 1; i < log.length && log[i]!.flung; i++) {
+        const step = log[i]!.f.y - log[i - 1]!.f.y;
+        expect(step, label).toBeGreaterThanOrEqual(0);
+        expect(step, label).toBeLessThanOrEqual((14 * L) / 60 + 0.01);
+      }
+      expect(log.slice(first).filter((e) => e.flung).length, label).toBeGreaterThan(15);
+      // (and it is not leaping to anything any more)
+      expect(log.filter((e) => e.flung).every((e) => e.jumpTo === null), label).toBe(true);
+      const end = log[log.length - 1]!;
+      expect(end.surface, label).toBe("floor");
+      expect(end.f.grounded, label).toBe(true);
+      expect(Math.abs(end.f.y - 1074), label).toBeLessThan(1);
+    }
+  });
+
+  it("is shaken off in the middle of a leap, too: it goes the way it was going for a moment, then falls, and does not chase the shelf it was leaping to", () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const label = `seed ${seed}`;
+      const engine = new CatEngine(seed);
+      const page = defaultPage();
+      const base = browseWorld(page);
+      run(engine, base, 6);
+      engine.send({ type: "cat.call", at: { x: 1500, y: 511 } });
+      run(engine, base, 8);
+      engine.send({ type: "cat.command", command: "play" });
+      // (on, until it is in the air on a leap from the top row)
+      let guard = 0;
+      while (!(engine.debug().act === "jump" && !engine.frame.grounded) && guard++ < 1800) stepCat(engine, base, 1 / 60, 60);
+      expect(guard, label).toBeLessThan(1800);
+      const log: Entry[] = [];
+      let scroll = 0;
+      let clock = 0;
+      while (scroll < 8000) {
+        scroll += 100;
+        const world = { ...browseWorld({ ...page, scroll }), readAt: (clock += 1000 / 60) };
+        stepCat(engine, world, 1 / 60, 60, (f) => {
+          const d = engine.debug();
+          log.push({ act: d.act, flung: d.flung, surface: d.surfaceId, jumpTo: d.jumpTo, f: { ...f } });
+        });
+      }
+      const L = base.bodyLength;
+      const first = log.findIndex((e) => e.flung);
+      expect(first, label).toBeGreaterThanOrEqual(0);
+      expect(first, label).toBeLessThan(5);
+      // (no lurch: the speed it is going at is the one it had, and the fall goes on from there)
+      const was = first > 0 ? log[first - 1]!.f : undefined;
+      if (was) {
+        expect(Math.abs(log[first]!.f.vy - was.vy), label).toBeLessThan(0.5 * L);
+        expect(Math.abs(log[first]!.f.y - was.y), label).toBeLessThan(0.3 * L);
+      }
+      // (it rises no further than the speed it had takes it, and then it only falls, never faster than a cat can)
+      const rising = Math.min(0, log[first]!.f.vy);
+      const top = log[first]!.f.y - (rising * rising) / (2 * GRAVITY * L);
+      for (let i = first; i < log.length && log[i]!.flung; i++) {
+        expect(log[i]!.f.y, `${label} at ${i}`).toBeGreaterThanOrEqual(top - 0.5);
+        if (i > first) expect(log[i]!.f.y - log[i - 1]!.f.y, `${label} at ${i}`).toBeLessThanOrEqual((14 * L) / 60 + 0.01);
+      }
+      expect(log.slice(first).filter((e) => e.flung).length, label).toBeGreaterThan(8);
+      expect(log.filter((e) => e.flung).every((e) => e.jumpTo === null), label).toBe(true);
+      const end = log[log.length - 1]!;
+      expect(end.f.grounded, label).toBe(true);
+      expect(end.surface, label).toBe("floor");
+    }
+  });
+
+  it("is not shaken off by a page that jumped, once, or that goes by slowly: only by one that is flung, read after read", () => {
+    // (the page scrolled to a poster, in one read, is not a fling: the cat is on the shelf the scroll brought to where its feet are)
+    const engine = new CatEngine(3);
+    const base = browseWorld(defaultPage());
+    run(engine, base, 6);
+    engine.send({ type: "cat.call", at: { x: 1500, y: 511 } });
+    run(engine, base, 8);
+    const jumped = browseWorld({ ...defaultPage(), scroll: 350 });
+    const acts = new Set<string>();
+    stepCat(engine, jumped, 4, 60, () => {
+      acts.add(engine.debug().act);
+      expect(engine.debug().flung).toBe(false);
+    });
+    expect(acts.has("fall")).toBe(false);
+    // (a page scrolled at 600 pixels a second, which is a finger that drags it, takes the cat with the shelf and it stays on its feet; so does a step of the remote, which goes by at
+    // twenty-odd body lengths a second at the quickest, and a wheel spun fast)
+    for (const [perFrame, to] of [
+      [10, 350],
+      [40, 327],
+      [55, 1100],
+    ] as const) {
+      const { log } = fling(3, perFrame, to);
+      expect(log.some((e) => e.flung), `${perFrame} px a frame`).toBe(false);
+      expect(log.some((e) => e.act === "fall"), `${perFrame} px a frame`).toBe(false);
+    }
+  });
+
+  it("does not shake off a cat that is showing the viewer a poster, nor one that must not move about, nor one that is on the foot of the screen", () => {
+    const point = (engine: CatEngine, world: World): void => {
+      engine.send({ type: "cat.point", targetId: world.targets.find((t) => t.id === "p1:r1c4")!.id });
+    };
+    const quiet = defaultPage();
+    quiet.quiet = true;
+    const still = defaultPage();
+    still.reducedMotion = true;
+    for (const [name, run_] of [
+      ["showing a poster", fling(2, 100, 3000, { ask: point })],
+      ["quiet", fling(2, 100, 3000, { page: quiet })],
+      ["reduced motion", fling(2, 100, 3000, { page: still })],
+      ["on the foot of the screen", fling(2, 100, 3000, { on: "floor" })],
+    ] as const) {
+      expect(run_.log.some((e) => e.flung || e.act === "fall"), name).toBe(false);
+    }
+  });
+
+  it("shakes a sleeping cat off its shelf as well, and it is startled", () => {
+    const { log } = fling(5, 100, 3000, {
+      ask: (engine) => {
+        engine.send({ type: "cat.command", command: "sleep" });
+      },
+    });
+    const first = log.findIndex((e) => e.flung);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(log[first + 1]!.f.emote).toBe("startle");
+    expect(log[first + 1]!.f.clip).toBe("jump");
+    expect(log[log.length - 1]!.f.grounded).toBe(true);
   });
 });
 

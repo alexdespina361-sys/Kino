@@ -1,5 +1,6 @@
 import { BODY_EMS, bodyLengthFor } from "../math";
 import type { PlayerMode, Rect, Surface, Target, World } from "../types";
+import { carried, type Rides } from "./carry";
 import { inflate, nameOf, rectOf, takesRoom, textRect } from "./dom";
 import { perchesFor } from "./perch";
 
@@ -68,6 +69,10 @@ interface Draft {
   soft: Rect[];
   focus?: Rect;
   focusId?: string;
+  /** What scrolls, if the page has a scroller (the rows, or a grid of posters), and which of the zones and the card with the focus are on it (see `carried`). */
+  scroller: HTMLElement | null;
+  keepOutRides: boolean[];
+  focusRides: boolean;
 }
 
 /** How many cards' names are kept for the cat to settle clear of (a page has more cards than a screen shows; the ones in view come first). */
@@ -94,6 +99,10 @@ export class TvPage {
   private readonly observer: MutationObserver | null;
   private readonly off: Array<() => void> = [];
   private signature = "";
+  /** The scroller of the page as it was read, where it was scrolled to then, and what of the page is on it (see `carried`). */
+  private ride: { scroller: HTMLElement; top: number; rides: Rides } | null = null;
+  /** The page carried on to the scroller's place at some frame, for the next frames if it has not moved since. */
+  private onward: { built: number; shift: number; world: World } | null = null;
 
   constructor(private readonly context: PageContext) {
     const touch = () => this.touch();
@@ -148,6 +157,7 @@ export class TvPage {
   /**
    * The page now, read again if it has to be; the very same read otherwise. While the page moves it is read at every frame, unless a read is dear: a read
    * is not done again before ten times as long as the last took has passed, so that on a screen where it costs it never takes more than a tenth of the time.
+   * (And in between, a page whose scroller has been scrolled since it was read is carried on to where the scroller is now, which costs nothing: see `carried`.)
    */
   read(now: number): PageRead {
     const stale = now - this.builtAt;
@@ -158,9 +168,19 @@ export class TvPage {
       this.builtAt = now;
       this.built++;
       this.last = this.build();
+      // (the world is the very same object when the page has not changed; the cat is told that it was read again, and found as it was)
+      this.last.world.readAt = now;
       const took = performance.now() - started;
       this.buildMs = this.buildMs === 0 ? took : this.buildMs * 0.8 + took * 0.2;
     }
+    const base = this.world!;
+    const ride = this.ride;
+    const shift = ride && ride.scroller.isConnected ? ride.top - ride.scroller.scrollTop : 0;
+    if (ride && shift !== 0) {
+      let onward = this.onward;
+      if (!onward || onward.built !== this.built || onward.shift !== shift) onward = this.onward = { built: this.built, shift, world: carried(base, shift, ride.rides, now) };
+      this.last.world = onward.world;
+    } else this.last.world = base;
     return this.last;
   }
 
@@ -181,7 +201,7 @@ export class TvPage {
     const vh = viewport.h;
     const L = Math.max(40, Math.round(bodyLengthFor(vw, vh) * (this.context.size?.() ?? 1)));
     const em = tv ? parseFloat(getComputedStyle(tv).fontSize) || L / BODY_EMS : L / BODY_EMS;
-    const draft: Draft = { surfaces: [], keepOut: [], targets: [], shelves: new Map(), soft: [] };
+    const draft: Draft = { surfaces: [], keepOut: [], targets: [], shelves: new Map(), soft: [], scroller: null, keepOutRides: [], focusRides: false };
     let mode: World["mode"] = "away";
     let player: PlayerMode = "none";
     let controlsUp = false;
@@ -215,7 +235,12 @@ export class TvPage {
       home = { parent: browse, after: null };
     } else why = "no library";
 
-    if (mode === "browse") for (const rect of this.context.extra?.() ?? []) draft.keepOut.push(rect);
+    if (mode === "browse") {
+      for (const rect of this.context.extra?.() ?? []) {
+        draft.keepOut.push(rect);
+        draft.keepOutRides.push(false);
+      }
+    }
 
     // the foot of the screen is always a place to be, in the library (a film has its perches instead)
     if (mode === "browse") draft.surfaces.push({ id: "floor", kind: "fallbackFloor", y: vh - Math.max(6, vh * 0.012), x0: 0, x1: vw, weight: 0.4 });
@@ -250,6 +275,8 @@ export class TvPage {
       this.world = world;
       this.signature = signature;
     }
+    // (where the scroller is as the page was read, to carry the page on from: the keep-out zones are in the order they were pushed, which the signature above says is the order of the world's own)
+    this.ride = draft.scroller ? { scroller: draft.scroller, top: draft.scroller.scrollTop, rides: { keepOut: draft.keepOutRides, focus: draft.focusRides } } : null;
     const read: PageRead = { world: this.world!, view, home, shelves: draft.shelves, why, ...(draft.focusId ? { focusId: draft.focusId } : {}) };
     return read;
   }
@@ -258,23 +285,31 @@ export class TvPage {
 
   private readLibrary(root: HTMLElement, c: Metrics, draft: Draft): void {
     const { em } = c;
+    // (what scrolls: the rows of the library, or the grid of a category, a list or the results of a search; the page has one of them at a time)
+    const scroller = root.querySelector<HTMLElement>(".tv-rows") ?? root.querySelector<HTMLElement>(".tv-grid");
+    draft.scroller = scroller;
+    const keep = (zone: Rect, el: Element): void => {
+      draft.keepOut.push(zone);
+      draft.keepOutRides.push(scroller?.contains(el) === true);
+    };
     for (const selector of BROWSE_FURNITURE) {
-      for (const el of root.querySelectorAll<HTMLElement>(selector)) if (takesRoom(el) && !el.closest(".tv-row-tiles")) draft.keepOut.push(inflate(rectOf(el), 0.15 * em));
+      for (const el of root.querySelectorAll<HTMLElement>(selector)) if (takesRoom(el) && !el.closest(".tv-row-tiles")) keep(inflate(rectOf(el), 0.15 * em), el);
     }
     for (const selector of BROWSE_TEXT) {
       for (const el of root.querySelectorAll<HTMLElement>(selector)) {
         if (!takesRoom(el)) continue;
         const box = textRect(el);
-        if (box) draft.keepOut.push(inflate(box, 0.15 * em));
+        if (box) keep(inflate(box, 0.15 * em), el);
       }
     }
     // the card that has the focus: it grows and has a ring, so the cat leaves it room
     const active = document.activeElement;
     if (active instanceof HTMLElement && root.contains(active) && active.matches(".tv-tile, .tv-hero-button, .tv-action, .tv-choice, .tv-key, .tv-corner-button, .tv-account-chip, .tv-bell, button")) {
       const box = rectOf(active);
-      draft.keepOut.push(inflate(box, 0.4 * em));
+      keep(inflate(box, 0.4 * em), active);
       if (active.matches(".tv-tile")) {
         draft.focus = box;
+        draft.focusRides = scroller?.contains(active) === true;
         const id = tileId(active);
         if (id) draft.focusId = id;
       }
