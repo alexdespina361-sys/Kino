@@ -199,6 +199,29 @@ test("a mood that no shelf of the page has finds nothing, and says so", async ({
   await expect(tv.getByTestId("cat-back")).toBeFocused();
 });
 
+test("a row the library made for the viewer is where \"anything\" is found, with the library's own reason, and is no shelf of a kind", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await catIsOnTheScreen(tv);
+  // (the row called Trending is made to be a row about the viewer, and the other two are hidden from the page as a row off the screen is, so that the only titles are its)
+  await tv.evaluate(() => {
+    for (const row of document.querySelectorAll<HTMLElement>(".tv-row")) {
+      if (row.getAttribute("aria-label") === "Trending Movies") row.setAttribute("aria-label", "Because you watched Up");
+      else row.setAttribute("aria-hidden", "true");
+    }
+  });
+  await tv.getByTestId("tv-cat-chip").click();
+  await tv.getByTestId("cat-find").click();
+  await tv.getByTestId("cat-mood-any").click();
+  const card = tv.getByTestId("cat-card");
+  await expect(card).toContainText("Fresh film");
+  await expect(card.locator(".cat-card-where")).toHaveText("Because you watched Up");
+  await expect(tv.getByTestId("cat-said")).toContainText("Because you watched Up");
+  // it is not a shelf of a kind: a viewer in the mood for something scary is not offered it for that
+  await tv.getByTestId("cat-back").click();
+  await tv.getByTestId("cat-mood-scary").click();
+  await expect(tv.getByTestId("cat-nothing")).toBeVisible();
+});
+
 test("a title's page over the library sends the cat away, and it is back when the page is closed", async ({ browser }) => {
   const tv = await openLibrary(browser, setup(), undefined, WANTS());
   await tv.goto("/tv?cat=debug");

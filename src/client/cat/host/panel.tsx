@@ -8,7 +8,7 @@ import { actionForKey } from "../../tv/keys";
 import { CAT_PANEL_ID } from "../bus";
 import type { Rng } from "../rng";
 import type { CatEvent } from "../types";
-import { fits, MOODS, pick, poolOfPage, tileOf, type Candidate, type Mood } from "./assistant";
+import { MOODS, pick, poolOfPage, reasonFor, tileOf, type Candidate, type Mood } from "./assistant";
 import { bringIntoView, clearPointed, markPointed } from "./effects";
 
 /**
@@ -124,9 +124,10 @@ function CatPanel({ send, point, rng, close }: PanelProps) {
 
   // What the cat found, in words: shown on the card, and said to a reader as soon as it is found (a place that is on the page from the start, so that a change in it is heard)
   const mood = screen.name === "pick" ? screen.mood : null;
-  const shelf = found && mood ? (found.rows.find((row) => fits(mood, row)) ?? found.rows[0]) : undefined;
+  const shelf = found && mood ? reasonFor(found, mood) : undefined;
   const pickLine = found ? (found.year ? t("cat.pickYear", { title: found.title, year: found.year }) : t("cat.pick", { title: found.title })) : "";
-  const pickWhere = shelf ? t("cat.pickWhere", { shelf }) : "";
+  // (a row about the viewer is a reason on its own: "Because you watched Up"; a shelf of a kind is "From “Comedy Movies”")
+  const pickWhere = shelf ? (shelf === found?.because ? shelf : t("cat.pickWhere", { shelf })) : "";
   const said = screen.name !== "pick" ? "" : found ? `${pickLine}${pickWhere ? `. ${pickWhere}` : ""}` : t("cat.nothing");
 
   return (

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createRng } from "../rng";
-import { fits, MOODS, pick, type Candidate, type Mood } from "./assistant";
+import { fits, MOODS, pick, reasonFor, type Candidate, type Mood } from "./assistant";
 import { Governor } from "./governor";
 import { DWELL_MS, Hand, REPEAT_MS } from "./hand";
 
@@ -156,6 +156,25 @@ describe("find me something", () => {
     expect(pick(pool.filter((one) => one.id !== "m2"), "scary", new Set(), createRng(1))).toBeNull();
     expect(pick(pool, "funny", new Set(["m1", "m5"]), createRng(1))).toBeNull();
     expect(pick([], "any", new Set(), createRng(1))).toBeNull();
+  });
+
+  it("likes a title the library chose for the viewer, and gives the reason in the library's own words", () => {
+    const among: Candidate[] = [
+      { id: "mine", title: "Mine", rows: ["Comedy"], index: 5, image: "x.jpg", because: "Because you watched Up" },
+      ...Array.from({ length: 29 }, (_, i): Candidate => ({ id: `other${i}`, title: `Other ${i}`, rows: ["Comedy"], index: 5, image: "y.jpg" })),
+    ];
+    let mine = 0;
+    for (let seed = 1; seed <= 600; seed++) if (pick(among, "funny" as Mood, new Set(), createRng(seed))?.id === "mine") mine++;
+    expect(mine).toBeGreaterThan(600 / 30 + 15); // (a fair draw among thirty gives it twenty; two and a half times the weight gives about forty-eight)
+    // for "anything" the row about the viewer is the reason; for a mood it is the shelf of that kind
+    expect(reasonFor(among[0]!, "any")).toBe("Because you watched Up");
+    expect(reasonFor(among[0]!, "funny")).toBe("Comedy");
+    expect(reasonFor(among[1]!, "any")).toBe("Comedy");
+    // a title that is only on a row about the viewer has no shelf of a kind, and is found for "anything" and for nothing else
+    const only: Candidate = { id: "only", title: "Only", rows: [], index: 0, because: "Because you loved Up" };
+    expect(reasonFor(only, "any")).toBe("Because you loved Up");
+    expect(pick([only], "any", new Set(), createRng(1))?.id).toBe("only");
+    expect(pick([only], "funny", new Set(), createRng(1))).toBeNull();
   });
 
   it("likes the front of a shelf and a poster with a picture", () => {
