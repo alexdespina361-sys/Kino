@@ -62,6 +62,8 @@ export interface AppOptions {
   allowPrivateNetwork?: boolean;
   /** Whether `/api/proxy` carries film (playlists, pieces, files) or only subtitles. On unless set; env PROXY_VIDEO=off turns it off (see `ProxyOptions.video`). */
   proxyVideo?: boolean;
+  /** Whether screens may offer the cat companion. Off unless set; env CAT_COMPANION=on turns it on, and taking it back off is the kill switch (see `/api/features`). */
+  cat?: boolean;
   /** Socket liveness tuning; tests shorten it. */
   hub?: HubOptions;
   /** How much of a film the proxy keeps for the screens of a party (64 MB, 3 minutes unless set; env SEGMENT_CACHE_MB sets the size in megabytes). */
@@ -178,6 +180,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   const isProxyOff = process.env.PROXY_VIDEO === "off" || process.env.PROXY_VIDEO === "false" || process.env.PROXY_VIDEO === "0";
   const proxyVideo = options.proxyVideo ?? !isProxyOff;
+  // The cat companion is shown to nobody until the host says so; a screen asks here whether it may offer one (and its settings switch is hidden when it may not).
+  // Setting CAT_COMPANION back to off is the kill switch: every screen's cat is gone at its next load.
+  const catOn = options.cat ?? /^(1|on|true|yes)$/i.test(process.env.CAT_COMPANION ?? "");
+  app.get("/api/features", async (_request, reply) => reply.header("Cache-Control", "no-store").send({ cat: catOn }));
   // (`uptime`, in seconds, tells a server that was only just started - it slept, or was restarted - from one that has been up all along.
   // `segments` counts the asks for a piece of a film that the proxy answered itself (`hits`) and the ones it had to take to the film's own place
   // (`misses`): with screens watching together, the hits are the share of the load that was not multiplied by the number of screens.)
@@ -193,6 +199,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     subsync: subsyncStats,
     // (`feedback` is how many reports are kept and whether the team can read them: `team` is false while FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more.)
     feedback: { reports: feedback.size, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },
+    features: { cat: catOn },
   }));
   app.get("/api/library", async (request, reply) => {
     const body = JSON.stringify(await library.get());
