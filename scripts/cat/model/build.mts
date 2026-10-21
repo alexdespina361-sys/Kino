@@ -23,9 +23,10 @@ const model = buildModel();
 const field = makeField(model.scene);
 const { prims } = model.scene;
 
-const lo = [-0.8, -0.03, -0.2];
-const hi = [0.8, 1.13, 0.2];
-const lattice: Lattice = { ox: lo[0]!, oy: lo[1]!, oz: lo[2]!, h, nx: Math.ceil((hi[0]! - lo[0]!) / h) + 1, ny: Math.ceil((hi[1]! - lo[1]!) / h) + 1, nz: Math.ceil((hi[2]! - lo[2]!) / h) + 1 };
+// (a surface that lies in the first layer of cells of the lattice is not made: the sides have room, and the same room, so that the cat is the same on both)
+const lo = [-0.8, -0.03, -0.25];
+const hi = [0.8, 1.13, 0.25];
+const lattice: Lattice = { ox: lo[0]!, oy: lo[1]!, oz: -h * Math.ceil(-lo[2]! / h), h, nx: Math.ceil((hi[0]! - lo[0]!) / h) + 1, ny: Math.ceil((hi[1]! - lo[1]!) / h) + 1, nz: 2 * Math.ceil(-lo[2]! / h) + 1 };
 console.log(`lattice ${lattice.nx} x ${lattice.ny} x ${lattice.nz} (${((lattice.nx * lattice.ny * lattice.nz) / 1e6).toFixed(2)} M), ${prims.length} shapes`);
 const values = sample(field, lattice);
 console.log(`sampled in ${((performance.now() - t0) / 1000).toFixed(1)} s`);

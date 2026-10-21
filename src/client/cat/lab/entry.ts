@@ -98,6 +98,8 @@ export const POSES: Cell[] = [
   { label: "stand, sniff", frame: { clip: "sniff", progress: 0.5 } },
   { label: "stalk", frame: { clip: "stalk", odometer: 20 } },
   { label: "crouch, wiggle", frame: { clip: "wiggle", progress: 0.5 } },
+  { label: "stalk, facing left", frame: { clip: "stalk", odometer: 20, facing: -1 } },
+  { label: "sit, facing left", frame: { clip: "sit", facing: -1 } },
 ];
 
 /** A strip of one walk cycle, evenly spaced. */

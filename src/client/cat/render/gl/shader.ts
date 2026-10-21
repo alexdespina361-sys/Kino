@@ -451,7 +451,9 @@ void main() {
   lit += vec3(1.0, 0.88, 0.7) * sheen * 0.1 * (1.0 - st * 0.6) * (1.0 - white);
   // (and a band of light across the hair, where its strands are turned to the light: the way a coat shines)
   vec3 H = normalize(L + vec3(0.0, 0.0, 1.0));
-  float th = dot(normalize(vFlow), H);
+  // (the flow of two bones can cancel to nothing at a point, and the direction of nothing is not a number: a black dot)
+  float flowLen = dot(vFlow, vFlow);
+  float th = flowLen > 0.000001 ? dot(vFlow, H) * inversesqrt(flowLen) : 0.0;
   float strandShine = pow(sqrt(max(0.0, 1.0 - th * th)), 30.0) * clamp(dot(N, L) + 0.3, 0.0, 1.0);
   // (it is the colour of the hair that shines: a black coat that took it as a light, whatever its colour, would be blotched where the hair's direction changes)
   float dark = 1.0 - clamp(dot(alb, vec3(0.3, 0.55, 0.15)) * 2.6, 0.0, 1.0);
