@@ -22,13 +22,13 @@ export interface Coat {
 
 export const COATS: Record<CatCoat, Coat> = {
   ginger: {
-    base: [0.9, 0.56, 0.25],
-    light: [0.98, 0.78, 0.52],
-    stripe: [0.7, 0.34, 0.12],
+    base: [0.93, 0.66, 0.37],
+    light: [0.99, 0.85, 0.66],
+    stripe: [0.78, 0.44, 0.19],
     white: [1, 0.95, 0.88],
     patchA: [0.9, 0.56, 0.25],
     patchB: [0.7, 0.34, 0.12],
-    stripes: 1,
+    stripes: 0.9,
     whites: 1,
     tuxedo: 0,
     patches: 0,

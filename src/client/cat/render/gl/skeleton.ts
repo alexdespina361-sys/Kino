@@ -186,6 +186,20 @@ function yaw(out: Mat, angle: number, cx: number): Mat {
   return out;
 }
 
+/** How much larger the head is worn than it is made (about its own centre). */
+export const HEAD_SCALE = 1.14;
+
+/** An even scale by `s` about the point (cx, cy) of the side view (and z = 0). */
+function scaleAbout(out: Mat, s: number, cx: number, cy: number): Mat {
+  out.fill(0);
+  out[0] = s;
+  out[5] = s;
+  out[10] = s;
+  out[3] = cx - s * cx;
+  out[7] = cy - s * cy;
+  return out;
+}
+
 /** A turn about the line along x through (y, z) = (py, pz): the way an ear leans. */
 function lean(out: Mat, angle: number, py: number, pz: number): Mat {
   const c = Math.cos(angle);
@@ -313,6 +327,9 @@ export class Skeleton {
     const sr = Math.sin(roll);
     plane(m, cr, -sr, sr, cr, headNow.x - (cr * R.head.x - sr * R.head.y), headNow.y - (sr * R.head.x + cr * R.head.y));
     yaw(this.tmp2, headYaw, R.head.x);
+    mul(m, m, this.tmp2);
+    // (a cat's head is bigger than a clay one's: the head, its ears, its jaw and its whiskers are made larger about their own centre, which the painted face, in the rest, does not feel)
+    scaleAbout(this.tmp2, HEAD_SCALE, R.head.x, R.head.y);
     mul(m, m, this.tmp2);
     this.head.set(m);
     mul(this.tmp3, world, m);

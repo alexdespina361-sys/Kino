@@ -1457,8 +1457,18 @@ export class CatEngine {
         const asleep: Act[] = turns
           ? [{ k: "sleep", dur: nap * this.rng.range(0.4, 0.6) }, { k: "shot", clip: "shift", dur: 2.6 }, { k: "sleep", dur: nap * this.rng.range(0.3, 0.45) }]
           : [{ k: "sleep", dur: nap }];
+        // (a nap is the longest stillness there is: a cat that is free to roam does not take it where its body would hide a name, however it was just that it moved,
+        // and goes to a shelf that is clear of them for it, or does not nap now)
+        const poses: readonly RestPose[] = tread ? ["loaf", "knead", "curl"] : ["loaf", "curl"];
+        const found = settling(poses);
+        let way: Act[] | null = null;
+        if (found && found.cost > UNTIDY * L * L) {
+          way = this.cleanerPlace(world, poses, found.cost);
+          if (!way) return null;
+          this.cool.relocate = this.now + this.rng.range(12, 25);
+        }
         return [
-          ...walkToSpot(tread ? ["loaf", "knead", "curl"] : ["loaf", "curl"]),
+          ...(way ?? (found?.x === undefined ? [] : [{ k: "walk", x: found.x, run: false, maxT: 25 } as const])),
           { k: "rest", pose: "loaf", dur: 2.5 },
           ...(tread ? [{ k: "shot", clip: "knead", dur: this.rng.range(4, 7) } as const] : []),
           ...asleep,

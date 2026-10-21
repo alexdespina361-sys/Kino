@@ -3,7 +3,11 @@
 //
 // Coordinates: x forward, y up, z toward the viewer (the cat's near side). Units are body lengths, like the rig's.
 import { BONE, TAIL_BONES, restSolved } from "../../../src/client/cat/render/gl/skeleton";
+import type { PointKey } from "../../../src/client/cat/render/shapes";
 import { ellipsoid, frameOf, roundCone, squeezed, type Prim, type Scene, type Dist, type Box } from "./sdf.mts";
+
+/** How full each part is made, against the first model (1 is that): a real cat is plumper in the neck, the head, the legs and the tail than a clay one. */
+const FAT = { torso: 1.07, neck: 1.22, head: 1.1, leg: 1.15, paw: 1.16, tail: 1.18 } as const;
 
 export const REGION = { body: 0, head: 1, ear: 2, foreleg: 3, hindleg: 4, paw: 5, tail: 6, muzzle: 7 } as const;
 
@@ -62,29 +66,51 @@ export function buildModel(): Model {
   const at = (dx: number, dy: number, dz: number): Vec3 => [H[0] + dx, H[1] + dy, H[2] + dz];
 
   /* ------------------------------ the body ------------------------------ */
-  // (stations of the barrel: where, how high and wide, and which bone carries it)
-  const station = (name: string, x: number, y: number, hh: number, hw: number, rx: number, bone: number, fur = 1, tau = 0.07) =>
-    add(name, ellipsoid([x, y, 0], [rx, hh, hw]), { bone, k: 0.08, tau, region: REGION.body, fur });
-  station("rump", -0.395, 0.468, 0.112, 0.112, 0.105, BONE.f0);
-  station("hips", -0.27, 0.465, 0.122, 0.118, 0.11, BONE.f1);
-  station("flank", -0.1, 0.462, 0.128, 0.104, 0.12, BONE.f2);
-  station("ribs", 0.07, 0.46, 0.148, 0.116, 0.135, BONE.f2);
-  station("chest", 0.2, 0.465, 0.152, 0.116, 0.12, BONE.f3, 1, 0.1);
-  station("prow", 0.325, 0.485, 0.145, 0.102, 0.11, BONE.f4, 1.3, 0.1);
+  // The barrel is made around the lines of the back and of the belly that the rig has for a standing cat (so that a standing cat that is made taller or
+  // lower in the rig is that in the mesh too): each station is an ellipsoid between the two lines, a little over or short of them as `top` and `bottom` say.
+  const pt = (k: PointKey) => ({ x: rest.pose.p[k].x, y: -rest.pose.p[k].y });
+  const lineOf = (keys: PointKey[]) => {
+    const pts = keys.map(pt).sort((a, b) => a.x - b.x);
+    return (x: number): number => {
+      if (x <= pts[0]!.x) return pts[0]!.y;
+      for (let i = 1; i < pts.length; i++) {
+        if (x <= pts[i]!.x) {
+          const a = pts[i - 1]!;
+          const b = pts[i]!;
+          return a.y + ((b.y - a.y) * (x - a.x)) / (b.x - a.x);
+        }
+      }
+      return pts[pts.length - 1]!.y;
+    };
+  };
+  const backAt = lineOf(["rumpTop", "backMid", "shoulderTop", "neckTop"]);
+  const bellyAt = lineOf(["rumpBottom", "groin", "bellyMid", "chestBottom", "chestFront"]);
+  // (stations of the barrel: where, how far over the back's line and the belly's, how wide, and which bone carries it)
+  const station = (name: string, x: number, top: number, bottom: number, hw: number, rx: number, bone: number, fur = 1, tau = 0.07) => {
+    const hi = backAt(x) + top;
+    const lo = bellyAt(x) + bottom;
+    add(name, ellipsoid([x, (hi + lo) / 2, 0], [rx, ((hi - lo) / 2) * FAT.torso, hw * FAT.torso]), { bone, k: 0.08, tau, region: REGION.body, fur });
+  };
+  station("rump", -0.395, 0, 0.003, 0.112, 0.105, BONE.f0);
+  station("hips", -0.27, -0.001, 0.004, 0.118, 0.11, BONE.f1);
+  station("flank", -0.1, -0.009, 0.007, 0.104, 0.12, BONE.f2);
+  station("ribs", 0.07, 0.003, -0.012, 0.116, 0.135, BONE.f2);
+  station("chest", 0.2, 0.007, -0.019, 0.116, 0.12, BONE.f3, 1, 0.1);
+  station("prow", 0.325, -0.007, 0.001, 0.102, 0.11, BONE.f4, 1.3, 0.1);
   // the ruff at the chest, and the belly (a cat's hangs a little between the legs)
-  add("ruff", ellipsoid([0.385, 0.44, 0], [0.07, 0.11, 0.082]), { bone: BONE.f4, k: 0.06, tau: 0.09, region: REGION.body, fur: 1.8 });
-  add("belly", ellipsoid([-0.07, 0.35, 0], [0.19, 0.04, 0.085]), { bone: BONE.f2, k: 0.07, tau: 0.07, region: REGION.body, fur: 1.5 });
+  add("ruff", ellipsoid([0.385, pt("chestBottom").y + 0.1, 0], [0.07, 0.11, 0.082]), { bone: BONE.f4, k: 0.06, tau: 0.09, region: REGION.body, fur: 1.8 });
+  add("belly", ellipsoid([-0.07, pt("bellyMid").y + 0.03, 0], [0.19, 0.04, 0.085]), { bone: BONE.f2, k: 0.07, tau: 0.07, region: REGION.body, fur: 1.5 });
 
   /* ------------------------------ the neck and the head ------------------------------ */
-  add("neck", roundCone([0.33, 0.55, 0], [H[0] - 0.04, H[1] - 0.07, 0], 0.098, 0.074), { bone: BONE.neck, k: 0.06, tau: 0.09, region: REGION.body, fur: 1.25 });
+  add("neck", roundCone([0.33, pt("neckTop").y - 0.09, 0], [H[0] - 0.04, H[1] - 0.07, 0], 0.098 * FAT.neck, 0.074 * FAT.neck), { bone: BONE.neck, k: 0.06, tau: 0.09, region: REGION.body, fur: 1.25 });
   const head = (name: string, c: Vec3, r: Vec3, o: { bone?: number; fur?: number; k?: number; region?: number } = {}) =>
     add(name, ellipsoid(c, r), { bone: o.bone ?? BONE.head, k: o.k ?? 0.035, tau: 0.03, region: o.region ?? REGION.head, fur: o.fur ?? 0.55 });
-  head("skull", at(-0.01, 0.012, 0), [0.114, 0.098, 0.112]);
+  head("skull", at(-0.01, 0.012, 0), [0.114 * FAT.head, 0.098 * FAT.head, 0.112 * FAT.head]);
   head("muzzle", at(0.1, -0.036, 0), [0.062, 0.046, 0.05], { region: REGION.muzzle, fur: 0.3 });
   head("chin", at(0.084, -0.076, 0), [0.042, 0.028, 0.036], { bone: BONE.jaw, region: REGION.muzzle, fur: 0.45 });
   for (const s of [1, -1]) {
     // the cheeks, which make a cat's face wider below the eyes than above them, and the puffs of the whisker pads on the muzzle
-    head(`cheek${s}`, at(0.028, -0.046, s * 0.072), [0.062, 0.05, 0.046], { fur: 1.5 });
+    head(`cheek${s}`, at(0.028, -0.046, s * 0.072), [0.062 * FAT.head, 0.05 * FAT.head, 0.046 * FAT.head], { fur: 1.5 });
     head(`pad${s}`, at(0.108, -0.049, s * 0.031), [0.042, 0.027, 0.03], { region: REGION.muzzle, fur: 0.3, k: 0.03 });
     // the brow over each eye
     head(`brow${s}`, at(0.066, 0.049, s * 0.052), [0.04, 0.014, 0.032], { k: 0.025, fur: 0.5 });
@@ -114,9 +140,9 @@ export function buildModel(): Model {
     const z = L.z;
     const p = (j: { x: number; y: number }, dz = 0): Vec3 => [j.x, j.y, z + dz];
     add(`${key}-scapula`, ellipsoid([L.root.x - 0.005, L.root.y + 0.065, z * 1.18], [0.088, 0.118, 0.05], { axis: [0.25, 1, 0] }), { bone: bones[0], k: 0.05, tau: 0.05, region: REGION.foreleg, fur: 1 });
-    add(`${key}-upper`, roundCone(p(L.root), p(L.mid), 0.07, 0.05), { bone: bones[0], k: 0.05, tau: 0.04, region: REGION.foreleg, fur: 0.9, u0: 0, u1: 0.4 });
-    add(`${key}-lower`, roundCone(p(L.mid), p(L.wrist), 0.048, 0.032), { bone: bones[1], k: 0.04, tau: 0.035, region: REGION.foreleg, fur: 0.7, u0: 0.4, u1: 0.85 });
-    add(`${key}-paw`, ellipsoid([L.toe.x + 0.027, 0.023, z], [0.058, 0.024, 0.034]), { bone: bones[2], k: 0.03, tau: 0.03, region: REGION.paw, fur: 0.4, u0: 1 });
+    add(`${key}-upper`, roundCone(p(L.root), p(L.mid), 0.07 * FAT.leg, 0.05 * FAT.leg), { bone: bones[0], k: 0.05, tau: 0.04, region: REGION.foreleg, fur: 0.9, u0: 0, u1: 0.4 });
+    add(`${key}-lower`, roundCone(p(L.mid), p(L.wrist), 0.048 * FAT.leg, 0.032 * FAT.leg), { bone: bones[1], k: 0.04, tau: 0.035, region: REGION.foreleg, fur: 0.7, u0: 0.4, u1: 0.85 });
+    add(`${key}-paw`, ellipsoid([L.toe.x + 0.027, 0.023, z], [0.058 * FAT.paw, 0.024 * FAT.paw, 0.034 * FAT.paw]), { bone: bones[2], k: 0.03, tau: 0.03, region: REGION.paw, fur: 0.4, u0: 1 });
   };
   front("fn", [BONE.fnU, BONE.fnL, BONE.fnP]);
   front("ff", [BONE.ffU, BONE.ffL, BONE.ffP]);
@@ -125,11 +151,11 @@ export function buildModel(): Model {
     const L = legs[key];
     const z = L.z;
     const p = (j: { x: number; y: number }, dz = 0): Vec3 => [j.x, j.y, z + dz];
-    add(`${key}-haunch`, ellipsoid([L.root.x + 0.015, L.root.y - 0.015, z * 1.06], [0.13, 0.15, 0.066], { axis: [0.35, 1, 0] }), { bone: bones[0], k: 0.06, tau: 0.085, region: REGION.hindleg, fur: 1.25 });
-    add(`${key}-thigh`, roundCone(p(L.root), p(L.mid), 0.105, 0.054), { bone: bones[0], k: 0.05, tau: 0.06, region: REGION.hindleg, fur: 1.2, u0: 0, u1: 0.3 });
-    add(`${key}-shin`, roundCone(p(L.mid), p(L.hock), 0.056, 0.039), { bone: bones[1], k: 0.04, tau: 0.035, region: REGION.hindleg, fur: 0.8, u0: 0.3, u1: 0.6 });
-    add(`${key}-foot`, roundCone(p(L.hock), p({ x: L.toe.x - 0.005, y: L.toe.y + 0.032 }), 0.038, 0.031), { bone: bones[2], k: 0.035, tau: 0.03, region: REGION.hindleg, fur: 0.5, u0: 0.6, u1: 0.9 });
-    add(`${key}-paw`, ellipsoid([L.toe.x + 0.029, 0.023, z], [0.06, 0.024, 0.034]), { bone: bones[2], k: 0.03, tau: 0.03, region: REGION.paw, fur: 0.4, u0: 1 });
+    add(`${key}-haunch`, ellipsoid([L.root.x + 0.015, L.root.y - 0.015, z * 1.06], [0.13, 0.15, 0.066], { axis: [0.35, 1, 0] }), { bone: BONE.f1, k: 0.06, tau: 0.085, region: REGION.hindleg, fur: 1.25 });
+    add(`${key}-thigh`, roundCone(p(L.root), p(L.mid), 0.105 * FAT.leg, 0.054 * FAT.leg), { bone: bones[0], k: 0.05, tau: 0.06, region: REGION.hindleg, fur: 1.2, u0: 0, u1: 0.3 });
+    add(`${key}-shin`, roundCone(p(L.mid), p(L.hock), 0.056 * FAT.leg, 0.039 * FAT.leg), { bone: bones[1], k: 0.04, tau: 0.035, region: REGION.hindleg, fur: 0.8, u0: 0.3, u1: 0.6 });
+    add(`${key}-foot`, roundCone(p(L.hock), p({ x: L.toe.x - 0.005, y: L.toe.y + 0.032 }), 0.038 * FAT.leg, 0.031 * FAT.leg), { bone: bones[2], k: 0.035, tau: 0.03, region: REGION.hindleg, fur: 0.5, u0: 0.6, u1: 0.9 });
+    add(`${key}-paw`, ellipsoid([L.toe.x + 0.029, 0.023, z], [0.06 * FAT.paw, 0.024 * FAT.paw, 0.034 * FAT.paw]), { bone: bones[2], k: 0.03, tau: 0.03, region: REGION.paw, fur: 0.4, u0: 1 });
   };
   hind("hn", [BONE.hnU, BONE.hnL, BONE.hnP]);
   hind("hf", [BONE.hfU, BONE.hfL, BONE.hfP]);
@@ -140,7 +166,7 @@ export function buildModel(): Model {
     const b = tail[i + 1]!;
     const f0 = i / TAIL_BONES;
     const f1 = (i + 1) / TAIL_BONES;
-    const r = (f: number) => 0.046 - 0.007 * f - 0.003 * f * f;
+    const r = (f: number) => (0.046 - 0.007 * f - 0.003 * f * f) * FAT.tail;
     add(`tail${i}`, roundCone([a.x, a.y, 0], [b.x, b.y, 0], r(f0), r(f1)), { bone: BONE.tail0 + i, k: i === 0 ? 0.06 : 0, tau: 0.035, region: REGION.tail, fur: 1.4, u0: f0, u1: f1 });
   }
 
