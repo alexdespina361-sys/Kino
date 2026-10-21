@@ -193,7 +193,7 @@ export class TvPage {
         const state = tv.dataset.state ?? "";
         controlsUp = tv.dataset.hud === "visible";
         player = tv.querySelector(".tv-end") ? "ended" : tv.querySelector(".tv-fail") || state === "error" ? "error" : state === "loading" ? "loading" : state === "playing" ? "playing" : state === "paused" ? "paused" : "none";
-        this.readFilm(tv, { vw, vh, L, em }, draft, controlsUp);
+        this.readFilm({ vw, vh, L, em }, draft);
         home = { parent: tv, after: video };
       }
     } else if (browse) {
@@ -349,13 +349,10 @@ export class TvPage {
 
   /* ------------------------------ a film ------------------------------ */
 
-  private readFilm(tv: HTMLElement, c: Metrics, draft: Draft, controlsUp: boolean): void {
-    const { em, L } = c;
-    if (controlsUp) {
-      for (const el of tv.querySelectorAll<HTMLElement>(".hud-top, .hud-bottom, .hud-upnext, .hud-boost")) if (takesRoom(el)) draft.keepOut.push(inflate(rectOf(el), 0.3 * em));
-    }
-    // the subtitles: each line, with a margin (they are drawn over the cat, but they are what is being read)
-    for (const el of tv.querySelectorAll<HTMLElement>(".tv-caption, .tv-note, .hud-toast, .tv-toast")) if (takesRoom(el)) draft.keepOut.push(inflate(rectOf(el), 0.6 * em));
+  private readFilm(c: Metrics, draft: Draft): void {
+    const { L } = c;
+    // (Nothing of the player is a place to keep out of: the cat's layer is under the subtitles, the controls and the notes, so it never covers one, and a
+    // cat that left whenever they came would be leaving at every key the viewer pressed and every line that was said.)
     const ground = c.vh - Math.max(6, c.vh * 0.025);
     draft.surfaces.push(
       { id: "perch-right", kind: "playerPerch", y: ground, x0: c.vw - PERCH_TO * L, x1: c.vw - PERCH_FROM * L, weight: 1 },

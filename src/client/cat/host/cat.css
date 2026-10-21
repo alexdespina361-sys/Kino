@@ -16,6 +16,9 @@
   contain: layout paint style;
 }
 .kino-cat[hidden] { display: none; }
+/* In a film the cat is drawn under everything the player puts after the picture (the subtitles, the controls, the shade of a pause): the layer is put just
+   after the picture, so at the page's own level it is under what follows it. Words are never drawn over a cat, and a tap on the controls is theirs. */
+.kino-cat[data-mode="player"] { z-index: 0; }
 .kino-cat-canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; will-change: transform; }
 .kino-cat-hit {
   position: absolute;
