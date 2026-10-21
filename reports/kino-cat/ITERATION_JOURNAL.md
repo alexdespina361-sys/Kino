@@ -190,8 +190,17 @@ One entry per iteration of the branch `feat/kino-cat` (off main `5cf4704`, PR #2
 - **Run.** The lab renders only (the shader is not covered by a unit test; the software driver is checked with the end-to-end run).
 - **Reference research.** None.
 
+## 20 · The landing of a hop is chosen by what it covers (round 2)
+
+- **Root issue.** Entry 17 left the real page unchanged: measured again against it (the page's own pixels against the names' text, by act and by surface) the cat still hid a name in 124 of 352 resting samples at seed 11 / 1280×720, and every one of the 33 samples over a tenth of a body-square was a sit on the floor of the screen after a hop. The TV's rows are all alike (names under every card), so there is no cleaner shelf to go to; the floor of the screen is the one place with the names right at its feet, and a hop to it lands at a chance place (a random fraction of the shelf) in the posture drawn first.
+- **Technique.** The hop's plan chooses the pose and the length of the rest first, then the place: the posture is replaced, if its best place on that shelf would hide more than a tenth of a body-square, by one that would hide at most half as much (`cleanestPose`, used for a rest and for a stroll's pause as well); the place is the best one near the chosen (`settle` on the *target* ledge: `settling` and `spotFor` take a ledge now); and the route is made to that place, not to the random one. No new random draws (the three that the plan always made are made first), none at all for a viewer who asked for quiet.
+- **Considered, not done.** Leaving the floor out of a hop's choices (it is the cat's home when nothing else is on the screen, and a good perch under the controls of a film); making the first seat, the seat by the focused card and the end of a pounce choose by what they cover (they carry a meaning of their own).
+- **Seen / measured.** On the real page, 120 s at three sizes (ISSUE_LOG row 9 of the Fixed list): none of the resting samples is over a tenth of a body-square (33 of 352 before), worst overlap 191 px² (1,481 before). New test on the captured TV page (`tv-library.fixture.ts`, taken from the cat's own `?cat=debug` handle, `world()` is new and only there): 0.028 of the resting on its floor hides more than a tenth of a body-square, 0.095 with the landing left to chance (the mutant fails it, checked).
+- **Run.** tsc, 119 cat unit tests.
+- **Reference research.** None.
+
 ## What the later iterations should do first
 
 1. A person should watch it on a real TV or Fire Stick with `?cat=debug` and report `art`, `quality`, `cost`, `fps` (05, "Not tested").
 2. Judge motion at real frame rates (every entry above judged stills, strips and numbers; nobody has watched the cat move).
-3. Decide ISSUE_LOG #9 and #10 (the names under the last row, the hop landing), and #13 (the simple cat is a different cat from the detailed one).
+3. Decide ISSUE_LOG #10 (the seats that are not chosen by what they cover) and #13 (the simple cat is a different cat from the detailed one).

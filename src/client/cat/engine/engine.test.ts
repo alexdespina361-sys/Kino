@@ -6,6 +6,7 @@ import { CatEngine } from "./engine";
 import { computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, screenEdges, settledCost, stepFlight, type Clutter, type Ledge, type RestPose } from "./ledges";
 import { shapeCovers, shapeHits } from "./shape";
 import { browseWorld, defaultPage, playerWorld, runSession, stepCat } from "./sim";
+import { tvLibrary } from "./tv-library.fixture";
 
 const L = 92;
 
@@ -644,6 +645,27 @@ describe("settling clear of the names", () => {
     // (it is on the crowded shelf now and then, on its way and for the pauses of a stroll, but not to rest on)
     expect(seen.on["p1:row0"] ?? 0).toBeLessThan(0.1 * seen.resting);
     expect(seen.on["p1:row1"] ?? 0).toBeGreaterThan(0.3 * seen.resting);
+  });
+
+  it("on the TV's own library page, as the cat read it, it does not rest in front of a name: not where it settles and not where it lands from a hop", () => {
+    // (the floor of the screen is the place with the names: the rows are clear of them)
+    let floor = 0;
+    let hid = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 11, 12]) {
+      const engine = new CatEngine(seed);
+      for (let i = 0; i < 600 * 30; i++) {
+        const f = engine.update(tvLibrary, 1 / 30);
+        const debug = engine.debug();
+        const pose: RestPose | null = debug.act === "rest:sit" ? "sit" : debug.act === "rest:loaf" ? "loaf" : debug.act === "rest:stand" ? "stand" : debug.act === "sleep" ? "curl" : null;
+        if (!pose || debug.surfaceId !== "floor" || f.appear < 0.99 || !f.grounded) continue;
+        floor++;
+        if (shapeCovers(pose, f.facing, f.x, f.y, tvLibrary.bodyLength, tvLibrary.soft!) / tvLibrary.bodyLength ** 2 > 0.1) hid++;
+      }
+    }
+    expect(floor).toBeGreaterThan(8000);
+    // (measured: 0.095 of its resting on the floor hid more than a tenth of a body-square of names while the landing of a hop was left to chance, and the posture was the one drawn; 0.028 since,
+    // nearly all of it the first seat or loaf where it appears and the seat after a sniff)
+    expect(hid / floor).toBeLessThan(0.05);
   });
 
   it("does not leave its shelf for the sake of names when the viewer wants quiet or less motion, but settles where it is", () => {

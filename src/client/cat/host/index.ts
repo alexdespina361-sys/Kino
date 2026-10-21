@@ -48,6 +48,8 @@ export interface CatHandle {
   snapshot(): CatSnapshot;
   /** Opens or closes the panel. */
   panel(open?: boolean): void;
+  /** The page as the cat last read it (plain numbers), to be tried again somewhere else. */
+  world(): World | null;
 }
 
 export interface CatSnapshot {
@@ -521,6 +523,7 @@ export function mountCat(): { stop: () => void } {
     window.__kinoCat = {
       send: (event) => engine.send(event),
       panel: togglePanel,
+      world: () => (read ? (JSON.parse(JSON.stringify(read.world)) as World) : null),
       snapshot: () => ({
         frame: { ...frame },
         engine: engine.debug(),

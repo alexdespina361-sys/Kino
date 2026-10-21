@@ -849,8 +849,9 @@ export class CatEngine {
 
     // (a cat that is going to settle for a while does it where its body does not cover the names under the cards, if the shelf has such a place; it only walks for it when it is free to roam)
     // (it faces the way it walks there: `from` is where it means to settle, and the spot is looked for round it)
-    const settling = (pose: RestPose | readonly RestPose[], from = this.x): Settling | undefined => (roaming && here ? settle(here, from, from === this.x ? this.facing : from > this.x ? 1 : -1, L, pose, world) : undefined);
-    const spotFor = (pose: RestPose | readonly RestPose[], from = this.x): number | undefined => settling(pose, from)?.x;
+    const settling = (pose: RestPose | readonly RestPose[], from = this.x, on: Ledge | undefined = here): Settling | undefined =>
+      roaming && on ? settle(on, from, from === this.x ? this.facing : from > this.x ? 1 : -1, L, pose, world) : undefined;
+    const spotFor = (pose: RestPose | readonly RestPose[], from = this.x, on: Ledge | undefined = here): number | undefined => settling(pose, from, on)?.x;
     // (and when even the best place of this shelf would hide a name, a cat that is free to roam, and has not just done it, goes to another shelf that has a better one, a leap or two off)
     const walkToSpot = (pose: RestPose | readonly RestPose[]): Act[] => {
       const found = settling(pose);
@@ -865,12 +866,27 @@ export class CatEngine {
     };
     // (a posture that the shelf has no room for, with the words as they are, is taken less: a cat lying out in front of a name when it could sit up between two)
     const roomFor = (pose: RestPose): number => 1 / (1 + (6 * (settling(pose)?.cost ?? 0)) / (L * L));
+    // (and the one that was drawn gives way, when its best place would still hide a name, to a posture that would hide at most half as much: it lies down or gets up instead of sitting in front of the name)
+    const cleanestPose = (pose: Pose, from = this.x, on: Ledge | undefined = here): Pose => {
+      const cost = settling(pose, from, on)?.cost;
+      if (cost === undefined || cost <= UNTIDY * L * L) return pose;
+      let best = pose;
+      let least = cost;
+      for (const other of ["sit", "loaf", "stand"] as const) {
+        const c = settling(other, from, on)?.cost;
+        if (c !== undefined && c < 0.5 * least) {
+          best = other;
+          least = c;
+        }
+      }
+      return best;
+    };
 
     options.push({
       name: "rest",
       score: 1.0 + tired * 0.8,
       plan: () => {
-        const pose = this.rng.weighted<Pose>(["sit", "loaf", "stand"], (p) => (p === "sit" ? 0.5 : p === "loaf" ? 0.3 + tired * 0.4 : 0.2) * roomFor(p)) ?? "sit";
+        const pose = cleanestPose(this.rng.weighted<Pose>(["sit", "loaf", "stand"], (p) => (p === "sit" ? 0.5 : p === "loaf" ? 0.3 + tired * 0.4 : 0.2) * roomFor(p)) ?? "sit");
         return [...walkToSpot(pose), { k: "rest", pose, dur: this.rng.range(4, 12) }];
       },
     });
@@ -885,7 +901,7 @@ export class CatEngine {
             if (Math.abs(x - this.x) > 1.3 * L) {
               // (a cat that has walked somewhere often smells it before it settles)
               const sniff: Act[] = tired < 0.7 && this.rng.chance(0.4) ? [{ k: "shot", clip: "sniff", dur: this.rng.range(2.2, 3.4) }] : [];
-              const pose: Pose = this.rng.chance(0.6) ? "sit" : "stand";
+              const pose: Pose = cleanestPose(this.rng.chance(0.6) ? "sit" : "stand", x);
               const dur = this.rng.range(2, 7);
               // (it stops where it was going, or a little off that if the names are there)
               return [{ k: "walk", x: spotFor(pose, x) ?? x, run: false, maxT: 40 }, ...sniff, { k: "rest", pose, dur }];
@@ -912,10 +928,16 @@ export class CatEngine {
           // (the shelves it has not been to lately are the more interesting)
           const pick = this.rng.weighted(candidates, (c) => c.ledge.weight / c.hops / (1 + 2 * Math.exp(-(this.now - (this.visited[c.ledge.surfaceId] ?? -1000)) / 40)));
           if (!pick) return null;
-          const plan = this.routeTo(world, pick.ledge, pick.x, false);
+          const sits = this.rng.chance(0.65);
+          const dur = this.rng.range(2, 6);
+          const cool = this.rng.range(6, 14);
+          // (it lands where it can settle clear of the names, the posture drawn giving way to a cleaner one if the shelf has no clean place for it: a landing at a chance place on a shelf of names is a few seconds in front of one)
+          const pose = cleanestPose(sits ? "sit" : "stand", pick.x, pick.ledge);
+          const spot = spotFor(pose, pick.x, pick.ledge) ?? pick.x;
+          const plan = this.routeTo(world, pick.ledge, spot, false) ?? this.routeTo(world, pick.ledge, pick.x, false);
           if (!plan) return null;
-          this.cool.hop = this.now + this.rng.range(6, 14);
-          plan.push({ k: "rest", pose: this.rng.chance(0.65) ? "sit" : "stand", dur: this.rng.range(2, 6) });
+          this.cool.hop = this.now + cool;
+          plan.push({ k: "rest", pose, dur });
           return plan;
         },
       });
