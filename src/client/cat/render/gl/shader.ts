@@ -366,12 +366,13 @@ void main() {
 
   float tux = uCoat.z;
   vec3 alb = uBase;
-  // the underside is the lighter colour (a tuxedo's white goes up the flank in a ragged line)
-  float rag = 0.035 * (noise(p * 7.0) - 0.5);
-  // (a ginger's colours run into each other; a tuxedo's white has an edge)
-  float edge = mix(0.045, 0.014, tux);
+  // the underside is the lighter colour (a tuxedo's white goes up the flank in a ragged line: it rises and falls along the body, and does not run the same on the two sides)
+  float rag = 0.035 * (noise(p * 7.0) - 0.5) + tux * (0.045 * sin(p.x * 8.5 + 1.1 * sign(p.z + 0.001)) + 0.07 * (noise(p * vec3(2.6, 1.8, 2.6) + 11.0) - 0.5));
+  // (a ginger's colours run into each other; a tuxedo's white has an edge, which is a scatter of hairs, one by one, in the layers of the fur)
+  float edge = mix(0.045, 0.03, tux);
   float belly = sstep(0.375 + 0.07 * tux + edge, 0.375 + 0.07 * tux - edge, p.y + rag) * (1.0 - onLimb);
-  alb = mix(alb, uLight, belly * mix(0.9, 1.0, tux));
+  float bellyH = (tux > 0.5 && uShell > 0.5) ? hairs(belly, strandOwn) : belly;
+  alb = mix(alb, uLight, bellyH * mix(0.9, 1.0, tux));
   float st = stripes(p, limb, u) * (1.0 - sstep(0.235, 0.19, length(h * vec3(1.0, 0.85, 1.0)))) * uCoat.x;
   // (each hair is dark or light by itself: the edge of a marking is a scatter of hairs, not a line; the base layer is the smooth mean of them)
   float stH = uShell > 0.5 ? hairs(st, strandOwn) : st;
@@ -424,6 +425,9 @@ void main() {
   if (uShell > 0.5 && f.a > 0.2) discard;
   alb = mix(alb, f.rgb, f.a);
   alb = mix(alb, mo.rgb, mo.a);
+  // (black hair is not black all through: towards its tip it is warmer and lighter, strand by strand, which is what shows a black coat to be fur)
+  float darkAlb = 1.0 - clamp(dot(alb, vec3(0.3, 0.55, 0.15)) * 2.6, 0.0, 1.0);
+  alb += vec3(0.07, 0.042, 0.026) * darkAlb * pow(shellT, 1.4) * (0.5 + strandOwn) * (1.0 - f.a);
 
   // light: a warm key from above and the front, a cool fill from the sky; the fur holds light along its edges
   vec3 A = lin(alb);
@@ -461,7 +465,11 @@ void main() {
   // the edge of a coat glows where the light comes through the hair: the outer layers, seen at a slant, are lit from behind
   lit += A * vec3(1.0, 0.8, 0.55) * pow(1.0 - clamp(abs(N.z), 0.0, 1.0), 1.5) * shellT * 0.5 * (0.4 + 0.6 * clamp(N.y * 0.5 + 0.7, 0.0, 1.0));
   // a dark coat takes almost nothing from the light as a colour, and would be a flat shape: the shine of its fur, cool, is what shows its form
-  lit += vec3(0.5, 0.58, 0.72) * dark * (0.012 * key + 0.1 * sheen + 0.07 * rim + 0.01 * sky);
+  // (strand by strand: each hair catches the light of its own, so the shine is a glitter of hairs and not a band of plastic)
+  // (and a coat is not equally glossy all over: where it is cleaner or flatter it shines, and elsewhere it does not, in patches the size of a hand)
+  float patchy = dark > 0.02 ? 0.5 + 1.0 * noise(p * 4.5 + 3.0) : 1.0;
+  float glint = (uShell > 0.5 ? 0.35 + 1.3 * strandOwn : 0.7) * patchy;
+  lit += vec3(0.5, 0.58, 0.72) * dark * (0.012 * key + 0.12 * pow(sheen, 1.5) * glint + 0.07 * rim + 0.01 * sky);
   lit += vec3(0.5, 0.18, 0.12) * onEar * (0.18 + 0.3 * rim) * (1.0 - key * 0.4);
   vec3 col = pow(lit, vec3(1.0 / 2.2));
   // paint that is itself light (the eye) is not darkened by the fur's shade

@@ -162,6 +162,34 @@ One entry per iteration of the branch `feat/kino-cat` (off main `5cf4704`, PR #2
 - **Seen / measured.** Three unit tests: the cat's silhouette (`shapeHits`) against each group in every posture a film takes, facing either way, at both ends of the perch; the corner fallback for each of the four reasons; `widestGap`. The mutant without the margin fails two of them (checked). The film end-to-end test now asserts the cat's body is between the groups, with the controls up or down. Pictures `film-1280x720-*-between-the-groups.jpg`: the head is in the clear in the paused state.
 - **Run.** tsc, 116 cat unit tests, the two film end-to-end tests.
 - **Reference research.** None.
+
+## 17 · A cat that has to settle on a shelf of names goes to a shelf that has room (`b622077`, round 2)
+
+- **Root issue.** ISSUE_LOG #9: on a row whose names run edge to edge the cat could rest over a name, because `settle` only looks along the shelf it is on, and when every place on that shelf would cover a name it stayed.
+- **Technique.** When the best place of the cat's own shelf would still cover more than a tenth of a body's area of words, a cat that is free to roam (not quiet, not reduced motion) and has not just done it (a 12–25 s cool-down) goes with four chances in five to another shelf whose best place is a good deal cleaner (`cleanerPlace`: at most 0.4 of what the present place costs, and at most 0.04 of a body's square), by the ordinary route (walk, hop, leap), and settles there. The new random draws are made only when the shelf is untidy, so a page with no names, or a tidy one, plays out exactly as before.
+- **Considered, not done.** Choosing the shelf for every rest (it would make the cat travel far more and change where it spends its time); hiding the names (the page is not the cat's to change).
+- **Seen / measured.** Two engine tests on an uneven page (one row of names edge to edge, one with gaps): the share of resting time spent over a name falls from 24 % to 4 %, the row with no room is left, the other row gets more than 30 % of the resting; and a quiet cat, or one asked for less motion, makes no walk, run or jump at all. The first fails with the rule off.
+- **Run.** The engine tests, tsc.
+- **Reference research.** None.
+
+## 18 · The cat's settings are one row, and the TV's settings page fits again (`f47af63`, round 2)
+
+- **Root issue.** Found by running the existing TV and account end-to-end specs with the cat switched on for the first time: 11 friends specs failed, because the cat's inline settings group, offered once the host has the cat, made the TV's settings page taller than the screen and the tap-to-pause layer lay over the Back button. In production, with the cat not offered, nothing was wrong, which is why no earlier run saw it (even the default run: the specs ran with the cat off).
+- **Technique.** The cat's settings are a row in the third column of the TV's settings page that opens a page of its own (`tv-cat-open`, `TvCatSettings`: what it does and how it looks in two columns, the page's own Back), the way Account and Friends already work. Strings in three languages.
+- **Considered, not done.** Shrinking the group (it overflowed at 720 p with six lines in Romanian); making the page scroll (the TV's pages do not).
+- **Seen / measured.** A new end-to-end test measures the settings page at four TV sizes (grid top at or below 0, its bottom inside the window, the Back button not covered); it fails on the old layout. The second batch of the TV, account and friends specs with the cat on: no failures (see 05).
+- **Run.** The cat, account and friends end-to-end specs, tsc.
+- **Reference research.** None.
+
+## 19 · Dark coats are fur (round 2)
+
+- **Root issue.** ISSUE_LOG #11: the tuxedo's white belly was a boxy band with a straight edge and the black fur took the light like plastic, a flat shape with one broad cool band of shine.
+- **Technique.** In the fragment shader only (no model, no animation, no silhouette change): the tuxedo's boundary rises and falls along the flank and differs on the two sides (a sine of the length of the body and a low-frequency noise, signed by the side), and in the fur's layers it is a scatter of single hairs; the albedo of a dark hair is warmer and lighter towards its tip, strand by strand; the cool sheen on a dark coat is narrower, glitters per strand (each strand's own factor) and varies in patches the size of a hand.
+- **Considered, not done.** A normal map for the lumps (the haunch and the shoulder are still smooth masses at three times the size: the next thing to try); a dark-coat-only extra shell layer (cost).
+- **Seen / measured.** Before and after at three times the size, in four views on the real GPU (ANGLE on the RTX 3090), for the tuxedo and the grey tabby, and the ginger and the calico checked for a side effect (none visible: the stripes and the patches are as they were); the four pictures `coat-*-views.jpg` in the evidence folder were made again.
+- **Run.** The lab renders only (the shader is not covered by a unit test; the software driver is checked with the end-to-end run).
+- **Reference research.** None.
+
 ## What the later iterations should do first
 
 1. A person should watch it on a real TV or Fire Stick with `?cat=debug` and report `art`, `quality`, `cost`, `fps` (05, "Not tested").
