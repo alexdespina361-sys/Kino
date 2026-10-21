@@ -95,7 +95,7 @@ export function classicBrush(): Brush | null {
 }
 
 /** What `paint` is told on a screen that has to take the fur down a step. */
-const LEAN = { shells: 1 } as const;
+const LEAN = { shells: 3 } as const;
 const FULL = {} as const;
 
 /** The solid cat from a mesh that was fetched; null where this browser cannot do WebGL, or the mesh is not one this cat can wear. */

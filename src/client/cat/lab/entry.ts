@@ -87,6 +87,7 @@ export const POSES: Cell[] = [
   { label: "crouch", frame: { clip: "crouch" } },
   { label: "stretch", frame: { clip: "stretch", progress: 0.5 } },
   { label: "jump: air", frame: { clip: "jump", progress: 0.5, grounded: false, vy: -300, vx: 300, y: -60 } },
+  { label: "jump: coming down", frame: { clip: "jump", progress: 0.7, grounded: false, vy: 600, vx: 300, y: -30 } },
   { label: "sit, groom", frame: { clip: "groom", clipTime: 0.2 } },
   { label: "sit, petted", frame: { clip: "sit", petted: true } },
   { label: "sit, yawn", frame: { clip: "yawn", progress: 0.5 } },

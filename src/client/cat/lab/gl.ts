@@ -184,6 +184,7 @@ export const EXTENT_CELLS: GlCell[] = (() => {
   at("sit,viewer", { clip: "sit", viewer: true });
   for (const p of [0.25, 0.5, 0.75]) at(`stretch@${p}`, { clip: "stretch", progress: p });
   for (const p of [0.2, 0.5, 0.8]) at(`jump@${p}`, { clip: "jump", progress: p, grounded: false, vy: -300, vx: 300 }, 0.6);
+  at("jump@down", { clip: "jump", progress: 0.7, grounded: false, vy: 600, vx: 300 }, 0.6);
   for (const t of [0.2, 0.6, 1.0, 1.4, 2.0]) at(`groom@${t}`, { clip: "groom", clipTime: t }, t);
   for (const s of [0.6, 1.0, 1.06, 1.3, 1.6]) {
     at(`scratch@${s}`, { clip: "scratch" }, s);

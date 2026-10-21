@@ -545,6 +545,23 @@ export class CatRig {
     // --- scratching behind the ear: the head goes down to meet the hind foot, which comes up to it and works fast
     let kneeUp = 0;
     const hockHind = { x: p.hock.x, y: p.hock.y };
+    const hockFar = { x: p.hock.x, y: p.hock.y };
+    // --- a leap on its way down: the hind legs come forward under the cat (the foot bent at the hock again) and the forelegs reach down for the ground
+    const falling = jumping && !frame.grounded ? smoothstep(80, 520, frame.vy) : 0;
+    if (falling > 0.001) {
+      fnTarget.x -= 0.05 * falling;
+      fnTarget.y += 0.13 * falling;
+      ffTarget.x -= 0.05 * falling;
+      ffTarget.y += 0.15 * falling;
+      hnTarget.x += 0.5 * falling;
+      hnTarget.y += 0.1 * falling;
+      hfTarget.x += 0.5 * falling;
+      hfTarget.y += 0.12 * falling;
+      for (const h of [hockHind, hockFar]) {
+        h.x = lerp(h.x, -0.07, falling);
+        h.y = lerp(h.y, -0.15, falling);
+      }
+    }
     if (scratching > 0.001) {
       const shake = Math.sin(frame.clipTime * TAU * 8.5);
       headShiftX += -0.03 * scratching;
@@ -636,7 +653,7 @@ export class CatRig {
     solveFront(s.legs.fn, p.shoulder, fnTarget, pw > 0.5);
     solveFront(s.legs.ff, { x: p.shoulder.x - 0.02, y: p.shoulder.y }, ffTarget, false);
     solveHind(s.legs.hn, p.hip, hnTarget, hockHind, kneeUp);
-    solveHind(s.legs.hf, { x: p.hip.x + 0.03, y: p.hip.y }, hfTarget);
+    solveHind(s.legs.hf, { x: p.hip.x + 0.03, y: p.hip.y }, hfTarget, hockFar);
 
     // --- the face: blinking, ear flicks, how wide the eyes are
     if (this.time >= this.nextBlink && this.blinkAt < 0 && sleepy < 0.6) {
