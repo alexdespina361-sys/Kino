@@ -1,13 +1,11 @@
 import { clamp, lerp } from "../../math";
-import type { CatFrame } from "../../types";
-import { CatRig, type Joint, type Leg, type Solved } from "../rig";
-import { stamp } from "./format";
-import { EARS, JAW_HINGE } from "./model";
+import type { Joint, Leg, Solved } from "../rig";
+import { MODEL } from "./model";
 
 /**
  * The bones of the solid cat, and how the numbers the rig works out each frame (a Solved: joints in the side view) move them.
  *
- * The mesh is made once, in the posture of a standing cat, around the very joints the rig has for that posture (the REST below); a bone is the way
+ * The mesh is made once, in the posture of a standing cat, around the very joints the model has for that posture (model.ts, as a Solved by fit.ts); a bone is the way
  * from where a part of that mesh stood to where the rig now has it. The legs and the tail are chains of rigid pieces. The body is not: the rig gives
  * the line of the back and the line of the belly, and the body is stretched between them in five stations (each station is the pair of points
  * where the back and the belly are, so a cat that sits, curls or stretches is the body the rig drew, thick or thin where the rig made it so).
@@ -187,7 +185,7 @@ function yaw(out: Mat, angle: number, cx: number): Mat {
 }
 
 /** How much larger the head is worn than it is made (about its own centre). */
-export const HEAD_SCALE = 1.14;
+export const HEAD_SCALE = 1;
 
 /** An even scale by `s` about the point (cx, cy) of the side view (and z = 0). */
 function scaleAbout(out: Mat, s: number, cx: number, cy: number): Mat {
@@ -215,56 +213,22 @@ function lean(out: Mat, angle: number, py: number, pz: number): Mat {
   return out;
 }
 
-const copyJoint = (j: Joint): Joint => ({ x: j.x, y: j.y });
-const copyLeg = (l: Leg): Leg => ({ root: copyJoint(l.root), mid: copyJoint(l.mid), hock: copyJoint(l.hock), toe: copyJoint(l.toe), front: l.front, lift: 0 });
-
-/** The cat's rest: the standing posture the mesh is made around, as the rig has it. */
-export function restSolved(): Solved {
-  const rig = new CatRig(1);
-  const frame: CatFrame = { x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false };
-  rig.snapTo(frame, 100);
-  const s = rig.solved;
-  const snap = (j: Joint): Joint => ({ x: Math.round(j.x * 1e4) / 1e4, y: Math.round(j.y * 1e4) / 1e4 });
-  return {
-    ...s,
-    legs: { fn: copyLeg(s.legs.fn), ff: copyLeg(s.legs.ff), hn: copyLeg(s.legs.hn), hf: copyLeg(s.legs.hf) },
-    tail: s.tail.map(snap),
-    head: { ...s.head, x: snap(s.head).x, y: snap(s.head).y },
-    pose: { p: Object.fromEntries(Object.entries(s.pose.p).map(([k, v]) => [k, snap(v)])) as Solved["pose"]["p"], s: { ...s.pose.s } },
-  };
-}
-
-/** A number made of the rest's joints: the mesh carries the one it was made around, and is not worn on bones that were made around another. */
-export function restStamp(rest: Solved = restSolved()): number {
-  return stamp([
-    ...Object.values(rest.pose.p).flatMap((j) => [j.x, j.y]),
-    ...(["fn", "ff", "hn", "hf"] as const).flatMap((k) => [rest.legs[k].root, rest.legs[k].mid, rest.legs[k].hock, rest.legs[k].toe].flatMap((j) => [j.x, j.y])),
-    ...rest.tail.flatMap((j) => [j.x, j.y]),
-    rest.head.x,
-    rest.head.y,
-  ]);
-}
+/** How the second and the fourth station are made of the rig's points: a share of the way from one to the next (the back of the second, the belly of the fourth). */
+export const STATION_MIX = { back: 0.45, belly: 0.6 } as const;
 
 /** The five stations of the body: where the back and the belly are at each, as points of the rig's pose (y is down there). */
 function stations(p: Solved["pose"]["p"], out: Array<[Joint, Joint]>): void {
   const lerpJ = (a: Joint, b: Joint, t: number): Joint => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
   out[0] = [p.rumpTop, p.rumpBottom];
-  out[1] = [lerpJ(p.rumpTop, p.backMid, 0.45), p.groin];
+  out[1] = [lerpJ(p.rumpTop, p.backMid, STATION_MIX.back), p.groin];
   out[2] = [p.backMid, p.bellyMid];
-  out[3] = [p.shoulderTop, lerpJ(p.bellyMid, p.chestBottom, 0.6)];
+  out[3] = [p.shoulderTop, lerpJ(p.bellyMid, p.chestBottom, STATION_MIX.belly)];
   out[4] = [p.neckTop, p.chestFront];
 }
 
 /** The rig's numbers are in a view where up is negative; the mesh and the bones are in a world where up is positive. */
 const up = (j: Joint): Joint => ({ x: j.x, y: -j.y });
 const upLeg = (l: Leg): Leg => ({ root: up(l.root), mid: up(l.mid), hock: up(l.hock), toe: up(l.toe), front: l.front, lift: l.lift });
-
-/** Where the head's centre (the point the mesh's head turns about) is in the rest, and the ear and neck pivots the model is made with. */
-export interface RestFrame {
-  head: Joint;
-  /** The two ends of the neck's bone: the centre of the last station, and the head. */
-  neckBase: Joint;
-}
 
 export class Skeleton {
   readonly rest: Solved;
@@ -275,7 +239,8 @@ export class Skeleton {
   private readonly tmp3 = mat();
   private readonly st: Array<[Joint, Joint]> = [];
 
-  constructor(rest: Solved = restSolved()) {
+  /** `rest` is the cat the mesh was made as (fit.ts: `modelRest()`); `solve` is given poses of that cat (`PoseFit.apply`). */
+  constructor(rest: Solved) {
     this.rest = rest;
     const restStations: Array<[Joint, Joint]> = [];
     stations(rest.pose.p, restStations);
@@ -336,10 +301,10 @@ export class Skeleton {
     for (let k = 0; k < 12; k++) out[BONE.head * 12 + k] = this.tmp3[k]!;
 
     // the ears: the head's, and a lean about the ear's base (the rig's angle is how far the ear is laid out from upright)
-    lean(this.tmp2, -clamp(s.head.earL, -0.5, 1.2) * 0.9, EARS[0].base[1], EARS[0].base[2]);
+    lean(this.tmp2, -clamp(s.head.earL, -0.5, 1.2) * 0.9, MODEL.ears[0].base[1], MODEL.ears[0].base[2]);
     mul(this.tmp3, this.head, this.tmp2);
     bone(BONE.earL, this.tmp3);
-    lean(this.tmp2, clamp(s.head.earR, -0.5, 1.2) * 0.9, EARS[1].base[1], EARS[1].base[2]);
+    lean(this.tmp2, clamp(s.head.earR, -0.5, 1.2) * 0.9, MODEL.ears[1].base[1], MODEL.ears[1].base[2]);
     mul(this.tmp3, this.head, this.tmp2);
     bone(BONE.earR, this.tmp3);
 
@@ -353,8 +318,9 @@ export class Skeleton {
     this.tmp2[4] = -sj;
     this.tmp2[5] = cj;
     this.tmp2[10] = 1;
-    this.tmp2[3] = JAW_HINGE[0] - (cj * JAW_HINGE[0] + sj * JAW_HINGE[1]);
-    this.tmp2[7] = JAW_HINGE[1] - (-sj * JAW_HINGE[0] + cj * JAW_HINGE[1]);
+    const hinge = MODEL.jawHinge;
+    this.tmp2[3] = hinge[0] - (cj * hinge[0] + sj * hinge[1]);
+    this.tmp2[7] = hinge[1] - (-sj * hinge[0] + cj * hinge[1]);
     mul(this.tmp3, this.head, this.tmp2);
     bone(BONE.jaw, this.tmp3);
 

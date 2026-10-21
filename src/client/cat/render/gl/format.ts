@@ -1,5 +1,5 @@
 /**
- * The cat's mesh as a file: what scripts/cat/model/build.mts writes and the renderer loads. Little-endian; the arrays follow the header one
+ * The cat's mesh as a file: what scripts/cat/model/build-meshy.mts writes and the renderer loads. Little-endian; the arrays follow the header one
  * after the other, each starting on a multiple of four bytes.
  *
  *   header  16 x 4 bytes: magic, version, vertex count, index count, bounds (min x y z, max x y z), a stamp of the rest pose it was made around,
@@ -8,14 +8,14 @@
  *   normal  vertex count x 3 int8
  *   skin    vertex count x 4 uint8: bone numbers
  *   weight  vertex count x 4 uint8: their weights, which add up to 255
- *   paint   vertex count x 4 uint8: how open to the room the skin is here (0 closed), the length of the fur, how far along the part, how much of a limb
+ *   color   vertex count x 4 uint8: the coat's colour here (red, green, blue, as the model was painted) and how open to the room the skin is (0 closed)
  *   index   the triangles, in the order of their lowest vertex, each as three numbers in a stream of varints (7 bits to a byte, the high bit says
  *           there is more): the first vertex as a step from the first vertex of the triangle before it, the other two as steps from the first. The
- *           vertices of a surface that was cut out of a lattice are numbered along it, so the steps are small and a triangle is a few bytes
+ *           vertices of a surface are numbered along it, so the steps are small and a triangle is a few bytes
  */
 
 export const MESH_MAGIC = 0x5441434b; // "KCAT"
-export const MESH_VERSION = 2;
+export const MESH_VERSION = 3;
 
 export interface CatMesh {
   count: number;
@@ -26,7 +26,7 @@ export interface CatMesh {
   normal: Int8Array;
   skin: Uint8Array;
   weight: Uint8Array;
-  paint: Uint8Array;
+  color: Uint8Array;
   index: Uint16Array;
 }
 
@@ -93,7 +93,7 @@ export function encodeMesh(mesh: {
   normal: Int8Array;
   skin: Uint8Array;
   weight: Uint8Array;
-  paint: Uint8Array;
+  color: Uint8Array;
   index: ArrayLike<number>;
 }): Uint8Array {
   const count = mesh.pos.length / 3;
@@ -128,7 +128,7 @@ export function encodeMesh(mesh: {
   at += parts[2]!;
   new Uint8Array(buffer, at, count * 4).set(mesh.weight);
   at += parts[3]!;
-  new Uint8Array(buffer, at, count * 4).set(mesh.paint);
+  new Uint8Array(buffer, at, count * 4).set(mesh.color);
   at += parts[4]!;
   new Uint8Array(buffer, at, index.length).set(index);
   return new Uint8Array(buffer);
@@ -161,10 +161,10 @@ export function decodeMesh(data: ArrayBuffer): CatMesh {
   at += parts[2]!;
   const weight = new Uint8Array(data, at, count * 4);
   at += parts[3]!;
-  const paint = new Uint8Array(data, at, count * 4);
+  const color = new Uint8Array(data, at, count * 4);
   at += parts[4]!;
   const index = unpackIndex(new Uint8Array(data, at, indexBytes), indices);
-  return { count, bounds, rest, pos, normal, skin, weight, paint, index };
+  return { count, bounds, rest, pos, normal, skin, weight, color, index };
 }
 
 /** A small number made of numbers, for telling whether two rest poses are the same one. */

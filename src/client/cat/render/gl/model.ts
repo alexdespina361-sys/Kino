@@ -1,7 +1,8 @@
-// Made by scripts/cat/model/build.mts with cat.mesh: do not edit.
-/** The centre of the head in the rest (the point it turns about), and the ears: the ear at z < 0, then the one at z > 0. */
-export const HEAD_REST = [0.49, 0.72, 0] as const;
-export const EARS = [{ base: [0.464, 0.8, -0.082], a: [-0.1067, 0.8893, -0.4447], b: [0, 0.4472, 0.8944], c: [0.9943, 0.0955, -0.0477] }, { base: [0.464, 0.8, 0.082], a: [-0.1067, 0.8893, 0.4447], b: [0, -0.4472, 0.8944], c: [0.9943, 0.0955, 0.0477] }] as const;
-/** How far an ear reaches from its base to its tip, how wide it is at the base, and how wide at the tip. */
-export const EAR_SHAPE = [0.135, 0.057, 0.011] as const;
-export const JAW_HINGE = [0.48, 0.66, 0] as const;
+// Made by scripts/cat/model/build-meshy.mts with cat.mesh: do not edit.
+import type { ModelRest } from "./rest";
+
+/** The posture the mesh was made in (rest.ts says what each number is). */
+export const MODEL: ModelRest = {"stations":[{"top":[-0.5,0.565],"bottom":[-0.54,0.22]},{"top":[-0.3,0.58],"bottom":[-0.3,0.17]},{"top":[-0.05,0.575],"bottom":[-0.03,0.145]},{"top":[0.15,0.6],"bottom":[0.16,0.2]},{"top":[0.26,0.63],"bottom":[0.33,0.38]}],"head":[0.331,0.633],"legs":{"fn":{"root":[0.268,0.316],"mid":[0.107,0.161],"hock":[0.088,0.075],"toe":[0.122,0.007],"z":0.105},"ff":{"root":[0.268,0.316],"mid":[0.107,0.161],"hock":[0.088,0.075],"toe":[0.122,0.007],"z":-0.105},"hn":{"root":[-0.5,0.4],"mid":[-0.36,0.24],"hock":[-0.62,0.174],"toe":[-0.591,0.048],"z":0.115},"hf":{"root":[-0.5,0.4],"mid":[-0.36,0.24],"hock":[-0.62,0.174],"toe":[-0.591,0.048],"z":-0.115}},"tail":[[-0.5,0.49],[-0.5755,0.5092],[-0.6435,0.5478],[-0.7033,0.5954],[-0.7475,0.66],[-0.7909,0.725],[-0.8338,0.7905],[-0.894,0.8386],[-0.9647,0.8682],[-1.0419,0.8807],[-1.12,0.885]],"ears":[{"base":[0.325,0.705,-0.118],"tip":[0.326,0.777,-0.142]},{"base":[0.325,0.705,0.118],"tip":[0.326,0.775,0.143]}],"jawHinge":[0.326,0.558,0]};
+
+/** The centre of the head in the rest (the point it turns about). */
+export const HEAD_REST = [0.331, 0.633, 0] as const;

@@ -16,7 +16,7 @@ export interface GlbMesh {
 
 type Json = Record<string, any>;
 
-export function readGlb(path: string): { json: Json; mesh: GlbMesh } {
+export function readGlb(path: string): { json: Json; mesh: GlbMesh; bin: Buffer; acc: (index: number) => Float64Array } {
   const buf = readFileSync(path);
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   if (dv.getUint32(0, true) !== 0x46546c67) throw new Error("not a glb");
@@ -116,7 +116,7 @@ export function readGlb(path: string): { json: Json; mesh: GlbMesh } {
   };
   const scene = json.scenes[json.scene ?? 0];
   for (const n of scene.nodes) visit(n, ident());
-  return { json, mesh: { pos: Float64Array.from(pos), tri: Uint32Array.from(tri), material: Int16Array.from(material), node: names, nodeOf: Uint16Array.from(nodeOf) } };
+  return { json, bin: b, acc: readAcc, mesh: { pos: Float64Array.from(pos), tri: Uint32Array.from(tri), material: Int16Array.from(material), node: names, nodeOf: Uint16Array.from(nodeOf) } };
 }
 
 /** The connected pieces of a mesh (welded): for each triangle, the piece it is in, and the pieces' sizes. */
