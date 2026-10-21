@@ -198,7 +198,7 @@ for (let v = 0; v < nV; v++) {
   }
   weight[k * 4] = weight[k * 4]! + (255 - given);
   paint[k * 4] = Math.round(open * 255);
-  paint[k * 4 + 1] = Math.round(Math.max(0, Math.min(2.5, fur / total)) * 100);
+  paint[k * 4 + 1] = Math.round(Math.max(0, Math.min(5.1, fur / total)) * 50);
   paint[k * 4 + 2] = Math.round(Math.max(0, Math.min(1, limbW > 0 ? limbU / limbW : 0)) * 255);
   paint[k * 4 + 3] = Math.round(Math.max(0, Math.min(1, limbW / total)) * 255);
 }

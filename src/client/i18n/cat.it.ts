@@ -39,6 +39,7 @@ export const catIt: CatDictionary = {
   "cat.settings.films": "Tienimi compagnia durante i film",
   "cat.settings.detail": "Gatto dettagliato (spento: più semplice)",
   "cat.settings.coat": "Mantello",
+  "cat.coat.ragdoll": "Ragdoll",
   "cat.coat.ginger": "Rosso tigrato",
   "cat.coat.tuxedo": "Tuxedo",
   "cat.coat.grey": "Grigio tigrato",

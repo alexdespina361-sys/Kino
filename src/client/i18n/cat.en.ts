@@ -43,6 +43,7 @@ export const catEn = {
   "cat.settings.films": "Keep me company during films",
   "cat.settings.detail": "Detailed cat (off: simpler, lighter)",
   "cat.settings.coat": "Coat",
+  "cat.coat.ragdoll": "Ragdoll",
   "cat.coat.ginger": "Ginger tabby",
   "cat.coat.tuxedo": "Tuxedo",
   "cat.coat.grey": "Grey tabby",

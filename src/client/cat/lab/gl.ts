@@ -36,7 +36,7 @@ const fromBase64 = (text: string): ArrayBuffer => {
   return bytes.buffer;
 };
 
-export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220, coat: CatCoat = "ginger"): void {
+export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220, coat: CatCoat = "ragdoll"): void {
   const cw = cellW * scale;
   const ch = cellH * scale;
   const rows = Math.ceil(cells.length / columns);
@@ -110,7 +110,7 @@ export const clipOfLabel = (label: string): string => (label.split("@")[0] ?? la
  * Pictures of the cat in each cell, one after another on one canvas, and what each takes of it: the box round every pixel the cat is drawn in (not the
  * faint ones: the fur's fringe and a whisker are not what covers a word). The cat faces right, its feet on a line at 0.8 of the canvas.
  */
-export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat = "ginger", seed = 7, alphaMin = 80): Extent[] {
+export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat = "ragdoll", seed = 7, alphaMin = 80): Extent[] {
   const W = 1200;
   const H = 900;
   const px = 150;
@@ -271,7 +271,7 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
   const glCanvas = document.createElement("canvas");
   const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
   if (!cat) throw new Error("no WebGL");
-  cat.setCoat(o.coat ?? "ginger");
+  cat.setCoat(o.coat ?? "ragdoll");
   const picks: number[] = [];
   for (let i = i0; i <= i1; i += o.every) picks.push(i);
   const ctx = canvas.getContext("2d")!;
@@ -403,6 +403,14 @@ const cycleOf = (clip: "walk" | "run", n: number): GlCell[] =>
 export const WALK: GlCell[] = cycleOf("walk", 8);
 export const RUN: GlCell[] = cycleOf("run", 12);
 
+export const EYES: GlCell[] = [
+  { label: "eyes, viewer", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05 }, zoom: { at: [0.3, 0.985], by: 9 } },
+  { label: "eyes, 3/4", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, turn: -0.5 }, zoom: { at: [0.3, 0.985], by: 9 } },
+  { label: "eyes, stand", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { at: [0.5, 0.78], by: 8 } },
+  { label: "eyes, wide", frame: { clip: "sit", viewer: true, energy: 1 }, view: { tilt: 0.05 }, zoom: { at: [0.3, 0.985], by: 9 } },
+  { label: "eyes, as in the picture", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05 }, zoom: { at: [0.3, 0.985], by: 6 } },
+];
+
 export const FACES2: GlCell[] = [
   { label: "no fur", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, shells: 0 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
   { label: "normals", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, debug: 1 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
@@ -410,6 +418,21 @@ export const FACES2: GlCell[] = [
   { label: "bones", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, debug: 3 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
 ];
 
+/** The locks of the coat: the whole cat, then the head, the tail and the feet close, with the locks and without them. */
+export const LOCKS: GlCell[] = [
+  { label: "side", frame: { clip: "stand" }, view: { tilt: 0 } },
+  { label: "side, no locks", frame: { clip: "stand" }, view: { tilt: 0, locks: 0 } },
+  { label: "3/4 front", frame: { clip: "stand" }, view: { turn: -0.7, tilt: 0.1 } },
+  { label: "front", frame: { clip: "stand" }, view: { turn: -1.5708, tilt: 0.1 } },
+  { label: "head", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { at: [0.46, 0.74], by: 4 } },
+  { label: "head, no locks", frame: { clip: "stand" }, view: { tilt: 0, locks: 0 }, zoom: { at: [0.46, 0.74], by: 4 } },
+  { label: "paws", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { at: [0.1, 0.12], by: 4 } },
+  { label: "paws, no locks", frame: { clip: "stand" }, view: { tilt: 0, locks: 0 }, zoom: { at: [0.1, 0.12], by: 4 } },
+  { label: "tail", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { at: [-0.5, 0.72], by: 3.4 } },
+  { label: "tail, no locks", frame: { clip: "stand" }, view: { tilt: 0, locks: 0 }, zoom: { at: [-0.5, 0.72], by: 3.4 } },
+  { label: "chest", frame: { clip: "stand" }, view: { turn: -0.7, tilt: 0.05 }, zoom: { at: [0.3, 0.45], by: 3.4 } },
+  { label: "sit", frame: { clip: "sit" }, view: { turn: -0.6, tilt: 0.08 } },
+];
 export const GL_POSES: GlCell[] = POSES.map((p) => ({ label: p.label, frame: p.frame }));
 
 /** Hanging by the scruff: from the side and from three quarters, the hand where the engine puts it (a cross), and the head close. */

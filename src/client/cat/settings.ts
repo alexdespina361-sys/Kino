@@ -10,7 +10,7 @@ import { readStorage, writeStorage } from "../shared/format";
  */
 
 /** The coats the detailed cat can wear (the simple drawn cat has the one). */
-export const CAT_COATS = ["ginger", "tuxedo", "grey", "calico"] as const;
+export const CAT_COATS = ["ragdoll", "ginger", "tuxedo", "grey", "calico"] as const;
 export type CatCoat = (typeof CAT_COATS)[number];
 /** How big the cat is on the screen, against what the screen's size makes of it: smaller where the picture is busy, bigger to see it better. */
 export const CAT_SIZES = ["small", "normal", "large"] as const;
@@ -64,7 +64,7 @@ export function catSizeAsk(search: string = typeof location === "undefined" ? ""
 
 /** The settings as stored (anything that is not understood is the default), for a browser that is a TV's or not. */
 export function parseCatSettings(raw: string | undefined, tv: boolean): CatSettings {
-  const settings: CatSettings = { on: false, quiet: tv, films: true, detail: true, coat: "ginger", size: "normal" };
+  const settings: CatSettings = { on: false, quiet: tv, films: true, detail: true, coat: "ragdoll", size: "normal" };
   if (!raw) return settings;
   try {
     const stored: unknown = JSON.parse(raw);

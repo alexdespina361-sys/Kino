@@ -4,8 +4,9 @@ import type { Solved } from "../rig";
 import { COATS } from "./coats";
 import { decodeMesh, type CatMesh } from "./format";
 import { FRAGMENT, SHADOW_FRAGMENT, SHADOW_VERTEX, VERTEX } from "./shader";
+import { makeLocks, type Locks } from "./locks";
 import { EARS } from "./model";
-import { BONE_COUNT, BONE_FLOATS, Skeleton, mat, mul, pitchAbout, restStamp } from "./skeleton";
+import { BONE, BONE_COUNT, BONE_FLOATS, Skeleton, mat, mul, pitchAbout, restStamp } from "./skeleton";
 import { makeWhiskers } from "./whiskers";
 
 /**
@@ -24,6 +25,8 @@ export interface View {
   shells?: number;
   /** Draw the whiskers (default: yes). */
   whiskers?: boolean;
+  /** The locks of the coat: 0 none, 1 the coarse ones only (a lean cat), 2 all of them (default). */
+  locks?: 0 | 1 | 2;
   /** Wear this coat for this picture (default: the one the cat was given with `setCoat`). */
   coat?: CatCoat;
 }
@@ -71,6 +74,9 @@ export class GlCat {
   private shadow: WebGLProgram;
   private buffers: WebGLBuffer[] = [];
   private whiskerBuffers: WebGLBuffer[] = [];
+  private lockBuffers: WebGLBuffer[] = [];
+  private lockIndexBuffer: WebGLBuffer;
+  private locks: Locks;
   private whiskerCount = 0;
   private indexBuffer: WebGLBuffer;
   private cornerBuffer: WebGLBuffer;
@@ -84,7 +90,7 @@ export class GlCat {
   private dpr = 1;
   private gone = false;
   private readonly probe = new Uint8Array(4);
-  private coat: CatCoat = "ginger";
+  private coat: CatCoat = "ragdoll";
   lost = false;
 
   private constructor(canvas: HTMLCanvasElement, gl: WebGLRenderingContext, mesh: CatMesh) {
@@ -108,13 +114,21 @@ export class GlCat {
     this.indexBuffer = buffer(gl.ELEMENT_ARRAY_BUFFER, mesh.index);
     this.cornerBuffer = buffer(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]));
     for (const name of ["aPos", "aNor", "aSkin", "aWgt", "aPaint"]) this.loc[name] = gl.getAttribLocation(this.main, name);
-    for (const name of ["uBones", "uProj", "uShell", "uShells", "uFreq", "uFurLen", "uAppear", "uDebug", "uWhisker", "uHead", "uEyes", "uEyes2", "uKey", "uFill", "uEarA", "uBase", "uLight", "uStripeC", "uWhiteC", "uPatchA", "uPatchB", "uCoat"]) {
+    for (const name of ["uBones", "uProj", "uShell", "uShells", "uFreq", "uFurLen", "uLock", "uUnder", "uAppear", "uDebug", "uWhisker", "uHead", "uEyes", "uEyes2", "uGlint", "uIris0", "uIris1", "uIris2", "uPointC", "uPoints", "uKey", "uFill", "uEarA", "uBase", "uLight", "uStripeC", "uWhiteC", "uPatchA", "uPatchB", "uCoat"]) {
       this.loc[name] = gl.getUniformLocation(this.main, name);
     }
     // the whiskers have buffers of their own and are drawn with the same program
     const w = makeWhiskers();
     this.whiskerCount = w.count;
     this.whiskerBuffers = [buffer(gl.ARRAY_BUFFER, w.pos), buffer(gl.ARRAY_BUFFER, w.normal), buffer(gl.ARRAY_BUFFER, w.skin), buffer(gl.ARRAY_BUFFER, w.weight), buffer(gl.ARRAY_BUFFER, w.paint)];
+    // the locks of the coat are made from the mesh (see locks.ts) and drawn over it with the same program
+    this.locks = makeLocks(mesh, this.skeleton.restUp.tail);
+    const l = this.locks;
+    this.lockBuffers = [buffer(gl.ARRAY_BUFFER, l.pos), buffer(gl.ARRAY_BUFFER, l.normal), buffer(gl.ARRAY_BUFFER, l.skin), buffer(gl.ARRAY_BUFFER, l.weight), buffer(gl.ARRAY_BUFFER, l.paint), buffer(gl.ARRAY_BUFFER, l.aux)];
+    this.lockIndexBuffer = buffer(gl.ELEMENT_ARRAY_BUFFER, l.index);
+    // (the buffer calls above leave the last element buffer bound: the mesh's is bound again when it is drawn)
+    this.loc.aLock = gl.getAttribLocation(this.main, "aLock");
+    gl.vertexAttrib4f(this.loc.aLock as number, 0, 0, 0, 0);
     this.loc.aCorner = gl.getAttribLocation(this.shadow, "aCorner");
     this.loc.sRect = gl.getUniformLocation(this.shadow, "uRect");
     this.loc.sStrength = gl.getUniformLocation(this.shadow, "uStrength");
@@ -259,6 +273,37 @@ export class GlCat {
     const h = s.head;
     gl.uniform4f(this.loc.uEyes as WebGLUniformLocation, h.openL, h.openR, h.pupil, h.happy > 0.5 ? 1 : 0);
     gl.uniform4f(this.loc.uEyes2 as WebGLUniformLocation, clamp(-s.flip * (h.eyeX - h.yaw * 0.9), -1, 1), clamp(-h.eyeY, -1, 1), h.asleep > 0.5 ? 1 : 0, h.jaw);
+    // where the catch of light lies in each eye: toward the upper right of the picture, whichever way the head is turned (the eye's own across and up, as they are
+    // in the picture, say how far along each to go)
+    {
+      const hb = BONE.head * BONE_FLOATS;
+      const m = this.bones;
+      const upX = m[hb + 1]!;
+      const upY = m[hb + 5]!;
+      const glintOf = (side: number, out: number[], at: number): void => {
+        const ax = side * m[hb + 2]!;
+        const ay = side * m[hb + 6]!;
+        const want = { x: 0.0112, y: 0.0122 };
+        const det = ax * upY - upX * ay;
+        let qx: number;
+        let qy: number;
+        if (Math.abs(det) > 0.35) {
+          qx = (want.x * upY - upX * want.y) / det;
+          qy = (ax * want.y - want.x * ay) / det;
+        } else {
+          qx = (want.x * ax + want.y * ay) / Math.max(ax * ax + ay * ay, 0.3);
+          qy = (want.x * upX + want.y * upY) / Math.max(upX * upX + upY * upY, 0.3);
+        }
+        const len = Math.hypot(qx, qy);
+        const k = len > 0.0185 ? 0.0185 / len : 1;
+        out[at] = qx * k;
+        out[at + 1] = qy * k;
+      };
+      const glint = [0, 0, 0, 0];
+      glintOf(1, glint, 0);
+      glintOf(-1, glint, 2);
+      gl.uniform4f(this.loc.uGlint as WebGLUniformLocation, glint[0]!, glint[1]!, glint[2]!, glint[3]!);
+    }
     gl.uniform3fv(this.loc.uEarA as WebGLUniformLocation, EAR_UNIFORM);
     const coat = COATS[view.coat ?? this.coat];
     gl.uniform3f(this.loc.uBase as WebGLUniformLocation, coat.base[0], coat.base[1], coat.base[2]);
@@ -268,13 +313,18 @@ export class GlCat {
     gl.uniform3f(this.loc.uPatchA as WebGLUniformLocation, coat.patchA[0], coat.patchA[1], coat.patchA[2]);
     gl.uniform3f(this.loc.uPatchB as WebGLUniformLocation, coat.patchB[0], coat.patchB[1], coat.patchB[2]);
     gl.uniform4f(this.loc.uCoat as WebGLUniformLocation, coat.stripes, coat.whites, coat.tuxedo, coat.patches);
+    gl.uniform3f(this.loc.uPointC as WebGLUniformLocation, coat.point[0], coat.point[1], coat.point[2]);
+    gl.uniform1f(this.loc.uPoints as WebGLUniformLocation, coat.points);
+    gl.uniform3f(this.loc.uIris0 as WebGLUniformLocation, coat.iris[0][0], coat.iris[0][1], coat.iris[0][2]);
+    gl.uniform3f(this.loc.uIris1 as WebGLUniformLocation, coat.iris[1][0], coat.iris[1][1], coat.iris[1][2]);
+    gl.uniform3f(this.loc.uIris2 as WebGLUniformLocation, coat.iris[2][0], coat.iris[2][1], coat.iris[2][2]);
     gl.uniform3f(this.loc.uKey as WebGLUniformLocation, -0.45, 0.75, 0.55);
     gl.uniform3f(this.loc.uFill as WebGLUniformLocation, 0.7, 0.2, 0.4);
     // the hair is as long as this part of the cat's coat is (in body lengths, the longest the thickest: see the mesh), in as many layers as the screen can spare
     gl.uniform1f(this.loc.uFurLen as WebGLUniformLocation, FUR_LENGTH);
     gl.uniform1f(this.loc.uFreq as WebGLUniformLocation, clamp(box.px / 2.2, 40, 150));
 
-    const bindAll = (from: WebGLBuffer[]): void => {
+    const bindAll = (from: WebGLBuffer[], withLock = false): void => {
       const bind = (index: number, name: string, size: number, type: number, normalized: boolean) => {
         const a = this.loc[name] as number;
         gl.bindBuffer(gl.ARRAY_BUFFER, from[index]!);
@@ -286,16 +336,35 @@ export class GlCat {
       bind(2, "aSkin", 4, gl.UNSIGNED_BYTE, false);
       bind(3, "aWgt", 4, gl.UNSIGNED_BYTE, true);
       bind(4, "aPaint", 4, gl.UNSIGNED_BYTE, true);
+      if (withLock) bind(5, "aLock", 4, gl.UNSIGNED_BYTE, true);
     };
     bindAll(this.buffers);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
 
+    // (what is under the locks is in their shade: told before the mesh is drawn, which is the first thing that is)
+    const lockMode = view.debug ? 0 : (view.locks ?? 2);
+    gl.uniform1f(this.loc.uUnder as WebGLUniformLocation, lockMode > 0 ? 0.8 : 1);
+    gl.uniform1f(this.loc.uLock as WebGLUniformLocation, 0);
     const shells = view.shells ?? clamp(Math.round(box.px / 24), 3, 12);
     gl.uniform1f(this.loc.uShells as WebGLUniformLocation, shells);
     gl.uniform1f(this.loc.uShell as WebGLUniformLocation, 0);
     gl.disable(gl.BLEND);
     gl.depthMask(true);
     gl.drawElements(gl.TRIANGLES, this.mesh.index.length, gl.UNSIGNED_SHORT, 0);
+
+    // --- the locks of the coat: opaque ribbons over the mesh, seen from both sides; what is under them (the mesh, the short hair of the shells) is in their shade
+    if (lockMode > 0 && this.locks.index.length > 0) {
+      bindAll(this.lockBuffers, true);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.lockIndexBuffer);
+      gl.uniform1f(this.loc.uLock as WebGLUniformLocation, 1);
+      gl.disable(gl.CULL_FACE);
+      gl.drawElements(gl.TRIANGLES, lockMode === 1 ? this.locks.mainIndex : this.locks.index.length, gl.UNSIGNED_SHORT, 0);
+      gl.enable(gl.CULL_FACE);
+      gl.uniform1f(this.loc.uLock as WebGLUniformLocation, 0);
+      gl.disableVertexAttribArray(this.loc.aLock as number);
+      bindAll(this.buffers);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+    }
     if (shells > 0 && !view.debug) {
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);

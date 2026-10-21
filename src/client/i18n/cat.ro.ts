@@ -39,6 +39,7 @@ export const catRo: CatDictionary = {
   "cat.settings.films": "Să-mi țină companie în timpul filmelor",
   "cat.settings.detail": "Pisică detaliată (oprit: mai simplă)",
   "cat.settings.coat": "Blana",
+  "cat.coat.ragdoll": "Ragdoll",
   "cat.coat.ginger": "Roșcată tigrată",
   "cat.coat.tuxedo": "Smoching",
   "cat.coat.grey": "Gri tigrată",
