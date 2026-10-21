@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CatFrame, Clip } from "../types";
+import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame, type Clip } from "../types";
 import { CatRig, WALK_STRIDE, type Solved } from "./rig";
 
 const frame = (over: Partial<CatFrame>): CatFrame => ({ x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false, ...over });
@@ -798,5 +798,81 @@ describe("the cat's finer motion: a walk that rocks, a face-wash, a yawn, a stre
       expect(biggest, `${clip}: a joint`).toBeLessThan(0.2);
       expect(turned, `${clip}: the head`).toBeLessThan(0.12);
     }
+  });
+
+  it("gets up before it walks off from a loaf or a curl: the legs do not step while the hips are low, so no knee goes through the floor or swings about", () => {
+    for (const [from, drowsy] of [["loaf", 0], ["curl", 1], ["sit", 0]] as const) {
+      const rig = new CatRig(3);
+      const lying = frame({ clip: from, drowsy });
+      rig.snapTo(lying, 100);
+      for (let k = 0; k < 120; k++) rig.update({ ...lying, clipTime: k / 60 }, 1 / 60, 100);
+      let odometer = 0;
+      let previous: number[] | null = null;
+      let biggest = 0;
+      let lowestKnee = -Infinity;
+      for (let k = 0; k < 240; k++) {
+        odometer += 100 / 60;
+        rig.update(frame({ clip: "walk", odometer, vx: 100, clipTime: k / 60 }), 1 / 60, 100);
+        const s = rig.solved;
+        const now = (["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe.x, s.legs[key].toe.y, s.legs[key].mid.x, s.legs[key].mid.y]);
+        if (previous) for (let i = 0; i + 1 < now.length; i += 2) biggest = Math.max(biggest, Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!));
+        previous = now;
+        lowestKnee = Math.max(lowestKnee, s.legs.hn.mid.y, s.legs.hf.mid.y);
+      }
+      // (y is down: a knee lower than the floor is a leg folded the wrong way)
+      expect(lowestKnee, `from ${from}: a knee`).toBeLessThan(0.02);
+      expect(biggest, `from ${from}: a joint`).toBeLessThan(0.2);
+    }
+  });
+
+  it("leaps without a joint snapping: the tail does not whip as the cat gathers, leaves the ground and lands, and the feet do not hop at the landing (none moves more than a fifth of the body in a frame)", () => {
+    const rig = new CatRig(5);
+    rig.snapTo(frame({ clip: "stand" }), 100);
+    for (let k = 0; k < 60; k++) rig.update(frame({ clip: "stand", clipTime: k / 60 }), 1 / 60, 100);
+    const seconds = 1.3;
+    const steps = Math.round(seconds * 60);
+    const body = 100;
+    let previous: number[] | null = null;
+    let biggest = 0;
+    let where = "";
+    for (let k = 0; k <= steps + 90; k++) {
+      const jumping = k <= steps;
+      const progress = Math.min(1, k / steps);
+      const fl = Math.min(1, Math.max(0, (progress - JUMP_TAKEOFF) / (JUMP_LANDING - JUMP_TAKEOFF)));
+      const flying = jumping && progress > JUMP_TAKEOFF && progress < JUMP_LANDING;
+      const flight = (JUMP_LANDING - JUMP_TAKEOFF) * seconds;
+      rig.update(
+        frame({
+          clip: jumping ? "jump" : "stand",
+          clipTime: k / 60,
+          progress: jumping ? progress : 0,
+          y: jumping ? -(4 * 0.9 * body * fl * (1 - fl)) : 0,
+          vx: flying ? (1.6 * body) / flight : 0,
+          vy: flying ? (-4 * 0.9 * body * (1 - 2 * fl)) / flight : 0,
+          grounded: !flying,
+        }),
+        1 / 60,
+        body,
+      );
+      const s = rig.solved;
+      const now = [
+        ...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe.x, s.legs[key].toe.y, s.legs[key].mid.x, s.legs[key].mid.y, s.legs[key].hock.x, s.legs[key].hock.y]),
+        s.head.x,
+        s.head.y,
+        s.tail[s.tail.length - 1]!.x,
+        s.tail[s.tail.length - 1]!.y,
+      ];
+      if (previous) {
+        for (let i = 0; i + 1 < now.length; i += 2) {
+          const step = Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!);
+          if (step > biggest) {
+            biggest = step;
+            where = `frame ${k} (progress ${progress.toFixed(2)}) joint ${i / 2}: ${step.toFixed(3)}`;
+          }
+        }
+      }
+      previous = now;
+    }
+    expect(biggest, where).toBeLessThan(0.2);
   });
 });

@@ -1004,6 +1004,25 @@ describe("picked up by a hand", () => {
     expect(end.x).toBeLessThanOrEqual(1300);
   });
 
+  it("is led in, not set on the edge in a frame, when the window is made smaller under a cat in a hand (the soak found a cat left off the screen taken by a hand: 64 px at once)", () => {
+    const { engine, world, body } = settled(4);
+    lift(engine, world, { x: 1500, y: 300 });
+    expect(engine.frame.x).toBeGreaterThan(1450);
+    const small: World = { ...world, viewport: { ...world.viewport, w: 1300 } };
+    let before = engine.frame.x;
+    const frames = stepCat(engine, small, 1.5, 30).frames;
+    frames.forEach((f, i) => {
+      expect(f.carried, `frame ${i}`).toBe(true);
+      expect(Math.abs(f.x - before), `frame ${i}`).toBeLessThanOrEqual((16 * body) / 30 + 1);
+      before = f.x;
+    });
+    // (it is brought in over a few frames, not none and not a second)
+    const inside = frames.findIndex((f) => f.x <= 1300);
+    expect(inside).toBeGreaterThan(1);
+    expect(inside).toBeLessThan(15);
+    expect(frames.slice(inside).every((f) => f.x <= 1300)).toBe(true);
+  });
+
   it("is deterministic: the same events give the same cat", () => {
     const go = (seed: number) => {
       const { engine, world, body } = settled(seed);
@@ -1038,6 +1057,8 @@ describe("picked up by a hand", () => {
       { seed: 386, seconds: 600, fps: 60 },
       { seed: 62, seconds: 600, fps: 60 },
       { seed: 153, seconds: 600, fps: 60 },
+      { seed: 313, seconds: 600 },
+      { seed: 335, seconds: 600, fps: 60 },
     ];
     for (const run of once) expect(runSession({ ...run, chaos }).violations, JSON.stringify(run)).toEqual([]);
   });

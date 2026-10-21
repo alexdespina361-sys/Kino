@@ -107,6 +107,10 @@ const GROOM_PATH: ReadonlyArray<readonly [number, number]> = [[0.075, -0.055], [
 /** How far the shoulders and the rump rock over the feet in a walk (body lengths: a free model's own walk, doubled so that it is seen at the size a cat is drawn at). */
 const ROCK_CHEST = 0.02;
 const ROCK_RUMP = 0.015;
+/** How quickly the tail follows what the posture does to it (a spring: a jump's posture changes at 9 Hz, which whipped the tail by half a body in a frame). */
+const TAIL_POSE_HZ = 2.4;
+/** The most a foot goes in a second while the cat leaps, in lengths of the body (the take-off's kick is about 5, and the landing's reach was over 10). */
+const LEAP_FOOT_SPEED = 4.5;
 /** A creeping cat takes short, slow steps, each foot lifted a little and set down with care. */
 const STALK_GAIT: Gait = { stride: 0.36, duty: 0.8, lift: 0.05 };
 
@@ -203,6 +207,16 @@ export class CatRig {
   /** The tail follows a fright a little behind the face (a tail is long, and a whole tail that went up in a frame would be seen to snap). */
   private startleTail = dyn(0);
   private tipKick = dyn(0);
+  /** What the posture asks of the tail (its base angle, its curl, how far it wraps the body), a spring behind it: a tail has weight. 	ailPoseReady is false until the first frame, and after snapTo. */
+  private tailPoseAngle = dyn(0);
+  private tailPoseCurl = dyn(0);
+  private tailPoseFront = dyn(0);
+  private tailPoseReady = false;
+  /** How far a leap is on its way down, with the legs reaching for the ground (a spring: let go of at the landing, not in a frame). */
+  private fallDyn = dyn(0);
+  /** How far into a leap the cat is (a spring: held a moment after it), and where each foot was last frame, for the speed limit a leap's feet are held to. */
+  private leapDyn = dyn(0);
+  private readonly footAt = { fn: { x: 0, y: 0, ready: false }, ff: { x: 0, y: 0, ready: false }, hn: { x: 0, y: 0, ready: false }, hf: { x: 0, y: 0, ready: false } };
   private nextTip: number;
   private prevProgress = 0;
   private nextSlow: number;
@@ -270,6 +284,11 @@ export class CatRig {
     }
     this.flipDyn.x = frame.facing;
     this.facing = frame.facing;
+    // (and a leap that is on its way down is already reaching for the ground, and the tail takes the posture's own tail straight away, not on its way from the one before)
+    this.fallDyn.x = frame.clip === "jump" && !frame.grounded ? smoothstep(80, 520, frame.vy) : 0;
+    this.fallDyn.v = 0;
+    for (const key of ["fn", "ff", "hn", "hf"] as const) this.footAt[key].ready = false;
+    this.tailPoseReady = false;
     this.update(frame, 0.001, px);
   }
 
@@ -381,9 +400,11 @@ export class CatRig {
                   : 1.6;
     let goal = 0;
     let here = 0;
+    let hereRear = 0;
     for (const name of SHAPE_NAMES) {
       goal += target[name] * SHAPE_HEIGHT[name]!;
       here += Math.max(0, this.weights[name].x) * SHAPE_HEIGHT[name]!;
+      hereRear += Math.max(0, this.rearWeights[name].x) * SHAPE_HEIGHT[name]!;
     }
     const lowering = !jumping && goal < here - 0.03;
     const rising = !jumping && goal > here + 0.03;
@@ -485,7 +506,9 @@ export class CatRig {
     // --- the walk: the legs are driven by the distance walked, so a foot on the ground stays where it is
     const stalking = clip === "stalk";
     const walking = clip === "walk" || clip === "run" || stalking;
-    smooth(this.gait, walking ? 1 : 0, walking ? 8 : 5, dt);
+    // (a cat that has been lying down gets up before it walks: legs that step while the hips are still low are folded double, and their knees would swing about, through the floor, and flip)
+    const risen = clamp01(1 - (goal - Math.min(here, hereRear)) / 0.2);
+    smooth(this.gait, walking ? risen : 0, walking ? 8 : 5, dt);
     const gaitW = clamp01(this.gait.x);
     const odoL = frame.odometer / px;
     // (a run is a gallop, and is eased into and out of: a cat that breaks into one does not jump from one gait to the other)
@@ -692,7 +715,7 @@ export class CatRig {
     }
     const pawOn = clip === "groom" || clip === "point" || clip === "tap" ? 1 : 0;
     // (a paw goes up quickly and comes down gently: put down in a few frames, it would drop like a stone; a wash takes its time raising it to the face)
-    smooth(this.pawOn, pawOn, pawOn > 0.5 ? (clip === "groom" ? 3.2 : 6) : 2.2, dt);
+    smooth(this.pawOn, pawOn, pawOn > 0.5 ? (clip === "groom" ? 2.6 : 6) : 2.2, dt);
     // (a paw that is let go of comes down from where it was, by its weight going: its goal is not moved to the floor ahead of it, which put it down in a tenth of a second)
     let pawGoalX = pawOn > 0.5 ? p.fn.x : this.pawX.x;
     let pawGoalY = pawOn > 0.5 ? 0 : this.pawY.x;
@@ -839,7 +862,11 @@ export class CatRig {
     const hockHind = { x: p.hock.x, y: p.hock.y };
     const hockFar = { x: p.hock.x, y: p.hock.y };
     // --- a leap on its way down: the hind legs come forward under the cat (the foot bent at the hock again) and the forelegs reach down for the ground
-    const falling = jumping && !frame.grounded ? smoothstep(80, 520, frame.vy) : 0;
+    // (and it lets go of that quickly but not in a frame: the legs go back over a tenth of a second or so at the landing, on top of the speed limit below, which alone left
+    // two steps of a knee's swing in a row in the engine's own leaps)
+    const fallingNow = jumping && !frame.grounded ? smoothstep(80, 520, frame.vy) : 0;
+    smooth(this.fallDyn, fallingNow, fallingNow > this.fallDyn.x ? 16 : 9, dt);
+    const falling = clamp01(this.fallDyn.x);
     if (falling > 0.001) {
       fnTarget.x -= 0.05 * falling;
       fnTarget.y += 0.13 * falling;
@@ -977,6 +1004,25 @@ export class CatRig {
       x: rootX + (1 - held) * clamp(0.1 * (paw.x - home.x), -0.03, 0.04),
       y: p.shoulder.y - (1 - held) * 0.25 * clamp(-paw.y, 0, 0.08),
     });
+    // (a leap's feet are only let go so fast: the posture changes at 9 Hz at the take-off and the landing, the hips drop as the feet reach, and a leg that is folded double swings its knee
+    // about the hip by more than the foot moves, in a frame: this is what the foot's speed is held to, while it leaps and for a moment after, and not otherwise)
+    smooth(this.leapDyn, jumping ? 1 : 0, jumping ? 20 : 3, dt);
+    const leapLimit = lerp(100, LEAP_FOOT_SPEED, clamp01(this.leapDyn.x)) * dt;
+    for (const [key, target] of [["fn", fnTarget], ["ff", ffTarget], ["hn", hnTarget], ["hf", hfTarget]] as const) {
+      const last = this.footAt[key];
+      if (last.ready) {
+        const dx = target.x - last.x;
+        const dy = target.y - last.y;
+        const len = Math.hypot(dx, dy);
+        if (len > leapLimit) {
+          target.x = last.x + (dx * leapLimit) / len;
+          target.y = last.y + (dy * leapLimit) / len;
+        }
+      }
+      last.x = target.x;
+      last.y = target.y;
+      last.ready = true;
+    }
     solveFront(s.legs.fn, shoulderOf(p.shoulder.x, fnTarget, p.fn), fnTarget, Math.max(pw, held));
     solveFront(s.legs.ff, shoulderOf(p.shoulder.x - 0.02, ffTarget, p.ff), ffTarget, held);
     solveHind(s.legs.hn, p.hip, hnTarget, hockHind, kneeUp);
@@ -1076,12 +1122,23 @@ export class CatRig {
     const swayRate = lerp(0.55, 0.2, sleepy) + frame.energy * 0.9 + hunt * 0.9 + 1.4 * joyful + 0.8 * stretchHold;
     // (in a run the tail streams out behind it, nearly straight, instead of going up and over; hanging in a hand it hangs straight down in the world, whichever way the body is tipped)
     const streaming = clamp01(this.gallopTail.x);
-    const running = lerp(pose.s.tailAngle, 3.35, streaming);
+    // (a tail has weight: what the posture does to it, a jump's gather and its reach, a landing and a stand, it follows a moment behind, and does not whip with it)
+    if (!this.tailPoseReady) {
+      for (const [d, v] of [[this.tailPoseAngle, pose.s.tailAngle], [this.tailPoseCurl, pose.s.tailCurl], [this.tailPoseFront, pose.s.tailFront]] as const) {
+        d.x = v;
+        d.v = 0;
+      }
+      this.tailPoseReady = true;
+    }
+    smooth(this.tailPoseAngle, pose.s.tailAngle, TAIL_POSE_HZ, dt);
+    smooth(this.tailPoseCurl, pose.s.tailCurl, TAIL_POSE_HZ, dt);
+    smooth(this.tailPoseFront, pose.s.tailFront, TAIL_POSE_HZ, dt);
+    const running = lerp(this.tailPoseAngle.x, 3.35, streaming);
     let tailBase = running + held * angleDelta(running, Math.PI / 2 - s.pitch);
     tailBase += (0.65 * joyful + 0.9 * startledTail) * angleDelta(tailBase, -1.45) + 0.5 * drooping * angleDelta(tailBase, 2.9);
     let a = tailBase + (frame.petted ? -0.45 : 0);
-    const curl = lerp(lerp(lerp(pose.s.tailCurl, 0.1, streaming), 0.05, held), 0.1, clamp01(0.7 * joyful + startledTail));
-    const wrap = clamp01(pose.s.tailFront) * (1 - held);
+    const curl = lerp(lerp(lerp(this.tailPoseCurl.x, 0.1, streaming), 0.05, held), 0.1, clamp01(0.7 * joyful + startledTail));
+    const wrap = clamp01(this.tailPoseFront.x) * (1 - held);
     // (a tail lies on the ground, not in it; one that hangs in the air has no ground)
     const tailFloor = lerp(TAIL_FLOOR, 9, held);
     let tx = p.tailRoot.x;
