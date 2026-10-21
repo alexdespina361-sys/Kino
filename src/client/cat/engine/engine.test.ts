@@ -598,6 +598,67 @@ describe("settling clear of the names", () => {
     expect(told.hidden).toBeLessThan(blind.hidden / 2.5);
   });
 
+  /**
+   * A page whose rows are not all alike: the names of the rows 0 and 2 run edge to edge (a title that fills its card, whatever the language: no gap for a cat to sit in),
+   * the names of the others are short.
+   */
+  const unevenWorld = (): World => {
+    const page = defaultPage();
+    page.rows = 4;
+    const world = browseWorld(page);
+    const L2 = world.bodyLength;
+    const soft: Rect[] = [];
+    for (const target of world.targets) {
+      const surface = world.surfaces.find((s) => s.id === target.surfaceId)!;
+      const row = Number(/row(\d+)/.exec(surface.id)![1]);
+      soft.push({ x: target.rect.x, y: surface.y - 0.55 * L2, w: row % 2 === 0 ? target.rect.w + 24 : 0.25 * target.rect.w, h: 0.4 * L2 });
+    }
+    return { ...world, soft };
+  };
+
+  /** What share of a cat's resting time, over a few afternoons on `world`, its body hid more than a tenth of a body-square of the names, and where it rested. */
+  const hiding = (world: World, seeds = [1, 2, 3, 4, 5, 6, 7, 8], seconds = 400): { share: number; resting: number; on: Record<string, number> } => {
+    let resting = 0;
+    let hid = 0;
+    const on: Record<string, number> = {};
+    for (const seed of seeds) {
+      const engine = new CatEngine(seed);
+      for (let i = 0; i < seconds * 30; i++) {
+        const f = engine.update(world, 1 / 30);
+        const debug = engine.debug();
+        const pose: RestPose | null = debug.act === "rest:sit" ? "sit" : debug.act === "rest:loaf" ? "loaf" : debug.act === "rest:stand" ? "stand" : debug.act === "sleep" ? "curl" : null;
+        if (!pose || f.appear < 0.99 || !f.grounded) continue;
+        resting++;
+        on[debug.surfaceId ?? "-"] = (on[debug.surfaceId ?? "-"] ?? 0) + 1;
+        if (shapeCovers(pose, f.facing, f.x, f.y, world.bodyLength, world.soft!) / world.bodyLength ** 2 > 0.1) hid++;
+      }
+    }
+    return { share: hid / resting, resting, on };
+  };
+
+  it("leaves a shelf whose names run edge to edge for one that has room, to settle for a while", () => {
+    const seen = hiding(unevenWorld());
+    expect(seen.resting).toBeGreaterThan(20000);
+    // (measured: 0.24 of its resting time on this page hid names when it knew only the shelf it was on; 0.04 knowing the others)
+    expect(seen.share).toBeLessThan(0.1);
+    // (it is on the crowded shelf now and then, on its way and for the pauses of a stroll, but not to rest on)
+    expect(seen.on["p1:row0"] ?? 0).toBeLessThan(0.1 * seen.resting);
+    expect(seen.on["p1:row1"] ?? 0).toBeGreaterThan(0.3 * seen.resting);
+  });
+
+  it("does not leave its shelf for the sake of names when the viewer wants quiet or less motion, but settles where it is", () => {
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const world = { ...unevenWorld(), [flag]: true };
+      const engine = new CatEngine(3);
+      let moving = 0;
+      for (let i = 0; i < 300 * 30; i++) {
+        engine.update(world, 1 / 30);
+        if (["walk", "run", "jump"].includes(engine.debug().act)) moving++;
+      }
+      expect(moving, flag).toBe(0);
+    }
+  });
+
   it("keeps to everything it must keep to on such a page, through the same bad afternoons", () => {
     for (let seed = 1; seed <= 6; seed++) {
       const stats = runSession({ seed, seconds: 600, chaos: { scroll: true, focus: true, resize: true, modal: true, film: true, touch: true, route: true, visibility: true }, names: true });

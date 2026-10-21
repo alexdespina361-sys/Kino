@@ -83,6 +83,13 @@ const OVERLAP = 1.6;
 const ASIDE = 0.5;
 /** How much of a cat that is settled (in body lengths: the tip of its tail) may be over the edge of the screen before it turns round or steps in. */
 const EDGE_SLACK = 0.12;
+/**
+ * What the best place on the shelf a cat is on still hides (of the words and the zones, in body-lengths squared) for it to look for a place on another shelf, and
+ * the most that place may hide, at most this share of the first: a tenth of a name is a paw's breadth, and a cat does not walk off for that.
+ */
+const UNTIDY = 0.1;
+const CLEAN = 0.04;
+const CLEANER = 0.4;
 
 const label = (act: Act): string =>
   act.k === "rest" ? `rest:${act.pose}` : act.k === "shot" ? `shot:${act.clip}` : act.k === "fade" ? (act.to === 0 ? "fade:out" : "fade:in") : act.k === "walk" && act.stalk ? "stalk" : act.k;
@@ -653,6 +660,34 @@ export class CatEngine {
     return plan;
   }
 
+  /**
+   * The way to a place on another shelf, a leap or two off, where a cat settled in `pose` hides much less than `than` of the words and the zones (at most `CLEANER` of
+   * it, and no more than `CLEAN` of a body-square): the cleanest place there is that it can get to, or none. The floor of a page with no shelves is not a place to
+   * settle.
+   */
+  private cleanerPlace(world: World, pose: RestPose | readonly RestPose[], than: number): Act[] | null {
+    const here = this.here();
+    if (!here) return null;
+    const L = world.bodyLength;
+    const found: Array<{ ledge: Ledge; x: number; cost: number }> = [];
+    for (const ledge of this.ledges) {
+      if (ledge.surfaceId === here.surfaceId || ledge.kind === "fallbackFloor" || ledge.kind === "playerPerch") continue;
+      let best: { x: number; cost: number } | null = null;
+      for (let x = ledge.x0 + 0.4 * L; x <= ledge.x1 - 0.4 * L; x += 0.3 * L) {
+        const cost = Math.max(settledCost(pose, 1, x, ledge.y, L, world), settledCost(pose, -1, x, ledge.y, L, world));
+        if (!best || cost < best.cost) best = { x, cost };
+      }
+      if (best && best.cost <= Math.min(CLEAN * L * L, CLEANER * than)) found.push({ ledge, ...best });
+    }
+    found.sort((a, b) => a.cost - b.cost);
+    for (const one of found.slice(0, 4)) {
+      if (findPath(this.ledges, here, this.x, one.ledge, one.x, L, 2) === null) continue;
+      const plan = this.routeTo(world, one.ledge, one.x, false);
+      if (plan) return plan;
+    }
+    return null;
+  }
+
   private comeTo(world: World, at: Vec | undefined): void {
     if (!this.placed || this.ledges.length === 0) return;
     if (world.reducedMotion || world.mode !== "browse") {
@@ -816,9 +851,17 @@ export class CatEngine {
     // (it faces the way it walks there: `from` is where it means to settle, and the spot is looked for round it)
     const settling = (pose: RestPose | readonly RestPose[], from = this.x): Settling | undefined => (roaming && here ? settle(here, from, from === this.x ? this.facing : from > this.x ? 1 : -1, L, pose, world) : undefined);
     const spotFor = (pose: RestPose | readonly RestPose[], from = this.x): number | undefined => settling(pose, from)?.x;
+    // (and when even the best place of this shelf would hide a name, a cat that is free to roam, and has not just done it, goes to another shelf that has a better one, a leap or two off)
     const walkToSpot = (pose: RestPose | readonly RestPose[]): Act[] => {
-      const spot = spotFor(pose);
-      return spot === undefined ? [] : [{ k: "walk", x: spot, run: false, maxT: 25 }];
+      const found = settling(pose);
+      if (found && found.cost > UNTIDY * L * L && this.cooled("relocate") && this.rng.chance(0.8)) {
+        const away = this.cleanerPlace(world, pose, found.cost);
+        if (away) {
+          this.cool.relocate = this.now + this.rng.range(12, 25);
+          return away;
+        }
+      }
+      return found?.x === undefined ? [] : [{ k: "walk", x: found.x, run: false, maxT: 25 }];
     };
     // (a posture that the shelf has no room for, with the words as they are, is taken less: a cat lying out in front of a name when it could sit up between two)
     const roomFor = (pose: RestPose): number => 1 / (1 + (6 * (settling(pose)?.cost ?? 0)) / (L * L));
