@@ -205,9 +205,26 @@ export class CatRig {
   private nextDream: number;
   private dreamAt = -1;
   private facing: 1 | -1 = 1;
+  /** A resting cat's idle life, from a generator of its own (so that it does not change what the rest of the cat does): where its eyes go next, the ears' slow drift, a change of foot. */
+  private readonly idle: Rng;
+  private nextGaze = 0;
+  private gazeX = 0.35;
+  private gazeY = 0;
+  private readonly earPhase: number[];
+  private nextShuffle = 0;
+  private shuffleAt = -1;
+  private shuffleKey: "fn" | "ff" | "hn" | "hf" = "hn";
+  private shuffleFrom = 0;
+  private shuffleTo = 0;
+  private readonly padOff = { fn: 0, ff: 0, hn: 0, hf: 0 };
+  private readonly padLift = { fn: 0, ff: 0, hn: 0, hf: 0 };
 
   constructor(seed = 1) {
     this.rng = createRng(seed);
+    this.idle = this.rng.fork("idle");
+    this.nextGaze = this.idle.range(1, 3);
+    this.nextShuffle = this.idle.range(4, 10);
+    this.earPhase = Array.from({ length: 4 }, () => this.idle.range(0, TAU));
     this.weights = {} as Record<ShapeName, Dyn>;
     this.rearWeights = {} as Record<ShapeName, Dyn>;
     for (const name of SHAPE_NAMES) {
@@ -367,7 +384,7 @@ export class CatRig {
     const rising = !jumping && goal > here + 0.03;
     // (one that gets up from lying curled or in a loaf takes its time over it: the front comes up first and the rest follows, as a cat that has been asleep does it)
     const lowNow = clamp01(Math.max(0, this.weights.curl.x) + 0.55 * Math.max(0, this.weights.loaf.x));
-    const getUp = rising && !frame.carried ? lerp(1, 0.4, lowNow) : 1;
+    const getUp = rising && !frame.carried ? lerp(1, 0.32, lowNow) : 1;
     const frontFreq = postureHz * getUp * (lowering ? 0.6 : 1);
     const rearFreq = postureHz * getUp * (rising ? 0.6 : 1);
     let total = 0;
@@ -518,6 +535,36 @@ export class CatRig {
       p.bellyMid.y += (rearDy + foreDy) / 2 - 0.03 * arch;
     }
 
+    // --- a cat that stands still changes its feet now and then: one paw comes up, goes a little way along, and is put down again (a foot that has strayed comes back the next time)
+    const standing = clip === "stand" && !frame.carried && sleepy < 0.4 && gaitW < 0.05;
+    if (standing && this.shuffleAt >= 0) {
+      const u = (this.time - this.shuffleAt) / 0.42;
+      const k = this.shuffleKey;
+      if (u >= 1) {
+        this.padOff[k] = this.shuffleTo;
+        this.padLift[k] = 0;
+        this.shuffleAt = -1;
+      } else {
+        this.padOff[k] = lerp(this.shuffleFrom, this.shuffleTo, smoothstep(0, 1, u));
+        this.padLift[k] = 0.04 * Math.sin(Math.PI * u);
+      }
+    } else if (standing && this.time >= this.nextShuffle) {
+      const k = this.idle.weighted(["hn", "hf", "fn", "ff"] as const, (n) => (n === "hn" ? 0.35 : n === "hf" ? 0.25 : n === "fn" ? 0.25 : 0.15))!;
+      this.shuffleKey = k;
+      this.shuffleFrom = this.padOff[k];
+      this.shuffleTo = Math.abs(this.shuffleFrom) > 0.02 ? 0 : this.idle.range(0.022, 0.04) * (this.idle.chance(0.5) ? 1 : -1);
+      this.shuffleAt = this.time;
+      this.nextShuffle = this.time + this.idle.range(5, 14);
+    } else if (!standing) {
+      // (anything else it does puts the feet back where the pose has them, without a jump)
+      this.shuffleAt = -1;
+      const fade = Math.exp(-7 * dt);
+      for (const k of ["fn", "ff", "hn", "hf"] as const) {
+        this.padOff[k] *= fade;
+        this.padLift[k] *= fade;
+      }
+    }
+
     // --- where each paw is (a step when walking, the posture's own rest place when not)
     const pawTarget = (key: "fn" | "ff" | "hn" | "hf") => {
       const home = p[key];
@@ -534,7 +581,7 @@ export class CatRig {
         gx = lerp(gx, g.x, gallop);
         gy = lerp(gy, g.y, gallop);
       }
-      return { x: lerp(home.x, gx, gaitW), y: lerp(home.y, gy, gaitW) };
+      return { x: lerp(home.x, gx, gaitW) + this.padOff[key], y: lerp(home.y, gy, gaitW) - this.padLift[key] };
     };
 
     const fnTarget = pawTarget("fn");
@@ -572,11 +619,22 @@ export class CatRig {
       wantY = 1;
       attending = true;
     }
+    // (a cat at rest looks about: now and then its eyes go to something, quickly, and its head follows a little way after them)
+    const calm = (clip === "sit" || clip === "stand" || clip === "loaf") && sleepy < 0.45 && !attending && !frame.carried;
+    if (this.time >= this.nextGaze) {
+      this.gazeX = this.idle.chance(0.4) ? 0.35 : this.idle.range(-0.6, 1);
+      this.gazeY = this.idle.range(-0.4, 0.5);
+      this.nextGaze = this.time + this.idle.range(1.4, 5);
+    }
+    if (calm) {
+      wantX = this.gazeX;
+      wantY = this.gazeY;
+    }
     smooth(this.eyeX, wantX, 11, dt);
     smooth(this.eyeY, wantY, 11, dt);
-    const yawTarget = facingOut ? 0 : clamp(wantX * 0.8, -0.85, 0.85);
+    const yawTarget = facingOut ? 0 : calm ? 0.28 + 0.25 * (wantX - 0.35) : clamp(wantX * 0.8, -0.85, 0.85);
     smooth(this.yaw, yawTarget, attending ? 3.2 : 1.6, dt);
-    smooth(this.tilt, wantY * 0.28, 3, dt);
+    smooth(this.tilt, wantY * (calm ? 0.2 : 0.28), 3, dt);
 
     // --- one-offs on the pose: a yawn, a stretch of the neck, being petted, grooming, pointing
     let jawTarget = 0;
@@ -971,8 +1029,13 @@ export class CatRig {
     hd.openL = open;
     hd.openR = open;
     hd.pupil = this.pupilDyn.x;
-    hd.earL = this.earBaseL.x + this.earKickL.x;
-    hd.earR = this.earBaseR.x + this.earKickR.x;
+    // (an awake cat's ears are never quite still: each turns, slowly and by itself, to what it hears)
+    const listen = (1 - clamp01(sleepy * 1.6)) * (1 - 0.5 * gaitW) * (1 - startled);
+    const ph = this.earPhase;
+    const scanL = (0.085 * Math.sin(this.time * 0.7 + ph[0]!) + 0.06 * Math.sin(this.time * 2.1 + ph[1]!)) * listen;
+    const scanR = (0.085 * Math.sin(this.time * 0.6 + ph[2]!) + 0.06 * Math.sin(this.time * 1.9 + ph[3]!)) * listen;
+    hd.earL = this.earBaseL.x + this.earKickL.x + scanL;
+    hd.earR = this.earBaseR.x + this.earKickR.x + scanR;
     // (and a cat that is carried says what it thinks of it, now and then: the mouth opens for a moment, the eyes and the ears stay as they are)
     hd.jaw = this.jawDyn.x + held * Math.max(0, Math.sin(this.time * TAU * 0.55)) ** 3 * 0.4;
     hd.happy = this.happyDyn.x;
