@@ -11,12 +11,18 @@ export interface Fitted {
   bones: Array<{ name: string; parent: number; head: [number, number, number] }>;
 }
 
-export function fit(m: Skinned, s = FIT.s, x0 = FIT.x0): Fitted {
+/** The map from the file's space (of the vertices at bind) to the rig's frame: for a point of the file, or a direction (`shift` false). */
+export function frameOf(m: Skinned, s = FIT.s, x0 = FIT.x0): (x: number, y: number, z: number) => [number, number, number] {
   const nV = m.pos.length / 3;
   let yMin = 1e9;
   for (let v = 0; v < nV; v++) yMin = Math.min(yMin, m.pos[v * 3 + 1]!);
   const hipRootZ = (m.bones.find((b) => b.name === "backleg")!.head[2] + m.bones.find((b) => b.name === "R_backleg")!.head[2]) / 2;
-  const conv = (x: number, y: number, z: number): [number, number, number] => [(z - hipRootZ) * 1000 * s + x0, (y - yMin) * 1000 * s, -x * 1000 * s];
+  return (x, y, z) => [(z - hipRootZ) * 1000 * s + x0, (y - yMin) * 1000 * s, -x * 1000 * s];
+}
+
+export function fit(m: Skinned, s = FIT.s, x0 = FIT.x0): Fitted {
+  const nV = m.pos.length / 3;
+  const conv = frameOf(m, s, x0);
   const pos = new Float32Array(nV * 3);
   const nor = new Float32Array(nV * 3);
   for (let v = 0; v < nV; v++) {

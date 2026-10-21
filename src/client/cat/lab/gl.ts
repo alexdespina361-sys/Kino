@@ -251,6 +251,11 @@ export interface FilmOptions {
   cellW?: number;
   cellH?: number;
   coat?: CatCoat;
+  /** For a strip: a closer look (the cat this many times the size, about the place `at` of it: body lengths forward and up from the feet). */
+  zoom?: number;
+  at?: [number, number];
+  /** The turn and tilt of the camera, as in a view (see `View`). */
+  view?: View;
 }
 
 /**
@@ -287,7 +292,10 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
     canvas.width = cw * o.cols;
     canvas.height = ch * rows;
     cat.resize(cw, ch, 1);
-    const line = ch - 24 * o.scale;
+    const zoom = o.zoom ?? 1;
+    const at = o.at ?? [0, 0];
+    // (zoomed in on a place, that place is the middle of the cell; otherwise the feet are on a line near the bottom of it)
+    const line = o.zoom ? ch / 2 + at[1] * lab * zoom : ch - 24 * o.scale;
     for (let i = warm + 1; i <= i1; i++) {
       const f = film.frames[i]!;
       rig.update(scaled(f), dt, lab);
@@ -299,8 +307,8 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
       ctx.fillRect(x0, y0, cw, ch);
       ctx.fillStyle = GROUND;
       ctx.fillRect(x0, y0 + line, cw, 3 * o.scale);
-      const oy = Math.min(ch - 4 * o.scale, line + (f.y - ref.y) * k);
-      cat.draw(rig.solved, { ox: cw / 2, oy, px: lab });
+      const oy = o.zoom ? line + (f.y - ref.y) * k * zoom : Math.min(ch - 4 * o.scale, line + (f.y - ref.y) * k);
+      cat.draw(rig.solved, { ox: cw / 2 - at[0] * lab * zoom, oy, px: lab * zoom }, o.view);
       ctx.drawImage(glCanvas, x0, y0);
       ctx.fillStyle = "#9aa";
       ctx.font = `${12 * o.scale}px sans-serif`;

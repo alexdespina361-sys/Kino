@@ -23,6 +23,12 @@ const pick = flag("pick", "").split(",").filter(Boolean).map(Number);
 const session = flag("session", "");
 const film = session ? JSON.parse(readFileSync(resolve(root, session), "utf8")) : null;
 const filmOptions = { mode: flag("mode", "strip"), cols, scale, from: Number(flag("from", 0)), to: Number(flag("to", 10)), every: Number(flag("every", 6)), cellW: Number(flag("cellw", 260)), cellH: Number(flag("cellh", 220)), coat: flag("coat", "ragdoll") };
+// (a closer look at a strip: --zoom=2.4 --at=0.3,0.55 [the place, in body lengths forward and up from the feet], and the camera: --turn=-0.5 --tilt=0.1)
+if (flag("zoom", "")) {
+  filmOptions.zoom = Number(flag("zoom", 1));
+  filmOptions.at = flag("at", "0,0.4").split(",").map(Number);
+}
+if (flag("turn", "") || flag("tilt", "") || flag("debug", "")) filmOptions.view = { ...(flag("turn", "") ? { turn: Number(flag("turn", 0)) } : {}), ...(flag("tilt", "") ? { tilt: Number(flag("tilt", 0)) } : {}), ...(flag("debug", "") ? { debug: Number(flag("debug", 0)) } : {}) };
 
 const code = await bundle(resolve(root, "src/client/cat/lab/gl.ts"), "CatLabGl");
 // (the software driver by default, so a sheet looks the same on every machine; --gpu=real is the machine's own graphics card, as a viewer's screen would draw it)

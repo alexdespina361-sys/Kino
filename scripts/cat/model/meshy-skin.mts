@@ -21,9 +21,15 @@ export const TUNING = {
   /** The tail: its radius, and how far along it (in body lengths) a point becomes the tail's. */
   tail: { radius: 0.12, from: 0.03, to: 0.15 },
   /** The legs: how thick each piece is, how far out a point is still the leg's (in those radii), and where along the top piece the leg fades into the body. */
-  leg: { front: [0.1, 0.075, 0.065] as const, hind: [0.1, 0.08, 0.07] as const, full: 1.0, none: 1.3, from: 0.1, to: 0.9, sigma: 0.04 },
+  leg: { front: [0.1, 0.075, 0.065] as const, hind: [0.07, 0.075, 0.07] as const, full: 1.0, none: 1.3, from: 0.1, to: 0.9, sigma: 0.04 },
+  /** A leg's reach into the body widens at the top of a hind leg (the haunch is carried by the thigh, not left behind it: a leg swung far back would tear its edge off the rump), and a point on the other side of the middle is not its leg's. */
+  haunch: { full: 0.9, none: 1.7, side: [-0.02, 0.05] as const },
   neck: { from: 0.05, to: 0.9, reach: 0.22 },
 };
+
+/** The bones whose weights are smoothed further (the body's stations and the legs) and by how much: rounds of drawing each point's weights toward the mean of its neighbours'. */
+const SOFT = { rounds: 24, pull: 0.5 };
+const SOFT_BONES = [BONE.f0, BONE.f0 + 1, BONE.f0 + 2, BONE.f0 + 3, BONE.f0 + 4, BONE.fnU, BONE.fnU + 1, BONE.fnU + 2, BONE.ffU, BONE.ffU + 1, BONE.ffU + 2, BONE.hnU, BONE.hnU + 1, BONE.hnU + 2, BONE.hfU, BONE.hfU + 1, BONE.hfU + 2];
 
 function nearestOnSegment(p: readonly [number, number, number], a: readonly [number, number, number], b: readonly [number, number, number]): { t: number; d: number } {
   const abx = b[0] - a[0], aby = b[1] - a[1], abz = b[2] - a[2];
@@ -109,7 +115,14 @@ export function weightsAt(p: readonly [number, number, number], rest: MeshyRest,
     }
     // how far down the leg (0 at the root, 1 at the elbow or knee) the nearest point is: the top of the leg fades out into the body
     const down = bestJ === 0 ? bestT : 1;
-    const share = sstep(T.leg.none, T.leg.full, best) * sstep(T.leg.from, T.leg.to, down);
+    // (the hind leg's reach is wider near the hip, where the haunch is, and fades out down the leg)
+    const hind = key[0] === "h";
+    const wide = hind ? 1 - sstep(0.35, 0.95, bestJ === 0 ? bestT : 1) : 0;
+    const full = T.leg.full + (T.haunch.full - T.leg.full) * wide;
+    const none = T.leg.none + (T.haunch.none - T.leg.none) * wide;
+    // (and only the leg's own side of the middle)
+    const side = sstep(T.haunch.side[0], T.haunch.side[1], z * Math.sign(L.z || 1));
+    const share = sstep(none, full, best) * sstep(T.leg.from, T.leg.to, down) * side;
     legShare[key] = share;
     // which of the three pieces: the nearest, with a soft edge
     const k = ds.map((d) => Math.exp(-((d / T.leg.sigma) ** 2) * 0.5));
@@ -257,6 +270,34 @@ export function weightField(pos: ArrayLike<number>, tri: ArrayLike<number>, rest
       }
     }
     [at, to] = [to, at];
+  }
+  // the body and the legs go on being smoothed, wider: a haunch that is carried by a thigh swung far back must stretch over the whole of its width, not tear at the edge of a narrow
+  // seam (the head, the jaw, the ears and the tail are left as they are: they have to keep their edges)
+  const soft = new Uint8Array(BONE_COUNT);
+  for (const b of SOFT_BONES) soft[b] = 1;
+  for (let r = 0; r < SOFT.rounds; r++) {
+    for (let p = 0; p < nodes; p++) {
+      const around = next[p]!;
+      for (let b = 0; b < BONE_COUNT; b++) {
+        if (!soft[b]) {
+          to[p * BONE_COUNT + b] = at[p * BONE_COUNT + b]!;
+          continue;
+        }
+        let sum = 0;
+        for (const q of around) sum += at[q * BONE_COUNT + b]!;
+        const mean = around.size ? sum / around.size : at[p * BONE_COUNT + b]!;
+        to[p * BONE_COUNT + b] = at[p * BONE_COUNT + b]! * (1 - SOFT.pull) + mean * SOFT.pull;
+      }
+    }
+    [at, to] = [to, at];
+  }
+  for (let p = 0; p < nodes; p++) {
+    // (what the soft bones carry is what the others leave: the sum stays one)
+    let fixed = 0;
+    let loose = 0;
+    for (let b = 0; b < BONE_COUNT; b++) (soft[b] ? (loose += at[p * BONE_COUNT + b]!) : (fixed += at[p * BONE_COUNT + b]!));
+    const scale = loose > 1e-9 ? Math.max(0, 1 - fixed) / loose : 0;
+    for (let b = 0; b < BONE_COUNT; b++) if (soft[b]) at[p * BONE_COUNT + b]! *= scale;
   }
   for (let v = 0; v < n; v++) dense.set(at.subarray(placeOf[v]! * BONE_COUNT, (placeOf[v]! + 1) * BONE_COUNT), v * BONE_COUNT);
   return dense;

@@ -337,7 +337,7 @@ export class Skeleton {
       // a front paw held up (to the face, to point) comes out toward the viewer, so that it is seen against the face and not lost against the chest;
       // a hind foot lifted to the ear (a scratch) comes out further still, for it has the whole side of the cat to clear
       const held = key === "fn" ? clamp((now.toe.y - 0.25) / 0.3, 0, 1) : key === "hn" ? clamp((now.toe.y - 0.3) / 0.25, 0, 1) : 0;
-      const out = key === "hn" ? [0.05, 0.11, 0.15] : [0.015, 0.045, 0.07];
+      const out = key === "hn" ? [0.09, 0.15, 0.17] : [0.015, 0.045, 0.07];
       segment(m, rest.root, rest.mid, now.root, now.mid, false);
       m[11] = (m[11] ?? 0) + held * out[0]!;
       bone(first, m);

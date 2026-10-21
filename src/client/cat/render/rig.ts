@@ -100,6 +100,13 @@ interface Gait {
   lift: number;
 }
 const WALK_GAIT: Gait = { stride: WALK_STRIDE, duty: 0.68, lift: 0.07 };
+/** A wash of the face: how long one stroke is (seconds), the part of it spent licking the paw at the mouth, and the way the paw goes (forward along the face, up it: body lengths from the head's centre). */
+const GROOM_BEAT = 1.5;
+const GROOM_LICK = 0.28;
+const GROOM_PATH: ReadonlyArray<readonly [number, number]> = [[0.075, -0.055], [0.035, -0.005], [-0.005, 0.07], [-0.05, 0.1]];
+/** How far the shoulders and the rump rock over the feet in a walk (body lengths: a free model's own walk, doubled so that it is seen at the size a cat is drawn at). */
+const ROCK_CHEST = 0.02;
+const ROCK_RUMP = 0.015;
 /** A creeping cat takes short, slow steps, each foot lifted a little and set down with care. */
 const STALK_GAIT: Gait = { stride: 0.36, duty: 0.8, lift: 0.05 };
 
@@ -358,8 +365,11 @@ export class CatRig {
     }
     const lowering = !jumping && goal < here - 0.03;
     const rising = !jumping && goal > here + 0.03;
-    const frontFreq = postureHz * (lowering ? 0.6 : 1);
-    const rearFreq = postureHz * (rising ? 0.6 : 1);
+    // (one that gets up from lying curled or in a loaf takes its time over it: the front comes up first and the rest follows, as a cat that has been asleep does it)
+    const lowNow = clamp01(Math.max(0, this.weights.curl.x) + 0.55 * Math.max(0, this.weights.loaf.x));
+    const getUp = rising && !frame.carried ? lerp(1, 0.4, lowNow) : 1;
+    const frontFreq = postureHz * getUp * (lowering ? 0.6 : 1);
+    const rearFreq = postureHz * getUp * (rising ? 0.6 : 1);
     let total = 0;
     let totalRear = 0;
     for (const name of SHAPE_NAMES) {
@@ -465,8 +475,14 @@ export class CatRig {
     const stalkW = clamp01(this.stalkDyn.x);
     const walkBeat = fract(odoL / WALK_GAIT.stride);
     const stalkBeat = fract(odoL / STALK_GAIT.stride);
-    const bob = gaitW * (1 - gallop) * lerp(0.012 * (1 - Math.cos(walkBeat * TAU * 2)) * 0.5, 0.004 * (1 - Math.cos(stalkBeat * TAU * 2)) * 0.5, stalkW);
-    const roll = gaitW * (1 - gallop) * lerp(Math.sin(walkBeat * TAU) * 0.012, Math.sin(stalkBeat * TAU) * 0.006, stalkW);
+    // (a walking cat's back rocks over its feet twice a stride, as a free model's own walk does, measured: the shoulders are at their highest as the hind feet come down and at their
+    // lowest as the forefeet do, the rump the other way about, a little less; the head goes forward with the shoulders and its bob follows theirs by a quarter of a beat)
+    const onFoot = gaitW * (1 - gallop);
+    const rockAt = (beat: number, lag = 0): number => Math.cos(TAU * 2 * (beat + 0.03) - lag);
+    const rock = onFoot * lerp(rockAt(walkBeat), 0.4 * rockAt(stalkBeat), stalkW);
+    const rockLate = onFoot * lerp(rockAt(walkBeat, 1.4), 0.4 * rockAt(stalkBeat, 1.4), stalkW);
+    const chestRise = ROCK_CHEST * rock;
+    const rumpRise = -ROCK_RUMP * rock;
     // (where it is in the gallop's one beat: 0 is the hind feet coming down; gathered, with the feet under it, is the end of it, stretched out the middle)
     const gbeat = fract(odoL / GALLOP_STRIDE);
     const gather = gat > 0.001 ? Math.cos(TAU * (gbeat - 0.92)) : 0;
@@ -480,11 +496,10 @@ export class CatRig {
     const handAx = ((frame.vx - this.prevVx) / dt / px) * frame.facing;
     bounce(this.swingDyn, held > 0.5 ? clamp(handAx * 0.012 + (frame.vx / px) * frame.facing * 0.012, -0.55, 0.55) : 0, 1.5, 0.2, dt);
     s.pitch = lerp(this.pitchDyn.x, CARRY_PITCH + this.swingDyn.x, held);
-    for (const k of ["rumpBack", "rumpTop", "backMid", "shoulderTop", "neckTop", "chestFront", "chestBottom", "bellyMid", "groin", "rumpBottom", "shoulder", "hip", "head", "tailRoot"] as const) {
-      p[k].y -= bob;
-    }
-    p.neckTop.y -= roll * 0.5;
-    p.rumpTop.y += roll * 0.5;
+    for (const k of ["shoulderTop", "neckTop", "chestFront", "chestBottom", "shoulder", "head"] as const) p[k].y -= chestRise;
+    for (const k of ["rumpBack", "rumpTop", "groin", "rumpBottom", "hip", "tailRoot"] as const) p[k].y -= rumpRise;
+    p.backMid.y -= (chestRise + rumpRise) / 2;
+    p.bellyMid.y -= (chestRise + rumpRise) / 2;
     if (gat > 0.001) {
       // (a cat that runs is lower on its legs, and rocks over them: the rump is down as the hind feet take the weight and up as the forefeet do, and the
       // shoulders the other way about; gathered, its back is arched and its body short, stretched out, it is long and flat)
@@ -565,17 +580,41 @@ export class CatRig {
 
     // --- one-offs on the pose: a yawn, a stretch of the neck, being petted, grooming, pointing
     let jawTarget = 0;
-    let headRotExtra = 0;
-    let headShiftX = 0;
-    let headShiftY = 0;
+    // (the walk's head: thrust forward with the shoulders, and a nod that follows them)
+    let headRotExtra = -0.025 * rockLate;
+    let headShiftX = 0.012 * rock;
+    let headShiftY = -0.006 * rockLate;
     if (clip === "yawn") {
-      // slowly open, hold, close more quickly: the head goes back and up as the jaw drops
+      // slowly open, hold (with a tremor at the top of it), close more quickly: the head goes back and up as the jaw drops and the chest is filled; the head is shaken when it is over
       const t = frame.progress;
-      const open = smoothstep(0.08, 0.4, t) * (1 - smoothstep(0.7, 0.94, t));
-      jawTarget = open;
-      headRotExtra = -0.6 * open;
-      headShiftX = 0.012 * open;
+      const open = smoothstep(0.08, 0.36, t) * (1 - smoothstep(0.64, 0.86, t));
+      const top = smoothstep(0.3, 0.42, t) * (1 - smoothstep(0.6, 0.7, t));
+      const tremor = Math.sin(frame.clipTime * TAU * 13) * top;
+      const shake = smoothstep(0.86, 0.9, t) * (1 - smoothstep(0.96, 1, t)) * Math.sin(((t - 0.86) / 0.14) * TAU * 2.5);
+      const lick = t > 0.9 ? Math.sin(((t - 0.9) / 0.1) * Math.PI) : 0;
+      jawTarget = open * (1 + 0.04 * tremor) + 0.1 * lick;
+      headRotExtra = -0.6 * open + 0.012 * tremor + 0.08 * shake;
+      headShiftX = 0.012 * open + 0.003 * tremor + 0.008 * shake;
       headShiftY = -0.03 * open;
+      // (the chest is filled: the front of the cat goes up and forward with the head)
+      p.chestFront.y -= 0.022 * open;
+      p.neckTop.y -= 0.014 * open;
+      p.shoulderTop.y -= 0.01 * open;
+      p.chestFront.x += 0.012 * open;
+    }
+    let stretchHold = 0;
+    if (clip === "stretch") {
+      // held, a stretch goes on: the chest sinks a little further, the forepaws slide out along the floor, and a tremor runs through the held pose
+      const t = frame.progress;
+      stretchHold = smoothstep(0.1, 0.34, t) * (1 - smoothstep(0.72, 0.92, t));
+      const creep = smoothstep(0.22, 0.7, t) * stretchHold;
+      const shiver = Math.sin(frame.clipTime * TAU * 9) * smoothstep(0.4, 0.6, t) * stretchHold;
+      p.chestFront.y += 0.014 * creep + 0.0015 * shiver;
+      p.shoulderTop.y += 0.012 * creep + 0.0015 * shiver;
+      p.neckTop.y += 0.012 * creep;
+      headShiftY += 0.012 * creep;
+      fnTarget.x += 0.03 * creep;
+      ffTarget.x += 0.03 * creep;
     }
     if (gat > 0.001) {
       // (the neck is stretched out and the head low, the nose down, and it comes up a little with the shoulders)
@@ -589,17 +628,32 @@ export class CatRig {
     let pawGoalX = p.fn.x;
     let pawGoalY = 0;
     smooth(this.groomDyn, clip === "groom" ? 1 : 0, 3, dt);
+    let groomSweep = 0;
     if (clip === "groom") {
-      // washing its face: the head bows to a paw held up at the cheek, the paw goes up over the ear and back down to the mouth, and the head nods with it
-      const t = frame.clipTime * TAU * 0.8;
-      const rub = Math.sin(t);
+      // washing its face: the paw is licked at the mouth (the jaw works a little), then drawn up the cheek, over the eye and the ear, held a moment behind it, and drawn down again;
+      // the head bows to the paw at the mouth, tips into it as it goes over, and the eye on that side shuts as it passes
+      const u = fract(frame.clipTime / GROOM_BEAT);
+      const sweep = u < GROOM_LICK ? 0 : 0.5 - 0.5 * Math.cos(TAU * ((u - GROOM_LICK) / (1 - GROOM_LICK)));
+      groomSweep = sweep * clamp01(this.groomDyn.x);
       const bow = clamp01(this.groomDyn.x);
-      headShiftX += 0.035 * bow;
-      headShiftY += (0.15 + 0.014 * rub) * bow;
-      headRotExtra += (0.3 - 0.06 * rub) * bow;
-      // (the wrist is where it is aimed, and the paw reaches on up the face from there)
-      pawGoalX = headX + headShiftX + 0.05 - 0.012 * rub;
-      pawGoalY = headY + headShiftY + 0.045 - 0.05 * rub;
+      headShiftX += (0.035 + 0.02 * sweep) * bow;
+      headShiftY += (0.15 - 0.045 * sweep) * bow;
+      headRotExtra += (0.3 + 0.16 * sweep) * bow;
+      // (the licks: the jaw opens a little twice while the paw is at the mouth)
+      if (u < GROOM_LICK) jawTarget = Math.max(jawTarget, 0.2 * Math.sin((u / GROOM_LICK) * Math.PI * 2) ** 2 * bow);
+      // (the paw's way, in the head's own terms: forward along the face and up it, from the mouth through the cheek and the eye to behind the ear; the head's tilt is carried with it)
+      const q = sweep * (GROOM_PATH.length - 1);
+      const k0 = Math.min(GROOM_PATH.length - 2, Math.floor(q));
+      const f = q - k0;
+      const a0 = GROOM_PATH[k0]!;
+      const a1 = GROOM_PATH[k0 + 1]!;
+      const lx = lerp(a0[0], a1[0], f);
+      const ly = lerp(a0[1], a1[1], f);
+      const rot = pose.s.headRot + headRotExtra + this.tilt.x;
+      const cr = Math.cos(rot);
+      const sr = Math.sin(rot);
+      pawGoalX = headX + headShiftX + lx * cr + ly * sr;
+      pawGoalY = headY + headShiftY - (-lx * sr + ly * cr);
     } else if ((clip === "point" || clip === "tap") && frame.reach) {
       const dx = ((frame.reach.x - frame.x) * frame.facing) / px;
       const dy = (frame.reach.y - frame.y) / px;
@@ -618,8 +672,8 @@ export class CatRig {
         p.chestFront.x += 0.012 * strike * clamp01(this.pawOn.x);
       }
     }
-    smooth(this.pawX, pawGoalX, 7, dt);
-    smooth(this.pawY, pawGoalY, 7, dt);
+    smooth(this.pawX, pawGoalX, clip === "groom" ? 11 : 7, dt);
+    smooth(this.pawY, pawGoalY, clip === "groom" ? 11 : 7, dt);
     const pw = clamp01(this.pawOn.x);
     fnTarget.x = lerp(fnTarget.x, this.pawX.x, pw);
     fnTarget.y = lerp(fnTarget.y, this.pawY.x, pw);
@@ -721,14 +775,18 @@ export class CatRig {
     }
     if (scratching > 0.001) {
       const shake = Math.sin(frame.clipTime * TAU * 8.5);
-      headShiftX += -0.03 * scratching;
-      headShiftY += (0.21 + 0.006 * shake) * scratching;
-      headRotExtra += (0.5 + 0.05 * shake) * scratching;
-      // (the hip comes forward a little as the leg is lifted, and the foot is where the ear is: the head's middle, a little up and back)
-      p.hip.x += 0.05 * scratching;
-      p.hip.y -= 0.03 * scratching;
-      hnTarget.x = lerp(hnTarget.x, headX + headShiftX - 0.02 + 0.014 * shake, scratching);
-      hnTarget.y = lerp(hnTarget.y, headY + headShiftY - 0.02 + 0.02 * shake, scratching);
+      // (the cat folds to meet its own foot: the head goes down and back over the shoulder, the neck and the chest lean back with it, and the head is shaken a little by the scratching)
+      headShiftX += (-0.1 + 0.004 * shake) * scratching;
+      headShiftY += (0.2 + 0.008 * shake) * scratching;
+      headRotExtra += (0.5 + 0.06 * shake) * scratching;
+      p.neckTop.x -= 0.04 * scratching;
+      p.chestFront.x -= 0.035 * scratching;
+      p.neckTop.y += 0.025 * scratching;
+      // (the hip comes forward and up as the leg is lifted, and the foot is where the ear is: the head's middle, a little up and back)
+      p.hip.x += 0.07 * scratching;
+      p.hip.y -= 0.04 * scratching;
+      hnTarget.x = lerp(hnTarget.x, headX + headShiftX - 0.02 + 0.026 * shake, scratching);
+      hnTarget.y = lerp(hnTarget.y, headY + headShiftY - 0.02 + 0.034 * shake, scratching);
       // (the foot points up and forward from the hock; the knee is below the leg's line, by the belly, instead of behind and above)
       hockHind.x = lerp(hockHind.x, -0.1, scratching);
       hockHind.y = lerp(hockHind.y, 0.15, scratching);
@@ -833,8 +891,13 @@ export class CatRig {
       leg.toe.y = paw.y;
       leg.lift = -paw.y;
     };
-    solveFront(s.legs.fn, p.shoulder, fnTarget, Math.max(pw, held));
-    solveFront(s.legs.ff, { x: p.shoulder.x - 0.02, y: p.shoulder.y }, ffTarget, held);
+    // (a shoulder blade slides on the ribs: back as the leg goes back, forward as it reaches, and up as the paw is lifted, so a foreleg is not hinged to a fixed point)
+    const shoulderOf = (rootX: number, paw: { x: number; y: number }, home: { x: number; y: number }): { x: number; y: number } => ({
+      x: rootX + (1 - held) * clamp(0.1 * (paw.x - home.x), -0.03, 0.04),
+      y: p.shoulder.y - (1 - held) * 0.25 * clamp(-paw.y, 0, 0.08),
+    });
+    solveFront(s.legs.fn, shoulderOf(p.shoulder.x, fnTarget, p.fn), fnTarget, Math.max(pw, held));
+    solveFront(s.legs.ff, shoulderOf(p.shoulder.x - 0.02, ffTarget, p.ff), ffTarget, held);
     solveHind(s.legs.hn, p.hip, hnTarget, hockHind, kneeUp);
     solveHind(s.legs.hf, { x: p.hip.x + 0.03, y: p.hip.y }, hfTarget, hockFar);
 
@@ -872,7 +935,7 @@ export class CatRig {
     // (and in a run they are laid back)
     // (a flinch lays them flat back; a letdown lets them out to the sides; a cat that is pleased, or that asks itself something, has them up and forward)
     const earRest =
-      lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0) + this.jawDyn.x * 0.3 + this.groomDyn.x * 0.12 + gat * 0.22 + held * 0.4 + 0.85 * startled + 0.34 * drooping - 0.1 * joyful - 0.08 * tilting - 0.05 * thinking;
+      lerp(0.12, 0.42, sleepy) - alert * 0.12 + (frame.petted ? 0.25 : 0) + this.jawDyn.x * 0.3 + this.groomDyn.x * 0.12 + groomSweep * 0.3 + gat * 0.22 + held * 0.4 + 0.85 * startled + 0.34 * drooping - 0.1 * joyful - 0.08 * tilting - 0.05 * thinking;
     smooth(this.earBaseL, earRest, 4, dt);
     smooth(this.earBaseR, earRest, 4, dt);
     bounce(this.earKickL, 0, 9, 0.35, dt);
@@ -902,7 +965,7 @@ export class CatRig {
     // (half shut in a scratch, and heavy in kneading)
     // (nodding off, the lids are heavy, and heaviest as the head sinks; half waking, they are a little open; a slow blink in a letdown)
     const open = Math.max(
-      lidBase * (1 - blink) * (1 - 0.92 * smoothstep(0.1, 0.5, this.jawDyn.x)) * (1 - 0.7 * clamp01(this.groomDyn.x)) * (1 - 0.7 * scratching) * (1 - 0.55 * kneading) * (1 - dozeLid) * (1 - 0.25 * drooping),
+      lidBase * (1 - blink) * (1 - 0.92 * smoothstep(0.1, 0.5, this.jawDyn.x)) * (1 - clamp01(this.groomDyn.x) * (0.4 + 0.5 * groomSweep)) * (1 - 0.7 * scratching) * (1 - 0.55 * kneading) * (1 - dozeLid) * (1 - 0.25 * drooping),
       0.45 * shiftLift,
     );
     hd.openL = open;
@@ -923,8 +986,8 @@ export class CatRig {
     smooth(this.tailRoot, clamp(-ax * 0.035, -0.6, 0.6), 5, dt);
     // (the tip of a hunting cat's tail twitches, quickly)
     // (and quivers, held up, in joy; a flinch has it up and stiff; a letdown has it low and still)
-    const swayAmp = lerp(0.09, 0.02, sleepy) + frame.energy * 0.22 + (frame.petted ? 0.12 : 0) + hunt * 0.12 + held * 0.1 + 0.2 * joyful + 0.1 * startledTail - 0.05 * drooping;
-    const swayRate = lerp(0.55, 0.2, sleepy) + frame.energy * 0.9 + hunt * 0.9 + 1.4 * joyful;
+    const swayAmp = lerp(0.09, 0.02, sleepy) + frame.energy * 0.22 + (frame.petted ? 0.12 : 0) + hunt * 0.12 + held * 0.1 + 0.2 * joyful + 0.1 * startledTail - 0.05 * drooping + 0.08 * stretchHold;
+    const swayRate = lerp(0.55, 0.2, sleepy) + frame.energy * 0.9 + hunt * 0.9 + 1.4 * joyful + 0.8 * stretchHold;
     // (in a run the tail streams out behind it, nearly straight, instead of going up and over; hanging in a hand it hangs straight down in the world, whichever way the body is tipped)
     const streaming = clamp01(this.gallopTail.x);
     const running = lerp(pose.s.tailAngle, 3.35, streaming);
@@ -950,7 +1013,10 @@ export class CatRig {
       carry = d.x;
       // (a tail that is wrapped round the cat goes back for a moment and then turns, quickly, to lie forward along its side)
       const along01 = lerp(f * f * 0.6 + f * 0.4, smoothstep(0.1, 0.32, f), wrap);
-      a = tailBase + (frame.petted ? -0.45 : 0) + curl * along01 + d.x * (0.4 + f);
+      // (a walking cat's tail rides the rock of its rump: the rump rises and the tail follows a little behind it, the tip furthest behind and furthest out)
+      const lag = 0.45 * i + 0.9;
+      const ride = onFoot * (0.025 + 0.07 * f) * lerp(Math.sin(TAU * 2 * (walkBeat + 0.03) - lag), 0.4 * Math.sin(TAU * 2 * (stalkBeat + 0.03) - lag), stalkW);
+      a = tailBase + (frame.petted ? -0.45 : 0) + curl * along01 + d.x * (0.4 + f) + ride * (1 - streaming);
       let dx = Math.cos(a) * segLen;
       let dy = Math.sin(a) * segLen;
       if (ty + dy > tailFloor) {
