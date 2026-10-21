@@ -1,9 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { shapeHits } from "../engine/shape";
 import { createRng } from "../rng";
+import type { Rect } from "../types";
 import { fits, MOODS, pick, reasonFor, type Candidate, type Mood } from "./assistant";
 import { Governor } from "./governor";
 import { DWELL_MS, Hand, REPEAT_MS } from "./hand";
+import { perchesFor, widestGap } from "./perch";
 
 describe("the hand on the cat", () => {
   it("does not stroke a cat the pointer only passes over, and strokes one it rests on", () => {
@@ -185,6 +188,53 @@ describe("find me something", () => {
     let front = 0;
     for (let seed = 1; seed <= 400; seed++) if (pick(wide, "funny" as Mood, new Set(), createRng(seed))?.id === "front") front++;
     expect(front).toBeGreaterThan(400 / 31 + 40); // (far more often than a fair draw among thirty-one would give it)
+  });
+});
+
+describe("the cat's place in a film", () => {
+  // the controls' row of a 1280x720 screen: a group of buttons at each end of it
+  const left: Rect = { x: 40, y: 640, w: 165, h: 52 };
+  const right: Rect = { x: 705, y: 645, w: 505, h: 42 };
+  const L = 100;
+
+  it("rests between the two groups of the controls' row, where no button is, whatever way it lies and faces", () => {
+    const perches = perchesFor([left, right], 1280, 720, L);
+    expect(perches.map((one) => one.id)).toEqual(["perch-gap"]);
+    const perch = perches[0]!;
+    expect(perch.kind).toBe("playerPerch");
+    expect(perch.y).toBeGreaterThan(690);
+    expect(perch.x1 - perch.x0).toBeGreaterThan(0.3 * L);
+    // every posture it takes in a film, at either end of its place, facing either way: tail, nose and all, it touches neither group
+    for (const clip of ["loaf", "curl", "sit", "knead", "stretch"] as const) {
+      for (const x of [perch.x0, perch.x1]) {
+        for (const facing of [1, -1] as const) {
+          for (const group of [left, right]) expect(shapeHits(clip, facing, x, perch.y, L, group), `${clip} at ${Math.round(x)} facing ${facing}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("is in a corner of the picture where the row has no such place: not drawn yet, too narrow, or wrapped", () => {
+    const corners = (groups: Rect[]) => perchesFor(groups, 1280, 720, L).map((one) => one.id);
+    expect(corners([])).toEqual(["perch-right", "perch-left"]);
+    expect(corners([left])).toEqual(["perch-right", "perch-left"]);
+    // (a gap that the cat would not fit in, with its tail)
+    expect(corners([left, { ...right, x: left.x + left.w + 160 }])).toEqual(["perch-right", "perch-left"]);
+    // (a row that has wrapped: its second group is on a line of its own)
+    expect(corners([left, { ...right, y: 700 }])).toEqual(["perch-right", "perch-left"]);
+    // (and a corner is on the right side of the right one)
+    const [one, two] = perchesFor([], 1280, 720, L);
+    expect(one!.x0).toBeGreaterThan(640);
+    expect(two!.x1).toBeLessThan(640);
+  });
+
+  it("takes the widest of the gaps", () => {
+    const a: Rect = { x: 0, y: 0, w: 100, h: 40 };
+    const b: Rect = { x: 160, y: 0, w: 100, h: 40 };
+    const c: Rect = { x: 560, y: 0, w: 100, h: 40 };
+    expect(widestGap([c, a, b])).toEqual([260, 560]);
+    expect(widestGap([a])).toBeNull();
+    expect(widestGap([])).toBeNull();
   });
 });
 

@@ -1,6 +1,7 @@
 import { BODY_EMS, bodyLengthFor } from "../math";
 import type { PlayerMode, Rect, Surface, Target, World } from "../types";
 import { inflate, nameOf, rectOf, takesRoom, textRect } from "./dom";
+import { perchesFor } from "./perch";
 
 /**
  * The page as the cat sees it. Reads the TV's own screens (the library, and a film's picture) and says, as a `World` of plain numbers: the lines the
@@ -22,10 +23,6 @@ const BROWSE_TEXT = [".tv-row-title", ".tv-view-title", ".tv-view-meta", ".tv-vi
 
 /** The longest, in milliseconds, that a page which is moving is left unread, however dear a read is. */
 const MOVING_GAP_MAX = 90;
-
-/** How much of the screen's width a corner of the picture takes for the cat to sit on in a film (in body lengths). */
-const PERCH_FROM = 0.7;
-const PERCH_TO = 3.6;
 
 export interface PageTile {
   el: HTMLElement;
@@ -365,14 +362,11 @@ export class TvPage {
   /* ------------------------------ a film ------------------------------ */
 
   private readFilm(c: Metrics, draft: Draft): void {
-    const { L } = c;
     // (Nothing of the player is a place to keep out of: the cat's layer is under the subtitles, the controls and the notes, so it never covers one, and a
-    // cat that left whenever they came would be leaving at every key the viewer pressed and every line that was said.)
-    const ground = c.vh - Math.max(6, c.vh * 0.025);
-    draft.surfaces.push(
-      { id: "perch-right", kind: "playerPerch", y: ground, x0: c.vw - PERCH_TO * L, x1: c.vw - PERCH_FROM * L, weight: 1 },
-      { id: "perch-left", kind: "playerPerch", y: ground, x0: PERCH_FROM * L, x1: PERCH_TO * L, weight: 0.7 },
-    );
+    // cat that left whenever they came would be leaving at every key the viewer pressed and every line that was said. It rests where the controls' row has no
+    // button, if it has such a place: the groups are there whether the controls are up or not, so the place does not change with them.)
+    const groups = [...document.querySelectorAll<HTMLElement>("main.tv .hud-controls > .hud-group")].filter(takesRoom).map(rectOf);
+    draft.surfaces.push(...perchesFor(groups, c.vw, c.vh, c.L));
   }
 }
 

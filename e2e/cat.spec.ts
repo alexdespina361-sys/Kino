@@ -4,7 +4,7 @@ import { openLibrary, openTvSettings, playFirst, RawPhone, readPairingCode, test
 
 /**
  * The cat companion (client/cat): a cat that lives on the TV's screen, only for a screen that asks for one and a host that offers it. It walks along the
- * rows of posters, sleeps in a corner of the film under the controls and the subtitles, is stroked by a hand, and finds a title on the page on
+ * rows of posters, sleeps at the foot of the film between the groups of the controls, under them and the subtitles, is stroked by a hand, and finds a title on the page on
  * request; it never starts anything. The tests offer the cat the way the host does (`/api/features`) and use the cat's own diagnostics (?cat=debug).
  */
 
@@ -278,7 +278,7 @@ const talk = () => {
   return vtt;
 };
 
-test("in a film the cat rests in a corner of the picture, under the controls, and neither it nor the film is disturbed when they come up", async ({ browser }) => {
+test("in a film the cat rests at the foot of the picture between the groups of the controls, and neither it nor the film is disturbed when they come up", async ({ browser }) => {
   const tv = await openLibrary(browser, setup(), undefined, WANTS());
   await tv.goto("/tv?cat=debug");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
@@ -294,8 +294,19 @@ test("in a film the cat rests in a corner of the picture, under the controls, an
   expect(place).toEqual({ parent: "tv", after: "video", z: "0" });
   const seen = await snap(tv);
   const screen = tv.viewportSize()!;
-  expect(seen.frame.y).toBeGreaterThan(screen.height * 0.85); // (the foot of the picture, in a corner)
-  expect(seen.frame.x < screen.width * 0.4 || seen.frame.x > screen.width * 0.6).toBe(true);
+  expect(seen.frame.y).toBeGreaterThan(screen.height * 0.85); // (the foot of the picture)
+  // the controls' row has a stretch with no button in it between its two groups, and that is where the cat rests: its whole body is between the groups
+  // (a cat behind a button's icon is clutter, even though the controls are over it), whether the controls are up or not
+  const groups = await tv.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("main.tv .hud-controls > .hud-group")].map((group) => {
+      const box = group.getBoundingClientRect();
+      return { left: box.left, right: box.right };
+    }),
+  );
+  expect(groups.length).toBe(2);
+  expect(seen.engine.surfaceId).toBe("perch-gap");
+  expect(seen.frame.x - 0.5 * seen.body).toBeGreaterThan(groups[0]!.right);
+  expect(seen.frame.x + 0.5 * seen.body).toBeLessThan(groups[1]!.left);
   // it settles to sleep while the film plays, and the film is the viewer's: it is still playing
   await expect.poll(async () => (await snap(tv)).frame.clip, { timeout: 15_000 }).toMatch(/loaf|curl/);
   await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
