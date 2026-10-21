@@ -1,11 +1,12 @@
-// Soak test of the cat's brain (the cat lab): many long sessions on a page that is scrolled, resized, covered by menus, left for a film, hidden and
-// touched at random, each checked for what must never happen (see runSession in src/client/cat/engine/sim.ts). Development tooling, not part of the app.
+// Soak test of the cat's brain (the cat lab): many long sessions on a page that is scrolled, resized, covered by menus, left for a film, hidden,
+// touched and picked up by a hand at random, each checked for what must never happen (see runSession in src/client/cat/engine/sim.ts). Development
+// tooling, not part of the app.
 //
 //   node node_modules/tsx/dist/cli.mjs scripts/cat/soak.mts [firstSeed=13] [lastSeed=212] [secondsPerSession=600]
 
 import { runSession } from "../../src/client/cat/engine/sim.ts";
 
-const all = { scroll: true, focus: true, resize: true, modal: true, film: true, touch: true, route: true, visibility: true };
+const all = { scroll: true, focus: true, resize: true, modal: true, film: true, touch: true, route: true, visibility: true, hand: true };
 const [, , fromArg = "13", toArg = "212", secondsArg = "600"] = process.argv;
 const from = Number(fromArg);
 const to = Number(toArg);
@@ -16,7 +17,7 @@ const variants: Array<[string, Parameters<typeof runSession>[0] extends infer O 
   ["all-60fps", { chaos: all, fps: 60 }],
   ["reduced", { chaos: all, reducedMotion: true }],
   ["quiet", { chaos: all, quiet: true }],
-  ["scroll-focus", { chaos: { scroll: true, focus: true, touch: true } }],
+  ["scroll-focus", { chaos: { scroll: true, focus: true, touch: true, hand: true } }],
   ["names", { chaos: all, names: true }],
 ];
 let bad = 0;

@@ -39,6 +39,7 @@ export const catIt: CatDictionary = {
   "cat.settings.films": "Tienimi compagnia durante i film",
   "cat.settings.detail": "Gatto dettagliato (spento: più semplice)",
   "cat.settings.coat": "Mantello",
+  "cat.coat.ragdoll": "Ragdoll",
   "cat.coat.ginger": "Rosso tigrato",
   "cat.coat.tuxedo": "Tuxedo",
   "cat.coat.grey": "Grigio tigrato",
@@ -47,5 +48,6 @@ export const catIt: CatDictionary = {
   "cat.size.small": "Piccolo",
   "cat.size.normal": "Normale",
   "cat.size.large": "Grande",
-  "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in fondo al film e si lascia accarezzare. Non avvia mai niente da solo.",
+  "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in fondo al film e si lascia accarezzare. Con il mouse puoi anche prenderlo e metterlo su un'altra fila. Non avvia mai niente da solo.",
+  "cat.settings.credit": "Il gatto dettagliato parte dal modello «Fluffy Blue-Eyed Cat» di Meshy AI (CC BY 4.0, creativecommons.org/licenses/by/4.0), modificato.",
 };

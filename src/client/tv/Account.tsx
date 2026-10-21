@@ -612,6 +612,10 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
             <p className="tv-hint tv-set-hint" data-testid="tv-cat-help">
               <InfoIcon /> <span>{t("cat.settings.help")}</span>
             </p>
+            {/* (the detailed cat is drawn from a model licensed CC BY 4.0, which asks for the maker to be named and the changes to be said) */}
+            <p className="tv-hint tv-set-hint" data-testid="tv-cat-credit">
+              <span>{t("cat.settings.credit")}</span>
+            </p>
           </div>
           <div className="tv-set-col" data-nav-column>
             {cat.settings.on && (

@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isTvAgent } from "../role";
 import { CAT_SIZE_FACTOR, CAT_SIZES, catAsk, catCoatAsk, catLook, catSizeAsk, parseCatSettings, wantsCat, type CatSettings } from "./settings";
 
 /** What a device that has said nothing gets, a TV's browser being quiet. */
-const base = (over: Partial<CatSettings> = {}): CatSettings => ({ on: false, quiet: false, films: true, detail: true, coat: "ginger", size: "normal", ...over });
+const base = (over: Partial<CatSettings> = {}): CatSettings => ({ on: false, quiet: false, films: true, detail: true, coat: "ragdoll", size: "normal", ...over });
 
 describe("what this device says about the cat", () => {
   it("is off on every device until somebody turns it on, and quiet on a TV's browser", () => {
@@ -29,8 +29,8 @@ describe("what this device says about the cat", () => {
   it("keeps a device's coat and size, and a coat or a size that is not one of ours is the usual one", () => {
     expect(parseCatSettings(JSON.stringify({ coat: "tuxedo", size: "large" }), false)).toMatchObject({ coat: "tuxedo", size: "large" });
     expect(parseCatSettings(JSON.stringify({ coat: "calico", size: "small" }), true)).toMatchObject({ coat: "calico", size: "small" });
-    expect(parseCatSettings(JSON.stringify({ coat: "purple", size: "huge" }), false)).toMatchObject({ coat: "ginger", size: "normal" });
-    expect(parseCatSettings(JSON.stringify({ on: true }), false)).toMatchObject({ coat: "ginger", size: "normal" });
+    expect(parseCatSettings(JSON.stringify({ coat: "purple", size: "huge" }), false)).toMatchObject({ coat: "ragdoll", size: "normal" });
+    expect(parseCatSettings(JSON.stringify({ on: true }), false)).toMatchObject({ coat: "ragdoll", size: "normal" });
   });
 
   it("is told what the address asks for", () => {
@@ -73,6 +73,78 @@ describe("what this device says about the cat", () => {
     expect(wantsCat(off, "on")).toBe(true);
     expect(wantsCat(off, "debug")).toBe(true);
     expect(wantsCat(on, "off")).toBe(false);
+  });
+});
+
+describe("asking the host whether it offers a cat", () => {
+  const reply = (body: unknown, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response;
+  /** The settings file afresh: what it knows of the host is the file's own state, one load of the page. */
+  const load = async () => {
+    vi.resetModules();
+    return import("./settings");
+  };
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("asks once and keeps the answer when the host says yes, says no, or has never heard of cats", async () => {
+    for (const [answer, offered] of [
+      [reply({ cat: true }), true],
+      [reply({ cat: false }), false],
+      [reply({ cat: "yes" }), false],
+      [reply({}, 404), false],
+    ] as const) {
+      const ask = vi.fn(async () => answer);
+      vi.stubGlobal("fetch", ask);
+      const { catOffered } = await load();
+      expect(await catOffered()).toBe(offered);
+      expect(await catOffered()).toBe(offered);
+      expect(ask).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("asks again a moment later when the host does not answer (a line that dropped, a server that is waking up), and takes the answer it then gets", async () => {
+    const ask = vi.fn<typeof fetch>().mockRejectedValueOnce(new TypeError("offline")).mockResolvedValueOnce(reply({}, 503)).mockResolvedValueOnce(reply({ cat: true }));
+    vi.stubGlobal("fetch", ask);
+    const { catOffered } = await load();
+    const answer = catOffered();
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(ask).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(await answer).toBe(true);
+    expect(ask).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up for now after two more tries, and is asked afresh the next time somebody wants to know, so that a TV that started before its network does not stay without a cat", async () => {
+    const ask = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("offline"));
+    vi.stubGlobal("fetch", ask);
+    const { catOffered } = await load();
+    const first = catOffered();
+    expect(catOffered()).toBe(first); // (one question at a time, however many want the answer)
+    await vi.advanceTimersByTimeAsync(1500 + 4000);
+    expect(await first).toBe(false);
+    expect(ask).toHaveBeenCalledTimes(3);
+    // the line is back: the next one to want to know asks again, and then it is kept
+    ask.mockResolvedValue(reply({ cat: true }));
+    expect(await catOffered()).toBe(true);
+    expect(ask).toHaveBeenCalledTimes(4);
+    expect(await catOffered()).toBe(true);
+    expect(ask).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not ask again after a host that did answer, even if the answer was no", async () => {
+    const ask = vi.fn<typeof fetch>().mockRejectedValueOnce(new TypeError("offline")).mockResolvedValueOnce(reply({ cat: false }));
+    vi.stubGlobal("fetch", ask);
+    const { catOffered } = await load();
+    const answer = catOffered();
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(await answer).toBe(false);
+    expect(await catOffered()).toBe(false);
+    expect(ask).toHaveBeenCalledTimes(2);
   });
 });
 

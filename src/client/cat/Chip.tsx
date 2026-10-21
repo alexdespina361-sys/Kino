@@ -34,7 +34,6 @@ export function CatChip({ col }: { col: number }) {
       data-col={col}
       data-cat-chip
       data-testid="tv-cat-chip"
-      aria-haspopup="true"
       aria-expanded={open}
       aria-controls={open ? CAT_PANEL_ID : undefined}
       aria-label={t("cat.panel")}

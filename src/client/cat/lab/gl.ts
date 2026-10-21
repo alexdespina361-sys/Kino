@@ -1,4 +1,6 @@
+import { HANG_AHEAD, HANG_DOWN } from "../engine/engine";
 import type { CatCoat } from "../settings";
+import { PoseFit } from "../render/gl/fit";
 import { GlCat, type View } from "../render/gl/renderer";
 import { CatRig, GALLOP_STRIDE, WALK_STRIDE } from "../render/rig";
 import type { CatFrame } from "../types";
@@ -14,10 +16,13 @@ interface GlCell {
   frame: Partial<CatFrame>;
   view?: View;
   settle?: number;
-  /** Looks closely at a place on the cat (its rest, in body lengths: x forward, y up) at this many times the size. */
-  zoom?: { at: [number, number]; by: number };
+  /** Looks closely at a place on the cat (its rest, in body lengths: x forward, y up, or `head` for where its head is) at this many times the size. */
+  zoom?: { at: [number, number]; by: number } | { head: [number, number]; by: number };
   /** For the walk and the run: how far through a stride it is (0..1), which fixes where the feet are. */
   cycle?: number;
+  /** Draws the cat this many body lengths higher in its cell (one that hangs reaches below its feet line), and marks a point (x to the right, y up, from the feet) where a hand would be. */
+  raise?: number;
+  hand?: [number, number];
 }
 
 const STRIDE = { walk: WALK_STRIDE, run: GALLOP_STRIDE };
@@ -32,7 +37,7 @@ const fromBase64 = (text: string): ArrayBuffer => {
   return bytes.buffer;
 };
 
-export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220, coat: CatCoat = "ginger"): void {
+export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220, coat: CatCoat = "ragdoll"): void {
   const cw = cellW * scale;
   const ch = cellH * scale;
   const rows = Math.ceil(cells.length / columns);
@@ -45,6 +50,7 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly
   cat.setCoat(coat);
   cat.resize(cw, ch, 1);
   const px = 150 * scale;
+  const fit = new PoseFit();
   cells.forEach((cell, i) => {
     const x0 = (i % columns) * cw;
     const y0 = Math.floor(i / columns) * ch;
@@ -56,13 +62,28 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly
     for (let k = 0; k < steps; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
     ctx.fillStyle = BG;
     ctx.fillRect(x0, y0, cw, ch);
-    const oy = ch - 24 * scale;
+    const oy = ch - 24 * scale - (cell.raise ?? 0) * px;
     ctx.fillStyle = GROUND;
     ctx.fillRect(x0, y0 + oy, cw, 3 * scale);
     const z = cell.zoom;
-    const box = z ? { px: px * z.by, ox: cw / 2 - z.at[0] * px * z.by, oy: ch / 2 + z.at[1] * px * z.by } : { ox: cw / 2, oy, px };
+    // (`head`: the place is where the head is, as the mesh's cat has it in this pose, and the number is how far from the head's centre to look at: ahead of it, and up)
+    const at = z ? ("head" in z ? ((): [number, number] => { const head = fit.apply(rig.solved).head; return [head.x + z.head[0], -head.y + z.head[1]]; })() : z.at) : undefined;
+    const box = z && at ? { px: px * z.by, ox: cw / 2 - at[0] * px * z.by, oy: ch / 2 + at[1] * px * z.by } : { ox: cw / 2, oy, px };
     cat.draw(rig.solved, box, cell.view);
     ctx.drawImage(glCanvas, x0, y0);
+    if (cell.hand) {
+      // (where the hand is: a cross)
+      const hx = x0 + box.ox + cell.hand[0] * box.px;
+      const hy = y0 + box.oy - cell.hand[1] * box.px;
+      ctx.strokeStyle = "#4df";
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(hx - 9 * scale, hy);
+      ctx.lineTo(hx + 9 * scale, hy);
+      ctx.moveTo(hx, hy - 9 * scale);
+      ctx.lineTo(hx, hy + 9 * scale);
+      ctx.stroke();
+    }
     ctx.fillStyle = "#9aa";
     ctx.font = `${13 * scale}px sans-serif`;
     ctx.fillText(cell.label, x0 + 8 * scale, y0 + 18 * scale);
@@ -93,7 +114,7 @@ export const clipOfLabel = (label: string): string => (label.split("@")[0] ?? la
  * Pictures of the cat in each cell, one after another on one canvas, and what each takes of it: the box round every pixel the cat is drawn in (not the
  * faint ones: the fur's fringe and a whisker are not what covers a word). The cat faces right, its feet on a line at 0.8 of the canvas.
  */
-export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat = "ginger", seed = 7, alphaMin = 80): Extent[] {
+export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat = "ragdoll", seed = 7, alphaMin = 80): Extent[] {
   const W = 1200;
   const H = 900;
   const px = 150;
@@ -193,6 +214,16 @@ export const EXTENT_CELLS: GlCell[] = (() => {
   }
   at("sniff", { clip: "sniff", progress: 0.5 });
   at("stalk", { clip: "stalk", odometer: 20 }, 1.0);
+  // (looking over an edge; the paw out at the pointer, level, high and low, at several moments of its beat; nodding off through its cycle; a sleeper shifting)
+  for (const s of [0.6, 1.4]) at(`peek@${s}`, { clip: "peek", look: { x: 240, y: 230 } }, s);
+  for (const [name, reach] of [["level", { x: 105, y: -60 }], ["high", { x: 70, y: -190 }], ["low", { x: 100, y: 40 }]] as const) {
+    at(`point@${name}`, { clip: "point", reach, look: reach }, 1.2);
+    for (const t of [0.15, 0.4, 0.65]) at(`tap@${name}${t}`, { clip: "tap", clipTime: t, reach, look: reach }, t);
+  }
+  for (const t of [0.9, 1.8, 2.7, 3.3]) at(`doze@${t}`, { clip: "doze", drowsy: 0.62 }, t);
+  for (const p of [0.15, 0.35, 0.6, 0.85]) at(`shift@${p}`, { clip: "shift", progress: p, drowsy: 1 });
+  // (and the feelings that last: the head cocked, and the look away and up; the flinch, the lift and the letdown are over in a moment and are not measured)
+  for (const clip of ["sit", "stand"] as const) for (const emote of ["tilt", "think"] as const) at(`${clip}@${emote}`, { clip, emote }, 1.0);
   for (let i = 0; i < 8; i++) cells.push({ label: `walk@${i}`, frame: { clip: "walk", vx: 150 }, cycle: i / 8, settle: 1 });
   for (let i = 0; i < 12; i++) cells.push({ label: `run@${i}`, frame: { clip: "run", vx: 380 }, cycle: i / 12, settle: 1 });
   return cells;
@@ -220,6 +251,11 @@ export interface FilmOptions {
   cellW?: number;
   cellH?: number;
   coat?: CatCoat;
+  /** For a strip: a closer look (the cat this many times the size, about the place `at` of it: body lengths forward and up from the feet). */
+  zoom?: number;
+  at?: [number, number];
+  /** The turn and tilt of the camera, as in a view (see `View`). */
+  view?: View;
 }
 
 /**
@@ -244,7 +280,7 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
   const glCanvas = document.createElement("canvas");
   const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
   if (!cat) throw new Error("no WebGL");
-  cat.setCoat(o.coat ?? "ginger");
+  cat.setCoat(o.coat ?? "ragdoll");
   const picks: number[] = [];
   for (let i = i0; i <= i1; i += o.every) picks.push(i);
   const ctx = canvas.getContext("2d")!;
@@ -256,7 +292,10 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
     canvas.width = cw * o.cols;
     canvas.height = ch * rows;
     cat.resize(cw, ch, 1);
-    const line = ch - 24 * o.scale;
+    const zoom = o.zoom ?? 1;
+    const at = o.at ?? [0, 0];
+    // (zoomed in on a place, that place is the middle of the cell; otherwise the feet are on a line near the bottom of it)
+    const line = o.zoom ? ch / 2 + at[1] * lab * zoom : ch - 24 * o.scale;
     for (let i = warm + 1; i <= i1; i++) {
       const f = film.frames[i]!;
       rig.update(scaled(f), dt, lab);
@@ -268,8 +307,8 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
       ctx.fillRect(x0, y0, cw, ch);
       ctx.fillStyle = GROUND;
       ctx.fillRect(x0, y0 + line, cw, 3 * o.scale);
-      const oy = Math.min(ch - 4 * o.scale, line + (f.y - ref.y) * k);
-      cat.draw(rig.solved, { ox: cw / 2, oy, px: lab });
+      const oy = o.zoom ? line + (f.y - ref.y) * k * zoom : Math.min(ch - 4 * o.scale, line + (f.y - ref.y) * k);
+      cat.draw(rig.solved, { ox: cw / 2 - at[0] * lab * zoom, oy, px: lab * zoom }, o.view);
       ctx.drawImage(glCanvas, x0, y0);
       ctx.fillStyle = "#9aa";
       ctx.font = `${12 * o.scale}px sans-serif`;
@@ -326,20 +365,20 @@ export const VIEWS: GlCell[] = [
 ];
 
 export const FACES: GlCell[] = [
-  { label: "face, stand", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { at: [0.5, 0.76], by: 4.2 } },
-  { label: "face, viewer", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
-  { label: "face, sleepy", frame: { clip: "sit", drowsy: 1 }, view: { tilt: 0.05 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
-  { label: "face, petted", frame: { clip: "sit", petted: true, viewer: true }, view: { tilt: 0.05 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
+  { label: "face, stand", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { head: [0.05, 0], by: 4.2 } },
+  { label: "face, viewer", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0], by: 4.2 } },
+  { label: "face, sleepy", frame: { clip: "sit", drowsy: 1 }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0], by: 4.2 } },
+  { label: "face, petted", frame: { clip: "sit", petted: true, viewer: true }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0], by: 4.2 } },
 ];
 
 /** The head in the postures where it is low or turned, and the paw raised in grooming. */
 export const FACES3: GlCell[] = [
-  { label: "face, asleep (curl)", frame: { clip: "curl", drowsy: 1 }, view: { tilt: 0.1 }, zoom: { at: [0.36, 0.22], by: 3.4 } },
-  { label: "face, loaf", frame: { clip: "loaf" }, view: { tilt: 0.1 }, zoom: { at: [0.44, 0.6], by: 3.4 } },
-  { label: "groom: the paw (mouth)", frame: { clip: "groom", clipTime: 3.12 }, view: { tilt: 0.1 }, zoom: { at: [0.3, 0.8], by: 3.4 }, settle: 0.1 },
-  { label: "groom: the paw (ear)", frame: { clip: "groom", clipTime: 3.12 + 0.3125 }, view: { tilt: 0.1 }, zoom: { at: [0.3, 0.8], by: 3.4 }, settle: 0.1 },
-  { label: "groom (stand-in 3/4)", frame: { clip: "groom", clipTime: 3.12 + 0.3125 }, view: { turn: -0.6, tilt: 0.1 }, zoom: { at: [0.3, 0.8], by: 3.4 }, settle: 0.1 },
-  { label: "yawn", frame: { clip: "yawn", progress: 0.45 }, view: { tilt: 0.05 }, zoom: { at: [0.3, 0.96], by: 3.4 } },
+  { label: "face, asleep (curl)", frame: { clip: "curl", drowsy: 1 }, view: { tilt: 0.1 }, zoom: { head: [0.05, 0], by: 3.4 } },
+  { label: "face, loaf", frame: { clip: "loaf" }, view: { tilt: 0.1 }, zoom: { head: [0.05, 0], by: 3.4 } },
+  { label: "groom: the paw (mouth)", frame: { clip: "groom", clipTime: 3.12 }, view: { tilt: 0.1 }, zoom: { head: [0.05, 0], by: 3.4 }, settle: 0.1 },
+  { label: "groom: the paw (ear)", frame: { clip: "groom", clipTime: 3.12 + 0.3125 }, view: { tilt: 0.1 }, zoom: { head: [0.05, 0], by: 3.4 }, settle: 0.1 },
+  { label: "groom (stand-in 3/4)", frame: { clip: "groom", clipTime: 3.12 + 0.3125 }, view: { turn: -0.6, tilt: 0.1 }, zoom: { head: [0.05, 0], by: 3.4 }, settle: 0.1 },
+  { label: "yawn", frame: { clip: "yawn", progress: 0.45 }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0], by: 3.4 } },
 ];
 
 /** The coat close up: the white of the chest and the socks, the stripes of a flank, the tail, the haunch. */
@@ -376,13 +415,41 @@ const cycleOf = (clip: "walk" | "run", n: number): GlCell[] =>
 export const WALK: GlCell[] = cycleOf("walk", 8);
 export const RUN: GlCell[] = cycleOf("run", 12);
 
+export const EYES: GlCell[] = [
+  { label: "eyes, viewer", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0.005], by: 9 } },
+  { label: "eyes, 3/4", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, turn: -0.5 }, zoom: { head: [0.05, 0.005], by: 9 } },
+  { label: "eyes, stand", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { head: [0.05, 0.005], by: 9 } },
+  { label: "eyes, wide", frame: { clip: "sit", viewer: true, energy: 1 }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0.005], by: 9 } },
+  { label: "eyes, as in the picture", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0.005], by: 6 } },
+];
+
 export const FACES2: GlCell[] = [
-  { label: "no fur", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, shells: 0 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
-  { label: "normals", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, debug: 1 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
-  { label: "ao", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, debug: 2 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
-  { label: "bones", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, debug: 3 }, zoom: { at: [0.3, 0.96], by: 4.2 } },
+  { label: "mesh colour", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, debug: 4 }, zoom: { head: [0.05, 0], by: 4.2 } },
+  { label: "normals", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, debug: 1 }, zoom: { head: [0.05, 0], by: 4.2 } },
+  { label: "ao", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, debug: 2 }, zoom: { head: [0.05, 0], by: 4.2 } },
+  { label: "bones", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05, debug: 3 }, zoom: { head: [0.05, 0], by: 4.2 } },
 ];
 
 export const GL_POSES: GlCell[] = POSES.map((p) => ({ label: p.label, frame: p.frame }));
+
+/** Hanging by the scruff: from the side and from three quarters, the hand where the engine puts it (a cross), and the head close. */
+const hung = (label: string, over: Partial<CatFrame> = {}, extra: Partial<GlCell> = {}): GlCell => ({
+  label,
+  frame: { clip: "stand", carried: true, grounded: false, viewer: true, ...over },
+  raise: 0.85,
+  hand: [(over.facing === -1 ? 1 : -1) * HANG_AHEAD, HANG_DOWN],
+  view: { tilt: 0.05 },
+  ...extra,
+});
+export const CARRIED: GlCell[] = [
+  hung("carried, still", {}),
+  hung("carried, facing left", { facing: -1 }),
+  hung("carried, 3/4", {}, { view: { turn: -0.6, tilt: 0.05 } }),
+  hung("carried, looking at the hand", { viewer: false, look: { x: 0, y: -400 } }),
+  hung("head", {}, { zoom: { at: [-0.1, 0.95], by: 3.2 }, hand: undefined as never }),
+  hung("head, 3/4", {}, { zoom: { at: [-0.1, 0.95], by: 3.2 }, view: { turn: -0.6, tilt: 0.05 }, hand: undefined as never }),
+  hung("hind legs and tail", {}, { zoom: { at: [-0.1, 0.0], by: 2.6 }, hand: undefined as never }),
+  hung("forelegs and chest", {}, { zoom: { at: [0.0, 0.55], by: 2.6 }, hand: undefined as never }),
+];
 
 

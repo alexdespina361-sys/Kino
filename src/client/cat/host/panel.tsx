@@ -40,8 +40,10 @@ function CatPanel({ send, point, rng, close }: PanelProps) {
       const found = pick(poolOfPage(), mood, shown.current, rng);
       if (found) shown.current.add(found.id);
       setScreen({ name: "pick", mood, found });
+      // (the cat feels it with the viewer: a little jump for a title, a letdown for none)
+      send({ type: "cat.react", kind: found ? "found" : "empty" });
     },
-    [rng],
+    [rng, send],
   );
 
   const back = useCallback(() => {

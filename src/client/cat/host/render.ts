@@ -94,10 +94,6 @@ export function classicBrush(): Brush | null {
   };
 }
 
-/** What `paint` is told on a screen that has to take the fur down a step. */
-const LEAN = { shells: 3 } as const;
-const FULL = {} as const;
-
 /** The solid cat from a mesh that was fetched; null where this browser cannot do WebGL, or the mesh is not one this cat can wear. */
 export function solidBrush(mesh: ArrayBuffer): Brush | null {
   const canvas = newCanvas();
@@ -121,8 +117,9 @@ export function solidBrush(mesh: ArrayBuffer): Brush | null {
       cat.resize(side, side, dpr);
       sized(canvas, side);
     },
-    paint(solved, place, quality, probe) {
-      cat.draw(solved, place, quality === "low" ? LEAN : FULL);
+    paint(solved, place, _quality, probe) {
+      // (a screen that has to take the picture down a step is given a smaller one, and fewer of them: see the host; the solid cat has no more to give up)
+      cat.draw(solved, place);
       if (!probe) return 0;
       // (the card is asked twice: for what it has been given, and again with nothing left to do. The second answer takes what the card and the browser take
       // to answer at all, which is not the cat's: on a fast card it is nearly all of the first, and on a slow one the first is that and the cat's work)

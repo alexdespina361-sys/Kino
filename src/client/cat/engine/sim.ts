@@ -92,6 +92,8 @@ export interface SimStats {
   frames: number;
   /** Seconds spent in each kind of act. */
   acts: Record<string, number>;
+  /** Seconds spent feeling each feeling (see `Emote`). */
+  emotes: Record<string, number>;
   hops: number;
   surfaces: string[];
   minAppear: number;
@@ -106,8 +108,11 @@ export interface SimOptions {
   seed: number;
   seconds: number;
   fps?: number;
-  /** What may happen to the page. */
-  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean };
+  /**
+   * What may happen to the page. `mouse`: a pointer that wanders the page, dashes about, rests, comes to the cat, and is put down (it is gone from the world three
+   * seconds after it last moved, as the host has it).
+   */
+  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean; mouse?: boolean };
   reducedMotion?: boolean;
   quiet?: boolean;
   /** The page has names over its shelves (see `PageOptions.names`). */
@@ -131,7 +136,7 @@ export function runSession(options: SimOptions): SimStats {
   page.reducedMotion = options.reducedMotion ?? false;
   page.quiet = options.quiet ?? false;
   page.names = options.names ?? false;
-  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, hops: 0, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
+  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, emotes: {}, hops: 0, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
   const trail: string[] = [];
   const seen = new Set<string>();
   let scrollGoal = 0;
@@ -142,6 +147,13 @@ export function runSession(options: SimOptions): SimStats {
   let modal = false;
   let hidden = false;
   let pointer: { x: number; y: number } | undefined;
+  /** The wandering mouse (see `chaos.mouse`): where it is, where it goes and how fast (body lengths a second), when it is resting until, and when it last moved. */
+  let mouse: { x: number; y: number; gx: number; gy: number; speed: number; restUntil: number; movedAt: number } | null = null;
+  /** A hand that has the cat (where it is, where it is going, and until when), if one does. */
+  let handAt: { x: number; y: number } | null = null;
+  let handGoal = { x: 0, y: 0 };
+  let handSpeed = 0;
+  let handUntil = 0;
   let world = browseWorld(page);
   let prev: { x: number; y: number; appear: number; onScreen: boolean; shelves: Map<string, number> } | null = null;
   let overlapSince = -1;
@@ -240,20 +252,91 @@ export function runSession(options: SimOptions): SimStats {
       if (roll < 0.5) engine.send({ type: "cat.pet" });
       else if (roll < 0.6) engine.send({ type: "cat.petEnd" });
       else if (roll < 0.75) engine.send({ type: "cat.call", at: { x: rng.range(0, page.width), y: rng.range(0, page.height) } });
-      else if (roll < 0.9) engine.send({ type: "cat.command", command: rng.pick(["sit", "sleep", "play", "come"] as const) ?? "sit" });
+      else if (roll < 0.88) engine.send({ type: "cat.command", command: rng.pick(["sit", "sleep", "play", "come"] as const) ?? "sit" });
+      else if (roll < 0.94) engine.send({ type: "cat.react", kind: rng.chance(0.6) ? "found" : "empty" });
       else if (world.targets.length > 0) engine.send({ type: "cat.point", targetId: rng.pick(world.targets)?.id ?? "" });
-      if (rng.chance(0.2)) {
+      if (rng.chance(0.2) && !chaos.mouse) {
         pointer = { x: rng.range(0, page.width), y: rng.range(0, page.height) };
         changed = true;
       }
     }
+    if (chaos.mouse) {
+      const Lm = world.bodyLength;
+      if (!mouse) {
+        if (rng.chance(0.006)) {
+          const at = { x: rng.range(0, page.width), y: rng.range(0, page.height) };
+          mouse = { ...at, gx: at.x, gy: at.y, speed: 0, restUntil: t, movedAt: t };
+        }
+      } else if (rng.chance(0.0015)) {
+        mouse = null;
+        if (pointer) changed = true;
+        pointer = undefined;
+      } else {
+        const moving = mouse.speed > 0;
+        if (!moving && t >= mouse.restUntil) {
+          // (a new goal: half the time near the cat -- a hand that comes to it, at the height of its head or a dash across it -- and otherwise anywhere)
+          const near = rng.chance(0.55) && engine.frame.appear > 0.5;
+          mouse.gx = near ? engine.frame.x + rng.range(-3, 3) * Lm : rng.range(0, page.width);
+          mouse.gy = near ? engine.frame.y - rng.range(-0.2, 1.6) * Lm : rng.range(0, page.height);
+          mouse.speed = rng.chance(0.3) ? rng.range(10, 24) : rng.range(0.5, 6);
+        }
+        if (mouse.speed > 0) {
+          const dx = mouse.gx - mouse.x;
+          const dy = mouse.gy - mouse.y;
+          const gap = Math.hypot(dx, dy);
+          const step = Math.min(gap, mouse.speed * Lm * dt);
+          if (gap > 1e-6) {
+            mouse.x += (dx / gap) * step;
+            mouse.y += (dy / gap) * step;
+            mouse.movedAt = t;
+          }
+          if (gap - step < 1) {
+            mouse.speed = 0;
+            mouse.restUntil = t + rng.range(0.3, 6);
+          }
+        }
+        const next = t - mouse.movedAt < 3 ? { x: mouse.x, y: mouse.y } : undefined;
+        if (next || pointer) changed = true;
+        pointer = next;
+      }
+    }
     if (changed) rebuild();
+
+    // a hand now and then takes the cat up, carries it about (as fast as a hand goes: the cat follows as fast as it can) and puts it down, or is lost with it in it
+    if (chaos.hand) {
+      const L0 = world.bodyLength;
+      if (!handAt) {
+        if (world.mode === "browse" && engine.frame.appear > 0.9 && rng.chance(0.004)) {
+          handAt = { x: engine.frame.x, y: engine.frame.y - 0.4 * L0 };
+          handGoal = { x: rng.range(0, page.width), y: rng.range(0, page.height) };
+          handSpeed = rng.range(1, 30) * L0;
+          handUntil = t + rng.range(0.2, 6);
+          engine.send({ type: "cat.grab", at: { ...handAt } });
+        }
+      } else {
+        const dx: number = handGoal.x - handAt.x;
+        const dy: number = handGoal.y - handAt.y;
+        const gap: number = Math.hypot(dx, dy);
+        const step = Math.min(gap, handSpeed * dt);
+        if (gap > 1e-6) handAt = { x: handAt.x + (dx / gap) * step, y: handAt.y + (dy / gap) * step };
+        if (gap < 1 || rng.chance(0.02)) {
+          handGoal = { x: rng.range(0, page.width), y: rng.range(0, page.height) };
+          handSpeed = rng.range(1, 30) * L0;
+        }
+        if (t >= handUntil) {
+          // (and one hand in seven is lost with the cat in it: the cat is let go of by itself)
+          if (rng.chance(0.86)) engine.send({ type: "cat.drop" });
+          handAt = null;
+        } else engine.send({ type: "cat.carry", at: { ...handAt } });
+      }
+    }
 
     const frame = engine.update(world, dt);
     const dbg = engine.debug();
     stats.frames++;
     stats.seconds = stats.frames * dt;
     stats.acts[dbg.act] = (stats.acts[dbg.act] ?? 0) + dt;
+    if (frame.emote && frame.emote !== "none") stats.emotes[frame.emote] = (stats.emotes[frame.emote] ?? 0) + dt;
     stats.lastDebug = JSON.stringify(dbg);
     stats.minAppear = Math.min(stats.minAppear, frame.appear);
     stats.maxAppear = Math.max(stats.maxAppear, frame.appear);
@@ -277,6 +360,13 @@ export function runSession(options: SimOptions): SimStats {
     if (frame.appear < 0 || frame.appear > 1.0001) fail(`appear out of range: ${frame.appear}`);
     if (frame.drowsy < 0 || frame.drowsy > 1.0001) fail(`drowsy out of range: ${frame.drowsy}`);
     if (frame.progress < 0 || frame.progress > 1.0001) fail(`progress out of range: ${frame.progress}`);
+    // (the scenes of the page: nodding off is a film's, and batting at the pointer is a roaming cat's, never one whose viewer asked for quiet or for less motion)
+    const fading = dbg.act === "fade:out" || dbg.act === "fade:in" || dbg.act === "relocate";
+    if (frame.appear > 0.05 && !fading) {
+      if (frame.clip === "doze" && world.mode !== "player") fail(`dozing off outside a film (${dbg.act})`);
+      if (frame.clip === "tap" && (world.quiet || world.reducedMotion)) fail(`batting at the pointer for a viewer who wants no motion (${dbg.act})`);
+      if ((frame.emote ?? "none") !== "none" && !["tilt", "think", "startle", "joy", "droop"].includes(frame.emote ?? "")) fail(`a feeling that is not one: ${frame.emote}`);
+    }
     const visible = frame.appear > 0.05;
     // (a cat that is fading out is on its way off the page: it is allowed to be where the page no longer has a place for it)
     const vanishing = dbg.act === "fade:out";
@@ -298,7 +388,8 @@ export function runSession(options: SimOptions): SimStats {
         lostRun++;
         if (lostRun > 3) fail(`off the screen at ${frame.x.toFixed(0)},${frame.y.toFixed(0)} (${dbg.act})`);
       } else lostRun = 0;
-      if (cut) {
+      // (a cat in a hand is where the hand has it, edge of the screen or not)
+      if (cut && dbg.act !== "carried") {
         if (cutSince < 0) cutSince = t;
         else if (t - cutSince > 2) fail(`cut by the edge of the screen for ${(t - cutSince).toFixed(1)}s at ${frame.x.toFixed(0)},${frame.y.toFixed(0)} (${dbg.act})`);
       } else cutSince = -1;

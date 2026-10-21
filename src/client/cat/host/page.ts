@@ -342,7 +342,9 @@ export class TvPage {
     }
     for (const line of lines.values()) {
       if (line.y < clip.y - 1) continue;
-      const id = `${nameOf(grid, "grid")}:${Math.round(line.y / 4)}`;
+      // (a line is named by its first card, not by where it is on the screen: a grid scrolls by itself under the cat, and a name made of the line's height
+      // would be a new shelf at every few pixels of the scroll, which the cat standing on it would take for a shelf that is gone)
+      const id = `${nameOf(grid, "grid")}:${line.tiles[0]!.id}`;
       for (const tile of line.tiles) tile.surfaceId = id;
       for (const target of draft.targets) if (line.tiles.some((tile) => tile.id === target.id)) target.surfaceId ??= id;
       draft.surfaces.push({ id, kind: "shelfTop", y: line.y, x0: Math.max(line.x0, 0, clip.x), x1: Math.min(line.x1, c.vw, clip.x + clip.w), weight: 0.85 });

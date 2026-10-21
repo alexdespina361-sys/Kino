@@ -111,7 +111,22 @@ export type Clip =
   | "knead"
   | "sniff"
   | "stalk"
-  | "wiggle";
+  | "wiggle"
+  /** Looking down over the edge of a shelf (at where it will land, or at a poster on the shelf below): the front of it lowered, the head out over the edge. */
+  | "peek"
+  /** A forepaw batting at something (the pointer): the same reach as `point`, repeated. */
+  | "tap"
+  /** Nodding off: a loaf, the head dropping and jerking up again, the eyes heavy. */
+  | "doze"
+  /** A sleeper changing its position: it half wakes, lifts its head, and curls up again. */
+  | "shift";
+
+/**
+ * How the cat feels, a face and a tail more than a body: laid over whatever it is doing (a cat can tilt its head as it sits, stands or walks).
+ * `tilt` is the quizzical look at whoever is there, `think` a look away and up, `startle` a flinch (ears flat, eyes wide), `joy` a lift (ears up, tail up and
+ * quivering), `droop` a letdown (ears out, head low, slow blink).
+ */
+export type Emote = "none" | "tilt" | "think" | "startle" | "joy" | "droop";
 
 /** How a jump's `progress` is shared out: crouching to push off, the flight, then the landing and settling. */
 export const JUMP_TAKEOFF = 0.22;
@@ -148,6 +163,10 @@ export interface CatFrame {
   appear: number;
   /** Something has a hand on it: it leans in and closes its eyes. */
   petted: boolean;
+  /** A hand has it by the scruff and is carrying it somewhere: it hangs from the hand (`x`,`y` are still its feet, a little below the grip). */
+  carried: boolean;
+  /** What it feels just now (see `Emote`); none when it does not say. */
+  emote?: Emote;
 }
 
 /* ------------------------------ what the page tells the cat ------------------------------ */
@@ -158,7 +177,13 @@ export type CatEvent =
   | { type: "cat.disable" }
   | { type: "cat.pet"; at?: Vec }
   | { type: "cat.petEnd" }
+  /** A hand takes hold of the cat (a pointer pressed on it and then moved), carries it (`at` is where the hand is, said again as it moves) and lets go. */
+  | { type: "cat.grab"; at: Vec }
+  | { type: "cat.carry"; at: Vec }
+  | { type: "cat.drop" }
   | { type: "cat.call"; at: Vec }
+  /** What the page found out for the cat: a title that was found (a little bounce of joy) or none (a letdown), for the cat to show it feels. */
+  | { type: "cat.react"; kind: "found" | "empty" }
   | { type: "cat.command"; command: "sit" | "sleep" | "play" | "away" | "come" }
   | { type: "route.enter"; page: string }
   | { type: "route.leave" }

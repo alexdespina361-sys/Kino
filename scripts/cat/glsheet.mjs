@@ -1,7 +1,7 @@
 // Pictures of the solid cat for looking at it: bundles src/client/cat/lab/gl.ts for the browser, runs it in Chromium (with the software driver, or
 // with the machine's graphics card with --gpu=real) and saves a PNG.
 //
-//   node scripts/cat/glsheet.mjs views|poses|scenes|faces|faces2|faces3|detail|walk|run <out.png> [--scale=2] [--mesh=src/client/cat/render/gl/cat.mesh] [--cols=4] [--pick=0,3] [--gpu=real]
+//   node scripts/cat/glsheet.mjs views|eyes|poses|carried|scenes|faces|faces2|faces3|detail|walk|run <out.png> [--scale=2] [--mesh=src/client/cat/render/gl/cat.mesh] [--cols=4] [--pick=0,3] [--gpu=real]
 //   node scripts/cat/glsheet.mjs film <out.png> --session=<recording.json> [--mode=strip|onion] [--from=0] [--to=10] [--every=6] [--cols=4] [--scale=1]
 //
 // Development tooling (the cat lab): nothing it makes is part of the app.
@@ -22,7 +22,13 @@ const pick = flag("pick", "").split(",").filter(Boolean).map(Number);
 // (the film: a recording made by scripts/cat/record.mts, and which part of it: --session=<file.json> --from=<s> --to=<s> --every=<frames> --mode=strip|onion)
 const session = flag("session", "");
 const film = session ? JSON.parse(readFileSync(resolve(root, session), "utf8")) : null;
-const filmOptions = { mode: flag("mode", "strip"), cols, scale, from: Number(flag("from", 0)), to: Number(flag("to", 10)), every: Number(flag("every", 6)), cellW: Number(flag("cellw", 260)), cellH: Number(flag("cellh", 220)), coat: flag("coat", "ginger") };
+const filmOptions = { mode: flag("mode", "strip"), cols, scale, from: Number(flag("from", 0)), to: Number(flag("to", 10)), every: Number(flag("every", 6)), cellW: Number(flag("cellw", 260)), cellH: Number(flag("cellh", 220)), coat: flag("coat", "ragdoll") };
+// (a closer look at a strip: --zoom=2.4 --at=0.3,0.55 [the place, in body lengths forward and up from the feet], and the camera: --turn=-0.5 --tilt=0.1)
+if (flag("zoom", "")) {
+  filmOptions.zoom = Number(flag("zoom", 1));
+  filmOptions.at = flag("at", "0,0.4").split(",").map(Number);
+}
+if (flag("turn", "") || flag("tilt", "") || flag("debug", "")) filmOptions.view = { ...(flag("turn", "") ? { turn: Number(flag("turn", 0)) } : {}), ...(flag("tilt", "") ? { tilt: Number(flag("tilt", 0)) } : {}), ...(flag("debug", "") ? { debug: Number(flag("debug", 0)) } : {}) };
 
 const code = await bundle(resolve(root, "src/client/cat/lab/gl.ts"), "CatLabGl");
 // (the software driver by default, so a sheet looks the same on every machine; --gpu=real is the machine's own graphics card, as a viewer's screen would draw it)
@@ -45,6 +51,8 @@ await page.evaluate(
     if (which === "film") lab.glFilm(canvas, data, recording, options);
     else if (which === "views") lab.glSheet(canvas, data, sel(lab.VIEWS), c, s, 7, 300, 260, options.coat);
     else if (which === "poses") lab.glSheet(canvas, data, sel(lab.GL_POSES), c, s, 7, options.cellW, options.cellH, options.coat);
+    else if (which === "carried") lab.glSheet(canvas, data, sel(lab.CARRIED), c, s, 7, options.cellW, options.cellH, options.coat);
+    else if (which === "eyes") lab.glSheet(canvas, data, sel(lab.EYES), c, s, 7, 500, 380, options.coat);
     else if (which === "faces2") lab.glSheet(canvas, data, sel(lab.FACES2), c, s, 7, 400, 340, options.coat);
     else if (which === "faces") lab.glSheet(canvas, data, sel(lab.FACES), c, s, 7, 400, 340, options.coat);
     else if (which === "faces3") lab.glSheet(canvas, data, sel(lab.FACES3), c, s, 7, 400, 340, options.coat);

@@ -38,7 +38,7 @@ The engine cuts every surface by the keep-outs (`computeLedges`, `HEIGHT = 1.02`
 
 ## The cat → renderer contract: `CatFrame`
 
-`x,y` (feet line under the body's middle), `facing`, `clip` (18 clips, see 04), `clipTime`, `progress` (one-shots), `odometer` (feet are driven by distance walked, so they do not slide), `vx,vy`, `grounded`, `look` / `viewer` (eyes), `reach` (pointing paw), `drowsy`, `energy`, `appear`, `petted`.
+`x,y` (feet line under the body's middle), `facing`, `clip` (18 clips, see 04), `clipTime`, `progress` (one-shots), `odometer` (feet are driven by distance walked, so they do not slide), `vx,vy`, `grounded`, `look` / `viewer` (eyes), `reach` (pointing paw), `drowsy`, `energy`, `appear`, `petted`, `carried` (true from the moment a hand takes hold until the cat has landed: the rig then lets the body hang from the scruff and swing).
 
 ## Events (the plan's §4.5), with what is really wired
 
@@ -48,6 +48,7 @@ The engine cuts every surface by the keep-outs (`computeLedges`, `HEIGHT = 1.02`
 | `cat.pet`, `cat.petEnd` | **wired** (a hand resting on the cat for a moment; the panel's pet button). A pointer that only passes over is not petting (e2e 10). |
 | `cat.command` `sit` `sleep` `play` `away` `come` | **wired** (panel) |
 | `cat.point` | **wired** ("find me something": the pick is pointed at, never opened) |
+| `cat.grab {at}`, `cat.carry {at}`, `cat.drop` | **wired** (host/index.ts: a press on the cat that moves more than 8 px is a grab; `carry` is sent every frame while the hand is held, and 2.5 s without one lets go; `drop` on release, on window blur, on a hidden tab, on a lost pointer capture). Only in `browse` mode, never for quiet or reduced motion. `CatEngine.landing()` says where a drop would land right now (the host draws a soft ellipse there) |
 | `catalog.itemFocused` | **wired** (the page's focused poster; the cat watches it from a seat next to it) |
 | `player.play` `pause` `resume` `ended` | **wired** (from `main.tv[data-state]` changes) |
 | `player.error` | sent; the engine has no special act: the player mode `error` makes it sit for 20 s |
@@ -61,6 +62,16 @@ Utility choice with cool-downs, not a random timer: `rest` (1.0 + 0.8·sleepines
 Moods (`sleepiness`, `energy`, `affection`, `curiosity`) drift and are nudged by events (pet +affection, focus +curiosity, call +energy). The random draws of every plan are made in a fixed order, so one seed is one cat (tested); a page that tells it of no words gets the cat it got before words existed (checked: 20 seeds × 600 s, 360,000 frames, identical checksum before and after the settling change).
 
 In a film: `choosePlayer`: playing → loaf, then sleep (up to 600 s); paused/loading → loaf 12–18 s then sleep; ended/error → sit 20 s. The cat sits on the `playerPerch` (a corner of the picture, 0.7–3.6 body lengths in), which is outside the HUD and caption keep-outs by construction.
+
+## Being picked up and put down (the drag; plan scenario D)
+
+Two acts, `carried` and `fall`, in `engine.ts` (all lengths in body lengths).
+
+- **Grab.** `cat.grab {at}` ends whatever the cat was doing (a leap in the air included: its position stays where it was) and starts `carried`. The feet hang `HANG_DOWN` (0.73) below the hand and `HANG_AHEAD` (0.1) further the way the cat faces; the hang forms at `HANG_RELAX` (7 a second) from wherever the hand took it, and **never below the shelf the cat stood on** while it forms (`hangY0`/`groundY`: a first version let the cat sink through its own shelf for a few frames, tested). The cat follows the hand at `CARRY_FOLLOW` (16 a second), no faster than `CARRY_SPEED` (16 body lengths a second), so a hand that flicks leaves it swinging behind; its position is clamped into the viewport (a window made smaller under a held cat once left it off the screen: soak).
+- **Where it would land.** `landing()` returns the place a drop would use right now (`dropTarget(world, spring)`: the nearest standing piece, below the feet or at most `SPRING` (0.6) above them, within `FALL_ACROSS` (3) to the side; the fallback floor is penalised so a shelf wins). The host draws a soft ellipse there (`.kino-cat-spot`), which is how the viewer knows which row the cat will take.
+- **Drop.** `cat.drop` (or 2.5 s without a `cat.carry`, the pointer lost) starts `fall`: gravity, steering to the place at `FALL_STEER` (4 a second) while it falls, a speed limit `FALL_FASTEST` (14 a second), a touchdown without a snap in x, `FALL_SETTLE` (0.32 s), then the normal choice (sit or wash). A drop with no place within reach (a hand let go over bare page and no shelf near) fades the cat out and brings it back at its home. A page that moves under the falling cat (the row is scrolled) retargets it: `placeY` remembers where the place was, `missed` says the cat has passed it, and the target is looked for again with a spring that matches what is left of any rise.
+- **The pose** (`rig.ts`, `carriedDyn`, blended at 2.2 a second in and 2.8 out so that nothing pops): the body pitches nose-up about its middle (`CARRY_PITCH`, applied at paint time), the fore paws are drawn in, the hind legs and the tail hang and swing as a pendulum fed by the hand's speed, the ears go back, the pupils widen, the mouth is a little open, and the shadow is gone (`1 - held`). Both painters draw it; the pivot of the pitch in the GL painter is the body's middle (a missing x term once drew the carried cat 0.4 body lengths to the side of the 2-D maths, found by the film strips).
+- **Never** for `prefers-reduced-motion`, quiet, a film or a hidden tab; a press that moves less than 8 px is a stroke.
 
 ## Renderers
 

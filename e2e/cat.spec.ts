@@ -30,7 +30,7 @@ const setup = (yes = true) => async (context: BrowserContext) => {
 const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, detail: false, ...over }) });
 
 interface Snap {
-  frame: { x: number; y: number; clip: string; appear: number; petted: boolean; grounded: boolean };
+  frame: { x: number; y: number; facing: number; clip: string; appear: number; petted: boolean; carried: boolean; grounded: boolean };
   engine: { act: string; surfaceId: string | null; mode: string; placed: boolean };
   view: string;
   why: string;
@@ -295,6 +295,10 @@ test("in a film the cat rests at the foot of the picture between the groups of t
   const seen = await snap(tv);
   const screen = tv.viewportSize()!;
   expect(seen.frame.y).toBeGreaterThan(screen.height * 0.85); // (the foot of the picture)
+  // a hand is the library's: in a film the picture is the player's (its taps, double-taps to skip and holds to speed up), so the box that takes a hand is out of the
+  // way there, and a press on the patch of the picture where the cat sleeps reaches the player like a press anywhere else on it
+  await expect(tv.getByTestId("cat-hit")).toHaveAttribute("data-off", "");
+  expect(await tv.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".kino-cat-hit") != null, { x: seen.frame.x, y: seen.frame.y - 0.3 * seen.body })).toBe(false);
   // the controls' row has a stretch with no button in it between its two groups, and that is where the cat rests: its whole body is between the groups
   // (a cat behind a button's icon is clutter, even though the controls are over it), whether the controls are up or not
   const groups = await tv.evaluate(() =>
@@ -322,12 +326,13 @@ test("in a film the cat rests at the foot of the picture between the groups of t
   await expect(tv.getByTestId("tv")).not.toHaveAttribute("data-hud", "visible", { timeout: 20_000 });
   await catIsOnItsPerch(tv);
   await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
-  // Back leaves the film (the first press brings the controls up, the next one leaves): the cat is on the shelves again
+  // Back leaves the film (the first press brings the controls up, the next one leaves): the cat is on the shelves again, and takes a hand again
   await expect(async () => {
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-browse")).toBeVisible({ timeout: 1_500 });
   }).toPass({ timeout: 15_000 });
   await catIsOnTheShelves(tv);
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-off", "");
 });
 
 test("the words of a film and the controls are drawn over the cat, and the lines coming and going do not make it come and go", async ({ browser, baseURL }) => {
@@ -493,6 +498,164 @@ test("a viewer who asked for less motion has a cat that rests where it is", asyn
   expect(later.frame.clip).not.toMatch(/walk|run|jump/);
 });
 
+/* ------------------------------ a hand that takes hold of the cat ------------------------------ */
+
+interface Surf {
+  id: string;
+  kind: string;
+  y: number;
+  x0: number;
+  x1: number;
+}
+const worldOf = (tv: Page) => tv.evaluate(() => (window as unknown as { __kinoCat: { world(): unknown } }).__kinoCat.world()) as Promise<{ bodyLength: number; surfaces: Surf[] }>;
+const tellCat = (tv: Page, event: unknown) => tv.evaluate((e) => (window as unknown as { __kinoCat: { send(event: unknown): void } }).__kinoCat.send(e), event);
+/** The cat sits where it is (a cat that is about to be taken by a hand is not on its way anywhere), and the middle of the box that takes a hand. */
+const catSitsAndWhere = async (tv: Page) => {
+  await tellCat(tv, { type: "cat.command", command: "sit" });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.clip, { timeout: 20_000 }).toBe("sit"));
+  await tv.waitForTimeout(400);
+  const box = (await tv.getByTestId("cat-hit").boundingBox())!;
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+};
+
+test("a hand that takes hold of the cat carries it by the scruff, marks the shelf it would be put down on, and puts it there", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const middle = await catSitsAndWhere(tv);
+  const start = await snap(tv);
+  const world = await worldOf(tv);
+  const L = world.bodyLength;
+  // the shelf the cat is not on, and the furthest from it (a whole row of posters or two, not a corner of a card)
+  const here = world.surfaces.find((surface) => surface.id === start.engine.surfaceId)!;
+  const target = world.surfaces
+    .filter((surface) => surface.kind === "shelfTop" && Math.abs(surface.y - here.y) > 1.5 * L && surface.x1 - surface.x0 > 3 * L)
+    .sort((a, b) => b.x1 - b.x0 - (a.x1 - a.x0))[0];
+  expect(target, "another shelf with room on it").toBeDefined();
+  const hand = { x: (target!.x0 + target!.x1) / 2, y: target!.y - 1.2 * L - 0.73 * L };
+
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  // (a press does not take hold of the cat until the hand has gone a little way: it is a stroke until then)
+  await tv.mouse.move(middle.x + 4, middle.y - 4);
+  expect((await snap(tv)).frame.carried).toBe(false);
+  await tv.mouse.move(middle.x + 30, middle.y - 30, { steps: 5 });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.act, { timeout: 5_000 }).toBe("carried"));
+  await expect(tv.getByTestId("cat-hit")).toHaveAttribute("data-held", "");
+
+  await tv.mouse.move(hand.x, hand.y, { steps: 30 });
+  // it hangs below the hand, a little way before it, and the shelf under it is marked
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return seen.frame.carried && Math.abs(seen.frame.y - (hand.y + 0.73 * L)) < 0.15 * L && Math.abs(seen.frame.x - (hand.x + 0.1 * L * seen.frame.facing)) < 0.15 * L;
+      }, { timeout: 8_000 })
+      .toBe(true),
+  );
+  await expect(tv.getByTestId("cat-spot")).toHaveAttribute("data-on", "");
+  const mark = (await tv.getByTestId("cat-spot").boundingBox())!;
+  const where = `mark at ${Math.round(mark.x + mark.width / 2)},${Math.round(mark.y + mark.height / 2)}, hand ${Math.round(hand.x)},${Math.round(hand.y)}, shelf ${target!.id} ${Math.round(target!.x0)}..${Math.round(target!.x1)} at ${Math.round(target!.y)}, L ${L}, cat ${JSON.stringify((await snap(tv)).frame)}`;
+  expect(Math.abs(mark.y + mark.height / 2 - target!.y), where).toBeLessThan(0.2 * L);
+  // (the place under it, or a little way across where the shelf has room for the cat and its keep-outs are not: never further than a fall can steer, three body lengths)
+  expect(mark.x + mark.width / 2, where).toBeGreaterThan(target!.x0);
+  expect(mark.x + mark.width / 2, where).toBeLessThan(target!.x1);
+  expect(Math.abs(mark.x + mark.width / 2 - hand.x), where).toBeLessThan(3 * L);
+  // (a hand that rests keeps the cat for as long as it is held: it is told at every frame, so it is not let go for being quiet)
+  await tv.waitForTimeout(3_500);
+  expect((await snap(tv)).engine.act).toBe("carried");
+
+  await tv.mouse.up();
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return !/carried|fall/.test(seen.engine.act) && seen.frame.grounded && seen.engine.surfaceId === target!.id;
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-held", "");
+  await expect(tv.getByTestId("cat-spot")).not.toHaveAttribute("data-on", "");
+  expect(Math.abs((await snap(tv)).frame.y - target!.y)).toBeLessThan(3);
+});
+
+test("a press that only wobbles is a stroke and lifts nothing; the page under it is not opened", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const middle = await catSitsAndWhere(tv);
+  const before = await snap(tv);
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  await tv.mouse.move(middle.x + 5, middle.y + 2, { steps: 3 });
+  await tv.mouse.move(middle.x - 3, middle.y - 4, { steps: 3 });
+  await tv.mouse.up();
+  await expect.poll(async () => (await snap(tv)).frame.petted, { timeout: 3_000 }).toBe(true);
+  const after = await snap(tv);
+  expect(after.frame.carried).toBe(false);
+  expect(after.engine.act).not.toMatch(/carried|fall/);
+  expect(Math.abs(after.frame.x - before.frame.x)).toBeLessThan(3);
+  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+});
+
+test("a viewer who asked for less motion, or for quiet, is not lifted, and the cursor does not offer it", async ({ browser }) => {
+  test.setTimeout(60_000);
+  for (const how of ["reduced motion", "quiet"] as const) {
+    const tv = await openLibrary(browser, setup(), undefined, WANTS({ quiet: how === "quiet" }));
+    if (how === "reduced motion") await tv.emulateMedia({ reducedMotion: "reduce" });
+    await tv.goto("/tv?cat=debug");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await catIsOnTheScreen(tv);
+    await tv.waitForTimeout(1_200);
+    await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-carry", "");
+    const box = (await tv.getByTestId("cat-hit").boundingBox())!;
+    const middle = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    const before = await snap(tv);
+    await tv.mouse.move(middle.x, middle.y);
+    await tv.mouse.down();
+    await tv.mouse.move(middle.x + 120, middle.y - 150, { steps: 12 });
+    await tv.waitForTimeout(500);
+    const during = await snap(tv);
+    // (a cat that is not lifted is not shown as held: the cursor stays an open hand)
+    await expect(tv.getByTestId("cat-hit"), how).not.toHaveAttribute("data-held", "");
+    await tv.mouse.up();
+    expect(during.frame.carried, how).toBe(false);
+    expect(during.engine.act, how).not.toMatch(/carried|fall/);
+    expect(Math.abs(during.frame.x - before.frame.x), how).toBeLessThan(3);
+    expect(Math.abs(during.frame.y - before.frame.y), how).toBeLessThan(3);
+    await tv.context().close();
+  }
+});
+
+test("a hand that is lost lets the cat go: the window losing the pointer puts it down on a shelf", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const middle = await catSitsAndWhere(tv);
+  const L = (await worldOf(tv)).bodyLength;
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  await tv.mouse.move(middle.x + 40, middle.y - 0.8 * L, { steps: 6 });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.act, { timeout: 5_000 }).toBe("carried"));
+  // (the window loses the focus with the button still down: no word about the button coming up ever arrives)
+  await tv.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return !/carried|fall/.test(seen.engine.act) && seen.frame.grounded && (seen.engine.surfaceId ?? "") !== "";
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-held", "");
+  await tv.mouse.up();
+});
+
 /** The cat's page of the settings: the settings page, then its row for the cat. */
 const openCatSettings = async (tv: Page) => {
   await openTvSettings(tv);
@@ -512,6 +675,9 @@ test("the settings page has a row for the cat only on a host that offers a cat, 
   await expect(row).toContainText("Off");
   await row.click();
   await expect(other.getByTestId("tv-cat-settings")).toBeVisible();
+  // (the author of the model the detailed cat is made from is named where the cat is chosen: the licence, CC BY 4.0, asks for that)
+  await expect(other.getByTestId("tv-cat-credit")).toContainText("Meshy AI");
+  await expect(other.getByTestId("tv-cat-credit")).toContainText("CC BY 4.0");
   const on = other.getByTestId("tv-cat-switch");
   await expect(on).toHaveAttribute("aria-checked", "false");
   await expect(other.getByTestId("tv-cat-quiet")).toHaveCount(0);
@@ -535,28 +701,35 @@ test("the settings page has a row for the cat only on a host that offers a cat, 
   await expect(other.getByTestId("tv-cat-chip")).toHaveCount(0);
 });
 
-test("the settings page and the cat's page of it fit the screen of a TV and nothing is over their Back buttons, with the cat's switches all showing", async ({ browser }) => {
-  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true }));
-  for (const [width, height] of [[1280, 720], [1920, 1080], [1366, 768], [1024, 768]] as const) {
-    await tv.setViewportSize({ width, height });
-    await openTvSettings(tv);
-    for (const page of ["tv-account", "tv-cat-settings"]) {
-      if (page === "tv-cat-settings") await tv.getByTestId("tv-cat-open").click();
-      await expect(tv.getByTestId(page)).toBeVisible();
-      const box = await tv.evaluate(() => {
-        const grid = document.querySelector(".tv-set-grid")!.getBoundingClientRect();
-        const back = document.querySelector(".tv-back")!;
-        const at = back.getBoundingClientRect();
-        const over = document.elementFromPoint(at.left + at.width / 2, at.top + at.height / 2);
-        return { top: grid.top, bottom: grid.bottom, height: innerHeight, free: over === back || back.contains(over) };
-      });
-      expect(box.top, `${page} at ${width}x${height}`).toBeGreaterThanOrEqual(0);
-      expect(box.bottom, `${page} at ${width}x${height}`).toBeLessThanOrEqual(box.height);
-      expect(box.free, `${page} at ${width}x${height}`).toBe(true);
+test("the settings page and the cat's page of it fit the screen of a TV, in each of the languages, and nothing is over their Back buttons, with the cat's switches all showing", async ({ browser }) => {
+  test.setTimeout(120_000);
+  // (the Romanian and Italian words, and the credit with the model's title in them, run longer than the English ones)
+  for (const lang of ["en", "ro", "it"] as const) {
+    const tv = await openLibrary(browser, setup(), undefined, { ...WANTS({ detail: true }), "kino.lang": lang });
+    await expect(tv.locator("html")).toHaveAttribute("lang", lang);
+    for (const [width, height] of [[1280, 720], [1920, 1080], [1366, 768], [1024, 768]] as const) {
+      await tv.setViewportSize({ width, height });
+      await openTvSettings(tv);
+      for (const page of ["tv-account", "tv-cat-settings"]) {
+        if (page === "tv-cat-settings") await tv.getByTestId("tv-cat-open").click();
+        await expect(tv.getByTestId(page)).toBeVisible();
+        const box = await tv.evaluate(() => {
+          const grid = document.querySelector(".tv-set-grid")!.getBoundingClientRect();
+          const back = document.querySelector(".tv-back")!;
+          const at = back.getBoundingClientRect();
+          const over = document.elementFromPoint(at.left + at.width / 2, at.top + at.height / 2);
+          return { top: grid.top, bottom: grid.bottom, height: innerHeight, free: over === back || back.contains(over) };
+        });
+        const where = `${lang} ${page} at ${width}x${height}`;
+        expect(box.top, where).toBeGreaterThanOrEqual(0);
+        expect(box.bottom, where).toBeLessThanOrEqual(box.height);
+        expect(box.free, where).toBe(true);
+      }
+      await tv.keyboard.press("Escape");
+      await tv.keyboard.press("Escape");
+      await expect(tv.getByTestId("tv-browse")).toBeVisible();
     }
-    await tv.keyboard.press("Escape");
-    await tv.keyboard.press("Escape");
-    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await tv.context().close();
   }
 });
 
@@ -587,7 +760,8 @@ const artIs = (tv: Page, art: Snap["art"], timeout = 12_000) => saying(tv, () =>
 const MESH = /\.mesh(\?|$)/;
 
 test("the detailed cat: a screen that can do WebGL gets the solid cat, painted by the card from a file that is fetched once, and it is on the screen", async ({ browser }) => {
-  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true }));
+  // (the ginger coat: the pale ragdoll that is the default has no colour of its own to tell it from the page by, the posters have no orange)
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true, coat: "ginger" }));
   const meshes: string[] = [];
   tv.on("request", (request) => MESH.test(request.url()) && meshes.push(request.url()));
   await tv.goto("/tv?cat=debug&catbudget=100000");
@@ -730,10 +904,10 @@ test("the settings page has the cat's coat and size: they are worn at once and k
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   await artIs(tv, "solid");
   const before = await snap(tv);
-  expect(before.coat).toBe("ginger");
+  expect(before.coat).toBe("ragdoll");
   expect(before.body).toBeGreaterThan(40);
   await openCatSettings(tv);
-  await expect(tv.getByTestId("tv-cat-coat-ginger")).toHaveAttribute("aria-checked", "true");
+  await expect(tv.getByTestId("tv-cat-coat-ragdoll")).toHaveAttribute("aria-checked", "true");
   await expect(tv.getByTestId("tv-cat-size-normal")).toHaveAttribute("aria-checked", "true");
   await tv.getByTestId("tv-cat-coat-tuxedo").click();
   await expect(tv.getByTestId("tv-cat-coat-tuxedo")).toHaveAttribute("aria-checked", "true");
@@ -775,4 +949,113 @@ test("the address can ask for either cat, whatever the device says", async ({ br
   await solid.goto("/tv?cat=debug&catart=solid&catbudget=100000");
   await expect(solid.getByTestId("tv-browse")).toBeVisible();
   await artIs(solid, "solid");
+});
+
+/* ------------------------------ what the independent review found ------------------------------ */
+
+test("a grid of posters that scrolls under the cat keeps the names of its lines, so a cat on one is not on a shelf that has gone at every few pixels", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const long = { updatedAt: Date.now(), rows: [library.rows[0]!, { id: "long", title: "A long row", source: "Test Source", items: Array.from({ length: 60 }, (_, index) => film(`g${index}`, `Grid film ${index + 1}`)) }] };
+  const tv = await openLibrary(
+    browser,
+    async (context) => {
+      await offered(true)(context);
+      await withLibrary(long)(context);
+    },
+    undefined,
+    WANTS(),
+  );
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  await tv.getByTestId("rail-categories").click();
+  await tv.getByTestId("tv-category-tile").filter({ hasText: "A long row" }).click();
+  await expect(tv.getByTestId("tv-category")).toBeVisible();
+  const lines = async () => (await worldOf(tv)).surfaces.filter((surface) => surface.id.startsWith("grid"));
+  const scrolled = () => tv.evaluate(() => document.querySelector<HTMLElement>(".tv-grid")!.scrollTop);
+  await saying(tv, () => expect.poll(async () => (await lines()).length, { timeout: 10_000 }).toBeGreaterThan(1));
+  const before = await lines();
+  const start = await scrolled();
+  // the grid scrolls by itself a little (the viewer's mouse wheel, the remote going down a line): the lines still in sight are the same shelves, a little higher
+  await tv.evaluate(() => {
+    document.querySelector<HTMLElement>(".tv-grid")!.scrollTop += 37;
+  });
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const moved = (await scrolled()) - start;
+        const now = await lines();
+        const same = before.filter((line) => now.some((one) => one.id === line.id));
+        // (at most the line that went out at the top is not there any more)
+        return moved > 20 && same.length >= before.length - 1 && same.every((line) => Math.abs(now.find((one) => one.id === line.id)!.y - (line.y - moved)) < 2);
+      }, { timeout: 6_000, message: `lines before: ${before.map((line) => line.id).join(" ")}` })
+      .toBe(true),
+  );
+  // and back: the very same names again, none left over from the way
+  await tv.evaluate((to) => {
+    document.querySelector<HTMLElement>(".tv-grid")!.scrollTop = to;
+  }, start);
+  await saying(tv, () => expect.poll(async () => (await lines()).map((line) => line.id).join(" "), { timeout: 6_000 }).toBe(before.map((line) => line.id).join(" ")));
+});
+
+test("a second hand, a finger while the mouse has the cat, is not the one that lets it go", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const middle = await catSitsAndWhere(tv);
+  const L = (await worldOf(tv)).bodyLength;
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  await tv.mouse.move(middle.x + 40, middle.y - 0.8 * L, { steps: 6 });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.act, { timeout: 5_000 }).toBe("carried"));
+  // a finger comes down on the cat, moves a good way and comes up, with the mouse still down
+  await tv.getByTestId("cat-hit").evaluate((box) => {
+    const at = box.getBoundingClientRect();
+    const finger = (type: string, dx = 0) =>
+      box.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: "touch", isPrimary: true, button: 0, bubbles: true, cancelable: true, clientX: at.left + at.width / 2 + dx, clientY: at.top + at.height / 2 }));
+    finger("pointerdown");
+    finger("pointermove", 120);
+    finger("pointerup", 120);
+  });
+  await tv.waitForTimeout(300);
+  expect((await snap(tv)).engine.act).toBe("carried");
+  await expect(tv.getByTestId("cat-hit")).toHaveAttribute("data-held", "");
+  // the mouse is the hand that has it, and it is the mouse that lets it go
+  await tv.mouse.up();
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return !/carried|fall/.test(seen.engine.act) && seen.frame.grounded;
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-held", "");
+});
+
+test("a TV that started before its network was up gets its cat when the line comes back, and its button with it, without a new load", async ({ browser }) => {
+  test.setTimeout(60_000);
+  let asked = 0;
+  const tv = await openLibrary(
+    browser,
+    async (context) => {
+      await withLibrary(library)(context);
+      // (the first question and the two that follow it, a moment apart, get no answer: a line that is not up yet)
+      await context.route("**/api/features", (route) => (++asked <= 3 ? route.abort("failed") : route.fulfill({ json: { cat: true } })));
+    },
+    undefined,
+    WANTS(),
+  );
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await expect.poll(() => asked, { timeout: 15_000 }).toBe(3);
+  await tv.waitForTimeout(800);
+  await expect(tv.getByTestId("cat")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-chip")).toHaveCount(0);
+  // the line comes back: the page is told, asks again, and the cat is there
+  await tv.evaluate(() => window.dispatchEvent(new Event("online")));
+  await catIsOnTheScreen(tv);
+  await expect(tv.getByTestId("tv-cat-chip")).toBeVisible();
+  expect(asked).toBeGreaterThanOrEqual(4);
 });

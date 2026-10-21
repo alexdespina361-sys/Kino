@@ -23,6 +23,7 @@ export const frameOf = (over: Partial<CatFrame> = {}): CatFrame => ({
   energy: 0.3,
   appear: 1,
   petted: false,
+  carried: false,
   ...over,
 });
 
@@ -33,13 +34,15 @@ interface Cell {
   settle?: number;
   /** Seconds of a moving clip to run before the picture (for a walk, the distance is in `frame.odometer` at the end). */
   run?: number;
+  /** Draws the feet line this many body lengths higher in the cell (a cat that hangs reaches below it). */
+  raise?: number;
 }
 
 const BG = "#15151b";
 const GROUND = "#2a2a35";
 
-function cellBox(w: number, h: number, scale: number) {
-  return { ox: w / 2, oy: h - 24 * scale, px: 150 * scale };
+function cellBox(w: number, h: number, scale: number, raise = 0) {
+  return { ox: w / 2, oy: h - 24 * scale - raise * 150 * scale, px: 150 * scale };
 }
 
 function paintCell(ctx: CanvasRenderingContext2D, cell: Cell, x0: number, y0: number, w: number, h: number, scale: number, seed: number): void {
@@ -55,7 +58,7 @@ function paintCell(ctx: CanvasRenderingContext2D, cell: Cell, x0: number, y0: nu
   ctx.clip();
   ctx.fillStyle = BG;
   ctx.fillRect(x0, y0, w, h);
-  const box = cellBox(w, h, scale);
+  const box = cellBox(w, h, scale, cell.raise);
   ctx.fillStyle = GROUND;
   ctx.fillRect(x0, y0 + box.oy, w, 3 * scale);
   ctx.translate(x0, y0);
@@ -68,10 +71,10 @@ function paintCell(ctx: CanvasRenderingContext2D, cell: Cell, x0: number, y0: nu
   ctx.restore();
 }
 
-/** A sheet of cells in a grid. */
-export function sheet(canvas: HTMLCanvasElement, cells: readonly Cell[], columns: number, scale = 1, seed = 7): void {
+/** A sheet of cells in a grid (`tall` makes the cells taller, for a cat that hangs: it reaches a body length and more below its feet line, so the line is higher in the cell). */
+export function sheet(canvas: HTMLCanvasElement, cells: readonly Cell[], columns: number, scale = 1, seed = 7, tall = 0): void {
   const cw = 260 * scale;
-  const ch = 220 * scale;
+  const ch = (220 + tall) * scale;
   const rows = Math.ceil(cells.length / columns);
   canvas.width = cw * columns;
   canvas.height = ch * rows;
@@ -100,6 +103,22 @@ export const POSES: Cell[] = [
   { label: "crouch, wiggle", frame: { clip: "wiggle", progress: 0.5 } },
   { label: "stalk, facing left", frame: { clip: "stalk", odometer: 20, facing: -1 } },
   { label: "sit, facing left", frame: { clip: "sit", facing: -1 } },
+  { label: "peek, over an edge", frame: { clip: "peek", look: { x: 240, y: 230 } } },
+  { label: "tap, at the pointer", frame: { clip: "tap", clipTime: 0.45, reach: { x: 96, y: -72 }, look: { x: 96, y: -72 } } },
+  { label: "doze, head down", frame: { clip: "doze", clipTime: 2.7, drowsy: 0.62 } },
+  { label: "shift, half awake", frame: { clip: "shift", progress: 0.3, drowsy: 1 } },
+  { label: "sit, joy", frame: { clip: "sit", emote: "joy" } },
+  { label: "stand, startled", frame: { clip: "stand", emote: "startle", look: { x: 200, y: -80 } } },
+  { label: "sit, letdown", frame: { clip: "sit", emote: "droop" } },
+  { label: "sit, tilt", frame: { clip: "sit", emote: "tilt", viewer: true } },
+  { label: "sit, think", frame: { clip: "sit", emote: "think" } },
+];
+
+/** The cat in a hand, in the simple painter too (the cells are taller, with the feet line high in them). */
+export const CARRIED: Cell[] = [
+  { label: "carried by the scruff", frame: { clip: "stand", carried: true, grounded: false, viewer: true }, raise: 0.85 },
+  { label: "carried, facing left", frame: { clip: "stand", carried: true, grounded: false, viewer: true, facing: -1 }, raise: 0.85 },
+  { label: "carried, looking up at the hand", frame: { clip: "stand", carried: true, grounded: false, viewer: false, look: { x: 0, y: -400 } }, raise: 0.85 },
 ];
 
 /** A strip of one walk cycle, evenly spaced. */

@@ -4,25 +4,36 @@
 //   node node_modules/tsx/dist/cli.mjs scripts/cat/record.mts <seed> <seconds> <out.json> [time=event[:argument] ...]
 //
 // The events are what the page could say, at a time (seconds): `5=cat.pet`, `9=cat.petEnd`, `12=cat.command:sleep`, `20=cat.call:900,700`,
-// `30=player.play`. Development tooling: nothing in the app imports this file.
+// `30=player.play`. A hand has its own words: `6=cat.grab` takes hold of the cat at its scruff where it is (`6=cat.grab:900,700` takes hold of a
+// place), `6.5=hand:1000,650@2` takes the hand there over two seconds (it is told at every tick for as long as it holds the cat), and
+// `9=cat.drop` lets go. Development tooling: nothing in the app imports this file.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { CatEngine } from "../../src/client/cat/engine/engine";
 import { browseWorld, defaultPage } from "../../src/client/cat/engine/sim";
-import type { CatEvent } from "../../src/client/cat/types";
+import type { CatEvent, Vec } from "../../src/client/cat/types";
 
 const [seedArg = "1", secondsArg = "60", out = ".kino-cat/session.json", ...script] = process.argv.slice(2);
 const seed = Number(seedArg);
 const fps = 30;
 
-const parse = (entry: string): { at: number; event: CatEvent } => {
+type Entry = { at: number; event: CatEvent } | { at: number; hand: { to: Vec; seconds: number } };
+const parse = (entry: string): Entry => {
   const [time = "0", rest = ""] = entry.split("=");
   const [type = "", arg = ""] = rest.split(":");
   const at = Number(time);
+  if (type === "hand") {
+    const [where = "0,0", seconds = "0"] = arg.split("@");
+    const [x, y] = where.split(",").map(Number);
+    return { at, hand: { to: { x: x ?? 0, y: y ?? 0 }, seconds: Number(seconds) } };
+  }
   if (type === "cat.command") return { at, event: { type, command: arg as "sit" | "sleep" | "play" | "away" | "come" } };
-  if (type === "cat.call" || type === "cat.pet") {
+  if (type === "cat.call" || type === "cat.pet" || type === "cat.grab") {
     const [x, y] = arg.split(",").map(Number);
-    return { at, event: type === "cat.call" ? { type, at: { x: x ?? 0, y: y ?? 0 } } : { type, ...(x !== undefined && y !== undefined ? { at: { x, y } } : {}) } };
+    const at2 = x !== undefined && y !== undefined ? { x, y } : undefined;
+    if (type === "cat.call") return { at, event: { type, at: at2 ?? { x: 0, y: 0 } } };
+    if (type === "cat.grab") return { at, event: { type, at: at2 ?? { x: NaN, y: NaN } } };
+    return { at, event: { type, ...(at2 ? { at: at2 } : {}) } };
   }
   return { at, event: { type } as CatEvent };
 };
@@ -35,11 +46,40 @@ engine.send({ type: "route.enter", page: "library:home" });
 const frames: Array<Record<string, unknown>> = [];
 let next = 0;
 const steps = Math.round(Number(secondsArg) * fps);
+/** Where the hand is while it holds the cat, and the way it is going (smoothly: a hand starts and stops). */
+let hand: Vec | null = null;
+let route: { from: Vec; to: Vec; start: number; seconds: number } | null = null;
+let last = engine.frame;
 for (let i = 0; i < steps; i++) {
   const t = i / fps;
-  while (next < events.length && events[next]!.at <= t) engine.send(events[next++]!.event);
+  while (next < events.length && events[next]!.at <= t) {
+    const entry = events[next++]!;
+    if ("hand" in entry) {
+      if (hand) route = { from: { ...hand }, to: entry.hand.to, start: t, seconds: entry.hand.seconds };
+      continue;
+    }
+    if (entry.event.type === "cat.grab") {
+      // (a grab with no place is at the cat's scruff, where it is)
+      const asked = entry.event.at;
+      hand = Number.isFinite(asked.x) ? { ...asked } : { x: last.x, y: last.y - 0.6 * world.bodyLength };
+      entry.event = { type: "cat.grab", at: hand };
+    }
+    if (entry.event.type === "cat.drop") {
+      hand = null;
+      route = null;
+    }
+    engine.send(entry.event);
+  }
+  if (hand && route) {
+    const k = route.seconds > 0 ? Math.min(1, (t - route.start) / route.seconds) : 1;
+    const e = k * k * (3 - 2 * k);
+    hand = { x: route.from.x + (route.to.x - route.from.x) * e, y: route.from.y + (route.to.y - route.from.y) * e };
+    if (k >= 1) route = null;
+  }
+  if (hand) engine.send({ type: "cat.carry", at: hand });
   const frame = engine.update(world, 1 / fps);
-  frames.push({ ...frame, act: engine.debug().act, surface: engine.debug().surfaceId });
+  last = frame;
+  frames.push({ ...frame, act: engine.debug().act, surface: engine.debug().surfaceId, ...(hand ? { hand: { ...hand } } : {}) });
 }
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, JSON.stringify({ fps, bodyLength: world.bodyLength, frames }));

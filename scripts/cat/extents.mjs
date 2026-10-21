@@ -73,7 +73,7 @@ const PAD = 0.02; // (a hair of room on every side, and on the side of more)
 const up = (n) => Math.ceil(n * 100 - 1e-9) / 100;
 const byClip = new Map();
 for (const row of rows) byClip.set(row.clip, [...(byClip.get(row.clip) ?? []), row]);
-const CLIPS = ["stand", "walk", "run", "sit", "loaf", "curl", "crouch", "jump", "stretch", "yawn", "groom", "pet", "point", "scratch", "knead", "sniff", "stalk", "wiggle"];
+const CLIPS = ["stand", "walk", "run", "sit", "loaf", "curl", "crouch", "jump", "stretch", "yawn", "groom", "pet", "point", "scratch", "knead", "sniff", "stalk", "wiggle", "peek", "tap", "doze", "shift"];
 const missing = CLIPS.filter((clip) => !byClip.has(clip));
 if (missing.length > 0) {
   console.error(`no pictures of: ${missing.join(", ")}`);

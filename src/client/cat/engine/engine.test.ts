@@ -426,7 +426,7 @@ describe("the cat on a page", () => {
     expect(frames[frames.length - 1]!.appear).toBeGreaterThan(0.9);
   });
 
-  it("turns round when the window is made smaller and puts it down at the end of a shelf with its tail over the edge of the screen, and is not left lying so", () => {
+  it("is put down at the end of a shelf, still sitting, when the window is made smaller under it, with none of it over the edge of the screen (turned round if its tail needs it)", () => {
     const engine = new CatEngine(2);
     const page = defaultPage();
     page.rows = 0;
@@ -449,7 +449,7 @@ describe("the cat on a page", () => {
     const { frames } = stepCat(engine, world, 3);
     expect(engine.debug().act).toBe("rest:sit");
     const last = frames[frames.length - 1]!;
-    expect(last.facing).toBe(1);
+    // (with the long tail the cat once had it had to be turned round here to keep the tail on the screen; the cat of today has a tail that fits whichever way it faces, and what is asked is that it does)
     for (const edge of screenEdges(world.viewport, world.bodyLength, 0.12)) expect(shapeHits(last.clip, last.facing, last.x, last.y, world.bodyLength, edge)).toBe(false);
   });
 
@@ -663,9 +663,9 @@ describe("settling clear of the names", () => {
       }
     }
     expect(floor).toBeGreaterThan(8000);
-    // (measured: 0.095 of its resting on the floor hid more than a tenth of a body-square of names while the landing of a hop was left to chance, and the posture was the one drawn; 0.028 since,
-    // nearly all of it the first seat or loaf where it appears and the seat after a sniff)
-    expect(hid / floor).toBeLessThan(0.05);
+    // (measured: 0.83 of its resting on the floor hid more than a tenth of a body-square of names while it knew nothing of them, and 0.064 knowing them, nearly all of it the first seat or loaf where it
+    // appears and the seat after a sniff; the cat before this one had 0.095 while the landing of a hop was left to chance, and 0.028 since)
+    expect(hid / floor).toBeLessThan(0.08);
   });
 
   it("does not leave its shelf for the sake of names when the viewer wants quiet or less motion, but settles where it is", () => {
@@ -698,6 +698,402 @@ describe("settling clear of the names", () => {
   });
 });
 
+describe("picked up by a hand", () => {
+  const settled = (seed = 4, flags: Partial<ReturnType<typeof defaultPage>> = {}) => {
+    const page = { ...defaultPage(), ...flags };
+    const engine = new CatEngine(seed);
+    const world = browseWorld(page);
+    stepCat(engine, world, 8);
+    return { engine, world, page, body: world.bodyLength };
+  };
+  const copy = (f: CatFrame): CatFrame => ({ ...f });
+  /** The hand goes from `from` to `to` in `seconds`, saying where it is at every frame, as the page does; the frames the cat gave. */
+  const carryTo = (engine: CatEngine, world: World, from: { x: number; y: number }, to: { x: number; y: number }, seconds: number): CatFrame[] => {
+    const frames: CatFrame[] = [];
+    const n = Math.max(1, Math.round(seconds * 30));
+    for (let i = 1; i <= n; i++) {
+      engine.send({ type: "cat.carry", at: { x: from.x + ((to.x - from.x) * i) / n, y: from.y + ((to.y - from.y) * i) / n } });
+      frames.push(copy(engine.update(world, 1 / 30)));
+    }
+    return frames;
+  };
+  /** The hand takes the cat by the middle of its body, carries it to the hand place `at` and lets it hang there (so that its feet are where the hang puts them). */
+  const lift = (engine: CatEngine, world: World, at: { x: number; y: number }): CatFrame => {
+    const f = engine.frame;
+    const grip = { x: f.x, y: f.y - 0.4 * world.bodyLength };
+    engine.send({ type: "cat.grab", at: grip });
+    engine.update(world, 1 / 30);
+    carryTo(engine, world, grip, at, 1);
+    return carryTo(engine, world, at, at, 1).pop()!;
+  };
+  const shelves = (world: World) => computeLedges(world).filter((l) => l.kind === "shelfTop").sort((a, b) => a.y - b.y);
+
+  it("takes the cat up where it stands, and it hangs from the hand by the scruff, a little behind it, following it", () => {
+    const { engine, world, body } = settled();
+    const start = copy(engine.frame);
+    const grip = { x: start.x, y: start.y - 0.4 * body };
+    engine.send({ type: "cat.grab", at: grip });
+    const first = copy(engine.update(world, 1 / 30));
+    expect(first.carried).toBe(true);
+    expect(first.grounded).toBe(false);
+    expect(engine.debug().act).toBe("carried");
+    // (it is where it was when the hand took it: it does not jump to the hand)
+    expect(Math.hypot(first.x - start.x, first.y - start.y)).toBeLessThan(0.05 * body);
+    // the hand takes it towards the middle of the screen, a long way, and holds it there
+    const goal = { x: start.x + (start.x < 900 ? 400 : -400), y: grip.y - 120 };
+    const moving = carryTo(engine, world, grip, goal, 1);
+    for (const f of moving) {
+      expect(f.carried).toBe(true);
+      expect(Math.hypot(f.vx, f.vy)).toBeLessThanOrEqual(16.01 * body);
+    }
+    const hanging = carryTo(engine, world, goal, goal, 1).pop()!;
+    expect(hanging.x).toBeCloseTo(goal.x + 0.1 * body * hanging.facing, 0);
+    expect(hanging.y).toBeCloseTo(goal.y + 0.73 * body, 0);
+    expect(hanging.clip).toBe("stand");
+    expect(hanging.viewer).toBe(true);
+  });
+
+  it("does not sink below where it stood as the hang forms: a hand that only lifts a little lifts the cat with it, and a hand that goes down takes it down", () => {
+    const { engine, world, body } = settled(4);
+    const start = copy(engine.frame);
+    const grip = { x: start.x, y: start.y - 0.4 * body };
+    engine.send({ type: "cat.grab", at: grip });
+    // the hand holds still for a moment: the hang forms under it (0.73 of a body below the hand; the cat was 0.4 below it), and the cat stays where it is
+    const resting = carryTo(engine, world, grip, grip, 1);
+    for (const f of resting) expect(f.y, "no sinking").toBeLessThanOrEqual(start.y + 0.5);
+    // the hand lifts it: the cat never goes down while the hand goes up, and is the hang below it once it is clear of where it stood
+    const lifted = carryTo(engine, world, grip, { x: grip.x, y: grip.y - 1.5 * body }, 1.2);
+    lifted.reduce((before, f) => {
+      expect(f.y).toBeLessThanOrEqual(before + 0.01);
+      return f.y;
+    }, resting[resting.length - 1]!.y);
+    const high = carryTo(engine, world, { x: grip.x, y: grip.y - 1.5 * body }, { x: grip.x, y: grip.y - 1.5 * body }, 1).pop()!;
+    expect(high.y).toBeCloseTo(grip.y - 1.5 * body + 0.73 * body, 0);
+    // a hand that goes down takes it down (the cat does not stay where it was taken from)
+    const lower = carryTo(engine, world, { x: grip.x, y: grip.y - 1.5 * body }, { x: grip.x, y: grip.y + 1.2 * body }, 1.5);
+    const last = lower.pop()!;
+    expect(last.y).toBeGreaterThan(start.y + 0.5 * body);
+  });
+
+  it("has the whole hang once the hand has carried it a body and a half, level or down: it is not held up by the middle all the way to a lower shelf (a hand that has gone only a little way has not sunk it)", () => {
+    for (const dir of [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]) {
+      const { engine, world, body } = settled(4);
+      const start = copy(engine.frame);
+      const grip = { x: start.x, y: start.y - 0.4 * body };
+      engine.send({ type: "cat.grab", at: grip });
+      const sign = grip.x < 900 ? 1 : -1;
+      // (a third of a body along: it is where it stood, or a third of a body further down with the hand: the hang that forms does not sink it)
+      const near = { x: grip.x + 0.3 * body * sign * dir.x, y: grip.y + 0.3 * body * dir.y };
+      const little = carryTo(engine, world, grip, near, 1);
+      for (const f of little) expect(f.y, `no sinking (${dir.x},${dir.y})`).toBeLessThanOrEqual(Math.max(start.y, near.y + 0.4 * body) + 0.5);
+      // (and a long way along it is the full hang below the hand)
+      const far = { x: grip.x + 4 * body * sign * dir.x, y: grip.y + 4 * body * dir.y };
+      carryTo(engine, world, near, far, 2);
+      const there = carryTo(engine, world, far, far, 1).pop()!;
+      expect(there.y, `the hang below the hand (${dir.x},${dir.y})`).toBeCloseTo(far.y + 0.73 * body, 0);
+    }
+  });
+
+  it("is not whisked along by a hand that flicks: it follows as fast as it can, and is a little behind", () => {
+    const { engine, world, body } = settled();
+    const f0 = copy(engine.frame);
+    const grip = { x: f0.x, y: f0.y - 0.4 * body };
+    engine.send({ type: "cat.grab", at: grip });
+    const held = copy(engine.update(world, 1 / 30));
+    const far = { x: grip.x + (grip.x < 900 ? 700 : -700), y: grip.y };
+    engine.send({ type: "cat.carry", at: far });
+    const next = copy(engine.update(world, 1 / 30));
+    expect(Math.abs(next.x - held.x)).toBeLessThanOrEqual((16 * body) / 30 + 1e-6);
+    expect(Math.abs(next.x - held.x)).toBeGreaterThan(0.3 * body);
+    const there = carryTo(engine, world, far, far, 1.5).pop()!;
+    expect(Math.abs(there.x - (far.x + 0.1 * body * there.facing))).toBeLessThan(2);
+  });
+
+  it("puts the cat down on the first shelf under it, steering across to it, and never through it", () => {
+    const { engine, world, body } = settled(2);
+    const [, second] = shelves(world);
+    expect(second).toBeDefined();
+    const x = (second!.x0 + second!.x1) / 2;
+    // the feet two body lengths over the shelf; the first shelf above is more than the cat can spring up to, the floor is further down
+    const hung = lift(engine, world, { x: x + 0.8 * body, y: second!.y - 2 * body - 0.73 * body });
+    expect(hung.carried).toBe(true);
+    expect(engine.landing()).toEqual({ x: expect.closeTo(hung.x, 3), y: second!.y });
+    engine.send({ type: "cat.drop" });
+    const frames = stepCat(engine, world, 3).frames;
+    expect(frames[0]!.carried).toBe(false);
+    let landedAt = -1;
+    frames.forEach((f, i) => {
+      expect(f.y, `frame ${i}`).toBeLessThanOrEqual(second!.y + 0.5);
+      expect(Math.hypot(f.vx, f.vy), `frame ${i}`).toBeLessThanOrEqual(14.01 * body);
+      if (landedAt < 0 && f.grounded) landedAt = i;
+    });
+    expect(landedAt).toBeGreaterThan(0);
+    // (about the time a body length's fall of two takes: sqrt(2 * 2 / 24) = 0.4 s)
+    expect(landedAt / 30).toBeLessThan(1);
+    const last = frames[frames.length - 1]!;
+    expect(last.grounded).toBe(true);
+    expect(last.y).toBe(second!.y);
+    expect(last.x).toBeGreaterThanOrEqual(second!.x0 - 1);
+    expect(last.x).toBeLessThanOrEqual(second!.x1 + 1);
+    expect(engine.debug().surfaceId).toBe(second!.surfaceId);
+    expect(engine.landing()).toBeNull();
+  });
+
+  it("puts a cat that a hand only brushed back where it was", () => {
+    const { engine, world, body } = settled(9);
+    const before = copy(engine.frame);
+    const surface = engine.debug().surfaceId;
+    engine.send({ type: "cat.grab", at: { x: before.x, y: before.y - 0.4 * body } });
+    stepCat(engine, world, 0.1);
+    engine.send({ type: "cat.drop" });
+    const after = stepCat(engine, world, 2).frames.pop()!;
+    expect(engine.debug().surfaceId).toBe(surface);
+    expect(after.grounded).toBe(true);
+    expect(after.y).toBe(before.y);
+    expect(Math.abs(after.x - before.x)).toBeLessThan(0.3 * body);
+  });
+
+  it("springs up onto a shelf that its paws hang a little below, over its edge and down again", () => {
+    const { engine, world, body } = settled(3);
+    const [first] = shelves(world);
+    expect(first).toBeDefined();
+    const x = (first!.x0 + first!.x1) / 2;
+    // the feet a third of a body under the line of the shelf
+    const hung = lift(engine, world, { x, y: first!.y + 0.3 * body - 0.73 * body });
+    expect(engine.landing()).toEqual({ x: expect.closeTo(hung.x, 3), y: first!.y });
+    engine.send({ type: "cat.drop" });
+    const frames = stepCat(engine, world, 3).frames;
+    expect(Math.min(...frames.map((f) => f.vy))).toBeLessThan(0);
+    expect(Math.min(...frames.map((f) => f.y))).toBeGreaterThan(first!.y - 0.5 * body);
+    expect(Math.max(...frames.map((f) => f.y))).toBeLessThanOrEqual(first!.y + 0.3 * body + 1);
+    const last = frames[frames.length - 1]!;
+    expect(last.grounded).toBe(true);
+    expect(last.y).toBe(first!.y);
+    expect(engine.debug().surfaceId).toBe(first!.surfaceId);
+  });
+
+  it("comes down on a place it may stand when it is let go over words, buttons or the edge of the screen, never in them", () => {
+    for (const [hx, hy] of [[600, 300], [60, 500], [1900, 200], [1000, 90], [700, 1070], [960, 560]] as const) {
+      const { engine, world } = settled(5);
+      lift(engine, world, { x: hx, y: hy });
+      engine.send({ type: "cat.drop" });
+      const last = stepCat(engine, world, 6).frames.pop()!;
+      const ledges = computeLedges(world);
+      expect(last.grounded, `${hx},${hy}`).toBe(true);
+      expect(last.appear, `${hx},${hy}`).toBeGreaterThan(0.9);
+      expect(ledges.some((l) => l.surfaceId === engine.debug().surfaceId && Math.abs(l.y - last.y) < 1.5 && last.x >= l.x0 - 1 && last.x <= l.x1 + 1), `${hx},${hy}`).toBe(true);
+      for (const zone of world.keepOut) expect(shapeHits(last.clip, last.facing, last.x, last.y, world.bodyLength, zone), `${hx},${hy}`).toBe(false);
+    }
+  });
+
+  it("washes after it lands, as if it had meant to, most of the time, and sits a moment first", () => {
+    let washed = 0;
+    const seeds = Array.from({ length: 16 }, (_, i) => i + 1);
+    for (const seed of seeds) {
+      const { engine, world, body } = settled(seed);
+      lift(engine, world, { x: 900, y: 500 - 0.73 * body });
+      engine.send({ type: "cat.drop" });
+      const acts: string[] = [];
+      for (let i = 0; i < 8 * 30; i++) {
+        engine.update(world, 1 / 30);
+        const act = engine.debug().act;
+        if (acts[acts.length - 1] !== act) acts.push(act);
+      }
+      const fell = acts.indexOf("fall");
+      expect(fell, `seed ${seed}: ${acts.join(">")}`).toBeGreaterThanOrEqual(0);
+      expect(acts[fell + 1], `seed ${seed}`).toBe("rest:sit");
+      if (acts[fell + 2] === "shot:groom") washed++;
+    }
+    expect(washed).toBeGreaterThan(seeds.length * 0.5);
+    expect(washed).toBeLessThan(seeds.length);
+  });
+
+  it("is not picked up when the viewer wants quiet or less motion, in a film, or while a menu has sent it away, and is still stroked", () => {
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const { engine, world, body } = settled(6, { [flag]: true });
+      engine.send({ type: "cat.grab", at: { x: engine.frame.x, y: engine.frame.y - 0.4 * body } });
+      engine.send({ type: "cat.carry", at: { x: 800, y: 300 } });
+      const frames = stepCat(engine, world, 1).frames;
+      expect(frames.every((f) => !f.carried && f.grounded), flag).toBe(true);
+      expect(Math.abs(frames[frames.length - 1]!.x - frames[0]!.x), flag).toBeLessThan(1);
+    }
+    const film = playerWorld(1920, 1080, "playing", false);
+    const inFilm = new CatEngine(6);
+    stepCat(inFilm, film, 8);
+    inFilm.send({ type: "cat.grab", at: { x: inFilm.frame.x, y: inFilm.frame.y - 40 } });
+    expect(stepCat(inFilm, film, 1).frames.some((f) => f.carried)).toBe(false);
+    const { engine, page } = settled(6);
+    stepCat(engine, browseWorld(page, { modal: true }), 3);
+    engine.send({ type: "cat.grab", at: { x: 500, y: 500 } });
+    expect(stepCat(engine, browseWorld(page, { modal: true }), 1).frames.some((f) => f.carried)).toBe(false);
+  });
+
+  it("is busy in a hand: it is not stroked, called, told or shown a poster, but it can be sent away", () => {
+    const { engine, world, body } = settled(8);
+    const grip = { x: engine.frame.x, y: engine.frame.y - 0.4 * body };
+    engine.send({ type: "cat.grab", at: grip });
+    engine.update(world, 1 / 30);
+    engine.send({ type: "cat.pet" });
+    engine.send({ type: "cat.call", at: { x: 300, y: 300 } });
+    engine.send({ type: "cat.command", command: "sit" });
+    engine.send({ type: "cat.point", targetId: world.targets[0]!.id });
+    const frames = carryTo(engine, world, grip, grip, 0.5);
+    expect(frames.every((f) => f.carried && !f.petted && f.clip === "stand")).toBe(true);
+    expect(engine.debug().queue).toEqual([]);
+    engine.send({ type: "cat.command", command: "away" });
+    const gone = stepCat(engine, world, 1).frames;
+    expect(gone[0]!.carried).toBe(false);
+    expect(gone[gone.length - 1]!.appear).toBe(0);
+  });
+
+  it("lets go of a hand that has said nothing for a while (a pointer that was lost), and of one that goes with the page away or into a film", () => {
+    const { engine, world, body } = settled(7);
+    engine.send({ type: "cat.grab", at: { x: engine.frame.x, y: engine.frame.y - 0.4 * body } });
+    const frames = stepCat(engine, world, 6).frames;
+    const held = frames.filter((f) => f.carried).length;
+    expect(held / 30).toBeGreaterThan(2.3);
+    expect(held / 30).toBeLessThan(2.8);
+    expect(frames[frames.length - 1]!.grounded).toBe(true);
+    // (a menu opens: the cat is gone at once, hand or no hand, and is back when it shuts)
+    const other = settled(7);
+    other.engine.send({ type: "cat.grab", at: { x: other.engine.frame.x, y: other.engine.frame.y - 0.4 * body } });
+    other.engine.update(other.world, 1 / 30);
+    expect(other.engine.frame.carried).toBe(true);
+    const away = stepCat(other.engine, browseWorld(other.page, { modal: true }), 2).frames;
+    expect(away.some((f) => f.carried)).toBe(false);
+    expect(away[away.length - 1]!.appear).toBe(0);
+    other.engine.send({ type: "cat.carry", at: { x: 500, y: 500 } });
+    const back = stepCat(other.engine, browseWorld(other.page), 5).frames;
+    expect(back.some((f) => f.carried)).toBe(false);
+    expect(back[back.length - 1]!.appear).toBe(1);
+  });
+
+  it("falls to the place under it when the shelf it was aimed at is gone, and does not fall for ever", () => {
+    const { engine, world, body } = settled(2);
+    const [, second] = shelves(world);
+    const x = (second!.x0 + second!.x1) / 2;
+    lift(engine, world, { x, y: second!.y - 3 * body - 0.73 * body });
+    engine.send({ type: "cat.drop" });
+    stepCat(engine, world, 0.15);
+    // the page changes under it: that row is gone
+    const page = defaultPage();
+    page.rows = 1;
+    const frames = stepCat(engine, browseWorld(page), 8).frames;
+    const last = frames[frames.length - 1]!;
+    expect(last.grounded).toBe(true);
+    expect(last.appear).toBeGreaterThan(0.9);
+    expect(Number.isFinite(last.y)).toBe(true);
+  });
+
+  it("is steered so as to arrive over its place as it lands, however far across the hand let go of it: nothing is put right in the last frame", () => {
+    // (the first version closed a part of what was left every frame and snapped the rest at the touchdown: up to a third of a body's length, seen by the soak at 60 fps)
+    for (const [hx, hy] of [[600, 300], [60, 500], [1900, 200], [960, 560], [1250, 700]] as const) {
+      const { engine, world, body } = settled(5);
+      lift(engine, world, { x: hx, y: hy });
+      engine.send({ type: "cat.drop" });
+      const frames = stepCat(engine, world, 6, 60).frames;
+      const down = frames.findIndex((f) => f.grounded);
+      expect(down, `${hx},${hy}`).toBeGreaterThan(2);
+      const last = Math.abs(frames[down]!.x - frames[down - 1]!.x);
+      const before = Math.abs(frames[down - 1]!.x - frames[down - 2]!.x);
+      expect(last, `${hx},${hy}: ${last.toFixed(1)} px at the touchdown, ${before.toFixed(1)} before it`).toBeLessThan(Math.max(2 * before, 0.01 * body) + 0.5);
+    }
+  });
+
+  it("is gone, and back at home, when the window is made smaller under it in the air and leaves it off the screen: it is not carried across the page in view", () => {
+    const { engine, world, body } = settled(2);
+    const [, second] = shelves(world);
+    lift(engine, world, { x: 1500, y: second!.y - 3 * body - 0.73 * body });
+    engine.send({ type: "cat.drop" });
+    stepCat(engine, world, 0.1);
+    expect(engine.frame.x).toBeGreaterThan(1450);
+    // (the window is made narrower: the shelf it was falling to is still there, 190 px from the cat, which is itself now outside the screen)
+    const small: World = { ...world, viewport: { ...world.viewport, w: 1300 } };
+    expect(computeLedges(small).some((ledge) => ledge.surfaceId === second!.surfaceId)).toBe(true);
+    const acts: string[] = [];
+    const frames = stepCat(engine, small, 8, 60, () => {
+      acts.push(engine.debug().act);
+    }).frames;
+    // (it fades out where it is, and nothing but that is seen off the new edge for more than a moment: a third of a second of steering back would be seen)
+    expect(acts).toContain("fade:out");
+    expect(frames.filter((f, i) => f.appear > 0.05 && acts[i] !== "fade:out" && f.x > 1300 + 0.55 * small.bodyLength).length).toBeLessThanOrEqual(1);
+    const end = frames[frames.length - 1]!;
+    expect(end.appear).toBeGreaterThan(0.9);
+    expect(end.grounded).toBe(true);
+    expect(end.x).toBeLessThanOrEqual(1300);
+  });
+
+  it("is led in, not set on the edge in a frame, when the window is made smaller under a cat in a hand and leaves part of it on the screen (the soak found 64 px at once)", () => {
+    const { engine, world, body } = settled(4);
+    lift(engine, world, { x: 1500, y: 300 });
+    expect(engine.frame.x).toBeGreaterThan(1450);
+    // (the edge is 60 px from the middle of the cat, which is more than half a body from a cat's middle to its tail's end on the screen)
+    const edge = engine.frame.x - 60;
+    const small: World = { ...world, viewport: { ...world.viewport, w: edge } };
+    let before = engine.frame.x;
+    const frames = stepCat(engine, small, 1.5, 30).frames;
+    frames.forEach((f, i) => {
+      expect(f.carried, `frame ${i}`).toBe(true);
+      expect(Math.abs(f.x - before), `frame ${i}`).toBeLessThanOrEqual((16 * body) / 30 + 1);
+      before = f.x;
+    });
+    // (it is brought in over a few frames, not none and not a second)
+    const inside = frames.findIndex((f) => f.x <= edge);
+    expect(inside).toBeGreaterThan(1);
+    expect(inside).toBeLessThan(15);
+    expect(frames.slice(inside).every((f) => f.x <= edge)).toBe(true);
+  });
+
+  it("is put back on the screen in the frame the window is made smaller when none of the cat in a hand is left on it: nobody sees that", () => {
+    const { engine, world } = settled(4);
+    lift(engine, world, { x: 1500, y: 300 });
+    const small: World = { ...world, viewport: { ...world.viewport, w: 900 } };
+    const frames = stepCat(engine, small, 0.5, 30).frames;
+    expect(frames[0]!.carried).toBe(true);
+    expect(frames[0]!.x).toBeLessThanOrEqual(900);
+  });
+
+  it("is deterministic: the same events give the same cat", () => {
+    const go = (seed: number) => {
+      const { engine, world, body } = settled(seed);
+      lift(engine, world, { x: 1200, y: 520 - 0.73 * body });
+      engine.send({ type: "cat.drop" });
+      return stepCat(engine, world, 5).frames.map((f) => `${f.x.toFixed(2)},${f.y.toFixed(2)},${f.clip}`);
+    };
+    expect(go(12)).toEqual(go(12));
+  });
+
+  it("goes through bad afternoons of hands, pages that change and menus that open, with nothing wrong", () => {
+    const chaos = { scroll: true, focus: true, resize: true, modal: true, film: true, touch: true, route: true, visibility: true, hand: true };
+    let held = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const stats = runSession({ seed, seconds: 600, chaos });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      held += stats.acts["carried"] ?? 0;
+    }
+    expect(held).toBeGreaterThan(30);
+    const calm = runSession({ seed: 3, seconds: 900, chaos: { hand: true, scroll: true, focus: true } });
+    expect(calm.violations).toEqual([]);
+    expect(calm.acts["fall"] ?? 0).toBeGreaterThan(1);
+  });
+
+  it("goes through the afternoons that once found it out (the soak's seeds): a stalk cut by the edge of the screen after a window was made smaller, a fall left off the screen, a snap at the touchdown", () => {
+    const chaos = { scroll: true, focus: true, resize: true, modal: true, film: true, touch: true, route: true, visibility: true, hand: true };
+    const once: Array<{ seed: number; seconds: number; fps?: number; names?: boolean }> = [
+      { seed: 581, seconds: 900, fps: 20 },
+      { seed: 196, seconds: 600 },
+      { seed: 283, seconds: 900, names: true },
+      { seed: 294, seconds: 900, fps: 60 },
+      { seed: 386, seconds: 600, fps: 60 },
+      { seed: 62, seconds: 600, fps: 60 },
+      { seed: 153, seconds: 600, fps: 60 },
+      { seed: 313, seconds: 600 },
+      { seed: 335, seconds: 600, fps: 60 },
+    ];
+    for (const run of once) expect(runSession({ ...run, chaos }).violations, JSON.stringify(run)).toEqual([]);
+  });
+});
+
 describe("the cat in a film", () => {
   const film = (state: World["player"] = "playing", controls = false) => playerWorld(1920, 1080, state, controls);
 
@@ -705,7 +1101,8 @@ describe("the cat in a film", () => {
     const engine = new CatEngine(1);
     run(engine, browseWorld(defaultPage()), 4);
     const w = film();
-    const { frames } = stepCat(engine, w, 30);
+    // (it watches the picture a while first, and nods off: see "watches the picture" below)
+    const { frames } = stepCat(engine, w, 45);
     const last = frames[frames.length - 1]!;
     const perch = w.surfaces[0]!;
     expect(last.y).toBe(perch.y);
@@ -721,7 +1118,7 @@ describe("the cat in a film", () => {
   it("wakes when the film is paused, and goes back to sleep when it plays", () => {
     const engine = new CatEngine(1);
     const w = film();
-    run(engine, w, 30);
+    run(engine, w, 45);
     engine.send({ type: "player.pause" });
     const paused = stepCat(engine, film("paused"), 5).frames;
     expect(paused[paused.length - 1]!.clip).toBe("loaf");
@@ -733,7 +1130,7 @@ describe("the cat in a film", () => {
 
   it("stays where it is, asleep, when the controls come and go over it: the layer is under them, so it has no reason to go (and does not flicker with every key)", () => {
     const engine = new CatEngine(1);
-    run(engine, film(), 30);
+    run(engine, film(), 45);
     const where = { x: engine.frame.x, y: engine.frame.y };
     let fades = 0;
     let was = engine.frame.appear;
@@ -749,7 +1146,8 @@ describe("the cat in a film", () => {
       }
     }
     expect(fades).toBe(0);
-    expect(engine.frame.clip).toBe("curl");
+    // (asleep, or turning over in its sleep: in place either way)
+    expect(["curl", "shift"]).toContain(engine.frame.clip);
   });
 
   it("finds its perch all the same when the film begins to play while the controls are over every place it could have", () => {
@@ -764,8 +1162,74 @@ describe("the cat in a film", () => {
       const last = frames[frames.length - 1]!;
       expect(last.appear, `seed ${seed}`).toBe(1);
       expect(last.y, `seed ${seed}`).toBe(film().surfaces[0]!.y);
-      expect(last.clip, `seed ${seed}`).toBe("curl");
+      // (watching the picture, or nodding off, or asleep: not walking about the picture)
+      expect(["loaf", "doze", "curl"], `seed ${seed}`).toContain(last.clip);
     }
+  });
+
+  it("watches the picture from its perch, nods off, and sleeps; it does not watch the film all over again every time it wakes", () => {
+    const engine = new CatEngine(1);
+    const w = film();
+    const { frames } = stepCat(engine, w, 420);
+    const seen: string[] = [];
+    for (const f of frames) {
+      if (f.appear < 1) continue;
+      if (seen[seen.length - 1] !== f.clip) seen.push(f.clip);
+    }
+    expect(seen.slice(0, 3)).toEqual(["loaf", "doze", "curl"]);
+    expect(seen.filter((c) => c === "loaf")).toHaveLength(1);
+    expect(seen.filter((c) => c === "doze")).toHaveLength(1);
+    // (it looks at the picture while it watches it: the middle of the screen, a little above the middle)
+    const watching = frames.filter((f) => f.appear === 1 && f.clip === "loaf");
+    expect(watching.length).toBeGreaterThan(30 * 6);
+    for (const f of watching) {
+      expect(f.look?.x).toBeCloseTo(960, 0);
+      expect(f.look?.y).toBeCloseTo(0.38 * 1080, 0);
+    }
+    // (and as it nods off it gets sleepy by degrees, and is not asleep until it sleeps)
+    const dozing = frames.filter((f) => f.appear === 1 && f.clip === "doze");
+    expect(dozing.length).toBeGreaterThan(30 * 7);
+    expect(Math.max(...dozing.map((f) => f.drowsy))).toBeLessThan(0.75);
+    expect(Math.max(...dozing.map((f) => f.drowsy))).toBeGreaterThan(0.5);
+    expect(Math.min(...frames.filter((f) => f.appear === 1 && f.clip === "curl").map((f) => f.drowsy))).toBeGreaterThan(0.6);
+  });
+
+  it("turns over in its sleep now and then, in its place, without waking: the shift keeps it drowsy and does not move it", () => {
+    const engine = new CatEngine(1);
+    const w = film();
+    const { frames } = stepCat(engine, w, 420);
+    const shifts = frames.filter((f) => f.appear === 1 && f.clip === "shift");
+    expect(shifts.length).toBeGreaterThan(30 * 2.5);
+    const perch = frames.filter((f) => f.appear === 1 && f.clip === "curl")[0]!;
+    for (const f of shifts) {
+      expect(f.x).toBeCloseTo(perch.x, 3);
+      expect(f.y).toBeCloseTo(perch.y, 3);
+      expect(f.drowsy).toBeGreaterThan(0.85);
+    }
+    // (more than once in a long film, and after a good sleep each time)
+    let starts = 0;
+    let last = "";
+    let sleptFor = 0;
+    let shortest = Infinity;
+    for (const f of frames) {
+      if (f.appear < 1) continue;
+      if (f.clip === "curl") sleptFor += 1 / 30;
+      if (f.clip === "shift" && last !== "shift") {
+        starts++;
+        shortest = Math.min(shortest, sleptFor);
+        sleptFor = 0;
+      }
+      last = f.clip;
+    }
+    expect(starts).toBeGreaterThanOrEqual(2);
+    expect(shortest).toBeGreaterThan(30);
+  });
+
+  it("goes straight to sleep, and stays as it is, for a viewer who wants no motion: no watching, no nodding off, no turning over", () => {
+    const engine = new CatEngine(1);
+    const w = playerWorld(1920, 1080, "playing", false, { reducedMotion: true });
+    const { frames } = stepCat(engine, w, 300);
+    expect([...new Set(frames.filter((f) => f.appear === 1).map((f) => f.clip))]).toEqual(["curl"]);
   });
 
   it("is not left unseen by a command that comes as it is put in its new place, before it has faded in", () => {
@@ -794,6 +1258,319 @@ describe("the cat in a film", () => {
     const none: World = { ...film(), surfaces: [] };
     const { frames } = stepCat(engine, none, 20);
     expect(frames.every((f) => f.appear === 0)).toBe(true);
+  });
+});
+
+describe("the cat and the things on the page", () => {
+  const page = (): World => browseWorld(defaultPage());
+
+  /** A cat that has come to rest somewhere on the page (sitting or standing, on a shelf, for a moment already), stepped there from a seed. */
+  const resting = (seed: number, w: World = page()): CatEngine => {
+    const engine = new CatEngine(seed);
+    let still = 0;
+    for (let i = 0; i < 30 * 180; i++) {
+      engine.update(w, 1 / 30);
+      const act = engine.debug().act;
+      still = engine.frame.appear > 0.99 && engine.frame.grounded && (act === "rest:sit" || act === "rest:stand") ? still + 1 : 0;
+      if (still > 15) return engine;
+    }
+    throw new Error(`seed ${seed}: the cat never came to rest`);
+  };
+
+  it("looks over a drop before it goes down it, and measures a climb before it goes up, when it is in no hurry", () => {
+    let drops = 0;
+    let climbs = 0;
+    for (const seed of [1, 2, 3, 4]) {
+      const w = page();
+      const engine = new CatEngine(seed);
+      let before = "";
+      for (let i = 0; i < 30 * 600; i++) {
+        engine.update(w, 1 / 30);
+        const dbg = engine.debug();
+        if (dbg.act === "jump" && before !== "jump") {
+          const to = w.surfaces.find((s) => s.id === dbg.jumpTo);
+          const from = w.surfaces.find((s) => s.id === dbg.surfaceId);
+          if (to && from) {
+            const fall = to.y - from.y;
+            if (fall >= 1.3 * w.bodyLength) {
+              drops++;
+              expect(before, `seed ${seed}: down ${fall.toFixed(0)}px`).toBe("shot:peek");
+            } else if (-fall >= 1.1 * w.bodyLength) {
+              climbs++;
+              expect(before, `seed ${seed}: up ${(-fall).toFixed(0)}px`).toBe("shot:wiggle");
+            }
+          }
+        }
+        before = dbg.act;
+      }
+    }
+    expect(drops).toBeGreaterThan(3);
+    expect(climbs).toBeGreaterThan(3);
+  });
+
+  it("is not made to look over the edge by a cat that is hurrying (called, sent to a poster)", () => {
+    const w = page();
+    const engine = new CatEngine(3);
+    stepCat(engine, w, 20);
+    const acts = new Set<string>();
+    const watch = (seconds: number) => {
+      for (let i = 0; i < 30 * seconds; i++) {
+        engine.update(w, 1 / 30);
+        acts.add(engine.debug().act);
+      }
+    };
+    // (called to the bottom of the screen, and then sent to a poster on another row)
+    engine.send({ type: "cat.call", at: { x: 900, y: 1070 } });
+    watch(12);
+    engine.send({ type: "cat.point", targetId: w.targets[0]!.id });
+    watch(12);
+    expect(acts.has("jump")).toBe(true);
+    expect(acts.has("shot:peek")).toBe(false);
+  });
+
+  /** The pointer goes from `from` body lengths ahead of the middle of the cat's back to `to`, `step` body lengths a frame; the feelings the cat shows meanwhile. */
+  const dash = (engine: CatEngine, w: World, from: number, to: number, step: number): string[] => {
+    const shown: string[] = [];
+    const cx = engine.frame.x;
+    const cy = engine.frame.y - 0.4 * w.bodyLength;
+    const frames = Math.ceil(Math.abs(to - from) / step);
+    for (let i = 0; i <= frames; i++) {
+      const d = from + Math.sign(to - from) * Math.min(Math.abs(to - from), i * step);
+      engine.update({ ...w, pointer: { x: cx + d * w.bodyLength, y: cy } }, 1 / 30);
+      shown.push(engine.frame.emote ?? "none");
+    }
+    return shown;
+  };
+
+  it("flinches when the pointer dashes at it, and freezes, then washes; not at one that drifts up to it or lands on it; and not again for a good while", () => {
+    const w = page();
+    for (const seed of [2, 3, 4]) {
+      const engine = resting(seed, w);
+      const shown = dash(engine, w, 2.4, 0.8, 0.5);
+      expect(shown, `seed ${seed}`).toContain("startle");
+      // (the fright is brief, and the cat stays where it was)
+      const after = stepCat(engine, w, 3).frames;
+      expect(after.some((f) => f.emote === "startle")).toBe(true);
+      expect(after[after.length - 1]!.emote).toBe("none");
+      // ...and a second dash a few seconds later is not another fright
+      expect(dash(engine, w, 2.4, 0.8, 0.5), `seed ${seed}, again`).not.toContain("startle");
+    }
+    // (a pointer that comes slowly, or lands on the cat, is not a fright)
+    for (const seed of [2, 3, 4]) {
+      expect(dash(resting(seed, w), w, 2.4, 0.8, 0.03), `seed ${seed}, slowly`).not.toContain("startle");
+      expect(dash(resting(seed, w), w, 3, 0.1, 3), `seed ${seed}, onto it`).not.toContain("startle");
+    }
+    // (nor does a cat that is asked for quiet, or for less motion, flinch)
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      expect(dash(resting(3, w), { ...w, [flag]: true }, 2.4, 0.8, 0.5), flag).not.toContain("startle");
+    }
+  });
+
+  it("bats at a pointer that rests up by its head, a little way off: goes to a paw's length from it, faces it, reaches at it, and not again for a while", () => {
+    let batted = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const w0 = page();
+      const engine = resting(seed, w0);
+      const pointer = { x: engine.frame.x + 1.8 * w0.bodyLength, y: engine.frame.y - 0.7 * w0.bodyLength };
+      const w: World = { ...w0, pointer };
+      const starts: number[] = [];
+      let inTap = false;
+      for (let i = 0; i < 30 * 220; i++) {
+        const f = engine.update(w, 1 / 30);
+        if (f.clip === "tap") {
+          if (!inTap) starts.push(i / 30);
+          inTap = true;
+          expect(f.facing, `seed ${seed}`).toBe(pointer.x > f.x ? 1 : -1);
+          expect(f.reach?.x).toBeCloseTo(pointer.x, 1);
+          expect(f.reach?.y).toBeCloseTo(pointer.y, 1);
+          expect(Math.abs(pointer.x - f.x) / w.bodyLength, `seed ${seed}`).toBeGreaterThan(0.45);
+          expect(Math.abs(pointer.x - f.x) / w.bodyLength, `seed ${seed}`).toBeLessThan(1.15);
+        } else inTap = false;
+      }
+      if (starts.length > 0) batted++;
+      for (let i = 1; i < starts.length; i++) expect(starts[i]! - starts[i - 1]!, `seed ${seed}`).toBeGreaterThan(70);
+    }
+    expect(batted).toBeGreaterThanOrEqual(4);
+  });
+
+  it("does not bat at a pointer that is on the cat, far from it, or down at its feet, nor when the viewer wants quiet or less motion (the pointer stays where it is to the cat, wherever the cat goes)", () => {
+    const L2 = page().bodyLength;
+    const tries: Array<[string, { dx: number; dy: number }, Partial<World>]> = [
+      ["on the cat", { dx: 0.2, dy: -0.5 }, {}],
+      ["far off", { dx: 4.5, dy: -0.7 }, {}],
+      ["at its feet", { dx: 1.8, dy: 0.2 }, {}],
+      ["quiet", { dx: 1.8, dy: -0.7 }, { quiet: true }],
+      ["reduced motion", { dx: 1.8, dy: -0.7 }, { reducedMotion: true }],
+    ];
+    for (const [name, off, flags] of tries) {
+      for (const seed of [1, 2, 3, 4]) {
+        const w0: World = { ...page(), ...flags };
+        const engine = resting(seed, w0);
+        for (let i = 0; i < 30 * 150; i++) {
+          const f = engine.update({ ...w0, pointer: { x: engine.frame.x + off.dx * L2, y: engine.frame.y + off.dy * L2 } }, 1 / 30);
+          if (f.clip === "tap") throw new Error(`${name}, seed ${seed}: batted at ${(i / 30).toFixed(1)} s`);
+        }
+      }
+    }
+    // (and the same pointer, a paw's length ahead of the cat's head, is something it does bat at: the cat is not simply deaf to it)
+    let batted = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const w0 = page();
+      const engine = resting(seed, w0);
+      for (let i = 0; i < 30 * 150; i++) {
+        const f = engine.update({ ...w0, pointer: { x: engine.frame.x + 1.8 * L2, y: engine.frame.y - 0.7 * L2 } }, 1 / 30);
+        if (f.clip === "tap") {
+          batted++;
+          break;
+        }
+      }
+    }
+    expect(batted).toBeGreaterThanOrEqual(3);
+  });
+
+  it("jumps for joy on the spot when it is told a title was found, and has a letdown when it is told there was none; the quiet ones feel it without the jump", () => {
+    const w = page();
+    for (const seed of [2, 3, 4]) {
+      const engine = resting(seed, w);
+      const x0 = engine.frame.x;
+      const y0 = engine.frame.y;
+      engine.send({ type: "cat.react", kind: "found" });
+      const frames = stepCat(engine, w, 3).frames;
+      expect(frames[1]!.emote, `seed ${seed}`).toBe("joy");
+      expect(frames.filter((f) => f.clip === "jump").length, `seed ${seed}`).toBeGreaterThan(8);
+      // (a hop on the spot: it comes down within half a body of where it went up, on the same shelf; what it does afterwards is its own affair)
+      const first = frames.findIndex((f) => f.clip === "jump");
+      let end = first;
+      while (end + 1 < frames.length && frames[end + 1]!.clip === "jump") end++;
+      expect(Math.max(...frames.slice(0, end + 1).map((f) => Math.abs(f.x - x0))), `seed ${seed}`).toBeLessThan(0.5 * w.bodyLength);
+      expect(frames[end]!.y, `seed ${seed}`).toBeCloseTo(y0, 1);
+      // (a joy is a moment)
+      expect(frames[frames.length - 1]!.emote).toBe("none");
+    }
+    for (const seed of [2, 3, 4]) {
+      const engine = resting(seed, w);
+      engine.send({ type: "cat.react", kind: "empty" });
+      const frames = stepCat(engine, w, 3.2).frames;
+      expect(frames[1]!.emote, `seed ${seed}`).toBe("droop");
+      for (const f of frames.slice(15, 70)) {
+        expect(f.clip, `seed ${seed}`).toBe("sit");
+        expect(f.emote).toBe("droop");
+      }
+      expect(frames[frames.length - 1]!.emote).toBe("none");
+    }
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const still = { ...w, [flag]: true };
+      const engine = resting(3, still);
+      engine.send({ type: "cat.react", kind: "found" });
+      const frames = stepCat(engine, still, 3).frames;
+      expect(frames[1]!.emote, flag).toBe("joy");
+      expect(frames.some((f) => f.clip === "jump"), flag).toBe(false);
+    }
+  });
+
+  it("does not take a joy for a reason to jump when it is not on its feet on a shelf (asleep, in a hand, away, or not yet there)", () => {
+    const w = page();
+    const asleep = new CatEngine(3);
+    stepCat(asleep, w, 20);
+    asleep.send({ type: "cat.command", command: "sleep" });
+    stepCat(asleep, w, 5);
+    asleep.send({ type: "cat.react", kind: "found" });
+    const slept = stepCat(asleep, w, 3).frames;
+    expect(slept.every((f) => f.clip === "curl")).toBe(true);
+    expect(slept.every((f) => (f.emote ?? "none") === "none")).toBe(true);
+    // (the page told it before it was there: nothing happens, and nothing is wrong)
+    const early = new CatEngine(3);
+    early.send({ type: "cat.react", kind: "found" });
+    expect(stepCat(early, w, 2).frames.every((f) => Number.isFinite(f.x) && (f.emote ?? "none") === "none")).toBe(true);
+  });
+
+  it("sometimes goes to the place above a poster on the next row and looks down at it, and sometimes cocks its head at a new card", () => {
+    let inspected = 0;
+    let tilts = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const w = page();
+      const engine = new CatEngine(seed);
+      let shot = false;
+      let was = "";
+      let peekLooks = 0;
+      let card = 0;
+      for (let i = 0; i < 30 * 600; i++) {
+        // (a new card gets the focus every twenty-odd seconds)
+        if (i % (30 * 23) === 0) {
+          card++;
+          const target = w.targets[card % w.targets.length]!;
+          engine.send({ type: "catalog.itemFocused", id: target.id });
+          w.focus = { x: target.rect.x - 12, y: target.rect.y - 12, w: target.rect.w + 24, h: target.rect.h + 24 };
+        }
+        const f = engine.update(w, 1 / 30);
+        const act = engine.debug().act;
+        if (f.emote === "tilt" && was !== "tilt") tilts++;
+        was = f.emote ?? "none";
+        if (act === "shot:peek") {
+          shot = true;
+          if (f.look && f.look.y > f.y) peekLooks++;
+        } else if (shot) {
+          shot = false;
+          // (a peek that is not followed by a leap was a cat looking at a poster, not at a drop)
+          if (act !== "jump" && peekLooks > 20) inspected++;
+          peekLooks = 0;
+        }
+      }
+    }
+    expect(inspected).toBeGreaterThanOrEqual(2);
+    expect(tilts).toBeGreaterThanOrEqual(1);
+  });
+
+  it("falls into a deeper sleep in the library now and then with a turn in it (a nap of a minute is not one stillness), and ponders now and then", () => {
+    let shifts = 0;
+    let thinks = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      const stats = runSession({ seed, seconds: 900 });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      shifts += stats.acts["shot:shift"] ?? 0;
+    }
+    expect(shifts).toBeGreaterThan(0);
+    for (const seed of [1, 2, 3, 4]) {
+      const engine = new CatEngine(seed);
+      const w = page();
+      let was = false;
+      for (const f of stepCat(engine, w, 400).frames) {
+        const now = f.emote === "think";
+        if (now && !was) thinks++;
+        if (now) expect(["sit", "loaf", "stand"], `seed ${seed}`).toContain(f.clip);
+        was = now;
+      }
+    }
+    expect(thinks).toBeGreaterThanOrEqual(2);
+  });
+
+  it("goes through bad afternoons with a mouse about the page, hands, films and menus, and never does the wrong scene for the viewer", () => {
+    const chaos = { mouse: true, touch: true, hand: true, scroll: true, focus: true, film: true, modal: true, resize: true, route: true, visibility: true };
+    let peeks = 0;
+    let dozes = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const stats = runSession({ seed, seconds: 600, chaos });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      peeks += stats.acts["shot:peek"] ?? 0;
+      dozes += stats.acts["shot:doze"] ?? 0;
+    }
+    expect(peeks).toBeGreaterThan(0);
+    expect(dozes).toBeGreaterThan(0);
+    // (with all of that going on the pointer is seldom at rest in the cat's reach in a browsing page, so batting at it is counted on a page with only a mouse about)
+    let taps = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const stats = runSession({ seed, seconds: 600, chaos: { mouse: true } });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      taps += stats.acts["tap"] ?? 0;
+    }
+    expect(taps).toBeGreaterThan(0);
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      for (const some of [chaos, { mouse: true }]) {
+        const stats = runSession({ seed: 5, seconds: 600, chaos: some, [flag]: true });
+        expect(stats.violations, flag).toEqual([]);
+        expect(stats.acts["tap"] ?? 0, flag).toBe(0);
+      }
+    }
   });
 });
 
