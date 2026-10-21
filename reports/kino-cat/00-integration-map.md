@@ -54,10 +54,11 @@ Streaming, the proxy, HLS, search, pairing, parties, accounts, friends/chat, the
 
 | Piece | Raw | gzip | brotli | Loaded when |
 |---|---|---|---|---|
-| everything the app loads anyway, against main (boot + settings + chip + i18n in `index-*.js`, the corner button and Settings rows in `Tv-*.js`, a 14 KB `dpad` chunk and a 0.5 KB `bus` chunk that the cat's lazy chunk and the TV page now share, and the chunk reshuffle that follows) | + 12.3 KB | **+ 4.7 KB** | – | always (a few lines run) |
-| of which `index-*.js` alone (237.2 → 240.6 KB raw) | + 3.4 KB | + 1.1 KB | + 0.9 KB | always |
-| lazy chunk `host-*.js` (engine + rig + classic canvas cat + GL renderer + shader + panel) | 120.6 KB | 44.2 KB | 39.1 KB | only when all gates are open |
-| `host-*.css` (the layer, the panel) | 4.4 KB | 1.5 KB | 1.3 KB | with the lazy chunk |
-| `cat-*.mesh` (the solid cat's model, offline-built, skinned on the GPU; 11,966 vertices) | 343.5 KB | 218.3 KB | 183.1 KB | only when the solid cat is used (WebGL available), once |
+| everything the app loads anyway, against `origin/main` after PR #27 (boot + settings + chip + i18n in `index-*.js`, the corner button and Settings rows in `Tv-*.js`, a 14 KB `dpad` chunk and a 0.5 KB `bus` chunk that the cat's lazy chunk and the TV page now share) | + 22.4 KB | **+ 6.6 KB** | – | always (a few lines run) |
+| of which `index-*.js` alone (237.2 → 240.6 KB raw) | + 3.4 KB | + 1.1 KB | – | always |
+| of which `Tv-*.js` (190.2 → 194.6 KB raw; the corner button, the Settings rows and the cat's settings page) | + 4.4 KB | + 1.0 KB | – | on the TV page |
+| lazy chunk `host-*.js` (engine + rig + simple canvas cat + GL renderer + shader + panel) | 140.3 KB | 50.7 KB | 44.8 KB | only when all gates are open |
+| `host-*.css` (the layer, the panel) | 4.9 KB | 1.7 KB | 1.4 KB | with the lazy chunk |
+| `cat-*.mesh` (the detailed cat's model, built offline from the Meshy AI model, skinned on the GPU; 11,181 vertices) | 272.2 KB | 164.9 KB | 147.8 KB | only when the detailed cat is used (WebGL available), once |
 
-Measured on the build in `dist/client` against `origin/main`'s (a throw-away script: gzip level 9, brotli quality 11). The entry stylesheet is byte for byte main's. The `dpad` and `bus` chunks are the reviewer's finding 13 (ISSUE_LOG #38): they exist because both the TV page and the cat's lazy chunk import them. Plan budget "< 150 KB before art": code 44.2 KB gzip, **met**; the model is the art. (KB here is 1,000 bytes; the figures are of the build of the branch's head, redone after the last source change.)
+Measured on the build in `dist/client` against `origin/main`'s (a throw-away script: gzip level 9, brotli default; `index`, `Tv`, `dpad` and `bus` summed: 127,559 → 134,175 B gzip). The entry stylesheet is byte for byte main's. The `dpad` and `bus` chunks are the reviewer's finding 13 (ISSUE_LOG #38): they exist because both the TV page and the cat's lazy chunk import them. Plan budget "< 150 KB before art": code 50.7 KB gzip (140.3 KB raw), **met**; the model is the art. (KB here is 1,000 bytes; the figures are of the build of the branch's head, redone after the last source change.)

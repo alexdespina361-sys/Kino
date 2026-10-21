@@ -32,7 +32,7 @@ The phone as a *remote* has no cat. The cat lives on the screen that plays.
 | The device asks for it | off | Settings → Cat companion (`kino.cat` in the device's own storage), or `?cat=on` for one load |
 | (testing) address | – | `?cat=on|off|debug`, `?catseed=N`, `?catbudget=ms`, `?catslow=ms`, `?catart=classic|solid`, `?catcoat=`, `?catsize=` |
 
-Nothing of the cat is downloaded before the gates are open: the always-loaded part is the switch, the corner button, the loader and the texts (+4.7 KB gzip over the whole app, measured against main); the cat is a lazy chunk (`host-*.js`, 44 KB gzip, plus a 1.5 KB stylesheet) and, for the detailed cat, one mesh file (`cat-*.mesh`, 218 KB gzip), fetched once.
+Nothing of the cat is downloaded before the gates are open: the always-loaded part is the switch, the corner button, the loader and the texts (+6.6 KB gzip over the whole app: the scripts of `/tv` were 127.6 KB gzip on `main` after PR #27 and are 134.2 KB now); the cat is a lazy chunk (`host-*.js`, 51 KB gzip, plus a 1.7 KB stylesheet) and, for the detailed cat, one mesh file (`cat-*.mesh`, 165 KB gzip), fetched once.
 
 ## Two cats, one governor
 
@@ -65,10 +65,17 @@ node node_modules/typescript/bin/tsc --noEmit -p tsconfig.json
 node node_modules/vitest/vitest.mjs run src/client/cat src/client/i18n/cat.test.ts src/server/features.test.ts
 $env:pnpm_config_verify_deps_before_run = "false"; $env:E2E_PORT = "8841"
 node node_modules/@playwright/test/cli.js test e2e/cat.spec.ts --reporter=list
-node node_modules/tsx/dist/cli.mjs scripts/cat/soak.mts 13 162 600
+node node_modules/tsx/dist/cli.mjs scripts/cat/soak.mts 13 412 600
 ```
 
-124 unit tests (8 files), 26 end-to-end tests, and a soak that puts the brain through 1,050 bad afternoons (150 seeds × 7 kinds) (a window made smaller, menus, films, a hidden tab, 20 fps) and checks that it is never stuck, never off the screen, never over a keep-out zone for long. The e2e run rebuilds `dist/client` (a tracked folder); the last commit of the branch is the final build.
+191 unit tests (8 files), 31 end-to-end tests, and a soak that puts the brain through 2,800 bad afternoons (400 seeds × 7 kinds, 10 minutes each: a window made smaller, a hand that carries the cat, menus, films, a hidden tab, 20 and 60 fps) and checks that it is never stuck, never off the screen, never over a keep-out zone for long (the last run of it found nothing, about five minutes). The e2e run rebuilds `dist/client` (a tracked folder); the last commit of the branch is the final build.
+
+## Next
+
+- **A sprite version for weak screens** (asked for by the owner): draw the detailed cat's poses and walk cycles to an atlas with our own renderer (the lab's `glsheet.mjs` already draws any pose to a canvas), ship it as one WebP and one JSON, and draw it with a small Canvas 2D painter where WebGL is too dear, in place of the cartoon fallback. The governor already has the rung for it. Not built.
+- A pass on real screens (a TV, a Fire Stick, an Android phone, an iPhone, Safari) with `?cat=debug`: the cost of the detailed cat there is unknown.
+- The cosmetic items in `reports/kino-cat/ANIMATION_BACKLOG.md` (flaps of fur on the model, the inside of the mouth, the scratching leg).
+- The owner to check the model's licence on the page it came from (`reports/kino-cat/RELEASE_CHECKLIST.md`, §4).
 
 ## Not checked
 

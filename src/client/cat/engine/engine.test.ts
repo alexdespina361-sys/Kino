@@ -775,6 +775,25 @@ describe("picked up by a hand", () => {
     expect(last.y).toBeGreaterThan(start.y + 0.5 * body);
   });
 
+  it("has the whole hang once the hand has carried it a body and a half, level or down: it is not held up by the middle all the way to a lower shelf (a hand that has gone only a little way has not sunk it)", () => {
+    for (const dir of [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }]) {
+      const { engine, world, body } = settled(4);
+      const start = copy(engine.frame);
+      const grip = { x: start.x, y: start.y - 0.4 * body };
+      engine.send({ type: "cat.grab", at: grip });
+      const sign = grip.x < 900 ? 1 : -1;
+      // (a third of a body along: it is where it stood, or a third of a body further down with the hand: the hang that forms does not sink it)
+      const near = { x: grip.x + 0.3 * body * sign * dir.x, y: grip.y + 0.3 * body * dir.y };
+      const little = carryTo(engine, world, grip, near, 1);
+      for (const f of little) expect(f.y, `no sinking (${dir.x},${dir.y})`).toBeLessThanOrEqual(Math.max(start.y, near.y + 0.4 * body) + 0.5);
+      // (and a long way along it is the full hang below the hand)
+      const far = { x: grip.x + 4 * body * sign * dir.x, y: grip.y + 4 * body * dir.y };
+      carryTo(engine, world, near, far, 2);
+      const there = carryTo(engine, world, far, far, 1).pop()!;
+      expect(there.y, `the hang below the hand (${dir.x},${dir.y})`).toBeCloseTo(far.y + 0.73 * body, 0);
+    }
+  });
+
   it("is not whisked along by a hand that flicks: it follows as fast as it can, and is a little behind", () => {
     const { engine, world, body } = settled();
     const f0 = copy(engine.frame);

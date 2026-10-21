@@ -190,9 +190,10 @@ export class CatEngine {
   private hold: Vec | null = null;
   private hangX = 0;
   private hangY = 0;
-  /** How far below the hand the feet were, and how high, when the hand took hold. */
+  /** How far below the hand the feet were, and how high, when the hand took hold; and where the hand was. */
   private hangY0 = 0;
   private groundY = 0;
+  private grabAt: Vec = { x: 0, y: 0 };
   private heldAt = 0;
   /** A cat that was let go of, on its way down to where it will land (see `runFall`). */
   private fall: { toSurface: string; toX: number; vy: number; landed: boolean; settleT: number; placeY: number; missed: boolean } | null = null;
@@ -986,6 +987,7 @@ export class CatEngine {
     this.hangY = this.y - hand.y;
     this.hangY0 = this.hangY;
     this.groundY = this.y;
+    this.grabAt = { x: hand.x, y: hand.y };
     this.act = { k: "carried" };
     this.actT = 0;
     this.grounded = false;
@@ -1011,13 +1013,18 @@ export class CatEngine {
     const ease = 1 - Math.exp(-HANG_RELAX * dt);
     this.hangX += (HANG_AHEAD * L * this.facing - this.hangX) * ease;
     this.hangY += (HANG_DOWN * L - this.hangY) * ease;
-    // (a cat taken up by the middle does not sink as the hang forms, below where it stood or below where the hand found it: it is the hand that lifts it)
+    // (a cat taken up by the middle does not sink as the hang forms, below where it stood or below where the hand found it: it is the hand that lifts it. That is for
+    // the moment of the grab: a hand that has carried it half a body away lets it hang, and one that has carried it a body and a half away has the whole hang, whichever
+    // way it went, so a cat taken down to a lower shelf is not held up by the middle all the way)
     // (a window made smaller brings the cat in with it: a cat in a hand is never left off the screen, whatever it was following. One that is partly on the screen is led
     // in as it follows the hand, as fast as a hand can carry it, and not set on the edge in a frame, which was seen as a jump of 64 px by the soak: it aims a hair
     // inside the edge, so that it is inside in a few frames)
     const vp = world.viewport;
     const slack = 0.02 * L;
-    const wantY = clamp(Math.min(hold.y + this.hangY, Math.max(hold.y + this.hangY0, this.groundY)), vp.y + 0.2 * L + slack, vp.y + vp.h + 0.8 * L - slack);
+    const hung = clamp01((Math.hypot(hold.x - this.grabAt.x, hold.y - this.grabAt.y) / L - 0.5) / 1);
+    const hangs = hold.y + this.hangY;
+    const kept = Math.min(hangs, Math.max(hold.y + this.hangY0, this.groundY));
+    const wantY = clamp(kept + (hangs - kept) * hung, vp.y + 0.2 * L + slack, vp.y + vp.h + 0.8 * L - slack);
     let vx = (clamp(hold.x + this.hangX, vp.x + slack, vp.x + vp.w - slack) - this.x) * CARRY_FOLLOW;
     let vy = (wantY - this.y) * CARRY_FOLLOW;
     const fastest = CARRY_SPEED * L;

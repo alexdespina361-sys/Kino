@@ -552,8 +552,12 @@ test("a hand that takes hold of the cat carries it by the scruff, marks the shel
   );
   await expect(tv.getByTestId("cat-spot")).toHaveAttribute("data-on", "");
   const mark = (await tv.getByTestId("cat-spot").boundingBox())!;
-  expect(Math.abs(mark.y + mark.height / 2 - target!.y)).toBeLessThan(0.2 * L);
-  expect(Math.abs(mark.x + mark.width / 2 - hand.x)).toBeLessThan(0.5 * L);
+  const where = `mark at ${Math.round(mark.x + mark.width / 2)},${Math.round(mark.y + mark.height / 2)}, hand ${Math.round(hand.x)},${Math.round(hand.y)}, shelf ${target!.id} ${Math.round(target!.x0)}..${Math.round(target!.x1)} at ${Math.round(target!.y)}, L ${L}, cat ${JSON.stringify((await snap(tv)).frame)}`;
+  expect(Math.abs(mark.y + mark.height / 2 - target!.y), where).toBeLessThan(0.2 * L);
+  // (the place under it, or a little way across where the shelf has room for the cat and its keep-outs are not: never further than a fall can steer, three body lengths)
+  expect(mark.x + mark.width / 2, where).toBeGreaterThan(target!.x0);
+  expect(mark.x + mark.width / 2, where).toBeLessThan(target!.x1);
+  expect(Math.abs(mark.x + mark.width / 2 - hand.x), where).toBeLessThan(3 * L);
   // (a hand that rests keeps the cat for as long as it is held: it is told at every frame, so it is not let go for being quiet)
   await tv.waitForTimeout(3_500);
   expect((await snap(tv)).engine.act).toBe("carried");
@@ -664,6 +668,9 @@ test("the settings page has a row for the cat only on a host that offers a cat, 
   await expect(row).toContainText("Off");
   await row.click();
   await expect(other.getByTestId("tv-cat-settings")).toBeVisible();
+  // (the author of the model the detailed cat is made from is named where the cat is chosen: the licence, CC BY 4.0, asks for that)
+  await expect(other.getByTestId("tv-cat-credit")).toContainText("Meshy AI");
+  await expect(other.getByTestId("tv-cat-credit")).toContainText("CC BY 4.0");
   const on = other.getByTestId("tv-cat-switch");
   await expect(on).toHaveAttribute("aria-checked", "false");
   await expect(other.getByTestId("tv-cat-quiet")).toHaveCount(0);
@@ -739,7 +746,8 @@ const artIs = (tv: Page, art: Snap["art"], timeout = 12_000) => saying(tv, () =>
 const MESH = /\.mesh(\?|$)/;
 
 test("the detailed cat: a screen that can do WebGL gets the solid cat, painted by the card from a file that is fetched once, and it is on the screen", async ({ browser }) => {
-  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true }));
+  // (the ginger coat: the pale ragdoll that is the default has no colour of its own to tell it from the page by, the posters have no orange)
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ detail: true, quiet: true, coat: "ginger" }));
   const meshes: string[] = [];
   tv.on("request", (request) => MESH.test(request.url()) && meshes.push(request.url()));
   await tv.goto("/tv?cat=debug&catbudget=100000");
@@ -882,10 +890,10 @@ test("the settings page has the cat's coat and size: they are worn at once and k
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   await artIs(tv, "solid");
   const before = await snap(tv);
-  expect(before.coat).toBe("ginger");
+  expect(before.coat).toBe("ragdoll");
   expect(before.body).toBeGreaterThan(40);
   await openCatSettings(tv);
-  await expect(tv.getByTestId("tv-cat-coat-ginger")).toHaveAttribute("aria-checked", "true");
+  await expect(tv.getByTestId("tv-cat-coat-ragdoll")).toHaveAttribute("aria-checked", "true");
   await expect(tv.getByTestId("tv-cat-size-normal")).toHaveAttribute("aria-checked", "true");
   await tv.getByTestId("tv-cat-coat-tuxedo").click();
   await expect(tv.getByTestId("tv-cat-coat-tuxedo")).toHaveAttribute("aria-checked", "true");
