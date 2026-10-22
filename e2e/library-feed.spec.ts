@@ -154,12 +154,12 @@ test.describe("the phone's library goes on as it is scrolled", () => {
   const long = { updatedAt: Date.now(), rows: Array.from({ length: 20 }, (_, i) => rowOf(`b${i}`, `Base ${i + 1}`, 20)) };
 
   /** A phone that is paired with a TV, its library answered by `setup`, and what it kept (`seed`) like a device that has watched and scored things. */
-  async function pairedPhone(browser: Browser, setup: (context: BrowserContext) => Promise<unknown>, seed: Record<string, string> = {}) {
+  async function pairedPhone(browser: Browser, setup: (context: BrowserContext) => Promise<unknown>, seed: Record<string, string> = {}, device: Parameters<Browser["newContext"]>[0] = PHONE) {
     const tv = await openTv(browser);
-    const phone = await openDevice(browser, PHONE, seed, setup);
+    const phone = await openDevice(browser, device, seed, setup);
     await phone.goto("/");
     await phone.getByTestId("code-input").fill(await readPairingCode(tv)); // connects by itself on the sixth digit
-    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+    await expect(phone.getByTestId("tv-online")).toHaveClass(/\bok\b/); // (connected: the words for it are the language's)
     return phone;
   }
   const toTheEnd = (phone: Page) => phone.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
@@ -300,6 +300,38 @@ test.describe("the phone's library goes on as it is scrolled", () => {
     await expect(rows.locator("h3")).toHaveText(["Classic TV"]);
     await expect.poll(() => asked).toEqual(expect.arrayContaining(["cartoon", "anime"])); // the rows that come next are the section's, not the page's
   });
+
+  for (const language of [
+    { name: "English", locale: "en-US" },
+    { name: "Romanian", locale: "ro-RO" },
+    { name: "Italian", locale: "it-IT" },
+  ]) {
+    for (const width of [320, 360, 390]) {
+      test(`the five filters are all on the screen, each name on one line: ${language.name}, ${width} wide`, async ({ browser }) => {
+        const phone = await pairedPhone(browser, withLibrary(base), {}, { ...PHONE, viewport: { width, height: 740 }, screen: { width, height: 740 }, locale: language.locale });
+        const fit = await phone
+          .getByTestId("filter-all")
+          .locator("xpath=..")
+          .evaluate((box) => {
+            const pills = [...box.children] as HTMLElement[];
+            const oneLine = (pill: HTMLElement) => {
+              const range = document.createRange();
+              range.selectNodeContents(pill);
+              return range.getClientRects().length === 1;
+            };
+            const inside = (pill: HTMLElement) => {
+              const edge = pill.getBoundingClientRect();
+              return edge.left >= 0 && edge.right <= window.innerWidth;
+            };
+            return { names: pills.map((pill) => pill.textContent), oneLine: pills.every(oneLine), inside: pills.every(inside), page: document.documentElement.scrollWidth, view: window.innerWidth };
+          });
+        expect(new Set(fit.names).size).toBe(5); // (All, Movies, Series, Cartoons, Anime: five names, none the same)
+        expect(fit.oneLine).toBe(true);
+        expect(fit.inside).toBe(true);
+        expect(fit.page).toBeLessThanOrEqual(fit.view);
+      });
+    }
+  }
 
   test("names TMDB where the titles are its", async ({ browser }) => {
     const filmpire = { updatedAt: Date.now(), rows: [{ ...rowOf("f1", "Filmpire row", 4), source: "Filmpire" }] };

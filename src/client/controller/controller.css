@@ -556,8 +556,9 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .title-episodes { display: flex; flex-direction: column; gap: 10px; }
 .episode[data-target="true"] { box-shadow: inset 0 0 0 1.5px rgb(var(--accent-rgb) / 0.55); }
 
-.lib-pills { display: flex; gap: 8px; margin: -4px 0 0; }
-.lib-pill { padding: 7px 15px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 0.85rem; font-weight: 600; transition: background 0.15s ease, color 0.15s ease; }
+/* (Five of them, and a narrow phone has room for four: the last goes on a second line, and no name is ever broken in two.) */
+.lib-pills { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 0; }
+.lib-pill { padding: 7px 15px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 0.85rem; font-weight: 600; white-space: nowrap; transition: background 0.15s ease, color 0.15s ease; }
 .lib-pill[aria-pressed="true"] { background: #fff; color: #000; }
 
 /* Ratings: a box on a title's page (folded to one line), and the page of everything rated. */
