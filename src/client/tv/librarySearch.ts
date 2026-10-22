@@ -1,4 +1,4 @@
-import { CLOSEST_MAX, itemsOf, normalizeQuery, rankByQuery, searchItems, type LibraryItem, type LibraryKind, type LibraryRow, type TitleIndex } from "../../shared";
+import { CLOSEST_MAX, itemsOf, normalizeQuery, rankByQuery, searchItems, sectionOf, type LibraryItem, type LibraryRow, type LibrarySection, type TitleIndex } from "../../shared";
 
 /** What a search found: the titles, the first `exact` of which have every word that was typed and the rest are the closest others (some of the words, or a letter off). */
 export interface Answers {
@@ -51,10 +51,10 @@ export function mergeAnswers(first: Answers, more: Answers, query: string): Answ
   return { items: [...exact, ...closest], exact: exact.length };
 }
 
-/** Only the films or only the shows of an answer (the closest others stay the closest). */
-export function onlyKind(answers: Answers, kind: LibraryKind | "all"): Answers {
-  if (kind === "all") return answers;
-  const keep = (items: readonly LibraryItem[]) => items.filter((item) => item.kind === kind);
+/** Only the titles of one section of an answer (Movies, Series, Cartoons or Anime; the closest others stay the closest). */
+export function onlySection(answers: Answers, section: LibrarySection | "all"): Answers {
+  if (section === "all") return answers;
+  const keep = (items: readonly LibraryItem[]) => items.filter((item) => sectionOf(item) === section);
   const exact = keep(answers.items.slice(0, answers.exact));
   return { items: [...exact, ...keep(answers.items.slice(answers.exact))], exact: exact.length };
 }

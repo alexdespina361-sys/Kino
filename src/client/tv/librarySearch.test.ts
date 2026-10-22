@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { itemsOf, TitleIndex } from "../../shared";
-import { allExact, appendTo, editBox, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, onlyKind, typedCharacter } from "./librarySearch";
+import { allExact, appendTo, editBox, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, onlySection, typedCharacter } from "./librarySearch";
 
-const item = (id: string, title: string, kind?: "movie" | "series") => ({ id, title, url: `/${id}`, ...(kind ? { kind } : {}) });
+const item = (id: string, title: string, kind?: "movie" | "series", section?: "cartoon" | "anime") => ({ id, title, url: `/${id}`, ...(kind ? { kind } : {}), ...(section ? { section } : {}) });
 const rows = [
   { id: "r1", title: "One", source: "S", items: [item("a", "The Night Of The Hunter"), item("b", "Nosferatu")] },
   { id: "r2", title: "Two", source: "S", items: [item("a", "The Night Of The Hunter"), item("c", "Night Train")] },
@@ -91,16 +91,31 @@ describe("mergeAnswers", () => {
   });
 });
 
-describe("onlyKind", () => {
+describe("onlySection", () => {
   const answers = { items: [item("a", "A", "movie"), item("b", "B", "series"), item("c", "C", "movie"), item("d", "D", "series")], exact: 2 };
   it("keeps the films or the shows, and how many of the first are exact", () => {
-    expect(onlyKind(answers, "all")).toBe(answers);
-    const films = onlyKind(answers, "movie");
+    expect(onlySection(answers, "all")).toBe(answers);
+    const films = onlySection(answers, "movie");
     expect(ids(films.items)).toEqual(["a", "c"]);
     expect(films.exact).toBe(1);
-    const shows = onlyKind(answers, "series");
+    const shows = onlySection(answers, "series");
     expect(ids(shows.items)).toEqual(["b", "d"]);
     expect(shows.exact).toBe(1);
+  });
+
+  it("puts a cartoon or an anime in its own section only, however its kind reads (a film or a show)", () => {
+    const mixed = {
+      items: [item("m", "M", "movie"), item("c1", "C1", "series", "cartoon"), item("a1", "A1", "movie", "anime"), item("s", "S", "series"), item("c2", "C2", "movie", "cartoon"), item("a2", "A2", "series", "anime")],
+      exact: 3,
+    };
+    expect(ids(onlySection(mixed, "movie").items)).toEqual(["m"]);
+    expect(ids(onlySection(mixed, "series").items)).toEqual(["s"]);
+    const cartoons = onlySection(mixed, "cartoon");
+    expect(ids(cartoons.items)).toEqual(["c1", "c2"]);
+    expect(cartoons.exact).toBe(1);
+    const anime = onlySection(mixed, "anime");
+    expect(ids(anime.items)).toEqual(["a1", "a2"]);
+    expect(anime.exact).toBe(1);
   });
 });
 

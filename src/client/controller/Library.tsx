@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LibraryItemsSchema, LibrarySchema, type Library as LibraryData, type LibraryItem, type LibraryKind } from "../../shared";
+import { LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibrarySection } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
 import { rowTitle, useT } from "../i18n";
-import { failedShelves, feed, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
+import { failedShelves, feed, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { Poster } from "../shared/Poster";
 import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
@@ -17,7 +17,9 @@ import { ListButton, useListToggle, type ListToggle } from "./Round";
 let remembered: LibraryData | null = null;
 
 type Status = "loading" | "ready" | "failed";
-type Filter = "all" | "movies" | "series";
+type Filter = "all" | "movies" | "series" | "cartoons" | "anime";
+/** The section each of the filters (but All) is for. */
+const FILTER_SECTION: Readonly<Record<Exclude<Filter, "all">, LibrarySection>> = { movies: "movie", series: "series", cartoons: "cartoon", anime: "anime" };
 
 /** A search that could not be made is made again this long after. */
 const SEARCH_RETRY_MS = 5000;
@@ -37,9 +39,20 @@ const TMDB_SOURCES = new Set(["Filmpire"]);
  */
 const kept: { query: string; filter: Filter; found: { query: string; answers: Answers } | null; scroll: number | null } = { query: "", filter: "all", found: null, scroll: null };
 
-/** What a row is: what its place says, else what its name suggests ("Feature films", "Classic TV"). Rows that are both, or neither, are only in All. */
-const isMovies = (row: LibraryData["rows"][number]) => (row.kind ? row.kind === "movie" : /movie|film/i.test(`${row.id} ${row.title}`));
-const isSeries = (row: LibraryData["rows"][number]) => (row.kind ? row.kind === "series" : /series|shows|docuseries|anime|(^|[^a-z])tv([^a-z]|$)/i.test(`${row.id} ${row.title}`));
+/** What a section's page says when the library has nothing of it (the TV's words). */
+const SECTION_EMPTY = { movie: "tv.kindEmptyMovies", series: "tv.kindEmptySeries", cartoon: "tv.kindEmptyCartoons", anime: "tv.kindEmptyAnime" } as const satisfies Readonly<Record<LibrarySection, string>>;
+
+/** What a row is in: the section its place says, else what its name suggests ("Feature films", "Classic TV"). A row that says nothing and has none of those words is only in All. */
+const NAMES: Readonly<Record<LibrarySection, RegExp>> = {
+  movie: /movie|film/i,
+  series: /series|shows|docuseries|(^|[^a-z])tv([^a-z]|$)/i,
+  cartoon: /cartoon|animat/i,
+  anime: /anime/i,
+};
+const isIn = (row: LibraryData["rows"][number], section: LibrarySection) => {
+  const said = sectionOf(row);
+  return said ? said === section : NAMES[section].test(`${row.id} ${row.title}`);
+};
 
 /** What is typed, as it is looked for. */
 const wanted = (query: string) => query.trim().toLowerCase();
@@ -80,11 +93,11 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
   const feeding = useFeed();
   // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
   const because = useBecause();
-  const kind: LibraryKind | undefined = filter === "movies" ? "movie" : filter === "series" ? "series" : undefined;
+  const pageSection = filter === "all" ? undefined : FILTER_SECTION[filter];
   const displayedRows = useMemo(() => {
-    const rows = pageRows(feeding.data, kind);
-    return filter === "movies" ? rows.filter(isMovies) : filter === "series" ? rows.filter(isSeries) : rows;
-  }, [feeding.data, kind, filter]);
+    const rows = pageRows(feeding.data, pageSection);
+    return pageSection ? rows.filter((row) => isIn(row, pageSection)) : rows;
+  }, [feeding.data, pageSection]);
 
   useEffect(() => {
     kept.filter = filter;
@@ -190,12 +203,12 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
   // The rows that come next are asked for when the page is scrolled near its end, whatever scrolled it (the window, or the sheet the library is in), and when the
   // page does not fill the screen yet: an answer, or a question that failed and may be asked again, looks again. A search is a list of its own and is not paged.
   const paging = status === "ready" && shown && answers === null;
-  const latest = useRef({ paging, kind });
-  latest.current = { paging, kind };
+  const latest = useRef({ paging, pageSection });
+  latest.current = { paging, pageSection };
   useEffect(() => {
     const askRows = () => {
       const section = root.current;
-      if (section && latest.current.paging && endIsNear(section)) feed.loadShelves(latest.current.kind);
+      if (section && latest.current.paging && endIsNear(section)) feed.loadShelves(latest.current.pageSection);
     };
     const onScroll = (event: Event) => {
       if (event.target instanceof Node && root.current && event.target.contains(root.current)) askRows(); // (a row scrolled sideways says nothing about the page)
@@ -208,8 +221,8 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
     };
   }, []);
   useEffect(() => {
-    if (paging && root.current && endIsNear(root.current)) feed.loadShelves(kind);
-  }, [feeding, paging, kind, displayedRows.length]);
+    if (paging && root.current && endIsNear(root.current)) feed.loadShelves(pageSection);
+  }, [feeding, paging, pageSection, displayedRows.length]);
 
   if (status === "loading") {
     return (
@@ -263,7 +276,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
 
       {answers === null && (
         <div className="lib-pills" role="group" aria-label={t("library.filter")}>
-          {(["all", "movies", "series"] as const).map((each) => (
+          {(["all", "movies", "series", "cartoons", "anime"] as const).map((each) => (
             <button key={each} type="button" className="lib-pill" aria-pressed={filter === each} onClick={() => setFilter(each)} data-testid={`filter-${each}`}>
               {t(`library.${each}`)}
             </button>
@@ -326,12 +339,17 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
             </div>
           ))}
           {/* Under the last row: empty tiles while the rows that come next are on their way, and a line when they could not be had (they are asked for again in a moment). */}
-          {failedShelves(feeding, kind) && (
+          {pageSection && displayedRows.length === 0 && !loadingShelves(feeding, pageSection) && !failedShelves(feeding, pageSection) && !hasMoreShelves(feeding, pageSection) && (
+            <p className="muted small" role="status" data-testid="library-section-empty">
+              {t(SECTION_EMPTY[pageSection])}
+            </p>
+          )}
+          {failedShelves(feeding, pageSection) && (
             <p className="muted small" role="status" data-testid="library-rows-failed">
               {t("rows.moreFailed")}
             </p>
           )}
-          {loadingShelves(feeding, kind) && (
+          {loadingShelves(feeding, pageSection) && (
             <div className="lib-row" aria-hidden="true" data-testid="library-rows-waiting">
               <span className="lib-waiting-title" />
               <div className="lib-scroller">

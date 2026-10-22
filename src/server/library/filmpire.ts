@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { EpisodeDetail, LibraryItem, LibraryKind, LibraryRow } from "../../shared";
+import { sectionOf, type EpisodeDetail, type LibraryItem, type LibraryRow, type LibrarySection } from "../../shared";
 import type { LibrarySource } from "./library";
-import { SHELF_GROUPS, shelfPlan, type FilmpireCategory } from "./shelves";
+import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, type FilmpireCategory } from "./shelves";
 
 export type { FilmpireCategory };
 
@@ -16,6 +16,13 @@ export const MAX_PAGE = 15;
 /** How many shelves one question about the rows after the first ones brings. */
 export const SHELF_BATCH = 5;
 
+/** What the lists of Movies and Series that TMDB can sort by genre are asked not to have: animation is in the Cartoons and the Anime (the trending, popular and top lists cannot be asked that way, so `askPage` takes it out of them). */
+const NO_ANIMATION = `without_genres=${ANIMATION_GENRE}`;
+
+/**
+ * The first rows of the library: Home's and, among them, the first of each page of a section (Movies, Series, Cartoons, Anime), in the
+ * order Home lists them. A category is in the section it says, else in the live-action one of its type.
+ */
 export const FILMPIRE_CATEGORIES: FilmpireCategory[] = [
   // Trending & Highlights
   { id: "trending-movies", title: "Trending Movies", path: "/trending/movie/week", type: "movie" },
@@ -26,31 +33,43 @@ export const FILMPIRE_CATEGORIES: FilmpireCategory[] = [
   { id: "top-rated-tv", title: "Best Rated TV Series", path: "/tv/top_rated?language=en-US&page=1", type: "tv" },
 
   // Movies by Genre (from explore-movies)
-  { id: "action-movies", title: "Action Movies", path: "/discover/movie?with_genres=28&sort_by=popularity.desc", type: "movie" },
-  { id: "scifi-movies", title: "Sci-Fi Movies", path: "/discover/movie?with_genres=878&sort_by=popularity.desc", type: "movie" },
-  { id: "comedy-movies", title: "Comedy Movies", path: "/discover/movie?with_genres=35&sort_by=popularity.desc", type: "movie" },
-  { id: "horror-movies", title: "Horror Movies", path: "/discover/movie?with_genres=27&sort_by=popularity.desc", type: "movie" },
-  { id: "animation-movies", title: "Animated Movies", path: "/discover/movie?with_genres=16&sort_by=popularity.desc", type: "movie" },
-  { id: "thriller-movies", title: "Thriller Movies", path: "/discover/movie?with_genres=53&sort_by=popularity.desc", type: "movie" },
-  { id: "adventure-movies", title: "Adventure Movies", path: "/discover/movie?with_genres=12&sort_by=popularity.desc", type: "movie" },
-  { id: "crime-movies", title: "Crime Movies", path: "/discover/movie?with_genres=80&sort_by=popularity.desc", type: "movie" },
-  { id: "fantasy-movies", title: "Fantasy Movies", path: "/discover/movie?with_genres=14&sort_by=popularity.desc", type: "movie" },
-  { id: "drama-movies", title: "Drama Movies", path: "/discover/movie?with_genres=18&sort_by=popularity.desc", type: "movie" },
-  { id: "mystery-movies", title: "Mystery Movies", path: "/discover/movie?with_genres=9648&sort_by=popularity.desc", type: "movie" },
-  { id: "romance-movies", title: "Romance Movies", path: "/discover/movie?with_genres=10749&sort_by=popularity.desc", type: "movie" },
-  { id: "family-movies", title: "Family Movies", path: "/discover/movie?with_genres=10751&sort_by=popularity.desc", type: "movie" },
-  { id: "documentary-movies", title: "Documentary Movies", path: "/discover/movie?with_genres=99&sort_by=popularity.desc", type: "movie" },
+  { id: "action-movies", title: "Action Movies", path: `/discover/movie?with_genres=28&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "scifi-movies", title: "Sci-Fi Movies", path: `/discover/movie?with_genres=878&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "comedy-movies", title: "Comedy Movies", path: `/discover/movie?with_genres=35&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "horror-movies", title: "Horror Movies", path: `/discover/movie?with_genres=27&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "thriller-movies", title: "Thriller Movies", path: `/discover/movie?with_genres=53&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "adventure-movies", title: "Adventure Movies", path: `/discover/movie?with_genres=12&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "crime-movies", title: "Crime Movies", path: `/discover/movie?with_genres=80&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "fantasy-movies", title: "Fantasy Movies", path: `/discover/movie?with_genres=14&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "drama-movies", title: "Drama Movies", path: `/discover/movie?with_genres=18&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "mystery-movies", title: "Mystery Movies", path: `/discover/movie?with_genres=9648&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "romance-movies", title: "Romance Movies", path: `/discover/movie?with_genres=10749&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "family-movies", title: "Family Movies", path: `/discover/movie?with_genres=10751&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
+  { id: "documentary-movies", title: "Documentary Movies", path: `/discover/movie?with_genres=99&${NO_ANIMATION}&sort_by=popularity.desc`, type: "movie" },
 
   // Series by Genre (from explore-series)
-  { id: "action-adventure-tv", title: "Action & Adventure Series", path: "/discover/tv?with_genres=10759&sort_by=popularity.desc", type: "tv" },
-  { id: "scifi-fantasy-tv", title: "Sci-Fi & Fantasy Series", path: "/discover/tv?with_genres=10765&sort_by=popularity.desc", type: "tv" },
-  { id: "animation-anime-tv", title: "Animation & Anime Series", path: "/discover/tv?with_genres=16&sort_by=popularity.desc", type: "tv" },
-  { id: "comedy-tv", title: "Comedy Series", path: "/discover/tv?with_genres=35&sort_by=popularity.desc", type: "tv" },
-  { id: "crime-tv", title: "Crime Series", path: "/discover/tv?with_genres=80&sort_by=popularity.desc", type: "tv" },
-  { id: "drama-tv", title: "Drama Series", path: "/discover/tv?with_genres=18&sort_by=popularity.desc", type: "tv" },
-  { id: "mystery-tv", title: "Mystery Series", path: "/discover/tv?with_genres=9648&sort_by=popularity.desc", type: "tv" },
-  { id: "kids-tv", title: "Kids & Family Shows", path: "/discover/tv?with_genres=10762&sort_by=popularity.desc", type: "tv" },
-  { id: "documentary-tv", title: "Docuseries", path: "/discover/tv?with_genres=99&sort_by=popularity.desc", type: "tv" },
+  { id: "action-adventure-tv", title: "Action & Adventure Series", path: `/discover/tv?with_genres=10759&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+  { id: "scifi-fantasy-tv", title: "Sci-Fi & Fantasy Series", path: `/discover/tv?with_genres=10765&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+  { id: "comedy-tv", title: "Comedy Series", path: `/discover/tv?with_genres=35&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+  { id: "crime-tv", title: "Crime Series", path: `/discover/tv?with_genres=80&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+  { id: "drama-tv", title: "Drama Series", path: `/discover/tv?with_genres=18&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+  { id: "mystery-tv", title: "Mystery Series", path: `/discover/tv?with_genres=9648&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+  { id: "kids-tv", title: "Kids & Family Shows", path: `/discover/tv?with_genres=10762&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+  { id: "documentary-tv", title: "Docuseries", path: `/discover/tv?with_genres=99&${NO_ANIMATION}&sort_by=popularity.desc`, type: "tv" },
+
+  // Cartoons: the first rows of their page (the ones that come after are the shelves, see shelves.ts)
+  { id: "cartoon-tv", title: "Popular Cartoon Series", path: `/discover/tv?${animated("cartoon")}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
+  { id: "cartoon-movies", title: "Popular Cartoon Movies", path: `/discover/movie?${animated("cartoon")}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
+  { id: "cartoon-top-tv", title: "Top Rated Cartoon Series", path: `/discover/tv?${animated("cartoon")}&vote_count.gte=300&sort_by=vote_average.desc`, type: "tv", section: "cartoon" },
+  { id: "cartoon-top-movies", title: "Top Rated Cartoon Movies", path: `/discover/movie?${animated("cartoon")}&vote_count.gte=1000&sort_by=vote_average.desc`, type: "movie", section: "cartoon" },
+  { id: "cartoon-kids-tv", title: "Kids' Cartoons", path: `/discover/tv?${animated("cartoon", 10762)}&sort_by=popularity.desc`, type: "tv", section: "cartoon" },
+  { id: "cartoon-family-movies", title: "Family Cartoon Movies", path: `/discover/movie?${animated("cartoon", 10751)}&sort_by=popularity.desc`, type: "movie", section: "cartoon" },
+
+  // Anime: the same, of Japanese animation
+  { id: "anime-series", title: "Popular Anime Series", path: `/discover/tv?${animated("anime")}&sort_by=popularity.desc`, type: "tv", section: "anime" },
+  { id: "anime-films", title: "Popular Anime Movies", path: `/discover/movie?${animated("anime")}&sort_by=popularity.desc`, type: "movie", section: "anime" },
+  { id: "anime-top-tv", title: "Top Rated Anime Series", path: `/discover/tv?${animated("anime")}&vote_count.gte=200&sort_by=vote_average.desc`, type: "tv", section: "anime" },
+  { id: "anime-top-movies", title: "Top Rated Anime Movies", path: `/discover/movie?${animated("anime")}&vote_count.gte=300&sort_by=vote_average.desc`, type: "movie", section: "anime" },
 ];
 
 export interface FilmpireSourceOptions {
@@ -138,7 +157,20 @@ const TmdbItemSchema = z.object({
   media_type: z.enum(["movie", "tv", "person"]).optional(),
   popularity: z.number().optional(),
   vote_count: z.number().optional(),
+  /** What tells a cartoon or an anime from a film or a show: its genres, and where it was made. */
+  genre_ids: z.array(z.number()).optional(),
+  original_language: z.string().optional(),
+  origin_country: z.array(z.string()).optional(),
 });
+
+/**
+ * The section of a title: animation is a Cartoon, or an Anime when it is Japanese (in its original language, or by its country); everything
+ * else is a film or a show. Said by `LibraryItem.section` only when it is a Cartoon or an Anime.
+ */
+function animationOf(doc: z.infer<typeof TmdbItemSchema>): Extract<LibrarySection, "cartoon" | "anime"> | undefined {
+  if (!doc.genre_ids?.includes(ANIMATION_GENRE)) return undefined;
+  return doc.original_language === "ja" || doc.origin_country?.includes("JP") ? "anime" : "cartoon";
+}
 
 const TmdbResponseSchema = z.object({
   results: z.array(z.unknown()),
@@ -196,6 +228,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   const backdrop = doc.backdrop_path ? `${BACKDROP_BASE}${doc.backdrop_path}` : undefined;
   const description = doc.overview ? doc.overview.trim().slice(0, 400) : undefined;
   const url = isTv ? `https://filmpire.sc/watch/${doc.id}?s=1&e=1` : `https://filmpire.sc/watch/${doc.id}`;
+  const section = animationOf(doc);
 
   return {
     id: `filmpire-${isTv ? "tv" : "movie"}-${doc.id}`,
@@ -205,6 +238,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
     ...(backdrop ? { backdrop } : {}),
     ...(description ? { description } : {}),
     kind: isTv ? "series" : "movie",
+    ...(section ? { section } : {}),
     url,
   };
 }
@@ -255,20 +289,29 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
   const probeTimeout = options.probeTimeoutMs ?? 1500;
 
   const shelfGroups = options.shelves ?? SHELF_GROUPS;
-  const rowOf = (cat: FilmpireCategory, items: LibraryItem[]): LibraryRow => ({
-    id: `filmpire-${cat.id}`,
-    title: cat.title,
-    source: "Filmpire",
-    kind: cat.type === "tv" ? "series" : "movie",
-    items,
-  });
-  /** One page of a category or shelf. `tidy` leaves out what looks like rubbish (the shelves and further pages: the first pages of the old categories were never sifted). */
+  const rowOf = (cat: FilmpireCategory, items: LibraryItem[]): LibraryRow => {
+    const section = sectionOfCategory(cat);
+    return {
+      id: `filmpire-${cat.id}`,
+      title: cat.title,
+      source: "Filmpire",
+      kind: cat.type === "tv" ? "series" : "movie",
+      ...(section === "cartoon" || section === "anime" ? { section } : {}), // (a row of Movies or Series does not say: its kind does)
+      items,
+    };
+  };
+  /**
+   * One page of a category or shelf, with only the titles that are in its section: TMDB cannot be asked for "animation, but not Japanese" (or
+   * "not animation" for its trending and popular lists), so a page of Cartoons has some anime in it, and a page of Movies some cartoons, which are left out here.
+   * `tidy` leaves out what looks like rubbish (the shelves and further pages: the first pages of the old categories were never sifted).
+   */
   const askPage = async (cat: FilmpireCategory, page: number, tidy: boolean): Promise<{ items: LibraryItem[]; last: boolean }> => {
     const res = await get(pageUrl(cat.path, page, apiKey), { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
     if (!res.ok) throw new Error(`${cat.id}: HTTP ${res.status}`);
     const data = TmdbSearchSchema.parse(await res.json());
     const results = tidy && shouldFilterTrash ? data.results.filter((item) => !isTrashItem(item)) : data.results;
-    const items = results.map((item) => toLibraryItem(item, cat.type)).filter((item): item is LibraryItem => item !== null);
+    const section = sectionOfCategory(cat);
+    const items = results.map((item) => toLibraryItem(item, cat.type)).filter((item): item is LibraryItem => item !== null && sectionOf(item) === section);
     return { items, last: data.results.length === 0 || page >= Math.min(data.total_pages ?? MAX_PAGE, MAX_PAGE) };
   };
   const loadCategory = async (cat: FilmpireCategory): Promise<LibraryRow> => rowOf(cat, (await askPage(cat, 1, false)).items);
@@ -284,8 +327,8 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       if (loaded.length === 0 && failed) throw failed.reason;
       return loaded;
     },
-    async shelves(kind: LibraryKind | undefined, cursor: number) {
-      const plan = shelfPlan(kind, shelfGroups);
+    async shelves(section: LibrarySection | undefined, cursor: number) {
+      const plan = shelfPlan(section, shelfGroups);
       const batch = plan.slice(cursor, cursor + SHELF_BATCH);
       if (batch.length === 0) return { rows: [], next: null };
       const settled = await Promise.allSettled(batch.map(async (cat) => rowOf(cat, (await askPage(cat, 1, true)).items)));

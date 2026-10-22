@@ -99,7 +99,7 @@ describe("GET /api/library/rows and /more", () => {
   const item = (id: string, title: string) => ({ id, title, url: `https://x.example/${id}` });
   const paging: LibrarySource = {
     ...source,
-    shelves: async (kind, cursor) => ({ rows: [{ id: `shelf-${kind ?? "all"}-${cursor}`, title: "Shelf", source: "Fake", items: [item(`a${cursor}`, "Alpha")] }], next: cursor < 5 ? cursor + 5 : null }),
+    shelves: async (section, cursor) => ({ rows: [{ id: `shelf-${section ?? "all"}-${cursor}`, title: "Shelf", source: "Fake", items: [item(`a${cursor}`, "Alpha")] }], next: cursor < 5 ? cursor + 5 : null }),
     more: async (rowId, page) => (rowId === "shelf" ? { items: [item(`p${page}`, `Page ${page}`)], last: page >= 3 } : { items: [], last: true }),
   };
 
@@ -110,13 +110,38 @@ describe("GET /api/library/rows and /more", () => {
     expect(first.headers["cache-control"]).toBe("public, max-age=300");
     expect(LibraryRowsSchema.parse(first.json())).toEqual({ rows: [{ id: "shelf-all-0", title: "Shelf", source: "Fake", items: [item("a0", "Alpha")] }], next: 5 });
 
-    const films = await app.inject({ url: "/api/library/rows?kind=movie&cursor=5" });
+    const films = await app.inject({ url: "/api/library/rows?section=movie&cursor=5" });
     expect(LibraryRowsSchema.parse(films.json())).toMatchObject({ rows: [{ id: "shelf-movie-5" }], next: null });
   });
 
-  it("wants a cursor that is a number, and a kind that is one of the two", async () => {
+  it("brings the rows of a page of a section: Movies, Series, Cartoons or Anime", async () => {
     app = await buildApp({ librarySources: [paging] });
-    for (const bad of ["cursor=-1", "cursor=1.5", "cursor=abc", "cursor=100001", "kind=anime"]) {
+    for (const section of ["movie", "series", "cartoon", "anime"]) {
+      const answer = await app.inject({ url: `/api/library/rows?section=${section}` });
+      expect(LibraryRowsSchema.parse(answer.json()), section).toMatchObject({ rows: [{ id: `shelf-${section}-0` }], next: 5 });
+    }
+  });
+
+  it("still takes the word a phone that has not been reloaded asks with: a kind, which is a film's or a show's section", async () => {
+    app = await buildApp({ librarySources: [paging] });
+    expect(LibraryRowsSchema.parse((await app.inject({ url: "/api/library/rows?kind=series" })).json())).toMatchObject({ rows: [{ id: "shelf-series-0" }] });
+    expect(LibraryRowsSchema.parse((await app.inject({ url: "/api/library/rows?kind=movie&cursor=5" })).json())).toMatchObject({ rows: [{ id: "shelf-movie-5" }] });
+    // (when both are given, the section is the one that counts)
+    expect(LibraryRowsSchema.parse((await app.inject({ url: "/api/library/rows?kind=movie&section=anime" })).json())).toMatchObject({ rows: [{ id: "shelf-anime-0" }] });
+  });
+
+  it("asks a place for a section's rows apart from another's, and from Home's", async () => {
+    const asked: Array<[string | undefined, number]> = [];
+    const spying: LibrarySource = { ...paging, shelves: async (section, cursor) => (asked.push([section, cursor]), { rows: [], next: null }) };
+    app = await buildApp({ librarySources: [spying] });
+    for (const url of ["/api/library/rows", "/api/library/rows?section=cartoon", "/api/library/rows?section=cartoon", "/api/library/rows?section=anime&cursor=5"]) await app.inject({ url });
+    // (the same question twice is answered from what was kept)
+    expect(asked).toEqual([[undefined, 0], ["cartoon", 0], ["anime", 5]]);
+  });
+
+  it("wants a cursor that is a number, a section that is one of the four, and a kind that is one of the two", async () => {
+    app = await buildApp({ librarySources: [paging] });
+    for (const bad of ["cursor=-1", "cursor=1.5", "cursor=abc", "cursor=100001", "kind=anime", "kind=cartoon", "section=documentary", "section=movies", "section="]) {
       expect((await app.inject({ url: `/api/library/rows?${bad}` })).statusCode, bad).toBe(400);
     }
   });

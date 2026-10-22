@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { LibraryRowSchema } from "../../shared";
-import { internetArchive, plainDescription } from "./internet-archive";
+import { ARCHIVE_ROWS, internetArchive, plainDescription } from "./internet-archive";
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const search = (...docs: unknown[]) => json({ response: { numFound: docs.length, start: 0, docs } });
@@ -24,6 +24,18 @@ describe("internetArchive", () => {
       { id: "short", title: "A Short", year: 1920, image: "https://archive.org/services/img/short", url: "https://archive.org/details/short" },
     ]);
     for (const row of result) expect(LibraryRowSchema.safeParse(row).success).toBe(true);
+  });
+
+  it("says the section of the one collection that is all cartoons, and of no other (the rest are on Home only)", async () => {
+    const get = vi.fn(async () => search({ identifier: "betty", title: "Betty Boop", year: 1932 }));
+    const result = await internetArchive({ rows: [...rows, { collection: "animationandcartoons", title: "Cartoons & animation", section: "cartoon" }], fetch: get as never }).load();
+    expect(result.map((row) => [row.id, row.section])).toEqual([
+      ["archive-feature_films", undefined],
+      ["archive-classic_tv", undefined],
+      ["archive-animationandcartoons", "cartoon"],
+    ]);
+    for (const row of result) expect(LibraryRowSchema.safeParse(row).success).toBe(true);
+    expect(ARCHIVE_ROWS.filter((row) => row.section).map((row) => [row.collection, row.section])).toEqual([["animationandcartoons", "cartoon"]]);
   });
 
   it("asks for the collection's films, most watched first, without the adult-tagged or so-titled", async () => {

@@ -5,7 +5,7 @@ import fastifyCompress from "@fastify/compress";
 import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
-import { isHttpUrl, type Registration } from "../shared";
+import { isHttpUrl, LibraryKindSchema, LibrarySectionSchema, type Registration } from "../shared";
 import type { PasswordCost } from "./accounts/password";
 import { accountRoutes, COOKIE, readCookie } from "./accounts/routes";
 import { ScreenProofs, screenProfiles } from "./accounts/screens";
@@ -224,12 +224,18 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   // The rest of the library for a page that is scrolled: the next few rows (`cursor` is where the last answer said to go on from), and the next
   // twenty titles of one row. A place that cannot be reached is a 502, so the page tries again later instead of taking it for the end.
-  app.get<{ Querystring: { cursor?: string; kind?: string } }>("/api/library/rows", async (request, reply) => {
+  // (`section` is the page the rows are for: movie, series, cartoon or anime. `kind` is what a page that was loaded before the sections said, and
+  // takes the first two; with both, the section is the answer.)
+  app.get<{ Querystring: { cursor?: string; kind?: string; section?: string } }>("/api/library/rows", async (request, reply) => {
     const cursor = Number(request.query.cursor ?? 0);
-    const kind = request.query.kind;
-    if (!Number.isInteger(cursor) || cursor < 0 || cursor > 100000 || (kind !== undefined && kind !== "movie" && kind !== "series")) return reply.code(400).send({ error: "Bad 'cursor' or 'kind' parameter" });
+    const { kind } = request.query;
+    const section = LibrarySectionSchema.safeParse(request.query.section);
+    const legacy = LibraryKindSchema.safeParse(kind);
+    if (!Number.isInteger(cursor) || cursor < 0 || cursor > 100000 || (request.query.section !== undefined && !section.success) || (kind !== undefined && !legacy.success)) {
+      return reply.code(400).send({ error: "Bad 'cursor', 'section' or 'kind' parameter" });
+    }
     try {
-      return reply.header("Cache-Control", "public, max-age=300").send(await library.rows(kind, cursor));
+      return reply.header("Cache-Control", "public, max-age=300").send(await library.rows(section.success ? section.data : legacy.success ? legacy.data : undefined, cursor));
     } catch {
       return reply.code(502).header("Cache-Control", "no-store").send({ error: "The library could not be reached" });
     }

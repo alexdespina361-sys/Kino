@@ -83,9 +83,16 @@ describe("freshShelves", () => {
 });
 
 describe("the rows of a page", () => {
+  const none = { rows: [], cursor: 0 };
   const data = (over: Partial<ReturnType<Feed["getSnapshot"]>["data"]> = {}) => ({
     base: [row("one", ids(20, "a")), row("empty", [])],
-    shelves: { all: { rows: [row("s1", ids(20, "b"))], cursor: 1 }, movie: { rows: [row("m1", ids(20, "c"))], cursor: 1 }, series: { rows: [], cursor: 0 } },
+    shelves: {
+      all: { rows: [row("s1", ids(20, "b"))], cursor: 1 },
+      movie: { rows: [row("m1", ids(20, "c"))], cursor: 1 },
+      series: none,
+      cartoon: { rows: [row("c1", ids(20, "d"))], cursor: 1 },
+      anime: none,
+    },
     more: {},
     ...over,
   });
@@ -94,6 +101,8 @@ describe("the rows of a page", () => {
     expect(pageRows(data(), undefined).map((r) => r.id)).toEqual(["one", "s1"]);
     expect(pageRows(data(), "movie").map((r) => r.id)).toEqual(["one", "m1"]);
     expect(pageRows(data(), "series").map((r) => r.id)).toEqual(["one"]);
+    expect(pageRows(data(), "cartoon").map((r) => r.id)).toEqual(["one", "c1"]);
+    expect(pageRows(data(), "anime").map((r) => r.id)).toEqual(["one"]);
   });
 
   it("grows a row with what was received for it", () => {
@@ -103,8 +112,8 @@ describe("the rows of a page", () => {
   });
 
   it("gives every row once for the pages of the categories", () => {
-    const all = allRows(data({ shelves: { all: { rows: [row("s1", ids(20, "b")), row("one", ids(20, "a"))], cursor: 1 }, movie: { rows: [row("s1", ids(20, "b"))], cursor: 1 }, series: { rows: [], cursor: 0 } } }));
-    expect(all.map((r) => r.id)).toEqual(["one", "s1"]);
+    const all = allRows(data({ shelves: { ...data().shelves, all: { rows: [row("s1", ids(20, "b")), row("one", ids(20, "a"))], cursor: 1 }, movie: { rows: [row("s1", ids(20, "b"))], cursor: 1 } } }));
+    expect(all.map((r) => r.id)).toEqual(["one", "s1", "c1"]);
     expect(all.every((r) => r.items.length <= GRID_CAP)).toBe(true);
   });
 });
@@ -149,14 +158,21 @@ describe("the feed", () => {
     expect(feed.index.size).toBe(40);
   });
 
-  it("asks for a kind of its own, and keeps the three runs apart", async () => {
+  it("asks for a section of its own, and keeps the five runs apart", async () => {
     const wire = server(() => ({ rows: [row("m", ids(20, "m"))], next: 1 }));
     feed = createFeed({ fetch: wire.fetch });
     feed.loadShelves("movie");
     await settle();
-    expect(wire.asked).toEqual(["/api/library/rows?cursor=0&kind=movie"]);
+    expect(wire.asked).toEqual(["/api/library/rows?cursor=0&section=movie"]);
     expect(feed.getSnapshot().data.shelves.movie.cursor).toBe(1);
-    expect(feed.getSnapshot().data.shelves.all.cursor).toBe(0);
+    for (const other of ["all", "series", "cartoon", "anime"] as const) expect(feed.getSnapshot().data.shelves[other].cursor, other).toBe(0);
+    // the cartoons and the anime are asked for by their own names, from their own start
+    feed.loadShelves("cartoon");
+    feed.loadShelves("anime");
+    await settle();
+    expect(wire.asked).toEqual(["/api/library/rows?cursor=0&section=movie", "/api/library/rows?cursor=0&section=cartoon", "/api/library/rows?cursor=0&section=anime"]);
+    expect(feed.getSnapshot().data.shelves.cartoon.cursor).toBe(1);
+    expect(feed.getSnapshot().data.shelves.anime.cursor).toBe(1);
     expect(feed.getSnapshot().data.shelves.series.cursor).toBe(0);
   });
 

@@ -1,4 +1,4 @@
-import type { EpisodeDetail, LibraryItem, LibraryKind, LibraryRow } from "../../shared";
+import type { EpisodeDetail, LibraryItem, LibraryRow } from "../../shared";
 import { FILMPIRE_TMDB_API_KEY } from "./filmpire";
 import type { LibrarySource } from "./library";
 
@@ -202,6 +202,7 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
         id: `animeheaven-series-${slug}`,
         title: decodeHtmlEntities(rawTitle),
         kind: "series",
+        section: "anime",
         image,
         url: `${BASE}/anime.php?${slug}&s=1&e=1`,
       });
@@ -223,6 +224,7 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
           id: `animeheaven-series-${slug}`,
           title: decodeHtmlEntities(rawTitle),
           kind: "series",
+          section: "anime",
           image,
           url: `${BASE}/anime.php?${slug}&s=1&e=1`,
         });
@@ -250,6 +252,7 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
             title: "Trending Anime",
             source: "AnimeHeaven",
             kind: "series",
+            section: "anime",
             items: popItems.slice(0, 30),
           });
         }
@@ -263,6 +266,7 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
             title: "New Anime Releases",
             source: "AnimeHeaven",
             kind: "series",
+            section: "anime",
             items: newItems.slice(0, 30),
           });
         }

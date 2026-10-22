@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { LibraryRowSchema } from "../../shared";
-import { filmpireSource, MAX_PAGE, type FilmpireCategory } from "./filmpire";
+import { FILMPIRE_CATEGORIES, filmpireSource, MAX_PAGE, type FilmpireCategory } from "./filmpire";
+import { sectionOfCategory } from "./shelves";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -271,6 +272,137 @@ describe("filmpireSource shelves and more", () => {
       ["/3/movie/popular", ["1"], "k"],
       ["/3/discover/movie", ["1"], "k"],
     ]);
+  });
+});
+
+describe("filmpireSource sections", () => {
+  const film = (id: number, title: string, extra: object = {}) => ({ id, title, release_date: "2001-01-01", poster_path: "/p.jpg", ...extra });
+  const show = (id: number, name: string, extra: object = {}) => ({ id, name, first_air_date: "2001-01-01", poster_path: "/p.jpg", ...extra });
+  const ANIMATION = 16;
+  const live = film(1, "Live Film", { genre_ids: [28], original_language: "en" });
+  const toon = film(2, "Toon Film", { genre_ids: [ANIMATION, 35], original_language: "en" });
+  const manga = film(3, "Manga Film", { genre_ids: [ANIMATION, 14], original_language: "ja" });
+  /** English in its title and its language, but made in Japan: an anime all the same. */
+  const madeInJapan = film(4, "Made In Japan", { genre_ids: [ANIMATION], original_language: "en", origin_country: ["JP"] });
+  /** Animated, but not Japanese: a cartoon, as a Korean or a French one is. */
+  const koreanToon = film(5, "Korean Toon", { genre_ids: [ANIMATION], original_language: "ko", origin_country: ["KR"] });
+  /** TMDB gave no genres for it. */
+  const unknown = film(6, "No Genres");
+  const films = [live, toon, manga, madeInJapan, koreanToon, unknown];
+  const liveShow = show(10, "Live Show", { genre_ids: [18], original_language: "en" });
+  const toonShow = show(11, "Toon Show", { genre_ids: [ANIMATION, 35], original_language: "en", origin_country: ["US"] });
+  const animeShow = show(12, "Anime Show", { genre_ids: [ANIMATION, 10759], original_language: "ja", origin_country: ["JP"] });
+  const shows = [liveShow, toonShow, animeShow];
+  const titlesOf = (row: { items: Array<{ title: string }> }) => row.items.map((one) => one.title);
+  /** TMDB answering a question about a show with the shows and about a film with the films. */
+  const tmdb = () => vi.fn(async (url: string | URL) => json({ results: String(url).includes("/tv") ? shows : films, total_pages: 3 }));
+  const shelf = (id: string, type: "movie" | "tv", section?: "cartoon" | "anime"): FilmpireCategory => ({ id, title: id.toUpperCase(), path: `/discover/${type}?with_genres=1&sort_by=vote_count.desc`, type, ...(section ? { section } : {}) });
+
+  it("tells a cartoon from an anime and from a film or a show by the genres, the language and the country of a title, saying the section only for the first two", async () => {
+    const get = vi.fn(async () => json({ results: [...films, ...shows] }));
+    const results = await filmpireSource({ fetch: get as never }).search!("anything");
+    expect(results.map((one) => [one.title, one.kind, one.section]).sort()).toEqual(
+      [
+        ["Live Film", "movie", undefined],
+        ["Toon Film", "movie", "cartoon"],
+        ["Manga Film", "movie", "anime"],
+        ["Made In Japan", "movie", "anime"],
+        ["Korean Toon", "movie", "cartoon"],
+        ["No Genres", "movie", undefined],
+        ["Live Show", "series", undefined],
+        ["Toon Show", "series", "cartoon"],
+        ["Anime Show", "series", "anime"],
+      ].sort(),
+    );
+  });
+
+  it("puts only the titles of a category's own section in its row: the film that is a cartoon is not among the movies, nor the anime among the cartoons", async () => {
+    const categories: FilmpireCategory[] = [
+      { id: "pop", title: "Pop", path: "/movie/popular", type: "movie" },
+      { id: "toons", title: "Toons", path: "/discover/movie?with_genres=16", type: "movie", section: "cartoon" },
+      { id: "manga", title: "Manga", path: "/discover/movie?with_genres=16&with_original_language=ja", type: "movie", section: "anime" },
+      { id: "pop-tv", title: "Pop TV", path: "/tv/popular", type: "tv" },
+      { id: "toons-tv", title: "Toons TV", path: "/discover/tv?with_genres=16", type: "tv", section: "cartoon" },
+      { id: "manga-tv", title: "Manga TV", path: "/discover/tv?with_genres=16&with_original_language=ja", type: "tv", section: "anime" },
+    ];
+    const rows = await filmpireSource({ categories, fetch: tmdb() as never }).load();
+    expect(rows.map((one) => [one.id, one.kind, one.section, titlesOf(one)])).toEqual([
+      ["filmpire-pop", "movie", undefined, ["Live Film", "No Genres"]],
+      ["filmpire-toons", "movie", "cartoon", ["Toon Film", "Korean Toon"]],
+      ["filmpire-manga", "movie", "anime", ["Manga Film", "Made In Japan"]],
+      ["filmpire-pop-tv", "series", undefined, ["Live Show"]],
+      ["filmpire-toons-tv", "series", "cartoon", ["Toon Show"]],
+      ["filmpire-manga-tv", "series", "anime", ["Anime Show"]],
+    ]);
+    for (const row of rows) expect(LibraryRowSchema.safeParse(row).success, row.id).toBe(true);
+    // (a title says its section too, apart from what it is, a film or a show)
+    expect(rows[1]!.items[0]).toMatchObject({ kind: "movie", section: "cartoon" });
+    expect(rows[5]!.items[0]).toMatchObject({ kind: "series", section: "anime" });
+    expect(rows[0]!.items[0]!.section).toBeUndefined();
+  });
+
+  it("brings the shelves of one section at a time, each with only the titles of that section, and Home's from all of them", async () => {
+    const groups = [[shelf("m1", "movie")], [shelf("t1", "tv")], [shelf("c1", "movie", "cartoon")], [shelf("c2", "tv", "cartoon")], [shelf("a1", "movie", "anime")]];
+    const source = filmpireSource({ categories: [], shelves: groups, fetch: tmdb() as never });
+    const ofSection = async (section: Parameters<NonNullable<typeof source.shelves>>[0]) => (await source.shelves!(section, 0)).rows.map((one) => [one.id, one.section, titlesOf(one)]);
+    expect(await ofSection("movie")).toEqual([["filmpire-m1", undefined, ["Live Film", "No Genres"]]]);
+    expect(await ofSection("series")).toEqual([["filmpire-t1", undefined, ["Live Show"]]]);
+    expect(await ofSection("cartoon")).toEqual([
+      ["filmpire-c1", "cartoon", ["Toon Film", "Korean Toon"]],
+      ["filmpire-c2", "cartoon", ["Toon Show"]],
+    ]);
+    expect(await ofSection("anime")).toEqual([["filmpire-a1", "anime", ["Manga Film", "Made In Japan"]]]);
+    expect((await ofSection(undefined)).map(([id]) => id)).toEqual(["filmpire-m1", "filmpire-t1", "filmpire-c1", "filmpire-c2", "filmpire-a1"]);
+    // (each section has its own place to go on from)
+    expect((await source.shelves!("cartoon", 0)).next).toBeNull();
+    expect((await source.shelves!(undefined, 0)).next).toBeNull();
+  });
+
+  it("brings the next pages of a shelf with only the titles of its section", async () => {
+    const source = filmpireSource({ categories: [], shelves: [[shelf("c1", "movie", "cartoon")], [shelf("a1", "movie", "anime")], [shelf("m1", "movie")]], fetch: tmdb() as never });
+    expect(titlesOf(await source.more!("filmpire-c1", 2))).toEqual(["Toon Film", "Korean Toon"]);
+    expect(titlesOf(await source.more!("filmpire-a1", 2))).toEqual(["Manga Film", "Made In Japan"]);
+    expect(titlesOf(await source.more!("filmpire-m1", 2))).toEqual(["Live Film", "No Genres"]);
+  });
+
+  it("leaves a shelf out of its page when TMDB had nothing of its section to show for it", async () => {
+    const onlyLive = vi.fn(async () => json({ results: [live, liveShow], total_pages: 3 }));
+    const source = filmpireSource({ categories: [], shelves: [[shelf("c1", "movie", "cartoon")], [shelf("m1", "movie")]], fetch: onlyLive as never });
+    expect((await source.shelves!(undefined, 0)).rows.map((one) => one.id)).toEqual(["filmpire-m1"]);
+  });
+
+  it("lists the first rows of every section, the animated ones asked for animation and the live-action ones for none", () => {
+    const params = (cat: FilmpireCategory) => new URLSearchParams(cat.path.split("?")[1]);
+    const genres = (value: string | null) => (value ?? "").split(",");
+    const of = (section: string) => FILMPIRE_CATEGORIES.filter((cat) => sectionOfCategory(cat) === section);
+    expect(of("movie").length).toBeGreaterThanOrEqual(10);
+    expect(of("series").length).toBeGreaterThanOrEqual(8);
+    expect(of("cartoon").length).toBeGreaterThanOrEqual(4);
+    expect(of("anime").length).toBeGreaterThanOrEqual(4);
+    expect(of("cartoon").some((cat) => cat.type === "movie") && of("cartoon").some((cat) => cat.type === "tv")).toBe(true);
+    expect(of("anime").some((cat) => cat.type === "movie") && of("anime").some((cat) => cat.type === "tv")).toBe(true);
+    for (const cat of FILMPIRE_CATEGORIES) {
+      const own = sectionOfCategory(cat);
+      if (own === "movie" || own === "series") {
+        expect(cat.type, cat.id).toBe(own === "movie" ? "movie" : "tv");
+        // (the lists TMDB can sort by genre are asked for none of it; its trending, popular and top lists cannot be, and are sifted when they come)
+        if (cat.path.startsWith("/discover")) expect(genres(params(cat).get("without_genres")), cat.id).toContain("16");
+      } else {
+        expect(genres(params(cat).get("with_genres")), cat.id).toContain("16");
+        expect(params(cat).get("with_original_language") === "ja", cat.id).toBe(own === "anime");
+      }
+    }
+  });
+
+  it("has no cartoon or anime among the movies, series, trending, popular and top rated lists TMDB cannot sift (they are sifted here)", async () => {
+    // a trending list of TMDB with a cartoon among its films: the Movies row leaves it out, the cartoon row (which asked for animation) has it
+    const trending: FilmpireCategory[] = [
+      { id: "trending-movies", title: "Trending Movies", path: "/trending/movie/week", type: "movie" },
+      { id: "cartoon-movies", title: "Cartoon Movies", path: "/discover/movie?with_genres=16", type: "movie", section: "cartoon" },
+    ];
+    const rows = await filmpireSource({ categories: trending, fetch: tmdb() as never }).load();
+    expect(rows.find((one) => one.id === "filmpire-trending-movies")!.items.some((one) => one.section !== undefined)).toBe(false);
+    expect(titlesOf(rows.find((one) => one.id === "filmpire-cartoon-movies")!)).toEqual(["Toon Film", "Korean Toon"]);
   });
 });
 
