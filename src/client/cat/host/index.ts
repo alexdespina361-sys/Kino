@@ -182,6 +182,10 @@ export function mountCat(): { stop: () => void } {
   /** Takes the cat away because the screen cannot spare it (set below, where everything it takes away is in reach). */
   let halt: () => void = () => undefined;
   let last = 0;
+  /** When the cat's brain last ran, on which page, and how long of its time the skeleton has not been told of yet (seconds): see `follow`. */
+  let thought = 0;
+  let thoughtOf: World | null = null;
+  let owed = 0;
   let cost = 0;
   /** Where a frame's time goes, smoothed (milliseconds): reading the page, the cat's brain, and painting (less the wait for the card). */
   let phases = { read: 0, think: 0, paint: 0 };
@@ -401,22 +405,63 @@ export function mountCat(): { stop: () => void } {
 
   /* ------------------------------ the loop ------------------------------ */
 
+  /** The picture's place and the box a hand is on, put where the brain has the cat (the picture on whole pixels of the screen: the rest of a pixel is in the painting). */
+  const putCat = (ix: number, iy: number, L: number): void => {
+    if (!brush) return;
+    brush.canvas.style.transform = `translate3d(${ix}px, ${iy}px, 0)`;
+    // (the box a hand is on is the cat's body and head, as it is drawn now and the way it faces; its tail is not a thing to click)
+    const [back, front, high] = coreOf(frame.clip);
+    hit.style.transform = `translate3d(${frame.x - origin.x - (frame.facing > 0 ? back : front) * L}px, ${frame.y - origin.y - high * L}px, 0) scale(${back + front}, ${high})`;
+  };
+
+  /**
+   * A frame that a slow screen is not given a picture for (it gets thirty a second): while the rows of the page go by under the cat, the brain runs and the cat is put where
+   * its shelf is now, so that it goes with the shelf at every frame as the shelf does, and is not jerked along behind it at every other one. The skeleton and the picture wait for the
+   * next frame that paints (the skeleton is told how long it was). A page that has not moved since the brain last looked costs nothing here; a cat in a hand is moved by the hand.
+   */
+  const follow = (time: number): void => {
+    if (!shown || !brush || !wrap.isConnected || drag?.held) return;
+    const now = page.read(time);
+    if (now !== read) {
+      read = now;
+      onRead(now);
+    }
+    const world = now.world;
+    if (world === thoughtOf) return;
+    if (pointer && time - pointerAt < 3000) world.pointer = pointer;
+    else delete world.pointer;
+    const dt = Math.min(thought ? time - thought : 16.7, 100) / 1000;
+    thought = time;
+    thoughtOf = world;
+    owed += dt;
+    frame = engine.update(world, dt);
+    putCat(Math.floor((frame.x - origin.x - ox) * dpr) / dpr, Math.floor((frame.y - origin.y - oy) * dpr) / dpr, world.bodyLength);
+  };
+
   const loop = (time: number): void => {
     if (stopped) return;
     raf = requestAnimationFrame(loop);
     if (document.hidden) {
       last = time;
+      thought = time;
       return;
     }
     const gap = last ? time - last : 16.7;
-    // a slow screen gets thirty frames a second; a screen where the cat is away (and not on its way back) is looked at a few times a second
-    if (quality === "low" && gap < 30) return;
+    // a slow screen gets thirty frames a second (and its cat goes with the page in between: see `follow`); a screen where the cat is away (and not on its way back) is looked at a few times a second
+    if (quality === "low" && gap < 30) {
+      follow(time);
+      return;
+    }
     if (read && !shown && prevMode === "away" && gap < 100) return;
     // a cat asleep in a film only breathes: it is painted a third as often, and the film has the rest of the screen's time
     if (shown && prevMode === "player" && frame.appear > 0.99 && (frame.clip === "curl" || frame.clip === "loaf") && !frame.petted && gap < ASLEEP_GAP_MS) return;
     last = time;
     fps = fps * 0.9 + (1000 / Math.max(1, gap)) * 0.1;
-    const dt = Math.min(gap, 100) / 1000;
+    // (the brain's time is from the last time it ran, which may have been a frame between: see `follow`)
+    const dt = Math.min(thought ? time - thought : 16.7, 100) / 1000;
+    thought = time;
+    const owing = owed;
+    owed = 0;
     const t0 = performance.now();
 
     const now = page.read(time);
@@ -437,6 +482,7 @@ export function mountCat(): { stop: () => void } {
     // (a hand that has the cat says so at every frame: a hand that goes quiet is a lost pointer, and the cat is let go)
     if (drag && held) engine.send({ type: "cat.carry", at: drag.at });
 
+    thoughtOf = world;
     frame = engine.update(world, dt);
     const tThink = performance.now();
     const L = world.bodyLength;
@@ -457,7 +503,7 @@ export function mountCat(): { stop: () => void } {
     let waited = 0;
     if (visible && brush) {
       if (!shown) rig.snapTo(frame, L); // (a cat that comes in is already in its pose: it does not settle into it in front of the viewer)
-      rig.update(frame, dt, L);
+      rig.update(frame, owing + dt, L);
       const px = frame.x - origin.x - ox;
       const py = frame.y - origin.y - oy;
       const ix = Math.floor(px * dpr) / dpr;
@@ -476,10 +522,7 @@ export function mountCat(): { stop: () => void } {
         if (taken.length > 3) taken.shift();
         gpu = [...taken].sort((a, b) => a - b)[(taken.length - 1) >> 1] ?? 0;
       }
-      brush.canvas.style.transform = `translate3d(${ix}px, ${iy}px, 0)`;
-      // (the box a hand is on is the cat's body and head, as it is drawn now and the way it faces; its tail is not a thing to click)
-      const [back, front, high] = coreOf(frame.clip);
-      hit.style.transform = `translate3d(${frame.x - origin.x - (frame.facing > 0 ? back : front) * L}px, ${frame.y - origin.y - high * L}px, 0) scale(${back + front}, ${high})`;
+      putCat(ix, iy, L);
     }
     if (visible !== shown) {
       shown = visible;

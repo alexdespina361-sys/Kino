@@ -20,6 +20,10 @@ const variants: Array<[string, Parameters<typeof runSession>[0] extends infer O 
   ["scroll-focus", { chaos: { scroll: true, focus: true, touch: true, hand: true } }],
   ["slide", { chaos: { slide: true, touch: true, focus: true } }],
   ["names", { chaos: all, names: true }],
+  // (a finger that flings the page, eight thousand pixels a second, at 60 frames and at 30: the cat is shaken off its shelf and falls)
+  ["fling-60fps", { chaos: { ...all, fling: true }, fps: 60 }],
+  ["fling-30fps", { chaos: { ...all, fling: true } }],
+  ["fling-scroll", { chaos: { scroll: true, focus: true, touch: true, hand: true, fling: true }, fps: 60 }],
 ];
 let bad = 0;
 const started = Date.now();

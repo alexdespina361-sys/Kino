@@ -753,6 +753,222 @@ test("a hand that is lost lets the cat go: the window losing the pointer puts it
   await tv.mouse.up();
 });
 
+/** A library of more rows than a screen shows, so that the rows can be flung. */
+const tallLibrary = { updatedAt: Date.now(), rows: Array.from({ length: 12 }, (_, row) => ({ id: `row${row}`, title: `Row ${row + 1}`, source: "Test Source", items: Array.from({ length: 10 }, (_, index) => film(`r${row}c${index}`, `Film ${row + 1}-${index + 1}`)) })) };
+interface Beat {
+  y: number;
+  act: string;
+  flung: boolean;
+  surface: string | null;
+  grounded: boolean;
+  scroll: number;
+}
+/** From now on, what the cat is doing, every few milliseconds (in the page, where the frames are), until `__beats.stop()`. */
+const watchTheCat = (tv: Page) =>
+  tv.evaluate(() => {
+    const w = window as unknown as { __kinoCat: { snapshot(): { frame: { y: number; grounded: boolean }; engine: { act: string; flung: boolean; surfaceId: string | null; scroll: number } } }; __beats: Beat[]; __stopBeats?: () => void };
+    w.__beats = [];
+    const timer = window.setInterval(() => {
+      const seen = w.__kinoCat.snapshot();
+      w.__beats.push({ y: seen.frame.y, act: seen.engine.act, flung: seen.engine.flung, surface: seen.engine.surfaceId, grounded: seen.frame.grounded, scroll: seen.engine.scroll });
+    }, 8);
+    w.__stopBeats = () => window.clearInterval(timer);
+  });
+const theBeats = (tv: Page) => tv.evaluate(() => (window as unknown as { __beats: Beat[] }).__beats);
+const stopWatching = (tv: Page) => tv.evaluate(() => (window as unknown as { __stopBeats?: () => void }).__stopBeats?.());
+
+test("a page that is flung does not take the cat up with its shelf: it is shaken off and falls, in front of the page that goes by, and lands; a step of the remote takes it with the shelf", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const tv = await openLibrary(browser, async (context) => {
+    await offered(true)(context);
+    await withLibrary(tallLibrary)(context);
+  }, undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  // (called to the highest shelf that is wholly on the screen, with room above it for the fall, and told to sit there)
+  const world = await worldOf(tv);
+  const L = world.bodyLength;
+  const shelf = world.surfaces.filter((surface) => surface.kind === "shelfTop" && surface.y > 2.2 * L).sort((a, b) => a.y - b.y)[0]!;
+  await tellCat(tv, { type: "cat.call", at: { x: (shelf.x0 + shelf.x1) / 2, y: shelf.y } });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 15_000 }).toBe(shelf.id));
+  await catSitsAndWhere(tv);
+  const start = await snap(tv);
+  const rest = async () => {
+    await saying(tv, () => expect.poll(async () => { const seen = await snap(tv); return seen.frame.grounded && !/fall|jump|carried/.test(seen.engine.act); }, { timeout: 15_000 }).toBe(true));
+  };
+
+  // a step of the remote (the rows go by at twenty-odd body lengths a second at the quickest): the cat goes with its shelf, and does not fall
+  await watchTheCat(tv);
+  await tv.evaluate((by) => document.querySelector<HTMLElement>(".tv-rows")!.scrollBy({ top: by, behavior: "smooth" }), 3 * L);
+  await tv.waitForTimeout(1_200);
+  await stopWatching(tv);
+  const stepped = await theBeats(tv);
+  expect(stepped.length).toBeGreaterThan(50);
+  expect(stepped.some((beat) => beat.flung || beat.act === "fall"), "a step of the remote").toBe(false);
+  await rest();
+  await tv.evaluate(() => (document.querySelector<HTMLElement>(".tv-rows")!.scrollTop = 0));
+  await tv.waitForTimeout(600);
+  await catIsOnTheShelves(tv);
+  await tellCat(tv, { type: "cat.call", at: { x: (shelf.x0 + shelf.x1) / 2, y: shelf.y } });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 15_000 }).toBe(shelf.id));
+  await catSitsAndWhere(tv);
+  const before = await snap(tv);
+
+  // a fling (a body length a frame, sixty a second, as far as the rows go): the cat does not go up with the shelf
+  await watchTheCat(tv);
+  await tv.evaluate(async (step) => {
+    const rows = document.querySelector<HTMLElement>(".tv-rows")!;
+    for (let frame = 0; frame < 80; frame++) {
+      rows.scrollTop += step;
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    }
+  }, L);
+  await saying(tv, () => expect.poll(async () => { const seen = await snap(tv); return seen.frame.grounded && !/fall|jump|carried/.test(seen.engine.act); }, { timeout: 15_000 }).toBe(true));
+  await stopWatching(tv);
+  const beats = await theBeats(tv);
+  const first = beats.findIndex((beat) => beat.flung);
+  expect(first, "it was shaken off").toBeGreaterThanOrEqual(0);
+  // (it could not know the page was being flung at the first look at it, and may go up with the shelf for that one, a body length at most -- the page that is flung goes by a body length a frame -- and not a pixel after: from there on it only falls)
+  expect(Math.min(...beats.map((beat) => beat.y)), "it rose with the shelf").toBeGreaterThan(before.frame.y - 1.2 * L);
+  const air = beats.slice(first).filter((beat) => beat.flung);
+  expect(air.length).toBeGreaterThan(5);
+  for (let i = first + 1; i < beats.length && beats[i]!.flung; i++) expect(beats[i]!.y, `beat ${i}`).toBeGreaterThanOrEqual(beats[i - 1]!.y - 0.01);
+  // (and it hung there, falling, while the page was flying: it was in the air for well over a tenth of a second, and was not down on anything before the page had slowed)
+  const landed = beats.findIndex((beat, i) => i > first && beat.grounded);
+  expect(landed).toBeGreaterThan(first);
+  expect(Math.max(...beats.slice(first, landed).map((beat) => Math.abs(beat.scroll)))).toBeGreaterThan(30);
+  const end = await snap(tv);
+  expect(end.frame.grounded).toBe(true);
+  expect(end.engine.surfaceId).not.toBe(shelf.id);
+  expect(end.frame.y).toBeGreaterThan(Math.min(...air.map((beat) => beat.y)) - 1);
+});
+
+/**
+ * The cat on the lowest shelf in sight, sitting, and then the rows scrolled up under it by a step of the remote (a smooth scroll of a body length and a half): at every
+ * frame of the scroll, where the cat's feet are and where the top of a poster of its shelf is (in the page, where the frames are). What came of it: the frames in which the
+ * shelf moved, the farthest the cat was from the shelf (less where it was to begin with), and the frames in which the shelf moved by more than two pixels and the cat did not.
+ */
+const ridesTheRows = async (tv: Page, slow: number, scroller = ".tv-rows", cards = ".tv-row .tv-tile") => {
+  const lowest = async () => {
+    const seen = await worldOf(tv);
+    return { L: seen.bodyLength, shelf: seen.surfaces.filter((surface) => surface.kind === "shelfTop").sort((a, b) => b.y - a.y)[0]! };
+  };
+  const { L, shelf } = await lowest();
+  // (taken by the scruff, held over the lowest shelf in sight and let go: it lands on it from wherever it was, which a call does not do from the floor of a grid)
+  const middle = await catSitsAndWhere(tv);
+  const hand = { x: (shelf.x0 + shelf.x1) / 2, y: shelf.y - 1.2 * L - 0.73 * L };
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  await tv.mouse.move(middle.x + 30, middle.y - 30, { steps: 5 });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.act, { timeout: 5_000 }).toBe("carried"));
+  await tv.mouse.move(hand.x, hand.y, { steps: 30 });
+  await tv.waitForTimeout(500);
+  await tv.mouse.up();
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return !/carried|fall/.test(seen.engine.act) && seen.frame.grounded && seen.engine.surfaceId === (await lowest()).shelf.id;
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+  await catSitsAndWhere(tv);
+  // (the screen is slowed once the cat is there: it is the ride that is looked at, and not the way to the shelf)
+  const session = await tv.context().newCDPSession(tv);
+  await session.send("Emulation.setCPUThrottlingRate", { rate: slow });
+  await tv.evaluate((cardsOf) => {
+    const w = window as unknown as { __kinoCat: { snapshot(): { engine: { surfaceId: string | null } }; world(): { surfaces: Array<{ id: string; x0: number; x1: number; y: number }> } }; __ride: Array<{ tile: number; cat: number }>; __rideStop?: boolean };
+    const hit = document.querySelector<HTMLElement>('[data-testid="cat-hit"]')!;
+    const under = w.__kinoCat.world().surfaces.find((surface) => surface.id === w.__kinoCat.snapshot().engine.surfaceId)!;
+    const tile = [...document.querySelectorAll<HTMLElement>(cardsOf)]
+      .filter((element) => {
+        const box = element.getBoundingClientRect();
+        return box.left >= under.x0 - 1 && box.right <= under.x1 + 1;
+      })
+      .sort((a, b) => Math.abs(a.getBoundingClientRect().top - under.y) - Math.abs(b.getBoundingClientRect().top - under.y))[0]!;
+    w.__ride = [];
+    w.__rideStop = false;
+    const tick = () => {
+      w.__ride.push({ tile: tile.getBoundingClientRect().top, cat: hit.getBoundingClientRect().bottom });
+      if (!w.__rideStop) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, cards);
+  await tv.waitForTimeout(200);
+  await tv.evaluate(([by, selector]) => document.querySelector<HTMLElement>(selector as string)!.scrollBy({ top: by as number, behavior: "smooth" }), [1.5 * L, scroller] as const);
+  await tv.waitForTimeout(1_500);
+  await tv.evaluate(() => ((window as unknown as { __rideStop: boolean }).__rideStop = true));
+  await session.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+  const samples = await tv.evaluate(() => (window as unknown as { __ride: Array<{ tile: number; cat: number }> }).__ride);
+  const first = samples.findIndex((sample, i) => i > 0 && sample.tile !== samples[0]!.tile);
+  let end = first;
+  for (let i = Math.max(first, 1); i < samples.length; i++) if (samples[i]!.tile !== samples[i - 1]!.tile) end = i;
+  const run = first < 0 ? [] : samples.slice(Math.max(0, first - 1), end + 1);
+  const base = run.length > 0 ? run[0]!.cat - run[0]!.tile : 0;
+  return {
+    L,
+    frames: run.length,
+    off: Math.max(0, ...run.map((sample) => Math.abs(sample.cat - sample.tile - base))),
+    stalls: run.slice(1).filter((sample, i) => Math.abs(sample.tile - run[i]!.tile) > 2 && Math.abs(sample.cat - run[i]!.cat) < 0.5).length,
+  };
+};
+
+test("on a slow screen, a processor four times slower than this one, the cat still goes with its shelf at every frame as the rows go up under it, and is not left behind in steps", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const tv = await openLibrary(browser, async (context) => {
+    await offered(true)(context);
+    await withLibrary(tallLibrary)(context);
+  }, undefined, WANTS());
+  // (a budget that keeps the cat as it is: this is about how often the page is read, which on a slow screen is a few times in a dozen frames)
+  await tv.goto("/tv?cat=debug&catbudget=100000");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const ride = await ridesTheRows(tv, 4);
+  expect(ride.frames, "the rows were seen to go by").toBeGreaterThan(5);
+  expect(ride.stalls, "frames of the scroll in which the cat did not move with the shelf").toBeLessThanOrEqual(1);
+  expect(ride.off, "how far it was from its shelf").toBeLessThan(0.1 * ride.L);
+});
+
+test("and so on a grid of posters, a category: on a slow screen the cat goes with its line at every frame as the grid goes up under it", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const long = { updatedAt: Date.now(), rows: [{ id: "long", title: "A long row", source: "Test Source", items: Array.from({ length: 90 }, (_, index) => film(`g${index}`, `Grid film ${index + 1}`)) }] };
+  const tv = await openLibrary(browser, async (context) => {
+    await offered(true)(context);
+    await withLibrary(long)(context);
+  }, undefined, WANTS());
+  await tv.goto("/tv?cat=debug&catbudget=100000");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  await tv.getByTestId("rail-categories").click();
+  await tv.getByTestId("tv-category-tile").filter({ hasText: "A long row" }).click();
+  await expect(tv.getByTestId("tv-category")).toBeVisible();
+  await saying(tv, () => expect.poll(async () => (await worldOf(tv)).surfaces.filter((surface) => surface.id.startsWith("grid")).length, { timeout: 10_000 }).toBeGreaterThan(1));
+  const ride = await ridesTheRows(tv, 4, ".tv-grid", ".tv-grid .tv-tile");
+  expect(ride.frames, "the grid was seen to go by").toBeGreaterThan(5);
+  expect(ride.stalls, "frames of the scroll in which the cat did not move with its line").toBeLessThanOrEqual(1);
+  expect(ride.off, "how far it was from its line").toBeLessThan(0.1 * ride.L);
+});
+
+test("a screen that gets thirty pictures a second still has the cat go with its shelf at every frame as the rows go up under it", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const tv = await openLibrary(browser, async (context) => {
+    await offered(true)(context);
+    await withLibrary(tallLibrary)(context);
+  }, undefined, WANTS({ look: "ragdoll" }));
+  // (a cost told to be over the budget, and not over the budget of the next step down: the screen is held at the picture of thirty a second)
+  await tv.goto("/tv?cat=debug&catbudget=1000&catslow=1500");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await artIs(tv, "solid");
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).quality, { timeout: 60_000 }).toBe("low"));
+  await catIsOnTheShelves(tv);
+  const ride = await ridesTheRows(tv, 1);
+  expect((await snap(tv)).quality, "it was at thirty pictures a second throughout").toBe("low");
+  expect(ride.frames, "the rows were seen to go by").toBeGreaterThan(5);
+  expect(ride.stalls, "frames of the scroll in which the cat did not move with the shelf").toBeLessThanOrEqual(1);
+  expect(ride.off, "how far it was from its shelf").toBeLessThan(0.1 * ride.L);
+});
+
 /** The cat's page of the settings: the settings page, then its row for the cat. */
 const openCatSettings = async (tv: Page) => {
   await openTvSettings(tv);

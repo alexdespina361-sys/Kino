@@ -84,6 +84,12 @@ export interface World {
   quiet: boolean;
   /** `prefers-reduced-motion`: the cat only rests, in one place. */
   reducedMotion: boolean;
+  /**
+   * When the page was last read (the host's clock, in milliseconds), for a host that hands the cat the very same world while the page has not changed: that world, read again and found as it
+   * was, has a later `readAt`. The cat takes another `readAt` for another reading of the page (a page that was read and had not moved is one that is still, and not one that has not been read
+   * yet). Optional: without it, a world is read afresh when it is another object.
+   */
+  readAt?: number;
 }
 
 /* ------------------------------ what the cat is doing ------------------------------ */
