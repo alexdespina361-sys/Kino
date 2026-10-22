@@ -644,10 +644,13 @@ the one before. That halves what an hour costs (1.2 GB instead of 2.4 GB in the 
 
 The server is one Node process that serves the page, the API and the sockets from one port, which is what a Render **Web Service** is.
 
-1. New → Web Service → this repository. Build command `corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build`, start
+1. New → Web Service → this repository. Build command `corepack pnpm install --frozen-lockfile --prod=false && corepack pnpm build`, start
    command `pnpm start`. Node comes from `.node-version`, and the pnpm version from `packageManager` in `package.json` (that is what
-   `corepack enable` is for). `--prod=false` keeps the build tools (`vite`, `tsx`) installed even if you ever set `NODE_ENV=production` for
-   the build. Under Advanced, set the health check path to `/api/health`.
+   `corepack pnpm` is for: it runs exactly that pnpm without putting anything into the system's folders). **Do not put `corepack enable` in the
+   build command**: it writes `pnpm` into `/usr/bin`, which Render's build machines can keep read-only, and the build stops with
+   `EROFS: read-only file system, unlink '/usr/bin/pnpm'`. `--prod=false` keeps the build tools (`vite`, `tsx`) installed even if you ever set
+   `NODE_ENV=production` for the build. Under Advanced, set the health check path to `/api/health`. If a deploy builds but then stops at
+   start with an error about pnpm, set the start command to `npm start` instead (it runs the same script and needs no pnpm).
 2. Render sets `PORT` and `RENDER`, so the server listens where Render looks and trusts its proxy (the rate limits then see each visitor's own
    address, not Render's).
 3. **Accounts need a database on the free plan.** A free instance's disk is wiped on every deploy and restart, and it goes to sleep after
@@ -688,7 +691,8 @@ Anything that runs a Node process does (Northflank, Railway, Fly, a VPS):
 - **Start with `pnpm start`.** `tsx`, which it runs, is a regular dependency, so a host that installs only the dependencies of a running app, or that
   removes the build tools after building (most buildpacks do), still has it: `tsx: not found` and a restart loop was the sign of it being missing. `dist/client`
   is committed, so there is nothing to build.
-- **Node 24** (`.node-version`), pnpm from `packageManager` (`corepack enable`).
+- **Node 24** (`.node-version`), pnpm from `packageManager` (`corepack pnpm ...`; `corepack enable` only where the host lets you write to the
+  system's `bin` folder, which Render's builds may not).
 - **The port:** the server listens on `PORT` (default 8787) on `HOST` (default `0.0.0.0`). Declare that port as HTTP in the host, with WebSockets allowed
   (the page talks over `/ws`), and `/api/health` as the health check.
 - **Set `TRUST_PROXY=1`** (the number of proxies in front of the server; it is on by itself only on Render). Without it every visitor looks like one address
