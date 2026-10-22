@@ -1,4 +1,4 @@
-import { CLOSEST_MAX, guessesFor, normalizeQuery, rankByQuery, spelledOut, TitleIndex, withoutNoise, type EpisodeDetail, type Library, type LibraryItem, type LibraryKind, type LibraryRow } from "../../shared";
+import { CLOSEST_MAX, guessesFor, normalizeQuery, rankByQuery, spelledOut, TitleIndex, withoutNoise, type EpisodeDetail, type Library, type LibraryItem, type LibraryRow, type LibrarySection } from "../../shared";
 
 /** A place that offers video openly and can list some of it as rows of titles. Each one is asked as seldom as the cache allows. */
 export interface LibrarySource {
@@ -13,8 +13,8 @@ export interface LibrarySource {
   episodes?(link: string, season: number): Promise<EpisodeDetail[]>;
   /** The seasons that can be watched of the show a link plays, in order (none for a film or a link that is not this place's own). Throws when the place cannot be reached. */
   seasons?(link: string): Promise<number[]>;
-  /** The rows that come after the ones `load` lists, a few at a time from `cursor` 0 (films only, or shows only, when `kind` says); `next` is where the following ones begin, none at the end. Throws when the place cannot be reached. */
-  shelves?(kind: LibraryKind | undefined, cursor: number): Promise<{ rows: LibraryRow[]; next: number | null }>;
+  /** The rows that come after the ones `load` lists, a few at a time from `cursor` 0 (those of one page, Movies, Series, Cartoons or Anime, when `section` says); `next` is where the following ones begin, none at the end. Throws when the place cannot be reached. */
+  shelves?(section: LibrarySection | undefined, cursor: number): Promise<{ rows: LibraryRow[]; next: number | null }>;
   /** More titles of one of this place's rows, from page 2 on (the first page is in the row), and whether there are no more after them (a row this place does not have: none, and no more). Throws when the place cannot be reached. */
   more?(rowId: string, page: number): Promise<{ items: LibraryItem[]; last: boolean }>;
 }
@@ -32,7 +32,7 @@ export interface LibraryService {
   get(): Promise<Library>;
   search(query: string): Promise<SearchAnswer>;
   /** The next rows of the library for a page that is scrolled (see `LibrarySource.shelves`). Throws when no place could be reached. */
-  rows(kind: LibraryKind | undefined, cursor: number): Promise<{ rows: LibraryRow[]; next: number | null }>;
+  rows(section: LibrarySection | undefined, cursor: number): Promise<{ rows: LibraryRow[]; next: number | null }>;
   /** More titles of a row (see `LibrarySource.more`). Throws when no place could be reached. */
   more(rowId: string, page: number): Promise<{ items: LibraryItem[]; last: boolean }>;
   similar(link: string): Promise<LibraryItem[]>;
@@ -314,9 +314,9 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       const ranked = rankByQuery(exact, rank); // (what was listed and what the places answered, the likeliest first)
       return { items: [...ranked, ...rankByQuery(closest, rank).slice(0, CLOSEST_MAX)].slice(0, MAX_ANSWERS), exact: Math.min(ranked.length, MAX_ANSWERS) };
     },
-    async rows(kind: LibraryKind | undefined, cursor: number) {
+    async rows(section: LibrarySection | undefined, cursor: number) {
       const asked = entries.filter(({ source }) => source.shelves);
-      const answers = await Promise.all(asked.map(({ source }) => remember(`rows|${source.id}|${kind ?? ""}|${cursor}`, () => source.shelves!(kind, cursor)).catch(() => null)));
+      const answers = await Promise.all(asked.map(({ source }) => remember(`rows|${source.id}|${section ?? ""}|${cursor}`, () => source.shelves!(section, cursor)).catch(() => null)));
       const got = answers.filter((answer): answer is NonNullable<typeof answer> => answer !== null);
       if (asked.length > 0 && got.length === 0) throw new Error("no place could be reached");
       learn(got.flatMap((answer) => answer.rows.flatMap((row) => row.items)));

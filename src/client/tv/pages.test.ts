@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_LIST, type LibraryItem, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating } from "../../shared";
 import { t } from "../i18n";
-import { backOf, cardOf, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, ofKind, overviewActions, resumable, rowsOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
+import { backOf, cardOf, freshSimilar, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, ofSection, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, startOf, viewKey, type PageData } from "./pages";
 
 const item = (id: string, kind?: "movie" | "series", extra: Partial<LibraryItem> = {}): LibraryItem => ({ id, title: `Title ${id}`, url: `https://x.example/${id}`, ...(kind ? { kind } : {}), ...extra });
-const row = (id: string, kind: "movie" | "series" | undefined, count = 3): LibraryRow => ({
+const row = (id: string, kind: "movie" | "series" | undefined, count = 3, section?: "cartoon" | "anime"): LibraryRow => ({
   id,
   title: `Row ${id}`,
   source: "Test",
   ...(kind ? { kind } : {}),
-  items: Array.from({ length: count }, (_, i) => item(`${id}-${i}`, kind, { image: `poster-${id}-${i}`, backdrop: `wide-${id}-${i}` })),
+  ...(section ? { section } : {}),
+  items: Array.from({ length: count }, (_, i) => item(`${id}-${i}`, kind, { image: `poster-${id}-${i}`, backdrop: `wide-${id}-${i}`, ...(section ? { section } : {}) })),
 });
 const card = (key: string, extra: Partial<LiveProgress> = {}): LiveProgress => ({ key, at: 1, title: `Card ${key}`, url: `https://x.example/${key}`, position: 100, duration: 1000, ...extra });
 const saved = (key: string, list?: string): LiveListItem => ({ key, at: 1, id: key, title: `Saved ${key}`, url: `https://x.example/${key}`, ...(list ? { list } : {}) });
@@ -36,7 +37,7 @@ describe("viewKey", () => {
   });
 
   it("knows which pages are made of rows", () => {
-    expect(["home", "movies", "series"].every((kind) => isRowsPage({ kind } as never))).toBe(true);
+    expect(["home", "movies", "series", "cartoons", "anime"].every((kind) => isRowsPage({ kind } as never))).toBe(true);
     expect(["list", "history", "search", "category", "categories"].some((kind) => isRowsPage({ kind } as never))).toBe(false);
   });
 
@@ -53,14 +54,14 @@ describe("viewKey", () => {
     expect(hasRows({ kind: "profile" })).toBe(true);
     expect(isRowsPage({ kind: "friends" })).toBe(false);
     expect(isRowsPage({ kind: "profile" })).toBe(false);
-    expect(["home", "movies", "series"].every((kind) => hasRows({ kind } as never))).toBe(true);
+    expect(["home", "movies", "series", "cartoons", "anime"].every((kind) => hasRows({ kind } as never))).toBe(true);
     expect(["list", "history", "ratings", "search", "category", "categories", "friend"].some((kind) => hasRows({ kind } as never))).toBe(false);
   });
 
   it("names the profile's page, and counts it and the pages it holds as the profile's", () => {
     expect(viewKey({ kind: "profile" })).toBe("profile");
     expect(["profile", "ratings", "history", "friends", "friend"].every((kind) => isProfilePage({ kind } as never))).toBe(true);
-    expect(["home", "movies", "series", "list", "search", "category", "categories"].some((kind) => isProfilePage({ kind } as never))).toBe(false);
+    expect(["home", "movies", "series", "cartoons", "anime", "list", "search", "category", "categories"].some((kind) => isProfilePage({ kind } as never))).toBe(false);
   });
 
   it("says where Back goes from each page: one step out for the pages that are a step in, Home for the rest, nowhere from Home", () => {
@@ -71,7 +72,7 @@ describe("viewKey", () => {
     expect(backOf({ kind: "profile" })).toEqual({ kind: "home" });
     expect(backOf({ kind: "category", rowId: "r1", from: "categories" })).toEqual({ kind: "categories" });
     expect(backOf({ kind: "category", rowId: "r1" })).toEqual({ kind: "home" });
-    for (const kind of ["movies", "series", "list", "search", "categories"] as const) expect(backOf({ kind })).toEqual({ kind: "home" });
+    for (const kind of ["movies", "series", "cartoons", "anime", "list", "search", "categories"] as const) expect(backOf({ kind })).toEqual({ kind: "home" });
     expect(backOf({ kind: "home" })).toBeNull();
   });
 });
@@ -174,6 +175,79 @@ describe("rowsOfPage: movies and series", () => {
   });
 });
 
+describe("rowsOfPage: the four sections", () => {
+  const plain = Array.from({ length: 6 }, (_, i) => row(`r${i}`, i % 2 ? "series" : "movie"));
+  // (a cartoon or an anime can be a film or a show: its section is said apart from its kind)
+  const cartoons = Array.from({ length: 6 }, (_, i) => row(`c${i}`, i % 2 ? "series" : "movie", 3, "cartoon"));
+  const anime = Array.from({ length: 6 }, (_, i) => row(`a${i}`, i % 2 ? "series" : "movie", 3, "anime"));
+  const everything = [...plain, ...cartoons, ...anime];
+  const titles = (page: Parameters<typeof rowsOfPage>[0], over: Partial<PageData> = {}) => rowsOfPage(page, data({ rows: everything, ...over }));
+  const ids = (rows: ReturnType<typeof rowsOfPage>) => rows.filter((r) => r.layout !== "categories").map((r) => r.id);
+
+  it("names the section each page is for, and none for Home", () => {
+    expect(sectionOfPage("home")).toBeUndefined();
+    expect(sectionOfPage("movies")).toBe("movie");
+    expect(sectionOfPage("series")).toBe("series");
+    expect(sectionOfPage("cartoons")).toBe("cartoon");
+    expect(sectionOfPage("anime")).toBe("anime");
+  });
+
+  it("gives each page the rows of its own section only: a cartoon film is not on Movies, nor an anime show on Series", () => {
+    expect(ids(titles("movies"))).toEqual(["r0", "r2", "r4"]);
+    expect(ids(titles("series"))).toEqual(["r1", "r3", "r5"]);
+    expect(ids(titles("cartoons"))).toEqual(["c0", "c1", "c2", "c3", "c4", "c5"]);
+    expect(ids(titles("anime"))).toEqual(["a0", "a1", "a2", "a3", "a4", "a5"]);
+    // Home has them all
+    expect(ids(titles("home"))).toEqual(everything.map((r) => r.id));
+  });
+
+  it("keeps what each title is (a film or a show) on its card, whichever section it is in", () => {
+    const entries = titles("cartoons").filter((r) => r.layout !== "categories");
+    expect(entries.find((r) => r.id === "c0")!.entries[0]!.kind).toBe("movie");
+    expect(entries.find((r) => r.id === "c1")!.entries[0]!.kind).toBe("series");
+  });
+
+  it("offers only the categories of its section in its row of categories", () => {
+    const categories = titles("anime").find((r) => r.id === "categories")!;
+    expect(categories.entries.map((e) => e.title)).toEqual(["Row a0", "Row a1", "Row a2", "Row a3", "Row a4", "Row a5"]);
+    expect(titles("cartoons").find((r) => r.id === "categories")!.entries.map((e) => e.id)).toEqual(["c0", "c1", "c2", "c3", "c4", "c5"]);
+  });
+
+  it("puts what is part way through in the section the library lists its title in, whether it is a film or a show", () => {
+    const progress = [
+      card("c1-0", { season: 2, episode: 4, url: "https://x.example/c1-0?s=2&e=4&key=abc" }), // a cartoon show, its link carrying the marks of the episode
+      card("c0-2"), // a cartoon film
+      card("a1-2", { season: 1, episode: 1 }), // an anime show
+      card("a0-0"), // an anime film
+      card("r0-0"), // a film
+      card("r1-1", { season: 3, episode: 1 }), // a show
+      card("lost-film"), // not listed any more: a film is in Movies
+      card("lost-show", { season: 1, episode: 1 }), // not listed any more: a show is in Series
+    ];
+    const going = (page: Parameters<typeof rowsOfPage>[0]) => {
+      const first = titles(page, { progress })[0]!;
+      return first.id === "continue" ? first.entries.map((e) => e.title).sort() : [];
+    };
+    expect(going("cartoons")).toEqual(["Card c0-2", "Card c1-0"]);
+    expect(going("anime")).toEqual(["Card a0-0", "Card a1-2"]);
+    expect(going("movies")).toEqual(["Card lost-film", "Card r0-0"]);
+    expect(going("series")).toEqual(["Card lost-show", "Card r1-1"]);
+    expect(going("home")).toHaveLength(8);
+  });
+
+  it("has no list or because rows of its own, as Movies and Series have none: those are on Home", () => {
+    for (const page of ["cartoons", "anime"] as const) {
+      const rows = titles(page, { list: [saved("l")], because: [{ key: "k", title: "x", why: "watched", items: [item("s")] }] });
+      expect(rows.map((r) => r.id).some((id) => id.startsWith("list:") || id.startsWith("because:")), page).toBe(false);
+    }
+  });
+
+  it("is empty when the library has nothing of that section", () => {
+    expect(rowsOfPage("cartoons", data({ rows: plain }))).toEqual([]);
+    expect(rowsOfPage("anime", data({ rows: [...plain, ...cartoons] }))).toEqual([]);
+  });
+});
+
 describe("gridOf", () => {
   it("is a list: its saved titles, newest first as kept, under the name it has", () => {
     const lists: ListInfo[] = [FIRST, { id: "la", name: "Weekend" }];
@@ -237,6 +311,26 @@ describe("gridOf", () => {
       ["x1", t("tv.titles", { count: 3 })],
     ]);
     expect(gridOf({ kind: "categories", of: "movie" }, data({ rows: library }))!.entries[0]?.note).toBe(t("tv.titles", { count: 3 }));
+  });
+
+  it("lists the categories of the cartoons and of the anime after those of films and shows, each saying which it is", () => {
+    const rows = [row("a1", "series", 3, "anime"), row("c1", "movie", 3, "cartoon"), row("x1", undefined), row("s1", "series"), row("c2", "series", 3, "cartoon"), row("m1", "movie")];
+    const all = gridOf({ kind: "categories" }, data({ rows }))!;
+    expect(all.entries.map((e) => [e.id, e.note])).toEqual([
+      ["m1", `${t("tv.movies")} · ${t("tv.titles", { count: 3 })}`],
+      ["s1", `${t("tv.series")} · ${t("tv.titles", { count: 3 })}`],
+      ["c1", `${t("tv.cartoons")} · ${t("tv.titles", { count: 3 })}`],
+      ["c2", `${t("tv.cartoons")} · ${t("tv.titles", { count: 3 })}`],
+      ["a1", `${t("tv.anime")} · ${t("tv.titles", { count: 3 })}`],
+      ["x1", t("tv.titles", { count: 3 })],
+    ]);
+    const cartoons = gridOf({ kind: "categories", of: "cartoon" }, data({ rows }))!;
+    expect(cartoons.title).toBe(t("tv.cartoonCategories"));
+    expect(cartoons.entries.map((e) => e.id)).toEqual(["c1", "c2"]);
+    expect(cartoons.entries[0]?.note).toBe(t("tv.titles", { count: 3 }));
+    const anime = gridOf({ kind: "categories", of: "anime" }, data({ rows }))!;
+    expect(anime.title).toBe(t("tv.animeCategories"));
+    expect(anime.entries.map((e) => e.id)).toEqual(["a1"]);
   });
 
   it("lists the categories, all of them or those of one kind", () => {
@@ -441,14 +535,16 @@ describe("overviewActions", () => {
   });
 });
 
-describe("ofKind", () => {
-  const items = [item("m", "movie"), item("s", "series"), item("u")];
-  it("keeps everything for All, and only what says it is of that kind otherwise", () => {
-    expect(ofKind(items, "all").map((i) => i.id)).toEqual(["m", "s", "u"]);
-    expect(ofKind(items, "movie").map((i) => i.id)).toEqual(["m"]);
-    expect(ofKind(items, "series").map((i) => i.id)).toEqual(["s"]);
+describe("ofSection", () => {
+  const items = [item("m", "movie"), item("s", "series"), item("u"), item("cf", "movie", { section: "cartoon" }), item("cs", "series", { section: "cartoon" }), item("an", "series", { section: "anime" })];
+  it("keeps everything for All, and only what says it is of that section otherwise", () => {
+    expect(ofSection(items, "all").map((i) => i.id)).toEqual(["m", "s", "u", "cf", "cs", "an"]);
+    expect(ofSection(items, "movie").map((i) => i.id)).toEqual(["m"]);
+    expect(ofSection(items, "series").map((i) => i.id)).toEqual(["s"]);
+    expect(ofSection(items, "cartoon").map((i) => i.id)).toEqual(["cf", "cs"]);
+    expect(ofSection(items, "anime").map((i) => i.id)).toEqual(["an"]);
   });
   it("has a filter for each", () => {
-    expect(KIND_FILTERS).toEqual(["all", "movie", "series"]);
+    expect(SECTION_FILTERS).toEqual(["all", "movie", "series", "cartoon", "anime"]);
   });
 });

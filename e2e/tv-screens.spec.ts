@@ -1497,7 +1497,7 @@ test.describe("movies, series, and the rest of the menu", () => {
     await tv.keyboard.press("ArrowLeft");
     await expect(rail(tv)).toHaveAttribute("data-open", "true");
     const order = await rail(tv).locator("button").evaluateAll((buttons) => buttons.map((button) => (button as HTMLElement).dataset.testid));
-    expect(order).toEqual(["rail-search", "rail-home", "rail-movies", "rail-series", "rail-categories", "rail-list", "rail-party", "rail-connect"]);
+    expect(order).toEqual(["rail-search", "rail-home", "rail-movies", "rail-series", "rail-cartoons", "rail-anime", "rail-categories", "rail-list", "rail-party", "rail-connect"]);
     await expect(tv.locator('[data-testid^="rail-category-"]')).toHaveCount(0); // (no line for a category, not for six of them either)
     await expect(rail(tv)).not.toContainText("Movie categories");
     // What is not a place of the library is not a line of the menu: the profile is the button in the corner, and History, ratings, friends and the settings are its.
@@ -1511,6 +1511,54 @@ test.describe("movies, series, and the rest of the menu", () => {
       expect(at.y + at.height, id).toBeLessThanOrEqual(strip.y + strip.height + 0.5);
     }
     expect(await rail(tv).evaluate((element) => element.scrollHeight <= element.clientHeight)).toBe(true);
+  });
+
+  /** The same library with cartoons and anime in it: a cartoon can be a film or a show, and so can an anime, and each is listed under the name of its section. */
+  const animatedLibrary = {
+    updatedAt: Date.now(),
+    rows: [
+      ...library.rows,
+      ...(["movie", "series"] as const).map((kind, at) => ({ ...kinded(kind, `c${at}`, kind === "movie" ? "Toon Films" : "Toon Shows"), section: "cartoon" as const, items: [1, 2].map((n) => ({ id: `c${at}-${n}`, title: `Cartoon ${kind === "movie" ? "Film" : "Show"} ${n}`, kind, section: "cartoon" as const, url: `/fixtures/sample.mp4?c${at}=${n}` })) })),
+      ...(["movie", "series"] as const).map((kind, at) => ({ ...kinded(kind, `a${at}`, kind === "movie" ? "Manga Films" : "Manga Shows"), section: "anime" as const, items: [1, 2].map((n) => ({ id: `a${at}-${n}`, title: `Anime ${kind === "movie" ? "Film" : "Show"} ${n}`, kind, section: "anime" as const, url: `/fixtures/sample.mp4?a${at}=${n}` })) })),
+    ],
+  };
+
+  test("Cartoons and Anime are pages of their own: a cartoon that is a film is not among the Movies, nor an anime that is a show among the Series", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(animatedLibrary));
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    const home = await titlesOnScreen(tv);
+    expect(home.some((title) => title?.startsWith("Cartoon")) && home.some((title) => title?.startsWith("Anime"))).toBe(true); // Home has them all
+
+    for (const [entry, view, prefix, strangers] of [
+      ["rail-movies", "movies", "Movie", ["Cartoon", "Anime", "Show"]],
+      ["rail-series", "series", "Show", ["Cartoon", "Anime", "Movie"]],
+      ["rail-cartoons", "cartoons", "Cartoon", ["Anime", "Movie", "Show"]],
+      ["rail-anime", "anime", "Anime", ["Cartoon", "Movie", "Show"]],
+    ] as const) {
+      await choose(tv, entry);
+      await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", view);
+      await expect(tv.getByTestId(entry)).toHaveAttribute("aria-current", "page");
+      const titles = await titlesOnScreen(tv);
+      expect(titles.length, view).toBeGreaterThan(0);
+      expect(titles.every((title) => title?.startsWith(prefix)), `${view}: ${titles.join(", ")}`).toBe(true);
+      expect(titles.some((title) => strangers.some((other) => title?.startsWith(other))), view).toBe(false);
+    }
+    // the cartoons' page lists the cartoon films and the cartoon shows, the first of them as the ranking
+    await choose(tv, "rail-cartoons");
+    expect((await titlesOnScreen(tv)).sort()).toEqual(["Cartoon Film 1", "Cartoon Film 2", "Cartoon Show 1", "Cartoon Show 2"]);
+    await expect(tv.getByTestId("tv-hero-title")).toHaveText(/^Cartoon /);
+  });
+
+  test("Categories keeps the categories of the cartoons and of the anime after those of the films and the series, each saying which", async ({ browser }) => {
+    const tv = await openLibrary(browser, withLibrary(animatedLibrary));
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await choose(tv, "rail-categories");
+    const names = () => tv.getByTestId("tv-category-tile").evaluateAll((all) => all.map((tile) => tile.getAttribute("title")));
+    expect(await names()).toEqual(["Action", "Comedy", "Horror", "Romance", "Thriller", "Western", "Crime", "Drama", "Toon Films", "Toon Shows", "Manga Films", "Manga Shows"]);
+    await expect(tv.getByTestId("tv-category-tile").nth(0)).toContainText("Movies");
+    await expect(tv.getByTestId("tv-category-tile").nth(6)).toContainText("Series");
+    await expect(tv.getByTestId("tv-category-tile").nth(8)).toContainText("Cartoons");
+    await expect(tv.getByTestId("tv-category-tile").nth(10)).toContainText("Anime");
   });
 
   test("Movies and Series are pages of their own, each with only its kind", async ({ browser }) => {
@@ -1548,6 +1596,16 @@ test.describe("movies, series, and the rest of the menu", () => {
     await choose(tv, "rail-series");
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "series");
     await expect(tv.getByTestId("tv-browse")).toContainText("No series here");
+    await expect(tv.getByTestId("tv-browse-home")).toBeFocused();
+
+    await choose(tv, "rail-cartoons");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "cartoons");
+    await expect(tv.getByTestId("tv-browse")).toContainText("No cartoons here");
+    await expect(tv.getByTestId("tv-browse-home")).toBeFocused();
+
+    await choose(tv, "rail-anime");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "anime");
+    await expect(tv.getByTestId("tv-browse")).toContainText("No anime here");
     await expect(tv.getByTestId("tv-browse-home")).toBeFocused();
 
     await tv.keyboard.press("Enter"); // Home, where the titles are
@@ -1632,7 +1690,7 @@ test.describe("movies, series, and the rest of the menu", () => {
     await tv.keyboard.press("ArrowLeft");
     await expect(rail(tv)).toHaveAttribute("data-open", "true");
     await expect(tv.getByTestId("rail-home")).toBeFocused(); // (the menu has no line for the profile: its pages belong to Home)
-    for (let i = 0; i < 4; i++) await tv.keyboard.press("ArrowDown"); // films, series, categories, the lists
+    for (let i = 0; i < 6; i++) await tv.keyboard.press("ArrowDown"); // films, series, cartoons, anime, categories, the lists
     await expect(tv.getByTestId("rail-list")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing here yet");
@@ -1685,7 +1743,7 @@ test.describe("movies, series, and the rest of the menu", () => {
       }
 
       await tv.keyboard.press("ArrowLeft"); // the menu opens on the page that is open...
-      for (let i = 0; i < 6; i++) await tv.keyboard.press("ArrowDown"); // ...and the remote goes down it to the last line
+      for (let i = 0; i < 8; i++) await tv.keyboard.press("ArrowDown"); // ...and the remote goes down it to the last line
       await expect(rail(tv)).toHaveAttribute("data-open", "true");
       await expect(tv.getByTestId("rail-connect")).toBeFocused();
       await expect
@@ -1779,7 +1837,7 @@ test.describe("categories and search on the TV", () => {
 
     await tv.keyboard.press("ArrowUp");
     await expect(tv.getByTestId("rail-search")).toBeFocused();
-    for (const entry of ["rail-home", "rail-movies", "rail-series", "rail-categories", "rail-list", "rail-party", "rail-connect"]) {
+    for (const entry of ["rail-home", "rail-movies", "rail-series", "rail-cartoons", "rail-anime", "rail-categories", "rail-list", "rail-party", "rail-connect"]) {
       await tv.keyboard.press("ArrowDown");
       await expect(tv.getByTestId(entry)).toBeFocused();
     }

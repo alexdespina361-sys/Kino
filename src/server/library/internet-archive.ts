@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { LibraryItem, LibraryRow } from "../../shared";
+import type { LibraryItem, LibraryRow, LibrarySection } from "../../shared";
 import type { LibrarySource } from "./library";
 
 /**
@@ -10,12 +10,14 @@ export interface ArchiveRow {
   /** The collection's identifier on archive.org. */
   collection: string;
   title: string;
+  /** The section of the library the collection is for, when it is one that is only Cartoons (the others are not told apart: they are on Home). */
+  section?: LibrarySection;
 }
 
 export const ARCHIVE_ROWS: ArchiveRow[] = [
   { collection: "feature_films", title: "Feature films" },
   { collection: "classic_tv", title: "Classic TV" },
-  { collection: "animationandcartoons", title: "Cartoons & animation" },
+  { collection: "animationandcartoons", title: "Cartoons & animation", section: "cartoon" },
   { collection: "silent_films", title: "Silent films" },
   { collection: "SciFi_Horror", title: "Sci-fi & horror" },
 ];
@@ -112,7 +114,7 @@ export function internetArchive(options: ArchiveOptions = {}): LibrarySource {
     if (!response.ok) throw new Error(`${row.collection}: HTTP ${response.status}`);
     const body = SearchSchema.parse(await response.json());
     const items = parseDocs(body.response.docs);
-    return { id: `archive-${row.collection}`, title: row.title, source: "Internet Archive", items };
+    return { id: `archive-${row.collection}`, title: row.title, source: "Internet Archive", ...(row.section ? { section: row.section } : {}), items };
   };
 
   return {

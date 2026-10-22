@@ -323,6 +323,23 @@ export const FilmIcon = (props: Props) => (
   </Icon>
 );
 
+/** A face with a wide grin: cartoons. */
+export const CartoonIcon = (props: Props) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9 9.5h.01M15 9.5h.01" />
+    <path d="M7.8 13.5h8.4a4.2 4.2 0 0 1-8.4 0z" />
+  </Icon>
+);
+
+/** A torii gate: anime. */
+export const AnimeIcon = (props: Props) => (
+  <Icon {...props}>
+    <path d="M2.5 5.5C6 7 9 7 12 7s6 0 9.5-1.5" />
+    <path d="M5 11h14M7.5 7.5V21M16.5 7.5V21M12 7.5V11" />
+  </Icon>
+);
+
 export const ClockIcon = (props: Props) => (
   <Icon {...props}>
     <circle cx="12" cy="12" r="9" />

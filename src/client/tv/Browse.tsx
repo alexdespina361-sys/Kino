@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { canAskTogether, DEFAULT_LIST, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type LibraryKind, type PlayHint, type Person } from "../../shared";
+import { canAskTogether, DEFAULT_LIST, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
@@ -19,8 +19,8 @@ import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { useHandHeldBack } from "../shared/backButton";
-import { BackspaceIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
-import { allRows, failedShelves, feed, GRID_CAP, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
+import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
@@ -33,8 +33,8 @@ import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
-import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlyKind, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
-import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, KIND_FILTERS, listOfRow, overviewActions, resumable, rowsOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type KindFilter, type Layout, type PageData, type Start, type View } from "./pages";
+import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlySection, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
+import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, listOfRow, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
 import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
@@ -78,7 +78,7 @@ const remembered = {
   results: NO_ANSWERS as Answers,
   /** The query `results` answers. */
   resultsFor: "",
-  filter: "all" as KindFilter,
+  filter: "all" as SectionFilter,
   /** Where the remote was on each page. */
   focus: {} as Record<string, Pos>,
   /** The row of a page of rows the remote was on (rows come and go as things are watched and saved, so a number is not enough). */
@@ -258,7 +258,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const query = box.text;
   const edit = (change: BoxEdit) => setBox((before) => editBox(before, change));
   const [results, setResults] = useState<Answers>(remembered.results);
-  const [filter, setFilter] = useState<KindFilter>(remembered.filter);
+  const [filter, setFilter] = useState<SectionFilter>(remembered.filter);
   const [searching, setSearching] = useState(false);
   /** The query the server could not answer (it is asked again in a moment), so "nothing matches" is not said of a search that did not happen. */
   const [failedFor, setFailedFor] = useState<string | null>(null);
@@ -317,12 +317,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const hasTiles = status === "ready" && rows.length > 0;
   // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
   const because = useBecause();
-  /** What kind of titles the rows of this page are: Home has both. */
-  const pageKind: LibraryKind | undefined = view.kind === "movies" ? "movie" : view.kind === "series" ? "series" : undefined;
-  const pageLibraryRows = useMemo(() => pageRows(feeding.data, pageKind), [feeding.data, pageKind]);
+  /** What section the rows of this page are in: Home has all of them. */
+  const pageSection = isRowsPage(view) ? sectionOfPage(view.kind) : undefined;
+  const pageLibraryRows = useMemo(() => pageRows(feeding.data, pageSection), [feeding.data, pageSection]);
   /** The rows of this page that the library can add titles to as they are scrolled (the ranking of ten, which is not scrolled, is not one). */
   const growing = useMemo(() => new Set(pageLibraryRows.filter((row) => hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP)).map((row) => row.id)), [pageLibraryRows, feeding]);
-  const everyRow = useMemo(() => (view.kind === "category" || view.kind === "categories" ? allRows(feeding.data) : pageLibraryRows), [feeding.data, pageLibraryRows, view.kind]);
+  // (Every row there is, also for the page of a section: the cards of "Continue watching" are told apart by where the library lists their titles.)
+  const everyRow = useMemo(() => allRows(feeding.data), [feeding.data]);
   const data = useMemo<PageData>(() => ({ rows: pageLibraryRows, all: everyRow, progress, lists, list, ratings: ratingsOn ? ratings : [], because }), [pageLibraryRows, everyRow, progress, lists, list, ratings, ratingsOn, because]);
 
   const rowsPage = hasRows(view);
@@ -345,7 +346,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet), [view, data, language, friends.state, sharedLists, sharedRatings, iGet]);
   /* eslint-enable react-hooks/exhaustive-deps */
   // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.
-  const shownAnswers = useMemo(() => onlyKind(results, filter), [results, filter]);
+  const shownAnswers = useMemo(() => onlySection(results, filter), [results, filter]);
   const shownResults = shownAnswers.items;
   /** The rows of the results' grid: those of the exact titles, then (a block of their own, under a heading) those of the closest others. */
   const resultRowsOf = (columns: number) => [...gridRows(shownAnswers.exact, columns), ...gridRows(shownResults.length - shownAnswers.exact, columns)];
@@ -433,6 +434,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) },
     { id: "movies", label: t("tv.movies"), icon: <FilmIcon />, current: view.kind === "movies", testId: "rail-movies", onPress: () => choose({ kind: "movies" }) },
     { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
+    { id: "cartoons", label: t("tv.cartoons"), icon: <CartoonIcon />, current: view.kind === "cartoons", testId: "rail-cartoons", onPress: () => choose({ kind: "cartoons" }) },
+    { id: "anime", label: t("tv.anime"), icon: <AnimeIcon />, current: view.kind === "anime", testId: "rail-anime", onPress: () => choose({ kind: "anime" }) },
     { id: "categories", label: t("tv.categories"), icon: <GridIcon />, current: view.kind === "categories" || view.kind === "category", testId: "rail-categories", onPress: () => choose({ kind: "categories" }) },
     { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) },
     { id: "party", label: t("party.rail"), icon: <UsersIcon />, apart: true, ...(partySize > 1 ? { badge: String(partySize) } : {}), testId: "rail-party", onPress: onParty },
@@ -456,14 +459,17 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   /** The profile's page has buttons where the other pages have a banner: Settings and Feedback, and for a guest the way to sign in before them. */
   const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) : 0;
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
-  // Movies or Series of a library that has titles, none of them of that kind (a source that does not say which): not "nothing yet", which Retry could not mend.
-  const kindEmpty = showRetry && hasTiles && (view.kind === "movies" || view.kind === "series");
+  // The page of a section (Movies, Series, Cartoons or Anime) of a library that has titles, none of them of that section: not "nothing yet", which Retry could not
+  // mend. (While the rows that come after the first ones may still bring some, it is waiting for them; the library says there are none when it has no more to bring.)
+  const sectionPage = pageSection !== undefined;
+  const sectionWaiting = showRetry && hasTiles && sectionPage && hasMoreShelves(feeding, pageSection);
+  const kindEmpty = showRetry && hasTiles && sectionPage && !sectionWaiting;
   const shape: Shape = {
     rail: entries.map(() => 1),
     top: topButtons > 0 ? [topButtons] : [],
     ...(rowsPage ? { hero: profileButtons > 0 ? [profileButtons] : !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
     ...(grid ? { grid: gridRows(grid.entries.length, gridColumns) } : {}),
-    ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [KIND_FILTERS.length], results: resultRowsOf(resultColumns) } : {}),
+    ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [SECTION_FILTERS.length], results: resultRowsOf(resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
     // A friend's page: the way back, their lists and their ratings over the titles (and, for a friend who takes invitations, to ask them to watch and to plan it), the chat, and under them the button that takes them off the friends.
@@ -477,8 +483,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         }
       : {}),
   };
-  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageKind, growing });
-  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageKind, growing };
+  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing });
+  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing };
 
   /**
    * Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. `leaving` is the block of buttons
@@ -539,11 +545,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // fill the screen yet: an answer, or a question that failed and may be asked again, looks again.
   useEffect(() => {
     if (status !== "ready") return;
-    if (isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageKind);
+    if (isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageSection);
     if (view.kind === "category" && nearBottom(gridRef.current)) feed.loadMore(view.rowId, GRID_CAP);
-  }, [feeding, status, view, pageKind, homeRows.length, grid?.entries.length]);
+  }, [feeding, status, view, pageSection, homeRows.length, grid?.entries.length]);
   const askShelves = () => {
-    if (status === "ready" && isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageKind);
+    if (status === "ready" && isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageSection);
   };
   const askTitles = () => {
     if (status === "ready" && view.kind === "category" && nearBottom(gridRef.current)) feed.loadMore(view.rowId, GRID_CAP);
@@ -716,9 +722,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       rowsRef.current?.scrollTo({ top: scroller.closest<HTMLElement>(".tv-row")!.offsetTop, behavior: "smooth" }); // (the row itself, with its name: not the box round its titles)
       // The remote moves a title at a time and a script scrolls: nothing here is a scroll the page could notice from far off, so the library is asked for more as the remote nears the end,
       // of the page (the rows that come next) and of the row (more of its titles).
-      const { homeRows: laid, view: page, pageKind: kind, growing: more } = latest.current;
+      const { homeRows: laid, view: page, pageSection: section, growing: more } = latest.current;
       const row = laid[pos.row];
-      if (status === "ready" && isRowsPage(page) && pos.row >= laid.length - ROWS_AHEAD) feed.loadShelves(kind);
+      if (status === "ready" && isRowsPage(page) && pos.row >= laid.length - ROWS_AHEAD) feed.loadShelves(section);
       if (row && row.layout === "wide" && more.has(row.id) && pos.col >= row.entries.length - TITLES_AHEAD) feed.loadMore(row.id, ROW_CAP);
     } else {
       const container = element.closest<HTMLElement>(".tv-grid");
@@ -994,9 +1000,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               </div>
             ) : status === "loading" ? (
               <p className="tv-hero-eyebrow">{t("tv.loadingLibrary")}</p>
+            ) : sectionWaiting ? (
+              <p className="tv-hero-eyebrow">{t("tv.loadingLibrary")}</p>
             ) : kindEmpty ? (
               <>
-                <h1 className="tv-hero-title tv-hero-status">{t(view.kind === "movies" ? "tv.kindEmptyMovies" : "tv.kindEmptySeries")}</h1>
+                <h1 className="tv-hero-title tv-hero-status">
+                  {t(view.kind === "movies" ? "tv.kindEmptyMovies" : view.kind === "series" ? "tv.kindEmptySeries" : view.kind === "cartoons" ? "tv.kindEmptyCartoons" : "tv.kindEmptyAnime")}
+                </h1>
                 <p className="tv-hero-about">{t("tv.kindEmptyHelp")}</p>
                 <div className="tv-actions tv-actions-start">
                   <button className="tv-action tv-action-primary" onClick={() => choose({ kind: "home" })} autoFocus data-testid="tv-browse-home" data-zone="rows" data-row={0} data-col={0}>
@@ -1038,12 +1048,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   </section>
                 )}
             {/* Under the last row: empty tiles while the rows that come next are on their way, and a line when they could not be had (they are asked for again in a moment). */}
-            {homeRows.length > 0 && isRowsPage(view) && failedShelves(feeding, pageKind) && (
+            {homeRows.length > 0 && isRowsPage(view) && failedShelves(feeding, pageSection) && (
               <p className="tv-rows-note" role="status" data-testid="tv-rows-failed">
                 {t("rows.moreFailed")}
               </p>
             )}
-            {homeRows.length > 0 && isRowsPage(view) && loadingShelves(feeding, pageKind) && (
+            {homeRows.length > 0 && isRowsPage(view) && loadingShelves(feeding, pageSection) && (
               <section className="tv-row tv-row-waiting" aria-hidden="true" data-testid="tv-rows-waiting">
                 <h2 className="tv-row-title tv-skeleton-title" />
                 <div className="tv-row-tiles">
@@ -1267,7 +1277,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           </div>
           <div className="tv-search-main">
             <div className="tv-filters" role="radiogroup" aria-label={t("tv.search")}>
-              {KIND_FILTERS.map((value, col) => {
+              {SECTION_FILTERS.map((value, col) => {
                 const pos: Pos = { zone: "chips", row: 0, col };
                 return (
                   <button
@@ -1282,7 +1292,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                     onClick={() => setFilter(value)}
                     onFocus={() => (remembered.focus.search = pos)}
                   >
-                    {t(value === "all" ? "tv.filterAll" : value === "movie" ? "tv.filterMovies" : "tv.filterSeries")}
+                    {t(value === "all" ? "tv.filterAll" : value === "movie" ? "tv.filterMovies" : value === "series" ? "tv.filterSeries" : value === "cartoon" ? "tv.filterCartoons" : "tv.filterAnime")}
                   </button>
                 );
               })}

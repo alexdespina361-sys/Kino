@@ -143,8 +143,8 @@ export const serverUp = (page: Page) =>
 
 /** What the library says to the rows that come after the first ones and to more titles of a row, when a test has it do so. */
 export interface LibraryFeed {
-  /** The rows after the first ones: `{ rows, next }`, asked from `cursor` (for the films or the shows only, or both). */
-  rows?: (cursor: number, kind: string | null) => unknown;
+  /** The rows after the first ones: `{ rows, next }`, asked from `cursor` (for the page of one section: movie, series, cartoon or anime; or for Home, `null`). */
+  rows?: (cursor: number, section: string | null) => unknown;
   /** More titles of a row, from page 2: `{ items, last }`. */
   more?: (row: string, page: number) => unknown;
 }
@@ -164,7 +164,7 @@ export const withLibrary =
     if (feed?.rows) {
       await context.route(/\/api\/library\/rows/, (route) => {
         const query = new URL(route.request().url()).searchParams;
-        return route.fulfill({ json: feed.rows!(Number(query.get("cursor") ?? 0), query.get("kind")) });
+        return route.fulfill({ json: feed.rows!(Number(query.get("cursor") ?? 0), query.get("section") ?? query.get("kind")) });
       });
     }
     if (feed?.more) {

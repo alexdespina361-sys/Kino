@@ -10,6 +10,18 @@ import { z } from "zod";
 export const LibraryKindSchema = z.enum(["movie", "series"]);
 export type LibraryKind = z.infer<typeof LibraryKindSchema>;
 
+/**
+ * Where a title is browsed. Movies and Series are the live-action films and shows; Cartoons and Anime are animation, films and shows alike, told
+ * apart by where it was made (Japanese animation is Anime, any other is a Cartoon). It is not the same as `kind`, which says only whether a title
+ * is one film or a show with episodes, and so what its page lists.
+ */
+export const LibrarySectionSchema = z.enum(["movie", "series", "cartoon", "anime"]);
+export type LibrarySection = z.infer<typeof LibrarySectionSchema>;
+export const LIBRARY_SECTIONS: readonly LibrarySection[] = LibrarySectionSchema.options;
+
+/** The section of a title or a row: the one it says, else the one its kind is (a title that is neither a cartoon nor an anime does not say). Nothing for one that says neither. */
+export const sectionOf = (thing: { section?: LibrarySection | undefined; kind?: LibraryKind | undefined }): LibrarySection | undefined => thing.section ?? thing.kind;
+
 export const LibraryItemSchema = z.object({
   id: z.string().max(200),
   title: z.string().max(300),
@@ -21,6 +33,8 @@ export const LibraryItemSchema = z.object({
   /** A sentence or two about it, as plain text, for the TV's banner. */
   description: z.string().max(400).optional(),
   kind: LibraryKindSchema.optional(),
+  /** Said only when it is a cartoon or an anime; a title without one is in the section of its kind (see `sectionOf`). */
+  section: LibrarySectionSchema.optional(),
   /** A page or media link, as pasted on the phone. Relative links (`/fixtures/a.mp4`) are this server's own. */
   url: z.string().max(2048),
 });
@@ -36,6 +50,8 @@ export const LibraryRowSchema = z.object({
   source: z.string().max(60),
   /** What the titles in the row are, when they are all one kind. */
   kind: LibraryKindSchema.optional(),
+  /** What section the titles in the row are all in, said only when it is a cartoon or an anime (a row of films is Movies, whatever is in it besides, until it says). */
+  section: LibrarySectionSchema.optional(),
   items: z.array(LibraryItemSchema).max(100),
 });
 export type LibraryRow = z.infer<typeof LibraryRowSchema>;

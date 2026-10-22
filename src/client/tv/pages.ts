@@ -1,4 +1,4 @@
-import { DEFAULT_LIST, fractionOf, listOf, resumeAt, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type Person } from "../../shared";
+import { DEFAULT_LIST, fractionOf, listOf, resumeAt, sectionOf, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type Person } from "../../shared";
 import { continueNote, listName, unfinished } from "../account/cards";
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
@@ -17,6 +17,8 @@ export type View =
   | { kind: "home" }
   | { kind: "movies" }
   | { kind: "series" }
+  | { kind: "cartoons" }
+  | { kind: "anime" }
   /** One of the lists (the first when none is named). */
   | { kind: "list"; list?: string }
   | { kind: "history" }
@@ -24,8 +26,8 @@ export type View =
   | { kind: "ratings" }
   /** One category's titles; `from` is the list of every category when it was opened from there (Back goes back to it). */
   | { kind: "category"; rowId: string; from?: "categories" }
-  /** Every category, or only those of films or of shows. */
-  | { kind: "categories"; of?: LibraryKind }
+  /** Every category, or only those of one section (Movies, Series, Cartoons or Anime). */
+  | { kind: "categories"; of?: LibrarySection }
   | { kind: "search" }
   /** The profile's own places: what it rated, its friends, what it watched, the settings (see profile.ts). */
   | { kind: "profile" }
@@ -49,8 +51,17 @@ export const viewKey = (view: View): string =>
 export const shownList = (view: View, lists: readonly ListInfo[]): ListInfo => lists.find((list) => view.kind === "list" && list.id === view.list) ?? lists[0] ?? { id: DEFAULT_LIST };
 
 /** The pages made of a banner and rows of titles under it. */
-export type RowsPage = "home" | "movies" | "series";
-export const isRowsPage = (view: View): view is { kind: RowsPage } => view.kind === "home" || view.kind === "movies" || view.kind === "series";
+export type RowsPage = "home" | "movies" | "series" | "cartoons" | "anime";
+export const isRowsPage = (view: View): view is { kind: RowsPage } =>
+  view.kind === "home" || view.kind === "movies" || view.kind === "series" || view.kind === "cartoons" || view.kind === "anime";
+
+/** The section each page of a section is for. */
+const SECTION_OF_PAGE: Readonly<Record<Exclude<RowsPage, "home">, LibrarySection>> = { movies: "movie", series: "series", cartoons: "cartoon", anime: "anime" };
+/** What a page of rows is for: one section, or (Home) all of them. */
+export const sectionOfPage = (page: RowsPage): LibrarySection | undefined => (page === "home" ? undefined : SECTION_OF_PAGE[page]);
+
+/** A section as the person reads it: the name of its page. */
+export const sectionName = (section: LibrarySection): string => t(section === "movie" ? "tv.movies" : section === "series" ? "tv.series" : section === "cartoon" ? "tv.cartoons" : "tv.anime");
 /** The pages that have a banner and rows under it: those above, the profile's (profile.ts) and the friends' (whose rows come from friends/pages.ts). */
 export const hasRows = (view: View): boolean => isRowsPage(view) || view.kind === "profile" || view.kind === "friends";
 
@@ -292,24 +303,25 @@ export const entryOfRating = (rating: LiveRating): Entry => ({
 /** Where a row's titles come from, said only when the library has more than one source (with one, every title would carry the same word). */
 const sourceOf = (rows: readonly LibraryRow[], row: LibraryRow): { source?: string } => (row.source && new Set(rows.map((each) => each.source)).size > 1 ? { source: row.source } : {});
 
-/** `withKind` says whether the category is of films or of shows too (the list of every category, where the two sit together). */
-const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[], withKind = false): Entry => {
+/** `withSection` says which section the category is in too (the list of every category, where they sit together). */
+const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[], withSection = false): Entry => {
   const first = row.items[0];
   const picture = first?.backdrop ?? first?.image;
-  const kind = withKind && row.kind ? t(row.kind === "movie" ? "tv.movies" : "tv.series") : "";
+  const section = sectionOf(row);
+  const place = withSection && section ? sectionName(section) : "";
   return {
     id: row.id,
     title: rowTitle(row),
     url: "",
     opens: { kind: "category", rowId: row.id },
     ...sourceOf(rows, row),
-    note: [kind, t("tv.titles", { count: row.items.length })].filter(Boolean).join(" · "),
+    note: [place, t("tv.titles", { count: row.items.length })].filter(Boolean).join(" · "),
     ...(picture ? { image: picture } : {}),
   };
 };
 
-/** The order every category is listed in: those of films, then of shows, then the others (each keeps the library's order). */
-const KIND_ORDER: ReadonlyArray<LibraryKind | undefined> = ["movie", "series", undefined];
+/** The order every category is listed in: those of Movies, then of Series, Cartoons and Anime, then the others (each keeps the library's order). */
+const SECTION_ORDER: ReadonlyArray<LibrarySection | undefined> = ["movie", "series", "cartoon", "anime", undefined];
 
 /** A card of a show has an episode; a film's has none. */
 const isShowCard = (card: LiveProgress) => card.season !== undefined;
@@ -326,39 +338,74 @@ const RANKED = 10;
 const CATEGORIES_AFTER = 3;
 const CATEGORY_TILES = 12;
 
-function categoriesRow(rows: readonly LibraryRow[], of: LibraryKind | undefined): HomeRow {
+function categoriesRow(rows: readonly LibraryRow[], of: LibrarySection | undefined): HomeRow {
   const entries = rows.slice(0, CATEGORY_TILES).map((row) => categoryEntry(row, rows));
   if (rows.length > CATEGORY_TILES) entries.push({ id: "all-categories", title: t("tv.allCategories"), url: "", opens: { kind: "categories", ...(of ? { of } : {}) }, note: t("tv.titles", { count: rows.length }) });
   return { id: "categories", layout: "categories", title: t("tv.byCategory"), entries };
 }
 
+/** A title's link without what tells its episodes apart (the season and the episode, and the key a place adds to them), with whether it is a show: what a title of the library and a card for it have in common. */
+function linkKey(link: string, isShow: boolean): string | undefined {
+  try {
+    const url = new URL(link);
+    for (const name of ["s", "e", "key"]) url.searchParams.delete(name);
+    return `${isShow ? "show" : "film"}|${url.origin}${url.pathname}${url.search}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Where each title the library has listed is browsed, by its link (see `linkKey`): the section it says, else its row's, else its kind's. */
+function sectionsByLink(rows: readonly LibraryRow[]): Map<string, LibrarySection> {
+  const out = new Map<string, LibrarySection>();
+  for (const row of rows) {
+    for (const item of row.items) {
+      const section = sectionOf(item) ?? sectionOf(row);
+      const key = linkKey(item.url, (item.kind ?? row.kind) === "series");
+      if (section && key && !out.has(key)) out.set(key, section);
+    }
+  }
+  return out;
+}
+
+/**
+ * The section a card of "Continue watching" belongs to: where the library lists its title, else its kind's (a card says only whether it is of a show,
+ * so a title that was not listed here — one that was found by a search, long ago — is in Movies or Series).
+ */
+const sectionOfCard = (card: LiveProgress, known: ReadonlyMap<string, LibrarySection>): LibrarySection => {
+  const show = isShowCard(card);
+  const key = linkKey(card.url, show);
+  return (key && known.get(key)) || (show ? "series" : "movie");
+};
+
 /**
  * The rows under the banner. Home has what this profile is part way through, titles like the ones it watched last or loved, a row for each of
- * its lists that has a title in it, then the library's rows with a row of categories among them. Movies and Series have the library's rows of that kind, and what is
- * part way through of that kind.
+ * its lists that has a title in it, then the library's rows with a row of categories among them. Movies, Series, Cartoons and Anime have the library's
+ * rows of their section, and what is part way through of it.
  */
 export function rowsOfPage(page: RowsPage, data: PageData): HomeRow[] {
-  const kind: LibraryKind | undefined = page === "movies" ? "movie" : page === "series" ? "series" : undefined;
+  const section = sectionOfPage(page);
   const out: HomeRow[] = [];
 
-  const going = unfinished(data.progress).filter((card) => !kind || isShowCard(card) === (kind === "series"));
+  const known = section ? sectionsByLink(data.all) : undefined; // (only the page of a section has to tell the cards apart)
+  const going = unfinished(data.progress).filter((card) => !known || sectionOfCard(card, known) === section);
   if (going.length > 0) out.push({ id: "continue", layout: "continue", title: t("rows.continue"), entries: going.map(entryOfProgress) });
-  if (!kind) {
+  if (!section) {
     for (const like of data.because) {
       if (like.items.length > 0) out.push({ id: `${BECAUSE_ROW}${like.key}`, layout: "wide", title: t(like.why === "loved" ? "rows.loved" : "rows.because", { title: like.title }), entries: like.items.map(entryOfItem) });
     }
   }
-  if (!kind) {
+  if (!section) {
     for (const info of data.lists) {
       const saved = data.list.filter((item) => listOf(item) === info.id);
       if (saved.length > 0) out.push({ id: `${LIST_ROW}${info.id}`, layout: "wide", title: listName(info), entries: saved.map(entryOfSaved) });
     }
   }
 
-  const library = kind ? data.rows.filter((row) => row.kind === kind) : data.rows;
+  const library = section ? data.rows.filter((row) => sectionOf(row) === section) : data.rows;
   library.forEach((row, index) => {
     out.push({ id: row.id, layout: index === 0 ? "ranked" : "wide", title: rowTitle(row), ...sourceOf(data.rows, row), entries: (index === 0 ? row.items.slice(0, RANKED) : row.items).map(entryOfItem) });
-    if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, kind));
+    if (index === CATEGORIES_AFTER - 1 && library.length > CATEGORIES_AFTER + 1) out.push(categoriesRow(library, section));
   });
   return out;
 }
@@ -380,9 +427,10 @@ export function gridOf(view: View, data: PageData): GridPage | null {
       return row ? { title: rowTitle(row), meta: [t("tv.titles", { count: row.items.length }), sourceOf(data.all, row).source].filter(Boolean).join(" · "), layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
     }
     case "categories": {
-      const rows = data.all.filter((row) => !view.of || row.kind === view.of);
-      const title = view.of === "movie" ? t("tv.movieCategories") : view.of === "series" ? t("tv.seriesCategories") : t("tv.allCategories");
-      const ordered = view.of ? rows : KIND_ORDER.flatMap((kind) => rows.filter((row) => row.kind === kind));
+      const rows = data.all.filter((row) => !view.of || sectionOf(row) === view.of);
+      const title =
+        view.of === "movie" ? t("tv.movieCategories") : view.of === "series" ? t("tv.seriesCategories") : view.of === "cartoon" ? t("tv.cartoonCategories") : view.of === "anime" ? t("tv.animeCategories") : t("tv.allCategories");
+      const ordered = view.of ? rows : SECTION_ORDER.flatMap((section) => rows.filter((row) => sectionOf(row) === section));
       return { title, meta: "", layout: "categories", entries: ordered.map((row) => categoryEntry(row, data.all, !view.of)), empty: "" };
     }
     default:
@@ -420,7 +468,7 @@ export const overviewActions = (entry: Entry, ratings = true, friends = false): 
   ...(entry.inboxId ? (["dismiss"] as const) : []),
 ];
 
-/** Which titles a search shows. */
-export type KindFilter = "all" | LibraryKind;
-export const KIND_FILTERS: readonly KindFilter[] = ["all", "movie", "series"];
-export const ofKind = (items: readonly LibraryItem[], filter: KindFilter): LibraryItem[] => (filter === "all" ? [...items] : items.filter((item) => item.kind === filter));
+/** Which titles a search shows: all, or those of one section. */
+export type SectionFilter = "all" | LibrarySection;
+export const SECTION_FILTERS: readonly SectionFilter[] = ["all", "movie", "series", "cartoon", "anime"];
+export const ofSection = (items: readonly LibraryItem[], filter: SectionFilter): LibraryItem[] => (filter === "all" ? [...items] : items.filter((item) => sectionOf(item) === filter));
