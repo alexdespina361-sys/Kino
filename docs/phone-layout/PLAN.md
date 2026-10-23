@@ -237,7 +237,7 @@ Everything is a stylesheet (`polish/tv-phone.css`) under `@media (max-width: 599
 | `TitlePage`, `RowPage` | loading (the grey tile), empty, failed | `Page`'s focus handling and Back (`useBackToClose`) |
 | `Sheet` | one size | the 70% cap; side sheet sideways |
 
-**Accessibility (`design:accessibility-review`, to be re-run on the build):** every icon button has a name (the chip: "TV menu: TV 4F2A, connected"); the bar and the rail are one `nav` with `aria-label`; tab content has one visually-hidden `h1`; focus order is the visual order (top bar, content, mini remote, bar) and a page or sheet traps focus as they do now; targets 44-48 px with 8 px gaps; motion respects `prefers-reduced-motion` (the existing block covers `.phone-ui *`); contrast of the active tab label is checked against the six accents; text is 14 px or more except the four tab labels (12 px, 600 weight); nothing relies on hover.
+**Accessibility (`design:accessibility-review`, to be re-run on the build):** every icon button has a name (the chip: "TV 4F2A TV connected, TV menu": the words that are on it first, as WCAG 2.5.3 asks, then what it opens); the bar and the rail are one `nav` with `aria-label`; tab content has one visually-hidden `h1`; focus order is the visual order (top bar, content, mini remote, bar) and a page or sheet traps focus as they do now; targets 44-48 px with 8 px gaps; motion respects `prefers-reduced-motion` (the existing block covers `.phone-ui *`); contrast of the active tab label is checked against the six accents; text is 14 px or more except the four tab labels (12 px, 600 weight); nothing relies on hover.
 
 **Copy (`design:ux-copy`):** sentence case, verbs first, the same word for the same thing. New strings (en / ro / it; `i18n.test.ts` keeps the keys equal):
 
@@ -246,7 +246,7 @@ Everything is a stylesheet (`polish/tv-phone.css`) under `@media (max-width: 599
 | `tabs.label` | Main navigation | Navigare principală | Navigazione principale |
 | `tabs.home` | Home | Acasă | Home |
 | `tabs.search` | Search | Caută | Cerca |
-| `tabs.list` | My lists | Listele mele | Le mie liste |
+| `tabs.list` | My Lists *(was "My lists": the TV's rail and the title page's button already say "My Lists", the blind review noticed the two)* | Listele mele | Le mie liste |
 | `tabs.you` | You | Tu | Tu |
 | `remote.open` | Open the remote | Deschide telecomanda | Apri il telecomando |
 | `search.popular` | Popular right now | Populare acum | Popolari adesso |

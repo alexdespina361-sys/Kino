@@ -24,7 +24,7 @@ Every Back goes back one page, as far as it can be said what "a page" is; the fi
 | A title's page, the lists, the profile and its pages | goes up one page, down to the library |
 | The party's pages, the end card, the error card, the welcome | the same as the remote's Back key does there |
 | The phone as a remote, a sheet over it | closes the sheet |
-| The phone as a remote, a place of the bar other than Home (Search, My lists, You) | goes to Home: the four places are not steps of the history (`controller/shell/useTabs.ts`), and each keeps how far it was scrolled |
+| The phone as a remote, a place of the bar other than Home (Search, My Lists, You) | goes to Home: the four places are not steps of the history (`controller/shell/useTabs.ts`), and each keeps how far it was scrolled |
 | The phone as a remote, a title's page or a row's "See all" | goes back to the place it was opened from, scrolled where it was left |
 | The phone as a remote, the remote | puts the remote away, to the library, with a line "playing on the TV" that brings it back. **The film is not stopped by a Back** (Stop is a button) |
 | The library, the first Back | "Press Back again to leave", a line that runs down 2.5 s |
