@@ -51,8 +51,12 @@ const SAME = 1e-4;
 /** Places closer than this are one place (the file has noise below it, from the program that made the clip). */
 const PLACE_SAME = 1e-5;
 
-/** The turns of a bone with neighbouring ones made to face the same way (a turn and its negative are the same turn; a line between them must not go the long way round). */
-function aligned(src: ArrayLike<number>, frames: number): Float64Array {
+/**
+ * The turns of a bone with neighbouring ones made to face the same way (a turn and its negative are the same turn; a line between them must not go the long way round), and the first
+ * of them facing the way the bone's rest does: the makers of clips sign one turn either way, and a pose that has faded from one clip into another would change the sign of its numbers
+ * (the same turn) where the fade ends.
+ */
+function aligned(src: ArrayLike<number>, frames: number, rest: readonly number[]): Float64Array {
   const out = new Float64Array(frames * 4);
   for (let f = 0; f < frames; f++) {
     const l = Math.hypot(src[f * 4]!, src[f * 4 + 1]!, src[f * 4 + 2]!, src[f * 4 + 3]!) || 1;
@@ -62,6 +66,7 @@ function aligned(src: ArrayLike<number>, frames: number): Float64Array {
       if (d < 0) for (let k = 0; k < 4; k++) out[f * 4 + k] = -out[f * 4 + k]!;
     }
   }
+  if (frames > 0 && out[0]! * rest[0]! + out[1]! * rest[1]! + out[2]! * rest[2]! + out[3]! * rest[3]! < 0) for (let i = 0; i < out.length; i++) out[i] = -out[i]!;
   return out;
 }
 
@@ -83,7 +88,7 @@ export function encodeClips(data: SkeletonData, sources: readonly ClipSource[]):
         rKind.push("0");
         rAt.push(0);
       } else {
-        const a = aligned(src, clip.frames);
+        const a = aligned(src, clip.frames, rest);
         let moves = false;
         for (let f = 1; f < clip.frames && !moves; f++) for (let k = 0; k < 4; k++) if (Math.abs(a[f * 4 + k]! - a[k]!) > SAME) moves = true;
         if (moves) {

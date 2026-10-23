@@ -1,7 +1,7 @@
 // Builds the cat's clips from the donors in the table below: each one is the donor's animation on the cat's bones (retarget.mts, feet.mts), given the style of a cat (style.mts), put
 // on the floor by its contacts (plant.mts, ground.mts, floor.mts), its leap or its gait measured (flight.mts, gait.mts). What no donor does (lying down, a stretch, a paw at the face)
-// is made by the pose generator (acts.mts) from the donors' own standing and sitting, and the two go into one clips file for the player. (The leap is the generator's too: the donor's
-// jump is a fox's pounce, and comes down on its nose.)
+// is made by the pose generator (acts.mts), told as postures and solved for the cat's bones, and the two go into one clips file for the player. (The sit, the leap, the swat and the peek
+// are the generator's too: the donors' are a fox's squat, a fox's pounce that comes down on its nose, a fox's bite and a fox's alert that is a stuck walk.)
 //
 //   node node_modules/tsx/dist/cli.mjs scripts/cat/anim/build.mts [--out=.kino-cat/cands.clips] [--only=walk,loaf] [--mesh=src/client/cat/render/gl/cat.mesh]
 //
@@ -17,14 +17,15 @@ import { analyseGait, RUNNING, soleVertices, WALKING } from "./gait.mts";
 import { plantPaws } from "./plant.mts";
 import { foxClips, type Wanted as FoxWanted } from "./recipes/fox.mts";
 import { mesh2motionClips, type Wanted as M2mWanted } from "./recipes/mesh2motion.mts";
+import { LEG, smoothed } from "./smooth.mts";
 import type { Style } from "./style.mts";
+import { thin } from "./thin.mts";
 
 const DONORS = "C:\\Users\\Me\\tools\\cat-workbench\\donors";
 const M2M = `${DONORS}\\mesh2motion\\app__static__animations__fox-animations.glb`;
 const KHR = `${DONORS}\\fox\\Fox.glb`;
 
 const ALL_PAWS = ["hind left", "hind right", "front left", "front right"];
-const FRONT_PAWS = ["front left", "front right"];
 
 /** How a donor's walk is made more of a cat's: the hips rise and fall more, the back and the neck turn more. (The fox's own is small, and a cat's coat hides what is left.) */
 const WALK_STYLE: Style = {
@@ -52,13 +53,10 @@ export const TABLE: readonly Entry[] = [
   { name: "walk", donor: "m2m", from: "Walk", loop: true, lock: true, style: WALK_STYLE, finish: { gait: WALKING, floor: "lift" } },
   { name: "run", donor: "m2m", from: "Run", loop: true, lock: true, style: RUN_STYLE, finish: { gait: RUNNING, floor: "lift" } },
   { name: "stand", donor: "khr", from: "Survey", loop: true, plant: { paws: ALL_PAWS, seat: false }, finish: { floor: "pin" } },
-  { name: "peek", donor: "m2m", from: "Idle Alert", loop: true, style: { lower: 0.6 }, plant: { paws: ALL_PAWS, seat: false }, finish: { floor: "pin" } },
-  { name: acts.DONOR_SIT, donor: "m2m", from: "Sit", loop: false, plant: { paws: FRONT_PAWS, seat: true }, finish: { floor: "pin" } },
-  { name: "swat", donor: "m2m", from: "Bite", loop: false, finish: { floor: "pin" } },
   { name: "yawn", donor: "m2m", from: "Bark", loop: false, finish: { floor: "pin" } },
 ];
 
-// (what the pose generator makes: acts.ACTS. Each is laid on the donors' standing and sitting, so the donors are built first.)
+// (what the pose generator makes: acts.ACTS, told from the cat's own rest; the stalk is laid on the walk, so the donors are built first.)
 
 const arg = (name: string, fallback: string): string => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const f = readFileSync(arg("mesh", "src/client/cat/render/gl/cat.mesh"));
@@ -116,8 +114,22 @@ for (const [name, make] of Object.entries(acts.ACTS)) {
   say(`${name}: ${clip.frames} frames at ${clip.fps.toFixed(2)}${clip.loop ? " (loop)" : ""}, made in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
-// (the donor's sit is what the acts are laid on and what the sit sits down to: the player has the one that sits down)
-const all = [...out.filter((s) => s.name !== acts.DONOR_SIT && wanted(s.name)), ...made];
+// (a leg that is reached for each frame of a clip on its own flicks now and then, a few degrees off the line between its neighbours: each such frame is brought back to within `--smooth`
+// degrees of it (`--smooth=off` leaves them as solved); the strike of a swat is meant to be sudden)
+const smooth = arg("smooth", "3");
+const SUDDEN = ["swat"];
+const smoothMade = smooth === "off" ? made : made.map((s) => (SUDDEN.includes(s.name) ? s : smoothed(s, (j) => LEG.test(skeleton.names[j]!), (Number(smooth) * Math.PI) / 180)));
+// (a clip is kept at fewer frames a second where the player's interpolation gives the same motion: `--thin=off` keeps them all)
+const everything = [...out.filter((s) => wanted(s.name)), ...smoothMade];
+const all =
+  arg("thin", "on") === "off"
+    ? everything
+    : everything.map((s) => {
+        const { source, by } = thin(s);
+        if (by > 1) say(`${s.name}: kept every ${by}th frame (${s.frames} -> ${source.frames} frames, ${s.fps.toFixed(1)} -> ${source.fps.toFixed(1)} a second)`);
+        return source;
+      });
 const dest = arg("out", ".kino-cat/cands.clips");
-writeFileSync(dest, encodeClips(mesh.skeleton, all));
-say(`wrote ${dest}: ${all.map((s) => s.name).join(", ")}`);
+const packed = encodeClips(mesh.skeleton, all);
+writeFileSync(dest, packed);
+say(`wrote ${dest}: ${all.map((s) => s.name).join(", ")} (${packed.length} bytes)`);

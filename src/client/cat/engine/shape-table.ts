@@ -5,7 +5,8 @@ import type { Clip } from "../types";
  * several ways; pixels drawn at 80/255 or more; 0.02 of a body length added on every side). Do not edit by hand: when the cat's model or an animation changes,
  * it is made again, and `--check` says whether it needs to be.
  * (The rows of `climb` are the standing cat's, put in by hand as stand-ins until the table is made again with pictures of the new clip: the climb ends standing on the ledge, and
- * the engine does not ask the table about a cat that hangs from a lip.)
+ * the engine does not ask the table about a cat that hangs from a lip. The rows of `scale` are put in by hand too, from the mesh of the cat upright against a wall seen from behind
+ * (scripts/cat/anim, the probe in the log of docs/cat-animation): about 0.2 of a body length to each side of the middle, 1.3 high from the hind paws to the forepaws' reach.)
  */
 
 /** Per clip, per band of a tenth of a body length from the feet up: how far back and how far forward of its middle the cat reaches there (facing right), in body lengths. */
@@ -34,6 +35,7 @@ export const BANDS: Record<Clip, ReadonlyArray<readonly [number, number]>> = {
   doze: [[1.19, 0.44], [1.21, 0.41], [1.12, 0.41], [0.93, 0.45], [-0.03, 0.48], [-0.06, 0.5], [-0.12, 0.46]],
   shift: [[1.16, 0.53], [1.14, 0.55], [1.09, 0.6], [0.93, 0.59], [-0.04, 0.5], [-0.13, 0.48], [-0.4, 0.48]],
   climb: [[0.65, 0.21], [0.69, 0.26], [0.69, 0.4], [0.64, 0.44], [0.84, 0.45], [0.94, 0.54], [1.05, 0.55], [1.2, 0.52], [1.2, 0.46], [1.18, -0.68]],
+  scale: [[0.2, 0.2], [0.2, 0.2], [0.22, 0.22], [0.24, 0.24], [0.24, 0.24], [0.24, 0.24], [0.26, 0.26], [0.26, 0.26], [0.26, 0.26], [0.24, 0.24], [0.24, 0.24], [0.22, 0.22], [0.22, 0.22]],
 };
 
 /** Per clip: how far back, how far forward and how high the body and the head reach, without the tail and the furthest of the rest: what a hand is on when it is on the cat. */
@@ -62,4 +64,5 @@ export const CORES: Record<Clip, readonly [number, number, number]> = {
   doze: [0.9, 0.29, 0.56],
   shift: [0.89, 0.32, 0.52],
   climb: [0.83, 0.28, 0.91],
+  scale: [0.24, 0.24, 1.3],
 };

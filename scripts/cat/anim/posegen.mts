@@ -2,12 +2,11 @@
 // tail bend, where each paw is to be), and what turns the bones need is found here: the bends are turns about the cat's own axes, the paws are put by a few steps of least squares
 // (ik.mts), and the whole is put on the floor by the lowest part of the mesh (floor.mts). A clip is such a posture asked for at each of its frames, so that what moves (a paw that
 // presses, a head that dips) is a formula of time and what holds still is held by the floor and the paws.
-import { Pose, Skeleton, after, globals, solve, turnAbout, type Clip } from "../../../src/client/cat/render/gl/pose";
+import { Pose, SKIN_LINEAR, Skeleton, after, dualSkin, globals, solveDual, turnAbout } from "../../../src/client/cat/render/gl/pose";
 import type { ClipSource } from "../../../src/client/cat/render/gl/clipfile";
 import type { CatMesh } from "../../../src/client/cat/render/gl/format";
 import { PAWS, restPads, soleVertices } from "./gait.mts";
-import { reachChain, type Limit, type Marker, type Prior, type Vec3 } from "./ik.mts";
-import { learnPriors } from "./prior.mts";
+import { reachChain, type Cap, type Limit, type Marker, type Vec3 } from "./ik.mts";
 import { quatOfMatrix, type Quat } from "./retarget.mts";
 
 export type PawName = (typeof PAWS)[number]["name"];
@@ -34,11 +33,24 @@ export interface Bend {
 const TORSO = ["Hips", "spine1", "spine2", "chest"];
 /** A point of a leg lower than this is through the floor (a little under it, so that the sole's own fur does not count). */
 const UNDER = -0.002;
+/** How far a single point of the coat may be through the floor (body lengths; a tuft that hangs lower than this is seen as a part of the cat that is in the floor). */
+const POKE = 0.025;
 /**
  * How far the joints of a leg may close (degrees), the elbow (the knee) and the wrist (the hock): measured on the mesh, the skin holds while the elbow stays over about 50 degrees
  * (stretch99 under 1.6) and folds in on itself under it (31 degrees: 2.5, a tenth of the faces turned over).
  */
 const CLOSE = { front: [55, 60], hind: [60, 25] } as const;
+/**
+ * How far a bone of a leg may be turned from its rest (degrees) before the solver is made to pay for it. The skin has a vertex that two bones carry blended through nothing when the
+ * two are a half turn apart (the player's skinning: a share under a twentieth of a turn's cosine, about 174 degrees), and a shoulder wound up that far is a coat that turns itself
+ * inside out; a limb has more bones than it needs to turn, and the turn is shared among them instead.
+ */
+const CAP = Number(process.env.CAT_CAP ?? 0);
+const CAP_HIND = Number(process.env.CAT_CAPH ?? 0);
+/** A paw that ends further than this (body lengths) from its place is tried again from other starts. */
+const STRAY = 0.03;
+/** What a radian of turn (on average, over the bones of a leg) costs when a leg's ends are compared, in body lengths of a paw out of place. */
+const FLING = Number(process.env.CAT_FLING ?? 0.03);
 
 /** Where a paw's sole is to be, and how the paw is held: tipped about the cat's z axis (toes up positive), turned about the vertical, how much it is kept to the pose it had, and where its elbow (or knee) is to be. */
 export interface PawAim {
@@ -57,8 +69,11 @@ export interface PawAim {
  * is about -0.2 at rest), a tail that lies out behind is 3.14.
  */
 export interface Spec {
-  /** Left out, the hips are as the pose the spec is laid on (`make`'s `base`) has them. */
-  hips?: { x?: number; y: number; pitch?: number; yaw?: number; roll?: number };
+  /**
+   * Left out, the hips are as the pose the spec is laid on (`make`'s `base`) has them. `z` is how far across they are. `spin` turns the whole cat about the vertical when everything else is
+   * found (the wall, the floor and the paws are told in the cat's own side view, and the cat is turned after): a cat that climbs up a wall seen from behind is such a turn of one seen from the side.
+   */
+  hips?: { x?: number; y: number; z?: number; pitch?: number; yaw?: number; roll?: number; spin?: number };
   back?: readonly [number, number];
   neck?: readonly [number, number, number, number];
   tail?: readonly [number, number, number, number];
@@ -69,7 +84,19 @@ export interface Spec {
   settle?: number;
   /** The pieces of the tail are not let below this height. */
   tailFloor?: number;
+  /** What the legs are kept out of, where it is not the floor alone (see `Solid`). */
+  solid?: Solid;
   paws?: Partial<Record<PawName, PawAim>>;
+}
+
+/**
+ * What a cat's legs must not go into: the floor (how high it is: 0 unless told, `false` for none) and a wall (how far forward it begins; the cat's space has the cat facing forward, so the
+ * wall is on the side the belly is on). Both together are a ledge: the floor is its top, from the lip on, and its face is the wall below the lip; a leg that hangs there is not through any
+ * floor. A wall alone is the face of something a cat climbs (a card).
+ */
+export interface Solid {
+  floor?: number | false;
+  wall?: number;
 }
 
 /** A spec made `k` of the way from `a` to `b` (numbers go in a straight line; what only one has is the one's, from the half way on). */
@@ -89,7 +116,6 @@ export function mixSpec<T>(a: T, b: T, k: number): T {
   return (k < 0.5 ? a : b) as T;
 }
 
-const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 const conj = (q: Quat): Quat => [-q[0], -q[1], -q[2], q[3]];
 const R = new Float64Array(48 * 9);
 const T = new Float64Array(48 * 3);
@@ -103,18 +129,19 @@ export class Body {
   private readonly rest: Pose;
   /** The vertices that a set of bones carries (by the set's names), and the bones as the card has them, for measuring how low the mesh reaches. */
   private readonly carried = new Map<string, Int32Array>();
-  private readonly skinning: Float32Array;
+  /** The bones as the player draws with them (dual quaternions, `solveDual`), and the place of a point that `dualSkin` writes: how low the mesh is is measured as it is drawn, not as matrices would have it. */
+  private readonly dq: Float32Array;
+  private readonly at = [0, 0, 0];
+  private readonly normal = [0, 0, 0];
   /** Every bone but the tail's (what a cat on the floor must not put through it). */
   private readonly nonTail: readonly string[];
-  /** How the legs' bones turn in the clips the body has learned from (`learn`), by bone. */
-  private priors = new Map<number, Prior>();
 
   constructor(
     readonly mesh: CatMesh,
     readonly skeleton: Skeleton,
   ) {
     this.hips = skeleton.bone("Hips");
-    this.skinning = new Float32Array(skeleton.count * 12);
+    this.dq = new Float32Array(skeleton.count * 8);
     this.nonTail = skeleton.names.filter((n) => !n.startsWith("tail"));
     this.rest = new Pose(skeleton);
     const soles = soleVertices(mesh, skeleton);
@@ -129,11 +156,6 @@ export class Body {
       this.padLocal.push([0, 1, 2].map((c) => R[paw * 9 + c]! * d[0]! + R[paw * 9 + 3 + c]! * d[1]! + R[paw * 9 + 6 + c]! * d[2]!) as Vec3);
       this.jointOff.push([T[paw * 3]! - pad[0], T[paw * 3 + 1]! - pad[1], T[paw * 3 + 2]! - pad[2]]);
     });
-  }
-
-  /** Learns how the legs' bones turn from clips of animals that move (the first three bones of each leg: the paw's own is left free), so that a leg is only reached by turns such a leg makes. */
-  learn(clips: Iterable<Clip>): void {
-    this.priors = learnPriors(this.skeleton, clips, (Object.values(LEGS) as string[][]).flatMap((leg) => leg.slice(0, 3)));
   }
 
   /** A pose at rest. */
@@ -167,11 +189,15 @@ export class Body {
 
   /** A bone turned further, about the cat's axes, after what its parents and it have (the bones below it go with it). */
   turn(pose: Pose, bone: string, b: Bend): void {
-    const j = this.skeleton.bone(bone);
     let w: Quat = [0, 0, 0, 1];
     if (b.roll) w = after(w, turnAbout(1, 0, 0, b.roll)) as Quat;
     if (b.yaw) w = after(w, turnAbout(0, 1, 0, b.yaw)) as Quat;
     if (b.pitch) w = after(w, turnAbout(0, 0, 1, b.pitch)) as Quat;
+    this.turnBy(pose, this.skeleton.bone(bone), w);
+  }
+
+  /** A bone given the turn `w` (about the cat's axes, whatever axis it is) after what its parents and it have. */
+  private turnBy(pose: Pose, j: number, w: Quat): void {
     globals(this.skeleton, pose, undefined, R, T);
     const parent = this.skeleton.parent[j]!;
     const P: Quat = parent >= 0 ? quatOfMatrix(R, parent * 9) : [0, 0, 0, 1];
@@ -208,7 +234,7 @@ export class Body {
    * A leg reached to a place: the middle of the paw's sole at `pad` (the cat's space), the paw tipped about the cat's z axis by `tip` (positive: the toes up) and turned about the
    * vertical by `toe`. Returns how far the sole ended from the place (body lengths).
    */
-  reach(pose: Pose, paw: PawName, pad: Vec3, o: { tip?: number; toe?: number; hold?: number; elbow?: Vec3; elbowWeight?: number; soft?: Vec3 } = {}): number {
+  reach(pose: Pose, paw: PawName, pad: Vec3, o: { tip?: number; toe?: number; hold?: number; elbow?: Vec3; elbowWeight?: number; soft?: Vec3; solid?: Solid } = {}): number {
     const k = PAWS.findIndex((p) => p.name === paw);
     const chain = LEGS[paw]!.map((b) => this.skeleton.bone(b));
     const tip = o.tip ?? 0;
@@ -236,29 +262,84 @@ export class Body {
       { bone: chain[1]!, min: close[0]!, weight: 4 },
       { bone: chain[2]!, min: close[1]!, weight: 4 },
     ];
-    const priors = chain.slice(0, 3).flatMap((j) => this.priors.get(j) ?? []);
-    let miss = reachChain(this.skeleton, pose, chain, markers, hold, 30, limits, priors).miss[0]!;
-    // (a leg that is folded may have a piece of itself through the floor: each point of it that is told to stay above the floor, and the leg is solved again)
-    const contacts: Marker[] = [];
-    for (let round = 0; round < 3; round++) {
-      const low = this.under(pose, LEGS[paw]!, UNDER, 24);
-      if (low.length === 0) break;
-      for (const l of low) contacts.push({ bone: l.bone, local: l.local, aim: [0, l.rigid + (UNDER - l.y), 0], floor: true, weight: 2 });
-      miss = reachChain(this.skeleton, pose, chain, [...markers, ...contacts], hold, 30, limits, priors).miss[0]!;
+    const cap = paw.startsWith("front") ? CAP : CAP_HIND;
+    const caps: Cap[] = cap > 0 ? chain.slice(0, 2).map((bone) => ({ bone, max: (cap * Math.PI) / 180, weight: 3 })) : [];
+    const solve = (p: Pose): number => {
+      let miss = reachChain(this.skeleton, p, chain, markers, hold, 30, limits, caps).miss[0]!;
+      // (a leg that is folded may have a piece of itself through the floor: each point of it that is told to stay above the floor, and the leg is solved again)
+      const contacts: Marker[] = [];
+      for (let round = 0; round < 3; round++) {
+        const low = this.under(p, LEGS[paw]!, o.solid ?? {}, 24);
+        if (low.length === 0) break;
+        for (const l of low) contacts.push(l.wall ? { bone: l.bone, local: l.local, aim: [l.rigid - l.depth, 0, 0], wall: true, weight: 2 } : { bone: l.bone, local: l.local, aim: [0, l.rigid + l.depth, 0], floor: true, weight: 2 });
+        miss = reachChain(this.skeleton, p, chain, [...markers, ...contacts], hold, 30, limits, caps).miss[0]!;
+      }
+      return miss;
+    };
+    const origin = this.pose();
+    origin.copy(pose);
+    let miss = solve(pose);
+    if (miss <= STRAY) return miss;
+    // (the search is from where the leg is, and a leg that is far from the place can settle in a bend that never gets there (a hind leg folded up over the back, with the paw by the
+    // shoulder): the leg is started again, turned at the hip to point at the place, from the pose it had and from the rest's, and the best of the ends is kept. The best counts the
+    // turn the leg took from where it was: a leg that is flung into another bend for a few hundredths of a body length is a pop in the clip, not a better pose)
+    const trial = this.pose();
+    let best = miss + FLING * this.turned(origin, pose, chain);
+    for (const fromRest of [false, true]) {
+      trial.copy(origin);
+      if (fromRest) for (const b of LEGS[paw]!) for (let c = 0; c < 4; c++) trial.r[this.skeleton.bone(b) * 4 + c] = this.rest.r[this.skeleton.bone(b) * 4 + c]!;
+      this.aimLeg(trial, paw, pad);
+      const m2 = solve(trial);
+      const score = m2 + FLING * this.turned(origin, trial, chain);
+      if (score < best) {
+        best = score;
+        miss = m2;
+        for (const j of chain) for (let c = 0; c < 4; c++) pose.r[j * 4 + c] = trial.r[j * 4 + c]!;
+      }
+      if (miss <= STRAY) break;
     }
     return miss;
   }
 
+  /** How far the bones of a chain are turned between two poses, on average (radians). */
+  private turned(a: Pose, b: Pose, chain: readonly number[]): number {
+    let sum = 0;
+    for (const j of chain) {
+      let d = 0;
+      for (let c = 0; c < 4; c++) d += a.r[j * 4 + c]! * b.r[j * 4 + c]!;
+      sum += 2 * Math.acos(Math.min(1, Math.abs(d)));
+    }
+    return sum / chain.length;
+  }
+
+  /** A leg turned at its hip, all in one piece, until the line from the hip to the middle of the paw's sole points at `pad` (the start of a search for the bends that put it there). */
+  private aimLeg(pose: Pose, paw: PawName, pad: Vec3): void {
+    const root = this.where(pose, LEGS[paw]![0]!);
+    const now = this.padOf(pose, paw);
+    const a: Vec3 = [now[0] - root[0], now[1] - root[1], now[2] - root[2]];
+    const b: Vec3 = [pad[0] - root[0], pad[1] - root[1], pad[2] - root[2]];
+    const axis: Vec3 = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const s = Math.hypot(axis[0], axis[1], axis[2]);
+    if (s < 1e-9) return;
+    const angle = Math.atan2(s, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]);
+    this.turnBy(pose, this.skeleton.bone(LEGS[paw]![0]!), turnAbout(axis[0] / s, axis[1] / s, axis[2] / s, angle) as Quat);
+  }
+
   /**
-   * The vertices that the named bones carry (a half or more of the weight, between them) that the pose has lower than `floor`, the lowest `few` of them: each with the bone of the set
-   * that carries it most, where it is in that bone's own axes (to put a marker on it), how high it is, and how high the bone's own turn would have it (the vertex as if it were all that
-   * bone's).
+   * The vertices that the named bones carry (a half or more of the weight, between them) that the pose has in the solid (below the floor, and, where there is a wall, beyond it), the
+   * `few` that are furthest in: each with the bone of the set that carries it most, where it is in that bone's own axes (to put a marker on it), how far in it is, and where the bone's
+   * own turn would have it (the vertex as if it were all that bone's: how high, or, for a point that leaves by the wall, how far forward). A point that is in a ledge comes out by the
+   * nearer way, up or back.
    */
-  under(pose: Pose, bones: readonly string[], floor: number, few = 16): Array<{ bone: number; local: Vec3; y: number; rigid: number }> {
+  under(pose: Pose, bones: readonly string[], solid: Solid, few = 16): Array<{ bone: number; local: Vec3; depth: number; rigid: number; wall: boolean }> {
+    if (solid.floor === false && solid.wall === undefined) return [];
+    // (a little in is not in: the sole's own fur)
+    const floor = solid.floor === false ? Infinity : (solid.floor ?? 0) + UNDER;
+    const wall = solid.wall === undefined ? Infinity : solid.wall - UNDER;
     const ids = bones.map((b) => this.skeleton.bone(b));
     const m = this.mesh;
-    solve(this.skeleton, pose, IDENTITY, this.skinning);
-    const found: Array<{ v: number; y: number; bone: number }> = [];
+    solveDual(this.skeleton, pose, this.dq);
+    const found: Array<{ v: number; depth: number; bone: number; wall: boolean }> = [];
     for (let v = 0; v < m.count; v++) {
       let w = 0;
       let top = 0;
@@ -277,25 +358,23 @@ export class Body {
       const px = m.pos[v * 3]!;
       const py = m.pos[v * 3 + 1]!;
       const pz = m.pos[v * 3 + 2]!;
-      let y = 0;
-      for (let k = 0; k < 4; k++) {
-        const wk = m.weight[v * 4 + k]! / 255;
-        if (wk <= 0) continue;
-        const o = m.skin[v * 4 + k]! * 12;
-        y += wk * (this.skinning[o + 4]! * px + this.skinning[o + 5]! * py + this.skinning[o + 6]! * pz + this.skinning[o + 7]!);
-      }
-      if (y < floor) found.push({ v, y, bone });
+      dualSkin(this.dq, m.skin, m.weight, v * 4, 1 / 255, px, py, pz, 0, 1, 0, this.at, this.normal, SKIN_LINEAR);
+      const up = floor - this.at[1]!;
+      const back = wall === Infinity ? Infinity : this.at[0]! - wall;
+      if (up <= 0 || back <= 0) continue;
+      found.push({ v, bone, depth: Math.min(up, back), wall: back < up });
     }
-    found.sort((a, b) => a.y - b.y);
+    found.sort((a, b) => b.depth - a.depth);
     globals(this.skeleton, pose, undefined, R, T);
     const bind = this.skeleton.bind;
-    return found.slice(0, few).map(({ v, y, bone }) => {
+    return found.slice(0, few).map(({ v, depth, bone, wall }) => {
       const px = m.pos[v * 3]!;
       const py = m.pos[v * 3 + 1]!;
       const pz = m.pos[v * 3 + 2]!;
       const l: Vec3 = [0, 1, 2].map((r) => bind[bone * 12 + r * 4]! * px + bind[bone * 12 + r * 4 + 1]! * py + bind[bone * 12 + r * 4 + 2]! * pz + bind[bone * 12 + r * 4 + 3]!) as Vec3;
-      const rigid = T[bone * 3 + 1]! + R[bone * 9 + 3]! * l[0] + R[bone * 9 + 4]! * l[1] + R[bone * 9 + 5]! * l[2];
-      return { bone, local: l, y, rigid };
+      const at = wall ? 0 : 1;
+      const rigid = T[bone * 3 + at]! + R[bone * 9 + at * 3]! * l[0] + R[bone * 9 + at * 3 + 1]! * l[1] + R[bone * 9 + at * 3 + 2]! * l[2];
+      return { bone, local: l, depth, rigid, wall };
     });
   }
 
@@ -317,19 +396,11 @@ export class Body {
       list = Int32Array.from(out);
       this.carried.set(bones.join(), list);
     }
-    solve(this.skeleton, pose, IDENTITY, this.skinning);
+    solveDual(this.skeleton, pose, this.dq);
     const low = new Float32Array(few).fill(Infinity);
     for (const v of list) {
-      const px = m.pos[v * 3]!;
-      const py = m.pos[v * 3 + 1]!;
-      const pz = m.pos[v * 3 + 2]!;
-      let y = 0;
-      for (let k = 0; k < 4; k++) {
-        const w = m.weight[v * 4 + k]! / 255;
-        if (w <= 0) continue;
-        const o = m.skin[v * 4 + k]! * 12;
-        y += w * (this.skinning[o + 4]! * px + this.skinning[o + 5]! * py + this.skinning[o + 6]! * pz + this.skinning[o + 7]!);
-      }
+      dualSkin(this.dq, m.skin, m.weight, v * 4, 1 / 255, m.pos[v * 3]!, m.pos[v * 3 + 1]!, m.pos[v * 3 + 2]!, 0, 1, 0, this.at, this.normal, SKIN_LINEAR);
+      const y = this.at[1]!;
       if (y >= low[few - 1]!) continue;
       let i = few - 1;
       while (i > 0 && low[i - 1]! > y) {
@@ -393,7 +464,7 @@ export class Body {
     const pose = this.pose();
     if (base) pose.copy(base);
     const h = spec.hips;
-    if (h) this.hipsAt(pose, { ...(h.x !== undefined ? { x: h.x } : {}), y: h.y }, { pitch: h.pitch ?? 0, yaw: h.yaw ?? 0, roll: h.roll ?? 0 });
+    if (h) this.hipsAt(pose, { ...(h.x !== undefined ? { x: h.x } : {}), y: h.y, ...(h.z !== undefined ? { z: h.z } : {}) }, { pitch: h.pitch ?? 0, yaw: h.yaw ?? 0, roll: h.roll ?? 0 });
     if (spec.back) {
       this.aim(pose, "spine1", "spine2", spec.back[0]);
       this.aim(pose, "spine2", "chest", spec.back[1]);
@@ -435,20 +506,36 @@ export class Body {
     }
     const putPaws = (): void => {
       for (const [name, aim] of Object.entries(spec.paws ?? {}) as Array<[PawName, PawAim]>) {
-        this.reach(pose, name, aim.at, { ...(aim.tip !== undefined ? { tip: aim.tip } : {}), ...(aim.toe !== undefined ? { toe: aim.toe } : {}), ...(aim.hold !== undefined ? { hold: aim.hold } : {}), ...(aim.elbow ? { elbow: aim.elbow } : {}), ...(aim.soft ? { soft: aim.soft } : {}) });
+        this.reach(pose, name, aim.at, { ...(aim.tip !== undefined ? { tip: aim.tip } : {}), ...(aim.toe !== undefined ? { toe: aim.toe } : {}), ...(aim.hold !== undefined ? { hold: aim.hold } : {}), ...(aim.elbow ? { elbow: aim.elbow } : {}), ...(aim.soft ? { soft: aim.soft } : {}), ...(spec.solid ? { solid: spec.solid } : {}) });
       }
     };
     putPaws();
     if (grounded) {
       // (a cat that is on the floor is not through it: whatever is lowest but the tail, once the legs are in, is brought up to the floor, and the legs are put again from there)
-      for (let pass = 0; pass < 2; pass++) {
+      // (the mean of the lowest few is what must be on the floor, so that one tuft does not decide; but no single point of the coat is let by more than `POKE` through it)
+      for (let pass = 0; pass < 3; pass++) {
         const low = this.lowest(pose, this.nonTail);
-        if (low > -0.004) break;
-        pose.t[this.hips * 3 + 1] = pose.t[this.hips * 3 + 1]! - low;
+        const lowest = this.lowest(pose, this.nonTail, 1);
+        if (low > -0.004 && lowest > -POKE) break;
+        pose.t[this.hips * 3 + 1] = pose.t[this.hips * 3 + 1]! + Math.max(-low, -POKE * 0.7 - lowest);
         putPaws();
       }
     }
+    if (h?.spin) this.spinBy(pose, h.spin);
     return pose;
+  }
+
+  /** The whole cat turned about the vertical through the origin (the hips' place and turn: the bones below them go with them). */
+  private spinBy(pose: Pose, angle: number): void {
+    const h = this.hips;
+    const c = Math.cos(angle);
+    const s = Math.sin(angle);
+    const x = pose.t[h * 3]!;
+    const z = pose.t[h * 3 + 2]!;
+    pose.t[h * 3] = x * c + z * s;
+    pose.t[h * 3 + 2] = -x * s + z * c;
+    const q = after([pose.r[h * 4]!, pose.r[h * 4 + 1]!, pose.r[h * 4 + 2]!, pose.r[h * 4 + 3]!], turnAbout(0, 1, 0, angle));
+    for (let k = 0; k < 4; k++) pose.r[h * 4 + k] = q[k]!;
   }
 
   /** Where the middle of a paw's sole is in the pose (the cat's space). */

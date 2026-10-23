@@ -30,6 +30,8 @@ interface GlCell {
   hand?: [number, number];
   /** A ledge whose top is the floor line and whose lip is this many body lengths from the feet (negative: behind them): drawn as a block, for a climb to be seen against. */
   ledge?: number;
+  /** The face of a card the whole cell wide behind the cat, in place of the floor line: for a cat that climbs straight up it. */
+  card?: boolean;
 }
 
 const STRIDE = { walk: WALK_STRIDE, run: GALLOP_STRIDE };
@@ -84,8 +86,18 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, clips: string, 
       ctx.fillStyle = LEDGE;
       ctx.fillRect(x0 + lip, y0 + oy, cw - lip, ch - oy);
     }
-    ctx.fillStyle = GROUND;
-    ctx.fillRect(x0, y0 + oy, cw, 3 * scale);
+    if (cell.card) {
+      ctx.fillStyle = LEDGE;
+      ctx.fillRect(x0, y0, cw, ch);
+      // (rungs on the face, a quarter of a body length apart and fixed to it: a cat that climbs is seen going up them, and a paw that holds is seen holding one)
+      for (let k = 0; ch - 24 * scale - k * 0.25 * px > 0; k++) {
+        ctx.fillStyle = k % 4 === 0 ? "#3a3a48" : "#2d2d39";
+        ctx.fillRect(x0, y0 + ch - 24 * scale - k * 0.25 * px, cw, (k % 4 === 0 ? 2 : 1) * scale);
+      }
+    } else {
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(x0, y0 + oy, cw, 3 * scale);
+    }
     const z = cell.zoom;
     // (`head`: the place is where the head is, as the mesh's cat has it in this pose, and the number is how far from the head's centre to look at: ahead of it, and up)
     const at = z ? ("head" in z ? ((): [number, number] => { const head = cat.place("head"); return [head[0] + z.head[0], head[1] + z.head[1]]; })() : z.at) : undefined;
@@ -493,11 +505,16 @@ export function clipCells(mesh: string, clips: string, name: string, n: number, 
   if (!plan) throw new Error(`no posture plays the clip ${name}`);
   const seconds = lengthOf(clip);
   // (`raise`: the floor line is this many body lengths higher in the cell, for a clip whose cat goes below it: a climb starts hanging under the ledge)
-  const up = { ...(raise ? { raise } : {}), ...(name === "climb" ? { ledge: -CLIMB_LIP } : {}) };
+  const up = { ...(raise ? { raise } : {}), ...(name === "climb" ? { ledge: -CLIMB_LIP } : {}), ...(name === "scale" ? { card: true } : {}) };
   return Array.from({ length: n }, (_, i) => {
     // (a blind sheet says only which picture it is: a reviewer who is not to know what the clip is must not be told by the label)
     const label = blind ? String(i + 1) : `${name} ${i}/${n}`;
-    if (plan.drive === "odometer") return { label, frame: { clip: name as CatFrame["clip"], vx: 150 }, cycle: i / n, view, settle: 1, ...up };
+    // (a cat that climbs the face of a card has no floor under it)
+    // (and its head is where the clip has it, not turned to the viewer; and it is higher up the face in each picture by the way a round of its paws climbs: the pictures are of one round)
+    if (plan.drive === "odometer") {
+      const climbs = name === "scale" ? { raise: raise + (i / n) * clip.stride, headYaw: 0 } : {};
+      return { label, frame: { clip: name as CatFrame["clip"], vx: 150, ...(name === "scale" ? { grounded: false } : {}) }, cycle: i / n, view, settle: 1, ...up, ...climbs };
+    }
     if (plan.drive === "progress") return { label, frame: { clip: name as CatFrame["clip"], progress: n > 1 ? i / (n - 1) : 0, ...(name === "climb" ? { grounded: false } : {}) }, view, settle: 1, ...up };
     return { label, frame: { clip: name as CatFrame["clip"] }, view, settle: (clip.loop ? i / n : n > 1 ? i / (n - 1) : 0) * seconds, ...up };
   });

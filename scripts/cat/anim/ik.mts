@@ -2,7 +2,7 @@
 // middle of a paw's sole, a joint) are at the places they are told to be, as near as they can to the turns the chain had (so that which way a knee bends is the pose it started from:
 // the same solver that finishes a donor's legs in feet.mts, for a chain and a set of places given by the caller). Nothing here knows an animal: it is geometry.
 import { Pose, globals, type Skeleton } from "../../../src/client/cat/render/gl/pose";
-import { matOf, mul3, quatOfMatrix, tr3 } from "./retarget.mts";
+import { matOf, mul3, quatOfMatrix } from "./retarget.mts";
 
 export type Vec3 = [number, number, number];
 
@@ -16,6 +16,8 @@ export interface Marker {
   weight?: number;
   /** The place is a floor: `aim`'s height is the lowest the point may be at, and where it is across and along does not count (a point that is above it costs nothing). */
   floor?: boolean;
+  /** The place is a wall: `aim`'s x (along) is the furthest forward the point may be at, and where it is up and across does not count (a point that is behind it costs nothing). */
+  wall?: boolean;
   /** How much each way (along, up, across) counts, against `weight` (a place that is only wanted to be about there along the floor gives along and across a little: 1 is the usual). */
   axes?: Vec3;
 }
@@ -29,14 +31,14 @@ export interface Limit {
 }
 
 /**
- * How a bone turns in an animal that moves (prior.mts learns it from the donors): its turn from rest (in its parent's frame, as a rotation vector) is told along three axes, the one it
- * mostly turns about first, and `spread` is how far along each it may go from `mean` before it costs as much as a marker a body length out of place (times `priorWeight`).
+ * How far a bone may be turned from its rest (radians: the angle between its turn against its parent and the one it has at rest), past which a turn costs. A bone that is turned half way
+ * round from its rest is where the skin goes wrong (a vertex that two bones carry, and the two a half turn apart, is blended through nothing), and a limb that has two bones turned a half
+ * turn each, one way and the other, is a limb that has wound itself up and got nowhere: the cap is what makes the solver find the way that does not.
  */
-export interface Prior {
+export interface Cap {
   bone: number;
-  mean: Vec3;
-  axes: readonly [Vec3, Vec3, Vec3];
-  spread: readonly [number, number, number];
+  max: number;
+  weight?: number;
 }
 
 export interface Reached {
@@ -89,7 +91,7 @@ const T = new Float64Array(48 * 3);
  * The bones of `chain` (each one hangs from the one before; the first from a bone that is not in it) turned in `pose` so that the markers are at their aims. `hold` is what a radian
  * of turn away from the pose's own costs against a body length of a marker out of place, squared (a small number: the larger, the more the chain keeps the shape it had).
  */
-export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly number[], markers: readonly Marker[], hold = 0.01, iterations = 30, limits: readonly Limit[] = [], priors: readonly Prior[] = [], priorWeight = 0.05): Reached {
+export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly number[], markers: readonly Marker[], hold = 0.01, iterations = 30, limits: readonly Limit[] = [], caps: readonly Cap[] = []): Reached {
   const K = chain.length;
   const first = chain[0]!;
   const carrier = skeleton.parent[first]!;
@@ -109,11 +111,10 @@ export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly numbe
     const k = at.get(l.bone);
     if (k === undefined || k < 1 || k > K - 2) throw new Error("a limit on a bone that is not inside the chain");
   }
-  const P = priors.length;
-  // (each prior bone's rest turn, transposed: the turn from rest is the bone's turn after that)
-  const restBack = priors.map((p) => {
-    if (!at.has(p.bone)) throw new Error("a prior on a bone that is not in the chain");
-    return tr3(matOf([skeleton.restR[p.bone * 4]!, skeleton.restR[p.bone * 4 + 1]!, skeleton.restR[p.bone * 4 + 2]!, skeleton.restR[p.bone * 4 + 3]!]));
+  const C = caps.length;
+  const restLocal = caps.map((c) => {
+    if (!at.has(c.bone)) throw new Error("a cap on a bone that is not in the chain");
+    return matOf([skeleton.restR[c.bone * 4]!, skeleton.restR[c.bone * 4 + 1]!, skeleton.restR[c.bone * 4 + 2]!, skeleton.restR[c.bone * 4 + 3]!]);
   });
   const markersOf = (d: ArrayLike<number>, into: Float64Array): void => {
     let Rp = Rc;
@@ -138,7 +139,7 @@ export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly numbe
     }
   };
   const m = K * 3;
-  const rows = M * 3 + L + P * 3 + m;
+  const rows = M * 3 + L + C + m;
   /** The angle at the head of the chain's k-th bone, between the lines to the bones on either side. */
   const angleAt = (k: number): number => {
     const ux = joint[(k - 1) * 3]! - joint[k * 3]!;
@@ -160,6 +161,12 @@ export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly numbe
         r[i * 3 + 2] = 0;
         continue;
       }
+      if (markers[i]!.wall) {
+        r[i * 3] = w * Math.max(0, mk[i * 3]! - markers[i]!.aim[0]!);
+        r[i * 3 + 1] = 0;
+        r[i * 3 + 2] = 0;
+        continue;
+      }
       const axes = markers[i]!.axes;
       for (let c = 0; c < 3; c++) r[i * 3 + c] = w * (axes ? axes[c]! : 1) * (mk[i * 3 + c]! - markers[i]!.aim[c]!);
     }
@@ -169,20 +176,18 @@ export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly numbe
       const w = Math.sqrt(lim.weight ?? 1);
       r[M * 3 + i] = w * (Math.max(0, (lim.min ?? 0) - a) + Math.max(0, a - (lim.max ?? Math.PI)));
     }
-    for (let i = 0; i < P; i++) {
-      const p = priors[i]!;
-      const k = at.get(p.bone)!;
-      // the bone's turn from rest as a rotation vector, and its distance from the usual turn along each of the axes the animal turns it about
-      const q = quatOfMatrix(mul3(mul3(rodrigues(d[k * 3]!, d[k * 3 + 1]!, d[k * 3 + 2]!), local[k]!), restBack[i]!));
-      if (q[3] < 0) for (let c = 0; c < 4; c++) q[c] = -q[c]!;
-      const s = Math.hypot(q[0], q[1], q[2]);
-      const a = s < 1e-9 ? 2 : (2 * Math.atan2(s, q[3])) / s;
-      for (let c = 0; c < 3; c++) {
-        const ax = p.axes[c]!;
-        r[M * 3 + L + i * 3 + c] = (priorWeight * ((q[0] * a - p.mean[0]) * ax[0] + (q[1] * a - p.mean[1]) * ax[1] + (q[2] * a - p.mean[2]) * ax[2])) / p.spread[c]!;
-      }
+    for (let i = 0; i < C; i++) {
+      const cap = caps[i]!;
+      const k = at.get(cap.bone)!;
+      // (the angle of the turn between the bone's rest and where it is: the trace of the one's transpose times the other)
+      const now = mul3(rodrigues(d[k * 3]!, d[k * 3 + 1]!, d[k * 3 + 2]!), local[k]!);
+      const rest = restLocal[i]!;
+      let trace = 0;
+      for (let c = 0; c < 9; c++) trace += rest[c]! * now[c]!;
+      const angle = Math.acos(Math.max(-1, Math.min(1, (trace - 1) / 2)));
+      r[M * 3 + L + i] = Math.sqrt(cap.weight ?? 1) * Math.max(0, angle - cap.max);
     }
-    for (let i = 0; i < m; i++) r[M * 3 + L + P * 3 + i] = sq * d[i]!;
+    for (let i = 0; i < m; i++) r[M * 3 + L + C + i] = sq * d[i]!;
   };
   let d = new Float64Array(m);
   let r = new Float64Array(rows);
@@ -232,6 +237,6 @@ export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly numbe
     turned += Math.hypot(d[k * 3]!, d[k * 3 + 1]!, d[k * 3 + 2]!) / K;
   }
   markersOf(d, mk);
-  const miss = markers.map((mm, i) => (mm.floor ? Math.max(0, mm.aim[1] - mk[i * 3 + 1]!) : Math.hypot(mk[i * 3]! - mm.aim[0], mk[i * 3 + 1]! - mm.aim[1], mk[i * 3 + 2]! - mm.aim[2])));
+  const miss = markers.map((mm, i) => (mm.floor ? Math.max(0, mm.aim[1] - mk[i * 3 + 1]!) : mm.wall ? Math.max(0, mk[i * 3]! - mm.aim[0]) : Math.hypot(mk[i * 3]! - mm.aim[0], mk[i * 3 + 1]! - mm.aim[1], mk[i * 3 + 2]! - mm.aim[2])));
   return { miss, turn: (turned * 180) / Math.PI };
 }

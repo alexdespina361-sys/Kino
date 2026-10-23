@@ -133,7 +133,12 @@ export type Clip =
    * (feet on the ledge's top) and it faces the inside of the ledge; `grounded` is false until the end. The picture starts with the cat hanging by its forepaws from the lip, below that
    * line (the art does the climb's travel; the engine does not move `y` while it plays), and ends standing.
    */
-  | "climb";
+  | "climb"
+  /**
+   * Going straight up the face of a card (or any wall the page has), seen from behind: the viewer has the cat's back, the tail hanging, the paws taking hold of the face one after another. A gait,
+   * not a one-shot: it is played by the distance climbed (`odometer`, the clip's `stride` being the length that one round of the paws climbs), so that no paw slides over the face.
+   */
+  | "scale";
 
 /**
  * How the cat feels, a face and a tail more than a body: laid over whatever it is doing (a cat can tilt its head as it sits, stands or walks).
