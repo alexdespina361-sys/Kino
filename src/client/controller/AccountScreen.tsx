@@ -22,14 +22,16 @@ import { keepFocusIn, sheetIsOpen } from "./Sheet";
 const pagesOpen: object[] = [];
 
 /**
- * A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. A page with a picture at its top (a title's) has
- * no head: its way back is a round button over the picture (`backTestId` is its test id), and its name is the page's own to write.
+ * A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. A `bare` page (a title's, with its picture at the top)
+ * has no head: its way back is a round button over the picture, and its name is the page's own to write. (`backTestId`: the way back's test id, "page-back" if none.)
  */
-export function Page({ title, onBack, children, testId, backTestId }: { title: string; onBack: () => void; children: ReactNode; testId?: string; backTestId?: string }) {
+export function Page({ title, onBack, children, testId, backTestId, bare = false }: { title: string; onBack: () => void; children: ReactNode; testId?: string; backTestId?: string; bare?: boolean }) {
   const t = useT();
   const page = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const me = useRef({}).current;
+  const back = useRef(onBack);
+  back.current = onBack; // (read when Escape is pressed: the key listener is not put on again at each render of the screen under it, which is once a second while a film plays)
   useBackToClose(onBack); // (the phone's own Back goes back a page too, instead of leaving the site)
   useEffect(() => {
     pagesOpen.push(me);
@@ -46,28 +48,31 @@ export function Page({ title, onBack, children, testId, backTestId }: { title: s
   }, [title, testId]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (sheetIsOpen()) return; // (a sheet over the page keeps its own focus)
+      // (A sheet keeps Escape and Tab. A title's page opened from a sheet that is still open - the ratings' - lies over it, and Escape closes the sheet under it first;
+      // the phone's own Back, which goes by the history's layers, closes the one on top. Only a keyboard sees the difference.)
+      if (sheetIsOpen()) return;
       if (pagesOpen[pagesOpen.length - 1] !== me) return; // (so does a page over this one)
       if (event.key === "Escape") {
         // (One Escape is one page back: the page under this one listens on the window too, and finds this one gone if it listens after it.)
         event.stopImmediatePropagation();
-        onBack();
+        back.current();
       } else if (event.key === "Tab" && page.current) keepFocusIn(page.current, event);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onBack, me]);
+  }, [me]);
+  const backButton = (
+    <button className={`icon-btn${bare ? " page-float-back" : ""}`} onClick={onBack} aria-label={t("common.back")} data-testid={backTestId ?? "page-back"}>
+      <ChevronIcon className="flip" />
+    </button>
+  );
   return (
-    <div className={`page${backTestId ? " is-bare" : ""}`} ref={page} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
-      {backTestId ? (
-        <button className="icon-btn page-float-back" onClick={onBack} aria-label={t("common.back")} data-testid={backTestId}>
-          <ChevronIcon className="flip" />
-        </button>
+    <div className={`page${bare ? " is-bare" : ""}`} ref={page} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
+      {bare ? (
+        backButton
       ) : (
         <header className="page-head">
-          <button className="icon-btn" onClick={onBack} aria-label={t("common.back")} data-testid="page-back">
-            <ChevronIcon className="flip" />
-          </button>
+          {backButton}
           <h2>{title}</h2>
         </header>
       )}
@@ -340,7 +345,7 @@ export function AccountScreen({
   );
   if (inline) {
     return (
-      <section className="tab-you" data-testid="account-screen" aria-label={t("account.title")}>
+      <section data-testid="account-screen" aria-label={t("account.title")}>
         <h2 className="sr-only">{t("account.title")}</h2>
         {front}
       </section>

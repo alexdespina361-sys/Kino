@@ -3,7 +3,7 @@ import { listEntryOf } from "../../account/cards";
 import type { ListEntry } from "../../account/profileStore";
 import { scoreOf, useScores } from "../../account/ratings";
 import { rowTitle, useT } from "../../i18n";
-import { allRows, failedTitles, feed, GRID_CAP, hasMoreTitles, loadingTitles, useFeed } from "../../shared/feed";
+import { allRows, failedTitles, feed, GRID_CAP, hasMoreTitles, loadingTitles, nearBottom, useFeed } from "../../shared/feed";
 import { entryOfItem, type Entry } from "../../tv/pages";
 import { Page } from "../AccountScreen";
 import { Tile } from "../Library";
@@ -33,7 +33,7 @@ export function RowPage({ rowId, onClose, onOpen, onPick }: { rowId: string; onC
     const body = grid.current?.closest<HTMLElement>(".page-body");
     if (!more || !body) return;
     const look = () => {
-      if (body.scrollHeight - body.scrollTop - body.clientHeight <= body.clientHeight * 1.5) feed.loadMore(rowId, GRID_CAP);
+      if (nearBottom(body)) feed.loadMore(rowId, GRID_CAP);
     };
     look();
     body.addEventListener("scroll", look, { passive: true });

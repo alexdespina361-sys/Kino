@@ -11,6 +11,10 @@ import { itemsOf, LibraryMoreSchema, LibraryRowsSchema, TitleIndex, type Library
 /** A row grows to this many titles as it is scrolled sideways, and a category's page to the second as it is scrolled down. */
 export const ROW_CAP = 100;
 export const GRID_CAP = 300;
+/** A page of rows, or a grid, asks the library for what comes next when it is scrolled to within this many of its own heights of its end. */
+const NEAR_BOTTOM = 1.5;
+/** Whether a page that scrolls (`box`: the one that does, and has a height) is that near its end. */
+export const nearBottom = (box: HTMLElement | null): boolean => box !== null && box.clientHeight > 0 && box.scrollHeight - box.clientHeight - box.scrollTop <= box.clientHeight * NEAR_BOTTOM;
 /** No more than this many rows are brought below the first ones. */
 export const SHELF_CAP = 60;
 /** A row brought below the first ones is left out when fewer than this many of its titles are not already shown above it. */

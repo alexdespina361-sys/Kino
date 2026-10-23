@@ -40,10 +40,7 @@
 }
 :root[data-ui="polish"] .phone.shell.has-mini { --mini-room: var(--mini-h); }
 /* The remote has the whole screen: no bar, so no room kept for one. */
-:root[data-ui="polish"] .phone.shell.is-remote {
-  --shell-bottom: 0px;
-  padding-bottom: max(32px, env(safe-area-inset-bottom));
-}
+:root[data-ui="polish"] .phone.shell.is-remote { padding-bottom: max(32px, env(safe-area-inset-bottom)); }
 :root[data-ui="polish"] .phone-ui .tab-panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
 /* ------------------------------ the top bar ------------------------------ */
@@ -80,8 +77,7 @@
 }
 :root[data-ui="polish"] .phone-ui .tv-chip:active { background: var(--surface-2); transform: scale(0.98); }
 :root[data-ui="polish"] .phone-ui .tv-chip:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff; }
-:root[data-ui="polish"] .phone-ui .tv-chip .top-name { display: flex; flex: 1 1 auto; flex-direction: column; gap: 1px; min-width: 0; }
-:root[data-ui="polish"] .phone-ui .tv-chip .top-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+:root[data-ui="polish"] .phone-ui .tv-chip .top-name { flex: 1 1 auto; }
 :root[data-ui="polish"] .phone-ui .tv-chip .tv-name {
   display: block;
   min-width: 0;
@@ -385,16 +381,15 @@
 @media (min-width: 600px), (max-height: 479px) {
   :root[data-ui="polish"] .phone.shell {
     --pad: max(20px, env(safe-area-inset-right));
-    --p-pad: max(20px, env(safe-area-inset-right));
+    --p-pad: var(--pad);
     --left: calc(var(--rail-w) + env(safe-area-inset-left) + 20px);
     --shell-bottom: env(safe-area-inset-bottom);
+    --poster-w: 120px; /* (rows of posters have room for more of them: the column is 720 px at the most, the screen on its side is wide but not tall) */
     max-width: none;
     padding: 0 var(--pad) calc(var(--shell-bottom) + var(--mini-room) + 24px) var(--left);
   }
   /* (there is no bar under the page here, so the mini remote is a card that floats over its foot, 12 px clear of the edge, in the column of the page) */
   :root[data-ui="polish"] .phone.shell.has-mini { --mini-room: calc(var(--mini-h) + 12px); }
-  /* (rows of posters have room for more of them: the column is 720 px at the most, the screen on its side is wide but not tall) */
-  :root[data-ui="polish"] .phone.shell { --poster-w: 120px; }
   :root[data-ui="polish"] .phone.shell.is-remote {
     padding-left: var(--pad);
   }

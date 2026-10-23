@@ -10,8 +10,10 @@ const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(pre
 /**
  * Which of the four places is showing, the way a phone's bar keeps them (docs/phone-layout/RESEARCH.md R3): each place is where its reader left it
  * (how far it was scrolled), a tap on the place you are in takes it to the top, a change of place is not a step in the history, and Back from any place
- * goes to Home (and from Home it asks, as it did). `hidden`: something else has the screen (the remote), and the place is not scrolled by it.
- * `paired`: the phone has a TV; without one the phone is on its first page, where the bar is not and the places are Home again.
+ * goes to Home (and from Home it asks, as it did). `hidden`: something else has the screen (the remote, or a page or a sheet over the place), and the place is
+ * not scrolled by it: whatever moves the window meanwhile (a finger on the page over it, the browser bringing a button into view) is not the place's reader, and
+ * the place is put back where it was left when that is over. `paired`: the phone has a TV; without one the phone is on its first page, where the bar is not and the
+ * places are Home again.
  */
 export function useTabs(hidden: boolean, paired: boolean) {
   const [tab, setTab] = useState<Tab>("home");
@@ -39,7 +41,7 @@ export function useTabs(hidden: boolean, paired: boolean) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // A place is shown where it was left: after a change of place, and when the remote that was over all of them has gone.
+  // A place is shown where it was left: after a change of place, and when what was over it (the remote, a page, a sheet) has gone.
   useLayoutEffect(() => {
     if (!hidden) window.scrollTo(0, scrolls.current[tab]);
   }, [tab, hidden]);

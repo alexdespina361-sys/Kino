@@ -103,7 +103,7 @@ export function Controller() {
   const [listSheet, setListSheet] = useState<{ kind: "manage" } | { kind: "pick"; entry: ListEntry } | null>(null);
   /** The page of a title that was tapped in the library or a list: where it is played, or put in a list. */
   const [title, setTitle] = useState<Entry | null>(null);
-  /** Whether the home screen has the box for pasting a link (also turned on and off in the settings: see linkBox.ts). */
+  /** Whether the home screen has the box for pasting a link (turned on and off in the settings: see linkBox.ts). */
   const [linkBox] = useLinkBox();
   // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
@@ -397,8 +397,10 @@ export function Controller() {
   /** The remote has the screen (the bar, and the places it leads to, are put away until it is). */
   const remoteOpen = active && remoteShown && !away;
   useBackWhile(remoteOpen, () => setRemoteShown(false));
+  /** A page or a sheet lies over the place that is showing: the place is not what is scrolled meanwhile, and is where it was when they go. */
+  const covered = seeAll !== null || title !== null || sheet !== null || listSheet !== null || other !== null || ratingsOpen || showAccount || showBell || chatWith !== null || approveCode !== null || friendCode !== null;
   // The four places of the bar: Home, Search, My lists and You.
-  const tabs = useTabs(remoteOpen, tv !== null);
+  const tabs = useTabs(remoteOpen || covered, tv !== null);
   useEffect(() => {
     if (!active) setSheet((open) => (open && open !== "menu" && open !== "party" && open !== "tvs" ? null : open));
   }, [active]);
@@ -411,13 +413,6 @@ export function Controller() {
     if (tv?.online) socketRef.current?.send({ type: "CMD", command: { type: "REFRESH_ACCOUNT" } });
   };
   const bellButton = <BellButton onClick={() => setShowBell(true)} />;
-  // (The first page has no bar: the account opens over it. On the bar's pages it is a place of the bar: "You".)
-  const accountButton = (
-    <>
-      {bellButton}
-      <AccountButton onClick={() => setShowAccount(true)} />
-    </>
-  );
   const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
   // A title's page, and the lists it can go in: over the remote, and over the account too (My ratings, a friend's lists), which a phone with no TV has as well. It then has no Play.
   const titleSheets = (
@@ -539,7 +534,9 @@ export function Controller() {
             <>
               {/* This page's own full screen, which hides the browser's bar (the TV's is a button on the remote, in the paired phone's menu there is this one). */}
               <FullscreenToggle className="icon-btn" />
-              {accountButton}
+              {bellButton}
+              {/* (The first page has no bar: the account opens over it. On the bar's pages it is a place of the bar: "You".) */}
+              <AccountButton onClick={() => setShowAccount(true)} />
             </>
           }
         />
@@ -565,7 +562,6 @@ export function Controller() {
     setSheet(null);
   };
   const status = connection !== "open" ? t("phone.reconnecting") : tv.online ? t("phone.tvConnected") : t("phone.tvDisconnected");
-  const removeFromList = (url: string, id: string) => profileStore.removeFromList(url, id);
 
   /* The four places of the bar (the one that is showing is drawn; the others are not: a library that is not on screen must not go on asking for its next rows). */
 
@@ -573,10 +569,10 @@ export function Controller() {
   const home = (
     <section className="home" data-testid="home-panel">
       <h2 className="sr-only">{t("phone.homeTitle")}</h2>
-      <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} status={false} />
+      {linkBox && <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />}
       <FriendsHome onOpenTitle={setTitle} onStartParty={startTogether} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
-      <Library onOpen={setTitle} onPick={pickList} onSeeAll={setSeeAll} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} status={false} />} />
+      <Library onOpen={setTitle} onPick={pickList} onSeeAll={setSeeAll} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />} />
     </section>
   );
   const search = (
@@ -593,7 +589,7 @@ export function Controller() {
       ratingsOn={ratingsOn}
       onOpen={setTitle}
       onPick={pickList}
-      onRemove={removeFromList}
+      onRemove={(url, id) => profileStore.removeFromList(url, id)}
       onManage={() => setListSheet({ kind: "manage" })}
       onAllRatings={() => setRatingsOpen(true)}
       onBrowse={() => tabs.setTab("home")}
@@ -602,10 +598,10 @@ export function Controller() {
   const you = <AccountScreen inline onClose={() => tabs.setTab("home")} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} onStartParty={startTogether} />;
   const panel = { home, search, list: myLists, you }[tabs.tab];
   /** What plays is a line above the bar, on every page, until the remote is the page (and not while the TV is gone: what it says of the film cannot be trusted). */
-  const mini = active && media !== null && !remoteOpen && !away;
+  const mini = active && !remoteOpen && !away;
 
   return (
-    <main className={`phone phone-ui shell${remoteOpen ? " is-remote" : ""}${mini ? " has-mini" : ""}`} data-tab={tabs.tab}>
+    <main className={`phone phone-ui shell${remoteOpen ? " is-remote" : ""}${mini ? " has-mini" : ""}`}>
       {seeAll !== null && <RowPage rowId={seeAll} onClose={() => setSeeAll(null)} onOpen={setTitle} onPick={pickList} />}
       {accountLayer}
       <header className="top">

@@ -36,7 +36,7 @@
     --poster: 112px; /* an upright title: 2 by 3 */
     --card: 200px; /* what is part way through: 16 by 9 */
     --tap: 44px;
-    --sheet-max: 70%;
+    --sheet-max: 70%; /* what comes up over the film (the phone's own remote steps to 78% under 640 px tall: here the film is the point, and 70% it stays) */
   }
 
   /* ------------------------------ the frame ------------------------------ */
@@ -78,8 +78,6 @@
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1); /* (a hairline over it, drawn inside, so the places have all of the 56 px) */
     transition: none;
   }
-  /* (nothing behind it is dimmed: it is never "open") */
-  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] ~ * { opacity: 1; }
   :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item {
     position: relative;
     flex: 1 1 0;
@@ -177,12 +175,10 @@
   :root[data-ui="polish"] .tv .tv-person-pic { font-size: 48px; }
   /* (What the profile holds is two across, the third under them: nothing to slide sideways, nothing cut at the edge of a 320 px screen.) */
   :root[data-ui="polish"] .tv .tv-tile-place { flex: none; width: calc(50% - var(--tile-gap) / 2); height: 120px; padding: 12px; }
-  :root[data-ui="polish"] .tv .tv-browse[data-view="profile"] .tv-row-tiles { flex-wrap: wrap; overflow: visible; }
+  :root[data-ui="polish"] .tv .tv-browse[data-view="profile"] .tv-row-tiles { flex-wrap: wrap; overflow: visible; padding-top: 4px; }
   :root[data-ui="polish"] .tv .tv-place-icon { top: 12px; left: 12px; width: 40px; height: 40px; font-size: 20px; }
-  :root[data-ui="polish"] .tv .tv-tile-place .tv-category-name { font-size: var(--fs-3); }
   :root[data-ui="polish"] .tv .tv-category-name { font-size: var(--fs-3); }
   :root[data-ui="polish"] .tv .tv-category-count { font-size: var(--fs-1); }
-  :root[data-ui="polish"] .tv .tv-browse[data-view="profile"] .tv-row-tiles { padding-top: 4px; }
 
   /* ------------------------------ a page of titles (a category, a list, history, ratings, the friends') ------------------------------ */
 
@@ -269,7 +265,7 @@
   :root[data-ui="polish"] .tv .tv-detail-eps-title { margin-bottom: 4px; font-size: var(--fs-4); }
   :root[data-ui="polish"] .tv .tv-detail-eps > .tv-filters { margin-inline: calc(var(--gutter) * -1); padding-inline: var(--gutter); }
   :root[data-ui="polish"] .tv .tv-detail-list { gap: 8px; margin: 0; padding: 4px 0; }
-  :root[data-ui="polish"] .tv .tv-opt.tv-ep { grid-template-columns: 24px 112px minmax(0, 1fr); gap: 10px; min-height: 76px; padding: 8px 10px 8px 4px; }
+  :root[data-ui="polish"] .tv .tv-opt.tv-ep { grid-template-columns: 24px 112px minmax(0, 1fr); gap: 10px; min-height: 76px; }
   :root[data-ui="polish"] .tv .tv-ep-no { font-size: 18px; }
   :root[data-ui="polish"] .tv .tv-ep-name { font-size: var(--fs-2); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   :root[data-ui="polish"] .tv .tv-ep-head { flex-wrap: wrap; gap: 0 8px; }
@@ -428,4 +424,10 @@
 }
 @media (min-width: 412px) and (max-width: 599px) and (min-height: 480px) {
   :root[data-ui="polish"] .tv { --poster: 120px; --card: 216px; }
+}
+/* On the profile's own page the corner is crowded on a narrow phone (the wordmark, the way back, the chip and full screen share 320 px, and "Autentifică-te" is cut to "Autentif…"):
+   the chip is its picture there, ringed as the page you are on, and the page says the rest (its name is the heading under it, its way in a button). The chip keeps its name for a screen reader. */
+@media (max-width: 380px) and (min-height: 480px) {
+  :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip[aria-current="page"] { justify-content: center; min-width: var(--tap); padding-right: 4px; }
+  :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip[aria-current="page"] > span { display: none; }
 }

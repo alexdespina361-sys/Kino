@@ -30,7 +30,8 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
   // A phone's menu is a bar of places along the bottom (one row of them), not a column down the left: what took the remote to the menu on the left takes it to the
   // bar below, Left and Right walk the bar, and Up leaves it for the titles.
   const bar = shape.rail?.length === 1 && (shape.rail[0] ?? 0) > 1;
-  const menu: Target = bar ? null : RAIL;
+  const menu: Target = bar ? null : RAIL; // (what Left leads to from the first thing of a page)
+  const toBar: Target = bar ? RAIL : null; // (what Down leads to from the last)
 
   if (at.zone === "rail") {
     if (bar) {
@@ -75,7 +76,7 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
       if (rows.length > 0) return { zone: "grid", row: rows.length - 1, col: 0 };
       return shape.chips?.length ? { zone: "chips", row: 0, col: 0 } : shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
     }
-    if (direction === "down") return bar ? RAIL : null;
+    if (direction === "down") return toBar;
     return direction === "left" ? menu : null;
   }
 
@@ -129,11 +130,11 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
       if (at.zone === "chips") {
         if (shape.rows?.length) return CONTENT;
         const below = shape.results?.length ? "results" : shape.grid?.length ? "grid" : shape.foot?.length ? "foot" : null;
-        return below ? { zone: below, row: 0, col: Math.min(at.col, (shape[below]?.[0] ?? 1) - 1) } : bar ? RAIL : null;
+        return below ? { zone: below, row: 0, col: Math.min(at.col, (shape[below]?.[0] ?? 1) - 1) } : toBar;
       }
       if (at.row < lengths.length - 1) return into(at.row + 1);
       if (at.zone === "grid" && shape.foot?.length) return { zone: "foot", row: 0, col: 0 };
-      return bar ? RAIL : null;
+      return toBar;
   }
 }
 

@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 
 /**
  * A phone held upright, or a window that narrow (docs/phone-layout/PLAN.md, "the TV page on a phone"): the TV's page is laid out for a thumb, with a bar of four
- * places at the bottom, the sections as chips, and titles as posters. polish/tv-phone.css asks the very same question, so every size can be tried and a narrow
- * window on a computer gets the same page. A phone on its side, or a tablet, has the TV's own menu down the left, which fits there.
+ * places at the bottom, the sections as chips, and titles as posters. polish/tv-phone.css asks the very same question (and polish/shell.css its opposite, for the
+ * phone's own shell), so every size can be tried and a narrow window on a computer gets the same page. A phone on its side, or a tablet, has the TV's own menu down
+ * the left, which fits there. CSS cannot share a number, so the two are named here for the code (and the tests) to say once.
  */
-export const COMPACT = "(max-width: 599px) and (min-height: 480px)";
+export const COMPACT_MAX_WIDTH = 599;
+export const COMPACT_MIN_HEIGHT = 480;
+const COMPACT = `(max-width: ${COMPACT_MAX_WIDTH}px) and (min-height: ${COMPACT_MIN_HEIGHT}px)`;
 
 export const isCompact = (): boolean => typeof matchMedia === "function" && matchMedia(COMPACT).matches;
 

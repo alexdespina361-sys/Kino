@@ -16,6 +16,10 @@ import { ListButton, useListToggle, type ListToggle } from "./Round";
 
 /** What the server last listed, so a visit to the home screen after the first shows it at once. (The rows are the feed's, which brings the rest as they are scrolled.) */
 let remembered: LibraryData | null = null;
+/** When it was listed. The browser keeps the list for five minutes without asking (src/server/app.ts), so a visit to Home or Search within that long would be told what it knows already:
+    it is not asked, and the index of the titles met so far (the shelves', the searches') is not made again from the first rows. */
+let rememberedAt = 0;
+const LIST_FRESH_MS = 5 * 60_000;
 
 type Status = "loading" | "ready" | "failed";
 type Filter = "all" | "movies" | "series" | "cartoons" | "anime";
@@ -71,7 +75,7 @@ function endIsNear(section: HTMLElement): boolean {
 }
 
 /** `browse`: the rows to scroll through (the Home tab). `search`: the box, what it finds, and a list to tap before anything is typed (the Search tab). */
-export type LibraryMode = "browse" | "search";
+type LibraryMode = "browse" | "search";
 
 /**
  * Rows of titles from the server's library, to scroll through (sideways for more of a row, down for more rows: both go on for as long as the
@@ -137,15 +141,17 @@ export function Library({
   }, [failedLookups]);
 
   useEffect(() => {
+    if (attempt === 0 && remembered && Date.now() - rememberedAt < LIST_FRESH_MS) return; // (this page was made from it: `library` and `status` start as it)
     let live = true;
     // (Asked again, as after a try that failed or a press on Retry, it is asked past the browser's memory of the last answer.)
     fetch("/api/library", attempt > 0 ? { cache: "reload" } : undefined)
       .then((response) => (response.ok ? response.json() : null))
       .then((body: unknown) => {
-        const parsed = LibrarySchema.safeParse(body);
         if (!live) return;
+        const parsed = LibrarySchema.safeParse(body);
         if (parsed.success) {
           remembered = parsed.data;
+          rememberedAt = Date.now();
           feed.setBase(parsed.data.rows.filter((row) => row.items.length > 0)); // (the rows that come after these, and more of each, are asked for as the page is scrolled: see the feed)
           if (attempt > 0) kept.found = null; // what a search found is asked for again against the new list
           setLibrary(parsed.data);
@@ -282,7 +288,7 @@ export function Library({
   const suggested = searchPage && answers === null ? displayedRows.find((row) => row.items.length > 0) : undefined;
 
   return (
-    <section className="library" data-testid="library" data-mode={mode} aria-label={t("library.title")} ref={root}>
+    <section className="library" data-testid="library" aria-label={t("library.title")} ref={root}>
       {searchPage && (
         <div className="field lib-search-field">
           <input

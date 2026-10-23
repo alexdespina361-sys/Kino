@@ -20,7 +20,7 @@ import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { useHandHeldBack } from "../shared/backButton";
 import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
-import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
+import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, nearBottom, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
@@ -37,7 +37,7 @@ import { actionForKey } from "./keys";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlySection, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
 import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, listOfRow, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
-import { ProfileHead, type ProfilePlace } from "./ProfileHead";
+import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
 import { RateOverlay } from "./RateOverlay";
 import { RowTiles } from "./RowTiles";
@@ -102,12 +102,9 @@ const BANNER_DELAY_MS = 200;
 const SEARCH_DELAY_MS = 350;
 /** A search the server did not answer is asked again after this long. */
 const SEARCH_RETRY_MS = 5000;
-/** A page of rows, or a grid, asks the library for what comes next when it is scrolled to within this many of its own heights of its end... */
-const NEAR_BOTTOM = 1.5;
-/** ...and the remote, which moves a title at a time, when it is this many rows (or, along a row, this many titles) from the end. */
+/** The remote, which moves a title at a time, asks the library for what comes next when it is this many rows (or, along a row, this many titles) from the end. (A page that is scrolled asks by `nearBottom`.) */
 const ROWS_AHEAD = 3;
 const TITLES_AHEAD = 6;
-const nearBottom = (box: HTMLElement | null): boolean => box !== null && box.clientHeight > 0 && box.scrollHeight - box.clientHeight - box.scrollTop <= box.clientHeight * NEAR_BOTTOM;
 const GRID_COLUMNS = 5;
 const RESULT_COLUMNS = 3;
 /** A phone, a tablet or a narrow window (the same width tv.css lays out for a hand-held screen): grids are as many titles wide as fit, and search is typed on the device's own keyboard. */
@@ -119,7 +116,11 @@ const POSTERS_THREE_FROM_PX = 360;
 
 /** How many titles wide a grid is on a hand-held screen, or 0 when the screen is wide enough for the TV's own layout. */
 function useNarrowColumns(): number {
-  const read = () => (!matchMedia(NARROW).matches ? 0 : isCompact() ? (innerWidth >= POSTERS_THREE_FROM_PX ? 3 : 2) : Math.max(2, Math.floor(innerWidth / NARROW_TILE_PX)));
+  const read = () => {
+    if (!matchMedia(NARROW).matches) return 0;
+    if (isCompact()) return innerWidth >= POSTERS_THREE_FROM_PX ? 3 : 2;
+    return Math.max(2, Math.floor(innerWidth / NARROW_TILE_PX));
+  };
   const [columns, setColumns] = useState(read);
   useEffect(() => {
     const update = () => setColumns(read());
@@ -457,31 +458,31 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // its friends and History, with the settings in its own corner.
   // A phone held upright (compact.ts) has a bar of four places along the bottom: Home (with its sections as buttons over the titles), Search, the categories and the lists.
   // The party and the phone are not places but things to do, and have a button each on the profile's page, where Settings is.
-  const partyPlace: ProfilePlace = { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: String(partySize) } : {}), testId: "rail-party", onPress: onParty };
-  const phonePlace: ProfilePlace = phone
+  const partyPlace: RailEntry = { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: String(partySize) } : {}), testId: "rail-party", onPress: onParty };
+  const phonePlace: RailEntry = phone
     ? { id: "connect", label: t("tv.useRemote"), icon: <PhoneIcon />, testId: "rail-connect", onPress: () => switchRole("remote") }
     : { id: "connect", label: t(connected ? "tv.phoneConnected" : "tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { lit: true } : {}), testId: "rail-connect", onPress: onConnect };
+  // (On a phone's bar the sections are not lines of the menu but buttons over the titles: Home is lit for any page of rows.)
+  const homeLine: RailEntry = { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: compact ? isRowsPage(view) : view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) };
+  const searchLine: RailEntry = { id: "search", label: t("tv.search"), icon: <SearchIcon />, current: view.kind === "search", testId: "rail-search", onPress: () => choose({ kind: "search" }) };
+  const categoriesLine: RailEntry = { id: "categories", label: t("tv.categories"), icon: <GridIcon />, current: view.kind === "categories" || view.kind === "category", testId: "rail-categories", onPress: () => choose({ kind: "categories" }) };
+  const listLine: RailEntry = { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) };
   const entries: RailEntry[] = compact
-    ? [
-        { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: isRowsPage(view), testId: "rail-home", onPress: () => choose({ kind: "home" }) },
-        { id: "search", label: t("tv.search"), icon: <SearchIcon />, current: view.kind === "search", testId: "rail-search", onPress: () => choose({ kind: "search" }) },
-        { id: "categories", label: t("tv.categories"), icon: <GridIcon />, current: view.kind === "categories" || view.kind === "category", testId: "rail-categories", onPress: () => choose({ kind: "categories" }) },
-        { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) },
-      ]
+    ? [homeLine, searchLine, categoriesLine, listLine]
     : [
-        { id: "search", label: t("tv.search"), icon: <SearchIcon />, current: view.kind === "search", testId: "rail-search", onPress: () => choose({ kind: "search" }) },
-        { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) },
+        searchLine,
+        homeLine,
         { id: "movies", label: t("tv.movies"), icon: <FilmIcon />, current: view.kind === "movies", testId: "rail-movies", onPress: () => choose({ kind: "movies" }) },
         { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
         { id: "cartoons", label: t("tv.cartoons"), icon: <CartoonIcon />, current: view.kind === "cartoons", testId: "rail-cartoons", onPress: () => choose({ kind: "cartoons" }) },
         { id: "anime", label: t("tv.anime"), icon: <AnimeIcon />, current: view.kind === "anime", testId: "rail-anime", onPress: () => choose({ kind: "anime" }) },
-        { id: "categories", label: t("tv.categories"), icon: <GridIcon />, current: view.kind === "categories" || view.kind === "category", testId: "rail-categories", onPress: () => choose({ kind: "categories" }) },
-        { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) },
+        categoriesLine,
+        listLine,
         { ...partyPlace, apart: true },
         phonePlace,
       ];
   const openEntry = entries.findIndex((entry) => entry.current);
-  const railIndex = openEntry === -1 ? (compact ? 0 : 1) : openEntry; // a page the menu has no line for belongs to Home
+  const railIndex = openEntry === -1 ? entries.indexOf(homeLine) : openEntry; // a page the menu has no line for belongs to Home
 
   // What the arrow keys can reach, row by row: the key handler below reads it through a ref.
   const canSignIn = accountStatus === "ready"; // (a server without accounts has nobody to sign in, but its TV has Settings, which the corner button leads to)
@@ -992,13 +993,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     );
   };
 
+  const detailArt = detail ? (detail.entry.backdrop ?? detail.entry.image) : undefined;
+
   return (
     <section className="tv-browse" ref={rootRef} data-testid="tv-browse" data-view={viewKey(view)} data-deep={deep} aria-label={t("tv.library")}>
       {/* (A phone has no banner for a picture to be behind: it does not ask for the big one.) */}
       <Backdrop image={compact ? undefined : (shown?.entry.backdrop ?? shown?.entry.image)} />
       <div className="tv-browse-shade" />
 
-      <Rail open={railOpen} onOpen={setRailOpen} entries={entries} bar={compact} onArrive={(element) => !compact && keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
+      <Rail open={railOpen} onOpen={setRailOpen} entries={entries} bar={compact} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
 
       <header className="tv-browse-top">
         <span className="tv-browse-logo">
@@ -1413,11 +1416,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
       {detail && (
         // A tap on the empty part of the page closes it, as Back does.
-        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" data-show={series.isShow} data-art={Boolean(detail.entry.backdrop ?? detail.entry.image)} onClick={(event) => event.target === event.currentTarget && closeDetail()}>
-          {!compact && <DetailArt image={detail.entry.backdrop ?? detail.entry.image} />}
+        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" data-show={series.isShow} data-art={Boolean(detailArt)} onClick={(event) => event.target === event.currentTarget && closeDetail()}>
+          {!compact && <DetailArt image={detailArt} />}
           {/* The page scrolls (a show's episodes lie under what a film's page is all of); the picture and the Close button stay. (On a phone held upright the picture is the page's own, at its top, and goes up with it.) */}
           <div className="tv-detail-scroll" onClick={(event) => event.target === event.currentTarget && closeDetail()} onFocus={scrollPage}>
-            {compact && <DetailArt image={detail.entry.backdrop ?? detail.entry.image} />}
+            {compact && <DetailArt image={detailArt} />}
             <div className="tv-detail-hero" onClick={(event) => event.target === event.currentTarget && closeDetail()}>
               <div className="tv-detail-text">
                 <p className="tv-hero-eyebrow">{detail.label}</p>

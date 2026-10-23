@@ -27,8 +27,7 @@ interface TitleSheetProps {
 /**
  * A title's own page on the phone, the way the TV has one: its picture, what it is about, Play (or Resume) and a list to keep it in,
  * and for a show its seasons and episodes. A tap on a title in the library or a list opens this instead of starting it at once.
- * It is a page (the whole screen, a round way back over its picture), not a sheet that leaves a strip of the page behind it showing; the name of the file and of
- * the component are what they were (and the test id, `title-sheet`, is still on it).
+ * It is a page (the whole screen, a round way back over its picture), not a sheet that leaves a strip of the page behind it showing.
  */
 export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheetProps) {
   const t = useT();
@@ -52,7 +51,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
   const meta = [entry.year, kind].filter(Boolean).join(" · ");
 
   return (
-    <Page title={entry.title} onBack={onClose} testId="title-sheet" backTestId="title-back">
+    <Page title={entry.title} onBack={onClose} testId="title-sheet" backTestId="title-back" bare>
       {/* (the picture over a column of what is done with the title; held sideways, the picture beside it: see the wrappers in the style sheets) */}
       <div className="title-top">
         <Poster className="title-art" title={entry.title} image={entry.backdrop ?? entry.image} seed={entry.id} />
@@ -61,7 +60,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
             {entry.title}
           </h2>
           {meta && (
-            <p className="muted small title-meta" data-testid="title-meta">
+            <p className="muted small" data-testid="title-meta">
               {meta}
             </p>
           )}

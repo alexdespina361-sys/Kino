@@ -87,7 +87,7 @@ export function Rail({
                 setResting(false);
                 entry.onPress();
               }}
-              onFocus={(event) => onArrive(event.currentTarget)}
+              onFocus={(event) => !bar && onArrive(event.currentTarget)}
             >
               {entry.icon}
               <span>{entry.label}</span>
