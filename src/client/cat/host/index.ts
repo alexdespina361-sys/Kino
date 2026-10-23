@@ -11,7 +11,7 @@ import "./cat.css";
 import { createDebugView, type DebugView } from "./debug";
 import { inflate, rectOf, takesRoom } from "./dom";
 import { clearPointed, dip, swatPoster } from "./effects";
-import { Governor, type Quality } from "./governor";
+import { Governor, Revival, type Quality } from "./governor";
 import { Hand } from "./hand";
 import { tileOf } from "./assistant";
 import { TvPage, type PageRead } from "./page";
@@ -239,14 +239,18 @@ export function mountCat(): { stop: () => void } {
 
   // The detailed (solid) cat is wanted where the device and the address do not say otherwise: it is the ragdoll, one of the two cats of the settings. Its mesh is
   // fetched, and the cat is not shown until it is there (a cat that changed its look in front of the viewer would be a bad moment); a screen that cannot do it,
-  // cannot get it, loses its picture of it or cannot afford it gets the same cat drawn simply, once, and is not asked again until the page is loaded anew, or
-  // somebody asks (the settings page says why the cat is the simple one, and has a button for another try).
+  // cannot get it or cannot afford it gets the same cat drawn simply, once, and is not asked again until the page is loaded anew, or somebody asks (the settings
+  // page says why the cat is the simple one, and has a button for another try). A card that takes the picture away is not that: a phone does it whenever the page
+  // has been in the background, and the cat is made again from the file that was fetched; only one that keeps doing it is given up on (see `Revival`).
   const wantsSolid = (): boolean => {
     const look = catLook();
     return look ? look === "solid" : settings.look === "ragdoll";
   };
   let solidFailed = false;
   let fetching = false;
+  /** The cat's file as it came, kept for the cat to be made again without fetching it again. */
+  let meshData: ArrayBuffer | null = null;
+  let revival = new Revival();
   /** Why the detailed cat was given up for this load (see `CatWhy`), for the settings page. */
   let failedWhy: CatWhy = "";
 
@@ -269,6 +273,13 @@ export function mountCat(): { stop: () => void } {
   const giveUp = (why: CatWhy): void => {
     solidFailed = true;
     failedWhy = why;
+  };
+
+  /** The detailed cat, made again after the card took its picture away. If the card will not give one yet nothing changes, and it is asked again soon. */
+  const revive = (): void => {
+    const made = meshData ? solidBrush(meshData) : null;
+    if (made && wantsSolid()) install(made);
+    else made?.dispose();
   };
 
   const choose = (): void => {
@@ -295,6 +306,7 @@ export function mountCat(): { stop: () => void } {
     void fetchMesh().then((data) => {
       fetching = false;
       if (stopped) return;
+      if (data) meshData = data;
       const made = data ? solidBrush(data) : null;
       if (!made) giveUp(data ? "graphics" : "file");
       if (made && wantsSolid()) install(made);
@@ -487,9 +499,14 @@ export function mountCat(): { stop: () => void } {
     const tThink = performance.now();
     const L = world.bodyLength;
     if (brush?.lost) {
-      // the card took the picture away (it was reset, or needed for something else): the simple cat carries on
-      giveUp("lost");
-      choose();
+      // the card took the picture away (it was reset, the page was in the background, a film needed the memory): the cat is made again, and the simple one only
+      // takes its place when the card keeps doing it. (Until there is a new picture the cat is not drawn, and a moment is all that takes.)
+      const again = revival.ask(time);
+      if (again === "now") revive();
+      else if (again === "never") {
+        giveUp("lost");
+        choose();
+      }
     }
     const wanted = quality === "low" || !brush ? 1 : Math.min(brush.maxDpr, window.devicePixelRatio || 1);
     const key = `${L}|${wanted}`;
@@ -684,6 +701,7 @@ export function mountCat(): { stop: () => void } {
   const tryAgain = (): void => {
     solidFailed = false;
     failedWhy = "";
+    revival = new Revival();
     governor = new Governor({ budget });
     gpu = 0;
     quality = "full";

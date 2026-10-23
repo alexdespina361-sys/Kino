@@ -72,3 +72,31 @@ export class Governor {
     this.warm = 0;
   }
 }
+
+/** What to do about a card that has taken the detailed cat's picture away: make the cat again now, wait a moment before trying, or be done with the card. */
+export type Revive = "now" | "wait" | "never";
+
+/** How many times the cat is made again in a stretch of `REVIVAL_WINDOW_MS`, a failed try counted, before the card is given up on. */
+const REVIVALS = 3;
+const REVIVAL_WINDOW_MS = 60_000;
+/** The time a card is given between one try and the next: one that has just lost its pictures is often slow to give a new one. */
+const REVIVAL_SPACING_MS = 1000;
+
+/**
+ * A card takes the detailed cat's picture away now and then: a phone does it when the page has been in the background, or when a film asks for the
+ * memory. That says nothing of what the cat costs, and is no reason to be done with the detailed cat for good; a card that does it again and again
+ * is, so the cat is made again but only so many times in a stretch, and not too soon after the last try. Pure: the time in, an answer out.
+ */
+export class Revival {
+  private tries: number[] = [];
+
+  /** Asked once for every frame that finds the picture gone; "now" counts as a try. */
+  ask(time: number): Revive {
+    this.tries = this.tries.filter((at) => time - at < REVIVAL_WINDOW_MS);
+    if (this.tries.length >= REVIVALS) return "never";
+    const last = this.tries[this.tries.length - 1];
+    if (last !== undefined && time - last < REVIVAL_SPACING_MS) return "wait";
+    this.tries.push(time);
+    return "now";
+  }
+}
