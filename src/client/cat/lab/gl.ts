@@ -276,6 +276,8 @@ export interface FilmOptions {
   view?: View;
   /** The clips by themselves: nothing follows them (the tail, the back and the breath are as the clip has them). */
   plain?: boolean;
+  /** A strip whose camera goes with the cat (it is in the same place of every cell): for a cat that is carried about. */
+  follow?: boolean;
 }
 
 /**
@@ -328,7 +330,7 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, clips: string, f
       ctx.fillRect(x0, y0, cw, ch);
       ctx.fillStyle = GROUND;
       ctx.fillRect(x0, y0 + line, cw, 3 * o.scale);
-      const oy = o.zoom ? line + (f.y - ref.y) * k * zoom : Math.min(ch - 4 * o.scale, line + (f.y - ref.y) * k);
+      const oy = o.follow ? line : o.zoom ? line + (f.y - ref.y) * k * zoom : Math.min(ch - 4 * o.scale, line + (f.y - ref.y) * k);
       cat.draw(rig.solved, { ox: cw / 2 - at[0] * lab * zoom, oy, px: lab * zoom }, o.view);
       ctx.drawImage(glCanvas, x0, y0);
       ctx.fillStyle = "#9aa";

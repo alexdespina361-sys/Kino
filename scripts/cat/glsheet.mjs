@@ -32,6 +32,8 @@ filmOptions.n = Number(flag("n", 8));
 filmOptions.blind = flag("blind", "") !== "";
 // (--plain=1: the clips by themselves, with nothing following them: the tail, the back and the breath as the clip has them)
 filmOptions.plain = flag("plain", "") !== "";
+// (--follow=1: the camera goes with the cat, for one that is carried about)
+filmOptions.follow = flag("follow", "") !== "";
 // (a closer look at a strip: --zoom=2.4 --at=0.3,0.55 [the place, in body lengths forward and up from the feet], and the camera: --turn=-0.5 --tilt=0.1)
 if (flag("zoom", "")) {
   filmOptions.zoom = Number(flag("zoom", 1));

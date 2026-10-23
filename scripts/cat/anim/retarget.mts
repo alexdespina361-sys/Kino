@@ -45,8 +45,8 @@ export const matOf = (q: Quat): number[] => {
   return out;
 };
 
-/** A turn made `u` of the way from `a` to `b` (the short way round). */
-function slerp(a: Quat, b: Quat, u: number): Quat {
+/** A turn made `u` of the way from `a` to `b` (the short way round; a `u` past 1 goes on beyond `b`). */
+export function slerp(a: Quat, b: Quat, u: number): Quat {
   let d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
   const sg = d < 0 ? -1 : 1;
   d *= sg;

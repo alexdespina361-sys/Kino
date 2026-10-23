@@ -8,6 +8,7 @@ import { chainLinks, type Anchor } from "../chain.mts";
 import { readDonor, type Donor } from "../donor.mts";
 import { placeFeet, type FeetReport, type Leg } from "../feet.mts";
 import { retarget, type Link } from "../retarget.mts";
+import { styled, type Style } from "../style.mts";
 
 const side = (cat: string, d: "L" | "R"): Link[] => [
   { bone: `${cat}backleg`, follows: `Back_Leg_Upper_${d}` },
@@ -62,6 +63,8 @@ export interface Wanted {
   loop: boolean;
   /** A gait: the paws that are down are made to stay where they land (lock.mts). */
   lock?: boolean;
+  /** What is laid on the donor's back, neck, tail and hips before the legs are placed (style.mts). */
+  style?: Style;
 }
 
 /**
@@ -89,7 +92,7 @@ export function mesh2motionClips(path: string, cat: Skeleton, mesh: CatMesh, wan
       facing,
       animation,
     });
-    const placed = placeFeet(donor, cat, mesh, plain, MESH2MOTION_LEGS, { animation, step: 1 / fps, facing, scale: CAT_HIPS_HEIGHT / FOX_HIPS_HEIGHT, ...(w.lock ? { lock: true } : {}) });
+    const placed = placeFeet(donor, cat, mesh, w.style ? styled(cat, plain, w.style) : plain, MESH2MOTION_LEGS, { animation, step: 1 / fps, facing, scale: CAT_HIPS_HEIGHT / FOX_HIPS_HEIGHT, ...(w.lock ? { lock: true } : {}) });
     report?.(w.as, placed.report);
     return placed.source;
   });

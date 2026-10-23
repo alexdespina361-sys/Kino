@@ -2,6 +2,7 @@ import { clamp, easeInOut } from "../../math";
 import { JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT, type CatFrame, type Clip as EngineClip } from "../../types";
 import type { Solved } from "../rig";
 import { Pose, Skeleton, blend, lengthOf, sampleFrame, turnAbout, type Adjust, type Clip } from "./pose";
+import { Dangle, type Hold } from "./held";
 import { Secondary, type Gust } from "./secondary";
 
 /**
@@ -110,6 +111,13 @@ const NECK: ReadonlyArray<readonly [string, number, number]> = [
   ["neck2", 0.33, 0.3],
   ["head", 0.33, 0.55],
 ];
+/** How much of the body's tip the head makes up for when the cat hangs (a cat hung by the scruff keeps its head up: the neck bends back against the body). */
+const HEAD_LEVEL = 0.7;
+/** How quickly the cat takes hold of the hand and lets go of it (the weight of a hang goes from 0 to 1 at this rate a second, in and out), and how it goes into a fall and out of it. */
+const HANG_IN = 9;
+const HANG_OUT = 5;
+/** The speed (body lengths a second, downward) from which a cat that is in the air and not leaping is falling free. */
+const FALL_SPEED = 7;
 /** The most the jaw opens (radians: a yawn is wide). */
 const JAW_OPEN = 0.8;
 /** How far an ear leans for a whole unit of the rig's ear angle. */
@@ -131,6 +139,11 @@ export class Director {
   follows = true;
   /** What follows the clip (the tail, the back, the breath), and the body's speed and how it is changing, as the last picture had them. */
   private readonly secondary: Secondary;
+  /** What the limbs do when nothing holds them up (hanging, falling, thrashing), and how far the cat is into each. */
+  private readonly dangle: Dangle;
+  private held = 0;
+  private falling = 0;
+  private struggle = 0;
   private lastVx = 0;
   private lastVy = 0;
   private accelX = 0;
@@ -166,6 +179,8 @@ export class Director {
       { bone: this.bone.earR, q: this.turns.earR },
       { bone: this.bone.chest, q: this.turns.chest },
     ];
+    this.dangle = new Dangle(skeleton);
+    this.adjust.push(...this.dangle.adjust);
   }
 
   has(name: string): boolean {
@@ -227,20 +242,42 @@ export class Director {
       this.pose.copy(this.to);
     }
     // --- what follows the clip (the tail, the back) and what the body does beside it (the breath)
-    if (this.follows) this.secondary.apply(this.pose, dt, this.gust(frame, dt, px, s.breath));
+    const gust = this.gust(frame, dt, px, s.breath);
+    if (this.follows) this.secondary.apply(this.pose, dt, gust);
+
+    // --- what hangs: the limbs of a cat in a hand or in the air answer to the world, not to the clip
+    // (the renderer tips the whole body by the rig's pitch turned over: positive is nose up)
+    const tip = -s.pitch;
+    this.takeHold(frame, dt, px);
+    if (this.follows) {
+      const hold: Hold = { held: this.held, falling: this.falling, struggle: this.struggle, pitch: tip, forward: gust.forward, up: gust.up, time: this.age };
+      this.dangle.update(this.pose, dt, hold);
+    }
 
     // --- what is laid on top
     const h = s.head;
     const yaw = clamp(headYaw, -HEAD_YAW_REACH, HEAD_YAW_REACH);
+    // (a cat that hangs by the scruff keeps its head up: the neck bends back against the body's tip)
+    const level = -HEAD_LEVEL * tip * this.held;
     for (const link of this.neck) {
       set(link.yaw, turnAbout(0, 1, 0, yaw * link.yawShare));
       // (the rig's y is down: its tilt is turned over)
-      set(link.roll, turnAbout(0, 0, 1, -h.rot * link.rollShare));
+      set(link.roll, turnAbout(0, 0, 1, -h.rot * link.rollShare + level * link.rollShare));
     }
     set(this.turns.jaw, turnAbout(0, 0, 1, -clamp(h.jaw, 0, 1) * JAW_OPEN));
     set(this.turns.earL, turnAbout(1, 0, 0, -clamp(h.earL, -0.5, 1.2) * EAR_LEAN));
     set(this.turns.earR, turnAbout(1, 0, 0, clamp(h.earR, -0.5, 1.2) * EAR_LEAN));
     set(this.turns.chest, turnAbout(0, 0, 1, 0));
+  }
+
+  /** How far the cat hangs from a hand, falls free and thrashes, eased: in a hand it takes hold at once, and lets go less quickly. */
+  private takeHold(frame: CatFrame, dt: number, px: number): void {
+    const toward = (now: number, to: number): number => now + (to - now) * (1 - Math.exp(-dt * (to > now ? HANG_IN : HANG_OUT)));
+    this.held = toward(this.held, frame.carried ? 1 : 0);
+    const dropping = !frame.carried && !frame.grounded && frame.clip !== "jump" && px > 0 && frame.vy / px > FALL_SPEED;
+    this.falling = toward(this.falling, dropping ? 1 : 0);
+    // (nothing says yet that it thrashes: the engine will)
+    this.struggle = toward(this.struggle, 0);
   }
 
   /** What the body is doing just now, for what follows the clip: how it is speeding up (the engine gives its speed, in pixels a second), how much a tail would sway, how lively and how it breathes. */
