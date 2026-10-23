@@ -345,7 +345,7 @@ export function solveDual(skeleton: Skeleton, pose: Pose, out: Float32Array, adj
     y /= l;
     z /= l;
     w /= l;
-    // (a bone's turn and its negative are one turn; the card puts the two it blends on one side of each other)
+    // (a bone's turn and its negative are one turn: which of the two it is is fixed below, for the whole skeleton at once)
     const tx = s[3]!;
     const ty = s[7]!;
     const tz = s[11]!;
@@ -360,6 +360,17 @@ export function solveDual(skeleton: Skeleton, pose: Pose, out: Float32Array, adj
     out[o + 6] = 0.5 * (tx * y - ty * x + tz * w);
     out[o + 7] = 0.5 * (-tx * x - ty * y - tz * z);
   }
+  // A bone's turn and its negative are one turn, but a blend of two bones is not: it goes the short way between the two quaternions the card has. Which of the two a bone has is
+  // therefore told here, once, down the skeleton (a bone on the side of the bone it hangs from, the root's with a share of w): a bone and its parent are never more than a half
+  // turn apart, so they are always on one side, and a point that two neighbouring bones carry is a turn between them. (The card used to put each point's bones on the side of the
+  // first of them. Two points side by side that carry the same three bones, one listing the forearm first and the other the hips, then chose different sides for a forearm that
+  // was folded back past a half turn from the hips, and were a third of a body apart.)
+  for (let j = 0; j < n; j++) {
+    const o = j * 8;
+    const p = skeleton.parent[j]!;
+    const flip = p >= 0 ? out[o]! * out[p * 8]! + out[o + 1]! * out[p * 8 + 1]! + out[o + 2]! * out[p * 8 + 2]! + out[o + 3]! * out[p * 8 + 3]! < 0 : out[o + 3]! < 0;
+    if (flip) for (let k = 0; k < 8; k++) out[o + k] = -out[o + k]!;
+  }
 }
 
 /**
@@ -368,29 +379,19 @@ export function solveDual(skeleton: Skeleton, pose: Pose, out: Float32Array, adj
  */
 export function dualSkin(dq: ArrayLike<number>, skin: ArrayLike<number>, weight: ArrayLike<number>, at: number, scale: number, px: number, py: number, pz: number, nx: number, ny: number, nz: number, p: number[], n: number[]): void {
   let rx = 0, ry = 0, rz = 0, rw = 0, dx = 0, dy = 0, dz = 0, dw = 0;
-  let refX = 0, refY = 0, refZ = 0, refW = 0;
-  let first = true;
+  // (the bones are blended as `solveDual` signed them: each on the side of the bone it hangs from, whatever bone a point lists first)
   for (let k = 0; k < 4; k++) {
     const w = weight[at + k]! * scale;
     if (w <= 0) continue;
     const o = skin[at + k]! * 8;
-    let sg = 1;
-    if (first) {
-      refX = dq[o]!;
-      refY = dq[o + 1]!;
-      refZ = dq[o + 2]!;
-      refW = dq[o + 3]!;
-      first = false;
-    } else if (dq[o]! * refX + dq[o + 1]! * refY + dq[o + 2]! * refZ + dq[o + 3]! * refW < 0) sg = -1;
-    const f = w * sg;
-    rx += f * dq[o]!;
-    ry += f * dq[o + 1]!;
-    rz += f * dq[o + 2]!;
-    rw += f * dq[o + 3]!;
-    dx += f * dq[o + 4]!;
-    dy += f * dq[o + 5]!;
-    dz += f * dq[o + 6]!;
-    dw += f * dq[o + 7]!;
+    rx += w * dq[o]!;
+    ry += w * dq[o + 1]!;
+    rz += w * dq[o + 2]!;
+    rw += w * dq[o + 3]!;
+    dx += w * dq[o + 4]!;
+    dy += w * dq[o + 5]!;
+    dz += w * dq[o + 6]!;
+    dw += w * dq[o + 7]!;
   }
   const len = Math.hypot(rx, ry, rz, rw) || 1;
   rx /= len;

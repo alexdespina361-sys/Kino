@@ -6,6 +6,7 @@ import type { ClipSource } from "../../../src/client/cat/render/gl/clipfile";
 import type { CatMesh } from "../../../src/client/cat/render/gl/format";
 import { Pose, sampleFrame, type Clip, type Skeleton } from "../../../src/client/cat/render/gl/pose";
 import { Body, mixSpec, Recorder, type PawName, type Spec } from "./posegen.mts";
+import { poseAt } from "./source.mts";
 
 const FPS = 30;
 const deg = (d: number): number => (d * Math.PI) / 180;
@@ -36,7 +37,17 @@ export interface Made {
 }
 
 export function context(mesh: CatMesh, skeleton: Skeleton, clips: Map<string, Clip> = new Map()): Made {
-  return { body: new Body(mesh, skeleton), mesh, skeleton, clips };
+  const body = new Body(mesh, skeleton);
+  // (the legs are reached by the turns that the donors' legs make: what they do not do, a shoulder swung half a turn about the vertical, a forearm twisted, they are not asked to)
+  body.learn(clips.values());
+  return { body, mesh, skeleton, clips };
+}
+
+/** The pose a clip that is just made has at its last frame. */
+export function lastOf(m: Made, source: ClipSource): Pose {
+  const pose = new Pose(m.skeleton);
+  poseAt(m.skeleton, source, source.frames - 1, pose);
+  return pose;
 }
 
 /** The pose a clip has at a frame (`last`: its last). */
@@ -115,14 +126,17 @@ export function between(a: Spec, b: Spec, t: number, when: Timing, lift = 0.035)
 }
 
 /** The frames of a clip: the spec at each time (laid on `base`, if there is one), solved, and recorded. */
-export function render(m: Made, name: string, seconds: number, loop: boolean, at: (t: number, u: number) => Spec, o: { marks?: Record<string, number>; base?: Pose } = {}): ClipSource {
+export function render(m: Made, name: string, seconds: number, loop: boolean, at: (t: number, u: number) => Spec, o: { marks?: Record<string, number>; base?: Pose; grounded?: boolean; from?: Pose } = {}): ClipSource {
   const frames = Math.max(2, Math.round(seconds * FPS) + (loop ? 0 : 1));
   const fps = loop ? frames / seconds : (frames - 1) / seconds;
   const rec = new Recorder(m.skeleton, frames);
-  let prev: Pose | undefined;
+  // (`from`: the pose the clip comes after, where the legs start their search: a crouch is found from the crouch it comes out of, not from the cat standing)
+  let prev: Pose | undefined = o.from;
+  // (a loop is gone round once beforehand, so that its first frame is found from its last and the legs do not start from another bend of the knee than they end in)
+  if (loop) for (let f = 0; f < frames; f++) prev = m.body.make(at(f / fps, f / frames), prev, o.base, o.grounded);
   for (let f = 0; f < frames; f++) {
     const t = f / fps;
-    const pose = m.body.make(at(t, f / (loop ? frames : frames - 1)), prev, o.base);
+    const pose = m.body.make(at(t, f / (loop ? frames : frames - 1)), prev, o.base, o.grounded);
     rec.put(f, pose);
     prev = pose;
   }
@@ -138,12 +152,15 @@ const LIE_DOWN: Timing = { hips: [0.1, 0.9], back: [0.1, 0.9], neck: [0.35, 0.9]
 function lying(m: Made, front: number, hind: number, frontAcross = 1.1, hindAcross = 1.5): NonNullable<Spec["paws"]> {
   const at = (p: PawName): [number, number, number] => m.body.padAtRest(p).at;
   return {
-    "front left": { at: [front, at("front left")[1], at("front left")[2] * frontAcross] },
-    "front right": { at: [front, at("front right")[1], at("front right")[2] * frontAcross] },
-    "hind left": { at: [hind, at("hind left")[1], at("hind left")[2] * hindAcross] },
-    "hind right": { at: [hind, at("hind right")[1], at("hind right")[2] * hindAcross] },
+    "front left": { at: [front, at("front left")[1], at("front left")[2] * frontAcross], soft: SOFT },
+    "front right": { at: [front, at("front right")[1], at("front right")[2] * frontAcross], soft: SOFT },
+    "hind left": { at: [hind, at("hind left")[1], at("hind left")[2] * hindAcross], soft: SOFT },
+    "hind right": { at: [hind, at("hind right")[1], at("hind right")[2] * hindAcross], soft: SOFT },
   };
 }
+
+/** A paw that lies on the floor is only about where it is told along it: the joints do not close past where the skin holds, and the paw lies where the leg can put it. */
+const SOFT: [number, number, number] = [0.2, 1, 0.6];
 
 /** The loaf: the belly on the floor, the front paws forward under the chest, the hind paws tucked by the haunch, the head up, the tail along the floor. */
 export function loafSpec(m: Made): Spec {
@@ -232,10 +249,10 @@ export function crouchSpec(m: Made): Spec {
     tailFloor: 0.09,
     settle: 0.05,
     paws: {
-      "front left": { at: [0.27, at("front left")[1], at("front left")[2]] },
-      "front right": { at: [0.27, at("front right")[1], at("front right")[2]] },
-      "hind left": { at: [-0.42, at("hind left")[1], at("hind left")[2] * 1.1] },
-      "hind right": { at: [-0.42, at("hind right")[1], at("hind right")[2] * 1.1] },
+      "front left": { at: [0.27, at("front left")[1], at("front left")[2]], soft: SOFT },
+      "front right": { at: [0.27, at("front right")[1], at("front right")[2]], soft: SOFT },
+      "hind left": { at: [-0.42, at("hind left")[1], at("hind left")[2] * 1.1], soft: SOFT },
+      "hind right": { at: [-0.42, at("hind right")[1], at("hind right")[2] * 1.1], soft: SOFT },
     },
   });
 }
@@ -251,10 +268,19 @@ export function crouch(m: Made): ClipSource {
 /** The haunches of a cat that is about to pounce, wagged: the hips turn about the vertical, the paws stay where they are, the tail's end answers. Four to the second. */
 export function wiggle(m: Made): ClipSource {
   const low = crouchSpec(m);
-  return render(m, "wiggle", 1.0, true, (t) => {
-    const s = Math.sin(TAU * 4 * t);
-    return { ...low, hips: { ...low.hips!, yaw: 0.2 * s }, yaw: { spine1: -0.1 * s, spine2: -0.08 * s, tailstart: 0.2 * s, tail1: 0.3 * s, tail2: 0.3 * s } };
-  });
+  // (it comes out of the crouch: the legs are found from where that leaves them)
+  const from = lastOf(m, crouch(m));
+  return render(
+    m,
+    "wiggle",
+    1.0,
+    true,
+    (t) => {
+      const s = Math.sin(TAU * 4 * t);
+      return { ...low, hips: { ...low.hips!, yaw: 0.2 * s }, yaw: { spine1: -0.1 * s, spine2: -0.08 * s, tailstart: 0.2 * s, tail1: 0.3 * s, tail2: 0.3 * s } };
+    },
+    { from },
+  );
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -420,20 +446,29 @@ export function knead(m: Made): ClipSource {
   const base = loafSpec(m);
   const at = (p: PawName): [number, number, number] => m.body.padAtRest(p).at;
   const P = 2.4;
-  return render(m, "knead", P, true, (t) => {
-    const a = TAU * t / P * 2;
-    const paw = (p: PawName, phase: number): { at: [number, number, number]; tip: number } => {
-      const q = a + phase;
-      return { at: [0.3 + 0.05 * Math.cos(q), at(p)[1] + 0.07 * Math.max(0, Math.sin(q)), at(p)[2] * 1.1], tip: 0.3 * Math.max(0, Math.sin(q)) };
-    };
-    return {
-      ...base,
-      hips: base.hips!,
-      neck: [deg(30), deg(26), deg(16), deg(-26)],
-      back: [deg(-2) + 0.02 * Math.sin(a), deg(-5) + 0.03 * Math.sin(a)],
-      paws: { ...base.paws, "front left": paw("front left", 0), "front right": paw("front right", Math.PI) },
-    };
-  });
+  // (it comes out of the loaf)
+  const from = lastOf(m, loaf(m));
+  return render(
+    m,
+    "knead",
+    P,
+    true,
+    (t) => {
+      const a = TAU * t / P * 2;
+      const paw = (p: PawName, phase: number): { at: [number, number, number]; tip: number } => {
+        const q = a + phase;
+        return { at: [0.3 + 0.05 * Math.cos(q), at(p)[1] + 0.07 * Math.max(0, Math.sin(q)), at(p)[2] * 1.1], tip: 0.3 * Math.max(0, Math.sin(q)) };
+      };
+      return {
+        ...base,
+        hips: base.hips!,
+        neck: [deg(30), deg(26), deg(16), deg(-26)],
+        back: [deg(-2) + 0.02 * Math.sin(a), deg(-5) + 0.03 * Math.sin(a)],
+        paws: { ...base.paws, "front left": paw("front left", 0), "front right": paw("front right", Math.PI) },
+      };
+    },
+    { from },
+  );
 }
 
 /** A swat: the paw back and up as the cat leans away, then out and down hard, and back. The hit is at 0.4 s. */

@@ -2,11 +2,12 @@
 // tail bend, where each paw is to be), and what turns the bones need is found here: the bends are turns about the cat's own axes, the paws are put by a few steps of least squares
 // (ik.mts), and the whole is put on the floor by the lowest part of the mesh (floor.mts). A clip is such a posture asked for at each of its frames, so that what moves (a paw that
 // presses, a head that dips) is a formula of time and what holds still is held by the floor and the paws.
-import { Pose, Skeleton, after, globals, solve, turnAbout } from "../../../src/client/cat/render/gl/pose";
+import { Pose, Skeleton, after, globals, solve, turnAbout, type Clip } from "../../../src/client/cat/render/gl/pose";
 import type { ClipSource } from "../../../src/client/cat/render/gl/clipfile";
 import type { CatMesh } from "../../../src/client/cat/render/gl/format";
 import { PAWS, restPads, soleVertices } from "./gait.mts";
-import { reachChain, type Marker, type Vec3 } from "./ik.mts";
+import { reachChain, type Limit, type Marker, type Prior, type Vec3 } from "./ik.mts";
+import { learnPriors } from "./prior.mts";
 import { quatOfMatrix, type Quat } from "./retarget.mts";
 
 export type PawName = (typeof PAWS)[number]["name"];
@@ -31,6 +32,13 @@ export interface Bend {
 }
 
 const TORSO = ["Hips", "spine1", "spine2", "chest"];
+/** A point of a leg lower than this is through the floor (a little under it, so that the sole's own fur does not count). */
+const UNDER = -0.002;
+/**
+ * How far the joints of a leg may close (degrees), the elbow (the knee) and the wrist (the hock): measured on the mesh, the skin holds while the elbow stays over about 50 degrees
+ * (stretch99 under 1.6) and folds in on itself under it (31 degrees: 2.5, a tenth of the faces turned over).
+ */
+const CLOSE = { front: [55, 60], hind: [60, 25] } as const;
 
 /** Where a paw's sole is to be, and how the paw is held: tipped about the cat's z axis (toes up positive), turned about the vertical, how much it is kept to the pose it had, and where its elbow (or knee) is to be. */
 export interface PawAim {
@@ -39,6 +47,8 @@ export interface PawAim {
   toe?: number;
   hold?: number;
   elbow?: Vec3;
+  /** How much each way (along, up, across) counts: a paw that is only to be about there along the floor (and on it) gives along a little, and the leg finds the place it can be at. */
+  soft?: Vec3;
 }
 
 /**
@@ -94,6 +104,10 @@ export class Body {
   /** The vertices that a set of bones carries (by the set's names), and the bones as the card has them, for measuring how low the mesh reaches. */
   private readonly carried = new Map<string, Int32Array>();
   private readonly skinning: Float32Array;
+  /** Every bone but the tail's (what a cat on the floor must not put through it). */
+  private readonly nonTail: readonly string[];
+  /** How the legs' bones turn in the clips the body has learned from (`learn`), by bone. */
+  private priors = new Map<number, Prior>();
 
   constructor(
     readonly mesh: CatMesh,
@@ -101,6 +115,7 @@ export class Body {
   ) {
     this.hips = skeleton.bone("Hips");
     this.skinning = new Float32Array(skeleton.count * 12);
+    this.nonTail = skeleton.names.filter((n) => !n.startsWith("tail"));
     this.rest = new Pose(skeleton);
     const soles = soleVertices(mesh, skeleton);
     this.pads = restPads(mesh, skeleton, soles);
@@ -114,6 +129,11 @@ export class Body {
       this.padLocal.push([0, 1, 2].map((c) => R[paw * 9 + c]! * d[0]! + R[paw * 9 + 3 + c]! * d[1]! + R[paw * 9 + 6 + c]! * d[2]!) as Vec3);
       this.jointOff.push([T[paw * 3]! - pad[0], T[paw * 3 + 1]! - pad[1], T[paw * 3 + 2]! - pad[2]]);
     });
+  }
+
+  /** Learns how the legs' bones turn from clips of animals that move (the first three bones of each leg: the paw's own is left free), so that a leg is only reached by turns such a leg makes. */
+  learn(clips: Iterable<Clip>): void {
+    this.priors = learnPriors(this.skeleton, clips, (Object.values(LEGS) as string[][]).flatMap((leg) => leg.slice(0, 3)));
   }
 
   /** A pose at rest. */
@@ -188,7 +208,7 @@ export class Body {
    * A leg reached to a place: the middle of the paw's sole at `pad` (the cat's space), the paw tipped about the cat's z axis by `tip` (positive: the toes up) and turned about the
    * vertical by `toe`. Returns how far the sole ended from the place (body lengths).
    */
-  reach(pose: Pose, paw: PawName, pad: Vec3, o: { tip?: number; toe?: number; hold?: number; elbow?: Vec3; elbowWeight?: number } = {}): number {
+  reach(pose: Pose, paw: PawName, pad: Vec3, o: { tip?: number; toe?: number; hold?: number; elbow?: Vec3; elbowWeight?: number; soft?: Vec3 } = {}): number {
     const k = PAWS.findIndex((p) => p.name === paw);
     const chain = LEGS[paw]!.map((b) => this.skeleton.bone(b));
     const tip = o.tip ?? 0;
@@ -203,13 +223,80 @@ export class Body {
     const ty = off[0] * st + off[1] * ct;
     const jx = tx * cy + off[2] * sy;
     const jz = -tx * sy + off[2] * cy;
+    const axes = o.soft;
     const markers: Marker[] = [
-      { bone: chain[3]!, local: this.padLocal[k]!, aim: pad, weight: 1 },
-      { bone: chain[3]!, local: [0, 0, 0], aim: [pad[0] + jx, pad[1] + ty, pad[2] + jz], weight: 1 },
+      { bone: chain[3]!, local: this.padLocal[k]!, aim: pad, weight: 1, ...(axes ? { axes } : {}) },
+      { bone: chain[3]!, local: [0, 0, 0], aim: [pad[0] + jx, pad[1] + ty, pad[2] + jz], weight: 1, ...(axes ? { axes } : {}) },
     ];
     if (o.elbow) markers.push({ bone: chain[1]!, local: [0, 0, 0], aim: o.elbow, weight: o.elbowWeight ?? 0.15 });
-    const reached = reachChain(this.skeleton, pose, chain, markers, o.hold ?? 0.004);
-    return reached.miss[0]!;
+    const hold = o.hold ?? 0.004;
+    // (the joints do not close past where the skin folds in on itself)
+    const close = (paw.startsWith("front") ? CLOSE.front : CLOSE.hind).map((d) => (d * Math.PI) / 180);
+    const limits: Limit[] = [
+      { bone: chain[1]!, min: close[0]!, weight: 4 },
+      { bone: chain[2]!, min: close[1]!, weight: 4 },
+    ];
+    const priors = chain.slice(0, 3).flatMap((j) => this.priors.get(j) ?? []);
+    let miss = reachChain(this.skeleton, pose, chain, markers, hold, 30, limits, priors).miss[0]!;
+    // (a leg that is folded may have a piece of itself through the floor: each point of it that is told to stay above the floor, and the leg is solved again)
+    const contacts: Marker[] = [];
+    for (let round = 0; round < 3; round++) {
+      const low = this.under(pose, LEGS[paw]!, UNDER, 24);
+      if (low.length === 0) break;
+      for (const l of low) contacts.push({ bone: l.bone, local: l.local, aim: [0, l.rigid + (UNDER - l.y), 0], floor: true, weight: 2 });
+      miss = reachChain(this.skeleton, pose, chain, [...markers, ...contacts], hold, 30, limits, priors).miss[0]!;
+    }
+    return miss;
+  }
+
+  /**
+   * The vertices that the named bones carry (a half or more of the weight, between them) that the pose has lower than `floor`, the lowest `few` of them: each with the bone of the set
+   * that carries it most, where it is in that bone's own axes (to put a marker on it), how high it is, and how high the bone's own turn would have it (the vertex as if it were all that
+   * bone's).
+   */
+  under(pose: Pose, bones: readonly string[], floor: number, few = 16): Array<{ bone: number; local: Vec3; y: number; rigid: number }> {
+    const ids = bones.map((b) => this.skeleton.bone(b));
+    const m = this.mesh;
+    solve(this.skeleton, pose, IDENTITY, this.skinning);
+    const found: Array<{ v: number; y: number; bone: number }> = [];
+    for (let v = 0; v < m.count; v++) {
+      let w = 0;
+      let top = 0;
+      let bone = -1;
+      for (let k = 0; k < 4; k++) {
+        const id = m.skin[v * 4 + k]!;
+        const wk = m.weight[v * 4 + k]! / 255;
+        if (wk <= 0 || !ids.includes(id)) continue;
+        w += wk;
+        if (wk > top) {
+          top = wk;
+          bone = id;
+        }
+      }
+      if (w < 0.5) continue;
+      const px = m.pos[v * 3]!;
+      const py = m.pos[v * 3 + 1]!;
+      const pz = m.pos[v * 3 + 2]!;
+      let y = 0;
+      for (let k = 0; k < 4; k++) {
+        const wk = m.weight[v * 4 + k]! / 255;
+        if (wk <= 0) continue;
+        const o = m.skin[v * 4 + k]! * 12;
+        y += wk * (this.skinning[o + 4]! * px + this.skinning[o + 5]! * py + this.skinning[o + 6]! * pz + this.skinning[o + 7]!);
+      }
+      if (y < floor) found.push({ v, y, bone });
+    }
+    found.sort((a, b) => a.y - b.y);
+    globals(this.skeleton, pose, undefined, R, T);
+    const bind = this.skeleton.bind;
+    return found.slice(0, few).map(({ v, y, bone }) => {
+      const px = m.pos[v * 3]!;
+      const py = m.pos[v * 3 + 1]!;
+      const pz = m.pos[v * 3 + 2]!;
+      const l: Vec3 = [0, 1, 2].map((r) => bind[bone * 12 + r * 4]! * px + bind[bone * 12 + r * 4 + 1]! * py + bind[bone * 12 + r * 4 + 2]! * pz + bind[bone * 12 + r * 4 + 3]!) as Vec3;
+      const rigid = T[bone * 3 + 1]! + R[bone * 9 + 3]! * l[0] + R[bone * 9 + 4]! * l[1] + R[bone * 9 + 5]! * l[2];
+      return { bone, local: l, y, rigid };
+    });
   }
 
   /**
@@ -289,7 +376,7 @@ export class Body {
    * bones, the hips settled on the floor by the torso, and the paws reached to their places. `prev` (the pose of the frame before) is where the legs start their search, so that a leg
    * that moves does it by small steps and does not jump to another bend of the knee.
    */
-  make(spec: Spec, prev?: Pose, base?: Pose): Pose {
+  make(spec: Spec, prev?: Pose, base?: Pose, grounded = base === undefined): Pose {
     const pose = this.pose();
     if (base) pose.copy(base);
     const h = spec.hips;
@@ -333,8 +420,20 @@ export class Body {
         for (let k = 0; k < 4; k++) pose.r[j * 4 + k] = prev.r[j * 4 + k]!;
       }
     }
-    for (const [name, aim] of Object.entries(spec.paws ?? {}) as Array<[PawName, PawAim]>) {
-      this.reach(pose, name, aim.at, { ...(aim.tip !== undefined ? { tip: aim.tip } : {}), ...(aim.toe !== undefined ? { toe: aim.toe } : {}), ...(aim.hold !== undefined ? { hold: aim.hold } : {}), ...(aim.elbow ? { elbow: aim.elbow } : {}) });
+    const putPaws = (): void => {
+      for (const [name, aim] of Object.entries(spec.paws ?? {}) as Array<[PawName, PawAim]>) {
+        this.reach(pose, name, aim.at, { ...(aim.tip !== undefined ? { tip: aim.tip } : {}), ...(aim.toe !== undefined ? { toe: aim.toe } : {}), ...(aim.hold !== undefined ? { hold: aim.hold } : {}), ...(aim.elbow ? { elbow: aim.elbow } : {}), ...(aim.soft ? { soft: aim.soft } : {}) });
+      }
+    };
+    putPaws();
+    if (grounded) {
+      // (a cat that is on the floor is not through it: whatever is lowest but the tail, once the legs are in, is brought up to the floor, and the legs are put again from there)
+      for (let pass = 0; pass < 2; pass++) {
+        const low = this.lowest(pose, this.nonTail);
+        if (low > -0.004) break;
+        pose.t[this.hips * 3 + 1] = pose.t[this.hips * 3 + 1]! - low;
+        putPaws();
+      }
     }
     return pose;
   }

@@ -30,7 +30,6 @@ void main() {
   // twisted, a knee that is bent). The whole cat's squash and tilt (uWorld, which is not a turn and a move) is laid on after.
   vec4 qr = vec4(0.0);
   vec4 qd = vec4(0.0);
-  vec4 ref = vec4(0.0);
   vec3 pm = vec3(0.0);
   vec3 nm = vec3(0.0);
   float top = -1.0;
@@ -40,11 +39,10 @@ void main() {
     if (w > 0.0) {
       float id = aSkin[i];
       int b = int(id + 0.5) * 2;
+      // (a turn and its negative are one turn, but the blend of two is not: which of the two a bone has is told once for the whole skeleton, down from the root, in solveDual, and
+      // not here by the point's first bone: two points side by side that list the same bones in another order would then take a folded limb on opposite sides and be torn apart)
       vec4 r = uDQ[b];
       vec4 d = uDQ[b + 1];
-      // (a turn and its negative are one turn: the blend takes them on the side of the first)
-      if (top < 0.0) ref = r;
-      else if (dot(r, ref) < 0.0) { r = -r; d = -d; }
       qr += w * r;
       qd += w * d;
       // (and, for the lab to see what the one saves over the other: the same bones as matrices, averaged)

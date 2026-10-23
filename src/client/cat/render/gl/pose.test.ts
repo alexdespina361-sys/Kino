@@ -128,25 +128,43 @@ describe("skinning by dual quaternions", () => {
     expect(Math.hypot(linear[1]!, linear[2]!)).toBeLessThan(1e-5);
   });
 
-  it("blends two bones that hold the same turn as each other's negatives as that turn, not as nothing", () => {
-    const q = turnAbout(0.3, 0.5, 0.8124, 0.9);
-    const t = [0.4, -0.2, 0.7];
-    const half = (s: number): number[] => {
-      // a bone with the turn q (or its negative) and the move t: the turn, then half the move turned by it
-      const [x, y, z, w] = q;
-      return [s * x, s * y, s * z, s * w, s * 0.5 * (t[0]! * w + t[1]! * z - t[2]! * y), s * 0.5 * (-t[0]! * z + t[1]! * w + t[2]! * x), s * 0.5 * (t[0]! * y - t[1]! * x + t[2]! * w), s * 0.5 * (-t[0]! * x - t[1]! * y - t[2]! * z)];
+  it("signs each bone on the side of the bone it hangs from, however far the limb is folded (the root, on the side of no turn)", () => {
+    // b is turned 100 degrees from a, and c another 100 from b: c is 200 degrees from a, which the matrix alone says is 160 the other way round
+    const pose = new Pose(skeleton);
+    pose.r.set(turnAbout(0, 0, 1, (100 * Math.PI) / 180), 4);
+    pose.r.set(turnAbout(0, 0, 1, (100 * Math.PI) / 180), 8);
+    const dq = new Float32Array(skeleton.count * 8);
+    solveDual(skeleton, pose, dq);
+    const dot = (i: number, j: number): number => dq[i * 8]! * dq[j * 8]! + dq[i * 8 + 1]! * dq[j * 8 + 1]! + dq[i * 8 + 2]! * dq[j * 8 + 2]! + dq[i * 8 + 3]! * dq[j * 8 + 3]!;
+    expect(dq[3]!).toBeGreaterThan(0);
+    expect(dot(1, 0)).toBeGreaterThan(0);
+    expect(dot(2, 1)).toBeGreaterThan(0);
+    expect(dot(3, 0)).toBeGreaterThan(0);
+    // (c's turn is the 200 degrees: its scalar part is that of a turn past a half)
+    expect(dq[2 * 8 + 3]!).toBeLessThan(0);
+  });
+
+  it("puts a point where it is whichever bone it lists first: two points that carry the same bones in another order are not torn apart by a limb folded past a half turn", () => {
+    // (the arrangement that tore the cat's inner elbow: weights a third each on the hips, the shoulder and the forearm, the forearm folded back 200 degrees from the hips)
+    const pose = new Pose(skeleton);
+    pose.r.set(turnAbout(0, 0, 1, (100 * Math.PI) / 180), 4);
+    pose.r.set(turnAbout(0, 0, 1, (100 * Math.PI) / 180), 8);
+    const dq = new Float32Array(skeleton.count * 8);
+    solveDual(skeleton, pose, dq);
+    const at = (bones: number[], weights: number[]): number[] => {
+      const out = [0, 0, 0];
+      dualSkin(dq, bones, weights, 0, 1, 0.9, 0.4, -0.2, 0, 1, 0, out, [0, 0, 0]);
+      return out;
     };
-    const dq = [...half(1), ...half(-1)];
-    const lone = [...half(1), ...half(1)];
-    const a = [0, 0, 0];
-    const b = [0, 0, 0];
-    dualSkin(dq, [0, 1, 0, 0], [0.5, 0.5, 0, 0], 0, 1, 0.6, -0.4, 0.2, 0, 1, 0, a, [0, 0, 0]);
-    dualSkin(lone, [0, 1, 0, 0], [0.5, 0.5, 0, 0], 0, 1, 0.6, -0.4, 0.2, 0, 1, 0, b, [0, 0, 0]);
-    near(a, b, 1e-6);
-    // and that is the move and turn it was given
-    const m = new Float64Array(9);
-    matrixOf(m, q[0], q[1], q[2], q[3]);
-    near(a, [m[0]! * 0.6 + m[1]! * -0.4 + m[2]! * 0.2 + t[0]!, m[3]! * 0.6 + m[4]! * -0.4 + m[5]! * 0.2 + t[1]!, m[6]! * 0.6 + m[7]! * -0.4 + m[8]! * 0.2 + t[2]!], 1e-6);
+    const first = at([0, 1, 2, 0], [0.35, 0.34, 0.31, 0]);
+    for (const [bones, weights] of [
+      [[2, 1, 0, 0], [0.31, 0.34, 0.35, 0]],
+      [[1, 0, 2, 0], [0.34, 0.35, 0.31, 0]],
+      [[2, 0, 1, 0], [0.31, 0.35, 0.34, 0]],
+    ] as const) near(at([...bones], [...weights]), first, 1e-6);
+    // and a point with weights that differ by a hundredth is a hundredth of the way from the other, not a limb away
+    const near2 = at([1, 0, 2, 0], [0.35, 0.34, 0.31, 0]);
+    expect(Math.hypot(near2[0]! - first[0]!, near2[1]! - first[1]!, near2[2]! - first[2]!)).toBeLessThan(0.05);
   });
 
   it("turns the normal with the blended turn and leaves it a unit", () => {
