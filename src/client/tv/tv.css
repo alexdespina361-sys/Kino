@@ -1551,6 +1551,52 @@
   100% { opacity: 0; }
 }
 
+/*
+ * What a pointer that rests against the top or the bottom edge shows while the page waits to move (a ring that fills over the wait) and while it
+ * moves (the arrow goes on): a shade along the edge, and the ring at the pointer. It takes no pointer, and it is only there while a page would move.
+ * (EdgeScrollHint.tsx)
+ */
+.tv-edge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 85; /* over the pages and their menus (the highest is 80), under the welcome */
+  height: 9em;
+  pointer-events: none;
+  animation: tv-edge-in 0.2s ease-out both;
+}
+.tv-edge[data-edge="bottom"] { bottom: 0; background: linear-gradient(to top, rgba(0, 0, 0, 0.62), transparent); --turn: 90deg; }
+.tv-edge[data-edge="top"] { top: 0; background: linear-gradient(to bottom, rgba(0, 0, 0, 0.62), transparent); --turn: -90deg; }
+.tv-edge-puck {
+  position: absolute;
+  left: var(--tv-edge-x, 50%);
+  left: clamp(3em, var(--tv-edge-x, 50%), calc(100% - 3em)); /* (a pointer in the corner keeps the whole ring on the screen; a browser that does not know clamp() leaves it where the pointer is) */
+  display: grid;
+  place-items: center;
+  width: 4.4em;
+  height: 4.4em;
+  margin-left: -2.2em;
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.84);
+  color: #fff;
+  box-shadow: 0 0.3em 1.4em rgba(0, 0, 0, 0.6);
+}
+.tv-edge[data-edge="bottom"] .tv-edge-puck { bottom: 2.2em; }
+.tv-edge[data-edge="top"] .tv-edge-puck { top: 2.2em; }
+.tv-edge-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.tv-edge-ring circle { fill: none; stroke-width: 2.4; }
+.tv-edge-ring .track { stroke: rgba(255, 255, 255, 0.22); }
+.tv-edge-ring .fill { stroke: var(--accent, #fff); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 0; }
+.tv-edge[data-phase="waiting"] .fill { animation: tv-edge-fill var(--tv-edge-dwell, 1s) linear both; }
+.tv-edge-chevron { position: relative; width: 2.2em; height: 2.2em; transform: rotate(var(--turn)); }
+.tv-edge[data-phase="moving"] .tv-edge-chevron { animation: tv-edge-go 0.75s ease-in-out infinite alternate; }
+@keyframes tv-edge-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tv-edge-fill { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes tv-edge-go {
+  from { transform: rotate(var(--turn)) translateX(-0.2em); }
+  to { transform: rotate(var(--turn)) translateX(0.3em); }
+}
+
 /* ------------------------------ library: the rows of the home page ------------------------------ */
 
 .tv-row { animation: tv-rise 0.45s ease both; }
@@ -2002,6 +2048,9 @@
   .tv-hero-text, .tv-row, .tv-hero-bg, .tv-detail-text, .tv-menu-backdrop, .tv-end, .hud-upnext, .hud-toast, .hud-pause-card, .tv-welcome .logo, .tv-welcome p, .tv-welcome .tv-action { animation-duration: 0.01s; }
   /* (What fades out at the end is simply shown for its time: a quick animation would leave it where it ends, gone.) */
   .tv-toast, .tv-note { animation: none; }
+  /* (The ring is half full while the page waits and full once it moves: the same news without the filling.) */
+  .tv-edge, .tv-edge-chevron { animation: none !important; }
+  .tv-edge[data-phase="waiting"] .fill { animation: none; stroke-dashoffset: 50; }
   .tv-detail { animation-duration: 0.01s, 0.5s; } /* the fade is quick; the pointer is still let through for as long */
   .tv-welcome { transition-duration: 0.01s; }
   .tv-overlay, .hud-top, .hud-bottom, .hud-titles, .hud-center::before, .hud-upnext { transition-duration: 0.01s; }

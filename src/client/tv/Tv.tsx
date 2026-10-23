@@ -40,6 +40,7 @@ import { useSlow, useWaking } from "../shared/useSlow";
 import { friendlyError, noticeText, socketError } from "../shared/words";
 import { TvAccount, type AccountView } from "./Account";
 import { Captions } from "./Captions";
+import { EdgeScrollHint } from "./EdgeScrollHint";
 import { PlayerEngine, PlayerError } from "./engine";
 import { pickInRows } from "./dpad";
 import { HOLD_SPEED, isPicture, usePictureGestures, useTouchUi, zoneOf, type PointerKind, type Side } from "./gestures";
@@ -1562,6 +1563,9 @@ export function Tv() {
           {flash.text}
         </p>
       )}
+
+      {/* A pointer that rests against the top or the bottom edge scrolls the page it is over, for a screen that can only move and click a mouse. */}
+      <EdgeScrollHint />
 
       {unlocked && showVideo && following && <FollowStatus player={player} onPlay={() => engineRef.current?.play()} />}
 
