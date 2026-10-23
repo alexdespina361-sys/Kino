@@ -320,6 +320,8 @@ export function crouchSpec(m: Made): Spec {
     tail: [deg(185), deg(188), deg(192), deg(195)],
     tailFloor: 0.09,
     settle: 0.05,
+    // (the legs fold up under the body, further than a cat on its feet turns them: under the limits of one the cat stays on its feet and is not a crouch)
+    range: "wide",
     paws: {
       "front left": { at: [0.27, at("front left")[1], at("front left")[2]], soft: SOFT },
       "front right": { at: [0.27, at("front right")[1], at("front right")[2]], soft: SOFT },
@@ -334,7 +336,7 @@ const CROUCH_IN: Timing = { hips: [0, 0.7], back: [0, 0.7], neck: [0.1, 0.6], ta
 export function crouch(m: Made): ClipSource {
   const from = standing(m);
   const to = crouchSpec(m);
-  return render(m, "crouch", 0.9, false, (t) => between(from, to, t, CROUCH_IN));
+  return render(m, "crouch", 0.9, false, (t) => ({ ...between(from, to, t, CROUCH_IN), range: "wide" }));
 }
 
 /** The haunches of a cat that is about to pounce, wagged: the hips turn about the vertical, the paws stay where they are, the tail's end answers. Four to the second. */
@@ -382,9 +384,22 @@ export function stretch(m: Made): ClipSource {
   return render(m, "stretch", 2.5, false, (t, u) => {
     // down over the first quarter, held, and up over the last half (a cat gets up out of a stretch more slowly than it went down: the engine's shot is two and a half seconds, and a rise in
     // the last quarter of it is a body snapping up)
-    const k = ease(u / 0.28) * (1 - ease((u - 0.52) / 0.48));
+    // (`between` eases each part of the body within its own window, so the way down and the way up are told straight: eased as well they would be an S of an S, and the body drops in a picture)
+    const k = clamp01(u / 0.4) * (1 - clamp01((u - 0.5) / 0.5));
+    const out = between(from, to, k, WIN);
+    // (the hold is not a freeze: the cat pushes on into the stretch, the breath goes through it and the tail answers)
+    const hold = over(u, 0.32, 0.08) * (1 - over(u, 0.5, 0.08));
+    const push = Math.sin(TAU * 0.7 * t) * hold;
+    const shift = (a: readonly number[], f: (i: number) => number): number[] => a.map((v, i) => v + f(i));
     // (the front legs go out along the floor ahead of the head and the shoulders sink between them: the arms turn further than a cat on its feet turns them)
-    return { ...between(from, to, k, WIN), range: "wide" };
+    return {
+      ...out,
+      range: "wide",
+      hips: { ...out.hips!, y: out.hips!.y + 0.012 * push },
+      back: shift(out.back!, (i) => (i === 0 ? 0.03 : -0.04) * push) as unknown as NonNullable<Spec["back"]>,
+      neck: shift(out.neck!, (i) => (i === 0 ? 0.05 : 0.025) * push) as unknown as NonNullable<Spec["neck"]>,
+      tail: shift(out.tail!, (i) => 0.07 * Math.sin(TAU * 1.1 * t - 0.5 * i) * hold) as unknown as NonNullable<Spec["tail"]>,
+    };
   });
 }
 
@@ -735,12 +750,12 @@ export function groom(m: Made): ClipSource {
       const e = bump(t, 0.25, 0.6, 2.3, 0.7);
       const lick = e * Math.sin(TAU * 2.2 * t);
       const head: Spec = {
-        neck: [neck[0] - 0.2 * e, neck[1] - 0.3 * e, neck[2] - 0.35 * e + 0.03 * lick, neck[3] - 0.15 * e + 0.07 * lick],
+        neck: [neck[0] - 0.2 * e + 0.02 * lick, neck[1] - 0.3 * e + 0.03 * lick, neck[2] - 0.35 * e + 0.05 * lick, neck[3] - 0.15 * e + 0.11 * lick],
         yaw: { neck2: -0.1 * e, head: -0.14 * e },
       };
       const nose = m.body.where(m.body.make(head, undefined, base), "headend");
       const rest = m.body.padOf(base, NEAR.front);
-      const goal: [number, number, number] = [nose[0] - 0.03 + 0.012 * lick, nose[1] - 0.05 + 0.01 * lick, nose[2] + 0.05];
+      const goal: [number, number, number] = [nose[0] - 0.03 + 0.02 * lick, nose[1] - 0.05 + 0.018 * lick, nose[2] + 0.05];
       const shoulder = m.body.where(base, "R_frontleg");
       return {
         ...head,
@@ -762,12 +777,15 @@ export function point(m: Made): ClipSource {
     (t) => {
       const e = over(t, 0, 0.5);
       const sway = Math.sin(TAU * 0.5 * t) * e;
+      // (a point is not a freeze: every second or so the paw is put out again, a little further, and drawn back, while the head follows what it points at)
+      const pulse = Math.pow(Math.max(0, Math.sin(TAU * 0.62 * t - 1.2)), 3) * e;
       const shoulder = m.body.where(base, "R_frontleg");
       const rest = m.body.padOf(base, NEAR.front);
-      const goal: [number, number, number] = [shoulder[0] + 0.36, shoulder[1] - 0.02 + 0.012 * sway, shoulder[2] + 0.0];
+      const goal: [number, number, number] = [shoulder[0] + 0.34 + 0.04 * pulse, shoulder[1] - 0.03 + 0.025 * sway + 0.02 * pulse, shoulder[2] + 0.0];
       return {
-        neck: [neck[0] + 0.05 * e, neck[1] + 0.05 * e, neck[2] + 0.04 * e, neck[3] + 0.06 * e],
-        paws: { [NEAR.front]: { at: mixSpec(rest, goal, e), tip: 0.25 * e, elbow: [shoulder[0] + 0.12, shoulder[1] - 0.13, shoulder[2] + 0.05] } },
+        neck: [neck[0] + 0.05 * e + 0.015 * pulse, neck[1] + 0.05 * e + 0.02 * pulse, neck[2] + 0.04 * e + 0.03 * sway, neck[3] + 0.06 * e + 0.04 * pulse],
+        yaw: { neck2: 0.05 * sway, head: 0.08 * sway, tailstart: 0.1 * Math.sin(TAU * 0.4 * t) * e, tail1: 0.16 * Math.sin(TAU * 0.4 * t - 0.6) * e, tail2: 0.2 * Math.sin(TAU * 0.4 * t - 1.2) * e },
+        paws: { [NEAR.front]: { at: mixSpec(rest, goal, e), tip: 0.25 * e + 0.2 * pulse, elbow: [shoulder[0] + 0.12, shoulder[1] - 0.13, shoulder[2] + 0.05] } },
       };
     },
     { base },

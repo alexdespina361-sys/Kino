@@ -283,8 +283,9 @@ export class Body {
     const caps: Cap[] = cap > 0 ? chain.slice(0, 2).map((bone) => ({ bone, max: (cap * Math.PI) / 180, weight: 3 })) : [];
     // (the range of each bone: its swing and its twist about the line to the next bone, as the rest has the line)
     const twists: Twist[] = [];
-    if (o.range !== "free") {
-      const table = RANGES[o.range ?? "normal"][paw.startsWith("front") ? "front" : "hind"];
+    const rangeName = o.range;
+    if (rangeName !== "free") {
+      const table = RANGES[rangeName ?? "normal"][paw.startsWith("front") ? "front" : "hind"];
       for (let i = 0; i < 3; i++) {
         const child = chain[i + 1]!;
         const x = this.skeleton.restT[child * 3]!;

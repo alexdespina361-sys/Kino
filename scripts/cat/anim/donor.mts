@@ -1,5 +1,5 @@
 // Another model's skeleton and its animations, read from a .glb, for borrowing its motion (retarget.mts). Development tooling only: the donors are research material and live
-// outside the repository, with their licences written down (scripts/cat/anim/sources.json).
+// outside the repository, with their licences written down (docs/cat-animation/source_registry.json).
 //
 // A donor's bones are the joints of its (first) skin. The numbers it gives are in its own world space (glTF's: y up, the model facing +z unless it says otherwise), with every
 // ancestor's scale in them, so that the places are those the model is drawn at; the turns are the bones' own, with that scale taken out.

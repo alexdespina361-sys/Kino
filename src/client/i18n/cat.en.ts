@@ -57,7 +57,7 @@ export const catEn = {
   "cat.size.normal": "Normal",
   "cat.size.large": "Large",
   "cat.settings.help": "A cat that lives on the screen: it walks along the rows of titles, naps at the foot of the film and can be petted. With a mouse you can also pick it up and put it on another row. It never plays anything by itself.",
-  "cat.settings.credit": "The white and grey cat is based on the model \"Fluffy Blue-Eyed Cat\" by Meshy AI (CC BY 4.0, creativecommons.org/licenses/by/4.0), changed to fit.",
+  "cat.settings.credit": "The white and grey cat is based on the model \"Fluffy Blue-Eyed Cat\" by Meshy AI (CC BY 4.0, creativecommons.org/licenses/by/4.0), changed to fit. Its standing animation is adapted from the \"Fox\" animation by tomkranis, converted to glTF by AsoboStudio and scurest (CC BY 4.0), changed to fit.",
 } as const;
 
 export type CatDictionary = Record<keyof typeof catEn, string> & Record<string, string>;
