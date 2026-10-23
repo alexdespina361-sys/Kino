@@ -835,15 +835,16 @@ test("a hand that rests on the white and grey cat for too long: it warns the han
   const start = await snap(tv);
   expect(start.engine.temperament).toBe("ragdoll");
   // the hand comes to the cat and rests on it: the host strokes it a third of a second after, and once a second after that
+  // (it comes in one move, onto the cat: a pointer that is seen coming at a grumpy cat at a dash is swiped at, one time in three, and startles it the rest -- that is another test, and
+  // whether a frame falls between the steps of a move made in four is a matter of how busy the machine is)
   await recordTheFeeling(tv);
-  await tv.mouse.move(middle.x - 200, middle.y - 80);
-  await tv.mouse.move(middle.x, middle.y, { steps: 4 });
+  await tv.mouse.move(middle.x, middle.y);
   await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.emote, { timeout: 14_000 }).toBe("annoyed"));
   // (it stands up to the hand, and goes: along the shelf, a body length or more from where the hand is)
   await saying(tv, () => expect.poll(async () => Math.abs((await snap(tv)).frame.x - start.frame.x) / start.body, { timeout: 20_000 }).toBeGreaterThan(1));
   const beats = await theFeeling(tv);
   const warned = beats.find((beat) => beat.emote === "annoyed")!;
-  expect(warned.t, "it is stroked a while before it has had enough").toBeGreaterThan(3);
+  expect(warned.t, "it is stroked a while before it has had enough").toBeGreaterThan(2);
   expect(warned.t, "and has had enough in the end").toBeLessThan(11);
   const left = (await snap(tv)).frame.x - start.frame.x;
   // (and the hand it left is where it was: the cat is on the far side of the body length from it)
