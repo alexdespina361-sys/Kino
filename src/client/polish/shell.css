@@ -42,6 +42,15 @@
 /* The remote has the whole screen: no bar, so no room kept for one. */
 :root[data-ui="polish"] .phone.shell.is-remote { padding-bottom: max(32px, env(safe-area-inset-bottom)); }
 :root[data-ui="polish"] .phone-ui .tab-panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+/* A key, or a screen reader, that moves to a control scrolls the page just far enough to show it, and "far enough" is under the two bars unless they are counted: a poster reached by Tab had
+   its lower quarter behind the bar. So what the tab's panel holds is kept clear of the top bar, and of the bar below and what plays above it. (Only the panel: the bars' own buttons stay put.) */
+:root[data-ui="polish"] .phone-ui .tab-panel button,
+:root[data-ui="polish"] .phone-ui .tab-panel a,
+:root[data-ui="polish"] .phone-ui .tab-panel input,
+:root[data-ui="polish"] .phone-ui .tab-panel [tabindex] {
+  scroll-margin-top: calc(var(--top-h) + env(safe-area-inset-top) + 8px);
+  scroll-margin-bottom: calc(var(--shell-bottom) + var(--mini-room) + 8px);
+}
 
 /* ------------------------------ the top bar ------------------------------ */
 

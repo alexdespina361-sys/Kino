@@ -9,7 +9,7 @@ export const shellEn = {
   "tabs.label": "Main navigation",
   "tabs.home": "Home",
   "tabs.search": "Search",
-  "tabs.list": "My lists",
+  "tabs.list": "My Lists",
   "tabs.you": "You",
 
   /* what plays, on every page, above the bar */

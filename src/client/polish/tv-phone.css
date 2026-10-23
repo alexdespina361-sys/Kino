@@ -317,6 +317,13 @@
   :root[data-ui="polish"] .tv .hud-controls .tv-btn[data-fold="skips"] .tv-btn-label { display: none; }
   :root[data-ui="polish"] .tv .hud-controls .tv-btn-play { width: 56px; height: 56px; margin: 0 4px 0 0; padding: 0; }
   :root[data-ui="polish"] .tv .hud-controls .tv-btn-play svg { font-size: 28px; }
+  /* They read the way a phone's player does: back and forward on either side of play, the episode before and the one after at the two ends (the markup has play first, the way the
+     TV's keys go: the order is only how it is drawn, and a key or a finger finds each where it is). */
+  :root[data-ui="polish"] .tv .hud-controls .hud-group:first-child > .tv-btn-play { order: 2; margin: 0 4px; }
+  :root[data-ui="polish"] .tv .hud-controls .hud-group:first-child > .tv-btn-icon:nth-child(2) { order: 1; }
+  :root[data-ui="polish"] .tv .hud-controls .hud-group:first-child > .tv-btn-icon:nth-child(3) { order: 3; }
+  :root[data-ui="polish"] .tv .hud-controls .hud-group:first-child > [data-fold="skips"]:not([data-testid="tv-prev-btn"]) { order: 4; }
+  :root[data-ui="polish"] .tv .hud-controls .hud-group:first-child > .tv-btn-stop { order: 5; }
   :root[data-ui="polish"] .tv .hud-controls .tv-btn-cut { max-width: 7em; }
   /* The second row of choices: the ones with words stretch to fill their rows, and the three that are only a picture (sound, full screen, stop) share the last row between them. */
   :root[data-ui="polish"] .tv .hud-controls .hud-group:last-child > .tv-btn { flex: 1 1 auto; }
@@ -375,6 +382,10 @@
   :root[data-ui="polish"] .tv .tv-opt.tv-ep,
   :root[data-ui="polish"] .tv .tv-menu[data-kind] .tv-opt.tv-ep { padding: 8px 10px 8px 4px; }
   :root[data-ui="polish"] .tv .tv-opt-detail { font-size: var(--fs-2); }
+  /* A touch screen leaves the hover where the last tap was, and a sheet opens right under that tap: the small words of a row lifted that way were 4.2:1 on its fill, so they take the lighter grey a focused row has. */
+  :root[data-ui="polish"] .tv .tv-opt:hover .tv-ep-about,
+  :root[data-ui="polish"] .tv .tv-opt:hover .tv-opt-detail,
+  :root[data-ui="polish"] .tv .tv-opt:hover .tv-ep-meta:not([data-state="now"]):not([data-state="watched"]) { color: var(--text-2); }
   :root[data-ui="polish"] .tv .tv-sub-preview { height: 72px; margin-top: 12px; }
   /* A code to read out and type on another device: six digits in one line on the narrowest screen (61 px was two lines of three there). */
   :root[data-ui="polish"] .tv .tv-code { font-size: 44px; }

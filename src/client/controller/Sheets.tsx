@@ -63,7 +63,7 @@ export function SpeedSheet({ player, onPick, onClose }: Close & { player: Player
   }));
   return (
     <Sheet title={t("player.speed")} onClose={onClose} testId="speed-sheet">
-      <ChoiceList choices={choices} />
+      <ChoiceList choices={choices} label={t("player.speed")} />
     </Sheet>
   );
 }
@@ -84,7 +84,7 @@ export function QualitySheet({ player, onPick, onClose }: Close & { player: Play
   ];
   return (
     <Sheet title={t("player.quality")} onClose={onClose} testId="quality-sheet">
-      <ChoiceList choices={choices} />
+      <ChoiceList choices={choices} label={t("player.quality")} />
     </Sheet>
   );
 }
@@ -101,7 +101,7 @@ export function SourcesSheet({ player, onPick, onClose }: Close & { player: Play
   }));
   return (
     <Sheet title={t("player.source")} onClose={onClose} testId="source-sheet">
-      <ChoiceList choices={choices} />
+      <ChoiceList choices={choices} label={t("player.source")} />
       <p className="muted small">{t("player.sourceHelp")}</p>
     </Sheet>
   );
@@ -214,18 +214,18 @@ export function TracksSheet({
       {audioChoices.length > 1 && (
         <>
           <h3 className="sheet-section">{t("player.audio")}</h3>
-          <ChoiceList choices={audioChoices} />
+          <ChoiceList choices={audioChoices} label={t("player.audio")} />
         </>
       )}
       <h3 className="sheet-section">{t("player.subtitles")}</h3>
       {flat ? (
         <>
-          <ChoiceList choices={[off, ...pinned.flatMap((group) => group.tracks.map(trackChoice))]} />
+          <ChoiceList choices={[off, ...pinned.flatMap((group) => group.tracks.map(trackChoice))]} label={t("player.subtitles")} />
           {more.length > 0 &&
             (moreOpen ? (
               <>
                 {moreLabel}
-                <ChoiceList choices={more.flatMap((group) => group.tracks.map(trackChoice))} />
+                <ChoiceList choices={more.flatMap((group) => group.tracks.map(trackChoice))} label={t("player.moreLanguages")} />
               </>
             ) : (
               <div className="cap-choices">{moreChip}</div>
@@ -242,7 +242,7 @@ export function TracksSheet({
             {more.length > 0 && (moreOpen ? [moreLabel, ...more.map(languageChip)] : moreChip)}
             {showAllChip}
           </div>
-          <ChoiceList choices={releases} />
+          <ChoiceList choices={releases} label={t("player.subtitles")} />
         </>
       )}
       {onSync && sync !== undefined && (

@@ -195,10 +195,10 @@ export interface Choice {
   pick: () => void;
 }
 
-/** One-of-many list inside a sheet. */
-export function ChoiceList({ choices }: { choices: Choice[] }) {
+/** One-of-many list inside a sheet; `label` is what it is a choice of (a list of options is announced by its name). */
+export function ChoiceList({ choices, label }: { choices: Choice[]; label: string }) {
   return (
-    <div className="choices" role="listbox">
+    <div className="choices" role="listbox" aria-label={label}>
       {choices.map((choice) => (
         <button
           key={choice.key}
