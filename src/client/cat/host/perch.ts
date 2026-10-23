@@ -2,14 +2,18 @@ import { reachOf } from "../engine/shape";
 import type { Rect, Surface } from "../types";
 
 /**
- * Where the cat rests in a film: on the line at the foot of the picture, either in the stretch of the controls' row that has no button in it (the cat is under
- * the controls' layer, so it is never over a button, but a face behind a button's icon is clutter all the same), or, where the row leaves no such stretch (a
- * narrow screen, a row that has wrapped), in a corner of the picture.
+ * Where the cat rests in a film: on the line at the foot of the picture, in the stretch of the controls' row that has no button in it (the cat's layer is over the bars, so
+ * that a hand can take it while they are up, and it is over no button there), or, where the row leaves no such stretch (a narrow screen, a row that has wrapped), in a corner of
+ * the picture, on the line where the bars' lowest block begins, so that it is over no button there either.
  */
 
 /** How much of the screen's width a corner of the picture takes for the cat to sit on (in body lengths from the screen's edge). */
 const CORNER_FROM = 0.7;
 const CORNER_TO = 3.6;
+
+/** How far above the top of the bars' block the feet of a cat in a corner are (in body lengths), and the highest on the screen that line may be (a share of its height). */
+const BARS_ABOVE = 0.08;
+const CORNER_LOWEST = 0.5;
 
 /** How far the cat reaches to either side in the postures it takes in a film, its tail included (in body lengths): the room it needs on both sides of its middle. */
 const FILM_REACH = Math.max(
@@ -40,18 +44,23 @@ export function widestGap(groups: readonly Rect[]): [number, number] | null {
   return best;
 }
 
-/** The places for the cat to rest in a film, the one it should take first before the others. `groups` is where the controls' groups of buttons are, if they are there. */
-export function perchesFor(groups: readonly Rect[], width: number, height: number, L: number): Surface[] {
+/**
+ * The places for the cat to rest in a film, the one it should take first before the others. `groups` is where the controls' groups of buttons are, if they are there. `bars` is
+ * where the top of the bars' lowest block is, as it is laid out whether they are up or not (its first row is the film's bar and its times), if there is one: the corners are
+ * on that line then, since the cat is over the bars and a corner at the foot of the screen would be over the last buttons of the row.
+ */
+export function perchesFor(groups: readonly Rect[], width: number, height: number, L: number, bars?: number): Surface[] {
   const y = height - Math.max(6, height * 0.025);
   const gap = widestGap(groups);
   if (gap) {
     const x0 = gap[0] + FILM_REACH * L;
     const x1 = gap[1] - FILM_REACH * L;
-    // (the only place, when there is one: a corner is behind the buttons of the row, and a cat left in it when the row comes would stay there)
+    // (the only place, when there is one: a corner is where the row's buttons are, and a cat left in it when the row comes would stay there)
     if (x1 - x0 >= LEAST * L) return [{ id: "perch-gap", kind: "playerPerch", y, x0, x1, weight: 1 }];
   }
+  const corner = bars !== undefined && Number.isFinite(bars) ? Math.min(y, Math.max(bars - BARS_ABOVE * L, CORNER_LOWEST * height)) : y;
   return [
-    { id: "perch-right", kind: "playerPerch", y, x0: width - CORNER_TO * L, x1: width - CORNER_FROM * L, weight: 1 },
-    { id: "perch-left", kind: "playerPerch", y, x0: CORNER_FROM * L, x1: CORNER_TO * L, weight: 0.7 },
+    { id: "perch-right", kind: "playerPerch", y: corner, x0: width - CORNER_TO * L, x1: width - CORNER_FROM * L, weight: 1 },
+    { id: "perch-left", kind: "playerPerch", y: corner, x0: CORNER_FROM * L, x1: CORNER_TO * L, weight: 0.7 },
   ];
 }

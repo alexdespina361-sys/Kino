@@ -3114,7 +3114,7 @@ describe("picked up by a hand", () => {
     expect(washed).toBeLessThan(seeds.length);
   });
 
-  it("is not picked up when the viewer wants quiet or less motion, in a film, or while a menu has sent it away, and is still stroked", () => {
+  it("is not picked up when the viewer wants quiet or less motion, or while a menu has sent it away, and is still stroked", () => {
     for (const flag of ["quiet", "reducedMotion"] as const) {
       const { engine, world, body } = settled(6, { [flag]: true });
       engine.send({ type: "cat.grab", at: { x: engine.frame.x, y: engine.frame.y - 0.4 * body } });
@@ -3123,11 +3123,14 @@ describe("picked up by a hand", () => {
       expect(frames.every((f) => !f.carried && f.grounded), flag).toBe(true);
       expect(Math.abs(frames[frames.length - 1]!.x - frames[0]!.x), flag).toBeLessThan(1);
     }
-    const film = playerWorld(1920, 1080, "playing", false);
-    const inFilm = new CatEngine(6);
-    stepCat(inFilm, film, 8);
-    inFilm.send({ type: "cat.grab", at: { x: inFilm.frame.x, y: inFilm.frame.y - 40 } });
-    expect(stepCat(inFilm, film, 1).frames.some((f) => f.carried)).toBe(false);
+    // (and the same in a film: a quiet cat there is stroked and not lifted)
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const film = playerWorld(1920, 1080, "playing", false, { [flag]: true });
+      const inFilm = new CatEngine(6);
+      stepCat(inFilm, film, 8);
+      inFilm.send({ type: "cat.grab", at: { x: inFilm.frame.x, y: inFilm.frame.y - 40 } });
+      expect(stepCat(inFilm, film, 1).frames.some((f) => f.carried), `${flag} in a film`).toBe(false);
+    }
     const { engine, page } = settled(6);
     stepCat(engine, browseWorld(page, { modal: true }), 3);
     engine.send({ type: "cat.grab", at: { x: 500, y: 500 } });
@@ -3719,6 +3722,34 @@ describe("the cat in a film", () => {
     expect(last.appear).toBe(1);
     // (it went there out of sight: it never walked or leapt across the picture)
     for (const f of frames) if (f.appear > 0.05) expect(f.clip).not.toBe("jump");
+  });
+
+  it("can be picked up in a film, with the controls up or not, and is put down on its perch wherever the hand let go of it", () => {
+    for (const controls of [false, true]) {
+      const engine = new CatEngine(3);
+      const w = film("playing", controls);
+      run(engine, w, 45);
+      const perch = w.surfaces[0]!;
+      const grip = { x: engine.frame.x, y: engine.frame.y - 0.4 * w.bodyLength };
+      engine.send({ type: "cat.grab", at: grip });
+      expect(engine.update(w, 1 / 30).carried, `controls ${controls}`).toBe(true);
+      // the hand takes it a long way across the picture, and holds it there
+      const to = { x: 500, y: 350 };
+      for (let i = 1; i <= 45; i++) {
+        engine.send({ type: "cat.carry", at: { x: grip.x + ((to.x - grip.x) * i) / 45, y: grip.y + ((to.y - grip.y) * i) / 45 } });
+        engine.update(w, 1 / 30);
+      }
+      expect(engine.frame.carried, `controls ${controls}`).toBe(true);
+      engine.send({ type: "cat.drop" });
+      const last = stepCat(engine, w, 10).frames.pop()!;
+      expect(last.carried, `controls ${controls}`).toBe(false);
+      expect(last.grounded, `controls ${controls}`).toBe(true);
+      expect(last.appear, `controls ${controls}`).toBeGreaterThan(0.9);
+      // (the only place a film has for it)
+      expect(last.y, `controls ${controls}`).toBe(perch.y);
+      expect(last.x, `controls ${controls}`).toBeGreaterThanOrEqual(perch.x0 - 1);
+      expect(last.x, `controls ${controls}`).toBeLessThanOrEqual(perch.x1 + 1);
+    }
   });
 
   it("wakes when the film is paused, and goes back to sleep when it plays", () => {

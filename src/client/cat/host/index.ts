@@ -1,4 +1,5 @@
 import { isTvAgent } from "../../role";
+import { t } from "../../i18n";
 import { onCat, setPanelOpen } from "../bus";
 import { BODY_EMS } from "../math";
 import { CatEngine, type EngineDebug } from "../engine/engine";
@@ -6,7 +7,7 @@ import { coreOf, HEIGHT, shapeCovers } from "../engine/shape";
 import { temperamentOf } from "../engine/temperament";
 import { CatRig } from "../render/rig";
 import { createRng } from "../rng";
-import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, coatOfLook, readCatSettings, setCatGone, setCatShown, subscribeCatSettings, type CatCoat, type CatWhy } from "../settings";
+import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, coatOfLook, readCatSettings, setCatAsleep, setCatGone, setCatShown, subscribeCatSettings, type CatCoat, type CatWhy } from "../settings";
 import { SWAT_HIT, type CatEvent, type CatFrame, type Clip, type PlayerMode, type Rect, type Vec, type World } from "../types";
 import "./cat.css";
 import { createDebugView, type DebugView } from "./debug";
@@ -15,6 +16,7 @@ import { clearPointed, dip, swatPoster } from "./effects";
 import { Governor, Revival, type Quality } from "./governor";
 import { Hand } from "./hand";
 import { tileOf } from "./assistant";
+import { createMenu, type MenuItem } from "./menu";
 import { TvPage, type PageRead } from "./page";
 import { mountPanel, type PanelHandle } from "./panel";
 import { classicBrush, fetchCatFiles, solidBrush, type Brush, type CatFiles } from "./render";
@@ -24,9 +26,11 @@ import { classicBrush, fetchCatFiles, solidBrush, type Brush, type CatFiles } fr
  * and the cat; everything it knows of the page comes from `TvPage` as numbers, and everything it asks of the cat is an event (see ../types.ts).
  *
  * The cat is one canvas, a few body lengths wide, that follows the cat about the screen (not a canvas the size of the screen to clear at every
- * frame), over a box of the same size as its body that takes a hand. It lives inside the screen it is on (the library's, or the film's, right
- * behind the controls and the subtitles) and goes where that screen goes. It is not in the tab order and not in the reading order: the button in the
- * library's corner and its panel are how the remote, a screen reader and a keyboard reach it.
+ * frame), over a box of the same size as its body that takes a hand. It lives inside the screen it is on (the library's, any other page of the TV's, or the
+ * film's, over the controls and under the subtitles) and goes where that screen goes. It is not in the tab order and not in the reading order: the button in the
+ * library's corner and its panel are how the remote, a screen reader and a keyboard reach it. A hand has more: it strokes it, picks it up and puts it down
+ * (in a film too: only the cat's own body takes a press there), and a right click (or a finger held on it) opens its menu (see ./menu.ts), whose "send to
+ * sleep" takes the cat away until it is woken.
  */
 
 /**
@@ -51,6 +55,12 @@ const SPOT_WIDE = 0.95;
 const SPOT_THICK = 0.16;
 /** A screen that comes round at least this many times a second (smoothed) is keeping up: what the card says a picture costs does not count against the cat then. */
 const KEEPING_UP_FPS = 50;
+/** A cat that is sent to sleep curls up where it is for this long and then fades out for this long (cat.css has the same two numbers, as the delay and the length of the fade); the mark of a cat that was woken stays for WAKE_MS. */
+const CURL_MS = 1500;
+const FADE_AWAY_MS = 900;
+const WAKE_MS = 1500;
+/** How long a finger has to rest on the cat for its menu to come up (a mouse has the right button for it). */
+const LONG_PRESS_MS = 550;
 
 export interface CatHandle {
   /** Tells the cat something, as the page would. */
@@ -77,6 +87,9 @@ export interface CatSnapshot {
   cost: number;
   fps: number;
   panel: boolean;
+  /** Whether the cat's menu (a right click on the cat) is open, and whether the viewer has sent the cat to sleep. */
+  menu: boolean;
+  asleep: boolean;
   visible: boolean;
   places: number;
   keepOut: number;
@@ -84,8 +97,11 @@ export interface CatSnapshot {
   /** How many names under the cards the cat knows of, and how much of them its body covers just now (in squares of its body length). */
   names: number;
   covers: number;
-  /** How many times the page has been read (a page that only sits there is read twice a second). */
+  /** How much of the page's words and buttons (what it keeps out of) the cat's body covers just now, in squares of its body length. */
+  covered: number;
+  /** How many times the page has been read (a page that only sits there is read twice a second), and what a read takes, in milliseconds (smoothed). */
   reads: number;
+  readMs: number;
   /** Where a frame's time goes, smoothed, in milliseconds (reading the page, the cat's brain, painting without the wait for the card), and what the card was seen to take. */
   phases: { read: number; think: number; paint: number };
   gpu: number;
@@ -213,6 +229,17 @@ export function mountCat(): { stop: () => void } {
   let prevMode: World["mode"] = "away";
   let prevPlayer: PlayerMode = "none";
   let prevFocus: string | undefined;
+  /**
+   * The viewer sent the cat to sleep: it curls up (if it is let), fades out and stays out, on every page and in every film, until it is woken. For this load of the page only: a cat
+   * that is switched off and on again, or a page that is loaded again, is awake. `asleepFor` is how long after `asleepAt` it is out of sight (milliseconds).
+   */
+  let asleep = false;
+  let asleepAt = 0;
+  let asleepFor = 0;
+  let wakingTimer = 0;
+  /** A finger that rests on the cat without moving: when it has been there long enough, the cat's menu comes up. */
+  let holdTimer = 0;
+  const menu = createMenu();
 
   /** What the card took for the last picture says nothing of the next one (another cat, another quality, another size): it is looked at afresh. */
   const pictureChanged = (): void => {
@@ -323,9 +350,69 @@ export function mountCat(): { stop: () => void } {
     });
   };
 
+  /* ------------------------------ sleep, and the menu ------------------------------ */
+
+  /**
+   * The viewer sends the cat to sleep: it curls up where it is and fades out (a cat that is sent "away" from the panel only fades), and it stays out, on every page and in every
+   * film, until it is woken (the panel and the settings page have a button for that). This is the host's doing and not the brain's: the brain's "away" is a cat that a page has
+   * sent off, and it comes back with the next page that has a place for it. The page is still read and the brain still runs while the cat is out of sight, so that it is where
+   * the page has a place for it when it comes back; they are done a few times a second, as on a screen where the cat is away.
+   */
+  const sendToSleep = (curl: boolean): void => {
+    if (asleep || stopped) return;
+    menu.close();
+    const still = read?.world.reducedMotion === true;
+    const curls = curl && !still;
+    asleep = true;
+    asleepAt = performance.now();
+    asleepFor = still ? 0 : (curls ? CURL_MS : 0) + FADE_AWAY_MS;
+    if (curls) engine.send({ type: "cat.command", command: "sleep" });
+    wrap.setAttribute("data-asleep", curls ? "curl" : "fade");
+    setCatAsleep(true);
+    page.touch();
+  };
+
+  /** The cat is woken: it fades in where it is (one that was still fading out turns back), and sits up. */
+  const wake = (): void => {
+    if (!asleep || stopped) return;
+    asleep = false;
+    setCatAsleep(false);
+    // (a cat that was out of sight comes in with a fade of its own, which plays when it is drawn again)
+    if (wrap.hidden) {
+      wrap.setAttribute("data-waking", "");
+      window.clearTimeout(wakingTimer);
+      wakingTimer = window.setTimeout(() => wrap.removeAttribute("data-waking"), WAKE_MS);
+    }
+    wrap.removeAttribute("data-asleep");
+    engine.send({ type: "cat.enable" });
+    engine.send({ type: "cat.command", command: "sit" });
+    page.touch();
+  };
+
+  /** What the panel tells the cat: "send away" is the cat sent to sleep without the curl (it stays out until it is woken); the rest is for the brain. */
+  const tell = (event: CatEvent): void => {
+    if (event.type === "cat.command" && event.command === "away") sendToSleep(false);
+    else engine.send(event);
+  };
+
+  /** The cat's menu, beside the cat: what a right click on it (or a finger held on it) offers. */
+  const openMenu = (): void => {
+    const home = wrap.parentElement;
+    if (stopped || !home || !shown || asleep || drag?.held || menu.isOpen() || hit.hasAttribute("data-off")) return;
+    const browsing = read?.world.mode === "browse";
+    const items: MenuItem[] = [{ id: "pet", label: t("cat.pet"), run: () => engine.send({ type: "cat.pet" }) }];
+    // ("come here" is for a page the cat walks about: in a film it rests where it is)
+    if (browsing) items.push({ id: "come", label: t("cat.come"), run: () => engine.send({ type: "cat.command", command: "come" }) });
+    items.push({ id: "sleep", label: t("cat.menu.sleep"), run: () => sendToSleep(true) });
+    // (the cat keeps still while it is being asked: the menu is beside it, and it is not to walk off from under the hand that is going for a button)
+    if (browsing) engine.send({ type: "cat.command", command: "sit" });
+    menu.open(home, rectOf(hit), items, t("cat.panel"));
+  };
+
   /* ------------------------------ the panel ------------------------------ */
 
   const askToPoint = (id: string): void => {
+    if (asleep) return;
     pointed = id;
     window.clearTimeout(pointRetry);
     engine.send({ type: "cat.enable" });
@@ -387,7 +474,7 @@ export function mountCat(): { stop: () => void } {
     panelHost = document.createElement("div");
     panelHost.className = "cat-panel-host";
     tv.appendChild(panelHost);
-    panel = mountPanel(panelHost, { send: (event) => engine.send(event), point: askToPoint, shelfRoom, rng, close: closePanel });
+    panel = mountPanel(panelHost, { send: tell, point: askToPoint, shelfRoom, rng, close: closePanel, wake });
     setPanelOpen(true);
     page.touch();
   };
@@ -413,6 +500,8 @@ export function mountCat(): { stop: () => void } {
       const type = world.player === "playing" ? (prevPlayer === "paused" ? "player.resume" : "player.play") : world.player === "paused" ? "player.pause" : world.player === "ended" ? "player.ended" : world.player === "error" ? "player.error" : null;
       if (type) engine.send({ type });
     }
+    // (another page, or a film that has begun or ended, or a menu that has opened: the cat is not where the menu was opened beside it, and its choices are not the same)
+    if (world.mode !== prevMode || wrap.getAttribute("data-view") !== now.view) menu.close();
     prevMode = world.mode;
     prevPlayer = world.player;
     if (panel && world.mode !== "browse") closePanel();
@@ -465,12 +554,13 @@ export function mountCat(): { stop: () => void } {
       return;
     }
     const gap = last ? time - last : 16.7;
-    // a slow screen gets thirty frames a second (and its cat goes with the page in between: see `follow`); a screen where the cat is away (and not on its way back) is looked at a few times a second
+    // a slow screen gets thirty frames a second (and its cat goes with the page in between: see `follow`); a screen where the cat is away (and not on its way back), or has been
+    // sent to sleep and is out of sight, is looked at a few times a second
     if (quality === "low" && gap < 30) {
       follow(time);
       return;
     }
-    if (read && !shown && prevMode === "away" && gap < 100) return;
+    if (read && !shown && (prevMode === "away" || asleep) && gap < 100) return;
     // a cat asleep in a film only breathes: it is painted a third as often, and the film has the rest of the screen's time
     if (shown && prevMode === "player" && frame.appear > 0.99 && (frame.clip === "curl" || frame.clip === "loaf") && !frame.petted && gap < ASLEEP_GAP_MS) return;
     last = time;
@@ -522,7 +612,8 @@ export function mountCat(): { stop: () => void } {
       pictureChanged();
     }
 
-    const visible = frame.appear > 0.01 && wrap.isConnected && brush !== null;
+    // (a cat that was sent to sleep is out of sight once it has curled up and faded: the fade itself is the layer's, see cat.css)
+    const visible = frame.appear > 0.01 && wrap.isConnected && brush !== null && !(asleep && time - asleepAt >= asleepFor);
     let waited = 0;
     if (visible && brush) {
       if (!shown) rig.snapTo(frame, L); // (a cat that comes in is already in its pose: it does not settle into it in front of the viewer)
@@ -552,12 +643,15 @@ export function mountCat(): { stop: () => void } {
       wrap.hidden = !visible;
       wrap.setAttribute("data-visible", String(visible));
     }
-    // (a hand is the library's: in a film the picture is the player's, with its taps, its double-taps to skip and its holds to speed up, and a box over the cat
-    // that took them would be a patch of the picture where none of those worked, and where the cursor came back)
+    // (a hand can take the cat in a film too, with the bars up or not: the layer is over them. The box that takes it is the cat's body and no more, and what it takes
+    // is only a press, never a move or a release: the rest of the picture is the player's, with its taps, its double-taps to skip and its holds to speed up, as it was)
     // (nor is a hand on a cat that hauls itself up over a lip: the frame is the point it ends up at, and the picture hangs below it, so a box there would be on nothing)
-    const handOk = visible && world.mode === "browse" && frame.appear > 0.5 && frame.clip !== "climb";
+    const handOk = visible && !asleep && (world.mode === "browse" || world.mode === "player") && frame.appear > 0.5 && frame.clip !== "climb";
     if (handOk === hit.hasAttribute("data-off")) hit.toggleAttribute("data-off", !handOk);
-    if (!handOk) over = false; // (a box that takes no pointer does not say that the pointer left it: a cat that cannot be touched is not being stroked)
+    if (!handOk) {
+      over = false; // (a box that takes no pointer does not say that the pointer left it: a cat that cannot be touched is not being stroked)
+      menu.close(); // (and a menu is for a cat that can be)
+    }
     // (a hand can take hold of the cat where the cat is let to move about; the cursor says so)
     const carryable = handOk && !world.quiet && !world.reducedMotion;
     if (carryable !== hit.hasAttribute("data-carry")) hit.toggleAttribute("data-carry", carryable);
@@ -642,26 +736,38 @@ export function mountCat(): { stop: () => void } {
     // (a hand on the cat strokes the cat: it takes nothing else with it, and the remote's focus is where it was)
     event.preventDefault();
     if (event.type === "mousedown") return;
+    const press = event as PointerEvent;
+    // (only the main button strokes and picks up: a right click is for the menu, which the browser asks for with a `contextmenu` of its own)
+    if (press.button !== undefined && press.button !== 0) return;
     hand.press(performance.now());
     engine.send({ type: "cat.pet" });
     // (and a hand that then moves, still pressed, takes hold of it: the pointer is kept for as long as it is down, wherever it goes)
     // (a second hand, a finger while the mouse has the cat, is not the one that lets it go: the first stays the hand until it comes up)
-    const press = event as PointerEvent;
-    if (press.pointerId !== undefined && press.button === 0 && press.isPrimary !== false && !drag?.held) {
+    if (press.pointerId !== undefined && press.isPrimary !== false && !drag?.held) {
       drag = { id: press.pointerId, from: { x: press.clientX, y: press.clientY }, at: { x: press.clientX, y: press.clientY }, held: false };
       try {
         hit.setPointerCapture(press.pointerId);
       } catch {
         /* a pointer that is already gone cannot be kept */
       }
+      // (a finger that rests on the cat brings up its menu, as a right click does: a phone or a tablet has no right button, and not every browser makes one of a long press)
+      window.clearTimeout(holdTimer);
+      if (press.pointerType !== "mouse") {
+        holdTimer = window.setTimeout(() => {
+          holdTimer = 0;
+          if (drag && !drag.held) openMenu();
+        }, LONG_PRESS_MS);
+      }
     }
   };
   const onDrag = (event: PointerEvent): void => {
     if (!drag || event.pointerId !== drag.id) return;
     drag.at = { x: event.clientX, y: event.clientY };
+    const moved = Math.hypot(drag.at.x - drag.from.x, drag.at.y - drag.from.y) > GRAB_SLOP;
+    if (moved) window.clearTimeout(holdTimer); // (a finger that moves is not resting)
     // (only where a hand can take hold of the cat, which the cursor says: for a quiet cat, or one that is to move as little as it can, the press stays a stroke,
     // and the cursor does not close on a cat that was not lifted)
-    if (!drag.held && Math.hypot(drag.at.x - drag.from.x, drag.at.y - drag.from.y) > GRAB_SLOP && hit.hasAttribute("data-carry")) {
+    if (!drag.held && moved && hit.hasAttribute("data-carry")) {
       drag.held = true;
       hit.setAttribute("data-held", "");
       engine.send({ type: "cat.grab", at: drag.at });
@@ -670,6 +776,7 @@ export function mountCat(): { stop: () => void } {
   /** The hand lets go (the pointer came up, was taken away, or the window lost it): a cat that was held is put down where the engine says. */
   const onRelease = (event?: PointerEvent): void => {
     if (!drag || (event && event.pointerId !== drag.id)) return;
+    window.clearTimeout(holdTimer);
     const was = drag;
     drag = null;
     hit.removeAttribute("data-held");
@@ -682,8 +789,11 @@ export function mountCat(): { stop: () => void } {
   };
   const onBlur = (): void => onRelease();
   const onContext = (event: Event): void => {
+    // (a right click on the cat is the cat's: the browser's own menu is not wanted over it, and the player under it is not told)
     event.preventDefault();
-    togglePanel();
+    event.stopPropagation();
+    window.clearTimeout(holdTimer);
+    openMenu();
   };
   const onOutside = (event: PointerEvent): void => {
     if (!panel) return;
@@ -691,6 +801,11 @@ export function mountCat(): { stop: () => void } {
     if (target && (panelHost?.contains(target) || target.closest("[data-cat-chip]"))) return;
     closePanel();
   };
+  // A press that lands on the cat is the cat's, and goes no further: it is no tap on the picture, no click on a page, no start of a double-tap or of a hold. What comes after a press, the
+  // move and the release, is never held back: the controls' bar is let go of by a release anywhere on the page, and the player's gestures end on one.
+  const STARTERS = ["pointerdown", "mousedown", "click", "dblclick", "auxclick", "touchstart"] as const;
+  const keep = (event: Event): void => event.stopPropagation();
+  for (const type of STARTERS) hit.addEventListener(type, keep, type === "touchstart" ? { passive: true } : false);
   window.addEventListener("pointermove", onMove, { passive: true });
   hit.addEventListener("pointerenter", onEnter);
   hit.addEventListener("pointerleave", onLeave);
@@ -718,6 +833,7 @@ export function mountCat(): { stop: () => void } {
   const offBus = onCat((command) => {
     if (command.type === "panel") togglePanel();
     else if (command.type === "retry" && !stopped) tryAgain();
+    else if (command.type === "wake") wake();
   });
   const offSettings = subscribeCatSettings(() => {
     if (stopped) return;
@@ -747,13 +863,17 @@ export function mountCat(): { stop: () => void } {
         cost: governor.average,
         fps,
         panel: panel !== null,
+        menu: menu.isOpen(),
+        asleep,
         visible: shown,
         places: read?.world.surfaces.length ?? 0,
         keepOut: read?.world.keepOut.length ?? 0,
         posters: read?.world.targets.length ?? 0,
         names: read?.world.soft?.length ?? 0,
         covers: read ? shapeCovers(frame.clip, frame.facing, frame.x, frame.y, read.world.bodyLength, read.world.soft ?? []) / read.world.bodyLength ** 2 : 0,
+        covered: read ? shapeCovers(frame.clip, frame.facing, frame.x, frame.y, read.world.bodyLength, read.world.keepOut) / read.world.bodyLength ** 2 : 0,
         reads: page.reads,
+        readMs: page.readMs,
         phases: { ...phases },
         gpu,
       }),
@@ -770,8 +890,12 @@ export function mountCat(): { stop: () => void } {
     stopped = true;
     cancelAnimationFrame(raf);
     window.clearTimeout(pointRetry);
+    window.clearTimeout(holdTimer);
+    window.clearTimeout(wakingTimer);
+    menu.dispose();
     brush?.dispose();
     window.removeEventListener("pointermove", onMove);
+    for (const type of STARTERS) hit.removeEventListener(type, keep);
     document.removeEventListener("pointerdown", onOutside, true);
     hit.removeEventListener("pointerenter", onEnter);
     hit.removeEventListener("pointerleave", onLeave);
@@ -791,6 +915,7 @@ export function mountCat(): { stop: () => void } {
     page.dispose();
     debug?.dispose();
     wrap.remove();
+    setCatAsleep(false); // (a cat that is switched off and on again is awake)
     setCatShown({ art: "none", why: "" });
     if (window.__kinoCat) delete window.__kinoCat;
   };

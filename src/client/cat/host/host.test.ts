@@ -268,6 +268,36 @@ describe("the cat's place in a film", () => {
     expect(two!.x1).toBeLessThan(640);
   });
 
+  it("sits on the line where the bars begin when it is told where that is: over no button of theirs, which a corner at the foot of the screen would be", () => {
+    // (a phone held upright: 390x844, the bars' lowest block, the film's bar and then the row of buttons under it, begins at 778 and a body is 52 long)
+    const small = 52;
+    const [right, leftOne] = perchesFor([], 390, 844, small, 778);
+    expect(right!.id).toBe("perch-right");
+    expect(leftOne!.id).toBe("perch-left");
+    expect(right!.y).toBeCloseTo(778 - 0.08 * small, 5);
+    expect(leftOne!.y).toBe(right!.y);
+    // (above the foot, which is where it was before it was told, and where the bars' buttons are)
+    expect(right!.y).toBeLessThan(perchesFor([], 390, 844, small)[0]!.y);
+    // the corners themselves are where they were
+    expect(right!.x0).toBe(perchesFor([], 390, 844, small)[0]!.x0);
+    expect(leftOne!.x1).toBe(perchesFor([], 390, 844, small)[1]!.x1);
+  });
+
+  it("keeps a corner in the lower half of the screen and above the foot, whatever the bars say", () => {
+    const foot = perchesFor([], 1280, 720, L)[0]!.y;
+    // (bars that begin high up the screen, or a number that is nonsense)
+    expect(perchesFor([], 1280, 720, L, 100)[0]!.y).toBe(0.5 * 720);
+    expect(perchesFor([], 1280, 720, L, 5000)[0]!.y).toBe(foot);
+    expect(perchesFor([], 1280, 720, L, Number.NaN)[0]!.y).toBe(foot);
+    expect(perchesFor([], 1280, 720, L, Number.POSITIVE_INFINITY)[0]!.y).toBe(foot);
+  });
+
+  it("is where the row has a place for it all the same, whatever the bars say", () => {
+    const [only, ...others] = perchesFor([left, right], 1280, 720, L, 600);
+    expect(others).toEqual([]);
+    expect(only).toEqual(perchesFor([left, right], 1280, 720, L)[0]);
+  });
+
   it("takes the widest of the gaps", () => {
     const a: Rect = { x: 0, y: 0, w: 100, h: 40 };
     const b: Rect = { x: 160, y: 0, w: 100, h: 40 };

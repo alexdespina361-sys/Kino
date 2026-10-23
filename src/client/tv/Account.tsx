@@ -6,7 +6,7 @@ import { AuthForm } from "../account/AuthForm";
 import { Avatar } from "../account/Avatar";
 import { emitCat } from "../cat/bus";
 import { CatIcon } from "../cat/Chip";
-import { CAT_LOOKS, CAT_SIZES, useCatSettings, useCatShown } from "../cat/settings";
+import { CAT_LOOKS, CAT_SIZES, useCatAsleep, useCatSettings, useCatShown } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
@@ -591,6 +591,7 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
   const t = useT();
   const cat = useCatSettings();
   const shown = useCatShown();
+  const asleep = useCatAsleep(); // (the viewer sent the cat to sleep from its menu or its panel: this is where it is woken, as well)
   // (what is really drawn, when the white and grey cat was chosen: said, so that a screen that gives the simple version is not left to look like a choice that did nothing)
   const said = cat.settings.look === "ragdoll" && shown.art === "solid" ? t("cat.shown.solid") : cat.settings.look === "ragdoll" && shown.art === "classic" && shown.why ? t(`cat.shown.${shown.why}`) : "";
   return (
@@ -610,6 +611,18 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
                 <>
                   <SettingsSwitch label={t("cat.settings.quiet")} on={cat.settings.quiet} onToggle={() => cat.set({ quiet: !cat.settings.quiet })} testId="tv-cat-quiet" />
                   <SettingsSwitch label={t("cat.settings.films")} on={cat.settings.films} onToggle={() => cat.set({ films: !cat.settings.films })} testId="tv-cat-films" />
+                  {asleep && (
+                    <SettingsLine
+                      icon={<CatIcon />}
+                      label={t("cat.wake")}
+                      onPress={() => {
+                        emitCat({ type: "wake" });
+                        // (the row goes with the sleep: the remote is put on the switch above it, not left on a button that is gone)
+                        document.querySelector<HTMLElement>('[data-testid="tv-cat-films"]')?.focus({ preventScroll: true });
+                      }}
+                      testId="tv-cat-wake"
+                    />
+                  )}
                 </>
               )}
             </SettingsGroup>

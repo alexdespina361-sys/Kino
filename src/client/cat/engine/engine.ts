@@ -1634,9 +1634,9 @@ export class CatEngine {
 
   /* ------------------------------ in a hand ------------------------------ */
 
-  /** Whether a hand may take the cat up: in the library, a cat in plain sight, and not for a viewer who asked for quiet or for less motion (it then only rests, where it is). */
+  /** Whether a hand may take the cat up: in the library or a film (it is put down on the film's perch), a cat in plain sight, and not for a viewer who asked for quiet or for less motion (it then only rests, where it is). */
   private canBeCarried(world: World): boolean {
-    return world.mode === "browse" && !world.reducedMotion && !world.quiet && this.placed && this.alpha > 0.5 && !this.dismissed;
+    return (world.mode === "browse" || world.mode === "player") && !world.reducedMotion && !world.quiet && this.placed && this.alpha > 0.5 && !this.dismissed;
   }
 
   /** The point of the screen nearest the hand: a hand cannot take the cat off the screen. */

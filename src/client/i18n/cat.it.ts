@@ -14,6 +14,10 @@ export const catIt: CatDictionary = {
   "cat.close": "Chiudi",
   "cat.back": "Indietro",
 
+  "cat.menu.sleep": "Mandalo a dormire",
+  "cat.asleep": "Il gatto dorme.",
+  "cat.wake": "Sveglia il gatto",
+
   "cat.findAsk": "Che cosa ti va?",
   "cat.mood.funny": "Qualcosa di divertente",
   "cat.mood.scary": "Qualcosa di spaventoso",
@@ -52,6 +56,6 @@ export const catIt: CatDictionary = {
   "cat.size.small": "Piccolo",
   "cat.size.normal": "Normale",
   "cat.size.large": "Grande",
-  "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in fondo al film e si lascia accarezzare. Con il mouse puoi anche prenderlo e metterlo su un'altra fila. Non avvia mai niente da solo.",
+  "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in fondo al film e si lascia accarezzare. Con il mouse puoi anche prenderlo e metterlo su un'altra fila, oppure fare clic destro su di lui per mandarlo a dormire. Non avvia mai niente da solo.",
   "cat.settings.credit": "Il gatto bianco e grigio parte dal modello «Fluffy Blue-Eyed Cat» di Meshy AI (CC BY 4.0, creativecommons.org/licenses/by/4.0), modificato. La sua animazione in piedi parte dall'animazione «Fox» di tomkranis, convertita in glTF da AsoboStudio e scurest (CC BY 4.0), modificata.",
 };

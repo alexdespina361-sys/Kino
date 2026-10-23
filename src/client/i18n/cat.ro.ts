@@ -14,6 +14,10 @@ export const catRo: CatDictionary = {
   "cat.close": "Închide",
   "cat.back": "Înapoi",
 
+  "cat.menu.sleep": "Trimite-o la culcare",
+  "cat.asleep": "Pisica doarme.",
+  "cat.wake": "Trezește pisica",
+
   "cat.findAsk": "Ce ți-ar plăcea acum?",
   "cat.mood.funny": "Ceva amuzant",
   "cat.mood.scary": "Ceva de groază",
@@ -52,6 +56,6 @@ export const catRo: CatDictionary = {
   "cat.size.small": "Mică",
   "cat.size.normal": "Normală",
   "cat.size.large": "Mare",
-  "cat.settings.help": "O pisică ce trăiește pe ecran: se plimbă pe rândurile de titluri, moțăie în josul filmului și poate fi mângâiată. Cu mouse-ul o poți și ridica, ca s-o pui pe alt rând. Nu pornește niciodată nimic singură.",
+  "cat.settings.help": "O pisică ce trăiește pe ecran: se plimbă pe rândurile de titluri, moțăie în josul filmului și poate fi mângâiată. Cu mouse-ul o poți și ridica, ca s-o pui pe alt rând, sau poți apăsa pe ea cu butonul din dreapta ca s-o trimiți la culcare. Nu pornește niciodată nimic singură.",
   "cat.settings.credit": "Pisica albă cu gri pornește de la modelul „Fluffy Blue-Eyed Cat” de la Meshy AI (CC BY 4.0, creativecommons.org/licenses/by/4.0), modificat. Animația ei în picioare pornește de la animația „Fox” de tomkranis, convertită în glTF de AsoboStudio și scurest (CC BY 4.0), modificată.",
 };

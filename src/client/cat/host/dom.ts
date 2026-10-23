@@ -10,6 +10,20 @@ export const rectOf = (element: Element): Rect => {
 /** Whether the element takes up room on the page (not `display: none`, not left out of the tree). */
 export const takesRoom = (element: Element | null | undefined): element is HTMLElement => Boolean(element) && (element as HTMLElement).getClientRects().length > 0;
 
+/**
+ * Where an element's top is in `root`, as the page is laid out: what slides it about for a moment (the film's bars slide as they come and go) is not counted, so the number
+ * is the same whether the bars are up or away. Null for an element that is not in `root`, or not laid out.
+ */
+export function layoutTop(element: HTMLElement, root: HTMLElement): number | null {
+  let top = 0;
+  let node: HTMLElement | null = element;
+  while (node && node !== root) {
+    top += node.offsetTop;
+    node = node.offsetParent as HTMLElement | null;
+  }
+  return node === root ? top : null;
+}
+
 /** The part of the page's text that is really there: a heading is as wide as its row, but the words are only as wide as the words. */
 export function textRect(element: Element): Rect | null {
   const range = document.createRange();
