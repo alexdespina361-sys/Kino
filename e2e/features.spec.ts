@@ -7,7 +7,7 @@ import { MAX_LINK_LENGTH, progressKey, type NormalizedMedia } from "../src/share
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, place, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
+import { FIRST_VISIT, guestStorage, heldUpright, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, place, playFirst, pressMenuLine, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -1661,13 +1661,13 @@ test.describe("a watch party started on a TV", () => {
   const screen = (browser: Browser, baseURL: string) => openLibrary(browser, withLibrary(films(baseURL)));
   const codeOf = async (host: Page) => (await host.getByTestId("tv-party-code").innerText()).replace(/\s/g, "");
   async function startParty(host: Page): Promise<string> {
-    await host.getByTestId("rail-party").click();
+    await pressMenuLine(host, "rail-party"); // (on a screen held upright it is a button of the profile's page)
     await host.getByTestId("tv-party-start").click();
     return codeOf(host);
   }
   /** The remote of a screen that is not in a party yet: Watch party in the menu, then Join, then the digits. */
   async function joinWith(guest: Page, code: string) {
-    await guest.getByTestId("rail-party").click();
+    await pressMenuLine(guest, "rail-party");
     await guest.getByTestId("tv-party-join").click();
     await guest.keyboard.type(code);
   }
@@ -2123,6 +2123,7 @@ test.describe("a watch party started on a TV", () => {
         expect(await sideways(page)).toBeLessThanOrEqual(0);
       }
       await host.getByTestId("tv-back-to-library").click();
+      if (heldUpright(host)) await host.getByTestId("rail-home").click(); // (the party was opened from the profile's page: that is where "back" is)
       await host.getByTestId("tv-browse-tile").first().click();
       await host.getByTestId("tv-detail-play").click();
       await expect(tvRoot(host)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });

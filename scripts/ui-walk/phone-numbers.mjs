@@ -61,7 +61,8 @@ function measure(file) {
     controls: controls.length,
     sheetCover: sheet ? Math.round(covered * 100) : null,
     sideways: data.page.sidewaysScroll ? `${data.page.scrollWidth - W}px` : "",
-    cutOff: visible.filter((e) => e.clipped || e.clippedTall).length,
+    // (a heading that is only for a screen reader is a box of one pixel, clipped on purpose: it is not text a person can see cut off)
+    cutOff: visible.filter((e) => (e.clipped || e.clippedTall) && e.w > 2 && e.h > 2).length,
     // (a field is named by the label around it, which the scan does not look at: the fields are checked with axe instead)
     unnamed: controls.filter((e) => e.named === false && !["input", "textarea", "select"].includes(e.tag)).length,
     titlesShown: shown.length,

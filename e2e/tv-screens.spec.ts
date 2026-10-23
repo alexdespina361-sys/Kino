@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { expect, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
 import { en } from "../src/client/i18n/en";
-import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openProfilePage, openProfilePlace, openTv, pressProfilePlace, RawPhone, readPairingCode, test, tvRoot, twoSizes, withLibrary } from "./helpers";
+import { clickAsAHand, guestStorage, openDevice, openLibrary, openPairedPhone, openProfilePage, openProfilePlace, openTv, pressMenuLine, pressProfilePlace, RawPhone, readPairingCode, test, tvRoot, twoSizes, withLibrary } from "./helpers";
 
 /** What the screens look like on a TV: the remote walks them, the buttons match, and everything fits. */
 
@@ -266,17 +266,28 @@ test.describe("the controls fit the screen", () => {
     phone.close();
   });
 
-  test("a phone-sized screen wraps the controls on two lines rather than running them off the side", async ({ browser, baseURL }) => {
+  // (A phone held upright, docs/phone-layout: the controls are in rows, and every button is as big as a thumb: it was two lines of small buttons before.)
+  test("a phone-sized screen puts the controls in rows of thumb-sized buttons rather than running them off the side", async ({ browser, baseURL }) => {
     const tv = await openDevice(browser, { viewport: { width: 390, height: 844 }, locale: "ro-RO" });
     await tv.goto("/tv");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
-    await tv.getByTestId("rail-connect").click();
+    await pressMenuLine(tv, "rail-connect");
     const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
     phone.cmd({ type: "LOAD", media: fullest(baseURL!) });
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
-    await expect.poll(() => linesOf(tv)).toBe(2);
-    const rects = await tv.evaluate(() => [...document.querySelectorAll(".hud-controls button")].map((button) => button.getBoundingClientRect().right));
-    for (const right of rects) expect(right).toBeLessThanOrEqual(390);
+    await expect.poll(() => linesOf(tv)).toBeGreaterThanOrEqual(2);
+    const boxes = await tv.evaluate(() =>
+      [...document.querySelectorAll(".hud-controls button")]
+        .map((button) => button.getBoundingClientRect())
+        .filter((box) => box.width > 0)
+        .map(({ left, right, width, height }) => ({ left, right, width, height })),
+    );
+    expect(boxes.length).toBeGreaterThanOrEqual(10);
+    for (const box of boxes) {
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(390);
+      expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(44);
+    }
     phone.close();
   });
 });
@@ -1708,9 +1719,10 @@ test.describe("movies, series, and the rest of the menu", () => {
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "home"); // and another goes home, as from any page
   });
 
+  // (A phone held upright has no menu to open: its four places are a bar along the bottom, whose own checks are in phone-layout.spec.ts. A phone on its side has the TV's menu.)
   for (const shape of [
     { where: "on a TV", viewport: { width: 1280, height: 720 } },
-    { where: "at a phone's width", viewport: { width: 390, height: 844 } },
+    { where: "on a phone held sideways", viewport: { width: 844, height: 390 } },
   ]) {
     test(`a line of the closed menu is its icon with the same room on both sides, inside the menu, and the one the remote is on holds its icon when the menu is open: ${shape.where}`, async ({ browser }) => {
       const tv = await openLibrary(browser, withLibrary(library), shape.viewport);

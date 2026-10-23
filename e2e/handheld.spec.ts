@@ -1,6 +1,6 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { FIRST_VISIT, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, test, tvRoot, tvTime, withLibrary } from "./helpers";
+import { FIRST_VISIT, guestStorage, openDevice, openLibrary, openPairedPhone, openTv, PAGE_LEFT_ALONE_MS, PHONE, playFirst, pressMenuLine, PRESS_EXPIRES_MS, RawPhone, readPairingCode, strictBrowser, test, tvRoot, tvTime, withLibrary } from "./helpers";
 
 /** Any device is a screen, and any phone can bring another screen in: the TV page on a phone or a tablet, and the QR codes between devices. */
 
@@ -25,15 +25,15 @@ test.describe("a phone used as the screen", () => {
     const phone = await openDevice(browser, PHONE, {}, withFilms);
     await phone.goto("/");
     await phone.getByTestId("switch-to-tv").tap(); // "Watch on this device": straight into the library
-    await expect(phone.getByTestId("tv-hero-title")).toHaveText("Film number 1");
+    await expect(phone.locator('.tv-tile[title="Film number 1"]')).toBeVisible(); // (a phone held upright has no banner to say it: the posters are the page)
     expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
     await expect(phone.getByTestId("tv-account-chip")).toBeInViewport(); // the corner's two buttons fit beside the logo
     await expect(phone.getByTestId("fullscreen-toggle")).toBeInViewport();
 
-    // Search is typed on the phone's own keyboard, and two titles fit across.
+    // Search is typed on the phone's own keyboard, and three posters fit across (two on the narrowest phones).
     await searchFilms(phone);
     await expect(phone.getByTestId("tv-query")).toHaveJSProperty("tagName", "INPUT");
-    expect(await columns(phone)).toBe(2);
+    expect(await columns(phone)).toBe(3);
     expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
 
     // A tap opens a title's own page and Play there plays it; a touch on the picture brings the controls up, the next one puts them away, and
@@ -68,13 +68,16 @@ test.describe("a phone used as the screen", () => {
     await expect(phone.getByTestId("tv-browse")).toBeVisible();
   });
 
-  test("the banner's buttons stay on the screen: the long one goes under Resume (and its words wrap, on the narrowest) instead of past the edge", async ({ browser }) => {
+  // (A phone held upright has no banner with Resume and Remove on it: a title that is part way through opens its own page, which has them.)
+  test("what is part way through has Resume and Remove on its page, on the screen, one under the other or side by side, down to the narrowest phone", async ({ browser }) => {
     const resume = guestStorage({ progress: [{ key: "url:https://films.example/night-train", at: Date.now() - 60_000, title: "Night Train", url: "https://films.example/night-train", position: 1500, duration: 6000 }] });
     for (const language of ["en", "it"]) {
       for (const width of [430, 360, 320]) {
         const phone = await openDevice(browser, { ...PHONE, viewport: { width, height: 760 } }, { ...resume, "kino.lang": language }, withFilms);
         await phone.goto("/tv");
-        for (const action of ["play", "remove"]) await expect(phone.getByTestId(`tv-hero-${action}`), `${action} at ${width} wide in ${language}`).toBeInViewport({ ratio: 1 });
+        await phone.locator('.tv-tile[title="Night Train"]').first().tap();
+        await expect(phone.getByTestId("tv-detail")).toBeVisible();
+        for (const action of ["play", "remove"]) await expect(phone.getByTestId(`tv-detail-${action}`), `${action} at ${width} wide in ${language}`).toBeInViewport({ ratio: 1 });
         expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
         await phone.context().close();
       }
@@ -96,6 +99,7 @@ test.describe("a phone used as the screen", () => {
   test("the menu's phone entry makes a phone the remote, where a TV's would show the code to type on one", async ({ browser }) => {
     const phone = await openDevice(browser, PHONE, {}, withFilms);
     await phone.goto("/tv");
+    await phone.getByTestId("tv-account-chip").tap(); // (a phone held upright has it as a button of the profile's page: its bar has four places)
     const entry = phone.getByTestId("rail-connect");
     await expect(entry).toHaveText(en["tv.useRemote"]);
     await entry.tap();
@@ -151,7 +155,7 @@ test.describe("a phone that watches a party along", () => {
   async function join(phone: Page, code: string, { open = true } = {}) {
     if (open) await phone.goto("/tv");
     await expect(phone.getByTestId("tv-browse")).toBeVisible();
-    await phone.getByTestId("rail-party").tap();
+    await pressMenuLine(phone, "rail-party", "tap");
     await phone.getByTestId("tv-party-join").tap();
     for (const digit of code) await phone.getByTestId(`pad-${digit}`).tap();
     await expect(phone.getByTestId("tv-following")).toBeVisible();

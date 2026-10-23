@@ -1,6 +1,6 @@
 import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
-import { openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, test, tvRoot, withLibrary } from "./helpers";
+import { openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, pressMenuLine, test, tvRoot, withLibrary } from "./helpers";
 
 /**
  * The Back button of an Android phone (the button, the swipe from the edge of the screen). Every Back goes back a page, as a back button does, and
@@ -158,7 +158,7 @@ test.describe("the Back button of a phone", () => {
     const code = (await host.getByTestId("tv-party-code").innerText()).replace(/\s/g, "");
 
     const phone = await library(browser);
-    await phone.getByTestId("rail-party").tap();
+    await pressMenuLine(phone, "rail-party", "tap");
     await phone.getByTestId("tv-party-join").tap();
     for (const digit of code) await phone.getByTestId(`pad-${digit}`).tap();
     await expect(phone.getByTestId("tv-following")).toBeVisible();

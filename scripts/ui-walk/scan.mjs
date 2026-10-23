@@ -200,9 +200,19 @@ function inPage(limit) {
   };
 }
 
-/** Reads the page and writes the scan next to where the walk's pictures go. */
+/** Reads the page and writes the scan next to where the walk's pictures go. With AXE=1 an automated accessibility check goes with it (see saveAxe). */
 export async function saveScan(page, folder, name) {
   mkdirSync(folder, { recursive: true });
   const data = await page.evaluate(inPage, 2500);
   writeFileSync(`${folder}/${name}.json`, JSON.stringify(data));
+  if (process.env.AXE === "1") await saveAxe(page, `${folder}/axe`, name);
+}
+
+/** What axe-core finds against the rules of WCAG 2.1 A and AA on the page as it is (a third of what a person finds, but all of it is a fact): one JSON per picture, in a folder of its own. */
+async function saveAxe(page, folder, name) {
+  const { AxeBuilder } = await import("@axe-core/playwright");
+  mkdirSync(folder, { recursive: true });
+  const { violations } = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+  const found = violations.map((rule) => ({ id: rule.id, impact: rule.impact, help: rule.help, nodes: rule.nodes.map((node) => ({ target: node.target.join(" "), html: node.html.slice(0, 220) })) }));
+  writeFileSync(`${folder}/${name}.json`, JSON.stringify(found));
 }
