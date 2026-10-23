@@ -5,7 +5,9 @@
 export type CatCommand =
   | { type: "panel" }
   /** The settings page asks for the detailed cat to be tried again (it was given up on for this load: the screen was slow, or the browser would not draw it). */
-  | { type: "retry" };
+  | { type: "retry" }
+  /** The settings page asks for the cat that was sent to sleep to be woken. */
+  | { type: "wake" };
 
 const EVENT = "kino:cat-command";
 /** A command sent as the cat is still being fetched (the button was pressed in the first moments after the switch) waits this long for it. */

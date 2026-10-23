@@ -17,9 +17,27 @@
   contain: layout paint style;
 }
 .kino-cat[hidden] { display: none; }
-/* In a film the cat is drawn under everything the player puts after the picture (the subtitles, the controls, the shade of a pause): the layer is put just
-   after the picture, so at the page's own level it is under what follows it. Words are never drawn over a cat, and a tap on the controls is theirs. */
-.kino-cat[data-mode="player"] { z-index: 0; }
+/* A cat that the viewer sent to sleep curls up where it is (the brain does that), then fades out, and stays out until it is woken (the host hides the layer once the fade is over:
+   the delay and the length here are CURL_MS and FADE_AWAY_MS there). One that is "sent away" has no curl. One that is woken while it is fading turns back; one that was out of
+   sight comes in with a fade of its own. */
+.kino-cat { transition: opacity 0.45s ease-out; }
+.kino-cat[data-asleep] { opacity: 0; }
+.kino-cat[data-asleep="curl"] { transition: opacity 0.9s ease-in 1.5s; }
+.kino-cat[data-asleep="fade"] { transition: opacity 0.9s ease-in; }
+.kino-cat[data-waking] { animation: kino-cat-wake 0.8s ease-out; }
+@keyframes kino-cat-wake {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kino-cat, .kino-cat[data-asleep] { transition: none; }
+  .kino-cat[data-waking] { animation: none; }
+}
+/* In a film the cat is drawn over the player's bars (the controls and the title are at 1 in the TV's box) and its shade of a pause, so that it can be taken in a hand while they
+   are up, which a cat under them never could be: the bars take every press that lands on them. It is under what the player puts up in passing (a note, the card of the next episode,
+   the end, a menu: they are at 12 and above), and under the subtitles, which are put at 3 below: words are never drawn over a cat. */
+.kino-cat[data-mode="player"] { z-index: 2; }
+.tv > .tv-captions { z-index: 3; }
 .kino-cat-canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; will-change: transform; }
 .kino-cat-hit {
   position: absolute;
@@ -31,6 +49,7 @@
   /* (a finger that goes on from the cat is a hand carrying it, not the page being scrolled) */
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -67,6 +86,38 @@
 }
 @media (prefers-reduced-motion: reduce) {
   [data-cat-pointed] { animation: none; }
+}
+
+/* The cat's menu (a right click on the cat, or a finger held on it): a few buttons in a card beside the cat, over everything of the page that the cat can be over, a film's bars
+   too. It is for a hand and takes no focus (the host sees to that), and the player's hidden cursor is not its own. */
+.kino-cat-menu {
+  position: absolute;
+  z-index: 68;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  box-sizing: border-box;
+  min-width: 9em;
+  max-width: calc(100% - 2em);
+  padding: 0.4em;
+  border-radius: var(--r-3, 1.1em);
+  background: var(--surf-1, #18181b);
+  color: var(--text-1, #f5f5f7);
+  font-size: var(--fs-2, 1.5em);
+  box-shadow: var(--lift, 0 0.8em 2.4em rgba(0, 0, 0, 0.65)), inset 0 0 0 0.05em var(--fill-2, rgba(255, 255, 255, 0.14));
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  animation: kino-cat-menu-in 0.12s ease-out;
+}
+.kino-cat-menu .cat-btn { justify-content: flex-start; min-height: 2.3em; text-align: left; white-space: nowrap; cursor: pointer; }
+/* (It comes in with a fade and does not move: a card that is still sliding is not where a hand, or a robot, aims at.) */
+@keyframes kino-cat-menu-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kino-cat-menu { animation: none; }
 }
 
 /* The panel, in the corner under the buttons. It is a card on the page, not a dialog: the cat and the library stay where they are. */
@@ -160,6 +211,9 @@
 @media (max-width: 760px) {
   .cat-panel { right: 1em; left: 1em; top: 6.6em; width: auto; font-size: 1.7em; }
   .cat-panel[data-screen="mood"], .cat-panel[data-screen="pick"] { width: auto; }
+  /* (and the menu is for a finger there: buttons of a finger's size) */
+  .kino-cat-menu { font-size: 1.7em; }
+  .kino-cat-menu .cat-btn { min-height: 2.9em; }
 }
 
 /* What the cat shows of itself with ?cat=debug. */

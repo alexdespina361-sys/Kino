@@ -1,7 +1,7 @@
 import { BODY_EMS, bodyLengthFor } from "../math";
 import type { PlayerMode, Rect, Surface, Target, World } from "../types";
 import { carried, type Rides } from "./carry";
-import { inflate, nameOf, rectOf, takesRoom, textRect } from "./dom";
+import { inflate, layoutTop, nameOf, rectOf, takesRoom, textRect } from "./dom";
 import { LINE_GAP, lies, mergeLines, placesInFront, placesOnTop, zoneOf, type Line } from "./lines";
 import { perchesFor } from "./perch";
 import { readPieces, readSlabs } from "./text";
@@ -76,7 +76,10 @@ export interface PageRead {
   focusId?: string;
   /** Which page of the library, or a film: for the cat to notice a change of page. */
   view: string;
-  /** Where a canvas for the cat belongs: in `parent`, straight after `after` (a film: right after the picture, so every control and subtitle is drawn over it) or at the end (the library); or none: the page is not one the cat can be on. */
+  /**
+   * Where a canvas for the cat belongs: at the end of `parent` (the TV's own box, for the library, every page of it and a film alike; what is over the cat and what is under it is
+   * a matter of z-index, see cat.css), or straight after `after` when one is given; or none: the page is not one the cat can be on.
+   */
   home: { parent: HTMLElement; after: Element | null } | null;
   /** The posters on the shelves of the page, by shelf. */
   shelves: Map<string, PageTile[]>;
@@ -267,7 +270,7 @@ export class TvPage {
         controlsUp = tv.dataset.hud === "visible";
         player = tv.querySelector(".tv-end") ? "ended" : tv.querySelector(".tv-fail") || state === "error" ? "error" : state === "loading" ? "loading" : state === "playing" ? "playing" : state === "paused" ? "paused" : "none";
         this.readFilm({ vw, vh, L, em }, draft);
-        home = { parent: tv, after: video };
+        home = { parent: tv, after: null };
       }
     } else if (page) {
       if (page.matches(PASSING) || page.querySelector('[data-testid="unlock"]')) why = `passing: ${page.dataset.testid ?? "page"}`;
@@ -495,11 +498,16 @@ export class TvPage {
   /* ------------------------------ a film ------------------------------ */
 
   private readFilm(c: Metrics, draft: Draft): void {
-    // (Nothing of the player is a place to keep out of: the cat's layer is under the subtitles, the controls and the notes, so it never covers one, and a
-    // cat that left whenever they came would be leaving at every key the viewer pressed and every line that was said. It rests where the controls' row has no
-    // button, if it has such a place: the groups are there whether the controls are up or not, so the place does not change with them.)
+    // (Nothing of the player is a place to keep out of: a cat that left whenever the controls came would be leaving at every key the viewer pressed, and one that left for
+    // every line that is said would be leaving all the time. The cat's layer is over the bars, so that it can be taken in a hand while they are up, and under the subtitles and
+    // the notes, so it never covers one. It rests where the controls' row has no button, if it has such a place, and so it is over no button: the groups are there whether the
+    // controls are up or not, so the place does not change with them.)
     const groups = [...document.querySelectorAll<HTMLElement>("main.tv .hud-controls > .hud-group")].filter(takesRoom).map(rectOf);
-    draft.surfaces.push(...perchesFor(groups, c.vw, c.vh, c.L));
+    // (where the lowest block of the bars begins, for a screen where the row has no free stretch: its first row, the film's bar, or the row of buttons if there is no bar)
+    const tv = document.querySelector<HTMLElement>("main.tv");
+    const first = tv?.querySelector<HTMLElement>(".hud-bottom .hud-progress") ?? tv?.querySelector<HTMLElement>(".hud-bottom .hud-controls");
+    const bars = tv && takesRoom(first) ? layoutTop(first, tv) : null;
+    draft.surfaces.push(...perchesFor(groups, c.vw, c.vh, c.L, bars ?? undefined));
   }
 }
 

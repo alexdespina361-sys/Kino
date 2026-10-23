@@ -1,12 +1,13 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { PNG } from "pngjs";
 import { CORES } from "../src/client/cat/engine/shape-table";
-import { openLibrary, openTvSettings, playFirst, RawPhone, readPairingCode, test, withLibrary } from "./helpers";
+import { openDevice, openLibrary, openTvSettings, playFirst, RawPhone, readPairingCode, test, withLibrary } from "./helpers";
 
 /**
  * The cat companion (client/cat): a cat that lives on the TV's screen, only for a screen that asks for one and a host that offers it. It walks along the
- * rows of posters, sleeps at the foot of the film between the groups of the controls, under them and the subtitles, is stroked by a hand, and finds a title on the page on
- * request; it never starts anything. The tests offer the cat the way the host does (`/api/features`) and use the cat's own diagnostics (?cat=debug).
+ * rows of posters, sleeps at the foot of the film between the groups of the controls (over their bars, under the subtitles), is stroked, carried and put down by a hand, has a
+ * menu for a right click (or a finger held on it) whose "Send to sleep" takes it away until it is woken, and finds a title on the page on request; it never starts anything. The
+ * tests offer the cat the way the host does (`/api/features`) and use the cat's own diagnostics (?cat=debug).
  */
 
 const film = (id: string, title: string) => ({ id, title, year: 2001, url: `/fixtures/sample.mp4?n=${id}` });
@@ -52,6 +53,8 @@ interface Snap {
   body: number;
   quality: string;
   panel: boolean;
+  menu: boolean;
+  asleep: boolean;
   visible: boolean;
   places: number;
   posters: number;
@@ -425,19 +428,23 @@ test("in a film the cat rests at the foot of the picture between the groups of t
   await playFirst(tv);
   await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
   await catIsOnItsPerch(tv);
-  // in the picture's own box, straight after the picture and no higher than the page's own level, so that everything the player draws after it is over the cat
+  // in the picture's own box, straight after the picture, over the bars of the controls (which are at 1) and under the subtitles (at 3): a hand can take the cat while the
+  // controls are up, and words are never drawn over it
   const place = await tv.evaluate(() => {
     const layer = document.querySelector('[data-testid="cat"]')!;
     return { parent: layer.parentElement?.getAttribute("data-testid"), after: layer.previousElementSibling?.tagName.toLowerCase(), z: getComputedStyle(layer).zIndex };
   });
-  expect(place).toEqual({ parent: "tv", after: "video", z: "0" });
+  expect(place).toEqual({ parent: "tv", after: "video", z: "2" });
   const seen = await snap(tv);
   const screen = tv.viewportSize()!;
   expect(seen.frame.y).toBeGreaterThan(screen.height * 0.85); // (the foot of the picture)
-  // a hand is the library's: in a film the picture is the player's (its taps, double-taps to skip and holds to speed up), so the box that takes a hand is out of the
-  // way there, and a press on the patch of the picture where the cat sleeps reaches the player like a press anywhere else on it
-  await expect(tv.getByTestId("cat-hit")).toHaveAttribute("data-off", "");
-  expect(await tv.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".kino-cat-hit") != null, { x: seen.frame.x, y: seen.frame.y - 0.3 * seen.body })).toBe(false);
+  // a hand can take it in a film too, and only the cat's own body takes a press there: the rest of the picture is the player's (its taps, double-taps to skip and holds to
+  // speed up), so a press a body's length beside the cat reaches the player like a press anywhere else on it
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-off", "");
+  const takesAHand = (dx: number) => tv.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".kino-cat-hit") != null, { x: seen.frame.x + dx, y: seen.frame.y - 0.3 * seen.body });
+  expect(await takesAHand(0)).toBe(true);
+  expect(await takesAHand(1.6 * seen.body)).toBe(false);
+  expect(await takesAHand(-1.6 * seen.body)).toBe(false);
   // the controls' row has a stretch with no button in it between its two groups, and that is where the cat rests: its whole body is between the groups
   // (a cat behind a button's icon is clutter, even though the controls are over it), whether the controls are up or not
   const groups = await tv.evaluate(() =>
@@ -457,6 +464,8 @@ test("in a film the cat rests at the foot of the picture between the groups of t
   const where = await snap(tv);
   await tv.keyboard.press("ArrowDown");
   await expect(tv.getByTestId("tv")).toHaveAttribute("data-hud", "visible");
+  // (and it is over their bar: the box that takes a hand is still the topmost thing at the cat's middle, with the controls up)
+  expect(await takesAHand(0)).toBe(true);
   const up = await watchedFor(tv, 2_000);
   expect(up.least).toBeGreaterThan(0.95);
   expect(up.changes).toBe(0);
@@ -474,7 +483,7 @@ test("in a film the cat rests at the foot of the picture between the groups of t
   await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-off", "");
 });
 
-test("the words of a film and the controls are drawn over the cat, and the lines coming and going do not make it come and go", async ({ browser, baseURL }) => {
+test("the words of a film are drawn over the cat, and the lines coming and going do not make it come and go", async ({ browser, baseURL }) => {
   test.setTimeout(90_000);
   const tv = await openLibrary(browser, async (context) => {
     await setup()(context);
@@ -1788,6 +1797,532 @@ test("a second hand, a finger while the mouse has the cat, is not the one that l
       .toBe(true),
   );
   await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-held", "");
+});
+
+/* ------------------------------ a hand on the cat in a film, and the cat's menu ------------------------------ */
+
+/** A film started with the remote's keys, and the cat on its perch at the foot of the picture. */
+const intoAFilm = async (tv: Page): Promise<void> => {
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheScreen(tv);
+  await playFirst(tv);
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
+  await catIsOnItsPerch(tv);
+};
+/** The controls brought up the way a hand brings them, by a mouse that moves (they stay up for a few seconds after the last move). */
+const controlsUpByMouse = async (tv: Page): Promise<void> => {
+  const screen = tv.viewportSize()!;
+  await tv.mouse.move(screen.width * 0.5, screen.height * 0.3);
+  await tv.mouse.move(screen.width * 0.52, screen.height * 0.32);
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-hud", "visible");
+};
+/** What the film is doing, and whether the controls are up. */
+const filmNow = (tv: Page) =>
+  tv.evaluate(() => {
+    const root = document.querySelector<HTMLElement>("main.tv")!;
+    const video = document.querySelector<HTMLVideoElement>("video.tv-video")!;
+    return { hud: root.dataset.hud ?? "", state: root.dataset.state ?? "", paused: video.paused, rate: video.playbackRate };
+  });
+/** The cat is on the page, in sight (on a title's page, the settings, the library). */
+const catIsOnThePage = (tv: Page) =>
+  saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return seen.engine.mode === "browse" && seen.engine.placed && seen.frame.appear > 0.95 && seen.visible;
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+/** Whether the box that takes a hand is the topmost thing at a point of the page. */
+const takesAHandAt = (tv: Page, at: { x: number; y: number }) => tv.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".kino-cat-hit") != null, at);
+/** The middle of a poster that is whole on the screen and clear of the given boxes (the cat, its menu): a place to click that is the page's. */
+const aPosterClearOf = (tv: Page, boxes: Array<{ x: number; y: number; width: number; height: number } | null>) =>
+  tv.evaluate((avoid) => {
+    const near = (rect: DOMRect, box: { x: number; y: number; width: number; height: number }) => rect.left < box.x + box.width + 20 && rect.right > box.x - 20 && rect.top < box.y + box.height + 20 && rect.bottom > box.y - 20;
+    for (const tile of document.querySelectorAll<HTMLElement>('[data-testid="tv-browse-tile"]')) {
+      const rect = tile.getBoundingClientRect();
+      if (rect.left < 20 || rect.right > innerWidth - 20 || rect.top < 20 || rect.bottom > innerHeight - 20) continue;
+      if (avoid.some((box) => box && near(rect, box))) continue;
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      if (tile.contains(document.elementFromPoint(x, y))) return { x, y };
+    }
+    return null;
+  }, boxes);
+const petted = (tv: Page) => async () => (await snap(tv)).frame.petted;
+
+test("in a film a hand takes the cat with the controls up, carries it over the picture and puts it down at the foot of it; the film is neither paused nor sped up, and a press beside the cat is still the player's", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await intoAFilm(tv);
+  const screen = tv.viewportSize()!;
+  const middle = await catSitsAndWhere(tv);
+  await controlsUpByMouse(tv);
+  expect(await takesAHandAt(tv, middle)).toBe(true);
+
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  // (a press does not take hold of the cat until the hand has gone a little way: it is a stroke until then)
+  await tv.mouse.move(middle.x + 4, middle.y - 4);
+  expect((await snap(tv)).frame.carried).toBe(false);
+  await tv.mouse.move(middle.x + 30, middle.y - 30, { steps: 5 });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.act, { timeout: 5_000 }).toBe("carried"));
+  await expect(tv.getByTestId("cat-hit")).toHaveAttribute("data-held", "");
+  // carried to the middle of the picture, over the controls (a mouse that moves keeps them up), for longer than a hold that speeds the film up: a press on the cat is no hold on the picture
+  await tv.mouse.move(screen.width * 0.5, screen.height * 0.4, { steps: 25 });
+  await tv.waitForTimeout(800);
+  expect((await snap(tv)).frame.carried).toBe(true);
+  expect(await filmNow(tv)).toEqual({ hud: "visible", state: "playing", paused: false, rate: 1 });
+  await tv.mouse.up();
+
+  // it is put down at the foot of the picture, between the groups of the controls, whole, and the film has not noticed
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return !/carried|fall/.test(seen.engine.act) && seen.frame.grounded && seen.engine.mode === "player" && (seen.engine.surfaceId ?? "").startsWith("perch");
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-held", "");
+  const landed = await snap(tv);
+  expect(landed.frame.y).toBeGreaterThan(screen.height * 0.85);
+  const groups = await tv.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("main.tv .hud-controls > .hud-group")].map((group) => {
+      const box = group.getBoundingClientRect();
+      return { left: box.left, right: box.right };
+    }),
+  );
+  expect(groups.length).toBe(2);
+  expect(landed.frame.x - 0.5 * landed.body).toBeGreaterThan(groups[0]!.right);
+  expect(landed.frame.x + 0.5 * landed.body).toBeLessThan(groups[1]!.left);
+  expect(await filmNow(tv)).toMatchObject({ state: "playing", paused: false, rate: 1 });
+
+  // a click on the picture beside the cat is the player's: with the controls up, it puts them away
+  await controlsUpByMouse(tv);
+  await tv.mouse.click(screen.width * 0.3, screen.height * 0.3);
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-hud", "hidden", { timeout: 2_000 });
+  // and a click on the cat is the cat's: it is stroked, and the controls stay up and the film plays on
+  const there = await catSitsAndWhere(tv);
+  await tv.waitForTimeout(700); // (a mouse that moves in the 600 ms after the click that put the controls away is only settling: PUT_AWAY_QUIET_MS in Tv.tsx)
+  await tv.mouse.move(there.x, there.y);
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-hud", "visible");
+  await tv.mouse.click(there.x, there.y);
+  await expect.poll(petted(tv), { timeout: 3_000 }).toBe(true);
+  await tv.waitForTimeout(500); // (longer than the wait for a second tap, after which the player would have put the controls away)
+  expect(await filmNow(tv)).toEqual({ hud: "visible", state: "playing", paused: false, rate: 1 });
+});
+
+test("a drag of the seek bar that is let go of over the cat still ends: the cat's box takes the start of a press and never the end of one", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await intoAFilm(tv);
+  // (a browser that does not keep the pointer for the bar: the bar hears the end of its drag from the window, wherever the button comes up)
+  await tv.evaluate(() => {
+    Element.prototype.setPointerCapture = () => {
+      throw new DOMException("not kept", "InvalidStateError");
+    };
+  });
+  const middle = await catSitsAndWhere(tv);
+  await controlsUpByMouse(tv);
+  const bar = tv.locator("main.tv .hud-bar");
+  const box = (await bar.boundingBox())!;
+  await tv.mouse.move(box.x + box.width * 0.3, box.y + box.height / 2);
+  await tv.mouse.down();
+  await expect(bar).toHaveAttribute("data-scrubbing", "true");
+  await tv.mouse.move(middle.x, middle.y, { steps: 8 });
+  expect(await takesAHandAt(tv, middle)).toBe(true);
+  await expect(bar).toHaveAttribute("data-scrubbing", "true");
+  await tv.mouse.up();
+  await expect(bar).not.toHaveAttribute("data-scrubbing", "true");
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
+});
+
+test("a right click on the cat opens its menu beside it and takes nothing from the page: Back closes only the menu, a click elsewhere is only that, and any other key is the page's", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const menu = tv.getByTestId("cat-menu");
+  const focused = () => tv.evaluate(() => document.activeElement?.getAttribute("data-entry") ?? document.activeElement?.tagName ?? "");
+  /** The cat is asked to sit (it is not to be walking off from under the hand), and is right-clicked. */
+  const rightClick = async () => {
+    const at = await catSitsAndWhere(tv);
+    await tv.mouse.click(at.x, at.y, { button: "right" });
+    await expect(menu).toBeVisible();
+  };
+
+  const before = await focused();
+  await rightClick();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Pet", "Come here", "Send to sleep"]);
+  await expect.poll(async () => (await snap(tv)).menu).toBe(true);
+  // beside the cat (not over it), whole on the screen, and the remote's focus is where it was
+  const card = (await menu.boundingBox())!;
+  const body = (await tv.getByTestId("cat-hit").boundingBox())!;
+  const screen = tv.viewportSize()!;
+  expect(card.x >= body.x + body.width || card.x + card.width <= body.x || card.y >= body.y + body.height || card.y + card.height <= body.y, "beside the cat, not over it").toBe(true);
+  expect(card.x).toBeGreaterThanOrEqual(0);
+  expect(card.y).toBeGreaterThanOrEqual(0);
+  expect(card.x + card.width).toBeLessThanOrEqual(screen.width);
+  expect(card.y + card.height).toBeLessThanOrEqual(screen.height);
+  expect(await focused()).toBe(before);
+  // Pet strokes it, and the menu is done
+  await menu.getByTestId("cat-menu-pet").click();
+  await expect(menu).toHaveCount(0);
+  await expect.poll(petted(tv), { timeout: 3_000 }).toBe(true);
+  expect(await focused()).toBe(before);
+
+  // the page going by under it closes it (the cat has gone with the rows, and the card has nothing to point at)
+  await rightClick();
+  await tv.evaluate(() => {
+    document.querySelector<HTMLElement>(".tv-rows")!.scrollTop += 60;
+  });
+  await expect(menu).toHaveCount(0);
+  await tv.evaluate(() => {
+    document.querySelector<HTMLElement>(".tv-rows")!.scrollTop = 0;
+  });
+
+  // a click on a poster elsewhere closes it, and is no click on the poster; the next click on the poster is
+  await rightClick();
+  const poster = (await aPosterClearOf(tv, [await menu.boundingBox(), await tv.getByTestId("cat-hit").boundingBox()]))!;
+  expect(poster, "a poster clear of the cat and its menu").not.toBeNull();
+  await tv.mouse.click(poster.x, poster.y);
+  await expect(menu).toHaveCount(0);
+  await tv.waitForTimeout(500);
+  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  expect((await snap(tv)).menu).toBe(false);
+
+  // any other key is the page's: the menu is done with, and the page moves its focus
+  await rightClick();
+  const beforeKey = await focused();
+  await tv.keyboard.press("ArrowRight");
+  await expect(menu).toHaveCount(0);
+  expect(await focused()).not.toBe(beforeKey);
+
+  // on a title's page the menu is there too, and Back closes it and not the page; the next Back closes the page
+  await tv.getByTestId("tv-browse-tile").first().click();
+  await expect(tv.getByTestId("tv-detail")).toBeVisible();
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-view", "page:tv-detail");
+  await catIsOnThePage(tv);
+  await rightClick();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Pet", "Come here", "Send to sleep"]);
+  await tv.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await tv.waitForTimeout(500);
+  await expect(tv.getByTestId("tv-detail")).toBeVisible();
+  await tv.keyboard.press("Escape");
+  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+});
+
+test("in a film the menu offers Pet and Send to sleep; Back closes it and the film goes on, and a click on the picture is only a click away from it", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await intoAFilm(tv);
+  const screen = tv.viewportSize()!;
+  const menu = tv.getByTestId("cat-menu");
+  const there = await catSitsAndWhere(tv);
+  await controlsUpByMouse(tv);
+  await tv.mouse.click(there.x, there.y, { button: "right" });
+  await expect(menu).toBeVisible();
+  // ("come here" is for a page the cat walks about: in a film it rests where it is)
+  await expect(menu.getByRole("menuitem")).toHaveText(["Pet", "Send to sleep"]);
+  expect(await filmNow(tv)).toEqual({ hud: "visible", state: "playing", paused: false, rate: 1 });
+  // Back is the menu's: the film is not left, and the controls are as they were
+  await tv.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await tv.waitForTimeout(500);
+  await expect(tv.getByTestId("tv-browse")).toHaveCount(0);
+  expect(await filmNow(tv)).toEqual({ hud: "visible", state: "playing", paused: false, rate: 1 });
+
+  // a click on the picture while the menu is up closes it and is no tap: the controls stay up, the film is not paused; the next click is a tap again
+  await tv.mouse.click(there.x, there.y, { button: "right" });
+  await expect(menu).toBeVisible();
+  await tv.mouse.click(screen.width * 0.3, screen.height * 0.3);
+  await expect(menu).toHaveCount(0);
+  await tv.waitForTimeout(600); // (longer than the wait for a second tap)
+  expect(await filmNow(tv)).toEqual({ hud: "visible", state: "playing", paused: false, rate: 1 });
+  await tv.mouse.click(screen.width * 0.3, screen.height * 0.3);
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-hud", "hidden", { timeout: 2_000 });
+
+  // with the controls away the bar sticks out of the TV's box (it has slid down out of sight), and the box can be scrolled a few pixels: a robot's retried click does it, a browser
+  // bringing something into view too. The card is in that box with the cat's layer and goes with it, so that is not the page going by and it stays
+  await tv.mouse.click(there.x, there.y, { button: "right" });
+  await expect(menu).toBeVisible();
+  await tv.evaluate(() => {
+    document.querySelector<HTMLElement>("main.tv")!.scrollTop = 12;
+  });
+  await tv.waitForTimeout(200);
+  await expect(menu).toBeVisible();
+  await tv.evaluate(() => {
+    document.querySelector<HTMLElement>("main.tv")!.scrollTop = 0;
+  });
+  await tv.waitForTimeout(200);
+
+  // Pet strokes it, and the film goes on
+  await expect(menu).toBeVisible();
+  await menu.getByTestId("cat-menu-pet").click();
+  await expect(menu).toHaveCount(0);
+  await expect.poll(petted(tv), { timeout: 3_000 }).toBe(true);
+  expect(await filmNow(tv)).toMatchObject({ state: "playing", paused: false, rate: 1 });
+});
+
+test("send to sleep: the cat curls up and fades out, and stays away on a title's page and in a film, and in the library again, until it is woken from the panel", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const layer = tv.getByTestId("cat");
+  const at = await catSitsAndWhere(tv);
+  await tv.mouse.click(at.x, at.y, { button: "right" });
+  await tv.getByTestId("cat-menu-sleep").click();
+  await expect(tv.getByTestId("cat-menu")).toHaveCount(0);
+  await expect.poll(async () => (await snap(tv)).asleep, { timeout: 2_000 }).toBe(true);
+  // it curls up where it is, and is gone after that
+  await expect(layer).toHaveAttribute("data-asleep", "curl");
+  await expect(layer).toHaveAttribute("data-visible", "false", { timeout: 8_000 });
+  await expect(tv.getByTestId("cat-hit")).toHaveAttribute("data-off", "");
+  // (the button in the corner is how the remote and the keyboard reach it, asleep or not)
+  await expect(tv.getByTestId("tv-cat-chip")).toBeVisible();
+
+  // it is away for every page, not only for the one it was sent from
+  await tv.getByTestId("tv-browse-tile").first().click();
+  await expect(tv.getByTestId("tv-detail")).toBeVisible();
+  await tv.waitForTimeout(2_000);
+  expect((await snap(tv)).visible).toBe(false);
+  await tv.getByTestId("tv-detail-play").click();
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
+  await tv.waitForTimeout(2_000);
+  expect(await snap(tv)).toMatchObject({ visible: false, asleep: true });
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
+  // (Back out of the film, and of the title's page)
+  await expect(async () => {
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible({ timeout: 1_500 });
+  }).toPass({ timeout: 15_000 });
+  await tv.waitForTimeout(2_000);
+  expect(await snap(tv)).toMatchObject({ visible: false, asleep: true });
+
+  // the panel says so, and wakes it
+  await tv.getByTestId("tv-cat-chip").click();
+  await expect(tv.getByTestId("cat-panel")).toHaveAttribute("data-screen", "asleep");
+  await expect(tv.getByTestId("cat-asleep")).toHaveText("The cat is asleep.");
+  await tv.getByTestId("cat-wake").click();
+  await expect(tv.getByTestId("cat-panel")).toHaveCount(0);
+  await expect(layer).toHaveAttribute("data-visible", "true", { timeout: 8_000 });
+  await expect(layer).not.toHaveAttribute("data-asleep", /.+/);
+  expect((await snap(tv)).asleep).toBe(false);
+  await catIsOnTheShelves(tv);
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-off", "");
+});
+
+test("a cat sent away from the panel is asleep too; the settings page has a row to wake it (and the menu is there on that page), and the remote can press it", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const layer = tv.getByTestId("cat");
+  // "Send away" is the cat sent to sleep without the curl: it fades out where it is and stays out
+  await tv.getByTestId("tv-cat-chip").click();
+  await tv.getByTestId("cat-away").click();
+  await expect(tv.getByTestId("cat-panel")).toHaveCount(0);
+  await expect.poll(async () => (await snap(tv)).asleep, { timeout: 2_000 }).toBe(true);
+  await expect(layer).toHaveAttribute("data-asleep", "fade");
+  await expect(layer).toHaveAttribute("data-visible", "false", { timeout: 6_000 });
+
+  // the cat's page of the settings has the row (it is not on the settings page's first screen, nor where the cat is awake), and a click on it wakes the cat there
+  await openTvSettings(tv);
+  await expect(tv.getByTestId("tv-cat-wake")).toHaveCount(0);
+  await tv.getByTestId("tv-cat-open").click();
+  await expect(tv.getByTestId("tv-cat-settings")).toBeVisible();
+  await expect(tv.getByTestId("tv-cat-wake")).toBeVisible();
+  await tv.getByTestId("tv-cat-wake").click();
+  await expect(tv.getByTestId("tv-cat-wake")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-films")).toBeFocused(); // (the remote is put on the switch above the row, not left on a button that is gone)
+  await expect(layer).toHaveAttribute("data-visible", "true", { timeout: 8_000 });
+  expect((await snap(tv)).asleep).toBe(false);
+  await expect(layer).toHaveAttribute("data-view", "page:tv-cat-settings");
+  await catIsOnThePage(tv);
+
+  // the menu is there on this page too; and the remote presses the row (Enter on it), whose cat wakes
+  const at = await catSitsAndWhere(tv);
+  await tv.mouse.click(at.x, at.y, { button: "right" });
+  await tv.getByTestId("cat-menu-sleep").click();
+  await expect.poll(async () => (await snap(tv)).asleep, { timeout: 2_000 }).toBe(true);
+  await expect(layer).toHaveAttribute("data-visible", "false", { timeout: 8_000 });
+  await tv.getByTestId("tv-cat-wake").focus();
+  await tv.keyboard.press("Enter");
+  await expect(tv.getByTestId("tv-cat-wake")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-films")).toBeFocused();
+  await expect(layer).toHaveAttribute("data-visible", "true", { timeout: 8_000 });
+  expect((await snap(tv)).asleep).toBe(false);
+});
+
+test("a cat that is switched off and on again is awake, and so is one on a page that is loaded again: the sleep is for one load of the page", async ({ browser }) => {
+  test.setTimeout(90_000);
+  // (no ?cat=debug: the address would say the cat is on whatever the switch says)
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ quiet: true }));
+  await catIsOnTheScreen(tv);
+  const layer = tv.getByTestId("cat");
+  const sendAway = async () => {
+    await tv.getByTestId("tv-cat-chip").click();
+    await tv.getByTestId("cat-away").click();
+    await expect(layer).toHaveAttribute("data-asleep", "fade");
+    await expect(layer).toHaveAttribute("data-visible", "false", { timeout: 6_000 });
+  };
+  await sendAway();
+  await openTvSettings(tv);
+  await tv.getByTestId("tv-cat-open").click();
+  await expect(tv.getByTestId("tv-cat-wake")).toBeVisible();
+  await tv.getByTestId("tv-cat-switch").click();
+  await expect(layer).toHaveCount(0);
+  await tv.getByTestId("tv-cat-switch").click();
+  await expect(layer).toHaveAttribute("data-visible", "true", { timeout: 12_000 });
+  await expect(layer).not.toHaveAttribute("data-asleep", /.+/);
+  await expect(tv.getByTestId("tv-cat-wake")).toHaveCount(0);
+
+  // and back on the library, asleep again, then the page loaded again
+  await tv.keyboard.press("Escape");
+  await expect(tv.getByTestId("tv-account")).toBeVisible();
+  await tv.keyboard.press("Escape");
+  await expect(tv.getByTestId("tv-cat-chip")).toBeVisible();
+  await sendAway();
+  await tv.goto("/tv");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheScreen(tv);
+  await expect(tv.getByTestId("cat")).not.toHaveAttribute("data-asleep", /.+/);
+});
+
+test("a viewer who asked for less motion has the menu too, and a cat that goes without curling up", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.emulateMedia({ reducedMotion: "reduce" });
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheScreen(tv);
+  await tv.waitForTimeout(1_200);
+  const box = (await tv.getByTestId("cat-hit").boundingBox())!;
+  await tv.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: "right" });
+  await expect(tv.getByTestId("cat-menu")).toBeVisible();
+  await tv.getByTestId("cat-menu-sleep").click();
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-asleep", "fade");
+  // (no curling up first: it is gone as soon as it has faded)
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-visible", "false", { timeout: 2_500 });
+});
+
+/* ------------------------------ a finger on the cat ------------------------------ */
+
+/** A phone held upright, as the TV's page is opened on one. */
+const PHONE_TV = { viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } as const;
+
+/** A finger, as the browser's own touch events (`touchscreen.tap` is too quick to rest on anything). */
+const fingerOn = async (tv: Page) => {
+  const cdp = await tv.context().newCDPSession(tv);
+  return {
+    down: (at: { x: number; y: number }) => cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: at.x, y: at.y }] }),
+    up: () => cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] }),
+  };
+};
+
+test("on a phone a finger held on the cat brings up its menu, and a quick touch only strokes it; a touch beside the menu closes it and is no touch on the page", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openDevice(browser, PHONE_TV, WANTS(), setup());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const finger = await fingerOn(tv);
+  const menu = tv.getByTestId("cat-menu");
+  const tap = async (at: { x: number; y: number }) => {
+    await finger.down(at);
+    await tv.waitForTimeout(80);
+    await finger.up();
+  };
+  /** A finger rests on the cat until its menu comes up (while the finger is still down), and then lifts. */
+  const hold = async () => {
+    const at = await catSitsAndWhere(tv);
+    await finger.down(at);
+    await expect(menu).toBeVisible({ timeout: 3_000 });
+    await finger.up();
+    await tv.waitForTimeout(300);
+    await expect(menu).toBeVisible(); // (lifting the finger after the hold does not close it)
+  };
+
+  // a quick touch strokes it and is no hold
+  await tap(await catSitsAndWhere(tv));
+  await expect.poll(petted(tv), { timeout: 3_000 }).toBe(true);
+  expect((await snap(tv)).menu).toBe(false);
+
+  await hold();
+  await expect(menu.getByRole("menuitem")).toHaveText(["Pet", "Come here", "Send to sleep"]);
+  // the phone's own Back closes it, and leaves the page
+  await tv.goBack();
+  await expect(menu).toHaveCount(0);
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+
+  // a touch on a poster elsewhere closes it, and is no touch on the poster
+  await hold();
+  const poster = (await aPosterClearOf(tv, [await menu.boundingBox(), await tv.getByTestId("cat-hit").boundingBox()]))!;
+  expect(poster, "a poster clear of the cat and its menu").not.toBeNull();
+  await tap(poster);
+  await expect(menu).toHaveCount(0);
+  await tv.waitForTimeout(600);
+  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+
+  // and a touch on a button of the menu does what it says
+  await hold();
+  const sleep = (await menu.getByTestId("cat-menu-sleep").boundingBox())!;
+  await tap({ x: sleep.x + sleep.width / 2, y: sleep.y + sleep.height / 2 });
+  await expect.poll(async () => (await snap(tv)).asleep, { timeout: 3_000 }).toBe(true);
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-visible", "false", { timeout: 8_000 });
+});
+
+test("on a phone, in a film, a finger held on the cat brings up its menu over the controls, and a touch on the picture beside it is only that: the controls do not come up", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openDevice(browser, PHONE_TV, WANTS(), setup());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheScreen(tv);
+  await tv.getByTestId("tv-browse-tile").first().click();
+  await tv.getByTestId("tv-detail-play").waitFor();
+  await tv.getByTestId("tv-detail-play").click();
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-state", "playing");
+  await catIsOnItsPerch(tv);
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-hud", "hidden", { timeout: 15_000 });
+  const screen = tv.viewportSize()!;
+  const finger = await fingerOn(tv);
+  const menu = tv.getByTestId("cat-menu");
+  const at = await catSitsAndWhere(tv);
+  // it is whole on the screen, at the foot of the picture, and its box is a good thing to put a finger on
+  const body = (await tv.getByTestId("cat-hit").boundingBox())!;
+  expect(body.x).toBeGreaterThanOrEqual(0);
+  expect(body.x + body.width).toBeLessThanOrEqual(screen.width);
+  expect(body.y + body.height).toBeLessThanOrEqual(screen.height);
+  expect(body.width).toBeGreaterThan(40);
+
+  await finger.down(at);
+  await expect(menu).toBeVisible({ timeout: 3_000 });
+  // (still held, for longer than the hold that plays the film faster: the player never heard of this finger)
+  expect(await filmNow(tv)).toEqual({ hud: "hidden", state: "playing", paused: false, rate: 1 });
+  await finger.up();
+  await tv.waitForTimeout(400);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Pet", "Send to sleep"]);
+  // the finger on the cat is the cat's: the controls did not come up for it, and the film plays on
+  expect(await filmNow(tv)).toEqual({ hud: "hidden", state: "playing", paused: false, rate: 1 });
+  // a touch on the picture closes the menu and is only that
+  await finger.down({ x: screen.width * 0.5, y: screen.height * 0.3 });
+  await tv.waitForTimeout(60);
+  await finger.up();
+  await expect(menu).toHaveCount(0);
+  await tv.waitForTimeout(700); // (longer than the wait for a second tap)
+  expect(await filmNow(tv)).toEqual({ hud: "hidden", state: "playing", paused: false, rate: 1 });
+  // the next touch on the picture is a touch on the picture again: the controls come up
+  await finger.down({ x: screen.width * 0.5, y: screen.height * 0.3 });
+  await tv.waitForTimeout(60);
+  await finger.up();
+  await expect(tv.getByTestId("tv")).toHaveAttribute("data-hud", "visible", { timeout: 2_000 });
 });
 
 test("a TV that started before its network was up gets its cat when the line comes back, and its button with it, without a new load", async ({ browser }) => {
