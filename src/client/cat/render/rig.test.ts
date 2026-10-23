@@ -325,19 +325,190 @@ describe("the cat's little scenes", () => {
   });
 
   it("swings under the hand like a pendulum: taken fast one way it is tipped further, and it hangs as it did once the hand is still", () => {
+    // (a second cat, hung the same way and left still, is what the first is measured against: a cat in a hand sways slowly of itself, and the two sway together)
     const rig = new CatRig(5);
+    const ref = new CatRig(5);
     const base = frame({ carried: true, grounded: false, viewer: true });
     rig.snapTo(base, 100);
-    for (let k = 0; k < 120; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, 100);
-    const still = rig.solved.pitch;
+    ref.snapTo(base, 100);
+    for (let k = 0; k < 120; k++) {
+      rig.update({ ...base, clipTime: k / 60 }, 1 / 60, 100);
+      ref.update({ ...base, clipTime: k / 60 }, 1 / 60, 100);
+    }
+    expect(Math.abs(rig.solved.pitch - ref.solved.pitch)).toBeLessThan(1e-9);
     let furthest = 0;
     for (let k = 0; k < 40; k++) {
       rig.update({ ...base, vx: 100 * (k / 40) * 8, clipTime: 2 + k / 60 }, 1 / 60, 100);
-      furthest = Math.max(furthest, Math.abs(rig.solved.pitch - still));
+      ref.update({ ...base, clipTime: 2 + k / 60 }, 1 / 60, 100);
+      furthest = Math.max(furthest, Math.abs(rig.solved.pitch - ref.solved.pitch));
     }
     expect(furthest).toBeGreaterThan(0.05);
-    for (let k = 0; k < 240; k++) rig.update({ ...base, clipTime: 3 + k / 60 }, 1 / 60, 100);
-    expect(Math.abs(rig.solved.pitch - still)).toBeLessThan(0.02);
+    for (let k = 0; k < 240; k++) {
+      rig.update({ ...base, clipTime: 3 + k / 60 }, 1 / 60, 100);
+      ref.update({ ...base, clipTime: 3 + k / 60 }, 1 / 60, 100);
+    }
+    expect(Math.abs(rig.solved.pitch - ref.solved.pitch)).toBeLessThan(0.02);
+  });
+
+  describe("hanging by the scruff, calm and fighting", () => {
+    /** The picture's own point of the scruff (where the body is held), in the pre-pitch numbers of the pose: the middle of the body, and the way the hand holds it at the rest hang. */
+    const GRIP = { x: -0.1, y: -0.73 };
+    const nape = (() => {
+      const dx = GRIP.x - 0;
+      const dy = GRIP.y + 0.4;
+      const c = Math.cos(1.2);
+      const si = Math.sin(1.2);
+      return { x: dx * c - dy * si, y: -0.4 + dx * si + dy * c };
+    })();
+    /** Where a point of the body is on the screen from the feet, y up: the picture is turned about the middle of the body and moved by `shift`. */
+    const onScreen = (s: Solved, j: { x: number; y: number }) => {
+      const at = seen(s, j);
+      return { x: at.x + s.shift.x, y: at.y - s.shift.y };
+    };
+    /** What a cat in a hand does for `seconds` at a given struggle: how far it swings, how much its hind feet and its forepaws move, the widest its mouth is, the lowest it holds its ears... */
+    const watched = (struggle: number, seconds = 5, over: Partial<CatFrame> = {}) => {
+      const out = { pitch: [] as number[], hindX: [] as number[], foreUp: -1, jaw: 0, ear: 1, tip: [] as number[], grip: 0 };
+      const rig = new CatRig(3);
+      const base = frame({ clip: "stand", carried: true, grounded: false, viewer: true, struggle, ...over });
+      rig.snapTo(base, 100);
+      for (let k = 0; k < Math.round(seconds * 60); k++) {
+        rig.update({ ...base, clipTime: k / 60 }, 1 / 60, 100);
+        if (k < 120) continue;
+        const s = rig.solved;
+        out.pitch.push(s.pitch);
+        out.hindX.push(seen(s, s.legs.hn.toe).x - seen(s, s.legs.hn.root).x);
+        for (const key of ["fn", "ff"] as const) {
+          out.foreUp = Math.max(out.foreUp, seen(s, s.legs[key].toe).y - seen(s, s.legs[key].root).y);
+        }
+        out.jaw = Math.max(out.jaw, s.head.jaw);
+        out.ear = Math.min(out.ear, s.head.earL);
+        out.tip.push(seen(s, s.tail[s.tail.length - 1]!).x);
+        const g = onScreen(s, nape);
+        out.grip = Math.max(out.grip, Math.hypot(g.x - GRIP.x, g.y + GRIP.y));
+      }
+      return out;
+    };
+    const spread = (xs: number[]): number => Math.max(...xs) - Math.min(...xs);
+
+    it("sways slowly under the hand even when it is calm: a few hundredths of a turn, and the hind legs and the tail hang below it", () => {
+      const calm = watched(0, 8);
+      expect(spread(calm.pitch)).toBeGreaterThan(0.06);
+      expect(spread(calm.pitch)).toBeLessThan(0.25);
+      // (slowly: it does not turn over more than a third of a radian a second)
+      let fastest = 0;
+      for (let i = 1; i < calm.pitch.length; i++) fastest = Math.max(fastest, Math.abs(calm.pitch[i]! - calm.pitch[i - 1]!) * 60);
+      expect(fastest).toBeLessThan(0.35);
+    });
+
+    it("fights the hand the harder it is made to: it swings wider, kicks with its hind feet, puts its forepaws up and swipes, throws its head about, lays its ears back and yowls", () => {
+      const calm = watched(0);
+      const fights = watched(0.9);
+      expect(spread(fights.pitch)).toBeGreaterThan(3 * spread(calm.pitch));
+      expect(spread(fights.pitch)).toBeGreaterThan(0.45);
+      expect(spread(fights.hindX)).toBeGreaterThan(spread(calm.hindX) + 0.15);
+      // (a forepaw is above its shoulder when it swipes, and never is when it hangs calm)
+      expect(fights.foreUp).toBeGreaterThan(0.1);
+      expect(calm.foreUp).toBeLessThan(-0.05);
+      expect(fights.jaw).toBeGreaterThan(calm.jaw + 0.25);
+      expect(fights.ear).toBeGreaterThan(calm.ear + 0.3);
+      expect(spread(fights.tip)).toBeGreaterThan(spread(calm.tip) + 0.15);
+      // (the harder the more: half as hard is in between)
+      const half = watched(0.45);
+      expect(spread(half.pitch)).toBeGreaterThan(spread(calm.pitch));
+      expect(spread(half.pitch)).toBeLessThan(spread(fights.pitch));
+    });
+
+    it("hangs from the scruff, which the hand has: whatever it does, the point it is held by stays where the hand is (the picture is turned about the hand, not about the middle of the body)", () => {
+      for (const struggle of [0, 0.5, 0.9]) {
+        const w = watched(struggle, 6);
+        expect(w.grip, `struggle ${struggle}`).toBeLessThan(0.02);
+      }
+      // (turned about the middle it would be far from it: the body is a body length long, and it swings by a third of a turn)
+      const rig = new CatRig(3);
+      const base = frame({ clip: "stand", carried: true, grounded: false, viewer: true, struggle: 0.9 });
+      rig.snapTo(base, 100);
+      let off = 0;
+      for (let k = 0; k < 360; k++) {
+        rig.update({ ...base, clipTime: k / 60 }, 1 / 60, 100);
+        const g = seen(rig.solved, nape);
+        off = Math.max(off, Math.hypot(g.x - GRIP.x, g.y + GRIP.y));
+      }
+      expect(off).toBeGreaterThan(0.08);
+    });
+
+    it("hangs from the hand facing left the same as facing right, turned round", () => {
+      const right = inHand(4, { struggle: 0.7, facing: 1 });
+      const left = inHand(4, { struggle: 0.7, facing: -1 });
+      // (it is a mirror image: the same numbers, with the flip, and the shift the other way)
+      expect(Math.abs(right.pitch - left.pitch)).toBeLessThan(1e-9);
+      expect(Math.abs(right.shift.x + left.shift.x)).toBeLessThan(1e-9);
+      expect(Math.abs(right.shift.y - left.shift.y)).toBeLessThan(1e-9);
+      expect(right.flip).toBeCloseTo(1, 3);
+      expect(left.flip).toBeCloseTo(-1, 3);
+    });
+
+    it("is eased into the fight and out of it: nothing snaps when the struggle comes on at once and goes at once (no joint moves more than 0.3 of the body in a frame)", () => {
+      const rig = new CatRig(5);
+      const base = frame({ carried: true, grounded: false, viewer: true });
+      rig.snapTo(base, 100);
+      let previous: number[] | null = null;
+      let biggest = 0;
+      const joints = (s: Solved): number[] =>
+        [...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe, s.legs[key].mid, s.legs[key].hock]), s.head, s.tail[s.tail.length - 1]!].flatMap((j) => {
+          const at = onScreen(s, j);
+          return [at.x, at.y];
+        });
+      let t = 0;
+      for (const [struggle, frames] of [[0, 60], [1, 240], [0, 120], [0.9, 120], [0.1, 120]] as const) {
+        for (let k = 0; k < frames; k++) {
+          t += 1 / 60;
+          rig.update({ ...base, struggle, clipTime: t }, 1 / 60, 100);
+          const now = joints(rig.solved);
+          for (const n of now) expect(Number.isFinite(n)).toBe(true);
+          if (previous) for (let i = 0; i + 1 < now.length; i += 2) biggest = Math.max(biggest, Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!));
+          previous = now;
+        }
+      }
+      expect(biggest).toBeLessThan(0.3);
+    });
+
+    it("is annoyed with its ears flat, its eyes narrowed, its head low and its tail lashing, and is itself again when it passes; and shakes the whole of itself, quickly, for about a second, and is still after", () => {
+      const calm = inClip({ clip: "stand" }, 2);
+      // (how far the tip of the tail goes in all: a lashing tail goes a long way, to and fro)
+      const lashed = (over: Partial<CatFrame>, seconds: number): number => {
+        let last: { x: number; y: number } | null = null;
+        let way = 0;
+        inClip({ clip: "stand", ...over }, seconds, (s, t) => {
+          if (t < 0.6) return;
+          const tip = s.tail[s.tail.length - 1]!;
+          if (last) way += Math.hypot(tip.x - last.x, tip.y - last.y);
+          last = { x: tip.x, y: tip.y };
+        });
+        return way;
+      };
+      const annoyed = inClip({ clip: "stand", emote: "annoyed" }, 2);
+      expect(annoyed.head.earL).toBeGreaterThan(calm.head.earL + 0.4);
+      expect(annoyed.head.openL).toBeLessThan(calm.head.openL - 0.1);
+      expect(annoyed.head.y).toBeGreaterThan(calm.head.y + 0.01);
+      expect(lashed({ emote: "annoyed" }, 4)).toBeGreaterThan(2 * lashed({}, 4));
+      // it passes
+      const rig = new CatRig(3);
+      const on = frame({ clip: "stand", emote: "annoyed" });
+      rig.snapTo(on, 100);
+      for (let k = 0; k < 120; k++) rig.update({ ...on, clipTime: k / 60 }, 1 / 60, 100);
+      const off = frame({ clip: "stand" });
+      for (let k = 0; k < 360; k++) rig.update({ ...off, clipTime: k / 60 }, 1 / 60, 100);
+      expect(Math.abs(rig.solved.head.earL - calm.head.earL)).toBeLessThan(0.25);
+      // the shake: the head goes from side to side, fast, for a second or so, and is still after it
+      const heads: Array<{ t: number; x: number; rot: number; pitch: number }> = [];
+      inClip({ clip: "stand", emote: "shake" }, 2.6, (s, t) => heads.push({ t, x: s.head.x, rot: s.head.rot, pitch: s.pitch }));
+      const during = heads.filter((h) => h.t > 0.1 && h.t < 0.9);
+      const after = heads.filter((h) => h.t > 1.5);
+      expect(spread(during.map((h) => h.x))).toBeGreaterThan(0.06);
+      expect(spread(during.map((h) => h.rot))).toBeGreaterThan(0.3);
+      expect(spread(after.map((h) => h.x))).toBeLessThan(0.02);
+      expect(spread(after.map((h) => h.pitch))).toBeLessThan(0.01);
+    });
   });
 
   it("keeps every number finite in every scene, however it is entered and left", () => {

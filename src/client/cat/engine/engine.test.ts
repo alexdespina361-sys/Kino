@@ -2067,6 +2067,211 @@ describe("picked up by a hand", () => {
     ];
     for (const { slide, ...run } of once) expect(runSession({ ...run, chaos: slide ? { ...chaos, slide } : chaos }).violations, JSON.stringify({ ...run, slide })).toEqual([]);
   });
+
+  describe("fighting the hand that holds it, and landing annoyed", () => {
+    /** The hand takes the cat where it stands and holds still for `seconds`: the frames (30 a second). */
+    const heldStill = (seed: number, seconds: number) => {
+      const { engine, world, body } = settled(seed);
+      const f = engine.frame;
+      const grip = { x: f.x, y: f.y - 0.4 * body };
+      engine.send({ type: "cat.grab", at: grip });
+      return { engine, world, body, grip, frames: carryTo(engine, world, grip, grip, seconds) };
+    };
+    /** The hand holds still until the cat fights at least this hard, and says what the frame was then (it never goes on for more than half a minute). */
+    const heldUntil = (seed: number, level: number) => {
+      const { engine, world, body } = settled(seed);
+      const f = engine.frame;
+      const grip = { x: f.x, y: f.y - 0.4 * body };
+      engine.send({ type: "cat.grab", at: grip });
+      for (let i = 0; i < 30 * 30; i++) {
+        engine.send({ type: "cat.carry", at: grip });
+        const frame = copy(engine.update(world, 1 / 30));
+        if ((frame.struggle ?? 0) >= level) return { engine, world, body, grip, frame };
+      }
+      throw new Error(`seed ${seed}: it never fought as hard as ${level}`);
+    };
+    const levels = (frames: CatFrame[]): number[] => frames.map((f) => f.struggle ?? 0);
+    /** Lets go, and the frames, with the act each was in, for `seconds`. */
+    const letGoFor = (engine: CatEngine, world: World, seconds: number) => {
+      engine.send({ type: "cat.drop" });
+      const acts: string[] = [];
+      const { frames } = stepCat(engine, world, seconds, 30, () => {
+        acts.push(engine.debug().act);
+      });
+      return { frames, acts };
+    };
+    /** What it did once it had come down: the feelings it showed (in order, once each) from the first frame on its feet, and whether it washed. */
+    const afterwards = (frames: CatFrame[], acts: string[]) => {
+      const down = frames.findIndex((f, i) => f.grounded && f.clip !== "jump" && i > 0 && frames[i - 1]!.vy === 0 && f.vy === 0);
+      const feelings: string[] = [];
+      let washed = false;
+      let walked = false;
+      for (let i = Math.max(0, down); i < frames.length; i++) {
+        const feeling = frames[i]!.emote ?? "none";
+        if (feeling !== "none" && feelings[feelings.length - 1] !== feeling) feelings.push(feeling);
+        if (acts[i] === "shot:groom") washed = true;
+        if (acts[i] === "walk") walked = true;
+      }
+      return { feelings, washed, walked };
+    };
+
+    it("hangs calm for a couple of seconds, and then begins to fight: 0 at first, never more than 1, and it is a number on every frame", () => {
+      for (const seed of [4, 7, 12]) {
+        const { frames } = heldStill(seed, 12);
+        const s = levels(frames);
+        expect(Math.max(...s.slice(0, 45)), `seed ${seed}: the first second and a half`).toBeLessThan(0.02);
+        const begins = s.findIndex((v) => v > 0.1) / 30;
+        expect(begins, `seed ${seed}: it begins`).toBeGreaterThan(1.5);
+        expect(begins, `seed ${seed}: it begins`).toBeLessThan(3.6);
+        expect(Math.max(...s), `seed ${seed}`).toBeGreaterThan(0.6);
+        for (const f of frames) {
+          expect(typeof f.struggle).toBe("number");
+          expect(f.struggle!).toBeGreaterThanOrEqual(0);
+          expect(f.struggle!).toBeLessThanOrEqual(1);
+        }
+      }
+    });
+
+    it("fights in bouts: it builds up, keeps it up for a few seconds, goes limp, and tries again, a little less hard each time", () => {
+      for (const seed of [4, 9]) {
+        const s = levels(heldStill(seed, 30).frames);
+        // (the bouts: a stretch above half, with a valley below a fifth between one and the next)
+        const peaks: number[] = [];
+        const valleys: number[] = [];
+        let inBout = false;
+        let top = 0;
+        for (const v of s) {
+          if (!inBout && v > 0.45) {
+            inBout = true;
+            top = v;
+          } else if (inBout) {
+            top = Math.max(top, v);
+            if (v < 0.2) {
+              inBout = false;
+              peaks.push(top);
+              valleys.push(v);
+            }
+          }
+        }
+        expect(peaks.length, `seed ${seed}: bouts`).toBeGreaterThanOrEqual(3);
+        for (const p of peaks) expect(p).toBeLessThanOrEqual(0.85 + 1e-9);
+        expect(peaks[0]!, `seed ${seed}: the first is the hardest, nearly`).toBeGreaterThan(0.7);
+        expect(peaks[2]!, `seed ${seed}: the third is less than the first`).toBeLessThan(peaks[0]!);
+        // (limp: not gone, the cat is still in the hand)
+        for (const v of valleys) expect(v).toBeGreaterThan(0.04);
+      }
+    });
+
+    it("goes on trying for as long as the hand holds it, a minute and more: it is not tired out for good, and the number is always between 0 and 1", () => {
+      const s = levels(heldStill(5, 60).frames);
+      for (const v of s) {
+        expect(Number.isFinite(v)).toBe(true);
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+      // (it goes on trying, the whole minute: it is not tired out for good)
+      expect(Math.max(...s.slice(30 * 45))).toBeGreaterThan(0.4);
+    });
+
+    it("is gone half a second after the hand lets go: it comes down fighting a little, on the way, and not after", () => {
+      for (const seed of [4, 9, 12]) {
+        const { engine, world, frame } = heldUntil(seed, 0.6);
+        const { frames } = letGoFor(engine, world, 2);
+        const s = levels(frames);
+        expect(frames[0]!.carried).toBe(false);
+        expect(s[0]!, `seed ${seed}: the first frame after the hand has let go`).toBeGreaterThan(0.3);
+        expect(s[0]!).toBeLessThan(frame.struggle!);
+        s.reduce((before, v, i) => {
+          expect(v, `seed ${seed}: frame ${i}`).toBeLessThanOrEqual(before + 1e-9);
+          return v;
+        }, 1);
+        expect(s[Math.ceil(0.55 * 30)], `seed ${seed}: half a second on`).toBe(0);
+      }
+    });
+
+    it("does not fight a hand that only brushed it, nor when no hand has it: 0 on every frame", () => {
+      const { engine, world } = settled(6);
+      for (const f of stepCat(engine, world, 20).frames) expect(f.struggle ?? 0).toBe(0);
+      const brushed = settled(3);
+      const f = brushed.engine.frame;
+      brushed.engine.send({ type: "cat.grab", at: { x: f.x, y: f.y - 0.4 * brushed.body } });
+      const held = stepCat(brushed.engine, brushed.world, 0.8).frames;
+      brushed.engine.send({ type: "cat.drop" });
+      const after = stepCat(brushed.engine, brushed.world, 6).frames;
+      for (const g of [...held, ...after]) expect(g.struggle ?? 0).toBeLessThan(0.02);
+    });
+
+    it("lands annoyed if it was fighting when the hand let go (it shows it: ears back, a fright, a shake), and lands as it always did if it was not", () => {
+      for (const seed of [2, 4, 6, 9, 11, 13]) {
+        const fought = heldUntil(seed, 0.6);
+        const out = letGoFor(fought.engine, fought.world, 7);
+        const did = afterwards(out.frames, out.acts);
+        expect(did.feelings.length, `seed ${seed}: annoyed (${did.feelings.join(", ")})`).toBeGreaterThan(0);
+        expect(did.feelings.every((feeling) => ["annoyed", "startle", "shake"].includes(feeling)), `seed ${seed}: ${did.feelings.join(", ")}`).toBe(true);
+        const calm = settled(seed);
+        const g = calm.engine.frame;
+        calm.engine.send({ type: "cat.grab", at: { x: g.x, y: g.y - 0.4 * calm.body } });
+        carryTo(calm.engine, calm.world, { x: g.x, y: g.y - 0.4 * calm.body }, { x: g.x, y: g.y - 0.4 * calm.body }, 0.8);
+        const easy = letGoFor(calm.engine, calm.world, 7);
+        const quiet = afterwards(easy.frames, easy.acts);
+        expect(quiet.feelings, `seed ${seed}: a cat that did not fight`).toEqual([]);
+      }
+    });
+
+    it("lands one of four ways, as its temperament weighs them: the tail flick and the walk away, a wash, a fright and a bolt, or a shake", () => {
+      const kinds: Record<string, number> = { huff: 0, groom: 0, startle: 0, shake: 0 };
+      for (let seed = 1; seed <= 60; seed++) {
+        const fought = heldUntil(seed, 0.5);
+        const out = letGoFor(fought.engine, fought.world, 8);
+        const did = afterwards(out.frames, out.acts);
+        const kind = did.feelings.includes("shake") ? "shake" : did.feelings.includes("startle") ? "startle" : did.washed ? "groom" : "huff";
+        expect(did.feelings.length, `seed ${seed}`).toBeGreaterThan(0);
+        kinds[kind] = (kinds[kind] ?? 0) + 1;
+      }
+      for (const kind of ["huff", "groom", "startle", "shake"]) expect(kinds[kind], `${kind} (${JSON.stringify(kinds)})`).toBeGreaterThan(0);
+      // (the walk away is the likeliest, then the wash)
+      expect(kinds.huff!).toBeGreaterThan(kinds.startle!);
+      expect(kinds.groom!).toBeGreaterThan(kinds.startle!);
+    });
+
+    it("walks off away from the hand when it is annoyed enough to (the way the hand is not: it turns its back)", () => {
+      let walks = 0;
+      for (let seed = 1; seed <= 30; seed++) {
+        const fought = heldUntil(seed, 0.5);
+        // the hand flicks a long way to the side it was on and lets go at once: the cat is left far from it
+        const side = fought.grip.x < 900 ? 1 : -1;
+        const gone = { x: fought.grip.x + side * 6 * fought.body, y: fought.grip.y };
+        carryTo(fought.engine, fought.world, fought.grip, gone, 0.1);
+        const out = letGoFor(fought.engine, fought.world, 9);
+        const down = out.frames.findIndex((f, i) => f.grounded && i > 0 && f.vy === 0 && out.frames[i - 1]!.vy === 0);
+        const did = afterwards(out.frames, out.acts);
+        if (!did.walked || did.washed || did.feelings.includes("startle")) continue;
+        // (the first walk after it came down: from where it landed to where it stopped)
+        const first = out.acts.findIndex((act, i) => i > down && act === "walk");
+        let last = first;
+        while (out.acts[last + 1] === "walk") last++;
+        const there = out.frames[down]!.x;
+        const end = out.frames[last]!.x;
+        // (a walk away, at least a body length, the other way from the hand, unless the shelf has run out)
+        if (Math.abs(end - there) < 0.8 * fought.body) continue;
+        walks++;
+        expect(Math.sign(end - there), `seed ${seed}: from ${there.toFixed(0)} to ${end.toFixed(0)}, the hand at ${gone.x.toFixed(0)}`).toBe(-side);
+      }
+      expect(walks).toBeGreaterThan(3);
+    });
+
+    it("gives the same fight for the same seed, whatever else the cat is doing meanwhile (the fight has a generator of its own)", () => {
+      const a = levels(heldStill(8, 14).frames);
+      const b = levels(heldStill(8, 14).frames);
+      expect(b).toEqual(a);
+      // (and a cat that was never held wanders as it did: the generator the fight draws from is not the one the cat's day does)
+      const idle = new CatEngine(8);
+      const world = browseWorld(defaultPage());
+      const days = stepCat(idle, world, 120).frames.map((f) => `${f.clip}@${Math.round(f.x)}`);
+      const again = new CatEngine(8);
+      expect(stepCat(again, world, 120).frames.map((f) => `${f.clip}@${Math.round(f.x)}`)).toEqual(days);
+    });
+  });
 });
 
 describe("hauling itself up a low step", () => {

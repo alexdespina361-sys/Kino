@@ -1,7 +1,9 @@
 // Pictures of the cat for looking at it: bundles src/client/cat/lab/entry.ts for the browser, runs it in Chromium and saves a PNG.
 //
-//   node scripts/cat/sheet.mjs poses|carried|walk|run|jump|climb|climb-walk <out.png> [--scale=2]
-//   (climb: the cat reaches for a lip in the air and hauls itself up; climb-walk: the same from its feet, under the lip)
+//   node scripts/cat/sheet.mjs poses|feelings|carried|struggle|struggle-left|walk|run|jump|climb|climb-walk <out.png> [--scale=2]
+//   (feelings: the annoyed cat and the shaking one, beside a calm one and a startled one)
+//   (climb: the cat reaches for a lip in the air and hauls itself up; climb-walk: the same from its feet, under the lip;
+//    struggle: the cat in a hand, calm and then fighting it and then limp, at the times written on each picture; the red cross is the hand)
 //
 // Development tooling (the cat lab): nothing it makes is part of the app.
 import { chromium } from "@playwright/test";
@@ -26,7 +28,10 @@ await page.evaluate(
     const canvas = document.getElementById("c");
     const lab = window.CatLab;
     if (which === "poses") lab.sheet(canvas, lab.POSES, 4, s);
-    else if (which === "carried") lab.sheet(canvas, lab.CARRIED, 3, s, 7, 110);
+    else if (which === "carried") lab.sheet(canvas, lab.CARRIED, 3, s, 7, 170);
+    else if (which === "feelings") lab.sheet(canvas, lab.FEELINGS, 4, s);
+    else if (which === "struggle") lab.struggleStrip(canvas, s, 1);
+    else if (which === "struggle-left") lab.struggleStrip(canvas, s, -1);
     else if (which === "walk") lab.walkStrip(canvas, 8, false, s);
     else if (which === "run") lab.walkStrip(canvas, 8, true, s);
     else if (which === "jump") lab.jumpStrip(canvas, 10, s);

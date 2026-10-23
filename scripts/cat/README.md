@@ -7,7 +7,7 @@ Development tooling for the cat companion (`docs/cat-companion.md`). **Nothing h
 | File | What for |
 |---|---|
 | `glsheet.mjs` | pictures of the detailed cat: `views`, `poses`, `scenes`, `faces`, `walk`, `run`, `carried`, and `film` (strips of a recording). `--gpu=real` draws on the machine's graphics card, `--coat=` picks a coat, `--scale=`, `--cols=` |
-| `sheet.mjs` | the same for the simple (Canvas 2D) cat: `poses`, `carried`, `walk`, `run`, `jump`, and `climb` / `climb-walk` (the reach for a lip and the haul up, from the air and from under the lip) |
+| `sheet.mjs` | the same for the simple (Canvas 2D) cat: `poses`, `feelings` (annoyed and shaking beside calm and startled), `carried`, `struggle` / `struggle-left` (held by the scruff at twelve moments of a hold: calm, building, all-out, limp, and the next bout; the red cross is the hand), `walk`, `run`, `jump`, and `climb` / `climb-walk` (the reach for a lip and the haul up, from the air and from under the lip) |
 | `browser-lab.mjs` | real-Chromium measurements on the TV's library, from a build you point it at (`scroll`: what the rows do for each kind of scroll and what the cat does; `places`: how an unattended cat spends its time on the real page). Starts its own server |
 | `extents.mjs` | measures how far the drawn cat reaches in each posture and writes or checks `src/client/cat/engine/shape-table.ts`; **run `--write` after any change to the model or to an animation, and `--check` to verify** (the unit tests and the engine plan with that table) |
 

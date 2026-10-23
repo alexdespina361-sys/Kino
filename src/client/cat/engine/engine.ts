@@ -1,8 +1,9 @@
-import { clamp, clamp01, finite, lerp } from "../math";
+import { clamp, clamp01, finite, lerp, smoothstep } from "../math";
 import { createRng, type Rng } from "../rng";
-import { CLIMB_BACK, CLIMB_HANG, CLIMB_LIP, CLIMB_TIME, JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Emote, type Rect, type Target, type Vec, type World } from "../types";
+import { CLIMB_BACK, CLIMB_HANG, CLIMB_LIP, CLIMB_TIME, HANG_AHEAD, HANG_DOWN, JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Emote, type Rect, type Target, type Vec, type World } from "../types";
 import { clampToLedge, computeLedges, findPath, GRAVITY, ledgeAt, planJump, reshape, screenEdges, settle, settledCost, stepFlight, type JumpPlan, type Ledge, type RestPose, type Settling } from "./ledges";
 import { HALF_WIDTH, shapeHits } from "./shape";
+import { BASELINE, type Temperament } from "./temperament";
 
 /**
  * The cat's mind and legs. Each frame it is given the page as a `World` (plain numbers) and the time that passed, and it says what the cat
@@ -149,14 +150,27 @@ const CLEANER = 0.4;
  * Being carried (all in body lengths unless it says otherwise): where the cat's feet hang from the hand once it hangs by the scruff (below it, and a little
  * further the way it faces: the scruff is behind the middle of the hanging cat, as the drawn pose has it), how fast the hang settles from wherever the hand took it
  * (a second's reciprocal), the fastest the hand can take it along and how quickly it follows (the cat lags behind a hand that flicks), and how long a silent hand
- * (a pointer that was lost) holds it before it is let go (seconds).
+ * (a pointer that was lost) holds it before it is let go (seconds). (Where the hand is from the feet, `HANG_DOWN` and `HANG_AHEAD`, is the contract with the painter: see types.ts.)
  */
-export const HANG_DOWN = 0.73;
-export const HANG_AHEAD = 0.1;
+export { HANG_AHEAD, HANG_DOWN };
 const HANG_RELAX = 7;
 const CARRY_SPEED = 16;
 const CARRY_FOLLOW = 16;
 const CARRY_SILENCE = 2.5;
+/**
+ * Fighting the hand (see `CatFrame.struggle`; how long it hangs calm, how hard it fights and for how long are the temperament's): a bout builds up over `FIGHT_BUILD` seconds, and then lies
+ * limp for a time within `FIGHT_LIMP` seconds, at `FIGHT_LIMP_LEVEL`, before the next, which is `FIGHT_TIRE` of the one before; the number follows what the bout asks of it at `FIGHT_FOLLOW`
+ * (a second's reciprocal), and is gone `FIGHT_RELEASE` seconds after the hand lets go. A cat that was fighting at least `UPSET_AT` as hard as that when it was let go of lands annoyed, if it
+ * lands within `UPSET_FOR` seconds (see `annoyedLanding`): it walks off, or washes, or is startled, or shakes itself, as its temperament has it.
+ */
+const FIGHT_BUILD = 1.3;
+const FIGHT_LIMP: readonly [number, number] = [1.4, 2.6];
+const FIGHT_LIMP_LEVEL = 0.1;
+const FIGHT_TIRE = 0.92;
+const FIGHT_FOLLOW = 3.5;
+const FIGHT_RELEASE = 0.5;
+const UPSET_AT = 0.3;
+const UPSET_FOR = 8;
 /**
  * Letting go: the cat comes down on the first place under it, or springs up onto one that is a little above its feet (the hang puts its paws below the line
  * of the shelf it was taken from) -- at most this far above, and at most this far across, steered to as it falls at `FALL_STEER` a second, no faster than
@@ -315,6 +329,18 @@ export class CatEngine {
   private groundY = 0;
   private grabAt: Vec = { x: 0, y: 0 };
   private heldAt = 0;
+  /** What sort of cat it is (see `Temperament`), and a generator of its own for what that decides (so that what the rest of the cat does is the same whatever it draws). */
+  private temper: Temperament = BASELINE;
+  private readonly rngTemper: Rng;
+  /**
+   * How hard it fights the hand that has it (the frame's `struggle`), the bout it is in (what it is doing, for how long it has, and how long it lasts, how hard it goes at the most, how many it has
+   * had), and, once the hand has let go of a cat that fought it, how hard it was fighting then, until when it holds, and where the hand was.
+   */
+  private struggle = 0;
+  private bout: { phase: "calm" | "build" | "thrash" | "limp"; t: number; len: number; peak: number; n: number } = { phase: "calm", t: 0, len: 1, peak: 0, n: 0 };
+  private upset = 0;
+  private upsetUntil = 0;
+  private letGoFrom: Vec | null = null;
   /**
    * A cat that was let go of, on its way down to where it will land (see `runFall`); or, with `free`, one that a flung page shook off its shelf, and that has no place it is falling to yet
    * (see `freeFall`).
@@ -360,6 +386,7 @@ export class CatEngine {
   constructor(seed = 1) {
     this.rng = createRng(seed).fork("director");
     this.rngLook = createRng(seed).fork("look");
+    this.rngTemper = createRng(seed).fork("temper");
     this.frame = {
       x: 0,
       y: 0,
@@ -474,6 +501,7 @@ export class CatEngine {
     f.appear = this.placed ? this.alpha : 0;
     f.petted = this.petted;
     f.carried = this.hold !== null && this.act?.k === "carried";
+    f.struggle = this.struggle;
     f.emote = this.emote;
     return f;
   }
@@ -615,6 +643,7 @@ export class CatEngine {
       this.jump = null;
       this.hold = null;
       this.fall = null;
+      this.upset = 0;
       this.act = null;
       this.grounded = true;
       this.vx = 0;
@@ -1030,6 +1059,8 @@ export class CatEngine {
     m.energy = clamp01(m.energy + (0.32 - m.energy) * Math.min(1, dt / 25));
     m.curiosity = clamp01(m.curiosity + (0.28 - m.curiosity) * Math.min(1, dt / 40));
     m.affection = clamp01(m.affection + (0.2 - m.affection) * Math.min(1, dt / 240));
+    // (the fight dies away in a moment once the hand has let go: the cat in the air still twists, and lands with what is left of it)
+    if (this.struggle > 0 && act?.k !== "carried") this.struggle = Math.max(0, this.struggle - dt / FIGHT_RELEASE);
     const goal = sleeping ? 1 : dozing ? 0.62 : this.petted ? 0.1 : 0;
     this.drowsy = clamp01(this.drowsy + clamp(goal - this.drowsy, -dt * 0.9, dt * 0.3));
     this.clipT += dt;
@@ -1434,6 +1465,8 @@ export class CatEngine {
     this.petUntil = -1;
     this.jump = null;
     this.fall = null;
+    this.upset = 0;
+    this.bout = { phase: "calm", t: 0, len: Math.max(0.05, this.temper.heldCalm * this.rngTemper.range(0.8, 1.25)), peak: 0, n: 0 };
     this.finish();
     this.queue = [];
     this.hold = hand;
@@ -1497,6 +1530,36 @@ export class CatEngine {
     }
     this.vx = vx;
     this.vy = vy;
+    this.wrestle(dt);
+  }
+
+  /**
+   * A cat that is held fights the hand, in bouts (see `CatFrame.struggle`): calm for a while, then it builds up to a peak, keeps that up for as long as it has the strength for, goes limp, and
+   * tries again, a little less hard each time. How long it hangs calm, how hard it fights and how long it keeps it up are its temperament's.
+   */
+  private wrestle(dt: number): void {
+    const bout = this.bout;
+    const temper = this.temper;
+    bout.t += dt;
+    while (bout.t >= bout.len) {
+      bout.t -= bout.len;
+      if (bout.phase === "calm" || bout.phase === "limp") {
+        bout.phase = "build";
+        bout.len = FIGHT_BUILD;
+        bout.peak = clamp01(temper.heldStrength * FIGHT_TIRE ** bout.n * this.rngTemper.range(0.9, 1));
+        bout.n++;
+      } else if (bout.phase === "build") {
+        bout.phase = "thrash";
+        bout.len = Math.max(0.2, temper.heldStamina * this.rngTemper.range(0.7, 1.3));
+      } else {
+        bout.phase = "limp";
+        bout.len = this.rngTemper.range(FIGHT_LIMP[0], FIGHT_LIMP[1]);
+      }
+    }
+    const u = bout.t / bout.len;
+    const goal =
+      bout.phase === "calm" ? 0 : bout.phase === "build" ? bout.peak * smoothstep(0, 1, u) : bout.phase === "thrash" ? bout.peak * (0.92 + 0.08 * Math.sin(bout.t * 5.7)) : FIGHT_LIMP_LEVEL * (1 - 0.5 * u);
+    this.struggle += (goal - this.struggle) * (1 - Math.exp(-FIGHT_FOLLOW * dt));
   }
 
   /**
@@ -1578,6 +1641,10 @@ export class CatEngine {
    * hauls itself up (see `reachFor`); or, with none, is gone from the page and back somewhere else.
    */
   private letGo(world: World): void {
+    // (a cat that was fighting the hand lands annoyed, wherever it lands: see `annoyedLanding`)
+    this.upset = this.struggle >= UPSET_AT ? this.struggle : 0;
+    this.upsetUntil = this.now + UPSET_FOR;
+    this.letGoFrom = this.hold ? { x: this.hold.x, y: this.hold.y } : null;
     this.hold = null;
     const target = this.dropTarget(world, undefined, false, true);
     if (!target) {
@@ -1734,6 +1801,11 @@ export class CatEngine {
    * What a cat that has come down on a shelf (let go of, or hauled up over its lip) does as if it had meant to: it sits a moment, and, `wash` of the times, washes; on a shelf with names it first goes where it hides none of them.
    */
   private afterLanding(world: World, sit: readonly [number, number], wash: number): void {
+    if (this.upset > 0 && this.now < this.upsetUntil && !world.reducedMotion && !world.quiet) {
+      this.annoyedLanding(world);
+      return;
+    }
+    this.upset = 0;
     const L = world.bodyLength;
     const here = this.here();
     const spot = here && !world.reducedMotion && !world.quiet ? settle(here, this.x, this.facing, L, "sit", world).x : undefined;
@@ -1743,6 +1815,48 @@ export class CatEngine {
       { k: "rest", pose: "sit", dur: this.rng.range(sit[0], sit[1]) },
       ...(this.rng.chance(wash) ? ([{ k: "shot", clip: "groom", dur: this.rng.range(3, 5) }] as const) : []),
     ];
+  }
+
+  /**
+   * What a cat that fought the hand does once it has landed (see `UPSET_AT`), and not what one that was put down in peace does (see `afterLanding`). It stands, ears flat and its tail lashing, with its
+   * back to where the hand was, and walks off (`huff`); or sits and washes, as if it had meant to be there; or is startled, looks round at the hand, and bolts; or shakes itself from its head to its tail.
+   * Which of them is the temperament's to say.
+   */
+  private annoyedLanding(world: World): void {
+    const L = world.bodyLength;
+    const rng = this.rngTemper;
+    const from = this.letGoFrom;
+    this.upset = 0;
+    this.letGoFrom = null;
+    this.cool.groom = this.now + rng.range(45, 90);
+    const here = this.here();
+    // (away from where the hand was, along the shelf it landed on: the way with the room, if the hand was over it, or there is none the other way)
+    const room = (dir: 1 | -1): number => (here ? (dir > 0 ? here.x1 - this.x : this.x - here.x0) : 0);
+    let dir: 1 | -1 = from && Math.abs(from.x - this.x) > 0.3 * L ? (from.x > this.x ? -1 : 1) : room(1) >= room(-1) ? 1 : -1;
+    const other: 1 | -1 = dir > 0 ? -1 : 1;
+    if (room(dir) < 1.5 * L && room(other) > room(dir)) dir = other;
+    const far = here ? clampToLedge(here, this.x + dir * rng.range(2.2, 3.4) * L) : this.x;
+    const away: Vec = { x: far, y: this.y - 0.4 * L };
+    const walks = Math.abs(far - this.x) > 0.8 * L;
+    const kind = rng.weighted(["huff", "groom", "startle", "shake"] as const, (k) => this.temper.temper[k]) ?? "groom";
+    const plan: Act[] = [];
+    if (kind === "huff") {
+      plan.push({ k: "rest", pose: "stand", dur: rng.range(0.7, 1.1), feel: "annoyed", at: away });
+      if (walks) plan.push({ k: "walk", x: far, run: false, maxT: 14 });
+      plan.push({ k: "rest", pose: "sit", dur: rng.range(2.2, 4), at: away });
+    } else if (kind === "groom") {
+      plan.push({ k: "rest", pose: "sit", dur: 0.6, feel: "annoyed" });
+      plan.push({ k: "shot", clip: "groom", dur: rng.range(4.5, 7) });
+    } else if (kind === "startle") {
+      plan.push({ k: "rest", pose: "stand", dur: 0.8, feel: "startle", ...(from ? { at: from } : {}) });
+      if (walks) plan.push({ k: "walk", x: far, run: true, maxT: 10 });
+      plan.push({ k: "rest", pose: "sit", dur: rng.range(1.5, 3) });
+    } else {
+      plan.push({ k: "rest", pose: "stand", dur: 1, feel: "shake" });
+      plan.push({ k: "rest", pose: "sit", dur: rng.range(0.8, 1.4) });
+      if (rng.chance(0.5)) plan.push({ k: "shot", clip: "groom", dur: rng.range(3, 5) });
+    }
+    this.queue = plan;
   }
 
   /**

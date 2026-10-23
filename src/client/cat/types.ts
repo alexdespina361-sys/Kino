@@ -138,9 +138,17 @@ export type Clip =
 /**
  * How the cat feels, a face and a tail more than a body: laid over whatever it is doing (a cat can tilt its head as it sits, stands or walks).
  * `tilt` is the quizzical look at whoever is there, `think` a look away and up, `startle` a flinch (ears flat, eyes wide), `joy` a lift (ears up, tail up and
- * quivering), `droop` a letdown (ears out, head low, slow blink).
+ * quivering), `droop` a letdown (ears out, head low, slow blink), `annoyed` a cat that was handled and did not like it (ears flat back, eyes narrowed, the tail lashing),
+ * `shake` the whole body shaken from the head to the tail, the ears flapping (a cat shaking a hand off; it lasts about a second).
  */
-export type Emote = "none" | "tilt" | "think" | "startle" | "joy" | "droop";
+export type Emote = "none" | "tilt" | "think" | "startle" | "joy" | "droop" | "annoyed" | "shake";
+
+/**
+ * Where a hand that has the cat is, from the cat's feet (body lengths, the cat as seen facing right): `HANG_AHEAD` behind them and `HANG_DOWN` above them, once the hang has formed
+ * (the frame's `x`,`y` are the feet). The cat hangs from it by the scruff, tipped nose up, so the painter turns the picture about that point.
+ */
+export const HANG_DOWN = 0.73;
+export const HANG_AHEAD = 0.1;
 
 /** How a jump's `progress` is shared out: crouching to push off, the flight, then the landing and settling. */
 export const JUMP_TAKEOFF = 0.22;
@@ -196,6 +204,12 @@ export interface CatFrame {
   petted: boolean;
   /** A hand has it by the scruff and is carrying it somewhere: it hangs from the hand (`x`,`y` are still its feet, a little below the grip). */
   carried: boolean;
+  /**
+   * How hard it fights the hand that has it, 0..1: 0 hangs calm, about 0.1 is limp (it has given up for a while), 1 is twisting, kicking and swiping with all it has. It is 0 until it has been
+   * held a while, comes on over a second or so, may peak and ease off to limp and try again, and dies away in the half second after the hand lets go (a cat that lands from a struggle lands
+   * annoyed: see `Emote`). The painter makes of it what it likes (a faster, bigger swing, legs kicking, ears back, the mouth open); missing means 0.
+   */
+  struggle?: number;
   /** What it feels just now (see `Emote`); none when it does not say. */
   emote?: Emote;
 }

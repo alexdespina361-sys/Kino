@@ -177,6 +177,8 @@ export function runSession(options: SimOptions): SimStats {
   let goneSince = -1;
   let prevSize = "";
   let wasJumping = false;
+  /** When a hand last had the cat (for the fight with it to be gone within a moment of the hand letting go). */
+  let carriedAt = -1e9;
   /** How far the posters that were slid are still to carry a cat that is on them: the engine takes it in over a few frames (`RIDE_EASE`), so the frames after a slide are the row's movement too. */
   let carryLeft = 0;
   const steps = Math.round(options.seconds * fps);
@@ -424,8 +426,13 @@ export function runSession(options: SimOptions): SimStats {
       // (a swat is a leap's worth of motion: the paw is put down on a poster, on its feet, and for a viewer who wants less motion it is never swung)
       if (frame.clip === "swat" && world.reducedMotion) fail(`swatting for a viewer who wants less motion (${dbg.act})`);
       if (frame.clip === "swat" && (!frame.reach || !frame.grounded)) fail(`a swat at nothing, or off its feet (${dbg.act}, reach ${JSON.stringify(frame.reach)}, ${frame.grounded ? "ground" : "air"})`);
-      if ((frame.emote ?? "none") !== "none" && !["tilt", "think", "startle", "joy", "droop"].includes(frame.emote ?? "")) fail(`a feeling that is not one: ${frame.emote}`);
+      if ((frame.emote ?? "none") !== "none" && !["tilt", "think", "startle", "joy", "droop", "annoyed", "shake"].includes(frame.emote ?? "")) fail(`a feeling that is not one: ${frame.emote}`);
     }
+    // (the fight with a hand is in a hand: it is 0..1, and gone within a moment of the hand letting go)
+    const fight = frame.struggle ?? 0;
+    if (!Number.isFinite(fight) || fight < 0 || fight > 1.0001) fail(`struggle out of range: ${fight}`);
+    if (frame.carried) carriedAt = t;
+    else if (fight > 0 && t - carriedAt > 0.7) fail(`still fighting a hand ${(t - carriedAt).toFixed(2)}s after it let go (${fight.toFixed(2)})`);
     const visible = frame.appear > 0.05;
     // (a cat that is fading out is on its way off the page: it is allowed to be where the page no longer has a place for it)
     const vanishing = dbg.act === "fade:out";

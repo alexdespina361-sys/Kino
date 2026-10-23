@@ -31,7 +31,7 @@ const setup = (yes = true) => async (context: BrowserContext) => {
 const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, look: "ginger", ...over }) });
 
 interface Snap {
-  frame: { x: number; y: number; facing: number; clip: string; appear: number; petted: boolean; carried: boolean; grounded: boolean };
+  frame: { x: number; y: number; facing: number; clip: string; appear: number; petted: boolean; carried: boolean; grounded: boolean; struggle?: number; emote?: string };
   engine: { act: string; surfaceId: string | null; mode: string; placed: boolean };
   view: string;
   why: string;
@@ -751,6 +751,77 @@ test("a hand that is lost lets the cat go: the window losing the pointer puts it
   );
   await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-held", "");
   await tv.mouse.up();
+});
+
+/** From now on, how hard the cat fights the hand and what it feels, every few milliseconds, until `__stopFeel()`. */
+const recordTheFeeling = (tv: Page) =>
+  tv.evaluate(() => {
+    const w = window as unknown as { __kinoCat: { snapshot(): { frame: { struggle?: number; emote?: string; carried: boolean }; engine: { act: string } } }; __feel: Array<{ t: number; struggle: number; emote: string; carried: boolean; act: string }>; __stopFeel?: () => void };
+    w.__feel = [];
+    const start = performance.now();
+    const timer = window.setInterval(() => {
+      const { frame, engine } = w.__kinoCat.snapshot();
+      w.__feel.push({ t: (performance.now() - start) / 1000, struggle: frame.struggle ?? 0, emote: frame.emote ?? "none", carried: frame.carried, act: engine.act });
+    }, 8);
+    w.__stopFeel = () => window.clearInterval(timer);
+  });
+const theFeeling = async (tv: Page) => {
+  await tv.evaluate(() => (window as unknown as { __stopFeel?: () => void }).__stopFeel?.());
+  return tv.evaluate(() => (window as unknown as { __feel: Array<{ t: number; struggle: number; emote: string; carried: boolean; act: string }> }).__feel);
+};
+
+test("a cat that is held by the scruff hangs calm for a moment and then fights the hand; one let go of while it fought lands annoyed, and one let go of calm lands as it always did", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const lift = async () => {
+    const middle = await catSitsAndWhere(tv);
+    await tv.mouse.move(middle.x, middle.y);
+    await tv.mouse.down();
+    await tv.mouse.move(middle.x + 30, middle.y - 30, { steps: 5 });
+    await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.act, { timeout: 5_000 }).toBe("carried"));
+  };
+  const landed = () => saying(tv, () => expect.poll(async () => { const seen = await snap(tv); return !/carried|fall|climb/.test(seen.engine.act) && seen.frame.grounded; }, { timeout: 12_000 }).toBe(true));
+
+  // the first hold is short and calm: nothing is fought, and the landing is the one it has always had
+  await recordTheFeeling(tv);
+  await lift();
+  await tv.waitForTimeout(1_200);
+  await tv.mouse.up();
+  await landed();
+  await tv.waitForTimeout(1_500);
+  const calm = await theFeeling(tv);
+  expect(calm.some((beat) => beat.carried)).toBe(true);
+  expect(Math.max(...calm.map((beat) => beat.struggle)), "a cat held a moment does not fight").toBeLessThan(0.05);
+  expect(calm.filter((beat) => beat.emote === "annoyed" || beat.emote === "shake"), "and lands as it always did").toEqual([]);
+
+  // the second is long: it hangs calm, then fights, and the hand does not move all the while
+  await recordTheFeeling(tv);
+  await lift();
+  await tv.waitForTimeout(1_000);
+  expect((await snap(tv)).engine.act).toBe("carried");
+  expect((await snap(tv)).frame.struggle ?? 0, "calm at first").toBeLessThan(0.05);
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.struggle ?? 0, { timeout: 10_000 }).toBeGreaterThan(0.5));
+  // (the fight does not tear the cat out of the hand: it is held all the while)
+  expect((await snap(tv)).engine.act).toBe("carried");
+  await tv.mouse.up();
+  await landed();
+  await tv.waitForTimeout(2_500);
+  const fight = await theFeeling(tv);
+  const released = fight.findIndex((beat, index) => index > 0 && fight[index - 1]!.carried && !beat.carried);
+  expect(released, "it was let go of").toBeGreaterThan(0);
+  const fought = Math.max(...fight.slice(0, released).map((beat) => beat.struggle));
+  expect(fought, "it fought hard").toBeGreaterThan(0.5);
+  // gone about half a second after the hand let go, and never back
+  const after = fight.slice(released);
+  const quiet = after.find((beat) => beat.struggle < 0.01);
+  expect(quiet, "it stops fighting").toBeDefined();
+  expect(quiet!.t - after[0]!.t, "within a second of the hand letting go").toBeLessThan(1);
+  expect(after.filter((beat) => beat.t > quiet!.t && beat.struggle > 0.01)).toEqual([]);
+  // and what it did when it landed: it showed what it felt (annoyed, startled or shaking), not the sit and wash of a cat put down in peace
+  expect(after.some((beat) => beat.emote === "annoyed" || beat.emote === "startle" || beat.emote === "shake"), "lands annoyed").toBe(true);
 });
 
 interface Seen {
