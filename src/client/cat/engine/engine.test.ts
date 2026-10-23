@@ -908,10 +908,14 @@ describe("the cat on a row of posters that is scrolled sideways", () => {
     let away = 0;
     for (let seed = 1; seed <= 24; seed++) {
       const { log, x0, surface, L } = slide(seed, 20, 10);
-      const end = log[log.length - 1]!;
       const label = `seed ${seed}`;
-      expect(log.some((e) => e.act === "jump"), label).toBe(true);
-      expect(end.f.grounded, label).toBe(true);
+      const first = log.findIndex((e) => e.act === "jump");
+      expect(first, label).toBeGreaterThanOrEqual(0);
+      // (where it came down, on its feet and done with the leap: a lively cat goes on to something of its own after that)
+      const down = log.findIndex((e, i) => i > first && e.f.grounded && e.act !== "jump");
+      expect(down, label).toBeGreaterThan(first);
+      const end = log[down]!;
+      expect(log[log.length - 1]!.f.grounded, label).toBe(true);
       if (end.surface !== surface) away++;
       else {
         back++;
@@ -1475,10 +1479,17 @@ describe("what the cat does of its own accord with the posters", () => {
         expect((choice.at - lastRun) / 30, `seed ${seed}`).toBeGreaterThanOrEqual(100);
         lastRun = choice.at;
         const next = acts.slice(choice.at, choice.at + 30 * 30);
+        // (two or three leaps, and then it sits down on its feet: a lively cat goes on to something of its own after that, in the air at the end of the half minute, say)
         let leaps = 0;
-        for (let i = 1; i < next.length; i++) if (next[i] === "jump" && next[i - 1] !== "jump") leaps++;
+        let sat = -1;
+        for (let i = 1; i < next.length && sat < 0; i++) {
+          if (next[i] === "jump" && next[i - 1] !== "jump") leaps++;
+          if (next[i] === "rest:sit" && leaps >= 2) sat = i;
+        }
         expect(leaps, `seed ${seed} zoomies at ${choice.at / 30} s`).toBeGreaterThanOrEqual(2);
-        expect(frames[choice.at + 30 * 30 - 1]!.grounded, `seed ${seed}`).toBe(true);
+        expect(leaps, `seed ${seed} zoomies at ${choice.at / 30} s`).toBeLessThanOrEqual(3);
+        expect(sat, `seed ${seed} zoomies at ${choice.at / 30} s: it sat down`).toBeGreaterThan(0);
+        expect(frames[choice.at + sat]!.grounded, `seed ${seed}`).toBe(true);
       }
     }
     expect(runs).toBeGreaterThanOrEqual(3);
@@ -1513,6 +1524,433 @@ describe("what the cat does of its own accord with the posters", () => {
     calm.send({ type: "cat.command", command: "play" });
     const calmFrames = stepCat(calm, quietWorld, 10).frames;
     expect(calmFrames.some((f) => f.clip === "jump" || f.clip === "run")).toBe(false);
+  });
+});
+
+describe("going about: a cat that is free to roam passes through the foot of the screen, and is a livelier one", () => {
+  const seeds = [1, 2, 3, 4, 5, 6, 7, 8, 11, 12];
+  /** The two pages it is measured on, and a place on the foot of the screen of each: the TV's own library (two shelves and the foot, 1280x720) and the simulator's page (four shelves, 1920x1080). */
+  const pages: Array<[string, World, { x: number; y: number }]> = [
+    ["the TV's library", tvLibrary, { x: 640, y: 711 }],
+    ["the simulator's page", browseWorld(defaultPage()), { x: 900, y: 1074 }],
+  ];
+
+  interface Afternoons {
+    seen: number;
+    foot: number;
+    /** Frames asleep on the foot of the screen. */
+    napped: number;
+    /** The seconds of every stay on the foot of the screen, one after the other. */
+    stays: number[];
+    hops: number;
+    walking: number;
+    asleep: number;
+    /** Frames at rest, asleep or in a scene of its own. */
+    still: number;
+  }
+  /** What a free cat does over a few afternoons on `world`: where it is, and what it is doing. */
+  const afternoons = (world: World, secondsEach = 600): Afternoons => {
+    const kinds = new Map(world.surfaces.map((s) => [s.id, s.kind] as const));
+    const out: Afternoons = { seen: 0, foot: 0, napped: 0, stays: [], hops: 0, walking: 0, asleep: 0, still: 0 };
+    for (const seed of seeds) {
+      const engine = new CatEngine(seed);
+      let onFoot = 0;
+      let wasJumping = false;
+      for (let i = 0; i < secondsEach * 30; i++) {
+        const f = engine.update(world, 1 / 30);
+        const debug = engine.debug();
+        if (f.appear <= 0.5) continue;
+        out.seen++;
+        const kind = f.grounded && debug.surfaceId ? kinds.get(debug.surfaceId) : "air";
+        if (kind === "fallbackFloor") {
+          out.foot++;
+          onFoot++;
+          if (debug.act === "sleep") out.napped++;
+        } else if (kind !== "air" && onFoot > 0) {
+          out.stays.push(onFoot / 30);
+          onFoot = 0;
+        }
+        const jumping = debug.act === "jump";
+        if (jumping && !wasJumping) out.hops++;
+        wasJumping = jumping;
+        if (debug.act === "walk" || debug.act === "stalk") out.walking++;
+        if (debug.act === "sleep") out.asleep++;
+        if (debug.act.startsWith("rest") || debug.act === "sleep" || debug.act.startsWith("shot")) out.still++;
+      }
+      if (onFoot > 0) out.stays.push(onFoot / 30);
+    }
+    return out;
+  };
+  const kept = new Map<World, Afternoons>();
+  const afternoon = (world: World): Afternoons => {
+    let one = kept.get(world);
+    if (!one) kept.set(world, (one = afternoons(world)));
+    return one;
+  };
+
+  it("gets up from the foot of the screen onto a shelf in a quarter of a minute or so, called down to it or not: it is a place to pass through", () => {
+    for (const [name, world, foot] of pages) {
+      const times: number[] = [];
+      for (let seed = 1; seed <= 30; seed++) {
+        const engine = new CatEngine(seed);
+        stepCat(engine, world, 6);
+        // (not in the middle of a hop: it would come down on the shelf it is leaping to, and be called there)
+        for (let i = 0; i < 20 * 30 && !engine.debug().act.startsWith("rest"); i++) engine.update(world, 1 / 30);
+        engine.send({ type: "cat.call", at: foot });
+        // (counted from when it has come, and is on its feet there)
+        let arrived = -1;
+        let left = -1;
+        for (let i = 0; i < 120 * 30 && left < 0; i++) {
+          const f = engine.update(world, 1 / 30);
+          const debug = engine.debug();
+          if (arrived < 0) {
+            if (debug.surfaceId === "floor" && f.grounded && debug.act !== "walk" && debug.act !== "jump") arrived = i;
+          } else if (f.grounded && debug.surfaceId !== "floor" && debug.act !== "fall") left = (i - arrived) / 30;
+        }
+        times.push(left);
+      }
+      // (the cat before this one stayed a median half a minute, a tenth of the time more than a minute, and now and then three minutes; measured now, over forty cats: a median of 12 s, a tenth over 19 s, the slowest 32 s and 45 s)
+      expect(times.filter((t) => t < 0), name).toEqual([]);
+      const sorted = [...times].sort((a, b) => a - b);
+      expect(sorted[sorted.length >> 1]!, name).toBeLessThan(16);
+      expect(sorted[Math.floor(sorted.length * 0.9)]!, name).toBeLessThan(26);
+      expect(sorted[sorted.length - 1]!, name).toBeLessThan(60);
+    }
+  });
+
+  it("spends hardly any of an afternoon on the foot of the screen of a page that has shelves, and none of it asleep", () => {
+    for (const [name, world] of pages) {
+      const seen = afternoon(world);
+      expect(seen.seen, name).toBeGreaterThan(5000);
+      // (measured: 1.1 % on the TV's library and 1.8 % on the simulator's page; the cat before this one 14 % and 24 %, in stays of up to a minute and a half to two and a half minutes)
+      expect(seen.foot / seen.seen, name).toBeLessThan(0.04);
+      expect(Math.max(0, ...seen.stays), name).toBeLessThan(30);
+      expect(seen.napped, name).toBe(0);
+    }
+  });
+
+  it("goes about more: it hops more, walks more and sleeps less than a cat that was content to stay where it was", () => {
+    // (measured on the TV's library, against the cat before this one -- 0.92 hops a minute, 13.6 % of its time walking, 38 % asleep, 84 % still: 1.8, 19.7, 23, 75; on the simulator's page 0.77, 14.1, 37, 84: 1.5, 19.1, 26, 77.
+    // The cat with the sleep it had before, but not on the foot, was 27 % and 30 % asleep.)
+    for (const [name, world, hops, asleep] of [
+      ["the TV's library", tvLibrary, 1.4, 0.25],
+      ["the simulator's page", pages[1]![1], 1.25, 0.28],
+    ] as const) {
+      const seen = afternoon(world);
+      expect((seen.hops * 60 * 30) / seen.seen, name).toBeGreaterThan(hops);
+      expect(seen.walking / seen.seen, name).toBeGreaterThan(0.16);
+      expect(seen.asleep / seen.seen, name).toBeLessThan(asleep);
+      expect(seen.still / seen.seen, name).toBeLessThan(0.8);
+    }
+  });
+
+  it("is as restful as it was on a page that has nothing but the foot of the screen: there it naps, and goes about the place", () => {
+    const floorOnly: World = { ...tvLibrary, surfaces: tvLibrary.surfaces.filter((s) => s.kind === "fallbackFloor"), targets: [] };
+    const seen = afternoon(floorOnly);
+    expect(seen.foot / seen.seen).toBeGreaterThan(0.95);
+    expect(seen.asleep / seen.seen).toBeGreaterThan(0.1);
+    expect(seen.walking / seen.seen).toBeGreaterThan(0.05);
+  });
+
+  it("is not made to go anywhere by it for a viewer who wants quiet or less motion: it stays where it was put", () => {
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const world = { ...tvLibrary, [flag]: true };
+      for (const seed of [1, 2, 3]) {
+        const engine = new CatEngine(seed);
+        stepCat(engine, world, 6);
+        engine.send({ type: "cat.call", at: { x: 640, y: 711 } });
+        stepCat(engine, world, 10);
+        const start = engine.debug().surfaceId;
+        for (let i = 0; i < 240 * 30; i++) {
+          engine.update(world, 1 / 30);
+          const debug = engine.debug();
+          expect(debug.surfaceId, `${flag} seed ${seed}`).toBe(start);
+          expect(["walk", "run", "jump"], `${flag} seed ${seed}`).not.toContain(debug.act);
+        }
+      }
+    }
+  });
+
+  it("runs the zoomies from shelf to shelf, and not down to the foot of the screen", () => {
+    const world = pages[1]![1];
+    const kinds = new Map(world.surfaces.map((s) => [s.id, s.kind] as const));
+    let lands = 0;
+    let low = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const engine = new CatEngine(seed);
+      let last = "";
+      let from = -1;
+      for (let i = 0; i < 900 * 30; i++) {
+        engine.mood.energy = 0.9;
+        engine.update(world, 1 / 30);
+        const debug = engine.debug();
+        if (debug.choice !== last) {
+          last = debug.choice;
+          from = debug.choice === "zoomies" ? i : -1;
+        }
+        // (where it sits down at the end of it)
+        if (from >= 0 && debug.act === "rest:sit" && i - from > 20) {
+          lands++;
+          if (kinds.get(debug.surfaceId ?? "") === "fallbackFloor") low++;
+          from = -1;
+        }
+      }
+    }
+    expect(lands).toBeGreaterThanOrEqual(10);
+    expect(low).toBeLessThanOrEqual(lands * 0.1);
+  });
+
+  /** What the cat did of its own accord when a card got the focus on another shelf: when it chose to follow, and the frame in which it first sat on that shelf afterwards. */
+  const followed = (seed: number) => {
+    const page = defaultPage();
+    const base = browseWorld(page);
+    const engine = new CatEngine(seed);
+    stepCat(engine, base, 6);
+    // (on the second shelf, and the focus is moved to a card on the first)
+    engine.send({ type: "cat.call", at: { x: 900, y: 861 } });
+    stepCat(engine, base, 12);
+    page.focus = { row: 0, col: 3 };
+    const world = browseWorld(page);
+    engine.send({ type: "catalog.itemFocused", id: "p1:r0c3" });
+    let last = engine.debug().choice;
+    let chose = -1;
+    let sat = undefined as CatFrame | undefined;
+    stepCat(engine, world, 30, 30, (f, t) => {
+      const debug = engine.debug();
+      if (debug.choice !== last) {
+        last = debug.choice;
+        if (debug.choice === "follow" && chose < 0) chose = t;
+      }
+      if (chose >= 0 && !sat && debug.act === "rest:sit" && debug.surfaceId === "p1:row0") sat = { ...f, ...(f.look ? { look: { ...f.look } } : {}) };
+    });
+    return { chose, sat, card: world.focus!, L: world.bodyLength };
+  };
+
+  it("goes over to the card that got the focus, on another shelf, and sits by it, looking at it", () => {
+    let went = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const { chose, sat, card, L } = followed(seed);
+      // (one that set out in the last ten seconds of the half minute is not seen to the end)
+      if (chose < 0 || chose > 20) continue;
+      went++;
+      const label = `seed ${seed}`;
+      expect(sat, label).toBeDefined();
+      // (within a moment's walk of it, and its eyes on it)
+      expect(Math.abs(sat!.x - (card.x + card.w / 2)), label).toBeLessThan(card.w / 2 + 1.6 * L);
+      expect(sat!.look, label).toBeDefined();
+      expect(sat!.look!.x, label).toBeGreaterThan(card.x);
+      expect(sat!.look!.x, label).toBeLessThan(card.x + card.w);
+      expect(sat!.look!.y, label).toBeGreaterThan(card.y);
+      expect(sat!.look!.y, label).toBeLessThan(card.y + card.h);
+    }
+    // (measured: 8 of 40 cats in half a minute; the rest were busy with something of their own when the focus moved, or tired, and the focus of a viewer who goes on down the library is news again at every card)
+    expect(went).toBeGreaterThanOrEqual(4);
+  });
+
+  it("does not follow a card that got the focus a long while ago, or is on the shelf it is on, or when the viewer wants quiet or less motion", () => {
+    // a focus that moved to a card on the shelf the cat is on (it may leave that shelf of its own accord, and come back to the card: it does not set out for a card that is on the shelf it is on)
+    for (let seed = 1; seed <= 20; seed++) {
+      const page = defaultPage();
+      const base = browseWorld(page);
+      const engine = new CatEngine(seed);
+      stepCat(engine, base, 6);
+      engine.send({ type: "cat.call", at: { x: 900, y: 861 } });
+      stepCat(engine, base, 12);
+      // (whichever shelf it is on by now)
+      const row = /row(\d)/.exec(engine.debug().surfaceId ?? "")?.[1];
+      if (row === undefined) continue;
+      page.focus = { row: Number(row), col: 5 };
+      const world = browseWorld(page);
+      engine.send({ type: "catalog.itemFocused", id: `p1:r${row}c5` });
+      let last = engine.debug().choice;
+      stepCat(engine, world, 25, 30, () => {
+        const debug = engine.debug();
+        if (debug.choice !== last) {
+          last = debug.choice;
+          if (debug.choice === "follow") expect(debug.surfaceId, `same shelf, seed ${seed}`).not.toBe(`p1:row${row}`);
+        }
+      });
+    }
+    // a card that has had the focus for a long while (the cat was never told it moved)
+    for (let seed = 1; seed <= 12; seed++) {
+      const page = defaultPage();
+      const base = browseWorld(page);
+      const engine = new CatEngine(seed);
+      stepCat(engine, base, 6);
+      engine.send({ type: "cat.call", at: { x: 900, y: 861 } });
+      stepCat(engine, base, 12);
+      page.focus = { row: 0, col: 3 };
+      const world = browseWorld(page);
+      let last = engine.debug().choice;
+      stepCat(engine, world, 120, 30, () => {
+        const debug = engine.debug();
+        if (debug.choice !== last) {
+          last = debug.choice;
+          expect(debug.choice, `long ago, seed ${seed}`).not.toBe("follow");
+        }
+      });
+    }
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const page = { ...defaultPage(), [flag]: true };
+      const engine = new CatEngine(3);
+      stepCat(engine, browseWorld(page), 6);
+      page.focus = { row: 0, col: 3 };
+      const world = browseWorld(page);
+      engine.send({ type: "catalog.itemFocused", id: "p1:r0c3" });
+      const { frames } = stepCat(engine, world, 40);
+      expect(frames.some((f) => f.clip === "walk" || f.clip === "jump"), flag).toBe(false);
+    }
+  });
+
+  /** What the cat did of its own accord when a pointer came to rest far from it: the frame in which it first sat looking at the pointer afterwards, and whether it chose to greet it. */
+  const greeted = (seed: number, pointer: { x: number; y: number }) => {
+    const page = defaultPage();
+    const base = browseWorld(page);
+    const engine = new CatEngine(seed);
+    stepCat(engine, base, 6);
+    engine.send({ type: "cat.call", at: { x: 1600, y: 861 } });
+    stepCat(engine, base, 12);
+    const world = browseWorld(page, { pointer });
+    let last = engine.debug().choice;
+    let chose = -1;
+    let sat = undefined as CatFrame | undefined;
+    stepCat(engine, world, 30, 30, (f, t) => {
+      const debug = engine.debug();
+      if (debug.choice !== last) {
+        last = debug.choice;
+        if (debug.choice === "greet" && chose < 0) chose = t;
+      }
+      if (chose >= 0 && !sat && debug.act === "rest:sit") sat = { ...f, ...(f.look ? { look: { ...f.look } } : {}) };
+    });
+    return { chose, sat, L: world.bodyLength };
+  };
+
+  it("comes over to a pointer that has rested for a while some way off, and sits where it can see it", () => {
+    const pointer = { x: 600, y: 800 };
+    let came = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const { chose, sat, L } = greeted(seed, pointer);
+      if (chose < 0 || chose > 20) continue;
+      came++;
+      const label = `seed ${seed}`;
+      expect(sat, label).toBeDefined();
+      expect(Math.abs(sat!.x - pointer.x), label).toBeLessThan(2.2 * L);
+      expect(sat!.look!.x, label).toBeCloseTo(pointer.x, 0);
+      expect(sat!.look!.y, label).toBeCloseTo(pointer.y, 0);
+      // (on the shelf under it)
+      expect(sat!.y - pointer.y, label).toBeGreaterThan(0);
+      expect(sat!.y - pointer.y, label).toBeLessThan(1.4 * L);
+    }
+    // (measured: 18 of 40 cats in half a minute, 14 in the first twenty seconds of it)
+    expect(came).toBeGreaterThanOrEqual(8);
+  });
+
+  it("does not come over to a pointer that is on the move, or is beside it already, or for a viewer who wants quiet or less motion", () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      // a pointer that goes to and fro all the time (never at rest for a second)
+      const page = defaultPage();
+      const base = browseWorld(page);
+      const engine = new CatEngine(seed);
+      stepCat(engine, base, 6);
+      engine.send({ type: "cat.call", at: { x: 1600, y: 861 } });
+      stepCat(engine, base, 12);
+      let last = engine.debug().choice;
+      for (let i = 0; i < 90 * 30; i++) {
+        const x = 300 + 700 * (0.5 + 0.5 * Math.sin(i / 20));
+        engine.update(browseWorld(page, { pointer: { x, y: 800 } }), 1 / 30);
+        const debug = engine.debug();
+        if (debug.choice !== last) {
+          last = debug.choice;
+          expect(debug.choice, `moving, seed ${seed}`).not.toBe("greet");
+        }
+      }
+      // a pointer that rests two body lengths from it, wherever it goes (a pointer that near is the bat's, not a greeting's)
+      const near = new CatEngine(seed);
+      stepCat(near, base, 6);
+      last = near.debug().choice;
+      for (let i = 0; i < 90 * 30; i++) {
+        const f = near.frame;
+        const side = f.x < base.viewport.w / 2 ? 1 : -1;
+        near.update(browseWorld(page, { pointer: { x: f.x + side * 2 * base.bodyLength, y: f.y - 0.5 * base.bodyLength } }), 1 / 30);
+        const debug = near.debug();
+        if (debug.choice !== last) {
+          last = debug.choice;
+          expect(debug.choice, `beside it, seed ${seed}`).not.toBe("greet");
+        }
+      }
+    }
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      for (let seed = 1; seed <= 6; seed++) {
+        const page = { ...defaultPage(), [flag]: true };
+        const engine = new CatEngine(seed);
+        stepCat(engine, browseWorld(page), 6);
+        let last = engine.debug().choice;
+        const { frames } = stepCat(engine, browseWorld(page, { pointer: { x: 600, y: 800 } }), 60, 30, () => {
+          const debug = engine.debug();
+          if (debug.choice !== last) {
+            last = debug.choice;
+            expect(debug.choice, `${flag} seed ${seed}`).not.toBe("greet");
+          }
+        });
+        expect(frames.some((f) => f.clip === "walk" || f.clip === "jump"), `${flag} seed ${seed}`).toBe(false);
+      }
+    }
+  });
+
+  it("visits a poster on another shelf now and then: goes over, creeps up on it, pats it, and sits", () => {
+    const world = tvLibrary;
+    const L2 = world.bodyLength;
+    let visits = 0;
+    for (const seed of seeds) {
+      const engine = new CatEngine(seed);
+      const frames: Array<{ f: CatFrame; surface: string | null }> = [];
+      const chose: Array<{ at: number; from: string | null }> = [];
+      let last = "";
+      for (let i = 0; i < 900 * 30; i++) {
+        const f = engine.update(world, 1 / 30);
+        const debug = engine.debug();
+        frames.push({ f: { ...f, ...(f.reach ? { reach: { ...f.reach } } : {}) }, surface: debug.surfaceId });
+        if (debug.choice !== last) {
+          last = debug.choice;
+          if (debug.choice === "visit") chose.push({ at: i, from: frames[Math.max(0, i - 1)]!.surface });
+        }
+      }
+      for (const { at, from } of chose) {
+        // (one chosen in the last minute is not seen to the end)
+        if (at + 60 * 30 > frames.length) continue;
+        visits++;
+        const label = `seed ${seed} visit at ${at / 30} s`;
+        const hit = frames.slice(at, at + 60 * 30).find((e) => e.f.clip === "swat" && e.f.progress >= SWAT_HIT);
+        expect(hit, label).toBeDefined();
+        const poster = world.targets.find((t) => hit!.f.reach!.x >= t.rect.x && hit!.f.reach!.x <= t.rect.x + t.rect.w && hit!.f.reach!.y >= t.rect.y - 0.2 * L2 && hit!.f.reach!.y <= t.rect.y + t.rect.h);
+        expect(poster, label).toBeDefined();
+        // (a poster of another shelf than the one it was on, and it is on that shelf, on its feet)
+        expect(poster!.surfaceId, label).not.toBe(from);
+        expect(hit!.surface, label).toBe(poster!.surfaceId);
+        expect(hit!.f.grounded, label).toBe(true);
+      }
+    }
+    expect(visits).toBeGreaterThanOrEqual(5);
+  });
+
+  it("has its busy spells and its quiet ones: its energy swings over a few minutes, and not in step with the next cat's", () => {
+    const at: number[] = [];
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const engine = new CatEngine(seed);
+      let lo = 1;
+      let hi = 0;
+      for (let i = 0; i < 700 * 30; i++) {
+        engine.update(tvLibrary, 1 / 30);
+        if (i === 100 * 30) at.push(engine.mood.energy);
+        if (i >= 60 * 30 && i % 30 === 0) {
+          lo = Math.min(lo, engine.mood.energy);
+          hi = Math.max(hi, engine.mood.energy);
+        }
+      }
+      // (measured: from 0.16 to 0.49, three cycles in it)
+      expect(hi - lo, `seed ${seed}`).toBeGreaterThan(0.25);
+    }
+    expect(Math.max(...at) - Math.min(...at)).toBeGreaterThan(0.15);
   });
 });
 
@@ -1662,32 +2100,37 @@ describe("settling clear of the names", () => {
   it("leaves a shelf whose names run edge to edge for one that has room, to settle for a while", () => {
     const seen = hiding(unevenWorld());
     expect(seen.resting).toBeGreaterThan(20000);
-    // (measured: 0.24 of its resting time on this page hid names when it knew only the shelf it was on; 0.04 knowing the others)
-    expect(seen.share).toBeLessThan(0.1);
+    // (measured: 0.24 of its resting time on this page hid names when it knew only the shelf it was on; 0.04 knowing the others. A cat that goes about -- see "going about" -- has more of the shelves
+    // in its day: 0.074 with the cat before it, 0.056 now; 0.094 if its leaps did not mind the names where they land, 0.11 if it did not leave a shelf of names, 0.13 if it did not cut short a stop in front of one)
+    expect(seen.share).toBeLessThan(0.075);
     // (it is on the crowded shelf now and then, on its way and for the pauses of a stroll, but not to rest on)
     expect(seen.on["p1:row0"] ?? 0).toBeLessThan(0.1 * seen.resting);
     expect(seen.on["p1:row1"] ?? 0).toBeGreaterThan(0.3 * seen.resting);
   });
 
   it("on the TV's own library page, as the cat read it, it does not rest in front of a name: not where it settles and not where it lands from a hop", () => {
-    // (the floor of the screen is the place with the names: the rows are clear of them)
-    let floor = 0;
-    let hid = 0;
-    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 11, 12]) {
-      const engine = new CatEngine(seed);
-      for (let i = 0; i < 600 * 30; i++) {
-        const f = engine.update(tvLibrary, 1 / 30);
-        const debug = engine.debug();
-        const pose: RestPose | null = debug.act === "rest:sit" ? "sit" : debug.act === "rest:loaf" ? "loaf" : debug.act === "rest:stand" ? "stand" : debug.act === "sleep" ? "curl" : null;
-        if (!pose || debug.surfaceId !== "floor" || f.appear < 0.99 || !f.grounded) continue;
-        floor++;
-        if (shapeCovers(pose, f.facing, f.x, f.y, tvLibrary.bodyLength, tvLibrary.soft!) / tvLibrary.bodyLength ** 2 > 0.1) hid++;
+    // (the floor of the screen is the place with the names: the rows are clear of them. A cat does not stay on the floor of a page that has rows -- see "gets up from the foot of the screen" -- so
+    // the floor is looked at twice: on the page as it is, where it is a place it passes through, and on the page with only its floor, where it is the cat's whole world)
+    const floorOnly: World = { ...tvLibrary, surfaces: tvLibrary.surfaces.filter((s) => s.kind === "fallbackFloor"), targets: [] };
+    for (const [world, least] of [[tvLibrary, 300], [floorOnly, 8000]] as const) {
+      let floor = 0;
+      let hid = 0;
+      for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 11, 12]) {
+        const engine = new CatEngine(seed);
+        for (let i = 0; i < 600 * 30; i++) {
+          const f = engine.update(world, 1 / 30);
+          const debug = engine.debug();
+          const pose: RestPose | null = debug.act === "rest:sit" ? "sit" : debug.act === "rest:loaf" ? "loaf" : debug.act === "rest:stand" ? "stand" : debug.act === "sleep" ? "curl" : null;
+          if (!pose || debug.surfaceId !== "floor" || f.appear < 0.99 || !f.grounded) continue;
+          floor++;
+          if (shapeCovers(pose, f.facing, f.x, f.y, world.bodyLength, world.soft!) / world.bodyLength ** 2 > 0.1) hid++;
+        }
       }
+      expect(floor, `${world.surfaces.length} places`).toBeGreaterThan(least);
+      // (measured: 0.83 of its resting on the floor hid more than a tenth of a body-square of names while it knew nothing of them, and 0.064 knowing them, nearly all of it the first seat or loaf where it
+      // appears and the seat after a sniff; the cat before this one had 0.095 while the landing of a hop was left to chance, and 0.028 since)
+      expect(hid / floor, `${world.surfaces.length} places`).toBeLessThan(0.08);
     }
-    expect(floor).toBeGreaterThan(8000);
-    // (measured: 0.83 of its resting on the floor hid more than a tenth of a body-square of names while it knew nothing of them, and 0.064 knowing them, nearly all of it the first seat or loaf where it
-    // appears and the seat after a sniff; the cat before this one had 0.095 while the landing of a hop was left to chance, and 0.028 since)
-    expect(hid / floor).toBeLessThan(0.08);
   });
 
   it("does not leave its shelf for the sake of names when the viewer wants quiet or less motion, but settles where it is", () => {
@@ -2460,9 +2903,10 @@ describe("picked up by a hand", () => {
         const out = letGoFor(fought.engine, fought.world, 9);
         const down = out.frames.findIndex((f, i) => f.grounded && i > 0 && f.vy === 0 && out.frames[i - 1]!.vy === 0);
         const did = afterwards(out.frames, out.acts);
-        if (!did.walked || did.washed || did.feelings.includes("startle")) continue;
-        // (the first walk after it came down: from where it landed to where it stopped)
+        if (!did.walked || did.washed || did.feelings.includes("startle") || did.feelings.includes("shake")) continue;
+        // (the first walk after it came down: from where it landed to where it stopped, and the one the huff makes, within a few seconds of the landing: a lively cat that has sat and calmed down walks where it likes)
         const first = out.acts.findIndex((act, i) => i > down && act === "walk");
+        if (first < 0 || first > down + 3 * 30) continue;
         let last = first;
         while (out.acts[last + 1] === "walk") last++;
         const there = out.frames[down]!.x;
@@ -2515,7 +2959,8 @@ describe("hauling itself up a low step", () => {
     const leaping: Array<string | null> = [];
     const { frames } = stepCat(engine, world, seconds, 30, () => {
       const dbg = engine.debug();
-      leaping.push(dbg.act === "jump" ? dbg.jumpTo : null);
+      // (a cat that has the zoomies runs and leaps at everything, as it always did: that is not a step it is climbing)
+      leaping.push(dbg.act === "jump" && dbg.choice !== "zoomies" ? dbg.jumpTo : null);
     });
     return { frames, leaping };
   };
@@ -2791,7 +3236,8 @@ describe("the cat and the things on the page", () => {
       for (let i = 0; i < 30 * 600; i++) {
         engine.update(w, 1 / 30);
         const dbg = engine.debug();
-        if (dbg.act === "jump" && before !== "jump") {
+        // (not the zoomies: a cat at play runs and leaps at everything, in no mood to look over the edge)
+        if (dbg.act === "jump" && before !== "jump" && dbg.choice !== "zoomies") {
           const to = w.surfaces.find((s) => s.id === dbg.jumpTo);
           const from = w.surfaces.find((s) => s.id === dbg.surfaceId);
           if (to && from) {
