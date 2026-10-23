@@ -53,32 +53,13 @@ export const TABLE: readonly Entry[] = [
   { name: "stalk", donor: "m2m", from: "Sneak", loop: true, lock: true, style: { ...WALK_STYLE, lower: 0.55 }, finish: { gait: WALKING, floor: "lift" } },
   { name: "stand", donor: "khr", from: "Survey", loop: true, plant: { paws: ALL_PAWS, seat: false }, finish: { floor: "pin" } },
   { name: "peek", donor: "m2m", from: "Idle Alert", loop: true, style: { lower: 0.6 }, plant: { paws: ALL_PAWS, seat: false }, finish: { floor: "pin" } },
-  { name: "sit", donor: "m2m", from: "Sit", loop: false, plant: { paws: FRONT_PAWS, seat: true }, finish: { floor: "pin" } },
+  { name: acts.DONOR_SIT, donor: "m2m", from: "Sit", loop: false, plant: { paws: FRONT_PAWS, seat: true }, finish: { floor: "pin" } },
   { name: "jump", donor: "m2m", from: "Jump", loop: false, finish: { leap: true, floor: "lift" } },
   { name: "swat", donor: "m2m", from: "Bite", loop: false, finish: { floor: "pin" } },
   { name: "yawn", donor: "m2m", from: "Bark", loop: false, finish: { floor: "pin" } },
 ];
 
-/**
- * The acts that the pose generator makes, in the order a person would list the cat's doings. (The donor's swat stays: it bites, and the generated one only reaches out.)
- * Each is laid on the donors' standing and sitting, so the donors must be built first.
- */
-export const ACTS: Readonly<Record<string, (m: acts.Made) => ClipSource>> = {
-  loaf: acts.loaf,
-  doze: acts.doze,
-  curl: acts.curl,
-  shift: acts.shift,
-  crouch: acts.crouch,
-  wiggle: acts.wiggle,
-  stretch: acts.stretch,
-  groom: acts.groom,
-  point: acts.point,
-  tap: acts.tap,
-  scratch: acts.scratch,
-  pet: acts.pet,
-  knead: acts.knead,
-  sniff: acts.sniff,
-};
+// (what the pose generator makes: acts.ACTS. Each is laid on the donors' standing and sitting, so the donors are built first.)
 
 const arg = (name: string, fallback: string): string => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const f = readFileSync(arg("mesh", "src/client/cat/render/gl/cat.mesh"));
@@ -128,7 +109,7 @@ const out = finished.map((s, i) => {
 // what no donor does
 const m = acts.context(mesh, skeleton, new Map(played.map((c) => [c.name, c])));
 const made: ClipSource[] = [];
-for (const [name, make] of Object.entries(ACTS)) {
+for (const [name, make] of Object.entries(acts.ACTS)) {
   if (!wanted(name)) continue;
   const t0 = Date.now();
   const clip = make(m);
@@ -136,7 +117,8 @@ for (const [name, make] of Object.entries(ACTS)) {
   say(`${name}: ${clip.frames} frames at ${clip.fps.toFixed(2)}${clip.loop ? " (loop)" : ""}, made in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
-const all = [...out.filter((s) => wanted(s.name)), ...made];
+// (the donor's sit is what the acts are laid on and what the sit sits down to: the player has the one that sits down)
+const all = [...out.filter((s) => s.name !== acts.DONOR_SIT && wanted(s.name)), ...made];
 const dest = arg("out", ".kino-cat/cands.clips");
 writeFileSync(dest, encodeClips(mesh.skeleton, all));
 say(`wrote ${dest}: ${all.map((s) => s.name).join(", ")}`);

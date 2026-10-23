@@ -4,7 +4,7 @@
 // has (a cat that sits and washes) is laid on that donor's pose, so that what is the donor's stays its own.
 import type { ClipSource } from "../../../src/client/cat/render/gl/clipfile";
 import type { CatMesh } from "../../../src/client/cat/render/gl/format";
-import { Pose, sampleFrame, type Clip, type Skeleton } from "../../../src/client/cat/render/gl/pose";
+import { Pose, blend, sampleFrame, type Clip, type Skeleton } from "../../../src/client/cat/render/gl/pose";
 import { Body, mixSpec, Recorder, type PawName, type Spec } from "./posegen.mts";
 import { poseAt } from "./source.mts";
 
@@ -75,6 +75,20 @@ export function standing(m: Made): Spec {
     neck: [angle("chest", "neck1"), angle("neck1", "neck2"), angle("neck2", "head"), angle("head", "headend")],
     tail: [angle("tail", "tailstart"), angle("tailstart", "tail1"), angle("tail1", "tail2"), angle("tail2", "tail3")],
     paws: Object.fromEntries(ALL.map((p) => [p, b.planted(p)])) as Spec["paws"],
+  };
+}
+
+/** A pose as the numbers a posture is told in: the hips' place and tilt, the bends of the back, the neck and the tail, and where each paw's sole is (what a donor's posture comes to when it is to be gone to, or from). */
+export function specOf(m: Made, pose: Pose): Spec {
+  const b = m.body;
+  const a = b.anglesOf(pose);
+  const hips = b.where(pose, "Hips");
+  return {
+    hips: { x: hips[0], y: hips[1], pitch: b.pitchOf(pose) },
+    back: a.back,
+    neck: a.neck,
+    tail: a.tail,
+    paws: Object.fromEntries(ALL.map((p) => [p, { at: b.padOf(pose, p) }])) as Spec["paws"],
   };
 }
 
@@ -319,8 +333,45 @@ export function stretch(m: Made): ClipSource {
 
 /** The sit as the donor made it: the pose the acts below are laid on, and where its neck's pieces point (the head moves by turns of those). */
 function sitting(m: Made): { base: Pose; neck: readonly [number, number, number, number] } {
-  const base = frameOf(m, "sit", 0);
+  const base = frameOf(m, DONOR_SIT, 0);
   return { base, neck: m.body.anglesOf(base).neck };
+}
+
+/** The donor's clip of a cat that sits (kept under this name: `sit` is the one that sits down, made below from the donor's pose). */
+export const DONOR_SIT = "sit_donor";
+
+const SIT_DOWN: Timing = { hips: [0, 0.8], back: [0, 0.8], neck: [0.2, 0.8], tail: [0.3, 0.7], hind: [0, 0.8], front: [0, 0.8] };
+
+/**
+ * The sit the cat sits down to: the donor's, as the numbers a posture is told in. (It is a squat with the back near level, and that is what this cat can do: its seat is the fur of its rump,
+ * which hangs far below the hips, and its legs are short: with the back steeper the shoulders are higher than the front legs reach and the paws are left hanging in the air, a begging cat.)
+ */
+export function sitSpec(m: Made): Spec {
+  return specOf(m, frameOf(m, DONOR_SIT, "last"));
+}
+
+/**
+ * The cat that sits down: from standing to the sit, the hips and the haunches first (the hind paws come forward under them), the back pitching up as the rump goes down, the neck and the
+ * tail after, and then the sit held.
+ */
+export function sit(m: Made): ClipSource {
+  const to = sitSpec(m);
+  const from = standing(m);
+  // (the legs of a pose that is told as numbers come out a little otherwise than the donor's: the last of the clip is eased into the donor's own, the pose that the acts done from a sit are laid on)
+  return endingIn(m, render(m, "sit", 1.4, false, (t) => between(from, to, t, SIT_DOWN)), frameOf(m, DONOR_SIT, "last"));
+}
+
+/** A clip whose last stretch (from `from` of the way through it) is brought, by an ease, to a pose that it ends in exactly. */
+export function endingIn(m: Made, source: ClipSource, target: Pose, from = 0.6): ClipSource {
+  const rec = new Recorder(m.skeleton, source.frames);
+  const pose = new Pose(m.skeleton);
+  const first = Math.floor(from * (source.frames - 1));
+  for (let f = 0; f < source.frames; f++) {
+    poseAt(m.skeleton, source, f, pose);
+    if (f > first) blend(pose, pose, target, ease((f - first) / (source.frames - 1 - first)));
+    rec.put(f, pose);
+  }
+  return rec.source(source.name, source.fps, source.loop, source.marks ?? {});
 }
 
 export function groom(m: Made): ClipSource {
@@ -499,6 +550,12 @@ export function swat(m: Made): ClipSource {
     { marks: { hit: 0.42 } },
   );
 }
+
+/**
+ * The acts that the pose generator makes, in the order a person would list the cat's doings. (The donor's swat stays: it bites, and the generated one only reaches out.)
+ * Each is laid on the donors' standing and sitting, so the donors must be made first.
+ */
+export const ACTS: Readonly<Record<string, (m: Made) => ClipSource>> = { sit, loaf, doze, curl, shift, crouch, wiggle, stretch, groom, point, tap, scratch, pet, knead, sniff };
 
 /** A sniff: the head down to the floor and moving about it, the nose working, and up again. */
 export function sniff(m: Made): ClipSource {

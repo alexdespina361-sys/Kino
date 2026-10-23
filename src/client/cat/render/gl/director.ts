@@ -27,6 +27,11 @@ export interface Plan {
    * lacks any of them is played evenly through.
    */
   anchors?: ReadonlyArray<{ at: number; mark: string }>;
+  /**
+   * The clip is the cat getting into a posture it stays in (it lies down, sits down, crouches) and ends in it: the cat that gets out of the posture to stand is shown this clip backwards
+   * (it gets up the way it got down) and not blended from the one pose to the other, which has its limbs pass through one another.
+   */
+  entry?: boolean;
 }
 
 /**
@@ -37,10 +42,10 @@ export const PLANS: Record<EngineClip, readonly Plan[]> = {
   stand: [{ clip: "stand", drive: "clock", fade: 0.3 }],
   walk: [{ clip: "walk", drive: "odometer", fade: 0.25 }],
   run: [{ clip: "run", drive: "odometer", fade: 0.2 }, { clip: "walk", drive: "odometer", fade: 0.2 }],
-  sit: [{ clip: "sit", drive: "clock", fade: 0.5 }],
-  loaf: [{ clip: "loaf", drive: "clock", fade: 0.6 }],
-  curl: [{ clip: "curl", drive: "clock", fade: 0.7 }],
-  crouch: [{ clip: "crouch", drive: "clock", fade: 0.3 }],
+  sit: [{ clip: "sit", drive: "clock", fade: 0.5, entry: true }],
+  loaf: [{ clip: "loaf", drive: "clock", fade: 0.6, entry: true }],
+  curl: [{ clip: "curl", drive: "clock", fade: 0.7, entry: true }],
+  crouch: [{ clip: "crouch", drive: "clock", fade: 0.3, entry: true }],
   jump: [{ clip: "jump", drive: "progress", fade: 0.12, anchors: [{ at: JUMP_TAKEOFF, mark: "takeoff" }, { at: JUMP_LANDING, mark: "land" }] }],
   stretch: [{ clip: "stretch", drive: "progress", fade: 0.3 }],
   yawn: [{ clip: "yawn", drive: "progress", fade: 0.3 }],
@@ -55,9 +60,44 @@ export const PLANS: Record<EngineClip, readonly Plan[]> = {
   peek: [{ clip: "peek", drive: "clock", fade: 0.4 }],
   tap: [{ clip: "tap", drive: "clock", fade: 0.2 }],
   swat: [{ clip: "swat", drive: "progress", fade: 0.12, anchors: [{ at: SWAT_HIT, mark: "hit" }] }],
-  doze: [{ clip: "doze", drive: "clock", fade: 0.6 }],
+  doze: [{ clip: "doze", drive: "clock", fade: 0.6, entry: true }],
   shift: [{ clip: "shift", drive: "progress", fade: 0.4 }],
 };
+
+/** Which of the cat's homes a posture is of: standing about, sitting, lying, or crouching. Getting from the second or the third to the first is a rise. */
+type Home = "stand" | "sit" | "lie" | "crouch";
+const HOME: Record<EngineClip, Home> = {
+  stand: "stand",
+  walk: "stand",
+  run: "stand",
+  stalk: "stand",
+  jump: "stand",
+  stretch: "stand",
+  yawn: "stand",
+  sniff: "stand",
+  swat: "stand",
+  peek: "stand",
+  sit: "sit",
+  groom: "sit",
+  point: "sit",
+  tap: "sit",
+  scratch: "sit",
+  pet: "sit",
+  loaf: "lie",
+  doze: "lie",
+  curl: "lie",
+  knead: "lie",
+  shift: "lie",
+  crouch: "crouch",
+  wiggle: "crouch",
+};
+/** The postures a cat that has been sitting or lying gets up to be in (the others are walked, run or leapt into: those start from where the body is, with a long blend). */
+const RISE_TO: ReadonlySet<EngineClip> = new Set<EngineClip>(["stand", "stretch", "yawn", "sniff"]);
+/** How much faster than it went down a cat gets up, and the blend (s) from the end of that into the next clip. */
+const RISE_SPEED = 1.5;
+const RISE_FADE = 0.2;
+/** The shortest blend (s) from a sitting, lying or crouching cat to a different home: a body that is on the floor does not stand in a third of a second. */
+const LEAVE_FADE = 0.5;
 
 type Turn = [number, number, number, number];
 
@@ -154,6 +194,12 @@ export class Director {
   private fading = 0;
   private fadeLength = 0.0001;
   private started = false;
+  /** Which home the cat is in (the posture the engine last asked for is of it), and the clip that got it into the one it sits or lies in. */
+  private home: Home = "stand";
+  private entryName = "";
+  /** A cat that is getting up: the clip it went down by, played backwards (`at` is the frame it is at), and the clip it is to pass to when it is up. */
+  private rising: { clip: Clip; at: number } | null = null;
+  private pending: Plan | null = null;
 
   constructor(
     readonly skeleton: Skeleton,
@@ -194,6 +240,10 @@ export class Director {
     this.currentKey = "";
     this.age = 0;
     this.fading = 0;
+    this.home = "stand";
+    this.entryName = "";
+    this.rising = null;
+    this.pending = null;
     this.held = 0;
     this.falling = 0;
     this.struggle = 0;
@@ -217,6 +267,40 @@ export class Director {
   }
 
   /**
+   * The engine asks for another posture (or for the first): what shows now is what is faded from (a cat that was in the middle of passing from one clip to another passes on from where it
+   * is). A cat that sits or lies and is to stand, stretch or sniff gets up first, by the clip it got down by, played backwards: a blend from the one pose to the other would pass its legs
+   * through its body. One that is to walk, run or leap is blended over longer than a cat that stands: it does not leave the floor in a third of a second.
+   */
+  private change(frame: CatFrame, plan: Plan | null, key: string): void {
+    const was = this.started;
+    const from = this.home;
+    const home = HOME[frame.clip];
+    let rise: { clip: Clip; at: number } | null = null;
+    if (was && this.rising === null && plan && (from === "sit" || from === "lie") && home === "stand" && RISE_TO.has(frame.clip) && frame.grounded && !frame.carried && frame.appear >= 0.9) {
+      const entry = this.byName.get(this.entryName);
+      // (from where the clip had got to, if that is what was playing; from the end of it for an act that is done from the posture)
+      if (entry) rise = { clip: entry, at: this.current?.clip === entry.name ? Math.min(this.age * entry.fps, entry.frames - 1) : entry.frames - 1 };
+    }
+    if (was) this.from.copy(this.pose);
+    this.fading = was ? 1 : 0;
+    this.currentKey = key;
+    this.started = true;
+    this.home = home;
+    if (plan?.entry) this.entryName = plan.clip;
+    if (rise) {
+      this.rising = rise;
+      this.pending = plan;
+      this.fadeLength = RISE_FADE;
+      return;
+    }
+    this.rising = null;
+    this.pending = null;
+    this.current = plan;
+    this.age = 0;
+    this.fadeLength = Math.max(0.0001, plan?.fade ?? 0.3, was && from !== home && from !== "stand" ? LEAVE_FADE : 0);
+  }
+
+  /**
    * The pose and the added turns for a cat the rig has solved. `px` is the body's length in pixels (the odometer is in pixels), `headYaw` how far the head is turned about the
    * vertical against the body (radians).
    */
@@ -225,20 +309,16 @@ export class Director {
     const plan = this.planFor(frame.clip);
     if (!plan) this.missing.add(frame.clip);
     const key = plan ? `${plan.clip}/${plan.drive}` : "";
-    if (!this.started || key !== this.currentKey) {
-      // a new clip: what shows now is what is faded from (a cat that was in the middle of passing from one clip to another passes on from where it is)
-      if (this.started) this.from.copy(this.pose);
-      this.fading = this.started ? 1 : 0;
-      this.fadeLength = Math.max(0.0001, plan?.fade ?? 0.3);
-      this.current = plan;
-      this.currentKey = key;
-      this.age = 0;
-      this.started = true;
-    }
+    if (!this.started || key !== this.currentKey) this.change(frame, plan, key);
     this.age += dt;
 
     const clip = plan ? this.byName.get(plan.clip)! : null;
-    if (clip && plan) {
+    const rising = this.rising;
+    if (rising) {
+      // (a cat that gets up: the clip it went down by, backwards, a little faster, from where it got to)
+      rising.at = Math.max(0, rising.at - dt * rising.clip.fps * RISE_SPEED);
+      sampleFrame(rising.clip, rising.at, this.to);
+    } else if (clip && plan) {
       let at: number;
       if (plan.drive === "odometer") {
         // (one cycle of the clip is `stride` body lengths of ground; a clip with no stride is played by the clock)
@@ -259,6 +339,16 @@ export class Director {
       blend(this.pose, this.from, this.to, easeInOut(1 - this.fading));
     } else {
       this.pose.copy(this.to);
+    }
+    if (rising && rising.at <= 0) {
+      // (it is up: it passes on to what it was getting up for, from where it stands)
+      this.rising = null;
+      this.from.copy(this.pose);
+      this.fading = 1;
+      this.fadeLength = RISE_FADE;
+      this.current = this.pending;
+      this.pending = null;
+      this.age = 0;
     }
     // --- what follows the clip (the tail, the back) and what the body does beside it (the breath)
     const gust = this.gust(frame, dt, px, s.breath);

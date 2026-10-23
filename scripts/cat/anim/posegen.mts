@@ -365,6 +365,19 @@ export class Body {
     };
   }
 
+  /** How far the hips are turned about the cat's z axis from their rest (positive: the front up), the number `hips.pitch` of a spec says. */
+  pitchOf(pose: Pose): number {
+    const h = this.hips;
+    const R0 = new Float64Array(this.skeleton.count * 9);
+    const T0 = new Float64Array(this.skeleton.count * 3);
+    globals(this.skeleton, this.rest, undefined, R0, T0);
+    globals(this.skeleton, pose, undefined, R, T);
+    // (the turn that takes the rest's hips to the pose's, in the cat's own axes: R * R0^T; where it takes the way the cat faces)
+    const x = R[h * 9]! * R0[h * 9]! + R[h * 9 + 1]! * R0[h * 9 + 1]! + R[h * 9 + 2]! * R0[h * 9 + 2]!;
+    const y = R[h * 9 + 3]! * R0[h * 9]! + R[h * 9 + 4]! * R0[h * 9 + 1]! + R[h * 9 + 5]! * R0[h * 9 + 2]!;
+    return Math.atan2(y, x);
+  }
+
   /** A paw put where it stands at rest, moved by `dx` forward and `dz` across (body lengths). */
   planted(paw: PawName, dx = 0, dz = 0, lift = 0): PawAim {
     const p = this.padAtRest(paw).at;
