@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -48,6 +48,23 @@ describe("serving the built page", () => {
       const model = await app.inject({ url: "/subtitle-sync/1/whistle.cact" });
       expect(model.statusCode).toBe(200);
       expect(model.headers["cache-control"]).toMatch(/max-age=31536000.*immutable/);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("serves the wordmark's pictures as pictures, and does not keep them for good (they keep their names: a new logo has to show up)", async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
+    await writeFile(path.join(dir, "index.html"), "<!doctype html><title>Kino</title>");
+    await cp(new URL("../../public/branding", import.meta.url), path.join(dir, "branding"), { recursive: true }); // (public/ is copied as it is into the built page)
+    const app = await buildApp({ clientDir: dir });
+    try {
+      for (const name of ["kino-cat-off.svg", "kino-cat-on.svg"]) {
+        const picture = await app.inject({ url: `/branding/${name}` });
+        expect(picture.statusCode).toBe(200);
+        expect(picture.headers["content-type"]).toMatch(/^image\/svg\+xml/);
+        expect(picture.headers["cache-control"]).not.toMatch(/immutable|31536000/);
+      }
     } finally {
       await app.close();
     }
