@@ -2,16 +2,17 @@ import { clamp, lerp } from "../../math";
 import type { CatCoat } from "../../settings";
 import type { Solved } from "../rig";
 import { COATS } from "./coats";
-import { PoseFit } from "./fit";
+import { decodeClips } from "./clipfile";
+import { Director, headYawOf } from "./director";
 import { decodeMesh, type CatMesh } from "./format";
-import { MODEL } from "./model";
-import { modelStamp } from "./rest";
+import { HEAD_CENTRE } from "./mouth";
+import { Skeleton, globals, matrixOf, solveDual } from "./pose";
 import { FRAGMENT, SHADOW_FRAGMENT, SHADOW_VERTEX, VERTEX } from "./shader";
-import { BONE, BONE_COUNT, BONE_FLOATS, Skeleton, mat, mul, pitchAbout } from "./skeleton";
+import { mat, mul, pitchAbout } from "./world";
 
 /**
- * The solid cat: the mesh, skinned on the graphics card by the bones the rig's numbers give (skeleton.ts, after fit.ts has fitted the rig's pose to the mesh's cat),
- * and lit. This file only draws; what the cat does is decided elsewhere, and what it looks like is the mesh and the shader.
+ * The solid cat: the mesh, skinned on the graphics card by the bones of the skeleton it was made with (pose.ts), moved by clips (director.ts), and lit. This file only
+ * draws; what the cat does is decided by the engine and the director, and what it looks like is the mesh and the shader.
  */
 
 export interface View {
@@ -23,6 +24,8 @@ export interface View {
   debug?: number;
   /** Wear this coat for this picture (default: the one the cat was given with `setCoat`). */
   coat?: CatCoat;
+  /** Skin with matrices averaged, as the model's own program does, instead of dual quaternions (for the lab: to see what the one saves over the other). */
+  linear?: boolean;
 }
 
 export interface Box {
@@ -33,6 +36,8 @@ export interface Box {
 }
 
 const TILT = 0.14;
+/** The shader has room for this many bones. */
+const MAX_SHADER_BONES = 40;
 
 function compile(gl: WebGLRenderingContext, type: number, source: string): WebGLShader {
   const shader = gl.createShader(type)!;
@@ -55,36 +60,47 @@ function link(gl: WebGLRenderingContext, vs: string, fs: string): WebGLProgram {
   return program;
 }
 
-const ATTRIBUTES = ["aPos", "aNor", "aSkin", "aWgt", "aColor"] as const;
-const UNIFORMS = ["uBones", "uProj", "uAppear", "uDebug", "uHead", "uEyes", "uEyes2", "uGlint", "uIris0", "uIris1", "uIris2", "uKey", "uFill", "uBase", "uLight", "uStripeC", "uWhiteC", "uPatchA", "uPatchB", "uPointC", "uCoat", "uOwn"] as const;
+const ATTRIBUTES = ["aPos", "aNor", "aSkin", "aWgt", "aColor", "aPart"] as const;
+const UNIFORMS = ["uDQ", "uWorld", "uProj", "uLinear", "uSide", "uAppear", "uDebug", "uHead", "uEyes", "uEyes2", "uGlint", "uIris0", "uIris1", "uIris2", "uKey", "uFill", "uBase", "uLight", "uStripeC", "uWhiteC", "uPatchA", "uPatchB", "uPointC", "uCoat", "uOwn"] as const;
 
 export class GlCat {
   readonly canvas: HTMLCanvasElement;
+  readonly skeleton: Skeleton;
+  readonly director: Director;
   private gl: WebGLRenderingContext;
   private mesh: CatMesh;
-  private fit = new PoseFit();
-  private skeleton = new Skeleton(this.fit.rest);
   private main: WebGLProgram;
   private shadow: WebGLProgram;
   private buffers: WebGLBuffer[] = [];
   private indexBuffer: WebGLBuffer;
   private cornerBuffer: WebGLBuffer;
   private loc: Record<string, number | WebGLUniformLocation | null> = {};
-  private bones = new Float32Array(BONE_COUNT * BONE_FLOATS);
+  /** The bones as the card has them: eight numbers each, a dual quaternion (pose.ts, `solveDual`). */
+  private bones: Float32Array;
   private world = mat();
+  /** (the same, for the card: it takes 32-bit numbers) */
+  private worldRows = new Float32Array(12);
   private tmp = mat();
+  /** Where the head's own up and across lie in the picture, as the last `step` left them (up x, up y, across x, across y). */
+  private readonly headFrame = [0, 1, 0, 0];
+  private readonly rot = new Float64Array(9);
   private cssW = 1;
   private cssH = 1;
   private dpr = 1;
   private gone = false;
   private readonly probe = new Uint8Array(4);
   private coat: CatCoat = "ragdoll";
+  private readonly headBone: number;
   lost = false;
 
-  private constructor(canvas: HTMLCanvasElement, gl: WebGLRenderingContext, mesh: CatMesh) {
+  private constructor(canvas: HTMLCanvasElement, gl: WebGLRenderingContext, mesh: CatMesh, skeleton: Skeleton, director: Director) {
     this.canvas = canvas;
     this.gl = gl;
     this.mesh = mesh;
+    this.skeleton = skeleton;
+    this.director = director;
+    this.bones = new Float32Array(skeleton.count * 8);
+    this.headBone = skeleton.bone("head");
     this.main = link(gl, VERTEX, FRAGMENT);
     this.shadow = link(gl, SHADOW_VERTEX, SHADOW_FRAGMENT);
     const buffer = (target: number, data: ArrayBufferView): WebGLBuffer => {
@@ -99,6 +115,7 @@ export class GlCat {
     buffer(gl.ARRAY_BUFFER, mesh.skin);
     buffer(gl.ARRAY_BUFFER, mesh.weight);
     buffer(gl.ARRAY_BUFFER, mesh.color);
+    buffer(gl.ARRAY_BUFFER, mesh.part);
     this.indexBuffer = buffer(gl.ELEMENT_ARRAY_BUFFER, mesh.index);
     this.cornerBuffer = buffer(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]));
     for (const name of ATTRIBUTES) this.loc[name] = gl.getAttribLocation(this.main, name);
@@ -109,8 +126,11 @@ export class GlCat {
     canvas.addEventListener("webglcontextlost", this.onLost);
   }
 
-  /** A solid cat on the canvas, or null if this browser cannot. */
-  static create(canvas: HTMLCanvasElement, data: ArrayBuffer, options: { preserve?: boolean } = {}): GlCat | null {
+  /**
+   * A solid cat on the canvas, or null if this browser cannot, or the files are not a mesh and clips made for each other. Without clips the cat stands in the rest of its
+   * skeleton (it moves its head, jaw and ears, and nothing else).
+   */
+  static create(canvas: HTMLCanvasElement, data: ArrayBuffer, clips: ArrayBuffer | null = null, options: { preserve?: boolean } = {}): GlCat | null {
     let gl: WebGLRenderingContext | null = null;
     // (a context that was made and is not going to be used is given back: a browser lets a page have only so many)
     const refuse = (): null => {
@@ -120,13 +140,16 @@ export class GlCat {
     try {
       const attrs: WebGLContextAttributes = { alpha: true, premultipliedAlpha: true, antialias: true, depth: true, stencil: false, powerPreference: "low-power", preserveDrawingBuffer: options.preserve === true };
       const mesh = decodeMesh(data);
-      if (mesh.rest !== modelStamp(MODEL)) return null; // (a mesh made around another rest pose would be worn crooked)
+      if (mesh.skeleton.names.length > MAX_SHADER_BONES) return null;
+      const skeleton = new Skeleton(mesh.skeleton);
+      // (the clips are made for one skeleton, and refuse to be worn by another)
+      const director = new Director(skeleton, clips ? decodeClips(clips, skeleton) : []);
       gl = (canvas.getContext("webgl", attrs) ?? canvas.getContext("experimental-webgl", attrs)) as WebGLRenderingContext | null;
       if (!gl) return null;
       // (what the shaders need of the card: room for the bones, and numbers that are not too coarse to paint the face with)
-      if ((gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) as number) < 112) return refuse();
+      if ((gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS) as number) < 96) return refuse();
       if ((gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT)?.precision ?? 0) < 16) return refuse();
-      return new GlCat(canvas, gl, mesh);
+      return new GlCat(canvas, gl, mesh, skeleton, director);
     } catch {
       return refuse();
     }
@@ -192,17 +215,41 @@ export class GlCat {
 
   /** How far the head is turned about the vertical against the body: from the rig's `yaw` (0 faces the viewer, 1 faces the way the body faces). */
   headYaw(s: Solved): number {
-    const turn = -(Math.PI / 2) * s.flip * (1 - s.head.yaw);
-    return clamp(turn, -2.1, 2.1);
+    return headYawOf(s);
   }
 
-  draw(rigSolved: Solved, box: Box, view: View = {}): void {
+  /** Moves the bones on by what the rig solved (one call for each picture of a moving cat; `draw` does it itself). */
+  step(s: Solved, box: Box, view: View = {}): void {
+    this.worldOf(s, view);
+    this.director.update(s, s.dt, box.px, this.headYaw(s));
+    solveDual(this.skeleton, this.director.pose, this.bones, this.director.adjust);
+    // where the head's own up and across lie in the picture (the whole cat's turn after the head's), for the catch of light in the eyes
+    const h = this.headBone * 8;
+    const b = this.bones;
+    const R = this.rot;
+    const W = this.world;
+    matrixOf(R, b[h]!, b[h + 1]!, b[h + 2]!, b[h + 3]!);
+    const f = this.headFrame;
+    f[0] = W[0]! * R[1]! + W[1]! * R[4]! + W[2]! * R[7]!;
+    f[1] = W[4]! * R[1]! + W[5]! * R[4]! + W[6]! * R[7]!;
+    f[2] = W[0]! * R[2]! + W[1]! * R[5]! + W[2]! * R[8]!;
+    f[3] = W[4]! * R[2]! + W[5]! * R[5]! + W[6]! * R[8]!;
+  }
+
+  /** Where a bone's joint is in the cat's own space (x forward, y up from the feet, z toward the viewer; body lengths) as the last `step` left it. For the lab, which looks closely at places. */
+  place(bone: string): [number, number, number] {
+    const n = this.skeleton.count;
+    const R = new Float64Array(n * 9);
+    const T = new Float64Array(n * 3);
+    globals(this.skeleton, this.director.pose, this.director.adjust, R, T);
+    const j = this.skeleton.bone(bone);
+    return [T[j * 3]!, T[j * 3 + 1]!, T[j * 3 + 2]!];
+  }
+
+  draw(s: Solved, box: Box, view: View = {}): void {
     if (this.gone || this.lost) return;
     const gl = this.gl;
-    // (the rig's pose is for the rig's cat: fitted to this one, it is what the bones are made of)
-    const s = this.fit.apply(rigSolved);
-    this.worldOf(s, view);
-    this.skeleton.solve(s, this.headYaw(s), this.world, this.bones);
+    this.step(s, box, view);
 
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(0, 0, 0, 0);
@@ -240,23 +287,25 @@ export class GlCat {
     const sc = (2 * box.px) / this.cssW;
     const sy = (2 * box.px) / this.cssH;
     gl.uniform4f(this.loc.uProj as WebGLUniformLocation, sc, sy, (2 * box.ox) / this.cssW - 1, 1 - (2 * box.oy) / this.cssH);
-    gl.uniform4fv(this.loc.uBones as WebGLUniformLocation, this.bones);
+    gl.uniform1f(this.loc.uLinear as WebGLUniformLocation, view.linear ? 1 : 0);
+    gl.uniform4fv(this.loc.uDQ as WebGLUniformLocation, this.bones);
+    this.worldRows.set(this.world);
+    gl.uniform4fv(this.loc.uWorld as WebGLUniformLocation, this.worldRows);
+    // (which side of the cat faces the viewer: where the cat's own z axis points once it is turned)
+    gl.uniform1f(this.loc.uSide as WebGLUniformLocation, clamp(this.world[10]! / 0.35, -1, 1));
     gl.uniform1f(this.loc.uAppear as WebGLUniformLocation, appear);
     gl.uniform1f(this.loc.uDebug as WebGLUniformLocation, view.debug ?? 0);
-    gl.uniform3f(this.loc.uHead as WebGLUniformLocation, this.skeleton.restUp.head.x, this.skeleton.restUp.head.y, 0);
+    gl.uniform3f(this.loc.uHead as WebGLUniformLocation, HEAD_CENTRE[0], HEAD_CENTRE[1], 0);
     const h = s.head;
     gl.uniform4f(this.loc.uEyes as WebGLUniformLocation, h.openL, h.openR, h.pupil, h.happy > 0.5 ? 1 : 0);
     gl.uniform4f(this.loc.uEyes2 as WebGLUniformLocation, clamp(-s.flip * (h.eyeX - h.yaw * 0.9), -1, 1), clamp(-h.eyeY, -1, 1), h.asleep > 0.5 ? 1 : 0, h.jaw);
     // where the catch of light lies in each eye: toward the upper right of the picture, whichever way the head is turned (the eye's own across and up, as they are
     // in the picture, say how far along each to go)
     {
-      const hb = BONE.head * BONE_FLOATS;
-      const m = this.bones;
-      const upX = m[hb + 1]!;
-      const upY = m[hb + 5]!;
+      const [upX, upY, acrossX, acrossY] = this.headFrame as [number, number, number, number];
       const glintOf = (side: number, out: number[], at: number): void => {
-        const ax = side * m[hb + 2]!;
-        const ay = side * m[hb + 6]!;
+        const ax = side * acrossX;
+        const ay = side * acrossY;
         const want = { x: 0.0095, y: 0.0098 };
         const det = ax * upY - upX * ay;
         let qx: number;
@@ -305,6 +354,7 @@ export class GlCat {
     bind(2, "aSkin", 4, gl.UNSIGNED_BYTE, false);
     bind(3, "aWgt", 4, gl.UNSIGNED_BYTE, true);
     bind(4, "aColor", 4, gl.UNSIGNED_BYTE, true);
+    bind(5, "aPart", 4, gl.UNSIGNED_BYTE, true);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     gl.drawElements(gl.TRIANGLES, this.mesh.index.length, gl.UNSIGNED_SHORT, 0);
     for (const name of ATTRIBUTES) gl.disableVertexAttribArray(this.loc[name] as number);

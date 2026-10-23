@@ -1,6 +1,9 @@
 import { HANG_AHEAD, HANG_DOWN } from "../engine/engine";
 import type { CatCoat } from "../settings";
-import { PoseFit } from "../render/gl/fit";
+import { decodeClips } from "../render/gl/clipfile";
+import { PLANS } from "../render/gl/director";
+import { decodeMesh } from "../render/gl/format";
+import { Skeleton, lengthOf } from "../render/gl/pose";
 import { GlCat, type View } from "../render/gl/renderer";
 import { CatRig, GALLOP_STRIDE, WALK_STRIDE } from "../render/rig";
 import type { CatFrame } from "../types";
@@ -20,6 +23,8 @@ interface GlCell {
   zoom?: { at: [number, number]; by: number } | { head: [number, number]; by: number };
   /** For the walk and the run: how far through a stride it is (0..1), which fixes where the feet are. */
   cycle?: number;
+  /** How far the head is turned about the vertical against the body (radians), in place of what the rig says. */
+  headYaw?: number;
   /** Draws the cat this many body lengths higher in its cell (one that hangs reaches below its feet line), and marks a point (x to the right, y up, from the feet) where a hand would be. */
   raise?: number;
   hand?: [number, number];
@@ -37,7 +42,7 @@ const fromBase64 = (text: string): ArrayBuffer => {
   return bytes.buffer;
 };
 
-export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220, coat: CatCoat = "ragdoll"): void {
+export function glSheet(canvas: HTMLCanvasElement, mesh: string, clips: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220, coat: CatCoat = "ragdoll", over: View = {}): void {
   const cw = cellW * scale;
   const ch = cellH * scale;
   const rows = Math.ceil(cells.length / columns);
@@ -45,21 +50,26 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly
   canvas.height = ch * rows;
   const ctx = canvas.getContext("2d")!;
   const glCanvas = document.createElement("canvas");
-  const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
+  const cat = GlCat.create(glCanvas, fromBase64(mesh), fromBase64(clips), { preserve: true });
   if (!cat) throw new Error("no WebGL");
   cat.setCoat(coat);
   cat.resize(cw, ch, 1);
   const px = 150 * scale;
-  const fit = new PoseFit();
   cells.forEach((cell, i) => {
     const x0 = (i % columns) * cw;
     const y0 = Math.floor(i / columns) * ch;
     const rig = new CatRig(seed + i);
     const base = frameOf(cell.frame);
-    if (cell.cycle !== undefined) base.odometer = cell.cycle * STRIDE[base.clip === "run" ? "run" : "walk"] * px;
+    // (a point of a cycle is a point of the clip's own stride: the ground one cycle of it carries the cat over)
+    if (cell.cycle !== undefined) base.odometer = cell.cycle * (cat.director.strideOf(base.clip) || STRIDE[base.clip === "run" ? "run" : "walk"]) * px;
     rig.snapTo(base, px);
     const steps = Math.round((cell.settle ?? 1.2) * 60);
-    for (let k = 0; k < steps; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
+    for (let k = 0; k < steps; k++) {
+      rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
+      // (headYawOf's own formula, the other way round)
+      if (cell.headYaw !== undefined) rig.solved.head.yaw = 1 + cell.headYaw / ((Math.PI / 2) * rig.solved.flip);
+      cat.step(rig.solved, { ox: cw / 2, oy: ch, px }, { ...cell.view, ...over });
+    }
     ctx.fillStyle = BG;
     ctx.fillRect(x0, y0, cw, ch);
     const oy = ch - 24 * scale - (cell.raise ?? 0) * px;
@@ -67,9 +77,9 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly
     ctx.fillRect(x0, y0 + oy, cw, 3 * scale);
     const z = cell.zoom;
     // (`head`: the place is where the head is, as the mesh's cat has it in this pose, and the number is how far from the head's centre to look at: ahead of it, and up)
-    const at = z ? ("head" in z ? ((): [number, number] => { const head = fit.apply(rig.solved).head; return [head.x + z.head[0], -head.y + z.head[1]]; })() : z.at) : undefined;
+    const at = z ? ("head" in z ? ((): [number, number] => { const head = cat.place("head"); return [head[0] + z.head[0], head[1] + z.head[1]]; })() : z.at) : undefined;
     const box = z && at ? { px: px * z.by, ox: cw / 2 - at[0] * px * z.by, oy: ch / 2 + at[1] * px * z.by } : { ox: cw / 2, oy, px };
-    cat.draw(rig.solved, box, cell.view);
+    cat.draw(rig.solved, box, { ...cell.view, ...over });
     ctx.drawImage(glCanvas, x0, y0);
     if (cell.hand) {
       // (where the hand is: a cross)
@@ -114,12 +124,12 @@ export const clipOfLabel = (label: string): string => (label.split("@")[0] ?? la
  * Pictures of the cat in each cell, one after another on one canvas, and what each takes of it: the box round every pixel the cat is drawn in (not the
  * faint ones: the fur's fringe and a whisker are not what covers a word). The cat faces right, its feet on a line at 0.8 of the canvas.
  */
-export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat = "ragdoll", seed = 7, alphaMin = 80): Extent[] {
+export function glExtents(mesh: string, clips: string, cells: readonly GlCell[], coat: CatCoat = "ragdoll", seed = 7, alphaMin = 80): Extent[] {
   const W = 1200;
   const H = 900;
   const px = 150;
   const glCanvas = document.createElement("canvas");
-  const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
+  const cat = GlCat.create(glCanvas, fromBase64(mesh), fromBase64(clips), { preserve: true });
   if (!cat) throw new Error("no WebGL");
   cat.setCoat(coat);
   cat.resize(W, H, 1);
@@ -133,10 +143,14 @@ export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat 
   cells.forEach((cell, i) => {
     const rig = new CatRig(seed + i);
     const base = frameOf(cell.frame);
-    if (cell.cycle !== undefined) base.odometer = cell.cycle * STRIDE[base.clip === "run" ? "run" : "walk"] * px;
+    // (a point of a cycle is a point of the clip's own stride: the ground one cycle of it carries the cat over)
+    if (cell.cycle !== undefined) base.odometer = cell.cycle * (cat.director.strideOf(base.clip) || STRIDE[base.clip === "run" ? "run" : "walk"]) * px;
     rig.snapTo(base, px);
     const steps = Math.round((cell.settle ?? 1.2) * 60);
-    for (let k = 0; k < steps; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
+    for (let k = 0; k < steps; k++) {
+      rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
+      cat.step(rig.solved, { ox, oy, px }, cell.view);
+    }
     cat.draw(rig.solved, { ox, oy, px }, cell.view);
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(glCanvas, 0, 0);
@@ -260,13 +274,15 @@ export interface FilmOptions {
   at?: [number, number];
   /** The turn and tilt of the camera, as in a view (see `View`). */
   view?: View;
+  /** The clips by themselves: nothing follows them (the tail, the back and the breath are as the clip has them). */
+  plain?: boolean;
 }
 
 /**
  * Pictures of a recording, drawn by one rig that is stepped through every frame of it (so what the springs do shows, not only the poses): either a strip
  * of cells (the cat where it is, the shelf's line fixed, so that a leap shows as height) or one sheet with the cat drawn along its whole path, faintly.
  */
-export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: FilmOptions): void {
+export function glFilm(canvas: HTMLCanvasElement, mesh: string, clips: string, film: Film, o: FilmOptions): void {
   const lab = 150 * o.scale;
   const k = lab / film.bodyLength;
   const dt = 1 / film.fps;
@@ -282,9 +298,10 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
   const rig = new CatRig(o.seed ?? 7);
   rig.snapTo(scaled(film.frames[warm]!), lab);
   const glCanvas = document.createElement("canvas");
-  const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
+  const cat = GlCat.create(glCanvas, fromBase64(mesh), fromBase64(clips), { preserve: true });
   if (!cat) throw new Error("no WebGL");
   cat.setCoat(o.coat ?? "ragdoll");
+  if (o.plain) cat.director.follows = false;
   const picks: number[] = [];
   for (let i = i0; i <= i1; i += o.every) picks.push(i);
   const ctx = canvas.getContext("2d")!;
@@ -368,6 +385,13 @@ export const VIEWS: GlCell[] = [
   { label: "top", frame: { clip: "stand" }, view: { tilt: 1.3 } },
 ];
 
+/** The neck as the head is turned against the body, from straight ahead to over the shoulder: a row from the side, a row from three quarters in front, a row of the bones. */
+export const NECK: GlCell[] = [
+  { tilt: 0, turn: 0 },
+  { tilt: 0.1, turn: -0.6 },
+  { tilt: 0, turn: 0, debug: 3 },
+].flatMap((view) => [0, 0.5, 1, 1.5].map((yaw): GlCell => ({ label: `head turned ${yaw}`, frame: { clip: "stand" }, view, headYaw: yaw, zoom: { head: [0, -0.02], by: 2.6 } })));
+
 export const FACES: GlCell[] = [
   { label: "face, stand", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { head: [0.05, 0], by: 4.2 } },
   { label: "face, viewer", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0], by: 4.2 } },
@@ -428,6 +452,26 @@ const cycleOf = (clip: "walk" | "run", n: number): GlCell[] =>
   Array.from({ length: n }, (_, i) => ({ label: `${clip} ${i}/${n}`, frame: { clip, vx: clip === "run" ? 380 : 150 }, cycle: i / n, view: { tilt: 0 }, settle: 1 }));
 export const WALK: GlCell[] = cycleOf("walk", 8);
 export const RUN: GlCell[] = cycleOf("run", 12);
+
+/**
+ * `n` pictures of one clip of the file, evenly through it (a clip is named for the posture of the engine it serves, and is played the way the director plays that posture: by the ground
+ * covered, by the clock, or by how far through a one-shot it is). For looking at a clip as the cat will show it, one side on.
+ */
+export function clipCells(mesh: string, clips: string, name: string, n: number, view: View = { tilt: 0 }, blind = false): GlCell[] {
+  const skeleton = new Skeleton(decodeMesh(fromBase64(mesh)).skeleton);
+  const clip = decodeClips(fromBase64(clips), skeleton).find((c) => c.name === name);
+  if (!clip) throw new Error(`no clip ${name}`);
+  const plan = PLANS[name as keyof typeof PLANS]?.find((p) => p.clip === name);
+  if (!plan) throw new Error(`no posture plays the clip ${name}`);
+  const seconds = lengthOf(clip);
+  return Array.from({ length: n }, (_, i) => {
+    // (a blind sheet says only which picture it is: a reviewer who is not to know what the clip is must not be told by the label)
+    const label = blind ? String(i + 1) : `${name} ${i}/${n}`;
+    if (plan.drive === "odometer") return { label, frame: { clip: name as CatFrame["clip"], vx: 150 }, cycle: i / n, view, settle: 1 };
+    if (plan.drive === "progress") return { label, frame: { clip: name as CatFrame["clip"], progress: n > 1 ? i / (n - 1) : 0 }, view, settle: 1 };
+    return { label, frame: { clip: name as CatFrame["clip"] }, view, settle: (clip.loop ? i / n : n > 1 ? i / (n - 1) : 0) * seconds };
+  });
+}
 
 export const EYES: GlCell[] = [
   { label: "eyes, viewer", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0.005], by: 9 } },

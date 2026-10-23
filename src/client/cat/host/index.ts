@@ -16,7 +16,7 @@ import { Hand } from "./hand";
 import { tileOf } from "./assistant";
 import { TvPage, type PageRead } from "./page";
 import { mountPanel, type PanelHandle } from "./panel";
-import { classicBrush, fetchMesh, solidBrush, type Brush } from "./render";
+import { classicBrush, fetchCatFiles, solidBrush, type Brush, type CatFiles } from "./render";
 
 /**
  * The cat on a screen: the loop that reads the page, lets the cat's brain decide, and paints it. This is the only file that touches both the page
@@ -248,8 +248,8 @@ export function mountCat(): { stop: () => void } {
   };
   let solidFailed = false;
   let fetching = false;
-  /** The cat's file as it came, kept for the cat to be made again without fetching it again. */
-  let meshData: ArrayBuffer | null = null;
+  /** The cat's files as they came, kept for the cat to be made again without fetching them again. */
+  let catFiles: CatFiles | null = null;
   let revival = new Revival();
   /** Why the detailed cat was given up for this load (see `CatWhy`), for the settings page. */
   let failedWhy: CatWhy = "";
@@ -277,7 +277,7 @@ export function mountCat(): { stop: () => void } {
 
   /** The detailed cat, made again after the card took its picture away. If the card will not give one yet nothing changes, and it is asked again soon. */
   const revive = (): void => {
-    const made = meshData ? solidBrush(meshData) : null;
+    const made = catFiles ? solidBrush(catFiles) : null;
     if (made && wantsSolid()) install(made);
     else made?.dispose();
   };
@@ -303,10 +303,10 @@ export function mountCat(): { stop: () => void } {
     }
     if (fetching) return;
     fetching = true;
-    void fetchMesh().then((data) => {
+    void fetchCatFiles().then((data) => {
       fetching = false;
       if (stopped) return;
-      if (data) meshData = data;
+      if (data) catFiles = data;
       const made = data ? solidBrush(data) : null;
       if (!made) giveUp(data ? "graphics" : "file");
       if (made && wantsSolid()) install(made);

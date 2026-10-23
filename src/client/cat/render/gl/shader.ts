@@ -12,8 +12,12 @@ attribute vec3 aNor;
 attribute vec4 aSkin;
 attribute vec4 aWgt;
 attribute vec4 aColor;
-uniform vec4 uBones[96];
+attribute vec4 aPart;
+uniform vec4 uDQ[80];
+uniform vec4 uWorld[3];
 uniform vec4 uProj;
+uniform float uSide;
+uniform float uLinear;
 varying vec3 vRest;
 varying vec3 vN;
 varying vec4 vColor;
@@ -21,35 +25,55 @@ varying vec3 vPart;
 varying float vBone;
 varying float vFar;
 void main() {
-  vec3 p = vec3(0.0);
-  vec3 n = vec3(0.0);
-  vec4 q = vec4(aPos, 1.0);
+  // Dual-quaternion skinning (see pose.ts, solveDual): each bone is a turn and a move, held as two quaternions (uDQ: the turn, then the move turned by it, a pair a bone).
+  // The bones that carry a point are blended as quaternions, so what lies between two bones turned far apart stays the size it was (matrices averaged shrink it: a neck that is
+  // twisted, a knee that is bent). The whole cat's squash and tilt (uWorld, which is not a turn and a move) is laid on after.
+  vec4 qr = vec4(0.0);
+  vec4 qd = vec4(0.0);
+  vec4 ref = vec4(0.0);
+  vec3 pm = vec3(0.0);
+  vec3 nm = vec3(0.0);
   float top = -1.0;
   float lead = 0.0;
-  float far = 0.0;
-  float legs = 0.0;
-  float tail = 0.0;
-  float along = 0.0;
   for (int i = 0; i < 4; i++) {
     float w = aWgt[i];
     if (w > 0.0) {
       float id = aSkin[i];
-      int b = int(id + 0.5) * 3;
-      vec4 r0 = uBones[b];
-      vec4 r1 = uBones[b + 1];
-      vec4 r2 = uBones[b + 2];
-      p += w * vec3(dot(r0, q), dot(r1, q), dot(r2, q));
-      n += w * vec3(dot(r0.xyz, aNor), dot(r1.xyz, aNor), dot(r2.xyz, aNor));
+      int b = int(id + 0.5) * 2;
+      vec4 r = uDQ[b];
+      vec4 d = uDQ[b + 1];
+      // (a turn and its negative are one turn: the blend takes them on the side of the first)
+      if (top < 0.0) ref = r;
+      else if (dot(r, ref) < 0.0) { r = -r; d = -d; }
+      qr += w * r;
+      qd += w * d;
+      // (and, for the lab to see what the one saves over the other: the same bones as matrices, averaged)
+      if (uLinear > 0.5) {
+        pm += w * (aPos + 2.0 * cross(r.xyz, cross(r.xyz, aPos) + r.w * aPos) + 2.0 * (r.w * d.xyz - d.w * r.xyz + cross(r.xyz, d.xyz)));
+        nm += w * (aNor + 2.0 * cross(r.xyz, cross(r.xyz, aNor) + r.w * aNor));
+      }
       if (w > top) { top = w; lead = id; }
-      // the legs on the far side of the body (bones 13..15 and 19..21): they are seen darker, as what is further from the light and the eye is
-      if ((id > 12.5 && id < 15.5) || (id > 18.5 && id < 21.5)) far += w;
-      // what part of the cat a point is: a leg (bones 10..21) or the tail (22..31, and how far along it)
-      if (id > 9.5 && id < 21.5) legs += w;
-      if (id > 21.5) { tail += w; along += w * (id - 22.0) / 9.0; }
     }
   }
-  vFar = far;
-  vPart = vec3(legs, tail, tail > 0.01 ? along / tail : 0.0);
+  float qn = inversesqrt(max(dot(qr, qr), 1e-8));
+  qr *= qn;
+  qd *= qn;
+  vec3 pl = aPos + 2.0 * cross(qr.xyz, cross(qr.xyz, aPos) + qr.w * aPos) + 2.0 * (qr.w * qd.xyz - qd.w * qr.xyz + cross(qr.xyz, qd.xyz));
+  vec3 nl = aNor + 2.0 * cross(qr.xyz, cross(qr.xyz, aNor) + qr.w * aNor);
+  if (uLinear > 0.5) {
+    pl = pm;
+    nl = nm;
+  }
+  vec4 ph = vec4(pl, 1.0);
+  vec3 p = vec3(dot(uWorld[0], ph), dot(uWorld[1], ph), dot(uWorld[2], ph));
+  vec3 n = vec3(dot(uWorld[0].xyz, nl), dot(uWorld[1].xyz, nl), dot(uWorld[2].xyz, nl));
+  // what part of the cat a point is (the mesh says: how much of it is a leg, the tail, how far along the tail, how much of the legs the left side's)
+  // and so which of the legs are on the far side of the body, which are seen darker, as what is further from the light and the eye is (uSide: 1 when
+  // the cat's right side faces the viewer, -1 when its left does)
+  float left = aPart.w;
+  float right = max(aPart.x - aPart.w, 0.0);
+  vFar = mix(right, left, 0.5 + 0.5 * uSide);
+  vPart = aPart.xyz;
   vRest = aPos;
   vN = normalize(n);
   vColor = aColor;

@@ -1,8 +1,29 @@
 // The skeleton of the free cat model, in the rig's frame: where the body's five stations, the head, the legs, the ears and the tail's ten pieces are in the posture the model
 // was made in. Measured on the model (scripts/cat/glb/meshy-*.mts) and drawn over it to check (meshy-check.mts). Positions are x forward, y up (the feet on the floor), z toward the viewer.
-import type { ModelRest, Pt } from "../../../src/client/cat/render/gl/rest";
+export type Pt = readonly [number, number];
+export type Pt3 = readonly [number, number, number];
 
-export type { ModelRest, Pt };
+export interface ModelLeg {
+  root: Pt;
+  mid: Pt;
+  hock: Pt;
+  toe: Pt;
+  /** How far out of the middle of the body the leg stands (toward the viewer for the near legs). */
+  z: number;
+}
+
+export interface ModelRest {
+  /** The back and the belly at five places along the body, from the rump to the chest. */
+  stations: readonly { top: Pt; bottom: Pt }[];
+  /** The centre of the head: the point it turns about. */
+  head: Pt;
+  legs: Record<"fn" | "ff" | "hn" | "hf", ModelLeg>;
+  /** Eleven joints of the tail, from its root to its tip. */
+  tail: readonly Pt[];
+  /** The ears' bases and tips: the ear at z < 0 first. */
+  ears: readonly [{ base: Pt3; tip: Pt3 }, { base: Pt3; tip: Pt3 }];
+  jawHinge: Pt3;
+}
 export type MeshyRest = ModelRest;
 
 /** The tail: a plume that leaves the top of the rump, goes up and then bends back, drawn by eye over the model and cut into ten equal pieces. */

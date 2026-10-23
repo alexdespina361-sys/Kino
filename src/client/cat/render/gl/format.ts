@@ -1,32 +1,39 @@
+import { skeletonStamp } from "./clipfile";
+import type { SkeletonData } from "./pose";
+
 /**
  * The cat's mesh as a file: what scripts/cat/model/build-meshy.mts writes and the renderer loads. Little-endian; the arrays follow the header one
  * after the other, each starting on a multiple of four bytes.
  *
- *   header  16 x 4 bytes: magic, version, vertex count, index count, bounds (min x y z, max x y z), a stamp of the rest pose it was made around,
- *           the length of the index stream in bytes, spare
- *   pos     vertex count x 3 int16, over the bounds
- *   normal  vertex count x 3 int8
- *   skin    vertex count x 4 uint8: bone numbers
- *   weight  vertex count x 4 uint8: their weights, which add up to 255
- *   color   vertex count x 4 uint8: the coat's colour here (red, green, blue, as the model was painted) and how open to the room the skin is (0 closed)
- *   index   the triangles, in the order of their lowest vertex, each as three numbers in a stream of varints (7 bits to a byte, the high bit says
- *           there is more): the first vertex as a step from the first vertex of the triangle before it, the other two as steps from the first. The
- *           vertices of a surface are numbered along it, so the steps are small and a triangle is a few bytes
+ *   header   16 x 4 bytes: magic, version, vertex count, index count, bounds (min x y z, max x y z), a stamp of the skeleton it is skinned to, the length of
+ *            the index stream in bytes, the length of the skeleton in bytes, spare
+ *   pos      vertex count x 3 int16, over the bounds
+ *   normal   vertex count x 3 int8
+ *   skin     vertex count x 4 uint8: bone numbers
+ *   weight   vertex count x 4 uint8: their weights, which add up to 255
+ *   color    vertex count x 4 uint8: the coat's colour here (red, green, blue, as the model was painted) and how open to the room the skin is (0 closed)
+ *   part     vertex count x 4 uint8: what part of the cat a point is (the coats of other cats are painted by it): how much of it is a leg, how much the tail,
+ *            how far along the tail, and how much of it the legs on the cat's left side
+ *   index    the triangles, in the order of their lowest vertex, each as three numbers in a stream of varints (7 bits to a byte, the high bit says
+ *            there is more): the first vertex as a step from the first vertex of the triangle before it, the other two as steps from the first. The
+ *            vertices of a surface are numbered along it, so the steps are small and a triangle is a few bytes
+ *   skeleton the bones the mesh is skinned to, in JSON (names, parents, and where each joint is against its parent's and the turn it has there)
  */
 
 export const MESH_MAGIC = 0x5441434b; // "KCAT"
-export const MESH_VERSION = 3;
+export const MESH_VERSION = 4;
 
 export interface CatMesh {
   count: number;
   bounds: readonly [number, number, number, number, number, number];
-  /** A number that is made of the rest pose the mesh was built around: the bones are no good with a mesh that was made around another. */
-  rest: number;
+  /** The bones the mesh is skinned to: clips are made for them (clipfile.ts), and a mesh is no good with clips that were made for other bones. */
+  skeleton: SkeletonData;
   pos: Float32Array;
   normal: Int8Array;
   skin: Uint8Array;
   weight: Uint8Array;
   color: Uint8Array;
+  part: Uint8Array;
   index: Uint16Array;
 }
 
@@ -86,21 +93,33 @@ export function unpackIndex(bytes: Uint8Array, count: number): Uint16Array {
   return out;
 }
 
+/** The skeleton as it is kept in the file: the numbers to a millionth (so that clips are made for the skeleton as it is read back, not as it was before it was written). */
+export const keptSkeleton = (data: SkeletonData): SkeletonData => ({
+  names: data.names.slice(),
+  parent: data.parent.slice(),
+  restT: data.restT.map((v) => Math.round(v * 1e6) / 1e6),
+  restR: data.restR.map((v) => Math.round(v * 1e6) / 1e6),
+});
+
 export function encodeMesh(mesh: {
   bounds: readonly [number, number, number, number, number, number];
-  rest: number;
+  skeleton: SkeletonData;
   pos: Float32Array;
   normal: Int8Array;
   skin: Uint8Array;
   weight: Uint8Array;
   color: Uint8Array;
+  part: Uint8Array;
   index: ArrayLike<number>;
 }): Uint8Array {
   const count = mesh.pos.length / 3;
   const index = packIndex(mesh.index);
-  const parts = [count * 6, count * 3, count * 4, count * 4, count * 4].map(pad4);
+  const kept = keptSkeleton(mesh.skeleton);
+  const skeleton = new TextEncoder().encode(JSON.stringify(kept));
+  const parts = [count * 6, count * 3, count * 4, count * 4, count * 4, count * 4].map(pad4);
   const head = 64;
-  const total = head + parts.reduce((a, b) => a + b, 0) + index.length;
+  const indexAt = head + parts.reduce((a, b) => a + b, 0);
+  const total = indexAt + pad4(index.length) + skeleton.length;
   const buffer = new ArrayBuffer(total);
   const view = new DataView(buffer);
   view.setUint32(0, MESH_MAGIC, true);
@@ -108,8 +127,9 @@ export function encodeMesh(mesh: {
   view.setUint32(8, count, true);
   view.setUint32(12, mesh.index.length, true);
   mesh.bounds.forEach((v, i) => view.setFloat32(16 + i * 4, v, true));
-  view.setUint32(40, mesh.rest >>> 0, true);
+  view.setUint32(40, skeletonStamp(kept) >>> 0, true);
   view.setUint32(44, index.length, true);
+  view.setUint32(48, skeleton.length, true);
   let at = head;
   const [minX, minY, minZ, maxX, maxY, maxZ] = mesh.bounds;
   const pos = new Int16Array(buffer, at, count * 3);
@@ -130,7 +150,11 @@ export function encodeMesh(mesh: {
   at += parts[3]!;
   new Uint8Array(buffer, at, count * 4).set(mesh.color);
   at += parts[4]!;
+  new Uint8Array(buffer, at, count * 4).set(mesh.part);
+  at += parts[5]!;
   new Uint8Array(buffer, at, index.length).set(index);
+  at += pad4(index.length);
+  new Uint8Array(buffer, at, skeleton.length).set(skeleton);
   return new Uint8Array(buffer);
 }
 
@@ -141,11 +165,12 @@ export function decodeMesh(data: ArrayBuffer): CatMesh {
   const count = view.getUint32(8, true);
   const indices = view.getUint32(12, true);
   const indexBytes = view.getUint32(44, true);
+  const skeletonBytes = view.getUint32(48, true);
   const bounds = [0, 1, 2, 3, 4, 5].map((i) => view.getFloat32(16 + i * 4, true)) as unknown as CatMesh["bounds"];
-  const rest = view.getUint32(40, true);
-  const parts = [count * 6, count * 3, count * 4, count * 4, count * 4].map(pad4);
+  const stampWas = view.getUint32(40, true);
+  const parts = [count * 6, count * 3, count * 4, count * 4, count * 4, count * 4].map(pad4);
   let at = 64;
-  if (at + parts.reduce((a, b) => a + b, 0) + indexBytes > data.byteLength || indices % 3 !== 0) throw new Error("a cat mesh that is cut short");
+  if (at + parts.reduce((a, b) => a + b, 0) + pad4(indexBytes) + skeletonBytes > data.byteLength || indices % 3 !== 0) throw new Error("a cat mesh that is cut short");
   const quantised = new Int16Array(data, at, count * 3);
   const [minX, minY, minZ, maxX, maxY, maxZ] = bounds;
   const pos = new Float32Array(count * 3);
@@ -163,8 +188,13 @@ export function decodeMesh(data: ArrayBuffer): CatMesh {
   at += parts[3]!;
   const color = new Uint8Array(data, at, count * 4);
   at += parts[4]!;
+  const part = new Uint8Array(data, at, count * 4);
+  at += parts[5]!;
   const index = unpackIndex(new Uint8Array(data, at, indexBytes), indices);
-  return { count, bounds, rest, pos, normal, skin, weight, color, index };
+  at += pad4(indexBytes);
+  const skeleton = JSON.parse(new TextDecoder().decode(new Uint8Array(data, at, skeletonBytes))) as SkeletonData;
+  if (skeletonStamp(skeleton) !== stampWas) throw new Error("a cat mesh whose skeleton is not the one it was made for");
+  return { count, bounds, skeleton, pos, normal, skin, weight, color, part, index };
 }
 
 /** A small number made of numbers, for telling whether two rest poses are the same one. */

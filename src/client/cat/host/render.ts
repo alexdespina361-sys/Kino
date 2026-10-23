@@ -1,4 +1,5 @@
 import { drawCat, MARMALADE, RAGDOLL, type Palette } from "../render/draw";
+import clipsUrl from "../render/gl/cat.clips?url";
 import meshUrl from "../render/gl/cat.mesh?url";
 import { GlCat } from "../render/gl/renderer";
 import type { Solved } from "../render/rig";
@@ -95,10 +96,16 @@ export function classicBrush(): Brush | null {
   };
 }
 
-/** The solid cat from a mesh that was fetched; null where this browser cannot do WebGL, or the mesh is not one this cat can wear. */
-export function solidBrush(mesh: ArrayBuffer): Brush | null {
+/** The solid cat's two files as they came: the mesh, and the clips that move its bones. */
+export interface CatFiles {
+  mesh: ArrayBuffer;
+  clips: ArrayBuffer;
+}
+
+/** The solid cat from the files that were fetched; null where this browser cannot do WebGL, or the files are not ones this cat can wear. */
+export function solidBrush(files: CatFiles): Brush | null {
   const canvas = newCanvas();
-  const cat = GlCat.create(canvas, mesh);
+  const cat = GlCat.create(canvas, files.mesh, files.clips);
   if (!cat) return null;
   let gpuMs = 0;
   return {
@@ -138,13 +145,17 @@ export function solidBrush(mesh: ArrayBuffer): Brush | null {
   };
 }
 
-/** The solid cat's mesh, or null if it could not be had in time (a screen on a bad line gets the simple cat rather than waiting for it). */
-export async function fetchMesh(timeoutMs = 8000): Promise<ArrayBuffer | null> {
+/** The solid cat's mesh and clips, or null if either could not be had in time (a screen on a bad line gets the simple cat rather than waiting for them). */
+export async function fetchCatFiles(timeoutMs = 8000): Promise<CatFiles | null> {
   const control = new AbortController();
   const timer = window.setTimeout(() => control.abort(), timeoutMs);
-  try {
-    const answer = await fetch(meshUrl, { signal: control.signal });
+  const get = async (url: string): Promise<ArrayBuffer | null> => {
+    const answer = await fetch(url, { signal: control.signal });
     return answer.ok ? await answer.arrayBuffer() : null;
+  };
+  try {
+    const [mesh, clips] = await Promise.all([get(meshUrl), get(clipsUrl)]);
+    return mesh && clips ? { mesh, clips } : null;
   } catch {
     return null;
   } finally {

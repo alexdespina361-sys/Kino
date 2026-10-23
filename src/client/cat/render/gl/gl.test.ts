@@ -1,21 +1,23 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { CatFrame } from "../../types";
-import { CatRig, type Joint, type Solved } from "../rig";
-import { PoseFit, rigRest } from "./fit";
+import type { Clip as EngineClip, CatFrame } from "../../types";
+import { CatRig, type Solved } from "../rig";
+import { decodeClips } from "./clipfile";
+import { Director } from "./director";
 import { decodeMesh, encodeMesh, MESH_MAGIC, MESH_VERSION, packIndex, unpackIndex } from "./format";
-import { MODEL } from "./model";
-import { modelStamp } from "./rest";
-import { BONE, BONE_COUNT, BONE_FLOATS, Skeleton, mat, pitchAbout } from "./skeleton";
+import { Pose, Skeleton, solve } from "./pose";
+import { mat, pitchAbout } from "./world";
 
-const meshFile = (): ArrayBuffer => {
-  const file = readFileSync(new URL("./cat.mesh", import.meta.url));
+const bufferOf = (name: string): ArrayBuffer => {
+  const file = readFileSync(new URL(name, import.meta.url));
   return file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
 };
+const meshFile = (): ArrayBuffer => bufferOf("./cat.mesh");
+const clipsFile = (): ArrayBuffer => bufferOf("./cat.clips");
 
 const frame = (over: Partial<CatFrame>): CatFrame => ({ x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false, ...over });
 
-/** A cat in a clip, settled: what the rig has after a second of it. */
+/** A cat in a clip, settled: what the rig has after a second and a half of it. */
 const solvedIn = (over: Partial<CatFrame>): Solved => {
   const rig = new CatRig(3);
   const base = frame(over);
@@ -62,16 +64,55 @@ describe("the cat's mesh file", () => {
     }
   });
 
-  it("gives every vertex bones that exist, and weights that make a whole", () => {
+  it("is skinned to bones the file carries, with weights that make a whole, and the shader has room for them", () => {
+    const bones = mesh.skeleton.names.length;
+    expect(bones).toBeLessThanOrEqual(40);
     for (let i = 0; i < mesh.count; i++) {
       let sum = 0;
       for (let k = 0; k < 4; k++) {
         const w = mesh.weight[i * 4 + k]!;
         sum += w;
-        if (w > 0) expect(mesh.skin[i * 4 + k]!).toBeLessThan(BONE_COUNT);
+        if (w > 0) expect(mesh.skin[i * 4 + k]!).toBeLessThan(bones);
       }
       expect(sum).toBe(255);
     }
+  });
+
+  it("has the bones the director moves (the model's own, and the jaw and ears added to it), each hung from one before it", () => {
+    const names = mesh.skeleton.names;
+    for (const bone of ["Hips", "chest", "head", "jaw", "earL", "earR", "backleg2", "R_backleg2", "frontleg2", "R_frontleg2", "tail"]) expect(names, bone).toContain(bone);
+    mesh.skeleton.parent.forEach((p, j) => expect(p).toBeLessThan(j));
+    expect(mesh.skeleton.parent[0]).toBe(-1);
+  });
+
+  it("gives the jaw and the ears some of the head's weight, and not all of it", () => {
+    const names = mesh.skeleton.names;
+    for (const bone of ["jaw", "earL", "earR"]) {
+      const id = names.indexOf(bone);
+      let points = 0;
+      for (let i = 0; i < mesh.count; i++) for (let k = 0; k < 4; k++) if (mesh.skin[i * 4 + k] === id && mesh.weight[i * 4 + k]! > 128) points++;
+      expect(points, bone).toBeGreaterThan(20);
+      expect(points, bone).toBeLessThan(mesh.count / 4);
+    }
+  });
+
+  it("says what part of the cat each point is (the coats of other cats are painted by it): legs, tail, how far along the tail, the left legs' share of the legs", () => {
+    let legs = 0;
+    let tail = 0;
+    let left = 0;
+    let right = 0;
+    for (let i = 0; i < mesh.count; i++) {
+      const [l, t, , s] = [mesh.part[i * 4]!, mesh.part[i * 4 + 1]!, mesh.part[i * 4 + 2]!, mesh.part[i * 4 + 3]!];
+      expect(s, "the left share is a share of the legs").toBeLessThanOrEqual(l + 1);
+      if (l > 200) legs++;
+      if (t > 200) tail++;
+      if (l > 200 && s > 200) left++;
+      if (l > 200 && l - s > 200) right++;
+    }
+    expect(legs).toBeGreaterThan(300);
+    expect(tail).toBeGreaterThan(100);
+    expect(left).toBeGreaterThan(100);
+    expect(right).toBeGreaterThan(100);
   });
 
   it("has normals that point somewhere (unit length, to the precision of a byte)", () => {
@@ -80,10 +121,6 @@ describe("the cat's mesh file", () => {
       expect(len).toBeGreaterThan(0.95);
       expect(len).toBeLessThan(1.05);
     }
-  });
-
-  it("was made around the rest pose the bones have now (a new model needs a new mesh: scripts/cat/model/build-meshy.mts)", () => {
-    expect(mesh.rest).toBe(modelStamp(MODEL));
   });
 
   it("carries a colour in every vertex, and how open to the room the skin is there (a coat that is all one colour, or a mesh that was never lit, is a mistake)", () => {
@@ -104,7 +141,7 @@ describe("the cat's mesh file", () => {
     expect(closed).toBeGreaterThan(mesh.count * 0.005);
   });
 
-  it("is refused when it is not a cat mesh of this version, or is cut short", () => {
+  it("is refused when it is not a cat mesh of this version, or is cut short, or its skeleton has been changed after it was written", () => {
     const broken = (patch: (view: DataView) => void): ArrayBuffer => {
       const copy = data.slice(0);
       patch(new DataView(copy));
@@ -114,6 +151,7 @@ describe("the cat's mesh file", () => {
     expect(() => decodeMesh(broken((v) => v.setUint32(4, MESH_VERSION + 1, true)))).toThrow(/another version/);
     expect(() => decodeMesh(data.slice(0, 3000))).toThrow(/cut short/);
     expect(() => decodeMesh(new ArrayBuffer(8))).toThrow(/not a cat mesh/);
+    expect(() => decodeMesh(broken((v) => v.setUint32(40, v.getUint32(40, true) ^ 1, true)))).toThrow(/skeleton is not the one/);
     expect(new DataView(data).getUint32(0, true)).toBe(MESH_MAGIC);
   });
 });
@@ -152,186 +190,164 @@ describe("the triangles of a mesh, packed", () => {
     expect(() => unpackIndex(stream.slice(0, stream.length - 1), 6)).toThrow(/ends in the middle/);
   });
 
-  it("go through a whole mesh file and come out whole", () => {
-    const pos = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+  it("go through a whole mesh file and come out whole, with the skeleton it was skinned to", () => {
+    const skeleton = { names: ["root", "arm"], parent: [-1, 0], restT: [0, 0, 0, 0.5, 0.25, 0], restR: [0, 0, 0, 1, 0, 0, 0.7071068, 0.7071068] };
     const bytes = encodeMesh({
       bounds: [0, 0, 0, 1, 1, 1],
-      rest: 77,
-      pos,
+      skeleton,
+      pos: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
       normal: new Int8Array(12).fill(64),
       skin: new Uint8Array(16),
       weight: new Uint8Array(16).fill(1),
       color: new Uint8Array(16).fill(9),
+      part: new Uint8Array(16).fill(3),
       index: [0, 1, 2, 0, 2, 3],
     });
     const mesh = decodeMesh(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
     expect(mesh.count).toBe(4);
-    expect(mesh.rest).toBe(77);
+    expect(mesh.skeleton.names).toEqual(["root", "arm"]);
+    expect(mesh.skeleton.parent).toEqual([-1, 0]);
+    expect(mesh.skeleton.restT[3]).toBeCloseTo(0.5, 6);
     expect(Array.from(mesh.index)).toEqual([0, 1, 2, 0, 2, 3]);
     expect(mesh.pos[3]!).toBeCloseTo(1, 3);
     expect(mesh.pos[7]!).toBeCloseTo(1, 3);
     expect(Array.from(mesh.color.slice(0, 4))).toEqual([9, 9, 9, 9]);
+    expect(Array.from(mesh.part.slice(0, 4))).toEqual([3, 3, 3, 3]);
   });
 });
 
 describe("the bones of the solid cat", () => {
-  const fit = new PoseFit();
-  const skeleton = new Skeleton(fit.rest);
-  const bones = (s: Solved, headYaw = 0): Float32Array => {
-    const out = new Float32Array(BONE_COUNT * BONE_FLOATS);
-    skeleton.solve(s, headYaw, mat(), out);
-    return out;
-  };
-  const apply = (out: Float32Array, bone: number, p: Joint): Joint => ({
-    x: out[bone * 12]! * p.x + out[bone * 12 + 1]! * p.y + out[bone * 12 + 3]!,
-    y: out[bone * 12 + 4]! * p.x + out[bone * 12 + 5]! * p.y + out[bone * 12 + 7]!,
-  });
-  const flipped = (j: Joint): Joint => ({ x: j.x, y: -j.y });
+  const mesh = decodeMesh(meshFile());
+  const skeleton = new Skeleton(mesh.skeleton);
   const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 
-  it("leave the mesh as it is when the cat is as it was made: standing", () => {
-    const out = bones(fit.rest);
-    const still = [...Array(5).keys()].map((i) => BONE.f0 + i).concat([BONE.neck, BONE.fnU, BONE.fnL, BONE.fnP, BONE.ffU, BONE.ffL, BONE.ffP, BONE.hnU, BONE.hnL, BONE.hnP, BONE.hfU, BONE.hfL, BONE.hfP]);
-    for (let i = 0; i < TAIL(); i++) still.push(BONE.tail0 + i);
-    for (const bone of still) {
-      for (let k = 0; k < 12; k++) expect(out[bone * 12 + k]!, `bone ${bone}, number ${k}`).toBeCloseTo(IDENTITY[k]!, 3);
-    }
+  it("leave the mesh as it is when the cat is as it was made (a skin matrix is the identity at rest, for every bone)", () => {
+    const out = new Float32Array(skeleton.count * 12);
+    solve(skeleton, new Pose(skeleton), IDENTITY, out);
+    for (let j = 0; j < skeleton.count; j++) for (let k = 0; k < 12; k++) expect(out[j * 12 + k]!, `${skeleton.names[j]} number ${k}`).toBeCloseTo(IDENTITY[k]!, 4);
   });
 
-  it("carry each piece of a leg to where the rig has it, in any posture, and put the paw where the toe is (the paw is never off the floor)", () => {
-    for (const clip of ["sit", "crouch", "walk", "loaf", "stretch"] as const) {
-      const s = fit.apply(solvedIn({ clip, progress: 0.4 }));
-      const out = bones(s);
-      const rest = skeleton.restUp.legs;
-      for (const [key, first] of [["fn", BONE.fnU], ["ff", BONE.ffU], ["hn", BONE.hnU], ["hf", BONE.hfU]] as const) {
-        const now = { root: flipped(s.legs[key].root), mid: flipped(s.legs[key].mid), hock: flipped(s.legs[key].hock), toe: flipped(s.legs[key].toe) };
-        const near = (bone: number, from: Joint, to: Joint, within: number): void => {
-          const at = apply(out, bone, from);
-          expect(Math.hypot(at.x - to.x, at.y - to.y), `${clip} ${key} bone ${bone}`).toBeLessThan(within);
-        };
-        // the thigh and the shin keep their length: both ends are where the rig has them (but for a knee that the floor lifted, which a leg folded up under the body has: the pieces are
-        // rigid, and the root and the toe are what they are held to)
-        near(first, rest[key].root, now.root, 1e-3);
-        const lifted = Math.abs(now.mid.y - 0.09) < 1e-6 || Math.abs(now.mid.y - 0.125) < 1e-6;
-        if (!lifted) {
-          near(first, rest[key].mid, now.mid, 1e-3);
-          near(first + 1, rest[key].mid, now.mid, 1e-3);
-          near(first + 1, rest[key].hock, now.hock, 1e-3);
-        }
-        // the foot is as long as the rig makes it (a cat that sits has a long one); the toe is on the toe, and the other end is left to the skin
-        near(first + 2, rest[key].toe, now.toe, 1e-3);
-        near(first + 2, rest[key].hock, now.hock, 0.12);
-      }
-    }
-  });
-
-  it("carry each piece of the tail to where the rig has it", () => {
-    const s = fit.apply(solvedIn({ clip: "sit" }));
-    const out = bones(s);
-    for (let i = 0; i < TAIL(); i++) {
-      // (a piece starts where the rig's joint is; it ends there too unless the rig asks for more stretch than a piece is allowed)
-      for (const [j, within] of [[i, 2e-3], [i + 1, 0.05]] as const) {
-        const at = apply(out, BONE.tail0 + i, skeleton.restUp.tail[j]!);
-        const to = flipped(s.tail[j]!);
-        expect(Math.hypot(at.x - to.x, at.y - to.y), `piece ${i}, joint ${j}`).toBeLessThan(within);
-      }
-    }
-  });
-
-  it("keep every number finite and the body from being turned inside out, in every posture the cat has", () => {
-    for (const clip of ["stand", "walk", "sit", "loaf", "curl", "crouch", "stretch", "groom", "yawn", "scratch", "knead", "sniff", "stalk", "wiggle"] as const) {
-      const out = bones(fit.apply(solvedIn({ clip, progress: 0.3, drowsy: clip === "curl" ? 1 : 0 })), 0.8);
-      for (let i = 0; i < out.length; i++) expect(Number.isFinite(out[i]!), `${clip} number ${i}`).toBe(true);
-      for (let bone = 0; bone < BONE_COUNT; bone++) {
-        // the part of a bone that turns and stretches (its 3 x 3) keeps its handedness
-        const m = (k: number): number => out[bone * 12 + k]!;
-        const det = m(0) * (m(5) * m(10) - m(6) * m(9)) - m(1) * (m(4) * m(10) - m(6) * m(8)) + m(2) * (m(4) * m(9) - m(5) * m(8));
-        expect(det, `${clip} bone ${bone}`).toBeGreaterThan(0.05);
-      }
-    }
+  it("are the skeleton the clips were made for (a clip file for another skeleton is refused)", () => {
+    expect(() => decodeClips(clipsFile(), skeleton)).not.toThrow();
+    const other = new Skeleton({ ...mesh.skeleton, restT: mesh.skeleton.restT.map((v, i) => (i === 7 ? v + 0.01 : v)) });
+    expect(() => decodeClips(clipsFile(), other)).toThrow(/another skeleton/);
   });
 });
 
-describe("the rig's poses, fitted to the cat of the mesh", () => {
-  const fit = new PoseFit();
-  const len = (a: Joint, b: Joint): number => Math.hypot(b.x - a.x, b.y - a.y);
-  const LEGS = ["fn", "ff", "hn", "hf"] as const;
-  const CLIPS = ["stand", "walk", "sit", "loaf", "curl", "crouch", "stretch", "groom", "yawn", "scratch", "knead", "sniff", "stalk", "wiggle", "run", "jump"] as const;
+describe("the clips of the solid cat", () => {
+  const mesh = decodeMesh(meshFile());
+  const skeleton = new Skeleton(mesh.skeleton);
+  const clips = decodeClips(clipsFile(), skeleton);
 
-  it("are the mesh's own rest when the rig is at its own rest (to within a paw's thickness at the toe)", () => {
-    const s = fit.apply(rigRest());
-    for (const [k, at] of Object.entries(fit.rest.pose.p)) {
-      expect(s.pose.p[k as keyof typeof s.pose.p].x, `${k} x`).toBeCloseTo(at.x, 6);
-      expect(s.pose.p[k as keyof typeof s.pose.p].y, `${k} y`).toBeCloseTo(at.y, 6);
-    }
-    expect(s.head.x).toBeCloseTo(fit.rest.head.x, 6);
-    expect(s.head.y).toBeCloseTo(fit.rest.head.y, 6);
-    for (const key of LEGS) {
-      for (const part of ["root", "mid", "hock", "toe"] as const) {
-        expect(len(s.legs[key][part], fit.rest.legs[key][part]), `${key} ${part}`).toBeLessThan(0.012);
-      }
-    }
-    for (let i = 0; i < fit.rest.tail.length; i++) expect(len(s.tail[i]!, fit.rest.tail[i]!), `tail ${i}`).toBeLessThan(1e-6);
+  it("hold the walk, a loop that carries the cat a stride of the ground in each round, as far as a cat's walk goes", () => {
+    const walk = clips.find((c) => c.name === "walk");
+    expect(walk, "a walk").toBeDefined();
+    expect(walk!.loop).toBe(true);
+    expect(walk!.frames).toBeGreaterThanOrEqual(12);
+    expect(walk!.stride).toBeGreaterThan(0.3);
+    expect(walk!.stride).toBeLessThan(1.4);
   });
 
-  it("keep the lengths of the mesh's own thigh and shin, where the leg is not folded up to the floor", () => {
-    for (const clip of ["stand", "walk"] as const) {
-      for (const progress of [0, 0.25, 0.5, 0.75]) {
-        const s = fit.apply(solvedIn({ clip, progress }));
-        for (const key of LEGS) {
-          const m = MODEL.legs[key];
-          const leg = s.legs[key];
-          expect(len(leg.root, leg.mid), `${clip} ${progress} ${key} thigh`).toBeCloseTo(Math.hypot(m.mid[0] - m.root[0], m.mid[1] - m.root[1]), 4);
-          expect(len(leg.mid, leg.hock), `${clip} ${progress} ${key} shin`).toBeCloseTo(Math.hypot(m.hock[0] - m.mid[0], m.hock[1] - m.mid[1]), 4);
-        }
-      }
-    }
+  it("are small enough to be fetched along with the mesh", () => {
+    expect(clipsFile().byteLength).toBeLessThan(200 * 1024);
   });
+});
 
-  it("never put a paw or a knee through the floor (the rig's y is down, the floor is 0), in any posture the cat has", () => {
-    for (const clip of CLIPS) {
-      for (const progress of [0.1, 0.5, 0.9]) {
-        const s = fit.apply(solvedIn({ clip, progress, drowsy: clip === "curl" ? 1 : 0 }));
-        for (const key of LEGS) {
-          const leg = s.legs[key];
-          expect(leg.toe.y, `${clip} ${progress} ${key} toe`).toBeLessThanOrEqual(1e-6);
-          expect(leg.mid.y, `${clip} ${progress} ${key} knee`).toBeLessThanOrEqual(-0.089);
-          for (const part of ["root", "mid", "hock", "toe"] as const) {
-            expect(Number.isFinite(leg[part].x) && Number.isFinite(leg[part].y), `${clip} ${key} ${part}`).toBe(true);
-          }
-        }
+describe("the director", () => {
+  const mesh = decodeMesh(meshFile());
+  const skeleton = new Skeleton(mesh.skeleton);
+  const clips = decodeClips(clipsFile(), skeleton);
+  const POSTURES: EngineClip[] = ["stand", "walk", "run", "sit", "loaf", "curl", "crouch", "jump", "stretch", "yawn", "groom", "pet", "point", "scratch", "knead", "sniff", "stalk", "wiggle", "peek", "tap", "swat", "doze", "shift"];
+
+  const bonesOf = (director: Director): Float32Array => {
+    const out = new Float32Array(skeleton.count * 12);
+    solve(skeleton, director.pose, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0], out, director.adjust);
+    return out;
+  };
+
+  it("keeps every bone's numbers finite, and no bone turned inside out, in every posture the engine has", () => {
+    const director = new Director(skeleton, clips);
+    for (const clip of POSTURES) {
+      const s = solvedIn({ clip, progress: 0.3, drowsy: clip === "curl" ? 1 : 0, odometer: 40 });
+      for (let k = 0; k < 20; k++) director.update(s, 1 / 60, 100, 0.8);
+      const out = bonesOf(director);
+      for (let i = 0; i < out.length; i++) expect(Number.isFinite(out[i]!), `${clip} number ${i}`).toBe(true);
+      for (let bone = 0; bone < skeleton.count; bone++) {
+        const m = (k: number): number => out[bone * 12 + k]!;
+        const det = m(0) * (m(5) * m(10) - m(6) * m(9)) - m(1) * (m(4) * m(10) - m(6) * m(8)) + m(2) * (m(4) * m(9) - m(5) * m(8));
+        expect(det, `${clip} bone ${skeleton.names[bone]}`).toBeGreaterThan(0.9);
       }
     }
   });
 
-  it("have the tail's pieces as long as the rig makes each one of its own, in the mesh's own curve", () => {
-    const rig = fit.rig.tail;
-    for (const clip of ["stand", "walk"] as const) {
-      const s = fit.apply(solvedIn({ clip, progress: 0.3 }));
-      const now = solvedIn({ clip, progress: 0.3 }).tail;
-      for (let i = 0; i + 1 < fit.rest.tail.length; i++) {
-        const model = len(fit.rest.tail[i]!, fit.rest.tail[i + 1]!);
-        const share = Math.min(2.5, Math.max(0.3, len(now[i]!, now[i + 1]!) / len(rig[i]!, rig[i + 1]!)));
-        expect(len(s.tail[i]!, s.tail[i + 1]!) / model, `${clip} piece ${i}`).toBeCloseTo(share, 3);
-      }
+  it("walks by the ground covered: a stride later the cat is in the same pose, and half of it later the legs have changed places", () => {
+    const walk = clips.find((c) => c.name === "walk")!;
+    const px = 100;
+    const at = (odometer: number): Float32Array => {
+      const director = new Director(skeleton, clips);
+      const s = solvedIn({ clip: "walk", odometer, vx: 150 });
+      // (settled in the walk first, so that no fade is left in the pose)
+      for (let k = 0; k < 120; k++) director.update({ ...s, frame: { ...s.frame, odometer }, dt: 1 / 60 }, 1 / 60, px, 0);
+      return bonesOf(director);
+    };
+    const a = at(300);
+    const b = at(300 + walk.stride * px);
+    const c = at(300 + 0.5 * walk.stride * px);
+    let same = 0;
+    let half = 0;
+    for (let i = 0; i < a.length; i++) {
+      same = Math.max(same, Math.abs(a[i]! - b[i]!));
+      half = Math.max(half, Math.abs(a[i]! - c[i]!));
     }
+    expect(same).toBeLessThan(0.02);
+    expect(half).toBeGreaterThan(0.1);
   });
 
-  it("do not change what the rig says of the body's turn, squash and fade (they are the rig's, not the mesh's)", () => {
-    const rigSolved = solvedIn({ clip: "walk", progress: 0.4, vx: 150 });
-    const flip = rigSolved.flip;
-    const sx = rigSolved.sx;
-    const s = fit.apply(rigSolved);
-    expect(s.flip).toBe(flip);
-    expect(s.sx).toBe(sx);
-    expect(s.appear).toBe(rigSolved.appear);
-    expect(s.head.jaw).toBe(rigSolved.head.jaw);
-    expect(s.head.openL).toBe(rigSolved.head.openL);
+  it("passes from one clip to the next without a jump: a pose never moves a bone further in one picture than a cat can", () => {
+    const director = new Director(skeleton, clips);
+    const walking = solvedIn({ clip: "walk", odometer: 100, vx: 150 });
+    const standing = solvedIn({ clip: "stand" });
+    for (let k = 0; k < 30; k++) director.update(walking, 1 / 60, 100, 0);
+    let before = Float32Array.from(director.pose.r);
+    let worst = 0;
+    for (let k = 0; k < 60; k++) {
+      director.update(standing, 1 / 60, 100, 0);
+      for (let i = 0; i < before.length; i++) worst = Math.max(worst, Math.abs(director.pose.r[i]! - before[i]!));
+      before = Float32Array.from(director.pose.r);
+    }
+    expect(worst).toBeLessThan(0.12);
+  });
+
+  it("opens the jaw and leans the ears when the face says so, and turns the head with the yaw it is given", () => {
+    const director = new Director(skeleton, clips);
+    const s = solvedIn({ clip: "stand" });
+    director.update({ ...s, head: { ...s.head, jaw: 0, earL: 0, earR: 0, rot: 0 } }, 1 / 60, 100, 0);
+    const shut = bonesOf(director);
+    director.update({ ...s, head: { ...s.head, jaw: 1, earL: 0.8, earR: 0.8, rot: 0 } }, 1 / 60, 100, 0.9);
+    const open = bonesOf(director);
+    const differs = (bone: string): number => {
+      const j = skeleton.bone(bone);
+      let d = 0;
+      for (let k = 0; k < 12; k++) d = Math.max(d, Math.abs(shut[j * 12 + k]! - open[j * 12 + k]!));
+      return d;
+    };
+    expect(differs("jaw")).toBeGreaterThan(0.3);
+    expect(differs("earL")).toBeGreaterThan(0.1);
+    expect(differs("earR")).toBeGreaterThan(0.1);
+    expect(differs("head")).toBeGreaterThan(0.3);
+    expect(differs("Hips")).toBeLessThan(1e-4);
+  });
+
+  it("says which postures the clips do not cover (they show the skeleton's rest, and a test can tell the file is not whole)", () => {
+    const director = new Director(skeleton, clips);
+    for (const clip of POSTURES) director.update(solvedIn({ clip }), 1 / 60, 100, 0);
+    expect(director.missing.has("walk")).toBe(false);
+    expect(director.missing.has("stand")).toBe(clips.every((c) => c.name !== "stand"));
   });
 });
 
 describe("the pitch of the body", () => {
-  const at = (m: Float64Array, x: number, y: number): Joint => ({ x: m[0]! * x + m[1]! * y + m[3]!, y: m[4]! * x + m[5]! * y + m[7]! });
+  const at = (m: Float64Array, x: number, y: number): { x: number; y: number } => ({ x: m[0]! * x + m[1]! * y + m[3]!, y: m[4]! * x + m[5]! * y + m[7]! });
 
   it("is a turn about the middle of the body, which stays where it is: a cat that tips over in a hand does not swing off to the side (the carried cat once hung 0.4 of its length from the hand)", () => {
     for (const angle of [-1.2, -0.4, 0, 0.7, 1.2]) {
@@ -346,7 +362,3 @@ describe("the pitch of the body", () => {
     }
   });
 });
-
-function TAIL(): number {
-  return 10;
-}

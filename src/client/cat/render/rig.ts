@@ -68,7 +68,13 @@ export interface Solved {
   breath: number;
   /** 1: the cat's shadow is on the ground under it; 0: none (it hangs in a hand, over no ground of its own). */
   shadow: number;
+  /** What this was solved from, and the seconds it moved on by: the solid cat plays its clips from them (the flat cat is drawn from the numbers above). */
+  frame: CatFrame;
+  dt: number;
 }
+
+/** A cat standing still, for a rig that has not been given a frame yet. */
+const FIRST_FRAME: CatFrame = { x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0, appear: 1, petted: false, carried: false };
 
 /** Hanging by the scruff: how far the body is tipped (radians; a negative angle lifts the nose). */
 const CARRY_PITCH = -1.2;
@@ -272,6 +278,8 @@ export class CatRig {
       pitch: 0,
       breath: 0,
       shadow: 1,
+      frame: FIRST_FRAME,
+      dt: 0.016,
     };
   }
 
@@ -374,6 +382,8 @@ export class CatRig {
   update(frame: CatFrame, dt: number, px: number): void {
     dt = clamp(dt, 0.0005, 0.05);
     const s = this.solved;
+    s.frame = frame;
+    s.dt = dt;
     this.time += dt;
     const sleepy = frame.drowsy;
     const clip = frame.clip;
