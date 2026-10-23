@@ -52,7 +52,7 @@ export const PLANS: Record<EngineClip, readonly Plan[]> = {
   groom: [{ clip: "groom", drive: "clock", fade: 0.4 }],
   pet: [{ clip: "pet", drive: "clock", fade: 0.4 }],
   point: [{ clip: "point", drive: "clock", fade: 0.25 }],
-  scratch: [{ clip: "scratch", drive: "clock", fade: 0.3 }],
+  scratch: [{ clip: "scratch", drive: "clock", fade: 0.3 }, { clip: "groom", drive: "clock", fade: 0.4 }],
   knead: [{ clip: "knead", drive: "clock", fade: 0.4 }],
   sniff: [{ clip: "sniff", drive: "progress", fade: 0.3 }],
   stalk: [{ clip: "stalk", drive: "odometer", fade: 0.3 }, { clip: "walk", drive: "odometer", fade: 0.3 }],
@@ -385,8 +385,8 @@ export class Director {
     this.held = toward(this.held, frame.carried ? 1 : 0);
     const dropping = !frame.carried && !frame.grounded && frame.clip !== "jump" && px > 0 && frame.vy / px > FALL_SPEED;
     this.falling = toward(this.falling, dropping ? 1 : 0);
-    // (nothing says yet that it thrashes: the engine will)
-    this.struggle = toward(this.struggle, 0);
+    // (a cat that is not in a hand does not fight it, whatever the last picture said)
+    this.struggle = toward(this.struggle, frame.carried ? clamp(frame.struggle ?? 0, 0, 1) : 0);
   }
 
   /** What the body is doing just now, for what follows the clip: how it is speeding up (the engine gives its speed, in pixels a second), how much a tail would sway, how lively and how it breathes. */

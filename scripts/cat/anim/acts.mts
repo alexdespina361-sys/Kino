@@ -139,6 +139,67 @@ export function between(a: Spec, b: Spec, t: number, when: Timing, lift = 0.035)
   return out;
 }
 
+/** The tangents of a smooth curve through the points (x, y) that never runs past one of them (Fritsch and Butland): flat where a point is a peak or a dip, and at rest at the first and the last. */
+function tangents(x: readonly number[], y: readonly number[]): number[] {
+  const slope = y.slice(1).map((v, i) => (v - y[i]!) / (x[i + 1]! - x[i]!));
+  return y.map((_, i) => {
+    if (i === 0 || i === y.length - 1) return 0;
+    const a = slope[i - 1]!;
+    const b = slope[i]!;
+    if (a * b <= 0) return 0;
+    const w0 = 2 * (x[i + 1]! - x[i]!) + (x[i]! - x[i - 1]!);
+    const w1 = (x[i + 1]! - x[i]!) + 2 * (x[i]! - x[i - 1]!);
+    return (w0 + w1) / (w0 / a + w1 / b);
+  });
+}
+
+/** The value at `t` of the curve through the points (x, y), as above. */
+function curve(x: readonly number[], y: readonly number[], t: number): number {
+  const last = x.length - 1;
+  if (t <= x[0]!) return y[0]!;
+  if (t >= x[last]!) return y[last]!;
+  let i = 0;
+  while (x[i + 1]! < t) i++;
+  const h = x[i + 1]! - x[i]!;
+  const k = (t - x[i]!) / h;
+  const m = tangents(x, y);
+  const k2 = k * k;
+  const k3 = k2 * k;
+  return (2 * k3 - 3 * k2 + 1) * y[i]! + (k3 - 2 * k2 + k) * h * m[i]! + (3 * k2 - 2 * k3) * y[i + 1]! + (k3 - k2) * h * m[i + 1]!;
+}
+
+/** `curve` through the numbers that a spec's keys hold, whatever shape they are in (numbers, lists of them, records of them); a field that only some keys have is the nearest key's. */
+function flow(x: readonly number[], values: readonly unknown[], t: number): unknown {
+  const first = values.find((v) => v !== undefined);
+  if (typeof first === "number") return curve(x, values as number[], t);
+  if (Array.isArray(first)) return first.map((_, j) => flow(x, values.map((v) => (v as unknown[])[j]), t));
+  if (first && typeof first === "object") {
+    const out: Record<string, unknown> = {};
+    for (const key of new Set(values.flatMap((v) => (v && typeof v === "object" ? Object.keys(v) : [])))) {
+      const have = values.map((v) => (v as Record<string, unknown> | undefined)?.[key]);
+      if (have.every((h) => h !== undefined)) {
+        out[key] = flow(x, have, t);
+        continue;
+      }
+      let near = -1;
+      have.forEach((h, i) => {
+        if (h !== undefined && (near < 0 || Math.abs(x[i]! - t) < Math.abs(x[near]! - t))) near = i;
+      });
+      out[key] = have[near];
+    }
+    return out;
+  }
+  return first;
+}
+
+/**
+ * The posture at time `t` of a body that goes through the keys (a spec at each time), smoothly: a curve through each number, which does not stop at a key unless the motion turns
+ * there (`between` eases each stretch to a stop at both ends, which is right for a cat that settles and wrong for one that is thrown through the air).
+ */
+export function through(keys: ReadonlyArray<readonly [number, Spec]>, t: number): Spec {
+  return flow(keys.map((k) => k[0]), keys.map((k) => k[1]), t) as Spec;
+}
+
 /** The frames of a clip: the spec at each time (laid on `base`, if there is one), solved, and recorded. */
 export function render(m: Made, name: string, seconds: number, loop: boolean, at: (t: number, u: number) => Spec, o: { marks?: Record<string, number>; base?: Pose; grounded?: boolean; from?: Pose } = {}): ClipSource {
   const frames = Math.max(2, Math.round(seconds * FPS) + (loop ? 0 : 1));
@@ -322,10 +383,103 @@ export function stretch(m: Made): ClipSource {
   const to = bowSpec(m);
   const WIN: Timing = { hips: [0, 0.85], back: [0.05, 0.85], neck: [0.15, 0.85], tail: [0.1, 0.8], hind: [0, 0.8], front: [0, 0.75] };
   return render(m, "stretch", 2.5, false, (t, u) => {
-    // down over the first third, held, and up over the last
-    const k = ease(u / 0.3) * (1 - ease((u - 0.72) / 0.28));
+    // down over the first quarter, held, and up over the last half (a cat gets up out of a stretch more slowly than it went down: the engine's shot is two and a half seconds, and a rise in
+    // the last quarter of it is a body snapping up)
+    const k = ease(u / 0.28) * (1 - ease((u - 0.52) / 0.48));
     return between(from, to, k, WIN);
   });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// the stalk
+
+/** `v` brought `k` of the way back to `mean` from where it is (1: as it is, 0: all the way to the mean). */
+const toward = (v: number, mean: number, k: number): number => mean + k * (v - mean);
+
+/**
+ * The stalk: the walk with the body brought down, the head forward and low, the tail trailing, each paw where the walk puts it (so the stride, the footfalls and the pace are the walk's)
+ * and the legs found again for the hips that are lower. A donor's own sneak is a fox crawling on its belly, and its folds in the legs are not ones this cat's short legs and coat can
+ * make: they come out a lump.
+ */
+export function stalk(m: Made): ClipSource {
+  const walk = m.clips.get("walk");
+  if (!walk) throw new Error("no walk to lay the stalk on");
+  const pose = new Pose(m.skeleton);
+  const specs: Spec[] = [];
+  for (let f = 0; f < walk.frames; f++) {
+    sampleFrame(walk, f, pose);
+    specs.push(specOf(m, pose));
+  }
+  const mean = (pick: (s: Spec) => number): number => specs.reduce((sum, s) => sum + pick(s), 0) / specs.length;
+  const hipsY = mean((s) => s.hips!.y);
+  const back = [mean((s) => s.back![0]), mean((s) => s.back![1])];
+  const neck = [0, 1, 2, 3].map((i) => mean((s) => s.neck![i]!));
+  // (how low the body goes, and where the head and the tail are held; what the walk does around them is kept in part: the sway of the body, a nod of the head. The body is hardly
+  // lowered: this cat's legs are short and its coat comes down over them, so that a crouch of a hand's breadth turns them into a lump; a low head and tail make the stalk)
+  const DROP = 0.01;
+  const SHOULDERS = 0;
+  const HEAD: [number, number, number, number] = [deg(12), deg(8), deg(0), deg(-22)];
+  const TAIL: [number, number, number, number] = [deg(190), deg(186), deg(182), deg(178)];
+  const low = specs.map(
+    (s): Spec => ({
+      hips: { ...s.hips!, y: toward(s.hips!.y, hipsY, 0.5) - DROP },
+      back: [toward(s.back![0], back[0]!, 0.5) - deg(SHOULDERS), toward(s.back![1], back[1]!, 0.5) - deg(SHOULDERS * 1.3)],
+      neck: s.neck!.map((a, i) => HEAD[i]! + 0.3 * (a - neck[i]!)) as unknown as [number, number, number, number],
+      tail: TAIL,
+      tailFloor: 0.06,
+      paws: s.paws!,
+    }),
+  );
+  const seconds = walk.frames / walk.fps;
+  const clip = render(m, "stalk", seconds, true, (_t, u) => {
+    const at = u * walk.frames;
+    const i = Math.floor(at) % walk.frames;
+    return mixSpec(low[i]!, low[(i + 1) % walk.frames]!, at - Math.floor(at));
+  });
+  return { ...clip, stride: walk.stride, marks: { ...walk.marks } };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// the leap
+
+/** When the leap's paws leave the floor and when one is on it again (s): the marks the director plays it by (the engine's take-off and landing). */
+export const LEAP = { takeoff: 0.38, land: 0.78 } as const;
+
+/**
+ * The leap, as a body does it: the coil, the push (the hips up and forward over the hind paws as the legs straighten), the stretch in the air with the front paws out ahead and the hind
+ * ones trailing, the reach for the floor, the landing that gives at the knees, and the stand. The body stays level: the engine carries the cat along its arc, and the renderer tips the
+ * whole cat to the way it is going, so a clip that tipped as well would turn the cat twice as far (a donor's jump does: it pounces, and comes down on its nose).
+ */
+export function jump(m: Made): ClipSource {
+  const stand = standing(m);
+  const rest = (p: PawName): [number, number, number] => m.body.padAtRest(p).at;
+  const FREE: [number, number, number] = [1, 1, 1];
+  /** The four paws, each as how far forward the sole is and how high; the sides across are the rest's. */
+  const feet = (fl: [number, number], fr: [number, number], hl: [number, number], hr: [number, number], soft: [number, number, number] = FREE): NonNullable<Spec["paws"]> => ({
+    "front left": { at: [fl[0], fl[1], rest("front left")[2]], soft },
+    "front right": { at: [fr[0], fr[1], rest("front right")[2]], soft },
+    "hind left": { at: [hl[0], hl[1], rest("hind left")[2]], soft },
+    "hind right": { at: [hr[0], hr[1], rest("hind right")[2]], soft },
+  });
+  const floor = rest("front left")[1];
+  const key = (at: number, spec: Omit<Spec, "tailFloor">): [number, Spec] => [at, { tailFloor: 0.05, ...spec }];
+  const on = (fl: number, fr: number, hl: number, hr: number): NonNullable<Spec["paws"]> => feet([fl, floor], [fr, floor], [hl, floor], [hr, floor], SOFT);
+  const keys: Array<[number, Spec]> = [
+    key(0, { hips: stand.hips!, back: stand.back!, neck: stand.neck!, tail: stand.tail!, paws: on(rest("front left")[0], rest("front right")[0], rest("hind left")[0], rest("hind right")[0]) }),
+    // the coil: the haunches down, the hind paws brought up under them, the chest forward and low, the head up on the place
+    key(0.22, { hips: { x: -0.4, y: 0.37, pitch: -0.04 }, back: [deg(-14), deg(-20)], neck: [deg(36), deg(38), deg(30), deg(-16)], tail: [deg(182), deg(186), deg(190), deg(194)], paws: on(0.2, 0.17, -0.45, -0.46) }),
+    // the push: the legs straight, the hips over and ahead of the hind paws, the chest up, the paws just off the floor
+    key(LEAP.takeoff, { hips: { x: -0.34, y: 0.52, pitch: 0 }, back: [deg(2), deg(8)], neck: [deg(50), deg(46), deg(34), deg(-22)], tail: [deg(176), deg(170), deg(164), deg(158)], paws: feet([0.3, 0.12], [0.22, 0.16], [-0.58, 0.07], [-0.6, 0.09]) }),
+    // in the air: the body level and long, the front paws reaching ahead, the hind ones trailing
+    key(0.58, { hips: { x: -0.38, y: 0.5, pitch: 0 }, back: [deg(-4), deg(-2)], neck: [deg(34), deg(30), deg(22), deg(-22)], tail: [deg(176), deg(172), deg(166), deg(160)], paws: feet([0.42, 0.24], [0.33, 0.28], [-0.66, 0.2], [-0.62, 0.24]) }),
+    // the reach: the front paws on the floor, the hind ones coming under
+    key(LEAP.land, { hips: { x: -0.37, y: 0.44, pitch: 0 }, back: [deg(-12), deg(-14)], neck: [deg(40), deg(40), deg(34), deg(-20)], tail: [deg(172), deg(160), deg(148), deg(138)], paws: feet([0.24, floor], [0.19, floor], [-0.5, 0.12], [-0.47, 0.16]) }),
+    // the landing gives
+    key(0.88, { hips: { x: -0.4, y: 0.38, pitch: -0.03 }, back: [deg(-14), deg(-20)], neck: [deg(40), deg(40), deg(32), deg(-18)], tail: [deg(176), deg(168), deg(158), deg(150)], paws: on(0.2, 0.16, -0.48, -0.48) }),
+    // and the cat stands where it landed
+    key(1, { hips: stand.hips!, back: stand.back!, neck: stand.neck!, tail: stand.tail!, paws: on(0.18, 0.14, -0.5, -0.5) }),
+  ];
+  return render(m, "jump", 1, false, (t) => through(keys, t), { marks: { takeoff: LEAP.takeoff, land: LEAP.land } });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -448,7 +602,10 @@ export function tap(m: Made): ClipSource {
   );
 }
 
-/** A hind leg up to the neck, scratching fast (six to the second), the head leaning into it. */
+/**
+ * A hind leg up to the neck, scratching fast (six to the second), the head leaning into it. (Not in ACTS: the leg that the pose generator can reach up with is a stick under a coat
+ * that hides it, and the clip is not one a viewer reads as a scratch; the director shows the cat's wash instead. Kept for the day the leg is a better one.)
+ */
 export function scratch(m: Made): ClipSource {
   const { base, neck } = sitting(m);
   return render(
@@ -555,7 +712,7 @@ export function swat(m: Made): ClipSource {
  * The acts that the pose generator makes, in the order a person would list the cat's doings. (The donor's swat stays: it bites, and the generated one only reaches out.)
  * Each is laid on the donors' standing and sitting, so the donors must be made first.
  */
-export const ACTS: Readonly<Record<string, (m: Made) => ClipSource>> = { sit, loaf, doze, curl, shift, crouch, wiggle, stretch, groom, point, tap, scratch, pet, knead, sniff };
+export const ACTS: Readonly<Record<string, (m: Made) => ClipSource>> = { sit, loaf, doze, curl, shift, crouch, wiggle, stretch, jump, stalk, groom, point, tap, pet, knead, sniff };
 
 /** A sniff: the head down to the floor and moving about it, the nose working, and up again. */
 export function sniff(m: Made): ClipSource {

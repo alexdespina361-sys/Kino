@@ -34,6 +34,8 @@ filmOptions.blind = flag("blind", "") !== "";
 filmOptions.plain = flag("plain", "") !== "";
 // (--follow=1: the camera goes with the cat, for one that is carried about)
 filmOptions.follow = flag("follow", "") !== "";
+// (--ref=<s>: the moment of the recording whose feet are on the floor line, for a strip that starts with the cat in the air)
+if (flag("ref", "") !== "") filmOptions.refAt = Number(flag("ref", 0));
 // (a closer look at a strip: --zoom=2.4 --at=0.3,0.55 [the place, in body lengths forward and up from the feet], and the camera: --turn=-0.5 --tilt=0.1)
 if (flag("zoom", "")) {
   filmOptions.zoom = Number(flag("zoom", 1));

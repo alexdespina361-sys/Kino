@@ -1,6 +1,7 @@
 // Builds the cat's clips from the donors in the table below: each one is the donor's animation on the cat's bones (retarget.mts, feet.mts), given the style of a cat (style.mts), put
 // on the floor by its contacts (plant.mts, ground.mts, floor.mts), its leap or its gait measured (flight.mts, gait.mts). What no donor does (lying down, a stretch, a paw at the face)
-// is made by the pose generator (acts.mts) from the donors' own standing and sitting, and the two go into one clips file for the player.
+// is made by the pose generator (acts.mts) from the donors' own standing and sitting, and the two go into one clips file for the player. (The leap is the generator's too: the donor's
+// jump is a fox's pounce, and comes down on its nose.)
 //
 //   node node_modules/tsx/dist/cli.mjs scripts/cat/anim/build.mts [--out=.kino-cat/cands.clips] [--only=walk,loaf] [--mesh=src/client/cat/render/gl/cat.mesh]
 //
@@ -31,8 +32,8 @@ const WALK_STYLE: Style = {
   amplify: { spine1: 1.8, spine2: 1.8, chest: 1.8, neck1: 1.5, neck2: 1.5, head: 1.3, tail: 2, tailstart: 2, tail1: 2, tail2: 2, tail3: 2 },
 };
 const RUN_STYLE: Style = {
-  hips: [1, 1.5, 1.4],
-  amplify: { spine1: 1.4, spine2: 1.4, chest: 1.3, tail: 1.3, tailstart: 1.3, tail1: 1.3, tail2: 1.3, tail3: 1.3 },
+  hips: [1, 1.2, 1.2],
+  amplify: { spine1: 1.4, spine2: 1.4, chest: 1.3, tail: 0.5, tailstart: 0.5, tail1: 0.5, tail2: 0.5, tail3: 0.5 },
 };
 
 interface Entry {
@@ -50,11 +51,9 @@ interface Entry {
 export const TABLE: readonly Entry[] = [
   { name: "walk", donor: "m2m", from: "Walk", loop: true, lock: true, style: WALK_STYLE, finish: { gait: WALKING, floor: "lift" } },
   { name: "run", donor: "m2m", from: "Run", loop: true, lock: true, style: RUN_STYLE, finish: { gait: RUNNING, floor: "lift" } },
-  { name: "stalk", donor: "m2m", from: "Sneak", loop: true, lock: true, style: { ...WALK_STYLE, lower: 0.55 }, finish: { gait: WALKING, floor: "lift" } },
   { name: "stand", donor: "khr", from: "Survey", loop: true, plant: { paws: ALL_PAWS, seat: false }, finish: { floor: "pin" } },
   { name: "peek", donor: "m2m", from: "Idle Alert", loop: true, style: { lower: 0.6 }, plant: { paws: ALL_PAWS, seat: false }, finish: { floor: "pin" } },
   { name: acts.DONOR_SIT, donor: "m2m", from: "Sit", loop: false, plant: { paws: FRONT_PAWS, seat: true }, finish: { floor: "pin" } },
-  { name: "jump", donor: "m2m", from: "Jump", loop: false, finish: { leap: true, floor: "lift" } },
   { name: "swat", donor: "m2m", from: "Bite", loop: false, finish: { floor: "pin" } },
   { name: "yawn", donor: "m2m", from: "Bark", loop: false, finish: { floor: "pin" } },
 ];

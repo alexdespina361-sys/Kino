@@ -266,6 +266,8 @@ export interface FilmOptions {
   /** Seconds into the recording. */
   from: number;
   to: number;
+  /** The moment of the recording whose feet are on the floor line (the first picture's, when it is not said). */
+  refAt?: number;
   /** For a strip: a picture every this many frames. For the onion skin: the same. */
   every: number;
   seed?: number;
@@ -281,6 +283,8 @@ export interface FilmOptions {
   plain?: boolean;
   /** A strip whose camera goes with the cat (it is in the same place of every cell): for a cat that is carried about. */
   follow?: boolean;
+  /** A strip for a reviewer who is not to be told what the cat is doing: each picture says only its number and the seconds since the first (not the engine's act, nor the clip). */
+  blind?: boolean;
 }
 
 /**
@@ -310,7 +314,8 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, clips: string, f
   const picks: number[] = [];
   for (let i = i0; i <= i1; i += o.every) picks.push(i);
   const ctx = canvas.getContext("2d")!;
-  const ref = film.frames[i0]!;
+  // (the floor line is where the feet of the first picture are, unless a moment of the recording is named: for a strip that starts with the cat already in the air)
+  const ref = film.frames[o.refAt === undefined ? i0 : Math.min(film.frames.length - 1, Math.max(0, Math.round(o.refAt * film.fps)))]!;
   if (o.mode === "strip") {
     const cw = (o.cellW ?? 260) * o.scale;
     const ch = (o.cellH ?? 220) * o.scale;
@@ -342,7 +347,7 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, clips: string, f
       ctx.drawImage(glCanvas, x0, y0);
       ctx.fillStyle = "#9aa";
       ctx.font = `${12 * o.scale}px sans-serif`;
-      ctx.fillText(`${(i / film.fps).toFixed(2)}s  ${f.act ?? ""}  ${f.clip}${f.grounded ? "" : " (air)"}`, x0 + 8 * o.scale, y0 + 16 * o.scale);
+      ctx.fillText(o.blind ? `${n + 1}   +${((i - i0) / film.fps).toFixed(1)} s` : `${(i / film.fps).toFixed(2)}s  ${f.act ?? ""}  ${f.clip}${f.grounded ? "" : " (air)"}`, x0 + 8 * o.scale, y0 + 16 * o.scale);
     }
   } else {
     let minX = Infinity;

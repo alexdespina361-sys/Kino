@@ -176,6 +176,12 @@ export interface CatFrame {
   petted: boolean;
   /** A hand has it by the scruff and is carrying it somewhere: it hangs from the hand (`x`,`y` are still its feet, a little below the grip). */
   carried: boolean;
+  /**
+   * How hard it fights the hand that has it, 0..1: 0 hangs calm, about 0.1 is limp (it has given up for a while), 1 is twisting, kicking and swiping with all it has. It is 0 until it has been
+   * held a while, comes on over a second or so, may peak and ease off to limp and try again, and dies away in the half second after the hand lets go (a cat that lands from a struggle lands
+   * annoyed: see `Emote`). The painter makes of it what it likes (a faster, bigger swing, legs kicking, ears back, the mouth open); missing means 0.
+   */
+  struggle?: number;
   /** What it feels just now (see `Emote`); none when it does not say. */
   emote?: Emote;
 }
