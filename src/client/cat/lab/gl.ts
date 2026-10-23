@@ -59,6 +59,8 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, clips: string, 
     const x0 = (i % columns) * cw;
     const y0 = Math.floor(i / columns) * ch;
     const rig = new CatRig(seed + i);
+    // (each picture is a cat of its own: the clip's clock, and what follows the clip, start at the picture, not where the picture before left them)
+    cat.director.restart();
     const base = frameOf(cell.frame);
     // (a point of a cycle is a point of the clip's own stride: the ground one cycle of it carries the cat over)
     if (cell.cycle !== undefined) base.odometer = cell.cycle * (cat.director.strideOf(base.clip) || STRIDE[base.clip === "run" ? "run" : "walk"]) * px;
@@ -142,6 +144,7 @@ export function glExtents(mesh: string, clips: string, cells: readonly GlCell[],
   const out: Extent[] = [];
   cells.forEach((cell, i) => {
     const rig = new CatRig(seed + i);
+    cat.director.restart();
     const base = frameOf(cell.frame);
     // (a point of a cycle is a point of the clip's own stride: the ground one cycle of it carries the cat over)
     if (cell.cycle !== undefined) base.odometer = cell.cycle * (cat.director.strideOf(base.clip) || STRIDE[base.clip === "run" ? "run" : "walk"]) * px;
@@ -323,7 +326,11 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, clips: string, f
       const f = film.frames[i]!;
       rig.update(scaled(f), dt, lab);
       const n = picks.indexOf(i);
-      if (n < 0) continue;
+      if (n < 0) {
+        // (the bones go on by every picture of the recording, drawn or not: the fades, the springs and the clocks of the clips run on the recording's time, not on the pictures chosen)
+        cat.step(rig.solved, { ox: 0, oy: 0, px: lab * zoom }, o.view);
+        continue;
+      }
       const x0 = (n % o.cols) * cw;
       const y0 = Math.floor(n / o.cols) * ch;
       ctx.fillStyle = BG;
@@ -365,7 +372,10 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, clips: string, f
     for (let i = warm + 1; i <= i1; i++) {
       const f = film.frames[i]!;
       rig.update(scaled(f), dt, lab);
-      if (!picks.includes(i)) continue;
+      if (!picks.includes(i)) {
+        cat.step(rig.solved, { ox: 0, oy: 0, px: lab });
+        continue;
+      }
       cat.draw(rig.solved, { ox: ox(f.x), oy: oy(f.y), px: lab });
       ctx.globalAlpha = 0.45;
       ctx.drawImage(glCanvas, 0, 0);

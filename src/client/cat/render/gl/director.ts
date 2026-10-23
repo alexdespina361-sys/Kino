@@ -187,6 +187,25 @@ export class Director {
     return this.byName.has(name);
   }
 
+  /** Forgets everything the director was doing: the next picture is the first of a cat that has just appeared (no clip is passed from, no spring is on its way, nothing is held). For the lab, which draws one cat in many places. */
+  restart(): void {
+    this.started = false;
+    this.current = null;
+    this.currentKey = "";
+    this.age = 0;
+    this.fading = 0;
+    this.held = 0;
+    this.falling = 0;
+    this.struggle = 0;
+    this.lastVx = 0;
+    this.lastVy = 0;
+    this.accelX = 0;
+    this.accelY = 0;
+    this.secondary.reset();
+    this.dangle.reset();
+    this.pose.reset();
+  }
+
   /** The ground (body lengths) one cycle of a gait clip carries the cat over, 0 for a clip that is not one or is not there. (For the lab, which stands the cat at a point of a cycle.) */
   strideOf(name: string): number {
     return this.byName.get(name)?.stride ?? 0;

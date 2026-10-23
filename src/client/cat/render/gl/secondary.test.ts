@@ -24,6 +24,7 @@ const data: SkeletonData = {
 };
 const skeleton = new Skeleton(data);
 
+const TAIL = ["tail", "tailstart", "tail1", "tail2", "tail3"];
 const QUIET: Gust = { forward: 0, up: 0, sway: 0, energy: 0, breath: 0 };
 const roll = (pose: Pose, name: string): number => {
   // (the angle about the cat's z of a bone's turn, which is all that these tests turn)
@@ -53,29 +54,42 @@ describe("secondary motion", () => {
     for (let i = 0; i < first.length; i++) expect(pose.r[i]).toBeCloseTo(first[i]!, 6);
   });
 
-  it("lags behind a bone that is turned, the tip further than the root, and gets there", () => {
+  it("carries a turn of the root on along the tail: each bone gets there after the one before it, the tip rings a little, and all of it arrives", () => {
     const secondary = new Secondary(skeleton);
-    // the tail is at rest, and then every bone of it is turned half a radian at once
-    const rest = new Pose(skeleton);
-    secondary.apply(rest, 1 / 60, QUIET);
-    const seen: Record<string, number[]> = { tail: [], tail3: [] };
+    secondary.apply(new Pose(skeleton), 1 / 60, QUIET);
+    // the root of the tail is turned half a radian; where each bone points in the cat's frame is its own turn and those of the bones before it
+    const seen: number[][] = [];
     for (let i = 0; i < 90; i++) {
-      const pose = new Pose(skeleton);
-      for (const name of ["tail", "tailstart", "tail1", "tail2", "tail3"]) pose.r.set(turnAbout(0, 0, 1, 0.5), skeleton.bone(name) * 4);
+      const pose = turned("tail", 0.5);
       secondary.apply(pose, 1 / 60, QUIET);
-      seen.tail!.push(roll(pose, "tail"));
-      seen.tail3!.push(roll(pose, "tail3"));
+      let sum = 0;
+      seen.push(TAIL.map((name) => (sum += roll(pose, name))));
     }
-    // (two pictures on: the root has moved on more than the tip, and the tip is still on its way a tenth of a second on)
-    expect(seen.tail![1]!).toBeGreaterThan(seen.tail3![1]!);
-    expect(seen.tail![5]!).toBeGreaterThan(seen.tail3![5]!);
-    // (a second and a half on: both are where they were sent)
-    expect(seen.tail![89]!).toBeCloseTo(0.5, 1);
-    expect(seen.tail3![89]!).toBeCloseTo(0.5, 1);
-    // (the tip rings: it goes past, by more than the root does, and not a lot)
-    const most = Math.max(...seen.tail3!);
-    expect(most).toBeGreaterThan(Math.max(...seen.tail!) + 0.02);
-    expect(most).toBeLessThan(0.5 * 1.4);
+    // (a tenth of a second on: the root is there, and the tip has hardly begun)
+    expect(seen[5]![0]!).toBeGreaterThan(0.4);
+    expect(seen[5]![4]!).toBeLessThan(0.1);
+    const arrives = (k: number): number => seen.findIndex((row) => row[k]! > 0.25);
+    for (let k = 1; k < TAIL.length; k++) expect(arrives(k)).toBeGreaterThan(arrives(k - 1));
+    // (the tip goes past where it was sent, by more than the root does, and not far)
+    const most = Math.max(...seen.map((row) => row[4]!));
+    expect(most).toBeGreaterThan(Math.max(...seen.map((row) => row[0]!)) + 0.05);
+    expect(most).toBeLessThan(0.5 * 1.6);
+    // (a second and a half on: all of it is where it was sent)
+    for (let k = 0; k < TAIL.length; k++) expect(seen[89]![k]!).toBeCloseTo(0.5, 1);
+  });
+
+  it("keeps pointing where it was when the body turns, and is carried round after it", () => {
+    const secondary = new Secondary(skeleton);
+    secondary.apply(new Pose(skeleton), 1 / 60, QUIET);
+    const seen: number[] = [];
+    for (let i = 0; i < 90; i++) {
+      const pose = turned("Hips", 0.5);
+      secondary.apply(pose, 1 / 60, QUIET);
+      seen.push(roll(pose, "tail"));
+    }
+    // (the root turns back against the body's turn at first, and the body's turn is all there is a second on)
+    expect(seen[2]!).toBeLessThan(-0.1);
+    expect(Math.abs(seen[89]!)).toBeLessThan(0.02);
   });
 
   it("gets to the same place whatever the length of the picture, and is steady for a very long one", () => {
@@ -137,22 +151,35 @@ describe("secondary motion", () => {
     expect(Math.abs(settle({ ...QUIET, forward: 5000 }))).toBeLessThan(0.45);
   });
 
-  it("sways the tail in a wave that is wider towards the tip, and runs on from the root", () => {
+  it("sways the whole tail in a wave that runs on from the root and is wider towards the tip", () => {
     const secondary = new Secondary(skeleton);
-    const swing: Record<string, number[]> = { tail: [], tailstart: [], tail1: [], tail2: [], tail3: [] };
-    for (let i = 0; i < 60 * 6; i++) {
+    // where each bone points in the cat's frame, for half a minute
+    const swing: number[][] = TAIL.map(() => []);
+    for (let i = 0; i < 60 * 30; i++) {
       const pose = new Pose(skeleton);
       secondary.apply(pose, 1 / 60, { ...QUIET, sway: 1 });
-      for (const name of Object.keys(swing)) swing[name]!.push(roll(pose, name));
+      let sum = 0;
+      TAIL.forEach((name, k) => swing[k]!.push((sum += roll(pose, name))));
     }
-    const range = (name: string): number => Math.max(...swing[name]!) - Math.min(...swing[name]!);
-    expect(range("tail3")).toBeGreaterThan(range("tail1"));
-    expect(range("tail1")).toBeGreaterThan(range("tail"));
-    expect(range("tail3")).toBeGreaterThan(0.25);
-    expect(range("tail3")).toBeLessThan(0.6);
-    // (the tip is behind the root: it reaches its top later)
-    const topAt = (name: string): number => swing[name]!.slice(0, 120).indexOf(Math.max(...swing[name]!.slice(0, 120)));
-    expect(topAt("tail3")).not.toBe(topAt("tail"));
+    const range = (k: number): number => Math.max(...swing[k]!) - Math.min(...swing[k]!);
+    for (let k = 1; k < TAIL.length; k++) expect(range(k)).toBeGreaterThan(range(k - 1));
+    // (not the tip alone: the root sways too, and the tip does not swing wildly in a calm cat)
+    expect(range(0)).toBeGreaterThan(0.1);
+    expect(range(4)).toBeGreaterThan(0.4);
+    expect(range(4)).toBeLessThan(1.1);
+    // (the tip is not the root over again: the waves are a wave that is behind from one bone to the next, so the two are far from one rhythm)
+    const mean = (a: number[]): number => a.reduce((s, v) => s + v, 0) / a.length;
+    const [root, tip] = [swing[0]!, swing[4]!];
+    const [mr, mt] = [mean(root), mean(tip)];
+    let both = 0;
+    let sr = 0;
+    let st = 0;
+    for (let i = 0; i < root.length; i++) {
+      both += (root[i]! - mr) * (tip[i]! - mt);
+      sr += (root[i]! - mr) ** 2;
+      st += (tip[i]! - mt) ** 2;
+    }
+    expect(Math.abs(both / Math.sqrt(sr * st))).toBeLessThan(0.7);
     // (and a cat that does not sway has a still tail)
     const still = new Secondary(skeleton);
     const seen: number[] = [];
@@ -162,6 +189,50 @@ describe("secondary motion", () => {
       seen.push(roll(pose, "tail3"));
     }
     expect(Math.max(...seen) - Math.min(...seen)).toBeLessThan(1e-6);
+  });
+
+  it("is wider and quicker for a lively cat", () => {
+    const tipRange = (energy: number): number => {
+      const secondary = new Secondary(skeleton);
+      let low = Infinity;
+      let high = -Infinity;
+      for (let i = 0; i < 60 * 30; i++) {
+        const pose = new Pose(skeleton);
+        secondary.apply(pose, 1 / 60, { ...QUIET, sway: 1, energy });
+        let sum = 0;
+        for (const name of TAIL) sum += roll(pose, name);
+        low = Math.min(low, sum);
+        high = Math.max(high, sum);
+      }
+      return high - low;
+    };
+    expect(tipRange(1)).toBeGreaterThan(tipRange(0) * 1.3);
+  });
+
+  it("flicks now and then (more for a lively cat), and not when it is not to sway", () => {
+    const count = (sway: number, energy: number): number => {
+      const secondary = new Secondary(skeleton);
+      for (let i = 0; i < 60 * 120; i++) secondary.apply(new Pose(skeleton), 1 / 60, { ...QUIET, sway, energy });
+      return secondary.flicks;
+    };
+    expect(count(1, 0)).toBeGreaterThan(5);
+    expect(count(1, 1)).toBeGreaterThan(count(1, 0));
+    expect(count(0, 1)).toBe(0);
+  });
+
+  it("does the same for the same seed, and not for another", () => {
+    const run = (seed: number): number[] => {
+      const secondary = new Secondary(skeleton, seed);
+      const out: number[] = [];
+      for (let i = 0; i < 600; i++) {
+        const pose = new Pose(skeleton);
+        secondary.apply(pose, 1 / 60, { ...QUIET, sway: 1, energy: 0.5 });
+        out.push(roll(pose, "tail3"));
+      }
+      return out;
+    };
+    expect(run(7)).toEqual(run(7));
+    expect(run(7)).not.toEqual(run(8));
   });
 
   it("lifts the chest with the breath in, and by more than the bones behind it", () => {

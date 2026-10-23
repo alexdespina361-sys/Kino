@@ -1,11 +1,13 @@
+import { createRng, type Rng } from "../../rng";
 import { TAU, clamp } from "../../math";
 import { Pose, Skeleton, globals } from "./pose";
 
 /**
- * What a living body does beyond what its clip says, laid over the clip's pose picture by picture: the tail and the back follow what the body did a moment ago (a spring
- * on each bone's own turn: the tip of the tail lags the root, and rings a little when the body stops), the tail is pushed by the body's own acceleration (starting, stopping,
- * landing), a tail at rest sways in a slow wave that runs from the root to the tip, and the chest rises and falls with the breath. None of it is a pose: a clip that is
- * played with no secondary motion is a cat made of one piece, and this is what makes the pieces follow one another.
+ * What a living body does beyond what its clip says, laid over the clip's pose picture by picture. The back follows what the body did a moment ago (a spring on each bone's own turn,
+ * and the chest rises and falls with the breath). The tail is a chain: each of its bones is a spring after the bone before it, in the cat's own frame, and the bone before it is itself
+ * still on its way, so a turn of the root, a push of the body, a flick, runs on from bone to bone and arrives at the tip late, and rings there. A tail at rest sways in a slow wave
+ * (two, one under the other, so that it does not keep time like a clock), and now and then flicks. None of it is a pose: a clip that is played with no secondary motion is a cat made of
+ * one piece, and this is what makes the pieces follow one another.
  */
 
 type Quat = [number, number, number, number];
@@ -16,33 +18,45 @@ interface Follow {
   bone: string;
   hz: number;
   zeta: number;
+  /** Whether the bone is one of the tail's chain, which follows the bone before it (its spring is in the cat's frame), and not the clip's turn in its parent's frame. */
+  chain?: boolean;
   /** How much of the push the tail takes at this bone (0 for a bone that is not pushed). */
   push: number;
   /** The slow wave of a tail at rest: how far this bone sways (radians, in the plane of the cat's side and in the plane of its back), and the pitch of the chest's breath. */
   wave: number;
   sway: number;
   breath: number;
+  /** How much of a flick this bone takes (the flick is a quick lift of the root of the tail; the bones after it are carried by the chain). */
+  flick?: number;
 }
 
 const FOLLOWERS: readonly Follow[] = [
   { bone: "spine1", hz: 8.5, zeta: 0.8, push: 0, wave: 0, sway: 0, breath: 0.008 },
   { bone: "spine2", hz: 8, zeta: 0.75, push: 0, wave: 0, sway: 0, breath: 0.014 },
   { bone: "chest", hz: 7.5, zeta: 0.7, push: 0, wave: 0, sway: 0, breath: 0.02 },
-  // (a walk turns the tail over about once a second and a run about twice: the springs are slow enough for the tip to be seen to trail the root, and each is slower than the one before)
-  { bone: "tail", hz: 5, zeta: 0.7, push: 0.4, wave: 0.03, sway: 0.02, breath: 0 },
-  { bone: "tailstart", hz: 4, zeta: 0.6, push: 0.7, wave: 0.06, sway: 0.05, breath: 0 },
-  { bone: "tail1", hz: 3.2, zeta: 0.5, push: 1, wave: 0.1, sway: 0.09, breath: 0 },
-  { bone: "tail2", hz: 2.6, zeta: 0.45, push: 1, wave: 0.14, sway: 0.13, breath: 0 },
-  { bone: "tail3", hz: 2.1, zeta: 0.4, push: 0.9, wave: 0.18, sway: 0.17, breath: 0 },
+  // (a walk turns the tail over about once a second and a run about twice: each bone is slower than the one it follows, so the tip is seen to trail the root, and rings by more)
+  { bone: "tail", hz: 5, zeta: 0.7, chain: true, push: 0.4, wave: 0.02, sway: 0.02, breath: 0, flick: 1 },
+  { bone: "tailstart", hz: 4.2, zeta: 0.6, chain: true, push: 0.6, wave: 0.04, sway: 0.035, breath: 0, flick: 0.55 },
+  { bone: "tail1", hz: 3.6, zeta: 0.5, chain: true, push: 0.8, wave: 0.055, sway: 0.05, breath: 0 },
+  { bone: "tail2", hz: 3, zeta: 0.45, chain: true, push: 1, wave: 0.065, sway: 0.06, breath: 0 },
+  { bone: "tail3", hz: 2.6, zeta: 0.4, chain: true, push: 0.9, wave: 0.065, sway: 0.06, breath: 0 },
 ];
 
 /** How far the body's acceleration bends the tail (radians for each body length a second, every second) and the most it may. */
 const PUSH_GAIN = 0.012;
 const PUSH_MOST = 0.4;
 /** The wave of a tail at rest: how far it runs behind from one bone to the next (radians) and how fast it goes (Hz at rest, and more for a lively cat). */
-const WAVE_LAG = 0.9;
+const WAVE_LAG = 0.7;
 const WAVE_HZ = 0.45;
 const WAVE_LIVELY = 0.6;
+/** The slower wave under it: its pace (Hz), how wide it is against the first, and how far it runs behind from one bone to the next. */
+const SWELL_HZ = 0.17;
+const SWELL_SHARE = 0.7;
+const SWELL_LAG = 0.35;
+/** A flick: how long it takes (s), how far it lifts the root of the tail at most and at least (radians), how soon the next one is (s, at rest and for a lively cat). */
+const FLICK_LENGTH = 0.38;
+const FLICK_SIZE: readonly [number, number] = [0.14, 0.32];
+const FLICK_EVERY: readonly [number, number] = [2.5, 7];
 
 /** What the body is doing, as far as the followers care. */
 export interface Gust {
@@ -51,7 +65,7 @@ export interface Gust {
   up: number;
   /** 0..1: how much the tail sways at rest in this posture (a sitting cat sways it, a running one does not need to, a sleeping one hardly). */
   sway: number;
-  /** 0..1: how lively the cat is (a faster, wider wave). */
+  /** 0..1: how lively the cat is (a faster, wider wave, and more flicks). */
   energy: number;
   /** -1..1: the breath (in is up). */
   breath: number;
@@ -60,7 +74,7 @@ export interface Gust {
 interface Follower {
   bone: number;
   spec: Follow;
-  /** The turn that follows, and how fast it is turning (about its own axes). */
+  /** The turn that follows, and how fast it is turning (about its own axes). For a bone of the tail's chain it is the bone's turn in the cat's frame, after the bones above it. */
   q: Quat;
   w: Vec3;
   /** Which way the bone's own axes point when the cat is at rest: the one along the cat's side (the turn that raises and lowers the tail) and the one up its back (the sway). */
@@ -69,6 +83,11 @@ interface Follower {
   /** Which way the bone points from its joint (x and y of the cat's side), for the push. */
   dx: number;
   dy: number;
+  /** For a bone of the chain: the follower (in the list) of the bone it hangs from, or -1 when that is not one, and then the bones from the root of the skeleton down to it. */
+  before: number;
+  above: number[];
+  /** The sign of a turn about `pitch` that lifts the tip of the tail. */
+  lift: number;
 }
 
 const normalise = (q: Quat): void => {
@@ -82,6 +101,16 @@ const normalise = (q: Quat): void => {
 /** `out` = the turn `a` and then, about its own axes, `b`. (`out` may be either.) */
 const times = (a: ArrayLike<number>, b: ArrayLike<number>, out: Quat): void => {
   const ax = a[0]!, ay = a[1]!, az = a[2]!, aw = a[3]!;
+  const bx = b[0]!, by = b[1]!, bz = b[2]!, bw = b[3]!;
+  out[0] = aw * bx + ax * bw + ay * bz - az * by;
+  out[1] = aw * by - ax * bz + ay * bw + az * bx;
+  out[2] = aw * bz + ax * by - ay * bx + az * bw;
+  out[3] = aw * bw - ax * bx - ay * by - az * bz;
+};
+
+/** `out` = the turn that undoes `a`, and then `b`: what `b` is, seen from the bone that `a` is the turn of. (`out` may be `b`.) */
+const unTimes = (a: ArrayLike<number>, b: ArrayLike<number>, out: Quat): void => {
+  const ax = -a[0]!, ay = -a[1]!, az = -a[2]!, aw = a[3]!;
   const bx = b[0]!, by = b[1]!, bz = b[2]!, bw = b[3]!;
   out[0] = aw * bx + ax * bw + ay * bz - az * by;
   out[1] = aw * by - ax * bz + ay * bw + az * bx;
@@ -109,6 +138,8 @@ const expOf = (x: number, y: number, z: number, out: Quat): void => {
 
 const scratch: Quat = [0, 0, 0, 1];
 const scratch2: Quat = [0, 0, 0, 1];
+/** The turn that carries the bone being followed (see `parentTurn`). */
+const carry: Quat = [0, 0, 0, 1];
 
 /** The turn that takes `from` to `to`, about `from`'s own axes, as a vector (the shortest way round). */
 const turnBetween = (from: Quat, to: ArrayLike<number>, out: Vec3): void => {
@@ -135,18 +166,31 @@ const turnBetween = (from: Quat, to: ArrayLike<number>, out: Vec3): void => {
 
 /**
  * The followers of one skeleton. `apply` is called once for every picture, after the clip (and whatever it was faded from) has set the pose: it replaces the turn of the bones that
- * follow with the turn they have got to, and puts on top what is not a spring (the wave, the breath). A skeleton that lacks a bone just goes without it.
+ * follow with the turn they have got to, and puts on top what is not a spring (the breath). A skeleton that lacks a bone just goes without it.
  */
 export class Secondary {
   private readonly followers: Follower[] = [];
   private ready = false;
   private time = 0;
   private readonly turn: Vec3 = [0, 0, 0];
+  private readonly rng: Rng;
+  /** The flick: seconds until the next, how far into the one that is going (`FLICK_LENGTH` and over: none), and how big it is. */
+  private untilFlick: number;
+  private flickAge = Number.POSITIVE_INFINITY;
+  private flickSize = 0;
+  /** Where the two waves are in their own rounds (they are not the clock: their pace changes with how lively the cat is). */
+  private waveAt = 0;
+  private swellAt: number;
 
-  constructor(skeleton: Skeleton) {
+  constructor(skeleton: Skeleton, seed = 0x7a11) {
+    this.rng = createRng(seed);
+    this.untilFlick = this.rng.range(...FLICK_EVERY);
+    this.swellAt = this.rng.range(0, TAU);
     const R = new Float64Array(skeleton.count * 9);
     const T = new Float64Array(skeleton.count * 3);
     globals(skeleton, new Pose(skeleton), undefined, R, T);
+    // the bone at the end of the chain: which way a turn of the others lifts it is measured against it
+    const tip = skeleton.has("tail3") ? skeleton.bone("tail3") : -1;
     for (const spec of FOLLOWERS) {
       if (!skeleton.has(spec.bone)) continue;
       const bone = skeleton.bone(spec.bone);
@@ -169,15 +213,24 @@ export class Secondary {
         dy = T[bone * 3 + 1]! - T[p * 3 + 1]!;
       }
       const l = Math.hypot(dx, dy) || 1;
+      const pitch: Vec3 = [R[m + 6]!, R[m + 7]!, R[m + 8]!];
+      // (the bones from the root down to this one's parent, for the first of a chain: its turn in the cat's frame is the parent's turn and then its own)
+      const parent = skeleton.parent[bone]!;
+      const before = this.followers.findIndex((o) => o.bone === parent && o.spec.chain === true);
+      const chain: number[] = [];
+      if (spec.chain && before < 0) for (let j = parent; j >= 0; j = skeleton.parent[j]!) chain.unshift(j);
       this.followers.push({
         bone,
         spec,
         q: [0, 0, 0, 1],
         w: [0, 0, 0],
-        pitch: [R[m + 6]!, R[m + 7]!, R[m + 8]!],
+        pitch,
         yaw: [R[m + 3]!, R[m + 4]!, R[m + 5]!],
         dx: dx / l,
         dy: dy / l,
+        before,
+        above: chain,
+        lift: tip >= 0 ? liftOf(skeleton, bone, pitch, tip) : 1,
       });
     }
   }
@@ -187,25 +240,45 @@ export class Secondary {
     return this.followers.map((f) => f.spec.bone);
   }
 
+  /** How many flicks the tail has made (for a test and for the lab). */
+  flicks = 0;
+
   /** Forgets where the bones were: the next picture is the pose as it is, with nothing trailing behind it. */
   reset(): void {
     this.ready = false;
+    this.flickAge = Number.POSITIVE_INFINITY;
   }
 
   apply(pose: Pose, dt: number, gust: Gust): void {
     if (!(dt > 0) || !Number.isFinite(dt)) return;
     const step = Math.min(dt, 0.25);
+    const energy = clamp(gust.energy, 0, 1);
+    const sway = clamp(gust.sway, 0, 1);
     if (!this.ready) {
       for (const f of this.followers) {
         const o = f.bone * 4;
         f.q = [pose.r[o]!, pose.r[o + 1]!, pose.r[o + 2]!, pose.r[o + 3]!];
+        if (f.spec.chain) {
+          this.parentTurn(f, pose, carry);
+          times(carry, f.q, f.q);
+        }
         f.w = [0, 0, 0];
       }
       this.ready = true;
     }
     this.time += step;
-    const hz = WAVE_HZ + WAVE_LIVELY * clamp(gust.energy, 0, 1);
-    const sway = clamp(gust.sway, 0, 1);
+    // --- the waves and the flicks go on in their own time
+    this.waveAt += TAU * (WAVE_HZ + WAVE_LIVELY * energy) * step;
+    this.swellAt += TAU * SWELL_HZ * (0.6 + 0.8 * energy) * step;
+    this.flickAge += step;
+    this.untilFlick -= step * (0.5 + 1.5 * energy) * sway;
+    if (this.untilFlick <= 0) {
+      this.flickAge = 0;
+      this.flickSize = this.rng.range(...FLICK_SIZE) * (0.6 + 0.8 * energy);
+      this.untilFlick = this.rng.range(...FLICK_EVERY);
+      this.flicks++;
+    }
+    const flick = this.flickAge < FLICK_LENGTH ? Math.sin((Math.PI * this.flickAge) / FLICK_LENGTH) ** 2 : 0;
     let order = 0;
     for (const f of this.followers) {
       const o = f.bone * 4;
@@ -221,29 +294,42 @@ export class Secondary {
         times(target, scratch, pushed);
         target = pushed;
       }
-      // --- the spring, in pieces small enough to be stable at any step (the same as `bounce` for a number)
-      const w0 = TAU * s.hz;
-      const pieces = Math.max(1, Math.ceil((step * w0) / 0.5));
-      const h = step / pieces;
-      for (let i = 0; i < pieces; i++) {
-        turnBetween(f.q, target, this.turn);
-        for (let k = 0; k < 3; k++) f.w[k] = f.w[k]! + (w0 * w0 * this.turn[k]! - 2 * s.zeta * w0 * f.w[k]!) * h;
-        expOf(f.w[0]! * h, f.w[1]! * h, f.w[2]! * h, scratch);
-        times(f.q, scratch, f.q);
-        normalise(f.q);
-      }
-      // --- what is on top of the spring: the wave runs on from the root of the tail to the tip, and the breath lifts the chest
+      // --- what a chain is asked besides: the waves run on from the root to the tip, and the root is flicked
       let pitch = 0;
       let around = 0;
       if (s.wave > 0 && sway > 0) {
-        const phase = TAU * hz * this.time - WAVE_LAG * order;
-        pitch += s.wave * sway * Math.sin(phase);
-        around += s.sway * sway * Math.sin(phase + Math.PI / 2);
+        const wide = 0.7 + 0.6 * energy;
+        const first = Math.sin(this.waveAt - WAVE_LAG * order);
+        const second = Math.sin(this.swellAt - SWELL_LAG * order) * SWELL_SHARE;
+        pitch += s.wave * wide * sway * (first + second);
+        around += s.sway * wide * sway * (Math.sin(this.waveAt - WAVE_LAG * order + Math.PI / 2) + Math.cos(this.swellAt * 1.3 - SWELL_LAG * order) * SWELL_SHARE);
       }
-      if (s.breath > 0) pitch += s.breath * clamp(gust.breath, -1, 1);
+      if (s.flick && flick > 0) pitch += f.lift * s.flick * flick * this.flickSize * sway;
       if (s.wave > 0) order++;
-      if (pitch !== 0 || around !== 0) {
-        expOf(f.pitch[0] * pitch + f.yaw[0] * around, f.pitch[1] * pitch + f.yaw[1] * around, f.pitch[2] * pitch + f.yaw[2] * around, scratch2);
+      if (s.chain) {
+        if (pitch !== 0 || around !== 0) {
+          expOf(f.pitch[0] * pitch + f.yaw[0] * around, f.pitch[1] * pitch + f.yaw[1] * around, f.pitch[2] * pitch + f.yaw[2] * around, scratch2);
+          const waved: Quat = [0, 0, 0, 1];
+          times(target, scratch2, waved);
+          target = waved;
+        }
+        // (the turn the bone is to have in the cat's frame: where the bone before it has got to, and then its own)
+        this.parentTurn(f, pose, carry);
+        const aim: Quat = [0, 0, 0, 1];
+        times(carry, target, aim);
+        this.spring(f, aim, step);
+        // (and what it has to turn in its parent to be there)
+        unTimes(carry, f.q, scratch);
+        pose.r[o] = scratch[0];
+        pose.r[o + 1] = scratch[1];
+        pose.r[o + 2] = scratch[2];
+        pose.r[o + 3] = scratch[3];
+        continue;
+      }
+      this.spring(f, target, step);
+      // --- what is on top of the spring: the breath lifts the chest
+      if (s.breath > 0) {
+        expOf(f.pitch[0] * s.breath * clamp(gust.breath, -1, 1), f.pitch[1] * s.breath * clamp(gust.breath, -1, 1), f.pitch[2] * s.breath * clamp(gust.breath, -1, 1), scratch2);
         times(f.q, scratch2, scratch);
         pose.r[o] = scratch[0];
         pose.r[o + 1] = scratch[1];
@@ -257,4 +343,63 @@ export class Secondary {
       }
     }
   }
+
+  /** The turn that carries a bone of the chain: that of the bone it hangs from as that bone has got to, or, for the root of the chain, of the bones above it as the pose has them. */
+  private parentTurn(f: Follower, pose: Pose, out: Quat): void {
+    if (f.before >= 0) {
+      const p = this.followers[f.before]!.q;
+      out[0] = p[0];
+      out[1] = p[1];
+      out[2] = p[2];
+      out[3] = p[3];
+      return;
+    }
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = 0;
+    out[3] = 1;
+    for (const j of f.above) {
+      const o = j * 4;
+      const ax = out[0], ay = out[1], az = out[2], aw = out[3];
+      const bx = pose.r[o]!, by = pose.r[o + 1]!, bz = pose.r[o + 2]!, bw = pose.r[o + 3]!;
+      out[0] = aw * bx + ax * bw + ay * bz - az * by;
+      out[1] = aw * by - ax * bz + ay * bw + az * bx;
+      out[2] = aw * bz + ax * by - ay * bx + az * bw;
+      out[3] = aw * bw - ax * bx - ay * by - az * bz;
+    }
+  }
+
+  /** The spring of one follower, in pieces small enough to be stable at any step (the same as `bounce` for a number): its turn goes after `target`. */
+  private spring(f: Follower, target: Quat, step: number): void {
+    const w0 = TAU * f.spec.hz;
+    const pieces = Math.max(1, Math.ceil((step * w0) / 0.5));
+    const h = step / pieces;
+    for (let i = 0; i < pieces; i++) {
+      turnBetween(f.q, target, this.turn);
+      for (let k = 0; k < 3; k++) f.w[k] = f.w[k]! + (w0 * w0 * this.turn[k]! - 2 * f.spec.zeta * w0 * f.w[k]!) * h;
+      expOf(f.w[0]! * h, f.w[1]! * h, f.w[2]! * h, scratch);
+      times(f.q, scratch, f.q);
+      normalise(f.q);
+    }
+  }
+}
+
+/** The sign of a turn about the bone's own `pitch` axis that lifts the end of the tail (+1 or -1): measured on the skeleton at rest. */
+function liftOf(skeleton: Skeleton, bone: number, pitch: Vec3, tip: number): number {
+  const probe = new Pose(skeleton);
+  const R = new Float64Array(skeleton.count * 9);
+  const T = new Float64Array(skeleton.count * 3);
+  const height = (angle: number): number => {
+    probe.reset();
+    const q: Quat = [0, 0, 0, 1];
+    expOf(pitch[0] * angle, pitch[1] * angle, pitch[2] * angle, q);
+    const o = bone * 4;
+    const turned: Quat = [0, 0, 0, 1];
+    times([probe.r[o]!, probe.r[o + 1]!, probe.r[o + 2]!, probe.r[o + 3]!], q, turned);
+    probe.r.set(turned, o);
+    globals(skeleton, probe, undefined, R, T);
+    return T[tip * 3 + 1]!;
+  };
+  const d = height(0.2) - height(-0.2);
+  return d >= 0 ? 1 : -1;
 }
