@@ -80,8 +80,11 @@ export interface CatSnapshot {
   /** How many names under the cards the cat knows of, and how much of them its body covers just now (in squares of its body length). */
   names: number;
   covers: number;
-  /** How many times the page has been read (a page that only sits there is read twice a second). */
+  /** How much of the page's words and buttons (what it keeps out of) the cat's body covers just now, in squares of its body length. */
+  covered: number;
+  /** How many times the page has been read (a page that only sits there is read twice a second), and what a read takes, in milliseconds (smoothed). */
   reads: number;
+  readMs: number;
   /** Where a frame's time goes, smoothed, in milliseconds (reading the page, the cat's brain, painting without the wait for the card), and what the card was seen to take. */
   phases: { read: number; think: number; paint: number };
   gpu: number;
@@ -745,7 +748,9 @@ export function mountCat(): { stop: () => void } {
         posters: read?.world.targets.length ?? 0,
         names: read?.world.soft?.length ?? 0,
         covers: read ? shapeCovers(frame.clip, frame.facing, frame.x, frame.y, read.world.bodyLength, read.world.soft ?? []) / read.world.bodyLength ** 2 : 0,
+        covered: read ? shapeCovers(frame.clip, frame.facing, frame.x, frame.y, read.world.bodyLength, read.world.keepOut) / read.world.bodyLength ** 2 : 0,
         reads: page.reads,
+        readMs: page.readMs,
         phases: { ...phases },
         gpu,
       }),

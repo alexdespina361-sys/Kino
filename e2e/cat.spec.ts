@@ -1,5 +1,6 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { PNG } from "pngjs";
+import { CORES } from "../src/client/cat/engine/shape-table";
 import { openLibrary, openTvSettings, playFirst, RawPhone, readPairingCode, test, withLibrary } from "./helpers";
 
 /**
@@ -18,10 +19,21 @@ const library = {
   ],
 };
 
+/** A library of fourteen rows of twelve (more than a row of categories holds: its page is lines of cards, and a category's page is three lines of them). */
+const wideLibrary = {
+  updatedAt: Date.now(),
+  rows: ["Trending", "Comedy", "Horror", "Romance", "Action", "Sci-Fi", "Drama", "Thriller", "Documentary", "Family", "Fantasy", "Mystery", "War", "History"].map((topic) => ({
+    id: topic.toLowerCase(),
+    title: `${topic} Movies`,
+    source: "Test Source",
+    items: Array.from({ length: 12 }, (_, index) => film(`${topic}${index}`, `${topic} film ${index + 1}`)),
+  })),
+};
+
 const offered = (yes: boolean) => (context: BrowserContext) => context.route("**/api/features", (route) => route.fulfill({ json: { cat: yes } }));
-const setup = (yes = true) => async (context: BrowserContext) => {
+const setup = (yes = true, shelves: unknown = library) => async (context: BrowserContext) => {
   await offered(yes)(context);
-  await withLibrary(library)(context);
+  await withLibrary(shelves)(context);
 };
 /**
  * A device that has turned the cat on (as its settings page does), in the way it starts: not quiet. It has the ginger cat (the flat one) for these tests,
@@ -1441,6 +1453,161 @@ test("a grid of posters that scrolls under the cat keeps the names of its lines,
     document.querySelector<HTMLElement>(".tv-grid")!.scrollTop = to;
   }, start);
   await saying(tv, () => expect.poll(async () => (await lines()).map((line) => line.id).join(" "), { timeout: 6_000 }).toBe(before.map((line) => line.id).join(" ")));
+});
+
+/* ------------------------------ the words of a page ------------------------------ */
+
+interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+const wholeWorld = (tv: Page) => tv.evaluate(() => (window as unknown as { __kinoCat: { world(): unknown } }).__kinoCat.world()) as Promise<{ bodyLength: number; surfaces: Surf[]; keepOut: Box[]; soft?: Box[] }>;
+/** The lines of words that the page draws for `selector` (as the browser lays them out), and which of them the cat's keep-out zones do not hold the middle of. */
+const wordsNotKeptOut = async (tv: Page, selector: string) =>
+  tv.evaluate(
+    ({ selector, zones }) => {
+      const range = document.createRange();
+      const seen: string[] = [];
+      const missed: string[] = [];
+      for (const element of document.querySelectorAll(selector)) {
+        for (const node of element.childNodes) {
+          if (node.nodeType !== 3 || !/\S/.test(node.nodeValue ?? "")) continue;
+          range.selectNodeContents(node);
+          for (const line of range.getClientRects()) {
+            if (line.width < 3 || line.height < 5 || line.bottom < 0 || line.top > innerHeight || line.right < 0 || line.left > innerWidth) continue;
+            const x = line.left + line.width / 2;
+            const y = line.top + line.height / 2;
+            seen.push(node.nodeValue!.trim());
+            if (!zones.some((zone) => x >= zone.x && x <= zone.x + zone.w && y >= zone.y && y <= zone.y + zone.h)) missed.push(`${node.nodeValue!.trim()} at ${Math.round(x)},${Math.round(y)}`);
+          }
+        }
+      }
+      return { seen: seen.length, missed };
+    },
+    { selector, zones: (await wholeWorld(tv)).keepOut },
+  );
+/**
+ * How much of the page's words the cat's body covers while it is made to play about, measured from the page itself (every line of text the browser draws, in the box of
+ * the cat's drawing that is body: head, chest and haunches), not from what the cat's reader says it read: the share of the time on its feet or at rest that it covers more than
+ * a thirtieth of a body length squared of them.
+ */
+const coverOfWords = (tv: Page, seconds: number) =>
+  tv.evaluate(
+    ({ span, cores, within }) =>
+      new Promise<{ grounded: number; covering: number; worst: number; shelves: number }>((resolve) => {
+        const handle = (window as unknown as { __kinoCat: { send(event: unknown): void; snapshot(): { frame: { x: number; y: number; facing: number; clip: string; appear: number; grounded: boolean }; engine: { act: string; surfaceId: string | null }; body: number } } }).__kinoCat;
+        const lines: Array<{ x: number; y: number; w: number; h: number }> = [];
+        let readAt = -1e9;
+        const read = () => {
+          lines.length = 0;
+          const root = document.querySelector(within)!;
+          const own = document.querySelector('[data-testid="cat"]');
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          const range = document.createRange();
+          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+            const parent = node.parentElement;
+            if (!/\S/.test(node.nodeValue ?? "") || !parent || (own && own.contains(node))) continue;
+            if (parent.checkVisibility && !parent.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
+            // (the letter that stands for a title without a picture is art, which the cat may be in front of: a reader of the page is not told it)
+            if (parent.closest('.tv-tile [aria-hidden="true"]')) continue;
+            range.selectNodeContents(node);
+            for (const line of range.getClientRects()) {
+              if (line.width <= 3 || line.height <= 5 || line.bottom <= 0 || line.top >= innerHeight) continue;
+              // (a grid clips what it holds: a line that is outside the box it scrolls in is not drawn)
+              const clip = parent.closest(".tv-rows, .tv-grid");
+              if (clip) {
+                const box = clip.getBoundingClientRect();
+                if (line.bottom < box.top || line.top > box.bottom) continue;
+              }
+              lines.push({ x: line.left, y: line.top + 0.1 * line.height, w: line.width, h: 0.8 * line.height });
+            }
+          }
+        };
+        const rows: Array<{ ink: number; surface: string | null }> = [];
+        let tick = 0;
+        const timer = setInterval(() => {
+          if (++tick % 80 === 1) handle.send({ type: "cat.command", command: "play" });
+          const now = performance.now();
+          if (now - readAt > 400) {
+            read();
+            readAt = now;
+          }
+          const seen = handle.snapshot();
+          const frame = seen.frame;
+          if (frame.appear <= 0.5 || !frame.grounded || ["jump", "fall", "carried"].includes(seen.engine.act)) return;
+          const core = cores[frame.clip] ?? cores.stand!;
+          const L = seen.body;
+          const box = { x0: frame.x - (frame.facing > 0 ? core[0]! : core[1]!) * L, x1: frame.x + (frame.facing > 0 ? core[1]! : core[0]!) * L, y0: frame.y - core[2]! * L, y1: frame.y };
+          let area = 0;
+          for (const line of lines) {
+            const wide = Math.min(box.x1, line.x + line.w) - Math.max(box.x0, line.x);
+            const high = Math.min(box.y1, line.y + line.h) - Math.max(box.y0, line.y);
+            if (wide > 0 && high > 0) area += wide * high;
+          }
+          rows.push({ ink: area / (L * L), surface: seen.engine.surfaceId });
+        }, 50);
+        setTimeout(() => {
+          clearInterval(timer);
+          resolve({ grounded: rows.length, covering: rows.filter((row) => row.ink > 0.03).length, worst: Math.max(0, ...rows.map((row) => row.ink)), shelves: new Set(rows.map((row) => row.surface)).size });
+        }, span * 1000);
+      }),
+    { span: seconds, cores: CORES as unknown as Record<string, number[]>, within: "main.tv" },
+  );
+
+test("every word of the categories page and of a category's page is something the cat keeps out of: the names and counts of the cards, not only the headings", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const tv = await openLibrary(browser, setup(true, wideLibrary), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  await tv.getByTestId("rail-categories").click();
+  await expect(tv.getByTestId("tv-categories")).toBeVisible();
+  // the category cards say their name and how many titles they hold (the page reader used to read neither)
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const found = await wordsNotKeptOut(tv, ".tv-category-name, .tv-category-count");
+        return found.seen >= 6 ? found.missed : [`only ${found.seen} lines of words are in sight`];
+      }, { timeout: 10_000 })
+      .toEqual([]),
+  );
+  await tv.getByTestId("tv-category-tile").nth(1).click();
+  await expect(tv.getByTestId("tv-category")).toBeVisible();
+  // the grid of a category: the name and the year under every card, in two lines of cards
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const found = await wordsNotKeptOut(tv, ".tv-tile-name, .tv-tile-year");
+        return found.seen >= 8 ? found.missed : [`only ${found.seen} lines of words are in sight`];
+      }, { timeout: 10_000 })
+      .toEqual([]),
+  );
+  // and the cat is still on the page, on a place in front of the names (a ledge of its own: the tops of the cards are cut to nothing by the names of the line above)
+  await catIsOnTheShelves(tv);
+  expect((await wholeWorld(tv)).surfaces.filter((surface) => surface.id.startsWith("words:")).length).toBeGreaterThan(0);
+});
+
+test("a cat that plays about on the categories page and on a category's page never stands over the words of them", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const tv = await openLibrary(browser, setup(true, wideLibrary), undefined, WANTS());
+  await tv.goto("/tv?cat=debug&catseed=7");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  await tv.getByTestId("rail-categories").click();
+  await expect(tv.getByTestId("tv-categories")).toBeVisible();
+  await tv.waitForTimeout(1500);
+  const categories = await coverOfWords(tv, 14);
+  await tv.getByTestId("tv-category-tile").nth(1).click();
+  await expect(tv.getByTestId("tv-category")).toBeVisible();
+  await tv.waitForTimeout(1500);
+  const category = await coverOfWords(tv, 14);
+  for (const [name, seen] of [["categories", categories], ["a category", category]] as const) {
+    // (the cat was about: it was on its feet or at rest for most of the time, so a cat that is nowhere does not pass this)
+    expect(seen.grounded, `${name}: the cat was about`).toBeGreaterThan(100);
+    expect(seen.covering / seen.grounded, `${name}: ${JSON.stringify(seen)}`).toBeLessThanOrEqual(0.02);
+  }
 });
 
 test("a second hand, a finger while the mouse has the cat, is not the one that lets it go", async ({ browser }) => {

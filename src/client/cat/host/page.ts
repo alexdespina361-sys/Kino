@@ -2,7 +2,9 @@ import { BODY_EMS, bodyLengthFor } from "../math";
 import type { PlayerMode, Rect, Surface, Target, World } from "../types";
 import { carried, type Rides } from "./carry";
 import { inflate, nameOf, rectOf, takesRoom, textRect } from "./dom";
+import { LINE_GAP, lies, mergeLines, placesInFront, zoneOf, type Line } from "./lines";
 import { perchesFor } from "./perch";
+import { readPieces } from "./text";
 
 /**
  * The page as the cat sees it. Reads the TV's own screens (the library, and a film's picture) and says, as a `World` of plain numbers: the lines the
@@ -17,10 +19,11 @@ import { perchesFor } from "./perch";
 /** Things that, when open, are in front of everything: the cat gives way to them. */
 const MODALS = '[role="dialog"], [aria-modal="true"], .tv-menu-backdrop, .tv-detail, .tv-screen, .tv-welcome';
 
-/** The parts of the library's page that are words and buttons, not for standing in front of. */
+/**
+ * The parts of the library's page that are boxes of words and buttons, and that are kept out of whole (the words and the buttons themselves are read from the page, whatever
+ * they are called: see `text.ts`; these are for what is drawn that is not words: the strip of icons down the side, the round buttons of the top bar).
+ */
 const BROWSE_FURNITURE = [".tv-browse-top", ".tv-rail", ".tv-hero-text", ".tv-hero-profile", ".tv-notice", ".tv-rows-note", ".tv-row-more", ".tv-view-foot", ".tv-filters", ".tv-keys", ".tv-query"];
-/** ...and the ones whose words are what take up the room (a heading is as wide as its row, the words as wide as they are). */
-const BROWSE_TEXT = [".tv-row-title", ".tv-view-title", ".tv-view-meta", ".tv-view-hint", ".tv-view-empty", ".tv-results-closest", ".tv-hero-eyebrow"];
 
 /** The longest, in milliseconds, that a page which is moving is left unread, however dear a read is. */
 const MOVING_GAP_MAX = 90;
@@ -77,6 +80,8 @@ interface Draft {
 
 /** How many cards' names are kept for the cat to settle clear of (a page has more cards than a screen shows; the ones in view come first). */
 const MAX_SOFT = 80;
+/** How many lines of words and buttons a page is read for (a screen holds a few dozen; a page of a thousand cards is read as far as this). */
+const MOST_PIECES = 500;
 
 const tileId = (el: HTMLElement): string | undefined => el.dataset.entry || undefined;
 
@@ -288,25 +293,18 @@ export class TvPage {
     // (what scrolls: the rows of the library, or the grid of a category, a list or the results of a search; the page has one of them at a time)
     const scroller = root.querySelector<HTMLElement>(".tv-rows") ?? root.querySelector<HTMLElement>(".tv-grid");
     draft.scroller = scroller;
-    const keep = (zone: Rect, el: Element): void => {
+    const keep = (zone: Rect, rides: boolean): void => {
       draft.keepOut.push(zone);
-      draft.keepOutRides.push(scroller?.contains(el) === true);
+      draft.keepOutRides.push(rides);
     };
     for (const selector of BROWSE_FURNITURE) {
-      for (const el of root.querySelectorAll<HTMLElement>(selector)) if (takesRoom(el) && !el.closest(".tv-row-tiles")) keep(inflate(rectOf(el), 0.15 * em), el);
-    }
-    for (const selector of BROWSE_TEXT) {
-      for (const el of root.querySelectorAll<HTMLElement>(selector)) {
-        if (!takesRoom(el)) continue;
-        const box = textRect(el);
-        if (box) keep(inflate(box, 0.15 * em), el);
-      }
+      for (const el of root.querySelectorAll<HTMLElement>(selector)) if (takesRoom(el) && !el.closest(".tv-row-tiles")) keep(inflate(rectOf(el), 0.15 * em), scroller?.contains(el) === true);
     }
     // the card that has the focus: it grows and has a ring, so the cat leaves it room
     const active = document.activeElement;
     if (active instanceof HTMLElement && root.contains(active) && active.matches(".tv-tile, .tv-hero-button, .tv-action, .tv-choice, .tv-key, .tv-corner-button, .tv-account-chip, .tv-bell, button")) {
       const box = rectOf(active);
-      keep(inflate(box, 0.4 * em), active);
+      keep(inflate(box, 0.4 * em), scroller?.contains(active) === true);
       if (active.matches(".tv-tile")) {
         draft.focus = box;
         draft.focusRides = scroller?.contains(active) === true;
@@ -314,6 +312,10 @@ export class TvPage {
         if (id) draft.focusId = id;
       }
     }
+    // everything that is read on the page, and what can be pressed: whatever it is called
+    const lines = this.words(root, c, draft, scroller);
+    // in a grid of cards, whose names are under them, the line of every card's name is a place in front of the cards (the line along the top of the cards is cut by the names of the line above)
+    if (scroller?.classList.contains("tv-grid")) draft.surfaces.push(...placesInFront(lines.filter((line) => line.rides), c.L, { x: 0, y: 0, w: c.vw, h: c.vh }));
 
     // the rows of posters, each with its own sideways scroll
     const rowsBox = root.querySelector<HTMLElement>(".tv-rows");
@@ -387,10 +389,36 @@ export class TvPage {
     }
   }
 
+  /**
+   * Every line of words on the page and every button, read as the page draws them (see `text.ts`), put into the zones the cat keeps out of: no letter of the page is covered by the cat
+   * while it stands or walks. A line that lies inside a box that is kept out of whole (the top bar, the banner's text) is part of it. The lines are handed back, for the places in front of them.
+   */
+  private words(root: HTMLElement, c: Metrics, draft: Draft, scroller: HTMLElement | null): Line[] {
+    const own = this.context.own?.() ?? null;
+    const pieces = readPieces(root, {
+      screen: { x: -c.L, y: -c.L, w: c.vw + 2 * c.L, h: c.vh + 2 * c.L },
+      scroller,
+      scrollBox: scroller ? rectOf(scroller) : null,
+      skip: (element) => element === own,
+      quietCards: !scroller?.classList.contains("tv-grid"),
+      limit: MOST_PIECES,
+    });
+    const lines = mergeLines(pieces, LINE_GAP * c.L);
+    const zones = lines.map((line) => zoneOf(line, c.em));
+    lines.forEach((line, i) => {
+      const zone = zones[i]!;
+      if (draft.keepOut.some((box) => lies(zone, box))) return;
+      if (zones.some((other, j) => j !== i && lies(zone, other) && (!lies(other, zone) || j < i))) return;
+      draft.keepOut.push(zone);
+      draft.keepOutRides.push(line.rides);
+    });
+    return lines;
+  }
+
   /** The words under a card (its name, and its year or the time left), as wide as the words are and not as wide as the card: for the cat to settle clear of. */
   private names(tile: HTMLElement, em: number, draft: Draft): void {
     if (draft.soft.length >= MAX_SOFT) return;
-    for (const el of tile.querySelectorAll<HTMLElement>(".tv-tile-name, .tv-tile-year")) {
+    for (const el of tile.querySelectorAll<HTMLElement>(".tv-tile-name, .tv-tile-year, .tv-category-name, .tv-category-count")) {
       const box = textRect(el);
       if (box) draft.soft.push(inflate(box, 0.06 * em));
     }
