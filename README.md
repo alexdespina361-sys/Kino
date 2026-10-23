@@ -535,7 +535,11 @@ well as in the page's own status, which can be far above a library that is scrol
   shows a round button in its top corner** (a screen with a mouse only, not a touch screen): **+** puts the title in the profile's first list at once (once it is there the button turns into a filled **×**, and a click on that
   takes it out), and **×** on a title of **Continue watching**, or in a list's own row or page, takes it out of that, so a row of films can be filled or emptied by clicking down it;
   the second click of a double click goes through the page to the title under it instead of closing the page or pressing Play, for the half second
-  the page takes to arrive. The banner's own buttons play or save the title it shows, without the page. The big banner picture fades in
+  the page takes to arrive. **A screen that can only move and click a mouse (an air mouse, a TV's pointer mode) scrolls by resting the pointer against the
+  bottom or the top edge of the screen for a second** (`src/client/tv/edgeScroll.ts`, `EdgeScrollHint.tsx`): a ring fills beside the pointer, then the page goes, gently
+  and then faster the longer it goes on; a key, a press, a finger or leaving the edge ends it (the pointer has to leave and come back before it counts
+  again), and a wheel turned once ends it for good, since a screen that has one has no use for it. It is only a mouse, only a page that has somewhere to go that way,
+  and not while a film is on the screen, over the menu or with a button held, so a remote, a wheel or a phone never meets it. The banner's own buttons play or save the title it shows, without the page. The big banner picture fades in
   over the previous one once it has loaded, instead of switching. Playing from the library and pressing Back (twice if the controls were
   hidden) or letting it stop comes back to the same title. A title that will not play is said so. A TV that watches
   along has no library, since it can't choose what plays.
