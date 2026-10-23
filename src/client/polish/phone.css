@@ -8,7 +8,8 @@
 /* ------------------------------ tokens ------------------------------ */
 
 :root[data-ui="polish"] {
-  --p-fs-1: 13px; /* a count, a caption, a note under a field */
+  --p-fs-0: 12px; /* only the words under the icons of the bar (nothing else on the phone is under 14) */
+  --p-fs-1: 14px; /* a count, a caption, a note under a field (it was 13: phone-layout/AUDIT.md A7) */
   --p-fs-2: 14px; /* a chip, a link's name, a line in a row */
   --p-fs-3: 16px; /* body, in any colour (also what stops a phone zooming into a field) */
   --p-fs-4: 18px; /* a heading of a sheet, a page or a row of pictures */
