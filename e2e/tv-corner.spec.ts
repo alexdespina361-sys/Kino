@@ -1,8 +1,8 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { openLibrary, openTvSettings, openTvSignIn, readPairingCode, test, withLibrary } from "./helpers";
+import { openDevice, openLibrary, openTvSettings, openTvSignIn, readPairingCode, test, withLibrary } from "./helpers";
 
 /**
  * The corners and edges of the TV's pages that every page shares: the way out of a full-screen page, a code that can be copied, the wordmark
@@ -89,6 +89,106 @@ for (const viewport of [HD, { width: 1024, height: 768 }, FULL_HD]) {
     }
   });
 }
+
+/**
+ * The cat's ears on the wordmark (Logo.tsx): a second picture over the plain one, shown while the cat is on (the cat's own setting, as the library's corner
+ * button has it), and the wordmark never moves for them. The ginger cat is the flat one, which a headless browser draws without trouble.
+ */
+const WANTS_CAT = { "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, look: "ginger" }) };
+const hostWith = (cat: boolean, asked = { count: 0 }) => async (context: BrowserContext) => {
+  await withLibrary(library)(context);
+  await context.route("**/api/features", (route) => {
+    asked.count++;
+    return route.fulfill({ json: { cat } });
+  });
+};
+const rect = (locator: Locator) =>
+  locator.evaluate((element) => {
+    const { left, top, width, height } = element.getBoundingClientRect();
+    return { left, top, width, height };
+  });
+
+test("the wordmark has the cat's ears when the cat is on, and only then, and it does not move for them", async ({ browser }) => {
+  const seen: Record<string, Awaited<ReturnType<typeof rect>>> = {};
+  for (const [name, seed, cat] of [
+    ["no cat asked for", {}, true],
+    ["no cat on the host", WANTS_CAT, false],
+    ["the cat", WANTS_CAT, true],
+  ] as const) {
+    const asked = { count: 0 };
+    const tv = await openLibrary(browser, hostWith(cat, asked), FULL_HD, seed);
+    const logo = tv.locator(".tv-browse-logo .logo");
+    const ears = name === "the cat";
+    if (seed === WANTS_CAT) await expect.poll(() => asked.count, name).toBeGreaterThan(0); // (the host has been asked and has answered: now it is known)
+    else expect(asked.count, "a screen that has not asked for the cat does not ask the host about it").toBe(0);
+    if (!ears) await tv.waitForTimeout(300); // (an answer that leaves it off has nothing to show for itself: give a late change time to come)
+    await expect(logo, name).toHaveAttribute("data-cat", ears ? "on" : "off");
+    await expect(logo.locator(".logo-ears"), name).toHaveCSS("opacity", ears ? "1" : "0");
+    await expect(logo, "named for a screen reader whichever picture it has").toHaveAccessibleName("Kino");
+    seen[name] = await rect(logo);
+  }
+  expect(seen["the cat"], "the box with the ears is the box without them").toEqual(seen["no cat asked for"]);
+});
+
+test("the wordmark has its size before its pictures have come, the two pictures sit exactly over each other, and the box does not change when they arrive", async ({ browser }) => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  try {
+    const tv = await openLibrary(
+      browser,
+      async (context) => {
+        await hostWith(true)(context);
+        await context.route("**/branding/*.svg", async (route) => {
+          await held;
+          await route.continue();
+        });
+      },
+      FULL_HD,
+      WANTS_CAT,
+    );
+    const logo = tv.locator(".tv-browse-logo .logo");
+    const pictures = logo.locator("img");
+    await expect(pictures).toHaveCount(2);
+    const before = await rect(logo);
+    expect(before.width, "the wordmark has a size with no picture yet").toBeGreaterThan(100);
+    expect(before.height).toBeGreaterThan(40);
+
+    release();
+    await expect.poll(() => pictures.evaluateAll((all) => all.every((one) => one instanceof HTMLImageElement && one.complete && one.naturalWidth > 0))).toBe(true);
+    expect(await rect(logo), "the same box once they have").toEqual(before);
+    expect(await rect(pictures.nth(1)), "the one with the ears is exactly over the plain one").toEqual(await rect(pictures.nth(0)));
+    // (the wordmark is one image to a screen reader, and these are its parts)
+    expect(await pictures.evaluateAll((all) => all.map((one) => [one.getAttribute("alt"), one.getAttribute("aria-hidden")]))).toEqual([["", "true"], ["", "true"]]);
+  } finally {
+    release();
+  }
+});
+
+test("the cat's switch gives the wordmark its ears at once, on the page it is on, and takes them away again", async ({ browser }) => {
+  const tv = await openLibrary(browser, hostWith(true), FULL_HD);
+  await openTvSettings(tv);
+  await tv.getByTestId("tv-cat-open").click();
+  const logo = tv.getByTestId("tv-cat-settings").locator(".logo");
+  await expect(logo).toHaveAttribute("data-cat", "off");
+  await tv.getByTestId("tv-cat-switch").click();
+  await expect(logo).toHaveAttribute("data-cat", "on");
+  await expect(logo.locator(".logo-ears")).toHaveCSS("opacity", "1");
+  await tv.getByTestId("tv-cat-switch").click();
+  await expect(logo).toHaveAttribute("data-cat", "off");
+  await expect(logo.locator(".logo-ears")).toHaveCSS("opacity", "0");
+});
+
+test("the ears fade in over a moment, and are there at once for a screen set to less motion", async ({ browser }) => {
+  const fade = async (reducedMotion: "no-preference" | "reduce") => {
+    const tv = await openDevice(browser, { viewport: FULL_HD, reducedMotion }, WANTS_CAT, hostWith(true));
+    await tv.goto("/tv");
+    const ears = tv.locator(".tv-browse-logo .logo-ears");
+    await expect(ears).toBeAttached();
+    return ears.evaluate((element) => parseFloat(getComputedStyle(element).transitionDuration)); // (seconds)
+  };
+  expect(await fade("no-preference")).toBeCloseTo(0.2, 2);
+  expect(await fade("reduce")).toBeLessThan(0.001); // (the TV's pages set every transition to a hundredth of a millisecond for this, and the logo's own rule is none)
+});
 
 test("a code on the screen is selected whole by a click, and the button under it copies it and says so", async ({ browser }) => {
   const tv = await openLibrary(browser, (context) => context.grantPermissions(["clipboard-read", "clipboard-write"]), HD);

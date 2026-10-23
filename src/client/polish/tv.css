@@ -136,10 +136,9 @@
   :root[data-ui="polish"] .tv-rail { padding-top: calc(var(--top) + var(--em) * 4.9); }
   :root[data-ui="polish"] .tv-rail-brand {
     position: absolute;
-    top: calc(var(--top) + var(--em) * 0.34);
+    top: var(--top);
     left: var(--gutter);
-    display: block;
-    font-size: 2.2em;
+    display: flex;
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--t-base) var(--ease);
@@ -147,11 +146,23 @@
   :root[data-ui="polish"] .tv-rail[data-open="true"] .tv-rail-brand { opacity: 1; }
 }
 
-/* ------------------------------ the wordmark on pages that are not the library ------------------------------ */
+/* ------------------------------ the wordmark ------------------------------ */
 
-/* The library draws the wordmark at the page's left edge (--gutter), centred on the corner buttons (a corner button is 3.6em tall, the wordmark's box about 2.9em: 0.34em of room above it); the pages that fill the screen (settings, sign-in, connect, party) and the open menu put it in the same place, so the name never moves, and keep the same edge on both sides. */
+/* The library draws the wordmark at the page's left edge (--gutter), level with the corner buttons; the pages that fill the screen (settings, sign-in, connect, party) and the open menu put it in the same place and size, so the name never moves.
+   Its box is as tall as a corner button (3.6em) with the picture in the middle of it, so that a wordmark taller than the buttons (it is, on a big screen) sticks out above and below them and does not make the top bar taller.
+   The width is one for all three places: 9.2% of the screen's width, and no more than 10.7em (19% of its height: a window wider than a TV's 16:9 gets no bigger a wordmark than a TV does, which would crowd the banner's first line).
+   The picture's "o" is lower than the middle of its box (the "k" and the dot of the "i" are tall), so the picture is lifted by that much (0.054 of its width): the "o", as the play button was, is level with the buttons, and what sticks out sticks out upwards, away from the banner's first line. */
 @media (min-width: 900px) {
-  :root[data-ui="polish"] .tv-brand { top: calc(var(--top) + var(--em) * 0.34); left: var(--gutter); }
+  :root[data-ui="polish"] .tv { --logo-w: min(9.2vw, calc(var(--em) * 10.7)); }
+  :root[data-ui="polish"] .tv-browse-logo,
+  :root[data-ui="polish"] .tv-brand,
+  :root[data-ui="polish"] .tv-rail-brand { align-items: center; height: calc(var(--em) * 3.6); }
+  :root[data-ui="polish"] .tv-browse-logo,
+  :root[data-ui="polish"] .tv-brand { display: flex; }
+  :root[data-ui="polish"] .tv-brand { top: var(--top); left: var(--gutter); }
+  :root[data-ui="polish"] .tv-browse-logo .logo,
+  :root[data-ui="polish"] .tv-brand .logo,
+  :root[data-ui="polish"] .tv-rail-brand .logo { top: calc(var(--logo-w) * -0.054); width: var(--logo-w); }
   :root[data-ui="polish"] .tv-screen { padding-left: var(--gutter); padding-right: var(--gutter); }
 }
 

@@ -1,6 +1,6 @@
 import { drawCat, MARMALADE } from "../render/draw";
 import { CatRig, GALLOP_STRIDE, WALK_STRIDE } from "../render/rig";
-import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame } from "../types";
+import { CLIMB_BACK, CLIMB_GRAB, CLIMB_HANG, CLIMB_LIP, CLIMB_OVER, CLIMB_PULL, CLIMB_TIME, HANG_AHEAD, HANG_DOWN, JUMP_LANDING, JUMP_TAKEOFF, type CatFrame } from "../types";
 
 /**
  * The cat lab: pictures of the cat for looking at it (pose sheets, strips of a walk or a jump), made in a real browser by scripts/cat/sheet.mjs.
@@ -116,12 +116,84 @@ export const POSES: Cell[] = [
   { label: "sit, think", frame: { clip: "sit", emote: "think" } },
 ];
 
+/** A cat that was handled and did not like it (`annoyed`), and one shaking the hand off (`shake`, a second long: the pictures are taken that long into it). */
+export const FEELINGS: Cell[] = [
+  { label: "stand, annoyed", frame: { clip: "stand", emote: "annoyed", look: { x: -300, y: -60 } }, settle: 1.6 },
+  { label: "sit, annoyed", frame: { clip: "sit", emote: "annoyed", look: { x: -300, y: -60 } }, settle: 1.6 },
+  { label: "stand, none (for comparison)", frame: { clip: "stand", look: { x: -300, y: -60 } }, settle: 1.6 },
+  { label: "stand, startled (for comparison)", frame: { clip: "stand", emote: "startle", look: { x: -300, y: -60 } }, settle: 1.0 },
+  { label: "shake, 0.12 s in", frame: { clip: "stand", emote: "shake" }, settle: 0.12 },
+  { label: "shake, 0.22 s in", frame: { clip: "stand", emote: "shake" }, settle: 0.22 },
+  { label: "shake, 0.32 s in", frame: { clip: "stand", emote: "shake" }, settle: 0.32 },
+  { label: "shake, 0.45 s in", frame: { clip: "stand", emote: "shake" }, settle: 0.45 },
+];
+
 /** The cat in a hand, in the simple painter too (the cells are taller, with the feet line high in them). */
 export const CARRIED: Cell[] = [
   { label: "carried by the scruff", frame: { clip: "stand", carried: true, grounded: false, viewer: true }, raise: 0.85 },
   { label: "carried, facing left", frame: { clip: "stand", carried: true, grounded: false, viewer: true, facing: -1 }, raise: 0.85 },
   { label: "carried, looking up at the hand", frame: { clip: "stand", carried: true, grounded: false, viewer: false, look: { x: 0, y: -400 } }, raise: 0.85 },
 ];
+
+/**
+ * A cat in a hand, fighting it: the rig is run for `until` seconds at 60 frames a second with the `struggle` the engine's bouts would give it (calm for a second, building up over a second
+ * and a half, held, easing off to limp), and painted at the times in `at` (the red cross is the hand, which holds still). `facing` -1 is the same turned round.
+ */
+export function struggleStrip(canvas: HTMLCanvasElement, scale = 1, facing: 1 | -1 = 1, at: readonly number[] = [0.4, 1.4, 2.0, 2.5, 2.75, 3.0, 3.25, 3.5, 5.3, 5.9, 6.6, 7.4], columns = 4): void {
+  const cw = 260 * scale;
+  const ch = 400 * scale;
+  const rows = Math.ceil(at.length / columns);
+  canvas.width = cw * columns;
+  canvas.height = ch * rows;
+  const ctx = canvas.getContext("2d")!;
+  const px = 150 * scale;
+  const rig = new CatRig(9);
+  const dt = 1 / 60;
+  const level = (t: number): number => (t < 1 ? 0 : t < 2.5 ? 0.9 * smooth01((t - 1) / 1.5) : t < 5 ? 0.9 : t < 5.7 ? 0.9 - 0.8 * smooth01((t - 5) / 0.7) : 0.1);
+  const base = frameOf({ clip: "stand", carried: true, grounded: false, viewer: true, facing });
+  rig.snapTo(base, px);
+  let k = 0;
+  const last = Math.max(...at);
+  for (let i = 0; i * dt <= last + 1e-6 && k < at.length; i++) {
+    const t = i * dt;
+    rig.update({ ...base, struggle: level(t), clipTime: t }, dt, px);
+    if (t >= at[k]! - 1e-6) {
+      const x0 = (k % columns) * cw;
+      const y0 = Math.floor(k / columns) * ch;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, y0, cw, ch);
+      ctx.clip();
+      ctx.fillStyle = BG;
+      ctx.fillRect(x0, y0, cw, ch);
+      const box = { ox: cw / 2, oy: ch - 24 * scale - 0.85 * px, px };
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(x0, y0 + box.oy, cw, 3 * scale);
+      ctx.translate(x0, y0);
+      drawCat(ctx, MARMALADE, rig.solved, box);
+      // (the hand: where the cat hangs from, which the grip does not leave)
+      const hx = box.ox - HANG_AHEAD * facing * px;
+      const hy = box.oy - HANG_DOWN * px;
+      ctx.strokeStyle = "#e33";
+      ctx.lineWidth = 2 * scale;
+      ctx.beginPath();
+      ctx.moveTo(hx - 7 * scale, hy);
+      ctx.lineTo(hx + 7 * scale, hy);
+      ctx.moveTo(hx, hy - 7 * scale);
+      ctx.lineTo(hx, hy + 7 * scale);
+      ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = "#9aa";
+      ctx.font = `${13 * scale}px sans-serif`;
+      ctx.fillText(`${t.toFixed(2)} s, struggle ${level(t).toFixed(2)}`, x0 + 8 * scale, y0 + 18 * scale);
+      k++;
+    }
+  }
+}
+const smooth01 = (u: number): number => {
+  const c = Math.min(1, Math.max(0, u));
+  return c * c * (3 - 2 * c);
+};
 
 /** A strip of one walk cycle, evenly spaced. */
 export function walkStrip(canvas: HTMLCanvasElement, frames = 8, run = false, scale = 1): void {
@@ -177,6 +249,68 @@ function sheetWalking(canvas: HTMLCanvasElement, cells: Cell[], columns: number,
     ctx.fillText(`${run ? "run" : "walk"} ${c + 1}/${columns}`, c * cw + 8 * scale, 18 * scale);
   }
   void cells;
+}
+
+/**
+ * One climb, as a strip: the reach in the air, the cat at the lip hanging by its forepaws, the pull, the scramble, the stand. The ledge is drawn as a slab whose lip is
+ * `CLIMB_LIP` before the point the cat ends up standing at, as the engine holds the frame (`from` says what the cat was doing before: "fall", in the air at the lip, or "walk", on
+ * its feet under it, the rise being `walkRise` body lengths).
+ */
+export function climbStrip(canvas: HTMLCanvasElement, from: "fall" | "walk" = "fall", scale = 1, walkRise = 1.34): void {
+  const marks = [0, CLIMB_GRAB * 0.5, CLIMB_GRAB, 0.4, CLIMB_PULL, 0.72, CLIMB_OVER, 0.93, 1];
+  const cw = 300 * scale;
+  const ch = 470 * scale;
+  canvas.width = cw * (marks.length + 1);
+  canvas.height = ch;
+  const ctx = canvas.getContext("2d")!;
+  const px = 150 * scale;
+  const rig = new CatRig(11);
+  const dt = 1 / 60;
+  const ledgeY = ch * 0.4;
+  const standX = cw * 0.62;
+  // (the cat before the climb: in the air at the lip, or standing under it)
+  const before = from === "fall" ? { x: standX - CLIMB_BACK * px, y: ledgeY + CLIMB_HANG * px } : { x: standX - CLIMB_BACK * px, y: ledgeY + walkRise * px };
+  const pre = frameOf(from === "fall" ? { clip: "jump", progress: 0.42, grounded: false, vy: 0, ...before } : { clip: "stand", ...before });
+  rig.snapTo(pre, px);
+  for (let i = 0; i < 24; i++) rig.update({ ...pre, clipTime: i * dt }, dt, px);
+  let k = 0;
+  const shoot = (label: string, frame: CatFrame): void => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(k * cw, 0, cw, ch);
+    ctx.clip();
+    ctx.fillStyle = BG;
+    ctx.fillRect(k * cw, 0, cw, ch);
+    // (the ledge: a slab with its top at the lip's line, from the lip to the right; and the ground it stands on, under the point the cat ends up at)
+    ctx.fillStyle = GROUND;
+    ctx.fillRect(k * cw + standX - CLIMB_LIP * px, ledgeY, cw, ch);
+    ctx.fillStyle = "#5a5a70";
+    ctx.fillRect(k * cw + standX - CLIMB_LIP * px, ledgeY, cw, 3 * scale);
+    ctx.translate(k * cw, 0);
+    drawCat(ctx, MARMALADE, rig.solved, { ox: frame.x, oy: frame.y, px });
+    ctx.fillStyle = "#e33";
+    ctx.fillRect(standX - 3 * scale, ledgeY - 3 * scale, 6 * scale, 6 * scale);
+    ctx.restore();
+    ctx.fillStyle = "#9aa";
+    ctx.font = `${13 * scale}px sans-serif`;
+    ctx.fillText(label, k * cw + 8 * scale, 18 * scale);
+    k++;
+  };
+  // (the reach: the cat at the lip in the air, the frame before the climb begins)
+  const total = CLIMB_TIME;
+  const steps = Math.round(total / dt) + 1;
+  shoot(from === "fall" ? "reach" : "under the lip", pre);
+  let next = 0;
+  for (let i = 0; i < steps && next < marks.length; i++) {
+    const t = i * dt;
+    const progress = Math.min(1, t / total);
+    const frame = frameOf({ clip: "climb", progress, clipTime: t, grounded: progress >= 1, x: standX, y: ledgeY, facing: 1 });
+    rig.update(frame, dt, px);
+    if (progress >= marks[next]! - 1e-6) {
+      shoot(`climb ${progress.toFixed(2)}`, frame);
+      next++;
+    }
+  }
 }
 
 /** One jump, as a strip: the crouch, the push, the flight, the landing. */

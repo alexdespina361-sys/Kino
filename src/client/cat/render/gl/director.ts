@@ -1,5 +1,5 @@
 import { clamp, easeInOut } from "../../math";
-import { JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT, type CatFrame, type Clip as EngineClip } from "../../types";
+import { CLIMB_GRAB, CLIMB_OVER, CLIMB_PULL, JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT, type CatFrame, type Clip as EngineClip } from "../../types";
 import type { Solved } from "../rig";
 import { Pose, Skeleton, blend, lengthOf, sampleFrame, turnAbout, type Adjust, type Clip } from "./pose";
 import { Dangle, type Hold } from "./held";
@@ -47,6 +47,11 @@ export const PLANS: Record<EngineClip, readonly Plan[]> = {
   curl: [{ clip: "curl", drive: "clock", fade: 0.7, entry: true }],
   crouch: [{ clip: "crouch", drive: "clock", fade: 0.3, entry: true }],
   jump: [{ clip: "jump", drive: "progress", fade: 0.12, anchors: [{ at: JUMP_TAKEOFF, mark: "takeoff" }, { at: JUMP_LANDING, mark: "land" }] }],
+  // (the picture of a climb starts below the point the cat ends up on, hanging by its forepaws from the lip: the clip does the travel itself, the engine holds the frame still)
+  climb: [
+    { clip: "climb", drive: "progress", fade: 0.12, anchors: [{ at: CLIMB_GRAB, mark: "grab" }, { at: CLIMB_PULL, mark: "pull" }, { at: CLIMB_OVER, mark: "over" }] },
+    { clip: "stand", drive: "clock", fade: 0.3 },
+  ],
   stretch: [{ clip: "stretch", drive: "progress", fade: 0.3 }],
   yawn: [{ clip: "yawn", drive: "progress", fade: 0.3 }],
   groom: [{ clip: "groom", drive: "clock", fade: 0.4 }],
@@ -72,6 +77,7 @@ const HOME: Record<EngineClip, Home> = {
   run: "stand",
   stalk: "stand",
   jump: "stand",
+  climb: "stand",
   stretch: "stand",
   yawn: "stand",
   sniff: "stand",
@@ -114,6 +120,7 @@ const SWAY: Record<EngineClip, number> = {
   curl: 0.2,
   crouch: 0.4,
   jump: 0,
+  climb: 0,
   stretch: 0.5,
   yawn: 0.8,
   groom: 0.8,

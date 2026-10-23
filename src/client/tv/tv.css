@@ -1862,6 +1862,7 @@
   .tv-rail-category { font-size: 1.4em; }
   .tv-browse-top { gap: 1em; padding: 1.2em 1.4em 0 6.4em; }
   .tv-browse-logo { font-size: 1.8em; }
+  .tv-browse-logo .logo { top: -0.216em; } /* (its "o" level with the buttons: see polish/tv.css) */
   .tv-browse-corner { font-size: 1.3em; }
   .tv-hero { height: 17em; max-width: none; padding: 0 1.4em 0.6em 6.4em; }
   .tv-browse[data-deep="true"] .tv-hero { height: 6em; }
