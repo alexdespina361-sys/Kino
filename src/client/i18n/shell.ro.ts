@@ -9,8 +9,8 @@ export const shellRo: ShellDictionary = {
   "tabs.list": "Listele mele",
   "tabs.you": "Tu",
 
-  /* o listă care merită atinsă înainte să scrii ceva */
-  "search.popular": "Populare acum",
+  /* ce rulează, pe fiecare pagină, deasupra barei */
+  "remote.open": "Deschide telecomanda",
 
   /* Listele mele, goale */
   "lists.emptyTitle": "Nimic salvat încă",

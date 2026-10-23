@@ -12,8 +12,8 @@ export const shellEn = {
   "tabs.list": "My lists",
   "tabs.you": "You",
 
-  /* a list worth tapping before anything is typed */
-  "search.popular": "Popular right now",
+  /* what plays, on every page, above the bar */
+  "remote.open": "Open the remote",
 
   /* My lists, with nothing in it */
   "lists.emptyTitle": "Nothing saved yet",

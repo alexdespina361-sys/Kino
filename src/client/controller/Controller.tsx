@@ -27,7 +27,7 @@ import { Rich } from "../i18n/Rich";
 import { useBackWhile } from "../shared/backButton";
 import { readKept, writeKept } from "../shared/kept";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
-import { ChevronLeftIcon, TvIcon } from "../shared/icons";
+import { ChevronLeftIcon } from "../shared/icons";
 import { partyLink, readLaunchParams } from "../shared/launch";
 import { useLinkBox } from "../shared/linkBox";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
@@ -42,10 +42,11 @@ import { Library } from "./Library";
 import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
 import { PlayLink, ResolveLine } from "./PlayLink";
-import { Chip, mediaTitle, Remote, stateLabel, type SheetKind } from "./Remote";
+import { Remote, type SheetKind } from "./Remote";
 import { LINE_EVENT } from "./Round";
 import { RatingsSheet } from "./RatingsSheet";
 import { ContinueRow } from "./Rows";
+import { MiniRemote } from "./shell/MiniRemote";
 import { MyLists } from "./shell/MyLists";
 import { TabBar } from "./shell/TabBar";
 import { TvChip } from "./shell/TvChip";
@@ -568,9 +569,6 @@ export function Controller() {
   const home = (
     <section className="home" data-testid="home-panel">
       <h2 className="sr-only">{t("phone.homeTitle")}</h2>
-      {active && media && !remoteOpen && (
-        <Chip icon={<TvIcon />} label={stateLabel(player, tv.name)} value={mediaTitle(media)} onClick={() => setRemoteShown(true)} testId="playing-bar" />
-      )}
       <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} status={false} />
       <FriendsHome onOpenTitle={setTitle} onStartParty={startTogether} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
@@ -599,9 +597,11 @@ export function Controller() {
   );
   const you = <AccountScreen inline onClose={() => tabs.setTab("home")} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} onStartParty={startTogether} />;
   const panel = { home, search, list: myLists, you }[tabs.tab];
+  /** What plays is a line above the bar, on every page, until the remote is the page (and not while the TV is gone: what it says of the film cannot be trusted). */
+  const mini = active && media !== null && !remoteOpen && !away;
 
   return (
-    <main className={`phone phone-ui shell${remoteOpen ? " is-remote" : ""}`} data-tab={tabs.tab}>
+    <main className={`phone phone-ui shell${remoteOpen ? " is-remote" : ""}${mini ? " has-mini" : ""}`} data-tab={tabs.tab}>
       {accountLayer}
       <header className="top">
         {remoteOpen && (
@@ -669,6 +669,7 @@ export function Controller() {
           {panel}
         </div>
       )}
+      {mini && media && <MiniRemote media={media} player={player} tvName={tv.name} online={online} onOpen={() => setRemoteShown(true)} onToggle={() => send({ type: player.state === "playing" ? "PAUSE" : "PLAY" })} />}
       {!remoteOpen && <TabBar tab={tabs.tab} onSelect={tabs.select} />}
       {sheet === "menu" && (
         <MenuSheet

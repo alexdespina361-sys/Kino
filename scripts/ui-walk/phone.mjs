@@ -165,6 +165,20 @@ if (parts.has("guest")) {
     await wait(1500);
     await snap(phone, device, "p12-remote-playing");
   });
+  await step(device, "p12b-mini-remote", async () => {
+    // (with the shell the remote can step aside: what plays stays as a line above the bar on every place of it, and a tap on the line brings the remote back)
+    if ((await phone.getByTestId("remote-back").count()) === 0) return;
+    await phone.getByTestId("remote-back").click();
+    await phone.getByTestId("mini-remote").waitFor();
+    await wait(600);
+    await snap(phone, device, "p12b-mini-home");
+    await goTo(phone, "search");
+    await snap(phone, device, "p12c-mini-search");
+    await goTo(phone, "home");
+    await phone.getByTestId("playing-bar").click();
+    await phone.getByTestId("media-title").waitFor();
+    await wait(400);
+  });
   await step(device, "p13-tracks-sheet", async () => {
     // (the made-up film has one soundtrack and no subtitles, and then the page rightly shows no chip for them)
     if ((await phone.getByTestId("chip-tracks").count()) === 0) return;

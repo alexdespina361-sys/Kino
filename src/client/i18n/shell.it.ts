@@ -9,8 +9,8 @@ export const shellIt: ShellDictionary = {
   "tabs.list": "Le mie liste",
   "tabs.you": "Tu",
 
-  /* una lista che vale un tocco prima di scrivere */
-  "search.popular": "Popolari adesso",
+  /* quello che sta passando, su ogni pagina, sopra la barra */
+  "remote.open": "Apri il telecomando",
 
   /* Le mie liste, vuote */
   "lists.emptyTitle": "Ancora niente di salvato",

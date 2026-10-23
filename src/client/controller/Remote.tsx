@@ -4,6 +4,7 @@ import { reportWontPlay } from "../feedback/store";
 import { Rich } from "../i18n/Rich";
 import { t, useT } from "../i18n";
 import { hostOf } from "../shared/format";
+import { Poster } from "../shared/Poster";
 import {
   Back10Icon,
   ChevronIcon,
@@ -105,6 +106,10 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
   return (
     <div className="remote">
       <section className="now-playing">
+        {/* The picture fills what would be blank between the header and the title; a screen that is not tall enough for it has none (shell.css). */}
+        <div className="remote-art" data-testid="remote-art">
+          <Poster title={title} image={media.poster ?? media.backdrop} />
+        </div>
         {series && (
           <div className="episode-line">
             <span className="badge">
