@@ -1,6 +1,6 @@
 import { drawCat, MARMALADE } from "../render/draw";
 import { CatRig, GALLOP_STRIDE, WALK_STRIDE } from "../render/rig";
-import { JUMP_LANDING, JUMP_TAKEOFF, type CatFrame } from "../types";
+import { CLIMB_BACK, CLIMB_GRAB, CLIMB_HANG, CLIMB_LIP, CLIMB_OVER, CLIMB_PULL, CLIMB_TIME, JUMP_LANDING, JUMP_TAKEOFF, type CatFrame } from "../types";
 
 /**
  * The cat lab: pictures of the cat for looking at it (pose sheets, strips of a walk or a jump), made in a real browser by scripts/cat/sheet.mjs.
@@ -177,6 +177,68 @@ function sheetWalking(canvas: HTMLCanvasElement, cells: Cell[], columns: number,
     ctx.fillText(`${run ? "run" : "walk"} ${c + 1}/${columns}`, c * cw + 8 * scale, 18 * scale);
   }
   void cells;
+}
+
+/**
+ * One climb, as a strip: the reach in the air, the cat at the lip hanging by its forepaws, the pull, the scramble, the stand. The ledge is drawn as a slab whose lip is
+ * `CLIMB_LIP` before the point the cat ends up standing at, as the engine holds the frame (`from` says what the cat was doing before: "fall", in the air at the lip, or "walk", on
+ * its feet under it, the rise being `walkRise` body lengths).
+ */
+export function climbStrip(canvas: HTMLCanvasElement, from: "fall" | "walk" = "fall", scale = 1, walkRise = 1.34): void {
+  const marks = [0, CLIMB_GRAB * 0.5, CLIMB_GRAB, 0.4, CLIMB_PULL, 0.72, CLIMB_OVER, 0.93, 1];
+  const cw = 300 * scale;
+  const ch = 470 * scale;
+  canvas.width = cw * (marks.length + 1);
+  canvas.height = ch;
+  const ctx = canvas.getContext("2d")!;
+  const px = 150 * scale;
+  const rig = new CatRig(11);
+  const dt = 1 / 60;
+  const ledgeY = ch * 0.4;
+  const standX = cw * 0.62;
+  // (the cat before the climb: in the air at the lip, or standing under it)
+  const before = from === "fall" ? { x: standX - CLIMB_BACK * px, y: ledgeY + CLIMB_HANG * px } : { x: standX - CLIMB_BACK * px, y: ledgeY + walkRise * px };
+  const pre = frameOf(from === "fall" ? { clip: "jump", progress: 0.42, grounded: false, vy: 0, ...before } : { clip: "stand", ...before });
+  rig.snapTo(pre, px);
+  for (let i = 0; i < 24; i++) rig.update({ ...pre, clipTime: i * dt }, dt, px);
+  let k = 0;
+  const shoot = (label: string, frame: CatFrame): void => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(k * cw, 0, cw, ch);
+    ctx.clip();
+    ctx.fillStyle = BG;
+    ctx.fillRect(k * cw, 0, cw, ch);
+    // (the ledge: a slab with its top at the lip's line, from the lip to the right; and the ground it stands on, under the point the cat ends up at)
+    ctx.fillStyle = GROUND;
+    ctx.fillRect(k * cw + standX - CLIMB_LIP * px, ledgeY, cw, ch);
+    ctx.fillStyle = "#5a5a70";
+    ctx.fillRect(k * cw + standX - CLIMB_LIP * px, ledgeY, cw, 3 * scale);
+    ctx.translate(k * cw, 0);
+    drawCat(ctx, MARMALADE, rig.solved, { ox: frame.x, oy: frame.y, px });
+    ctx.fillStyle = "#e33";
+    ctx.fillRect(standX - 3 * scale, ledgeY - 3 * scale, 6 * scale, 6 * scale);
+    ctx.restore();
+    ctx.fillStyle = "#9aa";
+    ctx.font = `${13 * scale}px sans-serif`;
+    ctx.fillText(label, k * cw + 8 * scale, 18 * scale);
+    k++;
+  };
+  // (the reach: the cat at the lip in the air, the frame before the climb begins)
+  const total = CLIMB_TIME;
+  const steps = Math.round(total / dt) + 1;
+  shoot(from === "fall" ? "reach" : "under the lip", pre);
+  let next = 0;
+  for (let i = 0; i < steps && next < marks.length; i++) {
+    const t = i * dt;
+    const progress = Math.min(1, t / total);
+    const frame = frameOf({ clip: "climb", progress, clipTime: t, grounded: progress >= 1, x: standX, y: ledgeY, facing: 1 });
+    rig.update(frame, dt, px);
+    if (progress >= marks[next]! - 1e-6) {
+      shoot(`climb ${progress.toFixed(2)}`, frame);
+      next++;
+    }
+  }
 }
 
 /** One jump, as a strip: the crouch, the push, the flight, the landing. */

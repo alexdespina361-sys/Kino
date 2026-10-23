@@ -753,6 +753,112 @@ test("a hand that is lost lets the cat go: the window losing the pointer puts it
   await tv.mouse.up();
 });
 
+interface Seen {
+  x: number;
+  y: number;
+  facing: number;
+  clip: string;
+  progress: number;
+  grounded: boolean;
+  act: string;
+  surface: string | null;
+  /** The box a hand is on takes no hand just now. */
+  off: boolean;
+}
+/** From now on, the cat's frame (and whether the box a hand is on is off) every few milliseconds, in the page, where the frames are, until `__stopSeen()`. */
+const recordTheCat = (tv: Page) =>
+  tv.evaluate(() => {
+    const w = window as unknown as { __kinoCat: { snapshot(): { frame: Omit<Seen, "act" | "surface" | "off">; engine: { act: string; surfaceId: string | null } } }; __seen: Seen[]; __stopSeen?: () => void };
+    const hit = document.querySelector<HTMLElement>('[data-testid="cat-hit"]')!;
+    w.__seen = [];
+    const timer = window.setInterval(() => {
+      const { frame, engine } = w.__kinoCat.snapshot();
+      w.__seen.push({ x: frame.x, y: frame.y, facing: frame.facing, clip: frame.clip, progress: frame.progress, grounded: frame.grounded, act: engine.act, surface: engine.surfaceId, off: hit.hasAttribute("data-off") });
+    }, 8);
+    w.__stopSeen = () => window.clearInterval(timer);
+  });
+const recordingOfTheCat = async (tv: Page): Promise<Seen[]> => {
+  await tv.evaluate(() => (window as unknown as { __stopSeen?: () => void }).__stopSeen?.());
+  return tv.evaluate(() => (window as unknown as { __seen: Seen[] }).__seen);
+};
+
+test("a hand that lets the cat go just under the edge of a shelf: it reaches for the edge, takes hold, hangs and hauls itself up onto the shelf, and nothing takes it from there meanwhile", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const middle = await catSitsAndWhere(tv);
+  const start = await snap(tv);
+  const world = (await worldOf(tv)) as Awaited<ReturnType<typeof worldOf>> & { keepOut: Array<{ x: number; y: number; w: number; h: number }>; viewport: { w: number; h: number } };
+  const L = world.bodyLength;
+  // the highest shelf, wide, with room under its edge on the screen (a shelf with the foot of the screen near under it is a fall to the foot, which is nearer), and a place along it with nothing to keep out of
+  // for two body lengths and a half on either side, from the height of the cat's head to where it hangs: the hero's buttons and the focus card are over the first part of the shelf
+  const openAt = (surface: Surf): number | undefined => {
+    const middle = (surface.x0 + surface.x1) / 2;
+    for (let step = 0; middle - step * 0.25 * L > surface.x0 + 3 * L; step++) {
+      for (const x of [middle - step * 0.25 * L, middle + step * 0.25 * L]) {
+        if (x > surface.x1 - 3 * L) continue;
+        if (!world.keepOut.some((zone) => zone.x < x + 2.5 * L && zone.x + zone.w > x - 2.5 * L && zone.y < surface.y + 1.5 * L && zone.y + zone.h > surface.y - 1.3 * L)) return x;
+      }
+    }
+    return undefined;
+  };
+  const target = world.surfaces.filter((surface) => surface.kind === "shelfTop" && surface.y + 1.8 * L < world.viewport.h && openAt(surface) !== undefined).sort((a, b) => a.y - b.y)[0];
+  expect(target, "a shelf with room under its edge").toBeDefined();
+  // (the feet a body length and a fifth under the line of the shelf: past what the cat springs up to, within what it reaches)
+  const hand = { x: openAt(target!)!, y: target!.y + 1.2 * L - 0.73 * L };
+  await tv.mouse.move(middle.x, middle.y);
+  await tv.mouse.down();
+  await tv.mouse.move(middle.x + 30, middle.y - 30, { steps: 5 });
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.act, { timeout: 5_000 }).toBe("carried"));
+  await tv.mouse.move(hand.x, hand.y, { steps: 30 });
+  await saying(tv, () => expect.poll(async () => { const seen = await snap(tv); return seen.frame.carried && Math.abs(seen.frame.y - (hand.y + 0.73 * L)) < 0.15 * L; }, { timeout: 8_000 }).toBe(true));
+  // the mark says where it would be put down: on top of that shelf, a stride along from where it hangs (or a little further, where the shelf has no room for it: a hero's buttons over it, say)
+  await expect(tv.getByTestId("cat-spot")).toHaveAttribute("data-on", "");
+  const mark = (await tv.getByTestId("cat-spot").boundingBox())!;
+  expect(Math.abs(mark.y + mark.height / 2 - target!.y)).toBeLessThan(0.2 * L);
+  expect(Math.abs(mark.x + mark.width / 2 - hand.x)).toBeLessThan(1.5 * L);
+
+  await recordTheCat(tv);
+  await tv.mouse.up();
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return !/carried|fall|climb/.test(seen.engine.act) && seen.frame.grounded && seen.engine.surfaceId === target!.id;
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+  const seen = await recordingOfTheCat(tv);
+  const climb = seen.filter((beat) => beat.clip === "climb");
+  // it climbed: for the length of the clip, held at the point it ends up standing at (feet on the line of the shelf), facing along the shelf
+  expect(climb.length).toBeGreaterThan(100);
+  for (const beat of climb) {
+    expect(beat.surface === target!.id || beat.surface === start.engine.surfaceId, "on its way").toBe(true);
+    expect(Math.abs(beat.y - target!.y), "the feet on the line of the shelf").toBeLessThan(1);
+    expect(Math.abs(beat.x - climb[0]!.x)).toBeLessThan(1);
+    expect(beat.facing).toBe(climb[0]!.facing);
+  }
+  // (up from nothing to one, and never back; off its feet until it is up)
+  climb.reduce((before, beat) => {
+    expect(beat.progress).toBeGreaterThanOrEqual(before - 1e-9);
+    return beat.progress;
+  }, 0);
+  expect(climb[0]!.progress).toBeLessThan(0.05);
+  expect(climb[climb.length - 1]!.progress).toBeGreaterThan(0.95);
+  expect(climb.filter((beat) => beat.progress < 0.9).every((beat) => !beat.grounded)).toBe(true);
+  // (and nothing is under a hand meanwhile: the box a hand is on is off for as long as it hangs)
+  expect(climb.every((beat) => beat.off), "the hand's box is off").toBe(true);
+  // the way there was a fall of a moment, and the end is the cat on its feet on the shelf, with its box back
+  const before = seen.slice(0, seen.indexOf(climb[0]!));
+  expect(before.length).toBeGreaterThan(3);
+  expect(before.every((beat) => beat.clip === "jump" && !beat.grounded)).toBe(true);
+  const end = await snap(tv);
+  expect(Math.abs(end.frame.y - target!.y)).toBeLessThan(2);
+  await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-off", "");
+});
+
 /** A library of more rows than a screen shows, so that the rows can be flung. */
 const tallLibrary = { updatedAt: Date.now(), rows: Array.from({ length: 12 }, (_, row) => ({ id: `row${row}`, title: `Row ${row + 1}`, source: "Test Source", items: Array.from({ length: 10 }, (_, index) => film(`r${row}c${index}`, `Film ${row + 1}-${index + 1}`)) })) };
 interface Beat {

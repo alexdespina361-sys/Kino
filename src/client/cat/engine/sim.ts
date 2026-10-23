@@ -101,6 +101,8 @@ export interface SimStats {
   hops: number;
   /** How many times a page that was flung shook the cat off its shelf. */
   flings: number;
+  /** Seconds the cat was in sight in the library, by the kind of place under its feet ("shelfTop", "fallbackFloor"...), or "air" while it was off its feet. */
+  places: Record<string, number>;
   surfaces: string[];
   minAppear: number;
   maxAppear: number;
@@ -143,7 +145,7 @@ export function runSession(options: SimOptions): SimStats {
   page.reducedMotion = options.reducedMotion ?? false;
   page.quiet = options.quiet ?? false;
   page.names = options.names ?? false;
-  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, emotes: {}, choices: {}, hops: 0, flings: 0, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
+  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, emotes: {}, choices: {}, hops: 0, flings: 0, places: {}, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
   let wasFlung = false;
   let lastChoice = "";
   /** Where each row of posters is being scrolled to sideways (see `chaos.slide`). */
@@ -167,7 +169,7 @@ export function runSession(options: SimOptions): SimStats {
   let handSpeed = 0;
   let handUntil = 0;
   let world = browseWorld(page);
-  let prev: { x: number; y: number; appear: number; onScreen: boolean; shelves: Map<string, number> } | null = null;
+  let prev: { x: number; y: number; appear: number; onScreen: boolean; shelves: Map<string, number>; act: string } | null = null;
   let overlapSince = -1;
   let cutSince = -1;
   let lostRun = 0;
@@ -385,6 +387,10 @@ export function runSession(options: SimOptions): SimStats {
       stats.choices[dbg.choice] = (stats.choices[dbg.choice] ?? 0) + 1;
     }
     if (frame.emote && frame.emote !== "none") stats.emotes[frame.emote] = (stats.emotes[frame.emote] ?? 0) + dt;
+    if (frame.appear > 0.5 && world.mode === "browse") {
+      const place = frame.grounded && dbg.surfaceId ? (world.surfaces.find((s) => s.id === dbg.surfaceId)?.kind ?? "other") : "air";
+      stats.places[place] = (stats.places[place] ?? 0) + dt;
+    }
     stats.lastDebug = JSON.stringify(dbg);
     stats.minAppear = Math.min(stats.minAppear, frame.appear);
     stats.maxAppear = Math.max(stats.maxAppear, frame.appear);
@@ -481,9 +487,11 @@ export function runSession(options: SimOptions): SimStats {
       }
       const limit = VMAX_L * L * dt + shelfMove + Math.max(slideStep, carryNow) + 1;
       const move = Math.hypot(frame.x - prev.x, frame.y - prev.y);
-      if (move > limit) fail(`jumped ${move.toFixed(0)}px in one frame (limit ${limit.toFixed(0)}, ${dbg.act})`);
+      // (the first frame of a climb is where the cat's paws take hold: the frame is the point it will stand at, and the picture is drawn from where it hangs, below it -- the move to there is the art's)
+      const climbBegins = dbg.act === "climb" && prev.act !== "climb";
+      if (move > limit && !climbBegins) fail(`jumped ${move.toFixed(0)}px in one frame (limit ${limit.toFixed(0)}, ${dbg.act})`);
     }
-    prev = { x: frame.x, y: frame.y, appear: frame.appear, onScreen, shelves };
+    prev = { x: frame.x, y: frame.y, appear: frame.appear, onScreen, shelves, act: dbg.act };
     if (options.stopOnViolation && stats.violations.length > 0) break;
   }
   return stats;

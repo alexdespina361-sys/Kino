@@ -28,9 +28,12 @@ import { classicBrush, fetchMesh, solidBrush, type Brush } from "./render";
  * library's corner and its panel are how the remote, a screen reader and a keyboard reach it.
  */
 
-/** The canvas is this many body lengths wide and tall, with the cat's feet this far down it. */
+/**
+ * The canvas is this many body lengths wide and tall, with the cat's feet this far down it (as a share of it: a cat that hangs from a lip by its forepaws is drawn up to a body length and
+ * a half under the point the frame holds, which is where it ends up standing, so there is that much canvas under the feet).
+ */
 const CANVAS_BODIES = 4;
-const GROUND_AT = 0.8;
+const GROUND_AT = 0.62;
 /**
  * How long after the picture has changed the card is first asked what a picture costs (it is getting ready for it until then), how often it is asked for the
  * next two, and how often after that (milliseconds). The ask empties the card's whole queue, the page's and a film's with it, so it is rare.
@@ -548,7 +551,8 @@ export function mountCat(): { stop: () => void } {
     }
     // (a hand is the library's: in a film the picture is the player's, with its taps, its double-taps to skip and its holds to speed up, and a box over the cat
     // that took them would be a patch of the picture where none of those worked, and where the cursor came back)
-    const handOk = visible && world.mode === "browse" && frame.appear > 0.5;
+    // (nor is a hand on a cat that hauls itself up over a lip: the frame is the point it ends up at, and the picture hangs below it, so a box there would be on nothing)
+    const handOk = visible && world.mode === "browse" && frame.appear > 0.5 && frame.clip !== "climb";
     if (handOk === hit.hasAttribute("data-off")) hit.toggleAttribute("data-off", !handOk);
     if (!handOk) over = false; // (a box that takes no pointer does not say that the pointer left it: a cat that cannot be touched is not being stroked)
     // (a hand can take hold of the cat where the cat is let to move about; the cursor says so)

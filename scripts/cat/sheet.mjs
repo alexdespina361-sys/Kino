@@ -1,6 +1,7 @@
 // Pictures of the cat for looking at it: bundles src/client/cat/lab/entry.ts for the browser, runs it in Chromium and saves a PNG.
 //
-//   node scripts/cat/sheet.mjs poses|carried|walk|run|jump <out.png> [--scale=2]
+//   node scripts/cat/sheet.mjs poses|carried|walk|run|jump|climb|climb-walk <out.png> [--scale=2]
+//   (climb: the cat reaches for a lip in the air and hauls itself up; climb-walk: the same from its feet, under the lip)
 //
 // Development tooling (the cat lab): nothing it makes is part of the app.
 import { chromium } from "@playwright/test";
@@ -29,6 +30,8 @@ await page.evaluate(
     else if (which === "walk") lab.walkStrip(canvas, 8, false, s);
     else if (which === "run") lab.walkStrip(canvas, 8, true, s);
     else if (which === "jump") lab.jumpStrip(canvas, 10, s);
+    else if (which === "climb") lab.climbStrip(canvas, "fall", s);
+    else if (which === "climb-walk") lab.climbStrip(canvas, "walk", s);
   },
   [kind, scale],
 );

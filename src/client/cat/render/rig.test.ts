@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT, type CatFrame, type Clip } from "../types";
+import { CLIMB_BACK, CLIMB_LIP, CLIMB_TIME, JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT, type CatFrame, type Clip } from "../types";
 import { CatRig, WALK_STRIDE, type Solved } from "./rig";
 
 const frame = (over: Partial<CatFrame>): CatFrame => ({ x: 0, y: 0, facing: 1, clip: "stand", clipTime: 0, progress: 0, odometer: 0, vx: 0, vy: 0, grounded: true, viewer: false, drowsy: 0, energy: 0.3, appear: 1, petted: false, carried: false, ...over });
@@ -1020,6 +1020,121 @@ describe("the cat's swat at a poster", () => {
         1.45,
         at,
       );
+    }
+  });
+});
+
+describe("the cat hauling itself up over a lip", () => {
+  /** Where a joint is seen once the whole cat is tipped (about the middle of its body): x the way it faces and y up, in body lengths from the point the frame holds, with the cat's shift (down is positive there) taken in. */
+  const seenFromTheTop = (s: Solved, j: { x: number; y: number }) => {
+    const c = Math.cos(s.pitch);
+    const si = Math.sin(s.pitch);
+    return { x: j.x * c - (j.y + 0.4) * si + s.shift.x, y: -(j.x * si + (j.y + 0.4) * c - 0.4) - s.shift.y };
+  };
+  const at = (progress: number, over: Partial<CatFrame> = {}, seconds = 1.5) => inClip({ clip: "climb", progress, grounded: false, ...over }, seconds);
+
+  it("hangs by its forepaws from the lip at the start: the paws on the line of the ledge, a lip's length behind the point the frame holds, the body below and nearly upright, the hind legs and the tail down, no shadow", () => {
+    const s = at(0);
+    expect(s.shift.x).toBeCloseTo(-CLIMB_BACK, 1);
+    expect(s.shift.y).toBeGreaterThan(0.9);
+    for (const key of ["fn", "ff"] as const) {
+      const paw = seenFromTheTop(s, s.legs[key].toe);
+      expect(paw.x, key).toBeGreaterThan(-CLIMB_LIP - 0.12);
+      expect(paw.x, key).toBeLessThan(-CLIMB_LIP + 0.06);
+      expect(Math.abs(paw.y), key).toBeLessThan(0.06);
+    }
+    expect(s.pitch).toBeLessThan(-1);
+    const head = seenFromTheTop(s, s.head);
+    const hip = seenFromTheTop(s, s.pose.p.hip);
+    expect(head.y).toBeGreaterThan(hip.y + 0.6);
+    for (const key of ["hn", "hf"] as const) expect(seenFromTheTop(s, s.legs[key].toe).y, key).toBeLessThan(-0.8);
+    const tail = s.tail.map((j) => seenFromTheTop(s, j));
+    expect(tail[tail.length - 1]!.y).toBeLessThan(tail[0]!.y - 0.4);
+    expect(s.shadow).toBeLessThan(0.05);
+  });
+
+  it("stands on the ledge at the end: the picture is where the frame is, upright, with its shadow, and its paws on top of the ledge past the lip", () => {
+    const s = at(1);
+    expect(s.shift.x).toBeCloseTo(0, 2);
+    expect(s.shift.y).toBeCloseTo(0, 2);
+    expect(Math.abs(s.pitch)).toBeLessThan(0.02);
+    expect(s.shadow).toBeGreaterThan(0.99);
+    expect(seenFromTheTop(s, s.legs.fn.toe).x).toBeGreaterThan(-CLIMB_LIP + 0.3);
+    // (and its feet are on the ledge)
+    for (const key of ["fn", "ff", "hn", "hf"] as const) expect(Math.abs(seenFromTheTop(s, s.legs[key].toe).y), key).toBeLessThan(0.08);
+  });
+
+  it("turns round with the cat: one that faces left hangs the other side of the point the frame holds", () => {
+    const right = at(0.2);
+    const left = at(0.2, { facing: -1 });
+    expect(left.shift.x).toBeCloseTo(-right.shift.x, 3);
+    expect(left.shift.y).toBeCloseTo(right.shift.y, 3);
+    expect(left.flip).toBeLessThan(0);
+  });
+
+  it("goes from hanging to standing through the climb without a joint snapping, and the shift only comes up and on (no joint moves more than a fifth of the body in one frame)", () => {
+    const rig = new CatRig(4);
+    rig.snapTo(frame({ clip: "climb", progress: 0, grounded: false }), 100);
+    const frames = Math.round(CLIMB_TIME * 60) + 30;
+    let previous: number[] | null = null;
+    let biggest = 0;
+    let before = { x: -Infinity, y: Infinity, pitch: -Infinity };
+    const joints = (s: Solved): number[] =>
+      [...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].toe, s.legs[key].mid, s.legs[key].hock]), s.head, s.tail[s.tail.length - 1]!].flatMap((j) => {
+        const a = seenFromTheTop(s, j);
+        return [a.x, a.y];
+      });
+    for (let k = 0; k < frames; k++) {
+      // (the engine's own frames: the progress runs over the clip, and the clip is over when it is done: a standing cat after)
+      const done = k >= Math.round(CLIMB_TIME * 60);
+      rig.update(frame(done ? { clip: "stand", clipTime: (k - Math.round(CLIMB_TIME * 60)) / 60 } : { clip: "climb", progress: k / Math.round(CLIMB_TIME * 60), grounded: false, clipTime: k / 60 }), 1 / 60, 100);
+      const s = rig.solved;
+      const now = joints(s);
+      for (const n of now) expect(Number.isFinite(n)).toBe(true);
+      if (previous) for (let i = 0; i + 1 < now.length; i += 2) biggest = Math.max(biggest, Math.hypot(now[i]! - previous[i]!, now[i + 1]! - previous[i + 1]!));
+      previous = now;
+      expect(s.shift.y, `${k}`).toBeLessThanOrEqual(before.y + 0.01);
+      expect(s.shift.x, `${k}`).toBeGreaterThanOrEqual(before.x - 0.01);
+      expect(s.pitch, `${k}`).toBeGreaterThanOrEqual(before.pitch - 0.02);
+      before = { x: s.shift.x, y: s.shift.y, pitch: s.pitch };
+    }
+    expect(biggest).toBeLessThan(0.2);
+    expect(rig.solved.shift.x).toBeCloseTo(0, 2);
+    expect(rig.solved.shift.y).toBeCloseTo(0, 2);
+  });
+
+  it("is brought up to the hang from where it was when the frame jumps to the point it ends up at: the picture does not jump with it (a cat that fell to the lip, and one that was standing under it)", () => {
+    // (the frame of a cat in the air at the lip: a body length and 0.4 below the point the climb holds, and a stride behind it; the first frame of the climb is at the point itself)
+    const px = 100;
+    for (const [dx, dy] of [[-CLIMB_BACK, 1.4], [-CLIMB_BACK, 1.4 - 0.07], [-CLIMB_BACK - 0.1, 1.4 + 0.1]] as const) {
+      const rig = new CatRig(6);
+      const reaching = frame({ clip: "jump", progress: 0.42, grounded: false, x: dx * px, y: dy * px });
+      rig.snapTo(reaching, px);
+      for (let k = 0; k < 30; k++) rig.update({ ...reaching, clipTime: k / 60 }, 1 / 60, px);
+      const climb = frame({ clip: "climb", progress: 0, grounded: false });
+      rig.update(climb, 1 / 60, px);
+      // (it is drawn about where it was: the shift is the distance it still has to come, and has most of it)
+      expect(rig.solved.shift.x, `${dx} ${dy}`).toBeCloseTo(dx, 1);
+      expect(rig.solved.shift.y, `${dx} ${dy}`).toBeGreaterThan(dy - 0.15);
+      expect(rig.solved.shift.y, `${dx} ${dy}`).toBeLessThan(dy + 0.05);
+      // ...and it is where the climb has it, a moment after
+      for (let k = 0; k < 60; k++) rig.update({ ...climb, clipTime: k / 60 }, 1 / 60, px);
+      expect(rig.solved.shift.x, `${dx} ${dy}`).toBeCloseTo(-CLIMB_BACK, 1);
+      expect(rig.solved.shift.y, `${dx} ${dy}`).toBeCloseTo(0.99, 1);
+    }
+  });
+
+  it("keeps every number finite however the climb is entered and left, and at any progress", () => {
+    const rig = new CatRig(8);
+    let t = 0;
+    for (const clip of ["stand", "jump", "climb", "sit", "climb", "walk", "climb", "stand"] as const) {
+      for (let k = 0; k < 70; k++) {
+        t += 1 / 60;
+        rig.update(frame({ clip, clipTime: t % 3, progress: clip === "climb" ? (k / 70) * 1.1 - 0.05 : (t % 3) / 3, grounded: clip !== "climb" && clip !== "jump", odometer: t * 30 }), 1 / 60, 100);
+        const s = rig.solved;
+        const numbers = [s.shift.x, s.shift.y, s.pitch, s.head.x, s.head.y, ...(["fn", "ff", "hn", "hf"] as const).flatMap((key) => [s.legs[key].mid.x, s.legs[key].mid.y, s.legs[key].toe.x, s.legs[key].toe.y]), ...s.tail.flatMap((j) => [j.x, j.y])];
+        for (const n of numbers) expect(Number.isFinite(n), `${clip} ${k}`).toBe(true);
+      }
     }
   });
 });
