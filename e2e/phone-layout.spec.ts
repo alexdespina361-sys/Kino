@@ -207,8 +207,83 @@ test.describe("the remote, held upright", () => {
       await expect(sheet).toHaveCount(0);
     });
   }
-});
 
+  test("the keyboard goes through a place in the order it is seen: the TV, the account, what the page holds, then the four places, each showing where it is", async ({ browser }) => {
+    const phone = await pairedPhone(browser, SIZES[2]!);
+    const blur = () => phone.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    const focused = () =>
+      phone.evaluate(() => {
+        const element = document.activeElement as HTMLElement;
+        // What is drawn round it, or round something in it (a place of the bar rings its icon), with the keyboard on it and without.
+        const drawn = () =>
+          [element, ...element.querySelectorAll("*")]
+            .map((node) => {
+              const style = getComputedStyle(node);
+              return `${style.outlineStyle}/${style.outlineWidth}/${style.boxShadow}`;
+            })
+            .join("|");
+        const on = drawn();
+        element.blur();
+        const off = drawn();
+        element.focus();
+        const box = element.getBoundingClientRect();
+        // (a field shows it on the frame around it: only the buttons are asked)
+        return { id: element.dataset.testid ?? element.tagName.toLowerCase(), ring: element.tagName !== "BUTTON" || on !== off, size: Math.min(box.width, box.height) };
+      });
+    /** The keyboard's next stops from the start of a page (Tab), or from its end (Shift+Tab): a page that has just been put up has no stop behind it yet. */
+    const stops = async (key: "Tab" | "Shift+Tab", count: number) => {
+      await blur();
+      const seen = [];
+      for (let press = 0; press < count; press++) {
+        await phone.keyboard.press(key);
+        seen.push(await focused());
+      }
+      return seen;
+    };
+    const backward = (await stops("Shift+Tab", 6)).filter((one) => one.id !== "body"); // (a first step back from the start of a page lands on the page itself)
+    expect(
+      backward.map((one) => one.id).slice(0, 4),
+      "the four places are the last the keyboard reaches, in the order they are drawn",
+    ).toEqual(["tab-you", "tab-list", "tab-search", "tab-home"]);
+    expect(backward[4]!.id.startsWith("tab-"), "and what is before them is the page's own").toBe(false);
+    await phone.reload();
+    await expect(phone.getByTestId("library-row").first()).toBeVisible();
+    const forward = await stops("Tab", 2);
+    expect(forward.map((one) => one.id), "the TV, then the account: what is at the top is reached first").toEqual(["menu", "account-button"]);
+    for (const one of [...forward, ...backward]) {
+      expect(one.size, `${one.id} has a size to be seen`).toBeGreaterThan(0);
+      expect(one.ring, `${one.id} shows that the keyboard is on it`).toBe(true);
+    }
+  });
+
+  // A key (or a screen reader) takes the page just far enough to show what it reached, and the two bars lie over the page: without the room kept for them (shell.css, scroll-margin) the foot of a poster was behind the bar.
+  for (const size of [SIZES[0]!, SIZES[2]!]) {
+    test(`at ${size.name}: what Tab or Shift+Tab reaches is clear of the bar below and of the TV above`, async ({ browser }) => {
+      const phone = await pairedPhone(browser, size);
+      const behind: string[] = [];
+      const walk = async (key: "Tab" | "Shift+Tab", count: number) => {
+        for (let press = 0; press < count; press++) {
+          await phone.keyboard.press(key);
+          const found = await phone.evaluate(() => {
+            const element = document.activeElement as HTMLElement | null;
+            if (!element || element === document.body || element.closest('[data-testid="tabbar"], .top')) return null; // (the bars' own buttons are not behind a bar)
+            const box = element.getBoundingClientRect();
+            const bar = document.querySelector('[data-testid="tabbar"]')!.getBoundingClientRect();
+            const top = document.querySelector(".phone-ui .top")!.getBoundingClientRect();
+            const id = element.dataset.testid ?? element.tagName.toLowerCase();
+            if (box.bottom > bar.top + 1) return `${id}: its foot is at ${Math.round(box.bottom)}, and the bar starts at ${Math.round(bar.top)}`;
+            if (box.top < top.bottom - 1) return `${id}: its head is at ${Math.round(box.top)}, and the TV's bar goes down to ${Math.round(top.bottom)}`;
+            return null;
+          });
+          if (found) behind.push(`${key} ${press + 1}: ${found}`);
+        }
+      };
+      await walk("Tab", 80); // (the TV, the account, the box for a link, the filters, then the rows of posters, a few screens down)
+      await walk("Shift+Tab", 80);
+      expect(behind, "what the keyboard reached and the bars cover").toEqual([]);
+    });
+  }
+});
 test.describe("a phone used as the screen, held upright", () => {
   async function screen(browser: Browser, size: Size, locale = "en-US"): Promise<Page> {
     const tv = await openDevice(browser, phoneAt(size, locale), {}, withLibrary(library));

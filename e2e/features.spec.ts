@@ -2769,6 +2769,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     // down the list, to one that is played
     await phone.evaluate(() => window.scrollTo(0, 400));
     await expect.poll(() => phone.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+    await results.nth(5).scrollIntoViewIfNeeded(); // (a result near a bar is brought clear of it, by a click as by a key: the place to come back to is the one it was clicked at)
     const before = (await results.nth(5).boundingBox())!.y;
     await results.nth(5).click();
     await expect(phone.getByTestId("title-sheet")).toContainText("Film number 6");
