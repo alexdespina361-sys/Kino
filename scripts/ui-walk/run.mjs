@@ -34,6 +34,8 @@ const PARTS = [
   { name: "tv-in-full", script: "tv-signed-in.mjs", args: ["full"] },
   { name: "tv-keys", script: "tv-keys.mjs", args: ["hd"] },
   { name: "phone", script: "phone.mjs", args: ["guest,in"] },
+  // (the page the TV shows, on a phone, touched with a finger: pictures go to screen-<size>/)
+  { name: "phone-tv", script: "phone-tv.mjs", args: [] },
 ];
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
