@@ -6,6 +6,7 @@ import { CatEngine } from "./engine";
 import { computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, screenEdges, settledCost, STEP_MAX, STEP_MIN, stepFlight, type Clutter, type Ledge, type RestPose } from "./ledges";
 import { shapeCovers, shapeHits } from "./shape";
 import { browseWorld, defaultPage, playerWorld, runSession, stepCat, type PageOptions } from "./sim";
+import { BASELINE, GINGER, RAGDOLL, tasteFor, temperamentOf } from "./temperament";
 import { tvLibrary } from "./tv-library.fixture";
 
 const L = 92;
@@ -443,6 +444,28 @@ describe("the cat on a page", () => {
     expect(pointing.length).toBeGreaterThan(30);
     expect(pointing[5]!.reach).toBeDefined();
     expect(pointing[5]!.look!.x).toBeCloseTo(target.rect.x + target.rect.w / 2, 0);
+  });
+
+  it("is not left in the middle of a swat at a poster, or of a point, by a page that sent it away and brought it back: it sits when it is in sight again", () => {
+    for (const [seed, clip] of [[1, "swat"], [2, "swat"], [3, "swat"], [33, "point"]] as const) {
+      const engine = new CatEngine(seed);
+      const world = browseWorld(defaultPage());
+      run(engine, world, 4);
+      engine.send({ type: "cat.point", targetId: world.targets.find((t) => t.id.endsWith("r1c2"))!.id });
+      let frame = engine.frame;
+      for (let i = 0; i < 60 * 30 && frame.clip !== clip; i++) frame = engine.update(world, 1 / 30);
+      expect(frame.clip, `seed ${seed}`).toBe(clip);
+      // (gone for a while: the menu, or another tab, or the TV off)
+      stepCat(engine, { ...world, mode: "away" }, 3);
+      expect(engine.frame.appear).toBeLessThan(0.05);
+      // (and back: in the frame that ends the fade the cat has no act, and it is not in a scene of the one it left)
+      const gaps: string[] = [];
+      stepCat(engine, world, 2, 30, (f) => {
+        if (engine.debug().act === "none") gaps.push(f.clip);
+      });
+      expect(gaps.length, `seed ${seed}`).toBeGreaterThan(0);
+      expect(gaps, `seed ${seed}`).not.toContain(clip);
+    }
   });
 
   it("rides a shelf that scrolls out from under the top bar, and then makes its way off, rather than hang in the air or stay under the bar", () => {
@@ -1954,6 +1977,562 @@ describe("going about: a cat that is free to roam passes through the foot of the
   });
 });
 
+describe("a character of its own: the ginger cat is restless, curious and friendly, the ragdoll lazy and grumpy", () => {
+  const seeds = [1, 2, 3, 4, 5, 6, 7, 8];
+  const world = tvLibrary;
+  const kinds = new Map(world.surfaces.map((s) => [s.id, s.kind] as const));
+
+  interface Day {
+    seen: number;
+    foot: number;
+    napped: number;
+    /** The seconds of every stay on the foot of the screen, one after the other. */
+    stays: number[];
+    hops: number;
+    walking: number;
+    asleep: number;
+    running: number;
+    energy: number;
+    curiosity: number;
+    chose: Record<string, number>;
+    /** The fastest it walked, in body lengths a second. */
+    pace: number;
+  }
+  /** What a cat of this character does alone on the TV's library for ten minutes, for each of a few seeds (counted in frames, 30 a second). */
+  const lived = (temperament: string): Day => {
+    const out: Day = { seen: 0, foot: 0, napped: 0, stays: [], hops: 0, walking: 0, asleep: 0, running: 0, energy: 0, curiosity: 0, chose: {}, pace: 0 };
+    let frames = 0;
+    for (const seed of seeds) {
+      const engine = new CatEngine(seed, { temperament });
+      let onFoot = 0;
+      let wasJumping = false;
+      let lastChoice = "";
+      for (let i = 0; i < 600 * 30; i++) {
+        const f = engine.update(world, 1 / 30);
+        const debug = engine.debug();
+        frames++;
+        out.energy += engine.mood.energy;
+        out.curiosity += engine.mood.curiosity;
+        if (debug.choice !== lastChoice) {
+          lastChoice = debug.choice;
+          out.chose[debug.choice] = (out.chose[debug.choice] ?? 0) + 1;
+        }
+        if (f.clip === "walk") out.pace = Math.max(out.pace, Math.abs(f.vx) / world.bodyLength);
+        if (f.appear <= 0.5) continue;
+        out.seen++;
+        const kind = f.grounded && debug.surfaceId ? kinds.get(debug.surfaceId) : "air";
+        if (kind === "fallbackFloor") {
+          out.foot++;
+          onFoot++;
+          if (debug.act === "sleep") out.napped++;
+        } else if (kind !== "air" && onFoot > 0) {
+          out.stays.push(onFoot / 30);
+          onFoot = 0;
+        }
+        const jumping = debug.act === "jump";
+        if (jumping && !wasJumping) out.hops++;
+        wasJumping = jumping;
+        if (debug.act === "walk" || debug.act === "stalk") out.walking++;
+        if (debug.act === "sleep") out.asleep++;
+        if (f.clip === "run") out.running++;
+      }
+      if (onFoot > 0) out.stays.push(onFoot / 30);
+    }
+    out.energy /= frames;
+    out.curiosity /= frames;
+    return out;
+  };
+  const kept = new Map<string, Day>();
+  const day = (temperament: string): Day => {
+    let one = kept.get(temperament);
+    if (!one) kept.set(temperament, (one = lived(temperament)));
+    return one;
+  };
+  /** The share of the time it was in sight that it spent so. */
+  const share = (d: Day, pick: (d: Day) => number): number => pick(d) / d.seen;
+  /** How many times a minute (in sight) it chose to do any of these things. */
+  const perMinute = (d: Day, ...things: string[]): number => (things.reduce((a, b) => a + (d.chose[b] ?? 0), 0) * 60 * 30) / d.seen;
+
+  it("is the cat as it was when its table is the baseline's: neutral numbers, and frame for frame the same cat, made by its name or by its table", () => {
+    expect(BASELINE).toMatchObject({ name: "baseline", speed: 1, drowsiness: 1, stay: 1, likes: {}, petPatience: Infinity, wakeGrump: 0, swatsHand: 0, sulk: 0, petJoy: 0 });
+    expect(temperamentOf("baseline")).toBe(BASELINE);
+    expect(temperamentOf("ginger")).toBe(GINGER);
+    expect(temperamentOf("ragdoll")).toBe(RAGDOLL);
+    // (a coat that is neither of the two the settings offer is the cat as it was)
+    expect(temperamentOf("tuxedo")).toBe(BASELINE);
+    for (const seed of [1, 2, 3]) {
+      const pictures = (engine: CatEngine) => stepCat(engine, tvLibrary, 60).frames.map((f) => JSON.stringify(f));
+      const plain = pictures(new CatEngine(seed));
+      expect(pictures(new CatEngine(seed, { temperament: "baseline" })), `seed ${seed}`).toEqual(plain);
+      expect(pictures(new CatEngine(seed, { temperament: BASELINE })), `seed ${seed}`).toEqual(plain);
+    }
+  });
+
+  it("says which cat it is, and is another cat from the moment it is told so: livelier or lazier at once, and not by degrees", () => {
+    expect(new CatEngine(1).debug().temperament).toBe("baseline");
+    expect(new CatEngine(1, { temperament: "ginger" }).debug().temperament).toBe("ginger");
+    const engine = new CatEngine(2, { temperament: "ginger" });
+    stepCat(engine, tvLibrary, 30);
+    const energy = engine.mood.energy;
+    const curiosity = engine.mood.curiosity;
+    engine.setTemperament("ragdoll");
+    expect(engine.debug().temperament).toBe("ragdoll");
+    expect(engine.mood.energy).toBeCloseTo(energy - 0.2, 9);
+    expect(engine.mood.curiosity).toBeCloseTo(curiosity - 0.2, 9);
+    engine.setTemperament(GINGER);
+    expect(engine.mood.energy).toBeCloseTo(energy, 9);
+    expect(engine.mood.curiosity).toBeCloseTo(curiosity, 9);
+    engine.setTemperament("tuxedo");
+    expect(engine.debug().temperament).toBe("baseline");
+  });
+
+  it("cares for what it might do as its table says, but not for the leap that gets it up from where it should not stay: that is worth the same to every cat", () => {
+    expect(tasteFor(BASELINE, "hop", false)).toBe(1);
+    expect(tasteFor(GINGER, "hop", false)).toBe(1.2);
+    expect(tasteFor(RAGDOLL, "hop", false)).toBe(0.7);
+    expect(tasteFor(RAGDOLL, "sleep", true)).toBe(1.5);
+    expect(tasteFor(RAGDOLL, "a thing that is not in the table", false)).toBe(1);
+    for (const t of [BASELINE, GINGER, RAGDOLL]) expect(tasteFor(t, "hop", true), t.name).toBe(1);
+  });
+
+  it("goes about more if it is the ginger and less if it is the ragdoll: it hops, walks and runs more and sleeps less, or the other way about", () => {
+    // (measured over forty cats, fifteen minutes each, on this library, the cat as it was against the ginger against the ragdoll: hops a minute 1.6, 2.4, 0.75; walking 18 % of the time, 23 %, 10 %;
+    // asleep 26 %, 17 %, 41 %; running 0.15 %, 0.8 %, none)
+    const [plain, ginger, ragdoll] = ["baseline", "ginger", "ragdoll"].map(day) as [Day, Day, Day];
+    expect(share(ginger, (d) => d.hops)).toBeGreaterThan(1.25 * share(plain, (d) => d.hops));
+    expect(share(ragdoll, (d) => d.hops)).toBeLessThan(0.65 * share(plain, (d) => d.hops));
+    expect(share(ginger, (d) => d.walking)).toBeGreaterThan(1.15 * share(plain, (d) => d.walking));
+    expect(share(ragdoll, (d) => d.walking)).toBeLessThan(0.7 * share(plain, (d) => d.walking));
+    expect(share(ginger, (d) => d.asleep)).toBeLessThan(0.85 * share(plain, (d) => d.asleep));
+    expect(share(ragdoll, (d) => d.asleep)).toBeGreaterThan(1.3 * share(plain, (d) => d.asleep));
+    expect(share(ginger, (d) => d.running)).toBeGreaterThan(2 * share(plain, (d) => d.running));
+  });
+
+  it("looks into more things if it is the ginger and into fewer if it is the ragdoll: a card to look down at, a poster to pat or to go over to", () => {
+    // (measured over forty cats: inspect, visit and pat together 0.52 a minute for the cat as it was, 0.76 for the ginger, 0.32 for the ragdoll)
+    const curious = (name: string) => perMinute(day(name), "inspect", "visit", "pat");
+    expect(curious("ginger")).toBeGreaterThan(1.25 * curious("baseline"));
+    expect(curious("ragdoll")).toBeLessThan(0.75 * curious("baseline"));
+  });
+
+  it("passes through the foot of the screen whichever cat it is: never asleep on it, hardly any of an afternoon on it, and no stay of half a minute", () => {
+    for (const name of ["baseline", "ginger", "ragdoll"]) {
+      const d = day(name);
+      expect(d.seen, name).toBeGreaterThan(5000);
+      expect(d.foot / d.seen, name).toBeLessThan(0.04);
+      expect(Math.max(0, ...d.stays), name).toBeLessThan(30);
+      expect(d.napped, name).toBe(0);
+    }
+  });
+
+  it("gets up from the foot of the screen in a quarter of a minute or so whichever cat it is (getting up is not a matter of taste)", () => {
+    // (and a cat that cannot abide a hop, as a table by hand may say: it gets up all the same)
+    for (const who of ["ginger", "ragdoll", { ...BASELINE, name: "hates a hop", likes: { hop: 0.02 } }]) {
+      const name = typeof who === "string" ? who : who.name;
+      const times: number[] = [];
+      for (let seed = 1; seed <= 20; seed++) {
+        const engine = new CatEngine(seed, { temperament: who });
+        stepCat(engine, world, 6);
+        for (let i = 0; i < 20 * 30 && !engine.debug().act.startsWith("rest"); i++) engine.update(world, 1 / 30);
+        engine.send({ type: "cat.call", at: { x: 640, y: 711 } });
+        let arrived = -1;
+        let left = -1;
+        for (let i = 0; i < 120 * 30 && left < 0; i++) {
+          const f = engine.update(world, 1 / 30);
+          const debug = engine.debug();
+          if (arrived < 0) {
+            if (debug.surfaceId === "floor" && f.grounded && debug.act !== "walk" && debug.act !== "jump") arrived = i;
+          } else if (f.grounded && debug.surfaceId !== "floor" && debug.act !== "fall") left = (i - arrived) / 30;
+        }
+        times.push(left);
+      }
+      expect(times.filter((t) => t < 0), name).toEqual([]);
+      const sorted = [...times].sort((a, b) => a - b);
+      expect(sorted[sorted.length >> 1]!, name).toBeLessThan(16);
+      expect(sorted[Math.floor(sorted.length * 0.9)]!, name).toBeLessThan(26);
+      expect(sorted[sorted.length - 1]!, name).toBeLessThan(60);
+    }
+  });
+
+  it("settles in its mood where its character puts it: the ginger livelier and more curious than the cat as it was, the ragdoll less", () => {
+    const [plain, ginger, ragdoll] = ["baseline", "ginger", "ragdoll"].map(day) as [Day, Day, Day];
+    // (nothing happens to these cats, so their moods are where they settle, and the energy swings round that)
+    for (const [d, energy, curiosity] of [[plain, 0.32, 0.28], [ginger, 0.42, 0.4], [ragdoll, 0.22, 0.2]] as const) {
+      expect(Math.abs(d.energy - energy), `energy ${d.energy.toFixed(3)} against ${energy}`).toBeLessThan(0.05);
+      expect(Math.abs(d.curiosity - curiosity), `curiosity ${d.curiosity.toFixed(3)} against ${curiosity}`).toBeLessThan(0.05);
+    }
+  });
+
+  it("walks at its own pace: the ginger an eighth faster than the cat as it was, the ragdoll a sixth slower", () => {
+    expect(day("ginger").pace / day("baseline").pace).toBeCloseTo(1.12, 1);
+    expect(day("ragdoll").pace / day("baseline").pace).toBeCloseTo(0.85, 1);
+  });
+
+  it("is not made to go anywhere by its character for a viewer who wants quiet or less motion, whichever cat it is: it stays where it was put", () => {
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      const still = { ...tvLibrary, [flag]: true };
+      for (const name of ["ginger", "ragdoll"]) {
+        for (const seed of [1, 2]) {
+          const engine = new CatEngine(seed, { temperament: name });
+          stepCat(engine, still, 6);
+          engine.send({ type: "cat.call", at: { x: 640, y: 711 } });
+          stepCat(engine, still, 10);
+          const start = engine.debug().surfaceId;
+          for (let i = 0; i < 240 * 30; i++) {
+            engine.update(still, 1 / 30);
+            const debug = engine.debug();
+            expect(debug.surfaceId, `${name} ${flag} seed ${seed}`).toBe(start);
+            expect(["walk", "run", "jump", "swat"], `${name} ${flag} seed ${seed}`).not.toContain(debug.act);
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("a hand that strokes it, wakes it or dashes at it: the ginger is glad of the hand, the ragdoll has its patience", () => {
+  const page = defaultPage();
+  const body = browseWorld(page).bodyLength;
+  type Hand = { x: number; y: number };
+
+  /** A cat of this character, settled on the simulator's page and at rest (not in the middle of something). */
+  const resting = (seed: number, temperament: string | undefined, flags: Partial<PageOptions> = {}) => {
+    const options = { ...page, ...flags };
+    const world = browseWorld(options);
+    const engine = new CatEngine(seed, temperament === undefined ? {} : { temperament });
+    stepCat(engine, world, 8);
+    for (let i = 0; i < 20 * 30 && !engine.debug().act.startsWith("rest"); i++) engine.update(world, 1 / 30);
+    return { engine, options, world };
+  };
+  /** The hand a little to the side of the middle of the cat, at the height of its back (so that going away from it means something). */
+  const handOn = (engine: CatEngine): Hand => ({ x: engine.frame.x + 0.3 * body, y: engine.frame.y - 0.5 * body });
+  /**
+   * The hand rests on the cat and strokes it as the host's hand does: a stroke a third of a second after it came and one every second after that, for as long as the cat is under it (with
+   * `always`, whether it is or not), and an end to it when the cat is not. The hand follows the cat about (`follows`), or does until the cat has had enough of it and stays where it was then
+   * (`leaves`), or stays where it was put (`fixed`). The frames the cat gave, the act it was in at each, and where the hand ended up.
+   */
+  const stroke = (engine: CatEngine, options: PageOptions, seconds: number, mode: "follows" | "leaves" | "fixed" = "follows", always = false) => {
+    let hand = handOn(engine);
+    let frozen = mode === "fixed";
+    const acts: string[] = [];
+    const queued: number[] = [];
+    let next = 0.32;
+    let under = true;
+    const { frames } = stepCat(engine, browseWorld(options, { pointer: hand }), seconds, 30, (frame, t) => {
+      const debug = engine.debug();
+      acts.push(debug.act);
+      queued.push(debug.queue.length);
+      if (mode === "leaves" && stood(frame, debug.act, debug.queue.length)) frozen = true;
+      if (!frozen) hand = { x: frame.x + 0.3 * body, y: frame.y - 0.5 * body };
+      const near = always || Math.abs(frame.x - hand.x) < 0.7 * body;
+      if (near && t >= next) {
+        engine.send({ type: "cat.pet" });
+        next += 1;
+        under = true;
+      } else if (!near && under) {
+        engine.send({ type: "cat.petEnd" });
+        under = false;
+        next = t + 0.32;
+      }
+      return browseWorld(options, { pointer: hand });
+    });
+    return { frames, acts, queued, hand };
+  };
+  /** The cat has stood up to the hand, ears back (it has had enough: it has a plan, of a swipe, a walk and a sit, in front of it). */
+  const stood = (f: CatFrame, act: string, queue: number): boolean => f.emote === "annoyed" && act === "rest:stand" && queue > 0;
+  /** When (seconds) the cat first showed it was annoyed, when it first stood up to the hand (it has had enough then), and when it first swung a paw; -1 for never. */
+  const told = (run: { frames: CatFrame[]; acts: string[]; queued: number[] }) => {
+    const when = (pick: (f: CatFrame, act: string, queue: number) => boolean): number => {
+      const i = run.frames.findIndex((f, j) => pick(f, run.acts[j]!, run.queued[j]!));
+      return i < 0 ? -1 : i / 30;
+    };
+    return {
+      warned: when((f) => f.emote === "annoyed"),
+      gone: when(stood),
+      swatted: when((f) => f.clip === "swat"),
+    };
+  };
+
+  it("never tires of a hand if it is the ginger, or the cat as it was: a minute of strokes and not a flick of annoyance, and the ginger is glad of them now and then", () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      for (const name of ["baseline", "ginger"]) {
+        const { engine, options } = resting(seed, name);
+        const { frames } = stroke(engine, options, 60);
+        expect(frames.some((f) => f.emote === "annoyed"), `${name} seed ${seed}`).toBe(false);
+        const joy = frames.filter((f, i) => f.emote === "joy" && frames[i - 1]?.emote !== "joy").length;
+        if (name === "baseline") expect(joy, `seed ${seed}`).toBe(0);
+        else {
+          // (a stroke in two is glad, and not more than once in three seconds and a half: 8 to 15 in a minute)
+          expect(joy, `ginger seed ${seed}`).toBeGreaterThan(4);
+          expect(joy, `ginger seed ${seed}`).toBeLessThan(16);
+        }
+      }
+    }
+  });
+
+  it("warns the hand when it has had two thirds of its patience and has had enough in five to nine seconds, if it is the ragdoll: the ears go back and the tail flicks, and then it stands up to the hand", () => {
+    const gone: number[] = [];
+    for (let seed = 1; seed <= 20; seed++) {
+      const { engine, options } = resting(seed, "ragdoll");
+      const t = told(stroke(engine, options, 14));
+      // (its patience is seven seconds, from 0.7 to 1.3 of that, and a little less the sleepier it is: 4.7 to 9.1, and it is heard once a second)
+      expect(t.warned, `seed ${seed}`).toBeGreaterThan(3.3);
+      expect(t.warned, `seed ${seed}`).toBeLessThan(7.1);
+      expect(t.gone, `seed ${seed}`).toBeGreaterThan(t.warned);
+      expect(t.gone, `seed ${seed}`).toBeGreaterThan(4.9);
+      expect(t.gone, `seed ${seed}`).toBeLessThan(10.2);
+      gone.push(t.gone);
+    }
+    // (every hand has a patience of its own: the cats are not all done with it in the same second -- the twenty of them spread over four seconds)
+    expect(Math.max(...gone) - Math.min(...gone)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("does not purr at the hand it is warning: it is not stroked in the frames it flicks its tail, and is again after", () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const { engine, options } = resting(seed, "ragdoll");
+      const run = stroke(engine, options, 8);
+      const { frames } = run;
+      const t = told(run);
+      const at = Math.round(t.warned * 30);
+      expect(frames[at]!.petted, `seed ${seed}`).toBe(false);
+      expect(frames[at - 20]!.petted, `seed ${seed}: before`).toBe(true);
+    }
+  });
+
+  it("swipes at the hand two times in three when it has had enough, with the paw where the hand is, and walks off the other way and sits with its back to it (the ragdoll)", () => {
+    let swiped = 0;
+    let twice = 0;
+    let walked = 0;
+    let away = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const { engine, options, world } = resting(seed, "ragdoll");
+      const ledges = computeLedges(world);
+      const surface = engine.debug().surfaceId!;
+      const run = stroke(engine, options, 18, "leaves");
+      const { frames, acts, hand } = run;
+      const t = told(run);
+      expect(t.gone, `seed ${seed}`).toBeGreaterThan(0);
+      if (t.swatted >= 0) {
+        swiped++;
+        // (and now and then a second swipe, straight after the first: the swing begins again)
+        if (frames.some((f, i) => i > 0 && f.clip === "swat" && frames[i - 1]!.clip === "swat" && f.progress < frames[i - 1]!.progress - 0.5)) twice++;
+        const hit = frames.find((f) => f.clip === "swat" && f.progress >= SWAT_HIT)!;
+        // (the paw lands in front of the cat, towards the hand, at about the height of the hand and a paw's reach from the cat)
+        expect(hit.grounded).toBe(true);
+        expect(hit.facing, `seed ${seed}`).toBe(Math.sign(hand.x - hit.x));
+        expect((hit.reach!.x - hit.x) * hit.facing, `seed ${seed}`).toBeGreaterThan(0.2 * body);
+        expect((hit.reach!.x - hit.x) * hit.facing, `seed ${seed}`).toBeLessThan(1.1 * body);
+        expect(Math.abs(hit.reach!.y - (hit.y - 0.45 * body)), `seed ${seed}`).toBeLessThan(0.1 * body);
+      }
+      // (the walk that follows -- right after the stand and the swipes -- is away from the hand, unless the shelf has no room on that side)
+      const from = Math.round(t.gone * 30);
+      const first = acts.findIndex((act, i) => i >= from && act === "walk");
+      if (first < 0 || first > from + 4 * 30) continue;
+      let last = first;
+      while (acts[last + 1] === "walk") last++;
+      const there = frames[from]!.x;
+      const end = frames[last]!.x;
+      if (Math.abs(end - there) < 0.8 * body) continue;
+      walked++;
+      const side = Math.sign(hand.x - there);
+      const ledge = ledgeAt(ledges, surface, there)!;
+      const room = side > 0 ? there - ledge.x0 : ledge.x1 - there;
+      if (room >= 1.6 * body) {
+        away++;
+        expect(Math.sign(end - there), `seed ${seed}: from ${there.toFixed(0)} to ${end.toFixed(0)}, the hand at ${hand.x.toFixed(0)}`).toBe(-side);
+      }
+    }
+    // (the chance is 0.65: 20 of 30 or so; two swipes in two of five of those)
+    expect(swiped).toBeGreaterThan(12);
+    expect(swiped).toBeLessThan(27);
+    expect(twice).toBeGreaterThan(2);
+    expect(twice).toBeLessThan(swiped);
+    expect(walked).toBeGreaterThan(20);
+    expect(away).toBeGreaterThan(10);
+  });
+
+  it("is not left in a swipe with no paw to land when the page has no room for it on the shelf as the swipe ends: the walk away from the hand has nowhere to go, and the frame that ends there is of a cat that sits", () => {
+    let reached = 0;
+    for (let seed = 1; seed <= 30; seed++) {
+      const { engine, options, world } = resting(seed, "ragdoll");
+      // (a card the size of the screen has the focus: the shelf is still there, and there is no room for a cat on it)
+      const full: World = { ...world, keepOut: [...world.keepOut, { x: -100, y: -100, w: world.viewport.w + 200, h: world.viewport.h + 200 }] };
+      expect(computeLedges(full), `seed ${seed}`).toEqual([]);
+      let hand = handOn(engine);
+      let frozen = false;
+      let next = 0.32;
+      let crowded = false;
+      let gap = false;
+      const noPaw: string[] = [];
+      stepCat(engine, browseWorld(options, { pointer: hand }), 14, 30, (frame, t) => {
+        const debug = engine.debug();
+        if (frame.clip === "swat" && !frame.reach) noPaw.push(`${t.toFixed(2)}s ${debug.act}`);
+        // (the frame in which the walk that was to follow ended the moment it began: no act, and the next one still to come)
+        if (crowded && debug.act === "none" && debug.queue.length > 0) gap = true;
+        if (!crowded && frame.clip === "swat" && frame.progress > 0.9 && debug.queue[0] === "walk") crowded = true;
+        if (crowded) return full;
+        if (stood(frame, debug.act, debug.queue.length)) frozen = true;
+        if (!frozen) hand = { x: frame.x + 0.3 * body, y: frame.y - 0.5 * body };
+        if (!frozen && Math.abs(frame.x - hand.x) < 0.7 * body && t >= next) {
+          engine.send({ type: "cat.pet" });
+          next += 1;
+        }
+        return browseWorld(options, { pointer: hand });
+      });
+      if (gap) reached++;
+      expect(noPaw, `seed ${seed}`).toEqual([]);
+    }
+    // (it swipes in two of three, and walks off after it in most of those)
+    expect(reached).toBeGreaterThan(5);
+  });
+
+  it("does not hear the hand while it is going: a hand that goes on stroking does not bring it back, nor cut its walk short, and it does not purr", () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const { engine, options } = resting(seed, "ragdoll");
+      const run = stroke(engine, options, 18, "fixed", true);
+      const { frames } = run;
+      const t = told(run);
+      const from = Math.round(t.gone * 30);
+      for (let i = from; i < from + 3.8 * 30; i++) expect(frames[i]!.petted, `seed ${seed}: frame ${i - from} after`).toBe(false);
+      // (and a few seconds after, the strokes are heard again)
+      expect(frames.slice(from + 4.5 * 30).some((f) => f.petted), `seed ${seed}`).toBe(true);
+    }
+  });
+
+  it("is touchy for forty-five seconds after it has been annoyed by a hand, and lets it be after that: the next hand has lost its patience in a couple of seconds, one that comes a minute on has the whole of it", () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const { engine, options } = resting(seed, "ragdoll");
+      const first = stroke(engine, options, 14, "leaves");
+      expect(told(first).gone, `seed ${seed}: the first hand`).toBeGreaterThan(0);
+      // (it goes off, sits for a while, and a hand comes to it again, ten seconds after)
+      stepCat(engine, browseWorld(options), 10);
+      const second = stroke(engine, options, 8);
+      const touchy = told(second).gone;
+      expect(touchy, `seed ${seed}: the second hand (touchy)`).toBeGreaterThan(0);
+      expect(touchy, `seed ${seed}: the second hand (touchy)`).toBeLessThan(4.6);
+      // (and it is a minute and more before the third, when it has forgiven the second; awake, and not woken by it)
+      stepCat(engine, browseWorld(options), 70);
+      engine.send({ type: "cat.command", command: "sit" });
+      stepCat(engine, browseWorld(options), 1);
+      const third = stroke(engine, options, 12);
+      expect(told(third).gone, `seed ${seed}: the third hand (forgiven)`).toBeGreaterThan(4.3);
+    }
+  });
+
+  it("is as touchy after it fought a hand that held it, if it is the ragdoll: the hand that strokes it a quarter of a minute after it landed has lost its patience in a couple of seconds", () => {
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const { engine, options, world } = resting(seed, "ragdoll");
+      const grip = { x: engine.frame.x, y: engine.frame.y - 0.4 * body };
+      engine.send({ type: "cat.grab", at: grip });
+      for (let i = 0; i < 5 * 30; i++) {
+        engine.send({ type: "cat.carry", at: grip });
+        engine.update(world, 1 / 30);
+      }
+      engine.send({ type: "cat.drop" });
+      // (it lands annoyed, does what such a cat does, and sits; awake, and not woken by the hand)
+      stepCat(engine, world, 12);
+      engine.send({ type: "cat.command", command: "sit" });
+      stepCat(engine, world, 1);
+      const gone = told(stroke(engine, options, 8)).gone;
+      expect(gone, `seed ${seed}`).toBeGreaterThan(0);
+      expect(gone, `seed ${seed}`).toBeLessThan(4.6);
+    }
+  });
+
+  it("starts its patience afresh for a hand that came back after three seconds: strokes of three seconds, over and over, never annoy it", () => {
+    for (const seed of [1, 2, 3]) {
+      const { engine, options } = resting(seed, "ragdoll");
+      let hand = handOn(engine);
+      let next = 0.32;
+      let strokes = 0;
+      const { frames } = stepCat(engine, browseWorld(options, { pointer: hand }), 90, 30, (frame, t) => {
+        // (four strokes, 0 to 3 seconds, and nothing for three seconds and a half, over and over)
+        const phase = t % 7;
+        hand = { x: frame.x + 0.3 * body, y: frame.y - 0.5 * body };
+        if (phase < 3.4 && t >= next) {
+          engine.send({ type: "cat.pet" });
+          strokes++;
+          next += 1;
+        } else if (phase >= 3.4) next = Math.ceil(t / 7) * 7 + 0.32;
+        return browseWorld(options, { pointer: hand });
+      });
+      expect(strokes, `seed ${seed}`).toBeGreaterThan(40);
+      expect(frames.some((f) => f.emote === "annoyed"), `seed ${seed}`).toBe(false);
+    }
+  });
+
+  it("wakes up cross if it is the ragdoll, about as often as not, and sits up and is stroked if it is the ginger or the cat as it was", () => {
+    const wakings = (name: string): { cross: number; sat: number } => {
+      let cross = 0;
+      let sat = 0;
+      for (let seed = 1; seed <= 30; seed++) {
+        const { engine, options, world } = resting(seed, name);
+        engine.send({ type: "cat.command", command: "sleep" });
+        stepCat(engine, world, 5);
+        expect(engine.debug().act, `${name} seed ${seed}`).toBe("sleep");
+        const run = stroke(engine, options, 2.5);
+        if (told(run).gone >= 0) cross++;
+        else if (run.frames.some((f) => f.petted)) sat++;
+      }
+      return { cross, sat };
+    };
+    const ragdoll = wakings("ragdoll");
+    // (0.55 of the time: 16 of 30 or so)
+    expect(ragdoll.cross, JSON.stringify(ragdoll)).toBeGreaterThan(9);
+    expect(ragdoll.cross, JSON.stringify(ragdoll)).toBeLessThan(24);
+    expect(ragdoll.cross + ragdoll.sat).toBe(30);
+    for (const name of ["baseline", "ginger"]) expect(wakings(name), name).toEqual({ cross: 0, sat: 30 });
+  });
+
+  it("swipes at a pointer that dashes at it a third of the times if it is the ragdoll, and never if it is the ginger: the others freeze, as a cat does that is startled", () => {
+    const dashes = (name: string, seeds = 40): { swiped: number; startled: number } => {
+      let swiped = 0;
+      let startled = 0;
+      for (let seed = 1; seed <= seeds; seed++) {
+        const { engine, options, world } = resting(seed, name);
+        const f = engine.frame;
+        // (the pointer comes at the cat from the side with the room, at fourteen body lengths a second, and stops a body length off, at the height of its back)
+        const side = f.x < world.viewport.w / 2 ? 1 : -1;
+        const from = f.x + side * 4 * body;
+        const to = f.x + side * body;
+        const seconds = Math.abs(to - from) / (14 * body);
+        const y = f.y - 0.5 * body;
+        let cross = false;
+        let fright = false;
+        stepCat(engine, world, 4, 30, (frame, t) => {
+          if (frame.emote === "annoyed") cross = true;
+          if (frame.emote === "startle") fright = true;
+          return browseWorld(options, { pointer: { x: from + (to - from) * Math.min(1, t / seconds), y } });
+        });
+        if (cross) swiped++;
+        if (fright && !cross) startled++;
+      }
+      return { swiped, startled };
+    };
+    const ragdoll = dashes("ragdoll", 120);
+    // (the chance is 0.325, half of what it is for a hand that has been stroking it for too long: 39 of 120 or so, where twice the chance would give 78; the cat that is not swiping is startled)
+    expect(ragdoll.swiped, JSON.stringify(ragdoll)).toBeGreaterThan(25);
+    expect(ragdoll.swiped, JSON.stringify(ragdoll)).toBeLessThan(55);
+    expect(ragdoll.swiped + ragdoll.startled, JSON.stringify(ragdoll)).toBe(120);
+    expect(dashes("ginger")).toEqual({ swiped: 0, startled: 40 });
+    expect(dashes("baseline")).toEqual({ swiped: 0, startled: 40 });
+  });
+
+  it("only shows it is annoyed, for a viewer who wants quiet or less motion: it does not swipe, nor walk off, nor move", () => {
+    for (const flag of ["quiet", "reducedMotion"] as const) {
+      for (const seed of [1, 2, 3, 4, 5, 6]) {
+        const { engine, options } = resting(seed, "ragdoll", { [flag]: true });
+        const start = engine.frame.x;
+        const { frames, acts } = stroke(engine, options, 40);
+        expect(frames.some((f) => f.emote === "annoyed"), `${flag} seed ${seed}`).toBe(true);
+        expect(frames.some((f) => f.clip === "swat"), `${flag} seed ${seed}`).toBe(false);
+        for (const act of acts) expect(["walk", "run", "jump", "swat", "stalk"], `${flag} seed ${seed}`).not.toContain(act);
+        expect(Math.abs(frames[frames.length - 1]!.x - start), `${flag} seed ${seed}`).toBeLessThan(0.05 * body);
+      }
+    }
+  });
+});
+
 describe("its little scenes", () => {
   /** A cat on the made-up page, its frames copied (the engine gives the same object every time) with the act each was in. */
   const watch = (seed: number, seconds: number) => {
@@ -2164,9 +2743,9 @@ describe("settling clear of the names", () => {
 });
 
 describe("picked up by a hand", () => {
-  const settled = (seed = 4, flags: Partial<ReturnType<typeof defaultPage>> = {}) => {
+  const settled = (seed = 4, flags: Partial<ReturnType<typeof defaultPage>> = {}, temperament?: string) => {
     const page = { ...defaultPage(), ...flags };
-    const engine = new CatEngine(seed);
+    const engine = new CatEngine(seed, temperament === undefined ? {} : { temperament });
     const world = browseWorld(page);
     stepCat(engine, world, 8);
     return { engine, world, page, body: world.bodyLength };
@@ -2728,16 +3307,16 @@ describe("picked up by a hand", () => {
 
   describe("fighting the hand that holds it, and landing annoyed", () => {
     /** The hand takes the cat where it stands and holds still for `seconds`: the frames (30 a second). */
-    const heldStill = (seed: number, seconds: number) => {
-      const { engine, world, body } = settled(seed);
+    const heldStill = (seed: number, seconds: number, temperament?: string) => {
+      const { engine, world, body } = settled(seed, {}, temperament);
       const f = engine.frame;
       const grip = { x: f.x, y: f.y - 0.4 * body };
       engine.send({ type: "cat.grab", at: grip });
       return { engine, world, body, grip, frames: carryTo(engine, world, grip, grip, seconds) };
     };
     /** The hand holds still until the cat fights at least this hard, and says what the frame was then (it never goes on for more than half a minute). */
-    const heldUntil = (seed: number, level: number) => {
-      const { engine, world, body } = settled(seed);
+    const heldUntil = (seed: number, level: number, temperament?: string) => {
+      const { engine, world, body } = settled(seed, {}, temperament);
       const f = engine.frame;
       const grip = { x: f.x, y: f.y - 0.4 * body };
       engine.send({ type: "cat.grab", at: grip });
@@ -2929,6 +3508,84 @@ describe("picked up by a hand", () => {
       const days = stepCat(idle, world, 120).frames.map((f) => `${f.clip}@${Math.round(f.x)}`);
       const again = new CatEngine(8);
       expect(stepCat(again, world, 120).frames.map((f) => `${f.clip}@${Math.round(f.x)}`)).toEqual(days);
+    });
+
+    describe("each cat in its own way: the ginger forgives a hand, the ragdoll fights it at once, hard and for long", () => {
+      const seeds = Array.from({ length: 16 }, (_, i) => i + 1);
+      /** For each seed, when the cat begins to fight a hand that holds still (seconds), how hard it gets, and how long its first bout stays above half of that (seconds). */
+      const fights = (temperament: string) =>
+        seeds.map((seed) => {
+          const s = levels(heldStill(seed, 25, temperament).frames);
+          const top = Math.max(...s);
+          const start = s.findIndex((v) => v > 0.5 * top);
+          let end = start;
+          while (end + 1 < s.length && s[end + 1]! > 0.5 * top) end++;
+          return { begins: s.findIndex((v) => v > 0.1) / 30, top, bout: (end - start + 1) / 30 };
+        });
+      const mean = (values: number[]): number => values.reduce((a, b) => a + b, 0) / values.length;
+      /** How a cat that fought at least this hard lands, in forty holds: the way the temperament weighs the four. */
+      const landings = (temperament: string, level: number): Record<string, number> => {
+        const kinds: Record<string, number> = { huff: 0, groom: 0, startle: 0, shake: 0 };
+        for (let seed = 1; seed <= 40; seed++) {
+          const fought = heldUntil(seed, level, temperament);
+          const out = letGoFor(fought.engine, fought.world, 8);
+          const did = afterwards(out.frames, out.acts);
+          const kind = did.feelings.includes("shake") ? "shake" : did.feelings.includes("startle") ? "startle" : did.washed ? "groom" : "huff";
+          kinds[kind] = (kinds[kind] ?? 0) + 1;
+        }
+        return kinds;
+      };
+
+      it("begins to fight within a second and a half of being picked up if it is the ragdoll, in two to three and a half if it is the cat as it was, and not before three if it is the ginger", () => {
+        // (measured over forty holds: the ragdoll 1.07 to 1.40 s, the cat as it was 2.2 to 3.2, the ginger 3.5 to 5.0)
+        expect(Math.max(...fights("ragdoll").map((f) => f.begins))).toBeLessThan(1.6);
+        for (const f of fights("baseline")) {
+          expect(f.begins).toBeGreaterThan(1.9);
+          expect(f.begins).toBeLessThan(3.6);
+        }
+        expect(Math.min(...fights("ginger").map((f) => f.begins))).toBeGreaterThan(3.2);
+      });
+
+      it("fights as hard as it is: the ragdoll with nearly all it has, the ginger with half of it", () => {
+        // (measured: the ragdoll 0.87 to 0.96 at the most, the cat as it was 0.74 to 0.82, the ginger 0.48 to 0.53)
+        for (const f of fights("ragdoll")) expect(f.top).toBeGreaterThan(0.85);
+        for (const f of fights("ginger")) expect(f.top).toBeLessThan(0.58);
+        for (const f of fights("baseline")) {
+          expect(f.top).toBeGreaterThan(0.7);
+          expect(f.top).toBeLessThan(0.86);
+        }
+      });
+
+      it("keeps a bout up for longer if it is the ragdoll (five seconds, against three and a half, against less than three for the ginger)", () => {
+        const [ragdoll, plain, ginger] = ["ragdoll", "baseline", "ginger"].map((name) => mean(fights(name).map((f) => f.bout)));
+        expect(ragdoll!).toBeGreaterThan(4.5);
+        expect(ginger!).toBeLessThan(3.3);
+        expect(plain!).toBeGreaterThan(ginger!);
+        expect(plain!).toBeLessThan(ragdoll!);
+      });
+
+      it("is put down annoyed after two and a half seconds in a hand if it is the ragdoll, and never if it is the ginger, which has not begun to fight yet", () => {
+        const annoyedAfter = (temperament: string): number => {
+          let annoyed = 0;
+          for (const seed of seeds) {
+            const held = heldStill(seed, 2.5, temperament);
+            const out = letGoFor(held.engine, held.world, 7);
+            if (afterwards(out.frames, out.acts).feelings.some((feeling) => ["annoyed", "startle", "shake"].includes(feeling))) annoyed++;
+          }
+          return annoyed;
+        };
+        expect(annoyedAfter("ragdoll")).toBe(seeds.length);
+        expect(annoyedAfter("ginger")).toBe(0);
+      });
+
+      it("lands as its temperament weighs it: the ragdoll mostly walks off with its tail lashing, the ginger washes or shakes itself and hardly ever huffs", () => {
+        // (measured over forty holds each: the ragdoll 27 huffs, 5 washes, 3 frights, 5 shakes; the ginger 2, 22, 3, 13)
+        const ragdoll = landings("ragdoll", 0.5);
+        const ginger = landings("ginger", 0.4);
+        expect(ragdoll.huff!, JSON.stringify(ragdoll)).toBeGreaterThan(18);
+        expect(ginger.huff!, JSON.stringify(ginger)).toBeLessThan(8);
+        expect(ginger.groom! + ginger.shake!, JSON.stringify(ginger)).toBeGreaterThan(28);
+      });
     });
   });
 });
@@ -3558,6 +4215,27 @@ describe("what must never happen (the cat through a very bad afternoon)", () => 
     for (const [act, seconds] of Object.entries(stats.acts)) {
       if (act === "sleep" || act === "none") continue;
       expect(seconds, act).toBeLessThan(1500);
+    }
+  });
+
+  it("keeps every one of those promises for a cat of a character of its own, with a hand that strokes it, takes it up and dashes at it", () => {
+    const afternoon = { ...chaos, hand: true, mouse: true, stroke: true };
+    for (const temperament of ["ginger", "ragdoll"]) {
+      let annoyed = 0;
+      for (let seed = 1; seed <= 4; seed++) {
+        const stats = runSession({ seed, seconds: 600, chaos: afternoon, temperament });
+        expect(stats.violations, `${temperament} seed ${seed}`).toEqual([]);
+        annoyed += stats.emotes["annoyed"] ?? 0;
+      }
+      // (the hand did get on the ragdoll's nerves: this is not an afternoon without a stroke)
+      if (temperament === "ragdoll") expect(annoyed).toBeGreaterThan(3);
+      // and the two cats that are quiet, or that do not move, are as they were: the feeling shows, nothing else does
+      for (const flag of ["quiet", "reducedMotion"] as const) {
+        const stats = runSession({ seed: 5, seconds: 600, chaos: afternoon, temperament, [flag]: true });
+        expect(stats.violations, `${temperament} ${flag}`).toEqual([]);
+        expect(stats.acts["swat"] ?? 0, `${temperament} ${flag}`).toBe(0);
+        if (flag === "reducedMotion") expect(stats.hops, temperament).toBe(0);
+      }
     }
   });
 });

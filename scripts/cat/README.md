@@ -17,8 +17,8 @@ Development tooling for the cat companion (`docs/cat-companion.md`). **Nothing h
 |---|---|
 | `record.mts` | records what the behaviour engine does for a seed on the made-up page, as JSON (`glsheet.mjs film` draws it) |
 | `clip-film.mts` | the same for clips played one after another, to look at one animation alone |
-| `behaviour.mts` | how the cat spends its time over many seeds (the share on each kind of place and each act, the stays on the foot of the screen, the hops, what it chooses), on the TV's library as the cat reads it or on the simulator's page, with or without a viewer; with `--temperament=a,b` one table for each, and what differs from the first |
-| `soak.mts` | the soak: `soak.mts 13 412 600` puts the brain through 400 seeds × 7 kinds of bad afternoon, 10 virtual minutes each, and exits 1 if a rule is broken (never stuck, never off the screen, never over a keep-out for long, no impossible jump) |
+| `behaviour.mts` | how the cat spends its time over many seeds (the share on each kind of place and each act, the stays on the foot of the screen, the hops, what it chooses), on the TV's library as the cat reads it or on the simulator's page, with or without a viewer; with `--temperament=baseline,ginger,ragdoll` one table for each of the characters (`src/client/cat/engine/temperament.ts`), and what differs from the first |
+| `soak.mts` | the soak: `soak.mts 13 412 600` puts the brain through 400 seeds × 18 kinds of bad afternoon, 10 virtual minutes each, and exits 1 if a rule is broken (never stuck, never off the screen, never over a keep-out for long, no impossible jump, no swat at nothing, no fight with a hand that has let go). A fourth argument picks the kinds by a regular expression: `soak.mts 13 242 600 stroke` runs those with a hand that strokes the cat and dashes at it, for the cat as it was, the ginger and the ragdoll, quiet and with reduced motion too |
 | `bundle.mjs` | bundles a TypeScript entry for the browser with Vite (used by the sheets) |
 
 ## Making the detailed cat's mesh (offline)

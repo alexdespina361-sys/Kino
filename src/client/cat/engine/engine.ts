@@ -3,7 +3,7 @@ import { createRng, type Rng } from "../rng";
 import { CLIMB_BACK, CLIMB_HANG, CLIMB_LIP, CLIMB_TIME, HANG_AHEAD, HANG_DOWN, JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Emote, type Rect, type Target, type Vec, type World } from "../types";
 import { clampToLedge, computeLedges, findPath, GRAVITY, ledgeAt, planJump, reshape, screenEdges, settle, settledCost, stepFlight, type JumpPlan, type Ledge, type RestPose, type Settling } from "./ledges";
 import { HALF_WIDTH, shapeHits } from "./shape";
-import { BASELINE, type Temperament } from "./temperament";
+import { BASELINE, tasteFor, temperamentOf, type Temperament } from "./temperament";
 
 /**
  * The cat's mind and legs. Each frame it is given the page as a `World` (plain numbers) and the time that passed, and it says what the cat
@@ -121,6 +121,8 @@ export interface EngineDebug {
   fast: number;
   /** How far the shelves have gone up the screen in the last half second, in steps of the rows' pitch (see `RISE_STEPS`): 1 is a step of the remote, 1.25 shakes the cat off. */
   rise: number;
+  /** What sort of cat it is (the name of its `Temperament`'s table). */
+  temperament: string;
 }
 
 /** Speeds in body lengths per second, and how quickly the cat gets up to them. */
@@ -309,6 +311,22 @@ const GREET_NEAR = 2.2;
  */
 const LIVELY_EVERY = 210;
 const LIVELY_SWING = 0.2;
+/**
+ * Being stroked (see `Temperament.petPatience`): the strokes that come within `STROKE_GAP` seconds of one another are those of one hand. At `STROKE_WARN` of its patience the cat warns the hand (the
+ * tail flicks, the ears go back); a cat that has had all of it gives the hand a look and, if it is the swatting kind, swipes at it (once, or twice; `SWIPE_FIRST` and `SWIPE_SECOND` seconds long, the
+ * paw at `SWIPE_HIGH` body lengths above its feet and `SWIPE_NEAR` to `SWIPE_FAR` ahead of them: where the hand is, as near as that), and then walks off along its shelf, away from the hand, and sits down
+ * with its back to it. The hand is not heard for `HAND_REFRACTORY` seconds, while that goes on (longer than `STROKE_GAP`, so that the hand that is heard again is a new one). A pointer that dashes
+ * at a cat of that kind is swiped at, and the cat stays where it is. A stroke that pleases it shows (see `Temperament.petJoy`) no oftener than every `JOY_EVERY` seconds.
+ */
+const STROKE_GAP = 2.5;
+const STROKE_WARN = 0.7;
+const HAND_REFRACTORY = 4;
+const SWIPE_FIRST = 0.8;
+const SWIPE_SECOND = 0.7;
+const SWIPE_HIGH = 0.45;
+const SWIPE_NEAR = 0.4;
+const SWIPE_FAR = 0.9;
+const JOY_EVERY = 3.5;
 
 const label = (act: Act): string =>
   act.k === "rest" ? `rest:${act.pose}` : act.k === "shot" ? `shot:${act.clip}` : act.k === "fade" ? (act.to === 0 ? "fade:out" : "fade:in") : act.k === "walk" && act.stalk ? "stalk" : act.k;
@@ -386,6 +404,16 @@ export class CatEngine {
   /** What sort of cat it is (see `Temperament`), and a generator of its own for what that decides (so that what the rest of the cat does is the same whatever it draws). */
   private temper: Temperament = BASELINE;
   private readonly rngTemper: Rng;
+  /**
+   * The hand that strokes it (see `Temperament.petPatience`): when its first stroke came and its last, how long the cat gives it, and whether the cat has warned it; and until when the cat does not
+   * hear a hand (it has had enough of this one, and is going), and until when it is touchy (a quarter of the patience).
+   */
+  private strokeSince = -1e9;
+  private strokeLast = -1e9;
+  private strokeFor = Infinity;
+  private strokeWarned = false;
+  private annoyedUntil = -1;
+  private sulkUntil = -1;
   /** Where in its cycle of busy spells and quiet ones the cat begins (see `LIVELY_EVERY`). */
   private readonly livelyPhase: number;
   /**
@@ -445,7 +473,7 @@ export class CatEngine {
   private scrollTrail: Array<{ at: number; dy: number; lone: boolean }> = [];
   private scrollPitch = 0;
 
-  constructor(seed = 1) {
+  constructor(seed = 1, options: { temperament?: Temperament | string } = {}) {
     this.rng = createRng(seed).fork("director");
     this.rngLook = createRng(seed).fork("look");
     this.rngTemper = createRng(seed).fork("temper");
@@ -468,6 +496,19 @@ export class CatEngine {
       petted: false,
       carried: false,
     };
+    if (options.temperament !== undefined) this.setTemperament(options.temperament);
+  }
+
+  /**
+   * What sort of cat it is, by its table or by the name of one (`temperamentOf`). The cat's mood moves with the table it is given, so that a cat that was changed for another, in the settings, is
+   * livelier or lazier from then on, and not only a little at a time.
+   */
+  setTemperament(temperament: Temperament | string): void {
+    const next = typeof temperament === "string" ? temperamentOf(temperament) : temperament;
+    const was = this.temper;
+    this.temper = next;
+    this.mood.energy = clamp01(this.mood.energy + (next.energy - was.energy));
+    this.mood.curiosity = clamp01(this.mood.curiosity + (next.curiosity - was.curiosity));
   }
 
   /** What the page tells the cat. Handled at the start of the next update. */
@@ -493,6 +534,7 @@ export class CatEngine {
       scroll: this.world ? this.scrollSpeed / this.world.bodyLength : 0,
       fast: this.fastRun,
       rise: this.world ? this.risen() / (this.scrollPitch || PITCH_DEFAULT * this.world.bodyLength) : 0,
+      temperament: this.temper.name,
     };
   }
 
@@ -537,6 +579,8 @@ export class CatEngine {
       this.next(world);
       if (this.act) this.runAct(world, 0);
     }
+    // (a frame that ends with no act at all -- the one that follows ended the moment it began, a walk along a shelf the page has just taken from under the cat -- does not show a paw with nothing to land on: a swat, a bat or a point whose reach is gone)
+    if (!this.act && (this.clip === "swat" || this.clip === "tap" || this.clip === "point")) this.endScene(world.mode === "player" ? "perch" : "home");
 
     this.updateLook(world);
     this.petted = this.now < this.petUntil;
@@ -624,10 +668,15 @@ export class CatEngine {
         case "cat.pet": {
           if (unreachable || inHand) break;
           this.lastInteraction = this.now;
-          this.petUntil = this.now + 1.3;
+          // (a cat that has just had enough of a hand does not hear it: it is going, and what the hand does meanwhile does not bring it back)
+          if (this.now < this.annoyedUntil) break;
+          const busy = this.act?.k === "jump" || this.act?.k === "point" || this.act?.k === "swat" || this.act?.k === "fade" || this.act?.k === "relocate";
+          const stroke = busy ? "calm" : this.vexedBy(world);
+          if (stroke === "gone") break;
+          // (one that has been warning the hand does not purr at it)
+          this.petUntil = stroke === "warned" ? this.now : this.now + 1.3;
           this.mood.affection = clamp01(this.mood.affection + 0.04);
           this.mood.sleepiness = Math.max(0, this.mood.sleepiness - 0.05);
-          const busy = this.act?.k === "jump" || this.act?.k === "point" || this.act?.k === "swat" || this.act?.k === "fade" || this.act?.k === "relocate";
           if (!busy && this.act?.k !== "rest" && this.placed) this.hardPlan([{ k: "rest", pose: "sit", dur: 4 }]);
           break;
         }
@@ -752,12 +801,18 @@ export class CatEngine {
     if (world.mode === "away") {
       this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }]);
     } else if (previous === "away" && this.placed && this.here()) {
-      // the cat is where it was, and the page still has that place for it
+      // the cat is where it was, and the page still has that place for it (but not in the middle of a swat at something it left when it went)
+      this.endScene(world.mode === "player" ? "perch" : "home");
       this.hardPlan([{ k: "fade", to: 1, rate: FADE_IN_RATE }]);
     } else {
       // a new scene (the film began or ended): out, to the new place, and in again
       this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: world.mode === "player" ? "perch" : "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
     }
+  }
+
+  /** A cat that was cut short in a scene of its own (a swat, a bat at the pointer, a point, nodding off) and is back in sight is not left in it: it sits, or lies on a perch. */
+  private endScene(where: "home" | "perch"): void {
+    if (this.clip === "doze" || this.clip === "shift" || this.clip === "peek" || this.clip === "tap" || this.clip === "swat" || this.clip === "point") this.setClip(where === "perch" ? "loaf" : "sit");
   }
 
   private place(world: World, where: "home" | "perch"): boolean {
@@ -1164,9 +1219,10 @@ export class CatEngine {
     // (a sleeper that shifts in its sleep is still asleep, and one that nods off is on the way to it)
     const sleeping = act?.k === "sleep" || (act?.k === "shot" && act.clip === "shift");
     const dozing = act?.k === "shot" && act.clip === "doze";
-    m.sleepiness = clamp01(m.sleepiness + dt * (sleeping ? -0.025 : idle > 30 ? 1 / 260 : 1 / 900));
-    m.energy = clamp01(m.energy + (0.32 + LIVELY_SWING * Math.sin((2 * Math.PI * this.now) / LIVELY_EVERY + this.livelyPhase) - m.energy) * Math.min(1, dt / 25));
-    m.curiosity = clamp01(m.curiosity + (0.28 - m.curiosity) * Math.min(1, dt / 40));
+    const T = this.temper;
+    m.sleepiness = clamp01(m.sleepiness + dt * (sleeping ? -0.025 : (idle > 30 ? 1 / 260 : 1 / 900) * T.drowsiness));
+    m.energy = clamp01(m.energy + (T.energy + LIVELY_SWING * Math.sin((2 * Math.PI * this.now) / LIVELY_EVERY + this.livelyPhase) - m.energy) * Math.min(1, dt / 25));
+    m.curiosity = clamp01(m.curiosity + (T.curiosity - m.curiosity) * Math.min(1, dt / 40));
     m.affection = clamp01(m.affection + (0.2 - m.affection) * Math.min(1, dt / 240));
     // (the fight dies away in a moment once the hand has let go: the cat in the air still twists, and lands with what is left of it)
     if (this.struggle > 0 && act?.k !== "carried") this.struggle = Math.max(0, this.struggle - dt / FIGHT_RELEASE);
@@ -1230,6 +1286,11 @@ export class CatEngine {
     const away = Math.hypot(point.x - this.x, point.y - (this.y - 0.4 * L));
     if (away > FLINCH_NEAR * L || away < 0.45 * L) return;
     this.cool.flinch = this.now + FLINCH_EVERY + this.rngLook.range(0, 15);
+    // (a grumpy cat does not freeze: it swipes at it)
+    if (this.temper.swatsHand > 0 && this.rngTemper.chance(this.temper.swatsHand * 0.5)) {
+      this.annoyedAtHand(world, point, "dash");
+      return;
+    }
     this.feel("startle", 0.5);
     this.lookAt({ x: point.x, y: point.y }, 1.8);
     // (it freezes, and then, as if nothing had happened, it washes)
@@ -1960,6 +2021,8 @@ export class CatEngine {
     const from = this.letGoFrom;
     this.upset = 0;
     this.letGoFrom = null;
+    // (and it is touchy for a time: a cat that was held against its will does not take a hand lightly)
+    this.sulkUntil = this.now + this.temper.sulk;
     this.cool.groom = this.now + rng.range(45, 90);
     const here = this.here();
     // (away from where the hand was, along the shelf it landed on: the way with the room, if the hand was over it, or there is none the other way)
@@ -1989,6 +2052,91 @@ export class CatEngine {
       if (rng.chance(0.5)) plan.push({ k: "shot", clip: "groom", dur: rng.range(3, 5) });
     }
     this.queue = plan;
+  }
+
+  /** How long the hand that has begun to stroke the cat may go on before the cat has had enough: its temperament's, drawn afresh for each hand; a quarter of that while it is touchy, and less the sleepier it is. */
+  private patience(): number {
+    const base = this.temper.petPatience;
+    if (!Number.isFinite(base)) return Infinity;
+    return base * this.rngTemper.range(0.7, 1.3) * (this.now < this.sulkUntil ? 0.25 : 1) * (1 - 0.4 * this.mood.sleepiness);
+  }
+
+  /**
+   * One more stroke of a hand (see `Temperament.petPatience`): says whether the cat has had enough of it and is going (`gone`: the stroke is spent on that), has just had `STROKE_WARN` of what it
+   * will take and says so (`warned`), or is content (`calm`; and, now and then, glad). A hand that wakes a sleeper may find it cross at once.
+   */
+  private vexedBy(world: World): "gone" | "warned" | "calm" {
+    const T = this.temper;
+    const fresh = this.now - this.strokeLast > STROKE_GAP;
+    this.strokeLast = this.now;
+    if (fresh) {
+      this.strokeSince = this.now;
+      this.strokeWarned = false;
+      this.strokeFor = this.patience();
+      const act = this.act;
+      const asleep = act?.k === "sleep" || (act?.k === "shot" && (act.clip === "shift" || act.clip === "doze"));
+      if (asleep && T.wakeGrump > 0 && this.rngTemper.chance(T.wakeGrump)) {
+        this.annoyedAtHand(world, world.pointer, "hand");
+        return "gone";
+      }
+    }
+    const held = this.now - this.strokeSince;
+    if (held >= this.strokeFor) {
+      this.annoyedAtHand(world, world.pointer, "hand");
+      return "gone";
+    }
+    if (!this.strokeWarned && held >= STROKE_WARN * this.strokeFor) {
+      this.strokeWarned = true;
+      this.feel("annoyed", 1.2);
+      return "warned";
+    }
+    if (T.petJoy > 0 && this.cooled("joy") && this.rngTemper.chance(T.petJoy)) {
+      this.cool.joy = this.now + JOY_EVERY;
+      this.feel("joy", 1.6);
+    }
+    return "calm";
+  }
+
+  /**
+   * A cat that has had enough of a hand (it was stroked for longer than the cat would take, or it woke the cat: `hand`) or of a pointer that dashes at it (`dash`): it turns to it with its
+   * ears back and its tail lashing, swipes at it (a dash always; a hand if it is the swatting kind: once, or twice), and, for a hand, walks off along its shelf, away from it, and sits down with
+   * its back to it; and it is touchy for a time (`Temperament.sulk`). A cat that is to stay where it is (a viewer who wants quiet, or less motion), or that has no ground under it, only lets it be seen.
+   */
+  private annoyedAtHand(world: World, hand: Vec | undefined, by: "hand" | "dash"): void {
+    const T = this.temper;
+    const rng = this.rngTemper;
+    const L = world.bodyLength;
+    const here = this.here();
+    const leaves = by === "hand";
+    this.petUntil = Math.min(this.petUntil, this.now);
+    if (leaves) {
+      this.annoyedUntil = this.now + HAND_REFRACTORY;
+      this.sulkUntil = this.now + T.sulk;
+    }
+    if (!here || world.reducedMotion || world.quiet) {
+      this.hardPlan([{ k: "rest", pose: "sit", dur: 2.4, feel: "annoyed" }]);
+      return;
+    }
+    const at: Vec = hand ?? { x: this.x + this.facing * 0.5 * L, y: this.y - 0.5 * L };
+    const dir: 1 | -1 = at.x >= this.x ? 1 : -1;
+    const plan: Act[] = [{ k: "rest", pose: "stand", dur: rng.range(0.4, 0.7), feel: "annoyed", at }];
+    if (by === "dash" || (T.swatsHand > 0 && rng.chance(T.swatsHand))) {
+      // (the paw lands where the hand is, as near as a paw reaches: in front of the cat, at the height of its shoulder or so)
+      const m = 0.05 * L;
+      const target: Rect = { x: this.x + dir * clamp(Math.abs(at.x - this.x), SWIPE_NEAR * L, SWIPE_FAR * L) - m, y: this.y - SWIPE_HIGH * L - m, w: 2 * m, h: 2 * m };
+      plan.push({ k: "swat", target, dur: SWIPE_FIRST });
+      if (rng.chance(0.4)) plan.push({ k: "swat", target, dur: SWIPE_SECOND });
+    }
+    if (leaves) {
+      // (away from the hand, along the shelf: the way with the room, if there is none the other way)
+      const room = (d: 1 | -1): number => (d > 0 ? here.x1 - this.x : this.x - here.x0);
+      let away: 1 | -1 = dir > 0 ? -1 : 1;
+      if (room(away) < 1.5 * L && room(dir) > room(away)) away = dir;
+      const far = clampToLedge(here, this.x + away * rng.range(2.2, 3.4) * L);
+      if (Math.abs(far - this.x) > 0.8 * L) plan.push({ k: "walk", x: far, run: false, maxT: 14 });
+      plan.push({ k: "rest", pose: "sit", dur: rng.range(2.5, 4), at: { x: far, y: this.y - 0.4 * L } });
+    } else plan.push({ k: "rest", pose: "sit", dur: rng.range(1.2, 2.2) });
+    this.hardPlan(plan);
   }
 
   /**
@@ -2075,7 +2223,7 @@ export class CatEngine {
       case "relocate":
         // (a cat that changes places is never seen doing it: what is left of it is gone, and it comes in sitting or lying, not in the middle of a scene of the last place)
         this.alpha = 0;
-        if (this.clip === "doze" || this.clip === "shift" || this.clip === "peek" || this.clip === "tap" || this.clip === "swat" || this.clip === "point") this.setClip(act.where === "perch" ? "loaf" : "sit");
+        this.endScene(act.where);
         if (!this.place(world, act.where)) this.placed = false;
         break;
       case "jump":
@@ -2236,7 +2384,7 @@ export class CatEngine {
       score: 1.0 + tired * 0.8,
       plan: () => {
         const pose = cleanestPose(this.rng.weighted<Pose>(["sit", "loaf", "stand"], (p) => (p === "sit" ? 0.5 : p === "loaf" ? 0.3 + tired * 0.4 : 0.2) * roomFor(p)) ?? "sit");
-        return [...walkToSpot(pose), { k: "rest", pose, dur: this.rng.range(3, 9) }];
+        return [...walkToSpot(pose), { k: "rest", pose, dur: this.rng.range(3, 9) * this.temper.stay }];
       },
     });
 
@@ -2252,7 +2400,7 @@ export class CatEngine {
               const sniff: Act[] = tired < 0.7 && this.rng.chance(0.4) ? [{ k: "shot", clip: "sniff", dur: this.rng.range(2.2, 3.4) }] : [];
               const pose: Pose = cleanestPose(this.rng.chance(0.6) ? "sit" : "stand", x);
               const stop = spotFor(pose, x) ?? x;
-              const dur = stopAt(this.rng.range(2, 6), pose, stop);
+              const dur = stopAt(this.rng.range(2, 6) * this.temper.stay, pose, stop);
               // (it stops where it was going, or a little off that if the names are there)
               return [{ k: "walk", x: stop, run: false, maxT: 40 }, ...sniff, { k: "rest", pose, dur }];
             }
@@ -2280,7 +2428,7 @@ export class CatEngine {
           const pick = this.rng.weighted(candidates, (c) => ((c.ledge.weight * (c.ledge.kind === "fallbackFloor" ? FOOT_WEIGHT : 1)) / c.hops / (1 + 2 * Math.exp(-(this.now - (this.visited[c.ledge.surfaceId] ?? -1000)) / 40))) / (1 + (6 * c.cost) / (L * L)) ** 2);
           if (!pick) return null;
           const sits = this.rng.chance(0.65);
-          const dur = this.rng.range(2, 6);
+          const dur = this.rng.range(2, 6) * this.temper.stay;
           const cool = this.rng.range(5, 11);
           // (it lands where it can settle clear of the names, the posture drawn giving way to a cleaner one if the shelf has no clean place for it: a landing at a chance place on a shelf of names is a few seconds in front of one)
           const pose = cleanestPose(sits ? "sit" : "stand", pick.x, pick.ledge);
@@ -2366,7 +2514,7 @@ export class CatEngine {
       // (and before it lies down for good, a cat will often tread its place into shape; the place is chosen for all of it: lying down, treading, curled up)
       plan: () => {
         const tread = this.rng.chance(0.5);
-        const nap = this.rng.range(20, 50);
+        const nap = this.rng.range(20, 50) * this.temper.stay;
         // (a long nap is not one stillness: part of the way through, the sleeper changes its position)
         const turns = nap > 45 && this.rng.chance(0.55);
         const asleep: Act[] = turns
@@ -2592,8 +2740,9 @@ export class CatEngine {
       },
     });
 
-    // (not the same thing twice in a row)
-    const weighted = options.map((o) => ({ o, w: Math.max(0, o.score) * (o.name === "hop" ? 1 : low ? FOOT_STAY : crowded ? CROWDED_STAY : 1) * (last.startsWith(o.name) ? 0.35 : 1) }));
+    // (what it likes to do it does the oftener, and the rest the less -- but not getting up from where it should not stay, which is not a matter of taste -- and not the same thing twice in a row)
+    const taste = (o: Option): number => tasteFor(this.temper, o.name, low || crowded);
+    const weighted = options.map((o) => ({ o, w: Math.max(0, o.score) * (o.name === "hop" ? 1 : low ? FOOT_STAY : crowded ? CROWDED_STAY : 1) * taste(o) * (last.startsWith(o.name) ? 0.35 : 1) }));
     for (let tries = 0; tries < 4; tries++) {
       const pick = this.rng.weighted(weighted, (c) => c.w);
       if (!pick) break;
@@ -2729,7 +2878,7 @@ export class CatEngine {
       }
       this.facing = dir;
     }
-    const cruise = (act.stalk ? STALK_SPEED : hurry ? RUN_SPEED : WALK_SPEED) * L;
+    const cruise = (act.stalk ? STALK_SPEED : hurry ? RUN_SPEED : WALK_SPEED) * L * this.temper.speed;
     const brake = Math.sqrt(2 * ACCEL * 0.7 * L * dist);
     const want = Math.min(cruise, brake) * dir;
     this.vx += clamp(want - this.vx, -dt * ACCEL * L, dt * ACCEL * L);

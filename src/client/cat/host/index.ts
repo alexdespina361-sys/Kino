@@ -3,6 +3,7 @@ import { onCat, setPanelOpen } from "../bus";
 import { BODY_EMS } from "../math";
 import { CatEngine, type EngineDebug } from "../engine/engine";
 import { coreOf, HEIGHT, shapeCovers } from "../engine/shape";
+import { temperamentOf } from "../engine/temperament";
 import { CatRig } from "../render/rig";
 import { createRng } from "../rng";
 import { CAT_SIZE_FACTOR, catAsk, catCoatAsk, catLook, catSizeAsk, coatOfLook, readCatSettings, setCatGone, setCatShown, subscribeCatSettings, type CatCoat, type CatWhy } from "../settings";
@@ -130,6 +131,8 @@ export function mountCat(): { stop: () => void } {
   let emLast = 12;
   // (what the address asks of the coat and the size is for this load only, and wins over what the device keeps)
   const coatNow = () => catCoatAsk() ?? coatOfLook(settings.look);
+  // (the cat is the character it looks like: the ginger is friendly and restless, the ragdoll grumpy and lazy; any other coat the address asks for is the cat as it was)
+  engine.setTemperament(temperamentOf(coatNow()));
   const page = new TvPage({
     films: () => settings.films,
     quiet: () => settings.quiet,
@@ -720,6 +723,7 @@ export function mountCat(): { stop: () => void } {
     if (stopped) return;
     const before = settings.look;
     settings = readCatSettings();
+    engine.setTemperament(temperamentOf(coatNow()));
     // (another cat chosen is a new start: a screen that could not afford the ragdoll is not held to that for the ginger, and one that chose the ragdoll again is asking)
     if (settings.look !== before) tryAgain();
     else choose(); // (or the same cat, asked for again)
