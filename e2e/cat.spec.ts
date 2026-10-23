@@ -954,8 +954,8 @@ const watchTheCat = (tv: Page) =>
 const theBeats = (tv: Page) => tv.evaluate(() => (window as unknown as { __beats: Beat[] }).__beats);
 const stopWatching = (tv: Page) => tv.evaluate(() => (window as unknown as { __stopBeats?: () => void }).__stopBeats?.());
 
-test("a page that is flung does not take the cat up with its shelf: it is shaken off and falls, in front of the page that goes by, and lands; a step of the remote takes it with the shelf", async ({ browser }) => {
-  test.setTimeout(120_000);
+test("a page that is flung, or scrolled too far and too fast to be a step of the remote, does not take the cat up with its shelf: it is shaken off and falls, in front of the page that goes by, and lands; a step of the remote takes it with the shelf", async ({ browser }) => {
+  test.setTimeout(240_000);
   const tv = await openLibrary(browser, async (context) => {
     await offered(true)(context);
     await withLibrary(tallLibrary)(context);
@@ -974,6 +974,21 @@ test("a page that is flung does not take the cat up with its shelf: it is shaken
   const rest = async () => {
     await saying(tv, () => expect.poll(async () => { const seen = await snap(tv); return seen.frame.grounded && !/fall|jump|carried/.test(seen.engine.act); }, { timeout: 15_000 }).toBe(true));
   };
+  /** The library back at the top (or, with `warm`, after the first step of the remote, which folds the banner), the cat called to the highest shelf with room above it, and told to sit there. */
+  const settle = async (warm = false) => {
+    await tv.evaluate(() => (document.querySelector<HTMLElement>(".tv-rows")!.scrollTop = 0));
+    await tv.waitForTimeout(600);
+    if (warm) {
+      await tv.keyboard.press("ArrowDown");
+      await tv.waitForTimeout(2_500);
+    }
+    await catIsOnTheShelves(tv);
+    const here = (await worldOf(tv)).surfaces.filter((surface) => surface.kind === "shelfTop" && surface.y > 2.2 * L).sort((a, b) => a.y - b.y)[0]!;
+    await tellCat(tv, { type: "cat.call", at: { x: (here.x0 + here.x1) / 2, y: here.y } });
+    await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 15_000 }).toBe(here.id));
+    await catSitsAndWhere(tv);
+    return { sat: await snap(tv), shelf: here };
+  };
 
   // a step of the remote (the rows go by at twenty-odd body lengths a second at the quickest): the cat goes with its shelf, and does not fall
   await watchTheCat(tv);
@@ -984,13 +999,7 @@ test("a page that is flung does not take the cat up with its shelf: it is shaken
   expect(stepped.length).toBeGreaterThan(50);
   expect(stepped.some((beat) => beat.flung || beat.act === "fall"), "a step of the remote").toBe(false);
   await rest();
-  await tv.evaluate(() => (document.querySelector<HTMLElement>(".tv-rows")!.scrollTop = 0));
-  await tv.waitForTimeout(600);
-  await catIsOnTheShelves(tv);
-  await tellCat(tv, { type: "cat.call", at: { x: (shelf.x0 + shelf.x1) / 2, y: shelf.y } });
-  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 15_000 }).toBe(shelf.id));
-  await catSitsAndWhere(tv);
-  const before = await snap(tv);
+  const before = (await settle()).sat;
 
   // a fling (a body length a frame, sixty a second, as far as the rows go): the cat does not go up with the shelf
   await watchTheCat(tv);
@@ -1019,6 +1028,46 @@ test("a page that is flung does not take the cat up with its shelf: it is shaken
   expect(end.frame.grounded).toBe(true);
   expect(end.engine.surfaceId).not.toBe(shelf.id);
   expect(end.frame.y).toBeGreaterThan(Math.min(...air.map((beat) => beat.y)) - 1);
+
+  // the first step of the remote from the top of the library (the banner folds up, the rows jump by a banner's half and then scroll a step): the cat goes with its shelf, as it does for any step
+  const top = await settle();
+  await watchTheCat(tv);
+  await tv.keyboard.press("ArrowDown");
+  await tv.waitForTimeout(1_500);
+  await stopWatching(tv);
+  expect((await theBeats(tv)).some((beat) => beat.flung || beat.act === "fall"), "the first step of the remote").toBe(false);
+  expect(top.sat.frame.grounded).toBe(true);
+
+  // a page that is not flung, but is scrolled too far and too fast to be a step of the remote -- a wheel spun, two steps of the remote one on the other's heels -- does not take the cat up with its shelf
+  // for more than a step and a bit either: it is shaken off, falls (never rising once it is in the air), and lands on something else
+  const fellFrom = async (what: string, ready: Awaited<ReturnType<typeof settle>>, gesture: () => Promise<void>) => {
+    await watchTheCat(tv);
+    await gesture();
+    await tv.waitForTimeout(300);
+    await rest();
+    await stopWatching(tv);
+    const seen = await theBeats(tv);
+    const left = seen.findIndex((beat) => beat.flung);
+    expect(left, `${what}: it was shaken off`).toBeGreaterThanOrEqual(0);
+    expect(Math.min(...seen.map((beat) => beat.y)), `${what}: it rose with the shelf`).toBeGreaterThan(ready.sat.frame.y - 4.5 * L);
+    for (let i = left + 1; i < seen.length && seen[i]!.flung; i++) expect(seen[i]!.y, `${what}: beat ${i}`).toBeGreaterThanOrEqual(seen[i - 1]!.y - 0.01);
+    expect((await snap(tv)).engine.surfaceId, `${what}: where it landed`).not.toBe(ready.shelf.id);
+  };
+  const spun = await settle();
+  await fellFrom("a wheel spun", spun, async () => {
+    const size = tv.viewportSize()!;
+    await tv.mouse.move(size.width / 2, size.height * 0.55);
+    for (let i = 0; i < 12; i++) {
+      await tv.mouse.wheel(0, 100);
+      await tv.waitForTimeout(30);
+    }
+  });
+  const hurried = await settle(true);
+  await fellFrom("two steps of the remote in a hurry", hurried, async () => {
+    await tv.keyboard.press("ArrowDown");
+    await tv.waitForTimeout(150);
+    await tv.keyboard.press("ArrowDown");
+  });
 });
 
 /**

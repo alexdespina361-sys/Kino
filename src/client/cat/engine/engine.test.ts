@@ -1161,11 +1161,10 @@ describe("the cat on a page that is flung (scrolled fast)", () => {
     });
     expect(acts.has("fall")).toBe(false);
     // (a page scrolled at 600 pixels a second, which is a finger that drags it, takes the cat with the shelf and it stays on its feet; so does a step of the remote, which goes by at
-    // twenty-odd body lengths a second at the quickest, and a wheel spun fast)
+    // twenty-odd body lengths a second at the quickest. A wheel spun fast, 55 pixels a frame for a screenful, is not on this list any more: it is shaken off, see below)
     for (const [perFrame, to] of [
       [10, 350],
       [40, 327],
-      [55, 1100],
     ] as const) {
       const { log } = fling(3, perFrame, to);
       expect(log.some((e) => e.flung), `${perFrame} px a frame`).toBe(false);
@@ -1202,6 +1201,222 @@ describe("the cat on a page that is flung (scrolled fast)", () => {
     expect(log[first + 1]!.f.emote).toBe("startle");
     expect(log[first + 1]!.f.clip).toBe("jump");
     expect(log[log.length - 1]!.f.grounded).toBe(true);
+  });
+});
+
+describe("the cat on a page that is scrolled down too far and too fast to be a step of the remote (it would float up with its shelf)", () => {
+  interface Entry {
+    act: string;
+    flung: boolean;
+    surface: string | null;
+    f: CatFrame;
+  }
+  /** The pitch of the rows of the made-up page, in pixels: what a step of the remote scrolls it by. */
+  const PITCH = 350;
+  /** The fractions of a step of the remote that go by in each frame at 60 a second (measured in a browser): up to 48 body lengths a second for a frame, and over in a quarter of a second. */
+  const EASE = [0.04, 0.15, 0.45, 0.8, 0.51, 0.31, 0.22, 0.14, 0.11, 0.08, 0.05, 0.04, 0.03, 0.01].map((n) => n / 2.93);
+  const stepOf = (px = PITCH): number[] => EASE.map((n) => n * px);
+  const idle = (frames: number): number[] => Array.from({ length: frames }, () => 0);
+  const even = (px: number, frames: number): number[] => Array.from({ length: frames }, () => px);
+  /** Twelve notches of a wheel that does not smooth: a hundred pixels in a frame, and the next frame still, thirty milliseconds apart. */
+  const NOTCHES = Array.from({ length: 12 }, () => [100, 0]).flat();
+  /**
+   * A cat settled on `row` of a page of twelve (at `from` pixels of scroll), the page then scrolled by `deltas` pixels a frame, down positive, at 60 frames a second -- a fresh read of the page
+   * in every frame in which it moved, and the very same world in the frames in which it did not -- and held there for a moment. What it did at every frame.
+   */
+  const scrolled = (seed: number, deltas: number[], options: { row?: number; from?: number; page?: PageOptions; shape?: (world: World) => World; ask?: (engine: CatEngine, world: World) => void } = {}) => {
+    const page = { ...(options.page ?? defaultPage()), rows: 12 };
+    page.scroll = options.from ?? 350;
+    const shape = options.shape ?? ((world: World) => world);
+    const engine = new CatEngine(seed);
+    const base = shape(browseWorld(page));
+    run(engine, base, 6);
+    const row = options.row ?? 2;
+    engine.send({ type: "cat.call", at: { x: 1500, y: 511 + 350 * row - page.scroll } });
+    run(engine, base, 8);
+    engine.send({ type: "cat.command", command: "sit" });
+    run(engine, base, 1);
+    const surface = engine.debug().surfaceId;
+    const y0 = engine.frame.y;
+    options.ask?.(engine, base);
+    const log: Entry[] = [];
+    const keep = (f: CatFrame): void => {
+      const d = engine.debug();
+      log.push({ act: d.act, flung: d.flung, surface: d.surfaceId, f: { ...f } });
+    };
+    let scroll = page.scroll;
+    let world = base;
+    let clock = 0;
+    const travelled: number[] = [];
+    for (const delta of deltas) {
+      if (delta !== 0) {
+        scroll += delta;
+        world = { ...shape(browseWorld({ ...page, scroll })), readAt: (clock += 1000 / 60) };
+      }
+      travelled.push(scroll - page.scroll);
+      stepCat(engine, world, 1 / 60, 60, keep);
+    }
+    // (the host goes on reading the page, at every frame, for a moment after it stopped)
+    let held = 0;
+    stepCat(engine, world, 4, 60, (f) => {
+      keep(f);
+      if (held++ < 27) world.readAt = clock += 1000 / 60;
+    });
+    return { engine, log, surface, row, y0, travelled, L: base.bodyLength };
+  };
+  /** It went with its shelf, every frame of the page's way (to the pixel; what it does of its own accord after that is its own), and did not fall. */
+  const rides = (run_: ReturnType<typeof scrolled>, label: string): void => {
+    expect(run_.surface, label).toBe(`p1:row${run_.row}`);
+    expect(run_.log.some((e) => e.flung || e.act === "fall"), label).toBe(false);
+    const moving = run_.travelled.findLastIndex((by, i) => by !== (run_.travelled[i - 1] ?? 0));
+    run_.travelled.slice(0, moving + 2).forEach((by, i) => {
+      // (a cat that begins a leap of its own, now the page has stopped, is crouching: that is not the page's doing)
+      if (run_.log[i]!.act === "jump") return;
+      expect(run_.log[i]!.surface, `${label} at ${i}`).toBe(run_.surface);
+      expect(Math.abs(run_.log[i]!.f.y - (run_.y0 - by)), `${label} at ${i}`).toBeLessThan(1);
+    });
+  };
+  /** The shelf of the page as it stands at the end that a cat falling from `y` comes down on first. */
+  const firstUnder = (scroll: number, y: number): string => {
+    const world = browseWorld({ ...defaultPage(), rows: 12, scroll });
+    return world.surfaces.filter((s) => s.kind === "shelfTop" && s.y >= y - 1).sort((a, b) => a.y - b.y)[0]!.id;
+  };
+
+  it("takes the cat with its shelf for a step of the remote, and for the first step of all, where the banner folds up and the rows jump before they scroll", () => {
+    rides(scrolled(1, [...stepOf(), ...idle(120)]), "a step");
+    // (the page laid out again by half a banner in one frame, a few frames of nothing, and then the step)
+    rides(scrolled(2, [170, ...idle(3), ...stepOf(), ...idle(120)]), "the first step");
+    // (and the same step for a cat that is smaller, or larger, than the page is built for: a step is a row's pitch, whatever the cat's size makes of a body length)
+    for (const size of [0.8, 1.35]) rides(scrolled(3, [...stepOf(), ...idle(120)], { shape: (world) => ({ ...world, bodyLength: world.bodyLength * size }) }), `a cat of ${size}`);
+  });
+
+  it("takes the cat with its shelf for two steps with a pause between them, but shakes it off in the second of two steps close together", () => {
+    // (a second between the starts of the two, and then seven tenths of a second)
+    rides(scrolled(1, [...stepOf(), ...idle(46), ...stepOf(), ...idle(120)], { from: 0, row: 1 }), "a second apart");
+    rides(scrolled(1, [...stepOf(), ...idle(28), ...stepOf(), ...idle(120)], { from: 0, row: 1 }), "seven tenths of a second apart");
+    for (const seed of [1, 2, 3]) {
+      // (the second a third of a second after the first began, a tenth of a second after it came to rest: the page has not been still for a sixth of a second between them)
+      const { log, y0 } = scrolled(seed, [...stepOf(), ...idle(4), ...stepOf(), ...idle(120)], { from: 0, row: 1 });
+      const label = `seed ${seed}`;
+      const first = log.findIndex((e) => e.flung);
+      expect(first, label).toBeGreaterThanOrEqual(0);
+      // (during the second step, and not before it: it has gone up with its shelf by a step and a quarter at the most, and a frame's travel more)
+      expect(first, label).toBeGreaterThan(14);
+      const risen = Math.min(...log.slice(0, first + 1).map((e) => e.f.y));
+      expect(risen, label).toBeGreaterThan(y0 - 1.25 * PITCH - 0.8 * (PITCH / 2.93) - 1);
+      expect(risen, label).toBeLessThan(y0 - PITCH);
+      expect(log[log.length - 1]!.f.grounded, label).toBe(true);
+    }
+  });
+
+  it("shakes the cat off a page that is scrolled down by a wheel spun fast, by a scrollbar dragged and by three steps at once: it falls from where it has risen to, a step and a quarter at the most, and lands on the first place under it", () => {
+    const gestures: Array<[string, number[]]> = [
+      ["a wheel spun", NOTCHES],
+      // (a screenful in a third of a second, the pointer pulling the thumb, no smoothing: twenty-odd body lengths a second all the way)
+      ["a scrollbar dragged", even(42, 22)],
+      ["three steps", [...stepOf(), ...idle(4), ...stepOf(), ...idle(4), ...stepOf()]],
+      // (a body length a frame: the older rule, the page flung)
+      ["a page flung", even(111, 30)],
+    ];
+    for (const [name, deltas] of gestures) {
+      for (const seed of [1, 2]) {
+        const label = `${name}, seed ${seed}`;
+        const { log, y0, L, travelled } = scrolled(seed, [...deltas, ...idle(8)], { from: 0, row: 1 });
+        const first = log.findIndex((e) => e.flung);
+        expect(first, label).toBeGreaterThanOrEqual(0);
+        // (it rose with the shelf for a step and a quarter, and the frame it was shaken off in: no more)
+        expect(Math.min(...log.slice(0, first + 1).map((e) => e.f.y)), label).toBeGreaterThan(y0 - 1.25 * PITCH - Math.max(...deltas) - 1);
+        // (and from there on it only falls, never faster than a cat can, until the page has slowed)
+        for (let i = first + 1; i < log.length && log[i]!.flung; i++) {
+          const step = log[i]!.f.y - log[i - 1]!.f.y;
+          expect(step, `${label} at ${i}`).toBeGreaterThanOrEqual(0);
+          expect(step, `${label} at ${i}`).toBeLessThanOrEqual((14 * L) / 60 + 0.01);
+        }
+        // (a wheel turns in notches: between two of them the page is still, and the cat does not land on that account; it comes down when the page has stopped)
+        const landed = log.findIndex((e, i) => i > first && e.f.grounded);
+        expect(landed, label).toBeGreaterThan(first);
+        expect(log.slice(first, landed).every((e) => e.act === "fall" && !e.f.grounded), label).toBe(true);
+        // (steps with a pause between them: it comes down in the pause, if the page has slowed to nothing in it, and is shaken off again by the next)
+        if (name !== "three steps") expect(landed, label).toBeGreaterThan(deltas.length - 2);
+        expect(log[landed]!.f.y, label).toBeGreaterThanOrEqual(log[first]!.f.y);
+        // (on the first place under it: when it gave up the air it had fallen as far as the last frame of its fall in the air, and that is the shelf below it then; or the foot of the screen)
+        const lastAir = log.reduce((at, e, i) => (e.flung ? i : at), first);
+        const under = firstUnder(travelled[travelled.length - 1]!, log[lastAir]!.f.y);
+        if (name === "a wheel spun" || name === "a scrollbar dragged") expect(log[landed]!.surface, label).toBe(under);
+      }
+    }
+  });
+
+  it("shakes a cat off a wheel spun fast within a few notches: in a tenth of a second, and not after the page has gone a screenful", () => {
+    for (const seed of [1, 2, 3]) {
+      const { log } = scrolled(seed, [...NOTCHES, ...idle(8)], { from: 0, row: 1 });
+      const first = log.findIndex((e) => e.flung);
+      // (the fifth notch is the fifth frame with a hundred pixels in it, the ninth frame: five hundred pixels is a step and a quarter, and more)
+      expect(first, `seed ${seed}`).toBeGreaterThanOrEqual(0);
+      expect(first, `seed ${seed}`).toBeLessThanOrEqual(9);
+    }
+  });
+
+  it("does not shake the cat off a page that is scrolled down slowly, however far, nor one that went down and came back, nor one that is scrolled up by as much", () => {
+    // (ten body lengths a second for most of a second: far, and not fast)
+    rides(scrolled(1, [...even(18, 36), ...idle(120)]), "slowly");
+    // (a body length and a half down, and back up the same way)
+    rides(scrolled(1, [...even(25, 10), ...even(-25, 10), ...idle(120)]), "down and back");
+    // (shelves going down the screen at thirty body lengths a second, the length of a step and a quarter: only the speed of a fling shakes a cat off then; it is not floating)
+    for (const seed of [1, 2]) rides(scrolled(seed, [...even(-55, 9), ...idle(120)], { from: 700 }), `scrolled up, seed ${seed}`);
+  });
+
+  it("does not shake off a cat that is showing the viewer a poster, nor one that must not move about, nor one that is in a hand or on the foot of the screen", () => {
+    const point = (engine: CatEngine, world: World): void => {
+      engine.send({ type: "cat.point", targetId: world.targets.find((t) => t.id === "p1:r1c4")!.id });
+    };
+    const quiet = defaultPage();
+    quiet.quiet = true;
+    const still = defaultPage();
+    still.reducedMotion = true;
+    // (a scrollbar dragged for a third of a second: far enough, and fast enough, to shake a cat off, and not so far that its shelf is gone from the screen)
+    const drag = even(42, 12);
+    for (const [name, run_] of [
+      ["showing a poster", scrolled(2, drag, { from: 0, row: 1, ask: point })],
+      ["quiet", scrolled(2, drag, { from: 0, row: 1, page: quiet })],
+      ["reduced motion", scrolled(2, drag, { from: 0, row: 1, page: still })],
+    ] as const) {
+      expect(run_.log.some((e) => e.flung || e.act === "fall"), name).toBe(false);
+    }
+    expect(scrolled(2, drag, { from: 0, row: 1 }).log.some((e) => e.flung), "and a cat that is doing nothing in particular is").toBe(true);
+    // (on the foot of the screen, which does not go with the page: called to it before the page moves)
+    const engine = new CatEngine(2);
+    const page = { ...defaultPage(), rows: 12 };
+    const base = browseWorld(page);
+    run(engine, base, 6);
+    engine.send({ type: "cat.call", at: { x: 1500, y: 1074 } });
+    run(engine, base, 8);
+    engine.send({ type: "cat.command", command: "sit" });
+    run(engine, base, 1);
+    expect(engine.debug().surfaceId).toBe("floor");
+    let scroll = 0;
+    let clock = 0;
+    for (const delta of drag) {
+      scroll += delta;
+      stepCat(engine, { ...browseWorld({ ...page, scroll }), readAt: (clock += 1000 / 60) }, 1 / 60, 60, () => {
+        expect(engine.debug().flung).toBe(false);
+        expect(engine.debug().act).not.toBe("fall");
+      });
+    }
+    // (and one that a hand has by the scruff is the hand's)
+    const held = new CatEngine(2);
+    run(held, base, 6);
+    held.send({ type: "cat.call", at: { x: 1500, y: 511 } });
+    run(held, base, 8);
+    held.send({ type: "cat.grab", at: { x: held.frame.x, y: held.frame.y - 40 } });
+    stepCat(held, base, 0.5, 60);
+    expect(held.debug().act).toBe("carried");
+    scroll = 0;
+    for (const delta of drag) {
+      scroll += delta;
+      stepCat(held, { ...browseWorld({ ...page, scroll }), readAt: (clock += 1000 / 60) }, 1 / 60, 60);
+      expect(held.debug().act).toBe("carried");
+    }
   });
 });
 

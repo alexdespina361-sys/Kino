@@ -1,7 +1,7 @@
 // Real-Chromium measurements of the cat on the TV's library (development tooling, not part of the app). It starts the server itself (on its own port, from
 // the build you point it at, so that the tracked dist/client is not touched), opens /tv with the cat on and `?cat=debug`, and reports what the cat does.
 //
-//   node scripts/cat/browser-lab.mjs scroll [--client=<dir>] [--port=8872] [--only=remote-step,wheel-spin] [--look=ginger]
+//   node scripts/cat/browser-lab.mjs scroll [--client=<dir>] [--port=8872] [--only=remote-step,wheel-spin] [--look=ginger] [--dump=<file.json>]
 //       what the library's rows do for each kind of scroll (a step of the remote, wheel notches, a trackpad, a held key, a page key, a fling), how fast and how far, and
 //       what the cat does while it sits on a shelf: whether it rode with the shelf (floated up), or was shaken off and fell.
 //   node scripts/cat/browser-lab.mjs places [--client=<dir>] [--port=8873] [--seconds=240] [--runs=3] [--viewer] [--look=ginger] [--size=1280x720]
@@ -13,6 +13,7 @@
 
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -89,10 +90,36 @@ async function onTheShelves(page, tick) {
 
 /* ------------------------------ scroll ------------------------------ */
 
-/** The ways a page is scrolled: each is told, from a page that has the cat on a shelf, what to do; the scroller is `.tv-rows`. */
+/**
+ * The ways a page is scrolled: each is told, from a page that has the cat on a shelf, what to do; the scroller is `.tv-rows`. (The first step of the remote from the top of the library is
+ * more than a step: the banner folds up, and the rows jump by a banner's half before they scroll. The gestures with `-2` in their names follow a first step, that is made before the cat is called.)
+ */
 const GESTURES = {
   "remote-step": async (page) => {
     await page.keyboard.press("ArrowDown");
+  },
+  "remote-step-2": async (page) => {
+    await page.keyboard.press("ArrowDown");
+  },
+  "remote-x2-fast": async (page) => {
+    await page.keyboard.press("ArrowDown");
+    await sleep(150);
+    await page.keyboard.press("ArrowDown");
+  },
+  "remote-x2-slow": async (page) => {
+    await page.keyboard.press("ArrowDown");
+    await sleep(700);
+    await page.keyboard.press("ArrowDown");
+  },
+  "wheel-smooth-x5": async (page) => {
+    // (what a browser with smooth wheel scrolling does with five notches: each is an animation of a few tenths of a second, and they run into each other)
+    await page.evaluate(async () => {
+      const rows = document.querySelector(".tv-rows");
+      for (let i = 0; i < 5; i++) {
+        rows.scrollBy({ top: 100, behavior: "smooth" });
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      }
+    });
   },
   "remote-x3": async (page) => {
     for (let i = 0; i < 3; i++) {
@@ -173,7 +200,7 @@ const startRecording = (page) =>
     const rec = (window.__rec = { samples: [], stop: false });
     const tick = (now) => {
       const seen = window.__kinoCat.snapshot();
-      rec.samples.push({ t: now, top: rows.scrollTop, y: seen.frame.y, grounded: seen.frame.grounded, act: seen.engine.act, flung: seen.engine.flung, surface: seen.engine.surfaceId, scroll: seen.engine.scroll, fast: seen.engine.fast, clip: seen.frame.clip });
+      rec.samples.push({ t: now, top: rows.scrollTop, y: seen.frame.y, grounded: seen.frame.grounded, act: seen.engine.act, flung: seen.engine.flung, surface: seen.engine.surfaceId, scroll: seen.engine.scroll, fast: seen.engine.fast, rise: seen.engine.rise ?? 0, clip: seen.frame.clip });
       if (!rec.stop) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -220,6 +247,19 @@ function analyse(samples, L) {
     rose: (y0 - lowest) / L,
     engineMost: -engineMost,
     fast: Math.max(...samples.map((s) => s.fast)),
+    // (the most the shelves went up in half a second, in steps of the rows' pitch: 1.25 shakes the cat off; and how long after the rows began to move the cat left its shelf, if it did)
+    steps: Math.max(...samples.map((s) => s.rise)),
+    after: (() => {
+      const left = samples.findIndex((s, i) => i >= first && (s.act === "fall" || s.flung));
+      return left < 0 ? null : (samples[left].t - samples[first - 1].t) / 1000;
+    })(),
+    // (how long it was in the air, from the first frame it fell in to the first in which it stood again, and what it stood on then)
+    air: (() => {
+      const left = samples.findIndex((s, i) => i >= first && (s.act === "fall" || s.flung));
+      if (left < 0) return null;
+      const down = samples.findIndex((s, i) => i > left && s.grounded && s.act !== "fall");
+      return down < 0 ? null : { seconds: (samples[down].t - samples[left].t) / 1000, on: samples[down].surface };
+    })(),
     frames: last - first + 1,
   };
 }
@@ -227,9 +267,16 @@ function analyse(samples, L) {
 async function scrollLab(browser, base) {
   const only = args.only ? args.only.split(",") : Object.keys(GESTURES);
   const rows = [];
+  const series = {};
   for (const name of only) {
     const page = await openTv(browser, base);
     await onTheShelves(page, (ms) => sleep(ms));
+    if (/-2$|^remote-x2/.test(name)) {
+      // (the first step from the top of the library is made, and has settled, before the cat is called to the shelf it sits on)
+      await page.keyboard.press("ArrowDown");
+      await sleep(2500);
+      await onTheShelves(page, (ms) => sleep(ms));
+    }
     const world = await worldOf(page);
     const L = world.bodyLength;
     // (the cat is called to the second shelf from the top, with room above it, and told to sit there)
@@ -249,11 +296,14 @@ async function scrollLab(browser, base) {
     const samples = await stopRecording(page);
     const result = analyse(samples, L);
     rows.push({ name, L, ...(result ?? { peak: 0, distance: 0 }) });
+    // (the frames themselves, for working out a rule offline: time in seconds from the first frame, the rows' scroll in body lengths, the cat's height in body lengths, what it is doing)
+    if (args.dump) series[name] = { L, frames: samples.map((s) => [Number(((s.t - samples[0].t) / 1000).toFixed(4)), Number((s.top / L).toFixed(4)), Number((s.y / L).toFixed(4)), s.act, s.grounded ? 1 : 0, Number(s.rise.toFixed(3)), Number(s.scroll.toFixed(1))]) };
     await page.context().close();
   }
+  if (args.dump) writeFileSync(path.resolve(String(args.dump)), JSON.stringify(series));
   const f = (n, d = 1) => (typeof n === "number" ? n.toFixed(d) : "-");
-  console.log(`${"gesture".padEnd(15)} peak L/s  dist L  secs   >12   >20   >26   >40  engine  rose L  fell`);
-  for (const r of rows) console.log(`${r.name.padEnd(15)} ${f(r.peak).padStart(8)} ${f(r.distance).padStart(7)} ${f(r.span, 2).padStart(5)} ${f(r.over12, 2).padStart(5)} ${f(r.over20, 2).padStart(5)} ${f(r.over26, 2).padStart(5)} ${f(r.over40, 2).padStart(5)} ${f(r.engineMost).padStart(7)} ${f(r.rose, 2).padStart(7)}  ${r.fell ? "FELL" : "rode"}`);
+  console.log(`${"gesture".padEnd(15)} peak L/s  dist L  secs   >12   >20   >26   >40  engine  rose L  steps  after  fell  in the air, and where it came down`);
+  for (const r of rows) console.log(`${r.name.padEnd(15)} ${f(r.peak).padStart(8)} ${f(r.distance).padStart(7)} ${f(r.span, 2).padStart(5)} ${f(r.over12, 2).padStart(5)} ${f(r.over20, 2).padStart(5)} ${f(r.over26, 2).padStart(5)} ${f(r.over40, 2).padStart(5)} ${f(r.engineMost).padStart(7)} ${f(r.rose, 2).padStart(7)} ${f(r.steps, 2).padStart(6)} ${(r.after === null || r.after === undefined ? "-" : `${r.after.toFixed(2)}s`).padStart(6)}  ${r.fell ? "FELL" : "rode"}  ${r.air ? `${r.air.seconds.toFixed(2)} s, on ${r.air.on}` : ""}`);
   if (args.json) console.log(JSON.stringify(rows));
 }
 

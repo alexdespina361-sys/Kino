@@ -119,6 +119,8 @@ export interface EngineDebug {
   scroll: number;
   /** How many readings of the page in a row were fast enough to shake the cat off (see SHAKE_SPEED). */
   fast: number;
+  /** How far the shelves have gone up the screen in the last half second, in steps of the rows' pitch (see `RISE_STEPS`): 1 is a step of the remote, 1.25 shakes the cat off. */
+  rise: number;
 }
 
 /** Speeds in body lengths per second, and how quickly the cat gets up to them. */
@@ -242,17 +244,35 @@ const RIDE_MOVING = 0.12;
 /** How fast the cat is carried the way the posters have slid (a share of what is left, for every second): the page is read a few times a second, and the carrying is eased in between. */
 export const RIDE_EASE = 22;
 /**
- * A page that is flung (its shelves going by faster than `SHAKE_SPEED` body lengths a second, in `SHAKE_READINGS` readings of the page one after the other) does not take the cat up with the
+ * A page that is flung (its shelves going by faster than `SHAKE_SPEED` body lengths a second where the rows are `PITCH_DEFAULT` body lengths apart -- that is, `SHAKE_SPEED / PITCH_DEFAULT` of the
+ * rows' pitches a second, whatever size the cat is --, in `SHAKE_READINGS` readings of the page one after the other) does not take the cat up with the
  * shelf it sits on: the cat is shaken off it and falls, in front of the page that goes by (so that, with the page still flying, it seems to hang there as it comes down). It comes down on the first
  * place under it once the page has slowed to `CATCH_SPEED`, or on the foot of the screen, which it is handed to when it is within `HANDOVER` body lengths of it (or has been falling for
  * `FREE_FALL_MAX` seconds). A speed is worked out between two readings of the page at least `SCROLL_SPAN` seconds apart (nearer than that, they are too near to tell a speed from), and a page that
  * has not been read again for `SCROLL_STILL` seconds is thought to be still.
  * (What the library's rows really do, in a browser, at the top of a step, in body lengths a second: one key of the remote 26 to 30, a wheel spun fast 32, three keys in quick succession 36, a page
- * key 72, a key held down 85, so that a step of the remote or a wheel takes the cat with its shelf, and a held key or a flung page does not.)
+ * key 72, a key held down 85, so that a step of the remote takes the cat with its shelf, and a held key or a flung page does not.)
+ *
+ * A page scrolled DOWN (its shelves going up the screen) is shaken off sooner than that, because the cat that goes up with its shelf for a screenful looks like floating, and the speed that
+ * tells a wheel spun fast, or a scrollbar dragged, from one step of the remote is a poor one (they overlap): what tells them apart is how far. A step of the remote is a row's pitch (the greatest
+ * distance between neighbouring shelves; `PITCH_DEFAULT` body lengths where the page shows only one shelf) wherever the cat's size has put its body length, and the cat goes up with the shelf for
+ * that. When the shelves have gone up by more than `RISE_STEPS` of those within `RISE_WINDOW` seconds (net: a page that went back down meanwhile has not), in at least two readings, and are
+ * still going at `RISE_SPEED` body lengths a second or more over the last `RISE_SPAN` seconds, the cat is shaken off, as by a fling: it has risen a step and a quarter at the most, in a few
+ * tenths of a second at the most, and falls from there. (The first movement of a page that has not moved for `RISE_WINDOW` seconds, if it is a jump of `JUMP_SHARE` of a pitch or more by
+ * itself, is not counted: it is the page laid out again, as at the first step of the remote from the top of the library, where the banner folds up, or a notch of a wheel that does not smooth.) A page going the other way,
+ * shelves down the screen, is shaken off only by the speed of a fling: a cat carried down is not floating. Falling, the cat comes down once the page has gone under `CATCH_SPEED` over the last
+ * `CATCH_SPAN` seconds (and not at a reading in which it happens not to have moved: a wheel turns in notches).
  */
 const SHAKE_SPEED = 40;
 const SHAKE_READINGS = 2;
+const RISE_STEPS = 1.25;
+const RISE_WINDOW = 0.5;
+const RISE_SPAN = 0.1;
+const RISE_SPEED = 12;
+const PITCH_DEFAULT = 3;
+const JUMP_SHARE = 0.4;
 const CATCH_SPEED = 8;
+const CATCH_SPAN = 0.1;
 const HANDOVER = 2.2;
 const FREE_FALL_MAX = 3;
 const SCROLL_SPAN = 0.012;
@@ -269,6 +289,16 @@ const PLAY_REACH = 2.6;
 const label = (act: Act): string =>
   act.k === "rest" ? `rest:${act.pose}` : act.k === "shot" ? `shot:${act.clip}` : act.k === "fade" ? (act.to === 0 ? "fade:out" : "fade:in") : act.k === "walk" && act.stalk ? "stalk" : act.k;
 const centre = (rect: Rect): Vec => ({ x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 });
+/**
+ * The pitch of a page's rows: the greatest distance between neighbouring shelves (those that are more than half a body length apart), which is what a step of the remote scrolls the page by at the
+ * most (the rows are not all as tall as each other). Between two and six body lengths, and `PITCH_DEFAULT` where the page shows fewer than two shelves.
+ */
+const pitchOf = (ys: number[], L: number): number => {
+  ys.sort((a, b) => a - b);
+  let most = 0;
+  for (let i = 1; i < ys.length; i++) if (ys[i]! - ys[i - 1]! > 0.5 * L) most = Math.max(most, ys[i]! - ys[i - 1]!);
+  return most > 0 ? clamp(most, 2 * L, 6 * L) : PITCH_DEFAULT * L;
+};
 const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 export class CatEngine {
@@ -382,6 +412,12 @@ export class CatEngine {
   private scrollSize = "";
   private scrollStill = true;
   private fastRun = 0;
+  /**
+   * What the page did in the last `RISE_WINDOW` seconds: for each reading that moved the shelves, when (the engine's clock) and how far (pixels, down the screen positive), and whether it was a
+   * big jump out of stillness by itself (`lone`, see `measureScroll`); and the rows' pitch (pixels).
+   */
+  private scrollTrail: Array<{ at: number; dy: number; lone: boolean }> = [];
+  private scrollPitch = 0;
 
   constructor(seed = 1) {
     this.rng = createRng(seed).fork("director");
@@ -429,6 +465,7 @@ export class CatEngine {
       flung: this.fall?.free === true && !this.fall.landed,
       scroll: this.world ? this.scrollSpeed / this.world.bodyLength : 0,
       fast: this.fastRun,
+      rise: this.world ? this.risen() / (this.scrollPitch || PITCH_DEFAULT * this.world.bodyLength) : 0,
     };
   }
 
@@ -746,7 +783,7 @@ export class CatEngine {
     }
     // (a page that is flung does not take the cat up with its shelf: the cat is shaken off it, whatever it was about to do on it, or doing: the first look at a page that is being flung
     // is of a shelf that has gone from under the cat already, and the cat has begun to leap to another one, which the page takes away from it again)
-    if (this.fastRun >= SHAKE_READINGS && this.shakeOff(world)) return;
+    if ((this.fastRun >= SHAKE_READINGS || this.rising(world.bodyLength)) && this.shakeOff(world)) return;
     if (!this.grounded) return;
     // (not while leaping, but when the leap has landed and is only settling; nor while on the way out to come back somewhere else)
     if ((this.act?.k === "jump" && !this.jump?.landed) || this.queueHas("relocate") || (this.act?.k === "fade" && this.act.to === 0)) return;
@@ -834,6 +871,7 @@ export class CatEngine {
         this.scrollAt = this.now;
         this.scrollSpeed = 0;
         this.fastRun = 0;
+        this.scrollTrail.length = 0;
       }
       return;
     }
@@ -854,11 +892,55 @@ export class CatEngine {
       }
     }
     moved.sort((a, b) => a - b);
-    this.scrollSpeed = moved.length > 0 && span > 0 ? moved[moved.length >> 1]! / span : 0;
-    this.fastRun = Math.abs(this.scrollSpeed) >= SHAKE_SPEED * world.bodyLength ? this.fastRun + 1 : 0;
+    const by = moved.length > 0 ? moved[moved.length >> 1]! : 0;
+    const pitch = pitchOf([...shelves.values()], world.bodyLength);
+    this.scrollSpeed = moved.length > 0 && span > 0 ? by / span : 0;
+    // (a fling is a number of the rows' pitches a second, as a step of the remote is a pitch: the cat's size, which makes the body length, has nothing to do with how fast the page goes by)
+    this.fastRun = Math.abs(this.scrollSpeed) >= (SHAKE_SPEED / PITCH_DEFAULT) * pitch ? this.fastRun + 1 : 0;
+    // (what the page has done lately, for the shelves that go up the screen too fast to be a step of the remote, and for the fall that is to end when the page has slowed. The first movement of
+    // a page that was still, if it is a big jump by itself, is a page laid out again -- the banner of the library folds up at the first step of the remote, and the rows jump by half a
+    // banner before they scroll -- or a notch of a wheel that does not smooth: it is not part of what the page is scrolled by, and so does not count towards the rise)
+    const trail = this.scrollTrail;
+    while (trail.length > 0 && trail[0]!.at < this.now - RISE_WINDOW) trail.shift();
+    if (moved.length === 0) trail.length = 0;
+    else if (by !== 0) trail.push({ at: this.now, dy: by, lone: trail.length === 0 && Math.abs(by) >= JUMP_SHARE * pitch });
+    this.scrollPitch = pitch;
     this.scrollShelves = shelves;
     this.scrollSize = size;
     this.scrollAt = this.now;
+  }
+
+  /** How far the shelves have gone up the screen in the last `RISE_WINDOW` seconds (pixels; where the page has gone back down meanwhile, that is counted off). */
+  private risen(): number {
+    let travel = 0;
+    for (const { at, dy, lone } of this.scrollTrail) if (!lone && at >= this.now - RISE_WINDOW) travel -= dy;
+    return Math.max(0, travel);
+  }
+
+  /**
+   * The page is scrolled down too far and too fast to be a step of the remote (see `RISE_STEPS`): the shelves have gone up by more than a step and a quarter in the last half second, in two
+   * readings at least, and by `RISE_SPEED` body lengths a second over the last tenth of it.
+   */
+  private rising(L: number): boolean {
+    const trail = this.scrollTrail;
+    if (trail.length < 2) return false;
+    let travel = 0;
+    let recent = 0;
+    let readings = 0;
+    for (const { at, dy, lone } of trail) {
+      if (lone || at < this.now - RISE_WINDOW) continue;
+      travel -= dy;
+      if (dy < 0) readings++;
+      if (at >= this.now - RISE_SPAN) recent -= dy;
+    }
+    return readings >= 2 && travel >= RISE_STEPS * (this.scrollPitch || PITCH_DEFAULT * L) && recent >= RISE_SPEED * L * RISE_SPAN;
+  }
+
+  /** How fast the page has gone, either way, over the last `span` seconds (pixels a second): a reading in which it happened not to move counts for what it is, a wheel turns in notches. */
+  private pageSpeed(span: number): number {
+    let net = 0;
+    for (const { at, dy } of this.scrollTrail) if (at >= this.now - span) net += dy;
+    return Math.abs(net) / span;
   }
 
   /**
@@ -1872,7 +1954,7 @@ export class CatEngine {
       this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
       return true;
     }
-    const slow = Math.abs(this.scrollSpeed) < CATCH_SPEED * L;
+    const slow = this.pageSpeed(CATCH_SPAN) < CATCH_SPEED * L;
     if (slow || this.y >= vp.y + vp.h - HANDOVER * L || this.actT > FREE_FALL_MAX) {
       const found = this.dropTarget(world, 0, !slow);
       if (!found) {
