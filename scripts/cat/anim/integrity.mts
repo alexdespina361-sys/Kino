@@ -81,17 +81,27 @@ export class IntegrityMeter {
   private readonly pos: Float64Array;
   /** The bones as the card has them: eight numbers a bone for dual-quaternion skinning (what the player draws with), twelve for linear. */
   private readonly skin: Float32Array;
+  /** (for a blend of the two: the twelve numbers a bone for the linear half) */
+  private readonly skinLinear: Float32Array;
+  private readonly otherPos: Float64Array;
   private readonly at = [0, 0, 0];
   private readonly nor = [0, 0, 0];
+  private readonly mix: number;
 
-  /** `skinning`: how the mesh is skinned: "dual" as the player's shader does it (default), "linear" as the model's own program would, to see what the one saves over the other. */
+  /**
+   * `skinning`: how the mesh is skinned: "dual" as the player's shader does it (default), "linear" as the model's own program would, to see what the one saves over the other,
+   * or a number between 0 (dual) and 1 (linear): the two blended, point by point, as the player's shader blends them with its `uLinear`.
+   */
   constructor(
     private readonly mesh: CatMesh,
     private readonly skeleton: Skeleton,
-    private readonly skinning: "dual" | "linear" = "dual",
+    skinning: "dual" | "linear" | number = "dual",
   ) {
+    this.mix = skinning === "dual" ? 0 : skinning === "linear" ? 1 : skinning;
     this.edges = edgesOf(mesh);
-    this.skin = new Float32Array(skeleton.count * (skinning === "dual" ? 8 : 12));
+    this.skin = new Float32Array(skeleton.count * (this.mix < 1 ? 8 : 12));
+    this.skinLinear = new Float32Array(skeleton.count * 12);
+    this.otherPos = new Float64Array(mesh.count * 3);
     this.pos = new Float64Array(mesh.count * 3);
     this.rest = new Float64Array(mesh.count * 3);
     this.skinned(new Pose(skeleton), this.rest);
@@ -139,7 +149,7 @@ export class IntegrityMeter {
   /** The mesh's vertices as the pose has them (and the turns the director lays on top of it, when they are given), in the cat's frame. */
   private skinned(pose: Pose, into: Float64Array, adjust?: readonly Adjust[]): void {
     const { mesh, skin } = this;
-    if (this.skinning === "dual") {
+    if (this.mix < 1) {
       solveDual(this.skeleton, pose, skin, adjust);
       const { at, nor } = this;
       for (let v = 0; v < mesh.count; v++) {
@@ -148,8 +158,20 @@ export class IntegrityMeter {
         into[v * 3 + 1] = at[1]!;
         into[v * 3 + 2] = at[2]!;
       }
+      if (this.mix > 0) {
+        const other = this.otherPos;
+        this.linearInto(pose, other, this.skinLinear, adjust);
+        const m = this.mix;
+        for (let i = 0; i < into.length; i++) into[i] = into[i]! * (1 - m) + other[i]! * m;
+      }
       return;
     }
+    this.linearInto(pose, into, skin, adjust);
+  }
+
+  /** The mesh skinned with matrices averaged (the bones' twelve numbers each written to `skin`). */
+  private linearInto(pose: Pose, into: Float64Array, skin: Float32Array, adjust?: readonly Adjust[]): void {
+    const { mesh } = this;
     solve(this.skeleton, pose, IDENTITY, skin, adjust);
     for (let v = 0; v < mesh.count; v++) {
       const px = mesh.pos[v * 3]!;
@@ -206,7 +228,7 @@ export class IntegrityMeter {
         let bx: number;
         let by: number;
         let bz: number;
-        if (this.skinning === "dual") {
+        if (this.mix < 1) {
           // (the bone's turn is a quaternion: the opposite turn takes a normal back to the rest frame)
           const o = this.carrier[i]! * 8;
           turnBy(-s[o]!, -s[o + 1]!, -s[o + 2]!, s[o + 3]!, nx, ny, nz, this.nor);

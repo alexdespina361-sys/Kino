@@ -3,10 +3,10 @@ import type { CatCoat } from "../../settings";
 import type { Solved } from "../rig";
 import { COATS } from "./coats";
 import { decodeClips } from "./clipfile";
-import { Director, headYawOf } from "./director";
+import { Director, headYawOf, tipOf } from "./director";
 import { decodeMesh, type CatMesh } from "./format";
 import { HEAD_CENTRE } from "./mouth";
-import { Skeleton, globals, matrixOf, solveDual } from "./pose";
+import { SKIN_LINEAR, Skeleton, globals, matrixOf, solveDual } from "./pose";
 import { FRAGMENT, SHADOW_FRAGMENT, SHADOW_VERTEX, VERTEX } from "./shader";
 import { mat, mul, pitchAbout } from "./world";
 
@@ -24,8 +24,8 @@ export interface View {
   debug?: number;
   /** Wear this coat for this picture (default: the one the cat was given with `setCoat`). */
   coat?: CatCoat;
-  /** Skin with matrices averaged, as the model's own program does, instead of dual quaternions (for the lab: to see what the one saves over the other). */
-  linear?: boolean;
+  /** How much of the skin is bones as matrices averaged, as the model's own program does it, and how much quaternions blended: 0 to 1, or true for 1 (default: `SKIN_LINEAR`; for the lab, to see what the one saves over the other). */
+  linear?: boolean | number;
 }
 
 export interface Box {
@@ -182,7 +182,8 @@ export class GlCat {
     const sy = g * s.sy;
     const sz = g * (s.sx + s.sy) * 0.5;
     // the pitch of a leap, about the middle of the body (the rig's angle is turned over: its y is down), as the flat painter's is: that point stays where it is
-    pitchAbout(w, -s.pitch, 0.4);
+    // (a climb is told in the ledge's own space by its clip, which hangs the body and does the travel itself: the rig's tip for the flat cat would turn it twice)
+    pitchAbout(w, -tipOf(s), 0.4);
     // squash and grow
     t.fill(0);
     t[0] = sx;
@@ -287,7 +288,7 @@ export class GlCat {
     const sc = (2 * box.px) / this.cssW;
     const sy = (2 * box.px) / this.cssH;
     gl.uniform4f(this.loc.uProj as WebGLUniformLocation, sc, sy, (2 * box.ox) / this.cssW - 1, 1 - (2 * box.oy) / this.cssH);
-    gl.uniform1f(this.loc.uLinear as WebGLUniformLocation, view.linear ? 1 : 0);
+    gl.uniform1f(this.loc.uLinear as WebGLUniformLocation, view.linear === undefined ? SKIN_LINEAR : clamp(Number(view.linear), 0, 1));
     gl.uniform4fv(this.loc.uDQ as WebGLUniformLocation, this.bones);
     this.worldRows.set(this.world);
     gl.uniform4fv(this.loc.uWorld as WebGLUniformLocation, this.worldRows);

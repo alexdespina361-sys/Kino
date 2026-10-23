@@ -17,6 +17,10 @@ export interface Hold {
   falling: number;
   /** 0..1: how hard it thrashes. */
   struggle: number;
+  /** 0..1: how far the rear (the hind legs and the tail) hangs, the front legs being held up by something else: a cat that hangs by its forepaws from a lip. */
+  rear: number;
+  /** 0..1: how hard the hind legs pedal (against the face of a ledge, with the forepaws on its lip), the front legs and the tail being let be. */
+  scramble: number;
   /** How far the renderer has tipped the whole body, nose up positive (radians). */
   pitch: number;
   /** How the body speeds up along the way it faces, and upward (body lengths a second squared), smoothed. */
@@ -43,11 +47,13 @@ interface Spec {
   swing: readonly number[];
   lag: number;
   phase: number;
+  /** Whether this is a limb of the rear (the hind legs and the tail), which can hang while the front legs hold on to something. */
+  rear: boolean;
 }
 
-const FRONT: Omit<Spec, "names" | "phase"> = { hang: [0.28, 0.05, 0.1], fall: [1.1, 0.8, 0.6], hz: [1.5, 1.9, 2.4], zeta: 0.4, follow: 0.55, push: 1.7, swing: [0.9, 0.7, 0.4], lag: 0.9 };
-const HIND: Omit<Spec, "names" | "phase"> = { hang: [0.4, -0.06, 0.06], fall: [-0.8, -0.4, 0.1], hz: [1.3, 1.7, 2.2], zeta: 0.4, follow: 0.6, push: 1.5, swing: [0.8, 0.8, 0.5], lag: 0.8 };
-const TAIL: Omit<Spec, "names" | "phase"> = { hang: [0.02, 0, -0.03, 0.04], fall: [2.9, 3.0, 3.1, 3.2], hz: [1.1, 1.3, 1.6, 1.9], zeta: 0.3, follow: 0.7, push: 2.2, swing: [0.35, 0.5, 0.65, 0.8], lag: 0.7 };
+const FRONT: Omit<Spec, "names" | "phase"> = { hang: [0.28, 0.05, 0.1], fall: [1.1, 0.8, 0.6], hz: [1.5, 1.9, 2.4], zeta: 0.4, follow: 0.55, push: 1.7, swing: [0.9, 0.7, 0.4], lag: 0.9, rear: false };
+const HIND: Omit<Spec, "names" | "phase"> = { hang: [0.4, -0.06, 0.06], fall: [-0.8, -0.4, 0.1], hz: [1.3, 1.7, 2.2], zeta: 0.4, follow: 0.6, push: 1.5, swing: [0.8, 0.8, 0.5], lag: 0.8, rear: true };
+const TAIL: Omit<Spec, "names" | "phase"> = { hang: [0.02, 0, -0.03, 0.04], fall: [2.9, 3.0, 3.1, 3.2], hz: [1.1, 1.3, 1.6, 1.9], zeta: 0.3, follow: 0.7, push: 2.2, swing: [0.35, 0.5, 0.65, 0.8], lag: 0.7, rear: true };
 
 const SPECS: readonly Spec[] = [
   { ...FRONT, names: ["frontleg", "frontleg0", "frontleg1", "frontleg2"], phase: 0 },
@@ -143,13 +149,15 @@ export class Dangle {
   update(pose: Pose, dt: number, hold: Hold): void {
     this.measure(pose, hold.pitch);
     const lone = Math.max(hold.held, hold.falling);
-    const rate = clamp(hold.held, 0, 1);
-    const w = clamp(lone, 0, 1);
     const steps = Math.max(1, Math.min(24, Math.ceil(dt / STEP)));
     const h = dt / steps;
     for (const l of this.limbs) {
       const n = l.base.length;
-      if (w < 0.001 && hold.struggle < 0.001) {
+      // (a limb of the rear answers to the world when the rear hangs by itself, and thrashes when it scrambles: the front legs and the tail hold, or are let be, as the clip has them)
+      const w = clamp(l.spec.rear ? Math.max(lone, hold.rear) : lone, 0, 1);
+      const rate = clamp(l.spec.rear ? Math.max(hold.held, hold.rear) : hold.held, 0, 1);
+      const fight = l.spec.rear && l.spec.names[0] !== "tail" ? Math.max(hold.struggle, hold.scramble) : hold.struggle;
+      if (w < 0.001 && fight < 0.001) {
         // (at rest the segments are where the pose has them, so that taking hold of the cat starts from there)
         for (let i = 0; i < n; i++) {
           l.beta[i] = l.base[i]!;
@@ -168,7 +176,7 @@ export class Dangle {
               const above = l.spec.hang[Math.min(i - 1, l.spec.hang.length - 1)]! * (1 - hold.falling) + l.spec.fall[Math.min(i - 1, l.spec.fall.length - 1)]! * hold.falling;
               aim += l.spec.follow * (l.beta[i - 1]! - above);
             }
-            aim += hold.struggle * l.spec.swing[Math.min(i, l.spec.swing.length - 1)]! * Math.sin(l.rhythm - i * l.spec.lag);
+            aim += fight * l.spec.swing[Math.min(i, l.spec.swing.length - 1)]! * Math.sin(l.rhythm - i * l.spec.lag);
             const push = -clamp(hold.forward * l.spec.push, -PUSH_MOST * 60, PUSH_MOST * 60) * Math.cos(l.beta[i]!);
             const acc = -k * (l.beta[i]! - aim) - c * l.speed[i]! + push * (0.4 + 0.6 * rate);
             l.speed[i] = l.speed[i]! + acc * h;
@@ -180,7 +188,7 @@ export class Dangle {
       let above = 0;
       for (let i = 0; i < n; i++) {
         const base = l.base[i]!;
-        const drive = Math.max(w, hold.struggle);
+        const drive = Math.max(w, fight);
         const want = base + drive * wrap(l.beta[i]! - base);
         const turn = wrap(want - base - above);
         above += turn;

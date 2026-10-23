@@ -6,7 +6,7 @@ import { decodeMesh } from "../render/gl/format";
 import { Skeleton, lengthOf } from "../render/gl/pose";
 import { GlCat, type View } from "../render/gl/renderer";
 import { CatRig, GALLOP_STRIDE, WALK_STRIDE } from "../render/rig";
-import type { CatFrame } from "../types";
+import { CLIMB_LIP, type CatFrame } from "../types";
 import { frameOf, POSES } from "./entry";
 
 /**
@@ -28,12 +28,15 @@ interface GlCell {
   /** Draws the cat this many body lengths higher in its cell (one that hangs reaches below its feet line), and marks a point (x to the right, y up, from the feet) where a hand would be. */
   raise?: number;
   hand?: [number, number];
+  /** A ledge whose top is the floor line and whose lip is this many body lengths from the feet (negative: behind them): drawn as a block, for a climb to be seen against. */
+  ledge?: number;
 }
 
 const STRIDE = { walk: WALK_STRIDE, run: GALLOP_STRIDE };
 
 const BG = "#15151b";
 const GROUND = "#2a2a35";
+const LEDGE = "#23232d";
 
 const fromBase64 = (text: string): ArrayBuffer => {
   const raw = atob(text);
@@ -75,6 +78,12 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, clips: string, 
     ctx.fillStyle = BG;
     ctx.fillRect(x0, y0, cw, ch);
     const oy = ch - 24 * scale - (cell.raise ?? 0) * px;
+    if (cell.ledge !== undefined) {
+      // (the block the cat climbs: its top is the floor line, and it goes down from the lip)
+      const lip = Math.max(0, cw / 2 + cell.ledge * px);
+      ctx.fillStyle = LEDGE;
+      ctx.fillRect(x0 + lip, y0 + oy, cw - lip, ch - oy);
+    }
     ctx.fillStyle = GROUND;
     ctx.fillRect(x0, y0 + oy, cw, 3 * scale);
     const z = cell.zoom;
@@ -476,19 +485,21 @@ export const RUN: GlCell[] = cycleOf("run", 12);
  * `n` pictures of one clip of the file, evenly through it (a clip is named for the posture of the engine it serves, and is played the way the director plays that posture: by the ground
  * covered, by the clock, or by how far through a one-shot it is). For looking at a clip as the cat will show it, one side on.
  */
-export function clipCells(mesh: string, clips: string, name: string, n: number, view: View = { tilt: 0 }, blind = false): GlCell[] {
+export function clipCells(mesh: string, clips: string, name: string, n: number, view: View = { tilt: 0 }, blind = false, raise = 0): GlCell[] {
   const skeleton = new Skeleton(decodeMesh(fromBase64(mesh)).skeleton);
   const clip = decodeClips(fromBase64(clips), skeleton).find((c) => c.name === name);
   if (!clip) throw new Error(`no clip ${name}`);
   const plan = PLANS[name as keyof typeof PLANS]?.find((p) => p.clip === name);
   if (!plan) throw new Error(`no posture plays the clip ${name}`);
   const seconds = lengthOf(clip);
+  // (`raise`: the floor line is this many body lengths higher in the cell, for a clip whose cat goes below it: a climb starts hanging under the ledge)
+  const up = { ...(raise ? { raise } : {}), ...(name === "climb" ? { ledge: -CLIMB_LIP } : {}) };
   return Array.from({ length: n }, (_, i) => {
     // (a blind sheet says only which picture it is: a reviewer who is not to know what the clip is must not be told by the label)
     const label = blind ? String(i + 1) : `${name} ${i}/${n}`;
-    if (plan.drive === "odometer") return { label, frame: { clip: name as CatFrame["clip"], vx: 150 }, cycle: i / n, view, settle: 1 };
-    if (plan.drive === "progress") return { label, frame: { clip: name as CatFrame["clip"], progress: n > 1 ? i / (n - 1) : 0 }, view, settle: 1 };
-    return { label, frame: { clip: name as CatFrame["clip"] }, view, settle: (clip.loop ? i / n : n > 1 ? i / (n - 1) : 0) * seconds };
+    if (plan.drive === "odometer") return { label, frame: { clip: name as CatFrame["clip"], vx: 150 }, cycle: i / n, view, settle: 1, ...up };
+    if (plan.drive === "progress") return { label, frame: { clip: name as CatFrame["clip"], progress: n > 1 ? i / (n - 1) : 0, ...(name === "climb" ? { grounded: false } : {}) }, view, settle: 1, ...up };
+    return { label, frame: { clip: name as CatFrame["clip"] }, view, settle: (clip.loop ? i / n : n > 1 ? i / (n - 1) : 0) * seconds, ...up };
   });
 }
 

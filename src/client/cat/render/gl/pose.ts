@@ -290,6 +290,44 @@ export function globals(skeleton: Skeleton, pose: Pose, adjust: readonly Adjust[
   }
 }
 
+const turned = [0, 0, 0, 1];
+
+/** The turn a rotation matrix (given as its three rows) is, as a unit quaternion (x y z w) written to `out`. */
+export function turnOfRows(m00: number, m01: number, m02: number, m10: number, m11: number, m12: number, m20: number, m21: number, m22: number, out: number[] | Float32Array): void {
+  const trace = m00 + m11 + m22;
+  let x: number, y: number, z: number, w: number;
+  if (trace > 0) {
+    const k = Math.sqrt(trace + 1) * 2;
+    w = k / 4;
+    x = (m21 - m12) / k;
+    y = (m02 - m20) / k;
+    z = (m10 - m01) / k;
+  } else if (m00 > m11 && m00 > m22) {
+    const k = Math.sqrt(1 + m00 - m11 - m22) * 2;
+    w = (m21 - m12) / k;
+    x = k / 4;
+    y = (m01 + m10) / k;
+    z = (m02 + m20) / k;
+  } else if (m11 > m22) {
+    const k = Math.sqrt(1 + m11 - m00 - m22) * 2;
+    w = (m02 - m20) / k;
+    x = (m01 + m10) / k;
+    y = k / 4;
+    z = (m12 + m21) / k;
+  } else {
+    const k = Math.sqrt(1 + m22 - m00 - m11) * 2;
+    w = (m10 - m01) / k;
+    x = (m02 + m20) / k;
+    y = (m12 + m21) / k;
+    z = k / 4;
+  }
+  const l = Math.hypot(x, y, z, w) || 1;
+  out[0] = x / l;
+  out[1] = y / l;
+  out[2] = z / l;
+  out[3] = w / l;
+}
+
 /**
  * The bones the card is given to skin by dual quaternions (a bone's skin is a turn and a move and nothing else, so it is one: the turn as a quaternion, and half the move turned by
  * it). Two bones that are turned far apart are then blended as a turn that is half of the one and half of the other, not as two matrices that are averaged (which shrinks
@@ -312,39 +350,8 @@ export function solveDual(skeleton: Skeleton, pose: Pose, out: Float32Array, adj
       s[r * 4 + 3] = r0 * skeleton.bind[b + 3]! + r1 * skeleton.bind[b + 7]! + r2 * skeleton.bind[b + 11]! + gT[j * 3 + r]!;
     }
     // the turn of the matrix's rotation part, as a quaternion
-    const m00 = s[0]!, m01 = s[1]!, m02 = s[2]!, m10 = s[4]!, m11 = s[5]!, m12 = s[6]!, m20 = s[8]!, m21 = s[9]!, m22 = s[10]!;
-    const trace = m00 + m11 + m22;
-    let x: number, y: number, z: number, w: number;
-    if (trace > 0) {
-      const k = Math.sqrt(trace + 1) * 2;
-      w = k / 4;
-      x = (m21 - m12) / k;
-      y = (m02 - m20) / k;
-      z = (m10 - m01) / k;
-    } else if (m00 > m11 && m00 > m22) {
-      const k = Math.sqrt(1 + m00 - m11 - m22) * 2;
-      w = (m21 - m12) / k;
-      x = k / 4;
-      y = (m01 + m10) / k;
-      z = (m02 + m20) / k;
-    } else if (m11 > m22) {
-      const k = Math.sqrt(1 + m11 - m00 - m22) * 2;
-      w = (m02 - m20) / k;
-      x = (m01 + m10) / k;
-      y = k / 4;
-      z = (m12 + m21) / k;
-    } else {
-      const k = Math.sqrt(1 + m22 - m00 - m11) * 2;
-      w = (m10 - m01) / k;
-      x = (m02 + m20) / k;
-      y = (m12 + m21) / k;
-      z = k / 4;
-    }
-    const l = Math.hypot(x, y, z, w) || 1;
-    x /= l;
-    y /= l;
-    z /= l;
-    w /= l;
+    turnOfRows(s[0]!, s[1]!, s[2]!, s[4]!, s[5]!, s[6]!, s[8]!, s[9]!, s[10]!, turned);
+    const x = turned[0]!, y = turned[1]!, z = turned[2]!, w = turned[3]!;
     // (a bone's turn and its negative are one turn: which of the two it is is fixed below, for the whole skeleton at once)
     const tx = s[3]!;
     const ty = s[7]!;
@@ -374,11 +381,23 @@ export function solveDual(skeleton: Skeleton, pose: Pose, out: Float32Array, adj
 }
 
 /**
+ * How much of the skin is bones as matrices averaged and how much is bones as quaternions blended (0: all quaternions, 1: all matrices). Quaternions keep what lies between two
+ * bones turned far apart the size it was (a twisted neck) but bulge where a limb is folded hard against the body, matrices pinch there. Blind judges, shown the same clips skinned
+ * both ways without being told which was which, found the chest under a raised paw, a sitting haunch and a stretching shoulder ballooning through the floor with quaternions
+ * (the clear cases: 13 px of 150 in a stretch) and pinched and creased with matrices; the volume of the body in the folded clips (groom, point, stretch, tap, pet) is nearest
+ * to what it was at rest, either side, with a share between 0.5 and 0.7, and the clips where the matrices shrink it the most (a climb, a run) are not worse than a few per cent
+ * there. The neck turned against the body looks the same with any share. Same number for the shader (the `uLinear` it is given) and for the tools that skin on the processor.
+ */
+export const SKIN_LINEAR = 0.7;
+
+/**
  * A point of the mesh and its normal, skinned by up to four of the bones `solveDual` gave (`skin` and `weight` are the point's four bones and their weights, the weights
  * adding to one): the same arithmetic as the vertex shader's. `at` is where the point's numbers start in `skin` and `weight`; the result is written to `p` and `n`.
+ * `linear`: how much of the result is the bones as matrices averaged (each bone's own turn and move of the point, then the weights), the rest quaternions blended.
  */
-export function dualSkin(dq: ArrayLike<number>, skin: ArrayLike<number>, weight: ArrayLike<number>, at: number, scale: number, px: number, py: number, pz: number, nx: number, ny: number, nz: number, p: number[], n: number[]): void {
+export function dualSkin(dq: ArrayLike<number>, skin: ArrayLike<number>, weight: ArrayLike<number>, at: number, scale: number, px: number, py: number, pz: number, nx: number, ny: number, nz: number, p: number[], n: number[], linear = 0): void {
   let rx = 0, ry = 0, rz = 0, rw = 0, dx = 0, dy = 0, dz = 0, dw = 0;
+  let mx = 0, my = 0, mz = 0, lx = 0, ly = 0, lz = 0;
   // (the bones are blended as `solveDual` signed them: each on the side of the bone it hangs from, whatever bone a point lists first)
   for (let k = 0; k < 4; k++) {
     const w = weight[at + k]! * scale;
@@ -392,6 +411,18 @@ export function dualSkin(dq: ArrayLike<number>, skin: ArrayLike<number>, weight:
     dy += w * dq[o + 5]!;
     dz += w * dq[o + 6]!;
     dw += w * dq[o + 7]!;
+    if (linear > 0) {
+      const qx = dq[o]!, qy = dq[o + 1]!, qz = dq[o + 2]!, qw = dq[o + 3]!;
+      const ex = dq[o + 4]!, ey = dq[o + 5]!, ez = dq[o + 6]!, ew = dq[o + 7]!;
+      turnBy(qx, qy, qz, qw, px, py, pz, p);
+      mx += w * (p[0]! + 2 * (qw * ex - ew * qx + (qy * ez - qz * ey)));
+      my += w * (p[1]! + 2 * (qw * ey - ew * qy + (qz * ex - qx * ez)));
+      mz += w * (p[2]! + 2 * (qw * ez - ew * qz + (qx * ey - qy * ex)));
+      turnBy(qx, qy, qz, qw, nx, ny, nz, n);
+      lx += w * n[0]!;
+      ly += w * n[1]!;
+      lz += w * n[2]!;
+    }
   }
   const len = Math.hypot(rx, ry, rz, rw) || 1;
   rx /= len;
@@ -408,6 +439,14 @@ export function dualSkin(dq: ArrayLike<number>, skin: ArrayLike<number>, weight:
   p[1] = p[1]! + 2 * (rw * dy - dw * ry + (rz * dx - rx * dz));
   p[2] = p[2]! + 2 * (rw * dz - dw * rz + (rx * dy - ry * dx));
   turnBy(rx, ry, rz, rw, nx, ny, nz, n);
+  if (linear > 0) {
+    p[0] = p[0]! + (mx - p[0]!) * linear;
+    p[1] = p[1]! + (my - p[1]!) * linear;
+    p[2] = p[2]! + (mz - p[2]!) * linear;
+    n[0] = n[0]! + (lx - n[0]!) * linear;
+    n[1] = n[1]! + (ly - n[1]!) * linear;
+    n[2] = n[2]! + (lz - n[2]!) * linear;
+  }
 }
 
 /** A vector turned by a quaternion (unit): v + 2 r x (r x v + w v). */

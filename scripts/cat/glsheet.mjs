@@ -34,6 +34,8 @@ filmOptions.blind = flag("blind", "") !== "";
 filmOptions.plain = flag("plain", "") !== "";
 // (--follow=1: the camera goes with the cat, for one that is carried about)
 filmOptions.follow = flag("follow", "") !== "";
+// (--raise=<body lengths>: for a clip sheet, the floor line higher in the cell, for a clip whose cat goes below it, as a climb does)
+filmOptions.raise = Number(flag("raise", 0));
 // (--ref=<s>: the moment of the recording whose feet are on the floor line, for a strip that starts with the cat in the air)
 if (flag("ref", "") !== "") filmOptions.refAt = Number(flag("ref", 0));
 // (a closer look at a strip: --zoom=2.4 --at=0.3,0.55 [the place, in body lengths forward and up from the feet], and the camera: --turn=-0.5 --tilt=0.1)
@@ -41,9 +43,10 @@ if (flag("zoom", "")) {
   filmOptions.zoom = Number(flag("zoom", 1));
   filmOptions.at = flag("at", "0,0.4").split(",").map(Number);
 }
-if (flag("turn", "") || flag("tilt", "") || flag("debug", "") || flag("linear", "")) filmOptions.view = { ...(flag("turn", "") ? { turn: Number(flag("turn", 0)) } : {}), ...(flag("tilt", "") ? { tilt: Number(flag("tilt", 0)) } : {}), ...(flag("debug", "") ? { debug: Number(flag("debug", 0)) } : {}), ...(flag("linear", "") ? { linear: true } : {}) };
-// (--linear=1: skin with matrices averaged instead of dual quaternions, to see what the one saves over the other; every kind of sheet takes it)
-filmOptions.over = flag("linear", "") ? { linear: true } : {};
+if (flag("turn", "") || flag("tilt", "") || flag("debug", "") || flag("linear", "")) filmOptions.view = { ...(flag("turn", "") ? { turn: Number(flag("turn", 0)) } : {}), ...(flag("tilt", "") ? { tilt: Number(flag("tilt", 0)) } : {}), ...(flag("debug", "") ? { debug: Number(flag("debug", 0)) } : {}), ...(flag("linear", "") ? { linear: Number(flag("linear", 1)) } : {}) };
+// (--linear=<0 to 1>: how much of the skin is matrices averaged and how much dual quaternions, to see what the one saves over the other (0: all quaternions, 1: all matrices; the player
+// has SKIN_LINEAR of pose.ts); every kind of sheet takes it)
+filmOptions.over = flag("linear", "") ? { linear: Number(flag("linear", 1)) } : {};
 const code = await bundle(resolve(root, "src/client/cat/lab/gl.ts"), "CatLabGl");
 // (the software driver by default, so a sheet looks the same on every machine; --gpu=real is the machine's own graphics card, as a viewer's screen would draw it)
 const browser = await chromium.launch(
@@ -76,7 +79,7 @@ await page.evaluate(
     else if (which === "swat") lab.glSheet(canvas, data, clipData, sel(lab.SWAT), c, s, 7, options.cellW, options.cellH, options.coat, options.over);
     else if (which === "walk") lab.glSheet(canvas, data, clipData, sel(lab.WALK), c, s, 7, 300, 230, options.coat, options.over);
     else if (which === "run") lab.glSheet(canvas, data, clipData, sel(lab.RUN), c, s, 7, 300, 230, options.coat, options.over);
-    else if (which === "clip") lab.glSheet(canvas, data, clipData, sel(lab.clipCells(data, clipData, options.clip, options.n, options.view, options.blind)), c, s, 7, options.cellW, options.cellH, options.coat, options.over);
+    else if (which === "clip") lab.glSheet(canvas, data, clipData, sel(lab.clipCells(data, clipData, options.clip, options.n, options.view, options.blind, options.raise)), c, s, 7, options.cellW, options.cellH, options.coat, options.over);
   },
   [kind, mesh, clips, scale, cols, pick, film, filmOptions],
 );

@@ -1,5 +1,6 @@
 import { clamp, easeInOut } from "../../math";
 import { CLIMB_GRAB, CLIMB_OVER, CLIMB_PULL, JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT, type CatFrame, type Clip as EngineClip } from "../../types";
+import { climbPose } from "../climb";
 import type { Solved } from "../rig";
 import { Pose, Skeleton, blend, lengthOf, sampleFrame, turnAbout, type Adjust, type Clip } from "./pose";
 import { Dangle, type Hold } from "./held";
@@ -149,6 +150,14 @@ const HEAD_YAW_REACH = 2.1;
 export function headYawOf(s: Solved): number {
   return clamp(-(Math.PI / 2) * s.flip * (1 - s.head.yaw), -HEAD_YAW_REACH, HEAD_YAW_REACH);
 }
+
+/**
+ * How far the whole body is tipped (the rig's pitch: negative lifts the nose). A climb is the exception: the flat cat is tipped by the rig as it hangs from the lip, but the solid cat's clip is told
+ * in the ledge's own space and hangs the body itself, so a tip on top of it would turn the cat twice.
+ */
+export function tipOf(s: Solved): number {
+  return s.frame.clip === "climb" ? 0 : s.pitch;
+}
 /**
  * How a turn of the head against the body is shared along the neck (the bones from the chest up, each with its share of the turn about the vertical and of the tilt): a head turned
  * on its own bone alone wrings the neck at one joint. A skeleton with no bones of the neck turns the head alone.
@@ -165,6 +174,9 @@ const HANG_IN = 9;
 const HANG_OUT = 5;
 /** The speed (body lengths a second, downward) from which a cat that is in the air and not leaping is falling free. */
 const FALL_SPEED = 7;
+/** How quickly the floor comes under the tail of a cat that lands or is set down, and goes from under a cat that is lifted, a second (the tail is held up from it as it goes, not dropped). */
+const FLOOR_IN = 6;
+const FLOOR_OUT = 14;
 /** The most the jaw opens (radians: a yawn is wide). */
 const JAW_OPEN = 0.8;
 /** How far an ear leans for a whole unit of the rig's ear angle. */
@@ -191,6 +203,11 @@ export class Director {
   private held = 0;
   private falling = 0;
   private struggle = 0;
+  /** How far the rear of the cat hangs while its forepaws hold on to a lip, and how hard its hind legs pedal against the face of the ledge. */
+  private rear = 0;
+  private scramble = 0;
+  /** How much of the floor there is under the tail (1 for a cat on its feet or lying, 0 for one that hangs or is in the air), eased. */
+  private floor = 0;
   private lastVx = 0;
   private lastVy = 0;
   private accelX = 0;
@@ -254,6 +271,9 @@ export class Director {
     this.held = 0;
     this.falling = 0;
     this.struggle = 0;
+    this.rear = 0;
+    this.scramble = 0;
+    this.floor = 0;
     this.lastVx = 0;
     this.lastVy = 0;
     this.accelX = 0;
@@ -363,11 +383,15 @@ export class Director {
 
     // --- what hangs: the limbs of a cat in a hand or in the air answer to the world, not to the clip
     // (the renderer tips the whole body by the rig's pitch turned over: positive is nose up)
-    const tip = -s.pitch;
+    const tip = -tipOf(s);
     this.takeHold(frame, dt, px);
     if (this.follows) {
-      const hold: Hold = { held: this.held, falling: this.falling, struggle: this.struggle, pitch: tip, forward: gust.forward, up: gust.up, time: this.age };
+      const hold: Hold = { held: this.held, falling: this.falling, struggle: this.struggle, rear: this.rear, scramble: this.scramble, pitch: tip, forward: gust.forward, up: gust.up, time: this.age };
       this.dangle.update(this.pose, dt, hold);
+      // --- and the floor: a tail that lies on it is not in it (a cat that is held, falls, is in the air or hauls itself over a ledge has none under it)
+      const standing = frame.grounded && !frame.carried && frame.clip !== "climb" && frame.clip !== "jump" ? 1 - Math.max(this.held, this.falling, this.rear) : 0;
+      this.floor += (standing - this.floor) * (1 - Math.exp(-dt * (standing > this.floor ? FLOOR_IN : FLOOR_OUT)));
+      this.secondary.settle(this.pose, this.floor);
     }
 
     // --- what is laid on top
@@ -394,6 +418,10 @@ export class Director {
     this.falling = toward(this.falling, dropping ? 1 : 0);
     // (a cat that is not in a hand does not fight it, whatever the last picture said)
     this.struggle = toward(this.struggle, frame.carried ? clamp(frame.struggle ?? 0, 0, 1) : 0);
+    // (a cat that climbs hangs by its forepaws until its chest is over the lip: its hind legs and its tail hang from it as they hang from a hand, and pedal against the wall; the engine's own numbers for how much)
+    const up = frame.clip === "climb" && !frame.carried ? climbPose(frame.progress) : null;
+    this.rear = toward(this.rear, up ? up.hang : 0);
+    this.scramble = toward(this.scramble, up ? up.scramble : 0);
   }
 
   /** What the body is doing just now, for what follows the clip: how it is speeding up (the engine gives its speed, in pixels a second), how much a tail would sway, how lively and how it breathes. */

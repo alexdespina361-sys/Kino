@@ -167,6 +167,91 @@ describe("skinning by dual quaternions", () => {
     expect(Math.hypot(near2[0]! - first[0]!, near2[1]! - first[1]!, near2[2]! - first[2]!)).toBeLessThan(0.05);
   });
 
+  it("blends with the bones as matrices averaged by the share it is asked for: none is the quaternions, all is the matrices, half is half way", () => {
+    const pose = new Pose(skeleton);
+    // the half turn again: a point one step off b's axis, half carried by a and half by b
+    pose.r.set(turnAbout(1, 0, 0, Math.PI), 4);
+    const dq = new Float32Array(skeleton.count * 8);
+    solveDual(skeleton, pose, dq);
+    const at = (linear: number): number[] => {
+      const out = [0, 0, 0];
+      dualSkin(dq, [0, 1, 0, 0], [0.5, 0.5, 0, 0], 0, 1, 1, 1, 0, 0, 0, 1, out, [0, 0, 0], linear);
+      return out;
+    };
+    const plain = [0, 0, 0];
+    dualSkin(dq, [0, 1, 0, 0], [0.5, 0.5, 0, 0], 0, 1, 1, 1, 0, 0, 0, 1, plain, [0, 0, 0]);
+    near(at(0), plain, 1e-9);
+    // all matrices: the point comes to the axis; quaternions: it keeps its distance from it
+    expect(Math.hypot(at(1)[1]!, at(1)[2]!)).toBeLessThan(1e-5);
+    expect(Math.hypot(at(0)[1]!, at(0)[2]!)).toBeCloseTo(1, 5);
+    // (the places are blended, so half is half of each: here, half the distance from the axis)
+    expect(Math.hypot(at(0.5)[1]!, at(0.5)[2]!)).toBeCloseTo(0.5, 5);
+    const matrices = new Float32Array(skeleton.count * 12);
+    solve(skeleton, pose, IDENTITY, matrices);
+    const a = apply(matrices, 0, [1, 1, 0]);
+    const b = apply(matrices, 12, [1, 1, 0]);
+    near(at(1), [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], 1e-5);
+  });
+
+  it("puts a point, whatever the turns, where the bones' matrices averaged put it, and the normal likewise, when it is asked for all of them", () => {
+    const pose = new Pose(skeleton);
+    pose.r.set(turnAbout(0.6, 0.0, 0.8, 1.1), 4);
+    pose.r.set(turnAbout(0, 1, 0, -0.7), 8);
+    pose.r.set(turnAbout(0.36, -0.8, 0.48, 2.2), 12);
+    pose.t.set([0.2, 0.1, 0.4], 0);
+    const dq = new Float32Array(skeleton.count * 8);
+    solveDual(skeleton, pose, dq);
+    const matrices = new Float32Array(skeleton.count * 12);
+    solve(skeleton, pose, IDENTITY, matrices);
+    const bones = [2, 1, 3, 0];
+    const weights = [0.4, 0.3, 0.2, 0.1];
+    const p: [number, number, number] = [1.4, -0.3, 0.9];
+    const expected = [0, 0, 0];
+    const expectedNormal = [0, 0, 0];
+    bones.forEach((b, i) => {
+      const at = apply(matrices, b * 12, p);
+      // (a normal is turned by the matrix's turn alone: the matrix applied to it, less where it puts the origin)
+      const o = apply(matrices, b * 12, [0, 0, 0]);
+      const n = apply(matrices, b * 12, [0.2, 0.9, -0.4]);
+      for (let k = 0; k < 3; k++) {
+        expected[k] = expected[k]! + weights[i]! * at[k]!;
+        expectedNormal[k] = expectedNormal[k]! + weights[i]! * (n[k]! - o[k]!);
+      }
+    });
+    const got = [0, 0, 0];
+    const normal = [0, 0, 0];
+    dualSkin(dq, bones, weights, 0, 1, p[0], p[1], p[2], 0.2, 0.9, -0.4, got, normal, 1);
+    near(got, expected, 1e-5);
+    near(normal, expectedNormal, 1e-5);
+    // and for a share, the two are mixed place by place
+    const dual = [0, 0, 0];
+    dualSkin(dq, bones, weights, 0, 1, p[0], p[1], p[2], 0.2, 0.9, -0.4, dual, [0, 0, 0], 0);
+    const mixed = [0, 0, 0];
+    dualSkin(dq, bones, weights, 0, 1, p[0], p[1], p[2], 0.2, 0.9, -0.4, mixed, [0, 0, 0], 0.25);
+    near(mixed, [0, 1, 2].map((k) => dual[k]! * 0.75 + expected[k]! * 0.25), 1e-5);
+  });
+
+  it("turns the normal with the matrices averaged, for the share asked, and with one bone it is the bone's turn whatever the share", () => {
+    const pose = new Pose(skeleton);
+    pose.r.set(turnAbout(0, 0, 1, Math.PI / 2), 4);
+    const dq = new Float32Array(skeleton.count * 8);
+    solveDual(skeleton, pose, dq);
+    const at = [0, 0, 0];
+    for (const linear of [0, 0.3, 1]) {
+      const n = [0, 0, 0];
+      dualSkin(dq, [1, 0, 0, 0], [1, 0, 0, 0], 0, 1, 2, 0, 0, 1, 0, 0, at, n, linear);
+      near(n, [0, 1, 0], 1e-6);
+      near(at, [1, 1, 0], 1e-6);
+    }
+    // two bones a quarter turn apart: the matrices' normals are averaged (shorter than a unit), the quaternions' is a unit, and a share of the one is between
+    const n0 = [0, 0, 0];
+    const n1 = [0, 0, 0];
+    dualSkin(dq, [0, 1, 0, 0], [0.5, 0.5, 0, 0], 0, 1, 2, 0, 0, 1, 0, 0, at, n0, 0);
+    dualSkin(dq, [0, 1, 0, 0], [0.5, 0.5, 0, 0], 0, 1, 2, 0, 0, 1, 0, 0, at, n1, 1);
+    expect(Math.hypot(n0[0]!, n0[1]!, n0[2]!)).toBeCloseTo(1, 6);
+    expect(Math.hypot(n1[0]!, n1[1]!, n1[2]!)).toBeLessThan(0.75);
+  });
+
   it("turns the normal with the blended turn and leaves it a unit", () => {
     const pose = new Pose(skeleton);
     pose.r.set(turnAbout(0, 0, 1, Math.PI / 2), 4);

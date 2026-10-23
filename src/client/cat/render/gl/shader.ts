@@ -28,6 +28,8 @@ void main() {
   // Dual-quaternion skinning (see pose.ts, solveDual): each bone is a turn and a move, held as two quaternions (uDQ: the turn, then the move turned by it, a pair a bone).
   // The bones that carry a point are blended as quaternions, so what lies between two bones turned far apart stays the size it was (matrices averaged shrink it: a neck that is
   // twisted, a knee that is bent). The whole cat's squash and tilt (uWorld, which is not a turn and a move) is laid on after.
+  // Blended quaternions bulge where a limb is folded hard against the body (a chest under a raised paw, a sitting haunch swell into a bag), matrices averaged pinch there, so
+  // the two are mixed (uLinear: the share of the matrices; see SKIN_LINEAR in pose.ts for how it was chosen).
   vec4 qr = vec4(0.0);
   vec4 qd = vec4(0.0);
   vec3 pm = vec3(0.0);
@@ -45,8 +47,8 @@ void main() {
       vec4 d = uDQ[b + 1];
       qr += w * r;
       qd += w * d;
-      // (and, for the lab to see what the one saves over the other: the same bones as matrices, averaged)
-      if (uLinear > 0.5) {
+      // (and the same bones as matrices, averaged)
+      if (uLinear > 0.0) {
         pm += w * (aPos + 2.0 * cross(r.xyz, cross(r.xyz, aPos) + r.w * aPos) + 2.0 * (r.w * d.xyz - d.w * r.xyz + cross(r.xyz, d.xyz)));
         nm += w * (aNor + 2.0 * cross(r.xyz, cross(r.xyz, aNor) + r.w * aNor));
       }
@@ -58,10 +60,8 @@ void main() {
   qd *= qn;
   vec3 pl = aPos + 2.0 * cross(qr.xyz, cross(qr.xyz, aPos) + qr.w * aPos) + 2.0 * (qr.w * qd.xyz - qd.w * qr.xyz + cross(qr.xyz, qd.xyz));
   vec3 nl = aNor + 2.0 * cross(qr.xyz, cross(qr.xyz, aNor) + qr.w * aNor);
-  if (uLinear > 0.5) {
-    pl = pm;
-    nl = nm;
-  }
+  pl = mix(pl, pm, uLinear);
+  nl = mix(nl, nm, uLinear);
   vec4 ph = vec4(pl, 1.0);
   vec3 p = vec3(dot(uWorld[0], ph), dot(uWorld[1], ph), dot(uWorld[2], ph));
   vec3 n = vec3(dot(uWorld[0].xyz, nl), dot(uWorld[1].xyz, nl), dot(uWorld[2].xyz, nl));

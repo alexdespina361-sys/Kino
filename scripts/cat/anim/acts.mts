@@ -5,6 +5,7 @@
 import type { ClipSource } from "../../../src/client/cat/render/gl/clipfile";
 import type { CatMesh } from "../../../src/client/cat/render/gl/format";
 import { Pose, blend, sampleFrame, type Clip, type Skeleton } from "../../../src/client/cat/render/gl/pose";
+import { CLIMB_GRAB, CLIMB_LIP, CLIMB_OVER, CLIMB_PULL, CLIMB_TIME } from "../../../src/client/cat/types";
 import { Body, mixSpec, Recorder, type PawName, type Spec } from "./posegen.mts";
 import { poseAt } from "./source.mts";
 
@@ -483,6 +484,50 @@ export function jump(m: Made): ClipSource {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// the climb
+
+/**
+ * Hauling itself up over the lip of a ledge by the forepaws. The engine holds the frame still at the point the cat ends up standing at, on the top of the ledge, and leaves all the travel
+ * to the picture: so this clip is in the ledge's own space (the origin is where the cat stands at the end, the top of the ledge is the floor from the lip, `CLIMB_LIP` behind that point,
+ * forward; the face of the ledge is the wall below the lip), and it starts with the cat hanging below the lip by its forepaws, the body upright, the hind legs and the tail hanging, and goes
+ * through the engine's beats (`CLIMB_GRAB`: the paws take hold; `CLIMB_PULL`: the chest is over the lip and the paws on top; `CLIMB_OVER`: the hind legs are over) to the stand. A cat's body does not
+ * clear a corner by being lifted: the forepaws walk forward on the ledge, the elbows fold and the chest comes over, the hind legs scrabble up the wall and then push.
+ */
+export function climb(m: Made): ClipSource {
+  const stand = standing(m);
+  const rest = (p: PawName): [number, number, number] => m.body.padAtRest(p).at;
+  const LIP = -CLIMB_LIP;
+  const FREE: [number, number, number] = [1, 1, 1];
+  /** A paw's sole at a place in the ledge's space (the sides across are the rest's, pulled in by `across` for paws that grip together). */
+  const at = (p: PawName, x: number, y: number, across = 1, soft: [number, number, number] = FREE): NonNullable<Spec["paws"]>[PawName] => ({ at: [x, y, rest(p)[2] * across], soft });
+  /** The four paws: the front pair and the hind pair, near one first. */
+  const paws = (fn: [number, number], ff: [number, number], hn: [number, number], hf: [number, number], across = 1): NonNullable<Spec["paws"]> => ({
+    "front right": at("front right", fn[0], fn[1], across),
+    "front left": at("front left", ff[0], ff[1], across),
+    "hind right": at("hind right", hn[0], hn[1], across),
+    "hind left": at("hind left", hf[0], hf[1], across),
+  });
+  const key = (u: number, spec: Omit<Spec, "tailFloor">): [number, Spec] => [u, spec];
+  const lip = 0.015;
+  const keys: Array<[number, Spec]> = [
+    // reaching: stretched up the wall, the paws open over the lip, the hind legs and the tail hanging
+    key(0, { hips: { x: LIP - 0.2, y: -0.8, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(92), deg(84), deg(52)], tail: [deg(250), deg(262), deg(268), deg(272)], paws: paws([LIP + 0.04, 0.09], [LIP - 0.02, 0.1], [LIP - 0.2, -1.08], [LIP - 0.24, -1.1], 0.8) }),
+    // the paws take hold of the lip and the weight comes on them
+    key(CLIMB_GRAB, { hips: { x: LIP - 0.22, y: -0.84, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(94), deg(86), deg(56)], tail: [deg(252), deg(264), deg(270), deg(274)], paws: paws([LIP + 0.02, lip], [LIP - 0.03, lip], [LIP - 0.2, -1.12], [LIP - 0.24, -1.14], 0.8) }),
+    // hauling: the forepaws go forward on the ledge, the elbows fold, the chest rises, one hind leg pushes on the wall
+    key(0.38, { hips: { x: LIP - 0.2, y: -0.62, pitch: 1.1 }, back: [deg(76), deg(72)], neck: [deg(78), deg(84), deg(76), deg(44)], tail: [deg(246), deg(258), deg(264), deg(268)], paws: paws([LIP + 0.16, lip], [LIP + 0.1, lip], [LIP - 0.03, -0.52], [LIP - 0.07, -0.78], 0.8) }),
+    // the chest is over the lip, the paws are on the top of the ledge, the belly is at the corner
+    key(CLIMB_PULL, { hips: { x: LIP - 0.14, y: -0.3, pitch: 0.9 }, back: [deg(52), deg(46)], neck: [deg(50), deg(58), deg(52), deg(22)], tail: [deg(236), deg(248), deg(258), deg(262)], paws: paws([LIP + 0.3, lip], [LIP + 0.37, lip], [LIP - 0.02, -0.34], [LIP - 0.05, -0.6], 0.9) }),
+    // the hind legs come over: the weight goes forward over the paws, one hind paw on the top
+    key(CLIMB_OVER, { hips: { x: LIP + 0.1, y: 0.2, pitch: 0.3 }, back: [deg(14), deg(8)], neck: [deg(40), deg(44), deg(40), deg(-6)], tail: [deg(214), deg(222), deg(232), deg(240)], paws: paws([LIP + 0.36, lip], [LIP + 0.4, lip], [LIP + 0.1, lip], [LIP - 0.02, -0.1], 1) }),
+    // and the cat stands where it climbed to
+    key(1, { hips: stand.hips!, back: stand.back!, neck: stand.neck!, tail: stand.tail!, paws: paws([rest("front right")[0], 0.02], [rest("front left")[0], 0.02], [rest("hind right")[0], 0.02], [rest("hind left")[0], 0.02], 1) }),
+  ];
+  const marks = { grab: CLIMB_GRAB * CLIMB_TIME, pull: CLIMB_PULL * CLIMB_TIME, over: CLIMB_OVER * CLIMB_TIME };
+  return render(m, "climb", CLIMB_TIME, false, (_t, u) => through(keys, u), { marks, grounded: false });
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 // from a sit: a paw to the face, a paw out, a leg at the neck
 
 /** The sit as the donor made it: the pose the acts below are laid on, and where its neck's pieces point (the head moves by turns of those). */
@@ -712,7 +757,7 @@ export function swat(m: Made): ClipSource {
  * The acts that the pose generator makes, in the order a person would list the cat's doings. (The donor's swat stays: it bites, and the generated one only reaches out.)
  * Each is laid on the donors' standing and sitting, so the donors must be made first.
  */
-export const ACTS: Readonly<Record<string, (m: Made) => ClipSource>> = { sit, loaf, doze, curl, shift, crouch, wiggle, stretch, jump, stalk, groom, point, tap, pet, knead, sniff };
+export const ACTS: Readonly<Record<string, (m: Made) => ClipSource>> = { sit, loaf, doze, curl, shift, crouch, wiggle, stretch, jump, climb, stalk, groom, point, tap, pet, knead, sniff };
 
 /** A sniff: the head down to the floor and moving about it, the nose working, and up again. */
 export function sniff(m: Made): ClipSource {

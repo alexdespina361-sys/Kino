@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Pose, Skeleton, turnAbout, type SkeletonData } from "./pose";
+import { Pose, Skeleton, globals, turnAbout, type SkeletonData } from "./pose";
 import { Secondary, type Gust } from "./secondary";
 
 /** A small cat: the hips, a back that is three bones, and a tail that goes back and up from the hips (the names are the real skeleton's, which is what the followers look for). */
@@ -246,5 +246,99 @@ describe("secondary motion", () => {
     const out = new Pose(skeleton);
     secondary.apply(out, 1 / 60, { ...QUIET, breath: -1 });
     expect(roll(out, "chest")).toBeCloseTo(-0.02, 3);
+  });
+});
+
+describe("a tail on the floor", () => {
+  /** Where the joints of the tail are (height, and the distance of each from the one before), as the pose has them. */
+  const joints = (pose: Pose): { y: number[]; gap: number[] } => {
+    const R = new Float64Array(skeleton.count * 9);
+    const T = new Float64Array(skeleton.count * 3);
+    globals(skeleton, pose, undefined, R, T);
+    const at = TAIL.map((name) => skeleton.bone(name));
+    const y = at.map((j) => T[j * 3 + 1]!);
+    const gap = at.slice(1).map((j, i) => Math.hypot(T[j * 3]! - T[at[i]! * 3]!, T[j * 3 + 1]! - T[at[i]! * 3 + 1]!, T[j * 3 + 2]! - T[at[i]! * 3 + 2]!));
+    return { y, gap };
+  };
+  /** A cat whose tail hangs from the hips down and back, far below where the floor is. */
+  const hanging = (): Pose => turned("tail", 1.75);
+
+  it("is held up off the floor, bone by bone, and the bones keep their length", () => {
+    const secondary = new Secondary(skeleton);
+    const free = hanging();
+    const rest = joints(free);
+    // (it does hang through the floor: the last joint is far below it)
+    expect(rest.y[4]!).toBeLessThan(0.1);
+    const pose = hanging();
+    const root = skeleton.bone("tail") * 4;
+    const turnOfRoot = Array.from(pose.r.slice(root, root + 4));
+    secondary.settle(pose, 1);
+    // (a bone whose end is clear of the floor is left as it was: the root of this tail, which the hips hold up)
+    expect(Array.from(pose.r.slice(root, root + 4))).toEqual(turnOfRoot);
+    const held = joints(pose);
+    for (let k = 1; k < TAIL.length; k++) expect(held.y[k]!).toBeGreaterThan(0.19);
+    // (and it was turned, not bent out of shape: a bone is as long as it was)
+    for (let k = 0; k < held.gap.length; k++) expect(held.gap[k]!).toBeCloseTo(rest.gap[k]!, 4);
+    // (the turns are still turns)
+    for (const name of NAMES) {
+      const o = skeleton.bone(name) * 4;
+      expect(Math.hypot(pose.r[o]!, pose.r[o + 1]!, pose.r[o + 2]!, pose.r[o + 3]!)).toBeCloseTo(1, 4);
+    }
+  });
+
+  it("is left alone when it is clear of the floor, and by a cat that has none under it", () => {
+    const secondary = new Secondary(skeleton);
+    const up = new Pose(skeleton);
+    const before = up.r.slice();
+    secondary.settle(up, 1);
+    expect(Array.from(up.r)).toEqual(Array.from(before));
+    const low = hanging();
+    const kept = low.r.slice();
+    secondary.settle(low, 0);
+    expect(Array.from(low.r)).toEqual(Array.from(kept));
+  });
+
+  it("is held up by as much as the floor is there: half the floor lifts it half of the way", () => {
+    const secondary = new Secondary(skeleton);
+    const height = (share: number): number => {
+      const pose = hanging();
+      secondary.settle(pose, share);
+      return joints(pose).y[4]!;
+    };
+    const [none, half, all] = [height(0), height(0.5), height(1)];
+    expect(half).toBeGreaterThan(none + 0.03);
+    expect(all).toBeGreaterThan(half + 0.03);
+  });
+
+  it("is only held up in the picture: the springs go on as they were, and the tail comes off the floor when its wave does", () => {
+    const run = (hold: boolean): number[][] => {
+      const secondary = new Secondary(skeleton);
+      const out: number[][] = [];
+      for (let i = 0; i < 120; i++) {
+        const pose = hanging();
+        secondary.apply(pose, 1 / 60, { ...QUIET, sway: 1, energy: 0.5 });
+        // (the picture before the floor is the spring's own)
+        out.push(Array.from(pose.r));
+        if (hold) secondary.settle(pose, 1);
+      }
+      return out;
+    };
+    expect(run(true)).toEqual(run(false));
+  });
+
+  it("does not turn a tail that lies along the floor on its end when the floor is above its root", () => {
+    // (the cat is lying in the floor to its hips: the tail is turned up by a quarter of a turn at most, and not stood on end)
+    const secondary = new Secondary(skeleton);
+    const sunk = new Pose(skeleton);
+    sunk.t[skeleton.bone("Hips") * 3 + 1] = -0.5;
+    secondary.settle(sunk, 1);
+    const R = new Float64Array(skeleton.count * 9);
+    const T = new Float64Array(skeleton.count * 3);
+    globals(skeleton, sunk, undefined, R, T);
+    const root = skeleton.bone("tail");
+    const first = skeleton.bone("tailstart");
+    const rise = (T[first * 3 + 1]! - T[root * 3 + 1]!) / Math.hypot(T[first * 3]! - T[root * 3]!, T[first * 3 + 1]! - T[root * 3 + 1]!);
+    expect(rise).toBeLessThanOrEqual(0.5 + 1e-4);
+    expect(rise).toBeGreaterThan(0.3);
   });
 });

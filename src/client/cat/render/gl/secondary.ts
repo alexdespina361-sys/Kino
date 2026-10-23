@@ -1,6 +1,6 @@
 import { createRng, type Rng } from "../../rng";
 import { TAU, clamp } from "../../math";
-import { Pose, Skeleton, globals } from "./pose";
+import { Pose, Skeleton, globals, turnOfRows } from "./pose";
 
 /**
  * What a living body does beyond what its clip says, laid over the clip's pose picture by picture. The back follows what the body did a moment ago (a spring on each bone's own turn,
@@ -58,6 +58,26 @@ const FLICK_LENGTH = 0.38;
 const FLICK_SIZE: readonly [number, number] = [0.14, 0.32];
 const FLICK_EVERY: readonly [number, number] = [2.5, 7];
 
+/**
+ * How high the end of each bone of the tail's chain (root first) has to be above the floor for the tail to lie on it and not in it, body lengths: the tail is a thick brush (the
+ * mesh is 0.1 to 0.25 round the bones of it), and its end, past the last joint, is the plume. The numbers are what the tail of the clips that lie down by themselves keep to.
+ */
+const TAIL_CLEARANCE: readonly number[] = [0.2, 0.2, 0.2, 0.22, 0.24];
+/** How far past its last joint the tail goes (body lengths). */
+const TAIL_PLUME = 0.2;
+/** The most a bone of the tail may be turned up to get its end off the floor, as the sine of how far above level it is to point (a tail whose root is already on the floor is not stood on end). */
+const TAIL_LIFT_MOST = 0.5;
+
+/** A bone of the tail's chain, for keeping it off the floor: the bone and where its end is (the bone after it, or the plume past its own end). */
+interface Link {
+  bone: number;
+  parent: number;
+  /** The bone after it in the chain, or -1 for the last (whose end is `plume`, in its own frame). */
+  next: number;
+  plume: Vec3;
+  clearance: number;
+}
+
 /** What the body is doing, as far as the followers care. */
 export interface Gust {
   /** How fast the body is going just now, along its own length (forward) and up, in body lengths a second squared; the wave and the breath need none. */
@@ -89,6 +109,9 @@ interface Follower {
   /** The sign of a turn about `pitch` that lifts the tip of the tail. */
   lift: number;
 }
+
+/** An angle taken round to between minus and plus a half turn. */
+const wrapAngle = (a: number): number => a - TAU * Math.round(a / TAU);
 
 const normalise = (q: Quat): void => {
   const l = Math.hypot(q[0], q[1], q[2], q[3]) || 1;
@@ -170,6 +193,12 @@ const turnBetween = (from: Quat, to: ArrayLike<number>, out: Vec3): void => {
  */
 export class Secondary {
   private readonly followers: Follower[] = [];
+  /** The tail's chain, for `settle`, and the matrices and places of the skeleton it works from. */
+  private readonly links: Link[] = [];
+  private readonly R: Float64Array;
+  private readonly T: Float64Array;
+  private readonly spare: number[] = [0, 0, 0, 1];
+  private readonly reach: Vec3 = [0, 0, 0];
   private ready = false;
   private time = 0;
   private readonly turn: Vec3 = [0, 0, 0];
@@ -182,12 +211,17 @@ export class Secondary {
   private waveAt = 0;
   private swellAt: number;
 
-  constructor(skeleton: Skeleton, seed = 0x7a11) {
+  constructor(
+    private readonly skeleton: Skeleton,
+    seed = 0x7a11,
+  ) {
     this.rng = createRng(seed);
     this.untilFlick = this.rng.range(...FLICK_EVERY);
     this.swellAt = this.rng.range(0, TAU);
     const R = new Float64Array(skeleton.count * 9);
     const T = new Float64Array(skeleton.count * 3);
+    this.R = new Float64Array(skeleton.count * 9);
+    this.T = new Float64Array(skeleton.count * 3);
     globals(skeleton, new Pose(skeleton), undefined, R, T);
     // the bone at the end of the chain: which way a turn of the others lifts it is measured against it
     const tip = skeleton.has("tail3") ? skeleton.bone("tail3") : -1;
@@ -233,6 +267,19 @@ export class Secondary {
         lift: tip >= 0 ? liftOf(skeleton, bone, pitch, tip) : 1,
       });
     }
+    // --- the tail's chain, for keeping it off the floor: each bone with where its end is
+    const chain = this.followers.filter((f) => f.spec.chain).map((f) => f.bone);
+    chain.forEach((bone, i) => {
+      // (the plume: on past the last joint the way the bone before it points, told in the bone's own frame)
+      const before = skeleton.parent[bone]!;
+      const ux = T[bone * 3]! - T[before * 3]!;
+      const uy = T[bone * 3 + 1]! - T[before * 3 + 1]!;
+      const uz = T[bone * 3 + 2]! - T[before * 3 + 2]!;
+      const l = Math.hypot(ux, uy, uz) || 1;
+      const m = bone * 9;
+      const plume: Vec3 = [0, 1, 2].map((k) => ((R[m + k]! * ux + R[m + 3 + k]! * uy + R[m + 6 + k]! * uz) / l) * TAIL_PLUME) as Vec3;
+      this.links.push({ bone, parent: before, next: chain[i + 1] ?? -1, plume, clearance: TAIL_CLEARANCE[Math.min(i, TAIL_CLEARANCE.length - 1)]! });
+    });
   }
 
   /** The bones that follow (their names, for a test and for the lab). */
@@ -342,6 +389,68 @@ export class Secondary {
         pose.r[o + 3] = f.q[3];
       }
     }
+  }
+
+  /**
+   * Keeps the tail off the floor (y = 0 in the cat's own space), as the pose has it, by `share` (1: all the way; 0: not at all, for a cat in a hand, in the air or hauling itself over a
+   * ledge, which has no floor under its tail). The springs are not touched: it is the picture that is held up, not the tail that is moved in them, so a tail that a wave has let down onto
+   * the floor comes up with the wave and is not kept down by what it was doing below it. A bone whose end would be lower than its clearance is turned up about its joint, about the cat's
+   * z, by the least that lifts its end to it, and the bones after it go with it and are looked at in their turn.
+   */
+  settle(pose: Pose, share: number): void {
+    const { links, R, T, skeleton, spare, reach } = this;
+    if (!(share > 0) || links.length === 0) return;
+    globals(skeleton, pose, undefined, R, T);
+    if (!links.some((link) => this.end(link, reach)[1]! < link.clearance)) return;
+    for (const link of links) {
+      globals(skeleton, pose, undefined, R, T);
+      this.end(link, reach);
+      if (reach[1]! >= link.clearance) continue;
+      const j = link.bone * 3;
+      const vx = reach[0]! - T[j]!;
+      const vy = reach[1]! - T[j + 1]!;
+      const rho = Math.hypot(vx, vy);
+      if (rho < 1e-4) continue;
+      // (it has to point at least this far above level, and the way to that which is the shorter turn: the bone is on the near side of straight down, or the far)
+      const low = Math.asin(clamp((link.clearance - T[j + 1]!) / rho, -1, TAIL_LIFT_MOST));
+      const at = Math.atan2(vy, vx);
+      const toLow = wrapAngle(low - at);
+      const toHigh = wrapAngle(Math.PI - low - at);
+      const turn = (Math.abs(toLow) < Math.abs(toHigh) ? toLow : toHigh) * clamp(share, 0, 1);
+      const c = Math.cos(turn);
+      const s = Math.sin(turn);
+      // (the bone's matrix turned about the cat's z, and then what it has to be against the bone it hangs from)
+      const m = link.bone * 9;
+      const p = link.parent * 9;
+      const rows = [
+        [c * R[m]! - s * R[m + 3]!, c * R[m + 1]! - s * R[m + 4]!, c * R[m + 2]! - s * R[m + 5]!],
+        [s * R[m]! + c * R[m + 3]!, s * R[m + 1]! + c * R[m + 4]!, s * R[m + 2]! + c * R[m + 5]!],
+        [R[m + 6]!, R[m + 7]!, R[m + 8]!],
+      ];
+      const local = (r: number, k: number): number => R[p + r]! * rows[0]![k]! + R[p + 3 + r]! * rows[1]![k]! + R[p + 6 + r]! * rows[2]![k]!;
+      turnOfRows(local(0, 0), local(0, 1), local(0, 2), local(1, 0), local(1, 1), local(1, 2), local(2, 0), local(2, 1), local(2, 2), spare);
+      pose.r[link.bone * 4] = spare[0]!;
+      pose.r[link.bone * 4 + 1] = spare[1]!;
+      pose.r[link.bone * 4 + 2] = spare[2]!;
+      pose.r[link.bone * 4 + 3] = spare[3]!;
+    }
+  }
+
+  /** Where the end of a bone of the tail's chain is, in the cat's space, as `R` and `T` have the pose (written to `out`, which is also given back). */
+  private end(link: Link, out: Vec3): Vec3 {
+    const { R, T } = this;
+    if (link.next >= 0) {
+      out[0] = T[link.next * 3]!;
+      out[1] = T[link.next * 3 + 1]!;
+      out[2] = T[link.next * 3 + 2]!;
+      return out;
+    }
+    const m = link.bone * 9;
+    const [x, y, z] = link.plume;
+    out[0] = T[link.bone * 3]! + R[m]! * x + R[m + 1]! * y + R[m + 2]! * z;
+    out[1] = T[link.bone * 3 + 1]! + R[m + 3]! * x + R[m + 4]! * y + R[m + 5]! * z;
+    out[2] = T[link.bone * 3 + 2]! + R[m + 6]! * x + R[m + 7]! * y + R[m + 8]! * z;
+    return out;
   }
 
   /** The turn that carries a bone of the chain: that of the bone it hangs from as that bone has got to, or, for the root of the chain, of the bones above it as the pose has them. */
