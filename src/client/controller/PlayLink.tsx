@@ -78,18 +78,25 @@ export function PlayLink({ tvName, resolve, onPlay, form = true, status = true }
         </form>
       )}
 
-      {status && resolve && (
-        <p className={`status ${resolve.phase}`} data-testid="resolve-status" data-phase={resolve.phase} role="status">
-          {resolve.phase === "resolving" && (
-            <>
-              <span className="spinner" />
-              {t("play.finding")}
-            </>
-          )}
-          {resolve.phase === "found" && t("play.found", { tv: tvName })}
-          {resolve.phase === "failed" && resolveFailure(resolve)}
-        </p>
-      )}
+      {status && <ResolveLine resolve={resolve} tvName={tvName} />}
     </div>
+  );
+}
+
+/** What the lookup of a link is up to, in a line: looking, found (and on its way to the TV), or why it could not be played. Nothing when there is no lookup. */
+export function ResolveLine({ resolve, tvName }: { resolve: ResolveStatus | null; tvName: string }) {
+  const t = useT();
+  if (!resolve || resolve.phase === "cancelled") return null;
+  return (
+    <p className={`status ${resolve.phase}`} data-testid="resolve-status" data-phase={resolve.phase} role="status">
+      {resolve.phase === "resolving" && (
+        <>
+          <span className="spinner" />
+          {t("play.finding")}
+        </>
+      )}
+      {resolve.phase === "found" && t("play.found", { tv: tvName })}
+      {resolve.phase === "failed" && resolveFailure(resolve)}
+    </p>
   );
 }

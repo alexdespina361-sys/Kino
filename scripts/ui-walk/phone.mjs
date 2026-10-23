@@ -67,9 +67,16 @@ async function friendsOn(phone) {
   await back(phone);
   await phone.getByTestId("menu-friends").waitFor();
 }
+/** The phone's Home (the bar's first place). Before the bar there was a hub to close; the bar is there on every page of the paired phone. */
 async function home(phone) {
-  await back(phone);
+  if ((await phone.getByTestId("tab-home").count()) > 0) await phone.getByTestId("tab-home").click();
+  else await back(phone);
   await phone.getByTestId("account-screen").waitFor({ state: "detached" });
+}
+/** One of the bar's places: "search", "list" or "you". */
+async function goTo(phone, tab) {
+  await phone.getByTestId(`tab-${tab}`).click();
+  await wait(350);
 }
 async function ask(from, tag) {
   const response = await from.request.post(`/api/profiles/${await profileOf(from)}/friends/requests`, { data: { tag } });
@@ -98,10 +105,16 @@ if (parts.has("guest")) {
     await snap(phone, device, "p02b-home-full", { fullPage: true, settle: 100 });
   });
   await step(device, "p03-search", async () => {
+    // (the box is the bar's second place; before the bar it was on Home, under the link box)
+    if ((await phone.getByTestId("tab-search").count()) > 0) {
+      await goTo(phone, "search");
+      await snap(phone, device, "p03a-search-empty");
+    }
     await phone.getByTestId("library-search-input").fill("har");
     await wait(900);
     await snap(phone, device, "p03-search");
     await phone.getByTestId("library-search-input").fill("");
+    if ((await phone.getByTestId("tab-home").count()) > 0) await goTo(phone, "home");
   });
   await step(device, "p04-title-sheet", async () => {
     await phone.getByTestId("library-tile").filter({ hasText: movies[1].title }).first().click();
@@ -322,7 +335,11 @@ if (parts.has("in")) {
     await home(phone);
   });
   await step(device, "p32-lists", async () => {
-    if ((await phone.getByTestId("lists-manage").count()) === 0) await home(phone);
+    if ((await phone.getByTestId("tab-list").count()) > 0) {
+      await goTo(phone, "list"); // (the lists and the ratings are the bar's third place; before the bar they were rows of Home)
+      await snap(phone, device, "p33-my-lists");
+      await snap(phone, device, "p33b-my-lists-full", { fullPage: true, settle: 100 });
+    } else if ((await phone.getByTestId("lists-manage").count()) === 0) await home(phone);
     await phone.getByTestId("lists-manage").click();
     await phone.getByTestId("lists-sheet").waitFor();
     await snap(phone, device, "p32-lists-sheet");

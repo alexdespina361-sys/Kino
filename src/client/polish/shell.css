@@ -1,0 +1,212 @@
+/*
+ * The phone's shell (client/controller/shell, docs/phone-layout): a top bar with the TV in it, four places on a bar at the bottom (Home, Search, My lists, You),
+ * and on a screen that is wide or short (a phone on its side, a tablet) the same bar as a rail down the left edge. Loaded after phone.css; every rule starts
+ * with :root[data-ui="polish"] (polish.test.ts) and all but the tokens go on to say .phone-ui. It is only loaded with the phone's page, which is not a TV's,
+ * but it keeps to what the oldest TV browsers understand (the guard is the same for every sheet of this folder).
+ */
+
+/* ------------------------------ tokens ------------------------------ */
+
+:root[data-ui="polish"] {
+  --bar-h: 56px; /* the bar at the bottom: icon over word */
+  --top-h: 56px; /* the top bar, under the notch */
+  --tap: 48px; /* what a thumb lands on: 48 in the bar and on a main button, 44 is the floor everywhere else */
+  --rail-w: 72px; /* the bar as a rail */
+}
+
+/* Words only a screen reader needs (a page's name: there is a word for it on the bar, but a page has a heading). */
+:root[data-ui="polish"] .phone-ui .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ------------------------------ the page ------------------------------ */
+
+/* The page scrolls (not a box inside it), so the browser's own bar folds away; the bottom bar is fixed, and the page has room for it. */
+:root[data-ui="polish"] .phone.shell {
+  --pad: 16px;
+  --shell-bottom: calc(var(--bar-h) + env(safe-area-inset-bottom));
+  gap: 12px;
+  padding: 0 var(--pad) calc(var(--shell-bottom) + 20px);
+}
+/* The remote has the whole screen: no bar, so no room kept for one. */
+:root[data-ui="polish"] .phone.shell.is-remote {
+  --shell-bottom: 0px;
+  padding-bottom: max(32px, env(safe-area-inset-bottom));
+}
+:root[data-ui="polish"] .phone-ui .tab-panel { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* ------------------------------ the top bar ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  box-sizing: border-box;
+  gap: 8px;
+  height: calc(var(--top-h) + env(safe-area-inset-top));
+  margin: 0 calc(var(--pad) * -1);
+  padding: env(safe-area-inset-top) var(--pad) 0;
+  background: var(--bg);
+}
+:root[data-ui="polish"] .phone-ui .top-actions { display: flex; flex: none; align-items: center; gap: 4px; }
+:root[data-ui="polish"] .phone-ui .top-back { margin-left: -8px; color: var(--text); font-size: 1.5rem; }
+
+/* The TV, as one button: its name over how it is doing; a tap opens the TV's menu. */
+:root[data-ui="polish"] .phone-ui .tv-chip {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 4px 10px 4px 12px;
+  border-radius: var(--p-r-2);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 1.25rem; /* (the size of its icon: the words say their own) */
+  text-align: left;
+  transition: background 0.15s var(--p-ease), transform 0.08s var(--p-ease);
+}
+:root[data-ui="polish"] .phone-ui .tv-chip:active { background: var(--surface-2); transform: scale(0.98); }
+:root[data-ui="polish"] .phone-ui .tv-chip:focus-visible { outline: none; box-shadow: 0 0 0 2px #fff; }
+:root[data-ui="polish"] .phone-ui .tv-chip .top-name { display: flex; flex: 1 1 auto; flex-direction: column; gap: 1px; min-width: 0; }
+:root[data-ui="polish"] .phone-ui .tv-chip .top-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+:root[data-ui="polish"] .phone-ui .tv-chip .tv-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--p-fs-3);
+  font-weight: 700;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-ui="polish"] .phone-ui .tv-chip .tv-status { line-height: 1.25; }
+:root[data-ui="polish"] .phone-ui .tv-chip-more { flex: none; width: 16px; height: 16px; transform: rotate(90deg); }
+/* the narrowest phones: the chip gives up its arrow (and some of its padding) so that "TV disconnected" is not cut */
+@media (max-width: 359px) {
+  :root[data-ui="polish"] .phone-ui .tv-chip { gap: 8px; padding: 4px 8px 4px 10px; }
+  :root[data-ui="polish"] .phone-ui .tv-chip-more { display: none; }
+}
+
+/* ------------------------------ what the lookup of a link is up to ------------------------------ */
+
+/* It stays under the top bar while the page is scrolled: a title is picked a long way down, and the answer is not. */
+:root[data-ui="polish"] .phone.shell > .status {
+  position: sticky;
+  top: calc(var(--top-h) + env(safe-area-inset-top));
+  z-index: 15;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--p-r-2);
+  background: var(--surface-2);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  font-size: var(--p-fs-2);
+}
+
+/* ------------------------------ the bar at the bottom ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .tabbar {
+  position: fixed;
+  z-index: 30;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  box-sizing: border-box;
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  border-top: 1px solid var(--p-line);
+  background: var(--overlay);
+}
+:root[data-ui="polish"] .phone-ui .tab {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  height: var(--bar-h);
+  padding: 4px 2px;
+  color: var(--muted);
+  font-size: var(--p-fs-0);
+  font-weight: 600;
+  line-height: 1.2;
+}
+:root[data-ui="polish"] .phone-ui .tab-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 28px;
+  border-radius: 14px;
+  font-size: 22px;
+  transition: background 0.18s var(--p-ease), transform 0.08s var(--p-ease);
+}
+:root[data-ui="polish"] .phone-ui .tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the place you are in: a pill of the accent behind its icon, and its word as bright as a title (told by shape and weight, not by colour alone) */
+:root[data-ui="polish"] .phone-ui .tab[aria-current="page"] { color: var(--text); }
+:root[data-ui="polish"] .phone-ui .tab[aria-current="page"] .tab-icon { background: rgb(var(--accent-rgb) / 0.3); }
+:root[data-ui="polish"] .phone-ui .tab:active .tab-icon { background: var(--surface-3); transform: scale(0.94); }
+:root[data-ui="polish"] .phone-ui .tab:focus-visible { outline: none; }
+:root[data-ui="polish"] .phone-ui .tab:focus-visible .tab-icon { box-shadow: 0 0 0 2px #fff; }
+
+/* What says something in a line (the TV's answer, the account's) stands above the bar, not on it. */
+:root[data-ui="polish"] .phone.shell:not(.is-remote) .toast,
+:root[data-ui="polish"] .phone.shell:not(.is-remote) .account-toast { bottom: calc(var(--shell-bottom) + 12px); }
+
+/* ------------------------------ a place with nothing in it ------------------------------ */
+
+:root[data-ui="polish"] .phone-ui .tab-heading { font-size: var(--p-fs-5); font-weight: 700; letter-spacing: -0.01em; }
+:root[data-ui="polish"] .phone-ui .empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 16px 24px; text-align: center; }
+:root[data-ui="polish"] .phone-ui .empty-state h3 { font-size: var(--p-fs-4); font-weight: 700; }
+:root[data-ui="polish"] .phone-ui .empty-state .muted { max-width: 22em; }
+:root[data-ui="polish"] .phone-ui .empty-state .btn { margin-top: 8px; }
+:root[data-ui="polish"] .phone-ui .empty-icon { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%; background: var(--surface); color: var(--muted); font-size: 32px; }
+
+/* ------------------------------ a wide or short screen: the bar is a rail ------------------------------ */
+
+/*
+ * Under 480 px tall (a phone on its side) there is no room for a bar under the page, and from 600 px wide (a tablet, a folded-out phone) a row of four is
+ * spread too thin. The same four places go down the left edge, one above the other; the page is the rest, in a column no wider than a person reads.
+ */
+@media (min-width: 600px), (max-height: 479px) {
+  :root[data-ui="polish"] .phone.shell {
+    --pad: max(20px, env(safe-area-inset-right));
+    --p-pad: max(20px, env(safe-area-inset-right));
+    --left: calc(var(--rail-w) + env(safe-area-inset-left) + 20px);
+    --shell-bottom: env(safe-area-inset-bottom);
+    max-width: none;
+    padding: 0 var(--pad) calc(var(--shell-bottom) + 24px) var(--left);
+  }
+  :root[data-ui="polish"] .phone.shell.is-remote {
+    padding-left: var(--pad);
+  }
+  :root[data-ui="polish"] .phone-ui .top { margin: 0 calc(var(--pad) * -1) 0 calc(var(--left) * -1); padding-left: var(--left); padding-right: var(--pad); }
+  :root[data-ui="polish"] .phone.shell.is-remote .top { margin-left: calc(var(--pad) * -1); padding-left: var(--pad); }
+  :root[data-ui="polish"] .phone-ui .tab-panel { width: 100%; max-width: 720px; }
+  :root[data-ui="polish"] .phone-ui .tabbar {
+    top: 0;
+    right: auto;
+    bottom: 0;
+    left: 0;
+    flex-direction: column;
+    justify-content: center;
+    width: calc(var(--rail-w) + env(safe-area-inset-left));
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) env(safe-area-inset-left);
+    border-top: 0;
+    border-right: 1px solid var(--p-line);
+  }
+  :root[data-ui="polish"] .phone-ui .tab { flex: none; height: 64px; }
+  :root[data-ui="polish"] .phone-ui .tab-icon { width: 48px; }
+  :root[data-ui="polish"] .phone.shell:not(.is-remote) .toast,
+  :root[data-ui="polish"] .phone.shell:not(.is-remote) .account-toast { bottom: max(24px, env(safe-area-inset-bottom)); }
+}

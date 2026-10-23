@@ -140,6 +140,11 @@ interface ListRowsProps {
   onManage: () => void;
 }
 
+/** Whether `ListRows` has anything to show: a list with a title in it, or several lists (the way to them). */
+export function hasListRows(lists: readonly ListInfo[], items: readonly LiveListItem[]): boolean {
+  return lists.length >= 2 || lists.some((info) => items.some((item) => listOf(item) === info.id));
+}
+
 /**
  * The lists this profile keeps: a row for each that has a title in it, named as the list is, the titles saved for later. The first
  * row has the way to the lists themselves; when there are several lists and all are empty the way is there on its own, and until
@@ -149,7 +154,7 @@ export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: L
   const t = useT();
   const scores = useScores();
   const filled = lists.filter((info) => items.some((item) => listOf(item) === info.id));
-  if (filled.length === 0 && lists.length < 2) return null;
+  if (!hasListRows(lists, items)) return null;
   const manage = (
     <button type="button" className="row-link" onClick={onManage} data-testid="lists-manage">
       {t("lists.manage")}

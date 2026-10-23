@@ -70,16 +70,22 @@ function MenuRow({ icon, label, onClick, testId, detail }: { icon: ReactNode; la
   );
 }
 
-/** Everything about the account on the phone: who is signed in, the profiles, settings, devices, and signing a TV in. */
+/**
+ * Everything about the account on the phone: who is signed in, the profiles, settings, devices, and signing a TV in. `inline`: the front page of it is a
+ * page of the phone's bar (the "You" tab), not a page laid over it; every page it leads to is still one laid over (with its own way back), and `onClose` is
+ * where the phone goes when the account has no more to show (a profile was chosen, someone signed out).
+ */
 export function AccountScreen({
   onClose,
   initial = "main",
+  inline = false,
   onSessionsChanged,
   onOpenTitle,
   onStartParty,
 }: {
   onClose: () => void;
   initial?: View;
+  inline?: boolean;
   onSessionsChanged?: () => void;
   /** A title a friend sent, or has in a list, was tapped (not given on a phone that has no TV to play it on). */
   onOpenTitle?: (entry: Entry) => void;
@@ -249,8 +255,8 @@ export function AccountScreen({
   const ratingsRow = ratingsOn && <MenuRow icon={<StarIcon />} label={t("rating.mine")} detail={ratings.length > 0 ? String(ratings.length) : undefined} onClick={() => setRatingsOpen(true)} testId="menu-ratings" />;
   /** Next to Settings, for a guest too: anybody may say what is wrong (the number is how many answers from the team wait). */
   const feedbackRow = <MenuRow icon={<MessageIcon />} label={t("feedback.entry")} detail={feedback.unread > 0 ? String(feedback.unread) : undefined} onClick={feedback.open} testId="menu-feedback" />;
-  return (
-    <Page title={t("account.title")} onBack={onClose} testId="account-screen">
+  const front = (
+    <>
       {me && profile ? (
         <div className="page-stack account-hub">
           <section className="account-card" data-testid="account-card">
@@ -309,6 +315,19 @@ export function AccountScreen({
         </div>
       )}
       {ratingsOpen && ratingsOn && <RatingsSheet ratings={ratings} onOpen={(entry) => onOpenTitle?.(entry)} onClose={() => setRatingsOpen(false)} />}
+    </>
+  );
+  if (inline) {
+    return (
+      <section className="tab-you" data-testid="account-screen" aria-label={t("account.title")}>
+        <h2 className="sr-only">{t("account.title")}</h2>
+        {front}
+      </section>
+    );
+  }
+  return (
+    <Page title={t("account.title")} onBack={onClose} testId="account-screen">
+      {front}
     </Page>
   );
 }

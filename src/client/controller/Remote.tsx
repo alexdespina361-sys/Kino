@@ -20,7 +20,7 @@ import {
 import { friendlyError, qualityName, trackName } from "../shared/words";
 import { SeekBar } from "./SeekBar";
 
-export type SheetKind = "link" | "menu" | "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes" | "party" | "tvs";
+export type SheetKind = "menu" | "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes" | "party" | "tvs";
 
 interface RemoteProps {
   tv: TvInfo;
@@ -33,6 +33,8 @@ interface RemoteProps {
   onNext: () => void;
   onPrevious: () => void;
   onOpen: (sheet: SheetKind) => void;
+  /** "Change video": the remote steps aside, to the page where a link is pasted and a title is picked. */
+  onChangeVideo: () => void;
 }
 
 /** What the title is called on the remote (a show without the episode, which has a line of its own). */
@@ -66,7 +68,7 @@ export function Chip({ icon, label, value, onClick, testId }: { icon?: ReactNode
 }
 
 /** The remote: what's playing, a seek bar, transport buttons, and the extras that apply to this video. */
-export function Remote({ tv, online, media, player, send, onStop, onNext, onPrevious, onOpen }: RemoteProps) {
+export function Remote({ tv, online, media, player, send, onStop, onNext, onPrevious, onOpen, onChangeVideo }: RemoteProps) {
   useT();
   // It takes the place of the library, which may have been scrolled far down: it starts at its own top (the title, and the TV's menu, are there).
   useLayoutEffect(() => {
@@ -232,7 +234,7 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
           <button className="btn" data-testid="fullscreen" onClick={toggleFullscreen} disabled={!online}>
             <FullscreenIcon /> {player.fullscreen ? t("remote.exitFullscreen") : t("remote.fullscreen")}
           </button>
-          <button className="btn" data-testid="change-video" onClick={() => onOpen("link")}>
+          <button className="btn" data-testid="change-video" onClick={onChangeVideo}>
             <LinkIcon /> {t("remote.changeVideo")}
           </button>
         </div>

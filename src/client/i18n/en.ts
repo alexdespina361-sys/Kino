@@ -4,6 +4,7 @@
  */
 import { chatEn } from "./chat.en";
 import { catEn } from "./cat.en";
+import { shellEn } from "./shell.en";
 
 export const en = {
   /* common */
@@ -1256,6 +1257,9 @@ export const en = {
 
   /* the chat between two friends (client/chat): kept in a file of its own, spread in here */
   ...chatEn,
+
+  /* the phone's shell, its bar of destinations and the screens in it (client/controller/shell): kept in a file of its own, spread in here */
+  ...shellEn,
 
   /* the cat companion (client/cat): kept in a file of its own, spread in here */
   ...catEn,

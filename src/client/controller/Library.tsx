@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibrarySection } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
@@ -34,10 +34,14 @@ const WAITING_TILES = 3;
 const TMDB_SOURCES = new Set(["Filmpire"]);
 
 /**
- * The search that was open when the home screen went away (a video was started from it, and then stopped): the words, the filter, what
- * the library answered, and how far down the list the page was scrolled. Coming back is coming back to the same list, not to an empty box.
+ * The search that was open when the search page went away (a video was started from it, and then stopped): the words, the filter, and what
+ * the library answered. Coming back is coming back to the same list, not to an empty box. (How far down the page was scrolled is the shell's to
+ * keep: shell/useTabs.ts.)
  */
-const kept: { query: string; filter: Filter; found: { query: string; answers: Answers } | null; scroll: number | null } = { query: "", filter: "all", found: null, scroll: null };
+const kept: { query: string; filter: Filter; found: { query: string; answers: Answers } | null } = { query: "", filter: "all", found: null };
+
+/** The titles of the first row, listed under the empty search box: a list worth tapping before a word is typed. */
+const SUGGESTED = 10;
 
 /** What a section's page says when the library has nothing of it (the TV's words). */
 const SECTION_EMPTY = { movie: "tv.kindEmptyMovies", series: "tv.kindEmptySeries", cartoon: "tv.kindEmptyCartoons", anime: "tv.kindEmptyAnime" } as const satisfies Readonly<Record<LibrarySection, string>>;
@@ -65,24 +69,30 @@ function endIsNear(section: HTMLElement): boolean {
   return height > 0 && section.getBoundingClientRect().bottom - view.bottom <= height * NEAR_END;
 }
 
+/** `browse`: the rows to scroll through (the Home tab). `search`: the box, what it finds, and a list to tap before anything is typed (the Search tab). */
+export type LibraryMode = "browse" | "search";
+
 /**
  * Rows of titles from the server's library, to scroll through (sideways for more of a row, down for more rows: both go on for as long as the
- * library has any), rows of titles like the ones this profile watched or loved, and a search that lists what it finds one under another. A tap on a title
- * opens its page (`onOpen`), a hold puts it in a list, and so does the round button on it; with more than one list that asks which
+ * library has any), rows of titles like the ones this profile watched or loved, and a search that lists what it finds one under another (the two
+ * are two pages of the phone, `mode`). A tap on a title opens its page (`onOpen`), a hold puts it in a list, and so does the round button on it; with more than one list that asks which
  * (`onPick`). Absent when there is no library, unless there is something (`fallback`) to say instead.
  */
-export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpen: (entry: Entry) => void; onPick: (entry: ListEntry) => void; failedLookups?: number; fallback?: ReactNode }) {
+export function Library({ onOpen, onPick, failedLookups = 0, fallback, mode = "browse" }: { onOpen: (entry: Entry) => void; onPick: (entry: ListEntry) => void; failedLookups?: number; fallback?: ReactNode; mode?: LibraryMode }) {
   const t = useT();
   const toggleFor = useListToggle(onPick);
   const scores = useScores();
+  const searchPage = mode === "search";
+  /** What was typed on the search page (the rows page has no box, and what it is never looking for is not kept from it). */
+  const startQuery = searchPage ? kept.query : "";
   const [library, setLibrary] = useState<LibraryData | null>(remembered);
   const [status, setStatus] = useState<Status>(remembered ? "ready" : "loading");
-  const [query, setQuery] = useState(kept.query);
+  const [query, setQuery] = useState(startQuery);
   const [answers, setAnswers] = useState<Answers | null>(() => {
-    const q = wanted(kept.query);
+    const q = wanted(startQuery);
     return !q ? null : kept.found?.query === q ? kept.found.answers : matchLocal(feed.index, remembered?.rows ?? [], q);
   });
-  const [searching, setSearching] = useState(() => Boolean(wanted(kept.query)) && kept.found?.query !== wanted(kept.query));
+  const [searching, setSearching] = useState(() => Boolean(wanted(startQuery)) && kept.found?.query !== wanted(startQuery));
   const [filter, setFilter] = useState<Filter>(kept.filter);
   const [attempt, setAttempt] = useState(0);
   const [searchFailed, setSearchFailed] = useState(false);
@@ -93,7 +103,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
   const feeding = useFeed();
   // "Because you watched ..." and "Because you loved ...": the library knows titles like the ones this profile watched last or scored high.
   const because = useBecause();
-  const pageSection = filter === "all" ? undefined : FILTER_SECTION[filter];
+  const pageSection = searchPage || filter === "all" ? undefined : FILTER_SECTION[filter];
   const displayedRows = useMemo(() => {
     const rows = pageRows(feeding.data, pageSection);
     return pageSection ? rows.filter((row) => isIn(row, pageSection)) : rows;
@@ -103,18 +113,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
     kept.filter = filter;
   }, [filter]);
 
-  // Back on the page with a search that was left: the page is where it was (a sheet scrolls on its own). It is the search that is kept in
-  // place, not the page: a card that was added above it in the meantime (what was just played) must not push it away.
   const shown = Boolean(library && library.rows.length > 0);
-  useLayoutEffect(() => {
-    const section = root.current;
-    if (!shown || !section || section.closest(".sheet")) return;
-    const top = () => section.getBoundingClientRect().top + window.scrollY;
-    if (wanted(kept.query) && kept.scroll !== null) window.scrollTo(0, top() + kept.scroll);
-    return () => {
-      kept.scroll = window.scrollY - top();
-    };
-  }, [shown]);
 
   // A video that would not play may have taken its title off the server's lists: ask for them again (the search with them).
   useEffect(() => {
@@ -144,7 +143,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
   }, [attempt]);
 
   useEffect(() => {
-    kept.query = query;
+    if (searchPage) kept.query = query;
     const q = wanted(query);
     if (!q) {
       setAnswers(null);
@@ -202,7 +201,7 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
 
   // The rows that come next are asked for when the page is scrolled near its end, whatever scrolled it (the window, or the sheet the library is in), and when the
   // page does not fill the screen yet: an answer, or a question that failed and may be asked again, looks again. A search is a list of its own and is not paged.
-  const paging = status === "ready" && shown && answers === null;
+  const paging = !searchPage && status === "ready" && shown && answers === null;
   const latest = useRef({ paging, pageSection });
   latest.current = { paging, pageSection };
   useEffect(() => {
@@ -251,30 +250,42 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
       </>
     );
   }
-  if (!library || library.rows.length === 0) return <>{fallback}</>;
+  if (!library || library.rows.length === 0) {
+    // (The search page is never blank: it says what is the matter, where the rows page has the box for pasting a link instead.)
+    if (!searchPage) return <>{fallback}</>;
+    return (
+      <p className="muted" role="status" data-testid="library-empty">
+        {t("tv.libraryEmpty")}. {t("tv.libraryEmptyHelp")}
+      </p>
+    );
+  }
 
   const toggleOf = (item: LibraryItem) => toggleFor(listEntryOf(item));
   const open = (item: LibraryItem) => () => onOpen(entryOfItem(item));
+  /** The first row that has titles: what the search page lists until something is typed. */
+  const suggested = searchPage && answers === null ? displayedRows.find((row) => row.items.length > 0) : undefined;
 
   return (
-    <section className="library" data-testid="library" aria-label={t("library.title")} ref={root}>
-      <div className="field lib-search-field">
-        <input
-          type="search"
-          placeholder={t("library.search")}
-          aria-label={t("library.searchLabel")}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          data-testid="library-search-input"
-        />
-        {query && (
-          <button type="button" className="field-btn icon" onClick={() => setQuery("")} aria-label={t("common.clear")}>
-            ✕
-          </button>
-        )}
-      </div>
+    <section className="library" data-testid="library" data-mode={mode} aria-label={t("library.title")} ref={root}>
+      {searchPage && (
+        <div className="field lib-search-field">
+          <input
+            type="search"
+            placeholder={t("library.search")}
+            aria-label={t("library.searchLabel")}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            data-testid="library-search-input"
+          />
+          {query && (
+            <button type="button" className="field-btn icon" onClick={() => setQuery("")} aria-label={t("common.clear")}>
+              ✕
+            </button>
+          )}
+        </div>
+      )}
 
-      {answers === null && (
+      {!searchPage && answers === null && (
         <div className="lib-pills" role="group" aria-label={t("library.filter")}>
           {(["all", "movies", "series", "cartoons", "anime"] as const).map((each) => (
             <button key={each} type="button" className="lib-pill" aria-pressed={filter === each} onClick={() => setFilter(each)} data-testid={`filter-${each}`}>
@@ -315,6 +326,19 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback }: { onOpe
             </ul>
           )}
         </div>
+      ) : searchPage ? (
+        suggested && (
+          <div className="lib-row" data-testid="library-suggested">
+            <h3>{rowTitle(suggested)}</h3>
+            <ul className="lib-list">
+              {suggested.items.slice(0, SUGGESTED).map((item) => (
+                <li key={item.id}>
+                  <Result item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
       ) : (
         <>
           {filter === "all" &&
