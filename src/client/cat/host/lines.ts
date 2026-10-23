@@ -43,8 +43,9 @@ const union = (a: Rect, b: Rect): Rect => {
 };
 
 /**
- * The pieces of a page put into lines: the pieces that are side by side, at one height, and no further apart than `gap` (pixels), are one line (the words of a sentence, the names
- * under a row of cards). Pieces that ride the scroller are never one line with ones that do not, nor words with a box. A line is named by its first piece.
+ * The pieces of a page put into lines: the words that are side by side, at one height, and no further apart than `gap` (pixels), are one line (the words of a sentence, the names
+ * under a row of cards). Words that ride the scroller are never one line with ones that do not. A box (a button, a picture) is a line of its own: two buttons side by side are not
+ * one, and what is between them, and above the lower of them, is not theirs. A line is named by its first piece.
  */
 export function mergeLines(pieces: readonly Piece[], gap: number): Line[] {
   const sorted = [...pieces].sort((a, b) => a.rect.x - b.rect.x);
@@ -52,7 +53,7 @@ export function mergeLines(pieces: readonly Piece[], gap: number): Line[] {
   for (const piece of sorted) {
     let joined = false;
     for (const line of lines) {
-      if (line.rides !== piece.rides || line.words !== piece.words || !sameHeight(line.rect, piece.rect)) continue;
+      if (!piece.words || line.rides !== piece.rides || !line.words || !sameHeight(line.rect, piece.rect)) continue;
       // (the pieces are taken from the left, so a piece is to the right of the line or over a part of it)
       if (piece.rect.x - (line.rect.x + line.rect.w) > gap) continue;
       line.rect = union(line.rect, piece.rect);
@@ -92,7 +93,7 @@ const CROWDED = 0.5;
 const SAME_TOP = 3;
 const RUN_GAP = 2;
 /** At most this many of such places for a page. */
-const MOST_PLACES = 36;
+export const MOST_PLACES = 36;
 
 /**
  * The places in front of the words of a page, for a page that has no shelf of its own where words are the only thing in the way: the line along the top of every line of words that
@@ -136,5 +137,49 @@ export function placesInFront(lines: readonly Line[], L: number, viewport: Rect)
   }
   // (the widest first, when there are more than a page needs)
   out.sort((a, b) => b.span - a.span);
+  return out.slice(0, MOST_PLACES).map(({ span: _span, ...surface }) => surface);
+}
+
+/* ------------------------------ the tops of the boxes a page draws ------------------------------ */
+
+/** A box a page draws: a card, a panel, a row of a list, a button (it has a colour of its own, or an edge). */
+export interface Slab {
+  rect: Rect;
+  /** It is on the page's scroller, and goes where the scroller goes (see `carry.ts`). */
+  rides: boolean;
+  /** A name that stays the box's for as long as it lives, and where it comes in the page's order. */
+  name: string;
+  order: number;
+}
+
+/** The least a box is tall to be a thing to stand on (body lengths): the hairline of a divider is not. */
+export const SLAB_THICK = 0.3;
+/** Tops this near (pixels) are one level. */
+const SAME_LEVEL = 3;
+
+/**
+ * The places on top of the boxes a page draws, for a page that has no shelves of its own (the settings, a page of buttons, a title's page): the line along the top edge of every
+ * box that is wide enough to stand on, and tall enough not to be a line. A box whose top is level with a wider one's that it lies in is the same place (a card and its first row).
+ * The engine cuts them by the words and buttons above them as it does every place (a card with its heading right over it has a place only where the heading is not).
+ */
+export function placesOnTop(slabs: readonly Slab[], L: number, viewport: Rect): Surface[] {
+  const wide = slabs
+    .filter((slab) => slab.rect.w >= SHELF_WIDE * L && slab.rect.h >= SLAB_THICK * L && slab.rect.y >= viewport.y && slab.rect.y <= viewport.y + viewport.h)
+    .sort((a, b) => b.rect.w * b.rect.h - a.rect.w * a.rect.h || a.order - b.order);
+  const kept: Slab[] = [];
+  for (const slab of wide) {
+    const inside = kept.some((other) => other.rides === slab.rides && Math.abs(other.rect.y - slab.rect.y) <= SAME_LEVEL && slab.rect.x >= other.rect.x - 1 && slab.rect.x + slab.rect.w <= other.rect.x + other.rect.w + 1);
+    if (!inside) kept.push(slab);
+  }
+  const used = new Set<string>();
+  const out: Array<Surface & { span: number }> = [];
+  for (const slab of kept) {
+    const base = `box:${slab.name}`;
+    let id = base;
+    for (let n = 2; used.has(id); n++) id = `${base}~${n}`;
+    used.add(id);
+    out.push({ id, kind: slab.rides ? "shelfTop" : "heroLedge", y: slab.rect.y, x0: slab.rect.x, x1: slab.rect.x + slab.rect.w, weight: 0.7, span: slab.rect.w });
+  }
+  out.sort((a, b) => b.span - a.span || (a.id < b.id ? -1 : 1));
   return out.slice(0, MOST_PLACES).map(({ span: _span, ...surface }) => surface);
 }

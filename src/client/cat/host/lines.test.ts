@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { computeLedges } from "../engine/ledges";
 import type { Rect, World } from "../types";
-import { lies, LINE_GAP, mergeLines, placesInFront, SHELF_WIDE, zoneOf, type Line, type Piece } from "./lines";
+import { lies, LINE_GAP, mergeLines, MOST_PLACES, placesInFront, placesOnTop, SHELF_WIDE, SLAB_THICK, zoneOf, type Line, type Piece, type Slab } from "./lines";
 
 /** A 1280x720 screen: its body is 74 pixels long and the TV's em is 12.8 pixels. */
 const L = 74;
@@ -26,6 +26,14 @@ describe("the words of a page put into lines", () => {
   it("keeps the words of the scroller apart from the words that stay where they are, and words apart from a box", () => {
     const lines = mergeLines([piece(100, 300, 60, 20, { rides: true }), piece(168, 300, 60, 20), piece(236, 300, 60, 20, { words: false })], LINE_GAP * L);
     expect(lines).toHaveLength(3);
+  });
+
+  it("makes no line of two boxes that are side by side: each button is its own, and the space above the lower of two is not theirs", () => {
+    const buttons = mergeLines([piece(100, 300, 120, 40, { words: false }), piece(228, 296, 120, 60, { words: false })], LINE_GAP * L);
+    expect(buttons.map((line) => line.rect).sort((a, b) => a.x - b.x)).toEqual([
+      { x: 100, y: 300, w: 120, h: 40 },
+      { x: 228, y: 296, w: 120, h: 60 },
+    ]);
   });
 
   it("is named by the first of its pieces in the page's order, whatever order they are found in", () => {
@@ -161,8 +169,63 @@ describe("the places in front of the words of a grid of cards", () => {
       LINE_GAP * L,
     );
     const places = placesInFront(many, L, screen);
-    expect(places).toHaveLength(36);
+    expect(places).toHaveLength(MOST_PLACES);
     // (the third column's lines are the widest, and the second's: all thirty of them are kept, and six of the first's)
     expect(places.filter((place) => place.x1 - place.x0 > 200 + 0.4 * L + 5)).toHaveLength(30);
+  });
+});
+
+let slabs = 0;
+const slab = (x: number, y: number, w: number, h: number, over: Partial<Slab> = {}): Slab => ({ rect: { x, y, w, h }, rides: false, name: `s${++slabs}`, order: slabs, ...over });
+
+describe("the places on top of the boxes a page draws", () => {
+  it("is the line along the top of every box wide enough to stand on, from one end of it to the other", () => {
+    const places = placesOnTop([slab(100, 200, 600, 120), slab(100, 340, 600, 120)], L, screen);
+    expect(places.map((place) => [place.x0, place.x1, place.y]).sort((a, b) => a[2]! - b[2]!)).toEqual([
+      [100, 700, 200],
+      [100, 700, 340],
+    ]);
+  });
+
+  it("is none for a box too narrow for a cat, or too thin to be anything but a line, or whose top is off the screen", () => {
+    const narrow = slab(100, 200, SHELF_WIDE * L - 2, 120);
+    const thin = slab(100, 300, 600, SLAB_THICK * L - 1);
+    const above = slab(100, -60, 600, 120);
+    const below = slab(100, screen.h + 20, 600, 120);
+    expect(placesOnTop([narrow, thin, above, below], L, screen)).toEqual([]);
+  });
+
+  it("is one place for a card and for the first row in it, where their tops are level and the row lies in the card", () => {
+    const card = slab(100, 200, 600, 300, { name: "card" });
+    const row = slab(110, 201, 580, 60, { name: "row" });
+    const next = slab(110, 270, 580, 60, { name: "next" });
+    const places = placesOnTop([row, next, card], L, screen);
+    expect(places.map((place) => [place.id, place.y]).sort()).toEqual([
+      ["box:card", 200],
+      ["box:next", 270],
+    ]);
+  });
+
+  it("goes with the scroller when the box does, and stays where it is when it stays", () => {
+    const places = placesOnTop([slab(100, 200, 600, 120, { rides: true, name: "on" }), slab(100, 400, 600, 120, { name: "off" })], L, screen);
+    expect(places.find((place) => place.id === "box:on")!.kind).toBe("shelfTop");
+    expect(places.find((place) => place.id === "box:off")!.kind).toBe("heroLedge");
+  });
+
+  it("is named for the box and not for where it is on the screen, and a name two boxes have is told apart, in the same way every time", () => {
+    const twins = [slab(100, 200, 600, 120, { name: "row", order: 1 }), slab(100, 340, 600, 120, { name: "row", order: 2 })];
+    const first = placesOnTop(twins, L, screen).map((place) => place.id);
+    expect(new Set(first).size).toBe(2);
+    expect(placesOnTop([...twins].reverse(), L, screen).map((place) => place.id)).toEqual(first);
+    const scrolled = twins.map((one) => ({ ...one, rect: { ...one.rect, y: one.rect.y - 40 } }));
+    expect(placesOnTop(scrolled, L, screen).map((place) => place.id)).toEqual(first);
+  });
+
+  it("is no more places than a page needs, the widest first", () => {
+    const many = Array.from({ length: 60 }, (_, i) => slab(10, 5 + i * 11, 300 + i * 10, 40));
+    const places = placesOnTop(many, L, screen);
+    expect(places).toHaveLength(MOST_PLACES);
+    // (the sixty boxes are of ever greater width: the last ones are kept)
+    expect(Math.min(...places.map((place) => place.x1 - place.x0))).toBeGreaterThanOrEqual(300 + 24 * 10);
   });
 });

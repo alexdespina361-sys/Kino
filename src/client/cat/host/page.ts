@@ -2,22 +2,54 @@ import { BODY_EMS, bodyLengthFor } from "../math";
 import type { PlayerMode, Rect, Surface, Target, World } from "../types";
 import { carried, type Rides } from "./carry";
 import { inflate, nameOf, rectOf, takesRoom, textRect } from "./dom";
-import { LINE_GAP, lies, mergeLines, placesInFront, zoneOf, type Line } from "./lines";
+import { LINE_GAP, lies, mergeLines, placesInFront, placesOnTop, zoneOf, type Line } from "./lines";
 import { perchesFor } from "./perch";
-import { readPieces } from "./text";
+import { readPieces, readSlabs } from "./text";
 
 /**
- * The page as the cat sees it. Reads the TV's own screens (the library, and a film's picture) and says, as a `World` of plain numbers: the lines the
- * cat can stand on (the tops of the rows of posters, the foot of the screen, a corner of the picture), what it must keep out of (the words, the
- * buttons, the card that has the remote's focus, the subtitles and the controls), the posters it can look at or point to, and whether to be there
- * at all (a menu, a settings page or a film's menu is open: the cat is away). It only reads; nothing is written to the page.
+ * The page as the cat sees it. Reads the TV's own screens (the library, every other page of the TV, and a film's picture) and says, as a `World` of plain numbers: the lines the
+ * cat can stand on (the tops of the rows of posters, of the cards and panels of a page, the foot of the screen, a corner of the picture), what it must keep out of (the words,
+ * the buttons, the pictures that say something, the card that has the remote's focus, the subtitles and the controls), the posters it can look at or point to, and whether to be
+ * there at all (a menu, a film's menu or the first-run welcome is open: the cat is away). It only reads; nothing is written to the page.
  *
  * A read of the page costs, so it is done when something may have changed (a scroll, a focus, a change in the tree, a transition), at most every
  * frame while the page is moving and every tenth of a second otherwise, and the cat is handed the same world until it does.
  */
 
-/** Things that, when open, are in front of everything: the cat gives way to them. */
-const MODALS = '[role="dialog"], [aria-modal="true"], .tv-menu-backdrop, .tv-detail, .tv-screen, .tv-welcome';
+/**
+ * Things that, when open, are in front of everything, and are a question that is asked and answered, a menu or the welcome: the cat gives way to them and is back when they are
+ * gone. (A page of the TV's own is not one of them: the cat lives on it, see `pageOnTop`.)
+ */
+const MODALS = '[role="dialog"], [aria-modal="true"], .tv-menu-backdrop, .tv-welcome';
+/** The TV's own pages: one over the library (a list to choose, a friend to ask, the settings), and a title's page. */
+const PAGES = ".tv-screen, .tv-detail";
+/** Pages that only say that something is on its way, and the first press that a party's link waits for: the cat does not move in for them. */
+const PASSING = '[data-testid="tv-resolving"], [data-testid="tv-connecting"]';
+
+/** The page of the TV that is in front, if there is one: a page over the library is over a title's page, which is over the library itself. */
+function pageOnTop(tv: HTMLElement): HTMLElement | null {
+  const pages = [...tv.querySelectorAll<HTMLElement>(".tv-screen")].filter(takesRoom);
+  if (pages.length > 0) return pages[pages.length - 1]!;
+  const detail = tv.querySelector<HTMLElement>(".tv-detail");
+  return takesRoom(detail) ? detail : null;
+}
+
+/** What scrolls on a page: the largest box in it that has more than it shows and scrolls it (the page itself on a small screen, a title's page with its episodes), or none. */
+function scrollerOf(root: HTMLElement): HTMLElement | null {
+  let best: HTMLElement | null = null;
+  let area = 0;
+  for (const element of [root, ...root.querySelectorAll<HTMLElement>("div, section, main, ul, ol")]) {
+    if (element.scrollHeight <= element.clientHeight + 1) continue;
+    const overflow = getComputedStyle(element).overflowY;
+    if (overflow !== "auto" && overflow !== "scroll") continue;
+    const size = element.clientWidth * element.clientHeight;
+    if (size > area) {
+      best = element;
+      area = size;
+    }
+  }
+  return best;
+}
 
 /**
  * The parts of the library's page that are boxes of words and buttons, and that are kept out of whole (the words and the buttons themselves are read from the page, whatever
@@ -82,6 +114,8 @@ interface Draft {
 const MAX_SOFT = 80;
 /** How many lines of words and buttons a page is read for (a screen holds a few dozen; a page of a thousand cards is read as far as this). */
 const MOST_PIECES = 500;
+/** How many boxes a page is read for, to find the tops of them. */
+const MOST_SLABS = 400;
 
 const tileId = (el: HTMLElement): string | undefined => el.dataset.entry || undefined;
 
@@ -217,11 +251,13 @@ export class TvPage {
     const video = tv?.querySelector<HTMLVideoElement>("video.tv-video") ?? null;
     const film = Boolean(video && video.style.display !== "none");
     const browse = tv?.querySelector<HTMLElement>(".tv-browse") ?? null;
-    // (anything in front of the page, whoever drew it: the feedback form is not inside the screen, a menu is)
-    const modal = [...document.querySelectorAll<HTMLElement>(MODALS)].find((el) => takesRoom(el));
+    // (anything in front of the page, whoever drew it: the feedback form is not inside the screen, a menu is; a page of the TV's own is the page the cat is on)
+    const modal = [...document.querySelectorAll<HTMLElement>(MODALS)].find((el) => takesRoom(el) && !el.matches(PAGES));
+    const page = tv ? pageOnTop(tv) : null;
 
     if (!tv || document.hidden) why = !tv ? "no screen" : "tab hidden";
     else if (modal) why = `open: ${modal.className.split(/\s+/)[0] || modal.getAttribute("role") || "dialog"}`;
+    else if (page && film) why = `open: ${page.dataset.testid ?? "page"}`; // (a page over a film covers it: the film's cat waits for it to go)
     else if (film && video) {
       if (!this.context.films()) why = "films off";
       else {
@@ -233,11 +269,19 @@ export class TvPage {
         this.readFilm({ vw, vh, L, em }, draft);
         home = { parent: tv, after: video };
       }
+    } else if (page) {
+      if (page.matches(PASSING) || page.querySelector('[data-testid="unlock"]')) why = `passing: ${page.dataset.testid ?? "page"}`;
+      else {
+        mode = "browse";
+        view = `page:${page.dataset.testid ?? page.className.split(/\s+/)[0] ?? ""}`;
+        this.readPage(page, { vw, vh, L, em }, draft);
+        home = { parent: tv, after: null };
+      }
     } else if (browse) {
       mode = "browse";
       view = `library:${browse.dataset.view ?? ""}`;
       this.readLibrary(browse, { vw, vh, L, em }, draft);
-      home = { parent: browse, after: null };
+      home = { parent: tv, after: null };
     } else why = "no library";
 
     if (mode === "browse") {
@@ -313,7 +357,7 @@ export class TvPage {
       }
     }
     // everything that is read on the page, and what can be pressed: whatever it is called
-    const lines = this.words(root, c, draft, scroller);
+    const lines = this.words(root, c, draft, scroller, { quietCards: !scroller?.classList.contains("tv-grid"), picture: 0 });
     // in a grid of cards, whose names are under them, the line of every card's name is a place in front of the cards (the line along the top of the cards is cut by the names of the line above)
     if (scroller?.classList.contains("tv-grid")) draft.surfaces.push(...placesInFront(lines.filter((line) => line.rides), c.L, { x: 0, y: 0, w: c.vw, h: c.vh }));
 
@@ -331,6 +375,30 @@ export class TvPage {
     for (const grid of root.querySelectorAll<HTMLElement>(".tv-grid")) {
       if (takesRoom(grid)) this.gridShelves(grid, c, draft);
     }
+  }
+
+  /* ------------------------------ any other page of the TV ------------------------------ */
+
+  /**
+   * A page of the TV that is not the library's rows or grid (the settings and each of its pages, a title's page, a list to choose, a friend to ask, a code to scan): read for
+   * what any page has, and not for the parts of one that is known. What is kept out of is everything that is read on it (the words, the buttons and fields, the pictures that say
+   * something, what has the focus), and the places are the tops of the boxes it draws (a card, a panel, a row, a button) and the lines in front of its first words, with the foot of
+   * the screen as ever. A page that is taller than the screen scrolls; what is on it goes where it goes.
+   */
+  private readPage(root: HTMLElement, c: Metrics, draft: Draft): void {
+    const { em } = c;
+    const scroller = scrollerOf(root);
+    draft.scroller = scroller;
+    // whatever has the focus (a button the remote is on, a field): it grows and has a ring, so the cat leaves it room
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body && root.contains(active)) {
+      draft.keepOut.push(inflate(rectOf(active), 0.4 * em));
+      draft.keepOutRides.push(scroller?.contains(active) === true);
+    }
+    const lines = this.words(root, c, draft, scroller, { quietCards: false, picture: 2.8 * em });
+    const view: Rect = { x: 0, y: 0, w: c.vw, h: c.vh };
+    const slabs = readSlabs(root, { screen: { x: -c.L, y: -c.L, w: c.vw + 2 * c.L, h: c.vh + 2 * c.L }, view, scroller, own: this.context.own?.() ?? null, L: c.L, limit: MOST_SLABS });
+    draft.surfaces.push(...placesOnTop(slabs, c.L, view), ...placesInFront(lines, c.L, view));
   }
 
   private shelf(row: HTMLElement, scroller: HTMLElement, box: Rect, clip: Rect, c: Metrics, draft: Draft): void {
@@ -393,14 +461,14 @@ export class TvPage {
    * Every line of words on the page and every button, read as the page draws them (see `text.ts`), put into the zones the cat keeps out of: no letter of the page is covered by the cat
    * while it stands or walks. A line that lies inside a box that is kept out of whole (the top bar, the banner's text) is part of it. The lines are handed back, for the places in front of them.
    */
-  private words(root: HTMLElement, c: Metrics, draft: Draft, scroller: HTMLElement | null): Line[] {
+  private words(root: HTMLElement, c: Metrics, draft: Draft, scroller: HTMLElement | null, how: { quietCards: boolean; picture: number }): Line[] {
     const own = this.context.own?.() ?? null;
     const pieces = readPieces(root, {
       screen: { x: -c.L, y: -c.L, w: c.vw + 2 * c.L, h: c.vh + 2 * c.L },
       scroller,
-      scrollBox: scroller ? rectOf(scroller) : null,
       skip: (element) => element === own,
-      quietCards: !scroller?.classList.contains("tv-grid"),
+      quietCards: how.quietCards,
+      picture: how.picture,
       limit: MOST_PIECES,
     });
     const lines = mergeLines(pieces, LINE_GAP * c.L);

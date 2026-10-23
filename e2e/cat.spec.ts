@@ -331,19 +331,49 @@ test("a row the library made for the viewer is where \"anything\" is found, with
   await expect(tv.getByTestId("cat-nothing")).toBeVisible();
 });
 
-test("a title's page over the library sends the cat away, and it is back when the page is closed", async ({ browser }) => {
+test("a title's page is a page of the cat's too: it is there, over the page, and the page's keys are the page's; closed, the cat is on the library again", async ({ browser }) => {
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ quiet: true }));
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-view", "library:home");
+  await tv.getByTestId("tv-browse-tile").first().click();
+  await expect(tv.getByTestId("tv-detail")).toBeVisible();
+  const layer = tv.getByTestId("cat");
+  await expect(layer).toHaveAttribute("data-view", "page:tv-detail");
+  await expect(layer).toHaveAttribute("data-mode", "browse");
+  // it is there (not sent away): on a place of the page, drawn in front of it
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const seen = await snap(tv);
+        return seen.engine.mode === "browse" && seen.engine.placed && seen.frame.appear > 0.95 && seen.visible;
+      }, { timeout: 12_000 })
+      .toBe(true),
+  );
+  expect(await tv.evaluate(() => Number(getComputedStyle(document.querySelector('[data-testid="cat"]')!).zIndex) > Number(getComputedStyle(document.querySelector('[data-testid="tv-browse"]')!).zIndex))).toBe(true);
+  expect(gingerIn(await around(tv))).toBeGreaterThan(300);
+  // the page keeps its focus and its keys: the cat takes none (Back closes the page, as it does without a cat)
+  await expect(tv.getByTestId("tv-detail").locator(":focus")).toHaveCount(1);
+  await tv.keyboard.press("Escape");
+  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  await expect(layer).toHaveAttribute("data-view", "library:home");
+  await catIsOnTheShelves(tv);
+});
+
+test("a modal in front of everything (the feedback form over the profile page) sends the cat away, and it is back when the form is closed", async ({ browser }) => {
   const tv = await openLibrary(browser, setup(), undefined, WANTS());
   await tv.goto("/tv?cat=debug");
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
-  await catIsOnTheScreen(tv);
-  await tv.getByTestId("tv-browse-tile").first().click();
-  await expect(tv.getByTestId("tv-detail")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  await tv.getByTestId("tv-account-chip").click();
+  await expect(tv.getByTestId("tv-profile-feedback")).toBeVisible();
+  await tv.getByTestId("tv-profile-feedback").click();
+  await expect(tv.getByTestId("feedback")).toBeVisible();
   await expect(tv.getByTestId("cat")).toHaveAttribute("data-mode", "away");
-  await expect.poll(async () => (await snap(tv)).frame.appear, { timeout: 5_000 }).toBeLessThan(0.05);
-  await expect(tv.getByTestId("cat")).toBeHidden();
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.appear, { timeout: 6_000 }).toBeLessThan(0.05));
   await tv.keyboard.press("Escape");
-  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
-  await expect(tv.getByTestId("cat")).toHaveAttribute("data-mode", "browse");
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-mode", "browse", { timeout: 8_000 });
   await catIsOnTheShelves(tv);
 });
 
@@ -1493,7 +1523,7 @@ const wordsNotKeptOut = async (tv: Page, selector: string) =>
  * the cat's drawing that is body: head, chest and haunches), not from what the cat's reader says it read: the share of the time on its feet or at rest that it covers more than
  * a thirtieth of a body length squared of them.
  */
-const coverOfWords = (tv: Page, seconds: number) =>
+const coverOfWords = (tv: Page, seconds: number, within = "main.tv") =>
   tv.evaluate(
     ({ span, cores, within }) =>
       new Promise<{ grounded: number; covering: number; worst: number; shelves: number }>((resolve) => {
@@ -1553,7 +1583,7 @@ const coverOfWords = (tv: Page, seconds: number) =>
           resolve({ grounded: rows.length, covering: rows.filter((row) => row.ink > 0.03).length, worst: Math.max(0, ...rows.map((row) => row.ink)), shelves: new Set(rows.map((row) => row.surface)).size });
         }, span * 1000);
       }),
-    { span: seconds, cores: CORES as unknown as Record<string, number[]>, within: "main.tv" },
+    { span: seconds, cores: CORES as unknown as Record<string, number[]>, within },
   );
 
 test("every word of the categories page and of a category's page is something the cat keeps out of: the names and counts of the cards, not only the headings", async ({ browser }) => {
@@ -1605,6 +1635,119 @@ test("a cat that plays about on the categories page and on a category's page nev
   const category = await coverOfWords(tv, 14);
   for (const [name, seen] of [["categories", categories], ["a category", category]] as const) {
     // (the cat was about: it was on its feet or at rest for most of the time, so a cat that is nowhere does not pass this)
+    expect(seen.grounded, `${name}: the cat was about`).toBeGreaterThan(100);
+    expect(seen.covering / seen.grounded, `${name}: ${JSON.stringify(seen)}`).toBeLessThanOrEqual(0.02);
+  }
+});
+
+/* ------------------------------ the cat on every page of the TV ------------------------------ */
+
+test("the cat is on the settings page and on its own page there, and its size and look are worn where the viewer is looking", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ look: "ginger", quiet: true }));
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const layer = tv.getByTestId("cat");
+  await openTvSettings(tv);
+  // the settings page is a page of the cat's: it is there, on the page, and the page's focus is the page's
+  await expect(layer).toHaveAttribute("data-view", "page:tv-account");
+  await expect(layer).toHaveAttribute("data-mode", "browse");
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.appear, { timeout: 8_000 }).toBeGreaterThan(0.95));
+  await expect(tv.getByTestId("tv-account").locator(":focus")).toHaveCount(1);
+  await tv.getByTestId("tv-cat-open").click();
+  await expect(tv.getByTestId("tv-cat-settings")).toBeVisible();
+  await expect(layer).toHaveAttribute("data-view", "page:tv-cat-settings");
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.appear, { timeout: 8_000 }).toBeGreaterThan(0.95));
+  // its size is worn at once, in front of the viewer's eyes
+  const before = (await snap(tv)).body;
+  await tv.getByTestId("tv-cat-size-large").click();
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).body, { timeout: 6_000 }).toBeGreaterThan(before * 1.2));
+  await tv.getByTestId("tv-cat-size-normal").click();
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).body, { timeout: 6_000 }).toBeLessThan(before * 1.1));
+  // so is its look
+  await tv.getByTestId("tv-cat-look-ragdoll").click();
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).coat, { timeout: 6_000 }).toBe("ragdoll"));
+  await tv.getByTestId("tv-cat-look-ginger").click();
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).coat, { timeout: 6_000 }).toBe("ginger"));
+});
+
+test("the switch of the cat's page takes the cat away from the very page the viewer is on, and brings it back there", async ({ browser }) => {
+  test.setTimeout(60_000);
+  // (no ?cat=debug: the address says the cat is on whatever the switch says)
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ quiet: true }));
+  await catIsOnTheScreen(tv);
+  await openTvSettings(tv);
+  await tv.getByTestId("tv-cat-open").click();
+  await expect(tv.getByTestId("tv-cat-settings")).toBeVisible();
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-view", "page:tv-cat-settings");
+  await tv.getByTestId("tv-cat-switch").click();
+  await expect(tv.getByTestId("tv-cat-switch")).toHaveAttribute("aria-checked", "false");
+  // no layer, no button in the corner, and the page is as it was
+  await expect(tv.getByTestId("cat")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-chip")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-settings")).toBeVisible();
+  // turned on again, it is back on that page without the page being loaded again
+  await tv.getByTestId("tv-cat-switch").click();
+  await expect(tv.getByTestId("tv-cat-switch")).toHaveAttribute("aria-checked", "true");
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-view", "page:tv-cat-settings", { timeout: 12_000 });
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-visible", "true", { timeout: 12_000 });
+  // (and the button in the library's corner is there again when the viewer is back on the library)
+  await tv.keyboard.press("Escape");
+  await expect(tv.getByTestId("tv-account")).toBeVisible();
+  await tv.keyboard.press("Escape");
+  await expect(tv.getByTestId("tv-cat-chip")).toBeVisible();
+});
+
+test("a page taller than the screen scrolls, and the places the cat has on it go with it", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ quiet: true }));
+  await tv.setViewportSize({ width: 640, height: 400 });
+  await tv.goto("/tv?cat=debug");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  await openTvSettings(tv);
+  await expect(tv.getByTestId("cat")).toHaveAttribute("data-view", "page:tv-account");
+  const places = async () => (await worldOf(tv)).surfaces.filter((surface) => surface.kind === "shelfTop");
+  await saying(tv, () => expect.poll(async () => (await places()).length, { timeout: 8_000 }).toBeGreaterThan(1));
+  const before = await places();
+  const start = await tv.evaluate(() => document.querySelector<HTMLElement>(".tv-screen")!.scrollTop);
+  await tv.evaluate(() => {
+    document.querySelector<HTMLElement>(".tv-screen")!.scrollTop += 90;
+  });
+  await saying(tv, () =>
+    expect
+      .poll(async () => {
+        const moved = (await tv.evaluate(() => document.querySelector<HTMLElement>(".tv-screen")!.scrollTop)) - start;
+        const now = await places();
+        const same = before.filter((place) => now.some((one) => one.id === place.id));
+        // (what was on the page's scroller is where it is now, higher by what the page scrolled; a place that went out at the top, or came in at the foot, is not asked about)
+        return moved > 60 && same.length >= 2 && same.every((place) => Math.abs(now.find((one) => one.id === place.id)!.y - (place.y - moved)) < 2);
+      }, { timeout: 6_000, message: `places before: ${before.map((place) => place.id).join(" ")}` })
+      .toBe(true),
+  );
+});
+
+test("a cat that plays about on a title's page, the settings page and its own page of them never stands over the words of them", async ({ browser }) => {
+  test.setTimeout(150_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS());
+  await tv.goto("/tv?cat=debug&catseed=7");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  await tv.getByTestId("tv-browse-tile").first().click();
+  await expect(tv.getByTestId("tv-detail")).toBeVisible();
+  await tv.waitForTimeout(1500);
+  const title = await coverOfWords(tv, 12, ".tv-detail");
+  await tv.keyboard.press("Escape");
+  await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+  await openTvSettings(tv);
+  await tv.waitForTimeout(1500);
+  const settings = await coverOfWords(tv, 12, ".tv-screen");
+  await tv.getByTestId("tv-cat-open").click();
+  await expect(tv.getByTestId("tv-cat-settings")).toBeVisible();
+  await tv.waitForTimeout(1500);
+  const cat = await coverOfWords(tv, 12, ".tv-screen");
+  for (const [name, seen] of [["a title's page", title], ["settings", settings], ["the cat's page", cat]] as const) {
     expect(seen.grounded, `${name}: the cat was about`).toBeGreaterThan(100);
     expect(seen.covering / seen.grounded, `${name}: ${JSON.stringify(seen)}`).toBeLessThanOrEqual(0.02);
   }

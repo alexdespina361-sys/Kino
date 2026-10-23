@@ -5,12 +5,13 @@
  * (Nothing here uses what the oldest TV browsers drop: see cat.test.ts.)
  */
 
-/* The layer: the cat's canvas and the box that takes a hand, over the page it is on. The page's own rules for the children of its screens are matched
-   by the host's inline style, which is why the position is set there too. */
+/* The layer: the cat's canvas and the box that takes a hand, over the page it is on. It is a child of the TV's own box, over every page of it (the library and a title's page
+   in it, the settings, a list to choose: they are at most 80 in their own box, which the library's is 50 of) and under what is said in passing (a note is at 70, the pointer's
+   edge at 85, the welcome at 90). The page's own rules for the children of its screens are matched by the host's inline style, which is why the position is set there too. */
 .kino-cat {
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 65;
   overflow: hidden;
   pointer-events: none;
   contain: layout paint style;
