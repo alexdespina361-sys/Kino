@@ -6,7 +6,7 @@ import { Pose, SKIN_LINEAR, Skeleton, after, dualSkin, globals, solveDual, turnA
 import type { ClipSource } from "../../../src/client/cat/render/gl/clipfile";
 import type { CatMesh } from "../../../src/client/cat/render/gl/format";
 import { PAWS, restPads, soleVertices } from "./gait.mts";
-import { reachChain, type Cap, type Limit, type Marker, type Vec3 } from "./ik.mts";
+import { reachChain, type Cap, type Limit, type Marker, type Twist, type Vec3 } from "./ik.mts";
 import { quatOfMatrix, type Quat } from "./retarget.mts";
 
 export type PawName = (typeof PAWS)[number]["name"];
@@ -40,17 +40,25 @@ const POKE = 0.025;
  * (stretch99 under 1.6) and folds in on itself under it (31 degrees: 2.5, a tenth of the faces turned over).
  */
 const CLOSE = { front: [55, 60], hind: [60, 25] } as const;
-/**
- * How far a bone of a leg may be turned from its rest (degrees) before the solver is made to pay for it. The skin has a vertex that two bones carry blended through nothing when the
- * two are a half turn apart (the player's skinning: a share under a twentieth of a turn's cosine, about 174 degrees), and a shoulder wound up that far is a coat that turns itself
- * inside out; a limb has more bones than it needs to turn, and the turn is shared among them instead.
- */
-const CAP = Number(process.env.CAT_CAP ?? 0);
-const CAP_HIND = Number(process.env.CAT_CAPH ?? 0);
 /** A paw that ends further than this (body lengths) from its place is tried again from other starts. */
 const STRAY = 0.03;
 /** What a radian of turn (on average, over the bones of a leg) costs when a leg's ends are compared, in body lengths of a paw out of place. */
-const FLING = Number(process.env.CAT_FLING ?? 0.03);
+const FLING = 0.03;
+/** The most that a leg's bones may turn between two frames (radians, on average) for a start over to be taken: a leg that is wound a half turn into another bend in a frame is a pop, whatever it gains. */
+const MAX_TURN = 1.2;
+/**
+ * How far each of the first three bones of a leg (from the shoulder, or the hip, down) may turn from its rest before the solver is made to pay for it, in degrees: the swing (how far the
+ * bone's own axis leaves where it points at rest) and the twist (about that axis), for each bone in turn. A paw's place does not say how its leg winds to reach it, and left to itself the
+ * solver winds a shoulder a half turn with the paw on its mark: the coat of that leg is turned inside out, and a hind leg too far into the belly swells it. The rig's first leg bone is the
+ * whole upper limb (about a fifth of the body), the next two are short ones about the elbow (the knee), so the limits are by bone and not for the leg. `normal` is for a cat on its
+ * feet, sitting, lying, reaching; `wide` for a stretch that takes its legs further; a spec that winds them up (a card, a wall) says `free` and has none (see `Spec.range`).
+ */
+const RANGES = {
+  normal: { front: [125, 30, 150, 35, 130, 35], hind: [70, 30, 125, 35, 120, 35] },
+  wide: { front: [150, 45, 170, 45, 150, 45], hind: [100, 40, 150, 45, 140, 45] },
+} as const;
+/** How much a paw that is turned past its range is charged (against the miss of the paw's place, which weighs 1). */
+const RANGE_WEIGHT = 3;
 
 /** Where a paw's sole is to be, and how the paw is held: tipped about the cat's z axis (toes up positive), turned about the vertical, how much it is kept to the pose it had, and where its elbow (or knee) is to be. */
 export interface PawAim {
@@ -86,6 +94,15 @@ export interface Spec {
   tailFloor?: number;
   /** What the legs are kept out of, where it is not the floor alone (see `Solid`). */
   solid?: Solid;
+  /**
+   * How far the first two bones of a leg (the shoulder and the arm, the hip and the thigh) may be turned from their rest (degrees) before the solver is made to pay for it; left out, no
+   * limit. The skin has a vertex that two bones carry blended through nothing when the two are a half turn apart (the player's skinning: a share under a twentieth of a turn's cosine,
+   * about 174 degrees), and a shoulder or a hip wound up that far is a coat that turns itself inside out; a leg has more bones than it needs to turn, and the turn is shared among them
+   * instead. For a clip whose legs are wound up (hanging by the arms, scrabbling at a wall): the hind legs of a sit fold further than any limit that is good for a wall.
+   */
+  cap?: { front?: number; hind?: number };
+  /** How far each bone of a leg may be turned (see `RANGES`); left out, `normal`. */
+  range?: keyof typeof RANGES | "free";
   paws?: Partial<Record<PawName, PawAim>>;
 }
 
@@ -234,7 +251,7 @@ export class Body {
    * A leg reached to a place: the middle of the paw's sole at `pad` (the cat's space), the paw tipped about the cat's z axis by `tip` (positive: the toes up) and turned about the
    * vertical by `toe`. Returns how far the sole ended from the place (body lengths).
    */
-  reach(pose: Pose, paw: PawName, pad: Vec3, o: { tip?: number; toe?: number; hold?: number; elbow?: Vec3; elbowWeight?: number; soft?: Vec3; solid?: Solid } = {}): number {
+  reach(pose: Pose, paw: PawName, pad: Vec3, o: { tip?: number; toe?: number; hold?: number; elbow?: Vec3; elbowWeight?: number; soft?: Vec3; solid?: Solid; cap?: number; range?: Spec["range"] } = {}): number {
     const k = PAWS.findIndex((p) => p.name === paw);
     const chain = LEGS[paw]!.map((b) => this.skeleton.bone(b));
     const tip = o.tip ?? 0;
@@ -262,17 +279,31 @@ export class Body {
       { bone: chain[1]!, min: close[0]!, weight: 4 },
       { bone: chain[2]!, min: close[1]!, weight: 4 },
     ];
-    const cap = paw.startsWith("front") ? CAP : CAP_HIND;
+    const cap = o.cap ?? 0;
     const caps: Cap[] = cap > 0 ? chain.slice(0, 2).map((bone) => ({ bone, max: (cap * Math.PI) / 180, weight: 3 })) : [];
+    // (the range of each bone: its swing and its twist about the line to the next bone, as the rest has the line)
+    const twists: Twist[] = [];
+    if (o.range !== "free") {
+      const table = RANGES[o.range ?? "normal"][paw.startsWith("front") ? "front" : "hind"];
+      for (let i = 0; i < 3; i++) {
+        const child = chain[i + 1]!;
+        const x = this.skeleton.restT[child * 3]!;
+        const y = this.skeleton.restT[child * 3 + 1]!;
+        const z = this.skeleton.restT[child * 3 + 2]!;
+        const l = Math.hypot(x, y, z) || 1;
+        caps.push({ bone: chain[i]!, max: (table[i * 2]! * Math.PI) / 180, weight: RANGE_WEIGHT });
+        twists.push({ bone: chain[i]!, axis: [x / l, y / l, z / l], max: (table[i * 2 + 1]! * Math.PI) / 180, weight: RANGE_WEIGHT });
+      }
+    }
     const solve = (p: Pose): number => {
-      let miss = reachChain(this.skeleton, p, chain, markers, hold, 30, limits, caps).miss[0]!;
+      let miss = reachChain(this.skeleton, p, chain, markers, hold, 30, limits, caps, twists).miss[0]!;
       // (a leg that is folded may have a piece of itself through the floor: each point of it that is told to stay above the floor, and the leg is solved again)
       const contacts: Marker[] = [];
       for (let round = 0; round < 3; round++) {
         const low = this.under(p, LEGS[paw]!, o.solid ?? {}, 24);
         if (low.length === 0) break;
         for (const l of low) contacts.push(l.wall ? { bone: l.bone, local: l.local, aim: [l.rigid - l.depth, 0, 0], wall: true, weight: 2 } : { bone: l.bone, local: l.local, aim: [0, l.rigid + l.depth, 0], floor: true, weight: 2 });
-        miss = reachChain(this.skeleton, p, chain, [...markers, ...contacts], hold, 30, limits, caps).miss[0]!;
+        miss = reachChain(this.skeleton, p, chain, [...markers, ...contacts], hold, 30, limits, caps, twists).miss[0]!;
       }
       return miss;
     };
@@ -290,6 +321,7 @@ export class Body {
       if (fromRest) for (const b of LEGS[paw]!) for (let c = 0; c < 4; c++) trial.r[this.skeleton.bone(b) * 4 + c] = this.rest.r[this.skeleton.bone(b) * 4 + c]!;
       this.aimLeg(trial, paw, pad);
       const m2 = solve(trial);
+      if (this.turned(origin, trial, chain) > MAX_TURN) continue;
       const score = m2 + FLING * this.turned(origin, trial, chain);
       if (score < best) {
         best = score;
@@ -506,7 +538,7 @@ export class Body {
     }
     const putPaws = (): void => {
       for (const [name, aim] of Object.entries(spec.paws ?? {}) as Array<[PawName, PawAim]>) {
-        this.reach(pose, name, aim.at, { ...(aim.tip !== undefined ? { tip: aim.tip } : {}), ...(aim.toe !== undefined ? { toe: aim.toe } : {}), ...(aim.hold !== undefined ? { hold: aim.hold } : {}), ...(aim.elbow ? { elbow: aim.elbow } : {}), ...(aim.soft ? { soft: aim.soft } : {}), ...(spec.solid ? { solid: spec.solid } : {}) });
+        this.reach(pose, name, aim.at, { ...(aim.tip !== undefined ? { tip: aim.tip } : {}), ...(aim.toe !== undefined ? { toe: aim.toe } : {}), ...(aim.hold !== undefined ? { hold: aim.hold } : {}), ...(aim.elbow ? { elbow: aim.elbow } : {}), ...(aim.soft ? { soft: aim.soft } : {}), ...(spec.solid ? { solid: spec.solid } : {}), ...(spec.range ? { range: spec.range } : {}), ...(spec.cap ? { cap: (name.startsWith("front") ? spec.cap.front : spec.cap.hind) ?? 0 } : {}) });
       }
     };
     putPaws();

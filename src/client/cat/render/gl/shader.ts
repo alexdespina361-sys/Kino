@@ -141,10 +141,14 @@ vec4 mouthInside(vec3 h, float open, out float depth) {
   float a = inBand * region * sstep(0.03, 0.12, open);
   depth = sstep(0.095, 0.035, h.x);
   float az = abs(h.z);
-  // the roof of the mouth and the throat: red at the lips, dark deeper in
+  // the roof of the mouth and the throat: red at the lips, dark deeper in (a mouth that is only a little open, for a lick, is a shadow between the lips with the tongue in it: a red
+  // line round it is read as blood)
   vec3 col = mix(vec3(0.66, 0.2, 0.22), vec3(0.21, 0.03, 0.045), clamp(0.3 + 0.7 * depth + 0.25 * (1.0 - abs(v)), 0.0, 1.0));
-  // the tongue: pink, rising from the lower lip, with a groove down its middle
+  float wide = sstep(0.14, 0.4, open);
+  col = mix(vec3(0.13, 0.05, 0.055), col, wide);
+  // the tongue: pink, rising from the lower lip, with a groove down its middle (and, with the mouth little open, filling the opening)
   float tongue = sstep(-0.1, -0.7, v) * sstep(0.03, 0.018, az) * sstep(0.096, 0.07, h.x);
+  tongue = max(tongue, (1.0 - wide) * sstep(0.03, 0.018, az) * sstep(0.1, 0.085, h.x) * sstep(0.03, 0.07, open));
   vec3 tc = mix(vec3(0.96, 0.54, 0.58), vec3(0.78, 0.34, 0.4), sstep(0.003, 0.0, az) * 0.8);
   col = mix(col, tc * (0.75 + 0.25 * (1.0 - depth)), tongue);
   // the fangs: a white point from each lip, at each side of the front

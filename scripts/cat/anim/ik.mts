@@ -41,6 +41,20 @@ export interface Cap {
   weight?: number;
 }
 
+/**
+ * How far a bone may be turned about its own long axis (`axis`, in the bone's own frame: towards its child) from its rest, which the solver is made to pay for. A limb has more turns than a
+ * place for its paw needs: the turn of each bone about its own length moves no joint of the limb, and a solver that is only told where the paw is lets it drift (a forearm that has turned
+ * a half turn, a shoulder that is wound up) from frame to frame, with the paw where it is wanted and the skin round the bone shearing itself flat. The swing of a bone is what puts the
+ * paw at a place and is left free; its twist is what is paid for.
+ */
+export interface Twist {
+  bone: number;
+  axis: Vec3;
+  /** The twist (radians) that is free, past which it is paid for (none: all of it is). */
+  max?: number;
+  weight?: number;
+}
+
 export interface Reached {
   /** How far each marker ended from its aim (body lengths), by marker. */
   miss: number[];
@@ -91,7 +105,7 @@ const T = new Float64Array(48 * 3);
  * The bones of `chain` (each one hangs from the one before; the first from a bone that is not in it) turned in `pose` so that the markers are at their aims. `hold` is what a radian
  * of turn away from the pose's own costs against a body length of a marker out of place, squared (a small number: the larger, the more the chain keeps the shape it had).
  */
-export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly number[], markers: readonly Marker[], hold = 0.01, iterations = 30, limits: readonly Limit[] = [], caps: readonly Cap[] = []): Reached {
+export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly number[], markers: readonly Marker[], hold = 0.01, iterations = 30, limits: readonly Limit[] = [], caps: readonly Cap[] = [], twists: readonly Twist[] = []): Reached {
   const K = chain.length;
   const first = chain[0]!;
   const carrier = skeleton.parent[first]!;
@@ -138,8 +152,13 @@ export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly numbe
       Tp = Tk;
     }
   };
+  const W = twists.length;
+  const restTwist = twists.map((t) => {
+    if (!at.has(t.bone)) throw new Error("a twist on a bone that is not in the chain");
+    return matOf([skeleton.restR[t.bone * 4]!, skeleton.restR[t.bone * 4 + 1]!, skeleton.restR[t.bone * 4 + 2]!, skeleton.restR[t.bone * 4 + 3]!]);
+  });
   const m = K * 3;
-  const rows = M * 3 + L + C + m;
+  const rows = M * 3 + L + C + W + m;
   /** The angle at the head of the chain's k-th bone, between the lines to the bones on either side. */
   const angleAt = (k: number): number => {
     const ux = joint[(k - 1) * 3]! - joint[k * 3]!;
@@ -187,7 +206,20 @@ export function reachChain(skeleton: Skeleton, pose: Pose, chain: readonly numbe
       const angle = Math.acos(Math.max(-1, Math.min(1, (trace - 1) / 2)));
       r[M * 3 + L + i] = Math.sqrt(cap.weight ?? 1) * Math.max(0, angle - cap.max);
     }
-    for (let i = 0; i < m; i++) r[M * 3 + L + C + i] = sq * d[i]!;
+    for (let i = 0; i < W; i++) {
+      const tw = twists[i]!;
+      const k = at.get(tw.bone)!;
+      // (the turn beyond the rest's, in the bone's own frame: the rest's transpose times where it is; as a quaternion, the part of it about the bone's length is the twist)
+      const now = mul3(rodrigues(d[k * 3]!, d[k * 3 + 1]!, d[k * 3 + 2]!), local[k]!);
+      const rest = restTwist[i]!;
+      const rel = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) rel[a * 3 + b] = rest[a]! * now[b]! + rest[3 + a]! * now[3 + b]! + rest[6 + a]! * now[6 + b]!;
+      const q = quatOfMatrix(rel);
+      const sign = q[3] < 0 ? -1 : 1;
+      const along = sign * (q[0] * tw.axis[0] + q[1] * tw.axis[1] + q[2] * tw.axis[2]);
+      r[M * 3 + L + C + i] = Math.sqrt(tw.weight ?? 1) * Math.max(0, 2 * Math.atan2(Math.abs(along), sign * q[3]) - (tw.max ?? 0));
+    }
+    for (let i = 0; i < m; i++) r[M * 3 + L + C + W + i] = sq * d[i]!;
   };
   let d = new Float64Array(m);
   let r = new Float64Array(rows);

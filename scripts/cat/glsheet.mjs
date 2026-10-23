@@ -43,6 +43,11 @@ if (flag("zoom", "")) {
   filmOptions.zoom = Number(flag("zoom", 1));
   filmOptions.at = flag("at", "0,0.4").split(",").map(Number);
 }
+// (--headzoom=<times the size> [--headat=<ahead>,<up>: where to look, from the head's centre in body lengths]: a clip sheet with every picture of the head, close)
+if (flag("headzoom", "")) {
+  filmOptions.headZoom = Number(flag("headzoom", 3));
+  filmOptions.headAt = flag("headat", "0.05,-0.02").split(",").map(Number);
+}
 if (flag("turn", "") || flag("tilt", "") || flag("debug", "") || flag("linear", "")) filmOptions.view = { ...(flag("turn", "") ? { turn: Number(flag("turn", 0)) } : {}), ...(flag("tilt", "") ? { tilt: Number(flag("tilt", 0)) } : {}), ...(flag("debug", "") ? { debug: Number(flag("debug", 0)) } : {}), ...(flag("linear", "") ? { linear: Number(flag("linear", 1)) } : {}) };
 // (--linear=<0 to 1>: how much of the skin is matrices averaged and how much dual quaternions, to see what the one saves over the other (0: all quaternions, 1: all matrices; the player
 // has SKIN_LINEAR of pose.ts); every kind of sheet takes it)
@@ -79,7 +84,7 @@ await page.evaluate(
     else if (which === "swat") lab.glSheet(canvas, data, clipData, sel(lab.SWAT), c, s, 7, options.cellW, options.cellH, options.coat, options.over);
     else if (which === "walk") lab.glSheet(canvas, data, clipData, sel(lab.WALK), c, s, 7, 300, 230, options.coat, options.over);
     else if (which === "run") lab.glSheet(canvas, data, clipData, sel(lab.RUN), c, s, 7, 300, 230, options.coat, options.over);
-    else if (which === "clip") lab.glSheet(canvas, data, clipData, sel(lab.clipCells(data, clipData, options.clip, options.n, options.view, options.blind, options.raise)), c, s, 7, options.cellW, options.cellH, options.coat, options.over);
+    else if (which === "clip") lab.glSheet(canvas, data, clipData, sel(lab.clipCells(data, clipData, options.clip, options.n, options.view, options.blind, options.raise)).map((cell) => (options.headZoom ? { ...cell, zoom: { head: options.headAt, by: options.headZoom } } : cell)), c, s, 7, options.cellW, options.cellH, options.coat, options.over);
   },
   [kind, mesh, clips, scale, cols, pick, film, filmOptions],
 );

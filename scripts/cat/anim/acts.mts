@@ -383,7 +383,8 @@ export function stretch(m: Made): ClipSource {
     // down over the first quarter, held, and up over the last half (a cat gets up out of a stretch more slowly than it went down: the engine's shot is two and a half seconds, and a rise in
     // the last quarter of it is a body snapping up)
     const k = ease(u / 0.28) * (1 - ease((u - 0.52) / 0.48));
-    return between(from, to, k, WIN);
+    // (the front legs go out along the floor ahead of the head and the shoulders sink between them: the arms turn further than a cat on its feet turns them)
+    return { ...between(from, to, k, WIN), range: "wide" };
   });
 }
 
@@ -496,41 +497,70 @@ export function jump(m: Made): ClipSource {
  * to the picture: so this clip is in the ledge's own space (the origin is where the cat stands at the end, the top of the ledge is the floor from the lip, `CLIMB_LIP` behind that point,
  * forward; the face of the ledge is the wall below the lip), and it starts with the cat hanging below the lip by its forepaws, the body upright, the hind legs and the tail hanging, and goes
  * through the engine's beats (`CLIMB_GRAB`: the paws take hold; `CLIMB_PULL`: the chest is over the lip and the paws on top; `CLIMB_OVER`: the hind legs are over) to the stand. A cat's body does not
- * clear a corner by being lifted: the forepaws walk forward on the ledge, the elbows fold and the chest comes over, the hind legs scrabble up the wall and then push.
+ * clear a corner by being lifted: the forepaws take hold of the lip and the body is hauled up under them, the chest comes over, the forepaws step forward on the ledge, the hind legs scrabble
+ * at the wall and then come over.
+ *
+ * A cat's legs are short (a third of a body length from the shoulder to the sole), so the places of the paws are told as footholds that the body passes: a paw that was put where the chest
+ * ends up has its leg folded flat against the shoulder, and a solver that is asked for it turns the whole limb the other way round in a frame (the pop in the clip). The paws are told
+ * against the body's own path instead: the forepaws are planted on the lip (A) until the shoulders are under them, stepped on to B ahead of the chest, and last to the stand; the hind
+ * paws are told against the hips (hanging, and kicking at the wall in time), and go up over the lip when the hips are over it.
  */
 export function climb(m: Made): ClipSource {
   const stand = standing(m);
   const rest = (p: PawName): [number, number, number] => m.body.padAtRest(p).at;
   const LIP = -CLIMB_LIP;
   const FREE: [number, number, number] = [1, 1, 1];
-  /** A paw's sole at a place in the ledge's space (the sides across are the rest's, pulled in by `across` for paws that grip together). */
-  const at = (p: PawName, x: number, y: number, across = 1, soft: [number, number, number] = FREE): NonNullable<Spec["paws"]>[PawName] => ({ at: [x, y, rest(p)[2] * across], soft });
-  /** The four paws: the front pair and the hind pair, near one first. */
-  const paws = (fn: [number, number], ff: [number, number], hn: [number, number], hf: [number, number], across = 1): NonNullable<Spec["paws"]> => ({
-    "front right": at("front right", fn[0], fn[1], across),
-    "front left": at("front left", ff[0], ff[1], across),
-    "hind right": at("hind right", hn[0], hn[1], across),
-    "hind left": at("hind left", hf[0], hf[1], across),
-  });
-  // (the floor is the top of the ledge, from its lip on: below the lip there is a wall, and a leg that hangs there is not through any floor)
-  const key = (u: number, spec: Omit<Spec, "tailFloor" | "solid">): [number, Spec] => [u, { solid: { floor: 0, wall: LIP }, ...spec }];
   const lip = 0.015;
+  // (the floor is the top of the ledge, from its lip on: below the lip there is a wall, and a leg that hangs there is not through any floor; the arms and the thighs are kept from winding up
+  // past a bit over a third of a turn: hanging by the arms and going over a corner wind a limb as far as the skin can go)
+  const key = (u: number, spec: Omit<Spec, "tailFloor" | "solid" | "cap" | "paws">): [number, Spec] => [u, { solid: { floor: 0, wall: LIP }, cap: { front: 130, hind: 130 }, ...spec }];
   const keys: Array<[number, Spec]> = [
     // reaching: stretched up the wall, the paws open over the lip, the hind legs and the tail hanging
-    key(0, { hips: { x: LIP - 0.2, y: -0.8, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(92), deg(84), deg(52)], tail: [deg(250), deg(262), deg(268), deg(272)], paws: paws([LIP + 0.04, 0.09], [LIP - 0.02, 0.1], [LIP - 0.2, -1.08], [LIP - 0.24, -1.1], 0.8) }),
+    key(0, { hips: { x: LIP - 0.2, y: -0.8, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(92), deg(84), deg(52)], tail: [deg(250), deg(262), deg(268), deg(272)] }),
     // the paws take hold of the lip and the weight comes on them
-    key(CLIMB_GRAB, { hips: { x: LIP - 0.22, y: -0.84, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(94), deg(86), deg(56)], tail: [deg(252), deg(264), deg(270), deg(274)], paws: paws([LIP + 0.02, lip], [LIP - 0.03, lip], [LIP - 0.2, -1.12], [LIP - 0.24, -1.14], 0.8) }),
-    // hauling: the forepaws go forward on the ledge, the elbows fold, the chest rises, one hind leg pushes on the wall
-    key(0.38, { hips: { x: LIP - 0.2, y: -0.62, pitch: 1.1 }, back: [deg(76), deg(72)], neck: [deg(78), deg(84), deg(76), deg(44)], tail: [deg(246), deg(258), deg(264), deg(268)], paws: paws([LIP + 0.16, lip], [LIP + 0.1, lip], [LIP - 0.03, -0.52], [LIP - 0.07, -0.78], 0.8) }),
-    // the chest is over the lip, the paws are on the top of the ledge, the belly is at the corner
-    key(CLIMB_PULL, { hips: { x: LIP - 0.14, y: -0.3, pitch: 0.9 }, back: [deg(52), deg(46)], neck: [deg(50), deg(58), deg(52), deg(22)], tail: [deg(236), deg(248), deg(258), deg(262)], paws: paws([LIP + 0.3, lip], [LIP + 0.37, lip], [LIP - 0.02, -0.34], [LIP - 0.05, -0.6], 0.9) }),
-    // the hind legs come over: the weight goes forward over the paws, one hind paw on the top
-    key(CLIMB_OVER, { hips: { x: LIP + 0.1, y: 0.2, pitch: 0.3 }, back: [deg(14), deg(8)], neck: [deg(40), deg(44), deg(40), deg(-6)], tail: [deg(214), deg(222), deg(232), deg(240)], paws: paws([LIP + 0.36, lip], [LIP + 0.4, lip], [LIP + 0.1, lip], [LIP - 0.02, -0.1], 1) }),
+    key(CLIMB_GRAB, { hips: { x: LIP - 0.22, y: -0.84, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(94), deg(86), deg(56)], tail: [deg(252), deg(264), deg(270), deg(274)] }),
+    // hauling: the elbows fold, the chest rises
+    key(0.38, { hips: { x: LIP - 0.2, y: -0.62, pitch: 1.1 }, back: [deg(76), deg(72)], neck: [deg(78), deg(84), deg(76), deg(44)], tail: [deg(246), deg(258), deg(264), deg(268)] }),
+    // the chest is over the lip, the belly is at the corner
+    key(CLIMB_PULL, { hips: { x: LIP - 0.14, y: -0.3, pitch: 0.9 }, back: [deg(52), deg(46)], neck: [deg(50), deg(58), deg(52), deg(22)], tail: [deg(236), deg(248), deg(258), deg(262)] }),
+    // the hind legs come over: the weight goes forward over the paws
+    key(CLIMB_OVER, { hips: { x: LIP + 0.1, y: 0.2, pitch: 0.3 }, back: [deg(14), deg(8)], neck: [deg(40), deg(44), deg(40), deg(-6)], tail: [deg(214), deg(222), deg(232), deg(240)] }),
     // and the cat stands where it climbed to
-    key(1, { hips: stand.hips!, back: stand.back!, neck: stand.neck!, tail: stand.tail!, paws: paws([rest("front right")[0], 0.02], [rest("front left")[0], 0.02], [rest("hind right")[0], 0.02], [rest("hind left")[0], 0.02], 1) }),
+    key(1, { hips: stand.hips!, back: stand.back!, neck: stand.neck!, tail: stand.tail! }),
   ];
+  /** How long a forepaw takes to step on, as a share of the clip. */
+  const STEP = 0.14;
+  /** The lip's side of the forepaws' foothold, (the near paw's, the far one's) and the one ahead of the chest, and when each steps on (the far paw a little after the near). */
+  const FORE = {
+    [NEAR.front]: { A: LIP + 0.04, B: LIP + 0.7, on: 0.48, out: 0.8 },
+    "front left": { A: LIP + 0.08, B: LIP + 0.74, on: 0.52, out: 0.84 },
+  } as const satisfies Partial<Record<PawName, { A: number; B: number; on: number; out: number }>>;
+  const fore = (p: PawName, u: number, across: number): NonNullable<Spec["paws"]>[PawName] => {
+    const f = FORE[p as keyof typeof FORE];
+    const x = f.A + (f.B - f.A) * over(u, f.on, STEP) + (rest(p)[0] - f.B) * over(u, f.out, STEP);
+    // (reaching over the lip until the weight is on the paws, and a paw that steps on goes up and over)
+    const y = lip + (0.09 - lip) * (1 - over(u, 0, CLIMB_GRAB)) + 0.12 * (Math.sin(Math.PI * clamp01((u - f.on) / STEP)) + Math.sin(Math.PI * clamp01((u - f.out) / STEP)));
+    return { at: [x, y, rest(p)[2] * across], soft: FREE, hold: 0.02 };
+  };
+  /** The hind paws: told against the hips (hanging under them, kicking at the wall in turn while the weight is on the arms), and up over the lip to where the cat stands once the hips are over it. */
+  const hind = (p: PawName, u: number, hips: { x: number; y: number }, across: number): NonNullable<Spec["paws"]>[PawName] => {
+    const near = p === NEAR.hind;
+    const phase = TAU * (u * (CLIMB_TIME / 0.5)) + (near ? 0 : Math.PI);
+    const work = over(u, 0.22, 0.12) * (1 - over(u, 0.7, 0.15));
+    const x = Math.min(hips.x + 0.07 * work * Math.cos(phase), LIP - 0.04);
+    const y = hips.y - 0.3 + 0.08 * work * Math.sin(phase);
+    const land = over(u, near ? 0.86 : 0.9, 0.12);
+    const to = rest(p);
+    return { at: [x + (to[0] - x) * land, y + (0.02 - y) * land + 0.08 * Math.sin(Math.PI * land), to[2] * across], soft: FREE, hold: 0.02 };
+  };
+  const spec = (_t: number, u: number): Spec => {
+    const body = through(keys, u);
+    const hips = { x: body.hips!.x ?? 0, y: body.hips!.y };
+    const across = 0.8 + 0.2 * over(u, 0.5, 0.4);
+    return { ...body, paws: { "front right": fore("front right", u, across), "front left": fore("front left", u, across), "hind right": hind("hind right", u, hips, across), "hind left": hind("hind left", u, hips, across) } };
+  };
   const marks = { grab: CLIMB_GRAB * CLIMB_TIME, pull: CLIMB_PULL * CLIMB_TIME, over: CLIMB_OVER * CLIMB_TIME };
-  return render(m, "climb", CLIMB_TIME, false, (_t, u) => through(keys, u), { marks, grounded: false });
+  return render(m, "climb", CLIMB_TIME, false, spec, { marks, grounded: false });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -602,6 +632,8 @@ export function scale(m: Made): ClipSource {
     const f = -ARCH * reach;
     return {
       solid: { floor: false, wall: FACE },
+      // (the legs are splayed against the card: the limits of a cat on its feet turn a thigh inside out there)
+      range: "free",
       hips: { x: -0.12, y: bob, z: 0.03 * rock, pitch: 1.3, roll: -deg(7) * rock, spin: Math.PI / 2 },
       back: [deg(90 - LEAN * 0.4) + f, deg(90 - LEAN * 0.9) - f],
       neck: [deg(90 - LEAN), deg(94 - LEAN), deg(90 - LEAN), deg(62 - LEAN)],
