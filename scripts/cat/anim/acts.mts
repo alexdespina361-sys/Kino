@@ -516,13 +516,13 @@ export function climb(m: Made): ClipSource {
   const key = (u: number, spec: Omit<Spec, "tailFloor" | "solid" | "cap" | "paws">): [number, Spec] => [u, { solid: { floor: 0, wall: LIP }, cap: { front: 130, hind: 130 }, ...spec }];
   const keys: Array<[number, Spec]> = [
     // reaching: stretched up the wall, the paws open over the lip, the hind legs and the tail hanging
-    key(0, { hips: { x: LIP - 0.2, y: -0.8, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(92), deg(84), deg(52)], tail: [deg(250), deg(262), deg(268), deg(272)] }),
+    key(0, { hips: { x: LIP - 0.2, y: -0.72, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(92), deg(84), deg(52)], tail: [deg(250), deg(262), deg(268), deg(272)] }),
     // the paws take hold of the lip and the weight comes on them
-    key(CLIMB_GRAB, { hips: { x: LIP - 0.22, y: -0.84, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(94), deg(86), deg(56)], tail: [deg(252), deg(264), deg(270), deg(274)] }),
+    key(CLIMB_GRAB, { hips: { x: LIP - 0.22, y: -0.77, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(94), deg(86), deg(56)], tail: [deg(252), deg(264), deg(270), deg(274)] }),
     // hauling: the elbows fold, the chest rises
-    key(0.38, { hips: { x: LIP - 0.2, y: -0.62, pitch: 1.1 }, back: [deg(76), deg(72)], neck: [deg(78), deg(84), deg(76), deg(44)], tail: [deg(246), deg(258), deg(264), deg(268)] }),
+    key(0.38, { hips: { x: LIP - 0.2, y: -0.56, pitch: 1.1 }, back: [deg(76), deg(72)], neck: [deg(78), deg(84), deg(76), deg(44)], tail: [deg(246), deg(258), deg(264), deg(268)] }),
     // the chest is over the lip, the belly is at the corner
-    key(CLIMB_PULL, { hips: { x: LIP - 0.14, y: -0.3, pitch: 0.9 }, back: [deg(52), deg(46)], neck: [deg(50), deg(58), deg(52), deg(22)], tail: [deg(236), deg(248), deg(258), deg(262)] }),
+    key(CLIMB_PULL, { hips: { x: LIP - 0.14, y: -0.27, pitch: 0.9 }, back: [deg(52), deg(46)], neck: [deg(50), deg(58), deg(52), deg(22)], tail: [deg(236), deg(248), deg(258), deg(262)] }),
     // the hind legs come over: the weight goes forward over the paws
     key(CLIMB_OVER, { hips: { x: LIP + 0.1, y: 0.2, pitch: 0.3 }, back: [deg(14), deg(8)], neck: [deg(40), deg(44), deg(40), deg(-6)], tail: [deg(214), deg(222), deg(232), deg(240)] }),
     // and the cat stands where it climbed to
@@ -532,8 +532,8 @@ export function climb(m: Made): ClipSource {
   const STEP = 0.14;
   /** The lip's side of the forepaws' foothold, (the near paw's, the far one's) and the one ahead of the chest, and when each steps on (the far paw a little after the near). */
   const FORE = {
-    [NEAR.front]: { A: LIP + 0.04, B: LIP + 0.7, on: 0.48, out: 0.8 },
-    "front left": { A: LIP + 0.08, B: LIP + 0.74, on: 0.52, out: 0.84 },
+    [NEAR.front]: { A: LIP + 0.04, B: LIP + 0.64, on: 0.48, out: 0.8 },
+    "front left": { A: LIP + 0.08, B: LIP + 0.68, on: 0.52, out: 0.84 },
   } as const satisfies Partial<Record<PawName, { A: number; B: number; on: number; out: number }>>;
   const fore = (p: PawName, u: number, across: number): NonNullable<Spec["paws"]>[PawName] => {
     const f = FORE[p as keyof typeof FORE];
@@ -546,7 +546,7 @@ export function climb(m: Made): ClipSource {
   const hind = (p: PawName, u: number, hips: { x: number; y: number }, across: number): NonNullable<Spec["paws"]>[PawName] => {
     const near = p === NEAR.hind;
     const phase = TAU * (u * (CLIMB_TIME / 0.5)) + (near ? 0 : Math.PI);
-    const work = over(u, 0.22, 0.12) * (1 - over(u, 0.7, 0.15));
+    const work = over(u, 0.1, 0.12) * (1 - over(u, 0.7, 0.15));
     const x = Math.min(hips.x + 0.07 * work * Math.cos(phase), LIP - 0.04);
     const y = hips.y - 0.3 + 0.08 * work * Math.sin(phase);
     const land = over(u, near ? 0.86 : 0.9, 0.12);
@@ -554,7 +554,17 @@ export function climb(m: Made): ClipSource {
     return { at: [x + (to[0] - x) * land, y + (0.02 - y) * land + 0.08 * Math.sin(Math.PI * land), to[2] * across], soft: FREE, hold: 0.02 };
   };
   const spec = (_t: number, u: number): Spec => {
-    const body = through(keys, u);
+    const key = through(keys, u);
+    // (a cat that hangs by its arms is not still: the body swings a little on them, each kick of the hind legs at the wall lifts it, and the tail answers; it dies away as the haul begins)
+    const hang = 1 - over(u, CLIMB_GRAB + 0.12, 0.15);
+    const swing = Math.sin(TAU * 2.5 * u);
+    const kick = Math.sin(TAU * (u * (CLIMB_TIME / 0.5)));
+    const hipsKey = key.hips!;
+    const body: Spec = {
+      ...key,
+      hips: { ...hipsKey, x: (hipsKey.x ?? 0) + 0.014 * swing * hang, y: hipsKey.y + 0.012 * kick * hang * over(u, 0.1, 0.12) },
+      tail: key.tail!.map((a, i) => a + deg(7) * Math.sin(TAU * (2.5 * u - 0.12 * (i + 1))) * hang) as unknown as NonNullable<Spec["tail"]>,
+    };
     const hips = { x: body.hips!.x ?? 0, y: body.hips!.y };
     const across = 0.8 + 0.2 * over(u, 0.5, 0.4);
     return { ...body, paws: { "front right": fore("front right", u, across), "front left": fore("front left", u, across), "hind right": hind("hind right", u, hips, across), "hind left": hind("hind left", u, hips, across) } };
@@ -590,7 +600,7 @@ export function scale(m: Made): ClipSource {
   const OUT = 0.09;
   /** The heights (over the hips) at which a stance starts, for the forepaws (high over the head) and the hind (the knee up by the haunch), and how far out across they are. */
   const TOP = { front: 0.88, hind: -0.02 } as const;
-  const ACROSS = { front: 0.26, hind: 0.28 } as const;
+  const ACROSS = { front: 0.31, hind: 0.28 } as const;
   /** How far the paws are tipped (toes up): the soles flat to the card. */
   const TIP = deg(80);
   /**
@@ -601,7 +611,7 @@ export function scale(m: Made): ClipSource {
   const LEAN = 24;
   /** How far the body rises and sinks against the line the card goes by at (it shoots up with the push of the hind legs and lags while the forepaws pull), and the bend of the back that goes with it. */
   const BOB = 0.05;
-  const ARCH = deg(10);
+  const ARCH = deg(4);
   /** How far the shoulders rock from one side to the other in a round, and how far the left paws of a pair are ahead of the right (a bound is not as even as a trot). */
   const SWAY = 1;
   const AHEAD = 0.04;

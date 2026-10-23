@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Clip as EngineClip, CatFrame } from "../../types";
 import { CatRig, type Solved } from "../rig";
-import { decodeClips } from "./clipfile";
+import { decodeClips, encodeClips, type ClipSource } from "./clipfile";
 import { Director } from "./director";
 import { decodeMesh, encodeMesh, MESH_MAGIC, MESH_VERSION, packIndex, unpackIndex } from "./format";
 import { Pose, Skeleton, solve } from "./pose";
@@ -248,8 +248,48 @@ describe("the clips of the solid cat", () => {
     expect(walk!.stride).toBeLessThan(1.4);
   });
 
+  it("hold the two climbs: up over a ledge, once through by the progress of the climb, and up the face of a card seen from behind, a bound that is played by the distance climbed", () => {
+    const climb = clips.find((c) => c.name === "climb");
+    expect(climb, "a climb").toBeDefined();
+    expect(climb!.loop).toBe(false);
+    for (const mark of ["grab", "pull", "over"]) expect(climb!.marks[mark], mark).toBeGreaterThan(0);
+    expect(climb!.marks.grab!).toBeLessThan(climb!.marks.pull!);
+    expect(climb!.marks.pull!).toBeLessThan(climb!.marks.over!);
+    const scale = clips.find((c) => c.name === "scale");
+    expect(scale, "a scale").toBeDefined();
+    expect(scale!.loop).toBe(true);
+    expect(scale!.stride).toBeGreaterThan(0.3);
+    expect(scale!.stride).toBeLessThan(1);
+  });
+
   it("are small enough to be fetched along with the mesh", () => {
-    expect(clipsFile().byteLength).toBeLessThan(200 * 1024);
+    // (some twenty-five clips, a hundred frames or fewer each, at sixteen bits a number: a quarter of a megabyte at the most)
+    expect(clipsFile().byteLength).toBeLessThan(256 * 1024);
+  });
+});
+
+describe("the turns in a clip file", () => {
+  const data = { names: ["Hips", "tail"], parent: [-1, 0], restT: [0, 0, 0, 0.1, 0, 0], restR: [0, 0, 0, 1, 0, 0, 0, 1] };
+  const skeleton = new Skeleton(data);
+  /** A turn of `angle` about z, written as it is or as its negative (the same turn). */
+  const turn = (angle: number, sign: 1 | -1): number[] => [0, 0, sign * Math.sin(angle / 2), sign * Math.cos(angle / 2)];
+  const clipOf = (turns: number[][]): ClipSource => ({ name: "t", fps: 30, frames: turns.length, loop: false, r: [null, turns.flat()], t: [null, null] });
+  const decoded = (turns: number[][]): { r: Float32Array; at: number } => {
+    const [clip] = decodeClips(encodeClips(data, [clipOf(turns)]).buffer as ArrayBuffer, skeleton);
+    expect(clip!.rKind[1]).toBe(2);
+    return { r: clip!.r, at: clip!.rAt[1]! };
+  };
+  const dot = (r: Float32Array, a: number, b: number): number => r[a]! * r[b]! + r[a + 1]! * r[b + 1]! + r[a + 2]! * r[b + 2]! + r[a + 3]! * r[b + 3]!;
+
+  it("face the same way as the turn before them, whichever way their maker signed them (a line between a turn and its negative would go the long way round)", () => {
+    const { r, at } = decoded([turn(0.1, 1), turn(0.2, -1), turn(0.3, 1), turn(0.4, -1)]);
+    for (let f = 1; f < 4; f++) expect(dot(r, at + f * 4, at + (f - 1) * 4), `frame ${f}`).toBeGreaterThan(0.99);
+  });
+
+  it("start facing the way the bone's rest does, so that a fade from a clip into another ends in the same signs (the first turn is written as the negative of the rest's side here)", () => {
+    const { r, at } = decoded([turn(0.1, -1), turn(0.2, -1), turn(0.3, -1)]);
+    // (the rest is 0 0 0 1: a turn facing the same way has a positive w)
+    for (let f = 0; f < 3; f++) expect(r[at + f * 4 + 3]!, `frame ${f}`).toBeGreaterThan(0);
   });
 });
 
@@ -319,16 +359,21 @@ describe("the director", () => {
   });
 
   it("opens the jaw and leans the ears when the face says so, and turns the head with the yaw it is given", () => {
-    const director = new Director(skeleton, clips);
     const s = solvedIn({ clip: "stand" });
-    director.update({ ...s, head: { ...s.head, jaw: 0, earL: 0, earR: 0, rot: 0 } }, 1 / 60, 100, 0);
-    const shut = bonesOf(director);
-    director.update({ ...s, head: { ...s.head, jaw: 1, earL: 0.8, earR: 0.8, rot: 0 } }, 1 / 60, 100, 0.9);
-    const open = bonesOf(director);
+    const face = (jaw: number, ear: number): Solved => ({ ...s, head: { ...s.head, jaw, earL: ear, earR: ear, rot: 0 } });
+    /** The bones after a picture with the face shut and one with `second` (the stand is not still: a sixtieth of a second later the body has moved a little of its own accord). */
+    const after = (second: Solved, yaw: number): Float32Array => {
+      const director = new Director(skeleton, clips);
+      director.update(face(0, 0), 1 / 60, 100, 0);
+      director.update(second, 1 / 60, 100, yaw);
+      return bonesOf(director);
+    };
+    const control = after(face(0, 0), 0);
+    const open = after(face(1, 0.8), 0.9);
     const differs = (bone: string): number => {
       const j = skeleton.bone(bone);
       let d = 0;
-      for (let k = 0; k < 12; k++) d = Math.max(d, Math.abs(shut[j * 12 + k]! - open[j * 12 + k]!));
+      for (let k = 0; k < 12; k++) d = Math.max(d, Math.abs(control[j * 12 + k]! - open[j * 12 + k]!));
       return d;
     };
     expect(differs("jaw")).toBeGreaterThan(0.3);
