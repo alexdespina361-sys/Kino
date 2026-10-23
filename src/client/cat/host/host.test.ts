@@ -4,7 +4,7 @@ import { shapeHits } from "../engine/shape";
 import { createRng } from "../rng";
 import type { Rect } from "../types";
 import { fits, MOODS, pick, reasonFor, type Candidate, type Mood } from "./assistant";
-import { Governor } from "./governor";
+import { Governor, Revival } from "./governor";
 import { DWELL_MS, Hand, REPEAT_MS } from "./hand";
 import { perchesFor, widestGap } from "./perch";
 
@@ -99,6 +99,46 @@ describe("the governor", () => {
     const governor = new Governor({ budget: 2 });
     run(governor, 400, 50, 1500);
     expect(governor.quality).toBe("full");
+  });
+});
+
+describe("a card that takes the detailed cat's picture away", () => {
+  it("is given the cat again at once, the first time and every time that is not too soon or too often", () => {
+    const revival = new Revival();
+    expect(revival.ask(5_000)).toBe("now");
+    expect(revival.ask(7_000)).toBe("now"); // (a page that was in the background twice: it was a while)
+    expect(revival.ask(20_000)).toBe("now");
+  });
+
+  it("is asked to wait when the last try was a moment ago, and the wait does not use up a try", () => {
+    const revival = new Revival();
+    expect(revival.ask(10_000)).toBe("now");
+    // (every frame that finds the picture gone asks, sixty times a second)
+    for (let at = 10_016; at < 11_000; at += 16) expect(revival.ask(at)).toBe("wait");
+    expect(revival.ask(11_000)).toBe("now");
+    expect(revival.ask(12_000)).toBe("now");
+    expect(revival.ask(13_000)).toBe("never"); // (three tries in the minute: the waits above were not counted as more)
+  });
+
+  it("is given up on when it does it again and again, whether the new picture came or the try failed", () => {
+    const revival = new Revival();
+    expect(revival.ask(0)).toBe("now");
+    expect(revival.ask(2_000)).toBe("now");
+    expect(revival.ask(4_000)).toBe("now");
+    expect(revival.ask(6_000)).toBe("never");
+    expect(revival.ask(6_016)).toBe("never"); // (the answer does not change by asking again)
+    expect(revival.ask(59_000)).toBe("never");
+  });
+
+  it("is given the cat again once the minute has passed, one try at a time as the old ones fall out of it", () => {
+    const revival = new Revival();
+    for (const at of [0, 2_000, 4_000]) expect(revival.ask(at)).toBe("now");
+    expect(revival.ask(59_999)).toBe("never");
+    expect(revival.ask(60_000)).toBe("now"); // (the try at 0 is a minute old)
+    expect(revival.ask(61_000)).toBe("never"); // (the tries at 2 000, 4 000 and 60 000 are in the minute)
+    expect(revival.ask(62_000)).toBe("now"); // (the try at 2 000 is a minute old)
+    expect(revival.ask(62_500)).toBe("never");
+    expect(revival.ask(64_000)).toBe("now"); // (the try at 4 000 is a minute old)
   });
 });
 

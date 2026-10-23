@@ -1302,6 +1302,75 @@ test("a white and grey cat that is drawn simply is said to be, with the reason, 
   await expect(tv.getByTestId("tv-cat-shown")).toHaveCount(0);
   await expect(tv.getByTestId("tv-cat-retry")).toHaveCount(0);
 });
+
+/** The browser takes the picture of the cat that is on the screen away, as a phone does when the page has been in the background or a film asks for the memory. */
+const takeThePictureAway = (tv: Page) =>
+  tv.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>(".kino-cat-canvas")!;
+    canvas.dataset.old = "yes";
+    canvas.getContext("webgl")!.getExtension("WEBGL_lose_context")!.loseContext();
+  });
+/** The cat is on a canvas that is not the one that was marked as the old one, and that canvas has its picture. */
+const theCatIsMadeAnew = (tv: Page) =>
+  saying(tv, () =>
+    expect
+      .poll(
+        () =>
+          tv.evaluate(() => {
+            const canvas = document.querySelector<HTMLCanvasElement>(".kino-cat-canvas");
+            // (a canvas of the simple cat has a 2d context, and no WebGL one to ask)
+            return canvas !== null && canvas.dataset.old === undefined && canvas.getContext("webgl")?.isContextLost() === false;
+          }),
+        { timeout: 8_000 },
+      )
+      .toBe(true),
+  );
+
+test("a browser that takes the detailed cat's picture away is not the end of it: the cat is made again from the file it has, and one that keeps doing it gets the simple cat", async ({ browser }) => {
+  test.setTimeout(75_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ look: "ragdoll", quiet: true }));
+  await tv.goto("/tv?cat=debug&catbudget=100000");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await artIs(tv, "solid");
+  await catIsOnTheScreen(tv);
+  // (three times in a minute is a thing that happens to a phone: the cat is the detailed one every time, and it is the same cat)
+  for (let time = 1; time <= 3; time++) {
+    await takeThePictureAway(tv);
+    await theCatIsMadeAnew(tv);
+    await artIs(tv, "solid");
+    await catIsOnTheScreen(tv);
+    expect((await snap(tv)).coat).toBe("ragdoll");
+  }
+  // (made from the file that was already there: a phone on a bad line is not asked to fetch it again. The page's own record of what it fetched, since the one
+  // request of a page that was left behind by the address above is not this page's)
+  expect(await tv.evaluate(() => performance.getEntriesByType("resource").filter((entry) => /\.mesh(\?|$)/.test(entry.name)).length)).toBe(1);
+  // (and the settings page has nothing to be sorry for: it is the cat that was asked for)
+  await openCatSettings(tv);
+  await expect(tv.getByTestId("tv-cat-shown")).toHaveAttribute("data-art", "solid");
+  await expect(tv.getByTestId("tv-cat-retry")).toHaveCount(0);
+  await tv.keyboard.press("Escape");
+  await tv.keyboard.press("Escape");
+  await catIsOnTheScreen(tv);
+  // (a card that takes it away again and again is not asked to go on: the fourth time in the minute the simple cat is drawn, in the same colours, and the page says why)
+  await takeThePictureAway(tv);
+  await artIs(tv, "classic", 8_000);
+  await catIsOnTheScreen(tv);
+  expect((await snap(tv)).coat).toBe("ragdoll");
+  await openCatSettings(tv);
+  await expect(tv.getByTestId("tv-cat-shown")).toHaveAttribute("data-art", "classic");
+  await expect(tv.getByTestId("tv-cat-shown")).toHaveAttribute("data-why", "lost");
+  // (and the button is another try, with the count started again)
+  await tv.getByTestId("tv-cat-retry").click();
+  await artIs(tv, "solid");
+  await expect(tv.getByTestId("tv-cat-retry")).toHaveCount(0);
+  await tv.keyboard.press("Escape");
+  await tv.keyboard.press("Escape");
+  await catIsOnTheScreen(tv);
+  await takeThePictureAway(tv);
+  await theCatIsMadeAnew(tv);
+  await artIs(tv, "solid");
+});
+
 test("the address can ask for the coat and the size, whatever the device says", async ({ browser }) => {
   const usual = await openLibrary(browser, setup(), undefined, WANTS({ look: "ragdoll", quiet: true }));
   await usual.goto("/tv?cat=debug&catbudget=100000");
