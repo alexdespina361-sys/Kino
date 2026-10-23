@@ -431,6 +431,7 @@ test.describe("a phone that has a TV scans another one", () => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);
     await phone.getByTestId("menu").click();
+    await phone.getByTestId("control-open").click(); // (the code and its picture are folded under a row of the sheet until they are wanted)
     const code = (await phone.getByTestId("control-code").innerText()).replace(/\s/g, "");
     await phone.goto(`/?control=${code}`);
     await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
@@ -464,6 +465,8 @@ test.describe("a second phone", () => {
     const first = await openPairedPhone(browser, tv);
     await first.getByTestId("menu").click();
     const card = first.getByTestId("control-card");
+    await expect(card.getByTestId("pairing-qr")).toHaveCount(0); // (folded until it is wanted)
+    await card.getByTestId("control-open").click();
     await expect(card.getByTestId("pairing-qr")).toBeVisible();
     const code = (await card.getByTestId("control-code").innerText()).replace(/\s/g, "");
 
@@ -490,6 +493,7 @@ test.describe("a second phone", () => {
     expect(code).toMatch(/^\d{6}$/);
 
     await first.getByTestId("menu").click(); // the first phone's own card holds the same code
+    await first.getByTestId("control-open").click();
     expect((await first.getByTestId("control-code").innerText()).replace(/\s/g, "")).toBe(code);
 
     const second = await (await browser.newContext(PHONE)).newPage();

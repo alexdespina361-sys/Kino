@@ -696,8 +696,6 @@ export const ro: Dictionary = {
   "tvs.full": "Lista ta e plină. Uită un televizor ca să conectezi altul.",
   "menu.partyOpen": "Vizionare comună",
   "menu.partyActive": "Vizionare comună · {count} dispozitive",
-  "menu.linkBox": "Caseta pentru linkuri",
-  "menu.linkBoxHelp": "Afișează pe ecranul principal o casetă în care lipești un link către un videoclip sau o pagină, ca să ruleze pe {tv}.",
   "menu.disconnect": "Deconectează de la acest televizor",
   "menu.disconnectHelp": "Televizorul iese din lista ta. Dacă nu îl mai are alt telefon, afișează un cod nou, cu care te poți conecta din nou tu sau altcineva. Ce ai vizionat rămâne în profilul tău.",
   "party.title": "Vizionare comună",

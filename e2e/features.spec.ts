@@ -7,7 +7,7 @@ import { MAX_LINK_LENGTH, progressKey, type NormalizedMedia } from "../src/share
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
+import { FIRST_VISIT, guestStorage, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, place, playFirst, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -2338,48 +2338,55 @@ test.describe("the library", () => {
     await expect(phone.getByTestId("media-title")).toBeVisible();
   });
 
-  test("the library is also there when changing the video", async ({ browser, baseURL }) => {
+  test("Change video steps the remote aside: the library is there to pick from, and what plays goes on, as a line above the bar", async ({ browser, baseURL }) => {
     const { tv, phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
     await phone.getByTestId("url-input").fill(sample(baseURL!));
     await phone.getByTestId("play-url").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
     await phone.getByTestId("change-video").click();
-    await expect(phone.getByTestId("link-sheet").getByTestId("library-tile")).toHaveCount(3);
+    await expect(phone.getByTestId("library-tile")).toHaveCount(3);
+    await expect(phone.getByTestId("mini-remote")).toBeVisible();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing"); // (nothing was stopped by choosing again)
+    await phone.getByTestId("playing-bar").click();
+    await expect(phone.getByTestId("player-state")).toBeVisible(); // and the line brings the remote back
   });
 
-  test("Escape closes the sheet on top, and the one under it the next time", async ({ browser, baseURL }) => {
-    const { tv, phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
-    // two lists, so that the round button on a title asks which
+  test("Escape closes the sheet on top, and the page under it the next time", async ({ browser }) => {
+    const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
+    // two lists, so that the list button on a title's page asks which
     await phone.getByTestId("library-list-toggle").first().click();
+    await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
     await phone.getByTestId("list-new").click();
     await phone.getByTestId("list-name-input").fill("Weekend");
     await phone.getByTestId("list-save").click();
     await phone.getByTestId("sheet-close").click();
+    await place(phone, "home");
 
-    // the library in the sheet of "Change video", and a list picker on top of it
-    await phone.getByTestId("url-input").fill(sample(baseURL!));
-    await phone.getByTestId("play-url").click();
-    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
-    await phone.getByTestId("change-video").click();
-    await phone.getByTestId("link-sheet").getByTestId("library-list-toggle").first().click();
+    // a title's page, and a list picker on top of it
+    await phone.getByTestId("library-tile").first().click();
+    await phone.getByTestId("title-list").click();
     await expect(phone.getByTestId("list-picker")).toBeVisible();
     await phone.keyboard.press("Escape");
     await expect(phone.getByTestId("list-picker")).toHaveCount(0);
-    await expect(phone.getByTestId("link-sheet")).toBeVisible();
+    await expect(phone.getByTestId("title-sheet")).toBeVisible();
     await phone.keyboard.press("Escape");
-    await expect(phone.getByTestId("link-sheet")).toHaveCount(0);
+    await expect(phone.getByTestId("title-sheet")).toHaveCount(0);
   });
 
   test("the round button on a title saves it in Favourites; once there is a second list it asks which, and a cross takes a title off one list", async ({ browser }) => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
+    await place(phone, "list");
     await expect(phone.getByTestId("list-row")).toHaveCount(0); // nothing saved: no row, and no button for lists yet
     await expect(phone.getByTestId("lists-manage")).toHaveCount(0);
+    await expect(phone.getByTestId("my-lists-empty")).toBeVisible(); // (the place says what it is for, and how to fill it)
+    await place(phone, "home");
 
     const toggle = (n: number) => phone.getByTestId("library-list-toggle").nth(n);
     await expect(toggle(0)).toHaveAccessibleName("Add to Favourites: The Sample");
     await toggle(0).click();
     await expect(toggle(0)).toHaveAccessibleName("In Favourites — tap to remove: The Sample");
+    await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Sample");
 
     // A second list, made in the sheet that the row's button opens.
@@ -2391,6 +2398,7 @@ test.describe("the library", () => {
     await expect(phone.getByTestId("lists-sheet")).toContainText("Weekend");
     await phone.getByTestId("sheet-close").click();
     await expect(phone.getByTestId("lists-sheet")).toHaveCount(0);
+    await place(phone, "home");
 
     // With two lists the button asks: a tap on a list puts the title in it, and the title is "in your lists".
     await expect(toggle(1)).toHaveAccessibleName("Add to a list: The Other One");
@@ -2404,6 +2412,7 @@ test.describe("the library", () => {
     await expect(picker.getByRole("button", { name: "Favourites" })).toHaveAttribute("aria-pressed", "true");
     await phone.getByTestId("sheet-close").click();
     await expect(toggle(1)).toHaveAccessibleName("In your lists: The Other One");
+    await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Sample");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Other One");
     await expect(phone.getByRole("region", { name: "Weekend" })).toContainText("The Other One");
@@ -2413,6 +2422,7 @@ test.describe("the library", () => {
     await phone.getByRole("region", { name: "Weekend" }).getByTestId("list-remove").click();
     await expect(phone.getByRole("region", { name: "Weekend" })).toHaveCount(0); // an empty list has no row
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Other One");
+    await place(phone, "home");
     await expect(toggle(1)).toHaveAccessibleName("In your lists: The Other One"); // still in the first
   });
 
@@ -2420,11 +2430,13 @@ test.describe("the library", () => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
     const toggle = (n: number) => phone.getByTestId("library-list-toggle").nth(n);
     await toggle(0).click(); // Favourites
+    await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
     await phone.getByTestId("list-new").click();
     await phone.getByTestId("list-name-input").fill("Weekend");
     await phone.getByTestId("list-save").click();
     await phone.getByTestId("sheet-close").click();
+    await place(phone, "home");
 
     // "New list" in the picker makes the list and puts the title in it.
     await toggle(2).click();
@@ -2439,6 +2451,7 @@ test.describe("the library", () => {
     await phone.getByTestId("list-save").click();
     await expect(picker.getByRole("button", { name: "Classics" })).toHaveAttribute("aria-pressed", "true");
     await phone.getByTestId("sheet-close").click();
+    await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Classics" })).toContainText("Third");
 
     // Another name for it.
@@ -2461,7 +2474,6 @@ test.describe("the library", () => {
     await phone.getByTestId("list-delete-confirm").click();
     await expect(sheet).not.toContainText("Old films");
     await expect(phone.getByRole("region", { name: "Old films" })).toHaveCount(0);
-    await expect(toggle(2)).toHaveAccessibleName("Add to a list: Third");
 
     // The first list has no Delete, but takes another name.
     await sheet.getByRole("button", { name: /^Favourites/ }).click();
@@ -2471,11 +2483,14 @@ test.describe("the library", () => {
     await expect(sheet.getByRole("button", { name: /^Watch later/ })).toBeVisible();
     await phone.getByTestId("sheet-close").click();
     await expect(phone.getByRole("region", { name: "Watch later" })).toContainText("The Sample");
+    await place(phone, "home");
+    await expect(toggle(2)).toHaveAccessibleName("Add to a list: Third"); // (the title that was in the deleted list is in none now)
   });
 
   test("the lists are put in the order wanted from the sheet that manages them: a list moves one place, never the first, and a new name keeps its place", async ({ browser }) => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
     await phone.getByTestId("library-list-toggle").first().click(); // Favourites: now there is a button for the lists
+    await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
     const sheet = phone.getByTestId("lists-sheet");
     const order = () => sheet.locator('[data-testid^="manage-"] > span:first-child').allTextContents();
@@ -2557,6 +2572,7 @@ test.describe("the library", () => {
   test("a search that cannot be made says so, instead of saying nothing matches", async ({ browser }) => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
     await phone.context().route(/\/api\/library\/search/, (route) => route.fulfill({ status: 500, body: "nope" }));
+    await place(phone, "search");
     await phone.getByTestId("library-search-input").fill("zzz");
     await expect(phone.getByTestId("library-search-results")).toContainText("Search can't be reached right now");
     await phone.getByTestId("library-search-input").fill("Sample"); // a title that is on the page needs no server
@@ -2668,6 +2684,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await phone.getByTestId("pick-favourites").click(); // (a saved title is what gives the row its button for the lists)
     await phone.getByTestId("sheet-close").click();
 
+    await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
     await expect(phone.getByTestId("list-new")).toHaveCount(0);
     await expect(phone.getByTestId("lists-full")).toHaveText(words);
@@ -2679,7 +2696,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("lists-full")).toHaveCount(0);
   });
 
-  test("a title's page keeps the title in a list, and its Close puts it away", async ({ browser, baseURL }) => {
+  test("a title's page keeps the title in a list, and its Back puts it away", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!);
     await tile(phone, "Film number 1").click();
     const page = phone.getByTestId("title-sheet");
@@ -2688,8 +2705,9 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await page.getByTestId("title-list").click();
     await expect(page.getByTestId("title-list")).toHaveAccessibleName("Remove from Favourites");
     await expect(page.getByTestId("title-list")).toHaveAttribute("aria-pressed", "true");
-    await phone.getByTestId("sheet-close").click();
+    await phone.getByTestId("title-back").click();
     await expect(phone.getByTestId("title-sheet")).toHaveCount(0);
+    await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("Film number 1");
 
     // From the list a tap opens the page too, which says where the title is kept.
@@ -2702,9 +2720,11 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     const first = phone.getByTestId("library-tile").first();
     await hold(phone, first);
     await expect(phone.getByTestId("library-list-toggle").first()).toHaveAccessibleName("In Favourites — tap to remove: Film number 1");
-    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("Film number 1");
     await expect(phone.getByTestId("title-sheet")).toHaveCount(0); // the let-go that ends a hold is not a tap
     await expect(phone.getByTestId("toast")).toHaveText("Added to Favourites"); // the + is a corner away from the finger: a line says what the hold did
+    await place(phone, "list");
+    await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("Film number 1");
+    await place(phone, "home");
 
     await hold(phone, first);
     await expect(phone.getByTestId("library-list-toggle").first()).toHaveAccessibleName("Add to Favourites: Film number 1");
@@ -2716,11 +2736,13 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
   test("with several lists a hold asks which", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!);
     await phone.getByTestId("library-list-toggle").first().click();
+    await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
     await phone.getByTestId("list-new").click();
     await phone.getByTestId("list-name-input").fill("Weekend");
     await phone.getByTestId("list-save").click();
     await phone.getByTestId("sheet-close").click();
+    await place(phone, "home");
 
     await hold(phone, tile(phone, "Film number 2"));
     await expect(phone.getByTestId("list-picker")).toContainText("Film number 2");
@@ -2729,6 +2751,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
 
   test("a search lists what it finds one under another, and is still there after something is played and stopped", async ({ browser, baseURL }) => {
     const { tv, phone } = await connect(browser, baseURL!);
+    await place(phone, "search");
     await phone.getByTestId("library-search-input").fill("film");
     const results = phone.getByTestId("library-result");
     await expect(results).toHaveCount(12);
@@ -2753,17 +2776,19 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await phone.getByTestId("stop").click();
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
 
-    // Back on the home screen: the words, the list, and the place in it (a card for what was played now lies above, and has not pushed it away).
+    // Back on the Search place as it was left: the words, the list, and the place in it.
     await expect(phone.getByTestId("library-search-input")).toHaveValue("film");
     await expect(results).toHaveCount(12);
-    await expect(phone.getByTestId("continue-item")).toHaveCount(1);
     await expect.poll(async () => Math.abs((await results.nth(5).boundingBox())!.y - before)).toBeLessThan(4);
     expect(searches).toBe(1); // what the library said is not asked again
+    await place(phone, "home"); // (and what was played lies on Home, in Continue watching)
+    await expect(phone.getByTestId("continue-item")).toHaveCount(1);
   });
 
   test("a search forgives a slip of the fingers, an unfinished word and spaces left out: a title on the page is found, and the answer from the library adds nothing wrong", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!);
     const results = phone.getByTestId("library-result");
+    await place(phone, "search");
     await phone.getByTestId("library-search-input").fill("long nigth"); // two letters swapped
     await expect(results).toHaveCount(1);
     await expect(results.first()).toContainText("The Long Night");
@@ -2786,6 +2811,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       { id: "b", title: "Boon", url: "/fixtures/sample.mp4?b=1" }, // (it is the title)
     ];
     const { phone } = await connect(browser, baseURL!, { library: { updatedAt: Date.now(), rows }, find: (query) => (query.includes("boon") ? server : []) });
+    await place(phone, "search");
     await phone.getByTestId("library-search-input").fill("boon");
     const results = phone.getByTestId("library-result");
     await expect(results).toHaveCount(45);
@@ -2829,7 +2855,9 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     const toggle = phone.getByTestId("continue-list-toggle").first();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("Film number 1");
+    await place(phone, "home");
     await phone.getByTestId("continue-remove").nth(1).click();
     await expect(cards).toHaveCount(2);
     await expect(phone.getByTestId("continue-row")).not.toContainText("Film number 2");
@@ -2838,55 +2866,46 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
   });
 
-  test("the box for pasting a link is off on a new phone, comes back from the menu and stays", async ({ browser, baseURL }) => {
+  /** Settings, from the You place of the bar: the page that has the switch "Paste a link". */
+  const linkBoxSetting = async (phone: Page) => {
+    await place(phone, "you");
+    await phone.getByTestId("menu-settings").click();
+    return phone.getByTestId("link-box-setting");
+  };
+
+  test("the box for pasting a link is off on a new phone, comes back from Settings and stays", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!, { device: { storageState: withoutLinkBox(baseURL!) } });
     await expect(phone.getByTestId("library")).toBeVisible();
     await expect(phone.getByTestId("url-input")).toHaveCount(0);
     await expect(phone.getByTestId("play-url")).toHaveCount(0);
 
-    await phone.getByTestId("menu").click();
-    const toggle = phone.getByTestId("link-box-toggle");
-    await expect(toggle).toHaveAttribute("aria-checked", "false");
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-checked", "true");
-    await phone.getByTestId("sheet-close").click();
+    const box = await linkBoxSetting(phone);
+    await expect(box).toHaveAttribute("aria-checked", "false");
+    await box.click();
+    await expect(box).toHaveAttribute("aria-checked", "true");
+    await phone.getByTestId("page-back").click(); // (the settings; the You place is under it)
+    await place(phone, "home");
     await expect(phone.getByTestId("url-input")).toBeVisible();
+    await expect(phone.getByTestId("play-url")).toHaveCount(0); // (the button comes with something to play)
+    await phone.getByTestId("url-input").fill("https://example.com/watch");
     await expect(phone.getByTestId("play-url")).toBeVisible();
 
     await phone.reload();
     await expect(phone.getByTestId("url-input")).toBeVisible(); // kept
 
-    await phone.getByTestId("menu").click();
-    await phone.getByTestId("link-box-toggle").click();
-    await phone.getByTestId("sheet-close").click();
+    await (await linkBoxSetting(phone)).click();
+    await phone.getByTestId("page-back").click();
+    await place(phone, "home");
     await expect(phone.getByTestId("url-input")).toHaveCount(0);
   });
 
-  test("the box is a switch in Settings too (\"Paste a link\"), the same one as the TV menu's", async ({ browser, baseURL }) => {
+  test("the TV's menu does not carry the switch for the box: Settings is the one place that has it", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!, { device: { storageState: withoutLinkBox(baseURL!) } });
-    await expect(phone.getByTestId("library")).toBeVisible();
-    await expect(phone.getByTestId("url-input")).toHaveCount(0);
-
-    const inSettings = async () => {
-      await phone.getByTestId("account-button").click();
-      await phone.getByTestId("menu-settings").click();
-      return phone.getByTestId("link-box-setting");
-    };
-    const box = await inSettings();
-    await expect(box).toHaveAttribute("aria-checked", "false");
-    await box.click();
-    await expect(box).toHaveAttribute("aria-checked", "true");
-    await phone.getByTestId("page-back").click(); // (the settings, then the account)
-    await phone.getByTestId("page-back").click();
-    await expect(phone.getByTestId("account-screen")).toHaveCount(0);
-    await expect(phone.getByTestId("url-input")).toBeVisible();
-
-    await phone.getByTestId("menu").click(); // the TV's menu says the same, and turns it off from there
-    await expect(phone.getByTestId("link-box-toggle")).toHaveAttribute("aria-checked", "true");
-    await phone.getByTestId("link-box-toggle").click();
+    await phone.getByTestId("menu").click();
+    await expect(phone.getByTestId("tvs-open")).toBeVisible(); // (the sheet is the TV's: its own rows are there)
+    await expect(phone.getByTestId("link-box-toggle")).toHaveCount(0);
     await phone.getByTestId("sheet-close").click();
-    await expect(phone.getByTestId("url-input")).toHaveCount(0);
-    await expect(await inSettings()).toHaveAttribute("aria-checked", "false");
+    await expect(await linkBoxSetting(phone)).toHaveAttribute("aria-checked", "false");
   });
 
   test("without the box, a title that cannot be played still says so", async ({ browser, baseURL }) => {
@@ -2920,6 +2939,8 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await phone.getByTestId("code-input").fill(await readPairingCode(tv));
       await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
       await expect(phone.getByTestId("url-input")).toBeVisible();
+      await expect(phone.getByTestId("play-url")).toHaveCount(0); // (the button comes with a link to play)
+      await phone.getByTestId("url-input").fill("https://example.com/watch");
       await expect(phone.getByTestId("play-url")).toBeVisible();
     }
   });
@@ -2994,11 +3015,14 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
         expect(press.height).toBeGreaterThanOrEqual(36);
       }
 
-      await phone.getByTestId("sheet-close").click();
+      await phone.getByTestId("title-back").click();
+      await place(phone, "list"); // (what was rated is a row of My lists)
       await expect(phone.getByTestId("ratings-row")).toContainText("Film number 1");
       await expect(phone.getByTestId("ratings-row").getByTestId("rating-item").locator(".lib-year")).toHaveText(["3/10"]);
       await phone.reload();
+      await place(phone, "list");
       await expect(phone.getByTestId("ratings-row")).toContainText("Film number 1");
+      await place(phone, "home");
       await tile(phone, "Film number 1").click();
       await expect(phone.getByTestId("rate-title-value")).toHaveText("3/10");
     });
@@ -3019,8 +3043,10 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(facts(phone)).toHaveText([RATED_TODAY]); // (a note does not make it rated again)
 
       await note.fill("Too long, but the ending paid off. Twice.");
-      await phone.getByTestId("sheet-close").click(); // (straight away: what was just typed is not lost)
+      await phone.getByTestId("title-back").click(); // (straight away: what was just typed is not lost)
+      await place(phone, "list");
       await expect(phone.getByTestId("ratings-row")).toBeVisible();
+      await place(phone, "home");
       await tile(phone, "Film number 2").click();
       await open(phone);
       await expect(phone.getByTestId("rate-title-note")).toHaveValue("Too long, but the ending paid off. Twice.");
@@ -3038,7 +3064,12 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(phone.getByTestId("rate-title-note")).toBeDisabled();
       await expect(phone.getByTestId("rate-title-note")).toHaveValue("");
       await expect.poll(() => notesKept(phone)).toEqual([]);
+      await phone.getByTestId("title-back").click();
+      await place(phone, "list");
       await expect(phone.getByTestId("ratings-row")).toHaveCount(0);
+      await place(phone, "home");
+      await tile(phone, "Film number 2").click();
+      await open(phone);
       await phone.getByTestId("rate-title-score-4").click();
       await expect(phone.getByTestId("rate-title-note")).toHaveValue("");
     });
@@ -3059,13 +3090,13 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await open(phone);
       await phone.getByTestId("rate-title-score-9").click();
       await expect(facts(phone)).toHaveText([RATED_TODAY, "Watched all of it", "Finished 3 Oct 2026"]);
-      await phone.getByTestId("sheet-close").click();
+      await phone.getByTestId("title-back").click();
 
       await tile(phone, "Film number 2").click();
       await open(phone);
       await phone.getByTestId("rate-title-score-7").click();
       await expect(facts(phone)).toHaveText([RATED_TODAY, "62% watched", "Last watched 4 Oct 2026"]);
-      await phone.getByTestId("sheet-close").click();
+      await phone.getByTestId("title-back").click();
 
       await tile(phone, "Film number 3").click(); // never played here
       await open(phone);
@@ -3108,7 +3139,8 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await phone.getByTestId("title-season-2").click();
       await expect(phone.getByTestId("rate-season-value")).toHaveText("5/10");
 
-      await phone.getByTestId("sheet-close").click();
+      await phone.getByTestId("title-back").click();
+      await place(phone, "list");
       await expect(phone.getByTestId("ratings-row").getByTestId("rating-item").locator(".lib-year")).toHaveText(["Season 2 · 5/10", "9/10"]); // (the newest first)
     });
 
@@ -3132,6 +3164,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
         },
       ];
       const { phone } = await connect(browser, url, { seed: guestStorage({ ratings }) });
+      await place(phone, "list");
       const row = phone.getByTestId("ratings-row");
       await expect(row.getByTestId("rating-item")).toHaveCount(3);
       await expect(row.getByTestId("rating-item").locator(".lib-title")).toHaveText(["The Long Night", "Film number 2", "Film number 1"]);
@@ -3157,7 +3190,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       const page = phone.getByTestId("title-sheet");
       await expect(page).toContainText("Film number 2");
       await expect(page.getByTestId("rate-title-value")).toHaveText("9/10");
-      await page.getByTestId("sheet-close").click();
+      await page.getByTestId("title-back").click();
       await expect(phone.getByTestId("ratings-sheet")).toBeVisible(); // (back to the list it was opened from)
       await sheet.getByTestId("sheet-close").click();
       await expect(phone.getByTestId("ratings-sheet")).toHaveCount(0);
@@ -3165,35 +3198,40 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
 
     test("Settings has a switch for ratings: off, every sign of them is gone and what was rated is kept; on again, it is all back", async ({ browser, baseURL }) => {
       const { phone } = await connect(browser, baseURL!, { library: wholeLibrary(baseURL!), seed: guestStorage({ ratings: [given(baseURL!, 0, 8, 2)] }) });
+      await place(phone, "list");
       await expect(phone.getByTestId("ratings-row")).toBeVisible();
+      await place(phone, "home");
       await tile(phone, "Film number 2").click();
       await expect(phone.getByTestId("rate-title")).toBeVisible();
-      await phone.getByTestId("sheet-close").click();
+      await phone.getByTestId("title-back").click();
 
       const toggle = async (to: "true" | "false") => {
-        await phone.getByTestId("account-button").click();
+        await place(phone, "you");
         await phone.getByTestId("menu-settings").click();
         const rate = phone.getByTestId("ratings-switch");
         await expect(rate).toHaveAttribute("aria-checked", to === "true" ? "false" : "true");
         await rate.click();
         await expect(rate).toHaveAttribute("aria-checked", to);
-        await phone.getByTestId("page-back").click();
-        await phone.getByTestId("page-back").click();
-        await expect(phone.getByTestId("account-screen")).toHaveCount(0);
+        await phone.getByTestId("page-back").click(); // (the settings; the You place is under it)
       };
 
       await toggle("false");
+      await place(phone, "list");
       await expect(phone.getByTestId("ratings-row")).toHaveCount(0);
+      await place(phone, "home");
       await tile(phone, "Film number 2").click();
       await expect(phone.getByTestId("title-sheet")).toBeVisible();
       await expect(phone.getByTestId("rate-title")).toHaveCount(0);
-      await phone.getByTestId("sheet-close").click();
+      await phone.getByTestId("title-back").click();
       await phone.reload();
       await expect(phone.getByTestId("library")).toBeVisible();
+      await place(phone, "list");
       await expect(phone.getByTestId("ratings-row")).toHaveCount(0); // (kept off)
 
       await toggle("true");
+      await place(phone, "list");
       await expect(phone.getByTestId("ratings-row")).toContainText("Film number 1");
+      await place(phone, "home");
       await tile(phone, "Film number 1").click();
       await expect(phone.getByTestId("rate-title-value")).toHaveText("8/10");
     });
@@ -3221,10 +3259,12 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(phone.getByTestId("continue-play")).toHaveAccessibleName(/Your rating: 6\/10/);
       await expect(badge(tile(phone, "Film number 2"))).toHaveCount(0);
       await expect(badge(tile(phone, "Film number 3"))).toHaveCount(0);
-      // The cards of Continue watching and of a list; the row of what was rated has its scores under the titles already.
+      // The cards of Continue watching and of a list (My lists); the row of what was rated has its scores under the titles already.
       await expect(badge(phone.getByTestId("continue-item"))).toHaveText("6");
+      await place(phone, "list");
       await expect(badge(phone.getByTestId("list-item"))).toHaveText("9");
       await expect(badge(phone.getByTestId("ratings-row"))).toHaveCount(0);
+      await place(phone, "home");
 
       // It is in the corner opposite the round button, so the two do not cover each other (and the button is still what a tap there reaches).
       const score = (await badge(tile(phone, "Film number 1")).boundingBox())!;
@@ -3232,6 +3272,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       expect(score.x + score.width).toBeLessThan(round.x);
 
       // A search: the same on the line of each title.
+      await place(phone, "search");
       await phone.getByTestId("library-search-input").fill("film number 1");
       const found = (title: string) => phone.locator(`[data-testid="library-result"][title="${title}"]`);
       await expect(found("Film number 1")).toBeVisible();
@@ -3239,27 +3280,27 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(found("Film number 10")).toBeVisible();
       await expect(badge(found("Film number 10"))).toHaveCount(0);
       await phone.getByTestId("library-search-input").fill("");
+      await place(phone, "home");
 
       // A score given on the title's page is on its picture when the page is closed, and gone when the rating is taken back.
       await tile(phone, "Film number 3").click();
       await open(phone);
       await phone.getByTestId("rate-title-score-4").click();
-      await phone.getByTestId("sheet-close").click();
+      await phone.getByTestId("title-back").click();
       await expect(badge(tile(phone, "Film number 3"))).toHaveText("4");
       await tile(phone, "Film number 3").click();
       await open(phone);
       await phone.getByTestId("rate-title-remove").click();
-      await phone.getByTestId("sheet-close").click();
+      await phone.getByTestId("title-back").click();
       await expect(badge(tile(phone, "Film number 3"))).toHaveCount(0);
 
       // With ratings off in the settings there is none anywhere.
-      await phone.getByTestId("account-button").click();
+      await place(phone, "you");
       await phone.getByTestId("menu-settings").click();
       await phone.getByTestId("ratings-switch").click();
       await expect(phone.getByTestId("ratings-switch")).toHaveAttribute("aria-checked", "false");
       await phone.getByTestId("page-back").click();
-      await phone.getByTestId("page-back").click();
-      await expect(phone.getByTestId("account-screen")).toHaveCount(0);
+      await place(phone, "home");
       await expect(tile(phone, "Film number 1")).toBeVisible();
       await expect(phone.getByTestId("score-badge")).toHaveCount(0);
     });
@@ -3280,7 +3321,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       const page = phone.getByTestId("title-sheet");
       await expect(page).toContainText("Film number 2");
       await expect(page.getByTestId("rate-title-value")).toHaveText("5/10");
-      await page.getByTestId("sheet-close").click();
+      await page.getByTestId("title-back").click();
       await expect(sheet).toBeVisible(); // (back to the list it was opened from)
       await sheet.getByTestId("sheet-close").click();
       await expect(sheet).toHaveCount(0);
@@ -3312,7 +3353,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(page.getByTestId("rate-title-value")).toHaveText("8/10");
       await open(phone);
       await page.getByTestId("rate-title-remove").click();
-      await page.getByTestId("sheet-close").click();
+      await page.getByTestId("title-back").click();
       await expect(sheet.getByTestId("ratings-empty")).toBeVisible();
       await expect(sheet.getByTestId("ratings-sort-new")).toHaveCount(0);
       await sheet.getByTestId("sheet-close").click();

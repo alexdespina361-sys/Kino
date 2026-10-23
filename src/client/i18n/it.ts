@@ -692,8 +692,6 @@ export const it: Dictionary = {
   "tvs.full": "La tua lista è piena. Dimentica una TV per collegarne un'altra.",
   "menu.partyOpen": "Visione condivisa",
   "menu.partyActive": "Visione condivisa · {count} dispositivi",
-  "menu.linkBox": "Casella dei link",
-  "menu.linkBoxHelp": "Mostra nella schermata iniziale una casella dove incollare il link di un video o di una pagina, da riprodurre su {tv}.",
   "menu.disconnect": "Scollegati da questa TV",
   "menu.disconnectHelp": "La TV esce dalla tua lista. Se nessun altro telefono ce l'ha, mostra un nuovo codice, con cui puoi ricollegarti tu o qualcun altro. Ciò che hai guardato resta nel tuo profilo.",
   "party.title": "Visione condivisa",

@@ -11,6 +11,7 @@ import { ScoreBadge } from "../shared/ScoreBadge";
 import { keepMatching, matchLocal, mergeAnswers, type Answers } from "../tv/librarySearch";
 import { entryOfItem, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
+import { RowHead } from "./Rows";
 import { ListButton, useListToggle, type ListToggle } from "./Round";
 
 /** What the server last listed, so a visit to the home screen after the first shows it at once. (The rows are the feed's, which brings the rest as they are scrolled.) */
@@ -78,7 +79,22 @@ export type LibraryMode = "browse" | "search";
  * are two pages of the phone, `mode`). A tap on a title opens its page (`onOpen`), a hold puts it in a list, and so does the round button on it; with more than one list that asks which
  * (`onPick`). Absent when there is no library, unless there is something (`fallback`) to say instead.
  */
-export function Library({ onOpen, onPick, failedLookups = 0, fallback, mode = "browse" }: { onOpen: (entry: Entry) => void; onPick: (entry: ListEntry) => void; failedLookups?: number; fallback?: ReactNode; mode?: LibraryMode }) {
+export function Library({
+  onOpen,
+  onPick,
+  onSeeAll,
+  failedLookups = 0,
+  fallback,
+  mode = "browse",
+}: {
+  onOpen: (entry: Entry) => void;
+  onPick: (entry: ListEntry) => void;
+  /** A row's heading ends with "See all", which opens the whole row (by its id) one title under the next. */
+  onSeeAll?: (rowId: string) => void;
+  failedLookups?: number;
+  fallback?: ReactNode;
+  mode?: LibraryMode;
+}) {
   const t = useT();
   const toggleFor = useListToggle(onPick);
   const scores = useScores();
@@ -354,7 +370,16 @@ export function Library({ onOpen, onPick, failedLookups = 0, fallback, mode = "b
             ))}
           {displayedRows.map((row) => (
             <div className="lib-row" key={row.id} data-testid="library-row">
-              <h3>{rowTitle(row)}</h3>
+              <RowHead
+                title={rowTitle(row)}
+                aside={
+                  onSeeAll && (
+                    <button type="button" className="row-link" data-testid="row-see-all" aria-label={`${t("rows.seeAll")}: ${rowTitle(row)}`} onClick={() => onSeeAll(row.id)}>
+                      {t("rows.seeAll")}
+                    </button>
+                  )
+                }
+              />
               <Scroller {...(hasMoreTitles(feeding, row.id, row.items.length, ROW_CAP) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
                 {row.items.map((item) => (
                   <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
@@ -417,13 +442,13 @@ function Scroller({ children, onNearEnd, loading }: { children: ReactNode; onNea
   );
 }
 
-/** A title in a row: its picture (with the score this profile gave it, if it did), the round + on it, and a hold that does what the + does. */
-function Tile({ item, score, toggle, onOpen }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void }) {
+/** A title in a row (or on the page of a whole row): its poster (with the score this profile gave it, if it did), the round + on it, and a hold that does what the + does. */
+export function Tile({ item, score, toggle, onOpen }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void }) {
   const hold = useHold(toggle.onHold);
   return (
     <div className="lib-tile" data-in-list={toggle.inList}>
       <button className="lib-card" data-testid="library-tile" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
-        <Poster className="lib-art" title={item.title} image={item.backdrop ?? item.image} seed={item.id}>
+        <Poster className="lib-art" title={item.title} image={item.image ?? item.backdrop} seed={item.id}>
           {score !== undefined && <ScoreBadge score={score} />}
         </Poster>
         <span className="lib-title">{item.title}</span>

@@ -18,6 +18,9 @@ export const shellEn = {
   /* My lists, with nothing in it */
   "lists.emptyTitle": "Nothing saved yet",
   "lists.browse": "Find something to watch",
+
+  /* the end of a row's heading: the whole row, one title under the next, on a page of its own */
+  "rows.seeAll": "See all",
 } as const;
 
 export type ShellDictionary = Record<keyof typeof shellEn, string> & Record<string, string>;

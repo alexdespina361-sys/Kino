@@ -410,8 +410,7 @@
   /* what to point a camera at is a square that leaves room for the words under it */
   :root[data-ui="polish"] .phone-ui .scanner-frame { width: min(70vw, 300px, 52vh); }
 
-  /* a title: the picture on the left, what to do with it and what it is about on the right; a show's episodes under both, as wide as the sheet */
-  :root[data-ui="polish"] .phone-ui .sheet[data-testid="title-sheet"] { max-width: 780px; }
+  /* a title: the picture on the left, what to do with it and what it is about on the right; a show's episodes under both, as wide as the page (shell.css says how wide that is) */
   :root[data-ui="polish"] .phone-ui .title-top { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; align-items: start; }
   :root[data-ui="polish"] .phone-ui .title-main { display: flex; flex-direction: column; gap: 10px; }
 

@@ -104,6 +104,25 @@ if (parts.has("guest")) {
     await snap(phone, device, "p02-home");
     await snap(phone, device, "p02b-home-full", { fullPage: true, settle: 100 });
   });
+  await step(device, "p02c-see-all", async () => {
+    // (a row's whole list, on a page of its own: only with the shell)
+    if ((await phone.getByTestId("row-see-all").count()) === 0) return;
+    await phone.getByTestId("row-see-all").first().click();
+    await phone.getByTestId("row-page").waitFor();
+    await wait(900); // (the pictures)
+    await snap(phone, device, "p02c-see-all");
+    await back(phone);
+    await phone.getByTestId("row-page").waitFor({ state: "detached" });
+  });
+  await step(device, "p02d-my-lists", async () => {
+    // (the lists are a place of the bar of their own: only with the shell)
+    if ((await phone.getByTestId("tab-list").count()) === 0) return;
+    await goTo(phone, "list");
+    await wait(700); // (the pictures)
+    await snap(phone, device, "p02d-my-lists");
+    await snap(phone, device, "p02e-my-lists-full", { fullPage: true, settle: 100 });
+    await goTo(phone, "home");
+  });
   await step(device, "p03-search", async () => {
     // (the box is the bar's second place; before the bar it was on Home, under the link box)
     if ((await phone.getByTestId("tab-search").count()) > 0) {
@@ -130,13 +149,20 @@ if (parts.has("guest")) {
     await phone.getByTestId("library-tile").filter({ hasText: series[1].title }).first().click();
     await phone.getByTestId("title-sheet").waitFor();
     await phone.getByTestId("title-episodes").waitFor();
-    await snap(phone, device, "p06-title-series", { settle: 900 });
+    await snapScrolled(phone, '[data-testid="title-sheet"]', device, "p06-title-series", { settle: 900 });
     await back(phone);
   });
   await step(device, "p07-menu", async () => {
     await phone.getByTestId("menu").click();
     await phone.getByTestId("menu-sheet").waitFor();
     await snap(phone, device, "p07-menu");
+    if ((await phone.getByTestId("control-open").count()) > 0) {
+      // (with the shell the code for another phone is behind its own row)
+      await phone.getByTestId("control-open").click();
+      await wait(300);
+      await snap(phone, device, "p07b-menu-code");
+      await phone.getByTestId("control-open").click();
+    }
     await phone.getByTestId("tvs-open").click();
     await phone.getByTestId("tvs-sheet").waitFor();
     await snap(phone, device, "p08-tvs-sheet");

@@ -15,4 +15,7 @@ export const shellIt: ShellDictionary = {
   /* Le mie liste, vuote */
   "lists.emptyTitle": "Ancora niente di salvato",
   "lists.browse": "Trova qualcosa da guardare",
+
+  /* la fine del titolo di una riga: tutta la riga, un titolo sotto l'altro, in una pagina a parte */
+  "rows.seeAll": "Vedi tutti",
 };

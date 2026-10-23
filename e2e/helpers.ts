@@ -286,8 +286,11 @@ export async function openPairedPhone(browser: Browser, tv: Page): Promise<Page>
   return phone;
 }
 
+/** One of the four places of the phone's bar: Home (what to watch, the box for a link), Search, My lists (the lists and the ratings) and You (the account). */
+export const place = (phone: Page, name: "home" | "search" | "list" | "you") => phone.getByTestId(`tab-${name}`).click();
+
 export const tvRoot = (tv: Page) => tv.getByTestId("tv");
-export const tvTime = async (tv: Page) => Number(await tvRoot(tv).getAttribute("data-time"));
+export const tvTime =async (tv: Page) => Number(await tvRoot(tv).getAttribute("data-time"));
 
 /** A phone speaking the raw protocol, to verify the exact command sequence without the UI in between. */
 export class RawPhone {

@@ -24,7 +24,8 @@ export function CardRow({ title, testId, aside, wide, children }: { title: strin
   );
 }
 
-function RowHead({ title, aside }: { title: string; aside?: ReactNode }) {
+/** A row's heading, with something small at its far end if there is something to put there. */
+export function RowHead({ title, aside }: { title: string; aside?: ReactNode }) {
   if (!aside) return <h3>{title}</h3>;
   return (
     <div className="lib-row-head">
@@ -181,7 +182,7 @@ export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: L
                   key={item.key}
                   testId="list"
                   title={item.title}
-                  image={item.backdrop ?? item.image}
+                  image={item.image ?? item.backdrop}
                   note={item.year ? String(item.year) : undefined}
                   score={scoreOf(scores, item.url)}
                   playLabel={`${t("rows.open")} ${item.title}`}
@@ -213,7 +214,7 @@ export function RatingsRow({ ratings, onOpen, onAll }: { ratings: readonly LiveR
   return (
     <CardRow title={t("rating.mine")} testId="ratings-row" aside={all}>
       {sortRatings(ratings, "new").map((rating) => (
-        <Card key={rating.key} testId="rating" title={rating.title} image={rating.backdrop ?? rating.image} note={ratingNote(t, rating)} playLabel={`${t("rows.open")} ${rating.title}`} onPlay={() => onOpen(entryOfRating(rating))} />
+        <Card key={rating.key} testId="rating" title={rating.title} image={rating.image ?? rating.backdrop} note={ratingNote(t, rating)} playLabel={`${t("rows.open")} ${rating.title}`} onPlay={() => onOpen(entryOfRating(rating))} />
       ))}
     </CardRow>
   );

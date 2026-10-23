@@ -18,12 +18,23 @@ import { FriendPage, FriendsPage } from "./Friends";
 import { RatingsSheet } from "./RatingsSheet";
 import { keepFocusIn, sheetIsOpen } from "./Sheet";
 
-/** A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. */
-export function Page({ title, onBack, children, testId }: { title: string; onBack: () => void; children: ReactNode; testId?: string }) {
+/** The pages that are open, the one on top last: a title's page lies over the account's, and Escape goes back from that one only. */
+const pagesOpen: object[] = [];
+
+/**
+ * A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. A page with a picture at its top (a title's) has
+ * no head: its way back is a round button over the picture (`backTestId` is its test id), and its name is the page's own to write.
+ */
+export function Page({ title, onBack, children, testId, backTestId }: { title: string; onBack: () => void; children: ReactNode; testId?: string; backTestId?: string }) {
   const t = useT();
   const page = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
+  const me = useRef({}).current;
   useBackToClose(onBack); // (the phone's own Back goes back a page too, instead of leaving the site)
+  useEffect(() => {
+    pagesOpen.push(me);
+    return () => void pagesOpen.splice(pagesOpen.indexOf(me), 1);
+  }, [me]);
   // (one page is the next one in the same place: what was scrolled in the one before is not where the next begins)
   useLayoutEffect(() => {
     body.current?.scrollTo(0, 0);
@@ -36,20 +47,30 @@ export function Page({ title, onBack, children, testId }: { title: string; onBac
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (sheetIsOpen()) return; // (a sheet over the page keeps its own focus)
-      if (event.key === "Escape") onBack();
-      else if (event.key === "Tab" && page.current) keepFocusIn(page.current, event);
+      if (pagesOpen[pagesOpen.length - 1] !== me) return; // (so does a page over this one)
+      if (event.key === "Escape") {
+        // (One Escape is one page back: the page under this one listens on the window too, and finds this one gone if it listens after it.)
+        event.stopImmediatePropagation();
+        onBack();
+      } else if (event.key === "Tab" && page.current) keepFocusIn(page.current, event);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onBack]);
+  }, [onBack, me]);
   return (
-    <div className="page" ref={page} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
-      <header className="page-head">
-        <button className="icon-btn" onClick={onBack} aria-label={t("common.back")} data-testid="page-back">
+    <div className={`page${backTestId ? " is-bare" : ""}`} ref={page} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
+      {backTestId ? (
+        <button className="icon-btn page-float-back" onClick={onBack} aria-label={t("common.back")} data-testid={backTestId}>
           <ChevronIcon className="flip" />
         </button>
-        <h2>{title}</h2>
-      </header>
+      ) : (
+        <header className="page-head">
+          <button className="icon-btn" onClick={onBack} aria-label={t("common.back")} data-testid="page-back">
+            <ChevronIcon className="flip" />
+          </button>
+          <h2>{title}</h2>
+        </header>
+      )}
       <div className="page-body" ref={body}>
         {children}
       </div>

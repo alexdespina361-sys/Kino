@@ -48,6 +48,7 @@ import { RatingsSheet } from "./RatingsSheet";
 import { ContinueRow } from "./Rows";
 import { MiniRemote } from "./shell/MiniRemote";
 import { MyLists } from "./shell/MyLists";
+import { RowPage } from "./shell/RowPage";
 import { TabBar } from "./shell/TabBar";
 import { TvChip } from "./shell/TvChip";
 import { useTabs } from "./shell/useTabs";
@@ -103,12 +104,14 @@ export function Controller() {
   /** The page of a title that was tapped in the library or a list: where it is played, or put in a list. */
   const [title, setTitle] = useState<Entry | null>(null);
   /** Whether the home screen has the box for pasting a link (also turned on and off in the settings: see linkBox.ts). */
-  const [linkBox, changeLinkBox] = useLinkBox();
+  const [linkBox] = useLinkBox();
   // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
   const ratingsOn = settings.ratings ?? true;
   /** The page that lists everything this profile rated. */
   const [ratingsOpen, setRatingsOpen] = useState(false);
+  /** The row of the library that "See all" opened on a page of its own (by its id). */
+  const [seeAll, setSeeAll] = useState<string | null>(null);
 
   // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
   const launchRef = useRef(readLaunchParams(location.search));
@@ -181,6 +184,7 @@ export function Controller() {
               setSheet(null);
               setListSheet(null);
               setRatingsOpen(false);
+              setSeeAll(null);
               setTitle(null);
               setResolve(null);
               setOther(null);
@@ -572,7 +576,7 @@ export function Controller() {
       <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} status={false} />
       <FriendsHome onOpenTitle={setTitle} onStartParty={startTogether} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
-      <Library onOpen={setTitle} onPick={pickList} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} status={false} />} />
+      <Library onOpen={setTitle} onPick={pickList} onSeeAll={setSeeAll} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} status={false} />} />
     </section>
   );
   const search = (
@@ -602,6 +606,7 @@ export function Controller() {
 
   return (
     <main className={`phone phone-ui shell${remoteOpen ? " is-remote" : ""}${mini ? " has-mini" : ""}`} data-tab={tabs.tab}>
+      {seeAll !== null && <RowPage rowId={seeAll} onClose={() => setSeeAll(null)} onOpen={setTitle} onPick={pickList} />}
       {accountLayer}
       <header className="top">
         {remoteOpen && (
@@ -679,8 +684,6 @@ export function Controller() {
           tvCount={tvs.length}
           controlCode={tv.controlCode}
           controllerCount={tv.controllerCount}
-          linkBox={linkBox}
-          onLinkBox={changeLinkBox}
           onParty={() => setSheet("party")}
           onTvs={() => setSheet("tvs")}
           onClose={closeSheet}

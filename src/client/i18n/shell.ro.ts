@@ -15,4 +15,7 @@ export const shellRo: ShellDictionary = {
   /* Listele mele, goale */
   "lists.emptyTitle": "Nimic salvat încă",
   "lists.browse": "Caută ceva de văzut",
+
+  /* sfârșitul titlului unui rând: tot rândul, un titlu sub altul, pe o pagină a lui */
+  "rows.seeAll": "Vezi toate",
 };

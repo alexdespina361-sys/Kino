@@ -2,7 +2,7 @@ import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, readPairingCode, test } from "./helpers";
+import { openDevice, openLibrary, openProfilePlace, openTvSignIn, PHONE, place, readPairingCode, test } from "./helpers";
 
 /**
  * Tags and requests: every profile has a tag (`Name#1`) that another types to find it, and finding it only asks: the other says yes (or no).
@@ -355,6 +355,7 @@ test.describe("asking the profile on a screen of a watch party", () => {
     await signUp(phone, pam);
     await turnOnFriends(phone);
     await phone.keyboard.press("Escape");
+    await place(phone, "home"); // (a paired phone has the account as one of the places of its bar)
     await expect(phone.getByTestId("account-screen")).toHaveCount(0);
 
     const guest = await screenWithFriends(browser, "Gus");

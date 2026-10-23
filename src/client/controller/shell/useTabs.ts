@@ -19,6 +19,17 @@ export function useTabs(hidden: boolean, paired: boolean) {
   const now = useRef({ tab, hidden });
   now.current = { tab, hidden };
 
+  // The browser puts a page back where its history entry left it when a Back goes through the entry (the remote's: it was made with the page at the top, and
+  // takes the place out of its scroll when it goes). The places are where their readers left them, and that is kept here.
+  useEffect(() => {
+    if (!("scrollRestoration" in window.history)) return;
+    const was = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    return () => {
+      window.history.scrollRestoration = was;
+    };
+  }, []);
+
   // How far each place has been scrolled, as it is scrolled (a page that gets shorter under the finger is not the finger's doing: while the remote has the screen nothing is kept).
   useEffect(() => {
     const onScroll = () => {

@@ -309,3 +309,6 @@ export const hasMoreTitles = (snap: FeedSnapshot, rowId: string, shown: number, 
 
 /** Whether the next titles of a row are being asked for. */
 export const loadingTitles = (snap: FeedSnapshot, rowId: string): boolean => Boolean(snap.status.busy[moreId(rowId)]);
+
+/** Whether the last question for the next titles of a row failed and is waiting to be asked again. */
+export const failedTitles = (snap: FeedSnapshot, rowId: string): boolean => Boolean(snap.status.failed[moreId(rowId)]);

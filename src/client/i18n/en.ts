@@ -694,8 +694,6 @@ export const en = {
   "tvs.full": "Your list is full. Forget a TV to connect another.",
   "menu.partyOpen": "Watch party",
   "menu.partyActive": "Watch party · {count} devices",
-  "menu.linkBox": "Paste-a-link box",
-  "menu.linkBoxHelp": "Shows a box on the home screen where a video or page link is pasted and played on {tv}.",
   "menu.disconnect": "Disconnect from this TV",
   "menu.disconnectHelp": "The TV comes off your list. If no other phone has it, it shows a new code so you (or someone else) can connect again. What you watched stays with your profile.",
   "party.title": "Watch party",

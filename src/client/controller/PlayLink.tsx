@@ -72,9 +72,12 @@ export function PlayLink({ tvName, resolve, onPlay, form = true, status = true }
               </button>
             )}
           </div>
-          <button type="submit" className="btn btn-red btn-block" data-testid="play-url" disabled={!url.trim()}>
-            <PlayIcon /> {t("play.on", { tv: tvName })}
-          </button>
+          {/* The button is there once there is something to play (a button that cannot be pressed is a line of the page that says nothing). */}
+          {url.trim() && (
+            <button type="submit" className="btn btn-red btn-block" data-testid="play-url">
+              <PlayIcon /> {t("play.on", { tv: tvName })}
+            </button>
+          )}
         </form>
       )}
 
