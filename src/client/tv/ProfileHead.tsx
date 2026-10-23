@@ -1,8 +1,22 @@
+import type { ReactNode } from "react";
 import type { AvatarId } from "../../shared";
 import { Avatar } from "../account/Avatar";
 import { useFeedbackEntry } from "../feedback/entry";
 import { useT } from "../i18n";
 import { GearIcon, MessageIcon, UserIcon } from "../shared/icons";
+
+/** A place the library's menu has, that a phone's bar of four has no room for (the watch party, the phone): a button after the others here. */
+export interface ProfilePlace {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  /** A short count beside the name (how many are in the party). */
+  badge?: string;
+  /** What it stands for is on right now (a phone is connected). */
+  lit?: boolean;
+  testId: string;
+  onPress: () => void;
+}
 
 interface ProfileHeadProps {
   /** Whoever is watching: the profile in use, or a guest (no account on this TV). */
@@ -17,6 +31,8 @@ interface ProfileHeadProps {
   onSettings: () => void;
   /** The remote came to the button at this place of the banner's row (the library keeps it, to come back to it from Settings). */
   onArrive: (col: number) => void;
+  /** After Feedback, more buttons, for a screen whose menu is too small to hold them. */
+  places?: readonly ProfilePlace[];
 }
 
 /**
@@ -24,7 +40,7 @@ interface ProfileHeadProps {
  * the keyboard and the mouse alike) with Feedback next to it, and for a guest the way to sign in, which is what the guest has come to this page for.
  * (Feedback comes after Settings, so the remote still starts where it did.)
  */
-export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn, onSettings, onArrive }: ProfileHeadProps) {
+export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn, onSettings, onArrive, places = [] }: ProfileHeadProps) {
   const t = useT();
   const feedback = useFeedbackEntry();
   const at = (col: number) => ({ "data-zone": "hero", "data-row": 0, "data-col": col, onFocus: () => onArrive(col) });
@@ -61,6 +77,12 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
             </span>
           )}
         </button>
+        {places.map((place, index) => (
+          <button key={place.id} className="tv-hero-button tv-profile-place" onClick={place.onPress} data-testid={place.testId} data-lit={place.lit ? "true" : undefined} {...at(settingsCol + 2 + index)}>
+            {place.icon} {place.label}
+            {place.badge && <span className="tv-profile-badge">{place.badge}</span>}
+          </button>
+        ))}
       </div>
     </div>
   );

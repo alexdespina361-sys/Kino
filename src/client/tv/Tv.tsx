@@ -65,7 +65,8 @@ import {
 } from "./prefs";
 import { useWakeLock } from "./useWakeLock";
 import "./tv.css";
-import "../polish/tv.css"; // (last of this chunk's sheets: the refined layer sits on top of the older ones, and is all under :root[data-ui="polish"])
+import "../polish/tv.css"; // (the refined layer sits on top of the older ones, and is all under :root[data-ui="polish"])
+import "../polish/tv-phone.css"; // (last of this chunk's sheets: the same page on a phone held upright, which says more than the one before it for a screen that narrow)
 
 const DEVICE_KEY = "tv.deviceId";
 /** The overlay fades out this long after the last key press, but only while a video is actually playing. */
@@ -1456,6 +1457,7 @@ export function Tv() {
       data-time={player.currentTime.toFixed(1)}
       data-error={player.error ?? ""}
       data-hud={controlsVisible ? "visible" : "hidden"}
+      data-touch={touch || undefined}
       onMouseMove={() => {
         // (The browser's echo of a finger is no mouse, and nor is one that is only settling after the click that put the controls away.)
         if (picture.echoOfTouch() || Date.now() - putAwayAtRef.current < PUT_AWAY_QUIET_MS) return;

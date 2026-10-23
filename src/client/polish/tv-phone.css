@@ -1,0 +1,431 @@
+/*
+ * The TV's page on a phone held upright (docs/phone-layout/PLAN.md, "path B"): a screen of 600 px or less, and tall enough to be held upright. It is what a phone shows when it is the screen
+ * itself (a party's link, "use this phone as the screen"), and what a window that narrow shows on a computer. Loaded after polish/tv.css, under the very same question that compact.ts asks
+ * (Browse.tsx and fit.ts ask it too, so the markup and these rules always agree); every rule starts with :root[data-ui="polish"] (polish.test.ts), and says .tv after that, to win over the
+ * rules of polish/tv.css that have said as much for a hand-held screen. Nothing above 600 px wide, or sideways, is touched by any of it: that is the TV's own page, and the one a phone
+ * on its side or a tablet gets, which has room for the TV's menu down the left.
+ *
+ * What changes, and why (the plan has the pictures): the menu is a bar of four places along the bottom, with names, where the TV has ten icons down the left; the sections of the library are a
+ * row of buttons over the titles; the banner is gone (a title is read on its own page, which a tap opens); titles are upright posters, three across; a title's page is a picture, the name, one wide
+ * Play button; the player's buttons are as big as a thumb needs, in rows; and what is chosen over the film (speed, language, episodes) comes up from the bottom as a sheet.
+ */
+
+@media (max-width: 599px) and (min-height: 480px) {
+  /* ------------------------------ tokens ------------------------------ */
+
+  /* Every text at least 14 px (the bar's four names, and the numbers on the player's bar, are the exceptions the plan names), every button as tall as a thumb. */
+  :root[data-ui="polish"] .tv {
+    --fs-1: 14px;
+    --fs-2: 14px;
+    --fs-3: 16px;
+    --fs-4: 18px;
+    --fs-5: 20px;
+    --fs-6: 24px;
+    --fs-7: 28px;
+    --r-1: 8px;
+    --r-2: 10px;
+    --r-3: 16px;
+    --gutter: 16px;
+    --edge: 16px;
+    --edge-r: 12px;
+    --page-r: 16px;
+    --tile-gap: 10px;
+    --top: 8px;
+    --bar: 56px; /* the bar of four places along the bottom */
+    --bar-room: calc(var(--bar) + env(safe-area-inset-bottom));
+    --poster: 112px; /* an upright title: 2 by 3 */
+    --card: 200px; /* what is part way through: 16 by 9 */
+    --tap: 44px;
+    --sheet-max: 70%;
+  }
+
+  /* ------------------------------ the frame ------------------------------ */
+
+  /* The bar takes the bottom of the page: what is above it is the page, and a page that lies over all of it (a title's, the settings) covers the bar too. */
+  :root[data-ui="polish"] .tv .tv-browse { padding-bottom: var(--bar-room); }
+  /* No banner for a picture to be behind, and none of its shade (a title's own page has its picture, below). */
+  :root[data-ui="polish"] .tv .tv-browse > .tv-hero-bg,
+  :root[data-ui="polish"] .tv .tv-browse > .tv-browse-shade { display: none; }
+
+  /* The top: the wordmark, and the buttons of the corner, each one as big as a thumb. */
+  :root[data-ui="polish"] .tv .tv-browse-top { box-sizing: border-box; gap: 8px; min-height: 56px; padding: calc(var(--top) + env(safe-area-inset-top)) var(--edge-r) 4px var(--gutter); }
+  :root[data-ui="polish"] .tv .tv-browse-corner { gap: 4px; font-size: 14px; }
+  :root[data-ui="polish"] .tv .tv-corner-button,
+  :root[data-ui="polish"] .tv .tv-browse-corner .tv-back { width: var(--tap); height: var(--tap); }
+  :root[data-ui="polish"] .tv .tv-corner-button svg { width: 22px; height: 22px; }
+  :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip { gap: 8px; height: var(--tap); padding: 0 14px 0 4px; font-size: 14px; }
+  :root[data-ui="polish"] .tv .tv-browse-corner .tv-account-chip > svg:not(.avatar) { width: 20px; height: 20px; padding: 6px; }
+  :root[data-ui="polish"] .tv .tv-chip-avatar { font-size: 36px; }
+  /* What the library says in passing (a title that would not play) is a line under the top, not a pill squeezed between the wordmark and the buttons. */
+  :root[data-ui="polish"] .tv .tv-browse-top .tv-notice { position: absolute; top: calc(var(--top) + env(safe-area-inset-top) + 52px); left: var(--gutter); right: var(--gutter); z-index: 3; border-radius: var(--r-2); font-size: 14px; text-align: center; }
+
+  /* ------------------------------ the bar of places ------------------------------ */
+
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    box-sizing: border-box;
+    flex-direction: row;
+    gap: 0;
+    width: auto;
+    height: var(--bar-room);
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    overflow: hidden;
+    border: 0;
+    background: rgba(11, 11, 12, 0.97);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1); /* (a hairline over it, drawn inside, so the places have all of the 56 px) */
+    transition: none;
+  }
+  /* (nothing behind it is dimmed: it is never "open") */
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] ~ * { opacity: 1; }
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item {
+    position: relative;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-width: 0;
+    height: var(--bar);
+    margin: 0;
+    padding: 4px 2px;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-3);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item svg { position: relative; z-index: 1; font-size: 22px; }
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item span { max-width: 100%; overflow: hidden; opacity: 1; text-overflow: ellipsis; white-space: nowrap; }
+  /* The place you are in: a pill of the accent behind its icon, and its word as bright as a title (told by shape and weight, not by colour alone). */
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item::before {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: 50%;
+    width: 56px;
+    height: 28px;
+    margin: 0 0 0 -28px;
+    border-radius: 14px;
+    background: transparent;
+    transform: none;
+    transition: background var(--t-base) var(--ease);
+  }
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item[aria-current="page"] { color: var(--text-1); }
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item[aria-current="page"]::before { background: rgb(var(--accent-rgb) / 0.3); }
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item:active::before { background: var(--fill-2); }
+  /* The remote on a place (a keyboard, or the arrow keys): a ring inside its edges, as the places of a TV's menu light. */
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item:focus-visible { background: transparent; box-shadow: inset 0 0 0 2px #fff; color: var(--text-1); transform: none; }
+  :root[data-ui="polish"] .tv .tv-rail[data-bar="true"] .tv-rail-item:focus-visible::before { background: var(--fill-3); }
+
+  /* ------------------------------ the sections, and any other row of buttons ------------------------------ */
+
+  /* One line of buttons that slides sideways (a list of them, a friend's page, the search's kinds, a show's seasons): from edge to edge of the screen, each as tall as a thumb. */
+  :root[data-ui="polish"] .tv .tv-filters { gap: 8px; margin: 0 calc(var(--page-r) * -1); padding: 4px var(--page-r) 8px; scroll-padding-inline: var(--page-r); }
+  :root[data-ui="polish"] .tv .tv-filters .tv-choice { min-height: var(--tap); padding: 0 16px; border-radius: 22px; font-size: 14px; font-weight: 600; white-space: nowrap; }
+  :root[data-ui="polish"] .tv .tv-filters-friend > .tv-choice { padding-inline: 14px; }
+  :root[data-ui="polish"] .tv .tv-sections { flex: none; margin: 0; }
+  /* A button that is lit by the remote on a phone is a ring, not a white slab that hides what it says. */
+  :root[data-ui="polish"] .tv .tv-filters .tv-choice:focus-visible { transform: none; }
+
+  /* ------------------------------ rows of titles ------------------------------ */
+
+  /* No banner: nothing but what a page says in place of titles (loading, nothing here, retry), and the profile's head. */
+  :root[data-ui="polish"] .tv .tv-hero { height: auto; min-height: 0; max-width: none; padding: 4px var(--page-r) 8px; }
+  :root[data-ui="polish"] .tv .tv-hero:empty { display: none; }
+  :root[data-ui="polish"] .tv .tv-hero .tv-hero-status { font-size: var(--fs-5); line-height: 1.2; white-space: normal; }
+  :root[data-ui="polish"] .tv .tv-hero .tv-hero-eyebrow { font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .tv-hero .tv-hero-about { font-size: var(--fs-2); -webkit-line-clamp: 4; }
+  :root[data-ui="polish"] .tv .tv-hero .tv-action { min-height: 48px; }
+
+  :root[data-ui="polish"] .tv .tv-row-title { margin: 8px var(--page-r) 0 var(--gutter); font-size: var(--fs-4); font-weight: 700; }
+  :root[data-ui="polish"] .tv .tv-row-tiles { gap: var(--tile-gap); padding: 8px var(--page-r) 12px var(--gutter); -webkit-mask-image: none; mask-image: none; scroll-padding-inline: var(--gutter); }
+  :root[data-ui="polish"] .tv .tv-rows::after { height: 24px; }
+  :root[data-ui="polish"] .tv .tv-rows-note { margin: 0 var(--page-r) 12px var(--gutter); font-size: var(--fs-2); }
+
+  /* A title is an upright poster with its name under it (two lines of it, not one cut short) and the year. */
+  :root[data-ui="polish"] .tv .tv-tile { width: var(--poster); }
+  :root[data-ui="polish"] .tv .tv-tile-art { aspect-ratio: 2 / 3; }
+  :root[data-ui="polish"] .tv .tv-tile-body { gap: 6px; }
+  :root[data-ui="polish"] .tv .tv-tile-name { display: -webkit-box; font-size: 14px; line-height: 1.3; white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  :root[data-ui="polish"] .tv .tv-tile-year { font-size: 14px; }
+  :root[data-ui="polish"] .tv .tv-tile-initial { font-size: 40px; }
+  /* What is part way through is a card as wide as a picture of the film is, with the bar of how far it got. */
+  :root[data-ui="polish"] .tv .tv-tile-continue { width: var(--card); }
+  :root[data-ui="polish"] .tv .tv-tile-continue .tv-tile-art { aspect-ratio: 16 / 9; }
+  :root[data-ui="polish"] .tv .tv-tile-play { font-size: 36px; }
+  :root[data-ui="polish"] .tv .tv-tile-progress { height: 4px; }
+  :root[data-ui="polish"] .tv .tv-skeleton { width: var(--poster); height: calc(var(--poster) * 1.5); }
+  :root[data-ui="polish"] .tv .tv-tile-art .score-badge { top: 6px; left: 6px; font-size: 14px; }
+  /* A finger puts nothing on a title that it has to keep lit: the tile that was tapped is not left ringed under the page that opened over it, nor is the first one on a
+     page that was only opened (the page focuses it for a key to start from). The arrow keys (a keyboard on a phone: data-touch goes with the first key) light it. */
+  :root[data-ui="polish"] .tv .tv-tile:focus,
+  :root[data-ui="polish"] .tv .tv-tile-category:focus { transform: none; }
+  :root[data-ui="polish"] .tv .tv-tile:focus .tv-tile-art,
+  :root[data-ui="polish"] .tv .tv-tile-category:focus,
+  :root[data-ui="polish"] .tv .tv-tile-place:focus { box-shadow: none; }
+  :root[data-ui="polish"] .tv:not([data-touch="true"]) .tv-tile:focus-visible .tv-tile-art,
+  :root[data-ui="polish"] .tv:not([data-touch="true"]) .tv-tile-category:focus-visible,
+  :root[data-ui="polish"] .tv:not([data-touch="true"]) .tv-tile-place:focus-visible { box-shadow: var(--focus-ring), var(--lift); }
+
+  /* Categories, and the places of the profile: a card of words. */
+  :root[data-ui="polish"] .tv .tv-tile-category { width: 156px; height: 92px; padding: 12px; }
+  :root[data-ui="polish"] .tv .tv-tile-person { width: 232px; height: auto; min-height: 76px; }
+  :root[data-ui="polish"] .tv .tv-person-pic { font-size: 48px; }
+  /* (What the profile holds is two across, the third under them: nothing to slide sideways, nothing cut at the edge of a 320 px screen.) */
+  :root[data-ui="polish"] .tv .tv-tile-place { flex: none; width: calc(50% - var(--tile-gap) / 2); height: 120px; padding: 12px; }
+  :root[data-ui="polish"] .tv .tv-browse[data-view="profile"] .tv-row-tiles { flex-wrap: wrap; overflow: visible; }
+  :root[data-ui="polish"] .tv .tv-place-icon { top: 12px; left: 12px; width: 40px; height: 40px; font-size: 20px; }
+  :root[data-ui="polish"] .tv .tv-tile-place .tv-category-name { font-size: var(--fs-3); }
+  :root[data-ui="polish"] .tv .tv-category-name { font-size: var(--fs-3); }
+  :root[data-ui="polish"] .tv .tv-category-count { font-size: var(--fs-1); }
+  :root[data-ui="polish"] .tv .tv-browse[data-view="profile"] .tv-row-tiles { padding-top: 4px; }
+
+  /* ------------------------------ a page of titles (a category, a list, history, ratings, the friends') ------------------------------ */
+
+  :root[data-ui="polish"] .tv .tv-view,
+  :root[data-ui="polish"] .tv .tv-search { padding: 4px var(--page-r) 0 var(--gutter); }
+  :root[data-ui="polish"] .tv .tv-view-title { font-size: var(--fs-6); line-height: 1.15; }
+  :root[data-ui="polish"] .tv .tv-view-meta { font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .tv-view-hint { max-width: none; font-size: var(--fs-1); }
+  :root[data-ui="polish"] .tv .tv-view-empty { max-width: none; font-size: var(--fs-4); }
+  :root[data-ui="polish"] .tv .tv-grid { gap: 14px 10px; margin: 0 calc(var(--page-r) * -1) 0 calc(var(--gutter) * -1); padding: 12px var(--page-r) 24px var(--gutter); }
+  :root[data-ui="polish"] .tv .tv-grid .tv-tile { width: auto; }
+  :root[data-ui="polish"] .tv .tv-grid .tv-tile-category { width: auto; height: 92px; }
+  :root[data-ui="polish"] .tv .tv-grid .tv-tile-person { height: auto; }
+  :root[data-ui="polish"] .tv .tv-view-foot { padding: 4px 0 16px; }
+  :root[data-ui="polish"] .tv .tv-results-closest { font-size: var(--fs-4); }
+
+  /* ------------------------------ search ------------------------------ */
+
+  :root[data-ui="polish"] .tv .tv-search { gap: 4px; }
+  /* A field, as tall as a thumb, on a surface of its own; 16 px, below which a phone's browser zooms into it. */
+  :root[data-ui="polish"] .tv input.tv-query { box-sizing: border-box; height: 48px; margin: 4px 0 0; padding: 0 16px; border-radius: 12px; background: var(--surf-2); font-size: 16px; }
+  :root[data-ui="polish"] .tv input.tv-query::placeholder { color: var(--text-3); }
+  :root[data-ui="polish"] .tv input.tv-query:focus { box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.7); }
+  :root[data-ui="polish"] .tv .tv-search-main .tv-view-meta { margin-top: 0; }
+
+  /* ------------------------------ the profile's page ------------------------------ */
+
+  :root[data-ui="polish"] .tv .tv-hero-profile { min-height: 0; padding: 4px var(--page-r) 8px var(--gutter); }
+  :root[data-ui="polish"] .tv .tv-profile-head { flex-wrap: wrap; align-items: center; gap: 12px 14px; }
+  :root[data-ui="polish"] .tv .tv-profile-avatar { font-size: 64px; }
+  :root[data-ui="polish"] .tv .tv-profile-guest { width: 64px; height: 64px; font-size: 28px; }
+  :root[data-ui="polish"] .tv .tv-profile-who { flex: 1 1 0; min-width: 0; gap: 4px; }
+  :root[data-ui="polish"] .tv .tv-profile-name { font-size: var(--fs-6); }
+  :root[data-ui="polish"] .tv .tv-profile-line { max-width: none; font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .tv-profile-signin { min-height: 48px; margin-top: 8px; }
+  /* What the page can do: two across, each as tall as a thumb (Settings, Feedback, the watch party, the phone). */
+  :root[data-ui="polish"] .tv .tv-profile-actions { display: grid; flex: 1 0 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-self: stretch; margin-top: 4px; }
+  :root[data-ui="polish"] .tv .tv-profile-actions .tv-hero-button { justify-content: center; min-height: 48px; padding: 0 12px; font-size: 14px; white-space: normal; text-align: center; }
+  :root[data-ui="polish"] .tv .tv-profile-place[data-lit="true"] { box-shadow: inset 0 0 0 2px rgb(var(--accent-rgb) / 0.8); }
+
+  /* ------------------------------ a title's own page ------------------------------ */
+
+  /* A picture across the top (16 by 9, as wide as the screen, to 300 px), the page's colour coming up over its lower edge, the words under it. It is in the page that scrolls (Browse.tsx), so it goes up with it. */
+  :root[data-ui="polish"] .tv .tv-detail-scroll > .tv-hero-bg { inset: 0 0 auto 0; height: min(56.25vw, 300px); background-position: center top; }
+  :root[data-ui="polish"] .tv .tv-detail-scroll > .tv-browse-shade {
+    inset: 0 0 auto 0;
+    height: min(56.25vw, 300px);
+    background:
+      linear-gradient(to bottom, rgba(11, 11, 12, 0.6), rgba(11, 11, 12, 0) 84px),
+      linear-gradient(to bottom, rgba(11, 11, 12, 0) calc(100% - 96px), var(--bg));
+  }
+  :root[data-ui="polish"] .tv .tv-detail-hero,
+  :root[data-ui="polish"] .tv .tv-detail[data-show="true"] .tv-detail-hero { min-height: 0; justify-content: flex-start; padding-top: calc(min(56.25vw, 300px) - 56px); }
+  :root[data-ui="polish"] .tv .tv-detail[data-art="false"] .tv-detail-hero { padding-top: 72px; }
+  :root[data-ui="polish"] .tv .tv-detail-text,
+  :root[data-ui="polish"] .tv .tv-detail[data-show="true"] .tv-detail-text { gap: 8px; max-width: none; padding: 0 var(--page-r) 20px var(--gutter); }
+  :root[data-ui="polish"] .tv .tv-detail-title { font-size: var(--fs-7); line-height: 1.12; }
+  :root[data-ui="polish"] .tv .tv-detail .tv-hero-eyebrow,
+  :root[data-ui="polish"] .tv .tv-detail .tv-hero-meta { font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .tv-detail-about { margin-top: 4px; max-width: none; font-size: var(--fs-3); line-height: 1.45; -webkit-line-clamp: 6; }
+  /* One wide button to play it, then the others side by side (two across, or the last on a line of its own when there are three). */
+  :root[data-ui="polish"] .tv .tv-detail .tv-hero-actions { gap: 8px; margin: 8px 0 0; padding: 0; }
+  :root[data-ui="polish"] .tv .tv-detail .tv-hero-button { flex: 1 1 calc(50% - 4px); justify-content: center; min-height: var(--tap); padding: 0 14px; font-size: var(--fs-2); text-align: center; }
+  :root[data-ui="polish"] .tv .tv-detail .tv-hero-button.is-primary { flex-basis: 100%; min-height: 52px; font-size: var(--fs-3); }
+  /* Close is a round button over the picture, as big as a thumb, with its word for a screen reader. */
+  :root[data-ui="polish"] .tv .tv-detail .tv-detail-close {
+    top: calc(var(--top) + env(safe-area-inset-top));
+    right: var(--edge-r);
+    justify-content: center;
+    width: var(--tap);
+    height: var(--tap);
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(11, 11, 12, 0.72);
+    color: var(--text-1);
+    font-size: 0; /* (the word stays in the button, to be read; only its picture is drawn) */
+  }
+  :root[data-ui="polish"] .tv .tv-detail .tv-detail-close:not(:focus-visible) { background: rgba(11, 11, 12, 0.72); color: var(--text-1); }
+  :root[data-ui="polish"] .tv .tv-detail .tv-detail-close svg { width: 22px; height: 22px; }
+  :root[data-ui="polish"] .tv .tv-detail .tv-detail-notice { top: calc(var(--top) + env(safe-area-inset-top) + 52px); left: var(--gutter); right: var(--gutter); max-width: none; transform: none; font-size: 14px; }
+
+  /* A show's seasons and episodes: the seasons slide, each episode is a row with its still, its name and what it is about. */
+  :root[data-ui="polish"] .tv .tv-detail-eps { padding: 4px var(--page-r) 32px var(--gutter); }
+  :root[data-ui="polish"] .tv .tv-detail-eps-title { margin-bottom: 4px; font-size: var(--fs-4); }
+  :root[data-ui="polish"] .tv .tv-detail-eps > .tv-filters { margin-inline: calc(var(--gutter) * -1); padding-inline: var(--gutter); }
+  :root[data-ui="polish"] .tv .tv-detail-list { gap: 8px; margin: 0; padding: 4px 0; }
+  :root[data-ui="polish"] .tv .tv-opt.tv-ep { grid-template-columns: 24px 112px minmax(0, 1fr); gap: 10px; min-height: 76px; padding: 8px 10px 8px 4px; }
+  :root[data-ui="polish"] .tv .tv-ep-no { font-size: 18px; }
+  :root[data-ui="polish"] .tv .tv-ep-name { font-size: var(--fs-2); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  :root[data-ui="polish"] .tv .tv-ep-head { flex-wrap: wrap; gap: 0 8px; }
+  :root[data-ui="polish"] .tv .tv-ep-meta { font-size: var(--fs-1); }
+  :root[data-ui="polish"] .tv .tv-ep-about { font-size: var(--fs-1); -webkit-line-clamp: 2; }
+
+  /* ------------------------------ the player ------------------------------ */
+
+  /* Over the picture: the title and the time at the top, how far it is and the buttons at the bottom. fit.ts gives nothing up here, so the buttons are laid out in rows (below). */
+  :root[data-ui="polish"] .tv .hud-top { gap: 12px; padding: calc(var(--top) + env(safe-area-inset-top)) var(--edge-r) 32px var(--gutter); }
+  :root[data-ui="polish"] .tv .hud-title { display: -webkit-box; font-size: var(--fs-5); white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  :root[data-ui="polish"] .tv .hud-episode { font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .hud-ep-name { font-size: var(--fs-3); }
+  :root[data-ui="polish"] .tv .hud-clock,
+  :root[data-ui="polish"] .tv .hud-ends { font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .hud-follow { font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .hud-boost { top: calc(var(--top) + env(safe-area-inset-top) + 8px); font-size: 18px; }
+
+  /* Paused: what it is, over the middle button, on a veil (the picture of a phone upright is a strip across the middle: the words go above it). */
+  :root[data-ui="polish"] .tv .hud-center::before { background: rgba(0, 0, 0, 0.45); }
+  :root[data-ui="polish"] .tv .hud-pause-card { top: auto; right: var(--gutter); bottom: calc(50% + 64px); left: var(--gutter); align-items: center; max-width: none; text-align: center; transform: none; }
+  :root[data-ui="polish"] .tv .hud-pause-card span,
+  :root[data-ui="polish"] .tv .hud-held { font-size: var(--fs-3); }
+  /* (the button is above the veil, not dimmed by it) */
+  :root[data-ui="polish"] .tv .hud-paused { --size: 88px; position: relative; }
+  :root[data-ui="polish"] .tv .hud-toast { font-size: 28px; }
+  :root[data-ui="polish"] .tv .hud-toast.notice { top: 30%; font-size: 18px; white-space: normal; text-align: center; }
+
+  /* The bar: a track a finger can pick up (the whole of its 44 px is the bar), the two times at its ends. */
+  :root[data-ui="polish"] .tv .hud-bottom { padding: 40px var(--edge-r) calc(12px + env(safe-area-inset-bottom)) var(--gutter); }
+  :root[data-ui="polish"] .tv .hud-progress { gap: 10px; }
+  :root[data-ui="polish"] .tv .hud-time { min-width: 3.4em; font-size: 14px; }
+  :root[data-ui="polish"] .tv .hud-bar { padding: 20px 0; }
+  :root[data-ui="polish"] .tv .hud-bar-track { height: 4px; }
+  :root[data-ui="polish"] .tv .hud-bar-thumb { width: 18px; height: 18px; }
+  :root[data-ui="polish"] .tv .hud-bar-tip { bottom: 30px; font-size: 14px; }
+
+  /* The buttons: play, back and forward on the first row (with the episodes before and after, as arrows), what is on the picture, the party, the sound and the way out on the next
+     ones. Every one is 44 px or more each way, and the ones that have a word for it say it (Episodes, Audio and subtitles, Watch party). */
+  :root[data-ui="polish"] .tv .hud-controls { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 8px; margin-top: 0; }
+  :root[data-ui="polish"] .tv .hud-controls .hud-group { flex: none; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn { box-sizing: border-box; justify-content: center; gap: 8px; min-width: var(--tap); min-height: var(--tap); padding: 0 14px; font-size: 14px; }
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn svg { font-size: 20px; }
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn-icon,
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn[data-fold="skips"] { width: var(--tap); padding: 0; }
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn-icon svg,
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn[data-fold="skips"] svg { font-size: 24px; }
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn[data-fold="skips"] { border-radius: 50%; background: transparent; }
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn[data-fold="skips"] .tv-btn-label { display: none; }
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn-play { width: 56px; height: 56px; margin: 0 4px 0 0; padding: 0; }
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn-play svg { font-size: 28px; }
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn-cut { max-width: 7em; }
+  /* The second row of choices: the ones with words stretch to fill their rows, and the three that are only a picture (sound, full screen, stop) share the last row between them. */
+  :root[data-ui="polish"] .tv .hud-controls .hud-group:last-child > .tv-btn { flex: 1 1 auto; }
+  :root[data-ui="polish"] .tv .hud-controls .hud-group:last-child > .tv-btn-icon { flex: 1 1 0; order: 2; }
+  :root[data-ui="polish"] .tv .hud-controls .hud-group:last-child::before { content: ""; flex: 0 0 100%; order: 1; height: 0; margin-top: -8px; }
+  /* What the remote says over a button that is only a picture is not drawn here: a finger has no remote, and a keyboard has the names it is read out. */
+  :root[data-ui="polish"] .tv .hud-controls .tv-btn:focus-visible::after { display: none; }
+
+  /* The next episode is coming: its card is at the top (under the title), where the picture is not. */
+  :root[data-ui="polish"] .tv .hud-upnext,
+  :root[data-ui="polish"] .tv[data-hud="hidden"] .hud-upnext { top: calc(var(--top) + env(safe-area-inset-top) + 104px); right: var(--gutter); bottom: auto; left: var(--gutter); width: auto; }
+  :root[data-ui="polish"] .tv .hud-upnext-head { font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .hud-upnext-actions .tv-btn,
+  :root[data-ui="polish"] .tv .hud-stuck .tv-btn { min-height: var(--tap); font-size: var(--fs-3); }
+  :root[data-ui="polish"] .tv .hud-stuck p { font-size: var(--fs-3); }
+  :root[data-ui="polish"] .tv .tv-fail .hud-error h2 { max-width: none; font-size: var(--fs-6); }
+  :root[data-ui="polish"] .tv .tv-fail .hud-error small,
+  :root[data-ui="polish"] .tv .tv-end-kicker,
+  :root[data-ui="polish"] .tv .tv-end-sub,
+  :root[data-ui="polish"] .tv .tv-end-name { font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .tv-fail .tv-action,
+  :root[data-ui="polish"] .tv .tv-end .tv-action { min-height: 48px; font-size: var(--fs-3); }
+
+  /* ------------------------------ what is chosen over the film ------------------------------ */
+
+  /* Speed, languages, episodes, quality, sources and the party come up from the bottom as a sheet (70% of the screen at the most, scrolling inside), the picture still showing above it;
+     the look of the subtitles goes to the top, so that the sample of them, down where they are drawn, can be seen. */
+  :root[data-ui="polish"] .tv .tv-menu-backdrop { place-items: end stretch; background: rgba(0, 0, 0, 0.55); }
+  :root[data-ui="polish"] .tv .tv-menu-backdrop[data-kind="captions"] { place-items: start stretch; padding-top: 0; background: rgba(0, 0, 0, 0.3); }
+  :root[data-ui="polish"] .tv .tv-menu,
+  :root[data-ui="polish"] .tv .tv-menu[data-cols],
+  :root[data-ui="polish"] .tv .tv-menu[data-kind] {
+    box-sizing: border-box;
+    width: auto;
+    max-height: var(--sheet-max);
+    padding: 8px var(--gutter) calc(16px + env(safe-area-inset-bottom));
+    border-width: 1px 0 0;
+    border-radius: var(--r-3) var(--r-3) 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+    animation: polish-sheet-rise 0.22s var(--ease);
+  }
+  :root[data-ui="polish"] .tv .tv-menu[data-kind="captions"] { max-height: 56%; border-width: 0 0 1px; border-radius: 0 0 var(--r-3) var(--r-3); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); animation: none; }
+  :root[data-ui="polish"] .tv .tv-menu-top { margin-bottom: 4px; }
+  :root[data-ui="polish"] .tv .tv-menu-top h2,
+  :root[data-ui="polish"] .tv .tv-menu[data-kind="captions"] .tv-menu-top h2 { font-size: var(--fs-5); }
+  :root[data-ui="polish"] .tv .tv-menu-top .tv-btn-icon { justify-content: center; width: var(--tap); height: var(--tap); margin-right: -10px; padding: 0; font-size: 22px; }
+  :root[data-ui="polish"] .tv .tv-menu-cols { gap: 8px; }
+  :root[data-ui="polish"] .tv .tv-menu-col h3,
+  :root[data-ui="polish"] .tv .tv-opt-heading { margin: 8px 0 6px; font-size: var(--fs-2); }
+  /* The sheet scrolls as a whole: a list that scrolls inside a sheet that scrolls is a trap for a thumb. */
+  :root[data-ui="polish"] .tv .tv-opts,
+  :root[data-ui="polish"] .tv .tv-menu[data-kind] .tv-opts,
+  :root[data-ui="polish"] .tv .tv-menu[data-kind="episodes"][data-rich="true"] .tv-opts { gap: 6px; max-height: none; overflow: visible; padding: 0; }
+  :root[data-ui="polish"] .tv .tv-opt,
+  :root[data-ui="polish"] .tv .tv-menu[data-kind] .tv-opt { min-height: 48px; padding: 0 14px; font-size: 16px; }
+  :root[data-ui="polish"] .tv .tv-opt.tv-ep,
+  :root[data-ui="polish"] .tv .tv-menu[data-kind] .tv-opt.tv-ep { padding: 8px 10px 8px 4px; }
+  :root[data-ui="polish"] .tv .tv-opt-detail { font-size: var(--fs-2); }
+  :root[data-ui="polish"] .tv .tv-sub-preview { height: 72px; margin-top: 12px; }
+  /* A code to read out and type on another device: six digits in one line on the narrowest screen (61 px was two lines of three there). */
+  :root[data-ui="polish"] .tv .tv-code { font-size: 44px; }
+  :root[data-ui="polish"] .tv .tv-menu .tv-party-invite .tv-code { font-size: 36px; }
+  /* A code that is typed on another device (nine characters, the dash and all) is one line on the narrowest screen, not two. */
+  :root[data-ui="polish"] .tv .tv-link-code { font-size: 36px; }
+  /* The quiet link that turns this screen into a remote: 14 px, and as tall as a thumb. */
+  :root[data-ui="polish"] .tv .role-switch { min-height: var(--tap); font-size: 14px; }
+
+  /* ------------------------------ the pages that fill the screen (settings, signing in, the party, the pairing) ------------------------------ */
+
+  /* Every button on them is as tall as a thumb: the way back, the main buttons, a language, a switch, the button that copies a code. */
+  :root[data-ui="polish"] .tv .tv-back { min-height: var(--tap); }
+  :root[data-ui="polish"] .tv .tv-action { min-height: 48px; }
+  :root[data-ui="polish"] .tv .copy-link-button { min-height: var(--tap); padding-inline: 16px; }
+  :root[data-ui="polish"] .tv .tv-segmented .tv-choice { min-height: var(--tap); }
+  :root[data-ui="polish"] .tv .tv-switch-row,
+  :root[data-ui="polish"] .tv .tv-group-body .tv-switch-row { min-height: 48px; }
+  /* The six colours: a row of circles of 44 px (the screens too narrow for that, below, have three and three). */
+  :root[data-ui="polish"] .tv .tv-set .tv-swatches { justify-content: space-between; gap: 6px; }
+  :root[data-ui="polish"] .tv .tv-set .tv-swatch { flex: none; width: var(--tap); height: var(--tap); }
+
+  /* ------------------------------ small print the player and its sheets kept ------------------------------ */
+
+  /* The numbers of the episode on the player's top, the show's name in the episodes' sheet, and the name of what is held (its g and y went under the line, and the box cut them). */
+  :root[data-ui="polish"] .tv .hud-badge,
+  :root[data-ui="polish"] .tv .tv-menu-show { font-size: var(--fs-1); }
+  :root[data-ui="polish"] .tv .hud-pause-card b { line-height: 1.2; }
+
+  /* ------------------------------ what is said in passing ------------------------------ */
+
+  :root[data-ui="polish"] .tv .tv-toast { bottom: calc(var(--bar-room) + 12px); max-width: calc(100% - 32px); font-size: 14px; }
+}
+
+/* A sheet comes up from the bottom (a screen that is asked for less motion has it where it is). */
+@keyframes polish-sheet-rise {
+  from { opacity: 0; transform: translateY(24px); }
+}
+@media (prefers-reduced-motion: reduce) and (max-width: 599px) and (min-height: 480px) {
+  :root[data-ui="polish"] .tv .tv-menu { animation: none; }
+}
+
+/* The narrowest phones have posters a little smaller (three across at 320 would be thumbnails; the grids are two across there), the widest a little larger. */
+@media (max-width: 359px) and (min-height: 480px) {
+  :root[data-ui="polish"] .tv { --poster: 104px; --card: 176px; }
+  :root[data-ui="polish"] .tv .tv-set .tv-swatches { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); justify-items: center; gap: 8px; }
+}
+@media (min-width: 412px) and (max-width: 599px) and (min-height: 480px) {
+  :root[data-ui="polish"] .tv { --poster: 120px; --card: 216px; }
+}

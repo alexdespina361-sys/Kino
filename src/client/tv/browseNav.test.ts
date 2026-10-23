@@ -229,6 +229,50 @@ describe("stepFrom on the lists page (a row of buttons over the grid)", () => {
   });
 });
 
+describe("stepFrom on a phone (the menu is a bar of four places along the bottom, the sections a row of buttons over the titles)", () => {
+  const phone: Shape = { rail: [4], top: [2], chips: [5], rows: [6, 4, 5] };
+  const CONTENT = { zone: "content", row: -1, col: -1 };
+
+  it("walks the bar sideways, leaves it upwards for the titles, and has nothing under it", () => {
+    expect(stepFrom(phone, at("rail", 0, 1), "right")).toEqual(at("rail", 0, 2));
+    expect(stepFrom(phone, at("rail", 0, 3), "right")).toBeNull();
+    expect(stepFrom(phone, at("rail", 0, 2), "left")).toEqual(at("rail", 0, 1));
+    expect(stepFrom(phone, at("rail", 0, 0), "left")).toBeNull();
+    expect(stepFrom(phone, at("rail", 0, 2), "up")).toEqual(CONTENT);
+    expect(stepFrom(phone, at("rail", 0, 2), "down")).toBeNull();
+  });
+
+  it("reaches the bar from the bottom of the page, not from the side (there is no menu on the left)", () => {
+    expect(stepFrom(phone, at("rows", 2, 1), "down")).toEqual({ zone: "rail", row: -1, col: -1 });
+    expect(stepFrom(phone, at("rows", 0, 0), "left")).toBeNull();
+    expect(stepFrom(phone, at("chips", 0, 0), "left")).toBeNull();
+    expect(stepFrom({ ...phone, rows: [], chips: [], grid: [4, 2], foot: [1] }, at("foot", 0, 0), "down")).toEqual({ zone: "rail", row: -1, col: -1 });
+    expect(stepFrom({ ...phone, rows: [], chips: [], grid: [4, 2] }, at("grid", 1, 1), "down")).toEqual({ zone: "rail", row: -1, col: -1 });
+  });
+
+  it("goes from the titles up to the sections' buttons, along them, down to the titles, and up again to the account button", () => {
+    expect(stepFrom(phone, at("rows", 0, 3), "up")).toEqual(at("chips", 0, 0)); // (the page puts it on the one that is shown)
+    expect(stepFrom(phone, at("rows", 1, 3), "up")).toEqual(at("rows", 0, 3));
+    expect(stepFrom(phone, at("chips", 0, 1), "right")).toEqual(at("chips", 0, 2));
+    expect(stepFrom(phone, at("chips", 0, 4), "right")).toBeNull();
+    expect(stepFrom(phone, at("chips", 0, 2), "down")).toEqual(CONTENT);
+    expect(stepFrom(phone, at("chips", 0, 2), "up")).toEqual(at("top", 0, 0));
+    expect(stepFrom(phone, at("top", 0, 1), "down")).toEqual(at("chips", 0, 0));
+  });
+
+  it("goes from the buttons over a page's titles down to the bar when it has no titles", () => {
+    expect(stepFrom({ ...phone, rows: [] }, at("chips", 0, 1), "down")).toEqual({ zone: "rail", row: -1, col: -1 });
+  });
+
+  it("is the TV's own, the menu down the left, wherever the menu is a column", () => {
+    const tv: Shape = { ...phone, rail: [1, 1, 1, 1], chips: [] };
+    expect(stepFrom(tv, at("rows", 0, 0), "left")).toEqual({ zone: "rail", row: -1, col: -1 });
+    expect(stepFrom(tv, at("rows", 2, 1), "down")).toBeNull();
+    expect(stepFrom(tv, at("top", 0, 0), "down")).toEqual(CONTENT);
+    expect(stepFrom(tv, at("rail", 0, 0), "down")).toEqual(at("rail", 1, 0));
+  });
+});
+
 describe("stepFrom on a friend's page (buttons over the titles, one button under them)", () => {
   const shape: Shape = { rail: [1, 1, 1], top: [1], chips: [3], grid: [4, 2], foot: [1] };
 
