@@ -1,9 +1,11 @@
 // Real-Chromium measurements of the cat on the TV's library (development tooling, not part of the app). It starts the server itself (on its own port, from
 // the build you point it at, so that the tracked dist/client is not touched), opens /tv with the cat on and `?cat=debug`, and reports what the cat does.
 //
-//   node scripts/cat/browser-lab.mjs scroll [--client=<dir>] [--port=8872] [--only=remote-step,wheel-spin] [--look=ginger]
+//   node scripts/cat/browser-lab.mjs scroll [--client=<dir>] [--port=8872] [--only=remote-step,wheel-spin] [--look=ginger] [--dump=<file.json>]
 //       what the library's rows do for each kind of scroll (a step of the remote, wheel notches, a trackpad, a held key, a page key, a fling), how fast and how far, and
 //       what the cat does while it sits on a shelf: whether it rode with the shelf (floated up), or was shaken off and fell.
+//   node scripts/cat/browser-lab.mjs floor [--client=<dir>] [--port=8874] [--runs=4] [--seconds=180] [--long]
+//       a cat that is called down to the foot of the screen and left to itself: how long before it is on a shelf again (with --long, it is followed for the whole time), and what it chose to do on the way.
 //   node scripts/cat/browser-lab.mjs places [--client=<dir>] [--port=8873] [--seconds=240] [--runs=3] [--viewer] [--look=ginger] [--size=1280x720]
 //       how an unattended cat spends its time on the real page (the share on each place, on the foot of the screen, in the air, in each act), in the page's own
 //       clock (a fake one, run at many times the speed of the real one, so that minutes of cat take seconds). With --viewer a hand presses an arrow key of the remote
@@ -13,6 +15,7 @@
 
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,7 +27,7 @@ const args = Object.fromEntries(
     return found ? [found[1], found[2] ?? "1"] : [arg, "1"];
   }),
 );
-const port = Number(args.port ?? (mode === "scroll" ? 8872 : 8873));
+const port = Number(args.port ?? (mode === "scroll" ? 8872 : mode === "floor" ? 8874 : 8873));
 const clientDir = args.client ? path.resolve(args.client) : path.join(root, "dist/client");
 const look = args.look ?? "ginger";
 const [width, height] = (args.size ?? "1280x720").split("x").map(Number);
@@ -89,10 +92,36 @@ async function onTheShelves(page, tick) {
 
 /* ------------------------------ scroll ------------------------------ */
 
-/** The ways a page is scrolled: each is told, from a page that has the cat on a shelf, what to do; the scroller is `.tv-rows`. */
+/**
+ * The ways a page is scrolled: each is told, from a page that has the cat on a shelf, what to do; the scroller is `.tv-rows`. (The first step of the remote from the top of the library is
+ * more than a step: the banner folds up, and the rows jump by a banner's half before they scroll. The gestures with `-2` in their names follow a first step, that is made before the cat is called.)
+ */
 const GESTURES = {
   "remote-step": async (page) => {
     await page.keyboard.press("ArrowDown");
+  },
+  "remote-step-2": async (page) => {
+    await page.keyboard.press("ArrowDown");
+  },
+  "remote-x2-fast": async (page) => {
+    await page.keyboard.press("ArrowDown");
+    await sleep(150);
+    await page.keyboard.press("ArrowDown");
+  },
+  "remote-x2-slow": async (page) => {
+    await page.keyboard.press("ArrowDown");
+    await sleep(700);
+    await page.keyboard.press("ArrowDown");
+  },
+  "wheel-smooth-x5": async (page) => {
+    // (what a browser with smooth wheel scrolling does with five notches: each is an animation of a few tenths of a second, and they run into each other)
+    await page.evaluate(async () => {
+      const rows = document.querySelector(".tv-rows");
+      for (let i = 0; i < 5; i++) {
+        rows.scrollBy({ top: 100, behavior: "smooth" });
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      }
+    });
   },
   "remote-x3": async (page) => {
     for (let i = 0; i < 3; i++) {
@@ -173,7 +202,7 @@ const startRecording = (page) =>
     const rec = (window.__rec = { samples: [], stop: false });
     const tick = (now) => {
       const seen = window.__kinoCat.snapshot();
-      rec.samples.push({ t: now, top: rows.scrollTop, y: seen.frame.y, grounded: seen.frame.grounded, act: seen.engine.act, flung: seen.engine.flung, surface: seen.engine.surfaceId, scroll: seen.engine.scroll, fast: seen.engine.fast, clip: seen.frame.clip });
+      rec.samples.push({ t: now, top: rows.scrollTop, y: seen.frame.y, grounded: seen.frame.grounded, act: seen.engine.act, flung: seen.engine.flung, surface: seen.engine.surfaceId, scroll: seen.engine.scroll, fast: seen.engine.fast, rise: seen.engine.rise ?? 0, clip: seen.frame.clip });
       if (!rec.stop) requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -220,6 +249,19 @@ function analyse(samples, L) {
     rose: (y0 - lowest) / L,
     engineMost: -engineMost,
     fast: Math.max(...samples.map((s) => s.fast)),
+    // (the most the shelves went up in half a second, in steps of the rows' pitch: 1.25 shakes the cat off; and how long after the rows began to move the cat left its shelf, if it did)
+    steps: Math.max(...samples.map((s) => s.rise)),
+    after: (() => {
+      const left = samples.findIndex((s, i) => i >= first && (s.act === "fall" || s.flung));
+      return left < 0 ? null : (samples[left].t - samples[first - 1].t) / 1000;
+    })(),
+    // (how long it was in the air, from the first frame it fell in to the first in which it stood again, and what it stood on then)
+    air: (() => {
+      const left = samples.findIndex((s, i) => i >= first && (s.act === "fall" || s.flung));
+      if (left < 0) return null;
+      const down = samples.findIndex((s, i) => i > left && s.grounded && s.act !== "fall");
+      return down < 0 ? null : { seconds: (samples[down].t - samples[left].t) / 1000, on: samples[down].surface };
+    })(),
     frames: last - first + 1,
   };
 }
@@ -227,9 +269,16 @@ function analyse(samples, L) {
 async function scrollLab(browser, base) {
   const only = args.only ? args.only.split(",") : Object.keys(GESTURES);
   const rows = [];
+  const series = {};
   for (const name of only) {
     const page = await openTv(browser, base);
     await onTheShelves(page, (ms) => sleep(ms));
+    if (/-2$|^remote-x2/.test(name)) {
+      // (the first step from the top of the library is made, and has settled, before the cat is called to the shelf it sits on)
+      await page.keyboard.press("ArrowDown");
+      await sleep(2500);
+      await onTheShelves(page, (ms) => sleep(ms));
+    }
     const world = await worldOf(page);
     const L = world.bodyLength;
     // (the cat is called to the second shelf from the top, with room above it, and told to sit there)
@@ -249,11 +298,14 @@ async function scrollLab(browser, base) {
     const samples = await stopRecording(page);
     const result = analyse(samples, L);
     rows.push({ name, L, ...(result ?? { peak: 0, distance: 0 }) });
+    // (the frames themselves, for working out a rule offline: time in seconds from the first frame, the rows' scroll in body lengths, the cat's height in body lengths, what it is doing)
+    if (args.dump) series[name] = { L, frames: samples.map((s) => [Number(((s.t - samples[0].t) / 1000).toFixed(4)), Number((s.top / L).toFixed(4)), Number((s.y / L).toFixed(4)), s.act, s.grounded ? 1 : 0, Number(s.rise.toFixed(3)), Number(s.scroll.toFixed(1))]) };
     await page.context().close();
   }
+  if (args.dump) writeFileSync(path.resolve(String(args.dump)), JSON.stringify(series));
   const f = (n, d = 1) => (typeof n === "number" ? n.toFixed(d) : "-");
-  console.log(`${"gesture".padEnd(15)} peak L/s  dist L  secs   >12   >20   >26   >40  engine  rose L  fell`);
-  for (const r of rows) console.log(`${r.name.padEnd(15)} ${f(r.peak).padStart(8)} ${f(r.distance).padStart(7)} ${f(r.span, 2).padStart(5)} ${f(r.over12, 2).padStart(5)} ${f(r.over20, 2).padStart(5)} ${f(r.over26, 2).padStart(5)} ${f(r.over40, 2).padStart(5)} ${f(r.engineMost).padStart(7)} ${f(r.rose, 2).padStart(7)}  ${r.fell ? "FELL" : "rode"}`);
+  console.log(`${"gesture".padEnd(15)} peak L/s  dist L  secs   >12   >20   >26   >40  engine  rose L  steps  after  fell  in the air, and where it came down`);
+  for (const r of rows) console.log(`${r.name.padEnd(15)} ${f(r.peak).padStart(8)} ${f(r.distance).padStart(7)} ${f(r.span, 2).padStart(5)} ${f(r.over12, 2).padStart(5)} ${f(r.over20, 2).padStart(5)} ${f(r.over26, 2).padStart(5)} ${f(r.over40, 2).padStart(5)} ${f(r.engineMost).padStart(7)} ${f(r.rose, 2).padStart(7)} ${f(r.steps, 2).padStart(6)} ${(r.after === null || r.after === undefined ? "-" : `${r.after.toFixed(2)}s`).padStart(6)}  ${r.fell ? "FELL" : "rode"}  ${r.air ? `${r.air.seconds.toFixed(2)} s, on ${r.air.on}` : ""}`);
   if (args.json) console.log(JSON.stringify(rows));
 }
 
@@ -263,6 +315,9 @@ async function placesLab(browser, base) {
   const seconds = Number(args.seconds ?? 240);
   const runs = Number(args.runs ?? 3);
   const total = { kinds: {}, spots: {}, acts: {}, choices: {}, seconds: 0 };
+  // (the stays on the foot of the screen: how long, and what the cat had last chosen to do when it came down to it; and the hops, and the places they went from and to)
+  const stays = [];
+  const hops = {};
   for (let run = 0; run < runs; run++) {
     const page = await openTv(browser, base, { fake: true, query: `cat=debug&catseed=${11 + run * 7}` });
     const tick = (ms) => page.clock.runFor(ms);
@@ -275,6 +330,8 @@ async function placesLab(browser, base) {
     let nextKey = 3000 + Math.random() * 3000;
     let elapsed = 0;
     const step = 100;
+    let stay = null;
+    let was = { kind: "", spot: "", act: "" };
     while (elapsed < seconds * 1000) {
       await tick(step);
       elapsed += step;
@@ -290,6 +347,16 @@ async function placesLab(browser, base) {
         const kind = seen.frame.grounded ? kinds[seen.engine.surfaceId] ?? "other" : "air";
         total.kinds[kind] = (total.kinds[kind] ?? 0) + step / 1000;
         if (seen.frame.grounded) total.spots[seen.engine.surfaceId ?? "-"] = (total.spots[seen.engine.surfaceId ?? "-"] ?? 0) + step / 1000;
+        if (kind === "fallbackFloor") {
+          if (!stay) stay = { secs: 0, came: `${was.kind || "?"} (${was.act})`, last: seen.engine.choice };
+          stay.secs += step / 1000;
+        } else if (kind !== "air" && stay) {
+          stays.push(stay);
+          stay = null;
+        }
+        if (kind !== "air" && was.kind && kind !== was.kind) hops[`${was.kind} -> ${kind}`] = (hops[`${was.kind} -> ${kind}`] ?? 0) + 1;
+        if (kind !== "air") was = { kind, spot: seen.engine.surfaceId ?? "", act: seen.engine.act };
+        else was = { ...was, act: seen.engine.act };
       }
       total.acts[seen.engine.act] = (total.acts[seen.engine.act] ?? 0) + step / 1000;
       if (seen.engine.choice !== lastChoice) {
@@ -298,6 +365,7 @@ async function placesLab(browser, base) {
       }
       total.seconds += step / 1000;
     }
+    if (stay) stays.push(stay);
     await page.context().close();
   }
   const pct = (n) => `${((100 * n) / total.seconds).toFixed(1).padStart(5)} %`;
@@ -309,8 +377,59 @@ async function placesLab(browser, base) {
   console.log("by act:");
   for (const [name, n] of Object.entries(total.acts).sort((a, b) => b[1] - a[1]).slice(0, 14)) console.log(`  ${name.padEnd(16)} ${pct(n)}`);
   const minutes = total.seconds / 60;
+  const secs = stays.map((s) => s.secs);
+  console.log(`stays on the foot: ${stays.length} (${((stays.length * 60) / minutes).toFixed(1)} an hour), ${stays.length ? (secs.reduce((a, b) => a + b, 0) / stays.length).toFixed(0) : 0} s on average, ${secs.length ? Math.max(...secs).toFixed(0) : 0} s the longest; it came down from ${Object.entries(stays.reduce((o, s) => ((o[s.came] = (o[s.came] ?? 0) + 1), o), {})).map(([k, v]) => `${k} x${v}`).join(", ") || "nowhere"}`);
+  console.log(`moves between kinds of place: ${Object.entries(hops).map(([k, v]) => `${k} x${v}`).join(", ")}`);
   console.log(`what it chose, per minute: ${Object.entries(total.choices).sort((a, b) => b[1] - a[1]).map(([name, n]) => `${name || "-"} ${(n / minutes).toFixed(2)}`).join(", ")}`);
   if (args.json) console.log(JSON.stringify(total));
+}
+
+/* ------------------------------ floor ------------------------------ */
+
+/**
+ * A cat that is called down to the foot of the screen and left to itself: how long it is before it is on a shelf again, and what it does on the way (the choices, with the time
+ * they were made at). `--runs` cats of `--seconds` seconds each, in the page's own (fake) clock.
+ */
+async function floorLab(browser, base) {
+  const seconds = Number(args.seconds ?? 180);
+  const runs = Number(args.runs ?? 4);
+  const lefts = [];
+  for (let run = 0; run < runs; run++) {
+    const page = await openTv(browser, base, { fake: true, query: `cat=debug&catseed=${5 + run * 11}` });
+    const tick = (ms) => page.clock.runFor(ms);
+    await page.clock.pauseAt(Date.now() + 2000).catch(() => {});
+    await onTheShelves(page, tick);
+    const world = await worldOf(page);
+    const floor = world.surfaces.find((s) => s.kind === "fallbackFloor");
+    await tell(page, { type: "cat.call", at: { x: world.viewport.w * (0.3 + 0.4 * ((run * 0.37) % 1)), y: floor.y } });
+    let seen = await snap(page);
+    for (let i = 0; i < 400 && !(seen.engine.surfaceId === floor.id && seen.frame.grounded); i++) {
+      await tick(100);
+      seen = await snap(page);
+    }
+    const line = [];
+    let elapsed = 0;
+    let lastChoice = "";
+    let left = null;
+    while (elapsed < seconds * 1000) {
+      await tick(100);
+      elapsed += 100;
+      seen = await snap(page);
+      if (seen.engine.choice !== lastChoice) {
+        lastChoice = seen.engine.choice;
+        line.push(`${(elapsed / 1000).toFixed(0)}s ${lastChoice}`);
+      }
+      if (left === null && seen.engine.surfaceId !== floor.id && seen.frame.grounded) {
+        left = elapsed / 1000;
+        if (!args.long) break;
+      }
+    }
+    lefts.push(left);
+    console.log(`cat ${run + 1}: ${left === null ? `still on the foot after ${seconds} s` : `on a shelf again after ${left.toFixed(1)} s`}; chose ${line.join(", ")}`);
+    await page.context().close();
+  }
+  const got = lefts.filter((n) => n !== null);
+  console.log(`${got.length} of ${runs} came up${got.length ? `, after ${(got.reduce((a, b) => a + b, 0) / got.length).toFixed(1)} s on average` : ""}`);
 }
 
 /* ------------------------------ world ------------------------------ */
@@ -338,6 +457,7 @@ try {
     if (mode === "scroll") await scrollLab(browser, base);
     else if (mode === "places") await placesLab(browser, base);
     else if (mode === "world") await worldLab(browser, base);
+    else if (mode === "floor") await floorLab(browser, base);
     else throw new Error(`unknown experiment: ${mode}`);
   } finally {
     await browser.close();

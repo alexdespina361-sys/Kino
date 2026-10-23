@@ -32,7 +32,7 @@ const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.string
 
 interface Snap {
   frame: { x: number; y: number; facing: number; clip: string; appear: number; petted: boolean; carried: boolean; grounded: boolean; struggle?: number; emote?: string };
-  engine: { act: string; surfaceId: string | null; mode: string; placed: boolean };
+  engine: { act: string; surfaceId: string | null; mode: string; placed: boolean; temperament: string };
   view: string;
   why: string;
   art: "solid" | "classic" | "none";
@@ -803,7 +803,8 @@ test("a cat that is held by the scruff hangs calm for a moment and then fights t
   await tv.waitForTimeout(1_000);
   expect((await snap(tv)).engine.act).toBe("carried");
   expect((await snap(tv)).frame.struggle ?? 0, "calm at first").toBeLessThan(0.05);
-  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.struggle ?? 0, { timeout: 10_000 }).toBeGreaterThan(0.5));
+  // (this is the ginger, which forgives a hand: it hangs calm for 3.6 s and fights at about half its strength; the ragdoll fights hard after a second)
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.struggle ?? 0, { timeout: 10_000 }).toBeGreaterThan(0.4));
   // (the fight does not tear the cat out of the hand: it is held all the while)
   expect((await snap(tv)).engine.act).toBe("carried");
   await tv.mouse.up();
@@ -813,7 +814,7 @@ test("a cat that is held by the scruff hangs calm for a moment and then fights t
   const released = fight.findIndex((beat, index) => index > 0 && fight[index - 1]!.carried && !beat.carried);
   expect(released, "it was let go of").toBeGreaterThan(0);
   const fought = Math.max(...fight.slice(0, released).map((beat) => beat.struggle));
-  expect(fought, "it fought hard").toBeGreaterThan(0.5);
+  expect(fought, "it fought").toBeGreaterThan(0.4);
   // gone about half a second after the hand let go, and never back
   const after = fight.slice(released);
   const quiet = after.find((beat) => beat.struggle < 0.01);
@@ -822,6 +823,32 @@ test("a cat that is held by the scruff hangs calm for a moment and then fights t
   expect(after.filter((beat) => beat.t > quiet!.t && beat.struggle > 0.01)).toEqual([]);
   // and what it did when it landed: it showed what it felt (annoyed, startled or shaking), not the sit and wash of a cat put down in peace
   expect(after.some((beat) => beat.emote === "annoyed" || beat.emote === "startle" || beat.emote === "shake"), "lands annoyed").toBe(true);
+});
+
+test("a hand that rests on the white and grey cat for too long: it warns the hand after a few seconds, stands up to it and walks off along the shelf, away from it", async ({ browser }) => {
+  test.setTimeout(90_000);
+  const tv = await openLibrary(browser, setup(), undefined, WANTS({ look: "ragdoll" }));
+  await tv.goto("/tv?cat=debug&catart=classic");
+  await expect(tv.getByTestId("tv-browse")).toBeVisible();
+  await catIsOnTheShelves(tv);
+  const middle = await catSitsAndWhere(tv);
+  const start = await snap(tv);
+  expect(start.engine.temperament).toBe("ragdoll");
+  // the hand comes to the cat and rests on it: the host strokes it a third of a second after, and once a second after that
+  // (it comes in one move, onto the cat: a pointer that is seen coming at a grumpy cat at a dash is swiped at, one time in three, and startles it the rest -- that is another test, and
+  // whether a frame falls between the steps of a move made in four is a matter of how busy the machine is)
+  await recordTheFeeling(tv);
+  await tv.mouse.move(middle.x, middle.y);
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).frame.emote, { timeout: 14_000 }).toBe("annoyed"));
+  // (it stands up to the hand, and goes: along the shelf, a body length or more from where the hand is)
+  await saying(tv, () => expect.poll(async () => Math.abs((await snap(tv)).frame.x - start.frame.x) / start.body, { timeout: 20_000 }).toBeGreaterThan(1));
+  const beats = await theFeeling(tv);
+  const warned = beats.find((beat) => beat.emote === "annoyed")!;
+  expect(warned.t, "it is stroked a while before it has had enough").toBeGreaterThan(2);
+  expect(warned.t, "and has had enough in the end").toBeLessThan(11);
+  const left = (await snap(tv)).frame.x - start.frame.x;
+  // (and the hand it left is where it was: the cat is on the far side of the body length from it)
+  expect(Math.abs(left)).toBeGreaterThan(start.body);
 });
 
 interface Seen {
@@ -922,9 +949,10 @@ test("a hand that lets the cat go just under the edge of a shelf: it reaches for
   // (and nothing is under a hand meanwhile: the box a hand is on is off for as long as it hangs)
   expect(climb.every((beat) => beat.off), "the hand's box is off").toBe(true);
   // the way there was a fall of a moment, and the end is the cat on its feet on the shelf, with its box back
-  const before = seen.slice(0, seen.indexOf(climb[0]!));
+  // (the first beats may still be of the hand that has not been heard letting go: the cat in it is not in the air of a fall)
+  const before = seen.slice(0, seen.indexOf(climb[0]!)).filter((beat) => beat.act !== "carried");
   expect(before.length).toBeGreaterThan(3);
-  expect(before.every((beat) => beat.clip === "jump" && !beat.grounded)).toBe(true);
+  expect(before.filter((beat) => !(beat.clip === "jump" && !beat.grounded)).map((beat) => `${beat.act} ${beat.clip} ${beat.grounded ? "ground" : "air"}`), "off its feet, and in the clip of a leap, all the way").toEqual([]);
   const end = await snap(tv);
   expect(Math.abs(end.frame.y - target!.y)).toBeLessThan(2);
   await expect(tv.getByTestId("cat-hit")).not.toHaveAttribute("data-off", "");
@@ -954,8 +982,8 @@ const watchTheCat = (tv: Page) =>
 const theBeats = (tv: Page) => tv.evaluate(() => (window as unknown as { __beats: Beat[] }).__beats);
 const stopWatching = (tv: Page) => tv.evaluate(() => (window as unknown as { __stopBeats?: () => void }).__stopBeats?.());
 
-test("a page that is flung does not take the cat up with its shelf: it is shaken off and falls, in front of the page that goes by, and lands; a step of the remote takes it with the shelf", async ({ browser }) => {
-  test.setTimeout(120_000);
+test("a page that is flung, or scrolled too far and too fast to be a step of the remote, does not take the cat up with its shelf: it is shaken off and falls, in front of the page that goes by, and lands; a step of the remote takes it with the shelf", async ({ browser }) => {
+  test.setTimeout(240_000);
   const tv = await openLibrary(browser, async (context) => {
     await offered(true)(context);
     await withLibrary(tallLibrary)(context);
@@ -974,6 +1002,21 @@ test("a page that is flung does not take the cat up with its shelf: it is shaken
   const rest = async () => {
     await saying(tv, () => expect.poll(async () => { const seen = await snap(tv); return seen.frame.grounded && !/fall|jump|carried/.test(seen.engine.act); }, { timeout: 15_000 }).toBe(true));
   };
+  /** The library back at the top (or, with `warm`, after the first step of the remote, which folds the banner), the cat called to the highest shelf with room above it, and told to sit there. */
+  const settle = async (warm = false) => {
+    await tv.evaluate(() => (document.querySelector<HTMLElement>(".tv-rows")!.scrollTop = 0));
+    await tv.waitForTimeout(600);
+    if (warm) {
+      await tv.keyboard.press("ArrowDown");
+      await tv.waitForTimeout(2_500);
+    }
+    await catIsOnTheShelves(tv);
+    const here = (await worldOf(tv)).surfaces.filter((surface) => surface.kind === "shelfTop" && surface.y > 2.2 * L).sort((a, b) => a.y - b.y)[0]!;
+    await tellCat(tv, { type: "cat.call", at: { x: (here.x0 + here.x1) / 2, y: here.y } });
+    await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 15_000 }).toBe(here.id));
+    await catSitsAndWhere(tv);
+    return { sat: await snap(tv), shelf: here };
+  };
 
   // a step of the remote (the rows go by at twenty-odd body lengths a second at the quickest): the cat goes with its shelf, and does not fall
   await watchTheCat(tv);
@@ -984,13 +1027,7 @@ test("a page that is flung does not take the cat up with its shelf: it is shaken
   expect(stepped.length).toBeGreaterThan(50);
   expect(stepped.some((beat) => beat.flung || beat.act === "fall"), "a step of the remote").toBe(false);
   await rest();
-  await tv.evaluate(() => (document.querySelector<HTMLElement>(".tv-rows")!.scrollTop = 0));
-  await tv.waitForTimeout(600);
-  await catIsOnTheShelves(tv);
-  await tellCat(tv, { type: "cat.call", at: { x: (shelf.x0 + shelf.x1) / 2, y: shelf.y } });
-  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 15_000 }).toBe(shelf.id));
-  await catSitsAndWhere(tv);
-  const before = await snap(tv);
+  const before = (await settle()).sat;
 
   // a fling (a body length a frame, sixty a second, as far as the rows go): the cat does not go up with the shelf
   await watchTheCat(tv);
@@ -1019,6 +1056,53 @@ test("a page that is flung does not take the cat up with its shelf: it is shaken
   expect(end.frame.grounded).toBe(true);
   expect(end.engine.surfaceId).not.toBe(shelf.id);
   expect(end.frame.y).toBeGreaterThan(Math.min(...air.map((beat) => beat.y)) - 1);
+
+  // the first step of the remote from the top of the library (the banner folds up, the rows jump by a banner's half and then scroll a step): the cat goes with its shelf, as it does for any step
+  const top = await settle();
+  await watchTheCat(tv);
+  await tv.keyboard.press("ArrowDown");
+  await tv.waitForTimeout(1_500);
+  await stopWatching(tv);
+  expect((await theBeats(tv)).some((beat) => beat.flung || beat.act === "fall"), "the first step of the remote").toBe(false);
+  expect(top.sat.frame.grounded).toBe(true);
+
+  // a page that is not flung, but is scrolled too far and too fast to be a step of the remote -- a wheel spun, two steps of the remote one on the other's heels -- does not take the cat up with its shelf
+  // for more than a step and a bit either: it is shaken off, falls (never rising once it is in the air), and lands on something else
+  const fellFrom = async (what: string, ready: Awaited<ReturnType<typeof settle>>, gesture: () => Promise<void>) => {
+    await watchTheCat(tv);
+    await gesture();
+    await tv.waitForTimeout(300);
+    await rest();
+    await stopWatching(tv);
+    const seen = await theBeats(tv);
+    const left = seen.findIndex((beat) => beat.flung);
+    expect(left, `${what}: it was shaken off`).toBeGreaterThanOrEqual(0);
+    expect(Math.min(...seen.map((beat) => beat.y)), `${what}: it rose with the shelf`).toBeGreaterThan(ready.sat.frame.y - 4.5 * L);
+    // (a cat that had already left the ground in a leap of its own when the page was shaken -- the shelf was going under the top bar, and it had begun to leap to another -- goes on up for a moment,
+    // as a cat in the air does, and falls from the top of that: what it must not do is rise again)
+    const leaping = left > 0 && seen[left - 1]!.act === "jump" && !seen[left - 1]!.grounded;
+    let past = !leaping;
+    for (let i = left + 1; i < seen.length && seen[i]!.flung; i++) {
+      if (seen[i]!.y > seen[i - 1]!.y + 0.01) past = true;
+      if (past) expect(seen[i]!.y, `${what}: beat ${i}`).toBeGreaterThanOrEqual(seen[i - 1]!.y - 0.01);
+    }
+    expect((await snap(tv)).engine.surfaceId, `${what}: where it landed`).not.toBe(ready.shelf.id);
+  };
+  const spun = await settle();
+  await fellFrom("a wheel spun", spun, async () => {
+    const size = tv.viewportSize()!;
+    await tv.mouse.move(size.width / 2, size.height * 0.55);
+    for (let i = 0; i < 12; i++) {
+      await tv.mouse.wheel(0, 100);
+      await tv.waitForTimeout(30);
+    }
+  });
+  const hurried = await settle(true);
+  await fellFrom("two steps of the remote in a hurry", hurried, async () => {
+    await tv.keyboard.press("ArrowDown");
+    await tv.waitForTimeout(150);
+    await tv.keyboard.press("ArrowDown");
+  });
 });
 
 /**
@@ -1379,6 +1463,8 @@ test("the settings page offers two cats, the white and grey one and the ginger o
   await expect(tv.getByTestId("tv-browse")).toBeVisible();
   await artIs(tv, "solid");
   expect((await snap(tv)).coat).toBe("ragdoll");
+  // (and the cat has the character of its coat: the grumpy, lazy one)
+  expect((await snap(tv)).engine.temperament).toBe("ragdoll");
   await openCatSettings(tv);
   // exactly two cats to choose between (and no coats to pick from any more), the white and grey one chosen, and the page says it is the one that is shown
   await expect(tv.locator('[data-testid^="tv-cat-look-"][role="radio"]')).toHaveCount(2);
@@ -1393,6 +1479,8 @@ test("the settings page offers two cats, the white and grey one and the ginger o
   await expect(tv.getByTestId("tv-cat-look-ginger")).toHaveAttribute("aria-checked", "true");
   await artIs(tv, "classic", 6_000);
   await saying(tv, () => expect.poll(async () => (await snap(tv)).coat, { timeout: 6_000 }).toBe("ginger"));
+  // (with its own character, the friendly one, from the moment it is worn)
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.temperament, { timeout: 6_000 }).toBe("ginger"));
   await expect(tv.getByTestId("tv-cat-shown")).toHaveCount(0);
   await expect(tv.getByTestId("tv-cat-retry")).toHaveCount(0);
   expect(JSON.parse(await tv.evaluate(() => localStorage.getItem("kino.cat") ?? "{}"))).toMatchObject({ look: "ginger" });
@@ -1400,6 +1488,7 @@ test("the settings page offers two cats, the white and grey one and the ginger o
   await tv.getByTestId("tv-cat-look-ragdoll").click();
   await artIs(tv, "solid");
   await saying(tv, () => expect.poll(async () => (await snap(tv)).coat, { timeout: 6_000 }).toBe("ragdoll"));
+  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.temperament, { timeout: 6_000 }).toBe("ragdoll"));
   await expect(tv.getByTestId("tv-cat-shown")).toHaveAttribute("data-art", "solid");
 });
 
@@ -1560,6 +1649,9 @@ test("the address can ask for the coat and the size, whatever the device says", 
   await artIs(asked, "solid");
   await saying(asked, () => expect.poll(async () => (await snap(asked)).coat, { timeout: 6_000 }).toBe("calico"));
   await saying(asked, () => expect.poll(async () => (await snap(asked)).body, { timeout: 6_000 }).toBeGreaterThan(normal.body * 1.2));
+  // (a coat that is neither of the two cats is the cat as it always was, whatever the settings say; the usual one has the character of its coat)
+  expect((await snap(asked)).engine.temperament).toBe("baseline");
+  expect(normal.engine.temperament).toBe("ragdoll");
 });
 
 test("the address can ask for either cat, whatever the device says", async ({ browser }) => {

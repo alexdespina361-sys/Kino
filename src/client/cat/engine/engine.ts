@@ -3,7 +3,7 @@ import { createRng, type Rng } from "../rng";
 import { CLIMB_BACK, CLIMB_HANG, CLIMB_LIP, CLIMB_TIME, HANG_AHEAD, HANG_DOWN, JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Emote, type Rect, type Target, type Vec, type World } from "../types";
 import { clampToLedge, computeLedges, findPath, GRAVITY, ledgeAt, planJump, reshape, screenEdges, settle, settledCost, stepFlight, type JumpPlan, type Ledge, type RestPose, type Settling } from "./ledges";
 import { HALF_WIDTH, shapeHits } from "./shape";
-import { BASELINE, type Temperament } from "./temperament";
+import { BASELINE, tasteFor, temperamentOf, type Temperament } from "./temperament";
 
 /**
  * The cat's mind and legs. Each frame it is given the page as a `World` (plain numbers) and the time that passed, and it says what the cat
@@ -119,6 +119,10 @@ export interface EngineDebug {
   scroll: number;
   /** How many readings of the page in a row were fast enough to shake the cat off (see SHAKE_SPEED). */
   fast: number;
+  /** How far the shelves have gone up the screen in the last half second, in steps of the rows' pitch (see `RISE_STEPS`): 1 is a step of the remote, 1.25 shakes the cat off. */
+  rise: number;
+  /** What sort of cat it is (the name of its `Temperament`'s table). */
+  temperament: string;
 }
 
 /** Speeds in body lengths per second, and how quickly the cat gets up to them. */
@@ -242,17 +246,35 @@ const RIDE_MOVING = 0.12;
 /** How fast the cat is carried the way the posters have slid (a share of what is left, for every second): the page is read a few times a second, and the carrying is eased in between. */
 export const RIDE_EASE = 22;
 /**
- * A page that is flung (its shelves going by faster than `SHAKE_SPEED` body lengths a second, in `SHAKE_READINGS` readings of the page one after the other) does not take the cat up with the
+ * A page that is flung (its shelves going by faster than `SHAKE_SPEED` body lengths a second where the rows are `PITCH_DEFAULT` body lengths apart -- that is, `SHAKE_SPEED / PITCH_DEFAULT` of the
+ * rows' pitches a second, whatever size the cat is --, in `SHAKE_READINGS` readings of the page one after the other) does not take the cat up with the
  * shelf it sits on: the cat is shaken off it and falls, in front of the page that goes by (so that, with the page still flying, it seems to hang there as it comes down). It comes down on the first
  * place under it once the page has slowed to `CATCH_SPEED`, or on the foot of the screen, which it is handed to when it is within `HANDOVER` body lengths of it (or has been falling for
  * `FREE_FALL_MAX` seconds). A speed is worked out between two readings of the page at least `SCROLL_SPAN` seconds apart (nearer than that, they are too near to tell a speed from), and a page that
  * has not been read again for `SCROLL_STILL` seconds is thought to be still.
  * (What the library's rows really do, in a browser, at the top of a step, in body lengths a second: one key of the remote 26 to 30, a wheel spun fast 32, three keys in quick succession 36, a page
- * key 72, a key held down 85, so that a step of the remote or a wheel takes the cat with its shelf, and a held key or a flung page does not.)
+ * key 72, a key held down 85, so that a step of the remote takes the cat with its shelf, and a held key or a flung page does not.)
+ *
+ * A page scrolled DOWN (its shelves going up the screen) is shaken off sooner than that, because the cat that goes up with its shelf for a screenful looks like floating, and the speed that
+ * tells a wheel spun fast, or a scrollbar dragged, from one step of the remote is a poor one (they overlap): what tells them apart is how far. A step of the remote is a row's pitch (the greatest
+ * distance between neighbouring shelves; `PITCH_DEFAULT` body lengths where the page shows only one shelf) wherever the cat's size has put its body length, and the cat goes up with the shelf for
+ * that. When the shelves have gone up by more than `RISE_STEPS` of those within `RISE_WINDOW` seconds (net: a page that went back down meanwhile has not), in at least two readings, and are
+ * still going at `RISE_SPEED` body lengths a second or more over the last `RISE_SPAN` seconds, the cat is shaken off, as by a fling: it has risen a step and a quarter at the most, in a few
+ * tenths of a second at the most, and falls from there. (The first movement of a page that has not moved for `RISE_WINDOW` seconds, if it is a jump of `JUMP_SHARE` of a pitch or more by
+ * itself, is not counted: it is the page laid out again, as at the first step of the remote from the top of the library, where the banner folds up, or a notch of a wheel that does not smooth.) A page going the other way,
+ * shelves down the screen, is shaken off only by the speed of a fling: a cat carried down is not floating. Falling, the cat comes down once the page has gone under `CATCH_SPEED` over the last
+ * `CATCH_SPAN` seconds (and not at a reading in which it happens not to have moved: a wheel turns in notches).
  */
 const SHAKE_SPEED = 40;
 const SHAKE_READINGS = 2;
+const RISE_STEPS = 1.25;
+const RISE_WINDOW = 0.5;
+const RISE_SPAN = 0.1;
+const RISE_SPEED = 12;
+const PITCH_DEFAULT = 3;
+const JUMP_SHARE = 0.4;
 const CATCH_SPEED = 8;
+const CATCH_SPAN = 0.1;
 const HANDOVER = 2.2;
 const FREE_FALL_MAX = 3;
 const SCROLL_SPAN = 0.012;
@@ -265,10 +287,60 @@ const FLINCH_EVERY = 25;
 const PLAY_STILL = 2.5;
 const PLAY_STILL_FOR = 0.6;
 const PLAY_REACH = 2.6;
+/**
+ * Going about (see `choose`). A cat that is free to roam, and is down on the foot of the screen of a page that has shelves, is not there to stay: what else it might do is worth `FOOT_STAY` of
+ * what it is worth anywhere else (it does not nap there at all), and getting up onto a shelf is worth `FOOT_UP`, against about 1 for a rest. Of its own accord it goes down to the foot only
+ * `FOOT_WEIGHT` as readily as the weight the page gives that place says (to hop to it, to come in at it, to run the zoomies to it). A card that has the remote's focus, on a shelf the cat is not on,
+ * is where it goes to sit by it and watch, if the focus moved there within `FOLLOW_WITHIN` seconds; a pointer that has rested for `GREET_STILL` seconds, more than `GREET_NEAR` body lengths off, is
+ * greeted (it comes over and sits where it can see it, and may bat at it); and a poster on another shelf is visited, and patted, now and then.
+ */
+const FOOT_STAY = 0.3;
+const FOOT_UP = 2.4;
+const FOOT_WEIGHT = 0.25;
+/** The same for a shelf whose names leave it no place to settle clear of them, when another shelf has one: it is gone from sooner than it would be (`CROWDED_STAY`, `CROWDED_UP`), and not chosen to settle on. */
+const CROWDED_STAY = 0.5;
+const CROWDED_UP = 1.8;
+/** How much of a stop it makes (wandering, after a hop, at a poster) at a place where its body would hide a name: this much of the time it would otherwise stop for. */
+const STOP_SHORT = 0.35;
+const FOLLOW_WITHIN = 14;
+const GREET_STILL = 1.2;
+const GREET_NEAR = 2.2;
+/**
+ * How lively it is changes with the time, in a cycle of `LIVELY_EVERY` seconds that each cat begins at a place of its own: its energy swings `LIVELY_SWING` either side of what it settles at, and
+ * everything that goes about (wandering, hopping, the zoomies, a poster to pat) is worth more at the top of the swing and less at the bottom, so that a cat has its busy spells and its quiet ones.
+ */
+const LIVELY_EVERY = 210;
+const LIVELY_SWING = 0.2;
+/**
+ * Being stroked (see `Temperament.petPatience`): the strokes that come within `STROKE_GAP` seconds of one another are those of one hand. At `STROKE_WARN` of its patience the cat warns the hand (the
+ * tail flicks, the ears go back); a cat that has had all of it gives the hand a look and, if it is the swatting kind, swipes at it (once, or twice; `SWIPE_FIRST` and `SWIPE_SECOND` seconds long, the
+ * paw at `SWIPE_HIGH` body lengths above its feet and `SWIPE_NEAR` to `SWIPE_FAR` ahead of them: where the hand is, as near as that), and then walks off along its shelf, away from the hand, and sits down
+ * with its back to it. The hand is not heard for `HAND_REFRACTORY` seconds, while that goes on (longer than `STROKE_GAP`, so that the hand that is heard again is a new one). A pointer that dashes
+ * at a cat of that kind is swiped at, and the cat stays where it is. A stroke that pleases it shows (see `Temperament.petJoy`) no oftener than every `JOY_EVERY` seconds.
+ */
+const STROKE_GAP = 2.5;
+const STROKE_WARN = 0.7;
+const HAND_REFRACTORY = 4;
+const SWIPE_FIRST = 0.8;
+const SWIPE_SECOND = 0.7;
+const SWIPE_HIGH = 0.45;
+const SWIPE_NEAR = 0.4;
+const SWIPE_FAR = 0.9;
+const JOY_EVERY = 3.5;
 
 const label = (act: Act): string =>
   act.k === "rest" ? `rest:${act.pose}` : act.k === "shot" ? `shot:${act.clip}` : act.k === "fade" ? (act.to === 0 ? "fade:out" : "fade:in") : act.k === "walk" && act.stalk ? "stalk" : act.k;
 const centre = (rect: Rect): Vec => ({ x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 });
+/**
+ * The pitch of a page's rows: the greatest distance between neighbouring shelves (those that are more than half a body length apart), which is what a step of the remote scrolls the page by at the
+ * most (the rows are not all as tall as each other). Between two and six body lengths, and `PITCH_DEFAULT` where the page shows fewer than two shelves.
+ */
+const pitchOf = (ys: number[], L: number): number => {
+  ys.sort((a, b) => a - b);
+  let most = 0;
+  for (let i = 1; i < ys.length; i++) if (ys[i]! - ys[i - 1]! > 0.5 * L) most = Math.max(most, ys[i]! - ys[i - 1]!);
+  return most > 0 ? clamp(most, 2 * L, 6 * L) : PITCH_DEFAULT * L;
+};
 const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 export class CatEngine {
@@ -333,6 +405,18 @@ export class CatEngine {
   private temper: Temperament = BASELINE;
   private readonly rngTemper: Rng;
   /**
+   * The hand that strokes it (see `Temperament.petPatience`): when its first stroke came and its last, how long the cat gives it, and whether the cat has warned it; and until when the cat does not
+   * hear a hand (it has had enough of this one, and is going), and until when it is touchy (a quarter of the patience).
+   */
+  private strokeSince = -1e9;
+  private strokeLast = -1e9;
+  private strokeFor = Infinity;
+  private strokeWarned = false;
+  private annoyedUntil = -1;
+  private sulkUntil = -1;
+  /** Where in its cycle of busy spells and quiet ones the cat begins (see `LIVELY_EVERY`). */
+  private readonly livelyPhase: number;
+  /**
    * How hard it fights the hand that has it (the frame's `struggle`), the bout it is in (what it is doing, for how long it has, and how long it lasts, how hard it goes at the most, how many it has
    * had), and, once the hand has let go of a cat that fought it, how hard it was fighting then, until when it holds, and where the hand was.
    */
@@ -382,11 +466,18 @@ export class CatEngine {
   private scrollSize = "";
   private scrollStill = true;
   private fastRun = 0;
+  /**
+   * What the page did in the last `RISE_WINDOW` seconds: for each reading that moved the shelves, when (the engine's clock) and how far (pixels, down the screen positive), and whether it was a
+   * big jump out of stillness by itself (`lone`, see `measureScroll`); and the rows' pitch (pixels).
+   */
+  private scrollTrail: Array<{ at: number; dy: number; lone: boolean }> = [];
+  private scrollPitch = 0;
 
-  constructor(seed = 1) {
+  constructor(seed = 1, options: { temperament?: Temperament | string } = {}) {
     this.rng = createRng(seed).fork("director");
     this.rngLook = createRng(seed).fork("look");
     this.rngTemper = createRng(seed).fork("temper");
+    this.livelyPhase = createRng(seed).fork("lively").range(0, 2 * Math.PI);
     this.frame = {
       x: 0,
       y: 0,
@@ -405,6 +496,19 @@ export class CatEngine {
       petted: false,
       carried: false,
     };
+    if (options.temperament !== undefined) this.setTemperament(options.temperament);
+  }
+
+  /**
+   * What sort of cat it is, by its table or by the name of one (`temperamentOf`). The cat's mood moves with the table it is given, so that a cat that was changed for another, in the settings, is
+   * livelier or lazier from then on, and not only a little at a time.
+   */
+  setTemperament(temperament: Temperament | string): void {
+    const next = typeof temperament === "string" ? temperamentOf(temperament) : temperament;
+    const was = this.temper;
+    this.temper = next;
+    this.mood.energy = clamp01(this.mood.energy + (next.energy - was.energy));
+    this.mood.curiosity = clamp01(this.mood.curiosity + (next.curiosity - was.curiosity));
   }
 
   /** What the page tells the cat. Handled at the start of the next update. */
@@ -429,6 +533,8 @@ export class CatEngine {
       flung: this.fall?.free === true && !this.fall.landed,
       scroll: this.world ? this.scrollSpeed / this.world.bodyLength : 0,
       fast: this.fastRun,
+      rise: this.world ? this.risen() / (this.scrollPitch || PITCH_DEFAULT * this.world.bodyLength) : 0,
+      temperament: this.temper.name,
     };
   }
 
@@ -473,6 +579,8 @@ export class CatEngine {
       this.next(world);
       if (this.act) this.runAct(world, 0);
     }
+    // (a frame that ends with no act at all -- the one that follows ended the moment it began, a walk along a shelf the page has just taken from under the cat -- does not show a paw with nothing to land on: a swat, a bat or a point whose reach is gone)
+    if (!this.act && (this.clip === "swat" || this.clip === "tap" || this.clip === "point")) this.endScene(world.mode === "player" ? "perch" : "home");
 
     this.updateLook(world);
     this.petted = this.now < this.petUntil;
@@ -560,10 +668,15 @@ export class CatEngine {
         case "cat.pet": {
           if (unreachable || inHand) break;
           this.lastInteraction = this.now;
-          this.petUntil = this.now + 1.3;
+          // (a cat that has just had enough of a hand does not hear it: it is going, and what the hand does meanwhile does not bring it back)
+          if (this.now < this.annoyedUntil) break;
+          const busy = this.act?.k === "jump" || this.act?.k === "point" || this.act?.k === "swat" || this.act?.k === "fade" || this.act?.k === "relocate";
+          const stroke = busy ? "calm" : this.vexedBy(world);
+          if (stroke === "gone") break;
+          // (one that has been warning the hand does not purr at it)
+          this.petUntil = stroke === "warned" ? this.now : this.now + 1.3;
           this.mood.affection = clamp01(this.mood.affection + 0.04);
           this.mood.sleepiness = Math.max(0, this.mood.sleepiness - 0.05);
-          const busy = this.act?.k === "jump" || this.act?.k === "point" || this.act?.k === "swat" || this.act?.k === "fade" || this.act?.k === "relocate";
           if (!busy && this.act?.k !== "rest" && this.placed) this.hardPlan([{ k: "rest", pose: "sit", dur: 4 }]);
           break;
         }
@@ -688,12 +801,18 @@ export class CatEngine {
     if (world.mode === "away") {
       this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }]);
     } else if (previous === "away" && this.placed && this.here()) {
-      // the cat is where it was, and the page still has that place for it
+      // the cat is where it was, and the page still has that place for it (but not in the middle of a swat at something it left when it went)
+      this.endScene(world.mode === "player" ? "perch" : "home");
       this.hardPlan([{ k: "fade", to: 1, rate: FADE_IN_RATE }]);
     } else {
       // a new scene (the film began or ended): out, to the new place, and in again
       this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: world.mode === "player" ? "perch" : "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
     }
+  }
+
+  /** A cat that was cut short in a scene of its own (a swat, a bat at the pointer, a point, nodding off) and is back in sight is not left in it: it sits, or lies on a perch. */
+  private endScene(where: "home" | "perch"): void {
+    if (this.clip === "doze" || this.clip === "shift" || this.clip === "peek" || this.clip === "tap" || this.clip === "swat" || this.clip === "point") this.setClip(where === "perch" ? "loaf" : "sit");
   }
 
   private place(world: World, where: "home" | "perch"): boolean {
@@ -703,7 +822,7 @@ export class CatEngine {
     const pick =
       where === "perch"
         ? pool[0]!
-        : (this.rng.weighted(pool, (ledge) => ledge.weight * (1 + Math.min(2, (ledge.x1 - ledge.x0) / (4 * L)))) ?? pool[0]!);
+        : (this.rng.weighted(pool, (ledge) => ledge.weight * (ledge.kind === "fallbackFloor" ? FOOT_WEIGHT : 1) * (1 + Math.min(2, (ledge.x1 - ledge.x0) / (4 * L)))) ?? pool[0]!);
     this.putAt(pick, where === "perch" ? (pick.x0 + pick.x1) / 2 : this.startOn(pick, world));
     return true;
   }
@@ -746,7 +865,7 @@ export class CatEngine {
     }
     // (a page that is flung does not take the cat up with its shelf: the cat is shaken off it, whatever it was about to do on it, or doing: the first look at a page that is being flung
     // is of a shelf that has gone from under the cat already, and the cat has begun to leap to another one, which the page takes away from it again)
-    if (this.fastRun >= SHAKE_READINGS && this.shakeOff(world)) return;
+    if ((this.fastRun >= SHAKE_READINGS || this.rising(world.bodyLength)) && this.shakeOff(world)) return;
     if (!this.grounded) return;
     // (not while leaping, but when the leap has landed and is only settling; nor while on the way out to come back somewhere else)
     if ((this.act?.k === "jump" && !this.jump?.landed) || this.queueHas("relocate") || (this.act?.k === "fade" && this.act.to === 0)) return;
@@ -834,6 +953,7 @@ export class CatEngine {
         this.scrollAt = this.now;
         this.scrollSpeed = 0;
         this.fastRun = 0;
+        this.scrollTrail.length = 0;
       }
       return;
     }
@@ -854,11 +974,55 @@ export class CatEngine {
       }
     }
     moved.sort((a, b) => a - b);
-    this.scrollSpeed = moved.length > 0 && span > 0 ? moved[moved.length >> 1]! / span : 0;
-    this.fastRun = Math.abs(this.scrollSpeed) >= SHAKE_SPEED * world.bodyLength ? this.fastRun + 1 : 0;
+    const by = moved.length > 0 ? moved[moved.length >> 1]! : 0;
+    const pitch = pitchOf([...shelves.values()], world.bodyLength);
+    this.scrollSpeed = moved.length > 0 && span > 0 ? by / span : 0;
+    // (a fling is a number of the rows' pitches a second, as a step of the remote is a pitch: the cat's size, which makes the body length, has nothing to do with how fast the page goes by)
+    this.fastRun = Math.abs(this.scrollSpeed) >= (SHAKE_SPEED / PITCH_DEFAULT) * pitch ? this.fastRun + 1 : 0;
+    // (what the page has done lately, for the shelves that go up the screen too fast to be a step of the remote, and for the fall that is to end when the page has slowed. The first movement of
+    // a page that was still, if it is a big jump by itself, is a page laid out again -- the banner of the library folds up at the first step of the remote, and the rows jump by half a
+    // banner before they scroll -- or a notch of a wheel that does not smooth: it is not part of what the page is scrolled by, and so does not count towards the rise)
+    const trail = this.scrollTrail;
+    while (trail.length > 0 && trail[0]!.at < this.now - RISE_WINDOW) trail.shift();
+    if (moved.length === 0) trail.length = 0;
+    else if (by !== 0) trail.push({ at: this.now, dy: by, lone: trail.length === 0 && Math.abs(by) >= JUMP_SHARE * pitch });
+    this.scrollPitch = pitch;
     this.scrollShelves = shelves;
     this.scrollSize = size;
     this.scrollAt = this.now;
+  }
+
+  /** How far the shelves have gone up the screen in the last `RISE_WINDOW` seconds (pixels; where the page has gone back down meanwhile, that is counted off). */
+  private risen(): number {
+    let travel = 0;
+    for (const { at, dy, lone } of this.scrollTrail) if (!lone && at >= this.now - RISE_WINDOW) travel -= dy;
+    return Math.max(0, travel);
+  }
+
+  /**
+   * The page is scrolled down too far and too fast to be a step of the remote (see `RISE_STEPS`): the shelves have gone up by more than a step and a quarter in the last half second, in two
+   * readings at least, and by `RISE_SPEED` body lengths a second over the last tenth of it.
+   */
+  private rising(L: number): boolean {
+    const trail = this.scrollTrail;
+    if (trail.length < 2) return false;
+    let travel = 0;
+    let recent = 0;
+    let readings = 0;
+    for (const { at, dy, lone } of trail) {
+      if (lone || at < this.now - RISE_WINDOW) continue;
+      travel -= dy;
+      if (dy < 0) readings++;
+      if (at >= this.now - RISE_SPAN) recent -= dy;
+    }
+    return readings >= 2 && travel >= RISE_STEPS * (this.scrollPitch || PITCH_DEFAULT * L) && recent >= RISE_SPEED * L * RISE_SPAN;
+  }
+
+  /** How fast the page has gone, either way, over the last `span` seconds (pixels a second): a reading in which it happened not to move counts for what it is, a wheel turns in notches. */
+  private pageSpeed(span: number): number {
+    let net = 0;
+    for (const { at, dy } of this.scrollTrail) if (at >= this.now - span) net += dy;
+    return Math.abs(net) / span;
   }
 
   /**
@@ -1055,9 +1219,10 @@ export class CatEngine {
     // (a sleeper that shifts in its sleep is still asleep, and one that nods off is on the way to it)
     const sleeping = act?.k === "sleep" || (act?.k === "shot" && act.clip === "shift");
     const dozing = act?.k === "shot" && act.clip === "doze";
-    m.sleepiness = clamp01(m.sleepiness + dt * (sleeping ? -0.025 : idle > 30 ? 1 / 260 : 1 / 900));
-    m.energy = clamp01(m.energy + (0.32 - m.energy) * Math.min(1, dt / 25));
-    m.curiosity = clamp01(m.curiosity + (0.28 - m.curiosity) * Math.min(1, dt / 40));
+    const T = this.temper;
+    m.sleepiness = clamp01(m.sleepiness + dt * (sleeping ? -0.025 : (idle > 30 ? 1 / 260 : 1 / 900) * T.drowsiness));
+    m.energy = clamp01(m.energy + (T.energy + LIVELY_SWING * Math.sin((2 * Math.PI * this.now) / LIVELY_EVERY + this.livelyPhase) - m.energy) * Math.min(1, dt / 25));
+    m.curiosity = clamp01(m.curiosity + (T.curiosity - m.curiosity) * Math.min(1, dt / 40));
     m.affection = clamp01(m.affection + (0.2 - m.affection) * Math.min(1, dt / 240));
     // (the fight dies away in a moment once the hand has let go: the cat in the air still twists, and lands with what is left of it)
     if (this.struggle > 0 && act?.k !== "carried") this.struggle = Math.max(0, this.struggle - dt / FIGHT_RELEASE);
@@ -1121,6 +1286,11 @@ export class CatEngine {
     const away = Math.hypot(point.x - this.x, point.y - (this.y - 0.4 * L));
     if (away > FLINCH_NEAR * L || away < 0.45 * L) return;
     this.cool.flinch = this.now + FLINCH_EVERY + this.rngLook.range(0, 15);
+    // (a grumpy cat does not freeze: it swipes at it)
+    if (this.temper.swatsHand > 0 && this.rngTemper.chance(this.temper.swatsHand * 0.5)) {
+      this.annoyedAtHand(world, point, "dash");
+      return;
+    }
     this.feel("startle", 0.5);
     this.lookAt({ x: point.x, y: point.y }, 1.8);
     // (it freezes, and then, as if nothing had happened, it washes)
@@ -1251,6 +1421,14 @@ export class CatEngine {
       if (plan) return plan;
     }
     return null;
+  }
+
+  /** The least that a cat settled in `pose` would hide of the words and the zones (body-squares in pixels) anywhere on `ledge`. */
+  private tidiest(world: World, ledge: Ledge, pose: RestPose | readonly RestPose[]): number {
+    const L = world.bodyLength;
+    let best = Infinity;
+    for (let x = ledge.x0 + 0.4 * L; x <= ledge.x1 - 0.4 * L; x += 0.3 * L) best = Math.min(best, Math.max(settledCost(pose, 1, x, ledge.y, L, world), settledCost(pose, -1, x, ledge.y, L, world)));
+    return best;
   }
 
   private comeTo(world: World, at: Vec | undefined): void {
@@ -1398,9 +1576,22 @@ export class CatEngine {
     };
   }
 
-  /** The poster a pointing or swatting act is about, where the page has it now (it has moved if the page was scrolled since the cat set out). */
+  /**
+   * The poster a pointing or swatting act is about, where the page has it now (it has moved if the page was scrolled since the cat set out). The same film can be on two shelves at once: it is the
+   * one of that name that is nearest to where the cat set out for that it means.
+   */
   private posterOf(world: World, act: { id?: string | undefined; target: Rect }): Rect {
-    return (act.id !== undefined ? world.targets.find((one) => one.id === act.id)?.rect : undefined) ?? act.target;
+    if (act.id === undefined) return act.target;
+    let best = act.target;
+    let nearest = Infinity;
+    for (const one of world.targets) {
+      const d = Math.abs(one.rect.x - act.target.x) + Math.abs(one.rect.y - act.target.y);
+      if (one.id === act.id && d < nearest) {
+        best = one.rect;
+        nearest = d;
+      }
+    }
+    return best;
   }
 
   private playPlan(world: World): void {
@@ -1421,8 +1612,10 @@ export class CatEngine {
     if (!at) return plan;
     for (let i = 0; i < hops; i++) {
       const from: Ledge = at;
-      const options: Ledge[] = this.ledges.filter((ledge) => ledge.id !== from.id && findPath(this.ledges, from, x, ledge, (ledge.x0 + ledge.x1) / 2, L, 1) !== null);
-      const to: Ledge | undefined = this.rng.pick(options);
+      const reachable: Ledge[] = this.ledges.filter((ledge) => ledge.id !== from.id && findPath(this.ledges, from, x, ledge, (ledge.x0 + ledge.x1) / 2, L, 1) !== null);
+      // (not down to the foot of the screen, if there are shelves to go to)
+      const high = reachable.filter((ledge) => ledge.kind !== "fallbackFloor");
+      const to: Ledge | undefined = this.rng.pick(high.length > 0 ? high : reachable);
       if (!to) break;
       const landX = lerp(to.x0, to.x1, this.rng.range(0.2, 0.8));
       const path = findPath(this.ledges, from, x, to, landX, L, 1);
@@ -1828,6 +2021,8 @@ export class CatEngine {
     const from = this.letGoFrom;
     this.upset = 0;
     this.letGoFrom = null;
+    // (and it is touchy for a time: a cat that was held against its will does not take a hand lightly)
+    this.sulkUntil = this.now + this.temper.sulk;
     this.cool.groom = this.now + rng.range(45, 90);
     const here = this.here();
     // (away from where the hand was, along the shelf it landed on: the way with the room, if the hand was over it, or there is none the other way)
@@ -1859,6 +2054,91 @@ export class CatEngine {
     this.queue = plan;
   }
 
+  /** How long the hand that has begun to stroke the cat may go on before the cat has had enough: its temperament's, drawn afresh for each hand; a quarter of that while it is touchy, and less the sleepier it is. */
+  private patience(): number {
+    const base = this.temper.petPatience;
+    if (!Number.isFinite(base)) return Infinity;
+    return base * this.rngTemper.range(0.7, 1.3) * (this.now < this.sulkUntil ? 0.25 : 1) * (1 - 0.4 * this.mood.sleepiness);
+  }
+
+  /**
+   * One more stroke of a hand (see `Temperament.petPatience`): says whether the cat has had enough of it and is going (`gone`: the stroke is spent on that), has just had `STROKE_WARN` of what it
+   * will take and says so (`warned`), or is content (`calm`; and, now and then, glad). A hand that wakes a sleeper may find it cross at once.
+   */
+  private vexedBy(world: World): "gone" | "warned" | "calm" {
+    const T = this.temper;
+    const fresh = this.now - this.strokeLast > STROKE_GAP;
+    this.strokeLast = this.now;
+    if (fresh) {
+      this.strokeSince = this.now;
+      this.strokeWarned = false;
+      this.strokeFor = this.patience();
+      const act = this.act;
+      const asleep = act?.k === "sleep" || (act?.k === "shot" && (act.clip === "shift" || act.clip === "doze"));
+      if (asleep && T.wakeGrump > 0 && this.rngTemper.chance(T.wakeGrump)) {
+        this.annoyedAtHand(world, world.pointer, "hand");
+        return "gone";
+      }
+    }
+    const held = this.now - this.strokeSince;
+    if (held >= this.strokeFor) {
+      this.annoyedAtHand(world, world.pointer, "hand");
+      return "gone";
+    }
+    if (!this.strokeWarned && held >= STROKE_WARN * this.strokeFor) {
+      this.strokeWarned = true;
+      this.feel("annoyed", 1.2);
+      return "warned";
+    }
+    if (T.petJoy > 0 && this.cooled("joy") && this.rngTemper.chance(T.petJoy)) {
+      this.cool.joy = this.now + JOY_EVERY;
+      this.feel("joy", 1.6);
+    }
+    return "calm";
+  }
+
+  /**
+   * A cat that has had enough of a hand (it was stroked for longer than the cat would take, or it woke the cat: `hand`) or of a pointer that dashes at it (`dash`): it turns to it with its
+   * ears back and its tail lashing, swipes at it (a dash always; a hand if it is the swatting kind: once, or twice), and, for a hand, walks off along its shelf, away from it, and sits down with
+   * its back to it; and it is touchy for a time (`Temperament.sulk`). A cat that is to stay where it is (a viewer who wants quiet, or less motion), or that has no ground under it, only lets it be seen.
+   */
+  private annoyedAtHand(world: World, hand: Vec | undefined, by: "hand" | "dash"): void {
+    const T = this.temper;
+    const rng = this.rngTemper;
+    const L = world.bodyLength;
+    const here = this.here();
+    const leaves = by === "hand";
+    this.petUntil = Math.min(this.petUntil, this.now);
+    if (leaves) {
+      this.annoyedUntil = this.now + HAND_REFRACTORY;
+      this.sulkUntil = this.now + T.sulk;
+    }
+    if (!here || world.reducedMotion || world.quiet) {
+      this.hardPlan([{ k: "rest", pose: "sit", dur: 2.4, feel: "annoyed" }]);
+      return;
+    }
+    const at: Vec = hand ?? { x: this.x + this.facing * 0.5 * L, y: this.y - 0.5 * L };
+    const dir: 1 | -1 = at.x >= this.x ? 1 : -1;
+    const plan: Act[] = [{ k: "rest", pose: "stand", dur: rng.range(0.4, 0.7), feel: "annoyed", at }];
+    if (by === "dash" || (T.swatsHand > 0 && rng.chance(T.swatsHand))) {
+      // (the paw lands where the hand is, as near as a paw reaches: in front of the cat, at the height of its shoulder or so)
+      const m = 0.05 * L;
+      const target: Rect = { x: this.x + dir * clamp(Math.abs(at.x - this.x), SWIPE_NEAR * L, SWIPE_FAR * L) - m, y: this.y - SWIPE_HIGH * L - m, w: 2 * m, h: 2 * m };
+      plan.push({ k: "swat", target, dur: SWIPE_FIRST });
+      if (rng.chance(0.4)) plan.push({ k: "swat", target, dur: SWIPE_SECOND });
+    }
+    if (leaves) {
+      // (away from the hand, along the shelf: the way with the room, if there is none the other way)
+      const room = (d: 1 | -1): number => (d > 0 ? here.x1 - this.x : this.x - here.x0);
+      let away: 1 | -1 = dir > 0 ? -1 : 1;
+      if (room(away) < 1.5 * L && room(dir) > room(away)) away = dir;
+      const far = clampToLedge(here, this.x + away * rng.range(2.2, 3.4) * L);
+      if (Math.abs(far - this.x) > 0.8 * L) plan.push({ k: "walk", x: far, run: false, maxT: 14 });
+      plan.push({ k: "rest", pose: "sit", dur: rng.range(2.5, 4), at: { x: far, y: this.y - 0.4 * L } });
+    } else plan.push({ k: "rest", pose: "sit", dur: rng.range(1.2, 2.2) });
+    this.hardPlan(plan);
+  }
+
   /**
    * A cat that a flung page shook off its shelf: it falls as gravity has it, where it is, in front of the page that goes by (a shelf that flies up at it does not catch it, nor does one that
    * flies down from under it carry it off: the page is not what it stands on any more). Once the page has slowed it comes down on the first place under it, as a cat let go of does; and when it is
@@ -1872,7 +2152,7 @@ export class CatEngine {
       this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
       return true;
     }
-    const slow = Math.abs(this.scrollSpeed) < CATCH_SPEED * L;
+    const slow = this.pageSpeed(CATCH_SPAN) < CATCH_SPEED * L;
     if (slow || this.y >= vp.y + vp.h - HANDOVER * L || this.actT > FREE_FALL_MAX) {
       const found = this.dropTarget(world, 0, !slow);
       if (!found) {
@@ -1943,7 +2223,7 @@ export class CatEngine {
       case "relocate":
         // (a cat that changes places is never seen doing it: what is left of it is gone, and it comes in sitting or lying, not in the middle of a scene of the last place)
         this.alpha = 0;
-        if (this.clip === "doze" || this.clip === "shift" || this.clip === "peek" || this.clip === "tap" || this.clip === "swat" || this.clip === "point") this.setClip(act.where === "perch" ? "loaf" : "sit");
+        this.endScene(act.where);
         if (!this.place(world, act.where)) this.placed = false;
         break;
       case "jump":
@@ -2040,6 +2320,17 @@ export class CatEngine {
     const idle = this.now - this.lastInteraction;
     const last = this.history[this.history.length - 1] ?? "";
     const tired = m.sleepiness;
+    // (down on the foot of the screen of a page that has shelves: not a place to stay, see `FOOT_STAY`)
+    const shelves = this.ledges.some((ledge) => ledge.kind !== "fallbackFloor" && ledge.kind !== "playerPerch");
+    const low = roaming && here !== undefined && here.kind === "fallbackFloor" && shelves;
+    // (and on a shelf whose names leave no place to sit clear of them, when another shelf has one: not a place to stay either)
+    const crowded =
+      roaming &&
+      !low &&
+      here !== undefined &&
+      here.kind !== "fallbackFloor" &&
+      (settle(here, this.x, this.facing, L, "sit", world).cost > UNTIDY * L * L) &&
+      this.ledges.some((ledge) => ledge.surfaceId !== here.surfaceId && ledge.kind !== "fallbackFloor" && ledge.kind !== "playerPerch" && this.tidiest(world, ledge, "sit") <= CLEAN * L * L);
     interface Option {
       name: string;
       score: number;
@@ -2081,20 +2372,26 @@ export class CatEngine {
       }
       return best;
     };
+    // (a stop at a place where its body, in that posture, hides a name is a short one: it moves on)
+    const stopAt = (dur: number, pose: Pose, x: number, on: Ledge | undefined = here): number => {
+      if (!on || !roaming) return dur;
+      const hid = Math.max(settledCost(pose, 1, x, on.y, L, world), settledCost(pose, -1, x, on.y, L, world));
+      return hid > UNTIDY * L * L ? dur * STOP_SHORT : dur;
+    };
 
     options.push({
       name: "rest",
       score: 1.0 + tired * 0.8,
       plan: () => {
         const pose = cleanestPose(this.rng.weighted<Pose>(["sit", "loaf", "stand"], (p) => (p === "sit" ? 0.5 : p === "loaf" ? 0.3 + tired * 0.4 : 0.2) * roomFor(p)) ?? "sit");
-        return [...walkToSpot(pose), { k: "rest", pose, dur: this.rng.range(4, 12) }];
+        return [...walkToSpot(pose), { k: "rest", pose, dur: this.rng.range(3, 9) * this.temper.stay }];
       },
     });
 
     if (here && roaming && here.x1 - here.x0 > 1.6 * L) {
       options.push({
         name: "wander",
-        score: 0.95 * (0.4 + m.energy),
+        score: 1.2 * (0.4 + m.energy),
         plan: () => {
           for (let tries = 0; tries < 6; tries++) {
             const x = lerp(here.x0, here.x1, this.rng.range(0.05, 0.95));
@@ -2102,9 +2399,10 @@ export class CatEngine {
               // (a cat that has walked somewhere often smells it before it settles)
               const sniff: Act[] = tired < 0.7 && this.rng.chance(0.4) ? [{ k: "shot", clip: "sniff", dur: this.rng.range(2.2, 3.4) }] : [];
               const pose: Pose = cleanestPose(this.rng.chance(0.6) ? "sit" : "stand", x);
-              const dur = this.rng.range(2, 7);
+              const stop = spotFor(pose, x) ?? x;
+              const dur = stopAt(this.rng.range(2, 6) * this.temper.stay, pose, stop);
               // (it stops where it was going, or a little off that if the names are there)
-              return [{ k: "walk", x: spotFor(pose, x) ?? x, run: false, maxT: 40 }, ...sniff, { k: "rest", pose, dur }];
+              return [{ k: "walk", x: stop, run: false, maxT: 40 }, ...sniff, { k: "rest", pose, dur }];
             }
           }
           return null;
@@ -2115,29 +2413,30 @@ export class CatEngine {
     if (here && roaming && this.ledges.length > 1) {
       options.push({
         name: "hop",
-        score: this.cooled("hop") ? 0.8 * (0.3 + m.energy) : 0.05,
+        score: low ? FOOT_UP : crowded ? CROWDED_UP : this.cooled("hop") ? 1.3 * (0.3 + m.energy) : 0.05,
         plan: () => {
           const candidates = this.ledges
             .filter((ledge) => ledge.surfaceId !== here.surfaceId)
             .map((ledge) => {
               const x = lerp(ledge.x0, ledge.x1, this.rng.range(0.2, 0.8));
               const path = findPath(this.ledges, here, this.x, ledge, x, L, 2);
-              return path ? { ledge, x, hops: path.length } : null;
+              // (and how much of the words it would hide, sitting where it can best sit on that shelf)
+              return path ? { ledge, x, hops: path.length, cost: settling("sit", x, ledge)?.cost ?? 0 } : null;
             })
-            .filter((c): c is { ledge: Ledge; x: number; hops: number } => c !== null);
-          // (the shelves it has not been to lately are the more interesting)
-          const pick = this.rng.weighted(candidates, (c) => c.ledge.weight / c.hops / (1 + 2 * Math.exp(-(this.now - (this.visited[c.ledge.surfaceId] ?? -1000)) / 40)));
+            .filter((c): c is { ledge: Ledge; x: number; hops: number; cost: number } => c !== null);
+          // (the shelves it has not been to lately are the more interesting, the one with room for it to settle clear of the names the likelier)
+          const pick = this.rng.weighted(candidates, (c) => ((c.ledge.weight * (c.ledge.kind === "fallbackFloor" ? FOOT_WEIGHT : 1)) / c.hops / (1 + 2 * Math.exp(-(this.now - (this.visited[c.ledge.surfaceId] ?? -1000)) / 40))) / (1 + (6 * c.cost) / (L * L)) ** 2);
           if (!pick) return null;
           const sits = this.rng.chance(0.65);
-          const dur = this.rng.range(2, 6);
-          const cool = this.rng.range(6, 14);
+          const dur = this.rng.range(2, 6) * this.temper.stay;
+          const cool = this.rng.range(5, 11);
           // (it lands where it can settle clear of the names, the posture drawn giving way to a cleaner one if the shelf has no clean place for it: a landing at a chance place on a shelf of names is a few seconds in front of one)
           const pose = cleanestPose(sits ? "sit" : "stand", pick.x, pick.ledge);
           const spot = spotFor(pose, pick.x, pick.ledge) ?? pick.x;
           const plan = this.routeTo(world, pick.ledge, spot, false) ?? this.routeTo(world, pick.ledge, pick.x, false);
           if (!plan) return null;
           this.cool.hop = this.now + cool;
-          plan.push({ k: "rest", pose, dur });
+          plan.push({ k: "rest", pose, dur: stopAt(dur, pose, spot, pick.ledge) });
           return plan;
         },
       });
@@ -2164,7 +2463,7 @@ export class CatEngine {
     if (here && roaming && world.targets.length > 0 && this.cooled("prowl")) {
       options.push({
         name: "prowl",
-        score: 0.34 * (0.4 + m.energy) * (0.6 + m.curiosity),
+        score: 0.5 * (0.4 + m.energy) * (0.6 + m.curiosity),
         plan: () => {
           // (a poster a few lengths off, with the whole run-up and the landing on this stretch of the shelf, not off the end of it or under the bar)
           const inside = (x: number): boolean => x >= here.x0 && x <= here.x1;
@@ -2180,7 +2479,7 @@ export class CatEngine {
           const from = clampToLedge(here, one.at.x - dir * 1.8 * L);
           const to = clampToLedge(here, one.at.x - dir * 0.2 * L);
           if (Math.abs(from - this.x) < 1.3 * L || !planJump(from, here.y, to, here.y, L)) return null;
-          this.cool.prowl = this.now + this.rng.range(90, 160);
+          this.cool.prowl = this.now + this.rng.range(60, 110);
           const plan: Act[] = [
             { k: "walk", x: from, run: false, maxT: 25, stalk: one.at },
             { k: "shot", clip: "wiggle", dur: this.rng.range(1, 1.5), at: one.at },
@@ -2211,11 +2510,11 @@ export class CatEngine {
     });
     options.push({
       name: "sleep",
-      score: idle > 40 ? 0.08 + tired * 1.8 : 0.0,
+      score: idle > 50 && !low ? 0.05 + tired * 1.3 : 0.0,
       // (and before it lies down for good, a cat will often tread its place into shape; the place is chosen for all of it: lying down, treading, curled up)
       plan: () => {
         const tread = this.rng.chance(0.5);
-        const nap = this.rng.range(25, 70);
+        const nap = this.rng.range(20, 50) * this.temper.stay;
         // (a long nap is not one stillness: part of the way through, the sleeper changes its position)
         const turns = nap > 45 && this.rng.chance(0.55);
         const asleep: Act[] = turns
@@ -2257,11 +2556,36 @@ export class CatEngine {
       });
     }
 
+    // the card that has the focus is on another shelf, and got it not long ago: the cat goes over to it and sits by it, looking at it (a viewer who goes down the library is accompanied)
+    if (here && roaming && world.focus && this.now - this.lastFocusAt < FOLLOW_WITHIN && this.cooled("follow")) {
+      const f = world.focus;
+      const card = world.targets.find((t) => t.surfaceId !== undefined && t.surfaceId !== here.surfaceId && overlaps(t.rect, f));
+      const shelf = card?.surfaceId !== undefined ? this.ledges.filter((ledge) => ledge.surfaceId === card.surfaceId) : [];
+      if (card && shelf.length > 0) {
+        options.push({
+          name: "follow",
+          score: 2.2 * (0.5 + m.curiosity) * (1 - 0.5 * tired),
+          plan: () => {
+            const cx = f.x + f.w / 2;
+            // (the piece of that shelf nearest the card, and the place by it on the side the cat comes from)
+            const ledge = shelf.reduce((a, b) => (Math.abs(clampToLedge(b, cx) - cx) < Math.abs(clampToLedge(a, cx) - cx) ? b : a));
+            const x = clampToLedge(ledge, cx + (this.x < cx ? -1 : 1) * (f.w / 2 + 0.8 * L));
+            const pose = cleanestPose("sit", x, ledge);
+            const spot = spotFor(pose, x, ledge) ?? x;
+            const path = this.routeTo(world, ledge, spot, false);
+            if (!path) return null;
+            this.cool.follow = this.now + this.rng.range(25, 50);
+            return [...path, { k: "rest", pose, dur: this.rng.range(4, 9), at: centre(f) }];
+          },
+        });
+      }
+    }
+
     // a poster on a lower row, a few lengths down the page: the cat goes to the place above it and looks down at it, head out
     if (here && roaming && world.targets.length > 0 && this.cooled("inspect")) {
       options.push({
         name: "inspect",
-        score: 0.3 * (0.4 + m.curiosity) * (1 - 0.6 * tired),
+        score: 0.45 * (0.4 + m.curiosity) * (1 - 0.6 * tired),
         plan: () => {
           const below = world.targets.filter((t) => {
             if (!t.surfaceId || t.surfaceId === here.surfaceId) return false;
@@ -2274,7 +2598,7 @@ export class CatEngine {
           // (above it, or as near to that as it can be without its body hiding a name)
           const above = clampToLedge(here, at.x);
           const x = spotFor("stand", above) ?? above;
-          this.cool.inspect = this.now + this.rng.range(50, 100);
+          this.cool.inspect = this.now + this.rng.range(35, 70);
           return [
             ...(Math.abs(x - this.x) < 0.5 * L ? [] : [{ k: "walk", x, run: false, maxT: 30, look: at } as const]),
             { k: "shot", clip: "peek", dur: this.rng.range(2.2, 3.4), at },
@@ -2309,6 +2633,28 @@ export class CatEngine {
       }
     }
 
+    // the pointer has rested somewhere further off than that: the cat comes over to the place where it can see it, a paw's length under it if there is one, and sits looking at it (and may bat at it then)
+    if (here && roaming && lure && this.pointerStill >= GREET_STILL && this.cooled("greet") && Math.hypot(lure.x - this.x, lure.y - (this.y - 0.5 * L)) >= GREET_NEAR * L) {
+      options.push({
+        name: "greet",
+        score: 1.4 * (0.4 + m.curiosity) * (1 - 0.6 * tired),
+        plan: () => {
+          const places = this.ledges.filter((ledge) => !shelves || ledge.kind !== "fallbackFloor");
+          const under = places.filter((ledge) => ledge.y - lure.y >= 0.1 * L && ledge.y - lure.y <= 1.3 * L);
+          const pool = under.length > 0 ? under : places;
+          const away = (ledge: Ledge): number => Math.abs(clampToLedge(ledge, lure.x) - lure.x) + 1.2 * Math.abs(ledge.y - lure.y);
+          const ledge = pool.reduce((a, b) => (away(b) < away(a) ? b : a), pool[0]!);
+          const side: 1 | -1 = this.x <= lure.x ? -1 : 1;
+          const x = clampToLedge(ledge, lure.x + side * 1.1 * L);
+          if (ledge.surfaceId === here.surfaceId && Math.abs(x - this.x) < 0.8 * L) return null;
+          const path = this.routeTo(world, ledge, x, false);
+          if (!path) return null;
+          this.cool.greet = this.now + this.rng.range(40, 80);
+          return [...path, { k: "rest", pose: "sit", dur: this.rng.range(3, 6), at: { x: lure.x, y: lure.y } }];
+        },
+      });
+    }
+
     // a poster on this shelf, a few lengths off, that is not the one the viewer is on: it goes up to it, looks over the lip, and pats it, once or twice (and the poster gives a little)
     if (here && roaming && world.targets.length > 0 && this.cooled("pat")) {
       const focus = world.focus;
@@ -2318,7 +2664,7 @@ export class CatEngine {
       if (prey.length > 0) {
         options.push({
           name: "pat",
-          score: 0.3 * (0.4 + m.curiosity) * (0.4 + m.energy) * (1 - 0.7 * tired),
+          score: 0.5 * (0.4 + m.curiosity) * (0.4 + m.energy) * (1 - 0.7 * tired),
           plan: () => {
             const one = this.rng.pick(prey);
             if (!one) return null;
@@ -2326,7 +2672,7 @@ export class CatEngine {
             const stand = standFor(one);
             const contact = this.swatPoint(one.rect, stand, here.y, side, L);
             this.swatFixes = 0;
-            this.cool.pat = this.now + this.rng.range(80, 150);
+            this.cool.pat = this.now + this.rng.range(50, 100);
             return [
               ...(Math.abs(stand - this.x) > 0.3 * L ? [{ k: "walk", x: stand, run: false, maxT: 25, look: contact } as const] : []),
               { k: "shot", clip: "peek", dur: this.rng.range(1.2, 2), at: contact },
@@ -2339,15 +2685,45 @@ export class CatEngine {
       }
     }
 
+    // a poster on another shelf, that is not the one the viewer is on: the cat goes over to it, creeps up, pats it, and sits as if it had come for it
+    if (here && roaming && world.targets.length > 0 && this.cooled("visit")) {
+      options.push({
+        name: "visit",
+        score: 0.4 * (0.4 + m.curiosity) * (0.4 + m.energy) * (1 - 0.6 * tired),
+        plan: () => {
+          const focus = world.focus;
+          const far = world.targets.filter((t) => t.surfaceId !== undefined && t.surfaceId !== here.surfaceId && !(focus && overlaps(t.rect, focus)));
+          // (the nearer ones more often than the far)
+          const one = this.rng.weighted(far, (t) => 1 / (1 + Math.abs(centre(t.rect).x - this.x) / (4 * L)));
+          if (!one) return null;
+          const spot = this.swatSpots(world, one.rect).find((s) => findPath(this.ledges, here, this.x, s.ledge, s.stand, L, 2) !== null);
+          if (!spot) return null;
+          const route = this.routeTo(world, spot.ledge, clampToLedge(spot.ledge, spot.stand - spot.side * CREEP * L), false);
+          if (!route) return null;
+          const contact = this.swatPoint(one.rect, spot.stand, spot.ledge.y, spot.side, L);
+          this.swatFixes = 0;
+          this.cool.visit = this.now + this.rng.range(60, 120);
+          return [
+            ...route,
+            { k: "walk", x: spot.stand, run: false, maxT: 8, look: contact },
+            { k: "shot", clip: "peek", dur: this.rng.range(1.2, 2), at: contact },
+            { k: "swat", target: one.rect, dur: SWAT_FIRST, id: one.id },
+            ...(this.rng.chance(0.4) ? ([{ k: "swat", target: one.rect, dur: SWAT_SECOND, id: one.id }] as const) : []),
+            { k: "rest", pose: "sit", dur: this.rng.range(1.5, 3) },
+          ];
+        },
+      });
+    }
+
     // the zoomies: a lively cat now and then runs and leaps from shelf to shelf for no reason at all, and sits down, pleased with itself
-    if (here && roaming && this.ledges.length > 1 && m.energy > 0.45 && this.cooled("zoomies")) {
+    if (here && roaming && this.ledges.length > 1 && m.energy > 0.4 && this.cooled("zoomies")) {
       options.push({
         name: "zoomies",
-        score: 0.28 * (m.energy - 0.3) * (1 - 0.8 * tired),
+        score: 0.45 * (m.energy - 0.25) * (1 - 0.8 * tired),
         plan: () => {
           const run = this.hopAround(world, this.rng.chance(0.5) ? 2 : 3);
           if (run.length === 0) return null;
-          this.cool.zoomies = this.now + this.rng.range(110, 200);
+          this.cool.zoomies = this.now + this.rng.range(80, 150);
           return [...run, { k: "rest", pose: "sit", dur: this.rng.range(2, 3.5), feel: "joy" }];
         },
       });
@@ -2364,8 +2740,9 @@ export class CatEngine {
       },
     });
 
-    // (not the same thing twice in a row)
-    const weighted = options.map((o) => ({ o, w: Math.max(0, o.score) * (last.startsWith(o.name) ? 0.35 : 1) }));
+    // (what it likes to do it does the oftener, and the rest the less -- but not getting up from where it should not stay, which is not a matter of taste -- and not the same thing twice in a row)
+    const taste = (o: Option): number => tasteFor(this.temper, o.name, low || crowded);
+    const weighted = options.map((o) => ({ o, w: Math.max(0, o.score) * (o.name === "hop" ? 1 : low ? FOOT_STAY : crowded ? CROWDED_STAY : 1) * taste(o) * (last.startsWith(o.name) ? 0.35 : 1) }));
     for (let tries = 0; tries < 4; tries++) {
       const pick = this.rng.weighted(weighted, (c) => c.w);
       if (!pick) break;
@@ -2501,7 +2878,7 @@ export class CatEngine {
       }
       this.facing = dir;
     }
-    const cruise = (act.stalk ? STALK_SPEED : hurry ? RUN_SPEED : WALK_SPEED) * L;
+    const cruise = (act.stalk ? STALK_SPEED : hurry ? RUN_SPEED : WALK_SPEED) * L * this.temper.speed;
     const brake = Math.sqrt(2 * ACCEL * 0.7 * L * dist);
     const want = Math.min(cruise, brake) * dir;
     this.vx += clamp(want - this.vx, -dt * ACCEL * L, dt * ACCEL * L);

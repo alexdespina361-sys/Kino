@@ -3,6 +3,7 @@ import { createRng, type Rng } from "../rng";
 import type { CatEvent, CatFrame, Rect, Surface, Target, World } from "../types";
 import { CatEngine, RIDE_EASE } from "./engine";
 import { HALF_WIDTH, reachOf, shapeHits } from "./shape";
+import type { Temperament } from "./temperament";
 
 /**
  * The scenario simulator: a made-up page (rows of posters like the TV's home, a film's screen), made-up things happening to it (scrolling,
@@ -119,11 +120,14 @@ export interface SimOptions {
   /**
    * What may happen to the page. `mouse`: a pointer that wanders the page, dashes about, rests, comes to the cat, and is put down (it is gone from the world three
    * seconds after it last moved, as the host has it). `fling`: the scrolling (`scroll`) is that of a finger that flings the page, eight thousand pixels a second and as far as the whole
-   * page, and not the slow one of a wheel.
+   * page, and not the slow one of a wheel. `stroke`: a hand now and then rests on the cat for two to fourteen seconds and strokes it as the host's hand does (a stroke a third of a second
+   * after it came and one every second after that, an end to it when it goes), in a film as well as on the library (where the world has no pointer to say where the hand is).
    */
-  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean; mouse?: boolean; slide?: boolean; fling?: boolean };
+  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean; mouse?: boolean; slide?: boolean; fling?: boolean; stroke?: boolean };
   reducedMotion?: boolean;
   quiet?: boolean;
+  /** What sort of cat it is (see `Temperament`): the baseline, the cat before there were two, when not said. */
+  temperament?: Temperament | string;
   /** The page has names over its shelves (see `PageOptions.names`). */
   names?: boolean;
   /** Stop at the first thing that must not happen. */
@@ -139,7 +143,7 @@ export function runSession(options: SimOptions): SimStats {
   const fps = options.fps ?? 30;
   const dt = 1 / fps;
   const rng = createRng(options.seed ^ 0x5eed);
-  const engine = new CatEngine(options.seed);
+  const engine = new CatEngine(options.seed, options.temperament === undefined ? {} : { temperament: options.temperament });
   const chaos = options.chaos ?? {};
   const page = defaultPage();
   page.reducedMotion = options.reducedMotion ?? false;
@@ -163,6 +167,8 @@ export function runSession(options: SimOptions): SimStats {
   let pointer: { x: number; y: number } | undefined;
   /** The wandering mouse (see `chaos.mouse`): where it is, where it goes and how fast (body lengths a second), when it is resting until, and when it last moved. */
   let mouse: { x: number; y: number; gx: number; gy: number; speed: number; restUntil: number; movedAt: number } | null = null;
+  /** The hand that strokes the cat (see `chaos.stroke`): until when, and when the next stroke is due. */
+  let stroking: { until: number; next: number } | null = null;
   /** A hand that has the cat (where it is, where it is going, and until when), if one does. */
   let handAt: { x: number; y: number } | null = null;
   let handGoal = { x: 0, y: 0 };
@@ -343,6 +349,28 @@ export function runSession(options: SimOptions): SimStats {
         pointer = next;
       }
     }
+    // a hand that strokes the cat now and then: the pointer is on the cat, the first stroke is sent after a third of a second and one every second after that (as the host's hand does), for a few seconds
+    if (chaos.stroke) {
+      const Ls = world.bodyLength;
+      if (!stroking) {
+        if (world.mode !== "away" && engine.frame.appear > 0.9 && rng.chance(0.004)) stroking = { until: t + rng.range(2, 14), next: t + 0.32 };
+      } else if (t >= stroking.until || world.mode === "away") {
+        engine.send({ type: "cat.petEnd" });
+        stroking = null;
+        pointer = undefined;
+        changed = true;
+      } else {
+        const on = { x: engine.frame.x, y: engine.frame.y - 0.5 * Ls };
+        if (!pointer || Math.hypot(pointer.x - on.x, pointer.y - on.y) > 0.5) {
+          pointer = on;
+          changed = true;
+        }
+        if (t >= stroking.next) {
+          engine.send({ type: "cat.pet" });
+          stroking.next += 1;
+        }
+      }
+    }
     if (changed) {
       rebuild();
       movedAt = t;
@@ -410,7 +438,7 @@ export function runSession(options: SimOptions): SimStats {
     const L = world.bodyLength;
     const surfaceNow = dbg.surfaceId ? world.surfaces.find((s) => s.id === dbg.surfaceId) : undefined;
     trail.push(
-      `${(stats.frames * dt).toFixed(2)}s ${dbg.act}${dbg.queue.length > 0 ? ` (then ${dbg.queue.slice(0, 3).join(", ")})` : ""} on ${dbg.surfaceId ?? "-"} x=${frame.x.toFixed(0)} y=${frame.y.toFixed(1)} shelf=${surfaceNow ? surfaceNow.y.toFixed(1) : "-"} ${frame.grounded ? "ground" : "air"} appear=${frame.appear.toFixed(2)} scroll=${page.scroll}${world.focus ? ` focus=${world.focus.x.toFixed(0)},${world.focus.y.toFixed(0)}` : ""} ${page.width}x${page.height}${inFilm ? " film" : ""}${modal ? " modal" : ""}`,
+      `${(stats.frames * dt).toFixed(2)}s ${dbg.act}${dbg.queue.length > 0 ? ` (then ${dbg.queue.slice(0, 3).join(", ")})` : ""} [${frame.clip}] on ${dbg.surfaceId ?? "-"} x=${frame.x.toFixed(0)} y=${frame.y.toFixed(1)} shelf=${surfaceNow ? surfaceNow.y.toFixed(1) : "-"} ${frame.grounded ? "ground" : "air"} appear=${frame.appear.toFixed(2)} scroll=${page.scroll}${world.focus ? ` focus=${world.focus.x.toFixed(0)},${world.focus.y.toFixed(0)}` : ""} ${page.width}x${page.height}${inFilm ? " film" : ""}${modal ? " modal" : ""}`,
     );
     if (trail.length > (options.contextFrames ?? 14)) trail.shift();
     const numbers = [frame.x, frame.y, frame.vx, frame.vy, frame.odometer, frame.drowsy, frame.energy, frame.appear, frame.progress, frame.clipTime];
