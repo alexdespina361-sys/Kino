@@ -1077,7 +1077,14 @@ test("a page that is flung, or scrolled too far and too fast to be a step of the
     const left = seen.findIndex((beat) => beat.flung);
     expect(left, `${what}: it was shaken off`).toBeGreaterThanOrEqual(0);
     expect(Math.min(...seen.map((beat) => beat.y)), `${what}: it rose with the shelf`).toBeGreaterThan(ready.sat.frame.y - 4.5 * L);
-    for (let i = left + 1; i < seen.length && seen[i]!.flung; i++) expect(seen[i]!.y, `${what}: beat ${i}`).toBeGreaterThanOrEqual(seen[i - 1]!.y - 0.01);
+    // (a cat that had already left the ground in a leap of its own when the page was shaken -- the shelf was going under the top bar, and it had begun to leap to another -- goes on up for a moment,
+    // as a cat in the air does, and falls from the top of that: what it must not do is rise again)
+    const leaping = left > 0 && seen[left - 1]!.act === "jump" && !seen[left - 1]!.grounded;
+    let past = !leaping;
+    for (let i = left + 1; i < seen.length && seen[i]!.flung; i++) {
+      if (seen[i]!.y > seen[i - 1]!.y + 0.01) past = true;
+      if (past) expect(seen[i]!.y, `${what}: beat ${i}`).toBeGreaterThanOrEqual(seen[i - 1]!.y - 0.01);
+    }
     expect((await snap(tv)).engine.surfaceId, `${what}: where it landed`).not.toBe(ready.shelf.id);
   };
   const spun = await settle();
