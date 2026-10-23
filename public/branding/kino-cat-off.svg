@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="269" height="115" viewBox="15 10 269 115" fill="none" role="img" aria-label="kino">
+  <title>Kino — clean wordmark (cat disabled)</title>
+  <!-- The two assets use the same viewBox, geometry, colors and margins. -->
+  <g stroke="#F8F8F7" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M31 21 V109 M39 82 L71 55 M39 82 L72 109"/>
+    <path d="M102 65 V109"/>
+    <path d="M137 109 V73 Q137 57 153 57 Q175 57 175 79 V109"/>
+  </g>
+  <circle cx="102" cy="34" r="8.5" fill="#F8F8F7"/>
+  <circle cx="235" cy="82" r="34" stroke="#F8F8F7" stroke-width="14"/>
+  <path d="M228 69 L228 95 L249 82 Z" fill="#F34854"/>
+</svg>

@@ -67,6 +67,7 @@
 .pair-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: auto; }
 .pair > :last-child { margin-bottom: auto; }
 .brand { align-self: center; font-size: 1.05rem; }
+.pair-top .logo { top: -0.216em; } /* (the "o" of the wordmark, not its box, is level with the buttons beside it: see polish/tv.css) */
 .pair-icon {
   display: grid;
   place-items: center;
