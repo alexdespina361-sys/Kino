@@ -6,6 +6,7 @@ import type { ClipSource } from "../../../src/client/cat/render/gl/clipfile";
 import type { CatMesh } from "../../../src/client/cat/render/gl/format";
 import { Pose, sampleFrame, type Clip, type Skeleton } from "../../../src/client/cat/render/gl/pose";
 import { CLIMB_GRAB, CLIMB_LIP, CLIMB_OVER, CLIMB_PULL, CLIMB_TIME } from "../../../src/client/cat/types";
+import { ahead, follower } from "./follow.mts";
 import { Body, mixSpec, Recorder, type PawName, type Spec } from "./posegen.mts";
 import { poseAt } from "./source.mts";
 
@@ -191,22 +192,84 @@ export function through(keys: ReadonlyArray<readonly [number, Spec]>, t: number)
   return flow(keys.map((k) => k[0]), keys.map((k) => k[1]), t) as Spec;
 }
 
-/** The frames of a clip: the spec at each time (laid on `base`, if there is one), solved, and recorded. */
-export function render(m: Made, name: string, seconds: number, loop: boolean, at: (t: number, u: number) => Spec, o: { marks?: Record<string, number>; base?: Pose; grounded?: boolean; from?: Pose } = {}): ClipSource {
+/**
+ * The frames of a clip: the spec at each time (laid on `base`, if there is one), solved, and recorded. `follow`: the hips, the back, the neck and the tail follow what the spec says as
+ * springs do (follow.mts), each a little behind and a little past, and a clip that is not a loop comes to exactly what it says over its last part (from `settleBy` of it, 0.85 if not said).
+ */
+export function render(
+  m: Made,
+  name: string,
+  seconds: number,
+  loop: boolean,
+  at: (t: number, u: number) => Spec,
+  o: { marks?: Record<string, number>; base?: Pose; grounded?: boolean; from?: Pose; follow?: boolean | { settleBy: number } } = {},
+): ClipSource {
   const frames = Math.max(2, Math.round(seconds * FPS) + (loop ? 0 : 1));
   const fps = loop ? frames / seconds : (frames - 1) / seconds;
   const rec = new Recorder(m.skeleton, frames);
   // (`from`: the pose the clip comes after, where the legs start their search: a crouch is found from the crouch it comes out of, not from the cat standing)
   let prev: Pose | undefined = o.from;
-  // (a loop is gone round once beforehand, so that its first frame is found from its last and the legs do not start from another bend of the knee than they end in)
-  if (loop) for (let f = 0; f < frames; f++) prev = m.body.make(at(f / fps, f / frames), prev, o.base, o.grounded);
+  const follow = o.follow ? follower() : null;
+  const settleBy = typeof o.follow === "object" ? o.follow.settleBy : 0.85;
+  const told = (t: number, u: number): Spec => {
+    const spec = at(t, u);
+    if (!follow) return spec;
+    // (each part is told where the clip will have it a moment from now, as far ahead as its spring is behind: see `LEAD`)
+    const soon = (d: number): Spec => (d === 0 ? spec : loop ? at((t + d) % seconds, (u + d / seconds) % 1) : at(Math.min(seconds, t + d), Math.min(1, u + d / seconds)));
+    const out = follow(ahead(soon), 1 / fps);
+    return loop || u <= settleBy ? out : mixSpec(out, spec, over(u, settleBy, 1 - settleBy));
+  };
+  // (a loop is gone round once beforehand, so that its first frame is found from its last and the legs do not start from another bend of the knee than they end in; with springs it is gone
+  // round a few times, to be where a loop that has gone on for a while is, and the legs are found on the last of them only)
+  if (loop) {
+    const rounds = follow ? Math.max(2, Math.ceil(3 / seconds)) : 1;
+    for (let r = 0; r < rounds; r++) {
+      for (let f = 0; f < frames; f++) {
+        const spec = told(f / fps, f / frames);
+        if (r === rounds - 1) prev = m.body.make(spec, prev, o.base, o.grounded);
+      }
+    }
+  }
   for (let f = 0; f < frames; f++) {
     const t = f / fps;
-    const pose = m.body.make(at(t, f / (loop ? frames : frames - 1)), prev, o.base, o.grounded);
+    const pose = m.body.make(told(t, f / (loop ? frames : frames - 1)), prev, o.base, o.grounded);
     rec.put(f, pose);
     prev = pose;
   }
   return rec.source(name, fps, loop, o.marks ?? {});
+}
+
+/**
+ * The small movements of a cat that is not moving, to be added to a posture that is held: the weight going from one side to the other (the hips across and tilted, a little forward and
+ * back), the breath in the back and the neck, the head looking about slowly. `base` is the pose the clip is laid on, if it is laid on one (the postures that leave out a part leave it
+ * as it is there). A function of `t` (the time), `T` (the length of the clip, so that a loop closes: every movement goes round a whole number of times in it) and `k` (0 to 1: how much).
+ */
+function living(m: Made, base?: Pose): (spec: Spec, t: number, T: number, k: number) => Spec {
+  const b = m.body;
+  const rest = base ?? b.pose();
+  const hips = b.where(rest, "Hips");
+  const angles = b.anglesOf(rest);
+  const pitch = b.pitchOf(rest);
+  // (a clip that is laid on a pose has the legs of that pose, and its paws are not told: left to the bones they go with the body that now moves over them, a paw that sinks into the floor and
+  // rises again. The paws the spec does not move are put where the pose has them, and the legs are found for the body.)
+  const planted = base ? (Object.fromEntries(ALL.map((p) => [p, { at: b.padOf(base, p) }])) as NonNullable<Spec["paws"]>) : undefined;
+  return (spec, t, T, k) => {
+    if (k <= 0) return spec;
+    const turn = (n: number, phase: number): number => Math.sin((TAU * n * t) / T + phase);
+    // (about two breaths in five seconds)
+    const breath = Math.max(1, Math.round(0.4 * T));
+    const h = spec.hips ?? { y: hips[1] };
+    const back = spec.back ?? angles.back;
+    const neck = spec.neck ?? angles.neck;
+    return {
+      ...spec,
+      ...(planted ? { paws: { ...planted, ...spec.paws } } : {}),
+      hips: { ...h, x: (h.x ?? hips[0]) + 0.014 * k * turn(1, 0.4), z: (h.z ?? 0) + 0.022 * k * turn(1, 1.9), roll: (h.roll ?? 0) + 0.04 * k * turn(1, 1.9), pitch: (h.pitch ?? pitch) + 0.025 * k * turn(breath, 0) },
+      back: [back[0] + 0.015 * k * turn(breath, 0.6) + 0.025 * k * turn(1, 2.4), back[1] + 0.02 * k * turn(breath, 0.9) + 0.03 * k * turn(1, 2.9)],
+      neck: [neck[0] + 0.02 * k * turn(breath, 1.0), neck[1] + 0.035 * k * turn(1, 3.1), neck[2] + 0.04 * k * turn(2, 0.2), neck[3] + 0.04 * k * turn(2, 1.3)],
+      yaw: { ...spec.yaw, neck2: (spec.yaw?.neck2 ?? 0) + 0.04 * k * turn(1, 0.9), head: (spec.yaw?.head ?? 0) + 0.08 * k * turn(1, 0.9) },
+    };
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -280,7 +343,7 @@ function lieDown(m: Made, name: string, to: Spec, seconds = 1.4): ClipSource {
     // (the chest goes down ahead of the rump: the back dips while the front folds, and comes back as the rump goes down)
     const dip = over(u, 0, 0.4) * (1 - over(u, 0.4, 0.4));
     return { ...spec, back: [spec.back![0] - 0.3 * dip, spec.back![1] - 0.5 * dip] };
-  });
+  }, { follow: true });
 }
 
 export const loaf = (m: Made): ClipSource => lieDown(m, "loaf", loafSpec(m));
@@ -331,6 +394,9 @@ export function crouchSpec(m: Made): Spec {
   });
 }
 
+// (a cat goes down into a crouch front first: the chest goes down with the back, and the rump follows onto the hind legs as they come under it, the tail last. Told straight, the springs of
+// `follow.mts` left out: judged blind against the same crouch with them (rounds 12 and 13, two windows of the tail), the straight one was called the more natural both times, by a hair, and
+// the sprung one's tail was a hook down at the end in one picture)
 const CROUCH_IN: Timing = { hips: [0, 0.7], back: [0, 0.7], neck: [0.1, 0.6], tail: [0.1, 0.7], hind: [0, 0.7], front: [0.05, 0.7] };
 
 export function crouch(m: Made): ClipSource {
@@ -369,8 +435,10 @@ export function bowSpec(m: Made): Spec {
     neck: [deg(-6), deg(-10), deg(-14), deg(-30)],
     tail: [deg(100), deg(90), deg(82), deg(76)],
     paws: {
-      "front left": { at: [0.52, at("front left")[1], at("front left")[2]] },
-      "front right": { at: [0.52, at("front right")[1], at("front right")[2]] },
+      // (as far ahead as the legs reach with the shoulders where the springs of the clip leave them: a foot told further is pulled back by the leg a few frames into the hold, and the whole body
+      // drops with it, 0.04 of a body length in one frame)
+      "front left": { at: [0.5, at("front left")[1], at("front left")[2]] },
+      "front right": { at: [0.5, at("front right")[1], at("front right")[2]] },
       "hind left": { at: [at("hind left")[0] - 0.02, at("hind left")[1], at("hind left")[2]] },
       "hind right": { at: [at("hind right")[0] - 0.02, at("hind right")[1], at("hind right")[2]] },
     },
@@ -386,7 +454,8 @@ export function stretch(m: Made): ClipSource {
     // the last quarter of it is a body snapping up)
     // (`between` eases each part of the body within its own window, so the way down and the way up are told straight: eased as well they would be an S of an S, and the body drops in a picture)
     const k = clamp01(u / 0.4) * (1 - clamp01((u - 0.5) / 0.5));
-    const out = between(from, to, k, WIN);
+    // (the front paws go a third of a body length ahead: each is lifted clear of the floor and put down, a step, and not slid; the lift is twice a short step's)
+    const out = between(from, to, k, WIN, 0.07);
     // (the hold is not a freeze: the cat pushes on into the stretch, the breath goes through it and the tail answers)
     const hold = over(u, 0.32, 0.08) * (1 - over(u, 0.5, 0.08));
     const push = Math.sin(TAU * 0.7 * t) * hold;
@@ -400,7 +469,7 @@ export function stretch(m: Made): ClipSource {
       neck: shift(out.neck!, (i) => (i === 0 ? 0.05 : 0.025) * push) as unknown as NonNullable<Spec["neck"]>,
       tail: shift(out.tail!, (i) => 0.07 * Math.sin(TAU * 1.1 * t - 0.5 * i) * hold) as unknown as NonNullable<Spec["tail"]>,
     };
-  });
+  }, { follow: true });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -529,17 +598,28 @@ export function climb(m: Made): ClipSource {
   // (the floor is the top of the ledge, from its lip on: below the lip there is a wall, and a leg that hangs there is not through any floor; the arms and the thighs are kept from winding up
   // past a bit over a third of a turn: hanging by the arms and going over a corner wind a limb as far as the skin can go)
   const key = (u: number, spec: Omit<Spec, "tailFloor" | "solid" | "cap" | "paws">): [number, Spec] => [u, { solid: { floor: 0, wall: LIP }, cap: { front: 130, hind: 130 }, ...spec }];
+  // (the pelvis is told as the angle it points at above the way the cat faces: at rest it points a little under it, and `hips.pitch` is the turn from there)
+  const rest0 = m.body.pose();
+  const h0 = m.body.where(rest0, "Hips");
+  const s0 = m.body.where(rest0, "spine1");
+  const PELVIS = Math.atan2(s0[1] - h0[1], s0[0] - h0[0]);
+  const pel = (a: number): number => deg(a) - PELVIS;
+  // (the body of this cat is deep: its belly is a quarter of a body length in front of the line of its spine, so a cat that hangs with its spine a quarter of a length from the wall has its
+  // belly on the wall, and one that is closer is a cat that has its chest in the wall. The probe of the first climb found its whole front 0.2 inside the ledge, and the forelegs buried in it:
+  // "a tube stuck to the corner, no forelegs on the lip". The numbers here keep the belly to the wall as far as the corner, and over the corner the belly on the lip.)
   const keys: Array<[number, Spec]> = [
-    // reaching: stretched up the wall, the paws open over the lip, the hind legs and the tail hanging
-    key(0, { hips: { x: LIP - 0.2, y: -0.72, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(92), deg(84), deg(52)], tail: [deg(250), deg(262), deg(268), deg(272)] }),
-    // the paws take hold of the lip and the weight comes on them
-    key(CLIMB_GRAB, { hips: { x: LIP - 0.22, y: -0.77, pitch: 1.2 }, back: [deg(84), deg(82)], neck: [deg(88), deg(94), deg(86), deg(56)], tail: [deg(252), deg(264), deg(270), deg(274)] }),
-    // hauling: the elbows fold, the chest rises
-    key(0.38, { hips: { x: LIP - 0.2, y: -0.56, pitch: 1.1 }, back: [deg(76), deg(72)], neck: [deg(78), deg(84), deg(76), deg(44)], tail: [deg(246), deg(258), deg(264), deg(268)] }),
-    // the chest is over the lip, the belly is at the corner
-    key(CLIMB_PULL, { hips: { x: LIP - 0.14, y: -0.27, pitch: 0.9 }, back: [deg(52), deg(46)], neck: [deg(50), deg(58), deg(52), deg(22)], tail: [deg(236), deg(248), deg(258), deg(262)] }),
-    // the hind legs come over: the weight goes forward over the paws
-    key(CLIMB_OVER, { hips: { x: LIP + 0.1, y: 0.2, pitch: 0.3 }, back: [deg(14), deg(8)], neck: [deg(40), deg(44), deg(40), deg(-6)], tail: [deg(214), deg(222), deg(232), deg(240)] }),
+    // reaching: the body hangs up the wall, belly to it, the paws reaching over the lip, the head up under the edge, the hind legs and the tail hanging
+    key(0, { hips: { x: LIP - 0.3, y: -0.8, pitch: pel(85) }, back: [deg(88), deg(90)], neck: [deg(76), deg(66), deg(54), deg(26)], tail: [deg(258), deg(264), deg(270), deg(272)] }),
+    // the paws take hold of the lip and the weight comes on them: the body drops a little on its arms
+    key(CLIMB_GRAB, { hips: { x: LIP - 0.32, y: -0.86, pitch: pel(85) }, back: [deg(90), deg(92)], neck: [deg(78), deg(68), deg(56), deg(28)], tail: [deg(260), deg(266), deg(271), deg(274)] }),
+    // hauling: the elbows fold, the shoulders come up to the lip and the head goes over it
+    key(0.4, { hips: { x: LIP - 0.35, y: -0.6, pitch: pel(80) }, back: [deg(84), deg(70)], neck: [deg(56), deg(38), deg(18), deg(-8)], tail: [deg(252), deg(258), deg(264), deg(268)] }),
+    // the chest is over the lip and the belly on the corner: the back bends over it, the hips still hang below
+    key(CLIMB_PULL, { hips: { x: LIP - 0.32, y: -0.17, pitch: pel(70) }, back: [deg(53), deg(19)], neck: [deg(14), deg(6), deg(-4), deg(-24)], tail: [deg(240), deg(250), deg(258), deg(262)] }),
+    // the hips come up the wall and over, the back straightens
+    key(0.74, { hips: { x: LIP - 0.1, y: 0.12, pitch: pel(48) }, back: [deg(28), deg(6)], neck: [deg(26), deg(18), deg(6), deg(-16)], tail: [deg(222), deg(228), deg(236), deg(242)] }),
+    // the hind legs are over: low on the ledge, the paws coming under, the tail lifting off the wall on the way to where it is carried
+    key(CLIMB_OVER, { hips: { x: LIP + 0.08, y: 0.36, pitch: pel(10) }, back: [deg(-4), deg(-9)], neck: [deg(44), deg(44), deg(42), deg(-14)], tail: [deg(198), deg(196), deg(192), deg(190)] }),
     // and the cat stands where it climbed to
     key(1, { hips: stand.hips!, back: stand.back!, neck: stand.neck!, tail: stand.tail! }),
   ];
@@ -547,8 +627,8 @@ export function climb(m: Made): ClipSource {
   const STEP = 0.14;
   /** The lip's side of the forepaws' foothold, (the near paw's, the far one's) and the one ahead of the chest, and when each steps on (the far paw a little after the near). */
   const FORE = {
-    [NEAR.front]: { A: LIP + 0.04, B: LIP + 0.64, on: 0.48, out: 0.8 },
-    "front left": { A: LIP + 0.08, B: LIP + 0.68, on: 0.52, out: 0.84 },
+    [NEAR.front]: { A: LIP + 0.1, B: LIP + 0.56, on: 0.46, out: 0.8 },
+    "front left": { A: LIP + 0.14, B: LIP + 0.6, on: 0.5, out: 0.84 },
   } as const satisfies Partial<Record<PawName, { A: number; B: number; on: number; out: number }>>;
   const fore = (p: PawName, u: number, across: number): NonNullable<Spec["paws"]>[PawName] => {
     const f = FORE[p as keyof typeof FORE];
@@ -560,13 +640,20 @@ export function climb(m: Made): ClipSource {
   /** The hind paws: told against the hips (hanging under them, kicking at the wall in turn while the weight is on the arms), and up over the lip to where the cat stands once the hips are over it. */
   const hind = (p: PawName, u: number, hips: { x: number; y: number }, across: number): NonNullable<Spec["paws"]>[PawName] => {
     const near = p === NEAR.hind;
-    const phase = TAU * (u * (CLIMB_TIME / 0.5)) + (near ? 0 : Math.PI);
-    const work = over(u, 0.1, 0.12) * (1 - over(u, 0.7, 0.15));
-    const x = Math.min(hips.x + 0.07 * work * Math.cos(phase), LIP - 0.04);
-    const y = hips.y - 0.3 + 0.08 * work * Math.sin(phase);
+    // (scrabbling: the foot goes down the wall in contact with it and comes away from it to go up again, the two in turn, about three times a second)
+    const a = TAU * (u * (CLIMB_TIME / 0.36) + (near ? 0 : 0.5));
+    const work = over(u, 0.08, 0.1) * (1 - over(u, 0.62, 0.12));
+    // (the foot is told at a distance from the hip that a leg can bend to: a foot 0.4 below the hip and 0.3 from it across is further than the leg is long, and the leg is a peg held out to it)
+    const wx = LIP - 0.09 - 0.05 * (0.5 - 0.5 * Math.sin(a)) * work - 0.04 * (1 - work);
+    const wy = hips.y - 0.27 + 0.09 * work * Math.cos(a);
+    // (then the foot hooks over the lip, the near one first, and the paws go where they stand)
+    const hook = over(u, near ? 0.62 : 0.7, 0.14);
+    const onX = LIP + (near ? 0.08 : 0.04);
+    const hx = wx + (onX - wx) * hook;
+    const hy = wy + (0.02 - wy) * hook + 0.07 * Math.sin(Math.PI * hook);
     const land = over(u, near ? 0.86 : 0.9, 0.12);
     const to = rest(p);
-    return { at: [x + (to[0] - x) * land, y + (0.02 - y) * land + 0.08 * Math.sin(Math.PI * land), to[2] * across], soft: FREE, hold: 0.02 };
+    return { at: [hx + (to[0] - hx) * land, hy + (0.02 - hy) * land + 0.05 * Math.sin(Math.PI * land), to[2] * across], soft: FREE, hold: 0.02 };
   };
   const spec = (_t: number, u: number): Spec => {
     const key = through(keys, u);
@@ -577,8 +664,8 @@ export function climb(m: Made): ClipSource {
     const hipsKey = key.hips!;
     const body: Spec = {
       ...key,
-      hips: { ...hipsKey, x: (hipsKey.x ?? 0) + 0.014 * swing * hang, y: hipsKey.y + 0.012 * kick * hang * over(u, 0.1, 0.12) },
-      tail: key.tail!.map((a, i) => a + deg(7) * Math.sin(TAU * (2.5 * u - 0.12 * (i + 1))) * hang) as unknown as NonNullable<Spec["tail"]>,
+      hips: { ...hipsKey, x: (hipsKey.x ?? 0) + 0.02 * swing * hang, y: hipsKey.y + 0.02 * kick * hang * over(u, 0.1, 0.12) },
+      tail: key.tail!.map((a, i) => a + deg(9) * Math.sin(TAU * (2.5 * u - 0.12 * (i + 1))) * hang) as unknown as NonNullable<Spec["tail"]>,
     };
     const hips = { x: body.hips!.x ?? 0, y: body.hips!.y };
     const across = 0.8 + 0.2 * over(u, 0.5, 0.4);
@@ -595,8 +682,8 @@ export function climb(m: Made): ClipSource {
 const SCALE_TIME = 1.0;
 /** How far the card goes by in a round (body lengths): what the climb gains in a bound. */
 const SCALE_BOUND = 0.5;
-/** For each pair of paws: where in the round it is lifted and the share of the round that it is off the card (the fore pair is placed at the end of the reach, the hind pair while the fore pair holds and pulls, so that at least two paws hold at every moment). */
-const SCALE_PAIRS = { front: { lift: 0, swing: 0.22 }, hind: { lift: 0.5, swing: 0.25 } } as const;
+/** For each pair of paws: where in the round it is lifted and the share of the round that it is off the card (the fore pair is placed at the end of the reach, the hind pair while the fore pair holds and pulls, so that at least two paws hold at every moment; the fore pair lets go before it has pulled down to the shoulders, where the arm of a rig that has no elbow is a straight bar out at the side, the T that a blind judge saw). */
+const SCALE_PAIRS = { front: { lift: 0, swing: 0.38 }, hind: { lift: 0.5, swing: 0.25 } } as const;
 
 /**
  * Climbing straight up the face of a card (a wall, anything the page has that is higher than a step), seen from behind: the viewer has the cat's back, the tail hanging, the hind legs
@@ -615,7 +702,7 @@ export function scale(m: Made): ClipSource {
   const OUT = 0.09;
   /** The heights (over the hips) at which a stance starts, for the forepaws (high over the head) and the hind (the knee up by the haunch), and how far out across they are. */
   const TOP = { front: 0.88, hind: -0.02 } as const;
-  const ACROSS = { front: 0.31, hind: 0.28 } as const;
+  const ACROSS = { front: 0.26, hind: 0.24 } as const;
   /** How far the paws are tipped (toes up): the soles flat to the card. */
   const TIP = deg(80);
   /**
@@ -629,7 +716,7 @@ export function scale(m: Made): ClipSource {
   const ARCH = deg(4);
   /** How far the shoulders rock from one side to the other in a round, and how far the left paws of a pair are ahead of the right (a bound is not as even as a trot). */
   const SWAY = 1;
-  const AHEAD = 0.04;
+  const AHEAD = 0.08;
   // (a paw's height over the round: it goes down at the card's speed while it holds, and, when it is lifted, it is carried up to where it holds again with the speed it has at both ends,
   // the card's: a cubic, so that the paw does not stop in the air or run on the card)
   const carried = (s: number, slope: number): number => -slope * (2 * s * s * s - 3 * s * s + s) + 3 * s * s - 2 * s * s * s;
@@ -704,6 +791,7 @@ export function sitSpec(m: Made): Spec {
     hips: { x: -0.52, y: 0.3, pitch: SIT_PITCH + deg(12) },
     back: [SIT_PITCH - 0.02, SIT_PITCH - 0.1],
     neck: [stand.neck![0] + 0.5 * SIT_PITCH, stand.neck![1] + 0.3 * SIT_PITCH, stand.neck![2], stand.neck![3]],
+    // (the tail out behind it: dropped from the rump and wrapped round the haunch by a turn to the viewer's side it was a rabbit's stub and a dark lump on the thigh, and 75 % of a blind judge's marks went to this one)
     tail: [deg(190), deg(185), deg(180), deg(180)],
     tailFloor: 0.05,
     settle: 0,
@@ -716,6 +804,9 @@ export function sitSpec(m: Made): Spec {
   const paws: NonNullable<Spec["paws"]> = {};
   for (const p of FRONT) paws[p] = { at: [shoulder[0] + 0.03, at(p)[1], at(p)[2]], tip: 0 };
   for (const p of HIND) paws[p] = { at: [hips[0] + 0.3, at(p)[1], at(p)[2] * 1.15], tip: 0 };
+  // (the viewer's hind leg lies along the floor, the knee behind the foot and the shin flat, and the far one folds under the haunch: told with where the knee is, because a leg is solved from the
+  // way it came, and the springs of the body make the two legs come to the same fold, one over the other, a stub)
+  paws[NEAR.hind] = { ...paws[NEAR.hind]!, elbow: [hips[0] + 0.03, 0.07, at(NEAR.hind)[2] * 1.15] };
   return settled(m, { ...torso, paws });
 }
 
@@ -734,12 +825,20 @@ export function sit(m: Made): ClipSource {
   return once(m, "sit", () => {
     const to = sitSpec(m);
     const from = standing(m);
-    return render(m, "sit", 1.4, false, (t) => between(from, to, t, SIT_DOWN));
+    // (the knee where it stands, so that the knee the sit asks for is blended in and does not appear half way)
+    from.paws = { ...from.paws, [NEAR.hind]: { ...from.paws![NEAR.hind]!, elbow: m.body.where(m.body.pose(), "R_backleg0") } };
+    return render(m, "sit", 1.4, false, (t) => between(from, to, t, SIT_DOWN), { follow: true });
   });
 }
 
+/** Where the groom lays the tail: down from the rump to the floor behind it, as a cat that is washing does, where the sit holds it out level. */
+const GROOM_TAIL: readonly [number, number, number, number] = [deg(150), deg(160), deg(168), deg(176)];
+
 export function groom(m: Made): ClipSource {
   const { base, neck } = sitting(m);
+  const alive = living(m, base);
+  // (the angles come from tan2, which says -170 deg for a tail 10 deg above level behind, and the tail is to go down to 150: the same angle, the turn taken the short way)
+  const tail0 = m.body.anglesOf(base).tail.map((a, i) => a + TAU * Math.round((GROOM_TAIL[i]! - a) / TAU));
   return render(
     m,
     "groom",
@@ -749,17 +848,29 @@ export function groom(m: Made): ClipSource {
       // the paw comes up to the mouth, the head goes down to meet it, a few licks, and the paw goes down again
       const e = bump(t, 0.25, 0.6, 2.3, 0.7);
       const lick = e * Math.sin(TAU * 2.2 * t);
-      const head: Spec = {
-        neck: [neck[0] - 0.2 * e + 0.02 * lick, neck[1] - 0.3 * e + 0.03 * lick, neck[2] - 0.35 * e + 0.05 * lick, neck[3] - 0.15 * e + 0.11 * lick],
-        yaw: { neck2: -0.1 * e, head: -0.14 * e },
-      };
-      const nose = m.body.where(m.body.make(head, undefined, base), "headend");
+      // (the tail goes down to the floor as the cat settles to wash, and flicks its tip while it does: held out level behind it, a cat that washes looks as if it watched something)
+      const low = bump(t, 0.5, 1, 1.7, 0.9);
+      const tail = tail0.map((a, i) => a + low * (GROOM_TAIL[i]! - a) + low * (0.03 + 0.03 * i) * Math.sin(TAU * 2 * (t / 4.2) - 0.7 * i)) as unknown as NonNullable<Spec["tail"]>;
+      const head: Spec = alive(
+        {
+          tail,
+          tailFloor: 0.05,
+          neck: [neck[0] - 0.2 * e + 0.02 * lick, neck[1] - 0.3 * e + 0.03 * lick, neck[2] - 0.35 * e + 0.05 * lick, neck[3] - 0.15 * e + 0.11 * lick],
+          yaw: { neck2: -0.1 * e, head: -0.14 * e },
+        },
+        t,
+        4.2,
+        0.8,
+      );
+      // (where the nose is: the body without its legs, which the nose does not depend on)
+      const { paws: planted, ...bare } = head;
+      const nose = m.body.where(m.body.make(bare, undefined, base), "headend");
       const rest = m.body.padOf(base, NEAR.front);
       const goal: [number, number, number] = [nose[0] - 0.03 + 0.02 * lick, nose[1] - 0.05 + 0.018 * lick, nose[2] + 0.05];
       const shoulder = m.body.where(base, "R_frontleg");
       return {
         ...head,
-        paws: { [NEAR.front]: { at: mixSpec(rest, goal, e), tip: 0.9 * e, elbow: [shoulder[0] - 0.06, shoulder[1] - 0.12, shoulder[2] + 0.07] } },
+        paws: { ...planted, [NEAR.front]: { at: mixSpec(rest, goal, e), tip: 0.9 * e, elbow: [shoulder[0] - 0.06, shoulder[1] - 0.12, shoulder[2] + 0.07] } },
       };
     },
     { base },
@@ -769,6 +880,7 @@ export function groom(m: Made): ClipSource {
 /** A paw held out ahead, to point at something: the arm out, the head up to look along it. Held, with a slight sway, for as long as the clip lasts (six seconds, then it stays). */
 export function point(m: Made): ClipSource {
   const { base, neck } = sitting(m);
+  const alive = living(m, base);
   return render(
     m,
     "point",
@@ -782,19 +894,25 @@ export function point(m: Made): ClipSource {
       const shoulder = m.body.where(base, "R_frontleg");
       const rest = m.body.padOf(base, NEAR.front);
       const goal: [number, number, number] = [shoulder[0] + 0.34 + 0.04 * pulse, shoulder[1] - 0.03 + 0.025 * sway + 0.02 * pulse, shoulder[2] + 0.0];
-      return {
-        neck: [neck[0] + 0.05 * e + 0.015 * pulse, neck[1] + 0.05 * e + 0.02 * pulse, neck[2] + 0.04 * e + 0.03 * sway, neck[3] + 0.06 * e + 0.04 * pulse],
-        yaw: { neck2: 0.05 * sway, head: 0.08 * sway, tailstart: 0.1 * Math.sin(TAU * 0.4 * t) * e, tail1: 0.16 * Math.sin(TAU * 0.4 * t - 0.6) * e, tail2: 0.2 * Math.sin(TAU * 0.4 * t - 1.2) * e },
-        paws: { [NEAR.front]: { at: mixSpec(rest, goal, e), tip: 0.25 * e + 0.2 * pulse, elbow: [shoulder[0] + 0.12, shoulder[1] - 0.13, shoulder[2] + 0.05] } },
-      };
+      return alive(
+        {
+          neck: [neck[0] + 0.05 * e + 0.015 * pulse, neck[1] + 0.05 * e + 0.02 * pulse, neck[2] + 0.04 * e + 0.03 * sway, neck[3] + 0.06 * e + 0.04 * pulse],
+          yaw: { neck2: 0.05 * sway, head: 0.08 * sway, tailstart: 0.1 * Math.sin(TAU * 0.4 * t) * e, tail1: 0.16 * Math.sin(TAU * 0.4 * t - 0.6) * e, tail2: 0.2 * Math.sin(TAU * 0.4 * t - 1.2) * e },
+          paws: { [NEAR.front]: { at: mixSpec(rest, goal, e), tip: 0.25 * e + 0.2 * pulse, elbow: [shoulder[0] + 0.12, shoulder[1] - 0.13, shoulder[2] + 0.05] } },
+        },
+        t,
+        6,
+        over(t, 0.4, 0.8),
+      );
     },
-    { base },
+    { base, follow: true },
   );
 }
 
 /** A paw that taps: out ahead and down, two to the second, the body leaning in a little. */
 export function tap(m: Made): ClipSource {
   const { base, neck } = sitting(m);
+  const alive = living(m, base);
   return render(
     m,
     "tap",
@@ -806,10 +924,15 @@ export function tap(m: Made): ClipSource {
       const shoulder = m.body.where(base, "R_frontleg");
       const floor = m.body.padOf(base, NEAR.front)[1];
       const goal: [number, number, number] = [shoulder[0] + 0.3, floor + 0.01 + 0.14 * lift, shoulder[2] + 0.02];
-      return {
-        neck: [neck[0] - 0.04, neck[1] - 0.05, neck[2] - 0.05, neck[3] - 0.04 + 0.03 * lift],
-        paws: { [NEAR.front]: { at: goal, tip: 0.1 + 0.5 * lift, elbow: [shoulder[0] + 0.1, shoulder[1] - 0.14, shoulder[2] + 0.06] } },
-      };
+      return alive(
+        {
+          neck: [neck[0] - 0.04, neck[1] - 0.05, neck[2] - 0.05, neck[3] - 0.04 + 0.03 * lift],
+          paws: { [NEAR.front]: { at: goal, tip: 0.1 + 0.5 * lift, elbow: [shoulder[0] + 0.1, shoulder[1] - 0.14, shoulder[2] + 0.06] } },
+        },
+        t,
+        2.0,
+        0.5,
+      );
     },
     { base },
   );
@@ -846,6 +969,7 @@ export function scratch(m: Made): ClipSource {
 /** A cat that is being stroked: the head leans up and into the hand, slowly, and eases off. */
 export function pet(m: Made): ClipSource {
   const { base, neck } = sitting(m);
+  const alive = living(m, base);
   return render(
     m,
     "pet",
@@ -853,9 +977,9 @@ export function pet(m: Made): ClipSource {
     true,
     (t) => {
       const push = 0.5 - 0.5 * Math.cos(TAU * t / 2.4);
-      return { neck: [neck[0] + 0.05 * push, neck[1] + 0.08 * push, neck[2] + 0.1 * push, neck[3] + 0.12 * push], roll: { head: 0.1 * push } };
+      return alive({ neck: [neck[0] + 0.05 * push, neck[1] + 0.08 * push, neck[2] + 0.1 * push, neck[3] + 0.12 * push], roll: { head: 0.1 * push } }, t, 2.4, 0.7);
     },
-    { base },
+    { base, follow: true },
   );
 }
 
@@ -867,6 +991,7 @@ export function knead(m: Made): ClipSource {
   const base = loafSpec(m);
   const at = (p: PawName): [number, number, number] => m.body.padAtRest(p).at;
   const P = 2.4;
+  const alive = living(m);
   // (it comes out of the loaf)
   const from = lastOf(m, loaf(m));
   return render(
@@ -880,13 +1005,18 @@ export function knead(m: Made): ClipSource {
         const q = a + phase;
         return { at: [0.3 + 0.05 * Math.cos(q), at(p)[1] + 0.07 * Math.max(0, Math.sin(q)), at(p)[2] * 1.1], tip: 0.3 * Math.max(0, Math.sin(q)) };
       };
-      return {
-        ...base,
-        hips: base.hips!,
-        neck: [deg(30), deg(26), deg(16), deg(-26)],
-        back: [deg(-2) + 0.02 * Math.sin(a), deg(-5) + 0.03 * Math.sin(a)],
-        paws: { ...base.paws, "front left": paw("front left", 0), "front right": paw("front right", Math.PI) },
-      };
+      return alive(
+        {
+          ...base,
+          hips: base.hips!,
+          neck: [deg(30), deg(26), deg(16), deg(-26)],
+          back: [deg(-2) + 0.02 * Math.sin(a), deg(-5) + 0.03 * Math.sin(a)],
+          paws: { ...base.paws, "front left": paw("front left", 0), "front right": paw("front right", Math.PI) },
+        },
+        t,
+        P,
+        0.6,
+      );
     },
     { from },
   );
@@ -934,7 +1064,8 @@ export const ACTS: Readonly<Record<string, (m: Made) => ClipSource>> = { sit, lo
  */
 export function peek(m: Made): ClipSource {
   const low = crouchSpec(m);
-  const P = 1.6;
+  const alive = living(m);
+  const P = 2.4;
   const from = lastOf(m, crouch(m));
   return render(
     m,
@@ -944,12 +1075,17 @@ export function peek(m: Made): ClipSource {
     (t) => {
       const a = (TAU * t) / P;
       const look = Math.sin(a);
-      return {
-        ...low,
-        neck: [deg(16) + 0.03 * look, deg(-2) + 0.05 * Math.sin(a - 0.6), deg(-20) + 0.06 * Math.sin(a - 1.2), deg(-36)],
-        yaw: { neck1: 0.06 * look, neck2: 0.16 * look, head: 0.28 * look, tailstart: 0.12 * Math.sin(a - 0.8), tail1: 0.2 * Math.sin(a - 1.1), tail2: 0.24 * Math.sin(a - 1.4) },
-        roll: { head: 0.08 * look },
-      };
+      return alive(
+        {
+          ...low,
+          neck: [deg(16) + 0.03 * look, deg(-2) + 0.05 * Math.sin(a - 0.6), deg(-20) + 0.06 * Math.sin(a - 1.2), deg(-36)],
+          yaw: { neck1: 0.06 * look, neck2: 0.14 * look, head: 0.2 * look, tailstart: 0.12 * Math.sin(a - 0.8), tail1: 0.2 * Math.sin(a - 1.1), tail2: 0.24 * Math.sin(a - 1.4) },
+          roll: { head: 0.08 * look },
+        },
+        t,
+        P,
+        0.7,
+      );
     },
     { from },
   );

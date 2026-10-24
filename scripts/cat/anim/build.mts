@@ -119,13 +119,15 @@ for (const [name, make] of Object.entries(acts.ACTS)) {
 const smooth = arg("smooth", "3");
 const SUDDEN = ["swat"];
 const smoothMade = smooth === "off" ? made : made.map((s) => (SUDDEN.includes(s.name) ? s : smoothed(s, (j) => LEG.test(skeleton.names[j]!), (Number(smooth) * Math.PI) / 180)));
-// (a clip is kept at fewer frames a second where the player's interpolation gives the same motion: `--thin=off` keeps them all)
+// (a clip is kept at fewer frames a second where the player's interpolation gives the same motion: `--thin=off` keeps them all, `--tol=<degrees>` says how far a bone may be turned from
+// where it was made, which is half a degree if it is not told, and a place may be a thousandth of the body for each half degree)
 const everything = [...out.filter((s) => wanted(s.name)), ...smoothMade];
+const tolerance = { turn: (Number(arg("tol", "0.5")) * Math.PI) / 180, place: Number(arg("tol", "0.5")) * 0.002 };
 const all =
   arg("thin", "on") === "off"
     ? everything
     : everything.map((s) => {
-        const { source, by } = thin(s);
+        const { source, by } = thin(s, tolerance);
         if (by > 1) say(`${s.name}: kept every ${by}th frame (${s.frames} -> ${source.frames} frames, ${s.fps.toFixed(1)} -> ${source.fps.toFixed(1)} a second)`);
         return source;
       });

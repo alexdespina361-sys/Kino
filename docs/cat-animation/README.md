@@ -22,7 +22,7 @@ Then every clip goes through the numbers (`qa.mts`: does the body hold together,
 | floor | `plant.mts`, `ground.mts`, `floor.mts`, `gait.mts`, `flight.mts` | the whole cat is moved so the lowest part of the mesh is at the floor; a gait's stride is measured; a leap's flight is left to the engine |
 | generate | `posegen.mts`, `ik.mts`, `acts.mts` | the clips no donor has (sit, lie, curl, stretch, groom, point, tap, knead, climb, ...), as postures solved for the bones |
 | smooth and thin | `smooth.mts`, `thin.mts` | a bone solved frame by frame is smoothed; frames the player's own interpolation reproduces are dropped |
-| pack | `pack.mts`, `finish.mts`, `src/client/cat/render/gl/clipfile.ts` | one `cat.clips` file, under 256 KiB |
+| pack | `pack.mts`, `finish.mts`, `src/client/cat/render/gl/clipfile.ts` | one `cat.clips` file, about 320 KB (the test allows 340 KiB; a clip that lives in its holds moves 23 to 27 bones every frame and does not thin) |
 | check | `qa.mts`, `integrity.mts`, `behaviour.mts` | the numbers (below), and the clips played in the order the engine plays them |
 
 ## Commands
@@ -33,7 +33,7 @@ Windows, from the repository root; the donors must be in `C:\Users\Me\tools\cat-
 # build every clip into the file the app plays
 node node_modules/tsx/dist/cli.mjs scripts/cat/anim/build.mts --out=src/client/cat/render/gl/cat.clips
 
-# one clip, no thinning, to look at (--thin=off keeps every frame)
+# one clip, no thinning, to look at (--thin=off keeps every frame; --tol=<degrees> is how far thinning may move a bone, 0.5 if not told; --smooth=<degrees> how far a leg may leave the line between its neighbours, 3)
 node node_modules/tsx/dist/cli.mjs scripts/cat/anim/build.mts --out=.kino-cat/x.clips --thin=off --only=groom
 
 # the numbers

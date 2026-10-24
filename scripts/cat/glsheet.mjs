@@ -1,7 +1,7 @@
 // Pictures of the solid cat for looking at it: bundles src/client/cat/lab/gl.ts for the browser, runs it in Chromium (with the software driver, or
 // with the machine's graphics card with --gpu=real) and saves a PNG.
 //
-//   node scripts/cat/glsheet.mjs views|eyes|poses|carried|scenes|swat|faces|faces2|faces3|neck|detail|walk|run <out.png> [--scale=2] [--mesh=src/client/cat/render/gl/cat.mesh] [--clips=src/client/cat/render/gl/cat.clips] [--cols=4] [--pick=0,3] [--gpu=real]
+//   node scripts/cat/glsheet.mjs views|eyes|poses|carried|scenes|swat|faces|faces2|faces3|neck|detail|walk|run|extents <out.png> [--scale=2] [--mesh=src/client/cat/render/gl/cat.mesh] [--clips=src/client/cat/render/gl/cat.clips] [--cols=4] [--pick=0,3] [--gpu=real]
 //   node scripts/cat/glsheet.mjs clip <out.png> --clip=<name of a clip of the file> [--n=8] [--cellw=260 --cellh=220] [--turn= --tilt=] [--blind=1]   (any clip, evenly through it, as the director plays it)
 //   node scripts/cat/glsheet.mjs film <out.png> --session=<recording.json> [--mode=strip|onion] [--from=0] [--to=10] [--every=6] [--cols=4] [--scale=1]
 //
@@ -27,6 +27,8 @@ const film = session ? JSON.parse(readFileSync(resolve(root, session), "utf8")) 
 const filmOptions = { mode: flag("mode", "strip"), cols, scale, from: Number(flag("from", 0)), to: Number(flag("to", 10)), every: Number(flag("every", 6)), cellW: Number(flag("cellw", 260)), cellH: Number(flag("cellh", 220)), coat: flag("coat", "ragdoll") };
 // (one clip of the file, evenly through it: `clip <out.png> --clip=sit --n=8`; --turn and --tilt turn the camera as for a film)
 filmOptions.clip = flag("clip", "walk");
+// (the pictures the table of the cat's reach is made from, as `extents <out.png> --label=sit` draws those whose label starts with that)
+filmOptions.label = flag("label", "");
 filmOptions.n = Number(flag("n", 8));
 // (--blind=1: the pictures are numbered, not named, for a reviewer who is not to be told what the clip is)
 filmOptions.blind = flag("blind", "") !== "";
@@ -82,6 +84,7 @@ await page.evaluate(
     else if (which === "detail") lab.glSheet(canvas, data, clipData, sel(lab.DETAIL), c, s, 7, 400, 340, options.coat, options.over);
     else if (which === "scenes") lab.glSheet(canvas, data, clipData, sel(lab.SCENES), c, s, 7, options.cellW, options.cellH, options.coat, options.over);
     else if (which === "swat") lab.glSheet(canvas, data, clipData, sel(lab.SWAT), c, s, 7, options.cellW, options.cellH, options.coat, options.over);
+    else if (which === "extents") lab.glSheet(canvas, data, clipData, sel(lab.EXTENT_CELLS.filter((cell) => cell.label.startsWith(options.label))), c, s, 7, options.cellW, options.cellH, options.coat, options.over);
     else if (which === "walk") lab.glSheet(canvas, data, clipData, sel(lab.WALK), c, s, 7, 300, 230, options.coat, options.over);
     else if (which === "run") lab.glSheet(canvas, data, clipData, sel(lab.RUN), c, s, 7, 300, 230, options.coat, options.over);
     else if (which === "clip") lab.glSheet(canvas, data, clipData, sel(lab.clipCells(data, clipData, options.clip, options.n, options.view, options.blind, options.raise)).map((cell) => (options.headZoom ? { ...cell, zoom: { head: options.headAt, by: options.headZoom } } : cell)), c, s, 7, options.cellW, options.cellH, options.coat, options.over);

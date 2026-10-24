@@ -55,11 +55,13 @@ const FRONT: Omit<Spec, "names" | "phase"> = { hang: [0.28, 0.05, 0.1], fall: [1
 const HIND: Omit<Spec, "names" | "phase"> = { hang: [0.4, -0.06, 0.06], fall: [-0.8, -0.4, 0.1], hz: [1.3, 1.7, 2.2], zeta: 0.4, follow: 0.6, push: 1.5, swing: [0.8, 0.8, 0.5], lag: 0.8, rear: true };
 const TAIL: Omit<Spec, "names" | "phase"> = { hang: [0.02, 0, -0.03, 0.04], fall: [2.9, 3.0, 3.1, 3.2], hz: [1.1, 1.3, 1.6, 1.9], zeta: 0.3, follow: 0.7, push: 2.2, swing: [0.35, 0.5, 0.65, 0.8], lag: 0.7, rear: true };
 
+// (a cat that hangs limp is not the same on both sides: a leg a little further forward than the other, and the hind legs bent at the knee and the hock, the thigh forward and the shin back,
+// where a leg that hangs straight from the hip is a pole)
 const SPECS: readonly Spec[] = [
-  { ...FRONT, names: ["frontleg", "frontleg0", "frontleg1", "frontleg2"], phase: 0 },
-  { ...FRONT, names: ["R_frontleg", "R_frontleg0", "R_frontleg1", "R_frontleg2"], phase: Math.PI * 0.8 },
-  { ...HIND, names: ["backleg", "backleg0", "backleg1", "backleg2"], phase: Math.PI },
-  { ...HIND, names: ["R_backleg", "R_backleg0", "R_backleg1", "R_backleg2"], phase: Math.PI * 1.8 },
+  { ...FRONT, hang: [0.08, 0.02, 0.1], names: ["frontleg", "frontleg0", "frontleg1", "frontleg2"], phase: 0 },
+  { ...FRONT, hang: [0.3, 0.18, 0.12], names: ["R_frontleg", "R_frontleg0", "R_frontleg1", "R_frontleg2"], phase: Math.PI * 0.8 },
+  { ...HIND, hang: [0.3, -0.25, 0.05], names: ["backleg", "backleg0", "backleg1", "backleg2"], phase: Math.PI },
+  { ...HIND, hang: [0.55, -0.4, 0.0], names: ["R_backleg", "R_backleg0", "R_backleg1", "R_backleg2"], phase: Math.PI * 1.8 },
   { ...TAIL, names: ["tail", "tailstart", "tail1", "tail2", "tail3"], phase: Math.PI * 0.4 },
 ];
 

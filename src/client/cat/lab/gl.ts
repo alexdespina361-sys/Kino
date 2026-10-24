@@ -232,15 +232,17 @@ export const EXTENT_CELLS: GlCell[] = (() => {
   const cells: GlCell[] = [];
   const at = (label: string, frame: Partial<CatFrame>, settle = 1.2): void => void cells.push({ label, frame, settle });
   const base = (clip: string): Partial<CatFrame> => (clip === "curl" ? { clip: "curl", drowsy: 1 } : clip === "pet" ? { clip: "sit", petted: true } : clip === "yawn" ? { clip: "yawn", progress: 0.5 } : { clip: clip as CatFrame["clip"] });
-  for (const clip of ["stand", "sit", "loaf", "curl", "crouch", "yawn", "point", "pet"] as const) at(clip, base(clip));
+  // (a cat that sits, lies down or curls up gets there over a second or more: the pictures of the posture are of the cat settled in it, not of the moment it is still standing up with its tail raised)
+  const SETTLED = 2.2;
+  for (const clip of ["stand", "sit", "loaf", "curl", "crouch", "yawn", "point", "pet"] as const) at(clip, base(clip), ["sit", "loaf", "curl", "point", "pet"].includes(clip) ? SETTLED : 1.2);
   // (a cat at rest for a while: the tail at other moments of its swish, a livelier tail, and the head turned up, down, forward and back)
   for (const clip of ["stand", "sit", "loaf", "curl"] as const) {
-    for (const s of [0.6, 1.9, 2.6, 3.4]) at(`${clip}@t${s}`, base(clip), s);
+    for (const s of clip === "stand" ? [0.6, 1.9, 2.6, 3.4] : [SETTLED, 2.6, 3.0, 3.4]) at(`${clip}@t${s}`, base(clip), s);
     for (const s of [1.2, 2.2]) at(`${clip}@lively${s}`, { ...base(clip), energy: 1 }, s);
     if (clip === "curl") continue;
     for (const [name, look] of [["upfront", { x: 300, y: -200 }], ["upback", { x: -300, y: -200 }], ["downfront", { x: 300, y: 200 }], ["downback", { x: -300, y: 160 }]] as const) at(`${clip}@look-${name}`, { ...base(clip), look: { x: look.x, y: look.y } }, 1.6);
   }
-  at("sit,viewer", { clip: "sit", viewer: true });
+  at("sit,viewer", { clip: "sit", viewer: true }, SETTLED);
   for (const p of [0.25, 0.5, 0.75]) at(`stretch@${p}`, { clip: "stretch", progress: p });
   for (const p of [0.2, 0.5, 0.8]) at(`jump@${p}`, { clip: "jump", progress: p, grounded: false, vy: -300, vx: 300 }, 0.6);
   at("jump@down", { clip: "jump", progress: 0.7, grounded: false, vy: 600, vx: 300 }, 0.6);
@@ -267,9 +269,11 @@ export const EXTENT_CELLS: GlCell[] = (() => {
   for (const t of [0.9, 1.8, 2.7, 3.3]) at(`doze@${t}`, { clip: "doze", drowsy: 0.62 }, t);
   for (const p of [0.15, 0.35, 0.6, 0.85]) at(`shift@${p}`, { clip: "shift", progress: p, drowsy: 1 });
   // (and the feelings that last: the head cocked, and the look away and up; the flinch, the lift and the letdown are over in a moment and are not measured)
-  for (const clip of ["sit", "stand"] as const) for (const emote of ["tilt", "think"] as const) at(`${clip}@${emote}`, { clip, emote }, 1.0);
+  for (const clip of ["sit", "stand"] as const) for (const emote of ["tilt", "think"] as const) at(`${clip}@${emote}`, { clip, emote }, clip === "sit" ? SETTLED : 1.0);
   for (let i = 0; i < 8; i++) cells.push({ label: `walk@${i}`, frame: { clip: "walk", vx: 150 }, cycle: i / 8, settle: 1 });
   for (let i = 0; i < 12; i++) cells.push({ label: `run@${i}`, frame: { clip: "run", vx: 380 }, cycle: i / 12, settle: 1 });
+  // (up the face of a card, seen from behind: the paws of a round of the climb, the head where the clip has it)
+  for (let i = 0; i < 8; i++) cells.push({ label: `scale@${i}`, frame: { clip: "scale", vx: 150, grounded: false }, cycle: i / 8, settle: 1, headYaw: 0 });
   return cells;
 })();
 
