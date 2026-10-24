@@ -20,7 +20,7 @@ import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { useHandHeldBack } from "../shared/backButton";
 import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
-import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, pageRows, ROW_CAP, useFeed } from "../shared/feed";
+import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, nearBottom, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
@@ -29,6 +29,7 @@ import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
+import { isCompact, useCompact } from "./compact";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
@@ -101,22 +102,25 @@ const BANNER_DELAY_MS = 200;
 const SEARCH_DELAY_MS = 350;
 /** A search the server did not answer is asked again after this long. */
 const SEARCH_RETRY_MS = 5000;
-/** A page of rows, or a grid, asks the library for what comes next when it is scrolled to within this many of its own heights of its end... */
-const NEAR_BOTTOM = 1.5;
-/** ...and the remote, which moves a title at a time, when it is this many rows (or, along a row, this many titles) from the end. */
+/** The remote, which moves a title at a time, asks the library for what comes next when it is this many rows (or, along a row, this many titles) from the end. (A page that is scrolled asks by `nearBottom`.) */
 const ROWS_AHEAD = 3;
 const TITLES_AHEAD = 6;
-const nearBottom = (box: HTMLElement | null): boolean => box !== null && box.clientHeight > 0 && box.scrollHeight - box.clientHeight - box.scrollTop <= box.clientHeight * NEAR_BOTTOM;
 const GRID_COLUMNS = 5;
 const RESULT_COLUMNS = 3;
 /** A phone, a tablet or a narrow window (the same width tv.css lays out for a hand-held screen): grids are as many titles wide as fit, and search is typed on the device's own keyboard. */
 const NARROW = "(max-width: 899px)";
 /** About how wide a title is on a hand-held screen, with the room around it. */
 const NARROW_TILE_PX = 190;
+/** A phone held upright shows posters (compact.ts): three across, and two on the narrowest screens, where three would be thumbnails. */
+const POSTERS_THREE_FROM_PX = 360;
 
 /** How many titles wide a grid is on a hand-held screen, or 0 when the screen is wide enough for the TV's own layout. */
 function useNarrowColumns(): number {
-  const read = () => (matchMedia(NARROW).matches ? Math.max(2, Math.floor(innerWidth / NARROW_TILE_PX)) : 0);
+  const read = () => {
+    if (!matchMedia(NARROW).matches) return 0;
+    if (isCompact()) return innerWidth >= POSTERS_THREE_FROM_PX ? 3 : 2;
+    return Math.max(2, Math.floor(innerWidth / NARROW_TILE_PX));
+  };
   const [columns, setColumns] = useState(read);
   useEffect(() => {
     const update = () => setColumns(read());
@@ -174,6 +178,17 @@ function posOf(element: Element | null): Pos | null {
 /** The buttons over a friend's titles: the way back, then the two halves of the page (the button of the one that is shown is where the remote stands). */
 const FRIEND_TABS = ["lists", "ratings"] as const;
 const friendChip = (tab: FriendTab | undefined): number => 1 + Math.max(0, FRIEND_TABS.indexOf(tab ?? "lists"));
+
+/** A phone held upright has no menu line for each section (compact.ts): they are a row of buttons over the titles, the first for the whole library. */
+const SECTION_CHIPS = [
+  { kind: "home", label: "tv.filterAll" },
+  { kind: "movies", label: "tv.filterMovies" },
+  { kind: "series", label: "tv.filterSeries" },
+  { kind: "cartoons", label: "tv.filterCartoons" },
+  { kind: "anime", label: "tv.filterAnime" },
+] as const;
+/** The button of the section a page is for, or -1 for a page that is none of them. */
+const sectionChip = (view: View): number => SECTION_CHIPS.findIndex((chip) => chip.kind === view.kind);
 
 /** Where the remote was on this page, with the row of a page of rows found again by name. */
 function savedPos(view: View, rows: readonly HomeRow[]): Pos | undefined {
@@ -246,9 +261,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const ratingsOn = settings.ratings ?? true;
   /** Whether this profile is told what friends watch (off until it is turned on: the friends' pages say so while it is). */
   const iGet = friendChoices(settings).friendsGet;
+  /** A phone held upright (compact.ts): a bar of four places at the bottom, the sections as buttons over the titles, posters, and no banner. */
+  const compact = useCompact();
   const narrowColumns = useNarrowColumns();
   const narrow = narrowColumns > 0;
-  const gridColumns = narrowColumns || GRID_COLUMNS;
   const resultColumns = narrowColumns || RESULT_COLUMNS;
   const [library, setLibrary] = useState<Library | null>(remembered.library);
   const [status, setStatus] = useState<"loading" | "ready" | "failed">(remembered.library ? "ready" : "loading");
@@ -345,6 +361,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   }, [view, data, language, friends.state, friends.on, friends.attention, me, profile, ratingsOn, ratings, progress.length, iGet]);
   const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet), [view, data, language, friends.state, sharedLists, sharedRatings, iGet]);
   /* eslint-enable react-hooks/exhaustive-deps */
+  // (A phone's categories are tiles of words, not pictures: two across, where the posters of the other pages are three.)
+  const gridColumns = compact && grid?.layout === "categories" ? 2 : narrowColumns || GRID_COLUMNS;
   // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.
   const shownAnswers = useMemo(() => onlySection(results, filter), [results, filter]);
   const shownResults = shownAnswers.items;
@@ -404,6 +422,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     remembered.view = next;
     setViewState(next);
   };
+  /** Another section on a phone's page of rows: the same way again (the buttons keep the remote), and the titles under them start from their top. */
+  const selectSection = (next: View) => {
+    remembered.view = next;
+    remembered.detail = null;
+    setViewState(next);
+    setFocused(null);
+    setDeep(false);
+    rowsRef.current?.scrollTo({ top: 0 });
+  };
   /** Closing a page over the library puts the remote back where it was asked from. */
   const closeOverlay = () => {
     setPending(overlay?.back ?? CONTENT);
@@ -429,22 +456,33 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // The menu: the places (search, home, films, shows, the categories, the lists), then what is done from here (the party, a phone). A few lines, so that
   // none has to be scrolled to. Who is watching is not in it: the button in the corner is, and opens the profile, which holds what the profile rated,
   // its friends and History, with the settings in its own corner.
-  const entries: RailEntry[] = [
-    { id: "search", label: t("tv.search"), icon: <SearchIcon />, current: view.kind === "search", testId: "rail-search", onPress: () => choose({ kind: "search" }) },
-    { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) },
-    { id: "movies", label: t("tv.movies"), icon: <FilmIcon />, current: view.kind === "movies", testId: "rail-movies", onPress: () => choose({ kind: "movies" }) },
-    { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
-    { id: "cartoons", label: t("tv.cartoons"), icon: <CartoonIcon />, current: view.kind === "cartoons", testId: "rail-cartoons", onPress: () => choose({ kind: "cartoons" }) },
-    { id: "anime", label: t("tv.anime"), icon: <AnimeIcon />, current: view.kind === "anime", testId: "rail-anime", onPress: () => choose({ kind: "anime" }) },
-    { id: "categories", label: t("tv.categories"), icon: <GridIcon />, current: view.kind === "categories" || view.kind === "category", testId: "rail-categories", onPress: () => choose({ kind: "categories" }) },
-    { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) },
-    { id: "party", label: t("party.rail"), icon: <UsersIcon />, apart: true, ...(partySize > 1 ? { badge: String(partySize) } : {}), testId: "rail-party", onPress: onParty },
-    phone
-      ? { id: "connect", label: t("tv.useRemote"), icon: <PhoneIcon />, testId: "rail-connect", onPress: () => switchRole("remote") }
-      : { id: "connect", label: t(connected ? "tv.phoneConnected" : "tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { lit: true } : {}), testId: "rail-connect", onPress: onConnect },
-  ];
+  // A phone held upright (compact.ts) has a bar of four places along the bottom: Home (with its sections as buttons over the titles), Search, the categories and the lists.
+  // The party and the phone are not places but things to do, and have a button each on the profile's page, where Settings is.
+  const partyPlace: RailEntry = { id: "party", label: t("party.rail"), icon: <UsersIcon />, ...(partySize > 1 ? { badge: String(partySize) } : {}), testId: "rail-party", onPress: onParty };
+  const phonePlace: RailEntry = phone
+    ? { id: "connect", label: t("tv.useRemote"), icon: <PhoneIcon />, testId: "rail-connect", onPress: () => switchRole("remote") }
+    : { id: "connect", label: t(connected ? "tv.phoneConnected" : "tv.connectPhone"), icon: <PhoneIcon />, ...(connected ? { lit: true } : {}), testId: "rail-connect", onPress: onConnect };
+  // (On a phone's bar the sections are not lines of the menu but buttons over the titles: Home is lit for any page of rows.)
+  const homeLine: RailEntry = { id: "home", label: t("tv.home"), icon: <HomeIcon />, current: compact ? isRowsPage(view) : view.kind === "home", testId: "rail-home", onPress: () => choose({ kind: "home" }) };
+  const searchLine: RailEntry = { id: "search", label: t("tv.search"), icon: <SearchIcon />, current: view.kind === "search", testId: "rail-search", onPress: () => choose({ kind: "search" }) };
+  const categoriesLine: RailEntry = { id: "categories", label: t("tv.categories"), icon: <GridIcon />, current: view.kind === "categories" || view.kind === "category", testId: "rail-categories", onPress: () => choose({ kind: "categories" }) };
+  const listLine: RailEntry = { id: "list", label: t("rows.myList"), icon: <ListIcon />, current: view.kind === "list", testId: "rail-list", onPress: () => choose({ kind: "list", list: remembered.list }) };
+  const entries: RailEntry[] = compact
+    ? [homeLine, searchLine, categoriesLine, listLine]
+    : [
+        searchLine,
+        homeLine,
+        { id: "movies", label: t("tv.movies"), icon: <FilmIcon />, current: view.kind === "movies", testId: "rail-movies", onPress: () => choose({ kind: "movies" }) },
+        { id: "series", label: t("tv.series"), icon: <TvIcon />, current: view.kind === "series", testId: "rail-series", onPress: () => choose({ kind: "series" }) },
+        { id: "cartoons", label: t("tv.cartoons"), icon: <CartoonIcon />, current: view.kind === "cartoons", testId: "rail-cartoons", onPress: () => choose({ kind: "cartoons" }) },
+        { id: "anime", label: t("tv.anime"), icon: <AnimeIcon />, current: view.kind === "anime", testId: "rail-anime", onPress: () => choose({ kind: "anime" }) },
+        categoriesLine,
+        listLine,
+        { ...partyPlace, apart: true },
+        phonePlace,
+      ];
   const openEntry = entries.findIndex((entry) => entry.current);
-  const railIndex = openEntry === -1 ? 1 : openEntry; // a page the menu has no line for belongs to Home
+  const railIndex = openEntry === -1 ? entries.indexOf(homeLine) : openEntry; // a page the menu has no line for belongs to Home
 
   // What the arrow keys can reach, row by row: the key handler below reads it through a ref.
   const canSignIn = accountStatus === "ready"; // (a server without accounts has nobody to sign in, but its TV has Settings, which the corner button leads to)
@@ -456,8 +494,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const lead = wayBack ? 1 : 0;
   const topButtons = lead + (showBell ? 1 : 0) + (showAccount ? 1 : 0) + (showCat ? 1 : 0) + (canFullscreen() ? 1 : 0); // the way back, the bell, the account button, the cat's, then the full screen one
   const signedIn = Boolean(me && profile);
+  /** What a phone's bar has no room for, as buttons after Feedback (none on a screen whose menu has a line for each). */
+  const places = compact ? [partyPlace, phonePlace] : [];
   /** The profile's page has buttons where the other pages have a banner: Settings and Feedback, and for a guest the way to sign in before them. */
-  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) : 0;
+  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) + places.length : 0;
+  /** A phone's pages of rows have their sections as a row of buttons where the others have a banner. */
+  const sectionButtons = compact && isRowsPage(view);
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
   // The page of a section (Movies, Series, Cartoons or Anime) of a library that has titles, none of them of that section: not "nothing yet", which Retry could not
   // mend. (While the rows that come after the first ones may still bring some, it is waiting for them; the library says there are none when it has no more to bring.)
@@ -465,9 +507,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const sectionWaiting = showRetry && hasTiles && sectionPage && hasMoreShelves(feeding, pageSection);
   const kindEmpty = showRetry && hasTiles && sectionPage && !sectionWaiting;
   const shape: Shape = {
-    rail: entries.map(() => 1),
+    rail: compact ? [entries.length] : entries.map(() => 1), // (a column of lines, or one row of places: browseNav.ts tells them apart)
     top: topButtons > 0 ? [topButtons] : [],
-    ...(rowsPage ? { hero: profileButtons > 0 ? [profileButtons] : !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
+    ...(rowsPage ? { hero: profileButtons > 0 ? [profileButtons] : !compact && !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
+    ...(sectionButtons ? { chips: [SECTION_CHIPS.length] } : {}),
     ...(grid ? { grid: gridRows(grid.entries.length, gridColumns) } : {}),
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [SECTION_FILTERS.length], results: resultRowsOf(resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
@@ -483,8 +526,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         }
       : {}),
   };
-  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing });
-  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing };
+  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact });
+  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact };
 
   /**
    * Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. `leaving` is the block of buttons
@@ -494,14 +537,21 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     const root = rootRef.current;
     if (!target || !root) return null;
     if (target.row !== -1) return target as Pos;
-    if (target.zone === "rail") return { zone: "rail", row: latest.current.railIndex, col: 0 };
+    // (A phone's menu is one row of places along the bottom, a TV's a column of lines down the left.)
+    if (target.zone === "rail") return latest.current.compact ? { zone: "rail", row: 0, col: latest.current.railIndex } : { zone: "rail", row: latest.current.railIndex, col: 0 };
     const at = savedPos(latest.current.view, latest.current.homeRows);
     if (at && at.zone !== leaving && RESTORABLE.includes(at.zone) && find(root, at)) return at;
-    // (On the lists page the buttons over the titles are somewhere to stand when the list has none; on a friend's page, the button of the half that is shown, not the way back.)
+    // (On the lists page the buttons over the titles are somewhere to stand when the list has none; on a friend's page, the button of the half that is shown, not the way back.
+    // The same on a phone's page of rows, where the buttons are the sections: the one that is shown.)
     const page = latest.current.view;
     // (A guest came to the profile's page for one thing: the way to sign in is where the remote starts.)
-    const zones: Zone[] = page.kind === "list" || page.kind === "friend" ? [...CONTENT_ZONES, "chips"] : page.kind === "profile" && !latest.current.signedIn ? ["hero", ...CONTENT_ZONES] : CONTENT_ZONES;
-    const start = (zone: Zone): Pos => ({ zone, row: 0, col: zone === "chips" && page.kind === "friend" ? friendChip(page.tab) : 0 });
+    const zones: Zone[] =
+      page.kind === "list" || page.kind === "friend" || (latest.current.compact && isRowsPage(page))
+        ? [...CONTENT_ZONES, "chips"]
+        : page.kind === "profile" && !latest.current.signedIn
+          ? ["hero", ...CONTENT_ZONES]
+          : CONTENT_ZONES;
+    const start = (zone: Zone): Pos => ({ zone, row: 0, col: zone === "chips" ? (page.kind === "friend" ? friendChip(page.tab) : Math.max(0, sectionChip(page))) : 0 });
     return zones.filter((zone) => zone !== leaving).map(start).find((pos) => find(root, pos)) ?? null;
   };
   const focusAt = (target: Target, leaving?: Zone) => {
@@ -510,10 +560,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   };
   /** Move the focus; the menu is only on screen while it has the focus, so it is opened first and reached after the render. */
   const go = (target: Target, leaving?: Zone) => {
-    if (target && target.zone === "rail") {
+    if (target && target.zone === "rail" && !latest.current.compact) {
       setRailOpen(true);
       setPending(target);
-    } else focusAt(target, leaving);
+    } else focusAt(target, leaving); // (a phone's bar is always on screen: nothing to open first)
   };
 
   useEffect(() => {
@@ -534,11 +584,17 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
   // Keys pressed while it loaded may have landed on the account button, or nowhere; once there is something to see, the remote goes to it.
   // (Also when the list changed under the remote: a title the server stopped offering takes its button with it.)
+  // (A phone's page of rows has the buttons of its sections to stand on while the titles are on their way: when they come, the remote goes to the first of them.)
+  const hadTiles = useRef(hasTiles);
   useEffect(() => {
     const at = posOf(document.activeElement);
+    const came = hasTiles && !hadTiles.current;
+    hadTiles.current = hasTiles;
+    const waited = came && at?.zone === "chips" && latest.current.compact && isRowsPage(latest.current.view);
+    if (waited) delete remembered.focus[viewKey(latest.current.view)]; // (that button was only where the remote waited: it is not where it was left)
     // (A new object each time: on a page with nothing to stand on the target is never taken, and the same one set again would change nothing, so the
     // next page chosen would not move the remote either.)
-    if (!at || at.zone === "top") setPending(fresh(latest.current.detail ? DETAIL : CONTENT));
+    if (!at || at.zone === "top" || waited) setPending(fresh(latest.current.detail ? DETAIL : CONTENT));
   }, [hasTiles, status, view.kind, library]);
 
   // The library is asked for more when a page is scrolled near its end, whatever scrolled it (see the handlers on the rows and the grid), and when the page does not
@@ -698,7 +754,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       const next = stepFrom(now, at, action);
       // Up from the titles lands on the button of the list (or the half of a friend's page) that is shown, not on the one above whichever title the remote was on.
       const shownChip = page.kind === "friend" ? friendChip(page.tab) : Math.max(0, all.findIndex((info) => info.id === shownList(page, all).id));
-      go(at.zone === "grid" && next?.zone === "chips" ? { ...next, col: shownChip } : next, at.zone);
+      // (Likewise on a phone's page of rows, where the buttons over the titles are the sections: from the titles, and from the account button over them, the one that is shown.)
+      const section = sectionChip(page);
+      const chip = at.zone === "grid" ? shownChip : section !== -1 && (at.zone === "rows" || at.zone === "top") ? section : null;
+      go(next?.zone === "chips" && chip !== null ? { ...next, col: chip } : next, at.zone);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -823,7 +882,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     // The score this profile gave the title shows on its picture wherever the title is in the library. (Not on a friend's page, where a
     // title's own line already says what that friend gave it, and not on the list of ratings, which is all of them.)
     const score = view.kind !== "ratings" && view.kind !== "friend" ? scoreOf(scores, entry.url) : undefined;
-    return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} rank={pos.col + 1} pos={pos} corner={cornerOf(entry, listId)} score={score} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title, pos)} />;
+    return <Tile key={`${pos.zone}-${entry.id}`} entry={entry} layout={layout} compact={compact} rank={pos.col + 1} pos={pos} corner={cornerOf(entry, listId)} score={score} onArrive={(element) => arrived(element, pos, title)} onPress={() => press(title, pos)} />;
   };
 
   /** An episode of the show whose page is open. */
@@ -934,12 +993,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     );
   };
 
+  const detailArt = detail ? (detail.entry.backdrop ?? detail.entry.image) : undefined;
+
   return (
     <section className="tv-browse" ref={rootRef} data-testid="tv-browse" data-view={viewKey(view)} data-deep={deep} aria-label={t("tv.library")}>
-      <Backdrop image={shown?.entry.backdrop ?? shown?.entry.image} />
+      {/* (A phone has no banner for a picture to be behind: it does not ask for the big one.) */}
+      <Backdrop image={compact ? undefined : (shown?.entry.backdrop ?? shown?.entry.image)} />
       <div className="tv-browse-shade" />
 
-      <Rail open={railOpen} onOpen={setRailOpen} entries={entries} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
+      <Rail open={railOpen} onOpen={setRailOpen} entries={entries} bar={compact} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
 
       <header className="tv-browse-top">
         <span className="tv-browse-logo">
@@ -961,6 +1023,27 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
       {rowsPage && (
         <>
+          {sectionButtons && (
+            // (Where the menu of a TV has a line for each section: a row of buttons, the one for the page that is shown lit. Choosing one is like choosing a list: the remote stays on the buttons.)
+            <div className="tv-filters tv-sections" role="radiogroup" aria-label={t("tv.sections")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+              {SECTION_CHIPS.map((chip, col) => (
+                <button
+                  key={chip.kind}
+                  className="tv-choice"
+                  role="radio"
+                  aria-checked={view.kind === chip.kind}
+                  data-testid={`section-${chip.kind}`}
+                  data-zone="chips"
+                  data-row={0}
+                  data-col={col}
+                  onClick={() => selectSection({ kind: chip.kind })}
+                  onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col })}
+                >
+                  {t(chip.label)}
+                </button>
+              ))}
+            </div>
+          )}
           <div className={`tv-hero${view.kind === "profile" ? " tv-hero-profile" : ""}`} data-testid="tv-hero">
             {view.kind === "profile" ? (
               <ProfileHead
@@ -972,8 +1055,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 onSignIn={onSignIn}
                 onSettings={onSettings}
                 onArrive={(col) => (remembered.focus[viewKey(view)] = { zone: "hero", row: 0, col })}
+                places={places}
               />
-            ) : shown ? (
+            ) : shown && !compact ? (
               <div className="tv-hero-text" key={shown.entry.id}>
                 <p className="tv-hero-eyebrow" data-testid="tv-hero-eyebrow">{shown.entry.opens?.kind === "category" || shown.entry.opens?.kind === "categories" ? t("tv.byCategory") : shown.label}</p>
                 <h1 className="tv-hero-title" data-testid="tv-hero-title">
@@ -998,7 +1082,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   ))}
                 </div>
               </div>
-            ) : status === "loading" ? (
+            ) : shown ? null /* (a phone has no room for the banner's words: a title is read on its own page, which a tap opens) */ : status === "loading" ? (
               <p className="tv-hero-eyebrow">{t("tv.loadingLibrary")}</p>
             ) : sectionWaiting ? (
               <p className="tv-hero-eyebrow">{t("tv.loadingLibrary")}</p>
@@ -1332,11 +1416,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
       {detail && (
         // A tap on the empty part of the page closes it, as Back does.
-        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" data-show={series.isShow} onClick={(event) => event.target === event.currentTarget && closeDetail()}>
-          <Backdrop image={detail.entry.backdrop ?? detail.entry.image} />
-          <div className="tv-browse-shade" />
-          {/* The page scrolls (a show's episodes lie under what a film's page is all of); the picture and the Close button stay. */}
+        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" data-show={series.isShow} data-art={Boolean(detailArt)} onClick={(event) => event.target === event.currentTarget && closeDetail()}>
+          {!compact && <DetailArt image={detailArt} />}
+          {/* The page scrolls (a show's episodes lie under what a film's page is all of); the picture and the Close button stay. (On a phone held upright the picture is the page's own, at its top, and goes up with it.) */}
           <div className="tv-detail-scroll" onClick={(event) => event.target === event.currentTarget && closeDetail()} onFocus={scrollPage}>
+            {compact && <DetailArt image={detailArt} />}
             <div className="tv-detail-hero" onClick={(event) => event.target === event.currentTarget && closeDetail()}>
               <div className="tv-detail-text">
                 <p className="tv-hero-eyebrow">{detail.label}</p>
@@ -1540,6 +1624,16 @@ function Backdrop({ image }: { image: string | undefined }) {
   );
 }
 
+/** The picture of a title's page, and the shade that lets what is written over it be read. */
+function DetailArt({ image }: { image: string | undefined }) {
+  return (
+    <>
+      <Backdrop image={image} />
+      <div className="tv-browse-shade" />
+    </>
+  );
+}
+
 function Key({ children, pos, wide, label, testId, onPress }: { children: ReactNode; pos: Pos; wide?: boolean; /** What a key that is only a picture does: its name for a screen reader, and for a pointer resting on it. */ label?: string; testId: string; onPress: () => void }) {
   return (
     <button
@@ -1572,12 +1666,16 @@ interface Corner {
   run: () => void;
 }
 
-/** One title (or category) of a row, in the shape its row asks for. */
-function Tile({ entry, layout, rank, pos, corner, score, onArrive, onPress }: { entry: Entry; layout: Layout; rank: number; pos: Pos; corner: Corner | undefined; score: number | undefined; onArrive: (element: HTMLElement) => void; onPress: () => void }) {
+/**
+ * One title (or category) of a row, in the shape its row asks for. A phone held upright (`compact`) shows an upright poster for every title but the cards of
+ * what is part way through, and has no room for the numbers of a ranking behind them: its titles are named like the others.
+ */
+function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArrive, onPress }: { entry: Entry; layout: Layout; compact: boolean; rank: number; pos: Pos; corner: Corner | undefined; score: number | undefined; onArrive: (element: HTMLElement) => void; onPress: () => void }) {
   const [broken, setBroken] = useState(false);
   const hue = hueOf(entry.id);
+  const layout: Layout = compact && asked === "ranked" ? "wide" : asked;
   // A ranking shows the upright poster; everything else is wide, and falls back to the poster when there is no wide picture.
-  const picture = layout === "ranked" ? (entry.image ?? entry.backdrop) : (entry.backdrop ?? entry.image);
+  const picture = layout === "ranked" || (compact && layout === "wide") ? (entry.image ?? entry.backdrop) : (entry.backdrop ?? entry.image);
   const showPicture = picture && !broken;
   const common = {
     "data-zone": pos.zone,

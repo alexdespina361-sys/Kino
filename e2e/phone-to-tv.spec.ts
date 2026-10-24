@@ -1,5 +1,5 @@
 import { expect, type Browser, type Locator, type Page } from "@playwright/test";
-import { openPairedPhone, openTv, PHONE, RawPhone, readPairingCode, test, tvRoot, tvTime } from "./helpers";
+import { openPairedPhone, openTv, PHONE, place, RawPhone, readPairingCode, test, tvRoot, tvTime } from "./helpers";
 
 test.describe("phone UI -> server -> TV player", () => {
   test("MP4: pair, load, play, pause, seek, stop", async ({ browser, baseURL }) => {
@@ -41,7 +41,7 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(phone.getByTestId("url-input")).toBeVisible(); // back to the picker
   });
 
-  test("the phone's own Back button closes a sheet, then a page of the account, and does not leave the remote", async ({ browser, baseURL }) => {
+  test("the phone's own Back button closes a sheet, then a page of the account, then the place, and does not leave the app", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);
     await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4`);
@@ -65,8 +65,11 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(phone.getByTestId("speed-sheet")).toHaveCount(0);
     await expect.poll(layers).toBe(remote);
 
-    // The account's pages go back one at a time, and the last Back closes it.
-    await phone.getByTestId("account-button").click();
+    // The remote steps aside by its own Back (the film plays on, as a line above the bar); the account is a place of the bar, and its pages go back one at a time:
+    // the last Back takes the place to Home, where the line is, and the address is the one it was.
+    await phone.getByTestId("remote-back").click();
+    await expect(phone.getByTestId("mini-remote")).toBeVisible();
+    await place(phone, "you");
     await phone.getByTestId("menu-settings").click();
     await expect(phone.getByTestId("settings-page")).toBeVisible();
     await phone.goBack();
@@ -74,7 +77,8 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(phone.getByTestId("account-screen")).toBeVisible();
     await phone.goBack();
     await expect(phone.getByTestId("account-screen")).toHaveCount(0);
-    await expect(phone.getByTestId("player-state")).toBeVisible();
+    await expect(phone.getByTestId("tab-home")).toHaveAttribute("aria-current", "page");
+    await expect(phone.getByTestId("mini-remote")).toBeVisible();
     expect(phone.url()).toBe(address);
   });
 
@@ -540,19 +544,22 @@ test.describe("a sheet on the phone is pulled down to close", () => {
     const { phone, sheet } = await withSheet(browser, baseURL!);
     await phone.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
-    await phone.getByTestId("change-video").click();
-    const link = phone.getByTestId("link-sheet");
-    await expect(link).toBeVisible();
-    await slidUp(link);
-    const top = Math.round((await link.boundingBox())!.y);
-    const field = (await phone.getByTestId("url-input").boundingBox())!;
+    // A sheet with a field in it: the TV's sheet has the code of another TV to add (the box for a link is on the home page now, not in a sheet).
+    await phone.getByTestId("menu").click();
+    await phone.getByTestId("tvs-open").click();
+    const tvs = phone.getByTestId("tvs-sheet");
+    await expect(tvs).toBeVisible();
+    await slidUp(tvs);
+    await phone.getByTestId("tvs-code").scrollIntoViewIfNeeded();
+    const top = Math.round((await tvs.boundingBox())!.y);
+    const field = (await phone.getByTestId("tvs-code").boundingBox())!;
 
     await pull(phone, { x: field.x + field.width / 2, y: field.y + field.height / 2 }, 260, { steps: 12, every: 30 });
-    await expect(link).toBeVisible();
-    expect(Math.round((await link.boundingBox())!.y)).toBe(top);
+    await expect(tvs).toBeVisible();
+    expect(Math.round((await tvs.boundingBox())!.y)).toBe(top);
     expect((await state(phone)).moves.some(Boolean)).toBe(false); // none of the pull was taken from the page
 
-    await pull(phone, await gripOf(link), 260, { steps: 12, every: 30 }); // the same pull from the grip still closes it
-    await expect(link).toHaveCount(0);
+    await pull(phone, await gripOf(tvs), 260, { steps: 12, every: 30 }); // the same pull from the grip still closes it
+    await expect(tvs).toHaveCount(0);
   });
 });

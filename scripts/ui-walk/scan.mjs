@@ -79,6 +79,15 @@ function inPage(limit) {
     if (kinds.length === 0) continue;
 
     const inView = rect.right > 0 && rect.bottom > 0 && rect.left < W && rect.top < H;
+    // Something else on top of it (a scrim and a sheet, a page laid over this one): it can be neither read nor touched, whatever its size.
+    // The middle of the part that is in view is asked what is there; the element itself, what it holds and what holds it all count as "not covered".
+    let covered;
+    if (inView) {
+      const x = Math.min(Math.max((Math.max(rect.left, 0) + Math.min(rect.right, W)) / 2, 0), W - 1);
+      const y = Math.min(Math.max((Math.max(rect.top, 0) + Math.min(rect.bottom, H)) / 2, 0), H - 1);
+      const top = document.elementFromPoint(x, y);
+      if (top && top !== element && !element.contains(top) && !top.contains(element)) covered = true;
+    }
     const record = {
       tag,
       id: element.getAttribute("data-testid") || undefined,
@@ -88,6 +97,7 @@ function inPage(limit) {
       text: direct ? direct.slice(0, 40) : undefined,
       kinds,
       inView,
+      covered,
       x: Math.round(rect.left),
       y: Math.round(rect.top),
       w: Math.round(rect.width),
@@ -163,7 +173,7 @@ function inPage(limit) {
       }
       if (reach.l + reach.r + reach.t + reach.b > 0.5) record.hit = [Math.round(rect.width + reach.l + reach.r), Math.round(rect.height + reach.t + reach.b)];
       record.cursor = style.cursor !== "auto" ? style.cursor : undefined;
-      record.named = !!(element.getAttribute("aria-label") || element.getAttribute("aria-labelledby") || (element.textContent || "").trim() || element.getAttribute("title") || element.getAttribute("alt"));
+      record.named = !!(element.getAttribute("aria-label") || element.getAttribute("aria-labelledby") || (element.textContent || "").trim() || element.getAttribute("title") || element.getAttribute("alt") || (element.labels && element.labels.length > 0));
       const tabindex = element.getAttribute("tabindex");
       record.tabbable = tag === "button" || tag === "input" || tag === "select" || tag === "textarea" || (tag === "a" && element.hasAttribute("href")) || (tabindex !== null && Number(tabindex) >= 0) || undefined;
     }
@@ -190,9 +200,19 @@ function inPage(limit) {
   };
 }
 
-/** Reads the page and writes the scan next to where the walk's pictures go. */
+/** Reads the page and writes the scan next to where the walk's pictures go. With AXE=1 an automated accessibility check goes with it (see saveAxe). */
 export async function saveScan(page, folder, name) {
   mkdirSync(folder, { recursive: true });
   const data = await page.evaluate(inPage, 2500);
   writeFileSync(`${folder}/${name}.json`, JSON.stringify(data));
+  if (process.env.AXE === "1") await saveAxe(page, `${folder}/axe`, name);
+}
+
+/** What axe-core finds against the rules of WCAG 2.1 A and AA on the page as it is (a third of what a person finds, but all of it is a fact): one JSON per picture, in a folder of its own. */
+async function saveAxe(page, folder, name) {
+  const { AxeBuilder } = await import("@axe-core/playwright");
+  mkdirSync(folder, { recursive: true });
+  const { violations } = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+  const found = violations.map((rule) => ({ id: rule.id, impact: rule.impact, help: rule.help, nodes: rule.nodes.map((node) => ({ target: node.target.join(" "), html: node.html.slice(0, 220) })) }));
+  writeFileSync(`${folder}/${name}.json`, JSON.stringify(found));
 }

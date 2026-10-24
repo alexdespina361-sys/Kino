@@ -3,6 +3,7 @@ import { Avatar } from "../account/Avatar";
 import { useFeedbackEntry } from "../feedback/entry";
 import { useT } from "../i18n";
 import { GearIcon, MessageIcon, UserIcon } from "../shared/icons";
+import type { RailEntry } from "./Rail";
 
 interface ProfileHeadProps {
   /** Whoever is watching: the profile in use, or a guest (no account on this TV). */
@@ -17,6 +18,8 @@ interface ProfileHeadProps {
   onSettings: () => void;
   /** The remote came to the button at this place of the banner's row (the library keeps it, to come back to it from Settings). */
   onArrive: (col: number) => void;
+  /** After Feedback, the menu's lines that a phone's bar of four has no room for (the watch party, the phone), as buttons. */
+  places: readonly RailEntry[];
 }
 
 /**
@@ -24,7 +27,7 @@ interface ProfileHeadProps {
  * the keyboard and the mouse alike) with Feedback next to it, and for a guest the way to sign in, which is what the guest has come to this page for.
  * (Feedback comes after Settings, so the remote still starts where it did.)
  */
-export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn, onSettings, onArrive }: ProfileHeadProps) {
+export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn, onSettings, onArrive, places }: ProfileHeadProps) {
   const t = useT();
   const feedback = useFeedbackEntry();
   const at = (col: number) => ({ "data-zone": "hero", "data-row": 0, "data-col": col, onFocus: () => onArrive(col) });
@@ -61,6 +64,12 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
             </span>
           )}
         </button>
+        {places.map((place, index) => (
+          <button key={place.id} className="tv-hero-button tv-profile-place" onClick={place.onPress} data-testid={place.testId} data-lit={place.lit ? "true" : undefined} {...at(settingsCol + 2 + index)}>
+            {place.icon} {place.label}
+            {place.badge && <span className="tv-profile-badge">{place.badge}</span>}
+          </button>
+        ))}
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { chatRo } from "./chat.ro";
 import { catRo } from "./cat.ro";
+import { shellRo } from "./shell.ro";
 import type { Dictionary } from "./en";
 
 /** Română. Aceleași chei ca în en.ts (compilatorul verifică); formele de plural sunt `_one`, `_few`, `_other`. */
@@ -626,7 +627,6 @@ export const ro: Dictionary = {
   "phone.exitFullscreen": "Ieși din ecran complet pe acest telefon",
   "phone.tvOffline": "Televizorul nu e conectat. Deschide {host} pe el și telecomanda își revine singură.",
   "phone.homeTitle": "Ce vrei să vezi?",
-  "phone.homeHelp": "Lipește un link către un videoclip sau către o pagină care are unul. Rulează pe {tv}, fără pagină.",
   "phone.outdatedServer": "Serverul nu înțelege această versiune a aplicației. Repornește serverul, apoi reîncarcă pagina.",
   "phone.linkTooLong": "Linkul este prea lung ca să fie redat. Încearcă adresa paginii din care provine.",
   "phone.tooSlow": "Durează prea mult. Încearcă din nou peste un moment.",
@@ -695,8 +695,6 @@ export const ro: Dictionary = {
   "tvs.full": "Lista ta e plină. Uită un televizor ca să conectezi altul.",
   "menu.partyOpen": "Vizionare comună",
   "menu.partyActive": "Vizionare comună · {count} dispozitive",
-  "menu.linkBox": "Caseta pentru linkuri",
-  "menu.linkBoxHelp": "Afișează pe ecranul principal o casetă în care lipești un link către un videoclip sau o pagină, ca să ruleze pe {tv}.",
   "menu.disconnect": "Deconectează de la acest televizor",
   "menu.disconnectHelp": "Televizorul iese din lista ta. Dacă nu îl mai are alt telefon, afișează un cod nou, cu care te poți conecta din nou tu sau altcineva. Ce ai vizionat rămâne în profilul tău.",
   "party.title": "Vizionare comună",
@@ -821,6 +819,7 @@ export const ro: Dictionary = {
   "tv.filterSeries": "Seriale",
   "tv.filterCartoons": "Desene animate",
   "tv.filterAnime": "Anime",
+  "tv.sections": "Secțiuni",
   "tv.backToLibrary": "Înapoi la bibliotecă",
   "rows.because": "Pentru că ai urmărit {title}",
   "rows.loved": "Pentru că ți-a plăcut {title}",
@@ -1271,6 +1270,9 @@ export const ro: Dictionary = {
 
   /* chat între doi prieteni (client/chat): într-un fișier separat, adăugat aici */
   ...chatRo,
+
+  /* shell-ul telefonului, bara de jos și ecranele din ea (client/controller/shell): într-un fișier separat, adăugat aici */
+  ...shellRo,
 
   /* the cat companion (client/cat): kept in a file of its own, spread in here */
   ...catRo,

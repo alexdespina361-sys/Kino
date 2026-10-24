@@ -605,7 +605,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
         <CardRow title={t("friends.activity")} testId="friends-activity">
           {state.activity.map((item) => {
             const entry = entryOfActivity(item, nameOf(state.friends, item.friend), now);
-            return <Card key={entry.id} testId="activity" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.note} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />;
+            return <Card key={entry.id} testId="activity" title={entry.title} image={entry.image ?? entry.backdrop} note={entry.note} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />;
           })}
         </CardRow>
       )}
@@ -641,7 +641,7 @@ function SharedLists({ friend, onOpenTitle }: { friend: Friend; onOpenTitle: Ope
       {lists.map((list) => (
         <CardRow key={list.info.id} title={listName(list.info)} testId="friend-list">
           {withProgress(entriesOfList(list), progress).map((entry) => (
-            <Card key={entry.id} testId="friend-list-card" title={entry.title} image={entry.backdrop ?? entry.image} note={entry.note ?? (entry.year ? String(entry.year) : undefined)} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />
+            <Card key={entry.id} testId="friend-list-card" title={entry.title} image={entry.image ?? entry.backdrop} note={entry.note ?? (entry.year ? String(entry.year) : undefined)} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />
           ))}
         </CardRow>
       ))}
@@ -1081,7 +1081,7 @@ export function FriendsHome({ onOpenTitle, onStartParty }: { onOpenTitle: OpenTi
                 key={item.id}
                 testId="friends"
                 title={entry.title}
-                image={entry.backdrop ?? entry.image}
+                image={entry.image ?? entry.backdrop}
                 note={entry.note}
                 score={scoreOf(scores, entry.url)}
                 playLabel={`${t("rows.open")} ${entry.title}`}

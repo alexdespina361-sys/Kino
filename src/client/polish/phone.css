@@ -8,7 +8,8 @@
 /* ------------------------------ tokens ------------------------------ */
 
 :root[data-ui="polish"] {
-  --p-fs-1: 13px; /* a count, a caption, a note under a field */
+  --p-fs-0: 12px; /* only the words under the icons of the bar (nothing else on the phone is under 14) */
+  --p-fs-1: 14px; /* a count, a caption, a note under a field (it was 13: phone-layout/AUDIT.md A7) */
   --p-fs-2: 14px; /* a chip, a link's name, a line in a row */
   --p-fs-3: 16px; /* body, in any colour (also what stops a phone zooming into a field) */
   --p-fs-4: 18px; /* a heading of a sheet, a page or a row of pictures */
@@ -32,7 +33,6 @@
   background: var(--overlay);
   border-radius: var(--p-r-3) var(--p-r-3) 0 0;
   box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
-  max-height: min(86vh, calc(100% - 8px)); /* (86vh is the screen with a browser's bar gone; the backdrop is what is there to be seen) */
 }
 :root[data-ui="polish"] .phone-ui .sheet-grip { width: 36px; background: rgba(255, 255, 255, 0.24); }
 /* what comes up from the edge, or in from the side, slows down as it lands: the one ease, as on the TV */
@@ -45,13 +45,11 @@
 :root[data-ui="polish"] .phone-ui .muted { font-size: var(--p-fs-3); }
 :root[data-ui="polish"] .phone-ui .muted.small { font-size: var(--p-fs-1); }
 :root[data-ui="polish"] .phone.pair h1,
-:root[data-ui="polish"] .phone-ui .home h2,
 :root[data-ui="polish"] .phone-ui .now-playing h2,
 :root[data-ui="polish"] .phone-ui .account-who h1,
 :root[data-ui="polish"] .phone-ui .account-pitch h1,
 :root[data-ui="polish"] .phone.choose h1,
 :root[data-ui="polish"] .phone-ui .link-approve h2 { font-size: var(--p-fs-5); font-weight: 700; letter-spacing: -0.01em; }
-:root[data-ui="polish"] .phone-ui .top-tv h1,
 :root[data-ui="polish"] .phone-ui .page-head h2,
 :root[data-ui="polish"] .phone-ui .lib-row h3 { font-size: var(--p-fs-4); font-weight: 700; }
 :root[data-ui="polish"] .phone-ui .friend-code { font-size: var(--p-fs-4); }
@@ -85,6 +83,7 @@
 :root[data-ui="polish"] .phone-ui .auth-ok,
 :root[data-ui="polish"] .phone-ui .or,
 :root[data-ui="polish"] .phone-ui .role-switch { font-size: var(--p-fs-2); }
+:root[data-ui="polish"] .phone-ui .role-switch { min-height: 44px; } /* (a quiet text button is still a thing to hit with a thumb) */
 :root[data-ui="polish"] .phone-ui .tv-status,
 :root[data-ui="polish"] .phone-ui .badge,
 :root[data-ui="polish"] .phone-ui .lib-year,
@@ -120,7 +119,6 @@
   text-transform: none;
 }
 :root[data-ui="polish"] .phone-ui .cap-label,
-:root[data-ui="polish"] .phone-ui .code-card-title,
 :root[data-ui="polish"] .phone-ui .chip-text small,
 :root[data-ui="polish"] .phone-ui .avatar-picker legend {
   color: var(--p-label);
@@ -284,6 +282,13 @@
 /* The colours are a card, as the language is, the six spread across it. Their gap is the least between two: six of 44 px and five of 6 fit a 360 px phone's card, so none is squeezed under a thumb's size. */
 :root[data-ui="polish"] .phone-ui .swatches { gap: 6px; justify-content: space-between; padding: 12px 14px; border-radius: var(--p-r-2); background: var(--surface); }
 :root[data-ui="polish"] .phone-ui .swatch[aria-checked="true"] { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px #fff; }
+/* (A phone narrower than 360 px has no room for six of them in a row: it is three and three, each still 44 px, rather than six that give up their size.) */
+@media (max-width: 359px) {
+  :root[data-ui="polish"] .phone-ui .swatches { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); justify-items: center; gap: 12px 6px; }
+  :root[data-ui="polish"] .phone-ui .swatch { width: 44px; }
+}
+/* A show's episode keeps its name whole on up to two lines, where one line of a narrow phone cut "What the Water Kept" short. */
+:root[data-ui="polish"] .phone-ui .episode.rich .episode-title { display: -webkit-box; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 /* Each of the settings' groups has room round it, so that the heading of the next is not taken for a line of the one before. */
 :root[data-ui="polish"] .phone-ui .page-stack[data-testid="settings-page"] { gap: 28px; }
 
@@ -305,6 +310,8 @@
 :root[data-ui="polish"] .phone-ui .seek-track { background: rgba(255, 255, 255, 0.18); }
 :root[data-ui="polish"] .phone-ui .chip { background: var(--surface); }
 :root[data-ui="polish"] .phone-ui .chip:active { background: var(--surface-2); }
+/* (Two across; one that is left over, a film that has only a speed to choose, is as wide as the screen rather than half of it with a hole beside it.) */
+:root[data-ui="polish"] .phone-ui .chips > .chip:last-child:nth-child(odd) { grid-column: 1 / -1; }
 :root[data-ui="polish"] .phone-ui .actions .btn { font-size: var(--p-fs-1); }
 :root[data-ui="polish"] .phone-ui .state-action { background: var(--surface-2); }
 
@@ -366,13 +373,6 @@
   /* (the rows of pictures bleed to the screen's edge, in line with the page's own edge) */
   :root[data-ui="polish"] .phone-ui .lib-scroller { margin: 0 calc(var(--p-pad) * -1); padding: 0 var(--p-pad) 6px; scroll-padding: 0 var(--p-pad); }
 
-  /* home: what to say and where to say it share the first line */
-  :root[data-ui="polish"] .phone-ui .home { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 28px; align-items: start; }
-  :root[data-ui="polish"] .phone-ui .home > * { grid-column: 1 / -1; }
-  :root[data-ui="polish"] .phone-ui .home > h2 { grid-column: 1; grid-row: 1; align-self: end; }
-  :root[data-ui="polish"] .phone-ui .home > .muted { grid-column: 1; grid-row: 2; align-self: start; }
-  :root[data-ui="polish"] .phone-ui .home > .play-link { grid-column: 2; grid-row: 1 / span 2; }
-
   /* the remote: the title and what is playing, then the transport, on the left; the extras and the three big buttons on the right, under the thumb of that hand */
   :root[data-ui="polish"] .phone-ui .remote { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr; gap: 8px 32px; }
   :root[data-ui="polish"] .phone-ui .now-playing { grid-column: 1; grid-row: 1; }
@@ -395,18 +395,14 @@
   :root[data-ui="polish"] .phone.pair .code-input { flex: 1; width: auto; min-width: 0; }
   :root[data-ui="polish"] .phone.pair form .btn { flex: none; width: auto; padding: 0 20px; }
 
-  /* sheets: as wide as they need to be, as tall as the screen lets them, and a head that is not a third of what is visible */
-  :root[data-ui="polish"] .phone-ui .sheet { max-width: 680px; max-height: calc(100% - 8px); padding-top: 4px; }
+  /* sheets: a head that is not a third of what is visible (how wide and how tall a sheet is, held sideways, is shell.css's: a panel from the right; the subtitles' style is the one that is not) */
+  :root[data-ui="polish"] .phone-ui .sheet { padding-top: 4px; }
   :root[data-ui="polish"] .phone-ui .sheet-grip { margin: 2px auto 2px; }
   :root[data-ui="polish"] .phone-ui .sheet-head { min-height: 44px; }
   :root[data-ui="polish"] .phone-ui .sheet-body { gap: 10px; padding-top: 4px; }
-  /* a short list of short words (the speeds, the qualities) is two columns: all of it in view, and a row no longer a hand's length from its own dot; a few rows with a count and a pencil (the lists, the bell) are not as wide as a title's sheet */
-  :root[data-ui="polish"] .phone-ui .sheet[data-testid="speed-sheet"],
-  :root[data-ui="polish"] .phone-ui .sheet[data-testid="quality-sheet"] { max-width: 560px; }
+  /* a short list of short words (the speeds, the qualities) is two columns: all of it in view, and a row no longer a hand's length from its own dot */
   :root[data-ui="polish"] .phone-ui .sheet[data-testid="speed-sheet"] .choices,
   :root[data-ui="polish"] .phone-ui .sheet[data-testid="quality-sheet"] .choices { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
-  :root[data-ui="polish"] .phone-ui .sheet[data-testid="lists-sheet"],
-  :root[data-ui="polish"] .phone-ui .sheet[data-testid="bell-sheet"] { max-width: 520px; }
 
   /* the subtitle style: the little TV stays on the left while the choices scroll on the right (a picture that is taller than what it sits in is no help) */
   :root[data-ui="polish"] .phone-ui .sheet[data-testid="captions-sheet"] { max-width: 780px; }
@@ -416,10 +412,8 @@
   /* what to point a camera at is a square that leaves room for the words under it */
   :root[data-ui="polish"] .phone-ui .scanner-frame { width: min(70vw, 300px, 52vh); }
 
-  /* a title: the picture on the left, what to do with it and what it is about on the right; a show's episodes under both, as wide as the sheet */
-  :root[data-ui="polish"] .phone-ui .sheet[data-testid="title-sheet"] { max-width: 780px; }
+  /* a title: the picture on the left, what to do with it and what it is about on the right; a show's episodes under both, as wide as the page (shell.css says how wide that is, and how its column is laid out) */
   :root[data-ui="polish"] .phone-ui .title-top { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; align-items: start; }
-  :root[data-ui="polish"] .phone-ui .title-main { display: flex; flex-direction: column; gap: 10px; }
 
   /* the pages: settings in two columns (it is one long list), the account's front page as who and what (the rows all in view), the rest in the column they were made for, centred */
   :root[data-ui="polish"] .phone-ui .page-head { padding-left: max(10px, env(safe-area-inset-left)); }

@@ -169,7 +169,8 @@ export const PHONE_SMALL = { width: 360, height: 800 };
 const kept = (first) => [...(first ? [] : [{ name: "kino.fullscreen.left", value: "1" }, { name: "kino.linkbox", value: "1" }])];
 const storageOf = (first) => ({ cookies: [], origins: kept(first).length > 0 ? [{ origin: base, localStorage: kept(first) }] : [] });
 
-export async function openContext(browser, viewport, { phone = false, first = false, seed = {}, locale = "en-US" } = {}) {
+// WALK_LOCALE=ro-RO walks the pages in Romanian (it-IT: Italian), the two languages whose words are the longest; write its pictures somewhere of their own (--out).
+export async function openContext(browser, viewport, { phone = false, first = false, seed = {}, locale = process.env.WALK_LOCALE ?? "en-US" } = {}) {
   const options = { baseURL: base, viewport, locale, storageState: storageOf(first) };
   if (phone) Object.assign(options, { screen: viewport, hasTouch: true, isMobile: true, deviceScaleFactor: 2, userAgent: devices["Pixel 7"].userAgent });
   const context = await browser.newContext(options);

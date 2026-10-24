@@ -1,5 +1,5 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { guestStorage, openDevice, openLibrary, openTv, PHONE, readPairingCode, test, withLibrary } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openTv, PHONE, place, readPairingCode, test, withLibrary } from "./helpers";
 
 /** The library as it grows while a page is scrolled: the rows after the first ones, more titles of a row, and a search that forgives (see src/client/shared/feed.ts). */
 
@@ -229,6 +229,7 @@ test.describe("the phone's library goes on as it is scrolled", () => {
       browser,
       withLibrary(base, (query) => (query.includes("strager") ? { items: [film("st", "Stranger Things"), film("c1", "Strange World"), film("c2", "Stranger Than Fiction")], exact: 1 } : [])),
     );
+    await place(phone, "search");
     await phone.getByTestId("library-search-input").fill("strager things");
     const results = phone.getByTestId("library-search-results");
     await expect(results.locator("h3")).toHaveText("Results for “strager things”");
@@ -238,6 +239,7 @@ test.describe("the phone's library goes on as it is scrolled", () => {
 
   test("a search that only the closest titles answer says so", async ({ browser }) => {
     const phone = await pairedPhone(browser, withLibrary(base, (query) => (query.includes("zq") ? { items: [film("c1", "Zorro Quest")], exact: 0 } : [])));
+    await place(phone, "search");
     await phone.getByTestId("library-search-input").fill("zq");
     await expect(phone.getByTestId("library-search-results").locator("h3")).toHaveText("Nothing matches “zq” exactly. These are the closest.");
     await expect(phone.getByTestId("library-result")).toHaveCount(1);
@@ -307,12 +309,11 @@ test.describe("the phone's library goes on as it is scrolled", () => {
     { name: "Italian", locale: "it-IT" },
   ]) {
     for (const width of [320, 360, 390]) {
-      test(`the five filters are all on the screen, each name on one line: ${language.name}, ${width} wide`, async ({ browser }) => {
+      test(`the five filters are one row that scrolls sideways: each name on one line, the first on the screen, the last reachable, the page no wider than the screen: ${language.name}, ${width} wide`, async ({ browser }) => {
         const phone = await pairedPhone(browser, withLibrary(base), {}, { ...PHONE, viewport: { width, height: 740 }, screen: { width, height: 740 }, locale: language.locale });
-        const fit = await phone
-          .getByTestId("filter-all")
-          .locator("xpath=..")
-          .evaluate((box) => {
+        const row = phone.getByTestId("filter-all").locator("xpath=..");
+        const read = () =>
+          row.evaluate((box) => {
             const pills = [...box.children] as HTMLElement[];
             const oneLine = (pill: HTMLElement) => {
               const range = document.createRange();
@@ -323,12 +324,19 @@ test.describe("the phone's library goes on as it is scrolled", () => {
               const edge = pill.getBoundingClientRect();
               return edge.left >= 0 && edge.right <= window.innerWidth;
             };
-            return { names: pills.map((pill) => pill.textContent), oneLine: pills.every(oneLine), inside: pills.every(inside), page: document.documentElement.scrollWidth, view: window.innerWidth };
+            const first = pills[0]!;
+            const last = pills[pills.length - 1]!;
+            return { names: pills.map((pill) => pill.textContent), oneLine: pills.every(oneLine), first: inside(first), last: inside(last), page: document.documentElement.scrollWidth, view: window.innerWidth };
           });
+        const fit = await read();
         expect(new Set(fit.names).size).toBe(5); // (All, Movies, Series, Cartoons, Anime: five names, none the same)
         expect(fit.oneLine).toBe(true);
-        expect(fit.inside).toBe(true);
-        expect(fit.page).toBeLessThanOrEqual(fit.view);
+        expect(fit.first).toBe(true);
+        expect(fit.page).toBeLessThanOrEqual(fit.view); // (the row scrolls inside itself: the page does not)
+
+        await row.evaluate((box) => box.scrollTo(box.scrollWidth, 0));
+        await expect.poll(async () => (await read()).last).toBe(true); // (the last one is there to be tapped, with the room of the page's side)
+        expect((await read()).page).toBeLessThanOrEqual(fit.view);
       });
     }
   }

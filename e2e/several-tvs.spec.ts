@@ -248,6 +248,7 @@ test.describe("a phone with several TVs", () => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);
     await phone.getByTestId("menu").click();
+    await phone.getByTestId("control-open").click(); // (folded under a row of the sheet until it is wanted)
     const code = (await phone.getByTestId("control-code").innerText()).replace(/\s/g, "");
     const other = await (await browser.newContext(PHONE)).newPage();
     await other.goto(`/?control=${code}`); // what scanning the QR code in the menu opens

@@ -56,6 +56,8 @@ function usePullToClose(backdrop: RefObject<HTMLDivElement | null>, sheet: RefOb
       if (event.touches.length !== 1) return void (touch = null);
       // A finger on a field is the field's (moving the caret, selecting what was typed), not a pull on the sheet.
       if (event.target instanceof Element && event.target.closest("input, textarea, select")) return void (touch = null);
+      // A sheet that comes in from the side (a phone held sideways, see polish/shell.css) is not pulled down: its cross, Back and a tap beside it close it.
+      if (getComputedStyle(panel).getPropertyValue("--sheet-side").trim() === "1") return void (touch = null);
       const finger = event.touches[0]!;
       const list = scrollerAt(event.target, panel);
       touch = { y: finger.clientY, x: finger.clientX, free: !list || list.scrollTop <= 0, pulling: false, last: { y: finger.clientY, at: event.timeStamp }, speed: 0 };
@@ -193,10 +195,10 @@ export interface Choice {
   pick: () => void;
 }
 
-/** One-of-many list inside a sheet. */
-export function ChoiceList({ choices }: { choices: Choice[] }) {
+/** One-of-many list inside a sheet; `label` is what it is a choice of (a list of options is announced by its name). */
+export function ChoiceList({ choices, label }: { choices: Choice[]; label: string }) {
   return (
-    <div className="choices" role="listbox">
+    <div className="choices" role="listbox" aria-label={label}>
       {choices.map((choice) => (
         <button
           key={choice.key}

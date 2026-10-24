@@ -163,14 +163,6 @@ export const CopyIcon = (props: Props) => (
   </Icon>
 );
 
-export const MoreIcon = (props: Props) => (
-  <Icon {...props}>
-    <circle cx="5" cy="12" r="1.6" fill="currentColor" />
-    <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-    <circle cx="19" cy="12" r="1.6" fill="currentColor" />
-  </Icon>
-);
-
 /** A viewfinder: the four corners of a frame with a line through it. */
 export const ScanIcon = (props: Props) => (
   <Icon {...props}>

@@ -1,5 +1,6 @@
 import { chromium, expect, test as base, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { parseServerMessage, type Command, type NormalizedMedia, type PlayerState, type ServerMessage } from "../src/shared";
+import { COMPACT_MAX_WIDTH, COMPACT_MIN_HEIGHT } from "../src/client/tv/compact";
 
 /**
  * The tests' `test`: Playwright's, and every device a test opened is closed when the test is over. A device made with
@@ -188,10 +189,28 @@ export async function openLibrary(
   return page;
 }
 
+/** A screen held upright, the one question client/tv/compact.ts asks: narrow, and tall enough to be held that way. Its menu is a bar of four places. */
+export const heldUpright = (page: Page): boolean => {
+  const size = page.viewportSize();
+  return size !== null && size.width <= COMPACT_MAX_WIDTH && size.height >= COMPACT_MIN_HEIGHT;
+};
+
+/** Whether the profile's page is the one that is open. */
+const onProfilePage = async (tv: Page): Promise<boolean> => (await tv.getByTestId("tv-browse").getAttribute("data-view")) === "profile";
+
+/**
+ * A line of a TV's menu that the bar of a screen held upright has no room for (the watch party, a phone to connect): there it is a button of the profile's
+ * page, with the same test id, and the profile's page is opened first. `how`: pressed with the mouse, or with a finger (a touch screen's tests are about touches).
+ */
+export async function pressMenuLine(tv: Page, id: "rail-party" | "rail-connect", how: "click" | "tap" = "click"): Promise<void> {
+  if (heldUpright(tv) && !(await onProfilePage(tv))) await openProfilePage(tv, how);
+  await tv.getByTestId(id)[how]();
+}
+
 /** The same, and on to "Connect a phone" in the library's menu, where the code to type on the phone is. */
 export async function openTv(browser: Browser, viewport = { width: 1280, height: 720 }, seed: Record<string, string> = {}): Promise<Page> {
   const page = await openLibrary(browser, undefined, viewport, seed);
-  await page.getByTestId("rail-connect").click();
+  await pressMenuLine(page, "rail-connect");
   return page;
 }
 
@@ -217,15 +236,15 @@ export type ProfilePlace = "ratings" | "friends" | "history" | "signin" | "setti
 export const profileButton = (tv: Page, place: ProfilePlace): Locator | null =>
   place === "settings" ? tv.getByTestId("tv-profile-settings") : place === "signin" ? tv.getByTestId("tv-profile-signin") : null;
 
-/** The profile's page, opened by a click on the button in the corner (the page's first button or card has the remote). */
-export async function openProfilePage(tv: Page): Promise<void> {
-  await tv.getByTestId("tv-account-chip").click();
+/** The profile's page, opened by a click (or a tap) on the button in the corner (the page's first button or card has the remote). */
+export async function openProfilePage(tv: Page, how: "click" | "tap" = "click"): Promise<void> {
+  await tv.getByTestId("tv-account-chip")[how]();
   await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
 }
 
 /** A place on the profile's page, clicked as a mouse does it (the profile's page is opened first unless it is open). */
 export async function openProfilePlace(tv: Page, place: ProfilePlace): Promise<void> {
-  if ((await tv.getByTestId("tv-browse").getAttribute("data-view")) !== "profile") await openProfilePage(tv);
+  if (!(await onProfilePage(tv))) await openProfilePage(tv);
   await (profileButton(tv, place) ?? tv.locator(`[data-entry="profile:${place}"]`)).click();
 }
 
@@ -285,6 +304,9 @@ export async function openPairedPhone(browser: Browser, tv: Page): Promise<Page>
   await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
   return phone;
 }
+
+/** One of the four places of the phone's bar: Home (what to watch, the box for a link), Search, My lists (the lists and the ratings) and You (the account). */
+export const place = (phone: Page, name: "home" | "search" | "list" | "you") => phone.getByTestId(`tab-${name}`).click();
 
 export const tvRoot = (tv: Page) => tv.getByTestId("tv");
 export const tvTime = async (tv: Page) => Number(await tvRoot(tv).getAttribute("data-time"));

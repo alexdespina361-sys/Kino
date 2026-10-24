@@ -1,6 +1,6 @@
 import { expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import type { NormalizedMedia } from "../src/shared";
-import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, playFirst, RawPhone, readPairingCode, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, PHONE, playFirst, pressMenuLine, RawPhone, readPairingCode, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
 
 /** The picture under a hand: what a tap, two taps and a held finger do, the big button in the middle, the episode's name, and a phone turned sideways. */
 
@@ -252,7 +252,7 @@ test.describe("a finger on the picture", () => {
 
   test("a screen that leads a party does not play faster under a held finger: the others are told the speed that was chosen and would fall behind", async ({ browser }) => {
     const host = await openFilms(browser);
-    await host.getByTestId("rail-party").tap();
+    await pressMenuLine(host, "rail-party", "tap");
     await host.getByTestId("tv-party-start").tap();
     const code = (await host.getByTestId("tv-party-code").innerText()).replace(/\s/g, "");
     const guest = await openLibrary(browser, withFilms);
@@ -517,7 +517,7 @@ test.describe("a finger on the bars laid over the picture", () => {
       await host.getByTestId("tv-party-start").click();
       const code = (await host.getByTestId("tv-party-code").innerText()).replace(/\s/g, "");
       const phone = await openFilms(browser, { shape });
-      await phone.getByTestId("rail-party").tap();
+      await pressMenuLine(phone, "rail-party", "tap");
       await phone.getByTestId("tv-party-join").tap();
       for (const digit of code) await phone.getByTestId(`pad-${digit}`).tap();
       await expect(phone.getByTestId("tv-following")).toBeVisible();

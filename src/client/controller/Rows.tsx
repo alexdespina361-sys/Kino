@@ -24,7 +24,8 @@ export function CardRow({ title, testId, aside, wide, children }: { title: strin
   );
 }
 
-function RowHead({ title, aside }: { title: string; aside?: ReactNode }) {
+/** A row's heading, with something small at its far end if there is something to put there. */
+export function RowHead({ title, aside }: { title: string; aside?: ReactNode }) {
   if (!aside) return <h3>{title}</h3>;
   return (
     <div className="lib-row-head">
@@ -140,6 +141,11 @@ interface ListRowsProps {
   onManage: () => void;
 }
 
+/** Whether `ListRows` has anything to show: a list with a title in it, or several lists (the way to them). */
+export function hasListRows(lists: readonly ListInfo[], items: readonly LiveListItem[]): boolean {
+  return lists.length >= 2 || lists.some((info) => items.some((item) => listOf(item) === info.id));
+}
+
 /**
  * The lists this profile keeps: a row for each that has a title in it, named as the list is, the titles saved for later. The first
  * row has the way to the lists themselves; when there are several lists and all are empty the way is there on its own, and until
@@ -149,7 +155,7 @@ export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: L
   const t = useT();
   const scores = useScores();
   const filled = lists.filter((info) => items.some((item) => listOf(item) === info.id));
-  if (filled.length === 0 && lists.length < 2) return null;
+  if (!hasListRows(lists, items)) return null;
   const manage = (
     <button type="button" className="row-link" onClick={onManage} data-testid="lists-manage">
       {t("lists.manage")}
@@ -176,7 +182,7 @@ export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: L
                   key={item.key}
                   testId="list"
                   title={item.title}
-                  image={item.backdrop ?? item.image}
+                  image={item.image ?? item.backdrop}
                   note={item.year ? String(item.year) : undefined}
                   score={scoreOf(scores, item.url)}
                   playLabel={`${t("rows.open")} ${item.title}`}
@@ -208,7 +214,7 @@ export function RatingsRow({ ratings, onOpen, onAll }: { ratings: readonly LiveR
   return (
     <CardRow title={t("rating.mine")} testId="ratings-row" aside={all}>
       {sortRatings(ratings, "new").map((rating) => (
-        <Card key={rating.key} testId="rating" title={rating.title} image={rating.backdrop ?? rating.image} note={ratingNote(t, rating)} playLabel={`${t("rows.open")} ${rating.title}`} onPlay={() => onOpen(entryOfRating(rating))} />
+        <Card key={rating.key} testId="rating" title={rating.title} image={rating.image ?? rating.backdrop} note={ratingNote(t, rating)} playLabel={`${t("rows.open")} ${rating.title}`} onPlay={() => onOpen(entryOfRating(rating))} />
       ))}
     </CardRow>
   );

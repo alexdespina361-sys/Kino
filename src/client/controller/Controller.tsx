@@ -27,7 +27,7 @@ import { Rich } from "../i18n/Rich";
 import { useBackWhile } from "../shared/backButton";
 import { readKept, writeKept } from "../shared/kept";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
-import { MoreIcon, TvIcon } from "../shared/icons";
+import { ChevronLeftIcon } from "../shared/icons";
 import { partyLink, readLaunchParams } from "../shared/launch";
 import { useLinkBox } from "../shared/linkBox";
 import { connectSocket, type Socket, type SocketStatus } from "../shared/socket";
@@ -41,12 +41,17 @@ import { FriendInvite, FriendsHome } from "./Friends";
 import { Library } from "./Library";
 import { ListPickerSheet, ListsSheet } from "./ListSheets";
 import { PairScreen } from "./PairScreen";
-import { PlayLink } from "./PlayLink";
-import { Chip, mediaTitle, Remote, stateLabel, type SheetKind } from "./Remote";
+import { PlayLink, ResolveLine } from "./PlayLink";
+import { Remote, type SheetKind } from "./Remote";
 import { LINE_EVENT } from "./Round";
 import { RatingsSheet } from "./RatingsSheet";
-import { ContinueRow, ListRows, RatingsRow } from "./Rows";
-import { Sheet } from "./Sheet";
+import { ContinueRow } from "./Rows";
+import { MiniRemote } from "./shell/MiniRemote";
+import { MyLists } from "./shell/MyLists";
+import { RowPage } from "./shell/RowPage";
+import { TabBar } from "./shell/TabBar";
+import { TvChip } from "./shell/TvChip";
+import { useTabs } from "./shell/useTabs";
 import { TitleSheet } from "./TitleSheet";
 import {
   CaptionStyleSheet,
@@ -63,6 +68,7 @@ import {
 } from "./Sheets";
 import "./controller.css";
 import "../polish/phone.css";
+import "../polish/shell.css";
 
 const CONTROLLER_KEY = "controller.id";
 /** A lookup that has not answered by now is reported as failed instead of spinning forever. */
@@ -97,13 +103,15 @@ export function Controller() {
   const [listSheet, setListSheet] = useState<{ kind: "manage" } | { kind: "pick"; entry: ListEntry } | null>(null);
   /** The page of a title that was tapped in the library or a list: where it is played, or put in a list. */
   const [title, setTitle] = useState<Entry | null>(null);
-  /** Whether the home screen has the box for pasting a link (also turned on and off in the settings: see linkBox.ts). */
-  const [linkBox, changeLinkBox] = useLinkBox();
+  /** Whether the home screen has the box for pasting a link (turned on and off in the settings: see linkBox.ts). */
+  const [linkBox] = useLinkBox();
   // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
   const ratingsOn = settings.ratings ?? true;
   /** The page that lists everything this profile rated. */
   const [ratingsOpen, setRatingsOpen] = useState(false);
+  /** The row of the library that "See all" opened on a page of its own (by its id). */
+  const [seeAll, setSeeAll] = useState<string | null>(null);
 
   // What this page was opened for: a code from the TV's QR code, or a link shared from another app.
   const launchRef = useRef(readLaunchParams(location.search));
@@ -176,6 +184,7 @@ export function Controller() {
               setSheet(null);
               setListSheet(null);
               setRatingsOpen(false);
+              setSeeAll(null);
               setTitle(null);
               setResolve(null);
               setOther(null);
@@ -217,7 +226,7 @@ export function Controller() {
             if (message.status.phase === "failed") setFailedLookups((n) => n + 1);
             if (message.status.phase === "found") {
               onFound(message.status.media);
-              setSheet((open) => (open === "link" || open === "episodes" ? null : open));
+              setSheet((open) => (open === "episodes" ? null : open));
             }
             break;
           case "PARTY":
@@ -352,9 +361,9 @@ export function Controller() {
     window.addEventListener(LINE_EVENT, say);
     return () => window.removeEventListener(LINE_EVENT, say);
   }, []);
-  // A play that did not work says so where the thumb is: the page's own line sits at the top of a library that may be scrolled far from it (the link sheet has the line itself, in view).
+  // A play that did not work says so where the thumb is: the page's own line sits at the top of a library that may be scrolled far from it.
   useEffect(() => {
-    if (resolve?.phase === "failed" && sheetRef.current !== "link") setToast((current) => ({ id: (current?.id ?? 0) + 1, text: resolveFailure(resolve), long: true }));
+    if (resolve?.phase === "failed") setToast((current) => ({ id: (current?.id ?? 0) + 1, text: resolveFailure(resolve), long: true }));
     else if (resolve?.phase === "resolving") setToast((current) => (current?.long ? null : current)); // another try: the answer to the last one has had its say
   }, [resolve]);
 
@@ -383,7 +392,15 @@ export function Controller() {
     if (active && !wasActive.current) setRemoteShown(true);
     wasActive.current = active;
   }, [active]);
-  useBackWhile(active && remoteShown && !(connection === "open" && tv !== null && !tv.online), () => setRemoteShown(false));
+  /** The server is reached but the TV is not: nothing the remote shows of it can be trusted. */
+  const away = connection === "open" && tv !== null && !tv.online;
+  /** The remote has the screen (the bar, and the places it leads to, are put away until it is). */
+  const remoteOpen = active && remoteShown && !away;
+  useBackWhile(remoteOpen, () => setRemoteShown(false));
+  /** A page or a sheet lies over the place that is showing: the place is not what is scrolled meanwhile, and is where it was when they go. */
+  const covered = seeAll !== null || title !== null || sheet !== null || listSheet !== null || other !== null || ratingsOpen || showAccount || showBell || chatWith !== null || approveCode !== null || friendCode !== null;
+  // The four places of the bar: Home, Search, My lists and You.
+  const tabs = useTabs(remoteOpen || covered, tv !== null);
   useEffect(() => {
     if (!active) setSheet((open) => (open && open !== "menu" && open !== "party" && open !== "tvs" ? null : open));
   }, [active]);
@@ -395,12 +412,7 @@ export function Controller() {
   const tellTvToLookAgain = () => {
     if (tv?.online) socketRef.current?.send({ type: "CMD", command: { type: "REFRESH_ACCOUNT" } });
   };
-  const accountButton = (
-    <>
-      <BellButton onClick={() => setShowBell(true)} />
-      <AccountButton onClick={() => setShowAccount(true)} />
-    </>
-  );
+  const bellButton = <BellButton onClick={() => setShowBell(true)} />;
   const pickList = (entry: ListEntry) => setListSheet({ kind: "pick", entry });
   // A title's page, and the lists it can go in: over the remote, and over the account too (My ratings, a friend's lists), which a phone with no TV has as well. It then has no Play.
   const titleSheets = (
@@ -522,7 +534,9 @@ export function Controller() {
             <>
               {/* This page's own full screen, which hides the browser's bar (the TV's is a button on the remote, in the paired phone's menu there is this one). */}
               <FullscreenToggle className="icon-btn" />
-              {accountButton}
+              {bellButton}
+              {/* (The first page has no bar: the account opens over it. On the bar's pages it is a place of the bar: "You".) */}
+              <AccountButton onClick={() => setShowAccount(true)} />
             </>
           }
         />
@@ -536,8 +550,6 @@ export function Controller() {
   }
 
   const online = connection === "open" && tv.online;
-  /** The server is reached but the TV is not: nothing the remote shows of it can be trusted. */
-  const away = connection === "open" && !tv.online;
   /** Let go of this TV: it shows a new code, and this phone is on the first screen again. */
   const disconnect = () => {
     hadTvRef.current = false; // asked for: not a pairing that was lost
@@ -549,43 +561,62 @@ export function Controller() {
     if (sheet === "party" || sheet === "tvs") setError(null); // what went wrong in there (a code that was refused) is not for the page behind it
     setSheet(null);
   };
-  // The box for pasting a link is there when it is turned on, and when the library has nothing to play instead (it would be the only way to start anything).
-  const link = (
-    <>
-      <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} form={linkBox} />
+  const status = connection !== "open" ? t("phone.reconnecting") : tv.online ? t("phone.tvConnected") : t("phone.tvDisconnected");
+
+  /* The four places of the bar (the one that is showing is drawn; the others are not: a library that is not on screen must not go on asking for its next rows). */
+
+  // Home: where a link is pasted (the box is there when it is turned on, and when the library has nothing to play instead: it would be the only way to start anything) and what to watch next.
+  const home = (
+    <section className="home" data-testid="home-panel">
+      <h2 className="sr-only">{t("phone.homeTitle")}</h2>
+      {linkBox && <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />}
       <FriendsHome onOpenTitle={setTitle} onStartParty={startTogether} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
-      <ListRows lists={lists} items={list} onOpen={setTitle} onPick={pickList} onRemove={(url, id) => profileStore.removeFromList(url, id)} onManage={() => setListSheet({ kind: "manage" })} />
-      {ratingsOn && <RatingsRow ratings={ratings} onOpen={setTitle} onAll={() => setRatingsOpen(true)} />}
-      <Library onOpen={setTitle} onPick={pickList} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} resolve={resolve} onPlay={(url) => playLink(url)} status={false} />} />
-    </>
+      <Library onOpen={setTitle} onPick={pickList} onSeeAll={setSeeAll} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />} />
+    </section>
   );
+  const search = (
+    <section className="search-panel" data-testid="search-panel">
+      <h2 className="sr-only">{t("tabs.search")}</h2>
+      <Library mode="search" onOpen={setTitle} onPick={pickList} failedLookups={failedLookups} />
+    </section>
+  );
+  const myLists = (
+    <MyLists
+      lists={lists}
+      items={list}
+      ratings={ratings}
+      ratingsOn={ratingsOn}
+      onOpen={setTitle}
+      onPick={pickList}
+      onRemove={(url, id) => profileStore.removeFromList(url, id)}
+      onManage={() => setListSheet({ kind: "manage" })}
+      onAllRatings={() => setRatingsOpen(true)}
+      onBrowse={() => tabs.setTab("home")}
+    />
+  );
+  const you = <AccountScreen inline onClose={() => tabs.setTab("home")} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} onStartParty={startTogether} />;
+  const panel = { home, search, list: myLists, you }[tabs.tab];
+  /** What plays is a line above the bar, on every page, until the remote is the page (and not while the TV is gone: what it says of the film cannot be trusted). */
+  const mini = active && !remoteOpen && !away;
 
   return (
-    <main className="phone phone-ui">
+    <main className={`phone phone-ui shell${remoteOpen ? " is-remote" : ""}${mini ? " has-mini" : ""}`}>
+      {seeAll !== null && <RowPage rowId={seeAll} onClose={() => setSeeAll(null)} onOpen={setTitle} onPick={pickList} />}
       {accountLayer}
       <header className="top">
-        <div className="top-tv">
-          <TvIcon />
-          {/* The name gets the width; how the TV is doing sits under it as a few small words. */}
-          <div className="top-name">
-            <div className="top-line">
-              <h1 data-testid="tv-name">{tv.name}</h1>
-              {party.length > 0 && (
-                <span className="party-count" data-testid="party-count">
-                  +{party.length}
-                </span>
-              )}
-            </div>
-            <span className={`tv-status ${online ? "ok" : "bad"}`} data-testid="tv-online">
-              {connection !== "open" ? t("phone.reconnecting") : tv.online ? t("phone.tvConnected") : t("phone.tvDisconnected")}
-            </span>
+        {remoteOpen && (
+          <button type="button" className="icon-btn top-back" aria-label={t("common.back")} data-testid="remote-back" onClick={() => setRemoteShown(false)}>
+            <ChevronLeftIcon />
+          </button>
+        )}
+        <TvChip name={tv.name} party={party.length} ok={online} status={status} onClick={openMenu} />
+        {!remoteOpen && (
+          <div className="top-actions">
+            {bellButton}
+            <AccountButton onClick={() => tabs.select("you")} />
           </div>
-        </div>
-        {accountButton}
-        <button className="icon-btn" aria-label={t("phone.tvMenu")} data-testid="menu" onClick={openMenu}>
-          <MoreIcon />
-        </button>
+        )}
       </header>
 
       {waking && (
@@ -605,7 +636,16 @@ export function Controller() {
         </section>
       )}
 
-      {away && active ? null : active && media && remoteShown ? (
+      {/* What the lookup of a link is up to, whichever page the phone is on (a title is picked on any of them). */}
+      <ResolveLine resolve={resolve} tvName={tv.name} />
+
+      {error && sheet !== "party" && sheet !== "tvs" && (
+        <p className="error banner" data-testid="error" role="alert">
+          {error}
+        </p>
+      )}
+
+      {remoteOpen && media ? (
         <Remote
           tv={tv}
           online={online}
@@ -619,42 +659,19 @@ export function Controller() {
             if (previous) playLink(previous.url);
           }}
           onOpen={setSheet}
+          onChangeVideo={() => {
+            // Another video is picked where videos are: the remote steps aside (the film plays on) and the page with the box for a link and the library is the one in view.
+            setRemoteShown(false);
+            tabs.setTab("home");
+          }}
         />
       ) : (
-        <section className="home">
-          {active && media && (
-            <Chip icon={<TvIcon />} label={stateLabel(player, tv.name)} value={mediaTitle(media)} onClick={() => setRemoteShown(true)} testId="playing-bar" />
-          )}
-          <h2>{t("phone.homeTitle")}</h2>
-          {linkBox && <p className="muted">{t("phone.homeHelp", { tv: tv.name })}</p>}
-          {link}
-        </section>
+        <div className="tab-panel" key={tabs.tab}>
+          {panel}
+        </div>
       )}
-
-      {active && sheet !== "link" && resolve && resolve.phase !== "found" && (
-        <p className={`status ${resolve.phase}`} data-testid="resolve-status" data-phase={resolve.phase} role="status">
-          {resolve.phase === "resolving" ? (
-            <>
-              <span className="spinner" />
-              {t("play.finding")}
-            </>
-          ) : (
-            resolveFailure(resolve)
-          )}
-        </p>
-      )}
-
-      {error && sheet !== "party" && sheet !== "tvs" && (
-        <p className="error banner" data-testid="error" role="alert">
-          {error}
-        </p>
-      )}
-
-      {sheet === "link" && (
-        <Sheet title={t("play.on", { tv: tv.name })} onClose={closeSheet} testId="link-sheet">
-          {link}
-        </Sheet>
-      )}
+      {mini && media && <MiniRemote media={media} player={player} tvName={tv.name} online={online} onOpen={() => setRemoteShown(true)} onToggle={() => send({ type: player.state === "playing" ? "PAUSE" : "PLAY" })} />}
+      {!remoteOpen && <TabBar tab={tabs.tab} onSelect={tabs.select} />}
       {sheet === "menu" && (
         <MenuSheet
           tvName={tv.name}
@@ -663,8 +680,6 @@ export function Controller() {
           tvCount={tvs.length}
           controlCode={tv.controlCode}
           controllerCount={tv.controllerCount}
-          linkBox={linkBox}
-          onLinkBox={changeLinkBox}
           onParty={() => setSheet("party")}
           onTvs={() => setSheet("tvs")}
           onClose={closeSheet}

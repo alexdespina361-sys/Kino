@@ -2,7 +2,7 @@ import { expect, type Browser, type Locator, type Page } from "@playwright/test"
 import { en } from "../src/client/i18n/en";
 import { ro } from "../src/client/i18n/ro";
 import { listKey, ratingKey } from "../src/shared";
-import { openDevice, openTv, PHONE, readPairingCode, test, withLibrary } from "./helpers";
+import { openDevice, openTv, PHONE, place, readPairingCode, test, withLibrary } from "./helpers";
 
 /**
  * Friends, on the phone: switched on in the settings, made with a code that one profile gives and another types (or a link), and then
@@ -717,19 +717,22 @@ test.describe("sending things to friends", () => {
     await expect(page.getByTestId("tv-online")).toHaveClass(/\bok\b/);
     await signUp(page, account);
     await turnOnFriends(page);
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("account-screen")).toHaveCount(0);
+    await backHome(page);
     return { page, tv, account, name: nameOf(account) };
+  }
+
+  /** The phone leaves the account page for its home screen (a paired phone has the account as one of the places of its bar: Home is one press away). */
+  async function backHome(page: Page) {
+    await page.keyboard.press("Escape");
+    if ((await page.getByTestId("tab-home").count()) > 0) await place(page, "home");
+    await expect(page.getByTestId("account-screen")).toHaveCount(0);
   }
 
   /** Both phones are at their home screens: `giver` makes a code and `taker` types it, and they are back at home. */
   async function meet(giver: Page, taker: Page) {
     for (const page of [giver, taker]) await page.getByTestId("account-button").click();
     await befriend(giver, taker);
-    for (const page of [giver, taker]) {
-      await page.keyboard.press("Escape");
-      await expect(page.getByTestId("account-screen")).toHaveCount(0);
-    }
+    for (const page of [giver, taker]) await backHome(page);
   }
 
   test("a title is recommended with a few words, arrives in the other's inbox and on their home screen, and is dismissed with its cross", async ({ browser, baseURL }) => {
@@ -759,7 +762,7 @@ test.describe("sending things to friends", () => {
     await expect(bob.page.getByTestId("title-sheet")).toContainText("You will like the ending");
     await bob.page.getByTestId("rate-title-toggle").click(); // (Bob rates it: the score is on its card in the row, as it is on every card)
     await bob.page.getByTestId("rate-title-score-7").click();
-    await bob.page.getByTestId("sheet-close").click();
+    await bob.page.getByTestId("title-back").click(); // (a title's page has its own way back, since it is a page of the app now and not a sheet)
     await expect(row.getByTestId("score-badge")).toHaveText("7");
 
     // opening the Friends page is seeing it: the number goes, the title is in the inbox
@@ -810,8 +813,8 @@ test.describe("sending things to friends", () => {
     const toggle = page.getByTestId(id);
     if ((await toggle.getAttribute("aria-checked")) !== String(on)) await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", String(on));
-    for (let back = 0; back < 2; back++) await page.keyboard.press("Escape");
-    await expect(page.getByTestId("account-screen")).toHaveCount(0);
+    await page.keyboard.press("Escape"); // (the settings, to the account page)
+    await backHome(page);
   }
 
   test("a friend who tells what they watch can be asked to watch together; the one asked has a button that starts a party and invites the one who asked, and it fits the narrowest phone in Romanian", async ({ browser, baseURL }) => {
@@ -832,8 +835,8 @@ test.describe("sending things to friends", () => {
     }).toPass();
     await bob.page.getByTestId("friend-together").click();
     await expect(bob.page.getByTestId("account-toast")).toContainText(`Asked ${ann.name} to watch together`);
-    for (let back = 0; back < 3; back++) await bob.page.keyboard.press("Escape"); // (the friend's page, the friends, the account page)
-    await expect(bob.page.getByTestId("account-screen")).toHaveCount(0);
+    for (let back = 0; back < 2; back++) await bob.page.keyboard.press("Escape"); // (the friend's page, the friends)
+    await backHome(bob.page); // (the account page)
 
     // Ann has it as a banner on her home screen and a row on her page of friends; each keeps its words and its buttons inside it, on any phone
     await look(ann.page);
@@ -853,8 +856,8 @@ test.describe("sending things to friends", () => {
       await ann.page.setViewportSize({ width, height: 800 });
       await keepClear(row, [row.locator(".inbox-text"), row.getByTestId("inbox-start"), row.getByTestId("inbox-dismiss")], width, 150);
     }
-    for (let back = 0; back < 2; back++) await ann.page.keyboard.press("Escape");
-    await expect(ann.page.getByTestId("account-screen")).toHaveCount(0);
+    await ann.page.keyboard.press("Escape"); // (the friends)
+    await backHome(ann.page); // (the account page)
 
     // Her button opens the party of her TV and invites Bob to it; the request is gone from her page, and Bob has the invitation
     await start.click();
@@ -953,8 +956,8 @@ test.describe("sending things to friends", () => {
     await sheet.getByTestId("plan-send").click();
     await expect(bob.page.getByTestId("account-toast")).toContainText(say(ro["friends.planSent"], { name: ann.name }));
     await expect(sheet).toHaveCount(0);
-    for (let back = 0; back < 3; back++) await bob.page.keyboard.press("Escape"); // (the friend's page, the friends, the account page)
-    await expect(bob.page.getByTestId("account-screen")).toHaveCount(0);
+    for (let back = 0; back < 2; back++) await bob.page.keyboard.press("Escape"); // (the friend's page, the friends)
+    await backHome(bob.page); // (the account page)
 
     // Ann has it on her page of friends, the words and the buttons kept inside the line on any phone; she says yes
     await look(ann.page);
@@ -971,8 +974,8 @@ test.describe("sending things to friends", () => {
     await row.getByTestId("plan-accept").click();
     await expect(row).toHaveAttribute("data-status", "agreed");
     await expect(row).toContainText(say(ro["friends.planAgreed"], { name: bob.name }));
-    for (let back = 0; back < 2; back++) await ann.page.keyboard.press("Escape");
-    await expect(ann.page.getByTestId("account-screen")).toHaveCount(0);
+    await ann.page.keyboard.press("Escape"); // (the friends)
+    await backHome(ann.page); // (the account page)
 
     // The time comes, by her clock: her home screen says so with a button, kept inside the banner on any phone
     const banner = ann.page.getByTestId("friend-plan-banner");

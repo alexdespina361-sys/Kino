@@ -3,8 +3,7 @@ import { readStorage, writeStorage } from "./format";
 
 /**
  * Whether this phone's home screen has the box for pasting a link: off until it is turned on (most people play from the library). It is
- * the phone's own choice, kept in its browser, and turned on or off from the TV's menu or from the settings: both go through here, so
- * the home screen follows whichever of them was used.
+ * the phone's own choice, kept in its browser, and turned on or off in the settings, which goes through here, so the home screen follows it.
  */
 const KEY = "kino.linkbox";
 

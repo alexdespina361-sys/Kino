@@ -4,7 +4,7 @@ import { weakness } from "../src/client/account/password";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, openTvSettings, openTvSignIn, PHONE, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, openTvSettings, openTvSignIn, PHONE, place, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
 import { TEST_ACCOUNT, TEST_ACCOUNT_B } from "./testAccount";
 
 /**
@@ -283,6 +283,7 @@ test.describe("what was watched follows the person", () => {
     const continuing = second.getByTestId("continue-row");
     await expect(continuing).toContainText("Night Train");
     await expect(continuing).toContainText("1 h 15 min left"); // 6000 - 1500 seconds
+    await place(second, "list"); // (the lists are a place of the bar, My lists)
     await expect(second.getByRole("region", { name: "Favourites" })).toContainText("Saved For Later");
     await expect(second.getByRole("region", { name: "Weekend" })).toContainText("Weekend Pick"); // the lists and their names come along too
 

@@ -45,11 +45,13 @@ test.describe("a title opened with a pointer is where the remote stands when its
     await hasRing(tileOf(tv, "Long film 4"));
   });
 
-  test("a tap on a small screen, then the page's Close button tapped: the same", async ({ browser }) => {
+  // (A phone held upright: a finger is shown no ring, and there is no banner to say which title the remote is on. The remote is where the finger was all the same, and the first key shows it.)
+  test("a tap on a small screen, then the page's Close button tapped: the remote is on the title that was tapped, with no ring for a finger, and the first key lights it", async ({ browser }) => {
     const tv = await openDevice(browser, PHONE, {}, withLibrary(library));
     await tv.goto("/tv");
     await expect(tv.getByTestId("tv-browse")).toBeVisible();
     await expect(tileOf(tv, "Top film 1")).toBeFocused();
+    await hasNoRing(tileOf(tv, "Top film 1")); // (the page put the remote on the first title for a key to start from: nothing of that is drawn for a finger)
 
     const target = tileOf(tv, "Long film 3");
     await target.scrollIntoViewIfNeeded();
@@ -59,9 +61,11 @@ test.describe("a title opened with a pointer is where the remote stands when its
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
 
     await expect(target).toBeFocused();
-    await hasRing(target);
-    await expect(tv.getByTestId("tv-hero-title")).toHaveText("Long film 3");
-    await hasNoRing(tileOf(tv, "Top film 1"));
+    await hasNoRing(target);
+    await tv.keyboard.press("ArrowRight"); // the keys go on from the title that was tapped, and light it
+    await expect(tileOf(tv, "Long film 4")).toBeFocused();
+    await hasRing(tileOf(tv, "Long film 4"));
+    await hasNoRing(target);
   });
 
   test("a page opened with a click starts with the remote on its first title, ring and all, and a title of its grid clicked and closed keeps it", async ({ browser }) => {
