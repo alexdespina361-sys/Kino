@@ -481,10 +481,10 @@ const toward = (v: number, mean: number, k: number): number => mean + k * (v - m
 /**
  * The stalk: the walk with the body brought down, the head forward and low, the tail trailing, each paw where the walk puts it (so the stride, the footfalls and the pace are the walk's)
  * and the legs found again for the hips that are lower. A donor's own sneak is a fox crawling on its belly, and its folds in the legs are not ones this cat's short legs and coat can
- * make: they come out a lump.
+ * make: they come out a lump. (`gait` is the clip whose paws, hips and back are followed when it is not the walk: the Sphynx's stalk, `--sphynx=stalk` of build.mts.)
  */
-export function stalk(m: Made): ClipSource {
-  const walk = m.clips.get("walk");
+export function stalk(m: Made, gait: Clip | undefined = m.clips.get("walk")): ClipSource {
+  const walk = gait;
   if (!walk) throw new Error("no walk to lay the stalk on");
   const pose = new Pose(m.skeleton);
   const specs: Spec[] = [];
@@ -590,6 +590,12 @@ export function jump(m: Made): ClipSource {
  * paws are told against the hips (hanging, and kicking at the wall in time), and go up over the lip when the hips are over it.
  */
 export function climb(m: Made): ClipSource {
+  const { spec, marks } = climbSpec(m);
+  return render(m, "climb", CLIMB_TIME, false, spec, { marks, grounded: false });
+}
+
+/** The climb's spec at a time and a progress, and its marks (seconds): what `climb` renders, for a clip that is laid on it in another way (sphynx-climb.mts; `sway: false` leaves out the body's swing on its arms, for a clip that has another). */
+export function climbSpec(m: Made, o: { sway?: boolean } = {}): { spec: (t: number, u: number) => Spec; marks: Record<string, number> } {
   const stand = standing(m);
   const rest = (p: PawName): [number, number, number] => m.body.padAtRest(p).at;
   const LIP = -CLIMB_LIP;
@@ -658,7 +664,7 @@ export function climb(m: Made): ClipSource {
   const spec = (_t: number, u: number): Spec => {
     const key = through(keys, u);
     // (a cat that hangs by its arms is not still: the body swings a little on them, each kick of the hind legs at the wall lifts it, and the tail answers; it dies away as the haul begins)
-    const hang = 1 - over(u, CLIMB_GRAB + 0.12, 0.15);
+    const hang = o.sway === false ? 0 : 1 - over(u, CLIMB_GRAB + 0.12, 0.15);
     const swing = Math.sin(TAU * 2.5 * u);
     const kick = Math.sin(TAU * (u * (CLIMB_TIME / 0.5)));
     const hipsKey = key.hips!;
@@ -672,7 +678,7 @@ export function climb(m: Made): ClipSource {
     return { ...body, paws: { "front right": fore("front right", u, across), "front left": fore("front left", u, across), "hind right": hind("hind right", u, hips, across), "hind left": hind("hind left", u, hips, across) } };
   };
   const marks = { grab: CLIMB_GRAB * CLIMB_TIME, pull: CLIMB_PULL * CLIMB_TIME, over: CLIMB_OVER * CLIMB_TIME };
-  return render(m, "climb", CLIMB_TIME, false, spec, { marks, grounded: false });
+  return { spec, marks };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

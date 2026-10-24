@@ -50,10 +50,10 @@
     {
       "id": "sketchfab-sphynx-cat-rigged-animated",
       "what": "\"Sphynx cat rigged animated (10 anims)\" on Sketchfab",
-      "where": "https://sketchfab.com/3d-models/sphynx-cat-rigged-animated-10-anims-0b86bde7a8b64fd7a459035b339a790f",
-      "licence": "CC BY (the page needs a sign-in to download, so it was not fetched by this work)",
+      "where": "https://sketchfab.com/3d-models/sphynx-cat-rigged-animated-10-anims-0b86bde7a8b64fd7a459035b339a790f (by animalanimator.com: https://animalanimator.com/the-ultimate-sphinx-cat-reference-for-animal-animators/); the owner saved the file as C:\\Users\\Me\\tools\\cat-workbench\\donors\\sphynx-cat.glb (29,997,956 bytes, sha256 137F44BB315924F89BA279F4CCBF5846F4C741577C49FA0893B7D3AE774FCB0A)",
+      "licence": "CC BY (the page tags the model \"Generated with AI\"); the credit to give if any of it ships: \"Sphynx Cat by animalanimator.com\"",
       "status": "reference-only",
-      "usedFor": "nothing yet: the file was to be saved by the owner as donors/sphynx-cat.glb and it is not there; if it comes, it is a donor of a real cat's gait and gets its own entry, with its attribution, before any of it is used"
+      "usedFor": "tried as a motion donor in round 15 of QA.md (107 joints with a real elbow, 12 hand-keyed animations at 30 frames a second; scripts/cat/anim/recipes/sphynx.mts, sphynx-acts.mts, sphynx-climb.mts): groom, scale, the ledge climb, jump, stalk and crouch were each built from it and judged blind against the shipped clip, and none was clearly better, so nothing of it is in the app (the default build is byte for byte the shipped cat.clips). If a clip is ever shipped from it this entry becomes ship-allowed and the credit goes on the cat's settings page beside the Fox's"
     },
     {
       "id": "cat-model-search",

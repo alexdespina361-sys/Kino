@@ -17,7 +17,10 @@ import { analyseGait, RUNNING, soleVertices, WALKING } from "./gait.mts";
 import { plantPaws } from "./plant.mts";
 import { foxClips, type Wanted as FoxWanted } from "./recipes/fox.mts";
 import { mesh2motionClips, type Wanted as M2mWanted } from "./recipes/mesh2motion.mts";
+import { SPHYNX, sphynxClips, type Wanted as SphynxWanted } from "./recipes/sphynx.mts";
 import { LEG, smoothed } from "./smooth.mts";
+import { GROOM, sphynxGroom } from "./sphynx-acts.mts";
+import { sphynxLedge, sphynxScale } from "./sphynx-climb.mts";
 import type { Style } from "./style.mts";
 import { thin } from "./thin.mts";
 
@@ -39,7 +42,7 @@ const RUN_STYLE: Style = {
 
 interface Entry {
   name: string;
-  donor: "m2m" | "khr";
+  donor: "m2m" | "khr" | "sphynx";
   from: string;
   loop: boolean;
   lock?: boolean;
@@ -47,6 +50,10 @@ interface Entry {
   /** Paws that are put on the floor, and whether the part of the body that sits on it is too. */
   plant?: { paws: string[]; seat: boolean };
   finish: Finish;
+  /** A clip that an act leans on, made like the others and not packed. */
+  scaffold?: boolean;
+  /** The part of the donor's animation to take, in seconds from its start (all of it if left out; the Sphynx's only). */
+  range?: readonly [number, number];
 }
 
 export const TABLE: readonly Entry[] = [
@@ -58,6 +65,29 @@ export const TABLE: readonly Entry[] = [
 
 // (what the pose generator makes: acts.ACTS, told from the cat's own rest; the stalk is laid on the walk, so the donors are built first.)
 
+// (the acts that the Sphynx's motion is put through (sphynx-acts.mts) and not the generator's own posture: `--sphynx=groom` asks for the ones named, `--sphynx=off` for none; the ones that
+// are in the app by default are SPHYNX_SHIPPED: they won their blind reviews, docs/cat-animation/QA.md round 15; the donor is not in the repository, SOURCES.md)
+const SPHYNX_ACTS: Record<string, (m: acts.Made) => ClipSource> = {
+  groom: (m) => sphynxGroom(m, GROOM),
+  // (the card climb, and the ledge climb with the Sphynx's motion on its hang: sphynx-climb.mts)
+  scale: (m) => sphynxScale(m),
+  climb: (m) => sphynxLedge(m),
+  // (the generator's stalk with the paws of the Sphynx's stalk in place of the walk's)
+  stalk: (m) => acts.stalk(m, m.clips.get("stalk-gait")),
+};
+const SPHYNX_SHIPPED: string[] = [];
+// (and the Sphynx's animations on the cat's bones as they are, a donor of the table's own kind, asked for by `--sphynx=<asks>`: `plain-stalk` and `plain-jump` stand in for the generator's clip
+// of the name; `stalk` makes the Sphynx's stalk as a gait, not packed, for the generator's stalk above to follow)
+interface SphynxEntry extends Entry {
+  asks: string;
+}
+const SPHYNX_TABLE: readonly SphynxEntry[] = [
+  { asks: "plain-stalk", name: "stalk", donor: "sphynx", from: "Cat_Stalk_Hunt", loop: true, lock: true, finish: { gait: WALKING, floor: "lift" } },
+  { asks: "plain-jump", name: "jump", donor: "sphynx", from: "Cat_Leap_Jump", loop: false, finish: { leap: true, floor: "pin" } },
+  { asks: "plain-crouch", name: "crouch", donor: "sphynx", from: "Cat_Pounce_Attack", loop: false, range: [0, 2], finish: { floor: "pin" } },
+  { asks: "stalk", name: "stalk-gait", donor: "sphynx", from: "Cat_Stalk_Hunt", loop: true, lock: true, finish: { gait: WALKING, floor: "lift" }, scaffold: true },
+];
+
 const arg = (name: string, fallback: string): string => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const f = readFileSync(arg("mesh", "src/client/cat/render/gl/cat.mesh"));
 const mesh = decodeMesh(f.buffer.slice(f.byteOffset, f.byteOffset + f.byteLength) as ArrayBuffer);
@@ -65,15 +95,21 @@ const skeleton = new Skeleton(mesh.skeleton);
 // (`--only` is which clips are written: the donors are always built, the acts lean on them)
 const only = arg("only", "").split(",").filter(Boolean);
 const wanted = (name: string): boolean => only.length === 0 || only.includes(name);
-const entries = TABLE;
+const sphynx = arg("sphynx", SPHYNX_SHIPPED.join(",")) === "off" ? [] : arg("sphynx", SPHYNX_SHIPPED.join(",")).split(",").filter(Boolean);
+const entries: Entry[] = [...TABLE, ...SPHYNX_TABLE.filter((e) => sphynx.includes(e.asks))];
 const say = (line: string): void => console.log(line);
 
 const raw = new Map<string, ClipSource>();
-for (const donor of ["m2m", "khr"] as const) {
+for (const donor of ["m2m", "khr", "sphynx"] as const) {
   const wanted = entries.filter((e) => e.donor === donor);
   if (wanted.length === 0) continue;
-  const asked = wanted.map((e) => ({ from: e.from, as: e.name, loop: e.loop, ...(e.lock ? { lock: true } : {}), ...(e.style ? { style: e.style } : {}) }));
-  const made = donor === "m2m" ? mesh2motionClips(M2M, skeleton, mesh, asked as M2mWanted[]) : foxClips(KHR, skeleton, mesh, asked as FoxWanted[]);
+  const asked = wanted.map((e) => ({ from: e.from, as: e.name, loop: e.loop, ...(e.lock ? { lock: true } : {}), ...(e.style ? { style: e.style } : {}), ...(e.range ? { range: e.range } : {}) }));
+  const made =
+    donor === "m2m"
+      ? mesh2motionClips(M2M, skeleton, mesh, asked as M2mWanted[])
+      : donor === "khr"
+        ? foxClips(KHR, skeleton, mesh, asked as FoxWanted[])
+        : sphynxClips(SPHYNX, skeleton, mesh, asked as SphynxWanted[]);
   for (const clip of made) raw.set(clip.name, clip);
 }
 
@@ -107,11 +143,12 @@ const out = finished.map((s, i) => {
 const m = acts.context(mesh, skeleton, new Map(played.map((c) => [c.name, c])));
 const made: ClipSource[] = [];
 for (const [name, make] of Object.entries(acts.ACTS)) {
-  if (!wanted(name)) continue;
+  if (!wanted(name) || SPHYNX_TABLE.some((e) => !e.scaffold && e.name === name && sphynx.includes(e.asks))) continue;
   const t0 = Date.now();
-  const clip = make(m);
+  const fromSphynx = sphynx.includes(name) ? SPHYNX_ACTS[name] : undefined;
+  const clip = (fromSphynx ?? make)(m);
   made.push(clip);
-  say(`${name}: ${clip.frames} frames at ${clip.fps.toFixed(2)}${clip.loop ? " (loop)" : ""}, made in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  say(`${name}: ${clip.frames} frames at ${clip.fps.toFixed(2)}${clip.loop ? " (loop)" : ""}${fromSphynx ? " (from the Sphynx)" : ""}, made in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
 // (a leg that is reached for each frame of a clip on its own flicks now and then, a few degrees off the line between its neighbours: each such frame is brought back to within `--smooth`
@@ -121,7 +158,7 @@ const SUDDEN = ["swat"];
 const smoothMade = smooth === "off" ? made : made.map((s) => (SUDDEN.includes(s.name) ? s : smoothed(s, (j) => LEG.test(skeleton.names[j]!), (Number(smooth) * Math.PI) / 180)));
 // (a clip is kept at fewer frames a second where the player's interpolation gives the same motion: `--thin=off` keeps them all, `--tol=<degrees>` says how far a bone may be turned from
 // where it was made, which is half a degree if it is not told, and a place may be a thousandth of the body for each half degree)
-const everything = [...out.filter((s) => wanted(s.name)), ...smoothMade];
+const everything = [...out.filter((s) => wanted(s.name) && !entries.some((e) => e.scaffold && e.name === s.name)), ...smoothMade];
 const tolerance = { turn: (Number(arg("tol", "0.5")) * Math.PI) / 180, place: Number(arg("tol", "0.5")) * 0.002 };
 const all =
   arg("thin", "on") === "off"
