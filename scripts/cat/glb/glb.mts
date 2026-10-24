@@ -37,7 +37,7 @@ export function readGlb(path: string): { json: Json; mesh: GlbMesh; bin: Buffer;
     const bv = json!.bufferViews[acc.bufferView];
     const n = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 }[acc.type as string]!;
     const csize = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 }[acc.componentType as number]!;
-    return { view: new DataView(b.buffer, b.byteOffset + (bv.byteOffset ?? 0) + (acc.byteOffset ?? 0), bv.byteLength), stride: bv.byteStride ?? n * csize, count: acc.count, ctype: acc.componentType, n, offset: 0 };
+    return { view: new DataView(b.buffer, b.byteOffset + (bv.byteOffset ?? 0) + (acc.byteOffset ?? 0), bv.byteLength - (acc.byteOffset ?? 0)), stride: bv.byteStride ?? n * csize, count: acc.count, ctype: acc.componentType, n, offset: 0 };
   };
   const readAcc = (index: number): Float64Array => {
     const acc = json!.accessors[index];

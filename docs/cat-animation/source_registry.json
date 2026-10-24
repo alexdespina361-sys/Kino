@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "updated": "2026-10-24",
+  "rule": "ship-allowed: the licence lets what is derived from it go into the app, and what the licence asks for (a name, a licence, a note that it was changed) is done where the app shows it. reference-only: looked at, measured or learned from; nothing of it is in the app. rejected: not used, with the reason. A source that is not in this file is not used.",
+  "sources": [
+    {
+      "id": "meshy-fluffy-blue-eyed-cat",
+      "what": "The canonical cat: mesh, rest pose, colours (\"Fluffy Blue-Eyed Cat (all animations)\", Meshy AI)",
+      "where": "C:\\Users\\Me\\tools\\cat-workbench\\canonical\\Meshy_AI_Fluffy_Blue_Eyed_Cat_All_Animations.glb (not in the repository)",
+      "sha256": "54c393f60f3526e9a56fd49c931aa849a8edf98163379f44fd20d5fa332f59aa",
+      "licence": "CC BY 4.0 (the owner's statement of 2026-10-21; Meshy's own page was not checked: see reports/kino-cat/06-risk-and-license-register.md)",
+      "status": "ship-allowed",
+      "usedFor": "cat.mesh and model.ts (simplified, re-skinned onto the engine's 32-bone skeleton, colours baked into the vertices); the model's own clips are NOT shipped, its own walk was only traced to see how the body rocks (reference-only)",
+      "attribution": "cat.settings.credit (en/ro/it), shown on the cat's settings page"
+    },
+    {
+      "id": "mesh2motion-fox-animations",
+      "what": "Fourteen hand-made quadruped animations on one fox skeleton (Mesh2Motion)",
+      "where": "https://github.com/Mesh2Motion/mesh2motion-app , static/animations/fox-animations.glb",
+      "licence": "CC0 1.0 for the assets, models, rigs and animations; MIT for the program",
+      "status": "ship-allowed",
+      "usedFor": "walk, run and yawn: the fox's joint turns are put on the cat's bones (scripts/cat/anim/retarget.mts, recipes/mesh2motion.mts), then given the style of a cat, planted on the floor and thinned; nothing of the fox's model is used",
+      "attribution": "none asked for; named in docs/cat-animation/SOURCES.md"
+    },
+    {
+      "id": "khronos-fox",
+      "what": "\"Fox\" of the glTF Sample Assets: Survey, Walk, Run",
+      "where": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox",
+      "licence": "model CC0 1.0 (PixelMannen); rigging and animation CC BY 4.0 (tomkranis); conversion to glTF CC BY 4.0 (@AsoboStudio and @scurest)",
+      "status": "ship-allowed",
+      "usedFor": "stand (the Survey animation put on the cat's bones, as above); nothing of the fox's model is used",
+      "attribution": "cat.settings.credit (en/ro/it): the animation's maker, the converters, the licence, \"changed to fit\""
+    },
+    {
+      "id": "quaternius-cats",
+      "what": "The cats of Quaternius's animated animals packs (two files, 2022 and 2023)",
+      "where": "C:\\Users\\Me\\tools\\cat-workbench\\donors\\quaternius-cat-2022 and quaternius-cat-2023",
+      "licence": "CC0 1.0",
+      "status": "reference-only",
+      "usedFor": "nothing: looked at as donors of a cat's gait; the rigs are too crude (one bone for each leg, 4 to 16 bones in all) to drive the cat's four-bone legs"
+    },
+    {
+      "id": "mesh2motion-fox-cat-rig",
+      "what": "The fox-cat rig variation and the sit and idle sources of Mesh2Motion",
+      "where": "C:\\Users\\Me\\tools\\cat-workbench\\donors\\mesh2motion (models-variation/fox/cat.glb and the .blend files)",
+      "licence": "CC0 1.0",
+      "status": "reference-only",
+      "usedFor": "nothing: inspected, not used"
+    },
+    {
+      "id": "sketchfab-sphynx-cat-rigged-animated",
+      "what": "\"Sphynx cat rigged animated (10 anims)\" on Sketchfab",
+      "where": "https://sketchfab.com/3d-models/sphynx-cat-rigged-animated-10-anims-0b86bde7a8b64fd7a459035b339a790f",
+      "licence": "CC BY (the page needs a sign-in to download, so it was not fetched by this work)",
+      "status": "reference-only",
+      "usedFor": "nothing yet: the file was to be saved by the owner as donors/sphynx-cat.glb and it is not there; if it comes, it is a donor of a real cat's gait and gets its own entry, with its attribution, before any of it is used"
+    },
+    {
+      "id": "cat-model-search",
+      "what": "A search for a better canonical cat: 50 Objaverse models (cc0 or by, from 798,759 scanned), 2 Quaternius, 10 Poly Pizza (CC BY 3.0), Poly Haven, Wikimedia Commons, OpenGameArt",
+      "licence": "CC0 or CC BY only were kept",
+      "status": "rejected",
+      "usedFor": "nothing: none came near the Meshy cat (the best two scored 4 of 5 on a clay render, and are low-poly); recorded so that the search is not repeated"
+    },
+    {
+      "id": "mocapanything",
+      "what": "MoCapAnything (arXiv 2604.28130): motion capture of any skeleton from video",
+      "where": "https://arxiv.org/abs/2604.28130",
+      "status": "rejected",
+      "usedFor": "nothing: its reported joint error (about 23 degrees) is more than a cat's leg chain can take"
+    },
+    {
+      "id": "furever",
+      "what": "A commercial desktop cat app, looked at as a competitor",
+      "status": "rejected",
+      "usedFor": "nothing: its program was never run, and none of its assets, code or telemetry is used; the scorecard of this work is made from what is public"
+    },
+    {
+      "id": "blender",
+      "what": "Blender 4.5 (a tool, offline)",
+      "licence": "GPL-3.0-or-later",
+      "status": "reference-only",
+      "usedFor": "reading and exporting the cat's rig to FBX (scripts/cat/anim/blender/export_rig_fbx.py); none of its code or output is in the app"
+    }
+  ]
+}

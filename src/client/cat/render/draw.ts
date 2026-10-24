@@ -425,7 +425,8 @@ export function drawCat(ctx: Ctx, pal: Palette, s: Solved, box: DrawBox): void {
 
   const grow = lerp(0.82, 1, appear);
   const flip = Math.abs(s.flip) < 0.2 ? (s.flip < 0 ? -0.2 : 0.2) : s.flip;
-  ctx.translate(ox, oy);
+  // (a cat that hangs from a lip is drawn below and behind the point the frame holds, which is where it will stand: its shadow, which is on the ground, is not)
+  ctx.translate(ox + s.shift.x * px, oy + s.shift.y * px);
   ctx.scale(px * flip * grow * s.sx, px * grow * s.sy);
   // pitch about the middle of the body
   ctx.translate(0, -0.4);

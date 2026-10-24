@@ -6,7 +6,7 @@
 //   node scripts/cat/extents.mjs                        what was measured, per clip (the most of any picture), and --profile=sit,loaf per band
 //   node scripts/cat/extents.mjs --write                make src/client/cat/engine/shape-table.ts from it
 //   node scripts/cat/extents.mjs --check                measure again and say (exit 1) if any picture reaches further than the table says
-//   options: --coat=ginger --alpha=80 --gpu=real|soft --json
+//   options: --coat=ginger --alpha=80 --gpu=real|soft --clips=<file> --json
 //
 // Development tooling (the cat lab): nothing it makes, but the table, is part of the app.
 import { chromium } from "@playwright/test";
@@ -21,6 +21,7 @@ const flag = (name, fallback) => rest.find((arg) => arg.startsWith(`--${name}=`)
 const coat = flag("coat", "ginger");
 const alpha = Number(flag("alpha", 80));
 const mesh = readFileSync(resolve(root, flag("mesh", "src/client/cat/render/gl/cat.mesh"))).toString("base64");
+const clips = readFileSync(resolve(root, flag("clips", "src/client/cat/render/gl/cat.clips"))).toString("base64");
 const tablePath = resolve(root, "src/client/cat/engine/shape-table.ts");
 const code = await bundle(resolve(root, "src/client/cat/lab/gl.ts"), "CatLabGl");
 const checking = rest.includes("--check");
@@ -34,7 +35,7 @@ await page.addScriptTag({ content: code });
 if (checking) await page.addScriptTag({ content: tableCode });
 const errors = [];
 page.on("pageerror", (error) => errors.push(String(error)));
-const rows = await page.evaluate(([m, c, a]) => window.CatLabGl.glExtents(m, window.CatLabGl.EXTENT_CELLS, c, 7, a), [mesh, coat, alpha]);
+const rows = await page.evaluate(([m, k, c, a]) => window.CatLabGl.glExtents(m, k, window.CatLabGl.EXTENT_CELLS, c, 7, a), [mesh, clips, coat, alpha]);
 let tooFar = [];
 if (checking) {
   // (in the page, where the table can be loaded as it is: every band of every picture is inside the table's)
@@ -73,7 +74,7 @@ const PAD = 0.02; // (a hair of room on every side, and on the side of more)
 const up = (n) => Math.ceil(n * 100 - 1e-9) / 100;
 const byClip = new Map();
 for (const row of rows) byClip.set(row.clip, [...(byClip.get(row.clip) ?? []), row]);
-const CLIPS = ["stand", "walk", "run", "sit", "loaf", "curl", "crouch", "jump", "stretch", "yawn", "groom", "pet", "point", "scratch", "knead", "sniff", "stalk", "wiggle", "peek", "tap", "swat", "doze", "shift"];
+const CLIPS = ["stand", "walk", "run", "sit", "loaf", "curl", "crouch", "jump", "climb", "scale", "stretch", "yawn", "groom", "pet", "point", "scratch", "knead", "sniff", "stalk", "wiggle", "peek", "tap", "swat", "doze", "shift"];
 const missing = CLIPS.filter((clip) => !byClip.has(clip));
 if (missing.length > 0) {
   console.error(`no pictures of: ${missing.join(", ")}`);

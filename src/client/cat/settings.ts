@@ -173,6 +173,24 @@ const subscribeGone = (listener: () => void): (() => void) => {
 };
 
 /**
+ * Whether the viewer has sent the cat to sleep (from its menu, or "send away" in the corner's panel): it is gone from every page and every film until it is woken, and the
+ * panel and the settings page then have a button for that. It lasts for this load of the page only: a cat that is switched off and on again, or a page that is loaded
+ * again, is awake. The cat's host says it; before there is a cat it is not.
+ */
+const ASLEEP = "kino:cat-asleep";
+let asleep = false;
+export function setCatAsleep(value: boolean): void {
+  if (asleep === value) return;
+  asleep = value;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(ASLEEP));
+}
+const subscribeAsleep = (listener: () => void): (() => void) => {
+  window.addEventListener(ASLEEP, listener);
+  return () => window.removeEventListener(ASLEEP, listener);
+};
+export const useCatAsleep = (): boolean => useSyncExternalStore(subscribeAsleep, () => asleep, () => false);
+
+/**
  * Which cat is really drawn on this screen, and, when it is not the one that was chosen, why (for the settings page, so that a viewer who chose the detailed cat
  * and sees the simple one is told why, and can have it tried again): `slow`: the screen could not keep up with it; `graphics`: this browser would not give the
  * graphics it needs; `file`: its file did not come; `lost`: the browser took the picture away. The cat's host says it; before there is a cat it is `none`.
