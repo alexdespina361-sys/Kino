@@ -51,8 +51,8 @@ export const foxLinks = (donor: Donor, cat: Skeleton): Link[] => [
 export const FOX_LEGS: Leg[] = [
   { chain: ["backleg", "backleg0", "backleg1", "backleg2"], carrier: { cat: "Hips", donor: "b_Hip_01" }, foot: "b_LeftFoot02_018", toes: ["b_LeftFoot02_018"], pad: 0 },
   { chain: ["R_backleg", "R_backleg0", "R_backleg1", "R_backleg2"], carrier: { cat: "Hips", donor: "b_Hip_01" }, foot: "b_RightFoot02_022", toes: ["b_RightFoot02_022"], pad: 1 },
-  { chain: ["frontleg", "frontleg0", "frontleg1", "frontleg2"], carrier: { cat: "chest", donor: "b_Spine02_03" }, foot: "b_LeftHand_011", toes: ["b_LeftHand_011"], pad: 2 },
-  { chain: ["R_frontleg", "R_frontleg0", "R_frontleg1", "R_frontleg2"], carrier: { cat: "chest", donor: "b_Spine02_03" }, foot: "b_RightHand_08", toes: ["b_RightHand_08"], pad: 3 },
+  { chain: ["frontleg", "frontleg_e", "frontleg0", "frontleg1", "frontleg2"], carrier: { cat: "chest", donor: "b_Spine02_03" }, foot: "b_LeftHand_011", toes: ["b_LeftHand_011"], pad: 2 },
+  { chain: ["R_frontleg", "R_frontleg_e", "R_frontleg0", "R_frontleg1", "R_frontleg2"], carrier: { cat: "chest", donor: "b_Spine02_03" }, foot: "b_RightHand_08", toes: ["b_RightHand_08"], pad: 3 },
 ];
 
 /** The fox's hips are this high above its feet (the model's units), and the cat's are this high (body lengths): the hips' travel is scaled by their ratio. */
