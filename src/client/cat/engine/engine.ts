@@ -118,6 +118,8 @@ export interface EngineDebug {
   choice: string;
   /** The poster it is waiting to be able to set out for (it was asked while in the air, say), if it is. */
   pending: string | null;
+  /** What it was told while it could not set out -- a call, or the command to come ("come"), or to play ("play") -- and is waiting to be able to answer from where it lands, if it is. */
+  asked: "come" | "play" | null;
   /** It was shaken off its shelf by a page that was flung, and has not come down on anything yet (see `SHAKE_SPEED`). */
   flung: boolean;
   /** How fast the page is scrolled just now, in body lengths a second (down the screen positive). */
@@ -243,9 +245,10 @@ const SWAT_FIRST = 1.45;
 const SWAT_SECOND = 1.25;
 /**
  * A cat asked to show a poster while it cannot set out (it is in the air, in a hand, or fading out to come back elsewhere, or the shelf it stood on has just gone from under it, as
- * a page scrolled to the poster takes it) sets out when it can, if that is within this many seconds; and a shelf that is gone, with another where the cat's feet are (within this
- * many body lengths of them), is exchanged for that one, and not left by a leap. (The cat is set on the new shelf in a frame, so the distance is kept under what the fastest of its
- * own movements covers in a frame of a fast screen: 18 body lengths a second is 0.3 of one at 60 frames.)
+ * a page scrolled to the poster takes it) sets out when it can, if that is within this many seconds (so does a cat that is called, or told to come or to play, when it cannot set out: in the
+ * middle of a leap, say); and a shelf that is gone, with another where the cat's feet are (within this many body lengths of them), is exchanged for that one, and not left by a leap. (The
+ * cat is set on the new shelf in a frame, so the distance is kept under what the fastest of its own movements covers in a frame of a fast screen: 18 body lengths a second is 0.3 of one at
+ * 60 frames.)
  */
 const POINT_WAIT = 8;
 const ADOPT = 0.25;
@@ -467,6 +470,11 @@ export class CatEngine {
   private swatFixes = 0;
   /** The poster the cat was asked to show when it could not set out, and the time (the engine's own clock) it is no longer wanted after (see `pointAt`). */
   private pendingPoint: { id: string; until: number } | null = null;
+  /**
+   * What the cat was told when it could not set out: a call to the place `at` (the command to come is one), or the command to play, and the time (the engine's own clock) it is no longer wanted
+   * after (see `comeTo`, `playPlan`).
+   */
+  private pendingCall: { to: "come" | "play"; at: Vec | undefined; until: number } | null = null;
   private choice = "";
   /** Where the shelf the cat stands on was at the last frame (to see that it is moving: the page is scrolled). */
   private shelfY = Number.NaN;
@@ -546,6 +554,7 @@ export class CatEngine {
       now: this.now,
       choice: this.choice,
       pending: this.pendingPoint?.id ?? null,
+      asked: this.pendingCall?.to ?? null,
       flung: this.fall?.free === true && !this.fall.landed,
       scroll: this.world ? this.scrollSpeed / this.world.bodyLength : 0,
       fast: this.fastRun,
@@ -670,6 +679,7 @@ export class CatEngine {
         case "cat.grab":
           if (unreachable || inHand || !this.canBeCarried(world)) break;
           this.pendingPoint = null;
+          this.pendingCall = null;
           this.grab(world, event.at);
           break;
         case "cat.carry":
@@ -702,6 +712,7 @@ export class CatEngine {
         case "cat.call":
           if (unreachable || inHand) break;
           this.pendingPoint = null;
+          this.pendingCall = null;
           this.lastInteraction = this.now;
           this.dismissed = false;
           this.mood.energy = clamp01(this.mood.energy + 0.25);
@@ -711,6 +722,7 @@ export class CatEngine {
         case "cat.command":
           if ((unreachable || inHand) && event.command !== "away") break;
           this.pendingPoint = null;
+          this.pendingCall = null;
           this.lastInteraction = this.now;
           this.command(world, event.command);
           break;
@@ -736,6 +748,7 @@ export class CatEngine {
           // (a cat that is in a hand, in the air, or fading out is asked all the same: it sets out when it can, see `pointAt`)
           if (world.mode === "away") break;
           this.lastInteraction = this.now;
+          this.pendingCall = null;
           this.pointAt(world, event.targetId);
           break;
         case "player.play":
@@ -756,7 +769,10 @@ export class CatEngine {
     }
   }
 
-  /** Replace the plan, unless the cat is in the air (it finishes its leap first), hanging from a lip or going up the face of a card to one (it hauls itself up first) or in a hand (the hand lets go first). */
+  /**
+   * Replace the plan, unless the cat is in the air (it finishes its leap first), hanging from a lip or going up the face of a card to one (it hauls itself up first) or in a hand (the hand lets go
+   * first). A plan that is a route from where the cat stands is not made for a cat that is about to be somewhere else: it waits until the cat can set out (see `readyToSetOut`, `comeTo`).
+   */
   private hardPlan(plan: Act[]): void {
     this.queue = plan;
     if (!this.act) return;
@@ -1491,10 +1507,19 @@ export class CatEngine {
     return best;
   }
 
-  private comeTo(world: World, at: Vec | undefined): void {
+  /**
+   * The cat is called to `at` (the command to come is a call to where the pointer is): it runs to the shelf nearest the call. A cat that cannot set out from where it is -- crouching for a leap, or in
+   * the air, say: it lands on another shelf than the one it stands on, and a route made from the shelf it leaves would be walked from the one it lands on -- is answered when it can, from where it is
+   * then (`waited`: the time the call is no longer wanted after, for one that is being answered again).
+   */
+  private comeTo(world: World, at: Vec | undefined, waited?: number): void {
     if (!this.placed || this.ledges.length === 0) return;
     if (world.reducedMotion || world.mode !== "browse") {
       this.hardPlan([{ k: "rest", pose: "sit", dur: 8 }]);
+      return;
+    }
+    if (!this.readyToSetOut(world)) {
+      this.pendingCall = { to: "come", at, until: waited ?? this.now + POINT_WAIT };
       return;
     }
     const goal = at ?? world.pointer ?? { x: world.viewport.x + world.viewport.w / 2, y: world.viewport.y + world.viewport.h };
@@ -1654,12 +1679,16 @@ export class CatEngine {
     return best;
   }
 
-  private playPlan(world: World): void {
+  /** The cat is told to play: a few leaps from shelf to shelf from where it stands, when it can set out (see `comeTo`). */
+  private playPlan(world: World, waited?: number): void {
     if (world.reducedMotion || world.mode !== "browse") {
       this.hardPlan([{ k: "rest", pose: "sit", dur: 4 }]);
       return;
     }
-    if (!this.here()) return;
+    if (!this.readyToSetOut(world)) {
+      this.pendingCall = { to: "play", at: undefined, until: waited ?? this.now + POINT_WAIT };
+      return;
+    }
     this.hardPlan([...this.hopAround(world, 3), { k: "rest", pose: "sit", dur: 5 }]);
   }
 
@@ -2243,6 +2272,16 @@ export class CatEngine {
     if (waiting) {
       if (this.now <= waiting.until && !this.dismissed) this.pointAt(world, waiting.id);
       else this.pendingPoint = null;
+    }
+    // (a call, or the command to come or to play, that the cat was given while it could not set out: it is answered from where it is now, if it can set out from there, and if the viewer is still
+    // in the library, and has not sent the cat away or asked for less motion; a cat that still cannot set out waits some more)
+    const called = this.pendingCall;
+    if (called) {
+      this.pendingCall = null;
+      if (this.now <= called.until && !this.dismissed && world.mode === "browse" && !world.reducedMotion) {
+        if (called.to === "play") this.playPlan(world, called.until);
+        else this.comeTo(world, called.at, called.until);
+      }
     }
     if (this.queue.length > 0) {
       this.act = this.queue.shift()!;
