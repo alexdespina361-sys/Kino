@@ -3099,7 +3099,8 @@ export class CatEngine {
     const to = ledgeAt(this.ledges, act.toSurface, act.standX);
     // (the cat must be where its paws take hold: under the lip, hanging, or a step from it and on its feet; if the page has moved since this was planned, there is no climb)
     // (one that has come up the face of the card is where its paws take hold: the scale stopped it at the height the art hangs it from the lip, see `SCALE_TOP`)
-    if (!to || Math.abs(this.x - (act.standX - act.dir * CLIMB_BACK * L)) > 0.6 * L || (!fromFace && Math.abs(this.y - (to.y + CLIMB_HANG * L)) > 0.5 * L)) {
+    // (nor if the ledge no longer reaches the place it was to stand at, by what `runClimb` allows: begun, such a climb would be let go of in the same frame, with the cat already at the top)
+    if (!to || act.standX < to.x0 - 0.2 * L || act.standX > to.x1 + 0.2 * L || Math.abs(this.x - (act.standX - act.dir * CLIMB_BACK * L)) > 0.6 * L || (!fromFace && Math.abs(this.y - (to.y + CLIMB_HANG * L)) > 0.5 * L)) {
       if (this.grounded) {
         this.queue = [];
         this.finish();

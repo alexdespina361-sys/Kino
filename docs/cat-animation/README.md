@@ -22,7 +22,7 @@ Then every clip goes through the numbers (`qa.mts`: does the body hold together,
 | floor | `plant.mts`, `ground.mts`, `floor.mts`, `gait.mts`, `flight.mts` | the whole cat is moved so the lowest part of the mesh is at the floor; a gait's stride is measured; a leap's flight is left to the engine |
 | generate | `posegen.mts`, `ik.mts`, `acts.mts` | the clips no donor has (sit, lie, curl, stretch, groom, point, tap, knead, climb, ...), as postures solved for the bones |
 | smooth and thin | `smooth.mts`, `thin.mts` | a bone solved frame by frame is smoothed; frames the player's own interpolation reproduces are dropped |
-| pack | `pack.mts`, `finish.mts`, `src/client/cat/render/gl/clipfile.ts` | one `cat.clips` file, about 320 KB (the test allows 340 KiB; a clip that lives in its holds moves 23 to 27 bones every frame and does not thin) |
+| pack | `pack.mts`, `finish.mts`, `src/client/cat/render/gl/clipfile.ts` | one `cat.clips` file, about 328 KB (328,064 bytes; the test allows 340 KiB; a clip that lives in its holds moves 23 to 27 bones every frame and does not thin) |
 | check | `qa.mts`, `integrity.mts`, `behaviour.mts` | the numbers (below), and the clips played in the order the engine plays them |
 
 ## Commands
@@ -43,7 +43,13 @@ node node_modules/tsx/dist/cli.mjs scripts/cat/anim/qa.mts src/client/cat/render
 node scripts/cat/glsheet.mjs clip .kino-cat/sheet.png --clip=groom --n=12 --blind=1 --clips=.kino-cat/x.clips
 
 # after any change to a clip: the engine plans with how far the drawn cat reaches in each posture
+# (measured from pictures of the settled cat, a few seconds of work; --check says whether any picture reaches farther than the table;
+#  --profile=sit,groom prints the bands of a clip; --clips=<file> measures a file that is not the one in the app)
 node scripts/cat/extents.mjs --write
+node scripts/cat/extents.mjs --check
+
+# the pictures that table is made from, as a sheet (--label is the start of the picture's name; --cellw=560 for a posture with a long tail)
+node scripts/cat/glsheet.mjs extents .kino-cat/extents-sit.png --label=sit --cols=4 --cellw=560
 ```
 
 `.kino-cat/` is not tracked. A full build takes about 40 s.

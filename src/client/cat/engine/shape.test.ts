@@ -9,7 +9,7 @@ const CLIPS = Object.keys(BANDS) as Clip[];
 
 describe("the shape of the drawn cat", () => {
   it("is measured for every clip, from the feet up, with nothing missing in between", () => {
-    expect(CLIPS.length).toBe(24);
+    expect(CLIPS.length).toBe(25);
     for (const clip of CLIPS) {
       const bands = BANDS[clip];
       expect(bands.length, clip).toBeGreaterThanOrEqual(4);
@@ -26,14 +26,15 @@ describe("the shape of the drawn cat", () => {
     expect(up("curl")).toBeLessThan(up("loaf"));
     expect(up("loaf")).toBeLessThan(up("sit"));
     expect(up("sit")).toBeLessThanOrEqual(up("stand") + BAND);
-    // (what the old boxes had at half the width and half the height of it)
-    expect(up("sit")).toBeGreaterThanOrEqual(1);
+    // (the head of a cat that sits up is drawn nine tenths of a body length from the floor, and the table's bands are a tenth: what the old boxes had at half the width and half the height of it)
+    expect(up("sit")).toBeGreaterThanOrEqual(0.85);
     expect(up("loaf")).toBeGreaterThan(0.7);
     const sit = reachOf("sit");
     expect(sit.back).toBeGreaterThan(0.9);
     expect(sit.front).toBeLessThan(0.7);
-    // ...and it is a tail: the body of the same cat, a hand's breadth up, is not as long
-    const [back] = BANDS.sit[4]!;
+    // ...and it is a tail, held out level behind the rump through the lower half of the bands: above it, at the height of the back and the head, the body of the same cat is not as long
+    expect(BANDS.sit[2]![0]).toBeGreaterThan(1.2);
+    const [back] = BANDS.sit[6]!;
     expect(back).toBeLessThan(0.5);
   });
 
@@ -44,7 +45,8 @@ describe("the shape of the drawn cat", () => {
       expect(back, clip).toBeLessThanOrEqual(reach.back);
       expect(front, clip).toBeLessThanOrEqual(reach.front);
       expect(up, clip).toBeLessThanOrEqual(reach.up);
-      expect(back + front, clip).toBeGreaterThan(0.5);
+      // (the cat that goes up the face of a card is seen from behind: it is as wide as it is across, 0.44 of a body length)
+      expect(back + front, clip).toBeGreaterThan(clip === "scale" ? 0.4 : 0.5);
       expect(up, clip).toBeGreaterThan(0.3);
       expect(CORES[clip]).toBe(coreOf(clip));
     }
@@ -73,9 +75,10 @@ describe("the shape of the drawn cat", () => {
   });
 
   it("touches a rectangle only where it is drawn: above its head, below its feet, and far off are not", () => {
-    // (a rectangle ahead of its nose, at the height of its head, and one the other side of it)
-    const ahead = BANDS.stand[8]![1] * L;
-    const nose: Rect = { x: 500 + ahead - 2, y: 800 - 0.85 * L, w: 10, h: 10 };
+    // (a rectangle ahead of its nose, at the height of its head, and one the other side of it: the nose is in the band that reaches furthest ahead)
+    const tip = BANDS.stand.reduce((best, [, front], i) => (front > best.front ? { front, band: i } : best), { front: -Infinity, band: 0 });
+    const ahead = tip.front * L;
+    const nose: Rect = { x: 500 + ahead - 2, y: 800 - (tip.band + 0.5) * BAND * L - 5, w: 10, h: 10 };
     expect(shapeHits("stand", 1, 500, 800, L, nose)).toBe(true);
     expect(shapeHits("stand", 1, 500 - 0.6 * L, 800, L, nose)).toBe(false);
     expect(shapeHits("stand", 1, 500, 800, L, { x: 450, y: 800 - 3 * L, w: 20, h: 20 })).toBe(false);

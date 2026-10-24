@@ -786,6 +786,8 @@
 :root[data-ui="polish"] .tv-group-body .tv-switch-row:focus-visible { z-index: 2; background: #fff; }
 :root[data-ui="polish"] .tv-set-hint { display: flex; align-items: flex-start; gap: calc(var(--em) * 0.8); margin: 0; padding: 0 calc(var(--em) * 0.5); color: var(--text-3); font-size: var(--fs-1); line-height: 1.4; }
 :root[data-ui="polish"] .tv-set-hint svg { flex: none; margin-top: 0.15em; }
+/* The credit of the cat's models: the licence asks for it to be said, so it is said in full, as fine print a step under the hints round it (in a language with long words it is the longest text of the page). */
+:root[data-ui="polish"] .tv-set-credit { font-size: calc(var(--fs-1) * 0.85); line-height: 1.35; }
 
 /* ------------------------------ what the classic sheet sized by itself ------------------------------ */
 

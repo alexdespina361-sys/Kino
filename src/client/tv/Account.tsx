@@ -629,10 +629,6 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
             <p className="tv-hint tv-set-hint" data-testid="tv-cat-help">
               <InfoIcon /> <span>{t("cat.settings.help")}</span>
             </p>
-            {/* (the detailed cat is drawn from a model licensed CC BY 4.0, which asks for the maker to be named and the changes to be said) */}
-            <p className="tv-hint tv-set-hint" data-testid="tv-cat-credit">
-              <span>{t("cat.settings.credit")}</span>
-            </p>
           </div>
           <div className="tv-set-col" data-nav-column>
             {cat.settings.on && (
@@ -674,6 +670,10 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
                 </div>
               </SettingsGroup>
             )}
+            {/* (the detailed cat is drawn from models licensed CC BY 4.0, which ask for the makers to be named and the changes to be said: said under the look it is the credit of, in the column with the room, where it made the left one taller than a TV's screen in Italian) */}
+            <p className="tv-hint tv-set-hint tv-set-credit" data-testid="tv-cat-credit">
+              <span>{t("cat.settings.credit")}</span>
+            </p>
           </div>
         </div>
       </div>

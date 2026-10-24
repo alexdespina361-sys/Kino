@@ -1046,8 +1046,22 @@ test("a page that is flung, or scrolled too far and too fast to be a step of the
   const world = await worldOf(tv);
   const L = world.bodyLength;
   const shelf = world.surfaces.filter((surface) => surface.kind === "shelfTop" && surface.y > 2.2 * L).sort((a, b) => a.y - b.y)[0]!;
-  await tellCat(tv, { type: "cat.call", at: { x: (shelf.x0 + shelf.x1) / 2, y: shelf.y } });
-  await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 15_000 }).toBe(shelf.id));
+  /**
+   * The cat called to a shelf, and called again if it has not got there: a cat that is about to leap of its own accord when it is called finishes that leap first, and then goes on by the
+   * route it was given from the shelf it left (it lands on another and sits down there), which a viewer who pressed Come here again would put right, and so does this.
+   */
+  const callTo = async (to: { id: string; x0: number; x1: number; y: number }) => {
+    for (let attempt = 1; ; attempt++) {
+      await tellCat(tv, { type: "cat.call", at: { x: (to.x0 + to.x1) / 2, y: to.y } });
+      try {
+        await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 8_000 }).toBe(to.id));
+        return;
+      } catch (error) {
+        if (attempt === 3) throw error;
+      }
+    }
+  };
+  await callTo(shelf);
   await catSitsAndWhere(tv);
   const start = await snap(tv);
   const rest = async () => {
@@ -1063,8 +1077,7 @@ test("a page that is flung, or scrolled too far and too fast to be a step of the
     }
     await catIsOnTheShelves(tv);
     const here = (await worldOf(tv)).surfaces.filter((surface) => surface.kind === "shelfTop" && surface.y > 2.2 * L).sort((a, b) => a.y - b.y)[0]!;
-    await tellCat(tv, { type: "cat.call", at: { x: (here.x0 + here.x1) / 2, y: here.y } });
-    await saying(tv, () => expect.poll(async () => (await snap(tv)).engine.surfaceId, { timeout: 15_000 }).toBe(here.id));
+    await callTo(here);
     await catSitsAndWhere(tv);
     return { sat: await snap(tv), shelf: here };
   };
@@ -1605,6 +1618,8 @@ test("a white and grey cat that is drawn simply is said to be, with the reason, 
   await retry.click();
   await artIs(tv, "classic");
   await expect(said).toHaveAttribute("data-why", "graphics");
+  // (that try is made from the cat's files, which are fetched and read first, and it asks the browser for its graphics only then: let it end before the browser is told to give them, or it is that try which gets them)
+  await tv.waitForTimeout(1_000);
   // (and now the browser gives them: another try, and it is the detailed cat)
   await tv.evaluate(() => {
     (window as unknown as { __noGl?: boolean }).__noGl = false;
