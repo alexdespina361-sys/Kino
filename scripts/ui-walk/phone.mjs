@@ -67,9 +67,16 @@ async function friendsOn(phone) {
   await back(phone);
   await phone.getByTestId("menu-friends").waitFor();
 }
+/** The phone's Home (the bar's first place). Before the bar there was a hub to close; the bar is there on every page of the paired phone. */
 async function home(phone) {
-  await back(phone);
+  if ((await phone.getByTestId("tab-home").count()) > 0) await phone.getByTestId("tab-home").click();
+  else await back(phone);
   await phone.getByTestId("account-screen").waitFor({ state: "detached" });
+}
+/** One of the bar's places: "search", "list" or "you". */
+async function goTo(phone, tab) {
+  await phone.getByTestId(`tab-${tab}`).click();
+  await wait(350);
 }
 async function ask(from, tag) {
   const response = await from.request.post(`/api/profiles/${await profileOf(from)}/friends/requests`, { data: { tag } });
@@ -97,11 +104,36 @@ if (parts.has("guest")) {
     await snap(phone, device, "p02-home");
     await snap(phone, device, "p02b-home-full", { fullPage: true, settle: 100 });
   });
+  await step(device, "p02c-see-all", async () => {
+    // (a row's whole list, on a page of its own: only with the shell)
+    if ((await phone.getByTestId("row-see-all").count()) === 0) return;
+    await phone.getByTestId("row-see-all").first().click();
+    await phone.getByTestId("row-page").waitFor();
+    await wait(900); // (the pictures)
+    await snap(phone, device, "p02c-see-all");
+    await back(phone);
+    await phone.getByTestId("row-page").waitFor({ state: "detached" });
+  });
+  await step(device, "p02d-my-lists", async () => {
+    // (the lists are a place of the bar of their own: only with the shell)
+    if ((await phone.getByTestId("tab-list").count()) === 0) return;
+    await goTo(phone, "list");
+    await wait(700); // (the pictures)
+    await snap(phone, device, "p02d-my-lists");
+    await snap(phone, device, "p02e-my-lists-full", { fullPage: true, settle: 100 });
+    await goTo(phone, "home");
+  });
   await step(device, "p03-search", async () => {
+    // (the box is the bar's second place; before the bar it was on Home, under the link box)
+    if ((await phone.getByTestId("tab-search").count()) > 0) {
+      await goTo(phone, "search");
+      await snap(phone, device, "p03a-search-empty");
+    }
     await phone.getByTestId("library-search-input").fill("har");
     await wait(900);
     await snap(phone, device, "p03-search");
     await phone.getByTestId("library-search-input").fill("");
+    if ((await phone.getByTestId("tab-home").count()) > 0) await goTo(phone, "home");
   });
   await step(device, "p04-title-sheet", async () => {
     await phone.getByTestId("library-tile").filter({ hasText: movies[1].title }).first().click();
@@ -117,13 +149,20 @@ if (parts.has("guest")) {
     await phone.getByTestId("library-tile").filter({ hasText: series[1].title }).first().click();
     await phone.getByTestId("title-sheet").waitFor();
     await phone.getByTestId("title-episodes").waitFor();
-    await snap(phone, device, "p06-title-series", { settle: 900 });
+    await snapScrolled(phone, '[data-testid="title-sheet"]', device, "p06-title-series", { settle: 900 });
     await back(phone);
   });
   await step(device, "p07-menu", async () => {
     await phone.getByTestId("menu").click();
     await phone.getByTestId("menu-sheet").waitFor();
     await snap(phone, device, "p07-menu");
+    if ((await phone.getByTestId("control-open").count()) > 0) {
+      // (with the shell the code for another phone is behind its own row)
+      await phone.getByTestId("control-open").click();
+      await wait(300);
+      await snap(phone, device, "p07b-menu-code");
+      await phone.getByTestId("control-open").click();
+    }
     await phone.getByTestId("tvs-open").click();
     await phone.getByTestId("tvs-sheet").waitFor();
     await snap(phone, device, "p08-tvs-sheet");
@@ -151,6 +190,20 @@ if (parts.has("guest")) {
     await phone.locator('[data-testid="player-state"]').filter({ hasText: /play/i }).first().waitFor({ timeout: 25_000 });
     await wait(1500);
     await snap(phone, device, "p12-remote-playing");
+  });
+  await step(device, "p12b-mini-remote", async () => {
+    // (with the shell the remote can step aside: what plays stays as a line above the bar on every place of it, and a tap on the line brings the remote back)
+    if ((await phone.getByTestId("remote-back").count()) === 0) return;
+    await phone.getByTestId("remote-back").click();
+    await phone.getByTestId("mini-remote").waitFor();
+    await wait(600);
+    await snap(phone, device, "p12b-mini-home");
+    await goTo(phone, "search");
+    await snap(phone, device, "p12c-mini-search");
+    await goTo(phone, "home");
+    await phone.getByTestId("playing-bar").click();
+    await phone.getByTestId("media-title").waitFor();
+    await wait(400);
   });
   await step(device, "p13-tracks-sheet", async () => {
     // (the made-up film has one soundtrack and no subtitles, and then the page rightly shows no chip for them)
@@ -322,7 +375,11 @@ if (parts.has("in")) {
     await home(phone);
   });
   await step(device, "p32-lists", async () => {
-    if ((await phone.getByTestId("lists-manage").count()) === 0) await home(phone);
+    if ((await phone.getByTestId("tab-list").count()) > 0) {
+      await goTo(phone, "list"); // (the lists and the ratings are the bar's third place; before the bar they were rows of Home)
+      await snap(phone, device, "p33-my-lists");
+      await snap(phone, device, "p33b-my-lists-full", { fullPage: true, settle: 100 });
+    } else if ((await phone.getByTestId("lists-manage").count()) === 0) await home(phone);
     await phone.getByTestId("lists-manage").click();
     await phone.getByTestId("lists-sheet").waitFor();
     await snap(phone, device, "p32-lists-sheet");

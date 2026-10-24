@@ -24,6 +24,8 @@ Every Back goes back one page, as far as it can be said what "a page" is; the fi
 | A title's page, the lists, the profile and its pages | goes up one page, down to the library |
 | The party's pages, the end card, the error card, the welcome | the same as the remote's Back key does there |
 | The phone as a remote, a sheet over it | closes the sheet |
+| The phone as a remote, a place of the bar other than Home (Search, My Lists, You) | goes to Home: the four places are not steps of the history (`controller/shell/useTabs.ts`), and each keeps how far it was scrolled |
+| The phone as a remote, a title's page or a row's "See all" | goes back to the place it was opened from, scrolled where it was left |
 | The phone as a remote, the remote | puts the remote away, to the library, with a line "playing on the TV" that brings it back. **The film is not stopped by a Back** (Stop is a button) |
 | The library, the first Back | "Press Back again to leave", a line that runs down 2.5 s |
 | The library, a second Back within the time | the browser's own Back: the site is left |
@@ -62,7 +64,9 @@ where `isHandHeld` says so (`role.ts`: a touch screen, a coarse pointer, not a T
 - `role.test.ts`: `isHandHeld`.
 - `e2e/android-back.spec.ts` on a touch context: the film, a title's page, the question and the second Back leaving; the question that runs out and
   the touch that ends it; a Back before the first touch; a reload; the paired phone (sheet, remote, the line, the question); a party guest; and a
-  desktop that keeps its keys. `phone-to-tv.spec.ts` now holds that no *layer* entry is left (the guard may be).
+  desktop that keeps its keys. `phone-to-tv.spec.ts` now holds that no *layer* entry is left (the guard may be). `phone-layout.spec.ts` holds that a title's
+  page, closed with its Back button, leaves the place under it where it was. (A phone used as the screen has its party button on the profile's page, its
+  bar of four places having no room for it: the party test here opens that page first.)
 
 ## Not checked
 

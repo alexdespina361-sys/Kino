@@ -9,9 +9,9 @@ import { CheckIcon, PlayIcon, PlusIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
 import { useSeriesPage, type PageEpisode, type SeriesPage } from "../tv/Episodes";
 import { resumable, type Entry } from "../tv/pages";
+import { Page } from "./AccountScreen";
 import { RecommendButton } from "./Friends";
 import { RatingBox } from "./RatingBox";
-import { Sheet } from "./Sheet";
 import { Still } from "./Sheets";
 
 interface TitleSheetProps {
@@ -27,6 +27,7 @@ interface TitleSheetProps {
 /**
  * A title's own page on the phone, the way the TV has one: its picture, what it is about, Play (or Resume) and a list to keep it in,
  * and for a show its seasons and episodes. A tap on a title in the library or a list opens this instead of starting it at once.
+ * It is a page (the whole screen, a round way back over its picture), not a sheet that leaves a strip of the page behind it showing.
  */
 export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheetProps) {
   const t = useT();
@@ -50,11 +51,14 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
   const meta = [entry.year, kind].filter(Boolean).join(" · ");
 
   return (
-    <Sheet title={entry.title} onClose={onClose} testId="title-sheet">
-      {/* (one column on a phone held upright; held sideways, the picture beside what is done with it: see the wrappers in the style sheets) */}
+    <Page title={entry.title} onBack={onClose} testId="title-sheet" backTestId="title-back" bare>
+      {/* (the picture over a column of what is done with the title; held sideways, the picture beside it: see the wrappers in the style sheets) */}
       <div className="title-top">
         <Poster className="title-art" title={entry.title} image={entry.backdrop ?? entry.image} seed={entry.id} />
         <div className="title-main">
+          <h2 className="title-name" data-testid="title-name">
+            {entry.title}
+          </h2>
           {meta && (
             <p className="muted small" data-testid="title-meta">
               {meta}
@@ -62,22 +66,24 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
           )}
           <div className="title-actions">
             {play && (
-              <button className="btn btn-red" data-testid="title-play" onClick={() => (at ? play(at.url, at.startAt) : play(entry.resumeUrl ?? entry.url, entry.startAt))}>
+              <button className="btn btn-red title-play" data-testid="title-play" onClick={() => (at ? play(at.url, at.startAt) : play(entry.resumeUrl ?? entry.url, entry.startAt))}>
                 <PlayIcon /> {playLabel}
               </button>
             )}
-            <button
-              className="btn"
-              data-testid="title-list"
-              aria-pressed={kept}
-              aria-haspopup={several ? "dialog" : undefined}
-              aria-label={listLabel}
-              onClick={() => (several ? onPick(listEntryOf(entry)) : profileStore.setInList(listEntryOf(entry), !kept))}
-            >
-              {kept ? <CheckIcon /> : <PlusIcon />} {listText}
-            </button>
+            <div className="title-secondary">
+              <button
+                className="btn"
+                data-testid="title-list"
+                aria-pressed={kept}
+                aria-haspopup={several ? "dialog" : undefined}
+                aria-label={listLabel}
+                onClick={() => (several ? onPick(listEntryOf(entry)) : profileStore.setInList(listEntryOf(entry), !kept))}
+              >
+                {kept ? <CheckIcon /> : <PlusIcon />} {listText}
+              </button>
+              <RecommendButton entry={entry} />
+            </div>
           </div>
-          <RecommendButton entry={entry} />
           {ratings && <RatingBox entry={entry} isShow={series.isShow} title={t("rating.yours")} testId="rate-title" />}
           {entry.description && <p className="muted title-about">{entry.description}</p>}
         </div>
@@ -93,7 +99,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
           }
         />
       )}
-    </Sheet>
+    </Page>
   );
 }
 

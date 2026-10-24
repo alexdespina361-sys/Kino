@@ -34,7 +34,7 @@ import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { CopyLink } from "../shared/CopyLink";
 import { useEpisodeDetails } from "../shared/episodeDetails";
 import { formatCode, formatLeft } from "../shared/format";
-import { CheckIcon, ChevronIcon, PlayIcon, PlusIcon, ScanIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { CheckIcon, ChevronIcon, PhoneIcon, PlayIcon, PlusIcon, ScanIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { controlLink, partyLink } from "../shared/launch";
 import { comesIn, hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
@@ -63,7 +63,7 @@ export function SpeedSheet({ player, onPick, onClose }: Close & { player: Player
   }));
   return (
     <Sheet title={t("player.speed")} onClose={onClose} testId="speed-sheet">
-      <ChoiceList choices={choices} />
+      <ChoiceList choices={choices} label={t("player.speed")} />
     </Sheet>
   );
 }
@@ -84,7 +84,7 @@ export function QualitySheet({ player, onPick, onClose }: Close & { player: Play
   ];
   return (
     <Sheet title={t("player.quality")} onClose={onClose} testId="quality-sheet">
-      <ChoiceList choices={choices} />
+      <ChoiceList choices={choices} label={t("player.quality")} />
     </Sheet>
   );
 }
@@ -101,7 +101,7 @@ export function SourcesSheet({ player, onPick, onClose }: Close & { player: Play
   }));
   return (
     <Sheet title={t("player.source")} onClose={onClose} testId="source-sheet">
-      <ChoiceList choices={choices} />
+      <ChoiceList choices={choices} label={t("player.source")} />
       <p className="muted small">{t("player.sourceHelp")}</p>
     </Sheet>
   );
@@ -214,18 +214,18 @@ export function TracksSheet({
       {audioChoices.length > 1 && (
         <>
           <h3 className="sheet-section">{t("player.audio")}</h3>
-          <ChoiceList choices={audioChoices} />
+          <ChoiceList choices={audioChoices} label={t("player.audio")} />
         </>
       )}
       <h3 className="sheet-section">{t("player.subtitles")}</h3>
       {flat ? (
         <>
-          <ChoiceList choices={[off, ...pinned.flatMap((group) => group.tracks.map(trackChoice))]} />
+          <ChoiceList choices={[off, ...pinned.flatMap((group) => group.tracks.map(trackChoice))]} label={t("player.subtitles")} />
           {more.length > 0 &&
             (moreOpen ? (
               <>
                 {moreLabel}
-                <ChoiceList choices={more.flatMap((group) => group.tracks.map(trackChoice))} />
+                <ChoiceList choices={more.flatMap((group) => group.tracks.map(trackChoice))} label={t("player.moreLanguages")} />
               </>
             ) : (
               <div className="cap-choices">{moreChip}</div>
@@ -242,7 +242,7 @@ export function TracksSheet({
             {more.length > 0 && (moreOpen ? [moreLabel, ...more.map(languageChip)] : moreChip)}
             {showAllChip}
           </div>
-          <ChoiceList choices={releases} />
+          <ChoiceList choices={releases} label={t("player.subtitles")} />
         </>
       )}
       {onSync && sync !== undefined && (
@@ -447,8 +447,6 @@ export function MenuSheet({
   tvCount,
   controlCode,
   controllerCount,
-  linkBox,
-  onLinkBox,
   onParty,
   onTvs,
   onDisconnect,
@@ -461,31 +459,16 @@ export function MenuSheet({
   tvCount: number;
   controlCode?: string;
   controllerCount?: number;
-  /** Whether the home screen has the box for pasting a link, and a way to turn it on or off. */
-  linkBox: boolean;
-  onLinkBox: (on: boolean) => void;
   onParty: () => void;
   onTvs: () => void;
   onDisconnect: () => void;
 }) {
   useT();
+  /** The code for another phone: a card as tall as a third of the screen, so it is behind its own row (what is used more is above it). */
+  const [codeOpen, setCodeOpen] = useState(false);
   return (
     <Sheet title={tvName} onClose={onClose} testId="menu-sheet">
       <p className="muted">{online ? t("menu.connected") : t("menu.offline")}</p>
-      {controlCode && (
-        <div className="code-card" data-testid="control-card">
-          <span className="code-card-title">{t("menu.controlWith", { count: controllerCount ?? 1 })}</span>
-          <div className="code-card-top">
-            <span className="code-card-code" data-testid="control-code">
-              {formatCode(controlCode)}
-            </span>
-            <QrCode value={controlLink(controlCode)} label={t("menu.controlQr")} />
-          </div>
-          <span className="muted small">
-            <Rich k="menu.controlHelp" parts={{ host: <b>{location.host}</b> }} />
-          </span>
-        </div>
-      )}
       <nav className="menu">
         <button className="menu-row" data-testid="party-open" onClick={onParty}>
           <span className="menu-icon">
@@ -502,9 +485,32 @@ export function MenuSheet({
           <ChevronIcon />
         </button>
       </nav>
+      {controlCode && (
+        <div className="menu control-more" data-testid="control-card">
+          <button className="menu-row" data-testid="control-open" aria-expanded={codeOpen} onClick={() => setCodeOpen((open) => !open)}>
+            <span className="menu-icon">
+              <PhoneIcon />
+            </span>
+            <span className="menu-label">{t("menu.controlWith", { count: controllerCount ?? 1 })}</span>
+            <ChevronIcon />
+          </button>
+          {codeOpen && (
+            <div className="control-code-card">
+              <div className="code-card-top">
+                <span className="code-card-code" data-testid="control-code">
+                  {formatCode(controlCode)}
+                </span>
+                <QrCode value={controlLink(controlCode)} label={t("menu.controlQr")} />
+              </div>
+              <span className="muted small">
+                <Rich k="menu.controlHelp" parts={{ host: <b>{location.host}</b> }} />
+              </span>
+            </div>
+          )}
+        </div>
+      )}
       <Rows>
         <FullscreenToggle className="menu-row" labels={{ enter: t("phone.fullscreen"), exit: t("phone.exitFullscreen") }} />
-        <Switch label={t("menu.linkBox")} hint={t("menu.linkBoxHelp", { tv: tvName })} checked={linkBox} onChange={onLinkBox} testId="link-box-toggle" />
       </Rows>
       <button className="btn btn-danger btn-block" data-testid="disconnect" onClick={onDisconnect}>
         {t("menu.disconnect")}

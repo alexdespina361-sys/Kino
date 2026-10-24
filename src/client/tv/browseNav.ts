@@ -27,8 +27,18 @@ const CONTENT: Target = { zone: "content", row: -1, col: -1 };
 
 export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
   const lengths = shape[at.zone] ?? [];
+  // A phone's menu is a bar of places along the bottom (one row of them), not a column down the left: what took the remote to the menu on the left takes it to the
+  // bar below, Left and Right walk the bar, and Up leaves it for the titles.
+  const bar = shape.rail?.length === 1 && (shape.rail[0] ?? 0) > 1;
+  const menu: Target = bar ? null : RAIL; // (what Left leads to from the first thing of a page)
+  const toBar: Target = bar ? RAIL : null; // (what Down leads to from the last)
 
   if (at.zone === "rail") {
+    if (bar) {
+      if (direction === "left") return at.col > 0 ? { zone: "rail", row: 0, col: at.col - 1 } : null;
+      if (direction === "right") return at.col < (lengths[0] ?? 0) - 1 ? { zone: "rail", row: 0, col: at.col + 1 } : null;
+      return direction === "up" ? CONTENT : null;
+    }
     if (direction === "right") return CONTENT;
     if (direction === "down") return at.row < lengths.length - 1 ? { zone: "rail", row: at.row + 1, col: 0 } : null;
     if (direction === "up") return at.row > 0 ? { zone: "rail", row: at.row - 1, col: 0 } : null;
@@ -66,19 +76,21 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
       if (rows.length > 0) return { zone: "grid", row: rows.length - 1, col: 0 };
       return shape.chips?.length ? { zone: "chips", row: 0, col: 0 } : shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
     }
-    return direction === "left" ? RAIL : null;
+    if (direction === "down") return toBar;
+    return direction === "left" ? menu : null;
   }
 
   if (at.zone === "top") {
     // The account button and, beside it, the full screen one.
     if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
     if (direction === "right") return at.col < (lengths[0] ?? 0) - 1 ? { ...at, col: at.col + 1 } : null;
-    return direction === "down" ? (shape.hero?.length ? { zone: "hero", row: 0, col: 0 } : CONTENT) : null;
+    // (A phone's page of rows has its sections as a row of buttons where the others have a banner.)
+    return direction === "down" ? (shape.hero?.length ? { zone: "hero", row: 0, col: 0 } : shape.rows?.length && shape.chips?.length ? { zone: "chips", row: 0, col: 0 } : CONTENT) : null;
   }
 
   if (at.zone === "hero") {
     const buttons = lengths[0] ?? 0;
-    if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : RAIL;
+    if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : menu;
     if (direction === "right") return at.col < buttons - 1 ? { ...at, col: at.col + 1 } : null;
     if (direction === "up") return shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
     return CONTENT;
@@ -100,7 +112,7 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
         return { zone: "keys", row, col: (shape.keys[row] ?? 1) - 1 };
       }
       if (at.zone === "chips" && shape.keys?.length) return { zone: "keys", row: 0, col: (shape.keys[0] ?? 1) - 1 };
-      return RAIL;
+      return menu;
     case "right":
       if (at.col < length - 1) return { ...at, col: at.col + 1 };
       if (at.zone === "keys") {
@@ -111,15 +123,18 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     case "up":
       if (at.row > 0) return into(at.row - 1);
       if (at.zone === "rows" && shape.hero?.length) return { zone: "hero", row: 0, col: 0 };
+      if (at.zone === "rows" && shape.chips?.length) return { zone: "chips", row: 0, col: 0 }; // (the page says which of them: the one that is shown)
       if ((at.zone === "results" || at.zone === "grid") && shape.chips?.length) return { zone: "chips", row: 0, col: Math.min(at.col, (shape.chips[0] ?? 1) - 1) };
       return shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
     case "down":
       if (at.zone === "chips") {
+        if (shape.rows?.length) return CONTENT;
         const below = shape.results?.length ? "results" : shape.grid?.length ? "grid" : shape.foot?.length ? "foot" : null;
-        return below ? { zone: below, row: 0, col: Math.min(at.col, (shape[below]?.[0] ?? 1) - 1) } : null;
+        return below ? { zone: below, row: 0, col: Math.min(at.col, (shape[below]?.[0] ?? 1) - 1) } : toBar;
       }
       if (at.row < lengths.length - 1) return into(at.row + 1);
-      return at.zone === "grid" && shape.foot?.length ? { zone: "foot", row: 0, col: 0 } : null;
+      if (at.zone === "grid" && shape.foot?.length) return { zone: "foot", row: 0, col: 0 };
+      return toBar;
   }
 }
 

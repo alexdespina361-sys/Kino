@@ -18,12 +18,25 @@ import { FriendPage, FriendsPage } from "./Friends";
 import { RatingsSheet } from "./RatingsSheet";
 import { keepFocusIn, sheetIsOpen } from "./Sheet";
 
-/** A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. */
-export function Page({ title, onBack, children, testId }: { title: string; onBack: () => void; children: ReactNode; testId?: string }) {
+/** The pages that are open, the one on top last: a title's page lies over the account's, and Escape goes back from that one only. */
+const pagesOpen: object[] = [];
+
+/**
+ * A full-screen page with a way back: the phone's account pages stack like the pages of a settings app. A `bare` page (a title's, with its picture at the top)
+ * has no head: its way back is a round button over the picture, and its name is the page's own to write. (`backTestId`: the way back's test id, "page-back" if none.)
+ */
+export function Page({ title, onBack, children, testId, backTestId, bare = false }: { title: string; onBack: () => void; children: ReactNode; testId?: string; backTestId?: string; bare?: boolean }) {
   const t = useT();
   const page = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
+  const me = useRef({}).current;
+  const back = useRef(onBack);
+  back.current = onBack; // (read when Escape is pressed: the key listener is not put on again at each render of the screen under it, which is once a second while a film plays)
   useBackToClose(onBack); // (the phone's own Back goes back a page too, instead of leaving the site)
+  useEffect(() => {
+    pagesOpen.push(me);
+    return () => void pagesOpen.splice(pagesOpen.indexOf(me), 1);
+  }, [me]);
   // (one page is the next one in the same place: what was scrolled in the one before is not where the next begins)
   useLayoutEffect(() => {
     body.current?.scrollTo(0, 0);
@@ -35,21 +48,34 @@ export function Page({ title, onBack, children, testId }: { title: string; onBac
   }, [title, testId]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (sheetIsOpen()) return; // (a sheet over the page keeps its own focus)
-      if (event.key === "Escape") onBack();
-      else if (event.key === "Tab" && page.current) keepFocusIn(page.current, event);
+      // (A sheet keeps Escape and Tab. A title's page opened from a sheet that is still open - the ratings' - lies over it, and Escape closes the sheet under it first;
+      // the phone's own Back, which goes by the history's layers, closes the one on top. Only a keyboard sees the difference.)
+      if (sheetIsOpen()) return;
+      if (pagesOpen[pagesOpen.length - 1] !== me) return; // (so does a page over this one)
+      if (event.key === "Escape") {
+        // (One Escape is one page back: the page under this one listens on the window too, and finds this one gone if it listens after it.)
+        event.stopImmediatePropagation();
+        back.current();
+      } else if (event.key === "Tab" && page.current) keepFocusIn(page.current, event);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onBack]);
+  }, [me]);
+  const backButton = (
+    <button className={`icon-btn${bare ? " page-float-back" : ""}`} onClick={onBack} aria-label={t("common.back")} data-testid={backTestId ?? "page-back"}>
+      <ChevronIcon className="flip" />
+    </button>
+  );
   return (
-    <div className="page" ref={page} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
-      <header className="page-head">
-        <button className="icon-btn" onClick={onBack} aria-label={t("common.back")} data-testid="page-back">
-          <ChevronIcon className="flip" />
-        </button>
-        <h2>{title}</h2>
-      </header>
+    <div className={`page${bare ? " is-bare" : ""}`} ref={page} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} data-testid={testId}>
+      {bare ? (
+        backButton
+      ) : (
+        <header className="page-head">
+          {backButton}
+          <h2>{title}</h2>
+        </header>
+      )}
       <div className="page-body" ref={body}>
         {children}
       </div>
@@ -70,16 +96,22 @@ function MenuRow({ icon, label, onClick, testId, detail }: { icon: ReactNode; la
   );
 }
 
-/** Everything about the account on the phone: who is signed in, the profiles, settings, devices, and signing a TV in. */
+/**
+ * Everything about the account on the phone: who is signed in, the profiles, settings, devices, and signing a TV in. `inline`: the front page of it is a
+ * page of the phone's bar (the "You" tab), not a page laid over it; every page it leads to is still one laid over (with its own way back), and `onClose` is
+ * where the phone goes when the account has no more to show (a profile was chosen, someone signed out).
+ */
 export function AccountScreen({
   onClose,
   initial = "main",
+  inline = false,
   onSessionsChanged,
   onOpenTitle,
   onStartParty,
 }: {
   onClose: () => void;
   initial?: View;
+  inline?: boolean;
   onSessionsChanged?: () => void;
   /** A title a friend sent, or has in a list, was tapped (not given on a phone that has no TV to play it on). */
   onOpenTitle?: (entry: Entry) => void;
@@ -249,8 +281,8 @@ export function AccountScreen({
   const ratingsRow = ratingsOn && <MenuRow icon={<StarIcon />} label={t("rating.mine")} detail={ratings.length > 0 ? String(ratings.length) : undefined} onClick={() => setRatingsOpen(true)} testId="menu-ratings" />;
   /** Next to Settings, for a guest too: anybody may say what is wrong (the number is how many answers from the team wait). */
   const feedbackRow = <MenuRow icon={<MessageIcon />} label={t("feedback.entry")} detail={feedback.unread > 0 ? String(feedback.unread) : undefined} onClick={feedback.open} testId="menu-feedback" />;
-  return (
-    <Page title={t("account.title")} onBack={onClose} testId="account-screen">
+  const front = (
+    <>
       {me && profile ? (
         <div className="page-stack account-hub">
           <section className="account-card" data-testid="account-card">
@@ -309,6 +341,19 @@ export function AccountScreen({
         </div>
       )}
       {ratingsOpen && ratingsOn && <RatingsSheet ratings={ratings} onOpen={(entry) => onOpenTitle?.(entry)} onClose={() => setRatingsOpen(false)} />}
+    </>
+  );
+  if (inline) {
+    return (
+      <section data-testid="account-screen" aria-label={t("account.title")}>
+        <h2 className="sr-only">{t("account.title")}</h2>
+        {front}
+      </section>
+    );
+  }
+  return (
+    <Page title={t("account.title")} onBack={onClose} testId="account-screen">
+      {front}
     </Page>
   );
 }

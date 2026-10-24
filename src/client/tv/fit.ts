@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { isCompact } from "./compact";
 
 /**
  * What the player's controls give up, in this order, until they fit on one line: the room between the buttons, then the long labels
@@ -34,6 +35,11 @@ function giveUp(row: HTMLElement, count: number): void {
 
 /** Gives up as little as it takes. A row that is as it was fitted (the room, the buttons, their words) is left as it is, apart from a button that is new since. */
 function fit(row: HTMLElement, last: Fitted): void {
+  // A phone held upright (compact.ts) lays its controls out in rows of its own, each button as big as a thumb needs (polish/tv-phone.css): nothing is given up.
+  if (isCompact()) {
+    last.key = "";
+    return giveUp(row, 0);
+  }
   const key = `${row.clientWidth}|${row.childElementCount}|${row.textContent}`;
   if (key === last.key) return giveUp(row, last.count);
   let count = 0;

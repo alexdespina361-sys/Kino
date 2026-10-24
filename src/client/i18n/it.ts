@@ -1,5 +1,6 @@
 import { chatIt } from "./chat.it";
 import { catIt } from "./cat.it";
+import { shellIt } from "./shell.it";
 import type { Dictionary } from "./en";
 
 /** Italiano. Stesse chiavi di en.ts (le controlla il compilatore); le forme del plurale sono `_one` e `_other`. */
@@ -623,7 +624,6 @@ export const it: Dictionary = {
   "phone.exitFullscreen": "Esci dallo schermo intero su questo telefono",
   "phone.tvOffline": "La TV è offline. Apri {host} sulla TV e questo telecomando riprenderà da solo.",
   "phone.homeTitle": "Cosa vuoi guardare?",
-  "phone.homeHelp": "Incolla il link di un video o di una pagina che ne ha uno. Parte su {tv}, senza la pagina.",
   "phone.outdatedServer": "Il server non capisce questa versione dell'app. Riavvia il server, poi ricarica la pagina.",
   "phone.linkTooLong": "Il link è troppo lungo per essere riprodotto. Prova con l'indirizzo della pagina da cui proviene.",
   "phone.tooSlow": "Ci sta mettendo troppo. Riprova tra un momento.",
@@ -691,8 +691,6 @@ export const it: Dictionary = {
   "tvs.full": "La tua lista è piena. Dimentica una TV per collegarne un'altra.",
   "menu.partyOpen": "Visione condivisa",
   "menu.partyActive": "Visione condivisa · {count} dispositivi",
-  "menu.linkBox": "Casella dei link",
-  "menu.linkBoxHelp": "Mostra nella schermata iniziale una casella dove incollare il link di un video o di una pagina, da riprodurre su {tv}.",
   "menu.disconnect": "Scollegati da questa TV",
   "menu.disconnectHelp": "La TV esce dalla tua lista. Se nessun altro telefono ce l'ha, mostra un nuovo codice, con cui puoi ricollegarti tu o qualcun altro. Ciò che hai guardato resta nel tuo profilo.",
   "party.title": "Visione condivisa",
@@ -814,6 +812,7 @@ export const it: Dictionary = {
   "tv.filterSeries": "Serie TV",
   "tv.filterCartoons": "Cartoni",
   "tv.filterAnime": "Anime",
+  "tv.sections": "Sezioni",
   "tv.backToLibrary": "Torna alla libreria",
   "rows.because": "Perché hai guardato {title}",
   "rows.loved": "Perché ti è piaciuto {title}",
@@ -1254,6 +1253,9 @@ export const it: Dictionary = {
 
   /* la chat tra due amici (client/chat): in un file a parte, aggiunto qui */
   ...chatIt,
+
+  /* la shell del telefono, la barra in basso e le schermate al suo interno (client/controller/shell): in un file a parte, aggiunto qui */
+  ...shellIt,
 
   /* the cat companion (client/cat): kept in a file of its own, spread in here */
   ...catIt,

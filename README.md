@@ -68,7 +68,7 @@ pnpm build && pnpm start     # http://localhost:8787
   used, so a signed-in browser stays signed in until the person signs out or the browser's data is cleared. The page also remembers who was
   signed in, so a screen does not look signed out while the server is slow to answer (a free host waking up). An account has up to **five
   profiles**, each with a name and one of **twelve avatars**; who is watching is asked on every new device, Netflix-style, and a profile
-  is switched from the account page (the profile picture in the phone's top bar, and in the library's top corner on the TV). The TV makes,
+  is switched from the account page (the **You** place of the phone's bar, or the profile picture at its top, and the library's top corner on the TV). The TV makes,
   renames, re-pictures and removes profiles itself, with the remote's arrow keys: profile picture in the top corner (or **Settings** on the
   menu's **Profile** page) → **Manage profiles**; the "Who's watching?" page that follows a sign-in has the same tile for a new profile and the same button.
 - **Watching is saved to the profile**, wherever it is watched: **Continue watching** (the place in every unfinished film or episode, and the
@@ -81,7 +81,7 @@ pnpm build && pnpm start     # http://localhost:8787
   on the phone (kept as it is typed), and on the TV with the keys of a page of its own. The rating also **writes down the watching behind it**, with no
   work from the person: *when it was rated*, *how much was watched* (**from 95% on it counts as all of it**, since the credits are often skipped; a
   show or a season is counted in episodes, "2 of 3 episodes watched") and *when it was finished* (or last watched). Watching it again later adds to that;
-  rating it again changes the day it was rated only when the score changes. **My ratings** is a row on the phone's home screen with a page of its own
+  rating it again changes the day it was rated only when the score changes. **My ratings** is a row of the phone's **My Lists** place with a page of its own
   (*See all*: newest first or highest first, with the notes and those facts, and the mean; it is also a row of the phone's account page, which works with no TV paired too: a title opens from it without Play, and with
   nothing rated the page says what to do) and a place on
   the TV's **Profile** page. **A title that was rated shows its score** (a star and the number) in the corner of its picture wherever it is shown, in the rows, a
@@ -221,7 +221,7 @@ pnpm build && pnpm start     # http://localhost:8787
   what the other one is for: join the watch party, or control it instead (the first TV is not let go: it carries on as it was, on the phone's
   list, below). Nothing changes behind its back, except that scanning another TV's QR code moves a phone off a TV that is switched off
   (offline) at once, since there is nothing to ask about
-- **My TVs.** A phone keeps the TVs it has connected to (up to eight, in the order it did): *My TVs* in its menu, and on its first screen once
+- **My TVs.** A phone keeps the TVs it has connected to (up to eight, in the order it did): *My TVs* in the sheet that the TV's chip at the top opens, and on its first screen once
   it controls none. A tap on one controls it, **with no code**; the one it leaves is not touched: it keeps playing, stays paired and
   is still on the list, with a dot for whether it is on. **Forget** lets a TV go, after a question that names it (a TV with no phone left shows a new code, as after
   *Disconnect*, and stops what it was playing); the field below connects another TV with its code, scanned or typed (the list says when it is full), and the
@@ -234,26 +234,30 @@ pnpm build && pnpm start     # http://localhost:8787
   add TVs to the party, and the menu says how many are connected. The TV flashes "A phone is connected." when one joins. That code stays good
   while a phone keeps asking for it (opening the menu, or the TV's page being open); a phone that already has a TV and scans it is only offered
   to control that TV instead
-- **The home screen** is the library's rows, **Continue watching** and the lists. A tap on a title in the library, a list or the search opens
-  **its own page**, as the TV has one: its picture, **Play** (or **Resume**; for a show, the episode this profile is at), the list to keep it in,
-  what it is about and, for a show, its seasons and episodes (a tap on one plays it). **Continue watching** is a row of big cards that snap one at a
-  time with the next one showing at the edge: a tap picks one up where it stopped, the **+** on it puts the title in a list and the **×** takes it off the
-  row. (One card per show and per profile. A guest's cards stay on the screen they were made on; signed in on both, the phone and the TV show the same ones.)
-  The search lists what it finds one under another, and is still there (the words, the filter, the list, the place in it) after something is played and stopped
-- **The box for pasting a link is off** on a new phone, since most of what is played comes from the library. A switch brings it back, in the phone's
-  menu and in **Settings → Paste a link** (one choice with two places, kept on that phone); it is there whatever the switch says while the library has
-  nothing to show, as the only way to start anything.
+- **The phone's shell** (`src/client/controller/shell/`, `docs/phone-layout/`). The TV is a **chip** at the top (its name, and how it is doing: connected, away, waking up); a tap on it opens a short sheet with
+  the watch party, **My TVs**, the code for more phones, full screen on the phone and **Disconnect**. Four **places** are a bar at the foot: **Home**, **Search**, **My Lists** and **You** (the account). Each place is
+  where its reader left it, a tap on the place you are in takes it to the top, and the phone's Back goes to Home from any of them (and from Home asks before leaving). While something plays it is a **line above
+  the bar** on every place (the picture, the title, a play / pause button, a thin line of how far it is), and a tap on it opens the full remote. Held sideways, or on a tablet, the bar is a rail down the left and a
+  sheet is a side sheet. Everything is read at 14 px or more (12 px for the four words of the bar), everything pressed is 44 px or more, and a sheet covers at most 70% of the height (78% of a short screen)
+- **Home** is what to watch: the box for pasting a link (when it is on), what friends asked, **Continue watching** and the library's rows as upright posters, each row's heading ending in **See all**, a page of its
+  own with the whole row as a grid that goes on as it is scrolled. A tap on a title in the library, a list or the search opens **its own page**, as the TV has one (the whole screen, a round way back over its picture): its
+  picture, a full-width **Play** (or **Resume**; for a show, the episode this profile is at), the list to keep it in, a rating, what it is about and, for a show, its seasons and episodes (a tap on one plays it).
+  **Continue watching** is a row of big cards that snap one at a time with the next one showing at the edge: a tap picks one up where it stopped, the **+** on it puts the title in a list and the **×** takes it off the
+  row. (One card per show and per profile. A guest's cards stay on the screen they were made on; signed in on both, the phone and the TV show the same ones.) **Search** lists what it finds one under another, and is still
+  there (the words, the filter, the list, the place in it) after something is played and stopped; before anything is typed it lists what is popular
+- **The box for pasting a link is off** on a new phone, since most of what is played comes from the library. A switch in **Settings → Paste a link** brings it back (kept on that phone); it is there whatever the
+  switch says while the library has nothing to show, as the only way to start anything.
   Opening the phone page as `/?url=<link>` plays that link once connected (the hook for a share button)
 - **Lists on the phone.** The round **+** on a title saves it in Favourites (and takes it out again), and so does holding the title (a line at
   the bottom says "Added to Favourites", the + being a corner away from the finger); once there
-  is a second list it asks which lists the title is in, with **New list** there too. Each list with something in it is a row on the home screen,
-  and **Manage lists** (at the end of the first row's heading) makes, renames, **reorders** (move up / down on the phone, left / right on the TV; the
-  home screen follows the order) and deletes them. The first list can be renamed and emptied, never deleted.
+  is a second list it asks which lists the title is in, with **New list** there too. Each list with something in it is a row of **My Lists**,
+  and **Manage lists** (at the top of that place) makes, renames, **reorders** (move up / down on the phone, left / right on the TV; the
+  rows follow the order) and deletes them. The first list can be renamed and emptied, never deleted.
 - **Add it to the home screen** and the page opens as an app with no browser bar (`public/manifest.webmanifest`; on an iPhone that is the only
   way to lose the bar, since its browsers have no full screen for pages): Share → *Add to Home Screen* there, the browser's menu → *Install app*
   or *Add to Home screen* on Android
 - Remote: play/pause, ±10 s, seek bar, audio/subtitle/speed/quality/source sheets, previous and next episode, episode list,
-  subtitle style, full screen, stop, disconnect (volume is the TV's own). It confirms what the TV did ("Speed 1.5×") in a line at the bottom
+  subtitle style, full screen, stop, disconnect (volume is the TV's own). It confirms what the TV did ("Speed 1.5×") in a line at the bottom. **Change video** steps the remote aside to the places (the film plays on, as the line above the bar)
 
 **TV**
 - Clean player with a fading HUD (title, and for an episode its numbers and **its name** when the library or the source has one besides the number,
@@ -290,7 +294,7 @@ pnpm build && pnpm start     # http://localhost:8787
   measures itself (`src/client/tv/fit.ts`) and gives up only as much as it must, in this order: the room between the buttons, the labels of Watch
   party and Audio & subtitles, the episode names under Previous / Next, the labels of Previous / Next, the label of Episodes (each label becomes its
   icon, still named for screen readers and in its tooltip), then the size of the buttons. Only a phone held upright is too narrow for that, and its
-  controls wrap on two lines
+  controls are two rows of buttons a thumb hits
 - **Quality follows the connection** (`src/client/tv/engine.ts`; the profile's switch **Match the picture quality to the connection**, in Settings on the
   phone and on the TV, on unless turned off). A film starts with its first piece in the lowest quality, which arrives at once whatever the link (a piece
   is as long as the film's pieces are, 2 to 10 seconds), and hls.js then asks for each next piece in the best quality that the link carries, as it
@@ -360,8 +364,8 @@ pnpm build && pnpm start     # http://localhost:8787
   controlling it goes back to the code screen, one that had moved on to another TV just loses it from its list)
 - **Sign in** is the button in the library's top corner (the profile picture once signed in); nobody is made to
 - **Any device can be this screen.** The same page lays itself out for the size of the device: the TV's wide layout from about 900 px
-  up, and below that (a phone, a tablet, a narrow window) a compact one with a thin menu, a smaller banner, titles that swipe along, a native
-  search field (the phone's own keyboard) and as many columns as fit. Taps press everything, swipes scroll, a tap on the picture brings the controls
+  up, and below that (a tablet, a phone held sideways, a narrow window) a compact one with a thin menu, a smaller banner, titles that swipe along, a native
+  search field (the phone's own keyboard) and as many columns as fit. **A phone held upright** (under 600 px wide and at least 480 tall) has a layout of its own (`src/client/polish/tv-phone.css`, `docs/phone-layout/`): the menu is a bar of four places at the foot (Home, Search, Categories, My lists; the watch party and *Use this phone as the remote* are buttons of the profile's page), Movies / Series / Cartoons / Anime are buttons over the titles, titles are upright posters, a title's page is its picture, a full-width **Play** and its buttons in a row, the player's controls are rows of buttons a thumb hits, and its menus are sheets that leave the picture in view. Taps press everything, swipes scroll, a tap on the picture brings the controls
   up and the next puts them away (two taps on a side skip, a held finger plays at 2×: see above), and every page has a way out for a finger. A phone held sideways gives the banner less height. Volume stays the device's own
 - Keeps the screen awake while playing; reconnects by itself, and notices a dead connection within about 25 s. After 10 s without the server
   the page says why that can be (*The server is waking up. A free server can take up to a minute…*): on the TV in its banner, on the phone's
@@ -648,10 +652,13 @@ the one before. That halves what an hour costs (1.2 GB instead of 2.4 GB in the 
 
 The server is one Node process that serves the page, the API and the sockets from one port, which is what a Render **Web Service** is.
 
-1. New → Web Service → this repository. Build command `corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm build`, start
+1. New → Web Service → this repository. Build command `corepack pnpm install --frozen-lockfile --prod=false && corepack pnpm build`, start
    command `pnpm start`. Node comes from `.node-version`, and the pnpm version from `packageManager` in `package.json` (that is what
-   `corepack enable` is for). `--prod=false` keeps the build tools (`vite`, `tsx`) installed even if you ever set `NODE_ENV=production` for
-   the build. Under Advanced, set the health check path to `/api/health`.
+   `corepack pnpm` is for: it runs exactly that pnpm without putting anything into the system's folders). **Do not put `corepack enable` in the
+   build command**: it writes `pnpm` into `/usr/bin`, which Render's build machines can keep read-only, and the build stops with
+   `EROFS: read-only file system, unlink '/usr/bin/pnpm'`. `--prod=false` keeps the build tools (`vite`, `tsx`) installed even if you ever set
+   `NODE_ENV=production` for the build. Under Advanced, set the health check path to `/api/health`. If a deploy builds but then stops at
+   start with an error about pnpm, set the start command to `npm start` instead (it runs the same script and needs no pnpm).
 2. Render sets `PORT` and `RENDER`, so the server listens where Render looks and trusts its proxy (the rate limits then see each visitor's own
    address, not Render's).
 3. **Accounts need a database on the free plan.** A free instance's disk is wiped on every deploy and restart, and it goes to sleep after
@@ -692,7 +699,8 @@ Anything that runs a Node process does (Northflank, Railway, Fly, a VPS):
 - **Start with `pnpm start`.** `tsx`, which it runs, is a regular dependency, so a host that installs only the dependencies of a running app, or that
   removes the build tools after building (most buildpacks do), still has it: `tsx: not found` and a restart loop was the sign of it being missing. `dist/client`
   is committed, so there is nothing to build.
-- **Node 24** (`.node-version`), pnpm from `packageManager` (`corepack enable`).
+- **Node 24** (`.node-version`), pnpm from `packageManager` (`corepack pnpm ...`; `corepack enable` only where the host lets you write to the
+  system's `bin` folder, which Render's builds may not).
 - **The port:** the server listens on `PORT` (default 8787) on `HOST` (default `0.0.0.0`). Declare that port as HTTP in the host, with WebSockets allowed
   (the page talks over `/ws`), and `/api/health` as the health check.
 - **Set `TRUST_PROXY=1`** (the number of proxies in front of the server; it is on by itself only on Render). Without it every visitor looks like one address

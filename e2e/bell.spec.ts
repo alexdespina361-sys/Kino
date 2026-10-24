@@ -2,7 +2,7 @@ import { expect, type Browser, type Page } from "@playwright/test";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { openDevice, openLibrary, openProfilePlace, openTv, openTvSignIn, PHONE, readPairingCode, test } from "./helpers";
+import { openDevice, openLibrary, openProfilePlace, openTv, openTvSignIn, PHONE, place, readPairingCode, test } from "./helpers";
 
 /**
  * The bell: a button beside the profile's picture, on the phone and on the TV. A number on it is what waits for an answer from this profile
@@ -79,9 +79,10 @@ async function turnOnFriends(page: Page) {
   await expect(page.getByTestId("menu-friends")).toBeVisible();
 }
 
-/** The account page is shut: the phone is at its home screen. */
+/** The account page is shut: the phone is at its home screen. (A phone that has a TV has the account as a place of its bar, You, and Home is another place of it.) */
 async function home(page: Page) {
   await page.keyboard.press("Escape");
+  if ((await page.getByTestId("tab-home").count()) > 0) await place(page, "home");
   await expect(page.getByTestId("account-screen")).toHaveCount(0);
 }
 
@@ -286,7 +287,8 @@ test.describe("the bell on the phone", () => {
         const header = document.querySelector("header.top")!;
         const around = header.getBoundingClientRect();
         if (document.documentElement.scrollWidth > innerWidth) problems.push("the page sticks out sideways");
-        const boxes = [".top-tv", '[data-testid="bell-button"]', '[data-testid="account-button"]', '[data-testid="menu"]'].map((selector) => ({ selector, box: header.querySelector(selector)!.getBoundingClientRect() }));
+        // (The TV's name and the button that opens its menu are one chip now: docs/phone-layout. The bell and the account button are the other two.)
+        const boxes = [".top-tv", '[data-testid="bell-button"]', '[data-testid="account-button"]'].map((selector) => ({ selector, box: header.querySelector(selector)!.getBoundingClientRect() }));
         boxes.forEach(({ selector, box }, at) => {
           if (box.left < around.left - 0.5 || box.right > around.right + 0.5) problems.push(`${selector} leaves the header`);
           for (const other of boxes.slice(at + 1)) if (box.left < other.box.right - 0.5 && other.box.left < box.right - 0.5) problems.push(`${selector} and ${other.selector} are side by side too closely`);

@@ -44,7 +44,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* The logo (Logo.tsx): two pictures of the same size, one over the other (the second has the cat's ears and fades in while the cat is on). Sized by the font-size of
-   whatever holds it, 4em wide (its "o" is as big as the old one was); a screen that wants it bigger sets the width. The height is the pictures' own (269 by 115). */
+   whatever holds it, 4em wide (its "o" is about as big as the old play button was); a screen that wants it bigger sets the width. The height is the pictures' own (269 by 115). */
 .logo {
   position: relative;
   display: block;

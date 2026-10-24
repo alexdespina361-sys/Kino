@@ -113,7 +113,6 @@
 .top-tv { display: flex; align-items: center; flex: 1; gap: 10px; min-width: 0; color: var(--muted); font-size: 1.3rem; }
 .top-name { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .top-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.top-tv h1 { overflow: hidden; color: var(--text); font-size: 1.1rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .tv-status { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
 .tv-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .tv-status.ok { color: var(--ok); }
@@ -131,7 +130,6 @@
 /* ------------------------------ home: play a link ------------------------------ */
 
 .home { display: flex; flex-direction: column; gap: 12px; }
-.home h2 { font-size: 1.5rem; line-height: 1.2; }
 .play-link { display: flex; flex-direction: column; gap: 14px; }
 .play-link form { display: flex; flex-direction: column; gap: 10px; }
 .field { position: relative; }
@@ -458,7 +456,6 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .tv-row .btn { flex: none; }
 /* A code that brings another screen in (to the party, or to the TV as a second remote): the digits to read out, the QR code to scan. */
 .code-card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 12px; background: var(--surface-2); }
-.code-card-title { color: var(--muted); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 .code-card-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 14px; } /* (the QR code goes under the code where they do not fit side by side: a narrow phone, a wide code) */
 .code-card-code { font-size: 2rem; font-weight: 800; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .code-card-top > svg { flex: none; width: 104px; height: 104px; border-radius: 8px; }

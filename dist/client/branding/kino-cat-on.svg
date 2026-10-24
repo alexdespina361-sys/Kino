@@ -1,16 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="269" height="115" viewBox="15 10 269 115" fill="none" role="img" aria-label="kino">
-  <title>Kino — subtle wide cat ears (companion enabled)</title>
-  <!-- B shape: 43-degree outward spread on each side, ~3.6 SVG units of radial lift. -->
+  <title>Kino — optical-balance wordmark, subtle cat ears enabled</title>
   <g stroke="#F8F8F7" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M31 21 V109 M39 82 L71 55 M39 82 L72 109"/>
+    <path d="M31 29 V109 M39 82 L71 55 M39 82 L72 109"/>
     <path d="M102 65 V109"/>
     <path d="M137 109 V73 Q137 57 153 57 Q175 57 175 79 V109"/>
   </g>
   <circle cx="102" cy="34" r="8.5" fill="#F8F8F7"/>
-  <circle cx="235" cy="82" r="34" stroke="#F8F8F7" stroke-width="14"/>
+  <circle cx="235" cy="82" r="32" stroke="#F8F8F7" stroke-width="14"/>
   <g fill="#F8F8F7">
-    <path d="M203.332 58.896 C203.315 55.587 202.731 52.053 203.881 50.050 Q204.521 49.316 205.299 48.728 C207.377 47.721 210.862 48.550 214.161 48.798 Z"/>
-    <path d="M255.839 48.798 C259.138 48.550 262.623 47.721 264.701 48.728 Q265.479 49.316 266.119 50.050 C267.269 52.053 266.685 55.587 266.668 58.896 Z"/>
+    <path d="M204.948 60.075 C204.851 56.868 204.197 53.413 205.277 51.483 Q205.885 50.779 206.631 50.220 C208.631 49.278 212.032 50.172 215.224 50.492 Z"/>
+    <path d="M254.776 50.492 C257.968 50.172 261.369 49.278 263.369 50.220 Q264.115 50.779 264.723 51.483 C265.803 53.413 265.149 56.868 265.052 60.075 Z"/>
   </g>
   <path d="M228 69 L228 95 L249 82 Z" fill="#F34854"/>
 </svg>

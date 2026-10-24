@@ -4,6 +4,7 @@
  */
 import { chatEn } from "./chat.en";
 import { catEn } from "./cat.en";
+import { shellEn } from "./shell.en";
 
 export const en = {
   /* common */
@@ -626,7 +627,6 @@ export const en = {
   "phone.exitFullscreen": "Exit full screen on this phone",
   "phone.tvOffline": "The TV is offline. Open {host} on it and this remote will pick up again.",
   "phone.homeTitle": "What do you want to watch?",
-  "phone.homeHelp": "Paste a link to a video, or to a page that has one. It plays on {tv}, without the page.",
   "phone.outdatedServer": "The server doesn't understand this app version. Restart the server, then reload this page.",
   "phone.linkTooLong": "That link is too long to play. Try the address of the page it comes from.",
   "phone.tooSlow": "This is taking too long. Try again in a moment.",
@@ -693,8 +693,6 @@ export const en = {
   "tvs.full": "Your list is full. Forget a TV to connect another.",
   "menu.partyOpen": "Watch party",
   "menu.partyActive": "Watch party · {count} devices",
-  "menu.linkBox": "Paste-a-link box",
-  "menu.linkBoxHelp": "Shows a box on the home screen where a video or page link is pasted and played on {tv}.",
   "menu.disconnect": "Disconnect from this TV",
   "menu.disconnectHelp": "The TV comes off your list. If no other phone has it, it shows a new code so you (or someone else) can connect again. What you watched stays with your profile.",
   "party.title": "Watch party",
@@ -816,6 +814,7 @@ export const en = {
   "tv.filterSeries": "Series",
   "tv.filterCartoons": "Cartoons",
   "tv.filterAnime": "Anime",
+  "tv.sections": "Sections",
   "tv.backToLibrary": "Back to the library",
   "rows.because": "Because you watched {title}",
   "rows.loved": "Because you loved {title}",
@@ -1256,6 +1255,9 @@ export const en = {
 
   /* the chat between two friends (client/chat): kept in a file of its own, spread in here */
   ...chatEn,
+
+  /* the phone's shell, its bar of destinations and the screens in it (client/controller/shell): kept in a file of its own, spread in here */
+  ...shellEn,
 
   /* the cat companion (client/cat): kept in a file of its own, spread in here */
   ...catEn,
