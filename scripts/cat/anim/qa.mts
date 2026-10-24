@@ -1,7 +1,7 @@
 // The numbers that can be had of a clip before a person looks at it: does the body hold together (integrity.mts), is the cat on the floor and not through it, does a bone jump from one
 // frame to the next, does a loop close. Nothing here says a clip is good (that is for blind eyes); it says which clips are not fit to be shown yet, and why.
 //
-//   node node_modules/tsx/dist/cli.mjs scripts/cat/anim/qa.mts <clips-file> [--only=a,b] [--json=out.json]
+//   node node_modules/tsx/dist/cli.mjs scripts/cat/anim/qa.mts <clips-file> [--only=a,b] [--json=out.json] [--mesh=cat.mesh]
 //
 // Development tooling: nothing in the app imports it.
 import { readFileSync, writeFileSync } from "node:fs";
@@ -12,14 +12,14 @@ import { reach } from "./floor.mts";
 import { IntegrityMeter } from "./integrity.mts";
 
 const [file, ...rest] = process.argv.slice(2);
-if (!file) throw new Error("usage: qa.mts <clips-file> [--only=a,b] [--json=out.json]");
+if (!file) throw new Error("usage: qa.mts <clips-file> [--only=a,b] [--json=out.json] [--mesh=cat.mesh]");
 const flag = (name: string, fallback: string): string => rest.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const only = flag("only", "").split(",").filter(Boolean);
 const read = (path: string): ArrayBuffer => {
   const b = readFileSync(path);
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 };
-const mesh = decodeMesh(read("src/client/cat/render/gl/cat.mesh"));
+const mesh = decodeMesh(read(flag("mesh", "src/client/cat/render/gl/cat.mesh")));
 const skeleton = new Skeleton(mesh.skeleton);
 const clips = decodeClips(read(file), skeleton).filter((c) => only.length === 0 || only.includes(c.name));
 const meter = new IntegrityMeter(mesh, skeleton, "dual");

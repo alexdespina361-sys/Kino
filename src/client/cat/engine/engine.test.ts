@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRng } from "../rng";
-import type { CatFrame, Rect, Target, World } from "../types";
+import type { CatEvent, CatFrame, Rect, Surface, Target, World } from "../types";
 import { CLIMB_BACK, CLIMB_HANG, CLIMB_LIP, CLIMB_TIME, JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT } from "../types";
 import { CatEngine } from "./engine";
 import { computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, SCALE_MAX, screenEdges, settledCost, STEP_MAX, STEP_MIN, stepFlight, type Clutter, type Ledge, type RestPose } from "./ledges";
@@ -920,6 +920,142 @@ describe("the cat asked to show a poster when the page has been scrolled to it (
     expect(log.some((e) => e.pending !== null)).toBe(true);
     expect(log[log.length - 1]!.pending).toBe(null);
     expect(log.some((e) => e.act === "stalk" || e.f.clip === "swat")).toBe(false);
+  });
+});
+
+describe("the cat called, or told to play, in the middle of a leap of its own (it lands first, and is answered from the shelf it lands on)", () => {
+  /**
+   * Four shelves on a screen of 1920 by 1080. `a` and `c` are on one line, a leap apart; `b` is a long way under `a` (a cat drops to it, and cannot leap up to `a`, or across and up to `c`, from it); `d` is a
+   * step up from `b` and a step up to `c`. So the way to `c` is one leap from `a`, and two from `b`, by `d`: a route that was made from `a` is not one to walk from `b`.
+   */
+  const shelf = (id: string, y: number, x0: number, x1: number): Surface => ({ id, kind: "shelfTop", y, x0, x1, weight: 1 });
+  const page = (...surfaces: Surface[]): World => ({ viewport: { x: 0, y: 0, w: 1920, h: 1080 }, bodyLength: L, surfaces, keepOut: [], targets: [], mode: "browse", player: "none", controlsUp: false, quiet: false, reducedMotion: false });
+  const a = shelf("a", 300, 180, 720);
+  const world = page(a, shelf("b", 735, 180, 720), shelf("c", 300, 880, 1480), shelf("d", 515, 700, 1000));
+  /** The same page with a poster on `d`, a pointer over `c`. */
+  const poster: Target = { id: "poster", rect: { x: 800, y: 515, w: 120, h: 190 }, surfaceId: "d" };
+  const withPoster: World = { ...world, targets: [poster] };
+  const withPointer: World = { ...world, pointer: { x: 1300, y: 300 } };
+  type Phase = "winding up" | "in the air" | "settling";
+  /** The leap from `a` down to `b`: crouching for it, in the air, and settled from it (the cat is on `b` by then). */
+  const phases: Record<Phase, (engine: CatEngine) => boolean> = {
+    "winding up": (engine) => engine.debug().act === "jump" && engine.debug().jumpTo === "b" && engine.frame.grounded,
+    "in the air": (engine) => engine.debug().act === "jump" && engine.debug().jumpTo === "b" && !engine.frame.grounded,
+    settling: (engine) => engine.debug().act === "jump" && engine.debug().jumpTo === null && engine.debug().surfaceId === "b",
+  };
+  /** A cat that sits on `a` (the only shelf the page has at first) is called down to `b`, and stepped on until it is in `phase` of the leap that takes it there. */
+  const leaping = (seed: number, phase: Phase): CatEngine => {
+    const engine = new CatEngine(seed);
+    run(engine, page(a), 5);
+    engine.send({ type: "cat.command", command: "sit" });
+    run(engine, world, 1);
+    engine.send({ type: "cat.call", at: { x: 450, y: 735 } });
+    for (let i = 0; i < 30 * 10 && !phases[phase](engine); i++) engine.update(world, 1 / 30);
+    expect(phases[phase](engine), `seed ${seed}: the leap`).toBe(true);
+    return engine;
+  };
+  /** The cat stepped on for `seconds` in `on`, and the shelves it stood on, in order, added to `stood`. */
+  const watch = (engine: CatEngine, stood: string[], on: World, seconds: number): void => {
+    stepCat(engine, on, seconds, 30, () => {
+      const at = engine.debug().surfaceId!;
+      if (stood[stood.length - 1] !== at) stood.push(at);
+    });
+  };
+  /**
+   * A cat in `phase` of its leap to `b` is told `events` (in one frame, the page being `on`): what it holds after that frame, and the shelves it stood on, in order, as the next ten seconds go by (a route to
+   * `c` takes it seven, and it sits there for eight more).
+   */
+  const told = (seed: number, phase: Phase, events: CatEvent[], on: World = world) => {
+    const engine = leaping(seed, phase);
+    const stood = [engine.debug().surfaceId!];
+    for (const event of events) engine.send(event);
+    engine.update(on, 1 / 30);
+    const held = engine.debug().asked;
+    const waiting = engine.debug().pending;
+    watch(engine, stood, on, 10);
+    return { engine, held, waiting, stood };
+  };
+  const toC = { type: "cat.call", at: { x: 1300, y: 300 } } as const;
+
+  it("is answered from the shelf it lands on when it is called as it winds up for a leap, in the air, or settling from it, and not by the route made for the shelf it left", () => {
+    for (const phase of ["winding up", "in the air", "settling"] as const) {
+      for (const seed of [1, 2, 3, 4]) {
+        const { engine, held, stood } = told(seed, phase, [toC]);
+        const label = `${phase}, seed ${seed}`;
+        // (it lands where its leap was going, goes up to `c` by `d`, as a route from `b` does, and sits down where it was called)
+        expect(stood, label).toEqual(phase === "settling" ? ["b", "d", "c"] : ["a", "b", "d", "c"]);
+        expect(engine.debug().act, label).toBe("rest:sit");
+        expect(Math.abs(engine.frame.x - toC.at.x), label).toBeLessThan(0.5 * L);
+        // (and it kept the call in mind until its leap was over, and made no route from where it was)
+        expect(held, label).toBe("come");
+        expect(engine.debug().asked, label).toBeNull();
+      }
+    }
+  });
+
+  it("is told to come in the air (to the pointer, over `c`), and comes from the shelf it lands on", () => {
+    for (const seed of [1, 2, 3, 4]) {
+      const { engine, held, stood } = told(seed, "in the air", [{ type: "cat.command", command: "come" }], withPointer);
+      expect(stood, `seed ${seed}`).toEqual(["a", "b", "d", "c"]);
+      expect(engine.debug().surfaceId, `seed ${seed}`).toBe("c");
+      expect(held, `seed ${seed}`).toBe("come");
+    }
+  });
+
+  it("is told to play in the air: it holds the command until it has landed, and plays from the shelf it lands on (the only leap a cat can make from `b` is its first)", () => {
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+      const { held, stood } = told(seed, "in the air", [{ type: "cat.command", command: "play" }]);
+      expect(stood.slice(0, 3), `seed ${seed}`).toEqual(["a", "b", "d"]);
+      expect(held, `seed ${seed}`).toBe("play");
+    }
+  });
+
+  it("forgets the call when it is told something else before it can set out, a command to sit, or a poster to show, which it goes to from the shelf it lands on", () => {
+    for (const seed of [1, 2]) {
+      const { engine, held, stood } = told(seed, "in the air", [toC, { type: "cat.command", command: "sit" }]);
+      expect(stood, `seed ${seed}`).toEqual(["a", "b"]);
+      expect(engine.debug().act, `seed ${seed}`).toBe("rest:sit");
+      expect(held, `seed ${seed}`).toBeNull();
+    }
+    const { held, waiting, stood } = told(1, "in the air", [toC, { type: "cat.point", targetId: poster.id }], withPoster);
+    expect(stood.slice(0, 3)).toEqual(["a", "b", "d"]);
+    expect(stood).not.toContain("c");
+    expect(held).toBeNull();
+    expect(waiting).toBe(poster.id);
+  });
+
+  it("forgets the call when the page sends the cat away (a menu opens) before it can set out: it does not go to the place when it is back", () => {
+    const engine = leaping(1, "in the air");
+    const stood = [engine.debug().surfaceId!];
+    engine.send(toC);
+    engine.update(world, 1 / 30);
+    expect(engine.debug().asked).toBe("come");
+    watch(engine, stood, { ...world, mode: "away" }, 1);
+    expect(engine.debug().asked).toBeNull();
+    watch(engine, stood, world, 12);
+    expect(stood).not.toContain("c");
+    expect(engine.debug().asked).toBeNull();
+  });
+
+  it("is not called while a hand has it, and the call is not remembered for when it is let go", () => {
+    const engine = new CatEngine(1);
+    run(engine, page(a), 5);
+    engine.send({ type: "cat.command", command: "sit" });
+    run(engine, world, 1);
+    engine.send({ type: "cat.grab", at: { x: engine.frame.x, y: engine.frame.y - 0.4 * L } });
+    engine.update(world, 1 / 30);
+    expect(engine.debug().act).toBe("carried");
+    engine.send(toC);
+    engine.send({ type: "cat.command", command: "come" });
+    engine.send({ type: "cat.command", command: "play" });
+    engine.update(world, 1 / 30);
+    expect(engine.debug().act).toBe("carried");
+    expect(engine.debug().asked).toBeNull();
+    engine.send({ type: "cat.drop" });
+    const stood = [engine.debug().surfaceId!];
+    watch(engine, stood, world, 4);
+    expect(engine.debug().asked).toBeNull();
+    expect(stood).not.toContain("c");
   });
 });
 

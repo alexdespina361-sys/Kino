@@ -54,6 +54,10 @@ node scripts/cat/glsheet.mjs extents .kino-cat/extents-sit.png --label=sit --col
 
 `.kino-cat/` is not tracked. A full build takes about 40 s.
 
+An experiment that is not in the app: `CAT_ELBOW=1` makes `build-meshy.mts` add an elbow bone to each foreleg (36 bones); the clips are then built with `build.mts --mesh=<that mesh>` and checked with `qa.mts --mesh=<that mesh>`. It was judged and not shipped (QA.md, round 14).
+
+Another that is not in the app: the Sphynx cat as a donor (`recipes/sphynx.mts`, `sphynx-acts.mts`, `sphynx-climb.mts`; the file is in the workbench's `donors\`, CC BY, [SOURCES.md](SOURCES.md)). `build.mts --sphynx=groom` (or `scale`, `climb` for the ledge climb, `stalk`, `plain-stalk`, `plain-jump`, `plain-crouch`) makes the named clip from it instead of the shipped one, `--sphynx=off` from none, and `SPHYNX_SHIPPED` in `build.mts` lists the ones that are in the app by default: **none**, so a plain build is byte for byte the shipped `cat.clips`. Six clips were judged blind and none beat the shipped one (QA.md, round 15, which also has the ship rule and what each version was).
+
 ## The numbers (`qa.mts`)
 
 | Column | Meaning | Healthy |

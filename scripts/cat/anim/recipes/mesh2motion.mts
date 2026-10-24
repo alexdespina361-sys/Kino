@@ -49,8 +49,8 @@ export const mesh2motionLinks = (donor: Donor, cat: Skeleton): Link[] => [
 export const MESH2MOTION_LEGS: Leg[] = [
   { chain: ["backleg", "backleg0", "backleg1", "backleg2"], carrier: { cat: "Hips", donor: "Hips" }, foot: "Back_Leg_Foot_L", toes: ["Back_Leg_Foot_1_L", "Back_Leg_Tip_L"], pad: 0 },
   { chain: ["R_backleg", "R_backleg0", "R_backleg1", "R_backleg2"], carrier: { cat: "Hips", donor: "Hips" }, foot: "Back_Leg_Foot_R", toes: ["Back_Leg_Foot_1_R", "Back_Leg_Tip_R"], pad: 1 },
-  { chain: ["frontleg", "frontleg0", "frontleg1", "frontleg2"], carrier: { cat: "chest", donor: "Spine_3" }, foot: "Front_Leg_Foot_L", toes: ["Front_Leg_Foot_L", "Front_Leg_Tip_L"], pad: 2 },
-  { chain: ["R_frontleg", "R_frontleg0", "R_frontleg1", "R_frontleg2"], carrier: { cat: "chest", donor: "Spine_3" }, foot: "Front_Leg_Foot_R", toes: ["Front_Leg_Foot_R", "Front_Leg_Tip_R"], pad: 3 },
+  { chain: ["frontleg", "frontleg_e", "frontleg0", "frontleg1", "frontleg2"], carrier: { cat: "chest", donor: "Spine_3" }, foot: "Front_Leg_Foot_L", toes: ["Front_Leg_Foot_L", "Front_Leg_Tip_L"], pad: 2 },
+  { chain: ["R_frontleg", "R_frontleg_e", "R_frontleg0", "R_frontleg1", "R_frontleg2"], carrier: { cat: "chest", donor: "Spine_3" }, foot: "Front_Leg_Foot_R", toes: ["Front_Leg_Foot_R", "Front_Leg_Tip_R"], pad: 3 },
 ];
 
 /** The fox's hips are this high above its feet (the model's units), and the cat's are this high (body lengths): the hips' travel is scaled by their ratio. */
