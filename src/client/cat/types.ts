@@ -90,12 +90,17 @@ export interface World {
    * yet). Optional: without it, a world is read afresh when it is another object.
    */
   readAt?: number;
+  /**
+   * The painter can draw the cat from behind, going up the face of a card (the `scale` clip): a step up that is too high for a hang (see `STEP_MAX` in engine/ledges.ts) is then one the cat may
+   * go up the face of, and haul itself over the lip from there. Optional: without it, the cat never asks for that clip.
+   */
+  rearView?: boolean;
 }
 
 /* ------------------------------ what the cat is doing ------------------------------ */
 
 /**
- * The cat's postures and actions, which the renderer draws. One-shot clips (`jump`, `stretch`, `yawn`, and the little scenes `groom`, `scratch`,
+ * The cat's postures and actions, which the renderer draws. One-shot clips (`jump`, `climb`, `stretch`, `yawn`, and the little scenes `groom`, `scratch`,
  * `knead`, `sniff` and `wiggle`) say how far along they are in `progress`. `stalk` is a walk, low, and slow, at something.
  * (Turning around, appearing and fading are not clips: the renderer works them out from `facing` and `appear`.)
  */
@@ -127,14 +132,35 @@ export type Clip =
   /** Nodding off: a loaf, the head dropping and jerking up again, the eyes heavy. */
   | "doze"
   /** A sleeper changing its position: it half wakes, lifts its head, and curls up again. */
-  | "shift";
+  | "shift"
+  /**
+   * Hauling itself up over the lip of a ledge by the forepaws (a one-shot, played by `progress`; see `CLIMB_*`). `x`,`y` are held at the point where the cat ends up standing on top
+   * (feet on the ledge's top) and it faces the inside of the ledge; `grounded` is false until the end. The picture starts with the cat hanging by its forepaws from the lip, below that
+   * line (the art does the climb's travel; the engine does not move `y` while it plays), and ends standing.
+   */
+  | "climb"
+  /**
+   * Going straight up the face of a card (or any wall the page has), seen from behind: the viewer has the cat's back, the tail hanging, the paws taking hold of the face one after another. A gait,
+   * not a one-shot: it is played by the distance climbed (`odometer`, the clip's `stride` being the length that one round of the paws climbs), so that no paw slides over the face.
+   * `facing` is 1 all the way up (a picture of the cat's back has no side to it, and the solid cat's clip turned round would show its belly), `grounded` is false, and it ends in a `climb`.
+   * Only for a world that says the painter can draw it (`World.rearView`).
+   */
+  | "scale";
 
 /**
  * How the cat feels, a face and a tail more than a body: laid over whatever it is doing (a cat can tilt its head as it sits, stands or walks).
  * `tilt` is the quizzical look at whoever is there, `think` a look away and up, `startle` a flinch (ears flat, eyes wide), `joy` a lift (ears up, tail up and
- * quivering), `droop` a letdown (ears out, head low, slow blink).
+ * quivering), `droop` a letdown (ears out, head low, slow blink), `annoyed` a cat that was handled and did not like it (ears flat back, eyes narrowed, the tail lashing),
+ * `shake` the whole body shaken from the head to the tail, the ears flapping (a cat shaking a hand off; it lasts about a second).
  */
-export type Emote = "none" | "tilt" | "think" | "startle" | "joy" | "droop";
+export type Emote = "none" | "tilt" | "think" | "startle" | "joy" | "droop" | "annoyed" | "shake";
+
+/**
+ * Where a hand that has the cat is, from the cat's feet (body lengths, the cat as seen facing right): `HANG_AHEAD` behind them and `HANG_DOWN` above them, once the hang has formed
+ * (the frame's `x`,`y` are the feet). The cat hangs from it by the scruff, tipped nose up, so the painter turns the picture about that point.
+ */
+export const HANG_DOWN = 0.73;
+export const HANG_AHEAD = 0.1;
 
 /** How a jump's `progress` is shared out: crouching to push off, the flight, then the landing and settling. */
 export const JUMP_TAKEOFF = 0.22;
@@ -142,6 +168,20 @@ export const JUMP_LANDING = 0.8;
 
 /** How far through a swat the paw lands: the page answers (the poster gives and rocks) as `progress` passes this. */
 export const SWAT_HIT = 0.44;
+
+/**
+ * The climb (see the `climb` clip), all in body lengths and as seen with the cat facing right (`facing` -1 is the same turned round): the lip the forepaws grip is `CLIMB_LIP`
+ * behind the point the cat ends up standing at (`x`,`y` of the frame), on the line of the ledge's top; at `progress` 0 the hanging cat's feet are `CLIMB_HANG` below that line and the middle
+ * of its body `CLIMB_BACK` behind the standing point (so a cat that fell to there, or that stood there, goes into the climb without a jump of the picture). The marks of the clip, in
+ * `progress`: the paws take hold, the haul is at its hardest, the hind legs are over the lip. (The engine makes the climb last `CLIMB_TIME` seconds.)
+ */
+export const CLIMB_LIP = 0.6;
+export const CLIMB_HANG = 1.4;
+export const CLIMB_BACK = 0.95;
+export const CLIMB_TIME = 1.7;
+export const CLIMB_GRAB = 0.2;
+export const CLIMB_PULL = 0.6;
+export const CLIMB_OVER = 0.85;
 
 /** Everything the renderer is told, every frame. */
 export interface CatFrame {
@@ -176,6 +216,12 @@ export interface CatFrame {
   petted: boolean;
   /** A hand has it by the scruff and is carrying it somewhere: it hangs from the hand (`x`,`y` are still its feet, a little below the grip). */
   carried: boolean;
+  /**
+   * How hard it fights the hand that has it, 0..1: 0 hangs calm, about 0.1 is limp (it has given up for a while), 1 is twisting, kicking and swiping with all it has. It is 0 until it has been
+   * held a while, comes on over a second or so, may peak and ease off to limp and try again, and dies away in the half second after the hand lets go (a cat that lands from a struggle lands
+   * annoyed: see `Emote`). The painter makes of it what it likes (a faster, bigger swing, legs kicking, ears back, the mouth open); missing means 0.
+   */
+  struggle?: number;
   /** What it feels just now (see `Emote`); none when it does not say. */
   emote?: Emote;
 }

@@ -5,7 +5,7 @@ import { createRng } from "../rng";
 import type { Rect } from "../types";
 import { fits, MOODS, pick, reasonFor, type Candidate, type Mood } from "./assistant";
 import { Governor, Revival } from "./governor";
-import { DWELL_MS, Hand, REPEAT_MS } from "./hand";
+import { DWELL_MS, Hand, handFits, REPEAT_MS } from "./hand";
 import { perchesFor, widestGap } from "./perch";
 
 describe("the hand on the cat", () => {
@@ -38,6 +38,12 @@ describe("the hand on the cat", () => {
     expect(hand.press(100)).toBe("pet");
     expect(hand.stroking).toBe(true);
     expect(hand.step(116, false)).toBe("end");
+  });
+
+  it("has no box to be put on a cat that hauls itself up over a lip, or goes up the face of a card to one, and has one on a cat that does anything else", () => {
+    expect(handFits("climb")).toBe(false);
+    expect(handFits("scale")).toBe(false);
+    for (const clip of ["stand", "walk", "run", "sit", "loaf", "curl", "jump", "peek", "groom"] as const) expect(handFits(clip), clip).toBe(true);
   });
 });
 
@@ -266,6 +272,36 @@ describe("the cat's place in a film", () => {
     const [one, two] = perchesFor([], 1280, 720, L);
     expect(one!.x0).toBeGreaterThan(640);
     expect(two!.x1).toBeLessThan(640);
+  });
+
+  it("sits on the line where the bars begin when it is told where that is: over no button of theirs, which a corner at the foot of the screen would be", () => {
+    // (a phone held upright: 390x844, the bars' lowest block, the film's bar and then the row of buttons under it, begins at 778 and a body is 52 long)
+    const small = 52;
+    const [right, leftOne] = perchesFor([], 390, 844, small, 778);
+    expect(right!.id).toBe("perch-right");
+    expect(leftOne!.id).toBe("perch-left");
+    expect(right!.y).toBeCloseTo(778 - 0.08 * small, 5);
+    expect(leftOne!.y).toBe(right!.y);
+    // (above the foot, which is where it was before it was told, and where the bars' buttons are)
+    expect(right!.y).toBeLessThan(perchesFor([], 390, 844, small)[0]!.y);
+    // the corners themselves are where they were
+    expect(right!.x0).toBe(perchesFor([], 390, 844, small)[0]!.x0);
+    expect(leftOne!.x1).toBe(perchesFor([], 390, 844, small)[1]!.x1);
+  });
+
+  it("keeps a corner in the lower half of the screen and above the foot, whatever the bars say", () => {
+    const foot = perchesFor([], 1280, 720, L)[0]!.y;
+    // (bars that begin high up the screen, or a number that is nonsense)
+    expect(perchesFor([], 1280, 720, L, 100)[0]!.y).toBe(0.5 * 720);
+    expect(perchesFor([], 1280, 720, L, 5000)[0]!.y).toBe(foot);
+    expect(perchesFor([], 1280, 720, L, Number.NaN)[0]!.y).toBe(foot);
+    expect(perchesFor([], 1280, 720, L, Number.POSITIVE_INFINITY)[0]!.y).toBe(foot);
+  });
+
+  it("is where the row has a place for it all the same, whatever the bars say", () => {
+    const [only, ...others] = perchesFor([left, right], 1280, 720, L, 600);
+    expect(others).toEqual([]);
+    expect(only).toEqual(perchesFor([left, right], 1280, 720, L)[0]);
   });
 
   it("takes the widest of the gaps", () => {

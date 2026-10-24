@@ -1,9 +1,12 @@
 import { HANG_AHEAD, HANG_DOWN } from "../engine/engine";
 import type { CatCoat } from "../settings";
-import { PoseFit } from "../render/gl/fit";
+import { decodeClips } from "../render/gl/clipfile";
+import { PLANS } from "../render/gl/director";
+import { decodeMesh } from "../render/gl/format";
+import { Skeleton, lengthOf } from "../render/gl/pose";
 import { GlCat, type View } from "../render/gl/renderer";
 import { CatRig, GALLOP_STRIDE, WALK_STRIDE } from "../render/rig";
-import type { CatFrame } from "../types";
+import { CLIMB_LIP, type CatFrame } from "../types";
 import { frameOf, POSES } from "./entry";
 
 /**
@@ -20,15 +23,22 @@ interface GlCell {
   zoom?: { at: [number, number]; by: number } | { head: [number, number]; by: number };
   /** For the walk and the run: how far through a stride it is (0..1), which fixes where the feet are. */
   cycle?: number;
+  /** How far the head is turned about the vertical against the body (radians), in place of what the rig says. */
+  headYaw?: number;
   /** Draws the cat this many body lengths higher in its cell (one that hangs reaches below its feet line), and marks a point (x to the right, y up, from the feet) where a hand would be. */
   raise?: number;
   hand?: [number, number];
+  /** A ledge whose top is the floor line and whose lip is this many body lengths from the feet (negative: behind them): drawn as a block, for a climb to be seen against. */
+  ledge?: number;
+  /** The face of a card the whole cell wide behind the cat, in place of the floor line: for a cat that climbs straight up it. */
+  card?: boolean;
 }
 
 const STRIDE = { walk: WALK_STRIDE, run: GALLOP_STRIDE };
 
 const BG = "#15151b";
 const GROUND = "#2a2a35";
+const LEDGE = "#23232d";
 
 const fromBase64 = (text: string): ArrayBuffer => {
   const raw = atob(text);
@@ -37,7 +47,7 @@ const fromBase64 = (text: string): ArrayBuffer => {
   return bytes.buffer;
 };
 
-export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220, coat: CatCoat = "ragdoll"): void {
+export function glSheet(canvas: HTMLCanvasElement, mesh: string, clips: string, cells: readonly GlCell[], columns: number, scale = 1, seed = 7, cellW = 260, cellH = 220, coat: CatCoat = "ragdoll", over: View = {}): void {
   const cw = cellW * scale;
   const ch = cellH * scale;
   const rows = Math.ceil(cells.length / columns);
@@ -45,31 +55,54 @@ export function glSheet(canvas: HTMLCanvasElement, mesh: string, cells: readonly
   canvas.height = ch * rows;
   const ctx = canvas.getContext("2d")!;
   const glCanvas = document.createElement("canvas");
-  const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
+  const cat = GlCat.create(glCanvas, fromBase64(mesh), fromBase64(clips), { preserve: true });
   if (!cat) throw new Error("no WebGL");
   cat.setCoat(coat);
   cat.resize(cw, ch, 1);
   const px = 150 * scale;
-  const fit = new PoseFit();
   cells.forEach((cell, i) => {
     const x0 = (i % columns) * cw;
     const y0 = Math.floor(i / columns) * ch;
     const rig = new CatRig(seed + i);
+    // (each picture is a cat of its own: the clip's clock, and what follows the clip, start at the picture, not where the picture before left them)
+    cat.director.restart();
     const base = frameOf(cell.frame);
-    if (cell.cycle !== undefined) base.odometer = cell.cycle * STRIDE[base.clip === "run" ? "run" : "walk"] * px;
+    // (a point of a cycle is a point of the clip's own stride: the ground one cycle of it carries the cat over)
+    if (cell.cycle !== undefined) base.odometer = cell.cycle * (cat.director.strideOf(base.clip) || STRIDE[base.clip === "run" ? "run" : "walk"]) * px;
     rig.snapTo(base, px);
     const steps = Math.round((cell.settle ?? 1.2) * 60);
-    for (let k = 0; k < steps; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
+    for (let k = 0; k < steps; k++) {
+      rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
+      // (headYawOf's own formula, the other way round)
+      if (cell.headYaw !== undefined) rig.solved.head.yaw = 1 + cell.headYaw / ((Math.PI / 2) * rig.solved.flip);
+      cat.step(rig.solved, { ox: cw / 2, oy: ch, px }, { ...cell.view, ...over });
+    }
     ctx.fillStyle = BG;
     ctx.fillRect(x0, y0, cw, ch);
     const oy = ch - 24 * scale - (cell.raise ?? 0) * px;
-    ctx.fillStyle = GROUND;
-    ctx.fillRect(x0, y0 + oy, cw, 3 * scale);
+    if (cell.ledge !== undefined) {
+      // (the block the cat climbs: its top is the floor line, and it goes down from the lip)
+      const lip = Math.max(0, cw / 2 + cell.ledge * px);
+      ctx.fillStyle = LEDGE;
+      ctx.fillRect(x0 + lip, y0 + oy, cw - lip, ch - oy);
+    }
+    if (cell.card) {
+      ctx.fillStyle = LEDGE;
+      ctx.fillRect(x0, y0, cw, ch);
+      // (rungs on the face, a quarter of a body length apart and fixed to it: a cat that climbs is seen going up them, and a paw that holds is seen holding one)
+      for (let k = 0; ch - 24 * scale - k * 0.25 * px > 0; k++) {
+        ctx.fillStyle = k % 4 === 0 ? "#3a3a48" : "#2d2d39";
+        ctx.fillRect(x0, y0 + ch - 24 * scale - k * 0.25 * px, cw, (k % 4 === 0 ? 2 : 1) * scale);
+      }
+    } else {
+      ctx.fillStyle = GROUND;
+      ctx.fillRect(x0, y0 + oy, cw, 3 * scale);
+    }
     const z = cell.zoom;
     // (`head`: the place is where the head is, as the mesh's cat has it in this pose, and the number is how far from the head's centre to look at: ahead of it, and up)
-    const at = z ? ("head" in z ? ((): [number, number] => { const head = fit.apply(rig.solved).head; return [head.x + z.head[0], -head.y + z.head[1]]; })() : z.at) : undefined;
+    const at = z ? ("head" in z ? ((): [number, number] => { const head = cat.place("head"); return [head[0] + z.head[0], head[1] + z.head[1]]; })() : z.at) : undefined;
     const box = z && at ? { px: px * z.by, ox: cw / 2 - at[0] * px * z.by, oy: ch / 2 + at[1] * px * z.by } : { ox: cw / 2, oy, px };
-    cat.draw(rig.solved, box, cell.view);
+    cat.draw(rig.solved, box, { ...cell.view, ...over });
     ctx.drawImage(glCanvas, x0, y0);
     if (cell.hand) {
       // (where the hand is: a cross)
@@ -114,12 +147,12 @@ export const clipOfLabel = (label: string): string => (label.split("@")[0] ?? la
  * Pictures of the cat in each cell, one after another on one canvas, and what each takes of it: the box round every pixel the cat is drawn in (not the
  * faint ones: the fur's fringe and a whisker are not what covers a word). The cat faces right, its feet on a line at 0.8 of the canvas.
  */
-export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat = "ragdoll", seed = 7, alphaMin = 80): Extent[] {
+export function glExtents(mesh: string, clips: string, cells: readonly GlCell[], coat: CatCoat = "ragdoll", seed = 7, alphaMin = 80): Extent[] {
   const W = 1200;
   const H = 900;
   const px = 150;
   const glCanvas = document.createElement("canvas");
-  const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
+  const cat = GlCat.create(glCanvas, fromBase64(mesh), fromBase64(clips), { preserve: true });
   if (!cat) throw new Error("no WebGL");
   cat.setCoat(coat);
   cat.resize(W, H, 1);
@@ -132,11 +165,16 @@ export function glExtents(mesh: string, cells: readonly GlCell[], coat: CatCoat 
   const out: Extent[] = [];
   cells.forEach((cell, i) => {
     const rig = new CatRig(seed + i);
+    cat.director.restart();
     const base = frameOf(cell.frame);
-    if (cell.cycle !== undefined) base.odometer = cell.cycle * STRIDE[base.clip === "run" ? "run" : "walk"] * px;
+    // (a point of a cycle is a point of the clip's own stride: the ground one cycle of it carries the cat over)
+    if (cell.cycle !== undefined) base.odometer = cell.cycle * (cat.director.strideOf(base.clip) || STRIDE[base.clip === "run" ? "run" : "walk"]) * px;
     rig.snapTo(base, px);
     const steps = Math.round((cell.settle ?? 1.2) * 60);
-    for (let k = 0; k < steps; k++) rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
+    for (let k = 0; k < steps; k++) {
+      rig.update({ ...base, clipTime: k / 60 }, 1 / 60, px);
+      cat.step(rig.solved, { ox, oy, px }, cell.view);
+    }
     cat.draw(rig.solved, { ox, oy, px }, cell.view);
     ctx.clearRect(0, 0, W, H);
     ctx.drawImage(glCanvas, 0, 0);
@@ -194,18 +232,22 @@ export const EXTENT_CELLS: GlCell[] = (() => {
   const cells: GlCell[] = [];
   const at = (label: string, frame: Partial<CatFrame>, settle = 1.2): void => void cells.push({ label, frame, settle });
   const base = (clip: string): Partial<CatFrame> => (clip === "curl" ? { clip: "curl", drowsy: 1 } : clip === "pet" ? { clip: "sit", petted: true } : clip === "yawn" ? { clip: "yawn", progress: 0.5 } : { clip: clip as CatFrame["clip"] });
-  for (const clip of ["stand", "sit", "loaf", "curl", "crouch", "yawn", "point", "pet"] as const) at(clip, base(clip));
+  // (a cat that sits, lies down or curls up gets there over a second or more: the pictures of the posture are of the cat settled in it, not of the moment it is still standing up with its tail raised)
+  const SETTLED = 2.2;
+  for (const clip of ["stand", "sit", "loaf", "curl", "crouch", "yawn", "point", "pet"] as const) at(clip, base(clip), ["sit", "loaf", "curl", "point", "pet"].includes(clip) ? SETTLED : 1.2);
   // (a cat at rest for a while: the tail at other moments of its swish, a livelier tail, and the head turned up, down, forward and back)
   for (const clip of ["stand", "sit", "loaf", "curl"] as const) {
-    for (const s of [0.6, 1.9, 2.6, 3.4]) at(`${clip}@t${s}`, base(clip), s);
+    for (const s of clip === "stand" ? [0.6, 1.9, 2.6, 3.4] : [SETTLED, 2.6, 3.0, 3.4]) at(`${clip}@t${s}`, base(clip), s);
     for (const s of [1.2, 2.2]) at(`${clip}@lively${s}`, { ...base(clip), energy: 1 }, s);
     if (clip === "curl") continue;
     for (const [name, look] of [["upfront", { x: 300, y: -200 }], ["upback", { x: -300, y: -200 }], ["downfront", { x: 300, y: 200 }], ["downback", { x: -300, y: 160 }]] as const) at(`${clip}@look-${name}`, { ...base(clip), look: { x: look.x, y: look.y } }, 1.6);
   }
-  at("sit,viewer", { clip: "sit", viewer: true });
+  at("sit,viewer", { clip: "sit", viewer: true }, SETTLED);
   for (const p of [0.25, 0.5, 0.75]) at(`stretch@${p}`, { clip: "stretch", progress: p });
   for (const p of [0.2, 0.5, 0.8]) at(`jump@${p}`, { clip: "jump", progress: p, grounded: false, vy: -300, vx: 300 }, 0.6);
   at("jump@down", { clip: "jump", progress: 0.7, grounded: false, vy: 600, vx: 300 }, 0.6);
+  // (hauling itself up over a lip: the frame is the point it ends up standing at, so the beginning of the clip is below the line the extent is measured from; what it reaches up to and out to is what matters)
+  for (const p of [0, 0.3, 0.6, 0.85, 1]) at(`climb@${p}`, { clip: "climb", progress: p, grounded: false }, 0.6);
   for (const t of [0.2, 0.6, 1.0, 1.4, 2.0]) at(`groom@${t}`, { clip: "groom", clipTime: t }, t);
   for (const s of [0.6, 1.0, 1.06, 1.3, 1.6]) {
     at(`scratch@${s}`, { clip: "scratch" }, s);
@@ -227,9 +269,11 @@ export const EXTENT_CELLS: GlCell[] = (() => {
   for (const t of [0.9, 1.8, 2.7, 3.3]) at(`doze@${t}`, { clip: "doze", drowsy: 0.62 }, t);
   for (const p of [0.15, 0.35, 0.6, 0.85]) at(`shift@${p}`, { clip: "shift", progress: p, drowsy: 1 });
   // (and the feelings that last: the head cocked, and the look away and up; the flinch, the lift and the letdown are over in a moment and are not measured)
-  for (const clip of ["sit", "stand"] as const) for (const emote of ["tilt", "think"] as const) at(`${clip}@${emote}`, { clip, emote }, 1.0);
+  for (const clip of ["sit", "stand"] as const) for (const emote of ["tilt", "think"] as const) at(`${clip}@${emote}`, { clip, emote }, clip === "sit" ? SETTLED : 1.0);
   for (let i = 0; i < 8; i++) cells.push({ label: `walk@${i}`, frame: { clip: "walk", vx: 150 }, cycle: i / 8, settle: 1 });
   for (let i = 0; i < 12; i++) cells.push({ label: `run@${i}`, frame: { clip: "run", vx: 380 }, cycle: i / 12, settle: 1 });
+  // (up the face of a card, seen from behind: the paws of a round of the climb, the head where the clip has it)
+  for (let i = 0; i < 8; i++) cells.push({ label: `scale@${i}`, frame: { clip: "scale", vx: 150, grounded: false }, cycle: i / 8, settle: 1, headYaw: 0 });
   return cells;
 })();
 
@@ -249,6 +293,8 @@ export interface FilmOptions {
   /** Seconds into the recording. */
   from: number;
   to: number;
+  /** The moment of the recording whose feet are on the floor line (the first picture's, when it is not said). */
+  refAt?: number;
   /** For a strip: a picture every this many frames. For the onion skin: the same. */
   every: number;
   seed?: number;
@@ -260,13 +306,19 @@ export interface FilmOptions {
   at?: [number, number];
   /** The turn and tilt of the camera, as in a view (see `View`). */
   view?: View;
+  /** The clips by themselves: nothing follows them (the tail, the back and the breath are as the clip has them). */
+  plain?: boolean;
+  /** A strip whose camera goes with the cat (it is in the same place of every cell): for a cat that is carried about. */
+  follow?: boolean;
+  /** A strip for a reviewer who is not to be told what the cat is doing: each picture says only its number and the seconds since the first (not the engine's act, nor the clip). */
+  blind?: boolean;
 }
 
 /**
  * Pictures of a recording, drawn by one rig that is stepped through every frame of it (so what the springs do shows, not only the poses): either a strip
  * of cells (the cat where it is, the shelf's line fixed, so that a leap shows as height) or one sheet with the cat drawn along its whole path, faintly.
  */
-export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: FilmOptions): void {
+export function glFilm(canvas: HTMLCanvasElement, mesh: string, clips: string, film: Film, o: FilmOptions): void {
   const lab = 150 * o.scale;
   const k = lab / film.bodyLength;
   const dt = 1 / film.fps;
@@ -282,13 +334,15 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
   const rig = new CatRig(o.seed ?? 7);
   rig.snapTo(scaled(film.frames[warm]!), lab);
   const glCanvas = document.createElement("canvas");
-  const cat = GlCat.create(glCanvas, fromBase64(mesh), { preserve: true });
+  const cat = GlCat.create(glCanvas, fromBase64(mesh), fromBase64(clips), { preserve: true });
   if (!cat) throw new Error("no WebGL");
   cat.setCoat(o.coat ?? "ragdoll");
+  if (o.plain) cat.director.follows = false;
   const picks: number[] = [];
   for (let i = i0; i <= i1; i += o.every) picks.push(i);
   const ctx = canvas.getContext("2d")!;
-  const ref = film.frames[i0]!;
+  // (the floor line is where the feet of the first picture are, unless a moment of the recording is named: for a strip that starts with the cat already in the air)
+  const ref = film.frames[o.refAt === undefined ? i0 : Math.min(film.frames.length - 1, Math.max(0, Math.round(o.refAt * film.fps)))]!;
   if (o.mode === "strip") {
     const cw = (o.cellW ?? 260) * o.scale;
     const ch = (o.cellH ?? 220) * o.scale;
@@ -304,19 +358,23 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
       const f = film.frames[i]!;
       rig.update(scaled(f), dt, lab);
       const n = picks.indexOf(i);
-      if (n < 0) continue;
+      if (n < 0) {
+        // (the bones go on by every picture of the recording, drawn or not: the fades, the springs and the clocks of the clips run on the recording's time, not on the pictures chosen)
+        cat.step(rig.solved, { ox: 0, oy: 0, px: lab * zoom }, o.view);
+        continue;
+      }
       const x0 = (n % o.cols) * cw;
       const y0 = Math.floor(n / o.cols) * ch;
       ctx.fillStyle = BG;
       ctx.fillRect(x0, y0, cw, ch);
       ctx.fillStyle = GROUND;
       ctx.fillRect(x0, y0 + line, cw, 3 * o.scale);
-      const oy = o.zoom ? line + (f.y - ref.y) * k * zoom : Math.min(ch - 4 * o.scale, line + (f.y - ref.y) * k);
+      const oy = o.follow ? line : o.zoom ? line + (f.y - ref.y) * k * zoom : Math.min(ch - 4 * o.scale, line + (f.y - ref.y) * k);
       cat.draw(rig.solved, { ox: cw / 2 - at[0] * lab * zoom, oy, px: lab * zoom }, o.view);
       ctx.drawImage(glCanvas, x0, y0);
       ctx.fillStyle = "#9aa";
       ctx.font = `${12 * o.scale}px sans-serif`;
-      ctx.fillText(`${(i / film.fps).toFixed(2)}s  ${f.act ?? ""}  ${f.clip}${f.grounded ? "" : " (air)"}`, x0 + 8 * o.scale, y0 + 16 * o.scale);
+      ctx.fillText(o.blind ? `${n + 1}   +${((i - i0) / film.fps).toFixed(1)} s` : `${(i / film.fps).toFixed(2)}s  ${f.act ?? ""}  ${f.clip}${f.grounded ? "" : " (air)"}`, x0 + 8 * o.scale, y0 + 16 * o.scale);
     }
   } else {
     let minX = Infinity;
@@ -346,7 +404,10 @@ export function glFilm(canvas: HTMLCanvasElement, mesh: string, film: Film, o: F
     for (let i = warm + 1; i <= i1; i++) {
       const f = film.frames[i]!;
       rig.update(scaled(f), dt, lab);
-      if (!picks.includes(i)) continue;
+      if (!picks.includes(i)) {
+        cat.step(rig.solved, { ox: 0, oy: 0, px: lab });
+        continue;
+      }
       cat.draw(rig.solved, { ox: ox(f.x), oy: oy(f.y), px: lab });
       ctx.globalAlpha = 0.45;
       ctx.drawImage(glCanvas, 0, 0);
@@ -367,6 +428,13 @@ export const VIEWS: GlCell[] = [
   { label: "side ao", frame: { clip: "stand" }, view: { tilt: 0, debug: 2 } },
   { label: "top", frame: { clip: "stand" }, view: { tilt: 1.3 } },
 ];
+
+/** The neck as the head is turned against the body, from straight ahead to over the shoulder: a row from the side, a row from three quarters in front, a row of the bones. */
+export const NECK: GlCell[] = [
+  { tilt: 0, turn: 0 },
+  { tilt: 0.1, turn: -0.6 },
+  { tilt: 0, turn: 0, debug: 3 },
+].flatMap((view) => [0, 0.5, 1, 1.5].map((yaw): GlCell => ({ label: `head turned ${yaw}`, frame: { clip: "stand" }, view, headYaw: yaw, zoom: { head: [0, -0.02], by: 2.6 } })));
 
 export const FACES: GlCell[] = [
   { label: "face, stand", frame: { clip: "stand" }, view: { tilt: 0 }, zoom: { head: [0.05, 0], by: 4.2 } },
@@ -428,6 +496,33 @@ const cycleOf = (clip: "walk" | "run", n: number): GlCell[] =>
   Array.from({ length: n }, (_, i) => ({ label: `${clip} ${i}/${n}`, frame: { clip, vx: clip === "run" ? 380 : 150 }, cycle: i / n, view: { tilt: 0 }, settle: 1 }));
 export const WALK: GlCell[] = cycleOf("walk", 8);
 export const RUN: GlCell[] = cycleOf("run", 12);
+
+/**
+ * `n` pictures of one clip of the file, evenly through it (a clip is named for the posture of the engine it serves, and is played the way the director plays that posture: by the ground
+ * covered, by the clock, or by how far through a one-shot it is). For looking at a clip as the cat will show it, one side on.
+ */
+export function clipCells(mesh: string, clips: string, name: string, n: number, view: View = { tilt: 0 }, blind = false, raise = 0): GlCell[] {
+  const skeleton = new Skeleton(decodeMesh(fromBase64(mesh)).skeleton);
+  const clip = decodeClips(fromBase64(clips), skeleton).find((c) => c.name === name);
+  if (!clip) throw new Error(`no clip ${name}`);
+  const plan = PLANS[name as keyof typeof PLANS]?.find((p) => p.clip === name);
+  if (!plan) throw new Error(`no posture plays the clip ${name}`);
+  const seconds = lengthOf(clip);
+  // (`raise`: the floor line is this many body lengths higher in the cell, for a clip whose cat goes below it: a climb starts hanging under the ledge)
+  const up = { ...(raise ? { raise } : {}), ...(name === "climb" ? { ledge: -CLIMB_LIP } : {}), ...(name === "scale" ? { card: true } : {}) };
+  return Array.from({ length: n }, (_, i) => {
+    // (a blind sheet says only which picture it is: a reviewer who is not to know what the clip is must not be told by the label)
+    const label = blind ? String(i + 1) : `${name} ${i}/${n}`;
+    // (a cat that climbs the face of a card has no floor under it)
+    // (and its head is where the clip has it, not turned to the viewer; and it is higher up the face in each picture by the way a round of its paws climbs: the pictures are of one round)
+    if (plan.drive === "odometer") {
+      const climbs = name === "scale" ? { raise: raise + (i / n) * clip.stride, headYaw: 0 } : {};
+      return { label, frame: { clip: name as CatFrame["clip"], vx: 150, ...(name === "scale" ? { grounded: false } : {}) }, cycle: i / n, view, settle: 1, ...up, ...climbs };
+    }
+    if (plan.drive === "progress") return { label, frame: { clip: name as CatFrame["clip"], progress: n > 1 ? i / (n - 1) : 0, ...(name === "climb" ? { grounded: false } : {}) }, view, settle: 1, ...up };
+    return { label, frame: { clip: name as CatFrame["clip"] }, view, settle: (clip.loop ? i / n : n > 1 ? i / (n - 1) : 0) * seconds, ...up };
+  });
+}
 
 export const EYES: GlCell[] = [
   { label: "eyes, viewer", frame: { clip: "sit", viewer: true }, view: { tilt: 0.05 }, zoom: { head: [0.05, 0.005], by: 9 } },

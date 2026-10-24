@@ -7,6 +7,7 @@ import { moveFocus, navItems } from "../../tv/dpad";
 import { actionForKey } from "../../tv/keys";
 import { CAT_PANEL_ID } from "../bus";
 import type { Rng } from "../rng";
+import { useCatAsleep } from "../settings";
 import type { CatEvent } from "../types";
 import { MOODS, pick, poolOfPage, reasonFor, tileOf, type Candidate, type Mood } from "./assistant";
 import { bringIntoView, clearPointed, markPointed } from "./effects";
@@ -16,11 +17,13 @@ import { bringIntoView, clearPointed, markPointed } from "./effects";
  * in the library's corner that the remote walks like any menu: the arrows move between its buttons, OK presses one, Back steps out (and, from the
  * first screen, closes it and puts the remote back where it was). It does not cover the library like a page: it is not a dialog, the cat stays
  * where it is on the page, and it is the cat that points at what it found. "Open it" opens the title's page, like pressing OK on its poster;
- * nothing here ever plays anything.
+ * nothing here ever plays anything. "Send away" sends the cat to sleep for good (until it is woken); while it sleeps, the panel has one thing to offer, which is to wake it.
  */
 
 export interface PanelProps {
   send: (event: CatEvent) => void;
+  /** Wakes the cat that was sent to sleep. */
+  wake: () => void;
   /** Asks the cat to go to a poster and point at it. */
   point: (targetId: string) => void;
   /** How low, from the top of the screen, the line along the tops of a poster's row has to be for a cat to stand in front of the poster (see `bringIntoView`); nothing if not given. */
@@ -31,11 +34,12 @@ export interface PanelProps {
 
 type Screen = { name: "menu" } | { name: "mood" } | { name: "pick"; mood: Mood; found: Candidate | null };
 
-function CatPanel({ send, point, shelfRoom, rng, close }: PanelProps) {
+function CatPanel({ send, wake, point, shelfRoom, rng, close }: PanelProps) {
   const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const [screen, setScreen] = useState<Screen>({ name: "menu" });
   const shown = useRef(new Set<string>());
+  const sleeping = useCatAsleep();
 
   const find = useCallback(
     (mood: Mood) => {
@@ -97,7 +101,7 @@ function CatPanel({ send, point, shelfRoom, rng, close }: PanelProps) {
   }, []);
 
   // Each screen starts with the remote on its first button (the one that asks for the most common thing).
-  const where = screen.name === "pick" ? `pick:${screen.found?.id ?? "none"}` : screen.name;
+  const where = sleeping ? "asleep" : screen.name === "pick" ? `pick:${screen.found?.id ?? "none"}` : screen.name;
   useEffect(() => {
     const inside = root.current;
     if (!inside) return;
@@ -132,10 +136,10 @@ function CatPanel({ send, point, shelfRoom, rng, close }: PanelProps) {
   const pickLine = found ? (found.year ? t("cat.pickYear", { title: found.title, year: found.year }) : t("cat.pick", { title: found.title })) : "";
   // (a row about the viewer is a reason on its own: "Because you watched Up"; a shelf of a kind is "From “Comedy Movies”")
   const pickWhere = shelf ? (shelf === found?.because ? shelf : t("cat.pickWhere", { shelf })) : "";
-  const said = screen.name !== "pick" ? "" : found ? `${pickLine}${pickWhere ? `. ${pickWhere}` : ""}` : t("cat.nothing");
+  const said = sleeping ? t("cat.asleep") : screen.name !== "pick" ? "" : found ? `${pickLine}${pickWhere ? `. ${pickWhere}` : ""}` : t("cat.nothing");
 
   return (
-    <div ref={root} id={CAT_PANEL_ID} className="cat-panel" role="region" aria-label={t("cat.panel")} data-testid="cat-panel" data-screen={screen.name} tabIndex={-1} onKeyDown={onKeyDown}>
+    <div ref={root} id={CAT_PANEL_ID} className="cat-panel" role="region" aria-label={t("cat.panel")} data-testid="cat-panel" data-screen={sleeping ? "asleep" : screen.name} tabIndex={-1} onKeyDown={onKeyDown}>
       <div className="cat-panel-head">
         <h2 className="cat-panel-title">{title}</h2>
         <button type="button" className="cat-x" data-nav onClick={close} aria-label={t("cat.close")} title={t("cat.close")} data-testid="cat-close">
@@ -146,7 +150,30 @@ function CatPanel({ send, point, shelfRoom, rng, close }: PanelProps) {
         {said}
       </div>
 
-      {screen.name === "menu" && (
+      {sleeping && (
+        <>
+          <p className="cat-nothing" data-testid="cat-asleep">
+            {t("cat.asleep")}
+          </p>
+          <div className="cat-foot" data-cols={1}>
+            <button
+              type="button"
+              className="cat-btn cat-btn-primary"
+              data-nav
+              data-autofocus
+              onClick={() => {
+                wake();
+                close();
+              }}
+              data-testid="cat-wake"
+            >
+              {t("cat.wake")}
+            </button>
+          </div>
+        </>
+      )}
+
+      {!sleeping && screen.name === "menu" && (
         <div className="cat-grid" data-cols={2}>
           <button type="button" className="cat-btn cat-btn-primary cat-wide" data-nav data-autofocus onClick={() => setScreen({ name: "mood" })} data-testid="cat-find">
             {t("cat.find")}
@@ -181,7 +208,7 @@ function CatPanel({ send, point, shelfRoom, rng, close }: PanelProps) {
         </div>
       )}
 
-      {screen.name === "mood" && (
+      {!sleeping && screen.name === "mood" && (
         <>
           <div className="cat-grid" data-cols={3}>
             {MOODS.map((mood, index) => (
@@ -198,7 +225,7 @@ function CatPanel({ send, point, shelfRoom, rng, close }: PanelProps) {
         </>
       )}
 
-      {screen.name === "pick" && (
+      {!sleeping && screen.name === "pick" && (
         <>
           {found ? (
             <div className="cat-card" data-testid="cat-card" data-id={found.id}>

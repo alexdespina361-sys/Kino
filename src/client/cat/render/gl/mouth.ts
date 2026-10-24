@@ -6,6 +6,9 @@
  * when the jaw is open. Written once here so that the two cannot drift apart.
  */
 
+/** Where the centre of the head is in the mesh's rest (x forward, y up; body lengths): the origin the face is painted round. */
+export const HEAD_CENTRE = [0.331, 0.633] as const;
+
 export const MOUTH = {
   /** The lip line at the middle of the muzzle (under the nose). */
   front: -0.066,

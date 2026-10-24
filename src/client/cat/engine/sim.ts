@@ -3,6 +3,7 @@ import { createRng, type Rng } from "../rng";
 import type { CatEvent, CatFrame, Rect, Surface, Target, World } from "../types";
 import { CatEngine, RIDE_EASE } from "./engine";
 import { HALF_WIDTH, reachOf, shapeHits } from "./shape";
+import type { Temperament } from "./temperament";
 
 /**
  * The scenario simulator: a made-up page (rows of posters like the TV's home, a film's screen), made-up things happening to it (scrolling,
@@ -101,6 +102,8 @@ export interface SimStats {
   hops: number;
   /** How many times a page that was flung shook the cat off its shelf. */
   flings: number;
+  /** Seconds the cat was in sight in the library, by the kind of place under its feet ("shelfTop", "fallbackFloor"...), or "air" while it was off its feet. */
+  places: Record<string, number>;
   surfaces: string[];
   minAppear: number;
   maxAppear: number;
@@ -117,13 +120,18 @@ export interface SimOptions {
   /**
    * What may happen to the page. `mouse`: a pointer that wanders the page, dashes about, rests, comes to the cat, and is put down (it is gone from the world three
    * seconds after it last moved, as the host has it). `fling`: the scrolling (`scroll`) is that of a finger that flings the page, eight thousand pixels a second and as far as the whole
-   * page, and not the slow one of a wheel.
+   * page, and not the slow one of a wheel. `stroke`: a hand now and then rests on the cat for two to fourteen seconds and strokes it as the host's hand does (a stroke a third of a second
+   * after it came and one every second after that, an end to it when it goes), in a film as well as on the library (where the world has no pointer to say where the hand is).
    */
-  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean; mouse?: boolean; slide?: boolean; fling?: boolean };
+  chaos?: { scroll?: boolean; focus?: boolean; resize?: boolean; modal?: boolean; film?: boolean; touch?: boolean; route?: boolean; visibility?: boolean; hand?: boolean; mouse?: boolean; slide?: boolean; fling?: boolean; stroke?: boolean };
   reducedMotion?: boolean;
   quiet?: boolean;
+  /** What sort of cat it is (see `Temperament`): the baseline, the cat before there were two, when not said. */
+  temperament?: Temperament | string;
   /** The page has names over its shelves (see `PageOptions.names`). */
   names?: boolean;
+  /** The painter can draw the cat from behind, going up the face of a card (see `World.rearView`). */
+  rearView?: boolean;
   /** Stop at the first thing that must not happen. */
   stopOnViolation?: boolean;
   /** How many frames before the first violation to keep for `context` (default 14). */
@@ -137,13 +145,13 @@ export function runSession(options: SimOptions): SimStats {
   const fps = options.fps ?? 30;
   const dt = 1 / fps;
   const rng = createRng(options.seed ^ 0x5eed);
-  const engine = new CatEngine(options.seed);
+  const engine = new CatEngine(options.seed, options.temperament === undefined ? {} : { temperament: options.temperament });
   const chaos = options.chaos ?? {};
   const page = defaultPage();
   page.reducedMotion = options.reducedMotion ?? false;
   page.quiet = options.quiet ?? false;
   page.names = options.names ?? false;
-  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, emotes: {}, choices: {}, hops: 0, flings: 0, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
+  const stats: SimStats = { seconds: 0, frames: 0, acts: {}, emotes: {}, choices: {}, hops: 0, flings: 0, places: {}, surfaces: [], minAppear: 1, maxAppear: 0, violations: [], context: [], lastDebug: "" };
   let wasFlung = false;
   let lastChoice = "";
   /** Where each row of posters is being scrolled to sideways (see `chaos.slide`). */
@@ -161,13 +169,15 @@ export function runSession(options: SimOptions): SimStats {
   let pointer: { x: number; y: number } | undefined;
   /** The wandering mouse (see `chaos.mouse`): where it is, where it goes and how fast (body lengths a second), when it is resting until, and when it last moved. */
   let mouse: { x: number; y: number; gx: number; gy: number; speed: number; restUntil: number; movedAt: number } | null = null;
+  /** The hand that strokes the cat (see `chaos.stroke`): until when, and when the next stroke is due. */
+  let stroking: { until: number; next: number } | null = null;
   /** A hand that has the cat (where it is, where it is going, and until when), if one does. */
   let handAt: { x: number; y: number } | null = null;
   let handGoal = { x: 0, y: 0 };
   let handSpeed = 0;
   let handUntil = 0;
   let world = browseWorld(page);
-  let prev: { x: number; y: number; appear: number; onScreen: boolean; shelves: Map<string, number> } | null = null;
+  let prev: { x: number; y: number; appear: number; onScreen: boolean; shelves: Map<string, number>; act: string } | null = null;
   let overlapSince = -1;
   let cutSince = -1;
   let lostRun = 0;
@@ -175,6 +185,8 @@ export function runSession(options: SimOptions): SimStats {
   let goneSince = -1;
   let prevSize = "";
   let wasJumping = false;
+  /** When a hand last had the cat (for the fight with it to be gone within a moment of the hand letting go). */
+  let carriedAt = -1e9;
   /** How far the posters that were slid are still to carry a cat that is on them: the engine takes it in over a few frames (`RIDE_EASE`), so the frames after a slide are the row's movement too. */
   let carryLeft = 0;
   const steps = Math.round(options.seconds * fps);
@@ -186,7 +198,9 @@ export function runSession(options: SimOptions): SimStats {
   const rebuild = () => {
     world = inFilm ? playerWorld(page.width, page.height, filmState, controlsUp, { quiet: page.quiet, reducedMotion: page.reducedMotion }) : browseWorld(page, { ...(pointer ? { pointer } : {}), modal });
     if (hidden) world = { ...world, mode: "away" };
+    if (options.rearView) world.rearView = true;
   };
+  if (options.rearView) world.rearView = true;
 
   for (let i = 0; i < steps; i++) {
     const t = i * dt;
@@ -339,6 +353,28 @@ export function runSession(options: SimOptions): SimStats {
         pointer = next;
       }
     }
+    // a hand that strokes the cat now and then: the pointer is on the cat, the first stroke is sent after a third of a second and one every second after that (as the host's hand does), for a few seconds
+    if (chaos.stroke) {
+      const Ls = world.bodyLength;
+      if (!stroking) {
+        if (world.mode !== "away" && engine.frame.appear > 0.9 && rng.chance(0.004)) stroking = { until: t + rng.range(2, 14), next: t + 0.32 };
+      } else if (t >= stroking.until || world.mode === "away") {
+        engine.send({ type: "cat.petEnd" });
+        stroking = null;
+        pointer = undefined;
+        changed = true;
+      } else {
+        const on = { x: engine.frame.x, y: engine.frame.y - 0.5 * Ls };
+        if (!pointer || Math.hypot(pointer.x - on.x, pointer.y - on.y) > 0.5) {
+          pointer = on;
+          changed = true;
+        }
+        if (t >= stroking.next) {
+          engine.send({ type: "cat.pet" });
+          stroking.next += 1;
+        }
+      }
+    }
     if (changed) {
       rebuild();
       movedAt = t;
@@ -385,6 +421,10 @@ export function runSession(options: SimOptions): SimStats {
       stats.choices[dbg.choice] = (stats.choices[dbg.choice] ?? 0) + 1;
     }
     if (frame.emote && frame.emote !== "none") stats.emotes[frame.emote] = (stats.emotes[frame.emote] ?? 0) + dt;
+    if (frame.appear > 0.5 && world.mode === "browse") {
+      const place = frame.grounded && dbg.surfaceId ? (world.surfaces.find((s) => s.id === dbg.surfaceId)?.kind ?? "other") : "air";
+      stats.places[place] = (stats.places[place] ?? 0) + dt;
+    }
     stats.lastDebug = JSON.stringify(dbg);
     stats.minAppear = Math.min(stats.minAppear, frame.appear);
     stats.maxAppear = Math.max(stats.maxAppear, frame.appear);
@@ -402,7 +442,7 @@ export function runSession(options: SimOptions): SimStats {
     const L = world.bodyLength;
     const surfaceNow = dbg.surfaceId ? world.surfaces.find((s) => s.id === dbg.surfaceId) : undefined;
     trail.push(
-      `${(stats.frames * dt).toFixed(2)}s ${dbg.act}${dbg.queue.length > 0 ? ` (then ${dbg.queue.slice(0, 3).join(", ")})` : ""} on ${dbg.surfaceId ?? "-"} x=${frame.x.toFixed(0)} y=${frame.y.toFixed(1)} shelf=${surfaceNow ? surfaceNow.y.toFixed(1) : "-"} ${frame.grounded ? "ground" : "air"} appear=${frame.appear.toFixed(2)} scroll=${page.scroll}${world.focus ? ` focus=${world.focus.x.toFixed(0)},${world.focus.y.toFixed(0)}` : ""} ${page.width}x${page.height}${inFilm ? " film" : ""}${modal ? " modal" : ""}`,
+      `${(stats.frames * dt).toFixed(2)}s ${dbg.act}${dbg.queue.length > 0 ? ` (then ${dbg.queue.slice(0, 3).join(", ")})` : ""} [${frame.clip}] on ${dbg.surfaceId ?? "-"} x=${frame.x.toFixed(0)} y=${frame.y.toFixed(1)} shelf=${surfaceNow ? surfaceNow.y.toFixed(1) : "-"} ${frame.grounded ? "ground" : "air"} appear=${frame.appear.toFixed(2)} scroll=${page.scroll}${world.focus ? ` focus=${world.focus.x.toFixed(0)},${world.focus.y.toFixed(0)}` : ""} ${page.width}x${page.height}${inFilm ? " film" : ""}${modal ? " modal" : ""}`,
     );
     if (trail.length > (options.contextFrames ?? 14)) trail.shift();
     const numbers = [frame.x, frame.y, frame.vx, frame.vy, frame.odometer, frame.drowsy, frame.energy, frame.appear, frame.progress, frame.clipTime];
@@ -418,8 +458,13 @@ export function runSession(options: SimOptions): SimStats {
       // (a swat is a leap's worth of motion: the paw is put down on a poster, on its feet, and for a viewer who wants less motion it is never swung)
       if (frame.clip === "swat" && world.reducedMotion) fail(`swatting for a viewer who wants less motion (${dbg.act})`);
       if (frame.clip === "swat" && (!frame.reach || !frame.grounded)) fail(`a swat at nothing, or off its feet (${dbg.act}, reach ${JSON.stringify(frame.reach)}, ${frame.grounded ? "ground" : "air"})`);
-      if ((frame.emote ?? "none") !== "none" && !["tilt", "think", "startle", "joy", "droop"].includes(frame.emote ?? "")) fail(`a feeling that is not one: ${frame.emote}`);
+      if ((frame.emote ?? "none") !== "none" && !["tilt", "think", "startle", "joy", "droop", "annoyed", "shake"].includes(frame.emote ?? "")) fail(`a feeling that is not one: ${frame.emote}`);
     }
+    // (the fight with a hand is in a hand: it is 0..1, and gone within a moment of the hand letting go)
+    const fight = frame.struggle ?? 0;
+    if (!Number.isFinite(fight) || fight < 0 || fight > 1.0001) fail(`struggle out of range: ${fight}`);
+    if (frame.carried) carriedAt = t;
+    else if (fight > 0 && t - carriedAt > 0.7) fail(`still fighting a hand ${(t - carriedAt).toFixed(2)}s after it let go (${fight.toFixed(2)})`);
     const visible = frame.appear > 0.05;
     // (a cat that is fading out is on its way off the page: it is allowed to be where the page no longer has a place for it)
     const vanishing = dbg.act === "fade:out";
@@ -481,9 +526,11 @@ export function runSession(options: SimOptions): SimStats {
       }
       const limit = VMAX_L * L * dt + shelfMove + Math.max(slideStep, carryNow) + 1;
       const move = Math.hypot(frame.x - prev.x, frame.y - prev.y);
-      if (move > limit) fail(`jumped ${move.toFixed(0)}px in one frame (limit ${limit.toFixed(0)}, ${dbg.act})`);
+      // (the first frame of a climb is where the cat's paws take hold: the frame is the point it will stand at, and the picture is drawn from where it hangs, below it -- the move to there is the art's)
+      const climbBegins = dbg.act === "climb" && prev.act !== "climb";
+      if (move > limit && !climbBegins) fail(`jumped ${move.toFixed(0)}px in one frame (limit ${limit.toFixed(0)}, ${dbg.act})`);
     }
-    prev = { x: frame.x, y: frame.y, appear: frame.appear, onScreen, shelves };
+    prev = { x: frame.x, y: frame.y, appear: frame.appear, onScreen, shelves, act: dbg.act };
     if (options.stopOnViolation && stats.violations.length > 0) break;
   }
   return stats;

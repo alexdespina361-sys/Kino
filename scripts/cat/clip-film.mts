@@ -50,6 +50,7 @@ for (const spec of segments) {
     f.viewer = over.viewer === "1";
     f.petted = over.petted === "1";
     f.carried = over.carried === "1";
+    if (f.carried) f.grounded = false;
     if (over.emote) f.emote = over.emote as Emote;
     if (over.lookx !== undefined) f.look = { x: Number(over.lookx), y: Number(over.looky ?? 0) };
     if (over.reachx !== undefined) f.reach = { x: Number(over.reachx), y: Number(over.reachy ?? 0) };
@@ -66,11 +67,17 @@ for (const spec of segments) {
     } else {
       x += vx * dt;
       odometer += Math.abs(vx) * dt;
-      f.x = x;
-      f.vx = vx;
+      // (a hand that swings the cat from side to side, `sway` body lengths either way at `swayhz` a second, with the speed that goes with it)
+      const sway = Number(over.sway ?? 0) * body;
+      const w = 2 * Math.PI * Number(over.swayhz ?? 0.5);
+      f.x = x + sway * Math.sin(w * i * dt);
+      f.vx = vx + sway * w * Math.cos(w * i * dt);
+      // (a hand that bobs it up and down: `bob` body lengths, the same rhythm)
+      const bob = Number(over.bob ?? 0) * body;
+      if (bob) f.vy = -bob * w * Math.cos(w * i * dt);
+      f.y = level - Number(over.lift ?? 0) * body - bob * Math.sin(w * i * dt);
     }
     f.odometer = odometer;
-    f.y = clip === "jump" ? f.y : level;
     frames.push({ ...f, act: `${acts}:${name}` });
   }
   if (clip === "jump") x += 1.6 * body;

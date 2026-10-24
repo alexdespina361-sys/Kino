@@ -1,5 +1,5 @@
 import { clamp } from "../math";
-import type { Clip, Rect, Surface, World } from "../types";
+import { CLIMB_BACK, type Clip, type Rect, type Surface, type World } from "../types";
 import { FOOT_SLACK, HALF_WIDTH, HEIGHT, shapeCovers, standingMargin } from "./shape";
 
 /**
@@ -284,22 +284,68 @@ export interface Hop {
   takeoffX: number;
   /** Where on this ledge it lands. */
   landX: number;
+  /**
+   * The cat climbs onto this ledge (it hauls itself up over the lip by its forepaws: see the `climb` clip) rather than leaping to it: `dir` is the way it faces, `landX` is where it stands on top,
+   * and `takeoffX` is where it stands before, under the lip (`CLIMB_BACK` behind `landX`).
+   */
+  climb?: { dir: 1 | -1 };
+  /**
+   * The cat goes straight up the face of the card under this ledge, its back to the viewer (the `scale` clip), and then hauls itself over the lip as it does for a `climb`: `dir` is the way it
+   * faces on top, `landX` is where it stands there, and `takeoffX` is where it sets off from, under the lip (`CLIMB_BACK` behind `landX`). Only where the painter can draw that (see `findPath`).
+   */
+  scale?: { dir: 1 | -1 };
 }
 
 /**
- * The take-off and landing places of a leap between two ledges. The cat lands where it is wanted if it can get there from the nearest place
- * on its own ledge; if that is too far, it lands as near as it can to where it stands now (and walks the rest of the way).
+ * A step up that is climbed, not leapt at: a ledge this many body lengths above the one the cat stands on, at the least and at the most (a cat hangs `CLIMB_HANG` below the lip when it
+ * has hold of it, so a step of about that is one it can go into without a jump of the picture, and a lower one is a leap of a stride, not worth the show).
  */
-export function leapBetween(from: Ledge, fromX: number, to: Ledge, wantX: number, bodyLength: number): { takeoffX: number; landX: number } | null {
-  for (const landX of [clamp(wantX, to.x0, to.x1), clamp(fromX, to.x0, to.x1)]) {
-    // take off from the place on the first ledge nearest the landing, then see whether that is a leap the cat can make
-    const takeoffX = clamp(landX, from.x0, from.x1);
-    if (planJump(takeoffX, from.y, landX, to.y, bodyLength)) return { takeoffX, landX };
+export const STEP_MIN = 1.2;
+export const STEP_MAX = 1.6;
+/** The highest step up (body lengths) that a cat whose painter can draw it from behind goes up the face of (see `Hop.scale`): a little more than it can leap up (`MAX_UP`). */
+export const SCALE_MAX = 4.5;
+
+/**
+ * Where the cat stands, on `from`, to take hold of the lip of the ledge above it and haul itself up to stand at `landX` on top (a climb, or the top of a scale): `CLIMB_BACK` behind that, which
+ * has to be a place of `from`; facing `first` if there is room for it there, and the other way if there is not. Null when there is room for neither.
+ */
+export function underLip(from: Ledge, landX: number, first: 1 | -1, bodyLength: number): { takeoffX: number; dir: 1 | -1 } | null {
+  for (const dir of [first, first > 0 ? -1 : 1] as const) {
+    const under = landX - dir * CLIMB_BACK * bodyLength;
+    if (under >= from.x0 && under <= from.x1) return { takeoffX: under, dir };
   }
   return null;
 }
 
-export function findPath(ledges: readonly Ledge[], from: Ledge, fromX: number, goal: Ledge, goalX: number, bodyLength: number, maxHops = 3): Hop[] | null {
+/**
+ * The take-off and landing places of a leap between two ledges. The cat lands where it is wanted if it can get there from the nearest place
+ * on its own ledge; if that is too far, it lands as near as it can to where it stands now (and walks the rest of the way). A step up of `STEP_MIN` to `STEP_MAX` body lengths that has room
+ * to stand under its lip is a climb (see `Hop.climb`): the cat walks to the place under the lip, and the leap is for the cat in a hurry. With `scale`, a step up that is higher than that, too high
+ * to leap at and no higher than `SCALE_MAX`, is gone up the face of (see `Hop.scale`), from the place under the lip; a lower one that can be leapt at is a leap here, and the cat's own to scale or not.
+ */
+export function leapBetween(from: Ledge, fromX: number, to: Ledge, wantX: number, bodyLength: number, scale = false): { takeoffX: number; landX: number; climb?: { dir: 1 | -1 }; scale?: { dir: 1 | -1 } } | null {
+  const rise = from.y - to.y;
+  for (const landX of [clamp(wantX, to.x0, to.x1), clamp(fromX, to.x0, to.x1)]) {
+    // take off from the place on the first ledge nearest the landing, then see whether that is a leap the cat can make
+    const takeoffX = clamp(landX, from.x0, from.x1);
+    if (!planJump(takeoffX, from.y, landX, to.y, bodyLength)) {
+      // (facing right on top where there is room for that: the picture of its back is drawn facing right, so it does not turn round as it hangs from the lip)
+      const lip = scale && rise > STEP_MAX * bodyLength && rise <= SCALE_MAX * bodyLength ? underLip(from, landX, 1, bodyLength) : null;
+      if (lip) return { takeoffX: lip.takeoffX, landX, scale: { dir: lip.dir } };
+      continue;
+    }
+    if (rise >= STEP_MIN * bodyLength && rise <= STEP_MAX * bodyLength) {
+      // (it climbs from the side it comes from: the place under the lip is `CLIMB_BACK` out from where it stands on top, and has to be a place of its own ledge)
+      const lip = underLip(from, landX, landX >= fromX ? 1 : -1, bodyLength);
+      if (lip) return { takeoffX: lip.takeoffX, landX, climb: { dir: lip.dir } };
+    }
+    return { takeoffX, landX };
+  }
+  return null;
+}
+
+/** With `scale`, a step up too high for a hang may be gone up the face of (see `leapBetween`): for a cat whose painter can draw it from behind, and that is in no hurry. */
+export function findPath(ledges: readonly Ledge[], from: Ledge, fromX: number, goal: Ledge, goalX: number, bodyLength: number, maxHops = 3, scale = false): Hop[] | null {
   if (from.id === goal.id) return [];
   interface Node {
     ledge: Ledge;
@@ -314,9 +360,9 @@ export function findPath(ledges: readonly Ledge[], from: Ledge, fromX: number, g
       for (const ledge of ledges) {
         if (seen.has(ledge.id)) continue;
         const want = ledge.id === goal.id ? goalX : node.x;
-        const leap = leapBetween(node.ledge, node.x, ledge, want, bodyLength);
+        const leap = leapBetween(node.ledge, node.x, ledge, want, bodyLength, scale);
         if (!leap) continue;
-        const hops = [...node.hops, { ledge, takeoffX: leap.takeoffX, landX: leap.landX }];
+        const hops: Hop[] = [...node.hops, { ledge, takeoffX: leap.takeoffX, landX: leap.landX, ...(leap.climb ? { climb: leap.climb } : {}), ...(leap.scale ? { scale: leap.scale } : {}) }];
         if (ledge.id === goal.id) return hops;
         seen.add(ledge.id);
         next.push({ ledge, x: leap.landX, hops });
