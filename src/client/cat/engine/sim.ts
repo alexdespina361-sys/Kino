@@ -130,6 +130,8 @@ export interface SimOptions {
   temperament?: Temperament | string;
   /** The page has names over its shelves (see `PageOptions.names`). */
   names?: boolean;
+  /** The painter can draw the cat from behind, going up the face of a card (see `World.rearView`). */
+  rearView?: boolean;
   /** Stop at the first thing that must not happen. */
   stopOnViolation?: boolean;
   /** How many frames before the first violation to keep for `context` (default 14). */
@@ -196,7 +198,9 @@ export function runSession(options: SimOptions): SimStats {
   const rebuild = () => {
     world = inFilm ? playerWorld(page.width, page.height, filmState, controlsUp, { quiet: page.quiet, reducedMotion: page.reducedMotion }) : browseWorld(page, { ...(pointer ? { pointer } : {}), modal });
     if (hidden) world = { ...world, mode: "away" };
+    if (options.rearView) world.rearView = true;
   };
+  if (options.rearView) world.rearView = true;
 
   for (let i = 0; i < steps; i++) {
     const t = i * dt;

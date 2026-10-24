@@ -14,7 +14,7 @@ import { createDebugView, type DebugView } from "./debug";
 import { inflate, rectOf, takesRoom } from "./dom";
 import { clearPointed, dip, swatPoster } from "./effects";
 import { Governor, Revival, type Quality } from "./governor";
-import { Hand } from "./hand";
+import { Hand, handFits } from "./hand";
 import { tileOf } from "./assistant";
 import { createMenu, type MenuItem } from "./menu";
 import { TvPage, type PageRead } from "./page";
@@ -537,6 +537,9 @@ export function mountCat(): { stop: () => void } {
     if (world === thoughtOf) return;
     if (pointer && time - pointerAt < 3000) world.pointer = pointer;
     else delete world.pointer;
+    // (the cat goes up the face of a card, its back to the viewer, only where the brush can draw that)
+    if (brush.rearView) world.rearView = true;
+    else delete world.rearView;
     const dt = Math.min(thought ? time - thought : 16.7, 100) / 1000;
     thought = time;
     thoughtOf = world;
@@ -580,9 +583,22 @@ export function mountCat(): { stop: () => void } {
       read = now;
       onRead(now);
     }
+    if (brush?.lost) {
+      // the card took the picture away (it was reset, the page was in the background, a film needed the memory): the cat is made again, and the simple one only
+      // takes its place when the card keeps doing it. (Until there is a new picture the cat is not drawn, and a moment is all that takes.) This is done before the
+      // brain runs, so that a cat going up the face of a card, which only the detailed cat draws, knows in this frame that the brush it is painted with cannot draw it.
+      const again = revival.ask(time);
+      if (again === "now") revive();
+      else if (again === "never") {
+        giveUp("lost");
+        choose();
+      }
+    }
     const world = now.world;
     if (pointer && time - pointerAt < 3000) world.pointer = pointer;
     else delete world.pointer;
+    if (brush?.rearView) world.rearView = true;
+    else delete world.rearView;
     const held = drag?.held === true;
     const says = hand.step(time, over && !held);
     if (says === "pet") engine.send({ type: "cat.pet" });
@@ -594,16 +610,6 @@ export function mountCat(): { stop: () => void } {
     frame = engine.update(world, dt);
     const tThink = performance.now();
     const L = world.bodyLength;
-    if (brush?.lost) {
-      // the card took the picture away (it was reset, the page was in the background, a film needed the memory): the cat is made again, and the simple one only
-      // takes its place when the card keeps doing it. (Until there is a new picture the cat is not drawn, and a moment is all that takes.)
-      const again = revival.ask(time);
-      if (again === "now") revive();
-      else if (again === "never") {
-        giveUp("lost");
-        choose();
-      }
-    }
     const wanted = quality === "low" || !brush ? 1 : Math.min(brush.maxDpr, window.devicePixelRatio || 1);
     const key = `${L}|${wanted}`;
     if (key !== layoutKey) {
@@ -645,8 +651,8 @@ export function mountCat(): { stop: () => void } {
     }
     // (a hand can take the cat in a film too, with the bars up or not: the layer is over them. The box that takes it is the cat's body and no more, and what it takes
     // is only a press, never a move or a release: the rest of the picture is the player's, with its taps, its double-taps to skip and its holds to speed up, as it was)
-    // (nor is a hand on a cat that hauls itself up over a lip: the frame is the point it ends up at, and the picture hangs below it, so a box there would be on nothing)
-    const handOk = visible && !asleep && (world.mode === "browse" || world.mode === "player") && frame.appear > 0.5 && frame.clip !== "climb";
+    // (nor is a hand on a cat that hauls itself up over a lip, or goes up the face of a card to one: see `handFits`)
+    const handOk = visible && !asleep && (world.mode === "browse" || world.mode === "player") && frame.appear > 0.5 && handFits(frame.clip);
     if (handOk === hit.hasAttribute("data-off")) hit.toggleAttribute("data-off", !handOk);
     if (!handOk) {
       over = false; // (a box that takes no pointer does not say that the pointer left it: a cat that cannot be touched is not being stroked)
