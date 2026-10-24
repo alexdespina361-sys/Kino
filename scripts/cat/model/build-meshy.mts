@@ -65,14 +65,22 @@ const between = (a: number, b: number, k: number): [number, number, number] => {
   const q = place(b);
   return [p[0] + (q[0] - p[0]) * k, p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k];
 };
-const ADDED = [
+const ADDED: Array<{ name: string; after: string; hangsFrom: string; axesOf: number; at: [number, number, number] }> = [
   { name: "spine1", after: "Hips", hangsFrom: "Hips", axesOf: hipsBone, at: between(hipsBone, chestBone, 1 / 3) },
   { name: "spine2", after: "Hips", hangsFrom: "spine1", axesOf: hipsBone, at: between(hipsBone, chestBone, 2 / 3) },
   { name: "neck1", after: "chest", hangsFrom: "chest", axesOf: chestBone, at: between(chestBone, headBone, 1 / 3) },
   { name: "neck2", after: "chest", hangsFrom: "neck1", axesOf: chestBone, at: between(chestBone, headBone, 2 / 3) },
-] as const;
-/** What a bone of the model hangs from here (the chest from the end of the spine, the head from the end of the neck), by name. */
-const hangsFromNow = (name: string, filed: string): string => (name === "chest" ? "spine2" : name === "head" ? "neck2" : filed);
+];
+// The model's first bone of each foreleg runs from the shoulder to the bone that carries the elbow's fur, 0.22 of a body length, and is the whole upper limb: a raised foreleg bends
+// only below it, in the last 0.17, and above that it is one straight tube. An elbow is added half way along it (`CAT_ELBOW=1` adds them, and `CAT_ELBOW_AT` tries another place; without it the mesh is the one in the app), hung from the first bone and
+// carrying the next, with no turn of its own (its axes are the first bone's, so everything the model's own clips say of the leg is as it was).
+const ELBOW_AT = Number(process.env.CAT_ELBOW_AT ?? 0.5);
+const ELBOW_ZONE = Number(process.env.CAT_ELBOW_ZONE ?? 0.3);
+const ELBOW = process.env.CAT_ELBOW !== "1" ? [] : [{ upper: "frontleg", name: "frontleg_e", lower: "frontleg0" }, { upper: "R_frontleg", name: "R_frontleg_e", lower: "R_frontleg0" }];
+const ADDED_ELBOWS = ELBOW.map((e) => ({ name: e.name, after: e.upper, hangsFrom: e.upper, axesOf: file.names.indexOf(e.upper), at: between(file.names.indexOf(e.upper), file.names.indexOf(e.lower), ELBOW_AT) }));
+ADDED.push(...ADDED_ELBOWS);
+/** What a bone of the model hangs from here (the chest from the end of the spine, the head from the end of the neck, a forearm from its elbow), by name. */
+const hangsFromNow = (name: string, filed: string): string => (name === "chest" ? "spine2" : name === "head" ? "neck2" : ELBOW.find((e) => e.lower === name)?.name ?? filed);
 // (parents come before their children: the added bones come right after the bone they are hung from, and the jaw and the ears, children of the head, last)
 const order: string[] = [];
 file.names.forEach((n) => {
@@ -139,7 +147,7 @@ const idOf = (name: string): number => {
 // the model's bones by what they carry
 const HEAD_BONES = ["head", "headend", "earend", "R_earend"].map(idOf);
 const TAIL_BONES = ["tail", "tailstart", "tail1", "tail2", "tail3"].map(idOf);
-const LEG_UPPER = [["backleg", "frontleg"], ["R_backleg", "R_frontleg"]].map((side) => side.map(idOf));
+const LEG_UPPER = [["backleg", "frontleg"], ["R_backleg", "R_frontleg"]].map((side, i) => [...side, ...(ELBOW[i] ? [ELBOW[i]!.name] : [])].map(idOf));
 const LEG_LOWER = [
   ["backleg0", "backleg1", "backleg2", "frontleg0", "frontleg1", "frontleg2"],
   ["R_backleg0", "R_backleg1", "R_backleg2", "R_frontleg0", "R_frontleg1", "R_frontleg2"],
@@ -285,7 +293,7 @@ const chainAt = CHAIN.map((b) => worldT.get(names[b]!)!);
 const HEADEND = idOf("headend");
 const LIMB_REACH: Record<string, number> = {
   backleg: 0.22, backleg0: 0.13, backleg1: 0.07, backleg2: 0.09,
-  frontleg: 0.08, frontleg0: 0.07, frontleg1: 0.062, frontleg2: 0.067,
+  frontleg: 0.08, frontleg0: 0.07, frontleg1: 0.062, frontleg2: 0.067, frontleg_e: 0.08,
   tail: 0.125, tailstart: 0.115, tail1: 0.155, tail2: 0.185, tail3: 0.33,
 };
 const LIMBS: Segment[] = [];
@@ -294,6 +302,7 @@ const LIMBS: Segment[] = [];
 // swells when the legs are drawn up (the volume up to 1.31 with no limit, 1.22 at 1.8). (CAT_LIMB_SCALE tries another, for the experiments that compare ways of skinning.)
 const LIMB_SCALE = Number(process.env.CAT_LIMB_SCALE ?? 1.8);
 for (const [bone, reach0] of Object.entries(LIMB_REACH)) {
+  if (bone.endsWith("_e") && ELBOW.length === 0) continue;
   const reach = reach0 * LIMB_SCALE;
   for (const side of ["", "R_"]) {
     // (the tail has one side)
@@ -326,7 +335,21 @@ for (let v = 0; v < nV; v++) {
   dense.fill(0);
   for (let i = 0; i < 4; i++) dense[hereOf[model.joints[raw * 4 + i]!]!]! += model.weights[raw * 4 + i]!;
   const x = P[v * 3]!, y = P[v * 3 + 1]!, z = P[v * 3 + 2]!;
-  const headW = HEAD_BONES.reduce((s, b) => s + dense[b]!, 0);
+  // the foreleg's first bone shares what it holds with the elbow below it, by how far along the bone the point is (a smooth step over `ELBOW_ZONE` of the bone's length, centred
+  // on the elbow): a point in the upper arm stays the shoulder's, one in the forearm is the elbow's, and between them it is a share of each, so the skin does not pinch where the leg folds
+  for (const e of ELBOW) {
+    const upper = idOf(e.upper);
+    const w = dense[upper]!;
+    if (w <= 0) continue;
+    const a = worldT.get(e.upper)!;
+    const b = worldT.get(e.lower)!;
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const t = ((x - a[0]) * ab[0]! + (y - a[1]) * ab[1]! + (z - a[2]) * ab[2]!) / (ab[0]! * ab[0]! + ab[1]! * ab[1]! + ab[2]! * ab[2]!);
+    const share = sstep(ELBOW_AT - ELBOW_ZONE, ELBOW_AT + ELBOW_ZONE, t);
+    dense[idOf(e.name)]! += w * share;
+    dense[upper]! = w * (1 - share);
+  }
+  const headW =HEAD_BONES.reduce((s, b) => s + dense[b]!, 0);
   if (headW > 0) {
     // the ears: a share that falls off with the distance from the line from the ear's base to its tip
     const ear = [0, 0];

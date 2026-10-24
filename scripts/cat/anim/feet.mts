@@ -130,7 +130,7 @@ export function placeFeet(donor: Donor, cat: Skeleton, mesh: CatMesh, source: Cl
 
   // 1. where each paw is to be, frame by frame
   const aimed: Aimed[] = legs.map((leg) => {
-    const ids = leg.chain.map((b) => cat.bone(b));
+    const ids = leg.chain.filter((b) => cat.has(b)).map((b) => cat.bone(b));
     const K = ids.length;
     const carrier = cat.bone(leg.carrier.cat);
     const carrierDonor = donorBoneOf(donor, leg.carrier.donor);

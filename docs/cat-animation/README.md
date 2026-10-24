@@ -54,6 +54,8 @@ node scripts/cat/glsheet.mjs extents .kino-cat/extents-sit.png --label=sit --col
 
 `.kino-cat/` is not tracked. A full build takes about 40 s.
 
+An experiment that is not in the app: `CAT_ELBOW=1` makes `build-meshy.mts` add an elbow bone to each foreleg (36 bones); the clips are then built with `build.mts --mesh=<that mesh>` and checked with `qa.mts --mesh=<that mesh>`. It was judged and not shipped (QA.md, round 14).
+
 ## The numbers (`qa.mts`)
 
 | Column | Meaning | Healthy |

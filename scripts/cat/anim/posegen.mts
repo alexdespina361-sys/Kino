@@ -15,9 +15,11 @@ export type PawName = (typeof PAWS)[number]["name"];
 const LEGS: Record<PawName, readonly string[]> = {
   "hind left": ["backleg", "backleg0", "backleg1", "backleg2"],
   "hind right": ["R_backleg", "R_backleg0", "R_backleg1", "R_backleg2"],
-  "front left": ["frontleg", "frontleg0", "frontleg1", "frontleg2"],
-  "front right": ["R_frontleg", "R_frontleg0", "R_frontleg1", "R_frontleg2"],
+  "front left": ["frontleg", "frontleg_e", "frontleg0", "frontleg1", "frontleg2"],
+  "front right": ["R_frontleg", "R_frontleg_e", "R_frontleg0", "R_frontleg1", "R_frontleg2"],
 };
+/** The legs of a skeleton: the bones above that it has (a foreleg's elbow, `frontleg_e`, is only in a mesh built with `CAT_ELBOW=1`: see build-meshy.mts). */
+const legsOf = (skeleton: Skeleton): Record<PawName, readonly string[]> => Object.fromEntries(Object.entries(LEGS).map(([paw, bones]) => [paw, bones.filter((b) => skeleton.has(b))])) as unknown as Record<PawName, readonly string[]>;
 
 const BACK = ["spine1", "spine2", "chest"] as const;
 const NECK = ["neck1", "neck2", "head"] as const;
@@ -36,10 +38,11 @@ const UNDER = -0.002;
 /** How far a single point of the coat may be through the floor (body lengths; a tuft that hangs lower than this is seen as a part of the cat that is in the floor). */
 const POKE = 0.025;
 /**
- * How far the joints of a leg may close (degrees), the elbow (the knee) and the wrist (the hock): measured on the mesh, the skin holds while the elbow stays over about 50 degrees
- * (stretch99 under 1.6) and folds in on itself under it (31 degrees: 2.5, a tenth of the faces turned over).
+ * How far the joints of a leg may close (degrees): a foreleg's elbow (the added bone), the joint of the forearm that the model had for an elbow (`frontleg0`: it bends the arm a little,
+ * and may not fold much more) and the wrist, a hind leg's knee and hock. Measured on the mesh before the elbow was added, the skin held while the elbow stayed over about 50 degrees
+ * (stretch99 under 1.6) and folded in on itself under it (31 degrees: 2.5, a tenth of the faces turned over).
  */
-const CLOSE = { front: [55, 60], hind: [60, 25] } as const;
+const CLOSE = { front: [55, 60], front5: (process.env.CAT_CLOSE_FRONT ?? "50,125,60").split(",").map(Number), hind: [60, 25] } as const;
 /** A paw that ends further than this (body lengths) from its place is tried again from other starts. */
 const STRAY = 0.03;
 /** What a radian of turn (on average, over the bones of a leg) costs when a leg's ends are compared, in body lengths of a paw out of place. */
@@ -49,13 +52,13 @@ const MAX_TURN = 1.2;
 /**
  * How far each of the first three bones of a leg (from the shoulder, or the hip, down) may turn from its rest before the solver is made to pay for it, in degrees: the swing (how far the
  * bone's own axis leaves where it points at rest) and the twist (about that axis), for each bone in turn. A paw's place does not say how its leg winds to reach it, and left to itself the
- * solver winds a shoulder a half turn with the paw on its mark: the coat of that leg is turned inside out, and a hind leg too far into the belly swells it. The rig's first leg bone is the
- * whole upper limb (about a fifth of the body), the next two are short ones about the elbow (the knee), so the limits are by bone and not for the leg. `normal` is for a cat on its
+ * solver winds a shoulder a half turn with the paw on its mark: the coat of that leg is turned inside out, and a hind leg too far into the belly swells it. The model's first leg bone is
+ * the whole upper limb (about a fifth of the body; a foreleg has an elbow added half way along it), the next ones are short ones about the knee, so the limits are by bone and not for the leg. `normal` is for a cat on its
  * feet, sitting, lying, reaching; `wide` for a stretch that takes its legs further; a spec that winds them up (a card, a wall) says `free` and has none (see `Spec.range`).
  */
 const RANGES = {
-  normal: { front: [125, 30, 150, 35, 130, 35], hind: [70, 30, 125, 35, 120, 35] },
-  wide: { front: [150, 45, 170, 45, 150, 45], hind: [100, 40, 150, 45, 140, 45] },
+  normal: { front: [125, 30, 150, 35, 130, 35], front5: [125, 30, 150, 35, 50, 20, 130, 35], hind: [70, 30, 125, 35, 120, 35] },
+  wide: { front: [150, 45, 170, 45, 150, 45], front5: [150, 45, 170, 45, 70, 30, 150, 45], hind: [100, 40, 150, 45, 140, 45] },
 } as const;
 /** How much a paw that is turned past its range is charged (against the miss of the paw's place, which weighs 1). */
 const RANGE_WEIGHT = 3;
@@ -67,6 +70,8 @@ export interface PawAim {
   toe?: number;
   hold?: number;
   elbow?: Vec3;
+  /** How much the elbow's place counts against the paw's (0.15 if left out). */
+  elbowWeight?: number;
   /** How much each way (along, up, across) counts: a paw that is only to be about there along the floor (and on it) gives along a little, and the leg finds the place it can be at. */
   soft?: Vec3;
 }
@@ -134,6 +139,8 @@ export function mixSpec<T>(a: T, b: T, k: number): T {
 }
 
 const conj = (q: Quat): Quat => [-q[0], -q[1], -q[2], q[3]];
+/** (CAT_ELBOW_PULL: every elbow hint counts this many times what the spec says, for trying how much of a bend a leg should be given) */
+const ELBOW_PULL = Number(process.env.CAT_ELBOW_PULL ?? 1);
 const R = new Float64Array(48 * 9);
 const T = new Float64Array(48 * 3);
 
@@ -152,12 +159,15 @@ export class Body {
   private readonly normal = [0, 0, 0];
   /** Every bone but the tail's (what a cat on the floor must not put through it). */
   private readonly nonTail: readonly string[];
+  /** The bones of each leg of this skeleton, from the hip (or the shoulder) down to the paw. */
+  private readonly legs: Record<PawName, readonly string[]>;
 
   constructor(
     readonly mesh: CatMesh,
     readonly skeleton: Skeleton,
   ) {
     this.hips = skeleton.bone("Hips");
+    this.legs = legsOf(skeleton);
     this.dq = new Float32Array(skeleton.count * 8);
     this.nonTail = skeleton.names.filter((n) => !n.startsWith("tail"));
     this.rest = new Pose(skeleton);
@@ -167,7 +177,7 @@ export class Body {
     this.padLocal = [];
     this.jointOff = [];
     PAWS.forEach((p, i) => {
-      const paw = skeleton.bone(LEGS[p.name]![3]!);
+      const paw = skeleton.bone(this.legs[p.name]![this.legs[p.name]!.length - 1]!);
       const pad = this.pads[i]!;
       const d = [pad[0] - T[paw * 3]!, pad[1] - T[paw * 3 + 1]!, pad[2] - T[paw * 3 + 2]!];
       this.padLocal.push([0, 1, 2].map((c) => R[paw * 9 + c]! * d[0]! + R[paw * 9 + 3 + c]! * d[1]! + R[paw * 9 + 6 + c]! * d[2]!) as Vec3);
@@ -253,7 +263,7 @@ export class Body {
    */
   reach(pose: Pose, paw: PawName, pad: Vec3, o: { tip?: number; toe?: number; hold?: number; elbow?: Vec3; elbowWeight?: number; soft?: Vec3; solid?: Solid; cap?: number; range?: Spec["range"] } = {}): number {
     const k = PAWS.findIndex((p) => p.name === paw);
-    const chain = LEGS[paw]!.map((b) => this.skeleton.bone(b));
+    const chain = this.legs[paw]!.map((b) => this.skeleton.bone(b));
     const tip = o.tip ?? 0;
     const toe = o.toe ?? 0;
     // the joint of the paw's bone against the sole: the rest offset, tipped and turned
@@ -267,26 +277,38 @@ export class Body {
     const jx = tx * cy + off[2] * sy;
     const jz = -tx * sy + off[2] * cy;
     const axes = o.soft;
+    const front = paw.startsWith("front");
+    // (a foreleg with an elbow of its own has five bones, a leg without has four: the hind legs, and the forelegs of the model's own skeleton)
+    const elbowed = chain.length === 5;
+    const last = chain[chain.length - 1]!;
     const markers: Marker[] = [
-      { bone: chain[3]!, local: this.padLocal[k]!, aim: pad, weight: 1, ...(axes ? { axes } : {}) },
-      { bone: chain[3]!, local: [0, 0, 0], aim: [pad[0] + jx, pad[1] + ty, pad[2] + jz], weight: 1, ...(axes ? { axes } : {}) },
+      { bone: last, local: this.padLocal[k]!, aim: pad, weight: 1, ...(axes ? { axes } : {}) },
+      { bone: last, local: [0, 0, 0], aim: [pad[0] + jx, pad[1] + ty, pad[2] + jz], weight: 1, ...(axes ? { axes } : {}) },
     ];
-    if (o.elbow) markers.push({ bone: chain[1]!, local: [0, 0, 0], aim: o.elbow, weight: o.elbowWeight ?? 0.15 });
+    if (o.elbow) {
+      // (a foreleg's hint says where the end of the first bone of the model's is to be, which is what an elbow was; the added elbow is that far from the shoulder, the share it has of the bone)
+      let aim = o.elbow;
+      if (elbowed) {
+        const s = this.where(pose, this.legs[paw]![0]!);
+        const a = Math.hypot(this.skeleton.restT[chain[1]! * 3]!, this.skeleton.restT[chain[1]! * 3 + 1]!, this.skeleton.restT[chain[1]! * 3 + 2]!);
+        const b = Math.hypot(this.skeleton.restT[chain[2]! * 3]!, this.skeleton.restT[chain[2]! * 3 + 1]!, this.skeleton.restT[chain[2]! * 3 + 2]!);
+        const share = a / (a + b);
+        aim = [s[0] + (aim[0] - s[0]) * share, s[1] + (aim[1] - s[1]) * share, s[2] + (aim[2] - s[2]) * share];
+      }
+      markers.push({ bone: chain[1]!, local: [0, 0, 0], aim, weight: o.elbowWeight ?? 0.15 });
+    }
     const hold = o.hold ?? 0.004;
     // (the joints do not close past where the skin folds in on itself)
-    const close = (paw.startsWith("front") ? CLOSE.front : CLOSE.hind).map((d) => (d * Math.PI) / 180);
-    const limits: Limit[] = [
-      { bone: chain[1]!, min: close[0]!, weight: 4 },
-      { bone: chain[2]!, min: close[1]!, weight: 4 },
-    ];
+    const close = (front ? (elbowed ? CLOSE.front5 : CLOSE.front) : CLOSE.hind).map((d) => (d * Math.PI) / 180);
+    const limits: Limit[] = close.map((min, i) => ({ bone: chain[i + 1]!, min, weight: 4 }));
     const cap = o.cap ?? 0;
     const caps: Cap[] = cap > 0 ? chain.slice(0, 2).map((bone) => ({ bone, max: (cap * Math.PI) / 180, weight: 3 })) : [];
     // (the range of each bone: its swing and its twist about the line to the next bone, as the rest has the line)
     const twists: Twist[] = [];
     const rangeName = o.range;
     if (rangeName !== "free") {
-      const table = RANGES[rangeName ?? "normal"][paw.startsWith("front") ? "front" : "hind"];
-      for (let i = 0; i < 3; i++) {
+      const table = RANGES[rangeName ?? "normal"][front ? (elbowed ? "front5" : "front") : "hind"];
+      for (let i = 0; i < chain.length - 1; i++) {
         const child = chain[i + 1]!;
         const x = this.skeleton.restT[child * 3]!;
         const y = this.skeleton.restT[child * 3 + 1]!;
@@ -301,7 +323,7 @@ export class Body {
       // (a leg that is folded may have a piece of itself through the floor: each point of it that is told to stay above the floor, and the leg is solved again)
       const contacts: Marker[] = [];
       for (let round = 0; round < 3; round++) {
-        const low = this.under(p, LEGS[paw]!, o.solid ?? {}, 24);
+        const low = this.under(p, this.legs[paw]!, o.solid ?? {}, 24);
         if (low.length === 0) break;
         for (const l of low) contacts.push(l.wall ? { bone: l.bone, local: l.local, aim: [l.rigid - l.depth, 0, 0], wall: true, weight: 2 } : { bone: l.bone, local: l.local, aim: [0, l.rigid + l.depth, 0], floor: true, weight: 2 });
         miss = reachChain(this.skeleton, p, chain, [...markers, ...contacts], hold, 30, limits, caps, twists).miss[0]!;
@@ -319,7 +341,7 @@ export class Body {
     let best = miss + FLING * this.turned(origin, pose, chain);
     for (const fromRest of [false, true]) {
       trial.copy(origin);
-      if (fromRest) for (const b of LEGS[paw]!) for (let c = 0; c < 4; c++) trial.r[this.skeleton.bone(b) * 4 + c] = this.rest.r[this.skeleton.bone(b) * 4 + c]!;
+      if (fromRest) for (const b of this.legs[paw]!) for (let c = 0; c < 4; c++) trial.r[this.skeleton.bone(b) * 4 + c] = this.rest.r[this.skeleton.bone(b) * 4 + c]!;
       this.aimLeg(trial, paw, pad);
       const m2 = solve(trial);
       if (this.turned(origin, trial, chain) > MAX_TURN) continue;
@@ -347,7 +369,7 @@ export class Body {
 
   /** A leg turned at its hip, all in one piece, until the line from the hip to the middle of the paw's sole points at `pad` (the start of a search for the bends that put it there). */
   private aimLeg(pose: Pose, paw: PawName, pad: Vec3): void {
-    const root = this.where(pose, LEGS[paw]![0]!);
+    const root = this.where(pose, this.legs[paw]![0]!);
     const now = this.padOf(pose, paw);
     const a: Vec3 = [now[0] - root[0], now[1] - root[1], now[2] - root[2]];
     const b: Vec3 = [pad[0] - root[0], pad[1] - root[1], pad[2] - root[2]];
@@ -355,7 +377,7 @@ export class Body {
     const s = Math.hypot(axis[0], axis[1], axis[2]);
     if (s < 1e-9) return;
     const angle = Math.atan2(s, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]);
-    this.turnBy(pose, this.skeleton.bone(LEGS[paw]![0]!), turnAbout(axis[0] / s, axis[1] / s, axis[2] / s, angle) as Quat);
+    this.turnBy(pose, this.skeleton.bone(this.legs[paw]![0]!), turnAbout(axis[0] / s, axis[1] / s, axis[2] / s, angle) as Quat);
   }
 
   /**
@@ -532,14 +554,14 @@ export class Body {
     for (const [bone, a] of Object.entries(spec.yaw ?? {})) if (a && aside(bone)) this.turn(pose, bone, { yaw: a });
     for (const [bone, a] of Object.entries(spec.roll ?? {})) if (a && aside(bone)) this.turn(pose, bone, { roll: a });
     if (prev) {
-      for (const name of Object.keys(LEGS) as PawName[]) for (const b of LEGS[name]!) {
+      for (const name of Object.keys(this.legs) as PawName[]) for (const b of this.legs[name]!) {
         const j = this.skeleton.bone(b);
         for (let k = 0; k < 4; k++) pose.r[j * 4 + k] = prev.r[j * 4 + k]!;
       }
     }
     const putPaws = (): void => {
       for (const [name, aim] of Object.entries(spec.paws ?? {}) as Array<[PawName, PawAim]>) {
-        this.reach(pose, name, aim.at, { ...(aim.tip !== undefined ? { tip: aim.tip } : {}), ...(aim.toe !== undefined ? { toe: aim.toe } : {}), ...(aim.hold !== undefined ? { hold: aim.hold } : {}), ...(aim.elbow ? { elbow: aim.elbow } : {}), ...(aim.soft ? { soft: aim.soft } : {}), ...(spec.solid ? { solid: spec.solid } : {}), ...(spec.range ? { range: spec.range } : {}), ...(spec.cap ? { cap: (name.startsWith("front") ? spec.cap.front : spec.cap.hind) ?? 0 } : {}) });
+        this.reach(pose, name, aim.at, { ...(aim.tip !== undefined ? { tip: aim.tip } : {}), ...(aim.toe !== undefined ? { toe: aim.toe } : {}), ...(aim.hold !== undefined ? { hold: aim.hold } : {}), ...(aim.elbow ? { elbow: aim.elbow, elbowWeight: (aim.elbowWeight ?? 0.15) * ELBOW_PULL } : {}), ...(aim.soft ? { soft: aim.soft } : {}), ...(spec.solid ? { solid: spec.solid } : {}), ...(spec.range ? { range: spec.range } : {}), ...(spec.cap ? { cap: (name.startsWith("front") ? spec.cap.front : spec.cap.hind) ?? 0 } : {}) });
       }
     };
     putPaws();
@@ -574,7 +596,7 @@ export class Body {
   /** Where the middle of a paw's sole is in the pose (the cat's space). */
   padOf(pose: Pose, paw: PawName): Vec3 {
     const k = PAWS.findIndex((p) => p.name === paw);
-    const j = this.skeleton.bone(LEGS[paw]![3]!);
+    const j = this.skeleton.bone(this.legs[paw]![this.legs[paw]!.length - 1]!);
     globals(this.skeleton, pose, undefined, R, T);
     const l = this.padLocal[k]!;
     return [T[j * 3]! + R[j * 9]! * l[0] + R[j * 9 + 1]! * l[1] + R[j * 9 + 2]! * l[2], T[j * 3 + 1]! + R[j * 9 + 3]! * l[0] + R[j * 9 + 4]! * l[1] + R[j * 9 + 5]! * l[2], T[j * 3 + 2]! + R[j * 9 + 6]! * l[0] + R[j * 9 + 7]! * l[1] + R[j * 9 + 8]! * l[2]];
