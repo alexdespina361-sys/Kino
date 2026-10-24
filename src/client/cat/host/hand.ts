@@ -4,9 +4,17 @@
  * the cat out, so it can be tested without a screen.
  */
 
+import type { Clip } from "../types";
+
 /** How long a mouse rests on the cat before it is stroked, and how often a hand that stays tells the cat so again (the cat lets go a little after the last word). */
 export const DWELL_MS = 320;
 export const REPEAT_MS = 1000;
+
+/**
+ * Whether a hand may be put on the cat in this posture at all: not on one that hauls itself up over a lip (the frame is the point it ends up at, and the picture hangs below it, so a box there would
+ * be on nothing), nor on one going up the face of a card to a lip (it is busy, as it is in the climb it ends in, and is not taken off the face).
+ */
+export const handFits = (clip: Clip): boolean => clip !== "climb" && clip !== "scale";
 
 export type HandSays = "pet" | "end" | null;
 

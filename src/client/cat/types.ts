@@ -90,6 +90,11 @@ export interface World {
    * yet). Optional: without it, a world is read afresh when it is another object.
    */
   readAt?: number;
+  /**
+   * The painter can draw the cat from behind, going up the face of a card (the `scale` clip): a step up that is too high for a hang (see `STEP_MAX` in engine/ledges.ts) is then one the cat may
+   * go up the face of, and haul itself over the lip from there. Optional: without it, the cat never asks for that clip.
+   */
+  rearView?: boolean;
 }
 
 /* ------------------------------ what the cat is doing ------------------------------ */
@@ -137,6 +142,8 @@ export type Clip =
   /**
    * Going straight up the face of a card (or any wall the page has), seen from behind: the viewer has the cat's back, the tail hanging, the paws taking hold of the face one after another. A gait,
    * not a one-shot: it is played by the distance climbed (`odometer`, the clip's `stride` being the length that one round of the paws climbs), so that no paw slides over the face.
+   * `facing` is 1 all the way up (a picture of the cat's back has no side to it, and the solid cat's clip turned round would show its belly), `grounded` is false, and it ends in a `climb`.
+   * Only for a world that says the painter can draw it (`World.rearView`).
    */
   | "scale";
 

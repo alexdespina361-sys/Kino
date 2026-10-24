@@ -1,7 +1,7 @@
 import { clamp, clamp01, finite, lerp, smoothstep } from "../math";
 import { createRng, type Rng } from "../rng";
 import { CLIMB_BACK, CLIMB_HANG, CLIMB_LIP, CLIMB_TIME, HANG_AHEAD, HANG_DOWN, JUMP_LANDING, JUMP_TAKEOFF, type CatEvent, type CatFrame, type Clip, type Emote, type Rect, type Target, type Vec, type World } from "../types";
-import { clampToLedge, computeLedges, findPath, GRAVITY, ledgeAt, planJump, reshape, screenEdges, settle, settledCost, stepFlight, type JumpPlan, type Ledge, type RestPose, type Settling } from "./ledges";
+import { clampToLedge, computeLedges, findPath, GRAVITY, ledgeAt, planJump, reshape, SCALE_MAX, screenEdges, settle, settledCost, STEP_MAX, stepFlight, underLip, type JumpPlan, type Ledge, type RestPose, type Settling } from "./ledges";
 import { HALF_WIDTH, shapeHits } from "./shape";
 import { BASELINE, tasteFor, temperamentOf, type Temperament } from "./temperament";
 
@@ -30,6 +30,11 @@ type Act =
    * a low one. `standX` is where it ends up standing on top of the ledge `toSurface`, and `dir` the way it faces. `up`: the last frame of the clip (the cat on its feet on top, `progress` 1) has been given.
    */
   | { k: "climb"; toSurface: string; standX: number; dir: 1 | -1; up?: boolean }
+  /**
+   * It goes straight up the face of the card under the ledge `toSurface`, its back to the viewer (the `scale` clip, see `startScale`), from the place under the lip it walked to, to where its forepaws
+   * take hold of the lip, and hauls itself over from there: the act becomes the `climb` to `standX`, facing `dir`. `below`: how far under the line of the ledge its feet are, once it has set off (pixels).
+   */
+  | { k: "scale"; toSurface: string; standX: number; dir: 1 | -1; below?: number }
   /** A hand has it by the scruff (see `grab`); it is in the air until the hand lets go, and then it falls (`fall`) to the place it will land. */
   | { k: "carried" }
   | { k: "fall" }
@@ -102,7 +107,7 @@ export interface EngineDebug {
   act: string;
   queue: string[];
   surfaceId: string | null;
-  /** The shelf a leap in the air is going to (or the cat is reaching for, or hauling itself up onto: it goes with that shelf's lip if the page moves). */
+  /** The shelf a leap in the air is going to (or the cat is reaching for, or going up the face of a card to, or hauling itself up onto: it goes with that shelf's lip if the page moves). */
   jumpTo: string | null;
   ledges: number;
   mode: string;
@@ -206,6 +211,17 @@ const FALL_SIT: readonly [number, number] = [0.9, 1.6];
 const FALL_WASH = 0.75;
 const CLIMB_SIT: readonly [number, number] = [0.7, 1.3];
 const CLIMB_WASH = 0.7;
+/**
+ * Going up the face of a card (see `startScale`), in body lengths and seconds: how fast, once under way; how long it takes to get under way; and how far under the line of the ledge its feet are when
+ * its forepaws take hold of the lip and the climb takes over. That last is the art's: the scale clip has its hips at its feet's point, and the climb, as it hangs by its forepaws at the start, has them
+ * 0.8 under the lip (measured on the clips: there, the hips and the head of the one are where those of the other are, to a tenth of a body length, and so are the forepaws at the top of the scale's
+ * reach), so the picture goes on from the one to the other where it was. (The climb's own `CLIMB_HANG` is the hang of a cat on its feet under the lip, or in the air at it.) A step that it could leap
+ * up, it goes up the face of `SCALE_SHARE` of the times.
+ */
+const SCALE_SPEED = 0.6;
+const SCALE_EASE = 0.35;
+const SCALE_TOP = 0.8;
+const SCALE_SHARE = 0.5;
 /**
  * What the cat makes of the page around it (body lengths, and seconds): a drop of this much or more is looked over before the cat goes down it, and a climb of
  * this much is measured (a wiggle, as a cat does); a pointer that goes faster than `FLINCH_SPEED` (body lengths a second) within `FLINCH_NEAR` of the cat makes it
@@ -522,7 +538,7 @@ export class CatEngine {
       act: this.act ? label(this.act) : "none",
       queue: this.queue.map(label),
       surfaceId: this.surfaceId,
-      jumpTo: this.jump && !this.jump.landed ? this.jump.toSurface : this.act?.k === "climb" ? this.act.toSurface : this.act?.k === "fall" && this.fall?.grab ? this.fall.toSurface : null,
+      jumpTo: this.jump && !this.jump.landed ? this.jump.toSurface : this.act?.k === "climb" || this.act?.k === "scale" ? this.act.toSurface : this.act?.k === "fall" && this.fall?.grab ? this.fall.toSurface : null,
       ledges: this.ledges.length,
       mode: this.mode,
       placed: this.placed,
@@ -641,8 +657,8 @@ export class CatEngine {
     // is given to do then would keep it from ever looking for a place)
     const unreachable = world.mode === "away" || this.leaving() || !this.placed;
     for (const event of events) {
-      // (a cat in a hand, or falling out of one, or hanging by its paws from a lip, is not stroked, called or told: it is busy)
-      const inHand = this.act?.k === "carried" || this.act?.k === "fall" || this.act?.k === "climb";
+      // (a cat in a hand, or falling out of one, or hanging by its paws from a lip, or going up the face of a card to one, is not stroked, called or told: it is busy)
+      const inHand = this.act?.k === "carried" || this.act?.k === "fall" || this.act?.k === "climb" || this.act?.k === "scale";
       switch (event.type) {
         case "cat.disable":
           this.dismissed = true;
@@ -740,19 +756,19 @@ export class CatEngine {
     }
   }
 
-  /** Replace the plan, unless the cat is in the air (it finishes its leap first), hanging from a lip (it hauls itself up first) or in a hand (the hand lets go first). */
+  /** Replace the plan, unless the cat is in the air (it finishes its leap first), hanging from a lip or going up the face of a card to one (it hauls itself up first) or in a hand (the hand lets go first). */
   private hardPlan(plan: Act[]): void {
     this.queue = plan;
     if (!this.act) return;
     // (a cat that has come down and is only settling is not in the air any more)
-    if (this.act.k === "jump" || this.act.k === "climb" || this.act.k === "carried" || (this.act.k === "fall" && !this.fall?.landed)) return;
+    if (this.act.k === "jump" || this.act.k === "climb" || this.act.k === "scale" || this.act.k === "carried" || (this.act.k === "fall" && !this.fall?.landed)) return;
     if (this.act.k === "fall") this.fall = null;
     this.act = null;
   }
 
   /** Out of the way at once (a menu has opened, the page is hidden, the viewer sent the cat away): even a leap in the air, or a hand that has hold of it, is cut short. */
   private vanish(plan: Act[]): void {
-    if (this.act?.k === "jump" || this.act?.k === "climb" || this.act?.k === "carried" || this.act?.k === "fall") {
+    if (this.act?.k === "jump" || this.act?.k === "climb" || this.act?.k === "scale" || this.act?.k === "carried" || this.act?.k === "fall") {
       this.jump = null;
       this.hold = null;
       this.fall = null;
@@ -1033,7 +1049,7 @@ export class CatEngine {
   private shakeOff(world: World): boolean {
     const act = this.act;
     if (world.mode !== "browse" || world.quiet || world.reducedMotion || this.dismissed || this.hold !== null || this.alpha < 0.5) return false;
-    if (act && (act.k === "carried" || act.k === "fall" || act.k === "climb" || act.k === "fade" || act.k === "relocate")) return false;
+    if (act && (act.k === "carried" || act.k === "fall" || act.k === "climb" || act.k === "scale" || act.k === "fade" || act.k === "relocate")) return false;
     if (this.queueHas("point") || this.queueHas("swat") || this.queueHas("relocate") || this.pendingPoint !== null) return false;
     const kind = this.surfaceId ? world.surfaces.find((s) => s.id === this.surfaceId)?.kind : undefined;
     if (kind === "fallbackFloor") return false;
@@ -1281,7 +1297,7 @@ export class CatEngine {
     const L = world.bodyLength;
     const act = this.act;
     if (world.mode !== "browse" || world.reducedMotion || world.quiet || !this.canFeel(world, this.leaving())) return;
-    if (act?.k === "carried" || act?.k === "fall" || act?.k === "climb" || act?.k === "jump" || act?.k === "fade" || act?.k === "relocate") return;
+    if (act?.k === "carried" || act?.k === "fall" || act?.k === "climb" || act?.k === "scale" || act?.k === "jump" || act?.k === "fade" || act?.k === "relocate") return;
     // (near the cat, and not on it: a hand that comes to stroke it is not a fright)
     const away = Math.hypot(point.x - this.x, point.y - (this.y - 0.4 * L));
     if (away > FLINCH_NEAR * L || away < 0.45 * L) return;
@@ -1329,6 +1345,12 @@ export class CatEngine {
       return;
     }
     if (this.act?.k === "point" || this.act?.k === "swat") return;
+    if (this.act?.k === "scale") {
+      // (going up the face of a card, its head is the clip's: forward, up the face, and not turned to anything)
+      this.viewer = false;
+      this.lookPoint = undefined;
+      return;
+    }
     if (this.act?.k === "carried") {
       // (held up by the scruff, it stares out of the screen at whoever has it)
       this.viewer = true;
@@ -1366,20 +1388,43 @@ export class CatEngine {
     return this.surfaceId ? ledgeAt(this.ledges, this.surfaceId, this.x) : undefined;
   }
 
-  /** The acts that take the cat from where it stands to `x` on another ledge (or this one): walks along ledges, leaps between them. */
+  /**
+   * The acts that take the cat from where it stands to `x` on another ledge (or this one): walks along ledges, leaps between them. A cat in no hurry whose painter can draw it from behind goes up
+   * the face of the card under a ledge that is too high for a hang (see `Hop.scale`): always for one too high to leap at, and `SCALE_SHARE` of the times for one it could leap at; never up a face that
+   * has something on it the cat keeps out of.
+   */
   private routeTo(world: World, to: Ledge, x: number, run: boolean): Act[] | null {
     const from = this.here();
     if (!from) return null;
-    const path = findPath(this.ledges, from, this.x, to, x, world.bodyLength);
+    const L = world.bodyLength;
+    const scales = this.scales(world, run);
+    let path = findPath(this.ledges, from, this.x, to, x, L, 3, scales);
+    // (a way up the face of the card the viewer is on, or over words or buttons, is not one: the way without it, if there is one)
+    if (path && scales && path.some((hop, i, hops) => hop.scale !== undefined && !this.faceClear(world, hop.takeoffX, (hops[i - 1]?.ledge ?? from).y, hop.ledge))) path = findPath(this.ledges, from, this.x, to, x, L);
     if (!path) return null;
     const plan: Act[] = [];
     let cursor = from;
-    const L = world.bodyLength;
     // (a cat in no hurry looks where it is going, and looks over a drop before it goes down it and measures a climb before it goes up)
     const calm = !run && !world.reducedMotion;
     for (const hop of path) {
       const landing = { x: hop.landX, y: hop.ledge.y };
-      plan.push({ k: "walk", x: hop.takeoffX, run, maxT: 30, ...(calm ? { look: landing } : {}) });
+      let takeoffX = hop.takeoffX;
+      let scale = hop.scale;
+      if (scales && !scale && cursor.y - hop.ledge.y > STEP_MAX * L) {
+        // (a step up too high for a hang, that it could leap at: now and then it goes up the face of the card instead, from the place under the lip, facing right on top where there is room for that)
+        const lip = underLip(cursor, hop.landX, 1, L);
+        if (lip && this.faceClear(world, lip.takeoffX, cursor.y, hop.ledge) && this.rng.chance(SCALE_SHARE)) {
+          takeoffX = lip.takeoffX;
+          scale = { dir: lip.dir };
+        }
+      }
+      plan.push({ k: "walk", x: takeoffX, run, maxT: 30, ...(calm ? { look: landing } : {}) });
+      if (scale) {
+        // (it goes to the place under the lip, straight up the face of the card, its back to the viewer, and hauls itself over the lip at the top)
+        plan.push({ k: "scale", toSurface: hop.ledge.surfaceId, standX: hop.landX, dir: scale.dir });
+        cursor = hop.ledge;
+        continue;
+      }
       if (hop.climb && !run) {
         // (a step up that is not a stride: it goes to the place under the lip, takes hold of it and hauls itself up, and does not leap)
         plan.push({ k: "climb", toSurface: hop.ledge.surfaceId, standX: hop.landX, dir: hop.climb.dir });
@@ -1393,6 +1438,21 @@ export class CatEngine {
     }
     plan.push({ k: "walk", x: clampToLedge(cursor, x), run, maxT: 30 });
     return plan;
+  }
+
+  /** Whether the cat may go up the face of a card on its way: its painter can draw that (`World.rearView`), it is in no hurry, and the viewer has not asked for less motion. */
+  private scales(world: World, run: boolean): boolean {
+    return world.rearView === true && !run && !world.reducedMotion;
+  }
+
+  /**
+   * Whether the face of the card that a cat going up it at `x`, from its feet at `y` to the lip of `to`, is in front of (its body, and a little either side) has nothing on it that the cat keeps out of
+   * (the card the viewer is on, words, buttons).
+   */
+  private faceClear(world: World, x: number, y: number, to: Ledge): boolean {
+    const L = world.bodyLength;
+    const face: Rect = { x: x - 0.3 * L, y: to.y, w: 0.6 * L, h: Math.max(0, y - to.y) };
+    return !world.keepOut.some((zone) => overlaps(zone, face));
   }
 
   /**
@@ -1416,7 +1476,7 @@ export class CatEngine {
     }
     found.sort((a, b) => a.cost - b.cost);
     for (const one of found.slice(0, 4)) {
-      if (findPath(this.ledges, here, this.x, one.ledge, one.x, L, 2) === null) continue;
+      if (findPath(this.ledges, here, this.x, one.ledge, one.x, L, 2, this.scales(world, false)) === null) continue;
       const plan = this.routeTo(world, one.ledge, one.x, false);
       if (plan) return plan;
     }
@@ -1563,7 +1623,7 @@ export class CatEngine {
   /** Whether the cat is somewhere it can set out from: on the page, on the ground of a shelf the page still has (any ground, for a viewer who wants no motion), and neither in a hand, nor in the air, nor on its way out. */
   private readyToSetOut(world: World): boolean {
     const k = this.act?.k;
-    if (!this.placed || this.leaving() || k === "jump" || k === "climb" || k === "carried" || k === "fall") return false;
+    if (!this.placed || this.leaving() || k === "jump" || k === "climb" || k === "scale" || k === "carried" || k === "fall") return false;
     return world.reducedMotion || this.here() !== undefined;
   }
 
@@ -2232,6 +2292,9 @@ export class CatEngine {
       case "climb":
         this.startClimb(world, act);
         break;
+      case "scale":
+        this.startScale(world, act);
+        break;
       case "point": {
         this.reach = centre(this.posterOf(world, act));
         this.lookAt(this.reach, act.dur);
@@ -2419,7 +2482,7 @@ export class CatEngine {
             .filter((ledge) => ledge.surfaceId !== here.surfaceId)
             .map((ledge) => {
               const x = lerp(ledge.x0, ledge.x1, this.rng.range(0.2, 0.8));
-              const path = findPath(this.ledges, here, this.x, ledge, x, L, 2);
+              const path = findPath(this.ledges, here, this.x, ledge, x, L, 2, this.scales(world, false));
               // (and how much of the words it would hide, sitting where it can best sit on that shelf)
               return path ? { ledge, x, hops: path.length, cost: settling("sit", x, ledge)?.cost ?? 0 } : null;
             })
@@ -2696,7 +2759,7 @@ export class CatEngine {
           // (the nearer ones more often than the far)
           const one = this.rng.weighted(far, (t) => 1 / (1 + Math.abs(centre(t.rect).x - this.x) / (4 * L)));
           if (!one) return null;
-          const spot = this.swatSpots(world, one.rect).find((s) => findPath(this.ledges, here, this.x, s.ledge, s.stand, L, 2) !== null);
+          const spot = this.swatSpots(world, one.rect).find((s) => findPath(this.ledges, here, this.x, s.ledge, s.stand, L, 2, this.scales(world, false)) !== null);
           if (!spot) return null;
           const route = this.routeTo(world, spot.ledge, clampToLedge(spot.ledge, spot.stand - spot.side * CREEP * L), false);
           if (!route) return null;
@@ -2836,6 +2899,9 @@ export class CatEngine {
         break;
       case "climb":
         this.runClimb(world, act, dt);
+        break;
+      case "scale":
+        this.runScale(world, act, dt);
         break;
       case "carried":
         this.carry(world, dt);
@@ -3025,13 +3091,15 @@ export class CatEngine {
 
   /**
    * The cat hangs from the lip of a ledge by its forepaws and hauls itself up (the `climb` clip, see `CLIMB_*` in the types): from a reach (`reachFor`, the cat in the air at the lip) or from a walk to the
-   * place under the lip (`routeTo`, a low step up). From here on `x`,`y` are the point it ends up standing at, and the picture is the art's, from hanging below it to standing on it.
+   * place under the lip (`routeTo`, a low step up), or from the top of the face of the card under the ledge (`runScale`, `fromFace`). From here on `x`,`y` are the point it ends up standing at, and the
+   * picture is the art's, from hanging below it to standing on it.
    */
-  private startClimb(world: World, act: Extract<Act, { k: "climb" }>): void {
+  private startClimb(world: World, act: Extract<Act, { k: "climb" }>, fromFace = false): void {
     const L = world.bodyLength;
     const to = ledgeAt(this.ledges, act.toSurface, act.standX);
     // (the cat must be where its paws take hold: under the lip, hanging, or a step from it and on its feet; if the page has moved since this was planned, there is no climb)
-    if (!to || Math.abs(this.x - (act.standX - act.dir * CLIMB_BACK * L)) > 0.6 * L || Math.abs(this.y - (to.y + CLIMB_HANG * L)) > 0.5 * L) {
+    // (one that has come up the face of the card is where its paws take hold: the scale stopped it at the height the art hangs it from the lip, see `SCALE_TOP`)
+    if (!to || Math.abs(this.x - (act.standX - act.dir * CLIMB_BACK * L)) > 0.6 * L || (!fromFace && Math.abs(this.y - (to.y + CLIMB_HANG * L)) > 0.5 * L)) {
       if (this.grounded) {
         this.queue = [];
         this.finish();
@@ -3079,5 +3147,84 @@ export class CatEngine {
     const more = this.queue.length > 0;
     this.finish();
     if (!more) this.afterLanding(world, CLIMB_SIT, CLIMB_WASH);
+  }
+
+  /**
+   * The cat goes straight up the face of the card under a ledge, its back to the viewer (the `scale` clip): from the place under the lip it walked to (`routeTo`, a step up too high for a hang) to
+   * where its forepaws take hold of the lip (`SCALE_TOP` under it), and hauls itself over from there (the act becomes the `climb`, with no fade between: the art goes on from where it was). The
+   * frame's point is its feet's: it keeps to the `x` it set off from, and goes up at `SCALE_SPEED` once under way, by the distance climbed (the odometer, which plays the clip), and with the ledge
+   * if the page moves.
+   */
+  private startScale(world: World, act: Extract<Act, { k: "scale" }>): void {
+    const L = world.bodyLength;
+    const to = ledgeAt(this.ledges, act.toSurface, act.standX);
+    const below = to ? this.y - to.y : 0;
+    // (the cat must be under the lip, a step too high for a hang below it, with nothing on the face it keeps out of, and with a painter that can draw it from behind; if the page or the painter
+    // has changed since this was planned, there is no scale)
+    if (!to || !world.rearView || Math.abs(this.x - (act.standX - act.dir * CLIMB_BACK * L)) > 0.6 * L || below < (STEP_MAX - 0.5) * L || below > (SCALE_MAX + 0.5) * L || !this.faceClear(world, this.x, this.y, to)) {
+      if (this.grounded) {
+        this.queue = [];
+        this.finish();
+      } else this.vanish([{ k: "fade", to: 0, rate: FADE_OUT_RATE }, { k: "relocate", where: "home" }, { k: "fade", to: 1, rate: FADE_IN_RATE }]);
+      return;
+    }
+    act.below = below;
+    // (the picture of its back is drawn facing right: see the clip)
+    this.facing = 1;
+    this.vx = 0;
+    this.vy = 0;
+    this.grounded = false;
+    this.setClip("scale");
+    this.progress = 0;
+    this.viewer = false;
+    this.lookPoint = undefined;
+    this.visited[to.surfaceId] = this.now;
+  }
+
+  private runScale(world: World, act: Extract<Act, { k: "scale" }>, dt: number): void {
+    const L = world.bodyLength;
+    const to = ledgeAt(this.ledges, act.toSurface, act.standX);
+    // (the page took the ledge away from over the cat as it went up the face under it, or moved it out from over it, or the painter that draws it from behind is gone: it lets go of the face, and
+    // falls to whatever is under it)
+    if (!to || act.standX < to.x0 - 0.2 * L || act.standX > to.x1 + 0.2 * L || !world.rearView) {
+      this.dropOffFace();
+      return;
+    }
+    this.setClip("scale");
+    const top = SCALE_TOP * L;
+    const was = act.below ?? Math.max(top, this.y - to.y);
+    // (under way over a moment, and then at its pace)
+    const below = Math.max(top, was - SCALE_SPEED * L * smoothstep(0, SCALE_EASE, this.actT) * dt);
+    act.below = below;
+    this.odometer += was - below;
+    this.y = to.y + below;
+    this.vx = 0;
+    this.vy = dt > 0 ? (below - was) / dt : 0;
+    this.facing = 1;
+    this.grounded = false;
+    // (a page that has carried the cat off the screen with the ledge: it is gone, and back somewhere else)
+    if (this.isUnseen(world)) {
+      this.slipAway(world);
+      return;
+    }
+    if (below > top) return;
+    // (its forepaws are on the lip: it hangs from it by them, and hauls itself over)
+    const climb: Extract<Act, { k: "climb" }> = { k: "climb", toSurface: act.toSurface, standX: act.standX, dir: act.dir };
+    this.act = climb;
+    this.actT = 0;
+    this.startClimb(world, climb, true);
+  }
+
+  /** A cat on the face of a card that has nothing to go up to any more: it lets go of the face, and falls to whatever is under it (see `runFall`), or, with nothing there, is gone and back somewhere else. */
+  private dropOffFace(): void {
+    this.queue = [];
+    this.act = { k: "fall" };
+    this.actT = 0;
+    this.fall = { toSurface: "", toX: this.x, vy: 0, landed: false, settleT: 0, placeY: this.y, missed: true, free: false };
+    this.grounded = false;
+    this.vx = 0;
+    this.vy = 0;
+    this.setClip("jump");
+    this.progress = FREE_FALL_POSE;
   }
 }

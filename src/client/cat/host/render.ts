@@ -32,6 +32,8 @@ export interface Brush {
   readonly lost: boolean;
   /** The most the canvas is made finer than the screen's own pixels (a finer canvas costs a card more than a TV can spare). */
   readonly maxDpr: number;
+  /** It can draw the cat from behind, going up the face of a card (the solid cat, with clips that have the `scale` one): the host tells the cat so (`World.rearView`). */
+  readonly rearView: boolean;
   /** The coat the cat wears from the next picture on (the simple cat has two: the ragdoll's colours, and the ginger's for any other coat). */
   setCoat(coat: CatCoat): void;
   resize(side: number, dpr: number): void;
@@ -72,6 +74,7 @@ export function classicBrush(): Brush | null {
     canvas,
     lost: false,
     maxDpr: 2,
+    rearView: false,
     gpuMs: 0,
     setCoat(coat) {
       palette = coat === "ragdoll" ? RAGDOLL : MARMALADE;
@@ -115,6 +118,7 @@ export function solidBrush(files: CatFiles): Brush | null {
       return cat.lost;
     },
     maxDpr: 1.5,
+    rearView: cat.director.has("scale"),
     get gpuMs() {
       return gpuMs;
     },

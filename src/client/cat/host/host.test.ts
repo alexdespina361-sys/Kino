@@ -5,7 +5,7 @@ import { createRng } from "../rng";
 import type { Rect } from "../types";
 import { fits, MOODS, pick, reasonFor, type Candidate, type Mood } from "./assistant";
 import { Governor, Revival } from "./governor";
-import { DWELL_MS, Hand, REPEAT_MS } from "./hand";
+import { DWELL_MS, Hand, handFits, REPEAT_MS } from "./hand";
 import { perchesFor, widestGap } from "./perch";
 
 describe("the hand on the cat", () => {
@@ -38,6 +38,12 @@ describe("the hand on the cat", () => {
     expect(hand.press(100)).toBe("pet");
     expect(hand.stroking).toBe(true);
     expect(hand.step(116, false)).toBe("end");
+  });
+
+  it("has no box to be put on a cat that hauls itself up over a lip, or goes up the face of a card to one, and has one on a cat that does anything else", () => {
+    expect(handFits("climb")).toBe(false);
+    expect(handFits("scale")).toBe(false);
+    for (const clip of ["stand", "walk", "run", "sit", "loaf", "curl", "jump", "peek", "groom"] as const) expect(handFits(clip), clip).toBe(true);
   });
 });
 

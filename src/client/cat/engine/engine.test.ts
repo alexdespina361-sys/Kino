@@ -3,7 +3,7 @@ import { createRng } from "../rng";
 import type { CatFrame, Rect, Target, World } from "../types";
 import { CLIMB_BACK, CLIMB_HANG, CLIMB_LIP, CLIMB_TIME, JUMP_LANDING, JUMP_TAKEOFF, SWAT_HIT } from "../types";
 import { CatEngine } from "./engine";
-import { computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, screenEdges, settledCost, STEP_MAX, STEP_MIN, stepFlight, type Clutter, type Ledge, type RestPose } from "./ledges";
+import { computeLedges, findPath, GRAVITY, jumpAt, ledgeAt, MAX_DOWN, MAX_UP, planJump, reshape, restSpot, SCALE_MAX, screenEdges, settledCost, STEP_MAX, STEP_MIN, stepFlight, type Clutter, type Ledge, type RestPose } from "./ledges";
 import { shapeCovers, shapeHits } from "./shape";
 import { browseWorld, defaultPage, playerWorld, runSession, stepCat, type PageOptions } from "./sim";
 import { BASELINE, GINGER, RAGDOLL, tasteFor, temperamentOf } from "./temperament";
@@ -224,6 +224,54 @@ describe("ledges", () => {
       const hop = findPath([from, to], from, 410, to, 600, L)![0]!;
       expect(hop.climb).toBeUndefined();
       expect(hop.takeoffX).toBe(420);
+    });
+  });
+
+  describe("a step up too high for a hang, gone up the face of the card (where the painter can draw the cat from behind)", () => {
+    const step = (rise: number, under: Partial<Ledge> = {}): [Ledge, Ledge] => [
+      { id: "low#0", surfaceId: "low", kind: "shelfTop", y: 800, x0: 100, x1: 1500, weight: 1, ...under },
+      { id: "high#0", surfaceId: "high", kind: "shelfTop", y: 800 - rise * L, x0: 300, x1: 1300, weight: 1 },
+    ];
+
+    it("is gone up from the place under the lip, facing right on top, when it is too high to leap at and no higher than SCALE_MAX; and is no way at all without the painter", () => {
+      for (const rise of [MAX_UP + 0.05, SCALE_MAX - 0.001]) {
+        const [from, to] = step(rise);
+        expect(findPath([from, to], from, 1000, to, 700, L), `${rise}: without it`).toBeNull();
+        // (from either side: the picture of its back faces right, so it does too, on top)
+        for (const fromX of [400, 1000]) {
+          const path = findPath([from, to], from, fromX, to, 700, L, 3, true)!;
+          const where = `${rise}, from ${fromX}`;
+          expect(path, where).toHaveLength(1);
+          expect(path[0]!.scale, where).toEqual({ dir: 1 });
+          expect(path[0]!.climb, where).toBeUndefined();
+          expect(path[0]!.landX, where).toBe(700);
+          expect(path[0]!.takeoffX, where).toBeCloseTo(700 - CLIMB_BACK * L, 6);
+        }
+      }
+      // (and higher than that, not at all)
+      const [from, to] = step(SCALE_MAX + 0.05);
+      expect(findPath([from, to], from, 1000, to, 700, L, 3, true)).toBeNull();
+    });
+
+    it("faces left on top when there is no room under the lip to face right, and is no way when there is room for neither", () => {
+      const [from, to] = step(MAX_UP + 0.3, { x0: 650 });
+      const hop = findPath([from, to], from, 1000, to, 700, L, 3, true)![0]!;
+      expect(hop.scale).toEqual({ dir: -1 });
+      expect(hop.takeoffX).toBeCloseTo(700 + CLIMB_BACK * L, 6);
+      const [narrow, high] = step(MAX_UP + 0.3, { x0: 650, x1: 700 });
+      expect(findPath([narrow, high], narrow, 680, high, 700, L, 3, true)).toBeNull();
+    });
+
+    it("leaves a step it can leap up a leap (the cat's own to go up the face of, now and then), and one about as high as its hang a climb", () => {
+      for (const rise of [STEP_MAX + 0.1, 2.5, MAX_UP - 0.05]) {
+        const [from, to] = step(rise);
+        const hop = findPath([from, to], from, 400, to, 700, L, 3, true)![0]!;
+        expect(hop.scale, `${rise}`).toBeUndefined();
+        expect(hop.climb, `${rise}`).toBeUndefined();
+        expect(hop.landX, `${rise}`).toBe(700);
+      }
+      const [from, to] = step(1.4);
+      expect(findPath([from, to], from, 400, to, 700, L, 3, true)![0]!.climb).toEqual({ dir: 1 });
     });
   });
 });
@@ -3700,6 +3748,251 @@ describe("hauling itself up a low step", () => {
     expect(climbed).toBeGreaterThan(10);
     const films = runSession({ seed: 3, seconds: 300, chaos: { film: true, hand: true } });
     expect(films.violations).toEqual([]);
+  });
+});
+
+describe("going up the face of a card, its back to the viewer (where the painter can draw that)", () => {
+  /** Two wide shelves, one `rise` body lengths above the other, and a painter that can draw the cat from behind (or one that says it cannot, or, with null, says nothing). */
+  const stairs = (rise: number, rearView: boolean | null = true): World => {
+    const body = browseWorld(defaultPage()).bodyLength;
+    return {
+      viewport: { x: 0, y: 0, w: 1920, h: 1080 },
+      bodyLength: body,
+      surfaces: [
+        { id: "low", kind: "shelfTop", y: 800, x0: 300, x1: 1500, weight: 1 },
+        { id: "high", kind: "shelfTop", y: 800 - rise * body, x0: 300, x1: 1500, weight: 1 },
+      ],
+      keepOut: [],
+      targets: [],
+      mode: "browse",
+      player: "none",
+      controlsUp: false,
+      quiet: false,
+      reducedMotion: false,
+      ...(rearView === null ? {} : { rearView }),
+    };
+  };
+  /** `seconds` of a cat on `world`: its frames, and for each the shelf it stood on and the shelf it was leaping to, if it was. */
+  const afternoon = (seed: number, world: World, seconds = 600) => {
+    const engine = new CatEngine(seed);
+    const on: Array<string | null> = [];
+    const leaping: Array<string | null> = [];
+    const { frames } = stepCat(engine, world, seconds, 30, () => {
+      const dbg = engine.debug();
+      on.push(dbg.surfaceId);
+      leaping.push(dbg.act === "jump" ? dbg.jumpTo : null);
+    });
+    return { frames, on, leaping };
+  };
+  const leapsUp = (leaping: Array<string | null>): number => leaping.filter((to, i) => to === "high" && leaping[i - 1] !== "high").length;
+  /** The runs of frames in which the cat goes up the face of the card: the first and the last frame of each. */
+  const scales = (frames: CatFrame[]): Array<[number, number]> => {
+    const runs: Array<[number, number]> = [];
+    frames.forEach((f, i) => {
+      if (f.clip !== "scale" || frames[i - 1]?.clip === "scale") return;
+      let end = i;
+      while (frames[end + 1]?.clip === "scale") end++;
+      runs.push([i, end]);
+    });
+    return runs;
+  };
+
+  it("goes up a step too high for a hang by the face of the card now and then (and leaps up it the other times), hauling itself over the lip at the top; never without the painter, and the cat is as it was", () => {
+    let up = 0;
+    let leaps = 0;
+    for (const seed of [1, 3, 4]) {
+      const { frames, leaping } = afternoon(seed, stairs(2.5));
+      for (const [, end] of scales(frames)) {
+        // (on a page that keeps still, every way up the face ends in the climb over the lip)
+        expect(frames[end + 1]?.clip, `seed ${seed}, frame ${end + 1}`).toBe("climb");
+        up++;
+      }
+      leaps += leapsUp(leaping);
+    }
+    expect(up).toBeGreaterThanOrEqual(3);
+    expect(leaps).toBeGreaterThanOrEqual(1);
+    // without the painter, or with one that says it cannot: no scale, the leap up as it always was, and the same cat frame for frame either way
+    let before = 0;
+    for (const seed of [1, 3]) {
+      const without = afternoon(seed, stairs(2.5, null), 300);
+      expect(without.frames.some((f) => f.clip === "scale"), `seed ${seed}`).toBe(false);
+      before += leapsUp(without.leaping);
+      expect(afternoon(seed, stairs(2.5, false), 300).frames, `seed ${seed}`).toEqual(without.frames);
+    }
+    expect(before).toBeGreaterThan(0);
+  });
+
+  it("goes up a step too high to leap at only by the face of the card, and never without the painter", () => {
+    let up = 0;
+    for (const seed of [1, 3, 4]) {
+      const { frames, on, leaping } = afternoon(seed, stairs(4.3));
+      expect(leapsUp(leaping), `seed ${seed}`).toBe(0);
+      up += scales(frames).length;
+      // (it may come in on the upper shelf, and leap down from it; it does not get back up)
+      const without = afternoon(seed, stairs(4.3, false));
+      expect(without.frames.some((f) => f.clip === "scale"), `seed ${seed}`).toBe(false);
+      expect(without.on.some((id, i) => id === "high" && without.on[i - 1] === "low"), `seed ${seed}`).toBe(false);
+      expect(on.some((id, i) => id === "high" && on[i - 1] === "low"), `seed ${seed}`).toBe(true);
+    }
+    expect(up).toBeGreaterThanOrEqual(3);
+  });
+
+  it("goes straight up from where it stood at its pace, facing away and its head as the clip has it, the paws played by the distance climbed, and hangs from the lip at the top where the climb takes it on from", () => {
+    const world = stairs(2.5);
+    const body = world.bodyLength;
+    const high = 800 - 2.5 * body;
+    const step = (0.6 * body) / 30;
+    let seen = 0;
+    for (const seed of [1, 3, 4]) {
+      const { frames } = afternoon(seed, world);
+      for (const [start, end] of scales(frames)) {
+        seen++;
+        const where = `seed ${seed}, frames ${start}..${end}`;
+        const first = frames[start]!;
+        // it set off from its feet on the lower shelf, where it had walked to
+        expect(frames[start - 1]!.grounded, where).toBe(true);
+        expect(frames[start - 1]!.y, where).toBe(800);
+        expect(Math.abs(frames[start - 1]!.x - first.x), where).toBeLessThan(0.05 * body);
+        expect(first.y, where).toBeCloseTo(800, 0);
+        for (let i = start; i <= end; i++) {
+          const f = frames[i]!;
+          expect(f.x, where).toBe(first.x);
+          expect(f.facing, where).toBe(1);
+          expect(f.grounded, where).toBe(false);
+          expect(f.look, where).toBeUndefined();
+          expect(f.viewer, where).toBe(false);
+          if (i === start) continue;
+          // up at every frame, by as much as the odometer says it climbed, and at its pace once under way
+          const was = frames[i - 1]!;
+          expect(f.y, where).toBeLessThan(was.y);
+          expect(f.odometer - was.odometer, where).toBeCloseTo(was.y - f.y, 6);
+          if (i - start >= 12) expect(was.y - f.y, where).toBeCloseTo(step, 6);
+        }
+        // as long as the face is, at that pace, and a moment to get under way
+        expect(Math.abs((end - start + 1) / 30 - ((2.5 - 0.8) / 0.6 + 0.35 / 2)), where).toBeLessThan(0.1);
+        // the last of it a pace short of where its forepaws take hold of the lip, and then the climb from there: the frame at the point it ends up standing at, above where it went up
+        expect(frames[end]!.y - high, where).toBeGreaterThan(0.8 * body);
+        expect(frames[end]!.y - high, where).toBeLessThanOrEqual(0.8 * body + step + 1e-6);
+        const climb = frames[end + 1]!;
+        expect(climb.clip, where).toBe("climb");
+        expect(climb.progress, where).toBe(0);
+        expect(climb.y, where).toBe(high);
+        // (a walk stops within a few hundredths of a body length of its mark: the place under the lip)
+        expect(Math.abs(climb.x - climb.facing * CLIMB_BACK * body - first.x), where).toBeLessThan(0.05 * body);
+        let last = end + 1;
+        while (frames[last + 1]?.clip === "climb") last++;
+        expect(last - end, where).toBeGreaterThanOrEqual(Math.round(CLIMB_TIME * 30));
+        for (const g of frames.slice(end + 1, last + 1)) {
+          expect(g.x, where).toBe(climb.x);
+          expect(g.y, where).toBe(high);
+          expect(g.facing, where).toBe(climb.facing);
+        }
+        // and it is on its feet on top at the end of it
+        expect(frames[last]!.grounded, where).toBe(true);
+        expect(frames[last]!.progress, where).toBe(1);
+        expect(frames[last + 1]?.y ?? frames[last]!.y, where).toBe(high);
+      }
+    }
+    expect(seen).toBeGreaterThanOrEqual(3);
+  });
+
+  it("is not taken off the face by a hand, nor stroked, called or told on the way up", () => {
+    const world = stairs(2.5);
+    const body = world.bodyLength;
+    let tried = 0;
+    for (const seed of [1, 3, 4]) {
+      const engine = new CatEngine(seed);
+      let at = -1;
+      const { frames } = stepCat(engine, world, 600, 30, (f, t) => {
+        if (at >= 0 || f.clip !== "scale" || f.y > 800 - 0.5 * body) return;
+        at = Math.round(t * 30);
+        engine.send({ type: "cat.grab", at: { x: f.x, y: f.y - 0.5 * body } });
+        engine.send({ type: "cat.pet" });
+        engine.send({ type: "cat.call", at: { x: 400, y: 800 } });
+        engine.send({ type: "cat.command", command: "sit" });
+      });
+      if (at < 0) continue;
+      tried++;
+      const where = `seed ${seed}, frame ${at}`;
+      // it goes on up the face, over the lip and onto its feet on top, never in a hand, and not stroked
+      const rest = frames.slice(at + 1);
+      expect(rest[0]!.clip, where).toBe("scale");
+      const over = rest.findIndex((f) => f.clip !== "scale");
+      expect(rest[over]!.clip, where).toBe("climb");
+      const top = rest.findIndex((f) => f.clip === "climb" && f.grounded);
+      expect(top, where).toBeGreaterThan(over);
+      expect(rest.slice(0, top + 1).some((f) => f.carried || f.petted), where).toBe(false);
+    }
+    expect(tried).toBeGreaterThan(0);
+  });
+
+  it("lets go of the face and falls to what is under it when the page takes the ledge away from over it or moves it away, or the painter that draws it from behind goes", () => {
+    const body = stairs(2.5).bodyLength;
+    const changes: Array<[string, (w: World, f: CatFrame) => World]> = [
+      ["gone", (w) => ({ ...w, surfaces: w.surfaces.filter((s) => s.id !== "high") })],
+      ["moved", (w, f) => ({ ...w, surfaces: w.surfaces.map((s) => (s.id === "high" ? { ...s, x0: f.x + (f.x > 960 ? -6 : 3) * body, x1: f.x + (f.x > 960 ? -3 : 6) * body } : s)) })],
+      ["no painter", (w) => ({ ...w, rearView: false })],
+    ];
+    for (const [name, change] of changes) {
+      let tried = 0;
+      for (const seed of [1, 3, 4]) {
+        const engine = new CatEngine(seed);
+        const world = stairs(2.5);
+        let at = -1;
+        const { frames } = stepCat(engine, world, 600, 30, (f, t) => {
+          if (at >= 0 || f.clip !== "scale" || f.y > 800 - 0.6 * body) return;
+          at = Math.round(t * 30);
+          return change(world, f);
+        });
+        if (at < 0) continue;
+        tried++;
+        const where = `${name}, seed ${seed}, frame ${at}`;
+        const rest = frames.slice(at + 1);
+        // at once it is falling (off its feet, the leap's clip), and goes down, and only down, onto the shelf under it, on its feet, where it was
+        expect(rest[0]!.clip, where).toBe("jump");
+        expect(rest[0]!.grounded, where).toBe(false);
+        const down = rest.findIndex((f) => f.grounded);
+        expect(down, where).toBeGreaterThan(0);
+        expect(rest.slice(0, down + 1).every((f) => f.clip === "jump"), where).toBe(true);
+        for (let i = 1; i <= down; i++) expect(rest[i]!.y, where).toBeGreaterThanOrEqual(rest[i - 1]!.y);
+        expect(rest[down]!.y, where).toBe(800);
+        expect(rest[down]!.x, where).toBeCloseTo(frames[at]!.x, 3);
+      }
+      expect(tried, name).toBeGreaterThan(0);
+    }
+  });
+
+  it("does not go up a face that has something on it the cat keeps out of (the card the viewer is on): it leaps", () => {
+    const base = stairs(2.5);
+    const body = base.bodyLength;
+    const high = 800 - 2.5 * body;
+    // (across the whole face between the two shelves, clear of where the cat stands on either)
+    const world: World = { ...base, keepOut: [{ x: 300, y: high + 10, w: 1200, h: 800 - 1.3 * body - (high + 10) }] };
+    let leaps = 0;
+    for (const seed of [1, 3, 4]) {
+      const { frames, leaping } = afternoon(seed, world);
+      expect(frames.some((f) => f.clip === "scale"), `seed ${seed}`).toBe(false);
+      leaps += leapsUp(leaping);
+    }
+    expect(leaps).toBeGreaterThan(0);
+  });
+
+  it("is the same cat from the same seed, frame for frame", () => {
+    const world = stairs(2.5);
+    const seed = [1, 3, 4].find((s) => afternoon(s, world).frames.some((f) => f.clip === "scale"));
+    expect(seed).toBeDefined();
+    expect(afternoon(seed!, world).frames).toEqual(afternoon(seed!, world).frames);
+  });
+
+  it("goes up the faces of the cards in afternoons of a page that is scrolled, flung, resized and changed, with nothing wrong", () => {
+    const chaos = { scroll: true, focus: true, resize: true, route: true, hand: true, mouse: true };
+    let scaled = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      const stats = runSession({ seed, seconds: 600, chaos: seed > 2 ? { ...chaos, fling: true } : chaos, rearView: true });
+      expect(stats.violations, `seed ${seed}`).toEqual([]);
+      scaled += stats.acts["scale"] ?? 0;
+    }
+    expect(scaled).toBeGreaterThan(5);
   });
 });
 
