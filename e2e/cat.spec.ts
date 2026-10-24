@@ -2120,16 +2120,19 @@ const catIsOnThePage = (tv: Page) =>
   );
 /** Whether the box that takes a hand is the topmost thing at a point of the page. */
 const takesAHandAt = (tv: Page, at: { x: number; y: number }) => tv.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".kino-cat-hit") != null, at);
-/** The middle of a poster that is whole on the screen and clear of the given boxes (the cat, its menu): a place to click that is the page's. */
+/**
+ * The middle of a poster that is on the screen and clear of the given boxes (the cat, its menu): a place to click that is the page's. It is the MIDDLE that must be
+ * clear, not the whole poster: on a phone held upright the posters are three to a row from edge to edge, and a menu beside the cat leaves no whole one.
+ */
 const aPosterClearOf = (tv: Page, boxes: Array<{ x: number; y: number; width: number; height: number } | null>) =>
   tv.evaluate((avoid) => {
-    const near = (rect: DOMRect, box: { x: number; y: number; width: number; height: number }) => rect.left < box.x + box.width + 20 && rect.right > box.x - 20 && rect.top < box.y + box.height + 20 && rect.bottom > box.y - 20;
+    const clear = (x: number, y: number, box: { x: number; y: number; width: number; height: number }) => x < box.x - 20 || x > box.x + box.width + 20 || y < box.y - 20 || y > box.y + box.height + 20;
     for (const tile of document.querySelectorAll<HTMLElement>('[data-testid="tv-browse-tile"]')) {
       const rect = tile.getBoundingClientRect();
-      if (rect.left < 20 || rect.right > innerWidth - 20 || rect.top < 20 || rect.bottom > innerHeight - 20) continue;
-      if (avoid.some((box) => box && near(rect, box))) continue;
       const x = rect.left + rect.width / 2;
       const y = rect.top + rect.height / 2;
+      if (x < 20 || x > innerWidth - 20 || y < 20 || y > innerHeight - 20) continue;
+      if (avoid.some((box) => box && !clear(x, y, box))) continue;
       if (tile.contains(document.elementFromPoint(x, y))) return { x, y };
     }
     return null;
