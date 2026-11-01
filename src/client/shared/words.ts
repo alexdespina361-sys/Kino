@@ -14,6 +14,12 @@ export function trackName(track: { label: string; lang?: string | undefined }): 
   return localTrackLabel(track, getLanguage());
 }
 
+/** The film has more than one sound to listen to (the audio languages its stream carries): what makes the menu of tracks "Audio & subtitles" and not just "Subtitles". */
+export const hasAudioChoice = (player: Pick<PlayerState, "audio">): boolean => (player.audio?.tracks.length ?? 0) > 1;
+
+/** What the menu of tracks and the button that opens it are called: a film with one sound has nothing to choose there, and the name does not promise it. */
+export const tracksTitle = (player: Pick<PlayerState, "audio">): string => t(hasAudioChoice(player) ? "player.audioSubtitles" : "player.subtitles");
+
 /** "Speed 1.5×", "Subtitles: Română": what just changed on the player. */
 export function noticeText(notice: ChangeNotice): string {
   switch (notice.kind) {
