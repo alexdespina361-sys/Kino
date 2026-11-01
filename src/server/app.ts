@@ -24,6 +24,7 @@ import { countVisits, statsRoutes } from "./stats/routes";
 import type { VisitCounter } from "./stats/visits";
 import { subsyncRoutes, type SubsyncStats } from "./subsync/routes";
 import { MemorySubsyncStore, type SubsyncStore } from "./subsync/store";
+import { trustedProxies } from "./trust";
 
 export interface AppOptions {
   /** Accounts, profiles and what they watched. Without it the server has no sign-in and every screen just keeps its own history. The app closes it when it stops. */
@@ -47,7 +48,7 @@ export interface AppOptions {
   maxAccounts?: number;
   /** How many accounts one address may make in an hour (10 unless set). */
   signUpsPerHour?: number;
-  /** How many proxies sit in front of the server (a host like Render has one), so a visitor's address and https are read from the right place. */
+  /** How many proxies sit in front of the server (a host like Render has one), so a visitor's address and https are read from the right place (Cloudflare's addresses are passed over on the way: `trust.ts`). */
   trustProxy?: boolean | number;
   /** Tests use a cheaper password hash. */
   passwordCost?: PasswordCost;
@@ -98,12 +99,13 @@ export function defaultFixturesDir(): string {
 }
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
-  // A number is "this many proxies in front of me" (Fastify no longer reads a bare number as that, so spell it out).
+  // A number is "this many proxies in front of me" (Fastify no longer reads a bare number as that, so spell it out), and zero is none. Cloudflare's
+  // addresses and the host's own are not taken for the visitor's on the way (trust.ts).
   const proxies = options.trustProxy;
-  const trustProxy = typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies;
+  const trustProxy = typeof proxies === "number" ? (proxies > 0 ? trustedProxies(proxies) : false) : proxies;
   const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
   // (First of all: a hook added to the app reaches only what is registered after it, and the pages are served by what comes below.)
-  if (options.visits) countVisits(app, { counter: options.visits, behindProxy: Boolean(proxies) });
+  if (options.visits) countVisits(app, options.visits);
   await app.register(fastifyCompress, {
     threshold: 1024,
   });

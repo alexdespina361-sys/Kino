@@ -123,7 +123,8 @@ describe("the owner's stats", () => {
       used: { today: 5, week: 14, month: 30 },
       devices: { browser: 31, tv: 12, remote: 4 },
     },
-    visits: { since: "2026-10-30", visitors: { today: 12, week: 61, month: 61 }, loads: { today: 30, week: 120, month: 120 }, addressFrom: { cloudflare: 118, forwarded: 2, connection: 0 } },
+    visits: { since: "2026-10-30", visitors: { today: 12, week: 61, month: 61 }, loads: { today: 30, week: 120, month: 120 } },
+    you: { address: "203.0.113.9", connection: "10.1.2.3", forwardedFor: "203.0.113.9, 172.70.1.2", cloudflare: null },
     days: [
       { day: "2026-10-30", newAccounts: 1, accounts: 34, visitors: 20, loads: 40 },
       { day: "2026-10-31", newAccounts: 0, accounts: 34, visitors: 29, loads: 50 },
@@ -159,7 +160,8 @@ describe("the owner's stats", () => {
     expect(said).toContain("counted since 2026-10-30; nobody was counted before");
     expect(said).toContain("people    today 12, last 7 days 61, last 30 days 61");
     expect(said).toContain("loads     today 30, last 7 days 120, last 30 days 120");
-    expect(said).toContain("address   from Cloudflare on 118 loads, from X-Forwarded-For on 2, from the connection on 0");
+    expect(said).toContain("Your address, as the server reads it: 203.0.113.9");
+    expect(said).toContain("the connection 10.1.2.3, X-Forwarded-For 203.0.113.9, 172.70.1.2, Cloudflare says none");
     expect(said).toContain("2026-11-01 14:30 UTC");
     // the days, newest last, with the columns for what the server has
     expect(said.split("\n").filter((line) => /^\s*2026-1\d-\d\d\s+\d/.test(line)).map((line) => line.trim().split(/\s+/))).toEqual([

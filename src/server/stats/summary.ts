@@ -1,6 +1,6 @@
 import type { Registration } from "../../shared";
 import type { AccountUsage } from "../accounts/store";
-import { dayOf, type AddressSource, type DayVisits } from "./visits";
+import { dayOf, type DayVisits } from "./visits";
 
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -9,6 +9,17 @@ export interface Windows {
   today: number;
   week: number;
   month: number;
+}
+
+/**
+ * How the server read the request that asked, which is the owner's own: `address` is the one the visitor count and the rate limits use for a request like
+ * it (see `trust.ts`), the rest is what it was read from. The way to see that a host's proxies give the visitor's address and not their own.
+ */
+export interface RequestSeen {
+  address: string;
+  connection: string | null;
+  forwardedFor: string | null;
+  cloudflare: string | null;
 }
 
 /** What the owner sees (`GET /api/admin/stats`, `scripts/stats.mjs`): counts and days, never a person. */
@@ -37,9 +48,9 @@ export interface StatsView {
     visitors: Windows;
     /** Page loads in those days. */
     loads: Windows;
-    /** Where the visitors' addresses were read from since the server started (page loads): when a proxy is in front and most are `connection`, the address is the proxy's and the counts are too low. */
-    addressFrom: Record<AddressSource, number>;
   };
+  /** The request that asked, as the server read its address. */
+  you?: RequestSeen;
   /** The last days, the newest last. */
   days: Array<{ day: string; newAccounts?: number; accounts?: number; visitors?: number; loads?: number }>;
 }
@@ -49,10 +60,11 @@ export interface StatsInput {
   /** How many days to list. */
   days: number;
   accounts?: { usage: AccountUsage; limit: number; signUps: Registration };
-  visits?: { since: string | undefined; days: ReadonlyMap<string, DayVisits>; sources: Readonly<Record<AddressSource, number>> };
+  visits?: { since: string | undefined; days: ReadonlyMap<string, DayVisits> };
+  you?: RequestSeen;
 }
 
-export function statsView({ at, days, accounts, visits }: StatsInput): StatsView {
+export function statsView({ at, days, accounts, visits, you }: StatsInput): StatsView {
   const back = (n: number) => dayOf(at - n * DAY_MS);
   const listed = Array.from({ length: days }, (_, index) => back(days - 1 - index));
   const windows = (count: (day: string) => number): Windows => {
@@ -93,10 +105,10 @@ export function statsView({ at, days, accounts, visits }: StatsInput): StatsView
             since: visits.since ?? null,
             visitors: windows((day) => visits.days.get(day)?.visitors ?? 0),
             loads: windows((day) => visits.days.get(day)?.loads ?? 0),
-            addressFrom: { ...visits.sources },
           },
         }
       : {}),
+    ...(you ? { you } : {}),
     days: listed.map((day) => ({
       day,
       ...(accounts && made ? { newAccounts: made.get(day) ?? 0, accounts: accounts.usage.madeAt.filter((moment) => dayOf(moment) <= day).length } : {}),
