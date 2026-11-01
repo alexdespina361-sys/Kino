@@ -151,6 +151,7 @@ describe("counting the people who open the site", () => {
       ["the api", { url: "/api/health", headers: page() }],
       ["a path the site does not have (the page answers it all the same)", { url: "/wp-login.php", headers: page() }],
       ["a deeper path", { url: "/tv/anything", headers: page() }],
+      ["the notice about the count", { url: "/privacy.html", headers: page() }],
       ["a request that is not a GET", { url: "/", method: "HEAD", headers: page() }],
       ["something that is not asking for a page", { url: "/", headers: { ...page(), accept: "application/json" } }],
       ["a frame", { url: "/", headers: page(PHONE, { "sec-fetch-dest": "iframe" }) }],

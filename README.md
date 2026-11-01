@@ -219,8 +219,8 @@ pnpm build && pnpm start     # http://localhost:8787
 - **The owner's stats**: `node scripts/stats.mjs` tells how many accounts there are (made and used today, this week, this month; the devices signed in) and how many
   people opened the site (a count per day: a hash of the address, browser and language with a secret that is thrown away at the end of the day, so nothing that is
   kept says who; no cookie; people who send Do Not Track are not counted), with a table of the last days. It answers only to the team's token. Counting starts at the
-  deploy; nothing earlier is known. What is kept, what is not counted, what was not tested (the real Cloudflare and Render): [docs/stats.md](docs/stats.md)
-  (`src/server/stats/`, `scripts/stats.mjs`)
+  deploy; nothing earlier is known. What is kept, what is not counted, what was not tested (the real Cloudflare and Render): [docs/stats.md](docs/stats.md);
+  the notice for visitors, in English, Romanian and Italian, is the page `/privacy.html` (`src/server/stats/`, `scripts/stats.mjs`, `public/privacy.html`)
 
 **Phone**
 - Pair by QR scan (camera) or by code; a QR link opened from the phone's camera app pairs by itself. A phone that already has a TV is asked
@@ -761,7 +761,7 @@ src/server/    sessions/ (registry: devices, codes, controllers; pairings: which
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),
                friends/ (the state both screens share, what is new, the friends' pages of the TV), chat/ (the chat of two friends: the phone's sheet, the TV's pages, what waits), feedback/ (the Feedback form, the picture of the screen and its marks),
                i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
-public/        copied as it is into the built page: the web app manifest and its icons
+public/        copied as it is into the built page: the web app manifest and its icons, and privacy.html (how visits are counted)
 fixtures/      sample.mp4, long.mp4 (40 s, for Up Next), hls/ (VP9, so Playwright's Chromium can decode them)
 e2e/           Playwright specs and helpers
 ```

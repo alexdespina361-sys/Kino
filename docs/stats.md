@@ -55,8 +55,10 @@ when the accounts are nowhere):
 | `visits:2026-11-02` | `{ visitors: 12, loads: 30 }` | for good (a few bytes a day) |
 | `seen:2026-11-02` | the day's salt and the hashes of its visitors | until the day is over |
 
-Not stored, anywhere, at any time: the address, the browser's name, the language, a cookie or anything put on the visitor's device. Nothing is sent
-to another service. A day stops adding new visitors at 20,000 (the loads go on being counted), so a flood of made-up browsers cannot grow what is kept.
+The counter never stores the address, the browser's name or the language (they are only hashed), sets no cookie, puts nothing on the visitor's device and sends
+nothing to another service. **Outside the counter, and not touched by it:** the server's ordinary request log (Fastify's, which has each request's address; the host
+keeps it for a short while) and the records of Render and Cloudflare, which any site behind them has. A day stops adding new visitors at 20,000 (the loads go on
+being counted), so a flood of made-up browsers cannot grow what is kept.
 
 **Not counted:** anything that is not a person opening a page (files of the site, the API, a request that does not ask for a page, a page in a frame,
 a prefetch), a path the site does not have, robots that say what they are (search engines, link previews, uptime checks, scripts), and **people whose browser
@@ -70,15 +72,11 @@ low**: that line is how to see it.
 **Turning it off:** `VISITOR_COUNT=off` on the host (and restart): nobody is counted, the stats say so, and what was counted stays until it is deleted
 (`drop table kino_visits` in the database, or the file `visits.json`).
 
-## For the site's privacy text
+## The notice
 
-The site's privacy text should say that the visits are counted. A sentence that matches what this does:
-
-> We count how many people open the site, per day. For that, a short hash of your address, browser and language (with a secret that changes every day and is
-> thrown away at the end of it) is kept for the rest of the day; afterwards only the number of visitors remains. We do not use cookies for this and do not
-> keep your address. If your browser sends Do Not Track or Global Privacy Control, you are not counted.
-
-Whether that is enough for the site is the owner's call (and a lawyer's, if it matters); it is how this is built, not a legal opinion.
+The app has no privacy text of its own (nothing for the accounts, the history or the feedback either). The visit count has a notice, `public/privacy.html`, served
+at `/privacy.html` in English, Romanian and Italian: it says only how visits are counted, and says that it is not the whole policy. It is not linked from the app;
+link it from wherever a privacy text goes. Whether it is enough is the owner's call (and a lawyer's, if it matters); it says how this is built and is not a legal opinion.
 
 ## What this does not tell, and what was not tested
 
