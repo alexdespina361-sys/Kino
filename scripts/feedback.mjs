@@ -322,9 +322,15 @@ async function stats({ flags }) {
     console.log(`\nVisitors (${v.since ? `counted since ${v.since}; nobody was counted before` : "none counted yet"}):`);
     console.log(`  people    ${spans(v.visitors)}   (added day by day: a person who came on three days is three)`);
     console.log(`  loads     ${spans(v.loads)}   (page loads of / and /tv)`);
-    console.log(`  address   from Cloudflare on ${v.addressFrom.cloudflare} loads, from X-Forwarded-For on ${v.addressFrom.forwarded}, from the connection on ${v.addressFrom.connection}   (since the server started; behind a proxy, mostly "the connection" means the counts are too low)`);
     console.log("  not counted: robots that say they are, and people who send Do Not Track or Global Privacy Control");
   } else console.log("\nVisitors: not counted on this server (VISITOR_COUNT=off, or the count could not be opened: see the server's log).");
+  const you = data.you;
+  if (you) {
+    const text = (value) => value ?? "none";
+    console.log(`\nYour address, as the server reads it: ${you.address}`);
+    console.log(`  the connection ${text(you.connection)}, X-Forwarded-For ${text(you.forwardedFor)}, Cloudflare says ${text(you.cloudflare)}`);
+    console.log("  The visitor count and the rate limits use that address for you: if it is not your own, they are counting the wrong thing.");
+  }
   const columns = [
     ["day", "Day", 10],
     ...(a ? [["newAccounts", "New accounts", 12], ["accounts", "Accounts", 8]] : []),

@@ -27,6 +27,9 @@ Visitors (counted since 2026-11-02; nobody was counted before):
 2026-11-02             3        37        12      30
 ```
 
+Under the visitors, the command also says how the server read the address of the request that asked, yours: *Your address, as the server reads it: …* (see "Where
+the address is read from").
+
 ## What the numbers are
 
 - **All days are UTC days.** A day ends at 02:00 in Romania (03:00 in summer). "Last 7 days" is today and the six before it.
@@ -64,10 +67,15 @@ being counted), so a flood of made-up browsers cannot grow what is kept.
 a prefetch), a path the site does not have, robots that say what they are (search engines, link previews, uptime checks, scripts), and **people whose browser
 sends Do Not Track or Global Privacy Control**. A robot that calls itself a browser is counted; there is no telling it apart.
 
-**Where the address is read from.** With a proxy in front (`TRUST_PROXY`, 1 on Render) the visitor is the address Cloudflare saw (`CF-Connecting-IP`), else the first
-of `X-Forwarded-For`; with none, the connection's own. The stats say how many loads each kind of address was behind since the server started
-(`address` line). **If a host's proxy hands the server its own address and not the visitor's, nearly all would be "the connection" and the counts would be too
-low**: that line is how to see it.
+**Where the address is read from.** From the connection, through the proxies in front of the server: `TRUST_PROXY` says how many there are (1 on Render), and
+Cloudflare's addresses and the ones inside a host's own network are passed over as well, so the visitor is the first address of `X-Forwarded-For`, read from the
+right, that is none of those (`src/server/trust.ts`). It is the address the rate limits use too (sign-ups, wrong passwords, link polls, feedback). What a visitor
+writes in that header comes first in the list and is never read, and `CF-Connecting-IP` is not used (anyone who reaches the host directly could write it). With no proxy
+in front, it is the connection's own. **To see it work:** the stats end with *Your address, as the server reads it*, which must be your own public address (what a
+"what is my IP" page says): if it is a Cloudflare address or the host's, the count and the limits are counting the wrong thing. Cloudflare's addresses
+(https://www.cloudflare.com/ips) are listed in `trust.ts` as they were on 2026-11-01; they change rarely, and one that is missing is read as a visitor, as every one
+was before this. Someone with a Cloudflare account of their own can send requests to the host from Cloudflare's machines and write the list as they please: what that
+gets them is a say in a rate limit and a count, no more.
 
 **Turning it off:** `VISITOR_COUNT=off` on the host (and restart): nobody is counted, the stats say so, and what was counted stays until it is deleted
 (`drop table kino_visits` in the database, or the file `visits.json`).
@@ -83,9 +91,10 @@ link it from wherever a privacy text goes. Whether it is enough is the owner's c
 - **Nothing about the time before it was deployed.** The count starts at the first load after the deploy. Cloudflare's own *Analytics & Logs → Traffic* for
   `kino.24-7.ro` is the only place that has the earlier visits (unique visitors by address, as far back as the plan keeps).
 - **Tried:** the counting rules, the day roll-over, the restart in the middle of a day, the table next to the accounts (in a PGlite database), the command against
-  a real server process (file storage, `TRUST_PROXY=1`, headers sent by hand), and that nothing written holds an address or a browser's name.
-- **Not tried:** the real thing behind Cloudflare and Render, and a real Postgres. The `address` line is for that: after the first deploy, open the
-  site and run the command; if `from Cloudflare` or `from X-Forwarded-For` is not most of the loads, the counts are wrong and the reading of the address has to change.
+  a real server process (file storage, `TRUST_PROXY=1`, headers sent by hand), that nothing written holds an address or a browser's name, and the address read
+  through every chain that could be built by hand (the host alone, Cloudflare in front, two Cloudflare machines, a proxy inside the host, IPv6, a list a visitor wrote,
+  a request sent straight to the host dressed as Cloudflare's), in tests and against that process.
+- **Not tried before it was deployed:** the real thing behind Cloudflare and Render. *Your address* in the stats is for that: it must be your own.
 
 ## Where it is
 

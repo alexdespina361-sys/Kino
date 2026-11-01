@@ -3,7 +3,7 @@ import type { Registration } from "../../shared";
 import { DEFAULT_MAX_ACCOUNTS, signUpsNow } from "../accounts/routes";
 import type { AccountStore } from "../accounts/store";
 import { teamGuard } from "../feedback/routes";
-import { statsView } from "./summary";
+import { statsView, type RequestSeen } from "./summary";
 import type { VisitCounter } from "./visits";
 
 /** Programs that fetch pages and say so (search engines, link previews, uptime checks, scripts). Anything that calls itself a browser is counted. */
@@ -14,15 +14,22 @@ const header = (request: FastifyRequest, name: string): string | undefined => {
   return Array.isArray(value) ? value[0] : value;
 };
 
+/** How the server read this request's address, to show to whoever asked (see `RequestSeen`). */
+const seenAs = (request: FastifyRequest): RequestSeen => ({
+  address: request.ip,
+  connection: request.socket.remoteAddress ?? null,
+  forwardedFor: header(request, "x-forwarded-for") ?? null,
+  cloudflare: header(request, "cf-connecting-ip") ?? null,
+});
+
 /**
  * Count the people who open the site: a page load of `/` (the phone) or `/tv`, in a browser, that was answered (a page the browser already has comes back as a 304,
  * and is a visit all the same). Not counted: anything but a person opening a page (assets, the api, a link preview, a prefetch, a robot that says so), and people
  * who send Do Not Track or Global Privacy Control, who asked not to be. It runs after the answer is sent, so it can never slow a page or break one.
  *
- * `behindProxy` says that a proxy of the host's sits in front (so the headers it sets can be believed): then the visitor is the address Cloudflare saw, or
- * else the first one in X-Forwarded-For. The address is only ever hashed (see `VisitCounter`).
+ * The visitor is `request.ip`, which the app has read through the proxies in front of it (`trust.ts`). The address is only ever hashed (see `VisitCounter`).
  */
-export function countVisits(app: FastifyInstance, { counter, behindProxy }: { counter: VisitCounter; behindProxy: boolean }): void {
+export function countVisits(app: FastifyInstance, counter: VisitCounter): void {
   app.addHook("onResponse", async (request, reply) => {
     if (request.method !== "GET" || (reply.statusCode !== 200 && reply.statusCode !== 304)) return;
     const page = (request.url.split("?")[0] ?? "").replace(/\/+$/, "");
@@ -34,9 +41,7 @@ export function countVisits(app: FastifyInstance, { counter, behindProxy }: { co
     if (header(request, "dnt") === "1" || header(request, "sec-gpc") === "1") return;
     const agent = header(request, "user-agent") ?? "";
     if (!agent || NOT_PEOPLE.test(agent)) return;
-    const cloudflare = behindProxy ? header(request, "cf-connecting-ip")?.trim() : undefined;
-    const forwarded = behindProxy && !cloudflare ? header(request, "x-forwarded-for")?.split(",")[0]?.trim() : undefined;
-    counter.count(cloudflare || forwarded || request.ip, agent, header(request, "accept-language") ?? "", cloudflare ? "cloudflare" : forwarded ? "forwarded" : "connection");
+    counter.count(request.ip, agent, header(request, "accept-language") ?? "");
   });
 }
 
@@ -50,7 +55,7 @@ export interface StatsRoutesOptions {
   now?: (() => number) | undefined;
 }
 
-/** The owner's stats, `GET /api/admin/stats?days=30`: how many accounts and how many visitors, by day (see `summary.ts`). Counts only; the team's token and nothing else. */
+/** The owner's stats, `GET /api/admin/stats?days=30`: how many accounts and how many visitors, by day (see `summary.ts`), and how the server read the address of the request that asked. Counts only; the team's token and nothing else. */
 export const statsRoutes: FastifyPluginAsync<StatsRoutesOptions> = async (app, { adminToken, accounts, visits, registration = "open", maxAccounts = DEFAULT_MAX_ACCOUNTS, now = Date.now }) => {
   const team = teamGuard(adminToken);
   app.addHook("onRequest", async (_request, reply) => {
@@ -65,6 +70,7 @@ export const statsRoutes: FastifyPluginAsync<StatsRoutesOptions> = async (app, {
         days,
         ...(accounts ? { accounts: { usage: accounts.usage(), limit: maxAccounts, signUps: signUpsNow(registration, accounts.countAccounts(), maxAccounts) } } : {}),
         ...(visits ? { visits: visits.records() } : {}),
+        you: seenAs(request),
       }),
     );
   });

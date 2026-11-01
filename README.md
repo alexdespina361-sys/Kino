@@ -43,7 +43,7 @@ pnpm build && pnpm start     # http://localhost:8787
 | `REGISTRATION` | `open` | `closed`: nobody new can make an account (once the people it is for have one). |
 | `MAX_ACCOUNTS` | `500` | A cap on accounts, for a small server: sign-ups close by themselves once there are this many. |
 | `SIGNUPS_PER_HOUR` | `10` | How many accounts one address may make in an hour (a household or a school behind one address may want more). |
-| `TRUST_PROXY` | `1` on Render, else off | How many proxies sit in front (a number, `true` or `false`), so the rate limits see the real address. |
+| `TRUST_PROXY` | `1` on Render, else off | How many proxies sit in front (a number, `true` or `false`), so the rate limits see the real address. Cloudflare's addresses and a host's own network are passed over on the way, so a site behind Cloudflare sees the visitor and not Cloudflare (`src/server/trust.ts`). |
 | `LIBRARY` | on | `off` starts without the browsing library. |
 | `TMDB_API_KEY` | built-in key of the Filmpire source | The library's TMDB key. Set your own; the built-in one is shared by everybody who runs this. TMDB's free licence is for non-commercial use and asks for a notice, which the phone's library shows (see [Library](#library)). |
 | `EDGE_STREAM_PROXY_URL` | – | The separate video relay endpoint. For the signed Node relay use `https://YOUR-RELAY-HOST/api/proxy`; see [relay setup](STREAM_RELAY_SETUP.md). |
@@ -712,7 +712,8 @@ Anything that runs a Node process does (Northflank, Railway, Fly, a VPS):
   (the page talks over `/ws`), and `/api/health` as the health check.
 - **Set `TRUST_PROXY=1`** (the number of proxies in front of the server; it is on by itself only on Render). Without it every visitor looks like one address
   to the rate limits (10 sign-ups an hour, wrong codes, link polls) and they apply to everybody together (twenty wrong codes from anybody
-  then pause pairing for all).
+  then pause pairing for all). Behind Cloudflare as well, that is all: its addresses are passed over for you (`src/server/trust.ts`), and `node scripts/stats.mjs`
+  ends with how your own request is read, which should be your own address.
 - `DATABASE_URL` as above, and **one running copy per database**: two copies (the old host and the new one) write over each other.
 
 Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),

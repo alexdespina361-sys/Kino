@@ -51,13 +51,8 @@ export interface DayVisits {
   loads: number;
 }
 
-/** Where the visitor's address was read from: Cloudflare's header, the first of X-Forwarded-For, or the connection itself. */
-export type AddressSource = "cloudflare" | "forwarded" | "connection";
-
 export class VisitCounter {
   private readonly days = new Map<string, DayVisits>();
-  /** How many loads each kind of address was behind since the server started: the way to see that a host's proxy gives the visitor's address (and not its own). */
-  private readonly sources: Record<AddressSource, number> = { cloudflare: 0, forwarded: 0, connection: 0 };
   private seen: { day: string; salt: string; hashes: Set<string> } | undefined;
   private readonly dirty = new Set<string>();
   private readonly removed = new Set<string>();
@@ -177,8 +172,7 @@ export class VisitCounter {
   }
 
   /** One page load by this visitor. (The address, browser and language are only ever seen here, to be hashed.) */
-  count(address: string, agent: string, language: string, source: AddressSource = "connection"): void {
-    this.sources[source]++;
+  count(address: string, agent: string, language: string): void {
     const day = dayOf(this.now());
     this.rollOver(day);
     // A new day starts with a new salt, so today's visitors cannot be told from yesterday's.
@@ -195,9 +189,9 @@ export class VisitCounter {
     this.touch(`visits:${day}`);
   }
 
-  /** What each day came to, the first day there is a number for, and where the addresses came from since the server started. */
-  records(): { since: string | undefined; days: ReadonlyMap<string, DayVisits>; sources: Readonly<Record<AddressSource, number>> } {
-    return { since: [...this.days.keys()].sort()[0], days: this.days, sources: { ...this.sources } };
+  /** What each day came to, and the first day there is a number for. */
+  records(): { since: string | undefined; days: ReadonlyMap<string, DayVisits> } {
+    return { since: [...this.days.keys()].sort()[0], days: this.days };
   }
 }
 

@@ -82,7 +82,8 @@ describe("the owner's stats", () => {
         used: { today: 0, week: 1, month: 1 },
         devices: { browser: 1 },
       },
-      visits: { since: "2026-11-01", visitors: { today: 2, week: 2, month: 2 }, loads: { today: 2, week: 2, month: 2 }, addressFrom: { cloudflare: 0, forwarded: 0, connection: 2 } },
+      visits: { since: "2026-11-01", visitors: { today: 2, week: 2, month: 2 }, loads: { today: 2, week: 2, month: 2 } },
+      you: { address: "127.0.0.1", connection: "127.0.0.1", forwardedFor: null, cloudflare: null },
       days: [
         { day: "2026-10-30", newAccounts: 2, accounts: 2, visitors: 0, loads: 0 },
         { day: "2026-10-31", newAccounts: 0, accounts: 2, visitors: 0, loads: 0 },
@@ -180,22 +181,19 @@ describe("counting the people who open the site", () => {
     await server.close();
   });
 
-  it("tells visitors apart by the address Cloudflare saw when a proxy of the host is in front, and by nothing a visitor can send when there is none", async () => {
+  it("tells visitors apart by the address behind Cloudflare and the host's proxy, and by nothing a visitor can send when there is no proxy", async () => {
     const behind = await site({ trustProxy: 1 });
-    await behind.server.inject({ url: "/", headers: page(PHONE, { "cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "10.0.0.1" }) });
-    await behind.server.inject({ url: "/", headers: page(PHONE, { "cf-connecting-ip": "203.0.113.8", "x-forwarded-for": "10.0.0.1" }) });
-    await behind.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "198.51.100.5, 10.0.0.1" }) }); // (no Cloudflare: the first address)
-    await behind.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "198.51.100.6, 10.0.0.1" }) });
-    expect(behind.today()).toEqual({ visitors: 4, loads: 4 });
-    // (and it can be seen where the addresses came from, which is how a host whose proxy gives its own is found out)
-    expect(behind.visits.records().sources).toEqual({ cloudflare: 2, forwarded: 2, connection: 0 });
+    // (Cloudflare in front of the host: the visitor, then the Cloudflare machine the host's proxy saw. Two people through the same machine are two.)
+    await behind.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.7, 172.70.1.2" }) });
+    await behind.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.8, 172.70.1.2" }) });
+    await behind.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.8, 172.70.1.2" }) }); // (the second one again)
+    expect(behind.today()).toEqual({ visitors: 2, loads: 3 });
     await behind.server.close();
 
     const alone = await site();
-    await alone.server.inject({ url: "/", headers: page(PHONE, { "cf-connecting-ip": "203.0.113.7" }) });
-    await alone.server.inject({ url: "/", headers: page(PHONE, { "cf-connecting-ip": "203.0.113.8" }) });
+    await alone.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.7", "cf-connecting-ip": "203.0.113.7" }) });
+    await alone.server.inject({ url: "/", headers: page(PHONE, { "x-forwarded-for": "203.0.113.8", "cf-connecting-ip": "203.0.113.8" }) });
     expect(alone.today()).toEqual({ visitors: 1, loads: 2 });
-    expect(alone.visits.records().sources).toEqual({ cloudflare: 0, forwarded: 0, connection: 2 });
     await alone.server.close();
   });
 
@@ -219,5 +217,52 @@ describe("counting the people who open the site", () => {
     expect((await server.inject({ url: "/", headers: page() })).statusCode).toBe(200);
     expect((await server.inject({ url: "/api/admin/stats", headers: auth })).statusCode).toBe(404);
     await server.close();
+  });
+});
+
+describe("which address a request is read as", () => {
+  const HOST_PROXY = "10.8.0.4"; // (the connection: the host's own proxy)
+
+  /** What the server reads as the address of a request that came in on `HOST_PROXY` with these headers, with this many proxies said to be in front. */
+  async function addressOf(headers: Record<string, string>, trustProxy?: number) {
+    const server = await buildApp({ feedbackAdminToken: TOKEN, ...(trustProxy === undefined ? {} : { trustProxy }) });
+    const response = await server.inject({ url: "/api/admin/stats", headers: { ...auth, ...headers }, remoteAddress: HOST_PROXY });
+    await server.close();
+    expect(response.statusCode).toBe(200);
+    return response.json().you;
+  }
+
+  it("is the visitor's, behind the host's proxy alone, behind Cloudflare too, and behind two Cloudflare machines or a proxy inside the host", async () => {
+    expect(await addressOf({ "x-forwarded-for": "203.0.113.9" }, 1)).toMatchObject({ address: "203.0.113.9", connection: HOST_PROXY });
+    expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2" }, 1)).address).toBe("203.0.113.9");
+    expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2, 104.16.0.3" }, 1)).address).toBe("203.0.113.9");
+    expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2, 10.9.9.9" }, 1)).address).toBe("203.0.113.9");
+    expect((await addressOf({ "x-forwarded-for": "2a02:2f0e:1::7, 2606:4700::6810:1" }, 1)).address).toBe("2a02:2f0e:1::7");
+  });
+
+  it("falls back to Cloudflare's own address when that is all the list has (the visitor is missing from it: as it was read before)", async () => {
+    expect((await addressOf({ "x-forwarded-for": "172.70.1.2" }, 1)).address).toBe("172.70.1.2");
+  });
+
+  it("is never one a visitor wrote: what comes before the proxies' own addresses is not read", async () => {
+    expect((await addressOf({ "x-forwarded-for": "6.6.6.6, 203.0.113.9, 172.70.1.2" }, 1)).address).toBe("203.0.113.9");
+    // sent straight to the host, dressed up as Cloudflare's: the address the host's proxy added is what counts
+    expect((await addressOf({ "x-forwarded-for": "6.6.6.6, 173.245.48.1, 198.51.100.7" }, 1)).address).toBe("198.51.100.7");
+    // and a Cloudflare header is only a header
+    expect((await addressOf({ "x-forwarded-for": "198.51.100.7", "cf-connecting-ip": "6.6.6.6" }, 1)).address).toBe("198.51.100.7");
+  });
+
+  it("is the connection's own when no proxy is said to be in front, however it is written", async () => {
+    expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2" })).address).toBe(HOST_PROXY);
+    expect((await addressOf({ "x-forwarded-for": "203.0.113.9" }, 0)).address).toBe(HOST_PROXY);
+  });
+
+  it("shows how it was read, which is how a host whose proxies give their own address is found out", async () => {
+    expect(await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2", "cf-connecting-ip": "203.0.113.9" }, 1)).toEqual({
+      address: "203.0.113.9",
+      connection: HOST_PROXY,
+      forwardedFor: "203.0.113.9, 172.70.1.2",
+      cloudflare: "203.0.113.9",
+    });
   });
 });
