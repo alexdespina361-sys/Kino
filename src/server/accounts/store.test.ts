@@ -53,6 +53,56 @@ describe("accounts", () => {
   });
 });
 
+describe("usage", () => {
+  it("tells when accounts were made and last used and what devices are in, and nothing about who", async () => {
+    const store = await open();
+    const made = clock;
+    const a = store.createAccount("first.person@example.com", "hash");
+    advance(2 * DAY);
+    const b = store.createAccount("second.person@example.com", "hash");
+    advance(DAY);
+    store.createAccount("third.person@example.com", "hash"); // never signed in
+    if (!a.ok || !b.ok) throw new Error("could not create");
+    store.addProfile(a.value.id, "Kid", store.freeAvatar(a.value.id));
+
+    clock = made + 5 * DAY;
+    store.createSession(a.value.id, "browser", "Chrome");
+    clock = made + 6 * DAY;
+    store.createSession(a.value.id, "tv", "Silk"); // the later of an account's devices is when it was last used
+    clock = made + 4 * DAY;
+    const { token } = store.createSession(b.value.id, "tv", "Chrome");
+    store.createSession(b.value.id, "browser", "Chrome");
+    clock = made + 7 * DAY;
+
+    const usage = store.usage();
+    expect(usage).toEqual({
+      profiles: 4,
+      madeAt: [made, made + 2 * DAY, made + 3 * DAY],
+      lastUsedAt: [made + 4 * DAY, made + 6 * DAY],
+      devices: { browser: 2, tv: 2 },
+    });
+    expect(JSON.stringify(usage)).not.toMatch(/example\.com|acc_|pro_|hash/);
+
+    // a device that signs out is no longer a device in use; an account with none is no longer in the list of those used
+    store.endSessionByToken(token);
+    store.revokeAll(b.value.id);
+    expect(store.usage().lastUsedAt).toEqual([made + 6 * DAY]);
+    expect(store.usage().devices).toEqual({ browser: 1, tv: 1 });
+  });
+
+  it("leaves out the devices whose sign-in has run out", async () => {
+    const store = await open();
+    const account = store.createAccount("only.person@example.com", "hash");
+    if (!account.ok) throw new Error("could not create");
+    store.createSession(account.value.id, "browser", "Chrome");
+    advance(SESSION_TTL_MS + DAY);
+    const usage = store.usage();
+    expect(usage.lastUsedAt).toEqual([]);
+    expect(usage.devices).toEqual({});
+    expect(usage.madeAt).toHaveLength(1);
+  });
+});
+
 describe("profiles", () => {
   it("adds up to five, with names that differ, and keeps the last one", async () => {
     const { store, account, profile } = await withAccount();

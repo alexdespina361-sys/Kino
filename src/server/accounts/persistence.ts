@@ -77,12 +77,20 @@ export interface SqlClient {
 }
 
 export class PostgresPersistence implements Persistence {
-  /** (Public: the shared subtitle timings keep a table in the same database.) */
-  constructor(readonly db: SqlClient) {}
+  /**
+   * (`db` is public: the shared subtitle timings keep a table in the same database.) `table` is where the documents go: the accounts' is `kino_docs`,
+   * and what has no business being loaded with them has a table of its own (the count of visitors: `stats/visits.ts`). It is a name of ours, never of anyone's making.
+   */
+  constructor(
+    readonly db: SqlClient,
+    private readonly table = "kino_docs",
+  ) {
+    if (!/^[a-z_]+$/.test(table)) throw new Error(`Not a table name: ${table}`);
+  }
 
   async load() {
-    await this.db.query("create table if not exists kino_docs (key text primary key, value jsonb not null)");
-    const { rows } = await this.db.query("select key, value from kino_docs");
+    await this.db.query(`create table if not exists ${this.table} (key text primary key, value jsonb not null)`);
+    const { rows } = await this.db.query(`select key, value from ${this.table}`);
     return new Map(rows.map((row) => [String(row.key), row.value] as const));
   }
 
@@ -91,7 +99,7 @@ export class PostgresPersistence implements Persistence {
     // One statement for both (a statement is all-or-nothing), so a server that stops between what is written and what is forgotten
     // cannot keep one and lose the other: a friendship ended, an account deleted, would come back with the next start.
     await this.db.query(
-      "with forgotten as (delete from kino_docs where key = any($3::text[])) insert into kino_docs (key, value) select * from unnest($1::text[], $2::jsonb[]) on conflict (key) do update set value = excluded.value",
+      `with forgotten as (delete from ${this.table} where key = any($3::text[])) insert into ${this.table} (key, value) select * from unnest($1::text[], $2::jsonb[]) on conflict (key) do update set value = excluded.value`,
       [[...put.keys()], [...put.values()].map((value) => JSON.stringify(value)), [...remove]],
     );
   }

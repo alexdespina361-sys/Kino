@@ -7,6 +7,7 @@ import { animeHeavenSource } from "./library/animeheaven";
 import { filmpireSource } from "./library/filmpire";
 import { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
+import { VisitCounter, visitsPersistenceFor } from "./stats/visits";
 import { subsyncStoreFor } from "./subsync/store";
 
 const port = Number(process.env.PORT ?? 8787);
@@ -37,6 +38,15 @@ if (feedbackAdminToken && feedbackAdminToken.length < FEEDBACK_TOKEN_MIN) {
   console.warn(`FEEDBACK_ADMIN_TOKEN is shorter than ${FEEDBACK_TOKEN_MIN} characters, so it is not used: the team's side of the feedback is off.`);
 }
 
+// How many people open the site is counted, a number for each day and nothing about who (docs/stats.md). VISITOR_COUNT=off is the kill switch: nobody is counted.
+// A home that cannot be opened must not take the site down with it: then nobody is counted until the next start.
+const visits = /^(0|off|false|no)$/i.test(process.env.VISITOR_COUNT ?? "")
+  ? undefined
+  : await VisitCounter.open({ persistence: visitsPersistenceFor(persistence, kind), log: console }).catch((error: Error) => {
+      console.warn(`The visitor count could not be opened (${error.message}); nobody is counted until the next start.`);
+      return undefined;
+    });
+
 // DIRECT_STREAMING is "on" by default to bypass the server middleman and stream directly to viewers.
 if (process.env.DIRECT_STREAMING === undefined) {
   process.env.DIRECT_STREAMING = "on";
@@ -54,6 +64,7 @@ const app = await buildApp({
   // (The subtitle timings that screens share live next to the accounts, in the same database or folder.)
   subsync: subsyncStoreFor(persistence, kind),
   feedback,
+  ...(visits ? { visits } : {}),
   ...(feedbackAdminToken ? { feedbackAdminToken } : {}),
   ...(Number(process.env.FEEDBACK_SENDS_PER_10_MIN) > 0 ? { feedbackSendsPer10Min: Number(process.env.FEEDBACK_SENDS_PER_10_MIN) } : {}),
   // REGISTRATION=closed: nobody new can make an account (once the people it is for have one).
@@ -67,6 +78,7 @@ const app = await buildApp({
   logger: true,
 });
 app.log.info(`Accounts and pairings are kept in ${describe}.`);
+app.log.info(visits ? "Visitors are counted, a number for each day (docs/stats.md)." : "Visitors are not counted.");
 
 await app.listen({ port, host });
 
