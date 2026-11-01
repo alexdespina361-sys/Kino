@@ -6,7 +6,9 @@ import { openDevice, openLibrary, openPairedPhone, openTv, PHONE, playFirst, pre
  * The Back button of an Android phone (the button, the swipe from the edge of the screen). Every Back goes back a page, as a back button does, and
  * at the bottom of the site, where the next one would leave it, the first only asks ("Press Back again to leave") and a second one leaves.
  * The tests press Back as the browser does (`page.goBack()`) on a touch screen, and tell "left the site" by the page the phone was on before it.
- * What they cannot show is the browser's own rule for entries a page makes without a touch (see shared/backButton.ts): that is in the unit tests.
+ * What they cannot show is Chrome's own rule for entries a page makes without a touch (see shared/backButton.ts): `page.goBack()` walks the history
+ * one entry at a time and applies none of it. The rule is in the unit tests (a fake browser that keeps it) and in android-back-real.spec.ts, which
+ * presses Chrome's own Back.
  */
 
 test.use({ actionTimeout: 15_000 });

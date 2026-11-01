@@ -339,6 +339,58 @@ describe("when it cannot, or has nothing to do", () => {
     expect(rig.logs).toEqual([]);
   });
 
+  it("leaves nothing unhandled when the film is stopped while a track is still being handed to the aligner", { timeout: 60_000 }, async () => {
+    // (Stopping a film closes the aligner, and the one in the worker fails the hand-over it still has: nobody waits for that one. A tester's report showed it as an unhandled rejection.)
+    let handedOver = false;
+    class Holding extends DirectBackend {
+      private fail: ((error: Error) => void) | undefined;
+      override setTrack(): Promise<void> {
+        handedOver = true;
+        return new Promise<void>((_resolve, reject) => void (this.fail = reject));
+      }
+      override close(): void {
+        this.fail?.(new Error("The aligner was closed"));
+      }
+    }
+    const unhandled: unknown[] = [];
+    const note = (reason: unknown) => void unhandled.push(reason);
+    process.on("unhandledRejection", note);
+    try {
+      const rig = new Rig({ tracks: [track("English", late(3))], shown: 0, backend: async () => new Holding(new SyncCore(new LoudnessVad())) });
+      for (let look = 0; look < 6; look++) rig.session.tick(); // (a track is taken once its lines have stopped coming)
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      expect(handedOver, "the track was on its way to the aligner").toBe(true);
+      rig.session.close(true);
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      expect(rig.statuses).not.toContain("unavailable");
+      expect(rig.logs).toEqual([]);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", note);
+    }
+  });
+
+  it("is unavailable when the hand-over of a track fails for another reason than being closed", { timeout: 60_000 }, async () => {
+    class Failing extends DirectBackend {
+      override async setTrack(): Promise<void> {
+        throw new Error("The weights are gone");
+      }
+    }
+    const unhandled: unknown[] = [];
+    const note = (reason: unknown) => void unhandled.push(reason);
+    process.on("unhandledRejection", note);
+    try {
+      const rig = new Rig({ tracks: [track("English", late(3))], shown: 0, backend: async () => new Failing(new SyncCore(new LoudnessVad())) });
+      for (let look = 0; look < 6; look++) rig.session.tick(); // (a track is taken once its lines have stopped coming)
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      expect(rig.session.status()).toBe("unavailable");
+      expect(rig.logs.join("\n")).toContain("The weights are gone");
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", note);
+    }
+  });
+
   it("leaves subtitles that come in the stream to the player", { timeout: 60_000 }, async () => {
     const rig = new Rig({ tracks: [track("English", late(3))], shown: 0 });
     rig.hls.subtitleTracks = [{}];

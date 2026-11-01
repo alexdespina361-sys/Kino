@@ -315,8 +315,8 @@ test.describe("the remote, held upright", () => {
   }
 });
 test.describe("a phone used as the screen, held upright", () => {
-  async function screen(browser: Browser, size: Size, locale = "en-US"): Promise<Page> {
-    const tv = await openDevice(browser, phoneAt(size, locale), {}, withLibrary(library));
+  async function screen(browser: Browser, size: Size, locale = "en-US", shelves = library): Promise<Page> {
+    const tv = await openDevice(browser, phoneAt(size, locale), {}, withLibrary(shelves));
     await tv.goto("/tv");
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeVisible();
     return tv;
@@ -347,6 +347,38 @@ test.describe("a phone used as the screen, held upright", () => {
         await expect(tv.getByTestId(id)).toHaveAttribute("aria-current", "page");
         await expectFits(tv, `${name}, ${id}`);
       }
+    });
+  }
+
+  for (const size of [SIZES[0]!, SIZES[2]!]) {
+    test(`at ${size.name}: a tap on a title's picture, or on the empty part beside its words, leaves its page open, and its Close button closes it`, async ({ browser }) => {
+      // (A title with a picture: its page keeps the top of the screen for it, and the words begin under it. The picture itself does not take a tap, so a tap lands on the page.)
+      const withPictures = { ...library, rows: library.rows.map((each) => ({ ...each, items: each.items.map((item) => ({ ...item, backdrop: "/fixtures/missing.png" })) })) };
+      const tv = await screen(browser, size, "en-US", withPictures);
+      await tv.getByTestId("tv-browse-tile").first().tap();
+      const page = tv.getByTestId("tv-detail");
+      await expect(page).toBeVisible();
+      await expect(page).toHaveAttribute("data-art", "true");
+      await expect(page).toHaveCSS("pointer-events", "auto"); // (a page lets the pointer through for its first half second, so that the tap that opened it does not press what is under it)
+      await settled(tv.getByTestId("tv-detail-close"));
+      const wordsBegin = await tv.evaluate(() => document.querySelector(".tv-detail-text")!.getBoundingClientRect().top);
+      expect(wordsBegin, "the picture has room above the words").toBeGreaterThan(100);
+      const places = [
+        { what: "the middle of the picture", x: size.width / 2, y: wordsBegin / 2 },
+        { what: "the foot of the picture", x: size.width / 2, y: wordsBegin - 6 },
+      ];
+      for (const place of places) {
+        const under = await tv.evaluate(({ x, y }) => {
+          const top = document.elementFromPoint(x, y);
+          return top?.matches(".tv-detail, .tv-detail-scroll, .tv-detail-hero") ? "the page" : `${top?.tagName.toLowerCase()}.${top?.className} at ${Math.round(x)},${Math.round(y)}`;
+        }, place);
+        expect(under, `${place.what} is on the page's own empty part`).toBe("the page");
+        await tv.touchscreen.tap(place.x, place.y);
+        await tv.waitForTimeout(150);
+        await expect(page, place.what).toBeVisible();
+      }
+      await tv.getByTestId("tv-detail-close").tap();
+      await expect(page).toHaveCount(0);
     });
   }
 

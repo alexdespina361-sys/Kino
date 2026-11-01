@@ -532,6 +532,7 @@
 :root[data-ui="polish"] .tv-menu-col h3 { color: var(--text-3); font-size: var(--fs-1); font-weight: 600; letter-spacing: 0; text-transform: none; }
 :root[data-ui="polish"] .tv-menu { border-radius: var(--r-3); border-color: rgba(255, 255, 255, 0.1); background: var(--surf-1); }
 :root[data-ui="polish"] .tv-menu-top h2 { font-size: var(--fs-5); font-weight: 700; }
+:root[data-ui="polish"] .tv-menu-note { margin: calc(var(--em) * -0.9) 0 calc(var(--em) * 1.2); font-size: var(--fs-2); color: var(--text-3); }
 :root[data-ui="polish"] .tv-menu[data-kind="captions"] .tv-menu-top h2 { font-size: var(--fs-4); }
 
 /* ------------------------------ the pages of what you have and who you are ------------------------------ */

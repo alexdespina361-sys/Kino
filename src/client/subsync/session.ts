@@ -399,7 +399,7 @@ export class SyncSession {
       follow.verified = false;
     }
     void this.backend?.reset().catch(() => {});
-    if (this.current) void this.register(this.current);
+    if (this.current) void this.registerQuietly(this.current);
   };
 
   private async sound(time: number, pcm: Float32Array): Promise<void> {
@@ -716,7 +716,7 @@ export class SyncSession {
     if (this.verifiedNext) this.verify(follow);
     this.paint(follow);
     this.noteLines();
-    void this.register(follow).then(() => {
+    void this.registerQuietly(follow).then(() => {
       if (this.current === follow && !this.closed) this.catchUp(follow);
     });
   }
@@ -759,6 +759,11 @@ export class SyncSession {
     if (!this.backend || this.closed || follow.registered) return;
     follow.registered = true;
     await this.backend.setTrack(follow.key, follow.cues, follow.english);
+  }
+
+  /** `register` for the places that do not wait for it. Closed under it (the film was stopped, the viewer turned the aligner off) is not the aligner failing; anything else is. */
+  private registerQuietly(follow: Followed): Promise<void> {
+    return this.register(follow).catch((error: unknown) => this.giveUp(`The aligner failed: ${describe(error)}`));
   }
 
   /** The tracks that are worked on now: the shown one, or (when it is timed from an English one) that English one. */
@@ -1112,7 +1117,7 @@ export class SyncSession {
     reference.registered = false;
     this.queued.delete(reference);
     this.jobs = this.jobs.filter((job) => job.follow !== current);
-    void this.register(reference).then(() => this.catchUp(reference));
+    void this.registerQuietly(reference).then(() => this.catchUp(reference));
   }
 
   /* ------------------------------------ timings from other screens ------------------------------------ */
