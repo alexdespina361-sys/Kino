@@ -62,6 +62,34 @@ export const LibraryRowsSchema = z.object({ rows: z.array(LibraryRowSchema).max(
 /** More titles of one row (the first twenty are in the row): `last` says there are no more. */
 export const LibraryMoreSchema = z.object({ items: z.array(LibraryItemSchema).max(100), last: z.boolean() });
 
+/** The countries whose age ratings a title's page can show: those of the languages the site speaks, and the two most people know. */
+export const AGE_COUNTRIES = ["RO", "IT", "US", "GB"] as const;
+
+/**
+ * What the movie database knows about one title besides what its tile shows, asked for when the title's page is opened (so never for a title nobody opens):
+ * its genres, who made it, who is in it, the age rating some countries give it, the other parts of the collection it is in (a film's sequels and prequels)
+ * and titles like it. A show's other parts are its seasons, which its page lists already.
+ */
+export const TitleAboutSchema = z.object({
+  genres: z.array(z.string().max(40)).max(8),
+  /** Who directed a film... */
+  directors: z.array(z.string().max(100)).max(4),
+  /** ...and who created a show. */
+  creators: z.array(z.string().max(100)).max(4),
+  /** The top-billed cast, the first billed first. */
+  cast: z.array(z.string().max(100)).max(8),
+  /** The age rating each of `AGE_COUNTRIES` gives it, as that country writes it (PG-13, AP-12, TV-MA); a country that gives none is not here. */
+  ages: z.record(z.string().max(2), z.string().max(20)),
+  /** The other titles of its collection, in the order they came out. */
+  parts: z.array(LibraryItemSchema).max(30),
+  /** Titles like it (none of them one of its parts). */
+  similar: z.array(LibraryItemSchema).max(20),
+});
+export type TitleAbout = z.infer<typeof TitleAboutSchema>;
+
+/** The answer to a question about a title: `about` is none for one nobody knows (and for a place that could not be reached just now). */
+export const TitleAboutAnswerSchema = z.object({ about: TitleAboutSchema.nullable() });
+
 /** What a place knows about one episode of a show besides its number: a name, a line about it, a still from it, how long it runs. */
 export const EpisodeDetailSchema = z.object({
   season: z.number().int().min(0).max(200),

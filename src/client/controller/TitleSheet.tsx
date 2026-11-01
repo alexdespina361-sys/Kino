@@ -2,16 +2,20 @@ import type { ReactNode } from "react";
 import { listKey, savedKeys, type PlayHint } from "../../shared";
 import { hintOf, listEntryOf, listName } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
-import { useRatingsOn } from "../account/ratings";
+import { scoreOf, useRatingsOn, useScores } from "../account/ratings";
 import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
+import { aboutRows, useAbout } from "../shared/about";
+import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { CheckIcon, PlayIcon, PlusIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
 import { useSeriesPage, type PageEpisode, type SeriesPage } from "../tv/Episodes";
-import { resumable, type Entry } from "../tv/pages";
+import { entryOfItem, resumable, type Entry } from "../tv/pages";
 import { Page } from "./AccountScreen";
 import { RecommendButton } from "./Friends";
+import { Tile } from "./Library";
 import { RatingBox } from "./RatingBox";
+import { useListToggle } from "./Round";
 import { Still } from "./Sheets";
 
 interface TitleSheetProps {
@@ -21,6 +25,8 @@ interface TitleSheetProps {
   onPlay?: (url: string, startAt: number | undefined, hint: PlayHint) => void;
   /** With more than one list: ask which one the title goes in. */
   onPick: (entry: ListEntry) => void;
+  /** A tap on a title of the rows under the page (the other parts of its collection, titles like it): that title's page opens in place of this one. */
+  onOpenTitle: (entry: Entry) => void;
   onClose: () => void;
 }
 
@@ -28,13 +34,18 @@ interface TitleSheetProps {
  * A title's own page on the phone, the way the TV has one: its picture, what it is about, Play (or Resume) and a list to keep it in,
  * and for a show its seasons and episodes. A tap on a title in the library or a list opens this instead of starting it at once.
  * It is a page (the whole screen, a round way back over its picture), not a sheet that leaves a strip of the page behind it showing.
+ * What the movie database knows of the title (its genres and age rating, who made it, who is in it, and the rows of the titles that go with it) is asked for when the page opens, and added under what it is about when it comes.
  */
-export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheetProps) {
+export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose }: TitleSheetProps) {
   const t = useT();
   const { progress, watched, lists, list } = useProfileData();
   const ratings = useRatingsOn();
+  const scores = useScores();
+  const toggleFor = useListToggle(onPick);
   const entry = resumable(given, progress);
   const series = useSeriesPage(given, progress, watched);
+  const about = useAbout(!entry.opens && entry.url !== "" ? entry.url : undefined);
+  const related = aboutRows(about);
   const hint = hintOf(entry);
   const play = onPlay ? (url: string, startAt?: number) => onPlay(new URL(url, location.href).href, startAt, hint) : undefined;
 
@@ -86,6 +97,8 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
           </div>
           {ratings && <RatingBox entry={entry} isShow={series.isShow} title={t("rating.yours")} testId="rate-title" />}
           {entry.description && <p className="muted title-about">{entry.description}</p>}
+          {about && <AboutFacts about={about} />}
+          {about && <AboutPeople about={about} />}
         </div>
       </div>
       {series.isShow && (
@@ -99,6 +112,16 @@ export function TitleSheet({ entry: given, onPlay, onPick, onClose }: TitleSheet
           }
         />
       )}
+      {related.map((row) => (
+        <section className="lib-row title-more" key={`${entry.id}-${row.id}`} aria-label={t(`about.${row.id}`)} data-testid={`title-about-${row.id}`}>
+          <h3>{t(`about.${row.id}`)}</h3>
+          <div className="lib-scroller">
+            {row.items.map((item) => (
+              <Tile key={item.id} item={item} score={scoreOf(scores, item.url)} toggle={toggleFor(listEntryOf(item))} onOpen={() => onOpenTitle(entryOfItem(item))} />
+            ))}
+          </div>
+        </section>
+      ))}
     </Page>
   );
 }

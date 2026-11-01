@@ -607,6 +607,145 @@ describe("filmpireSource similar", () => {
   });
 });
 
+describe("filmpireSource about", () => {
+  const film = (id: number, title: string, date: string | undefined, poster: string | null = "/p.jpg") => ({ id, title, media_type: "movie", poster_path: poster, ...(date ? { release_date: date } : {}) });
+  /** What TMDB answers for a film that is the first of a collection, with the people, the ratings and the recommendations appended. */
+  const kungFu = {
+    genres: [{ id: 16, name: "Animation" }, { id: 28, name: "Action" }, { id: 35, name: "Comedy" }],
+    belongs_to_collection: { id: 77, name: "Kung Fu Panda Collection" },
+    credits: {
+      cast: [
+        { name: "Dustin Hoffman", order: 2 },
+        { name: "Jack Black", order: 0 },
+        { name: "Angelina Jolie", order: 1 },
+        ...Array.from({ length: 12 }, (_, at) => ({ name: `Extra ${at}`, order: 10 + at })),
+      ],
+      crew: [
+        { name: "Mark Osborne", job: "Director" },
+        { name: "John Stevenson", job: "Director" },
+        { name: "Mark Osborne", job: "Director" },
+        { name: "Hans Zimmer", job: "Original Music Composer" },
+      ],
+    },
+    release_dates: {
+      results: [
+        { iso_3166_1: "RO", release_dates: [{ certification: "", type: 1 }, { certification: "AG", type: 3 }] },
+        { iso_3166_1: "US", release_dates: [{ certification: "PG", type: 4 }, { certification: "PG-13", type: 3 }] },
+        { iso_3166_1: "GB", release_dates: [{ certification: "U", type: 5 }] },
+        { iso_3166_1: "IT", release_dates: [{ certification: "", type: 3 }] },
+        { iso_3166_1: "FR", release_dates: [{ certification: "TP", type: 3 }] },
+      ],
+    },
+    recommendations: { results: [film(9, "Ice Age", "2002-03-15"), film(78, "Kung Fu Panda 2", "2011-05-26"), film(10, "No Poster", "2001-01-01", null), film(11, "Not Yet", "2999-01-01")] },
+  };
+  const collection = { parts: [film(79, "Kung Fu Panda 3", "2016-01-28"), film(603, "Kung Fu Panda", "2008-06-04"), film(78, "Kung Fu Panda 2", "2011-05-26"), film(80, "Undated", undefined), film(81, "Kung Fu Panda 5", "2999-03-01")] };
+
+  const sourceWith = (answer: (url: string) => Response | Promise<Response>) => {
+    const asked: string[] = [];
+    const get = vi.fn(async (url: string | URL) => {
+      asked.push(String(url));
+      return answer(String(url));
+    });
+    return { source: filmpireSource({ apiKey: "k", fetch: get as never, filterTrash: true }), asked };
+  };
+
+  it("asks TMDB once for a film with its people, ratings and recommendations appended, and once more for its collection", async () => {
+    const { source, asked } = sourceWith((url) => json(url.includes("/collection/77") ? collection : kungFu));
+    const about = await source.about!("https://filmpire.sc/watch/603");
+
+    expect(asked).toHaveLength(2);
+    expect(asked[0]).toContain("/movie/603?");
+    expect(asked[0]).toContain("append_to_response=credits,release_dates,recommendations");
+    expect(asked[1]).toContain("/collection/77?");
+    expect(asked.every((url) => url.startsWith("https://api.themoviedb.org/3/"))).toBe(true); // (nothing else is asked, no video probed)
+
+    expect(about).toMatchObject({
+      genres: ["Animation", "Action", "Comedy"],
+      directors: ["Mark Osborne", "John Stevenson"], // (only directors, each once)
+      creators: [],
+      ages: { RO: "AG", US: "PG-13", GB: "U" }, // (the theatrical release's, else any; a country with none and the countries the site has no use for are left out)
+    });
+    expect(about!.cast).toEqual(["Jack Black", "Angelina Jolie", "Dustin Hoffman", "Extra 0", "Extra 1", "Extra 2", "Extra 3", "Extra 4"]); // (first billed first, eight at most)
+  });
+
+  it("lists the other parts of the collection in the order they came out, without the film itself, one not out yet or one TMDB has no picture of; the undated last", async () => {
+    const { source } = sourceWith((url) => json(url.includes("/collection/77") ? collection : kungFu));
+    const about = await source.about!("https://filmpire.sc/watch/603");
+    expect(about!.parts.map((part) => [part.id, part.title, part.year, part.url])).toEqual([
+      ["filmpire-movie-78", "Kung Fu Panda 2", 2011, "https://filmpire.sc/watch/78"],
+      ["filmpire-movie-79", "Kung Fu Panda 3", 2016, "https://filmpire.sc/watch/79"],
+      ["filmpire-movie-80", "Undated", undefined, "https://filmpire.sc/watch/80"],
+    ]);
+  });
+
+  it("lists the titles like it without a part of the collection, rubbish or a title not out yet, in the shape of any other tile", async () => {
+    const { source } = sourceWith((url) => json(url.includes("/collection/77") ? collection : kungFu));
+    const about = await source.about!("https://filmpire.sc/watch/603");
+    expect(about!.similar).toEqual([{ id: "filmpire-movie-9", title: "Ice Age", year: 2002, image: "https://image.tmdb.org/t/p/w500/p.jpg", kind: "movie", url: "https://filmpire.sc/watch/9" }]);
+    expect(LibraryRowSchema.safeParse({ id: "r", title: "r", source: "s", items: about!.similar }).success).toBe(true);
+  });
+
+  it("asks nothing about a collection for a film that is in none, and gives the rest", async () => {
+    const { source, asked } = sourceWith(() => json({ genres: [{ name: "Drama" }], belongs_to_collection: null, credits: { cast: [{ name: "Ann" }], crew: [] }, release_dates: { results: [] }, recommendations: { results: [] } }));
+    expect(await source.about!("https://filmpire.sc/watch/5")).toEqual({ genres: ["Drama"], directors: [], creators: [], cast: ["Ann"], ages: {}, parts: [], similar: [] });
+    expect(asked).toHaveLength(1);
+  });
+
+  it("asks for a show's content ratings, names its creators and not the directors of its episodes, and asks about no collection", async () => {
+    const { source, asked } = sourceWith(() =>
+      json({
+        genres: [{ name: "Drama" }],
+        created_by: [{ name: "Vince Gilligan" }],
+        belongs_to_collection: { id: 1 }, // (TMDB has none for a show; if it ever did, a show's other parts are its seasons)
+        credits: { cast: [{ name: "Bryan Cranston", order: 0 }], crew: [{ name: "An Episode Director", job: "Director" }] },
+        content_ratings: { results: [{ iso_3166_1: "US", rating: "TV-MA" }, { iso_3166_1: "RO", rating: "" }, { iso_3166_1: "GB", rating: "18" }] },
+        recommendations: { results: [{ id: 5, name: "Better Call Saul", media_type: "tv", first_air_date: "2015-02-08", poster_path: "/s.jpg" }] },
+      }),
+    );
+    const about = await source.about!("https://filmpire.sc/watch/1396?s=3&e=7");
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("/tv/1396?");
+    expect(asked[0]).toContain("append_to_response=credits,content_ratings,recommendations");
+    expect(about).toMatchObject({ directors: [], creators: ["Vince Gilligan"], cast: ["Bryan Cranston"], ages: { US: "TV-MA", GB: "18" }, parts: [] });
+    expect(about!.similar.map((one) => [one.id, one.kind, one.url])).toEqual([["filmpire-tv-5", "series", "https://filmpire.sc/watch/5?s=1&e=1"]]);
+  });
+
+  it("tells a cartoon from an anime among the titles it lists, as every row does", async () => {
+    const { source } = sourceWith(() =>
+      json({
+        genres: [{ name: "Animation" }],
+        recommendations: { results: [{ id: 5, title: "Spirited Away", media_type: "movie", poster_path: "/s.jpg", genre_ids: [16], original_language: "ja" }, { id: 6, title: "Shrek", media_type: "movie", poster_path: "/k.jpg", genre_ids: [16], original_language: "en" }] },
+      }),
+    );
+    expect((await source.about!("https://filmpire.sc/watch/603"))!.similar.map((one) => [one.title, one.section])).toEqual([["Spirited Away", "anime"], ["Shrek", "cartoon"]]);
+  });
+
+  it("knows nothing about links that are not Filmpire's, and says so without asking anyone", async () => {
+    const get = vi.fn();
+    const source = filmpireSource({ fetch: get as never });
+    expect(await source.about!("https://other.example/watch/603")).toBeNull();
+    expect(await source.about!("https://filmpire.sc/somewhere/603")).toBeNull();
+    expect(await source.about!("not a link")).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("has nothing to say of a title TMDB knows nothing about, and no part of a collection that is gone", async () => {
+    expect(await filmpireSource({ apiKey: "k", fetch: (async () => json({}, 404)) as never }).about!("https://filmpire.sc/watch/603")).toBeNull();
+    expect(await filmpireSource({ apiKey: "k", fetch: (async () => json({ genres: [] })) as never }).about!("https://filmpire.sc/watch/603")).toBeNull();
+    const { source } = sourceWith((url) => (url.includes("/collection/") ? json({}, 404) : json({ genres: [{ name: "Drama" }], belongs_to_collection: { id: 77 } })));
+    expect((await source.about!("https://filmpire.sc/watch/603"))!.parts).toEqual([]);
+  });
+
+  it("fails when TMDB cannot be reached (also for the collection) or answers with something else, so that nothing is remembered of it", async () => {
+    const link = "https://filmpire.sc/watch/603";
+    await expect(filmpireSource({ apiKey: "k", fetch: (async () => json({}, 500)) as never }).about!(link)).rejects.toThrow();
+    await expect(filmpireSource({ apiKey: "k", fetch: (async () => json({ genres: "nope" })) as never }).about!(link)).rejects.toThrow();
+    await expect(filmpireSource({ apiKey: "k", fetch: (async () => Promise.reject(new Error("offline"))) as never }).about!(link)).rejects.toThrow();
+    const { source } = sourceWith((url) => (url.includes("/collection/") ? json({}, 502) : json(kungFu)));
+    await expect(source.about!(link)).rejects.toThrow();
+  });
+});
+
 describe("filmpireSource episodes", () => {
   it("asks TMDB for one season of the show a Filmpire link plays, and keeps what is known of each episode", async () => {
     const asked: string[] = [];

@@ -27,6 +27,8 @@ import { Logo } from "../shared/Logo";
 import { comesIn, hueOf } from "../shared/Poster";
 import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
+import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
+import { aboutRows, useAbout } from "../shared/about";
 import { switchRole, thisIsPhone } from "../role";
 import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { isCompact, useCompact } from "./compact";
@@ -207,7 +209,7 @@ function savedPos(view: View, rows: readonly HomeRow[]): Pos | undefined {
 }
 
 /** The buttons of a title's own page, the zones its arrow keys walk. */
-const PAGE_ZONES: Zone[] = ["detail", "close", "seasons", "episodes"];
+const PAGE_ZONES: Zone[] = ["detail", "close", "seasons", "episodes", "related"];
 
 /** Moving into a show's seasons lands on the one that is shown, and into its episodes on the one Play leads to (else on the first). */
 function landOnPage(next: Target, from: Pos, root: ParentNode): Target {
@@ -241,6 +243,16 @@ function slideIntoView(button: HTMLElement) {
   const at = button.getBoundingClientRect();
   if (at.left < box.left + room) row.scrollBy({ left: at.left - box.left - room, behavior: "smooth" });
   else if (at.right > box.right - room) row.scrollBy({ left: at.right - box.right + room, behavior: "smooth" });
+}
+
+/** The same for a row of titles: it slides just far enough that the title shows with another beside it, so there is somewhere to go. */
+function slideAlong(element: HTMLElement) {
+  const scroller = element.parentElement!;
+  const edge = element.getBoundingClientRect();
+  const box = scroller.getBoundingClientRect();
+  const room = edge.width * 0.7;
+  if (edge.left < box.left + room) scroller.scrollBy({ left: edge.left - box.left - room, behavior: "smooth" });
+  else if (edge.right > box.right - room) scroller.scrollBy({ left: edge.right - box.right + room, behavior: "smooth" });
 }
 
 /**
@@ -294,6 +306,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   }, []);
   /** What that page lists besides the buttons when the title is a show: its seasons, and the episodes of one. */
   const series = useSeriesPage(detail?.entry, progress, watched, remembered.detail?.season);
+  /** What the movie database knows of that title (genres, the people, the age rating) and the rows of titles it lists under the episodes: the other parts of its collection, titles like it. Asked when the page opens, for that title only. */
+  const about = useAbout(detail && !detail.entry.opens && detail.entry.url ? detail.entry.url : undefined);
+  const aboutList = aboutRows(about);
   /** The remote is on a row below the first, so the banner makes room for the rows. */
   const [deep, setDeep] = useState(false);
   /** The page over the library, when there is one. */
@@ -523,6 +538,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           detail: [overviewActions(detail.entry, ratingsOn, friends.on).length],
           ...(series.seasons.length > 1 ? { seasons: [series.seasons.length] } : {}),
           ...(series.episodes?.length ? { episodes: series.episodes.map(() => 1) } : {}),
+          ...(aboutList.length > 0 ? { related: aboutList.map((row) => row.items.length) } : {}),
         }
       : {}),
   };
@@ -571,6 +587,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     setPending(null);
     focusAt(pending);
   }, [pending]);
+
+  // A title opened from one of the open page's rows is a page of its own: it starts at its top.
+  const openId = detail?.entry.id;
+  useEffect(() => {
+    rootRef.current?.querySelector<HTMLElement>(".tv-detail-scroll")?.scrollTo({ top: 0 });
+  }, [openId]);
 
   // A title that goes while the remote is on it (friends turned off from another device, a card removed) takes the focus with it, and then
   // nothing answers OK: the remote goes to the title that is where it was.
@@ -765,6 +787,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
   /** The remote moved onto a title: keep it in view (the page itself never scrolls) and, after a pause, let the banner say what it is. */
   const arrived = (element: HTMLElement, pos: Pos, now: Focused) => {
+    if (pos.zone === "related") return slideAlong(element); // (a title of the open page's own rows: the page scrolls to it, and the library behind keeps where the remote was)
     const key = viewKey(latest.current.view);
     remembered.focus[key] = pos;
     standingOn.current = element;
@@ -772,12 +795,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       remembered.row[key] = latest.current.homeRows[pos.row]?.id ?? "";
       remembered.tile[key] = latest.current.homeRows[pos.row]?.entries[pos.col]?.id ?? "";
       setDeep(pos.row > 0);
+      slideAlong(element);
       const scroller = element.parentElement!;
-      const edge = element.getBoundingClientRect();
-      const box = scroller.getBoundingClientRect();
-      const room = edge.width * 0.7; // keep a title beside it showing, so there is somewhere to go
-      if (edge.left < box.left + room) scroller.scrollBy({ left: edge.left - box.left - room, behavior: "smooth" });
-      else if (edge.right > box.right - room) scroller.scrollBy({ left: edge.right - box.right + room, behavior: "smooth" });
       rowsRef.current?.scrollTo({ top: scroller.closest<HTMLElement>(".tv-row")!.offsetTop, behavior: "smooth" }); // (the row itself, with its name: not the box round its titles)
       // The remote moves a title at a time and a script scrolls: nothing here is a scroll the page could notice from far off, so the library is asked for more as the remote nears the end,
       // of the page (the rows that come next) and of the row (more of its titles).
@@ -1428,7 +1447,9 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   {detail.entry.title}
                 </h1>
                 <p className="tv-hero-meta">{[detail.entry.year, detail.entry.note, detail.source].filter(Boolean).join("  ·  ")}</p>
+                {about && <AboutFacts about={about} />}
                 {detail.entry.description && <p className="tv-detail-about">{detail.entry.description}</p>}
+                {about && <AboutPeople about={about} />}
                 <div className="tv-hero-actions">
                   {overviewActions(detail.entry, ratingsOn, friends.on).map((action, col) => (
                     <button
@@ -1448,6 +1469,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               </div>
             </div>
             {series.isShow && <SeriesSection page={series} onPlay={playEpisode} onSlide={slideIntoView} />}
+            {aboutList.map((row, r) => (
+              <section className="tv-detail-more" key={`${detail.entry.id}-${row.id}`} aria-label={t(`about.${row.id}`)} data-testid={`tv-about-${row.id}`}>
+                <h2 className="tv-row-title">{t(`about.${row.id}`)}</h2>
+                <RowTiles>{row.items.map((item, c) => tile(entryOfItem(item), { zone: "related", row: r, col: c }, t(`about.${row.id}`), "wide"))}</RowTiles>
+              </section>
+            ))}
           </div>
           <button className="tv-hero-button tv-detail-close" onClick={closeDetail} data-testid="tv-detail-close" data-zone="close" data-row={0} data-col={0}>
             <CloseIcon /> {t("common.close")}

@@ -429,6 +429,7 @@ export function Controller() {
               }
             : {})}
           onPick={pickList}
+          onOpenTitle={setTitle}
           onClose={() => setTitle(null)}
         />
       )}

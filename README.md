@@ -601,6 +601,13 @@ the TV lists each episode streaming-app style: season picker on the left, a pict
 description for each, with watched marks. The phone's list is the same as cards, in one column. An episode the source gave no name is
 called "Episode 3" in the language of the screen.
 
+A title's page (on the TV and on the phone) also says what TMDB knows of the title besides its tile: its age rating (the reader's own country's when the title has one, else the
+US's, else Britain's) and its genres on a line, who directed it (for a show, who created it) and who is in it, and under the page two rows of titles that open as any tile does:
+**Other parts** (a film's collection: its sequels and prequels, in the order they came out) and **More like this** (TMDB's recommendations, without the parts). It is one question for
+each title whose page is opened (`GET /api/library/about?url=`: TMDB's `append_to_response`, and one more for a collection; remembered like the library's other answers) and none for the titles
+on the shelves; a title of another source, or one TMDB does not know, keeps the page it had. On the TV the remote walks down into the rows after the buttons (and a show's episodes). The ratings
+of other sites (MAL, Rotten Tomatoes) are not here: they need an access of their own, which is the owner's to give.
+
 ### Sources
 
 `NormalizedMedia.alternates` is an optional list of `{ label?, stream, subtitles? }`: other streams of the same video, in the

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { LibraryMoreSchema, LibraryRowsSchema, LibrarySchema } from "../../shared";
+import { LibraryMoreSchema, LibraryRowsSchema, LibrarySchema, TitleAboutAnswerSchema, type TitleAbout } from "../../shared";
 import { buildApp } from "../app";
 import type { LibrarySource } from "./library";
 
@@ -202,6 +202,48 @@ describe("GET /api/library/similar", () => {
   it("wants a link", async () => {
     app = await buildApp({ librarySources: [source] });
     expect((await app.inject({ url: "/api/library/similar" })).statusCode).toBe(400);
+  });
+});
+
+describe("GET /api/library/about", () => {
+  const known: TitleAbout = {
+    genres: ["Animation"],
+    directors: ["Ann Jones"],
+    creators: [],
+    cast: ["Bo Lee"],
+    ages: { US: "PG" },
+    parts: [{ id: "p2", title: "Part two", url: "https://x.example/p2" }],
+    similar: [{ id: "s1", title: "Alike", url: "https://x.example/s1" }],
+  };
+  const aboutSource: LibrarySource = { ...source, about: async (link) => (link.endsWith("/1") ? known : null) };
+
+  it("tells what a source knows of the title a link plays, which a browser may keep for an hour", async () => {
+    app = await buildApp({ librarySources: [aboutSource] });
+    const found = await app.inject({ url: `/api/library/about?url=${encodeURIComponent("https://x.example/watch/1")}` });
+    expect(found.statusCode).toBe(200);
+    expect(found.headers["cache-control"]).toBe("public, max-age=3600");
+    expect(TitleAboutAnswerSchema.parse(found.json())).toEqual({ about: known });
+  });
+
+  it("answers none for a title nobody knows, and asks the browser not to keep that", async () => {
+    app = await buildApp({ librarySources: [aboutSource] });
+    const unknown = await app.inject({ url: `/api/library/about?url=${encodeURIComponent("https://x.example/watch/2")}` });
+    expect(unknown.statusCode).toBe(200);
+    expect(unknown.json()).toEqual({ about: null });
+    expect(unknown.headers["cache-control"]).toBe("no-store"); // may be a place that could not be reached just now
+  });
+
+  it("answers none, and no error, when a place cannot be reached or no place knows how", async () => {
+    app = await buildApp({ librarySources: [{ ...source, about: async () => Promise.reject(new Error("down")) }, source] });
+    const answer = await app.inject({ url: `/api/library/about?url=${encodeURIComponent("https://x.example/watch/1")}` });
+    expect(answer.statusCode).toBe(200);
+    expect(answer.json()).toEqual({ about: null });
+  });
+
+  it("wants a link", async () => {
+    app = await buildApp({ librarySources: [aboutSource] });
+    expect((await app.inject({ url: "/api/library/about" })).statusCode).toBe(400);
+    expect((await app.inject({ url: `/api/library/about?url=${"x".repeat(2049)}` })).statusCode).toBe(400);
   });
 });
 

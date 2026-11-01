@@ -270,7 +270,8 @@
 :root[data-ui="polish"] .phone.shell .lib-row:not(.is-wide) .poster-initial { font-size: var(--p-fs-6); }
 /* A poster's name is up to two lines (it was one, cut with dots), and a line's room is kept, so that the years of a row are level. The wide cards of "Continue watching" keep their one. */
 :root[data-ui="polish"] .phone.shell .lib-row:not(.is-wide) .lib-card .lib-title,
-:root[data-ui="polish"] .phone-ui .poster-grid .lib-card .lib-title {
+:root[data-ui="polish"] .phone-ui .poster-grid .lib-card .lib-title,
+:root[data-ui="polish"] .phone-ui .title-more .lib-card .lib-title {
   display: -webkit-box;
   min-height: 2.6em;
   line-height: 1.3;
@@ -281,9 +282,11 @@
 }
 /* The round + on a poster is a smaller drawing on a smaller picture; a finger still has its 44 px (the halo). On the big cards of "Continue watching" it is the size it was. */
 :root[data-ui="polish"] .phone.shell .lib-row:not(.is-wide) .lib-tile .lib-round,
-:root[data-ui="polish"] .phone-ui .poster-grid .lib-tile .lib-round { width: 32px; height: 32px; font-size: 1.05rem; }
+:root[data-ui="polish"] .phone-ui .poster-grid .lib-tile .lib-round,
+:root[data-ui="polish"] .phone-ui .title-more .lib-tile .lib-round { width: 32px; height: 32px; font-size: 1.05rem; }
 :root[data-ui="polish"] .phone.shell .lib-row:not(.is-wide) .lib-tile .lib-round::after,
-:root[data-ui="polish"] .phone-ui .poster-grid .lib-tile .lib-round::after { inset: -6px; }
+:root[data-ui="polish"] .phone-ui .poster-grid .lib-tile .lib-round::after,
+:root[data-ui="polish"] .phone-ui .title-more .lib-tile .lib-round::after { inset: -6px; }
 :root[data-ui="polish"] .phone.shell .lib-row.is-wide .lib-round { width: 40px; height: 40px; }
 :root[data-ui="polish"] .phone.shell .lib-row.is-wide .lib-round::after { inset: -4px; }
 /* The box for a link is one line at the narrowest, as long as its hint (the hint is cut with dots rather than at a letter). */
@@ -324,6 +327,18 @@
 :root[data-ui="polish"] .phone-ui .title-play { min-height: 52px; font-size: var(--p-fs-3); }
 :root[data-ui="polish"] .phone-ui .title-secondary { display: flex; gap: 8px; }
 :root[data-ui="polish"] .phone-ui .title-secondary > .btn { flex: 1 1 0; min-width: 0; text-align: center; }
+/* What the movie database knows of the title, under what it is about (so that nothing over Play moves when it arrives): the age rating and the genres, the people, then (under a show's episodes) the rows of the titles that go with it, as the library's own posters. */
+:root[data-ui="polish"] .phone-ui .about-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0; font-size: var(--p-fs-2); font-weight: 600; color: var(--p-label); }
+:root[data-ui="polish"] .phone-ui .about-age { display: inline-flex; align-items: baseline; gap: 5px; padding: 1px 8px; border-radius: 6px; box-shadow: inset 0 0 0 1.5px var(--muted); color: var(--text); font-weight: 800; line-height: 1.4; }
+:root[data-ui="polish"] .phone-ui .about-age small { color: var(--muted); font-weight: 700; }
+:root[data-ui="polish"] .phone-ui .about-people { display: flex; flex-direction: column; gap: 6px; margin: 0; font-size: var(--p-fs-2); line-height: 1.4; }
+:root[data-ui="polish"] .phone-ui .about-person { display: flex; align-items: flex-start; gap: 12px; }
+:root[data-ui="polish"] .phone-ui .about-person dt { flex: none; min-width: 92px; color: var(--muted); font-weight: 600; }
+:root[data-ui="polish"] .phone-ui .about-person dd { margin: 0; color: var(--p-label); }
+:root[data-ui="polish"] .phone-ui .page.is-bare .title-more { --poster-w: clamp(88px, calc((100vw - 16px) / 3.35 - 10px), 132px); margin: 0 16px; }
+:root[data-ui="polish"] .phone-ui .title-more .lib-tile { width: var(--poster-w); }
+:root[data-ui="polish"] .phone-ui .title-more .lib-art { aspect-ratio: 2 / 3; }
+:root[data-ui="polish"] .phone-ui .title-more .poster-initial { font-size: var(--p-fs-6); }
 /* held sideways: the picture on the left (as it is, with its corners, not to the edges), what is done with it on the right */
 @media (orientation: landscape) and (max-height: 520px) {
   :root[data-ui="polish"] .phone-ui .page.is-bare .page-body { max-width: 940px; padding: 56px var(--p-pad) 24px; }
@@ -331,7 +346,8 @@
   :root[data-ui="polish"] .phone-ui .page.is-bare .title-art { border-radius: var(--p-r-2); }
   :root[data-ui="polish"] .phone-ui .page.is-bare .title-art::after { display: none; }
   :root[data-ui="polish"] .phone-ui .page.is-bare .title-main,
-  :root[data-ui="polish"] .phone-ui .page.is-bare .title-episodes { margin: 0; }
+  :root[data-ui="polish"] .phone-ui .page.is-bare .title-episodes,
+  :root[data-ui="polish"] .phone-ui .page.is-bare .title-more { margin: 0; }
 }
 
 /* ------------------------------ sheets ------------------------------ */

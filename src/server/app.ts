@@ -258,6 +258,15 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     reply.header("Cache-Control", items.length > 0 ? "public, max-age=3600" : "no-store");
     return reply.send({ items });
   });
+  // What the movie database knows of a title besides its tile, asked for when its page is opened: one question for each title, kept for as long as the
+  // library is. A title nobody knows (and a place that could not be reached just now) is `about: null`, which a browser is asked not to keep.
+  app.get<{ Querystring: { url?: string } }>("/api/library/about", async (request, reply) => {
+    const link = request.query.url ?? "";
+    if (!link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
+    const about = await library.about(link);
+    reply.header("Cache-Control", about ? "public, max-age=3600" : "no-store");
+    return reply.send({ about });
+  });
   app.get<{ Querystring: { url?: string; season?: string } }>("/api/library/episodes", async (request, reply) => {
     const link = request.query.url ?? "";
     const season = Number(request.query.season);
