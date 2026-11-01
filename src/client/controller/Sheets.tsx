@@ -40,7 +40,7 @@ import { comesIn, hueOf } from "../shared/Poster";
 import { QrCode } from "../shared/QrCode";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { RoleSwitch } from "../shared/RoleSwitch";
-import { captionLabel, captionTitle, statusWords, syncWords, trackName } from "../shared/words";
+import { captionLabel, captionTitle, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
 import { Rows, Switch } from "./AccountPages";
 import { InviteFriendsButton } from "./Friends";
 import { codeFromScan } from "./scan";
@@ -210,12 +210,17 @@ export function TracksSheet({
   );
 
   return (
-    <Sheet title={t("player.audioSubtitles")} onClose={onClose} testId="tracks-sheet">
-      {audioChoices.length > 1 && (
+    <Sheet title={tracksTitle(player)} onClose={onClose} testId="tracks-sheet">
+      {audioChoices.length > 1 ? (
         <>
-          <h3 className="sheet-section">{t("player.audio")}</h3>
-          <ChoiceList choices={audioChoices} label={t("player.audio")} />
+          <h3 className="sheet-section">{t("player.audioLanguage")}</h3>
+          <ChoiceList choices={audioChoices} label={t("player.audioLanguage")} />
         </>
+      ) : (
+        // (What the title does not promise, and what a viewer who looks for the film's language is told: the stream has no other.)
+        <p className="muted small" data-testid="no-audio-choice">
+          {t("player.noAudioChoice")}
+        </p>
       )}
       <h3 className="sheet-section">{t("player.subtitles")}</h3>
       {flat ? (

@@ -712,6 +712,51 @@ test.describe("the phone's subtitle style", () => {
   });
 });
 
+test.describe("the menu of tracks of a film that has one sound", () => {
+  // A film that comes with one sound (every film of these tests) has nothing to choose under "Audio", so its menu is not called that, and says why it has no such part.
+  const media = (baseURL: string): NormalizedMedia => ({
+    ...seriesMedia(baseURL),
+    subtitles: [
+      { id: "en", label: "English", lang: "en", url: "/fixtures/sample.vtt" },
+      { id: "en2", label: "English (SDH)", lang: "en", url: "/fixtures/sample.vtt" },
+      { id: "nl", label: "Dutch", lang: "nl", url: "/fixtures/sample.vtt" },
+    ],
+  });
+
+  test("is called Subtitles on the TV, names the language of the subtitles as theirs, and says there is no other audio language", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: media(baseURL!) });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+
+    const button = tv.getByTestId("tv-audio-sub-btn");
+    await expect(button).toHaveAttribute("aria-label", "Subtitles");
+    await expect(button.locator(".tv-btn-label")).toHaveText("Subtitles");
+    await button.click();
+    const menu = tv.getByTestId("audio-subtitles-modal");
+    await expect(menu).toHaveAttribute("data-kind", "tracks");
+    await expect(menu.getByRole("heading", { level: 2 })).toHaveText("Subtitles");
+    await expect(tv.getByTestId("no-audio-choice")).toHaveText("This film has no other audio language to choose.");
+    await expect(menu.getByRole("heading", { level: 3, name: "Subtitle language" })).toBeVisible();
+    await expect(menu.getByRole("heading", { level: 3, name: /^Audio/ })).toHaveCount(0);
+    phone.close();
+  });
+
+  test("is called Subtitles on the phone too, with the same line where an audio list would be", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await loadOnTv(phone, media(baseURL!));
+    await expect(phone.getByTestId("media-title")).toBeVisible();
+
+    await phone.getByTestId("chip-tracks").click();
+    const sheet = phone.getByTestId("tracks-sheet");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole("heading", { level: 2 }).first()).toHaveText("Subtitles");
+    await expect(phone.getByTestId("no-audio-choice")).toHaveText("This film has no other audio language to choose.");
+    await expect(sheet.getByRole("heading", { level: 3, name: /^Audio/ })).toHaveCount(0);
+  });
+});
+
 test.describe("the subtitle delay", () => {
   test("is offered for subtitles that are on, and not while there are none", async ({ browser, baseURL }) => {
     const tv = await openTv(browser);

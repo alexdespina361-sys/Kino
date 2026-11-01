@@ -27,7 +27,7 @@ import {
   VolumeIcon,
 } from "../shared/icons";
 import { Poster } from "../shared/Poster";
-import { friendlyError, qualityName } from "../shared/words";
+import { friendlyError, hasAudioChoice, qualityName, tracksTitle } from "../shared/words";
 import type { PlayOptions } from "./Browse";
 import { useBack, useDpad } from "./dpad";
 import { PlayerError } from "./engine";
@@ -143,7 +143,7 @@ export function useBusy(player: PlayerState, resolving: boolean): boolean {
 }
 
 /** The video has subtitles to choose from, or more than one audio track. */
-export const hasTracks = (player: PlayerState) => Boolean(player.subtitles?.tracks.length) || (player.audio?.tracks.length ?? 0) > 1;
+export const hasTracks = (player: PlayerState) => Boolean(player.subtitles?.tracks.length) || hasAudioChoice(player);
 
 /** The browser would not start the video: it wants a press first (see PlayerEngine.play), and whatever asks again after one gets it going. */
 export const isBlocked = (player: PlayerState) => player.state === "error" && player.error === PlayerError.Blocked;
@@ -207,11 +207,11 @@ function TracksButton({ p, player }: { p: HudProps; player: PlayerState }) {
       data-testid="tv-audio-sub-btn"
       data-fold="tracks"
       onClick={() => p.onOpenMenu("tracks")}
-      title={t("hud.tracksTip")}
-      aria-label={t("player.audioSubtitles")}
+      title={t(hasAudioChoice(player) ? "hud.tracksTip" : "hud.subtitlesTip")}
+      aria-label={tracksTitle(player)}
     >
       <SubtitlesIcon />
-      <span className="tv-btn-label">{t("player.audioSubtitles")}</span>
+      <span className="tv-btn-label">{tracksTitle(player)}</span>
     </button>
   );
 }

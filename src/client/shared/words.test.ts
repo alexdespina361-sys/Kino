@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { CAPTION_SETTINGS, CAPTION_VALUES, MAX_FOLLOWERS, type ResolveStatus } from "../../shared";
 import { setLanguage, t } from "../i18n";
-import { captionLabel, captionTitle, friendlyError, noticeText, qualityName, resolveFailure, socketError, statusWords, syncWords, trackName } from "./words";
+import { captionLabel, captionTitle, friendlyError, hasAudioChoice, noticeText, qualityName, resolveFailure, socketError, statusWords, syncWords, trackName, tracksTitle } from "./words";
 
 const LANGUAGES = ["en", "ro", "it"] as const;
 afterEach(() => setLanguage("en", false));
@@ -43,6 +43,30 @@ describe("trackName", () => {
     expect(trackName({ label: "English", lang: "en" })).toBe("Engleză");
     expect(trackName({ label: "English (SDH)", lang: "en" })).toBe("English (SDH)");
   });
+});
+
+describe("the menu of tracks", () => {
+  const audio = (count: number) => ({ tracks: Array.from({ length: count }, (_, id) => ({ id, label: `Audio ${id + 1}` })), current: 0 });
+
+  it("is called Audio & subtitles only for a film that has more than one sound to listen to", () => {
+    expect(hasAudioChoice({})).toBe(false);
+    expect(hasAudioChoice({ audio: audio(1) })).toBe(false);
+    expect(hasAudioChoice({ audio: audio(2) })).toBe(true);
+    expect(tracksTitle({})).toBe("Subtitles");
+    expect(tracksTitle({ audio: audio(1) })).toBe("Subtitles");
+    expect(tracksTitle({ audio: audio(2) })).toBe("Audio & subtitles");
+  });
+
+  for (const language of LANGUAGES) {
+    it(`${language} has words for both names, for the audio language and for a film that has none to choose`, () => {
+      setLanguage(language, false);
+      for (const key of ["player.audioSubtitles", "player.subtitles", "player.audioLanguage", "player.subtitleLanguage", "player.noAudioChoice", "hud.tracksTip", "hud.subtitlesTip"] as const) {
+        expect(t(key), key).not.toBe(key);
+      }
+      expect(tracksTitle({})).toBe(t("player.subtitles"));
+      expect(tracksTitle({ audio: audio(2) })).toBe(t("player.audioSubtitles"));
+    });
+  }
 });
 
 describe("noticeText", () => {

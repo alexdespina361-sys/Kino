@@ -26,7 +26,7 @@ import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { useEpisodeDetails, type SeasonDetails } from "../shared/episodeDetails";
 import { formatLeft } from "../shared/format";
 import { CheckIcon, CloseIcon } from "../shared/icons";
-import { captionLabel, captionTitle, statusWords, syncWords, trackName } from "../shared/words";
+import { captionLabel, captionTitle, hasAudioChoice, statusWords, syncWords, trackName, tracksTitle } from "../shared/words";
 import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
 
 export type MenuKind = "tracks" | "captions" | "speed" | "quality" | "sources" | "episodes";
@@ -81,10 +81,10 @@ interface MenuProps {
   onEpisode: (url: string) => void;
 }
 
-const titleOf = (kind: MenuKind): string => {
+const titleOf = (kind: MenuKind, player: PlayerState): string => {
   switch (kind) {
     case "tracks":
-      return t("player.audioSubtitles");
+      return tracksTitle(player);
     case "captions":
       return t("player.captionStyle");
     case "speed":
@@ -247,11 +247,11 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
 
   const columns: Column[] = [];
 
-  // Audio: only when there is a choice (a plain file has one track, and a column with a single "Default" is just noise).
+  // Audio: only when there is a choice (a plain file has one track, and a column with a single "Default" is just noise); the menu says so when there is none (see `TvMenu`).
   const audio = player.audio?.tracks ?? [];
   if (audio.length > 1) {
     columns.push({
-      title: t("player.audio"),
+      title: t("player.audioLanguage"),
       size: "narrow",
       options: audio.map((track) => ({
         key: track.id,
@@ -292,7 +292,7 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
       pick: () => p.onSubtitle(playing?.key === group.key ? subtitles!.current : (defaultTrack(group.tracks) ?? group.tracks[0]!).id),
     });
     columns.push({
-      title: t("player.language"),
+      title: t("player.subtitleLanguage"),
       size: "narrow",
       options: [off, ...pinned.map(option), ...heading, ...more.map(option), ...reveal],
     });
@@ -347,7 +347,7 @@ export function TvMenu(props: MenuProps) {
   // Any episode's link will do to ask about its season: the first one is always the same.
   const details = useEpisodeDetails(shown?.episodes[0]?.url, shown?.season);
   const columns = columnsFor(props, { groups, shown, details, setSeason, setting, setSetting, language, setLanguage, showAll: () => setAll(true) }, lists);
-  const title = titleOf(props.kind);
+  const title = titleOf(props.kind, props.player);
 
   // Start on whatever is selected now (the episode you're watching, the current language), so OK changes nothing by accident.
   // Back from the caption style returns to the menu it came from, on the entry that opened it.
@@ -385,6 +385,12 @@ export function TvMenu(props: MenuProps) {
             <CloseIcon />
           </button>
         </div>
+        {props.kind === "tracks" && !hasAudioChoice(props.player) && (
+          // (What the title does not promise, and what a viewer who looks for the film's language is told: the stream has no other.)
+          <p className="tv-menu-note" data-testid="no-audio-choice">
+            {t("player.noAudioChoice")}
+          </p>
+        )}
         <div className="tv-menu-cols">
           {columns.map((column, col) => (
             <div className="tv-menu-col" key={column.title} data-size={column.size} data-wrap={column.wrap}>

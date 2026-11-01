@@ -723,6 +723,7 @@
 }
 .tv-menu-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.6em; }
 .tv-menu-top h2 { margin: 0; font-size: 2.4em; font-weight: 800; }
+.tv-menu-note { margin: -0.9em 0 1.4em; font-size: 1.3em; color: #8a8a8a; } /* the track menu of a film with one audio language: what the title does not offer */
 .tv-menu[data-cols="2"] { width: min(92vw, 68em); }
 .tv-menu[data-cols="3"] { width: min(92vw, 72em); }
 .tv-menu[data-kind="episodes"][data-cols="1"] { width: min(92vw, 52em); }

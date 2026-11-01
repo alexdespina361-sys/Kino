@@ -111,6 +111,16 @@ export function bufferPolicy(inParty: boolean, isProxied = false): { maxBufferLe
 /** How long a direct address may take to start playing before the server's own is used instead (see `PlayerEngine.playNatively`). */
 export const DIRECT_START_MS = 12_000;
 
+/** hls.js's answer to a piece or a list that will not come, once the tries it makes itself are over: leave this quality (its `NetworkErrorAction.SendAlternateToPenaltyBox`, which it does not export). */
+const LEAVE_THIS_QUALITY = 2;
+
+/**
+ * A quality picked by hand stays through the answers above: hls.js would go back to Auto at the first one, a piece that was refused once
+ * was enough, and a viewer found the picture on Auto every few seconds while it was not even short of data. It goes back to Auto only when
+ * that many come one after the other with no piece arriving between them: the quality does not load, and the film would stand still on it.
+ */
+export const QUALITY_GIVE_UPS = 3;
+
 /** 1080p and above: what `formatQualityLabel` calls those (a film's own shape counts: 1920x804 is 1080p, 1280x536 is 720p). */
 const isHighDefinition = (width = 0, height = 0): boolean => width >= 1800 || height >= 800;
 
@@ -288,12 +298,16 @@ export class PlayerEngine {
         capLevelToPlayerSize: false,
         ...bufferPolicy(this.inParty, usesWebsiteProxy(src)),
         lowLatencyMode: false,
+        // (A quality picked by hand is kept through a piece that will not load: see `QUALITY_GIVE_UPS`.)
+        preserveManualLevelOnError: true,
         // (The first piece in the lowest quality, which is the first one the player lists: it drops the variants that have no picture when there are some that do.)
         ...(adaptive ? { startLevel: 0 } : {}),
       });
       this.hls = hls;
       hls.subtitleDisplay = false; // keep its subtitle tracks "hidden" instead of painting them: the page draws them
       let mediaRecoverAttempts = 0;
+      let qualityGiveUps = 0;
+      hls.on(HlsLib.Events.FRAG_LOADED, () => (qualityGiveUps = 0));
       hls.on(HlsLib.Events.ERROR, (_event, data) => {
         console.warn(describeHlsError(data), {
           type: data.type,
@@ -302,6 +316,11 @@ export class PlayerEngine {
           url: data.url,
           response: data.response ? { code: data.response.code, text: data.response.text } : undefined,
         });
+        if (!data.fatal && hls.manualLevel !== -1 && data.errorAction?.action === LEAVE_THIS_QUALITY && (qualityGiveUps += 1) >= QUALITY_GIVE_UPS) {
+          qualityGiveUps = 0;
+          hls.loadLevel = -1; // (what hls.js does at the first one, unless it is told to keep the quality)
+          this.emit();
+        }
         if (data.fatal) {
           if (data.type === HlsLib.ErrorTypes.MEDIA_ERROR && mediaRecoverAttempts < 2) {
             mediaRecoverAttempts++;

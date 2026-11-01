@@ -289,7 +289,8 @@ pnpm build && pnpm start     # http://localhost:8787
   the library (or a show's page), out of a title's page and the pages of the profile, out of a sheet; the phone as a remote puts the remote away to the
   library, with a line that brings it back, and the film plays on. At the library the first Back asks (**Press Back again to leave**, a line that runs
   down 2.5 s) and a second one leaves; a Back that would stop a party for others asks first. Desktops and TVs keep Back as a key
-  (`src/client/shared/backButton.ts`, `docs/android-back.md`, `e2e/android-back.spec.ts`)
+  (`src/client/shared/backButton.ts`, `docs/android-back.md`, `e2e/android-back.spec.ts`, and
+  `e2e/android-back-real.spec.ts` for Chrome's own Back)
 - The controls are one line on any screen, in any language, with every button present (series, subtitles, sources, quality, party). The row
   measures itself (`src/client/tv/fit.ts`) and gives up only as much as it must, in this order: the room between the buttons, the labels of Watch
   party and Audio & subtitles, the episode names under Previous / Next, the labels of Previous / Next, the label of Episodes (each label becomes its

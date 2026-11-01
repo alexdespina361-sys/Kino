@@ -9,6 +9,7 @@ import {
   PARTY_BUFFER_AHEAD_S,
   PARTY_BUFFER_BYTES,
   PlayerEngine,
+  QUALITY_GIVE_UPS,
   bufferPolicy,
   describeHlsError,
   lostTheConnection,
@@ -35,6 +36,7 @@ const FakeHls = vi.hoisted(() => {
       AUDIO_TRACKS_UPDATED: "atu",
       BUFFER_APPENDING: "bufferAppending",
       AUDIO_TRACK_SWITCHING: "audioTrackSwitching",
+      FRAG_LOADED: "fragLoaded",
     };
     static ErrorTypes = { MEDIA_ERROR: "mediaError", NETWORK_ERROR: "networkError" };
     handlers = new Map<string, Handler[]>();
@@ -42,6 +44,12 @@ const FakeHls = vi.hoisted(() => {
     autoLevelCapping = -1;
     currentLevel = -1;
     manualLevel = -1;
+    /** What was written to `loadLevel`, which sets the level that is picked by hand, as in the library. */
+    loadLevelWrites: number[] = [];
+    set loadLevel(level: number) {
+      this.loadLevelWrites.push(level);
+      this.manualLevel = level;
+    }
     subtitleDisplay = true;
     constructor(readonly config: Record<string, unknown>) {
       FakeHls.instances.push(this);
@@ -246,6 +254,88 @@ describe("a picture that comes through this server", () => {
     expect(hls.autoLevelCapping).toBe(-1);
     hls.emit("error", { type: "networkError", details: "manifestLoadError", fatal: true });
     expect(hls.url).toBe(url);
+    engine.destroy();
+  });
+});
+
+describe("a quality picked by hand", () => {
+  const levels = [
+    { width: 640, height: 360 },
+    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 },
+  ];
+  beforeEach(() => {
+    FakeHls.instances.length = 0;
+    FakeHls.supported = true;
+    stubBrowser();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+  const picked = async () => {
+    const { engine } = newEngine();
+    await engine.load("https://cdn.example/a.m3u8", "hls");
+    const hls = FakeHls.instances.at(-1)!;
+    hls.emit("manifestParsed", { levels });
+    hls.manualLevel = 2; // (1080p, from the menu)
+    return { engine, hls };
+  };
+  /** hls.js says: this quality will not do (its tries are over, or a refusal such as a 404 is not tried again). `action` 2 is that; 5 is another try. */
+  const leave = (hls: InstanceType<typeof FakeHls>, action = 2) => hls.emit("error", { type: "networkError", details: "fragLoadError", fatal: false, errorAction: { action } });
+
+  it("is asked of hls.js to be kept when a piece will not load, where it would go back to Auto at the first one", async () => {
+    const { engine, hls } = await picked();
+    expect(hls.config.preserveManualLevelOnError).toBe(true);
+    engine.destroy();
+  });
+
+  it("stays through a piece that was refused, and through a few of them as long as pieces arrive between", async () => {
+    const { engine, hls } = await picked();
+    for (let round = 0; round < 4; round++) {
+      leave(hls);
+      leave(hls);
+      hls.emit("fragLoaded", {});
+    }
+    expect(hls.manualLevel).toBe(2);
+    expect(hls.loadLevelWrites).toEqual([]);
+    engine.destroy();
+  });
+
+  it("goes back to Auto when the quality does not load: that many answers in a row, with no piece between", async () => {
+    const { engine, hls } = await picked();
+    for (let each = 1; each < QUALITY_GIVE_UPS; each++) leave(hls);
+    expect(hls.manualLevel).toBe(2);
+    leave(hls);
+    expect(hls.manualLevel).toBe(-1);
+    expect(hls.loadLevelWrites).toEqual([-1]);
+    engine.destroy();
+  });
+
+  it("is not given up on for the tries hls.js makes on its own, or for an error that ends the film instead", async () => {
+    const { engine, hls } = await picked();
+    for (let each = 0; each < QUALITY_GIVE_UPS * 2; each++) leave(hls, 5);
+    for (let each = 0; each < QUALITY_GIVE_UPS; each++) hls.emit("error", { type: "networkError", details: "manifestLoadError", fatal: true, errorAction: { action: 2 } });
+    expect(hls.manualLevel).toBe(2);
+    expect(hls.loadLevelWrites).toEqual([]);
+    engine.destroy();
+  });
+
+  it("leaves the player's own choice alone: nothing is written to the level when it was never picked", async () => {
+    const { engine, hls } = await picked();
+    hls.manualLevel = -1;
+    for (let each = 0; each < QUALITY_GIVE_UPS * 2; each++) leave(hls);
+    expect(hls.loadLevelWrites).toEqual([]);
+    engine.destroy();
+  });
+
+  it("counts again from nothing after it has gone back, and after a new pick", async () => {
+    const { engine, hls } = await picked();
+    for (let each = 0; each < QUALITY_GIVE_UPS; each++) leave(hls);
+    expect(hls.manualLevel).toBe(-1);
+    hls.manualLevel = 2;
+    for (let each = 1; each < QUALITY_GIVE_UPS; each++) leave(hls);
+    expect(hls.manualLevel).toBe(2);
     engine.destroy();
   });
 });
