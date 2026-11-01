@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>How Kino counts visits</title>
+    <style>
+      :root {
+        --bg: #0b0b0c;
+        --text: #ececee;
+        --muted: #a2a2aa;
+        --line: #2a2a30;
+        --link: #ff6b6b;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #ffffff;
+          --text: #18181b;
+          --muted: #5b5b64;
+          --line: #dcdce2;
+          --link: #c42b2b;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 2rem 16px 4rem;
+        background: var(--bg);
+        color: var(--text);
+        font: 1rem/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main {
+        max-width: 38rem;
+        margin: 0 auto;
+      }
+      a {
+        color: var(--link);
+      }
+      nav {
+        display: flex;
+        gap: 1.25rem;
+        margin: 0 0 2.5rem;
+      }
+      section + section {
+        margin-top: 3rem;
+        padding-top: 2rem;
+        border-top: 1px solid var(--line);
+      }
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: 1.6rem;
+        line-height: 1.25;
+      }
+      h2 {
+        margin: 1.75rem 0 0.25rem;
+        font-size: 1.05rem;
+      }
+      p {
+        margin: 0.25rem 0;
+      }
+      .note {
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav>
+        <a href="#en">English</a>
+        <a href="#ro">Română</a>
+        <a href="#it">Italiano</a>
+        <a href="/">Kino</a>
+      </nav>
+
+      <section id="en" lang="en">
+        <h1>How Kino counts visits</h1>
+        <p class="note">This page says only how visits to Kino are counted. It is not the site's whole privacy policy.</p>
+
+        <h2>What is counted</h2>
+        <p>How many different visitors open the site each day, and how many pages they load. Nothing else about the visit.</p>
+
+        <h2>How</h2>
+        <p>
+          When a page of the site is opened in a browser, the server makes a short code (a hash) from the address the visit came from, the browser's
+          name and the browser's language, mixed with a secret that is new every day. The code is only used to tell a second visit on the same day from
+          a new visitor.
+        </p>
+
+        <h2>What is kept</h2>
+        <p>
+          The codes and the day's secret are deleted when the day (UTC) is over, or at the server's next start if it was asleep then. Two numbers per day
+          stay: how many visitors and how many page loads. The counter does not store your address, your browser's name or your language, sets no cookie
+          and puts nothing on your device.
+        </p>
+
+        <h2>What is outside the counter</h2>
+        <p>
+          Like any website, the server's ordinary log, and the companies that host the site and pass its traffic (Render and Cloudflare), record
+          requests and addresses for a short time. The counter does not use those records.
+        </p>
+
+        <h2>Who sees it</h2>
+        <p>Only the site's owner, as numbers per day.</p>
+
+        <h2>If you do not want to be counted</h2>
+        <p>Switch on "Do Not Track" or "Global Privacy Control" in your browser. Visits that send either are not counted.</p>
+      </section>
+
+      <section id="ro" lang="ro">
+        <h1>Cum numără Kino vizitele</h1>
+        <p class="note">Această pagină spune doar cum sunt numărate vizitele pe Kino. Nu este politica de confidențialitate completă a site-ului.</p>
+
+        <h2>Ce se numără</h2>
+        <p>Câți vizitatori diferiți deschid site-ul în fiecare zi și câte pagini încarcă. Nimic altceva despre vizită.</p>
+
+        <h2>Cum</h2>
+        <p>
+          Când o pagină a site-ului este deschisă într-un browser, serverul face un cod scurt (un hash) din adresa de la care vine vizita, numele
+          browserului și limba browserului, amestecate cu un secret care este nou în fiecare zi. Codul servește doar ca să deosebească o a doua vizită
+          din aceeași zi de un vizitator nou.
+        </p>
+
+        <h2>Ce se păstrează</h2>
+        <p>
+          Codurile și secretul zilei sunt șterse când ziua (UTC) s-a terminat, sau la următoarea pornire a serverului dacă dormea atunci. Rămân două
+          numere pe zi: câți vizitatori și câte pagini încărcate. Contorul nu stochează adresa ta, numele browserului sau limba ta, nu setează niciun
+          cookie și nu pune nimic pe dispozitivul tău.
+        </p>
+
+        <h2>Ce este în afara contorului</h2>
+        <p>
+          Ca orice site, jurnalul obișnuit al serverului și companiile care găzduiesc site-ul și îi transmit traficul (Render și Cloudflare) înregistrează
+          cereri și adrese pentru scurt timp. Contorul nu folosește aceste înregistrări.
+        </p>
+
+        <h2>Cine îl vede</h2>
+        <p>Doar proprietarul site-ului, ca numere pe zi.</p>
+
+        <h2>Dacă nu vrei să fii numărat</h2>
+        <p>Activează „Do Not Track” sau „Global Privacy Control” în browser. Vizitele care trimit unul dintre ele nu sunt numărate.</p>
+      </section>
+
+      <section id="it" lang="it">
+        <h1>Come Kino conta le visite</h1>
+        <p class="note">Questa pagina dice solo come vengono contate le visite a Kino. Non è l'informativa sulla privacy completa del sito.</p>
+
+        <h2>Cosa si conta</h2>
+        <p>Quanti visitatori diversi aprono il sito ogni giorno e quante pagine caricano. Nient'altro sulla visita.</p>
+
+        <h2>Come</h2>
+        <p>
+          Quando una pagina del sito viene aperta in un browser, il server crea un codice breve (un hash) dall'indirizzo da cui arriva la visita, dal
+          nome del browser e dalla lingua del browser, mescolati con un segreto nuovo ogni giorno. Il codice serve solo a distinguere una seconda visita
+          dello stesso giorno da un nuovo visitatore.
+        </p>
+
+        <h2>Cosa viene conservato</h2>
+        <p>
+          I codici e il segreto del giorno vengono cancellati quando il giorno (UTC) finisce, o al successivo avvio del server se in quel momento era in
+          pausa. Restano due numeri al giorno: quanti visitatori e quante pagine caricate. Il contatore non memorizza il tuo indirizzo, il nome del
+          browser o la tua lingua, non imposta alcun cookie e non mette nulla sul tuo dispositivo.
+        </p>
+
+        <h2>Cosa è fuori dal contatore</h2>
+        <p>
+          Come qualsiasi sito, il registro ordinario del server e le aziende che ospitano il sito e ne instradano il traffico (Render e Cloudflare)
+          registrano richieste e indirizzi per un breve periodo. Il contatore non usa queste registrazioni.
+        </p>
+
+        <h2>Chi lo vede</h2>
+        <p>Solo il proprietario del sito, come numeri al giorno.</p>
+
+        <h2>Se non vuoi essere contato</h2>
+        <p>Attiva «Do Not Track» o «Global Privacy Control» nel browser. Le visite che ne inviano uno non vengono contate.</p>
+      </section>
+    </main>
+  </body>
+</html>

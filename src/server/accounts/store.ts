@@ -91,6 +91,17 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: StoreError 
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 const fail = (error: StoreError): Result<never> => ({ ok: false, error });
 
+/** How the accounts are used, in numbers and moments only (what the owner's stats are made of): nothing here says who anyone is. */
+export interface AccountUsage {
+  profiles: number;
+  /** When each account was made (ms), the oldest first. */
+  madeAt: number[];
+  /** For each account with a device signed in: when the most recently used of its devices was last used (ms), the oldest first. A device that signed out is not here. */
+  lastUsedAt: number[];
+  /** The devices signed in, by what they are (`tv`, `remote`, `browser`). */
+  devices: Record<string, number>;
+}
+
 export interface StoreOptions {
   persistence: Persistence;
   now?: () => number;
@@ -284,6 +295,23 @@ export class AccountStore {
 
   countAccounts() {
     return this.accounts.size;
+  }
+  usage(): AccountUsage {
+    const now = this.now();
+    const lastUsed = new Map<string, number>();
+    const devices: Record<string, number> = {};
+    for (const session of this.sessions.values()) {
+      if (session.expiresAt <= now || !this.accounts.has(session.accountId)) continue;
+      devices[session.kind] = (devices[session.kind] ?? 0) + 1;
+      lastUsed.set(session.accountId, Math.max(lastUsed.get(session.accountId) ?? 0, session.lastSeenAt));
+    }
+    const accounts = [...this.accounts.values()];
+    return {
+      profiles: accounts.reduce((sum, account) => sum + account.profiles.length, 0),
+      madeAt: accounts.map((account) => account.createdAt).sort((a, b) => a - b),
+      lastUsedAt: [...lastUsed.values()].sort((a, b) => a - b),
+      devices,
+    };
   }
   findByEmail(email: string): AccountDoc | undefined {
     const id = this.emails.get(email);

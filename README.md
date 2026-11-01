@@ -41,7 +41,7 @@ pnpm build && pnpm start     # http://localhost:8787
 | `DATABASE_URL` | – | Keep accounts, which phone goes with which TV, and what each TV was playing in Postgres. Without it they are kept in `DATA_DIR`. |
 | `DATA_DIR` | `data` | Folder for the file `kino.json` that holds the same (git-ignored: it holds password hashes). `memory` keeps nothing. |
 | `REGISTRATION` | `open` | `closed`: nobody new can make an account (once the people it is for have one). |
-| `MAX_ACCOUNTS` | unlimited | A cap on accounts, for a small server. |
+| `MAX_ACCOUNTS` | `500` | A cap on accounts, for a small server: sign-ups close by themselves once there are this many. |
 | `SIGNUPS_PER_HOUR` | `10` | How many accounts one address may make in an hour (a household or a school behind one address may want more). |
 | `TRUST_PROXY` | `1` on Render, else off | How many proxies sit in front (a number, `true` or `false`), so the rate limits see the real address. |
 | `LIBRARY` | on | `off` starts without the browsing library. |
@@ -53,6 +53,7 @@ pnpm build && pnpm start     # http://localhost:8787
 | `FEEDBACK_ADMIN_TOKEN` | – | The team's token (24 characters or more) for reading and answering what people send with the **Feedback** button. Without it reports are kept and nobody can read them. Keep it secret; see [docs/feedback.md](docs/feedback.md). |
 | `FEEDBACK_MAX_MB` | `150` | What the reports (their pictures, nearly all of it) may take up before the oldest closed ones make room. |
 | `FEEDBACK_SENDS_PER_10_MIN` | `6` | How many reports one address may send in ten minutes. |
+| `VISITOR_COUNT` | on | `off`: nobody is counted. Otherwise the server counts how many people open the site, a number for each day and nothing about who; the owner reads it with `node scripts/stats.mjs` (the same token as the feedback). See [docs/stats.md](docs/stats.md). |
 
 ## What it does
 
@@ -215,6 +216,11 @@ pnpm build && pnpm start     # http://localhost:8787
   messages** (no email: the report is kept by the browser under a key of its own, or by the account). Words are kept as a draft; Back goes a step back, then
   closes. How it is set up, read and judged, what is collected and left out, and what could not be tested: [docs/feedback.md](docs/feedback.md)
   (`src/client/feedback/`, `src/server/feedback/`, `scripts/feedback.mjs`, `e2e/feedback.spec.ts`)
+- **The owner's stats**: `node scripts/stats.mjs` tells how many accounts there are (made and used today, this week, this month; the devices signed in) and how many
+  people opened the site (a count per day: a hash of the address, browser and language with a secret that is thrown away at the end of the day, so nothing that is
+  kept says who; no cookie; people who send Do Not Track are not counted), with a table of the last days. It answers only to the team's token. Counting starts at the
+  deploy; nothing earlier is known. What is kept, what is not counted, what was not tested (the real Cloudflare and Render): [docs/stats.md](docs/stats.md);
+  the notice for visitors, in English, Romanian and Italian, is the page `/privacy.html` (`src/server/stats/`, `scripts/stats.mjs`, `public/privacy.html`)
 
 **Phone**
 - Pair by QR scan (camera) or by code; a QR link opened from the phone's camera app pairs by itself. A phone that already has a TV is asked
@@ -758,11 +764,11 @@ Android TV remotes, the wake lock, an iPhone's camera and browsers, and the home
 src/shared/    protocol.ts (messages, commands, state), media.ts (NormalizedMedia, series helpers), account.ts (profiles, the merge), rating.ts (what a rating remembers of the watching),
                friends.ts (the friends' switches, what travels between them), chat.ts (the chat's limits and the rule for a message)
 src/server/    sessions/ (registry: devices, codes, controllers; pairings: which phone goes with which TV, kept between restarts), websocket/hub.ts,
-               resolvers/, accounts/ (store, routes, persistence, friends: codes, inboxes, what a friend may see, chat.ts and chatRoutes.ts: the chat between two friends), feedback/ (what people send with the Feedback button, and the team's side of it), app.ts
+               resolvers/, accounts/ (store, routes, persistence, friends: codes, inboxes, what a friend may see, chat.ts and chatRoutes.ts: the chat between two friends), feedback/ (what people send with the Feedback button, and the team's side of it), stats/ (how many people open the site, and the owner's stats), app.ts
 src/client/    controller/ (phone), tv/ (receiver, HUD, menu, library, PlayerEngine), account/ (profile store, sync, shared account UI),
                friends/ (the state both screens share, what is new, the friends' pages of the TV), chat/ (the chat of two friends: the phone's sheet, the TV's pages, what waits), feedback/ (the Feedback form, the picture of the screen and its marks),
                i18n/ (en, ro, it), shared/ (socket, format, words, logo, icons)
-public/        copied as it is into the built page: the web app manifest and its icons
+public/        copied as it is into the built page: the web app manifest and its icons, and privacy.html (how visits are counted)
 fixtures/      sample.mp4, long.mp4 (40 s, for Up Next), hls/ (VP9, so Playwright's Chromium can decode them)
 e2e/           Playwright specs and helpers
 ```
