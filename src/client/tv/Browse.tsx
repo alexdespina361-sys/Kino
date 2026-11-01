@@ -18,7 +18,7 @@ import { useBell } from "../friends/useBell";
 import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
-import { useHandHeldBack } from "../shared/backButton";
+import { handHeld, useHandHeldBack } from "../shared/backButton";
 import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, nearBottom, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
@@ -447,6 +447,14 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     remembered.detail = null;
     setDetail(null);
     setPending(CONTENT);
+  };
+  /**
+   * A click on the empty part of a title's page closes it, as Back does: with a mouse the Close button can be far away, and a click beside the page is the short way off it.
+   * A finger is on the page to read it and to scroll it, and it rests on the picture, or between two lines, on the way: what it touches there is not a way off (the page has its
+   * Close button, and the phone's own Back).
+   */
+  const closeBesideIt = (event: MouseEvent) => {
+    if (event.target === event.currentTarget && !handHeld()) closeDetail();
   };
   // A phone or a tablet has no Back key: its own Back does what the remote's does, out of a title's page first, then from a page of the library to the
   // one it is a step in from (Home at the end). Home is as far back as the library goes: the site asks there before it is left (see shared/backButton.ts).
@@ -1415,13 +1423,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       )}
 
       {detail && (
-        // A tap on the empty part of the page closes it, as Back does.
-        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" data-show={series.isShow} data-art={Boolean(detailArt)} onClick={(event) => event.target === event.currentTarget && closeDetail()}>
+        // A click on the empty part of the page closes it, as Back does (but not a touch: see `closeBesideIt`).
+        <div className="tv-detail" role="dialog" aria-modal="true" aria-label={detail.entry.title} data-testid="tv-detail" data-show={series.isShow} data-art={Boolean(detailArt)} onClick={closeBesideIt}>
           {!compact && <DetailArt image={detailArt} />}
           {/* The page scrolls (a show's episodes lie under what a film's page is all of); the picture and the Close button stay. (On a phone held upright the picture is the page's own, at its top, and goes up with it.) */}
-          <div className="tv-detail-scroll" onClick={(event) => event.target === event.currentTarget && closeDetail()} onFocus={scrollPage}>
+          <div className="tv-detail-scroll" onClick={closeBesideIt} onFocus={scrollPage}>
             {compact && <DetailArt image={detailArt} />}
-            <div className="tv-detail-hero" onClick={(event) => event.target === event.currentTarget && closeDetail()}>
+            <div className="tv-detail-hero" onClick={closeBesideIt}>
               <div className="tv-detail-text">
                 <p className="tv-hero-eyebrow">{detail.label}</p>
                 <h1 className="tv-detail-title" data-testid="tv-detail-title">
