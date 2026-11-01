@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { sectionOf, type EpisodeDetail, type LibraryItem, type LibraryRow, type LibrarySection } from "../../shared";
+import { AGE_COUNTRIES, sectionOf, type EpisodeDetail, type LibraryItem, type LibraryRow, type LibrarySection, type TitleAbout } from "../../shared";
 import type { LibrarySource } from "./library";
 import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, type FilmpireCategory } from "./shelves";
 
@@ -206,6 +206,43 @@ const TmdbShowSchema = z.object({
   seasons: z.array(z.object({ season_number: z.number().int(), episode_count: z.number().int().optional(), air_date: z.string().nullable().optional() })),
 });
 
+/**
+ * One title with what TMDB can append to its answer (`append_to_response`): the people, the age rating (a film's `release_dates`, a show's `content_ratings`)
+ * and the titles like it, all in this one answer. Every field is optional: a title TMDB knows little of still has its page.
+ */
+const TmdbAboutSchema = z.object({
+  genres: z.array(z.object({ name: z.string() })).optional(),
+  created_by: z.array(z.object({ name: z.string() })).optional(),
+  belongs_to_collection: z.object({ id: z.number().int() }).nullish(),
+  credits: z
+    .object({
+      cast: z.array(z.object({ name: z.string(), order: z.number().optional() })).optional(),
+      crew: z.array(z.object({ name: z.string(), job: z.string().optional() })).optional(),
+    })
+    .optional(),
+  release_dates: z
+    .object({ results: z.array(z.object({ iso_3166_1: z.string(), release_dates: z.array(z.object({ certification: z.string().nullish(), type: z.number().optional() })) })) })
+    .optional(),
+  content_ratings: z.object({ results: z.array(z.object({ iso_3166_1: z.string(), rating: z.string().nullish() })) }).optional(),
+  recommendations: z.object({ results: z.array(z.unknown()) }).optional(),
+});
+
+/** The titles of a collection (a film and its sequels). */
+const TmdbCollectionSchema = z.object({ parts: z.array(z.unknown()) });
+
+/** What a title's page lists of each kind at most. */
+const ABOUT_MAX = { genres: 8, directors: 4, creators: 4, cast: 8, parts: 30, similar: 20 } as const;
+
+/** The names in a list, each once, without the blank ones, no more than `max`. */
+const namesOf = (list: ReadonlyArray<{ name: string }> | undefined, max: number): string[] => [...new Set((list ?? []).map((one) => one.name.trim().slice(0, 100)).filter(Boolean))].slice(0, max);
+
+/** The age rating a country gives a title, as it writes it: a film's theatrical release first, else any release that has one. */
+function ageIn(country: string, doc: z.infer<typeof TmdbAboutSchema>, type: "movie" | "tv"): string | undefined {
+  if (type === "tv") return doc.content_ratings?.results.find((one) => one.iso_3166_1 === country)?.rating?.trim();
+  const releases = doc.release_dates?.results.find((one) => one.iso_3166_1 === country)?.release_dates ?? [];
+  return (releases.find((one) => one.certification && one.type === 3) ?? releases.find((one) => one.certification))?.certification?.trim();
+}
+
 /** Today as TMDB writes a date, to tell what has not come out yet. */
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -242,6 +279,12 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
     url,
   };
 }
+
+/** When a title came out, as TMDB writes it (a title without a date after the ones with). */
+const releasedAt = (raw: unknown): string => {
+  const found = TmdbItemSchema.safeParse(raw);
+  return (found.success && (found.data.release_date || found.data.first_air_date)) || "9999";
+};
 
 /** The TMDB id and kind of a title from its Filmpire link (`/watch/603`, `/watch/1399?s=1&e=1`, or `/watch/1399?type=series`), or null for any other link. */
 function parseWatchLink(link: string): { id: number; type: "movie" | "tv" } | null {
@@ -424,6 +467,51 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       );
 
       return probeResults.filter((item): item is LibraryItem => item !== null);
+    },
+    /**
+     * What TMDB knows of the title a link plays besides its tile, in one question (`append_to_response`), and a second for a film that is part of a collection: that
+     * is all, and only when a page asks. A link that is not Filmpire's, and a title TMDB does not know, have none; a place that cannot be reached throws (as above).
+     * The titles are not probed for a video, as the rows' are not: one that will not play leaves the lists when it is tried (see `LibraryService.played`).
+     */
+    async about(link: string): Promise<TitleAbout | null> {
+      const title = parseWatchLink(link);
+      if (!title) return null;
+      const ask = (path: string, append = "") => get(`${BASE_URL}${path}?api_key=${apiKey}&language=en-US${append}`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+      const res = await ask(`/${title.type}/${title.id}`, `&append_to_response=credits,${title.type === "movie" ? "release_dates" : "content_ratings"},recommendations`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`about: HTTP ${res.status}`);
+      const doc = TmdbAboutSchema.parse(await res.json());
+      const own = `filmpire-${title.type}-${title.id}`;
+      const listed = (results: readonly unknown[], type: "movie" | "tv", max: number, skip: ReadonlySet<string> = new Set()) =>
+        (shouldFilterTrash ? results.filter((item) => !isTrashItem(item)) : results)
+          .map((item) => toLibraryItem(item, type))
+          .filter((item): item is LibraryItem => item !== null && item.id !== own && !skip.has(item.id))
+          .slice(0, max);
+
+      let parts: LibraryItem[] = [];
+      if (title.type === "movie" && doc.belongs_to_collection) {
+        const collection = await ask(`/collection/${doc.belongs_to_collection.id}`);
+        if (collection.ok) parts = listed([...TmdbCollectionSchema.parse(await collection.json()).parts].sort((a, b) => releasedAt(a).localeCompare(releasedAt(b))), "movie", ABOUT_MAX.parts);
+        else if (collection.status !== 404) throw new Error(`about: collection HTTP ${collection.status}`);
+      }
+      const similar = listed(doc.recommendations?.results ?? [], title.type, ABOUT_MAX.similar, new Set(parts.map((item) => item.id))); // (a sequel is among the parts, not among the titles like it as well)
+
+      const ages: Record<string, string> = {};
+      for (const country of AGE_COUNTRIES) {
+        const age = ageIn(country, doc, title.type);
+        if (age) ages[country] = age.slice(0, 20);
+      }
+      const about: TitleAbout = {
+        genres: namesOf(doc.genres, ABOUT_MAX.genres).map((name) => name.slice(0, 40)),
+        directors: title.type === "movie" ? namesOf(doc.credits?.crew?.filter((one) => one.job === "Director"), ABOUT_MAX.directors) : [], // (a show's crew is its episodes' directors: it has its creators)
+        creators: namesOf(doc.created_by, ABOUT_MAX.creators),
+        cast: namesOf([...(doc.credits?.cast ?? [])].sort((a, b) => (a.order ?? 1e6) - (b.order ?? 1e6)), ABOUT_MAX.cast),
+        ages,
+        parts,
+        similar,
+      };
+      const known = about.genres.length + about.directors.length + about.creators.length + about.cast.length + Object.keys(ages).length + parts.length + similar.length;
+      return known > 0 ? about : null;
     },
     async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
       const title = parseWatchLink(link);

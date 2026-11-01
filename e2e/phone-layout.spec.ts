@@ -191,6 +191,36 @@ test.describe("the remote, held upright", () => {
     });
   }
 
+  // What the movie database knows of a title (the age rating and genres, who made it and who is in it, two rows of titles) is added under what the page is about: nothing above Play moves, and the page still fits.
+  const known = {
+    genres: ["Animation", "Action", "Comedy", "Family"],
+    directors: ["Mark Osborne", "John Stevenson"],
+    creators: [],
+    cast: ["Jack Black", "Dustin Hoffman", "Angelina Jolie", "Ian McShane", "Jackie Chan", "Seth Rogen", "Lucy Liu", "David Cross"],
+    ages: { US: "PG-13", GB: "12A", RO: "AP-12", IT: "T" },
+    parts: [film("p1", "Kung Fu Panda 2"), film("p2", "Kung Fu Panda 3")],
+    similar: [film("s1", "Madagascar"), film("s2", "Shrek"), film("s3", "How to Train Your Dragon")],
+  };
+  for (const { size, locale, name } of CASES) {
+    test(`at ${name}: a title's page with what the movie database knows of it fits a thumb and an eye, with Play in the first screen`, async ({ browser }) => {
+      const phone = await pairedPhone(browser, size, locale);
+      await phone.route("**/api/library/about*", (route) => route.fulfill({ json: { about: known } }));
+      await phone.getByTestId("library-tile").nth(2).tap();
+      const page = phone.getByTestId("title-sheet");
+      await expect(page.getByTestId("about-people")).toBeVisible();
+      await expect(page.getByTestId("title-about-similar")).toBeAttached();
+      await settled(page);
+      const play = (await phone.getByTestId("title-play").boundingBox())!;
+      expect(play.y + play.height, "Play is in the first screen of the page").toBeLessThanOrEqual(size.height);
+      await expectFits(phone, `${name}, a title's page with what the movie database knows`);
+      for (const rows of ["title-about-parts", "title-about-similar"]) {
+        await page.getByTestId(rows).scrollIntoViewIfNeeded();
+        await settled(page.getByTestId(rows));
+        await expectFits(phone, `${name}, a title's page at its row ${rows}`);
+      }
+    });
+  }
+
   for (const size of [SIZES[0]!, SIZES[2]!]) {
     test(`at ${size.name}: a sheet leaves the page it was opened from in view (at most 70% of a tall screen, 78% of a short one)`, async ({ browser }) => {
       const phone = await pairedPhone(browser, size);

@@ -180,6 +180,51 @@ describe("stepFrom on a show's own page (buttons, seasons, episodes, one under t
   });
 });
 
+describe("stepFrom on a title's page that lists rows of titles (the other parts of its collection, titles like it)", () => {
+  // A film: its buttons, then two rows of titles (three, and five).
+  const film: Shape = { rail: [1, 1], top: [1], rows: [8], detail: [3], close: [1], related: [3, 5] };
+  // A show: the buttons, the seasons, the episodes, then one row of titles.
+  const show: Shape = { rail: [1, 1], top: [1], rows: [8], detail: [2], close: [1], seasons: [4], episodes: [1, 1, 1], related: [6] };
+
+  it("goes down from a film's buttons into the first row, and on to the next row, and back up the same way", () => {
+    expect(stepFrom(film, at("detail", 0, 2), "down")).toEqual(at("related", 0, 0));
+    expect(stepFrom(film, at("related", 0, 0), "down")).toEqual(at("related", 1, 0));
+    expect(stepFrom(film, at("related", 1, 3), "up")).toEqual(at("related", 0, 2)); // (the last title of the shorter row above)
+    expect(stepFrom(film, at("related", 0, 1), "up")).toEqual(at("detail", 0, 0));
+    expect(stepFrom(film, at("related", 1, 1), "down")).toBeNull(); // (the last row is the end of the page)
+  });
+
+  it("walks along a row and stops at both ends, without leaving sideways", () => {
+    expect(stepFrom(film, at("related", 1, 0), "right")).toEqual(at("related", 1, 1));
+    expect(stepFrom(film, at("related", 1, 4), "right")).toBeNull();
+    expect(stepFrom(film, at("related", 1, 1), "left")).toEqual(at("related", 1, 0));
+    expect(stepFrom(film, at("related", 1, 0), "left")).toBeNull(); // (not into the menu either: nothing leads out of the page)
+    expect(stepFrom(film, at("related", 0, 2), "right")).toBeNull();
+  });
+
+  it("comes after a show's episodes, and back up from the row to the last of them", () => {
+    expect(stepFrom(show, at("episodes", 1, 0), "down")).toEqual(at("episodes", 2, 0));
+    expect(stepFrom(show, at("episodes", 2, 0), "down")).toEqual(at("related", 0, 0));
+    expect(stepFrom(show, at("related", 0, 4), "up")).toEqual(at("episodes", 2, 0));
+  });
+
+  it("goes round what is not there: a show with no seasons to choose, or whose episodes are still being asked for", () => {
+    expect(stepFrom({ ...show, seasons: [] }, at("detail", 0, 0), "down")).toEqual(at("episodes", 0, 0));
+    const loading: Shape = { ...show, episodes: [] };
+    expect(stepFrom(loading, at("seasons", 0, 1), "down")).toEqual(at("related", 0, 0));
+    expect(stepFrom({ ...loading, seasons: [] }, at("detail", 0, 0), "down")).toEqual(at("related", 0, 0));
+    expect(stepFrom(loading, at("related", 0, 0), "up")).toEqual(at("seasons", 0, 0));
+    expect(stepFrom({ ...loading, seasons: [] }, at("related", 0, 0), "up")).toEqual(at("detail", 0, 0));
+  });
+
+  it("is as it was when the page lists no rows (none known, none yet)", () => {
+    const plain: Shape = { ...film, related: [] };
+    expect(stepFrom(plain, at("detail", 0, 1), "down")).toBeNull();
+    expect(stepFrom({ rail: [1], detail: [1], close: [1] }, at("detail", 0, 0), "down")).toBeNull();
+    expect(stepFrom({ ...show, related: [] }, at("episodes", 2, 0), "down")).toBeNull();
+  });
+});
+
 describe("stepFrom with the search filter (All, Movies, Series)", () => {
   // The filter sits above the results, to the right of the keys.
   const shape: Shape = { rail: [1, 1], top: [1], keys: [6, 6, 6, 2], chips: [3], results: gridRows(7, 3) };

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { LibraryRow } from "../../shared";
+import type { LibraryRow, TitleAbout } from "../../shared";
 import { createLibrary, STRIKE_GAP_MS, type LibrarySource } from "./library";
 
 const row = (title: string, count = 2): LibraryRow => ({
@@ -153,6 +153,78 @@ describe("createLibrary similar", () => {
     const broken = knowing("a", () => Promise.reject(new Error("down")));
     expect(await setup([broken]).library.similar("https://x.example/watch/1")).toEqual([]);
     expect(await setup([fakeSource("plain", [gives(row("R"))])]).library.similar("https://x.example/watch/1")).toEqual([]);
+  });
+});
+
+describe("createLibrary about", () => {
+  const item = (id: string) => ({ id, title: id, url: `https://x.example/${id}` });
+  const about = (over: Partial<TitleAbout> = {}): TitleAbout => ({ genres: ["Drama"], directors: [], creators: [], cast: [], ages: {}, parts: [], similar: [], ...over });
+  /** A source that knows one thing about any link, and counts how often it was asked. */
+  const knowing = (id: string, answer: () => Promise<TitleAbout | null>): LibrarySource & { asked: string[] } => {
+    const asked: string[] = [];
+    return {
+      id,
+      name: id,
+      load: gives(row("R")),
+      asked,
+      about: (link: string) => {
+        asked.push(link);
+        return answer();
+      },
+    };
+  };
+
+  it("asks the sources in turn and takes the first answer there is, one question for each title however often it is opened", async () => {
+    const silent = knowing("a", () => Promise.resolve(null));
+    const wise = knowing("b", () => Promise.resolve(about({ cast: ["Ann"] })));
+    const later = knowing("c", () => Promise.resolve(about({ cast: ["Bo"] })));
+    const { library, advance } = setup([silent, wise, later]);
+    expect((await library.about("https://x.example/watch/1"))?.cast).toEqual(["Ann"]);
+    expect((await library.about("https://x.example/watch/1"))?.cast).toEqual(["Ann"]);
+    expect([silent.asked.length, wise.asked.length, later.asked.length]).toEqual([1, 1, 0]);
+    advance(1000); // (as long as the library is good)
+    await library.about("https://x.example/watch/1");
+    expect(wise.asked).toHaveLength(2);
+  });
+
+  it("is one title for every episode of a show", async () => {
+    const source = knowing("a", () => Promise.resolve(about()));
+    const { library } = setup([source]);
+    await library.about("https://x.example/watch/7?s=1&e=1");
+    await library.about("https://x.example/watch/7?s=3&e=12");
+    expect(source.asked).toEqual(["https://x.example/watch/7?s=1&e=1"]);
+    await library.about("https://x.example/watch/8?s=1&e=1");
+    expect(source.asked).toHaveLength(2);
+  });
+
+  it("remembers that nobody knows a title, but not that a place could not be reached", async () => {
+    let up = false;
+    const source = knowing("a", () => (up ? Promise.resolve(null) : Promise.reject(new Error("down"))));
+    const { library } = setup([source]);
+    expect(await library.about("https://x.example/watch/1")).toBeNull();
+    expect(await library.about("https://x.example/watch/1")).toBeNull();
+    expect(source.asked).toHaveLength(2); // asked again: the first was not an answer
+    up = true;
+    expect(await library.about("https://x.example/watch/1")).toBeNull();
+    expect(await library.about("https://x.example/watch/1")).toBeNull();
+    expect(source.asked).toHaveLength(3); // ...and this one was
+  });
+
+  it("is none when no source knows how", async () => {
+    expect(await setup([fakeSource("plain", [gives(row("R"))])]).library.about("https://x.example/watch/1")).toBeNull();
+  });
+
+  it("leaves out of its lists a title that would not play, however long ago the answer was kept, and lets the search find the others", async () => {
+    const source = knowing("a", () => Promise.resolve(about({ parts: [item("one"), item("two")], similar: [item("three"), item("four")] })));
+    const { library } = setup([source]);
+    expect((await library.about("https://x.example/watch/1"))?.similar.map((found) => found.id)).toEqual(["three", "four"]);
+    library.played("https://x.example/three", "none");
+    library.played("https://x.example/one", "none");
+    const again = await library.about("https://x.example/watch/1");
+    expect(again?.parts.map((found) => found.id)).toEqual(["two"]);
+    expect(again?.similar.map((found) => found.id)).toEqual(["four"]);
+    expect(source.asked).toHaveLength(1);
+    expect((await library.search("four")).items.map((found) => found.id)).toContain("four");
   });
 });
 

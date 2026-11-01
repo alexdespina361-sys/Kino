@@ -1,4 +1,4 @@
-import { CLOSEST_MAX, guessesFor, normalizeQuery, rankByQuery, spelledOut, TitleIndex, withoutNoise, type EpisodeDetail, type Library, type LibraryItem, type LibraryRow, type LibrarySection } from "../../shared";
+import { CLOSEST_MAX, guessesFor, normalizeQuery, rankByQuery, spelledOut, TitleIndex, titleLink, withoutNoise, type EpisodeDetail, type Library, type LibraryItem, type LibraryRow, type LibrarySection, type TitleAbout } from "../../shared";
 
 /** A place that offers video openly and can list some of it as rows of titles. Each one is asked as seldom as the cache allows. */
 export interface LibrarySource {
@@ -9,6 +9,8 @@ export interface LibrarySource {
   search?(query: string): Promise<LibraryItem[]>;
   /** Titles like the one a link plays, when the link is one of this place's own (anything else: none). */
   similar?(link: string): Promise<LibraryItem[]>;
+  /** What is known about the title a link plays besides its tile (genres, people, age rating, the other parts of its collection, titles like it), when the link is one of this place's own (anything else: none). Throws when the place cannot be reached. */
+  about?(link: string): Promise<TitleAbout | null>;
   /** What is known about each episode of one season of the show a link plays, when the link is one of this place's own (anything else: none). */
   episodes?(link: string, season: number): Promise<EpisodeDetail[]>;
   /** The seasons that can be watched of the show a link plays, in order (none for a film or a link that is not this place's own). Throws when the place cannot be reached. */
@@ -36,6 +38,8 @@ export interface LibraryService {
   /** More titles of a row (see `LibrarySource.more`). Throws when no place could be reached. */
   more(rowId: string, page: number): Promise<{ items: LibraryItem[]; last: boolean }>;
   similar(link: string): Promise<LibraryItem[]>;
+  /** What the places know of one title besides its tile (see `LibrarySource.about`): asked once for each title that is opened, and none for one nobody knows. */
+  about(link: string): Promise<TitleAbout | null>;
   episodes(link: string, season: number): Promise<EpisodeDetail[]>;
   seasons(link: string): Promise<number[]>;
   /**
@@ -216,6 +220,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
     return pending;
   };
   const similarTo = answers<LibraryItem>();
+  const aboutTitle = answers<TitleAbout>(); // (an answer is one thing: it is kept as a list of one, and a title nobody knows as a list of none)
   const episodesOf = answers<EpisodeDetail>();
   const seasonsOf = answers<number>();
 
@@ -347,6 +352,17 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       const found = await similarTo(link, (source) => source.similar?.(link));
       learn(found);
       return found.filter((item) => listed(item));
+    },
+    about: async (link: string) => {
+      // (Every episode of a show is one title: the answer is kept under the link of the show.)
+      const [found] = await aboutTitle(titleLink(link), async (source) => {
+        const about = await source.about?.(link);
+        return about ? [about] : [];
+      });
+      if (!found) return null;
+      learn([...found.parts, ...found.similar]);
+      // (A title that would not play is left out of these as it is of the rows, however long ago the answer was kept.)
+      return { ...found, parts: found.parts.filter((item) => listed(item)), similar: found.similar.filter((item) => listed(item)) };
     },
     episodes: (link: string, season: number) => episodesOf(`${season}|${link}`, (source) => source.episodes?.(link, season)),
     seasons: (link: string) => seasonsOf(link, (source) => source.seasons?.(link)),

@@ -309,6 +309,23 @@
 :root[data-ui="polish"] .tv-detail-eps-title { font-size: var(--fs-4); font-weight: 700; letter-spacing: -0.01em; }
 :root[data-ui="polish"] .tv-detail-eps-note { font-size: var(--fs-2); }
 
+/*
+ * What the movie database knows of a title. Its age rating and genres are a line under the year and the people (who made it, who is in it) are under what it is about:
+ * the words are the size of the line under the title, and they are above the buttons, so that the page (whose words are at its foot) grows upward and Play stays where it was.
+ * Under the first screen, and under a show's episodes, are the rows of the titles that go with it: the library's own rows, on a ground of the page's colour (the picture stays behind the page).
+ */
+:root[data-ui="polish"] .tv-detail .about-facts { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--em) * 0.3) calc(var(--em) * 1); margin: 0; font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
+:root[data-ui="polish"] .tv-detail .about-age { display: inline-flex; align-items: baseline; gap: calc(var(--em) * 0.4); padding: 0 calc(var(--em) * 0.7); border-radius: var(--r-1); box-shadow: inset 0 0 0 calc(var(--em) * 0.15) var(--text-3); color: var(--text-1); font-weight: 800; line-height: 1.5; }
+:root[data-ui="polish"] .tv-detail .about-age small { font-size: 0.7em; font-weight: 700; color: var(--text-3); }
+:root[data-ui="polish"] .tv-detail .about-people { display: flex; flex-direction: column; gap: calc(var(--em) * 0.2); margin: calc(var(--em) * 0.2) 0 0; font-size: var(--fs-2); line-height: 1.35; }
+:root[data-ui="polish"] .tv-detail .about-person { display: flex; align-items: flex-start; gap: calc(var(--em) * 1); }
+:root[data-ui="polish"] .tv-detail .about-person dt { flex: none; min-width: 6.5em; color: var(--text-3); font-weight: 600; }
+:root[data-ui="polish"] .tv-detail .about-person dd { display: -webkit-box; margin: 0; color: var(--text-2); -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+:root[data-ui="polish"] .tv-detail-eps:not(:last-child) { padding-bottom: calc(var(--em) * 1.5); }
+:root[data-ui="polish"] .tv-detail-more { position: relative; flex: none; padding-top: var(--eps-t); background: var(--bg); }
+:root[data-ui="polish"] .tv-detail-hero + .tv-detail-more { background: linear-gradient(to bottom, transparent, var(--bg) 5em); }
+:root[data-ui="polish"] .tv-detail-more:last-child { padding-bottom: var(--eps-b); }
+
 /* ------------------------------ pages of a few things: headlines, leads, hints ------------------------------ */
 
 :root[data-ui="polish"] .tv-headline { font-size: var(--fs-7); font-weight: 700; letter-spacing: -0.015em; }
@@ -915,6 +932,8 @@
   }
   :root[data-ui="polish"] .tv-rail { gap: calc(var(--em) * 0.2); }
   :root[data-ui="polish"] .tv-rail-item { padding-top: calc(var(--em) * 0.4); padding-bottom: calc(var(--em) * 0.4); }
+  /* (the people of a title are one line more than a flat screen has room for over the buttons: the genres and the age rating stay) */
+  :root[data-ui="polish"] .tv-detail .about-people { display: none; }
 }
 
 @media (max-height: 360px) {

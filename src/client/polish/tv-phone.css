@@ -272,6 +272,18 @@
   :root[data-ui="polish"] .tv .tv-ep-meta { font-size: var(--fs-1); }
   :root[data-ui="polish"] .tv .tv-ep-about { font-size: var(--fs-1); -webkit-line-clamp: 2; }
 
+  /* What the movie database knows: under the buttons (so that nothing over Play moves when it arrives; the page here grows downward), and the rows of the titles that go with it. */
+  :root[data-ui="polish"] .tv .tv-detail .about-facts,
+  :root[data-ui="polish"] .tv .tv-detail .about-people { order: 1; }
+  :root[data-ui="polish"] .tv .tv-detail .about-facts { gap: 4px 10px; margin-top: 4px; }
+  :root[data-ui="polish"] .tv .tv-detail .about-age { gap: 4px; padding: 0 7px; box-shadow: inset 0 0 0 1.5px var(--text-3); }
+  :root[data-ui="polish"] .tv .tv-detail .about-people { gap: 4px; margin-top: 0; }
+  :root[data-ui="polish"] .tv .tv-detail .about-person { gap: 10px; }
+  :root[data-ui="polish"] .tv .tv-detail .about-person dt { min-width: 84px; }
+  :root[data-ui="polish"] .tv .tv-detail-eps:not(:last-child) { padding-bottom: 12px; }
+  :root[data-ui="polish"] .tv .tv-detail-more { padding-top: 4px; }
+  :root[data-ui="polish"] .tv .tv-detail-more:last-child { padding-bottom: 32px; }
+
   /* ------------------------------ the player ------------------------------ */
 
   /* Over the picture: the title and the time at the top, how far it is and the buttons at the bottom. fit.ts gives nothing up here, so the buttons are laid out in rows (below). */

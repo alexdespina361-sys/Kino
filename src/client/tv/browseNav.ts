@@ -5,10 +5,11 @@ import type { Direction } from "./dpad";
  * on the left, the account button on top (with the full screen one beside it), the banner's buttons (Play, the list) under it on the pages with rows, and in the middle
  * either rows of titles, a grid (the lists have a row of buttons over theirs, a friend's page one button under it), or the search keyboard with its filter and results. A title's own page lies over all of these
  * while it is open, and the arrow keys do not leave it: its Close button in the corner, under it its row of buttons (`detail`), and for a show,
- * under those, a row of seasons and the episodes of the one that is shown, one under the other.
+ * under those, a row of seasons and the episodes of the one that is shown, one under the other; last, the rows of titles it lists (the other parts of its collection,
+ * titles like it: `related`, a row of tiles each).
  * Pure, so the walking can be tested without a screen.
  */
-export type Zone = "rail" | "top" | "hero" | "rows" | "grid" | "keys" | "chips" | "results" | "foot" | "detail" | "close" | "seasons" | "episodes";
+export type Zone = "rail" | "top" | "hero" | "rows" | "grid" | "keys" | "chips" | "results" | "foot" | "detail" | "close" | "seasons" | "episodes" | "related";
 
 export interface Pos {
   zone: Zone;
@@ -45,10 +46,13 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     return null;
   }
 
-  // A title's own page: Close in the corner, the buttons under it, then the seasons and the episodes of a show. Nothing leads out of it.
+  // A title's own page: Close in the corner, the buttons under it, then the seasons and the episodes of a show, then the rows of titles. Nothing leads out of it.
   const BUTTONS: Pos = { zone: "detail", row: 0, col: 0 };
   const CLOSE: Pos = { zone: "close", row: 0, col: 0 };
   const firstEpisode: Pos | null = shape.episodes?.length ? { zone: "episodes", row: 0, col: 0 } : null;
+  const firstRelated: Pos | null = shape.related?.length ? { zone: "related", row: 0, col: 0 } : null;
+  /** What is above the rows of titles: the last episode, else the seasons, else the buttons. */
+  const aboveRelated: Pos = shape.episodes?.length ? { zone: "episodes", row: shape.episodes.length - 1, col: 0 } : shape.seasons?.length ? { zone: "seasons", row: 0, col: 0 } : BUTTONS;
   if (at.zone === "close") {
     if (direction === "down") return BUTTONS;
     return direction === "left" ? { ...BUTTONS, col: Math.max(0, (shape.detail?.[0] ?? 1) - 1) } : null;
@@ -57,16 +61,25 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
     if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
     if (direction === "right") return at.col < (lengths[0] ?? 0) - 1 ? { ...at, col: at.col + 1 } : shape.close?.length ? CLOSE : null;
     if (direction === "up") return shape.close?.length ? CLOSE : null;
-    return shape.seasons?.length ? { zone: "seasons", row: 0, col: 0 } : firstEpisode;
+    return shape.seasons?.length ? { zone: "seasons", row: 0, col: 0 } : (firstEpisode ?? firstRelated);
   }
   if (at.zone === "seasons") {
     if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
     if (direction === "right") return at.col < (lengths[0] ?? 0) - 1 ? { ...at, col: at.col + 1 } : null;
-    return direction === "up" ? BUTTONS : firstEpisode;
+    return direction === "up" ? BUTTONS : (firstEpisode ?? firstRelated);
   }
   if (at.zone === "episodes") {
     if (direction === "up") return at.row > 0 ? { ...at, row: at.row - 1 } : shape.seasons?.length ? { zone: "seasons", row: 0, col: 0 } : BUTTONS;
-    return direction === "down" && at.row < lengths.length - 1 ? { ...at, row: at.row + 1 } : null;
+    if (direction !== "down") return null;
+    return at.row < lengths.length - 1 ? { ...at, row: at.row + 1 } : firstRelated;
+  }
+  if (at.zone === "related") {
+    // (A row of titles slides along; a step up or down lands on the same place of the next row, or the last title of a shorter one.)
+    if (direction === "left") return at.col > 0 ? { ...at, col: at.col - 1 } : null;
+    if (direction === "right") return at.col < (lengths[at.row] ?? 0) - 1 ? { ...at, col: at.col + 1 } : null;
+    const row = at.row + (direction === "up" ? -1 : 1);
+    if (row < 0) return aboveRelated;
+    return row < lengths.length ? { zone: "related", row, col: Math.min(at.col, (lengths[row] ?? 1) - 1) } : null;
   }
 
   if (at.zone === "foot") {
