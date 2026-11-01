@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Browser Back",
+  "version": "1.0",
+  "description": "Lets a test press the browser's own Back (chrome.tabs.goBack), which passes over the entries that Chrome holds against a page. Test only.",
+  "permissions": ["tabs"],
+  "background": { "service_worker": "sw.js" }
+}
