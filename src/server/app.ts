@@ -20,6 +20,8 @@ import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
 import { Hub, type HubOptions } from "./websocket/hub";
 import type { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
+import { countVisits, statsRoutes } from "./stats/routes";
+import type { VisitCounter } from "./stats/visits";
 import { subsyncRoutes, type SubsyncStats } from "./subsync/routes";
 import { MemorySubsyncStore, type SubsyncStore } from "./subsync/store";
 
@@ -38,6 +40,8 @@ export interface AppOptions {
   feedbackAdminToken?: string;
   /** How many reports one address may send in ten minutes (6 unless set; env FEEDBACK_SENDS_PER_10_MIN). */
   feedbackSendsPer10Min?: number;
+  /** Counts the people who open the site, a number for each day (see `stats/visits.ts`); the owner reads it at `/api/admin/stats`. Without it nobody is counted. The app writes what is left of it when it stops. */
+  visits?: VisitCounter;
   /** `closed` stops new accounts being made. */
   registration?: Registration;
   maxAccounts?: number;
@@ -98,6 +102,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const proxies = options.trustProxy;
   const trustProxy = typeof proxies === "number" ? (_address: string, hop: number) => hop < proxies : proxies;
   const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
+  // (First of all: a hook added to the app reaches only what is registered after it, and the pages are served by what comes below.)
+  if (options.visits) countVisits(app, { counter: options.visits, behindProxy: Boolean(proxies) });
   await app.register(fastifyCompress, {
     threshold: 1024,
   });
@@ -125,6 +131,11 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
         },
       },
     });
+  }
+  if (options.visits) {
+    // (After the accounts', so it runs before it: the counts are written before the accounts close the database they share.)
+    const visits = options.visits;
+    app.addHook("onClose", async () => visits.close());
   }
   const resolve =
     options.resolve ??
@@ -177,6 +188,14 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
           },
         }
       : {}),
+  });
+  // (The owner reads the stats with the same token as the feedback.)
+  await app.register(statsRoutes, {
+    adminToken: options.feedbackAdminToken,
+    accounts,
+    visits: options.visits,
+    registration: options.registration,
+    maxAccounts: options.maxAccounts,
   });
   const isProxyOff = process.env.PROXY_VIDEO === "off" || process.env.PROXY_VIDEO === "false" || process.env.PROXY_VIDEO === "0";
   const proxyVideo = options.proxyVideo ?? !isProxyOff;

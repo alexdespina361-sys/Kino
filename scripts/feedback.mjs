@@ -8,6 +8,7 @@
 //   node scripts/feedback.mjs note <id> "text"      node scripts/feedback.mjs tag <id> one,two
 //   node scripts/feedback.mjs delete <id> --yes     node scripts/feedback.mjs export [file]
 //   node scripts/feedback.mjs watch                 (one line for each new report and each thing a sender adds; for a Monitor)
+//   node scripts/feedback.mjs stats [--days 14] [--json]    (how many accounts and how many visitors, by day: counts only; `node scripts/stats.mjs` is the same; docs/stats.md)
 //
 // Where: KINO_URL (the site, http://localhost:8787 when not set) and FEEDBACK_ADMIN_TOKEN, or both in .kino-feedback.json ({ "url": "...", "token": "..." },
 // which git ignores): beside the scripts folder, else in the main folder of the repository when this is a git worktree, else the file KINO_FEEDBACK_FILE names.
@@ -101,6 +102,7 @@ async function call(method, route, body, { timeoutMs = 90_000 } = {}) {
   }
   if (response.status === 401) throw new Error("The server did not take the token (401).");
   if (response.status === 404 && route.startsWith("/api/admin/feedback") && !/\/\d/.test(route)) throw new Error("The server has no team side: FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters (404).");
+  if (response.status === 404 && route.startsWith("/api/admin/stats")) throw new Error("The server has no stats for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before the stats were added.");
   if (response.status === 429) throw new Error("Too many wrong tries from this address: wait a quarter of an hour.");
   return response;
 }
@@ -301,6 +303,37 @@ async function exportAll({ words }) {
   } else console.log(text);
 }
 
+/** How many accounts and how many visitors (counts only: the server has no names or addresses to tell). */
+async function stats({ flags }) {
+  const days = Math.min(400, Math.max(1, Math.floor(Number(flags.days)) || 14));
+  const data = await json("GET", `/api/admin/stats?days=${days}`);
+  if (flags.json) return console.log(JSON.stringify(data, null, 2));
+  const spans = (w) => `today ${w.today}, last 7 days ${w.week}, last 30 days ${w.month}`;
+  console.log(`Kino on ${connection.url}, at ${when(data.at)} UTC (days are UTC days: they end at 02:00, in summer 03:00, in Romania)`);
+  const a = data.accounts;
+  if (a) {
+    console.log(`\nAccounts: ${a.total} (${a.profiles} profiles). Sign-ups are ${a.signUps}${a.signUps === "closed" && a.total >= a.limit ? ` (the limit of ${a.limit} is reached)` : `, up to ${a.limit}`}.`);
+    console.log(`  made      ${spans(a.made)}`);
+    console.log(`  used      ${spans(a.used)}   (accounts with a device signed in that was used; a device that signed out is not kept)`);
+    console.log(`  devices   ${Object.entries(a.devices).map(([kind, count]) => `${kind} ${count}`).join(", ") || "none signed in"}`);
+  }
+  const v = data.visits;
+  if (v) {
+    console.log(`\nVisitors (${v.since ? `counted since ${v.since}; nobody was counted before` : "none counted yet"}):`);
+    console.log(`  people    ${spans(v.visitors)}   (added day by day: a person who came on three days is three)`);
+    console.log(`  loads     ${spans(v.loads)}   (page loads of / and /tv)`);
+    console.log(`  address   from Cloudflare on ${v.addressFrom.cloudflare} loads, from X-Forwarded-For on ${v.addressFrom.forwarded}, from the connection on ${v.addressFrom.connection}   (since the server started; behind a proxy, mostly "the connection" means the counts are too low)`);
+    console.log("  not counted: robots that say they are, and people who send Do Not Track or Global Privacy Control");
+  } else console.log("\nVisitors: not counted on this server (VISITOR_COUNT=off, or the count could not be opened: see the server's log).");
+  const columns = [
+    ["day", "Day", 10],
+    ...(a ? [["newAccounts", "New accounts", 12], ["accounts", "Accounts", 8]] : []),
+    ...(v ? [["visitors", "Visitors", 8], ["loads", "Loads", 6]] : []),
+  ];
+  console.log(`\n${columns.map(([, title, width]) => String(title).padStart(width)).join("  ")}`);
+  for (const row of data.days) console.log(columns.map(([key, , width]) => String(row[key] ?? "").padStart(width)).join("  "));
+}
+
 const parsed = parse(process.argv.slice(2));
 const command = parsed.words[0];
 const commands = {
@@ -308,6 +341,7 @@ const commands = {
   show,
   reply,
   watch,
+  stats,
   export: exportAll,
   status: ({ words }) => {
     if (!STATUSES.includes(words[2])) fail(`status <id> <${STATUSES.join("|")}>`);

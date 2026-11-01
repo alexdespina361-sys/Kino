@@ -46,6 +46,11 @@ export interface AccountRoutesOptions {
 export const COOKIE = "kino_session";
 const MINUTE = 60_000;
 
+/** How many accounts there can be unless the host says otherwise (env MAX_ACCOUNTS). */
+export const DEFAULT_MAX_ACCOUNTS = 500;
+/** Whether a new account can be made now: not once registration is closed, nor once there are as many accounts as are allowed. */
+export const signUpsNow = (registration: Registration, accounts: number, maxAccounts: number): Registration => (registration === "closed" || accounts >= maxAccounts ? "closed" : "open");
+
 const PasswordChangeSchema = z.object({ current: z.string().max(200), next: NewPasswordSchema });
 const ConfirmSchema = z.object({ password: z.string().max(200) });
 const CreateProfileSchema = NewProfileSchema.partial({ avatar: true });
@@ -78,7 +83,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   const { store } = options;
   const links = options.links ?? new LinkRegistry();
   const registration = options.registration ?? "open";
-  const maxAccounts = options.maxAccounts ?? 500;
+  const maxAccounts = options.maxAccounts ?? DEFAULT_MAX_ACCOUNTS;
 
   // Guessing is slowed per address that is being tried, which is what protects an account whichever machine the guesses come
   // from; the per-visitor limits are loose, as behind some hosts every visitor can look like the same address.
@@ -116,7 +121,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     const account = store.getAccount(accountId);
     return { account: { id: account?.id ?? accountId, email: account?.email ?? "" }, profiles: store.profilesOf(accountId) };
   };
-  const registrationNow = (): Registration => (registration === "closed" || store.countAccounts() >= maxAccounts ? "closed" : "open");
+  const registrationNow = (): Registration => signUpsNow(registration, store.countAccounts(), maxAccounts);
 
   /** A new session for this device, remembered by the cookie that goes back with the answer. */
   const signIn = (request: FastifyRequest, reply: FastifyReply, accountId: string, kind: DeviceKind, label = describeDevice(request.headers["user-agent"])) => {

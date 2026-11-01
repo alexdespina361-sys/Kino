@@ -130,6 +130,39 @@ const adminFull = (record: FeedbackRecord) => ({
 
 const digest = (value: string) => createHash("sha256").update(value).digest();
 
+const tooMany = (reply: FastifyReply, waitMs: number) => {
+  const seconds = Math.max(1, Math.ceil(waitMs / 1000));
+  return reply.header("Retry-After", seconds).code(429).send({ error: "rate_limited", retryAfter: seconds });
+};
+
+/**
+ * The check for the team's side of the site (the feedback below, and the owner's stats): true when the request brings the team's token
+ * (`FEEDBACK_ADMIN_TOKEN`) as a Bearer; otherwise the answer is sent. Without a token that is long enough there is no team's side, and the answer is a
+ * 404 (there is nothing to find). Wrong tries are slowed per address.
+ */
+export function teamGuard(adminToken: string | undefined): (request: FastifyRequest, reply: FastifyReply) => boolean {
+  const tokenDigest = typeof adminToken === "string" && adminToken.length >= FEEDBACK_TOKEN_MIN ? digest(adminToken) : undefined;
+  const triedToken = new RateLimiter(10, 15 * MINUTE);
+  return (request, reply) => {
+    if (!tokenDigest) {
+      void reply.code(404).send({ error: "NOT_FOUND" });
+      return false;
+    }
+    const wait = triedToken.wait(request.ip);
+    if (wait > 0) {
+      void tooMany(reply, wait);
+      return false;
+    }
+    const given = /^Bearer (.+)$/i.exec(request.headers.authorization ?? "")?.[1]?.trim() ?? "";
+    if (!timingSafeEqual(digest(given), tokenDigest)) {
+      triedToken.hit(request.ip);
+      void reply.code(401).send({ error: "unauthorized" });
+      return false;
+    }
+    return true;
+  };
+}
+
 /**
  * Feedback from the people who use the site (see `shared/reports.ts`), under /api/feedback; and the team's side of it under /api/admin/feedback,
  * which takes the team's token and nothing else. The sender's side has no sign-in: a report is the one who has its key (made on the page and
@@ -141,11 +174,6 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
   const everyone = new RateLimiter(Math.max(200, sendsPer10Min * 30), HOUR);
   const replies = new RateLimiter(30, 10 * MINUTE);
   const reads = new RateLimiter(120, MINUTE);
-  const triedToken = new RateLimiter(10, 15 * MINUTE);
-  const tooMany = (reply: FastifyReply, waitMs: number) => {
-    const seconds = Math.max(1, Math.ceil(waitMs / 1000));
-    return reply.header("Retry-After", seconds).code(429).send({ error: "rate_limited", retryAfter: seconds });
-  };
   const invalid = (reply: FastifyReply) => reply.code(400).send({ error: "invalid_request" });
 
   app.addHook("onRequest", async (_request, reply) => {
@@ -263,27 +291,7 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
 
   /* ------------------------------ the team's side ------------------------------ */
 
-  const tokenDigest = typeof adminToken === "string" && adminToken.length >= FEEDBACK_TOKEN_MIN ? digest(adminToken) : undefined;
-
-  /** True when the request brings the team's token; otherwise the answer is sent (a 404 when there is no team's side: there is nothing to find). */
-  function team(request: FastifyRequest, reply: FastifyReply): boolean {
-    if (!tokenDigest) {
-      void reply.code(404).send({ error: "NOT_FOUND" });
-      return false;
-    }
-    const wait = triedToken.wait(request.ip);
-    if (wait > 0) {
-      void tooMany(reply, wait);
-      return false;
-    }
-    const given = /^Bearer (.+)$/i.exec(request.headers.authorization ?? "")?.[1]?.trim() ?? "";
-    if (!timingSafeEqual(digest(given), tokenDigest)) {
-      triedToken.hit(request.ip);
-      void reply.code(401).send({ error: "unauthorized" });
-      return false;
-    }
-    return true;
-  }
+  const team = teamGuard(adminToken);
 
   app.get<{ Querystring: { status?: string; kind?: string; area?: string; q?: string; waiting?: string; limit?: string } }>("/api/admin/feedback", async (request, reply) => {
     if (!team(request, reply)) return;
