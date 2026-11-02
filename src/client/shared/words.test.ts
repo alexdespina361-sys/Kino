@@ -166,6 +166,13 @@ describe("socketError", () => {
     expect(socketError("BAD_MESSAGE", "Invalid message.")).toMatch(/restart the server/i);
   });
 
+  it("does not call too many tries wrong codes: the same refusal is the answer to too many videos asked for in a minute", () => {
+    for (const language of ["en", "it", "ro"] as const) {
+      setLanguage(language, false);
+      expect(socketError("RATE_LIMITED", "Too many videos asked for in a short time. Try again in a minute."), language).not.toMatch(/wrong|sbagliat|gre[sș]it/i);
+    }
+  });
+
   it("passes on what the server said about a code it has no words for", () => {
     setLanguage("it", false);
     expect(socketError("BRAND_NEW_CODE", "Something the server said.")).toBe("Something the server said.");

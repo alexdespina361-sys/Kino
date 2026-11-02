@@ -728,7 +728,7 @@ export const en = {
   "ws.TV_OFFLINE": "The TV is offline.",
   "ws.TV_LIST_FULL": "Your list of TVs is full. Forget one first.",
   "ws.NOT_YOUR_TV": "That TV is not on your list any more.",
-  "ws.RATE_LIMITED": "Too many wrong codes. Try again in a minute.",
+  "ws.RATE_LIMITED": "Too many tries in a short time. Try again in a minute.",
   "ws.INVALID_CODE": "Invalid or expired code.",
   "ws.PARTY_CODE": "That is the code of a watch party. Watch on this device to join it.",
   "ws.ADD_PARTY_CODE": "That is the code of a watch party. Type it on the device that should join it.",

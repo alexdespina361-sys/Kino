@@ -730,7 +730,7 @@ export const ro: Dictionary = {
   "ws.TV_OFFLINE": "Televizorul nu e conectat.",
   "ws.TV_LIST_FULL": "Lista ta de televizoare e plină. Uită mai întâi unul.",
   "ws.NOT_YOUR_TV": "Televizorul acela nu mai e în lista ta.",
-  "ws.RATE_LIMITED": "Prea multe coduri greșite. Încearcă din nou peste un minut.",
+  "ws.RATE_LIMITED": "Prea multe încercări într-un timp scurt. Încearcă din nou peste un minut.",
   "ws.INVALID_CODE": "Cod invalid sau expirat.",
   "ws.PARTY_CODE": "Acesta este codul unei vizionări comune. Privește pe acest dispozitiv ca să intri în ea.",
   "ws.ADD_PARTY_CODE": "Acesta este codul unei vizionări comune. Introdu-l pe dispozitivul care trebuie să intre în ea.",

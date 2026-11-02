@@ -726,7 +726,7 @@ export const it: Dictionary = {
   "ws.TV_OFFLINE": "La TV è offline.",
   "ws.TV_LIST_FULL": "La tua lista di TV è piena. Dimentica prima una TV.",
   "ws.NOT_YOUR_TV": "Quella TV non è più nella tua lista.",
-  "ws.RATE_LIMITED": "Troppi codici sbagliati. Riprova tra un minuto.",
+  "ws.RATE_LIMITED": "Troppi tentativi in poco tempo. Riprova tra un minuto.",
   "ws.INVALID_CODE": "Codice non valido o scaduto.",
   "ws.PARTY_CODE": "Questo è il codice di una visione condivisa. Guarda su questo dispositivo per entrare.",
   "ws.ADD_PARTY_CODE": "Questo è il codice di una visione condivisa. Inseriscilo sul dispositivo che deve entrare.",
