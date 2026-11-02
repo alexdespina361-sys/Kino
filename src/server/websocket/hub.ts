@@ -97,6 +97,8 @@ export interface HubOptions {
 export class Hub {
   private readonly tvs = new Map<string, WebSocket>(); // deviceId -> socket
   private readonly controllers = new Map<string, WebSocket>(); // controllerId -> socket
+  /** Every page of each phone that is open, the one opened last at the end: a phone may have more than one (`controllers` has the one that answers for it; when that closes, the one before takes its place). */
+  private readonly phoneSockets = new Map<string, Set<WebSocket>>(); // controllerId -> sockets
   /** Latest PLAY_URL per device, so a slow resolve can't overwrite a newer choice (or a STOP). */
   private readonly resolveSeq = new Map<string, number>();
   /** When each open socket last said anything. A TV that lost power never sends a close frame. */
@@ -197,9 +199,7 @@ export class Hub {
         const host = device && (this.registry.leaderOf(device) ?? device);
         if (host && this.registry.inParty(host)) this.sendParty(host);
       }
-      if (conn.role === "controller" && this.controllers.get(conn.controllerId) === socket) {
-        this.controllers.delete(conn.controllerId);
-      }
+      if (conn.role === "controller") this.phoneClosed(conn.controllerId, socket);
     });
     socket.on("error", () => {});
   }
@@ -419,9 +419,28 @@ export class Hub {
     if (!(wanted && this.registry.getController(wanted)) && !this.hasRoomFor("phone")) return this.turnAway(conn);
     const controller = this.registry.controllerHello(wanted);
     this.goneSince.delete(controller.id);
-    this.controllers.set(controller.id, socket);
+    this.phoneOpened(controller.id, socket);
     this.sendWelcome(controller);
     return { role: "controller", socket, controllerId: controller.id };
+  }
+
+  /** A page of a phone is open: it is the one that answers for the phone now (so it is again when it says hello again). */
+  private phoneOpened(id: string, socket: WebSocket): void {
+    const open = this.phoneSockets.get(id) ?? new Set<WebSocket>();
+    open.add(socket);
+    this.phoneSockets.set(id, open);
+    this.controllers.set(id, socket);
+  }
+
+  /** A page of a phone has closed. The phone is gone with its last page; until then the page opened last of those left answers for it, so that closing a newer page does not leave an older one unheard. */
+  private phoneClosed(id: string, socket: WebSocket): void {
+    const open = this.phoneSockets.get(id);
+    open?.delete(socket);
+    const newest = open ? [...open].pop() : undefined;
+    if (!newest) {
+      this.phoneSockets.delete(id);
+      if (this.controllers.get(id) === socket) this.controllers.delete(id);
+    } else if (this.controllers.get(id) === socket) this.controllers.set(id, newest);
   }
 
   /** A hello that would make a connection a second TV or phone is answered with an error; the connection stays what it was. */
@@ -473,7 +492,7 @@ export class Hub {
 
   private fromController(controllerId: string, message: ClientMessage): void {
     const controller = this.registry.getController(controllerId);
-    if (!controller) return; // (let go of while an older page of this phone was still open: see `forgetAbandoned`)
+    if (!controller) return; // (a phone that was let go of, and not a page of one that was still open: see `forgetAbandoned`)
     if (message.type === "PAIR") return this.pair(controller, message.code);
     if (message.type === "PLAY_URL") return void this.playUrl(controller, message.url, message.startAt, message.hint);
     if (message.type === "UNPAIR") return this.unpair(controller, message.id);

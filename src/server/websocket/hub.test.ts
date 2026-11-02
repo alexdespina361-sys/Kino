@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import type { Socket } from "node:net";
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
@@ -91,6 +92,23 @@ class Client {
   /** The socket drops, as when a page is closed or the network goes. (A polite close never completes over `injectWS`'s in-memory streams.) */
   close(): void {
     this.ws.terminate();
+  }
+}
+
+/** A page of a phone as the hub sees it, for a test that looks into the hub: it keeps what it is sent. */
+class FakePage extends EventEmitter {
+  readyState = 1;
+  bufferedAmount = 0;
+  sent: string[] = [];
+  send(data: string): void {
+    this.sent.push(data);
+  }
+  close(): void {
+    this.readyState = 3;
+    this.emit("close");
+  }
+  terminate(): void {
+    this.close();
   }
 }
 
@@ -853,6 +871,13 @@ describe("TVs and phones that nobody has paired", () => {
     const welcome = await phone.next("CTL_WELCOME");
     return { phone, controllerId: welcome.controllerId };
   };
+  /** Another page of a phone that is open already (a second tab, a page that came back). */
+  const anotherPage = async (open: Open, controllerId: string) => {
+    const page = await open();
+    page.send({ type: "CTL_HELLO", controllerId });
+    expect((await page.next("CTL_WELCOME")).controllerId).toBe(controllerId);
+    return page;
+  };
   /** Time passes by this much for the hub. */
   const jump = (ms: number) => vi.setSystemTime(Date.now() + ms);
   /** Long enough for the hub to look a few times. */
@@ -1043,21 +1068,114 @@ describe("TVs and phones that nobody has paired", () => {
       await expect.poll(() => registry.freeTvs().length + registry.freePhones().length).toBe(0);
     });
 
-    it("does not make a new phone of an older page of a phone that was let go of while it was still open", async () => {
+    it("does not make a new phone of a page whose phone is not here any more", async () => {
+      const { registry, open } = await serverWith();
+      const page = await phoneHello(open);
+      registry.forgetFree(page.controllerId); // (let go of for some other reason, with the page still open)
+
+      page.phone.send({ type: "PAIR", code: "000000" }); // (anything a phone says)
+      page.phone.send({ type: "PING" });
+      await page.phone.next("PONG");
+      expect(registry.freePhones()).toEqual([]);
+    });
+
+    it("keeps a phone for as long as any page of it is open: closing the newer of two leaves the older one the phone, answered as it was", async () => {
       const { registry, open } = await serverWith();
       const older = await phoneHello(open);
-      const newer = await open();
-      newer.send({ type: "CTL_HELLO", controllerId: older.controllerId });
-      await newer.next("CTL_WELCOME");
+      const newer = await anotherPage(open, older.controllerId);
       newer.close();
       await sweeps();
-      jump(KEEP);
-      await expect.poll(() => registry.getController(older.controllerId)).toBeUndefined();
+      jump(5 * KEEP);
+      await sweeps();
+      expect(registry.getController(older.controllerId)).toBeDefined();
+      older.phone.send({ type: "CMD", command: { type: "PAUSE" } }); // (a phone that has no TV is told so)
+      expect((await older.phone.next("ERROR")).code).toBe("NOT_PAIRED");
+    });
 
-      older.phone.send({ type: "PAIR", code: "000000" }); // (anything a phone says)
-      older.phone.send({ type: "PING" });
-      await older.phone.next("PONG");
-      expect(registry.freePhones()).toEqual([]);
+    it("is not left without its other page when the older of two closes", async () => {
+      const { registry, open } = await serverWith();
+      const older = await phoneHello(open);
+      const newer = await anotherPage(open, older.controllerId);
+      older.phone.close();
+      await sweeps();
+      jump(5 * KEEP);
+      await sweeps();
+      expect(registry.getController(older.controllerId)).toBeDefined();
+      newer.send({ type: "CMD", command: { type: "PAUSE" } });
+      expect((await newer.next("ERROR")).code).toBe("NOT_PAIRED");
+    });
+
+    it("is answered by the page opened last of those that are left, and by none once the last has closed", async () => {
+      const { registry, open } = await serverWith();
+      const first = await phoneHello(open);
+      const second = await anotherPage(open, first.controllerId);
+      const third = await anotherPage(open, first.controllerId);
+      const ask = () => first.phone.send({ type: "CMD", command: { type: "PAUSE" } }); // (an answer to a phone that has no TV)
+      third.close();
+      await sweeps();
+      ask();
+      expect((await second.next("ERROR")).code).toBe("NOT_PAIRED");
+      await first.phone.expectNone((m) => m.type === "ERROR");
+      second.close();
+      await sweeps();
+      ask();
+      expect((await first.phone.next("ERROR")).code).toBe("NOT_PAIRED");
+      first.phone.close();
+      await sweeps();
+      jump(KEEP);
+      await expect.poll(() => registry.getController(first.controllerId)).toBeUndefined();
+    });
+
+    it("keeps nothing of the pages of a phone once the last of them has closed, in whatever order they went", () => {
+      const registry = new Registry();
+      const hub = new Hub(registry, async () => ({ status: "unsupported", reason: "not asked" }), { sweepEveryMs: 2_000_000_000 });
+      try {
+        const inside = hub as unknown as { controllers: Map<string, unknown>; phoneSockets: Map<string, Set<unknown>> };
+        const say = (page: FakePage, controllerId?: string) => {
+          page.emit("message", Buffer.from(JSON.stringify({ type: "CTL_HELLO", ...(controllerId ? { controllerId } : {}) })), false);
+          return (JSON.parse(page.sent.at(-1)!) as { controllerId: string }).controllerId;
+        };
+        const hello = (controllerId?: string) => {
+          const page = new FakePage();
+          hub.handleConnection(page as never);
+          return { page, id: say(page, controllerId) };
+        };
+        const answering = (id: string) => inside.controllers.get(id);
+        const open = (id: string) => inside.phoneSockets.get(id)?.size;
+        for (let n = 0; n < 20; n++) {
+          const a = hello();
+          const b = hello(a.id);
+          const c = hello(a.id);
+          expect([b.id, c.id]).toEqual([a.id, a.id]);
+          expect([open(a.id), answering(a.id)]).toEqual([3, c.page]); // (the page opened last answers)
+          expect(say(a.page, a.id)).toBe(a.id);
+          expect([open(a.id), answering(a.id)]).toEqual([3, a.page]); // (a page that says hello again answers again, and is not a page more)
+          c.page.close();
+          expect([open(a.id), answering(a.id)]).toEqual([2, a.page]); // (one that does not answer going changes nothing)
+          a.page.close();
+          expect([open(a.id), answering(a.id)]).toEqual([1, b.page]); // (the one that answers going: one that is left takes its place)
+          b.page.close();
+          expect([open(a.id), answering(a.id)]).toEqual([undefined, undefined]);
+        }
+        expect(inside.controllers.size).toBe(0);
+        expect(inside.phoneSockets.size).toBe(0);
+      } finally {
+        hub.dispose();
+      }
+    });
+
+    it("tells the page that is left whether the TV is there, when the newer of two pages of a paired phone closed", async () => {
+      const { open } = await serverWith();
+      const { tv, welcome } = await tvHello(open);
+      const first = await phoneHello(open);
+      first.phone.send({ type: "PAIR", code: welcome.pairing!.code });
+      await first.phone.next("CTL_WELCOME");
+      await tv.next("TV_PAIRED");
+      const second = await anotherPage(open, first.controllerId);
+      second.close();
+      await sweeps();
+      tv.close();
+      expect((await first.phone.nextWhere("TV_STATUS", (m) => !m.online)).online).toBe(false);
     });
   });
 
