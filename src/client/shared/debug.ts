@@ -1,4 +1,5 @@
 import { alignerStats, describeAligner } from "../subsync/stats";
+import { isEditable } from "../tv/keys";
 import { describeSync, syncStats } from "../tv/sync";
 import { isHisense } from "./browser";
 import { readStorage } from "./format";
@@ -28,6 +29,17 @@ export function describeElement(node: unknown): string {
   if (!element?.tagName) return "-";
   const name = element.getAttribute?.("data-testid") || element.getAttribute?.("aria-label") || element.id || "";
   return element.tagName.toLowerCase() + (name ? `[${name.slice(0, 28)}]` : "");
+}
+
+/**
+ * A key, as the panel writes it. What is typed in a field is not written down, not even which keys (a password would be on the screen, and in a
+ * screenshot of a report): only that a key was typed there. Every other key is (the keys of a TV's remote are what the panel is for).
+ */
+export function describeKey(type: "keydown" | "keyup", key: { key: string; code: string; keyCode: number; target: EventTarget | null }): string {
+  const arrow = type === "keydown" ? "v" : "^";
+  const where = describeElement(key.target);
+  if (key.key.length === 1 && isEditable(key.target)) return `${arrow} (typing) on ${where}`;
+  return `${arrow} ${key.key} ${key.code} #${key.keyCode} on ${where}`;
 }
 
 /** A line of the panel, cut to a length that fits on a screen. */
@@ -121,6 +133,7 @@ function startDebug(): void {
   const lines: Array<{ text: string }> = [];
   const panel = document.createElement("pre");
   panel.id = "kino-debug";
+  panel.setAttribute("data-feedback-skip", ""); // (not in the picture of a screen that a report brings)
   const size = Math.max(11, Math.round(innerWidth / 62));
   panel.style.cssText = `position:fixed;left:0;top:0;z-index:2147483647;max-width:64vw;margin:0;padding:.3em .6em;background:rgba(0,0,0,.8);color:#9f9;font:${size}px/1.25 monospace;white-space:pre-wrap;overflow-wrap:anywhere;pointer-events:none;`;
   (document.body ?? document.documentElement).append(panel);
@@ -189,7 +202,7 @@ function startDebug(): void {
       type,
       (event) => {
         const key = event as KeyboardEvent;
-        const line = log(`${type === "keydown" ? "v" : "^"} ${key.key} ${key.code} #${key.keyCode} on ${describeElement(key.target)}`);
+        const line = log(describeKey(type, key));
         if (type === "keydown") {
           setTimeout(() => {
             line.text = clip(`${line.text} ${key.defaultPrevented ? "taken" : "free"} -> ${describeElement(document.activeElement)}`, 150);

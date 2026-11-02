@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { debugOn, describeElement, describeServer } from "./debug";
+import { debugOn, describeElement, describeKey, describeServer } from "./debug";
 
 describe("debugOn", () => {
   it("is off unless the address asks, or an earlier visit did", () => {
@@ -39,6 +39,31 @@ describe("describeServer", () => {
     expect(describeServer(null)).toBe("server: storage unknown (?)  up ?");
     expect(describeServer("<html>")).toBe("server: storage unknown (?)  up ?");
     expect(describeServer({ storage: 3, uptime: -1 })).toBe("server: storage unknown (?)  up ?");
+  });
+});
+
+describe("describeKey", () => {
+  const element = (tagName: string, type?: string) => ({ tagName, ...(type ? { type } : {}), id: "", getAttribute: () => null }) as unknown as EventTarget;
+  const press = (key: string, target: EventTarget | null, code = "KeyS", keyCode = 83) => ({ key, code, keyCode, target });
+
+  it("writes the keys of a remote as they are, and a letter pressed where nothing is typed", () => {
+    expect(describeKey("keydown", press("ArrowUp", element("BUTTON"), "ArrowUp", 38))).toBe("v ArrowUp ArrowUp #38 on button");
+    expect(describeKey("keyup", press("Enter", element("DIV"), "Enter", 13))).toBe("^ Enter Enter #13 on div");
+    expect(describeKey("keydown", press("s", element("BUTTON")))).toBe("v s KeyS #83 on button");
+    expect(describeKey("keydown", press("s", null))).toBe("v s KeyS #83 on -");
+  });
+
+  it("writes nothing of what is typed in a field, a password included, not even which key", () => {
+    for (const target of [element("INPUT"), element("INPUT", "password"), element("INPUT", "search"), element("TEXTAREA")]) {
+      expect(describeKey("keydown", press("s", target))).toMatch(/^v \(typing\) on (input|textarea)$/);
+      expect(describeKey("keyup", press("S", target))).toMatch(/^\^ \(typing\) on (input|textarea)$/);
+    }
+  });
+
+  it("writes the keys that move through a field or leave it, and a key in a field that takes no text", () => {
+    expect(describeKey("keydown", press("ArrowDown", element("INPUT"), "ArrowDown", 40))).toBe("v ArrowDown ArrowDown #40 on input");
+    expect(describeKey("keydown", press("Backspace", element("INPUT"), "Backspace", 8))).toBe("v Backspace Backspace #8 on input");
+    expect(describeKey("keydown", press(" ", element("INPUT", "checkbox"), "Space", 32))).toBe("v   Space #32 on input");
   });
 });
 

@@ -115,6 +115,7 @@ test.describe("TV browsers with a player of their own (Hisense's)", () => {
     await tv.goto("/tv?debug=1");
     const panel = tv.locator("#kino-debug");
     await expect(panel).toContainText("KINO DEBUG");
+    await expect(panel).toHaveAttribute("data-feedback-skip", ""); // (a report's picture of the screen leaves it out)
     await expect(panel).toContainText("VIDAA/6.0");
     await expect(panel).toContainText("hisense true");
     await expect(panel).toContainText("focus-visible:Y");
