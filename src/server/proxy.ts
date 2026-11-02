@@ -118,12 +118,22 @@ export interface ProxyOptions {
   segments?: SegmentCache;
   /** Counts what is sent on (see `ProxyStats`). */
   stats?: ProxyStats;
+  /**
+   * How long the other end may take before it is given up on: to begin its answer, to send a playlist or a subtitle whole, and to send the next bytes of a film
+   * (the time a screen takes to read what has come is not counted: only the wait for the other end). Without it 30 seconds; a test shortens it.
+   */
+  upstreamMs?: number;
 }
 
 const ANYWHERE = () => true;
 const REDIRECTS = 5;
 /** A piece that has not arrived whole by then is given up on (it is shared, so it is not tied to the screen that asked first). */
 const PIECE_DEADLINE_MS = 60_000;
+/** What `ProxyOptions.upstreamMs` is without it. */
+const UPSTREAM_MS = 30_000;
+
+/** The other end did not begin its answer, or did not send a text whole, in time (answered with 504 by `handleStreamProxy`). */
+class UpstreamTooSlow extends Error {}
 /** A server that carries no film still passes a subtitle on, which is some tens of kilobytes: a text beyond this is not one. */
 const SUBTITLE_MAX_BYTES = 2 * 1024 * 1024;
 /** The longest text (a playlist, a subtitle) a server that does carry film reads: a playlist of a long film is some hundreds of kilobytes. */
@@ -262,14 +272,51 @@ async function* counted(body: AsyncIterable<Uint8Array>, stats?: ProxyStats): As
   }
 }
 
-/** The text of an answer, or null when it is longer than `limit` bytes (what has come by then is dropped; leaving the loop ends the request to the other end). */
-async function textUpTo(response: Response, limit: number): Promise<string | null> {
+/**
+ * The bytes of a body as they come. The request to the other end is ended (by `stop`) when it sends none for `ms`: the wait for the next bytes is timed,
+ * not the time that whoever reads them takes, as a screen that has paused does not read for as long as it likes.
+ */
+async function* untilSilent(body: AsyncIterable<Uint8Array>, ms: number, stop: AbortController): AsyncGenerator<Uint8Array> {
+  const bytes = body[Symbol.asyncIterator]();
+  try {
+    for (;;) {
+      const timer = setTimeout(() => stop.abort(), ms);
+      let next: IteratorResult<Uint8Array>;
+      try {
+        next = await bytes.next();
+      } finally {
+        clearTimeout(timer);
+      }
+      if (next.done) return;
+      yield next.value;
+    }
+  } finally {
+    await bytes.return?.();
+  }
+}
+
+/**
+ * The text of an answer, or null when it is longer than `limit` bytes (what has come by then is dropped; leaving the loop ends the request to the other end).
+ * All of it has to come within `ms`, however it comes (a few bytes at a time keep a connection from being silent, and from ever ending): else `UpstreamTooSlow`.
+ */
+async function textUpTo(response: Response, limit: number, ms: number, stop: AbortController): Promise<string | null> {
   const chunks: Buffer[] = [];
   let size = 0;
-  for await (const chunk of (response.body ?? []) as AsyncIterable<Uint8Array>) {
-    size += chunk.length;
-    if (size > limit) return null;
-    chunks.push(Buffer.from(chunk));
+  let late = false;
+  const timer = setTimeout(() => {
+    late = true;
+    stop.abort();
+  }, ms);
+  try {
+    for await (const chunk of (response.body ?? []) as AsyncIterable<Uint8Array>) {
+      size += chunk.length;
+      if (size > limit) return null;
+      chunks.push(Buffer.from(chunk));
+    }
+  } catch (error) {
+    throw late ? new UpstreamTooSlow() : error;
+  } finally {
+    clearTimeout(timer);
   }
   return Buffer.concat(chunks).toString("utf8");
 }
@@ -287,7 +334,22 @@ export async function handleStreamProxy(
   reply: FastifyReply,
   options: ProxyOptions = {},
 ): Promise<FastifyReply> {
+  try {
+    return await proxyRequest(request, reply, options);
+  } catch (error) {
+    // (Nothing has been sent yet when the other end is too slow to answer or to send a text whole: the screen is told so.)
+    if (!(error instanceof UpstreamTooSlow)) throw error;
+    return reply.code(504).header("Content-Type", TEXT_TYPE).send("The other end is too slow");
+  }
+}
+
+async function proxyRequest(
+  request: FastifyRequest<{ Querystring: { url?: string; referer?: string; format?: string } }>,
+  reply: FastifyReply,
+  options: ProxyOptions,
+): Promise<FastifyReply> {
   inert(reply);
+  const upstreamMs = options.upstreamMs ?? UPSTREAM_MS;
   const rawUrl = request.query.url;
   // (A name given twice reaches a handler as a list.)
   if (typeof rawUrl !== "string" || !rawUrl) {
@@ -363,12 +425,21 @@ export async function handleStreamProxy(
 
   let upstreamResponse: Response;
   let upstreamUrl: URL;
+  // (An other end that does not begin to answer is given up on, and the connection to it let go.)
+  let silent = false;
+  const waiting = setTimeout(() => {
+    silent = true;
+    abortController.abort();
+  }, upstreamMs);
   try {
     ({ response: upstreamResponse, url: upstreamUrl } = handed.answer ?? (await openUpstream(targetUrl, headers, isAllowedAddress, abortController.signal)));
   } catch (err: unknown) {
+    if (silent) throw new UpstreamTooSlow();
     if (isRefusal(err)) return reply.code(403).send({ error: "URL not allowed" });
     const message = err instanceof Error ? err.message : "Upstream error";
     return reply.code(502).send({ error: "Upstream fetch failed", message });
+  } finally {
+    clearTimeout(waiting);
   }
 
   const contentType = upstreamResponse.headers.get("content-type") || "";
@@ -392,7 +463,7 @@ export async function handleStreamProxy(
   if (!upstreamResponse.ok) {
     // (What the other end said is passed on as text, whatever it called it: it is for whoever reads the failure, not a page for a browser.)
     reply.code(statusFrom(upstreamResponse.status)).header("Cache-Control", "no-store").header("Content-Type", TEXT_TYPE);
-    const text = await textUpTo(upstreamResponse, 64 * 1024);
+    const text = await textUpTo(upstreamResponse, 64 * 1024, upstreamMs, abortController);
     const message = text ?? `Upstream returned HTTP ${upstreamResponse.status}`;
     if (stats) stats.bytes += Buffer.byteLength(message);
     return reply.send(message);
@@ -400,7 +471,7 @@ export async function handleStreamProxy(
 
   if (isM3u8) {
     // (Counted as it is decoded: a small answer on the wire can be a very large text.)
-    const text = await textUpTo(upstreamResponse, TEXT_MAX_BYTES);
+    const text = await textUpTo(upstreamResponse, TEXT_MAX_BYTES, upstreamMs, abortController);
     if (text === null) return reply.code(502).header("Content-Type", TEXT_TYPE).send("The playlist is too long");
     // Verify it actually looks like an m3u8
     if (text.includes("#EXTM3U")) {
@@ -423,7 +494,7 @@ export async function handleStreamProxy(
 
   // Subtitle conversion to WebVTT
   if (isSubtitle) {
-    const rawText = await textUpTo(upstreamResponse, video ? TEXT_MAX_BYTES : SUBTITLE_MAX_BYTES);
+    const rawText = await textUpTo(upstreamResponse, video ? TEXT_MAX_BYTES : SUBTITLE_MAX_BYTES, upstreamMs, abortController);
     if (rawText === null) return video ? reply.code(502).header("Content-Type", TEXT_TYPE).send("The subtitle is too long") : turnAway();
     const vtt = srtToVtt(rawText);
     if (stats) stats.bytes += Buffer.byteLength(vtt);
@@ -457,7 +528,7 @@ export async function handleStreamProxy(
   }
 
   if (upstreamResponse.body) {
-    return reply.send(Readable.from(counted(Readable.fromWeb(upstreamResponse.body as any), stats), { objectMode: false }));
+    return reply.send(Readable.from(counted(untilSilent(Readable.fromWeb(upstreamResponse.body as any), upstreamMs, abortController), stats), { objectMode: false }));
   }
 
   return reply.send();
