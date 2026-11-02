@@ -44,14 +44,24 @@ export function answerUnroutable(error: FastifyError, request: FastifyRequest, r
   void reply.send(error);
 }
 
-/** The routes that make this server fetch from another site for whoever asks. */
-const FETCHES = new Set(["/api/proxy", "/api/resolve"]);
+/** The library's routes that take the address of a title and ask the place that lists it. */
+const TITLE_ASKS = ["/api/library/similar", "/api/library/about", "/api/library/episodes", "/api/library/seasons"];
+
+/** The library's routes that page through the shelves: more rows are asked for as a page is scrolled, and more titles of one row. Few answers are kept for as many as can be asked. */
+const BROWSE_ASKS = ["/api/library/rows", "/api/library/more"];
+
+/** The routes that make this server fetch from another site for whoever asks (the library's, when what it keeps has gone out of date). */
+const FETCHES = new Set(["/api/proxy", "/api/resolve", "/api/library", "/api/library/search", ...BROWSE_ASKS, ...TITLE_ASKS]);
 
 /**
- * The routes that only read, but note that someone looked: a profile's Friends page being open (that is how its friends see it online), a chat being open (what is in it
- * has been seen), a code of an invitation that was not good (counted against the account). A link leads to none of them, so nothing but this site's own pages may ask.
+ * The routes that only read, but for the visitor whose session they are asked with, and count or note something against it: everything of a profile (the Friends page being open is how its
+ * friends see it online, a chat being open is what has been seen in it, a tag or a code of an invitation that nobody has counts as a wrong guess, and each of them takes from the allowance of
+ * reads), the lookup of the code of a link, and the visitor's own reports (which take from the address's allowance of reads). A link leads to none of them, so nothing but this site's own
+ * pages may ask. (A route is told by the start of its path, so one that is added to these is covered at once.)
  */
-const LOOKS_THAT_COUNT = new Set(["/api/profiles/:id/friends", "/api/profiles/:id/friends/invites/:code", "/api/profiles/:id/friends/:fid/chat"]);
+const COUNTED_PREFIXES = ["/api/profiles/", "/api/link/"];
+const COUNTED_ROUTES = new Set(["/api/feedback/mine"]);
+const counts = (route: string) => COUNTED_ROUTES.has(route) || COUNTED_PREFIXES.some((prefix) => route.startsWith(prefix));
 
 /** Whether `origin`, as a browser writes it in `Origin` (an address without a path, or `null`), is the very host `host` (the `Host` header) names, with its port. */
 export function isOwnOrigin(origin: string, host: string | undefined): boolean {
@@ -74,8 +84,8 @@ export function isOwnOrigin(origin: string, host: string | undefined): boolean {
  * no referrer (`Referrer-Policy: no-referrer`, as every answer here says) and the request was not made in the CORS mode (a form, a beacon, a fetch kept to the origin).
  *
  * What only reads is let through, except what makes this server fetch for whoever asks (`FETCHES`): a page of another site must not be able to use the server
- * for that, so it is turned away on the same word of the browser, unless the visitor followed a link there (a navigation); and what notes that someone looked
- * (`LOOKS_THAT_COUNT`), which is turned away on that word whether or not a link led there.
+ * for that, so it is turned away on the same word of the browser, unless the visitor followed a link there (a navigation); and what counts or notes something against
+ * the visitor's session (`COUNTED_PREFIXES`, `COUNTED_ROUTES`), which is turned away on that word whether or not a link led there.
  */
 export function sameSiteGate(app: FastifyInstance): void {
   app.addHook("onRequest", async (request, reply) => {
@@ -86,7 +96,7 @@ export function sameSiteGate(app: FastifyInstance): void {
     const elsewhere = site === "cross-site" || site === "same-site";
     let refused: boolean;
     if (request.method === "GET" || request.method === "HEAD") {
-      refused = elsewhere && (LOOKS_THAT_COUNT.has(route) || (FETCHES.has(route) && request.headers["sec-fetch-mode"] !== "navigate"));
+      refused = elsewhere && (counts(route) || (FETCHES.has(route) && request.headers["sec-fetch-mode"] !== "navigate"));
     } else {
       const { origin, host } = request.headers;
       refused = elsewhere || (site !== "same-origin" && origin !== undefined && !isOwnOrigin(origin, host));
@@ -108,12 +118,6 @@ export interface FetchesPerMinute {
   /** The library's rows and the next titles of a row (`rows` and `more`, counted together; 300 unless set): a page that is scrolled asks a few times a minute, and what is not kept goes to the movie database. */
   browse?: number;
 }
-
-/** The library's routes that take the address of a title and ask the place that lists it. */
-const TITLE_ASKS = ["/api/library/similar", "/api/library/about", "/api/library/episodes", "/api/library/seasons"];
-
-/** The library's routes that page through the shelves: more rows are asked for as a page is scrolled, and more titles of one row. Few answers are kept for as many as can be asked. */
-const BROWSE_ASKS = ["/api/library/rows", "/api/library/more"];
 
 /**
  * Anyone may ask this server to go and fetch a page (`/api/resolve`, the library's questions about a title, the library's search, its rows and the titles of a row) or a text (`/api/proxy` without film, which is subtitles),

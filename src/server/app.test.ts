@@ -212,7 +212,18 @@ describe("where a request to the api comes from", () => {
     expect((await sentTo(site, "OPTIONS", "/api/preflight", foreign)).statusCode).toBe(204);
   });
 
-  it.each(["/api/proxy", "/api/resolve"])("turns away a page of another site that would have %s fetch for it, but not a visitor who follows a link there", async (url) => {
+  it.each([
+    "/api/proxy",
+    "/api/resolve",
+    "/api/library",
+    "/api/library/search?q=up",
+    "/api/library/rows",
+    "/api/library/more",
+    "/api/library/similar",
+    "/api/library/about",
+    "/api/library/episodes",
+    "/api/library/seasons",
+  ])("turns away a page of another site that would have %s fetch for it, but not a visitor who follows a link there", async (url) => {
     const site = await buildApp();
     app = site;
     const asked = async (method: "GET" | "HEAD", headers: Record<string, string>) => (await sentTo(site, method, url, headers)).statusCode;
@@ -224,23 +235,49 @@ describe("where a request to the api comes from", () => {
     };
     for (const [name, headers] of Object.entries(refused)) expect(await asked("GET", headers), name).toBe(403);
     expect(await asked("HEAD", refused["a script of another site"]!)).toBe(403);
-    // (Without an address to go to the answer is a 400 of the route's own: the request was let in.)
+    // (What a request that is let in is answered is the route's own: a 400 where there is no address to go to, an empty list where there is nothing to ask for. A page of this site shows it.)
+    const own = await asked("GET", { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" });
+    expect(own).not.toBe(403);
     const allowed: Record<string, Record<string, string>> = {
       "a link from another site": { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" },
       "a link from a sibling name": { "sec-fetch-site": "same-site", "sec-fetch-mode": "navigate" },
-      "a page of this site": { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" },
       "an address that was typed": { "sec-fetch-site": "none", "sec-fetch-mode": "navigate" },
       "a script, or an old browser, that says nothing of it": {},
     };
-    for (const [name, headers] of Object.entries(allowed)) expect(await asked("GET", headers), name).toBe(400);
-    expect(await asked("HEAD", allowed["a link from another site"]!)).toBe(400);
+    for (const [name, headers] of Object.entries(allowed)) expect(await asked("GET", headers), name).toBe(own);
+    expect(await asked("HEAD", allowed["a link from another site"]!)).toBe(own);
+  });
+
+  it("does not collect the library, or ask the places that list titles, for a page of another site", async () => {
+    const asked: string[] = [];
+    const places: LibrarySource = {
+      id: "places",
+      name: "Places",
+      load: async () => (asked.push("load"), []),
+      search: async (words) => (asked.push(`search ${words}`), []),
+      shelves: async (_section, cursor) => (asked.push(`rows ${cursor}`), { rows: [], next: null }),
+    };
+    const site = await buildApp({ librarySources: [places] });
+    app = site;
+    const script = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors" };
+    for (const url of ["/api/library", "/api/library/search?q=up", "/api/library/rows?cursor=0"]) expect((await sentTo(site, "GET", url, script)).statusCode, url).toBe(403);
+    expect(asked).toEqual([]);
+    expect((await sentTo(site, "GET", "/api/library", { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" })).statusCode).toBe(200);
+    expect(asked).toEqual(["load"]);
   });
 
   it.each([
     ["a profile's Friends page", "/api/profiles/p1/friends"],
     ["an invitation code", "/api/profiles/p1/friends/invites/ABCDEFGH"],
     ["a chat", "/api/profiles/p1/friends/f1/chat"],
-  ])("turns away a page of another site, and a link from one, that would have %s noted as looked at", async (_what, url) => {
+    ["a chat to be reported", "/api/profiles/p1/friends/f1/chat/report"],
+    ["a tag", "/api/profiles/p1/friends/tags/nobody"],
+    ["the friends a profile keeps", "/api/profiles/p1/friends/kept"],
+    ["a friend's lists", "/api/profiles/p1/friends/f1/lists"],
+    ["a friend's ratings", "/api/profiles/p1/friends/f1/ratings"],
+    ["the code of a link", "/api/link/ABCD1234"],
+    ["the visitor's own reports", "/api/feedback/mine"],
+  ])("turns away a page of another site, and a link from one, that would have %s counted against the visitor", async (_what, url) => {
     const site = await withAccounts();
     const asked = async (method: "GET" | "HEAD", headers: Record<string, string>) => (await sentTo(site, method, url, headers)).statusCode;
     const refused: Record<string, Record<string, string>> = {
@@ -261,6 +298,18 @@ describe("where a request to the api comes from", () => {
     };
     for (const [name, headers] of Object.entries(allowed)) expect(await asked("GET", headers), name).toBe(401);
     expect(await asked("HEAD", allowed["a page of this site"]!)).toBe(401);
+  });
+
+  it("holds a route that is added under a profile or a link to the same, without being told of it, and no other for having those words in its path", async () => {
+    const site = await withAccounts();
+    site.get("/api/profiles/:id/added-later", async () => "ok");
+    site.get("/api/link/:code/added-later", async () => "ok");
+    site.get("/api/other/api/profiles/:id", async () => "ok");
+    for (const url of ["/api/profiles/p1/added-later", "/api/link/ABCD1234/added-later"]) {
+      expect((await sentTo(site, "GET", url, { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" })).statusCode, url).toBe(403);
+      expect((await sentTo(site, "GET", url, { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" })).statusCode, url).toBe(200);
+    }
+    expect((await sentTo(site, "GET", "/api/other/api/profiles/p1", { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors" })).statusCode).toBe(200);
   });
 
   it("gives no website leave to read the proxy: a preflight is not answered and no answer has a CORS header", async () => {

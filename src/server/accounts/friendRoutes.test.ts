@@ -1309,6 +1309,36 @@ describe("who is online", () => {
   });
 });
 
+describe("what a link from another site, or a page of a sibling name, can do with a visitor's session", () => {
+  // (The cookie of a session goes along with a link, and with every request of a page of a sibling name; the browser says where a request comes from, and the server believes that word.)
+  const from = (who: Person, how: { site: "cross-site" | "same-site"; mode: "navigate" | "cors" }) => ({ cookie: who.client.cookie, "sec-fetch-site": how.site, "sec-fetch-mode": how.mode });
+  const link = { site: "cross-site", mode: "navigate" } as const;
+  const sibling = { site: "same-site", mode: "cors" } as const;
+
+  it("does not use up the guesses a profile may make at a tag or at a code", async () => {
+    const { app, alex } = await pair();
+    const look = (path: string, how: typeof link | typeof sibling) => app.inject({ method: "GET", url: mine(alex, path), headers: from(alex, how) });
+    const tag = (n: number) => `/tags/${encodeURIComponent(`Nobody#${n}`)}`;
+    for (let n = 0; n < 12; n++) {
+      expect((await look(tag(n + 2), link)).statusCode).toBe(403);
+      expect((await look(`/invites/ABCD23${n + 10}`, sibling)).statusCode).toBe(403);
+    }
+    // All ten of its own wrong guesses are still its own.
+    for (let n = 0; n < 10; n++) expect((await alex.client.get(mine(alex, tag(n + 2)))).statusCode).toBe(404);
+    expect((await alex.client.get(mine(alex, tag(99)))).statusCode).toBe(429);
+  });
+
+  it("does not use up the lookups of the code of a link that an account may make", async () => {
+    const { app, alex } = await pair();
+    for (let n = 0; n < 35; n++) {
+      const refused = await app.inject({ method: "GET", url: "/api/link/ABCD2345", headers: from(alex, n % 2 === 0 ? link : sibling) });
+      expect(refused.statusCode).toBe(403);
+    }
+    for (let n = 0; n < 30; n++) expect((await alex.client.get("/api/link/ABCD2345")).statusCode).toBe(404);
+    expect((await alex.client.get("/api/link/ABCD2345")).statusCode).toBe(429);
+  });
+});
+
 describe("keeping friends", () => {
   it("is still there after the server restarts", async () => {
     const persistence = new MemoryPersistence();
