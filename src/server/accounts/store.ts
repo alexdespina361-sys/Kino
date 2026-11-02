@@ -77,9 +77,10 @@ const FUTURE_SLACK_MS = 60_000;
 /** When a write fails (the database is waking up, the network blinked), try again after this. */
 const RETRY_MS = 10_000;
 /**
- * The most the live items of one part of a profile may weigh (their JSON, in characters), the newest first. The counts in `LIMITS` alone leave room for items of
- * some kilobytes each, which is about 8 MB for one profile and some dozens of MB for one account. These are far above what anybody keeps (400 titles in the lists,
- * or 500 ratings, of a kilobyte each use 60% and 75% of theirs), so they only ever hold back a profile that is filled with text on purpose.
+ * The most the live items of one part of a profile may weigh (their JSON, in bytes as it is written down: a letter that is not ASCII is two or three of them, and the
+ * schemas count letters), the newest first. The counts in `LIMITS` alone leave room for items of some kilobytes each, which is about 8 MB for one profile and some
+ * dozens of MB for one account. These are far above what anybody keeps (400 titles in the lists, or 500 ratings, of a kilobyte each use 60% and 75% of theirs), so they
+ * only ever hold back a profile that is filled with text on purpose.
  */
 const BYTE_BUDGET: Record<CollectionName, number> = { progress: 192 * 1024, watched: 256 * 1024, list: 640 * 1024, listNames: 32 * 1024, ratings: 640 * 1024, settings: 64 * 1024 };
 
@@ -589,7 +590,7 @@ export class AccountStore {
       if (item.deleted) return true;
       // (What is past the budget is not weighed: it goes whatever it weighs.)
       if (!over) {
-        weight += JSON.stringify(item).length;
+        weight += Buffer.byteLength(JSON.stringify(item));
         over = weight > BYTE_BUDGET[name];
       }
       return !over;

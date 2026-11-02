@@ -31,7 +31,8 @@ function weighing<T extends object>(item: T, chars: number, fields: Array<[strin
   if (missing !== 0) throw new Error(`cannot make an item of ${chars} characters`);
   return filled as T;
 }
-const weigh = (items: readonly object[]) => items.reduce((sum, item) => sum + JSON.stringify(item).length, 0);
+/** What `items` weigh as the store counts it: their JSON in bytes (for ASCII, which `weighing` writes, that is its length in characters). */
+const weigh = (items: readonly object[]) => items.reduce((sum, item) => sum + Buffer.byteLength(JSON.stringify(item)), 0);
 
 /** A store with one account, and that account's first profile. */
 async function withAccount(persistence?: MemoryPersistence) {
@@ -572,7 +573,7 @@ describe("what a profile may weigh", () => {
     { name: "listNames", budget: 32 * 1024, size: 4096, make: (n: number, at: number) => ({ key: `l${n}`, at, name: "" }), pad: [["name", 4096]] },
   ] satisfies Array<{ name: CollectionName; budget: number; size: number; make: (n: number, at: number) => object; pad: Array<[string, number]> }>;
 
-  it.each(edges)("holds $name to its budget to the character", async ({ name, budget, size, make, pad }) => {
+  it.each(edges)("holds $name to its budget to the byte", async ({ name, budget, size, make, pad }) => {
     const count = budget / size;
     const items = (oldestWeighs = size) => Array.from({ length: count }, (_, n) => weighing(make(n, clock - n * 1000), n === count - 1 ? oldestWeighs : size, pad as Array<[string, number]>));
 
@@ -588,6 +589,41 @@ describe("what a profile may weigh", () => {
     const sent = items(size + 1);
     over.store.sync(over.profile.id, request(0, { [name]: sent } as never));
     expect(stored(over.store, over.profile.id, name).map((item) => item.key).sort()).toEqual(sent.slice(0, count - 1).map((item) => (item as { key: string }).key).sort());
+  });
+
+  it("counts the bytes that are written down, not the letters: a letter that is not ASCII weighs two or three of them", async () => {
+    const budget = 640 * 1024;
+    const count = 128;
+    // Items of 4320 letters, 400 of them Chinese ones (three bytes each in UTF-8): 5120 bytes, so 128 of them are exactly the budget of a list, where the same letters
+    // in ASCII would have been 552960 of the 655360.
+    const items = (oldestWeighs = 4320) =>
+      Array.from({ length: count }, (_, n) =>
+        weighing({ key: `url:https://x/${n}`, at: clock - n * 1000, id: String(n), title: `T${n}`, url: `https://x/${n}`, description: "漢".repeat(400) }, n === count - 1 ? oldestWeighs : 4320, [["image", 2048], ["backdrop", 2048]]),
+      );
+    expect(weigh(items())).toBe(budget);
+    expect(items().reduce((sum, item) => sum + JSON.stringify(item).length, 0)).toBeLessThan(budget);
+
+    // exactly the budget: all of it stays
+    const exact = await withAccount();
+    exact.store.sync(exact.profile.id, request(0, { list: items() }));
+    expect(stored(exact.store, exact.profile.id, "list")).toHaveLength(count);
+
+    // a byte more, and the oldest is the one that goes
+    const over = await withAccount();
+    const sent = items(4321);
+    over.store.sync(over.profile.id, request(0, { list: sent }));
+    expect(stored(over.store, over.profile.id, "list").map((item) => item.key).sort()).toEqual(sent.slice(0, count - 1).map((item) => item.key).sort());
+
+    // and text of two bytes a letter (Cyrillic, Greek) is held to it as well: 160 items of 4096 letters would be 655360 of them, but they are 4496 bytes each
+    const twice = await withAccount();
+    const cyrillic = Array.from({ length: 160 }, (_, n) =>
+      weighing({ key: `url:https://x/${n}`, at: clock - n * 1000, id: String(n), title: `T${n}`, url: `https://x/${n}`, description: "ж".repeat(400) }, 4096, [["image", 2048], ["backdrop", 2048]]),
+    );
+    twice.store.sync(twice.profile.id, request(0, { list: cyrillic }));
+    const kept = stored(twice.store, twice.profile.id, "list");
+    expect(kept.length).toBeLessThan(160);
+    expect(weigh(cyrillic.slice(0, kept.length))).toBeLessThanOrEqual(budget);
+    expect(weigh(cyrillic.slice(0, kept.length + 1))).toBeGreaterThan(budget);
   });
 
   it("lets nothing older than the first item that does not fit stay, even a small one that would fit", async () => {
