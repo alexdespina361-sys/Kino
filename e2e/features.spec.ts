@@ -2070,7 +2070,7 @@ test.describe("a watch party started on a TV", () => {
     await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
   });
 
-  test("the host sends a guest away, and the guest is told and can come back with the same code", async ({ browser, baseURL }) => {
+  test("the host sends a guest away, and the guest is told and cannot come back, with the code it had or with the party's new one", async ({ browser, baseURL }) => {
     const { host, guest, code } = await party(browser, baseURL!);
     await host.getByTestId("tv-party-remove").click();
     await expect(host.getByTestId("tv-party-member")).toHaveCount(1);
@@ -2078,10 +2078,16 @@ test.describe("a watch party started on a TV", () => {
     await expect(guest.getByTestId("tv-flash")).toHaveText("You are no longer in the party.");
     await expect(guest.getByTestId("tv-party-start")).toBeVisible();
 
-    await guest.getByTestId("tv-party-join").click(); // the code is still good
+    await expect.poll(() => codeOf(host)).not.toBe(code); // (the party has another code now: the one the guest knew went when it was sent away)
+    const fresh = await codeOf(host);
+    await guest.getByTestId("tv-party-join").click();
     await guest.keyboard.type(code);
-    await expect(guest.getByTestId("tv-following")).toBeVisible();
-    await expect(host.getByTestId("tv-party-member")).toHaveCount(2);
+    await expect(guest.getByTestId("tv-party-error")).toHaveText("Invalid or expired code.");
+    await guest.keyboard.type(fresh); // (nor does the new one let it back in: a guest that was sent away stays away)
+    await guest.waitForTimeout(1000); // (a refusal is the absence of an answer to wait for)
+    await expect(guest.getByTestId("tv-party-error")).toHaveText("Invalid or expired code.");
+    await expect(guest.getByTestId("tv-following")).toHaveCount(0);
+    await expect(host.getByTestId("tv-party-member")).toHaveCount(1);
   });
 
   test("the host makes a guest an admin: its buttons and keys steer the film for everyone, and taking that back puts them away", async ({ browser, baseURL }) => {
