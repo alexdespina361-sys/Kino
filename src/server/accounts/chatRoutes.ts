@@ -161,8 +161,12 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
       at: store.clock(),
       lines: held.value.lines.map((line) => ({ at: line.at, from: line.mine ? "reporter" : "about", text: line.text })),
     });
-    // (The team's side is full of reports nobody has closed: nothing was kept. That is the site's to put right, so it is a 503 and not a 429; the page may try again later.)
-    if (sent === "full") return reply.header("Retry-After", 3600).code(503).send({ error: "full" });
+    // (The team's side is full of reports nobody has closed: nothing was kept. That is the site's to put right, so it is a 503 and not a 429; the page may try again
+    // later. A report that was not kept is not one the account sent: its place in the hour's few comes back.)
+    if (sent === "full") {
+      reportsByAccount.undo(me.accountId);
+      return reply.header("Retry-After", 3600).code(503).send({ error: "full" });
+    }
     return reply.code(204).send();
   });
 }

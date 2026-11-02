@@ -230,8 +230,9 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     proxy: { bytes: proxyStats.bytes, requests: proxyStats.requests, refused: proxyStats.refused, video: proxyVideo ? "on" : "off" },
     // (`subsync` counts the asks for a shared subtitle timing that found one and the ones that did not, and the timings screens have left.)
     subsync: subsyncStats,
-    // (`feedback` is how many reports are kept and whether the team can read them: `team` is false while FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more.)
-    feedback: { reports: feedback.size, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },
+    // (`feedback` is how many reports are kept, whether the team can read them, and whether a new report would be turned away: `team` is false while
+    // FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more, and `full` is true while the reports that are still open take every place or all the room.)
+    feedback: { reports: feedback.size, full: feedback.full, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },
     features: { cat: catOn },
   }));
   app.get("/api/library", async (request, reply) => {

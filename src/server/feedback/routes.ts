@@ -20,7 +20,7 @@ import {
 } from "../../shared";
 import { RateLimiter } from "../accounts/rateLimit";
 import { isEmptyReport, readContext, readDetails, readFiles, readWords } from "./intake";
-import { FeedbackFull, unreadOf, waitingOn, type FeedbackRecord, type FeedbackStore } from "./store";
+import { FeedbackFull, TooManyOpen, unreadOf, waitingOn, type FeedbackRecord, type FeedbackStore } from "./store";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -159,6 +159,12 @@ const tooMany = (reply: FastifyReply, waitMs: number) => {
 const full = (reply: FastifyReply) => reply.header("Retry-After", 3600).code(503).send({ error: "full" });
 
 /**
+ * The sender has as many reports open as one address may (see `TooManyOpen`). That is the sender's doing, so it is a 429, but waiting a few minutes will not
+ * change it: it changes when the team has dealt with some of the reports, so the page is told to try again later.
+ */
+const tooManyOpen = (reply: FastifyReply) => reply.header("Retry-After", 3600).code(429).send({ error: "too_many_open" });
+
+/**
  * The check for the team's side of the site (the feedback below, and the owner's stats): true when the request brings the team's token
  * (`FEEDBACK_ADMIN_TOKEN`) as a Bearer; otherwise the answer is sent. Without a token that is long enough there is no team's side, and the answer is a
  * 404 (there is nothing to find). Wrong tries are slowed per address.
@@ -199,6 +205,11 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
   const reads = new RateLimiter(120, MINUTE);
   /** Every try to send, whatever comes of it, counted before the body is read: a request that is turned away has cost what it cost to read. */
   const tries = new RateLimiter(Math.max(30, sendsPer10Min * 5), 10 * MINUTE);
+  /**
+   * The most reports one address may have open at once (see `TooManyOpen`): as many as it may send in ten minutes. A person has a few things to say
+   * before anybody has looked at the first, so this is far above what one needs, and an address cannot fill the room with reports nobody has dealt with.
+   */
+  const maxOpen = Math.max(6, sendsPer10Min);
   const counted = async (request: FastifyRequest, reply: FastifyReply) => {
     const wait = tries.wait(request.ip);
     if (wait > 0) return tooMany(reply, wait);
@@ -261,11 +272,18 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
           context,
           ...(dropped.length ? { contextDropped: dropped } : {}),
           files,
+          from: request.ip,
         },
-        { filesOptional: true },
+        { filesOptional: true, maxOpen },
       );
     } catch (error) {
-      if (error instanceof FeedbackFull) return full(reply);
+      if (error instanceof FeedbackFull || error instanceof TooManyOpen) {
+        // (A report the store did not take is not one this address sent: what it cost the allowances comes back, so a full store does not use them up.)
+        perAddress.undo(request.ip);
+        perAddressDay.undo(request.ip);
+        everyone.undo("all");
+        return error instanceof FeedbackFull ? full(reply) : tooManyOpen(reply);
+      }
       throw error;
     }
     const { record, refused } = made;
@@ -326,10 +344,17 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     replies.hit(request.ip);
     // (A report that was waiting for this answer, or was closed, is the team's to look at again.)
     const status: FeedbackStatus | undefined = found.status === "needs_info" || found.status === "done" || found.status === "declined" || found.status === "duplicate" ? "in_review" : undefined;
-    const added = await store.addMessage(found.id, { from: "user", text, files, ...(status ? { status } : {}) });
+    let added: Awaited<ReturnType<FeedbackStore["addMessage"]>>;
+    try {
+      // (As for a report, the words are kept before the pictures: what does not fit the room for files is left out, and said, as what is too big is.)
+      added = await store.addMessage(found.id, { from: "user", text, files, ...(status ? { status } : {}) });
+    } catch (error) {
+      if (error instanceof FeedbackFull) return full(reply);
+      throw error;
+    }
     if (added === "full") return reply.code(409).send({ error: "thread_full" });
     if (!added) return reply.code(404).send({ error: "not_found" });
-    return reply.code(201).send({ message: messageView(added), rejected });
+    return reply.code(201).send({ message: messageView(added.message), rejected: [...rejected, ...added.refused.map((id) => ({ id, reason: "too_big" as const }))] });
   });
 
   /* ------------------------------ the team's side ------------------------------ */
@@ -387,7 +412,7 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     const status: FeedbackStatus = parsed.data.status ?? (parsed.data.ask ? "needs_info" : record.status === "new" ? "in_review" : record.status);
     const added = await store.addMessage(record.id, { from: "team", text: cleanText(parsed.data.text, FEEDBACK_LIMITS.text * 2), asks: Boolean(parsed.data.ask), status });
     if (added === "full") return reply.code(409).send({ error: "thread_full" });
-    return added ? reply.code(201).send({ message: added, status }) : reply.code(404).send({ error: "not_found" });
+    return added ? reply.code(201).send({ message: added.message, status }) : reply.code(404).send({ error: "not_found" });
   });
 
   app.patch<{ Params: { id: string } }>("/api/admin/feedback/:id", async (request, reply) => {
