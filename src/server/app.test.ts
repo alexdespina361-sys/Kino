@@ -323,6 +323,25 @@ describe("how often an address may ask for what makes the server fetch from anot
     expect(await codes(alone, [from("198.51.100.7"), from("198.51.100.8"), from("198.51.100.9")])).toEqual([200, 200, 429]);
   });
 
+  it("counts every address of an IPv6 network of 64 bits as one visitor, and the next network as another", async () => {
+    const { resolve } = resolver();
+    const behind = await buildApp({ resolve, trustProxy: 1, fetchesPerMinute: { resolve: 2 } });
+    app = behind;
+    const from = (address: string): InjectOptions => ({ url: `/api/resolve?url=${PAGE}`, headers: { "x-forwarded-for": address } });
+    // (A machine can send from any address of its network: each one it makes up is not another visitor.)
+    expect(await codes(behind, [from("2001:db8:1:2::1"), from("2001:db8:1:2:aaaa::2"), from("2001:db8:1:2:bbbb:cccc:dddd:3")])).toEqual([200, 200, 429]);
+    expect(await codes(behind, [from("2001:db8:1:3::1"), from("2001:db8:1:3::2"), from("2001:db8:1:3::3")])).toEqual([200, 200, 429]); // (the next network: its own two)
+    // An IPv4 address written as IPv6 is the IPv4 one.
+    expect(await codes(behind, [from("198.51.100.7"), from("::ffff:198.51.100.7"), from("::ffff:c633:6407")])).toEqual([200, 200, 429]);
+    // Where no proxy is in front it is the connection's own address that is cut, and nothing a header says.
+    await behind.close();
+    const alone = await buildApp({ resolve, fetchesPerMinute: { resolve: 2 } });
+    app = alone;
+    const direct = (remoteAddress: string): InjectOptions => ({ url: `/api/resolve?url=${PAGE}`, remoteAddress, headers: { "x-forwarded-for": remoteAddress } });
+    expect(await codes(alone, [direct("2001:db8:1:2::1"), direct("2001:db8:1:2::2"), direct("2001:db8:1:2::3")])).toEqual([200, 200, 429]);
+    expect(await codes(alone, [direct("2001:db8:1:4::1")])).toEqual([200]);
+  });
+
   it("counts the library's four questions about a title together, and the rest of what the library answers not at all", async () => {
     const { resolve } = resolver();
     const site = await buildApp({ resolve, fetchesPerMinute: { library: 4, resolve: 1, proxy: 1, browse: 100 }, proxyVideo: false });

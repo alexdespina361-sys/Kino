@@ -720,7 +720,8 @@ Anything that runs a Node process does (Northflank, Railway, Fly, a VPS):
 - **Set `TRUST_PROXY=1`** (the number of proxies in front of the server; it is on by itself only on Render). Without it every visitor looks like one address
   to the rate limits (10 sign-ups an hour, wrong codes, link polls) and they apply to everybody together (twenty wrong codes from anybody
   then pause pairing for all). Behind Cloudflare as well, that is all: its addresses are passed over for you (`src/server/trust.ts`), and `node scripts/stats.mjs`
-  ends with how your own request is read, which should be your own address.
+  ends with how your own request is read, which should be your own address (an IPv6 one as its network of 64 bits, `2001:db8:1:2::`: whoever is given a network can write any address
+  in it, so all of them count as one visitor).
 - `DATABASE_URL` as above, and **one running copy per database**: two copies (the old host and the new one) write over each other.
 
 Limits to know about: there is no password reset (no mail is sent, and a password can be anything, so a forgotten one means a new account),

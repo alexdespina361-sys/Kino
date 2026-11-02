@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isProxyAddress, trustedProxies } from "./trust";
+import { isProxyAddress, trustedProxies, visitorOf } from "./trust";
 
 describe("which addresses are a proxy's and not a visitor's", () => {
   it("knows Cloudflare's, at the edges of its ranges and not beyond them", () => {
@@ -48,5 +48,55 @@ describe("what Fastify is told to trust", () => {
     const two = trustedProxies(2);
     expect(two("203.0.113.9", 1)).toBe(true);
     expect(two("203.0.113.9", 2)).toBe(false);
+  });
+});
+
+describe("who a request counts as", () => {
+  it("leaves an IPv4 address as it is, and whatever is not an address", () => {
+    for (const text of ["203.0.113.9", "10.1.2.3", "0.0.0.0", "", "unknown", "1.2.3", "999.1.1.1", "2001:db8::zz"]) {
+      expect(visitorOf(text), text).toBe(text);
+    }
+  });
+
+  it("counts every address of an IPv6 network of 64 bits as the one visitor it is, however the address is written", () => {
+    const network = "2001:db8:1:2::";
+    for (const address of [
+      "2001:db8:1:2::1",
+      "2001:db8:1:2::",
+      "2001:db8:1:2:ffff:ffff:ffff:ffff",
+      "2001:0db8:0001:0002:0000:0000:0000:0001",
+      "2001:DB8:1:2:AAAA:bbbb:CcCc:dddd",
+      "2001:db8:1:2:1::",
+    ]) {
+      expect(visitorOf(address), address).toBe(network);
+    }
+  });
+
+  it("keeps the networks apart, in the first 64 bits and in no other", () => {
+    const visitors = ["2001:db8:1:2::1", "2001:db8:1:3::1", "2001:db8:2:2::1", "2001:db9:1:2::1", "2002:db8:1:2::1", "2001:db8::1:2:0:1"].map(visitorOf);
+    expect(new Set(visitors).size).toBe(visitors.length);
+    expect(visitorOf("2001:db8::5:6:7:8")).toBe("2001:db8:0:0::");
+    expect(visitorOf("::1")).toBe("0:0:0:0::");
+    expect(visitorOf("::")).toBe("0:0:0:0::");
+    expect(visitorOf("1:2:3:4:5:6:7::")).toBe("1:2:3:4::");
+    expect(visitorOf("::2:3:4:5:6:7:8")).toBe("0:2:3:4::");
+  });
+
+  it("reads an IPv4 address written as IPv6 as the IPv4 one, in both ways it is written", () => {
+    expect(visitorOf("::ffff:203.0.113.9")).toBe("203.0.113.9");
+    expect(visitorOf("::FFFF:203.0.113.9")).toBe("203.0.113.9");
+    expect(visitorOf("::ffff:cb00:7109")).toBe("203.0.113.9");
+    expect(visitorOf("0:0:0:0:0:ffff:cb00:7109")).toBe("203.0.113.9");
+    expect(visitorOf("::ffff:10.1.2.3")).toBe("10.1.2.3");
+    // (Only the one prefix is the IPv4 one: the others are networks like any other.)
+    expect(visitorOf("::fffe:203.0.113.9")).toBe("0:0:0:0::");
+    expect(visitorOf("64:ff9b::203.0.113.9")).toBe("64:ff9b:0:0::");
+    expect(visitorOf("1::ffff:203.0.113.9")).toBe("1:0:0:0::");
+  });
+
+  it("leaves out the zone of a link-local address", () => {
+    expect(visitorOf("fe80::1%eth0")).toBe("fe80:0:0:0::");
+    expect(visitorOf("fe80::1")).toBe(visitorOf("fe80::2%en1"));
+    expect(visitorOf("::ffff:203.0.113.9%eth0")).toBe("203.0.113.9");
   });
 });

@@ -58,3 +58,33 @@ export function isProxyAddress(address: string): boolean {
 export function trustedProxies(proxies: number): (address: string, hop: number) => boolean {
   return (address, hop) => hop < proxies || isProxyAddress(address);
 }
+
+/** The eight 16-bit groups of an IPv6 address, or undefined for whatever is not one. */
+function groupsOf(address: string): number[] | undefined {
+  if (isIP(address) !== 6) return undefined;
+  let text = address.split("%")[0] ?? ""; // (a zone, `fe80::1%eth0`, is no part of the address)
+  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(text);
+  if (dotted) {
+    const [a = 0, b = 0, c = 0, d = 0] = dotted.slice(1).map(Number);
+    text = `${text.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = "", tail] = text.split("::");
+  const parts = (side: string | undefined) => (side ? side.split(":") : []);
+  const [front, back] = [parts(head), parts(tail)];
+  return [...front, ...Array<string>(8 - front.length - back.length).fill("0"), ...back].map((group) => parseInt(group, 16));
+}
+
+/**
+ * Who a request counts as for the limits and the visitor count. An IPv6 customer is given a whole network (a /64 at the least, and the machine can send from
+ * any address inside it), so a limit kept per full address is one that a single machine has as many of as it likes, one for each address it makes up. So the
+ * address is cut to the first 64 bits of it (`2001:db8:1:2::`, the network that one household or one machine has), and an IPv4 address written as IPv6
+ * (`::ffff:203.0.113.9`) is read as the IPv4 one. IPv4 addresses, and whatever is not an address, are left as they are.
+ * What this does not stop: someone who is given several networks has an allowance for each of them, as someone who has several IPv4 addresses does.
+ */
+export function visitorOf(address: string): string {
+  const groups = groupsOf(address);
+  if (!groups || groups.length !== 8) return address;
+  const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, h = 0] = groups;
+  if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0xffff) return `${g >> 8}.${g & 255}.${h >> 8}.${h & 255}`;
+  return `${a.toString(16)}:${b.toString(16)}:${c.toString(16)}:${d.toString(16)}::`;
+}

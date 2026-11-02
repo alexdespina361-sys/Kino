@@ -237,7 +237,9 @@ describe("which address a request is read as", () => {
     expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2" }, 1)).address).toBe("203.0.113.9");
     expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2, 104.16.0.3" }, 1)).address).toBe("203.0.113.9");
     expect((await addressOf({ "x-forwarded-for": "203.0.113.9, 172.70.1.2, 10.9.9.9" }, 1)).address).toBe("203.0.113.9");
-    expect((await addressOf({ "x-forwarded-for": "2a02:2f0e:1::7, 2606:4700::6810:1" }, 1)).address).toBe("2a02:2f0e:1::7");
+    // (An IPv6 visitor is the network of 64 bits that the address is in: trust.ts.)
+    expect((await addressOf({ "x-forwarded-for": "2a02:2f0e:1::7, 2606:4700::6810:1" }, 1)).address).toBe("2a02:2f0e:1:0::");
+    expect((await addressOf({ "x-forwarded-for": "2a02:2f0e:1:9:8:7:6:5" }, 1)).address).toBe("2a02:2f0e:1:9::");
   });
 
   it("falls back to Cloudflare's own address when that is all the list has (the visitor is missing from it: as it was read before)", async () => {

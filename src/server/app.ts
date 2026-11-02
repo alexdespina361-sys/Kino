@@ -25,7 +25,7 @@ import { countVisits, statsRoutes } from "./stats/routes";
 import type { VisitCounter } from "./stats/visits";
 import { subsyncRoutes, type SubsyncStats } from "./subsync/routes";
 import { MemorySubsyncStore, type SubsyncStore } from "./subsync/store";
-import { trustedProxies } from "./trust";
+import { trustedProxies, visitorOf } from "./trust";
 
 export interface AppOptions {
   /** Accounts, profiles and what they watched. Without it the server has no sign-in and every screen just keeps its own history. The app closes it when it stops. */
@@ -112,6 +112,11 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const trustProxy = typeof proxies === "number" ? (proxies > 0 ? trustedProxies(proxies) : false) : proxies;
   const app = Fastify({ logger: options.logger ?? false, frameworkErrors: answerUnroutable, ...(trustProxy === undefined ? {} : { trustProxy }) });
   // (First of all: a hook added to the app reaches only what is registered after it, and the pages are served by what comes below.)
+  // A visitor is one network of 64 bits, not one address, in every limit and count that goes by `request.ip` (trust.ts).
+  app.addHook("onRequest", async (request) => {
+    const visitor = visitorOf(request.ip);
+    if (visitor !== request.ip) Object.defineProperty(request, "ip", { value: visitor });
+  });
   if (options.visits) countVisits(app, options.visits);
   securityHeaders(app);
   sameSiteGate(app);
