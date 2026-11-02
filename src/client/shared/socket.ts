@@ -80,7 +80,6 @@ export function connectSocket(options: SocketOptions): Socket {
 
     socket.onopen = () => {
       clearTimeout(connectTimer);
-      attempt = 0;
       socket.send(JSON.stringify(options.hello()));
       options.onStatus("open");
 
@@ -105,6 +104,9 @@ export function connectSocket(options: SocketOptions): Socket {
     };
     socket.onmessage = (event) => {
       lastHeard = Date.now();
+      // (The wait before the next try starts over when the server has said something, not when it has only taken the connection: a proxy with nothing behind it does
+      // that, and every page would ask it twice a second for as long as it did.)
+      attempt = 0;
       const message = parseServerMessage(event.data);
       if (message?.type === "PONG" && pingedAt > 0) {
         const took = performance.now() - pingedAt;

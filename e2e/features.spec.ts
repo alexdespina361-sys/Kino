@@ -270,6 +270,49 @@ test.describe("a server that is slow to answer", () => {
     await tv.clock.fastForward(10_500);
     await expect(tv.getByTestId("tv-banner")).toHaveCount(0);
   });
+
+  test("a server that takes a connection and drops it again at once is asked back after longer and longer waits, not twice a second for as long as it does; one that said something is asked back at once", async ({ browser }) => {
+    type Line = { __tries: number; __talks: boolean };
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, async (context) => {
+      await context.clock.install();
+      await context.addInitScript(() => {
+        const line = window as unknown as Line;
+        line.__tries = 0;
+        line.__talks = false;
+        // A proxy with nothing behind it: the connection opens and is gone before a word is said on it (unless the test has it say one).
+        window.WebSocket = new Proxy(window.WebSocket, {
+          construct() {
+            line.__tries++;
+            const stand: Record<string, unknown> = { readyState: 0, onopen: null, onmessage: null, onerror: null, onclose: null, send() {}, close() {} };
+            queueMicrotask(() => {
+              stand.readyState = 1;
+              (stand.onopen as (() => void) | null)?.();
+              if (line.__talks) (stand.onmessage as ((event: { data: string }) => void) | null)?.({ data: "{}" });
+              stand.readyState = 3;
+              (stand.onclose as ((event: { code: number }) => void) | null)?.({ code: 1006 });
+            });
+            return stand as unknown as WebSocket;
+          },
+        });
+      });
+    });
+    const tries = () => tv.evaluate(() => (window as unknown as Line).__tries);
+    /** How many half seconds of the page's clock pass before it has tried `count` times. */
+    const halfSecondsUntil = async (count: number) => {
+      for (let steps = 1; steps <= 40; steps++) {
+        await tv.clock.runFor(500);
+        if ((await tries()) >= count) return steps;
+      }
+      return 40;
+    };
+    await tv.goto("/tv");
+    // The first try, and then the waits grow: 0.5, 1, 2 and 4 seconds (a try every half second would be five in two).
+    expect(await halfSecondsUntil(5)).toBeGreaterThanOrEqual(8);
+
+    // The wait is five seconds by now. A connection that has something said on it ends that: the next try comes after the half second of a new beginning.
+    await tv.evaluate(() => ((window as unknown as Line).__talks = true));
+    expect(await halfSecondsUntil(7)).toBeLessThanOrEqual(14); // (five seconds, and the half second; not five, and five again)
+  });
 });
 
 test.describe("playing links", () => {
