@@ -164,6 +164,9 @@ const HOLD_SLACK_S = 5;
 
 const newId = (prefix: string) => `${prefix}_${randomBytes(12).toString("hex")}`;
 
+/** A TV that has a phone or a party (or watches along with one): a pair worth keeping. Any other is free, and a restart forgets it (see `records`). */
+const isPaired = (device: Device): boolean => device.controllerIds.length > 0 || device.leaderId !== null || device.followerIds.length > 0;
+
 /**
  * Who is paired with whom, and the codes that are good right now. Codes and what is playing live in memory only; the pairs
  * themselves are handed out by `records` and taken back by `restore`, so a restart of the server (a free host sleeps and
@@ -195,6 +198,7 @@ export class Registry {
 
   /** A TV or phone was heard from. Only the day counts, so a device that is always on is written once a day, not at every ping. */
   markSeen(id: string): void {
+    if (!this.devices.has(id) && !this.controllers.has(id)) return; // (one that was let go of: see `forgetFree`)
     const day = this.today();
     if (this.seenDays.get(id) === day) return;
     this.seenDays.set(id, day);
@@ -205,7 +209,7 @@ export class Registry {
   records(): Records {
     const today = this.today();
     const devices = [...this.devices.values()]
-      .filter((device) => device.controllerIds.length > 0 || device.leaderId !== null || device.followerIds.length > 0)
+      .filter(isPaired)
       .map((device) => ({
         id: device.id,
         publicId: device.publicId,
@@ -417,6 +421,37 @@ export class Registry {
     this.controllers.set(controller.id, controller);
     this.markSeen(controller.id);
     return controller;
+  }
+
+  /** The TVs that have no phone and no party, the one that came first first. They are not in `records`, so nothing keeps them but this server's memory. */
+  freeTvs(): string[] {
+    return [...this.devices.values()].filter((device) => !isPaired(device)).map((device) => device.id);
+  }
+
+  /** The phones that have no TV, the one that came first first. */
+  freePhones(): string[] {
+    return [...this.controllers.values()].filter((controller) => controller.deviceIds.length === 0).map((controller) => controller.id);
+  }
+
+  /**
+   * A TV that nobody has paired, or a phone with no TV, is let go of, with the codes it was given: its page, when it comes back, is a new TV (or phone) with a new code. One
+   * that is paired is a pair worth keeping and is left alone (it goes by being unpaired, as it always did). Returns whether anything was let go of.
+   */
+  forgetFree(id: string): boolean {
+    const device = this.devices.get(id);
+    if (device) {
+      if (isPaired(device)) return false;
+      this.dropCode(device);
+      this.dropPartyCode(device);
+      if (device.controlCode) this.deviceByControlCode.delete(device.controlCode.value);
+      this.devices.delete(id);
+    } else {
+      const controller = this.controllers.get(id);
+      if (!controller || controller.deviceIds.length > 0) return false;
+      this.controllers.delete(id);
+    }
+    this.seenDays.delete(id);
+    return true;
   }
 
   /** The free TV a code was given to, as long as that is still its code (it may have run out). */

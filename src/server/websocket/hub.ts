@@ -4,6 +4,7 @@ import {
   MAX_FOLLOWERS,
   MAX_LAG_S,
   MAX_PHONE_TVS,
+  PAIRING_CODE_TTL_MS,
   parseClientMessage,
   withHint,
   type ClientMessage,
@@ -41,6 +42,19 @@ export const MAX_BUFFERED_BYTES = 1_000_000;
 /** A film that starts or holds within this long of an admin guest's play or pause is that guest's doing; otherwise it is the host's own. */
 export const STEER_ATTRIBUTION_MS = 4000;
 
+/**
+ * How long a TV or phone that nobody has paired is kept after its connection went, in case its page comes back (a page that was reloaded, or lost its link, is the same TV with
+ * the same code until then). By then the code it was given has run out, and a page that comes back after that is a new TV. Without this, every page that ever said hello would
+ * stay in this server's memory for good.
+ */
+export const KEEP_UNPAIRED_MS = PAIRING_CODE_TTL_MS;
+
+/**
+ * How many TVs, and how many phones, that nobody has paired are kept at most, however fast they come (the pages of a household are a handful). One more than that lets go of the
+ * one that came first and is not connected; when every one of them is connected, it is turned away (the connection is closed, 1013) and its page tries again in a moment.
+ */
+export const MAX_UNPAIRED = 5000;
+
 /** Whether a party's film was going when its host last reported, and whose doing that was (`PartyTv.id`). */
 interface Hold {
   playing: boolean;
@@ -73,6 +87,10 @@ export interface HubOptions {
   maxResolvesByAddress?: number;
   /** Whose a screen is, as the accounts prove it (see TV_PROFILE). Without it a watch party shows no profiles. */
   profiles?: ScreenProfiles;
+  /** How long a TV or phone that nobody has paired is kept after it went (see KEEP_UNPAIRED_MS). Default: as long as a pairing code is good. */
+  keepUnpairedMs?: number;
+  /** How many TVs, and how many phones, that nobody has paired are kept at most (see MAX_UNPAIRED). */
+  maxUnpaired?: number;
 }
 
 /** Relays between phones and TVs. Holds no state of its own beyond who is connected right now. */
@@ -106,6 +124,10 @@ export class Hub {
   /** Where each open socket comes from (see `addressOf`). */
   private readonly addresses = new WeakMap<WebSocket, string>();
   private readonly profiles: ScreenProfiles | undefined;
+  /** When each TV or phone that nobody has paired was first seen to be gone: only the ones still waiting (see `forgetAbandoned`). */
+  private goneSince = new Map<string, number>();
+  private readonly keepUnpairedMs: number;
+  private readonly maxUnpaired: number;
 
   constructor(
     private readonly registry: Registry,
@@ -114,6 +136,8 @@ export class Hub {
   ) {
     const staleAfterMs = options.staleAfterMs ?? 60_000;
     this.profiles = options.profiles;
+    this.keepUnpairedMs = options.keepUnpairedMs ?? KEEP_UNPAIRED_MS;
+    this.maxUnpaired = options.maxUnpaired ?? MAX_UNPAIRED;
     const perAddress = options.maxFailedPairings ?? 20;
     const windowMs = options.failedPairingWindowMs ?? 60_000;
     this.wrongByAddress = new RateLimiter(perAddress, windowMs);
@@ -124,6 +148,7 @@ export class Hub {
     this.sweeper = setInterval(() => {
       const now = Date.now();
       for (const [socket, seen] of this.lastSeen) if (now - seen > staleAfterMs) socket.terminate();
+      this.forgetAbandoned(now);
     }, options.sweepEveryMs ?? 20_000);
     this.sweeper.unref();
   }
@@ -199,6 +224,49 @@ export class Hub {
     return conn;
   }
 
+  /* ------------------------------ TVs and phones that nobody has paired ------------------------------ */
+
+  /** Lets go of the TVs and phones that nobody has paired and that have been gone for `keepUnpairedMs` (counted from the first sweep that saw them gone). */
+  private forgetAbandoned(now: number): void {
+    const waiting = new Map<string, number>();
+    const look = (free: string[], connected: Map<string, WebSocket>): void => {
+      for (const id of free) {
+        if (connected.has(id)) continue;
+        const since = this.goneSince.get(id) ?? now;
+        if (now - since >= this.keepUnpairedMs) this.forget(id);
+        else waiting.set(id, since);
+      }
+    };
+    look(this.registry.freeTvs(), this.tvs);
+    look(this.registry.freePhones(), this.controllers);
+    this.goneSince = waiting; // (only the ones still waiting: one that came back, or was paired, is not counted any more)
+  }
+
+  /**
+   * Whether there is room for one more TV (or phone) that nobody has paired. When `maxUnpaired` of them are here already, the one that came first and is not connected is
+   * let go of to make room; false when every one of them is connected.
+   */
+  private hasRoomFor(kind: "tv" | "phone"): boolean {
+    const free = kind === "tv" ? this.registry.freeTvs() : this.registry.freePhones();
+    if (free.length < this.maxUnpaired) return true;
+    const connected = kind === "tv" ? this.tvs : this.controllers;
+    const gone = free.find((id) => !connected.has(id));
+    if (gone === undefined) return false;
+    this.forget(gone);
+    return true;
+  }
+
+  private forget(id: string): void {
+    this.registry.forgetFree(id);
+    this.resolveSeq.delete(id); // (a lookup that was still running for it ends there: see `playUrlForDevice`)
+  }
+
+  /** A hello that finds no room: the connection is closed without a word (a page that is told something tries again at once; one that is only cut off waits longer each time). */
+  private turnAway(conn: Conn): Conn {
+    conn.socket.close(1013, "busy");
+    return conn;
+  }
+
   /* ------------------------------ TV ------------------------------ */
 
   /**
@@ -210,7 +278,11 @@ export class Hub {
     const mine = conn.role === "tv" ? conn.deviceId : undefined;
     if (conn.role !== "none" && (!mine || (named && named !== mine && this.registry.getDevice(named)))) return this.refuseHello(conn);
     const { socket } = conn;
-    const device = this.registry.tvHello(mine ?? named);
+    const wanted = mine ?? named;
+    // (A TV that this server does not know is a new one, and there is room for only so many that nobody has paired.)
+    if (!(wanted && this.registry.getDevice(wanted)) && !this.hasRoomFor("tv")) return this.turnAway(conn);
+    const device = this.registry.tvHello(wanted);
+    this.goneSince.delete(device.id); // (its time starts over when it goes again, however soon that is)
 
     // One live page per TV. The old page is told to stand down instead of fighting for the slot.
     const previous = this.tvs.get(device.id);
@@ -343,7 +415,10 @@ export class Hub {
     const mine = conn.role === "controller" ? conn.controllerId : undefined;
     if (conn.role !== "none" && (!mine || (named && named !== mine && this.registry.getController(named)))) return this.refuseHello(conn);
     const { socket } = conn;
-    const controller = this.registry.controllerHello(mine ?? named);
+    const wanted = mine ?? named;
+    if (!(wanted && this.registry.getController(wanted)) && !this.hasRoomFor("phone")) return this.turnAway(conn);
+    const controller = this.registry.controllerHello(wanted);
+    this.goneSince.delete(controller.id);
     this.controllers.set(controller.id, socket);
     this.sendWelcome(controller);
     return { role: "controller", socket, controllerId: controller.id };
@@ -397,7 +472,8 @@ export class Hub {
   }
 
   private fromController(controllerId: string, message: ClientMessage): void {
-    const controller = this.registry.controllerHello(controllerId);
+    const controller = this.registry.getController(controllerId);
+    if (!controller) return; // (let go of while an older page of this phone was still open: see `forgetAbandoned`)
     if (message.type === "PAIR") return this.pair(controller, message.code);
     if (message.type === "PLAY_URL") return void this.playUrl(controller, message.url, message.startAt, message.hint);
     if (message.type === "UNPAIR") return this.unpair(controller, message.id);

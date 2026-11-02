@@ -9,7 +9,7 @@ import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
 import type { ResolveFn } from "../resolvers";
 import { PairingStore } from "../sessions/pairings";
 import { MAX_PHONES_PER_TV, Registry } from "../sessions/registry";
-import { CLOSE_REPLACED, FRAME_BURST, MAX_BUFFERED_BYTES, STEER_ATTRIBUTION_MS } from "./hub";
+import { CLOSE_REPLACED, FRAME_BURST, Hub, KEEP_UNPAIRED_MS, MAX_BUFFERED_BYTES, MAX_UNPAIRED, STEER_ATTRIBUTION_MS, type HubOptions } from "./hub";
 
 /**
  * Minimal fake TV / phone. It connects through `app.injectWS`, in memory: a client and a server that talk over real loopback
@@ -809,6 +809,368 @@ describe("keepalive", () => {
     } finally {
       await fast.close();
     }
+  });
+});
+
+describe("TVs and phones that nobody has paired", () => {
+  const KEEP = KEEP_UNPAIRED_MS;
+  const servers: FastifyInstance[] = [];
+  const opened: Client[] = [];
+
+  /**
+   * A server of its own, whose registry the tests look into. Its hub looks every 20 ms and keeps time by `Date`, which a test moves by hand (nothing else is
+   * faked, so a test waits for the hub in real time).
+   */
+  async function serverWith(hub: HubOptions = {}) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const registry = new Registry();
+    const server = await buildApp({ registry, hub: { sweepEveryMs: 20, staleAfterMs: 1e12, ...hub } });
+    await server.ready();
+    servers.push(server);
+    const open = async () => {
+      const client = await Client.open(server);
+      opened.push(client);
+      return client;
+    };
+    return { registry, open };
+  }
+  afterEach(async () => {
+    opened.splice(0).forEach((client) => client.close());
+    await Promise.all(servers.splice(0).map((server) => server.close()));
+    vi.useRealTimers();
+  });
+
+  type Open = () => Promise<Client>;
+  const tvHello = async (open: Open) => {
+    const tv = await open();
+    tv.send({ type: "TV_HELLO" });
+    const welcome = await tv.next("TV_WELCOME");
+    return { tv, welcome, deviceId: welcome.deviceId };
+  };
+  const phoneHello = async (open: Open) => {
+    const phone = await open();
+    phone.send({ type: "CTL_HELLO" });
+    const welcome = await phone.next("CTL_WELCOME");
+    return { phone, controllerId: welcome.controllerId };
+  };
+  /** Time passes by this much for the hub. */
+  const jump = (ms: number) => vi.setSystemTime(Date.now() + ms);
+  /** Long enough for the hub to look a few times. */
+  const sweeps = () => new Promise((resolve) => setTimeout(resolve, 150));
+
+  describe("when they go away", () => {
+    it("lets go of a TV that said hello and went, when it has been gone for the time to the millisecond, and not before", async () => {
+      const { registry, open } = await serverWith();
+      const { tv, deviceId } = await tvHello(open);
+      tv.close();
+      await sweeps();
+      jump(KEEP - 1);
+      await sweeps();
+      expect(registry.getDevice(deviceId)).toBeDefined();
+      jump(1);
+      await expect.poll(() => registry.getDevice(deviceId)).toBeUndefined();
+    });
+
+    it("goes by the time it is told to keep them for", async () => {
+      const { registry, open } = await serverWith({ keepUnpairedMs: 5000 });
+      const { tv, deviceId } = await tvHello(open);
+      tv.close();
+      await sweeps();
+      jump(4999);
+      await sweeps();
+      expect(registry.getDevice(deviceId)).toBeDefined();
+      jump(1);
+      await expect.poll(() => registry.getDevice(deviceId)).toBeUndefined();
+    });
+
+    it("lets go of a phone that said hello and went, the same way, and a page of it that comes back after that is a new phone", async () => {
+      const { registry, open } = await serverWith();
+      const { phone, controllerId } = await phoneHello(open);
+      phone.close();
+      await sweeps();
+      jump(KEEP - 1);
+      await sweeps();
+      expect(registry.getController(controllerId)).toBeDefined();
+      jump(1);
+      await expect.poll(() => registry.getController(controllerId)).toBeUndefined();
+
+      const back = await open();
+      back.send({ type: "CTL_HELLO", controllerId });
+      expect((await back.next("CTL_WELCOME")).controllerId).not.toBe(controllerId);
+    });
+
+    it("keeps a TV that comes back in time: it is the same TV, with the code it had, and connected it is kept however long it stays", async () => {
+      const { registry, open } = await serverWith();
+      const first = await tvHello(open);
+      first.tv.close();
+      await sweeps();
+      jump(KEEP - 1000);
+      await sweeps();
+      const again = await open();
+      again.send({ type: "TV_HELLO", deviceId: first.deviceId });
+      const back = await again.next("TV_WELCOME");
+      expect(back).toMatchObject({ deviceId: first.deviceId, paired: false });
+      expect(back.pairing?.code).toBe(first.welcome.pairing?.code);
+
+      jump(5 * KEEP);
+      await sweeps();
+      expect(registry.getDevice(first.deviceId)).toBeDefined();
+    });
+
+    it("goes by the time to the millisecond: gone at the time, not a moment before (the look is given the time by hand)", () => {
+      const registry = new Registry();
+      const hub = new Hub(registry, async () => ({ status: "unsupported", reason: "not asked" }), { sweepEveryMs: 2_000_000_000, keepUnpairedMs: 1000 });
+      try {
+        const look = (now: number) => (hub as unknown as { forgetAbandoned(now: number): void }).forgetAbandoned(now);
+        const tv = registry.tvHello(undefined);
+        const phone = registry.controllerHello(undefined);
+        look(5000); // (first seen gone)
+        look(5999);
+        expect(registry.getDevice(tv.id)).toBeDefined();
+        expect(registry.getController(phone.id)).toBeDefined();
+        look(6000);
+        expect(registry.getDevice(tv.id)).toBeUndefined();
+        expect(registry.getController(phone.id)).toBeUndefined();
+      } finally {
+        hub.dispose();
+      }
+    });
+
+    it("keeps nothing of the lookups of a TV it lets go of (the number that tells a lookup that a newer choice or a stop came)", () => {
+      const registry = new Registry();
+      const hub = new Hub(registry, async () => ({ status: "unsupported", reason: "not asked" }), { sweepEveryMs: 2_000_000_000, keepUnpairedMs: 1000 });
+      try {
+        const inside = hub as unknown as { forgetAbandoned(now: number): void; bumpResolveSeq(id: string): number; resolveSeq: Map<string, number> };
+        const tv = registry.tvHello(undefined);
+        inside.bumpResolveSeq(tv.id); // (a stop, which a TV that was never paired is given too)
+        expect(inside.resolveSeq.has(tv.id)).toBe(true);
+        inside.forgetAbandoned(5000);
+        inside.forgetAbandoned(6000);
+        expect(registry.getDevice(tv.id)).toBeUndefined();
+        expect(inside.resolveSeq.has(tv.id)).toBe(false);
+      } finally {
+        hub.dispose();
+      }
+    });
+
+    it("never lets go of a TV or a phone that is connected, however long it stays after the hub has seen it", async () => {
+      const { registry, open } = await serverWith();
+      const { tv, deviceId } = await tvHello(open);
+      const { phone, controllerId } = await phoneHello(open);
+      await sweeps(); // (the hub has looked at them, and counts from there)
+      jump(5 * KEEP);
+      await sweeps();
+      expect(registry.getDevice(deviceId)).toBeDefined();
+      expect(registry.getController(controllerId)).toBeDefined();
+      tv.send({ type: "PING" });
+      await tv.next("PONG");
+      phone.send({ type: "PING" });
+      await phone.next("PONG");
+      expect(tv.closeCode).toBeUndefined();
+      expect(phone.closeCode).toBeUndefined();
+    });
+
+    it("counts the time from the last time it went, not the first", async () => {
+      const { registry, open } = await serverWith();
+      const first = await tvHello(open);
+      first.tv.close();
+      await sweeps();
+      jump(KEEP - 1000);
+      await sweeps();
+      const again = await open();
+      again.send({ type: "TV_HELLO", deviceId: first.deviceId });
+      await again.next("TV_WELCOME");
+      again.close();
+      await sweeps();
+
+      jump(KEEP - 1); // (the whole time after it first went; not after it last went)
+      await sweeps();
+      expect(registry.getDevice(first.deviceId)).toBeDefined();
+      jump(1);
+      await expect.poll(() => registry.getDevice(first.deviceId)).toBeUndefined();
+    });
+
+    it("counts the time from the last time a phone went, not the first", async () => {
+      const { registry, open } = await serverWith();
+      const first = await phoneHello(open);
+      first.phone.close();
+      await sweeps();
+      jump(KEEP - 1000);
+      await sweeps();
+      const again = await open();
+      again.send({ type: "CTL_HELLO", controllerId: first.controllerId });
+      await again.next("CTL_WELCOME");
+      again.close();
+      await sweeps();
+
+      jump(KEEP - 1);
+      await sweeps();
+      expect(registry.getController(first.controllerId)).toBeDefined();
+      jump(1);
+      await expect.poll(() => registry.getController(first.controllerId)).toBeUndefined();
+    });
+
+    it("never lets go of a TV or a phone that is paired, however long they are gone", async () => {
+      const { registry, open } = await serverWith();
+      const { tv, welcome, deviceId } = await tvHello(open);
+      const { phone } = await phoneHello(open);
+      phone.send({ type: "PAIR", code: welcome.pairing!.code });
+      const { controllerId } = await phone.next("CTL_WELCOME");
+      await tv.next("TV_PAIRED");
+      tv.close();
+      phone.close();
+      await sweeps();
+
+      jump(10 * KEEP);
+      await sweeps();
+      expect(registry.getDevice(deviceId)).toBeDefined();
+      expect(registry.getController(controllerId)).toBeDefined();
+      const back = await open();
+      back.send({ type: "TV_HELLO", deviceId });
+      expect(await back.next("TV_WELCOME")).toMatchObject({ deviceId, paired: true, pairing: null });
+    });
+
+    it("leaves nothing behind of pages that came and went, however many", async () => {
+      const { registry, open } = await serverWith();
+      for (let n = 0; n < 60; n++) {
+        (await tvHello(open)).tv.close();
+        (await phoneHello(open)).phone.close();
+      }
+      await sweeps();
+      expect(registry.freeTvs()).toHaveLength(60);
+      expect(registry.freePhones()).toHaveLength(60);
+      jump(KEEP);
+      await expect.poll(() => registry.freeTvs().length + registry.freePhones().length).toBe(0);
+    });
+
+    it("does not make a new phone of an older page of a phone that was let go of while it was still open", async () => {
+      const { registry, open } = await serverWith();
+      const older = await phoneHello(open);
+      const newer = await open();
+      newer.send({ type: "CTL_HELLO", controllerId: older.controllerId });
+      await newer.next("CTL_WELCOME");
+      newer.close();
+      await sweeps();
+      jump(KEEP);
+      await expect.poll(() => registry.getController(older.controllerId)).toBeUndefined();
+
+      older.phone.send({ type: "PAIR", code: "000000" }); // (anything a phone says)
+      older.phone.send({ type: "PING" });
+      await older.phone.next("PONG");
+      expect(registry.freePhones()).toEqual([]);
+    });
+  });
+
+  describe("when more come than the server keeps", () => {
+    it("keeps far more than a household has", () => {
+      expect(MAX_UNPAIRED).toBeGreaterThanOrEqual(1000);
+      expect(KEEP).toBe(10 * 60 * 1000);
+    });
+
+    it("lets go of the TV that came first and is not connected, to make room for one more", async () => {
+      const { registry, open } = await serverWith({ maxUnpaired: 3 });
+      const a = await tvHello(open);
+      const b = await tvHello(open);
+      const c = await tvHello(open);
+      b.tv.close();
+      a.tv.close();
+      await sweeps();
+
+      const d = await tvHello(open);
+      expect(registry.getDevice(a.deviceId)).toBeUndefined(); // (it came before the other that went)
+      expect(registry.getDevice(b.deviceId)).toBeDefined();
+      expect(registry.getDevice(c.deviceId)).toBeDefined();
+      expect(registry.getDevice(d.deviceId)).toBeDefined();
+    });
+
+    it("turns away a TV when every one of them is connected, without a word, and touches none of them", async () => {
+      const { registry, open } = await serverWith({ maxUnpaired: 3 });
+      const three = [await tvHello(open), await tvHello(open), await tvHello(open)];
+      const late = await open();
+      late.send({ type: "TV_HELLO" });
+      expect(await late.closed()).toBe(1013);
+      await late.expectNone(() => true, 0);
+      expect(registry.freeTvs()).toEqual(three.map((tv) => tv.deviceId));
+      three.forEach(({ tv }) => expect(tv.closeCode).toBeUndefined());
+    });
+
+    it("lets a TV it knows come back when it is full: that is not a new one", async () => {
+      const { registry, open } = await serverWith({ maxUnpaired: 2 });
+      const a = await tvHello(open);
+      const b = await tvHello(open);
+      const again = await open();
+      again.send({ type: "TV_HELLO", deviceId: a.deviceId });
+      expect((await again.next("TV_WELCOME")).deviceId).toBe(a.deviceId);
+      expect(await a.tv.closed()).toBe(CLOSE_REPLACED); // (the page it had is told to stand down, as always)
+      expect(registry.freeTvs()).toEqual([a.deviceId, b.deviceId]);
+    });
+
+    it("takes a TV that names an id the server never gave for a new one: it is turned away when every one is connected, and nothing is made for it", async () => {
+      const { registry, open } = await serverWith({ maxUnpaired: 2 });
+      const a = await tvHello(open);
+      const b = await tvHello(open);
+      const late = await open();
+      late.send({ type: "TV_HELLO", deviceId: "an-id-nobody-gave" });
+      expect(await late.closed()).toBe(1013);
+      expect(registry.freeTvs()).toEqual([a.deviceId, b.deviceId]);
+    });
+
+    it("takes a phone that names an id the server never gave for a new one, the same way", async () => {
+      const { registry, open } = await serverWith({ maxUnpaired: 2 });
+      const a = await phoneHello(open);
+      const b = await phoneHello(open);
+      const late = await open();
+      late.send({ type: "CTL_HELLO", controllerId: "an-id-nobody-gave" });
+      expect(await late.closed()).toBe(1013);
+      expect(registry.freePhones()).toEqual([a.controllerId, b.controllerId]);
+    });
+
+    it("lets a phone it knows say hello when it is full: it keeps its id, even when it is the one that came first and is not connected", async () => {
+      const { registry, open } = await serverWith({ maxUnpaired: 2 });
+      const a = await phoneHello(open);
+      const b = await phoneHello(open);
+      a.phone.close();
+      await sweeps(); // (the server has seen it go)
+      const again = await open();
+      again.send({ type: "CTL_HELLO", controllerId: a.controllerId });
+      expect((await again.next("CTL_WELCOME")).controllerId).toBe(a.controllerId);
+      expect(registry.freePhones()).toEqual([a.controllerId, b.controllerId]);
+    });
+
+    it("makes room for a phone the same way, and turns one away when every phone is connected", async () => {
+      const { registry, open } = await serverWith({ maxUnpaired: 2 });
+      const a = await phoneHello(open);
+      const b = await phoneHello(open);
+      const late = await open();
+      late.send({ type: "CTL_HELLO" });
+      expect(await late.closed()).toBe(1013);
+      expect(registry.freePhones()).toEqual([a.controllerId, b.controllerId]);
+
+      a.phone.close();
+      await sweeps();
+      const c = await phoneHello(open);
+      expect(registry.getController(a.controllerId)).toBeUndefined();
+      expect(registry.getController(b.controllerId)).toBeDefined();
+      expect(registry.getController(c.controllerId)).toBeDefined();
+    });
+
+    it("counts TVs and phones apart, and not the ones that are paired", async () => {
+      const { registry, open } = await serverWith({ maxUnpaired: 1 });
+      const { tv, welcome } = await tvHello(open);
+      const { phone } = await phoneHello(open);
+      phone.send({ type: "PAIR", code: welcome.pairing!.code });
+      await phone.next("CTL_WELCOME");
+      await tv.next("TV_PAIRED");
+
+      // The one TV and the one phone of the pair are not counted; each kind has the one place it was given.
+      const free = await tvHello(open);
+      const lone = await phoneHello(open);
+      expect(registry.freeTvs()).toEqual([free.deviceId]);
+      expect(registry.freePhones()).toEqual([lone.controllerId]);
+      const late = await open();
+      late.send({ type: "TV_HELLO" });
+      expect(await late.closed()).toBe(1013);
+    });
   });
 });
 

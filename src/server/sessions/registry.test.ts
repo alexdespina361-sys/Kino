@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAX_PHONE_TVS } from "../../shared";
-import { KEEP_RESUME_DAYS, MAX_PHONES_PER_TV, Registry, cleanLabel, generatePairingCode } from "./registry";
+import { KEEP_RESUME_DAYS, MAX_PHONES_PER_TV, Registry, cleanLabel, generatePairingCode, type Device } from "./registry";
 
 function setup(options: ConstructorParameters<typeof Registry>[0] = {}) {
   let time = 1_000_000;
@@ -1041,6 +1041,132 @@ describe("Registry: what a TV was playing", () => {
     const tvAgain = later.tvHello(tv.id);
     expect(tvAgain.controllerId).not.toBeNull(); // the pair is still there
     expect(later.resumeOf(tvAgain)).toBeUndefined();
+  });
+});
+
+describe("Registry: TVs and phones that nobody has paired", () => {
+  /** What the registry holds for an id besides the TV or phone itself (the day it was last heard from): there is no other way to see that it is gone. */
+  const seenDays = (registry: Registry) => (registry as unknown as { seenDays: Map<string, number> }).seenDays;
+
+  it("lists the free TVs, the one that came first first, and leaves out a TV that has a phone, a party or a leader", () => {
+    const { registry } = setup();
+    const first = registry.tvHello();
+    const withPhone = registry.tvHello();
+    const second = registry.tvHello();
+    const host = registry.tvHello();
+    const guest = registry.tvHello();
+    registry.pair(registry.controllerHello(), registry.ensureCode(withPhone)!.code);
+    registry.ensurePartyCode(host);
+    expect(registry.freeTvs()).toEqual([first.id, second.id, host.id, guest.id]); // (a party nobody came to is nothing yet: a restart forgets it)
+    registry.joinParty(guest, registry.partyCodeOf(host)!.code);
+    expect(registry.freeTvs()).toEqual([first.id, second.id]);
+  });
+
+  it("lists the phones that have no TV, and leaves out the ones that have one", () => {
+    const { registry } = setup();
+    const alone = registry.controllerHello();
+    const withTv = registry.controllerHello();
+    const other = registry.controllerHello();
+    registry.pair(withTv, registry.ensureCode(registry.tvHello())!.code);
+    expect(registry.freePhones()).toEqual([alone.id, other.id]);
+    registry.unpair(withTv);
+    expect(registry.freePhones()).toEqual([alone.id, withTv.id, other.id]);
+  });
+
+  it("lets go of a free TV: a hello with its id is a new TV, and nothing of it is left", () => {
+    const { registry } = setup();
+    const tv = registry.tvHello();
+    expect(seenDays(registry).has(tv.id)).toBe(true);
+    expect(registry.forgetFree(tv.id)).toBe(true);
+    expect(registry.getDevice(tv.id)).toBeUndefined();
+    expect(registry.freeTvs()).toEqual([]);
+    expect(seenDays(registry).has(tv.id)).toBe(false);
+    expect(registry.tvHello(tv.id).id).not.toBe(tv.id);
+  });
+
+  it("lets go of a free phone: a hello with its id is a new phone, and nothing of it is left", () => {
+    const { registry } = setup();
+    const phone = registry.controllerHello();
+    expect(seenDays(registry).has(phone.id)).toBe(true);
+    expect(registry.forgetFree(phone.id)).toBe(true);
+    expect(registry.getController(phone.id)).toBeUndefined();
+    expect(registry.freePhones()).toEqual([]);
+    expect(seenDays(registry).has(phone.id)).toBe(false);
+    expect(registry.controllerHello(phone.id).id).not.toBe(phone.id);
+  });
+
+  it("gives the codes of a TV it lets go of to the next one that asks (a pairing code, the code of a party nobody came to, a control code)", () => {
+    for (const [what, asked] of [
+      ["pairing", (registry: Registry, tv: Device) => registry.ensureCode(tv)],
+      ["party", (registry: Registry, tv: Device) => registry.ensurePartyCode(tv)],
+      ["control", (registry: Registry, tv: Device) => registry.ensureControlCode(tv)],
+    ] as const) {
+      const { registry } = setup({ generateCode: counter(["111111", "111111", "333333"]) });
+      const gone = registry.tvHello();
+      expect(asked(registry, gone)?.code, what).toBe("111111");
+      expect(registry.forgetFree(gone.id), what).toBe(true);
+      expect(asked(registry, registry.tvHello())?.code, what).toBe("111111"); // (not passed over as taken: that would give "333333")
+    }
+  });
+
+  it("does not let go of a TV that has a phone, nor of a TV that hosts a party or watches along with one", () => {
+    const { registry } = setup();
+    const withPhone = registry.tvHello();
+    const host = registry.tvHello();
+    const guest = registry.tvHello();
+    registry.pair(registry.controllerHello(), registry.ensureCode(withPhone)!.code);
+    registry.ensurePartyCode(host);
+    registry.joinParty(guest, registry.partyCodeOf(host)!.code);
+    for (const tv of [withPhone, host, guest]) {
+      expect(registry.forgetFree(tv.id)).toBe(false);
+      expect(registry.getDevice(tv.id)).toBe(tv);
+    }
+  });
+
+  it("does not let go of a phone that has a TV, and does not know an id it never gave", () => {
+    const { registry } = setup();
+    const phone = registry.controllerHello();
+    registry.pair(phone, registry.ensureCode(registry.tvHello())!.code);
+    expect(registry.forgetFree(phone.id)).toBe(false);
+    expect(registry.getController(phone.id)).toBe(phone);
+    expect(registry.forgetFree("ctl_nobody")).toBe(false);
+    expect(registry.forgetFree("tv_nobody")).toBe(false);
+  });
+
+  it("counts a TV as free again once its phone has let go of it", () => {
+    const { registry } = setup();
+    const tv = registry.tvHello();
+    const phone = registry.controllerHello();
+    registry.pair(phone, registry.ensureCode(tv)!.code);
+    registry.unpair(phone);
+    expect(registry.freeTvs()).toEqual([tv.id]);
+    expect(registry.forgetFree(tv.id)).toBe(true);
+  });
+
+  it("does not note a day for an id it has let go of (a page of it that was still open says something later)", () => {
+    const { registry } = setup();
+    const changed = vi.fn();
+    const tv = registry.tvHello();
+    const phone = registry.controllerHello();
+    registry.forgetFree(tv.id);
+    registry.forgetFree(phone.id);
+    registry.onChange = changed;
+    registry.markSeen(tv.id);
+    registry.markSeen(phone.id);
+    expect(changed).not.toHaveBeenCalled();
+    expect(seenDays(registry).size).toBe(0);
+  });
+
+  it("still notes a day for one it has not let go of", () => {
+    const { registry, advance } = setup();
+    const changed = vi.fn();
+    const tv = registry.tvHello();
+    const phone = registry.controllerHello();
+    registry.onChange = changed;
+    advance(24 * 3600 * 1000);
+    registry.markSeen(tv.id);
+    registry.markSeen(phone.id);
+    expect(changed).toHaveBeenCalledTimes(2);
   });
 });
 
