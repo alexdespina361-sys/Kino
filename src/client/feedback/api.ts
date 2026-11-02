@@ -4,7 +4,7 @@ import { addReceipt, readReceipts, type Receipt } from "./receipts";
 
 /** The server's side of the feedback, asked for with the browser's own cookie (so a signed-in account is known) and a receipt key (so a report is known). */
 
-export type SendFailure = "offline" | "rate" | "big" | "empty" | "server";
+export type SendFailure = "offline" | "rate" | "big" | "empty" | "server" | "inboxFull";
 export type Sent = { ok: true; id: string; rejected: Array<{ id: string; reason: string }> } | { ok: false; reason: SendFailure; retryAfter?: number };
 
 interface Answer {
@@ -39,6 +39,9 @@ async function ask(method: "GET" | "POST", path: string, body?: unknown): Promis
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** The server has no room for a new report (every one it keeps is still open). It is a 503 like the one of a host that is waking up, but asking again within the hour changes nothing. */
+const isInboxFull = (answer: Answer) => answer.status === 503 && answer.data?.error === "full";
+
 /**
  * Sends a report. The key in it is the report's name on the server, so asking again after an answer that never came is safe (the server keeps one
  * report for a key): a bad connection, a server that is waking up or one that is just then restarting are tried again, a few times, before the person
@@ -54,6 +57,7 @@ export async function sendReport(payload: FeedbackSend, onWaking?: () => void, d
       last = await ask("POST", "/api/feedback", body);
       if (last.status === 200 || last.status === 201) break;
       if (last.status !== 0 && last.status < 500 && last.status !== 408) break; // (a no that asking again will not change)
+      if (isInboxFull(last)) break; // (nor this one: the next try gets the same answer, and the person is told at once)
     }
     if (last.status === 200 || last.status === 201) {
       const rejected = Array.isArray(last.data?.rejected) ? (last.data.rejected as Array<{ id: string; reason: string }>) : [];
@@ -62,6 +66,7 @@ export async function sendReport(payload: FeedbackSend, onWaking?: () => void, d
     if (last.status === 429) return { ok: false, reason: "rate", ...(last.retryAfter ? { retryAfter: last.retryAfter } : {}) };
     if (last.status === 413) return { ok: false, reason: "big" };
     if (last.status === 400 && last.data?.error === "empty") return { ok: false, reason: "empty" };
+    if (isInboxFull(last)) return { ok: false, reason: "inboxFull" };
     return { ok: false, reason: last.status === 0 ? "offline" : "server" };
   } finally {
     clearTimeout(slow);

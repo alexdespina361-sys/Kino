@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { FEEDBACK_KEY, FEEDBACK_LIMITS } from "../../shared";
+import { FEEDBACK_KEY, FEEDBACK_LIMITS, type FeedbackSend } from "../../shared";
+import { sendReport } from "./api";
 import { redactText, redactUrl, seconds, viewNow } from "./diagnostics";
 import { buildPayload, detailsOf, fromDraft, hasContent, hasWords, newForm, toDraft, writtenByThePerson } from "./formState";
 import { kindOfFile, newPictureId, plan, room, scaleToFit, type Piece } from "./images";
@@ -128,6 +129,34 @@ describe("the receipt and the draft", () => {
     vi.stubGlobal("localStorage", fakeStorage());
     saveDraft({ kind: "bug", area: "unsure", text: "", details: { expected: "to play" }, at: 5 });
     expect(readDraft(6)?.details).toEqual({ expected: "to play" });
+  });
+});
+
+describe("sending a report", () => {
+  const report = { key: newKey(), kind: "bug", area: "player", text: "It stopped" } as unknown as FeedbackSend;
+  const answered = (status: number, body: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
+  /** No waiting between tries: the delays are what the page puts between them, not what is tested here. */
+  const NOW = [0, 0, 0, 0];
+
+  it("is told at once, in the words of its own, when the server has no room for another report, and does not ask again", async () => {
+    const ask = vi.fn<typeof fetch>().mockImplementation(async () => answered(503, { error: "full" }, { "retry-after": "3600" }));
+    vi.stubGlobal("fetch", ask);
+    expect(await sendReport(report, undefined, NOW)).toEqual({ ok: false, reason: "inboxFull" });
+    expect(ask).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks a server again that is waking up, or that fell over for a moment, until it answers", async () => {
+    const ask = vi.fn<typeof fetch>().mockResolvedValueOnce(answered(503, { error: "unavailable" })).mockResolvedValueOnce(answered(502, {})).mockResolvedValueOnce(answered(201, { id: "r1", rejected: [] }));
+    vi.stubGlobal("fetch", ask);
+    expect(await sendReport(report, undefined, NOW)).toMatchObject({ ok: true, id: "r1" });
+    expect(ask).toHaveBeenCalledTimes(3);
+  });
+
+  it("says that the server had a problem after the last of its tries, when a 503 is no word about room", async () => {
+    const ask = vi.fn<typeof fetch>().mockImplementation(async () => answered(503, { error: "unavailable" }));
+    vi.stubGlobal("fetch", ask);
+    expect(await sendReport(report, undefined, NOW)).toEqual({ ok: false, reason: "server" });
+    expect(ask).toHaveBeenCalledTimes(NOW.length);
   });
 });
 

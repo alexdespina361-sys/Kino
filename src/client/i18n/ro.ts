@@ -1236,6 +1236,7 @@ export const ro: Dictionary = {
   "feedback.error.big": "Mesajul e prea mare ca să fie trimis. Elimină una-două imagini și încearcă din nou.",
   "feedback.error.empty": "Nu e nimic de trimis încă. Scrie ceva sau adaugă o imagine.",
   "feedback.error.full": "Această conversație a atins limita. Trimite un mesaj nou.",
+  "feedback.error.inboxFull": "Acum nu mai este loc pentru mesaje noi. Mesajul tău este încă aici. Încearcă din nou mai târziu, azi.",
   "feedback.sent.heading": "Trimis",
   "feedback.sent.title": "Mulțumim, mesajul e pe drum spre echipă",
   "feedback.sent.answerable": "Dacă avem o întrebare sau o veste, îți scriem aici. Uită-te la „Mesajele tale” și folosește în continuare acest dispozitiv sau cont: așa te găsește răspunsul.",

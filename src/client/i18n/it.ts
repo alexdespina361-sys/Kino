@@ -1223,6 +1223,7 @@ export const it: Dictionary = {
   "feedback.error.big": "Il messaggio è troppo grande per essere inviato. Rimuovi un'immagine o due e riprova.",
   "feedback.error.empty": "Non c'è ancora nulla da inviare. Scrivi qualcosa o aggiungi un'immagine.",
   "feedback.error.full": "Questa conversazione ha raggiunto il limite. Invia un nuovo messaggio.",
+  "feedback.error.inboxFull": "Al momento non c'è spazio per nuovi messaggi. Il tuo messaggio è ancora qui. Riprova più tardi, oggi.",
   "feedback.sent.heading": "Inviato",
   "feedback.sent.title": "Grazie, il messaggio sta arrivando al team",
   "feedback.sent.answerable": "Se abbiamo una domanda o una novità, ti scriviamo qui. Guarda in “I tuoi messaggi” e continua a usare questo dispositivo o account: è così che la risposta ti trova.",

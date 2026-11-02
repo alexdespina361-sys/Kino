@@ -1225,6 +1225,7 @@ export const en = {
   "feedback.error.big": "This message is too big to send. Remove a picture or two and try again.",
   "feedback.error.empty": "There is nothing to send yet. Write something or add a picture.",
   "feedback.error.full": "This conversation has reached its limit. Send a new message instead.",
+  "feedback.error.inboxFull": "There is no room for new messages right now. Your message is still here. Try again later today.",
   "feedback.sent.heading": "Sent",
   "feedback.sent.title": "Thank you, it is on its way to the team",
   "feedback.sent.answerable": "If we have a question or news, we will write back here. Look under “Your messages”, and keep using this device or account: that is how the answer finds you.",
