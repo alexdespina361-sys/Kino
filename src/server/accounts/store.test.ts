@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterEach, describe, expect, it } from "vitest";
-import { MAX_PROFILES, type SyncRequest } from "../../shared";
+import { LIMITS, ListItemSchema, MAX_PROFILES, ProgressItemSchema, RatingItemSchema, WatchedItemSchema, type CollectionName, type SyncRequest } from "../../shared";
 import { FilePersistence, MemoryPersistence, PostgresPersistence, persistenceFromEnv } from "./persistence";
 import { AccountStore, SESSION_TTL_MS } from "./store";
 
@@ -17,6 +17,21 @@ const open = (persistence = new MemoryPersistence(), extra: { flushMs?: number }
 
 const progress = (key: string, at: number, extra: Record<string, unknown> = {}) => ({ key, at, title: key, url: `https://x/${key}`, position: 10, duration: 100, ...extra });
 const request = (since: number, parts: Partial<Omit<SyncRequest, "since">> = {}): SyncRequest => ({ since, ...parts });
+
+/** `item` with the text of the fields named (each may take up to that many more characters) made longer until its JSON is exactly `chars` long. */
+function weighing<T extends object>(item: T, chars: number, fields: Array<[string, number]>): T {
+  const filled = { ...item } as Record<string, unknown>;
+  for (const [name] of fields) filled[name] = String(filled[name] ?? "");
+  let missing = chars - JSON.stringify(filled).length;
+  for (const [name, most] of fields) {
+    const add = Math.max(0, Math.min(missing, most));
+    filled[name] = `${String(filled[name])}${"x".repeat(add)}`;
+    missing -= add;
+  }
+  if (missing !== 0) throw new Error(`cannot make an item of ${chars} characters`);
+  return filled as T;
+}
+const weigh = (items: readonly object[]) => items.reduce((sum, item) => sum + JSON.stringify(item).length, 0);
 
 /** A store with one account, and that account's first profile. */
 async function withAccount(persistence?: MemoryPersistence) {
@@ -454,6 +469,147 @@ describe("sync", () => {
   it("answers nobody for a profile that does not exist", async () => {
     const { store } = await withAccount();
     expect(store.sync("pro_nope", request(0))).toBeUndefined();
+  });
+});
+
+describe("what a profile may weigh", () => {
+  type Stored = Array<{ key: string; deleted?: true }>;
+  const stored = (store: AccountStore, profileId: string, name: CollectionName) => store.items(profileId, name) as unknown as Stored;
+
+  const budgets = { progress: 192 * 1024, watched: 256 * 1024, list: 640 * 1024, ratings: 640 * 1024 } as const;
+  type Heavy = keyof typeof budgets;
+  const heavy = Object.keys(budgets) as Heavy[];
+  /** A key as long as a key may be, told apart by its first characters. */
+  const wide = (n: number) => `${String(n).padStart(4, "0")}${"k".repeat(396)}`;
+  /** An item of each part with every text as long as the schema it travels by allows (each is checked against it, so these are items a screen may send). */
+  const longest: Record<Heavy, (n: number, at: number) => object> = {
+    progress: (n, at) => ProgressItemSchema.parse({ key: wide(n), at, title: "t".repeat(300), url: "u".repeat(2048), image: "i".repeat(2048), backdrop: "b".repeat(2048), year: 2026, position: 1, duration: 2, season: 1, episode: 1, done: true }),
+    watched: (n, at) => WatchedItemSchema.parse({ key: wide(n), at, show: "s".repeat(300), season: 1, episode: 1, position: 1, duration: 2, done: true }),
+    list: (n, at) => ListItemSchema.parse({ key: wide(n), at, list: "l".repeat(60), id: "d".repeat(200), title: "t".repeat(300), url: "u".repeat(2048), image: "i".repeat(2048), backdrop: "b".repeat(2048), year: 2026, description: "x".repeat(400) }),
+    ratings: (n, at) => RatingItemSchema.parse({ key: wide(n), at, title: "t".repeat(300), url: "u".repeat(2048), image: "i".repeat(2048), backdrop: "b".repeat(2048), year: 2026, kind: "movie", season: 1, score: 10, note: "n".repeat(400), ratedAt: at, watchedAt: at, percent: 100, seen: 5000, of: 5000 }),
+  };
+
+  /** A profile whose every part has as many items as it may have, each as long as it may be, the newest first. */
+  async function brim() {
+    const persistence = new MemoryPersistence();
+    const { store, profile } = await withAccount(persistence);
+    const sent = Object.fromEntries(heavy.map((name) => [name, Array.from({ length: LIMITS[name] }, (_, n) => longest[name](n, clock - n * 1000))])) as Record<Heavy, Stored>;
+    store.sync(profile.id, request(0, sent as never));
+    return { persistence, store, profile, sent };
+  }
+
+  it("keeps a profile filled to the brim within the budget of each part, the newest items first, in the very call that brought them", async () => {
+    const { persistence, store, profile, sent } = await brim();
+    for (const name of heavy) {
+      // (Looked at as that call left them: any other call would prune again.)
+      const here = new Set(stored(store, profile.id, name).map((item) => item.key));
+      const fit = sent[name].filter((item) => here.has(item.key));
+      expect(here.size).toBe(fit.length);
+      expect(fit).toEqual(sent[name].slice(0, fit.length)); // the newest are what stayed...
+      expect(weigh(fit)).toBeLessThanOrEqual(budgets[name]);
+      expect(weigh(sent[name].slice(0, fit.length + 1))).toBeGreaterThan(budgets[name]); // ...as many as fit...
+      expect(fit.length).toBeLessThan(LIMITS[name]); // ...which is fewer than the count alone allows.
+    }
+    // What is written down is some megabytes, where the counts alone allow some eight.
+    await store.flush();
+    expect(JSON.stringify(persistence.docs.get(`pdata:${profile.id}`)).length).toBeLessThan(2 * 1024 * 1024);
+  });
+
+  it("lets a newer item push out the oldest ones in the call that brings it", async () => {
+    const { store, profile, sent } = await brim();
+    const before = stored(store, profile.id, "list");
+    const oldest = sent.list.filter((item) => before.some((kept) => kept.key === item.key)).at(-1)!;
+    const newest = longest.list(9999, clock + 1000);
+    store.sync(profile.id, request(1, { list: [newest as never] }));
+    const after = stored(store, profile.id, "list");
+    expect(after).toContainEqual(newest);
+    expect(after.map((item) => item.key)).not.toContain(oldest.key);
+    expect(after).toHaveLength(before.length); // (every item is as long as the next: one in, one out)
+    expect(weigh(after)).toBeLessThanOrEqual(budgets.list);
+  });
+
+  it("loses nothing of a heavy profile that somebody really could have, and asks for no more writes for it than for any other", async () => {
+    const persistence = new MemoryPersistence();
+    let saves = 0;
+    const save = persistence.save.bind(persistence);
+    persistence.save = async (changes) => {
+      saves++;
+      await save(changes);
+    };
+    const { store, profile } = await withAccount(persistence);
+    // 400 titles in the lists and 500 ratings, a kilobyte each, 600 episodes watched and 60 cards to carry on with
+    const kilobyte = <T extends object>(item: T, fields: Array<[string, number]>) => weighing(item, 1000, fields);
+    const sent = {
+      progress: Array.from({ length: LIMITS.progress }, (_, n) => kilobyte(progress(`show:${n}`, clock - n * 1000), [["image", 2048]])),
+      watched: Array.from({ length: LIMITS.watched }, (_, n) => ({ key: `show|1x${n}`, at: clock - n * 1000, show: "Some show", season: 1, episode: n, position: 10, duration: 100, done: true })),
+      list: Array.from({ length: LIMITS.list }, (_, n) => kilobyte({ key: `url:https://x/${n}`, at: clock - n * 1000, id: String(n), title: `T${n}`, url: `https://x/${n}` }, [["description", 400], ["image", 2048]])),
+      ratings: Array.from({ length: LIMITS.ratings }, (_, n) => kilobyte({ key: `rate:https://x/${n}`, at: clock - n * 1000, title: `T${n}`, url: `https://x/${n}`, score: 7, ratedAt: clock }, [["note", 400], ["image", 2048]])),
+    };
+    expect(JSON.stringify(sent.list[0]).length).toBe(1000);
+    const first = store.sync(profile.id, request(0, sent as never))!;
+    const keys = (items: ReadonlyArray<{ key: string }>) => items.map((item) => item.key).sort();
+    for (const name of heavy) expect(keys(stored(store, profile.id, name))).toEqual(keys(sent[name]));
+
+    // one write for all of it, and none when a call changes nothing, or says what the server has already
+    await store.flush();
+    expect(saves).toBe(1);
+    store.sync(profile.id, request(first.rev));
+    store.sync(profile.id, request(first.rev, { list: [sent.list[0]! as never] }));
+    await store.flush();
+    expect(saves).toBe(1);
+    // (and one that does change something is written, so the count above is counting)
+    store.sync(profile.id, request(first.rev, { list: [{ ...sent.list[0]!, at: clock + 1, title: "Changed" } as never] }));
+    await store.flush();
+    expect(saves).toBe(2);
+  });
+
+  const edges = [
+    { name: "progress", budget: 192 * 1024, size: 4096, make: (n: number, at: number) => progress(`show:${n}`, at), pad: [["image", 2048], ["backdrop", 2048]] },
+    { name: "watched", budget: 256 * 1024, size: 512, make: (n: number, at: number) => ({ key: `show|1x${n}`, at, show: "Show", season: 1, episode: n, position: 10, duration: 100, done: true }), pad: [["show", 300], ["key", 150]] },
+    { name: "list", budget: 640 * 1024, size: 4096, make: (n: number, at: number) => ({ key: `url:https://x/${n}`, at, id: String(n), title: `T${n}`, url: `https://x/${n}` }), pad: [["description", 400], ["image", 2048], ["backdrop", 2048]] },
+    { name: "ratings", budget: 640 * 1024, size: 4096, make: (n: number, at: number) => ({ key: `rate:https://x/${n}`, at, title: `T${n}`, url: `https://x/${n}`, score: 7, ratedAt: at }), pad: [["note", 400], ["image", 2048], ["backdrop", 2048]] },
+    // (A name of a list is 24 characters at the most. Only a store that is handed what the routes would have turned away can be given one this long, which is the one way to reach this budget.)
+    { name: "listNames", budget: 32 * 1024, size: 4096, make: (n: number, at: number) => ({ key: `l${n}`, at, name: "" }), pad: [["name", 4096]] },
+  ] satisfies Array<{ name: CollectionName; budget: number; size: number; make: (n: number, at: number) => object; pad: Array<[string, number]> }>;
+
+  it.each(edges)("holds $name to its budget to the character", async ({ name, budget, size, make, pad }) => {
+    const count = budget / size;
+    const items = (oldestWeighs = size) => Array.from({ length: count }, (_, n) => weighing(make(n, clock - n * 1000), n === count - 1 ? oldestWeighs : size, pad as Array<[string, number]>));
+
+    // exactly the budget: all of it stays, and whatever comes after it, being older, has no room
+    const exact = await withAccount();
+    exact.store.sync(exact.profile.id, request(0, { [name]: items() } as never));
+    expect(stored(exact.store, exact.profile.id, name)).toHaveLength(count);
+    exact.store.sync(exact.profile.id, request(1, { [name]: [make(count, clock - count * 1000)] } as never));
+    expect(stored(exact.store, exact.profile.id, name)).toHaveLength(count);
+
+    // a character more, and the oldest is the one that goes
+    const over = await withAccount();
+    const sent = items(size + 1);
+    over.store.sync(over.profile.id, request(0, { [name]: sent } as never));
+    expect(stored(over.store, over.profile.id, name).map((item) => item.key).sort()).toEqual(sent.slice(0, count - 1).map((item) => (item as { key: string }).key).sort());
+  });
+
+  it("lets nothing older than the first item that does not fit stay, even a small one that would fit", async () => {
+    const { store, profile } = await withAccount();
+    const pad: Array<[string, number]> = [["description", 400], ["image", 2048], ["backdrop", 2048]];
+    const titled = (n: number, chars: number) => weighing({ key: `url:https://x/${n}`, at: clock - n * 1000, id: String(n), title: `T${n}`, url: `https://x/${n}` }, chars, pad);
+    // 159 items of 4096 leave room for 4096 more of the 160 × 4096 there is: the next one is a character too long, and the one after it is small
+    const sent = [...Array.from({ length: 159 }, (_, n) => titled(n, 4096)), titled(159, 4097), titled(160, 300)];
+    store.sync(profile.id, request(0, { list: sent }));
+    expect(stored(store, profile.id, "list").map((item) => item.key).sort()).toEqual(sent.slice(0, 159).map((item) => item.key).sort());
+  });
+
+  it("does not weigh a removal, and never lets the budget take one", async () => {
+    const { store, profile } = await withAccount();
+    const live = Array.from({ length: 161 }, (_, n) => weighing({ key: `url:https://x/${n}`, at: clock - 1000 - n * 1000, id: String(n), title: `T${n}`, url: `https://x/${n}` }, 4096, [["description", 400], ["image", 2048], ["backdrop", 2048]]));
+    const removal = (n: number, at: number) => ({ key: `url:https://x/gone${n}`, at, deleted: true as const });
+    // Removals newer than every item and older than every item: the budget has room for 160 items, so the 161st goes, and no removal with it.
+    const gone = [...Array.from({ length: 50 }, (_, n) => removal(n, clock + n)), ...Array.from({ length: 50 }, (_, n) => removal(50 + n, clock - 500_000 - n))];
+    store.sync(profile.id, request(0, { list: [...live, ...gone] }));
+    const kept = stored(store, profile.id, "list");
+    expect(kept.filter((item) => !item.deleted).map((item) => item.key).sort()).toEqual(live.slice(0, 160).map((item) => item.key).sort());
+    expect(kept.filter((item) => item.deleted)).toHaveLength(100);
   });
 });
 
