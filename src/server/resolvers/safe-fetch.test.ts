@@ -1,7 +1,7 @@
 import dns from "node:dns";
 import { getEventListeners } from "node:events";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
+import net, { type AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SafeFetchError, assertAllowedUrl, guardedLookup, safeFetch } from "./safe-fetch";
 
@@ -104,6 +104,23 @@ describe("safeFetch", () => {
     expect((await safeFetch(`${base}/moved`, loopbackOnly)).body).toBe("fine");
     expect((await failure(safeFetch(`${base}/broken`, loopbackOnly))).code).toBe("bad_status");
     await expect.poll(() => [...closed].sort()).toEqual(["broken", "moved"]);
+  });
+
+  it.each([
+    ["a length it does not reach", "Content-Length: 1000\r\n\r\nshort"],
+    ["chunks that stop", "Transfer-Encoding: chunked\r\n\r\n5\r\nshort\r\n"],
+  ])("reports an answer that is cut short - %s - as a failure, never as a short page", async (_kind, rest) => {
+    // (A bare socket, not the http server: nothing here decides how the answer is framed, and a plain close ends it without a timer. Destroying a server's socket in the middle of an answer, in the same process as the client, now and then aborts Node on Windows.)
+    const bare = net.createServer((socket) => {
+      socket.on("error", () => {});
+      socket.once("data", () => socket.end(`HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n${rest}`));
+    });
+    await new Promise<void>((resolve) => bare.listen(0, "127.0.0.1", resolve));
+    try {
+      expect((await failure(safeFetch(`http://127.0.0.1:${(bare.address() as AddressInfo).port}/cut`, loopbackOnly))).code).toBe("network");
+    } finally {
+      await new Promise((resolve) => bare.close(resolve));
+    }
   });
 
   it("with the DEFAULT policy, refuses loopback by IP and by name", async () => {
