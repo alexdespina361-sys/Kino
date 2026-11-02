@@ -34,6 +34,11 @@ export class RateLimiter {
     if (++this.sinceSweep > 500) this.sweep();
   }
 
+  /** Take back the attempt counted last for this key: what it was counted for did not happen (the others stay). */
+  undo(key: string): void {
+    this.recent(key).pop();
+  }
+
   reset(key: string): void {
     this.hits.delete(key);
   }

@@ -60,7 +60,7 @@ Reports reach the server at `/api/feedback`, and **the team reads them with a to
 | --- | --- | --- |
 | `FEEDBACK_ADMIN_TOKEN` | – | The team's token (at least 24 characters). Compared in constant time; ten wrong tries from an address lock it out for 15 minutes. |
 | `FEEDBACK_MAX_MB` | `150` | What the reports may take up, pictures nearly all of it. Past it the files of the oldest closed report go (the words stay); past 600 reports the oldest closed one goes. **A report that is still open is never given up.** When nothing closed is left to make room from, a new report keeps its words and loses the pictures that do not fit (the page is told which), and one that cannot be kept at all is answered `503 {"error":"full"}` (with `Retry-After`) until the team has closed some; the log says `turned a report away`. A sender's answers are held to the same budget: their words count for their length, the pictures that do not fit are left out (the page is told which), an answer whose words do not fit is answered `503` too, and the team's own lines are never turned away. |
-| `FEEDBACK_SENDS_PER_10_MIN` | `6` | Reports one address may send in ten minutes (and `7×` that in a day, and `30×` that in an hour from everybody). Answers: 30 in ten minutes. |
+| `FEEDBACK_SENDS_PER_10_MIN` | `6` | Reports one address may send in ten minutes (and `7×` that in a day, and `30×` that in an hour from everybody). Answers: 30 in ten minutes. A report the store could not take (`503 full`) does not use these up. |
 
 Reports are kept where the accounts are: Postgres when `DATABASE_URL` is set, else files in `DATA_DIR/feedback/`, else (`DATA_DIR=memory`) not at
 all. A host with no disk and no database loses them at each deploy: read them before.

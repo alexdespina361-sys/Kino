@@ -28,7 +28,8 @@ async function start({ report = true }: { report?: boolean } = {}) {
     takes: (id) => on(id) && !quiet.has(id),
   });
   const reports: ChatReport[] = [];
-  const reporter: ChatReporter = async (made) => void reports.push(made);
+  const teamSide = { full: false }; // (while it is, the team's side takes no report)
+  const reporter: ChatReporter = async (made) => (teamSide.full ? "full" : void reports.push(made));
   const app = Fastify();
   apps.push(app);
   chatRoutes(
@@ -48,7 +49,7 @@ async function start({ report = true }: { report?: boolean } = {}) {
     { chat, ...(report ? { report: reporter } : {}) },
   );
   await app.ready();
-  return { app, store, chat, clock, quiet, reports };
+  return { app, store, chat, clock, quiet, reports, teamSide };
 }
 type World = Awaited<ReturnType<typeof start>>;
 
@@ -331,6 +332,22 @@ describe("reporting a chat", () => {
     const slow = await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev });
     expect(slow.statusCode).toBe(429);
     expect(slow.data.error).toBe("rate_limited");
+    expect(reports).toHaveLength(5);
+  });
+
+  it("does not use up an account's few an hour on a team's side that is full: a report that was not kept is not one it sent", async () => {
+    const { alex, sam, reports, teamSide } = await friends();
+    const sent = (await write(sam, alex, "hello")).data as ChatThread;
+    teamSide.full = true;
+    // (More tries than the hour allows.)
+    for (let i = 0; i < 8; i++) {
+      const refused = await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev });
+      expect([refused.statusCode, refused.data]).toEqual([503, { error: "full" }]);
+    }
+    // Once there is room all of the few are there still.
+    teamSide.full = false;
+    for (let i = 0; i < 5; i++) expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev })).statusCode).toBe(204);
+    expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev })).statusCode).toBe(429);
     expect(reports).toHaveLength(5);
   });
 

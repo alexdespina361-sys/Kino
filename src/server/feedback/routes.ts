@@ -265,7 +265,13 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
         { filesOptional: true },
       );
     } catch (error) {
-      if (error instanceof FeedbackFull) return full(reply);
+      if (error instanceof FeedbackFull) {
+        // (A report the store did not take is not one this address sent: what it cost the allowances comes back, so a full store does not use them up.)
+        perAddress.undo(request.ip);
+        perAddressDay.undo(request.ip);
+        everyone.undo("all");
+        return full(reply);
+      }
       throw error;
     }
     const { record, refused } = made;

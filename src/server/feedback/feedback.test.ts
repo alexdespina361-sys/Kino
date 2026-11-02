@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FEEDBACK_DETAIL_KEYS, FEEDBACK_LIMITS, feedbackClosed } from "../../shared";
 import { MemoryPersistence } from "../accounts/persistence";
 import { AccountStore } from "../accounts/store";
@@ -821,6 +821,32 @@ describe("sending a report", () => {
     expect(feedback.get("1")).toMatchObject({ message: "With a picture" });
     expect((await staff.get("/api/admin/feedback/1/files/pic1")).statusCode).toBe(404);
     expect((await staff.get("/api/admin/feedback/3/files/pic3")).statusCode).toBe(200);
+  });
+
+  it("gives the allowances back when the store cannot take a report: a full store does not use up the address's, nor everybody's", async () => {
+    // (The clock is the limiters' own: it is set before they are made, and moved to get past the ten minutes.)
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { app } = await start({ maxReports: 1 });
+      const sendFrom = (address: string, n: number) => app.inject({ method: "POST", url: "/api/feedback", remoteAddress: address, payload: { key: key(n), message: `Report ${n}` } });
+      const staff = team(app);
+      let n = 0;
+      expect((await sendFrom("198.51.100.1", ++n)).statusCode).toBe(201); // (the only place)
+      // More tries that are turned away than any allowance holds: 6 in ten minutes from an address, 42 in a day, and 200 in an hour from everybody.
+      for (let address = 2; address <= 8; address++) {
+        for (let each = 0; each < 30; each++) expect((await sendFrom(`198.51.100.${address}`, ++n)).statusCode).toBe(503);
+      }
+      vi.setSystemTime(Date.now() + 11 * 60_000);
+      for (let each = 0; each < 15; each++) expect((await sendFrom("198.51.100.2", ++n)).statusCode).toBe(503);
+
+      // The team closes the report: an address that has not sent anything else is taken at once, and so is the one that tried 45 times.
+      await staff.patch("/api/admin/feedback/1", { status: "done" });
+      expect((await sendFrom("198.51.100.9", ++n)).statusCode).toBe(201);
+      await staff.patch("/api/admin/feedback/2", { status: "done" });
+      expect((await sendFrom("198.51.100.2", ++n)).statusCode).toBe(201);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("slows down an address that sends many", async () => {
