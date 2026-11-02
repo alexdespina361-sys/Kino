@@ -1,4 +1,6 @@
 import type { EpisodeDetail, LibraryItem, LibraryRow } from "../../shared";
+import { remember } from "../boundedMap";
+import { providerFetch } from "../resolvers/providerFetch";
 import { FILMPIRE_TMDB_API_KEY } from "./filmpire";
 import type { LibrarySource } from "./library";
 
@@ -45,6 +47,10 @@ interface TmdbSeasonCacheEntry {
 }
 
 const tmdbCache = new Map<string, TmdbSeasonCacheEntry>();
+/** Seasons are kept by the title the site gave, which is its own to choose: no more than this many are kept (the oldest go first). */
+const MAX_TMDB_SEASONS = 500;
+/** The same for the slugs of the anime that were looked into for episodes. */
+const MAX_PROBED_ANIME = 1000;
 
 function decodeHtmlEntities(str: string): string {
   return str
@@ -138,7 +144,7 @@ export async function fetchTmdbAnimeSeasonDetails(
       backdrop,
       poster,
     };
-    tmdbCache.set(cacheKey, entry);
+    remember(tmdbCache, cacheKey, entry, MAX_TMDB_SEASONS);
     return entry;
   } catch {
     return null;
@@ -146,7 +152,7 @@ export async function fetchTmdbAnimeSeasonDetails(
 }
 
 export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): LibrarySource {
-  const get = options.fetch ?? fetch;
+  const get = options.fetch ?? providerFetch();
   const timeoutMs = options.timeoutMs ?? 10_000;
   const tmdbApiKey = options.tmdbApiKey ?? FILMPIRE_TMDB_API_KEY;
 
@@ -168,7 +174,7 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
     try {
       const animeHtml = await fetchHtml(`anime.php?${slug}`);
       const hasEpisodes = /<a[^>]+id\s*=\s*['"][a-f0-9]{32}['"]/i.test(animeHtml);
-      animeProbeCache.set(slug, { at: Date.now(), hasEpisodes });
+      remember(animeProbeCache, slug, { at: Date.now(), hasEpisodes }, MAX_PROBED_ANIME);
       return hasEpisodes;
     } catch {
       return false;

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AGE_COUNTRIES, sectionOf, type EpisodeDetail, type LibraryItem, type LibraryRow, type LibrarySection, type TitleAbout } from "../../shared";
+import { providerFetch } from "../resolvers/providerFetch";
 import type { LibrarySource } from "./library";
 import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, type FilmpireCategory } from "./shelves";
 
@@ -321,14 +322,14 @@ function isTrashItem(raw: unknown): boolean {
 export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySource {
   const apiKey = options.apiKey ?? FILMPIRE_TMDB_API_KEY;
   const categories = options.categories ?? FILMPIRE_CATEGORIES;
-  const get = options.fetch ?? fetch;
+  const get = options.fetch ?? providerFetch();
   const timeoutMs = options.timeoutMs ?? 10_000;
   const probeCache = new Map<string, ProbeRecord>();
   const preloadedSeasons = new Map<number, number[]>();
   const now = options.now ?? Date.now;
   const shouldVerify = options.verifyPlayback ?? (process.env.FILTER_UNPLAYABLE !== "0" && (!options.fetch || options.probeFetch !== undefined));
   const shouldFilterTrash = options.filterTrash ?? (process.env.FILTER_TRASH !== "0" && (!options.fetch || options.probeFetch !== undefined));
-  const probeFetcher = options.probeFetch ?? (options.fetch ?? fetch);
+  const probeFetcher = options.probeFetch ?? get;
   const probeTimeout = options.probeTimeoutMs ?? 1500;
 
   const shelfGroups = options.shelves ?? SHELF_GROUPS;

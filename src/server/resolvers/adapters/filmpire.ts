@@ -1,46 +1,42 @@
-import type { AlternateSource, EpisodeRef, SeriesInfo, SubtitleTrack } from "../../../shared";
+import { isHttpUrl, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
+import { remember } from "../../boundedMap";
 import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
+import { providerFetch } from "../providerFetch";
 import type { ResolveResult, SiteAdapter } from "../types";
 import { streamAddress } from "./streamAddress";
+import { decryptInThread } from "./wasmDecrypt";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
-async function fetchJson<T = Record<string, unknown>>(url: string, headers: Record<string, string> = {}): Promise<T> {
-  const res = await fetch(url, {
+/** What is taken of a player's answer: no more streams, subtitles or episodes than a screen can use, however many the answer lists. */
+const MAX_STREAMS = 12;
+const MAX_SUBTITLES = 40;
+const MAX_EPISODES = 400;
+
+async function getJson<T = Record<string, unknown>>(get: typeof fetch, url: string, headers: Record<string, string> = {}): Promise<T> {
+  const res = await get(url, {
     headers: { "user-agent": UA, accept: "application/json", ...headers },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
   return res.json() as Promise<T>;
 }
 
-async function fetchText(url: string, headers: Record<string, string> = {}): Promise<string> {
-  const res = await fetch(url, {
+async function getText(get: typeof fetch, url: string, headers: Record<string, string> = {}): Promise<string> {
+  const res = await get(url, {
     headers: { "user-agent": UA, accept: "*/*", ...headers },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
   return res.text();
 }
 
-async function decryptWasm(encBase64: string, wasmUrl: string, referer: string): Promise<string[]> {
-  const wasmRes = await fetch(wasmUrl, {
+async function decryptWasm(get: typeof fetch, encBase64: string, wasmUrl: string, referer: string): Promise<string[]> {
+  const wasmRes = await get(wasmUrl, {
     headers: { "user-agent": UA, referer },
   });
   if (!wasmRes.ok) throw new Error(`Failed to fetch wasm from ${wasmUrl}`);
-  const wasmBuf = await wasmRes.arrayBuffer();
-  const mod = await WebAssembly.compile(wasmBuf);
-  const inst = await WebAssembly.instantiate(mod, {});
-  const ex = inst.exports as {
-    alloc: (len: number) => number;
-    decrypt: (ptr: number, len: number) => number;
-    memory: WebAssembly.Memory;
-  };
-
-  const enc = Buffer.from(encBase64, "base64");
-  const ptr = ex.alloc(enc.length);
-  new Uint8Array(ex.memory.buffer, ptr, enc.length).set(enc);
-  const outLen = ex.decrypt(ptr, enc.length);
-  const decrypted = new TextDecoder().decode(new Uint8Array(ex.memory.buffer, ptr + 12, outLen));
-  return decrypted.split("\n").map((s) => s.trim()).filter((s) => s.startsWith("http"));
+  const wasm = new Uint8Array(await wasmRes.arrayBuffer());
+  const decrypted = await decryptInThread(wasm, Buffer.from(encBase64, "base64"));
+  return decrypted.split("\n").map((s) => s.trim()).filter(isHttpUrl);
 }
 
 const LANG_NAMES: Record<string, string> = {
@@ -83,6 +79,10 @@ interface CachedHostToken {
   expiresAt: number;
 }
 const hostTokenCache = new Map<string, CachedHostToken>();
+/** The tokens are kept by the origin of a stream's address, which the site chooses: no more than this many are kept (the oldest go first). */
+const MAX_HOST_TOKENS = 100;
+/** A token longer than this cannot be part of an address that a screen takes (2048 characters). */
+const MAX_TOKEN_CHARS = 1900;
 
 function parseJwtExp(jwt: string): number | null {
   try {
@@ -99,7 +99,7 @@ function parseJwtExp(jwt: string): number | null {
   return null;
 }
 
-async function getHostToken(streamOrigin: string, playerUrl: string): Promise<string> {
+export async function getHostToken(get: typeof fetch, streamOrigin: string, playerUrl: string): Promise<string> {
   const cached = hostTokenCache.get(streamOrigin);
   const now = Date.now();
   if (cached && cached.expiresAt > now + 60_000) {
@@ -107,7 +107,7 @@ async function getHostToken(streamOrigin: string, playerUrl: string): Promise<st
   }
 
   try {
-    const rawToken = await fetchText(`${streamOrigin}/generate.php`, { referer: playerUrl });
+    const rawToken = await getText(get, `${streamOrigin}/generate.php`, { referer: playerUrl });
     let token = "";
     try {
       const parsed = JSON.parse(rawToken.trim()) as Record<string, string>;
@@ -115,9 +115,9 @@ async function getHostToken(streamOrigin: string, playerUrl: string): Promise<st
     } catch {
       token = rawToken.trim();
     }
-    if (token) {
+    if (token && token.length <= MAX_TOKEN_CHARS) {
       const exp = parseJwtExp(token) ?? (now + 2 * 3600 * 1000);
-      hostTokenCache.set(streamOrigin, { token, expiresAt: exp });
+      remember(hostTokenCache, streamOrigin, { token, expiresAt: exp }, MAX_HOST_TOKENS);
       return token;
     }
   } catch {
@@ -129,7 +129,15 @@ async function getHostToken(streamOrigin: string, playerUrl: string): Promise<st
   return cached?.token || "";
 }
 
-export function createFilmpireAdapter(): SiteAdapter {
+export interface FilmpireAdapterOptions {
+  /** How the sites are asked. Default: `providerFetch()`, which goes to public addresses only and reads no more than a bounded answer. */
+  fetch?: typeof fetch;
+}
+
+export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): SiteAdapter {
+  const get = options.fetch ?? providerFetch();
+  const fetchJson = <T = Record<string, unknown>>(url: string, headers: Record<string, string> = {}): Promise<T> => getJson<T>(get, url, headers);
+  const fetchText = (url: string, headers: Record<string, string> = {}): Promise<string> => getText(get, url, headers);
   return {
     id: "filmpire",
     domains: ["filmpire.sc", "filmpire.cc", "www.filmpire.cc", "filmpire.net", "filmpire.to", "filmpire.vip", "vidsrc.me", "screenfetch4.cyou"],
@@ -290,6 +298,7 @@ export function createFilmpireAdapter(): SiteAdapter {
               for (const sNum of seasonNums) {
                 const epNums = (epsMap[String(sNum)] || []).map(Number).filter((n) => !isNaN(n)).sort((a, b) => a - b);
                 for (const epNum of epNums) {
+                  if (allEpisodes.length >= MAX_EPISODES) break;
                   const epTitle = sNum === currS && tmdbNames.has(epNum)
                     ? tmdbNames.get(epNum)
                     : `S${sNum}:E${epNum}`;
@@ -315,7 +324,7 @@ export function createFilmpireAdapter(): SiteAdapter {
                   url: `https://filmpire.sc/watch/${id}?s=${nextS}&e=${nextE}`,
                   title: nextTitle,
                 } : undefined,
-                episodes: allEpisodes.length > 0 ? allEpisodes.slice(0, 400) : undefined,
+                episodes: allEpisodes.length > 0 ? allEpisodes : undefined,
               };
             }
           } catch {
@@ -367,10 +376,11 @@ export function createFilmpireAdapter(): SiteAdapter {
         apiImdbId = apiData.data?.imdb_id;
         const raw = apiData.data?.stream_urls;
         if (typeof raw === "string" && apiData.vs?.wasm_url) {
-          streamUrls = await decryptWasm(raw, apiData.vs.wasm_url, playerUrl);
+          streamUrls = await decryptWasm(get, raw, apiData.vs.wasm_url, playerUrl);
         } else if (Array.isArray(raw)) {
-          streamUrls = raw.filter((u): u is string => typeof u === "string");
+          streamUrls = raw.filter((u): u is string => typeof u === "string" && isHttpUrl(u));
         }
+        streamUrls = streamUrls.slice(0, MAX_STREAMS);
 
         const rawSubs =
           apiData.data?.subtitles ||
@@ -379,6 +389,7 @@ export function createFilmpireAdapter(): SiteAdapter {
           apiData.tracks ||
           [];
         for (const sub of rawSubs) {
+          if (subtitles.length >= MAX_SUBTITLES) break;
           const subUrl = sub.file || sub.url;
           if (subUrl && typeof subUrl === "string") {
             const absSub = subUrl.startsWith("http") ? subUrl : new URL(subUrl, playerUrl).href;
@@ -400,6 +411,7 @@ export function createFilmpireAdapter(): SiteAdapter {
           if (trackMatch?.[1]) {
             const parsed = JSON.parse(trackMatch[1]) as Array<{ file?: string; url?: string; label?: string; lang?: string; kind?: string }>;
             for (const t of parsed) {
+              if (subtitles.length >= MAX_SUBTITLES) break;
               if (t.kind && t.kind !== "captions" && t.kind !== "subtitles") continue;
               const subUrl = t.file || t.url;
               if (subUrl && typeof subUrl === "string") {
@@ -433,6 +445,7 @@ export function createFilmpireAdapter(): SiteAdapter {
           if (subData?.subtitles?.length) {
             const seenLangs = new Set<string>();
             for (const item of subData.subtitles) {
+              if (subtitles.length >= MAX_SUBTITLES) break;
               if (!item.url) continue;
               const langCode = (item.lang || "en").toLowerCase();
               const count = [...seenLangs].filter((l) => l.startsWith(langCode)).length;
@@ -473,7 +486,7 @@ export function createFilmpireAdapter(): SiteAdapter {
       for (const sUrl of relayOwnsToken ? [] : streamUrls) {
         try {
           const origin = new URL(sUrl).origin;
-          const tok = await getHostToken(origin, playerUrl);
+          const tok = await getHostToken(get, origin, playerUrl);
           if (tok) {
             chosenStream = sUrl;
             chosenToken = tok;
@@ -502,7 +515,7 @@ export function createFilmpireAdapter(): SiteAdapter {
         try {
           const origin = new URL(sUrl).origin;
           const hostName = new URL(sUrl).hostname.split(".")[0] || "Server";
-          const altToken = relayOwnsToken ? "" : await getHostToken(origin, playerUrl);
+          const altToken = relayOwnsToken ? "" : await getHostToken(get, origin, playerUrl);
           const altDelim = sUrl.includes("?") ? "&" : "?";
           const altFinalUrl = altToken
             ? `${sUrl}${altDelim}token=${encodeURIComponent(altToken)}&bypass_localize=true`

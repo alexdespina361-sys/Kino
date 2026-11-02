@@ -1,7 +1,9 @@
+import dns from "node:dns";
+import { getEventListeners } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SafeFetchError, assertAllowedUrl, safeFetch } from "./safe-fetch";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SafeFetchError, assertAllowedUrl, guardedLookup, safeFetch } from "./safe-fetch";
 
 type Handler = (req: http.IncomingMessage, res: http.ServerResponse) => void;
 let server: http.Server;
@@ -92,6 +94,152 @@ describe("safeFetch", () => {
     const port = new URL(base).port;
     expect((await failure(safeFetch(`http://127.0.0.1:${port}/`))).code).toBe("blocked");
     expect((await failure(safeFetch(`http://localhost:${port}/`))).code).toBe("blocked");
+  });
+});
+
+describe("safeFetch: headers, any type, abort", () => {
+  /** Makes a name of the test (never a real one) lead to this machine. */
+  const nameLeadsHere = (name: string) => {
+    const real = dns.lookup;
+    vi.spyOn(dns, "lookup").mockImplementation(((host: string, options: dns.LookupOptions, callback: never) =>
+      host === name ? (callback as (e: null, a: dns.LookupAddress[]) => void)(null, [{ address: "127.0.0.1", family: 4 }]) : real(host, options, callback)) as never);
+  };
+  afterEach(() => vi.restoreAllMocks());
+
+  it("sends the headers it is given, and always asks for the plain (uncompressed) body", async () => {
+    let seen: http.IncomingHttpHeaders = {};
+    handler = (req, res) => {
+      seen = req.headers;
+      res.writeHead(200, { "content-type": "text/html" }).end("ok");
+    };
+    await safeFetch(`${base}/a`, { ...loopbackOnly, headers: { Referer: "https://player.example/p", "User-Agent": "Test/1", "Accept-Encoding": "gzip" } });
+    expect(seen).toMatchObject({ referer: "https://player.example/p", "user-agent": "Test/1", "accept-encoding": "identity" });
+  });
+
+  it("with anyType, hands over a body of any type as bytes (and without it, still does not download one)", async () => {
+    const bytes = Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 255, 254]);
+    handler = (_req, res) => res.writeHead(200, { "content-type": "application/wasm" }).end(bytes);
+    const page = await safeFetch(`${base}/m.wasm`, { ...loopbackOnly, anyType: true });
+    expect(page.contentType).toBe("application/wasm");
+    expect(page.bytes?.equals(bytes)).toBe(true);
+    expect(page.body).toBe(""); // (it is not text, and is not made into any)
+    const plain = await safeFetch(`${base}/m.wasm`, loopbackOnly);
+    expect(plain).toMatchObject({ body: "", truncated: false });
+    expect(plain.bytes).toBeUndefined();
+    handler = (_req, res) => res.writeHead(200, { "content-type": "text/plain" }).end("hi");
+    expect((await safeFetch(`${base}/t`, loopbackOnly)).bytes).toBeUndefined(); // (a page is held once, as text)
+  });
+
+  it("an option given as undefined is no option: the bounds stay (the default size and time, and five redirects)", async () => {
+    handler = (_req, res) => res.writeHead(200, { "content-type": "text/html" }).end("x".repeat(3 * 1024 * 1024));
+    const page = await safeFetch(`${base}/big`, { ...loopbackOnly, maxBytes: undefined, timeoutMs: undefined, maxRedirects: undefined });
+    expect(page.truncated).toBe(true);
+    expect(page.body.length).toBe(2 * 1024 * 1024);
+    handler = (_req, res) => res.writeHead(302, { location: "/again" }).end();
+    expect((await failure(safeFetch(`${base}/x`, { ...loopbackOnly, maxRedirects: undefined }))).code).toBe("too_many_redirects");
+  });
+
+  it("with anyType, still reads no more than the bound", async () => {
+    handler = (_req, res) => res.writeHead(200, { "content-type": "application/octet-stream" }).end(Buffer.alloc(100_000, 7));
+    const page = await safeFetch(`${base}/big`, { ...loopbackOnly, anyType: true, maxBytes: 1000 });
+    expect(page.truncated).toBe(true);
+    expect(page.bytes?.length).toBe(1000);
+  });
+
+  it("does not pass a cookie on to another origin when a redirect leads there, and keeps it for the same one", async () => {
+    const asked: Array<{ host: string | undefined; cookie: string | undefined; authorization: string | undefined; referer: string | undefined }> = [];
+    nameLeadsHere("other.test");
+    handler = (req, res) => {
+      asked.push({ host: req.headers.host?.split(":")[0], cookie: req.headers.cookie, authorization: req.headers.authorization, referer: req.headers.referer });
+      const port = new URL(base).port;
+      if (req.url === "/start") return void res.writeHead(302, { location: "/same" }).end();
+      if (req.url === "/same") return void res.writeHead(302, { location: `http://other.test:${port}/elsewhere` }).end();
+      res.writeHead(200, { "content-type": "text/html" }).end("done");
+    };
+    const page = await safeFetch(`${base}/start`, { ...loopbackOnly, headers: { cookie: "key=abc", Authorization: "Bearer secret", referer: "https://player.example/" } });
+    expect(page.body).toBe("done");
+    expect(asked).toEqual([
+      { host: "127.0.0.1", cookie: "key=abc", authorization: "Bearer secret", referer: "https://player.example/" },
+      { host: "127.0.0.1", cookie: "key=abc", authorization: "Bearer secret", referer: "https://player.example/" },
+      { host: "other.test", cookie: undefined, authorization: undefined, referer: "https://player.example/" },
+    ]);
+  });
+
+  it("ends when the signal it is given aborts, or has already", async () => {
+    handler = () => {};
+    const started = Date.now();
+    expect((await failure(safeFetch(`${base}/hang`, { ...loopbackOnly, signal: AbortSignal.timeout(150) }))).code).toBe("timeout");
+    expect((await failure(safeFetch(`${base}/hang`, { ...loopbackOnly, signal: AbortSignal.abort() }))).code).toBe("timeout");
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it("leaves no listener on a signal that goes on after it, however it ended", async () => {
+    const signal = new AbortController().signal;
+    const listeners = () => getEventListeners(signal, "abort").length;
+    handler = (_req, res) => res.writeHead(200, { "content-type": "text/html" }).end("ok");
+    await safeFetch(`${base}/a`, { ...loopbackOnly, signal });
+    expect(listeners()).toBe(0);
+    handler = (_req, res) => res.writeHead(404).end();
+    await failure(safeFetch(`${base}/a`, { ...loopbackOnly, signal }));
+    expect(listeners()).toBe(0);
+    await failure(safeFetch("not a url", { ...loopbackOnly, signal }));
+    expect(listeners()).toBe(0);
+  });
+
+  it("ends a body that stops coming after the headers, within the time it was given", async () => {
+    handler = (_req, res) => {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.write("<p>start");
+      // (and nothing more, ever)
+    };
+    const started = Date.now();
+    const outcome = await safeFetch(`${base}/stall`, { ...loopbackOnly, timeoutMs: 250 }).then(
+      (page) => ({ page }),
+      (error: unknown) => ({ error: error as SafeFetchError }),
+    );
+    expect(Date.now() - started).toBeLessThan(3000);
+    if ("error" in outcome) expect(outcome.error.code).toBe("timeout");
+    else expect(outcome.page.body).toBe("<p>start");
+  });
+});
+
+describe("guardedLookup", () => {
+  const nameLeadsTo = (...addresses: string[]) =>
+    vi.spyOn(dns, "lookup").mockImplementation(((_host: string, _options: dns.LookupOptions, callback: never) =>
+      (callback as (e: null, a: dns.LookupAddress[]) => void)(null, addresses.map((address) => ({ address, family: 4 })))) as never);
+  const lookUp = (allowed: (ip: string) => boolean, all = false) =>
+    new Promise<{ error: SafeFetchError | null; result: unknown }>((resolve) =>
+      guardedLookup(allowed)("any.test", { all }, ((error: SafeFetchError | null, result: unknown) => resolve({ error, result })) as never),
+    );
+  const onlyTheFirstOfTwo = (ip: string) => ip === "127.0.0.1";
+  afterEach(() => vi.restoreAllMocks());
+
+  it("hands out the addresses of a name when every one of them is allowed (one, or all of them when asked for all)", async () => {
+    nameLeadsTo("127.0.0.1", "127.0.0.2");
+    const loopback = (ip: string) => ip.startsWith("127.0.0.");
+    expect((await lookUp(loopback, true)).result).toEqual([{ address: "127.0.0.1", family: 4 }, { address: "127.0.0.2", family: 4 }]);
+    expect((await lookUp(loopback)).result).toBe("127.0.0.1");
+  });
+
+  it("refuses a name when any one of its addresses is not allowed, wherever in the list it is", async () => {
+    nameLeadsTo("127.0.0.1", "127.0.0.2");
+    expect((await lookUp(onlyTheFirstOfTwo, true)).error?.code).toBe("blocked");
+    nameLeadsTo("127.0.0.2", "127.0.0.1");
+    expect((await lookUp(onlyTheFirstOfTwo, true)).error?.code).toBe("blocked");
+    expect((await lookUp(onlyTheFirstOfTwo)).error?.code).toBe("blocked");
+  });
+
+  it("refuses a name that has no address", async () => {
+    nameLeadsTo();
+    expect((await lookUp(() => true)).error?.code).toBe("blocked");
+  });
+
+  it("passes a lookup that failed on as the failure it is, never as an address", async () => {
+    const failed = Object.assign(new Error("getaddrinfo ENOTFOUND any.test"), { code: "ENOTFOUND" });
+    vi.spyOn(dns, "lookup").mockImplementation(((_host: string, _options: dns.LookupOptions, callback: never) => (callback as (e: Error) => void)(failed)) as never);
+    const answer = await lookUp(() => true);
+    expect(answer.error).toBe(failed);
+    expect(answer.result).toBeFalsy();
   });
 });
 

@@ -121,16 +121,15 @@ describe("createFilmpireAdapter", () => {
     vi.resetModules();
     const asked: string[] = [];
     // (A fake network: nothing is sent anywhere, and every answer is a failure, so the adapter gives up after its first questions.)
-    vi.stubGlobal("fetch", async (input: unknown) => {
+    const fake = (async (input: unknown) => {
       asked.push(String(input));
       return new Response("{}", { status: 503 });
-    });
+    }) as typeof fetch;
     try {
       const { createFilmpireAdapter: fresh } = await import("./adapters/filmpire");
-      await fresh().resolve(new URL("https://filmpire.cc/movie/603"));
+      await fresh({ fetch: fake }).resolve(new URL("https://filmpire.cc/movie/603"));
     } finally {
       vi.unstubAllEnvs();
-      vi.unstubAllGlobals();
       vi.resetModules();
     }
     const toTmdb = asked.map((url) => new URL(url)).filter((url) => url.hostname === "api.themoviedb.org");
@@ -173,7 +172,7 @@ describe("createAnimeHeavenAdapter", () => {
       </video>
     `;
 
-    vi.stubGlobal("fetch", async (url: string | URL) => {
+    const fake = (async (url: string | URL) => {
       const u = String(url);
       if (u.includes("anime.php")) {
         return { ok: true, status: 200, text: async () => fakeAnimeHtml };
@@ -182,9 +181,9 @@ describe("createAnimeHeavenAdapter", () => {
         return { ok: true, status: 200, text: async () => fakeGateHtml };
       }
       return { ok: false, status: 404 };
-    });
+    }) as unknown as typeof fetch;
 
-    const adapter = createAnimeHeavenAdapter();
+    const adapter = createAnimeHeavenAdapter({ fetch: fake });
     const res = await adapter.resolve(new URL("https://animeheaven.me/anime.php?pynn3&s=1&e=1"));
     expect(res.status).toBe("success");
     if (res.status === "success") {

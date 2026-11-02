@@ -25,6 +25,12 @@ export interface SafeFetchOptions {
   /** Address policy. Default: public internet only. Tests/dev may widen it; production never should. */
   isAllowedAddress?: (address: string) => boolean;
   userAgent?: string;
+  /** Headers to send besides the usual ones (a referer, a cookie the other end asks for). A cookie or an authorization header is not passed on to another origin when a redirect leads there. */
+  headers?: Record<string, string>;
+  /** Read the body whatever its type, and hand it over as `bytes` (default: only text is read; any other type is reported and not downloaded). */
+  anyType?: boolean;
+  /** Ends the request when it aborts, as the timeout does. */
+  signal?: AbortSignal;
 }
 
 export interface FetchedPage {
@@ -36,6 +42,8 @@ export interface FetchedPage {
   /** Empty for non-text responses (we never download media bodies). */
   body: string;
   truncated: boolean;
+  /** What was read, for `anyType` only. */
+  bytes?: Buffer;
 }
 
 export type SafeFetch = (url: string | URL, options?: SafeFetchOptions) => Promise<FetchedPage>;
@@ -85,44 +93,53 @@ function get(url: URL, headers: Record<string, string>, lookup: net_lookup, sign
 }
 
 export const safeFetch: SafeFetch = async (input, options = {}) => {
-  const { timeoutMs, maxBytes, maxRedirects } = { ...DEFAULTS, ...options };
+  // (An option that is given as `undefined` is no option: it must not take the bound away.)
+  const timeoutMs = options.timeoutMs ?? DEFAULTS.timeoutMs;
+  const maxBytes = options.maxBytes ?? DEFAULTS.maxBytes;
+  const maxRedirects = options.maxRedirects ?? DEFAULTS.maxRedirects;
   const isAllowedAddress = options.isAllowedAddress ?? isPublicAddress;
   const lookup = guardedLookup(isAllowedAddress);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
+  if (options.signal?.aborted) controller.abort();
+  else options.signal?.addEventListener("abort", onAbort, { once: true });
 
   let url: URL;
   try {
     url = new URL(input);
   } catch {
     clearTimeout(timer);
+    options.signal?.removeEventListener("abort", onAbort);
     throw new SafeFetchError("invalid_url", "not a URL");
   }
+
+  let headers: Record<string, string> = {
+    "user-agent": options.userAgent ?? "Mozilla/5.0 (compatible; PhoneToTvResolver/0.1)",
+    accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5",
+    "accept-language": "en",
+    "accept-encoding": "identity", // no decompression-bomb surface
+  };
+  for (const [name, value] of Object.entries(options.headers ?? {})) headers[name.toLowerCase()] = value;
+  headers["accept-encoding"] = "identity";
 
   try {
     for (let hop = 0; hop <= maxRedirects; hop++) {
       assertAllowedUrl(url, isAllowedAddress);
-      const res = await get(
-        url,
-        {
-          "user-agent": options.userAgent ?? "Mozilla/5.0 (compatible; PhoneToTvResolver/0.1)",
-          accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5",
-          "accept-language": "en",
-          "accept-encoding": "identity", // no decompression-bomb surface
-        },
-        lookup,
-        controller.signal,
-      );
+      const res = await get(url, headers, lookup, controller.signal);
 
       const status = res.statusCode ?? 0;
       const location = res.headers.location;
       if (status >= 300 && status < 400 && location) {
         res.resume();
+        let next: URL;
         try {
-          url = new URL(location, url);
+          next = new URL(location, url);
         } catch {
           throw new SafeFetchError("invalid_url", "bad redirect");
         }
+        if (next.origin !== url.origin) headers = withoutCredentials(headers);
+        url = next;
         continue;
       }
       if (status >= 400) {
@@ -131,21 +148,30 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
       }
 
       const contentType = String(res.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
-      if (!TEXT_TYPES.test(contentType)) {
+      const textual = TEXT_TYPES.test(contentType);
+      if (!textual && !options.anyType) {
         res.destroy(); // media / binary: report the type, never download it
         return { url, status, contentType, body: "", truncated: false };
       }
-      return await readCapped(res, url, status, contentType, maxBytes);
+      const read = await readCapped(res, maxBytes);
+      return { url, status, contentType, body: textual ? read.bytes.toString("utf8") : "", truncated: read.truncated, ...(options.anyType ? { bytes: read.bytes } : {}) };
     }
     throw new SafeFetchError("too_many_redirects", "too many redirects");
   } catch (error) {
     throw normalize(error, controller.signal);
   } finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener("abort", onAbort);
   }
 };
 
-function readCapped(res: http.IncomingMessage, url: URL, status: number, contentType: string, maxBytes: number): Promise<FetchedPage> {
+/** What was asked with a cookie or a login stays with the origin it was asked of: a redirect to another does not carry it along. */
+function withoutCredentials(headers: Record<string, string>): Record<string, string> {
+  const { cookie: _cookie, authorization: _authorization, ...rest } = headers;
+  return rest;
+}
+
+function readCapped(res: http.IncomingMessage, maxBytes: number): Promise<{ bytes: Buffer; truncated: boolean }> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -153,7 +179,7 @@ function readCapped(res: http.IncomingMessage, url: URL, status: number, content
     const finish = (truncated: boolean) => {
       if (done) return;
       done = true;
-      resolve({ url, status, contentType, body: Buffer.concat(chunks).toString("utf8"), truncated });
+      resolve({ bytes: Buffer.concat(chunks), truncated });
     };
     res.on("data", (chunk: Buffer) => {
       if (done) return;

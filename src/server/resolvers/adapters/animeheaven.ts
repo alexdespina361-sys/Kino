@@ -1,14 +1,17 @@
-import type { AlternateSource, EpisodeRef, SeriesInfo } from "../../../shared";
+import { isHttpUrl, type AlternateSource, type EpisodeRef, type SeriesInfo } from "../../../shared";
 import { fetchTmdbAnimeSeasonDetails } from "../../library/animeheaven";
 import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
+import { providerFetch } from "../providerFetch";
 import type { ResolveResult, SiteAdapter } from "../types";
 import { streamAddress } from "./streamAddress";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const BASE = "https://animeheaven.me";
+/** No more streams are taken from a page than a screen can use, however many it lists. */
+const MAX_STREAMS = 12;
 
 export function createAnimeHeavenAdapter(options: { fetch?: typeof fetch } = {}): SiteAdapter {
-  const get = options.fetch ?? fetch;
+  const get = options.fetch ?? providerFetch();
   return {
     id: "animeheaven",
     domains: ["animeheaven.me", "www.animeheaven.me"],
@@ -94,10 +97,10 @@ export function createAnimeHeavenAdapter(options: { fetch?: typeof fetch } = {})
         const gateHtml = await gateRes.text();
 
         // 4. Extract video sources from <source> tags
-        const allSources = [...gateHtml.matchAll(/<source[^>]+src=['"]([^'"]+)['"]/gi)].flatMap((m) => (m[1] ? [m[1]] : []));
+        const allSources = [...gateHtml.matchAll(/<source[^>]+src=['"]([^'"]+)['"]/gi)].flatMap((m) => (m[1] && isHttpUrl(m[1]) ? [m[1]] : []));
         // Filter out sponsor/ad roll (the genuine episode streams contain the episodeKey)
         const episodeStreams = allSources.filter((s) => s.includes(episodeKey));
-        const streamUrls = episodeStreams.length > 0 ? episodeStreams : allSources;
+        const streamUrls = (episodeStreams.length > 0 ? episodeStreams : allSources).slice(0, MAX_STREAMS);
 
         if (streamUrls.length === 0) {
           return { status: "unsupported", reason: "No video stream found for this episode." };

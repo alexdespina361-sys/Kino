@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { LibraryItem, LibraryRow, LibrarySection } from "../../shared";
+import { providerFetch } from "../resolvers/providerFetch";
 import type { LibrarySource } from "./library";
 
 /**
@@ -78,7 +79,7 @@ const query = (collection: string) =>
 export function internetArchive(options: ArchiveOptions = {}): LibrarySource {
   const rows = options.rows ?? ARCHIVE_ROWS;
   const perRow = options.perRow ?? 24;
-  const get = options.fetch ?? fetch;
+  const get = options.fetch ?? providerFetch();
   const timeoutMs = options.timeoutMs ?? 10_000;
 
   const parseDocs = (docs: unknown[]): LibraryItem[] =>

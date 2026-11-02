@@ -3,6 +3,7 @@ import { createFilmpireAdapter } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 import { createGenericResolver } from "./generic";
 import { isPublicAddress } from "./ip";
+import { providerFetch } from "./providerFetch";
 import { ResolverRegistry, type RegistryLog } from "./registry";
 import { safeFetch } from "./safe-fetch";
 import type { ResolveFn, SiteAdapter } from "./types";
@@ -19,6 +20,8 @@ export interface ResolverSetup {
 export function createResolver({ log, allowPrivateNetwork = false, adapters }: ResolverSetup): ResolveFn {
   const fetchOptions = { isAllowedAddress: allowPrivateNetwork ? () => true : isPublicAddress };
   const generic = createGenericResolver({ fetch: safeFetch, fetchOptions });
-  const activeAdapters = adapters ?? [createFilmpireAdapter(), createSitefilmeAdapter(), createAnimeHeavenAdapter()];
+  // (The adapters ask the sites they are made for, and those name the next address to ask: they are held to the same addresses as a pasted link.)
+  const providers = providerFetch(fetchOptions);
+  const activeAdapters = adapters ?? [createFilmpireAdapter({ fetch: providers }), createSitefilmeAdapter(), createAnimeHeavenAdapter({ fetch: providers })];
   return new ResolverRegistry(activeAdapters, generic, log).resolve;
 }
