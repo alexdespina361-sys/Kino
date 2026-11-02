@@ -13,9 +13,20 @@ export function srtToVtt(srt: string): string {
   return `WEBVTT\n\n${clean}`;
 }
 
+/** A playlist that comes out larger than any real one: a long film is some thousands of addresses (see `rewriteM3u8`). */
+export class PlaylistTooLong extends Error {}
+
+/** The most addresses a playlist is rewritten for, and the most it may come to (a line of a few bytes comes out as the address, and the referer, each time). */
+const PLAYLIST_MAX_ADDRESSES = 20_000;
+const PLAYLIST_MAX_BYTES = 16 * 1024 * 1024;
+/** The page said to have asked, as long as an address of a page may be (it is written into every address of a playlist). */
+const REFERER_MAX_LENGTH = 2048;
+
 export function rewriteM3u8(content: string, playlistUrl: string, referer?: string, rewriteUrl?: (target: URL) => string): string {
   const lines = content.split(/\r?\n/);
   const out: string[] = [];
+  let addresses = 0;
+  let size = 0;
 
   const toProxyUrl = (target: string): string => {
     try {
@@ -31,10 +42,29 @@ export function rewriteM3u8(content: string, playlistUrl: string, referer?: stri
     }
   };
 
+  // (Counted outside `toProxyUrl`, which answers any failure with the address as it was; and as each address comes out, since one line can hold thousands.)
+  let counted = 0;
+  const grow = (by: number): void => {
+    size += by;
+    if (size > PLAYLIST_MAX_BYTES) throw new PlaylistTooLong();
+  };
+  const rewritten = (target: string): string => {
+    if (++addresses > PLAYLIST_MAX_ADDRESSES) throw new PlaylistTooLong();
+    const address = toProxyUrl(target);
+    counted += address.length;
+    grow(address.length);
+    return address;
+  };
+  const push = (line: string): void => {
+    grow(line.length + 1 - counted);
+    counted = 0;
+    out.push(line);
+  };
+
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) {
-      out.push(line);
+      push(line);
       continue;
     }
 
@@ -42,17 +72,17 @@ export function rewriteM3u8(content: string, playlistUrl: string, referer?: stri
       // Tags that reference external resources via URI="..."
       if (trimmed.startsWith("#EXT")) {
         const rewrittenTag = line.replace(/URI=["']([^"']+)["']/g, (_match, uri: string) => {
-          return `URI="${toProxyUrl(uri)}"`;
+          return `URI="${rewritten(uri)}"`;
         });
-        out.push(rewrittenTag);
+        push(rewrittenTag);
       } else {
-        out.push(line);
+        push(line);
       }
       continue;
     }
 
     // Media segment or sub-playlist URL
-    out.push(toProxyUrl(trimmed));
+    push(rewritten(trimmed));
   }
 
   return out.join("\n");
@@ -289,6 +319,7 @@ export async function handleStreamProxy(
   } catch {
     return reply.code(400).send({ error: "Invalid 'referer' query parameter" });
   }
+  if (referer.length > REFERER_MAX_LENGTH) return reply.code(400).send({ error: "Invalid 'referer' query parameter" });
   const stats = options.stats;
   if (stats) stats.requests += 1;
 
@@ -379,7 +410,13 @@ export async function handleStreamProxy(
     if (text === null) return reply.code(502).header("Content-Type", TEXT_TYPE).send("The playlist is too long");
     // Verify it actually looks like an m3u8
     if (text.includes("#EXTM3U")) {
-      const rewritten = rewriteM3u8(text, upstreamUrl.href, referer, options.rewriteUrl);
+      let rewritten: string;
+      try {
+        rewritten = rewriteM3u8(text, upstreamUrl.href, referer, options.rewriteUrl);
+      } catch (error) {
+        if (error instanceof PlaylistTooLong) return reply.code(502).header("Content-Type", TEXT_TYPE).send("The playlist is too long");
+        throw error;
+      }
       reply.header("Cache-Control", "no-store");
       if (stats) stats.bytes += Buffer.byteLength(rewritten);
       reply.header("Content-Type", "application/vnd.apple.mpegurl");

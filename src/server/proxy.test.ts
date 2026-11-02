@@ -3,7 +3,7 @@ import type { AddressInfo, Socket } from "node:net";
 import { gzipSync } from "node:zlib";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { handleStreamProxy, rewriteM3u8, srtToVtt } from "./proxy";
+import { PlaylistTooLong, handleStreamProxy, rewriteM3u8, srtToVtt } from "./proxy";
 import { SegmentCache } from "./segmentCache";
 
 describe("rewriteM3u8", () => {
@@ -35,6 +35,41 @@ describe("rewriteM3u8", () => {
     const result = rewriteM3u8(input, "https://media.example/hls/list.m3u8");
     expect(result).toContain('URI="/api/proxy?url=https%3A%2F%2Fmedia.example%2Fhls%2Fkey.php%3Fid%3D1"');
     expect(result).toContain("/api/proxy?url=https%3A%2F%2Fmedia.example%2Fhls%2Fchunk0.ts");
+  });
+
+  describe("what a playlist may come to", () => {
+    const base = "https://media.example/stream/list.m3u8";
+    const pieces = (count: number) => `#EXTM3U\n${Array.from({ length: count }, (_, n) => `#EXTINF:4,\nseg${n}.ts\n`).join("")}`;
+    /** Every address of the playlist gets it written in again: the longest text a request can make of it (each `%` comes out as three characters). */
+    const referer = "%".repeat(2048);
+
+    it("rewrites a playlist of 20,000 pieces whole, and refuses one of 20,001", () => {
+      const addresses = (text: string) => text.split("\n").filter((line) => line.startsWith("/api/proxy?url=")).length;
+      expect(addresses(rewriteM3u8(pieces(20_000), base))).toBe(20_000);
+      expect(() => rewriteM3u8(pieces(20_001), base)).toThrow(PlaylistTooLong);
+    });
+
+    it("rewrites a playlist that comes out at 11 MB whole, with the weight of each address counted once", () => {
+      const text = rewriteM3u8(pieces(10_000), base, "https://site.example/".padEnd(1000, "a"));
+      expect(text.length).toBeGreaterThan(8 * 1024 * 1024);
+      expect(text.length).toBeLessThan(16 * 1024 * 1024);
+    });
+
+    it("counts the addresses in the tags as well, however many a line holds", () => {
+      const keys = `#EXTM3U\n#EXT-X-SESSION-KEY:${'URI="k.key",'.repeat(20_001)}\n`;
+      expect(() => rewriteM3u8(keys, base)).toThrow(PlaylistTooLong);
+    });
+
+    it("refuses a playlist that comes out larger than 16 MiB, from lines of a few bytes and a long referer", () => {
+      // (5,000 of them: well under the count above, 30 MB as they come out.)
+      expect(() => rewriteM3u8(`#EXTM3U\n${"a\n".repeat(5_000)}`, base, referer)).toThrow(PlaylistTooLong);
+    });
+
+    it("counts what comes out as each address of a line does, not when the line is done", () => {
+      // (10,000 addresses in one line: 60 MB with the referer in each.)
+      const keys = `#EXTM3U\n#EXT-X-SESSION-KEY:${'URI="k.key",'.repeat(10_000)}\n`;
+      expect(() => rewriteM3u8(keys, base, referer)).toThrow(PlaylistTooLong);
+    });
   });
 });
 
@@ -95,6 +130,11 @@ describe("handleStreamProxy", () => {
       if (url.pathname === "/list.m3u8") {
         response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl" });
         return void response.end("#EXTM3U\n#EXTINF:4,\nseg.ts\n");
+      }
+      if (url.pathname === "/many.m3u8") {
+        // (More pieces than any film has, each of them a few bytes.)
+        response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl" });
+        return void response.end(`#EXTM3U\n${"a.ts\n".repeat(30_000)}`);
       }
       if (url.pathname === "/hls/playlist") {
         // (Many servers write the type like this, and the address says nothing.)
@@ -251,6 +291,21 @@ describe("handleStreamProxy", () => {
   it("rewrites a playlist so that its pieces come through here as well", async () => {
     const answer = await ask(at(OKAY, "/list.m3u8"));
     expect(answer.body).toContain(`/api/proxy?url=${encodeURIComponent(at(OKAY, "/seg.ts"))}`);
+  });
+
+  it("turns away a playlist with more pieces than any film has, and goes on serving", async () => {
+    const answer = await ask(at(OKAY, "/many.m3u8"));
+    expect(answer.statusCode).toBe(502);
+    expect(answer.headers["content-type"]).toBe("text/plain; charset=utf-8");
+    expect(answer.body).toBe("The playlist is too long");
+    expect((await ask(at(OKAY, "/seg.ts"))).statusCode).toBe(200);
+  });
+
+  it("takes a referer as long as the address of a page may be, and no longer", async () => {
+    const through = (referer: string) => app.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/list.m3u8"))}&referer=${encodeURIComponent(referer)}` });
+    const page = (length: number) => "https://site.example/".padEnd(length, "a");
+    expect((await through(page(2048))).statusCode).toBe(200);
+    expect((await through(page(2049))).statusCode).toBe(400);
   });
 
   it("knows a playlist by the type the other end gives it, in whatever case, when the address does not say so", async () => {
@@ -495,11 +550,20 @@ describe("handleStreamProxy", () => {
   });
 
   it("answers with a failure, and goes on serving, when the other end stacks more content codings than a client takes and drops the connection", async () => {
-    // (Any visitor can send the proxy to a server of their own: a library that fell over on that one answer would take every screen down with it.)
-    const answer = await ask(at(OKAY, "/stacked.mp4"));
-    expect(answer.statusCode).toBeGreaterThanOrEqual(500);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect((await ask(at(OKAY, "/seg.ts"))).statusCode).toBe(200);
+    // (Any visitor can send the proxy to a server of their own: a library that fell over on that one answer would take every screen down with it. What the
+    // old one did was throw from a socket that nobody listens to, which ends the whole process, so the test listens for exactly that.)
+    const thrown: unknown[] = [];
+    const note = (error: unknown) => void thrown.push(error);
+    process.on("uncaughtException", note);
+    try {
+      const answer = await ask(at(OKAY, "/stacked.mp4"));
+      expect(answer.statusCode).toBeGreaterThanOrEqual(500);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect((await ask(at(OKAY, "/seg.ts"))).statusCode).toBe(200);
+    } finally {
+      process.off("uncaughtException", note);
+    }
+    expect(thrown).toEqual([]);
   });
 
   it("says what the other end said when it has no such thing, and does not tell the player to keep that", async () => {
