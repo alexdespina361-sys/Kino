@@ -60,7 +60,10 @@ function isPublicV6(address: string): boolean {
   if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0 && gg === 0 && h === 1) return false; // ::1
   if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0xffff) return isPublicV4(embeddedV4); // ::ffff:a.b.c.d
   if (a === 0x64 && b === 0xff9b && c === 0 && d === 0 && e === 0 && f === 0) return isPublicV4(embeddedV4); // NAT64
+  if (a === 0x64 && b === 0xff9b && c === 1) return false; // 64:ff9b:1::/48 local-use NAT64 (an operator's own IPv4 inside)
   if (a === 0 && b === 0 && c === 0 && d === 0 && e === 0 && f === 0) return false; // deprecated IPv4-compatible
+  if (a === 0x2002) return false; // 2002::/16 6to4 (any IPv4 address inside, a private one too)
+  if (a === 0x2001 && b < 0x0200) return false; // 2001::/23 IETF protocol assignments, Teredo (2001::/32) among them (IPv4 addresses inside)
   if ((a & 0xfe00) === 0xfc00) return false; // fc00::/7 unique local
   if ((a & 0xffc0) === 0xfe80) return false; // fe80::/10 link-local
   if ((a & 0xffc0) === 0xfec0) return false; // fec0::/10 site-local (deprecated)
