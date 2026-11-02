@@ -65,6 +65,10 @@ export interface HubOptions {
   maxFailedPairingsInAll?: number;
   /** Length of that window. Default 60 s. */
   failedPairingWindowMs?: number;
+  /** Videos looked up for one TV (chosen on a phone, on the TV itself, or the next episode) tolerated in one window before further ones are refused. Default 30. */
+  maxResolves?: number;
+  /** Length of that window. Default 60 s. */
+  resolveWindowMs?: number;
   /** Whose a screen is, as the accounts prove it (see TV_PROFILE). Without it a watch party shows no profiles. */
   profiles?: ScreenProfiles;
 }
@@ -93,6 +97,8 @@ export class Hub {
    */
   private readonly wrongByAddress: RateLimiter;
   private readonly wrongInAll: RateLimiter;
+  /** Lookups lately, counted for each TV: every one is a fetch of a page that is somebody else's, and a person chooses a title every few seconds at the very most. */
+  private readonly resolvesByDevice: RateLimiter;
   /** Where each open socket comes from (see `addressOf`). */
   private readonly addresses = new WeakMap<WebSocket, string>();
   private readonly profiles: ScreenProfiles | undefined;
@@ -108,6 +114,7 @@ export class Hub {
     const windowMs = options.failedPairingWindowMs ?? 60_000;
     this.wrongByAddress = new RateLimiter(perAddress, windowMs);
     this.wrongInAll = new RateLimiter(options.maxFailedPairingsInAll ?? perAddress * 5, windowMs);
+    this.resolvesByDevice = new RateLimiter(options.maxResolves ?? 30, options.resolveWindowMs ?? 60_000);
     this.sweeper = setInterval(() => {
       const now = Date.now();
       for (const [socket, seen] of this.lastSeen) if (now - seen > staleAfterMs) socket.terminate();
@@ -770,6 +777,14 @@ export class Hub {
     };
     const tvOffline = () => status({ phase: "failed", reason: "tv_offline", message: "The TV is offline." });
     if (!this.tvs.has(device.id)) return tvOffline();
+
+    // Far more lookups than a person can choose are refused. Nothing is announced or dropped for one that is: the TV is not left waiting for it, and a lookup under way carries on.
+    if (this.resolvesByDevice.wait(device.id) > 0) {
+      const message = "Too many videos asked for in a short time. Try again in a minute.";
+      if (controllerId) return this.error(controllerId, "RATE_LIMITED", message);
+      return this.send(this.tvs.get(device.id), { type: "ERROR", code: "RATE_LIMITED", message });
+    }
+    this.resolvesByDevice.hit(device.id);
 
     const seq = this.bumpResolveSeq(device.id);
     status({ phase: "resolving" });

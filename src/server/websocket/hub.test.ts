@@ -834,6 +834,113 @@ describe("TV feedback while a link is being looked up", () => {
   });
 });
 
+describe("lookups asked for faster than a person chooses", () => {
+  /** A paired TV and phone on a server that looks up at most `max` videos for one TV in `windowMs`. */
+  async function limited(max: number, windowMs = 60_000) {
+    await app.close();
+    app = await buildApp({ resolve: (url) => resolveImpl(url), hub: { maxResolves: max, resolveWindowMs: windowMs } });
+    await app.ready();
+    return pairedSetup();
+  }
+  /** Every address the resolver is asked about, and the answer to each: a video. */
+  function lookups() {
+    const seen: string[] = [];
+    resolveImpl = async (url) => (seen.push(url), { status: "success", resolver: "test", media });
+    return seen;
+  }
+  const played = (m: ServerMessage) => m.type === "TV_CMD" && m.command.type === "PLAY";
+
+  it("refuses a phone's choice past the limit: nothing is looked up, the TV is not left waiting for it, and the phone is told", async () => {
+    const seen = lookups();
+    const { tv, phone } = await limited(2);
+    for (const n of [1, 2]) {
+      phone.send({ type: "PLAY_URL", url: `https://s.example/${n}` });
+      await tv.nextWhere("TV_CMD", played);
+    }
+    await Promise.all([tv.forget(), phone.forget()]);
+
+    phone.send({ type: "PLAY_URL", url: "https://s.example/3" });
+    const refused = await phone.next("ERROR");
+    expect(refused.code).toBe("RATE_LIMITED");
+    expect(refused.message).toMatch(/Too many.*Try again/);
+    await tv.expectNone((m) => m.type === "TV_RESOLVING" || m.type === "TV_CMD");
+    await phone.expectNone((m) => m.type === "RESOLVE_STATUS" || m.type === "MEDIA" || m.type === "STATE");
+    expect(seen).toEqual(["https://s.example/1", "https://s.example/2"]);
+  });
+
+  it("counts what the TV asks for with what the phone does, and tells the TV when it is refused", async () => {
+    const seen = lookups();
+    const { tv, phone } = await limited(2);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/1" });
+    await tv.nextWhere("TV_CMD", played);
+    tv.send({ type: "TV_PLAY_URL", url: "https://s.example/2" });
+    await tv.nextWhere("TV_CMD", played);
+    await Promise.all([tv.forget(), phone.forget()]);
+
+    tv.send({ type: "TV_PLAY_URL", url: "https://s.example/3" });
+    expect((await tv.next("ERROR")).code).toBe("RATE_LIMITED");
+    await tv.expectNone((m) => m.type === "TV_RESOLVING" || m.type === "TV_CMD");
+    await phone.expectNone((m) => m.type === "RESOLVE_STATUS" || m.type === "ERROR");
+    expect(seen).toEqual(["https://s.example/1", "https://s.example/2"]);
+  });
+
+  it("leaves a lookup that is under way alone when it refuses another one", async () => {
+    const gate: { release: () => void } = { release: () => {} };
+    resolveImpl = async () => {
+      await new Promise<void>((resolve) => (gate.release = resolve));
+      return { status: "success", resolver: "test", media };
+    };
+    const { tv, phone } = await limited(1);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/slow" });
+    expect((await tv.next("TV_RESOLVING")).active).toBe(true);
+
+    phone.send({ type: "PLAY_URL", url: "https://s.example/more" });
+    expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
+    gate.release();
+    expect((await tv.next("TV_RESOLVING")).active).toBe(false); // (the TV waited for one lookup and is told when it ends)
+    expect((await tv.next("TV_CMD")).command.type).toBe("LOAD");
+    await tv.expectNone((m) => m.type === "TV_RESOLVING");
+  });
+
+  it("lets lookups through again once the window has passed", async () => {
+    const seen = lookups();
+    const { tv, phone } = await limited(1, 500);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/1" });
+    await tv.nextWhere("TV_CMD", played);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/2" });
+    expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    phone.send({ type: "PLAY_URL", url: "https://s.example/3" });
+    await tv.nextWhere("TV_CMD", played);
+    expect(seen).toEqual(["https://s.example/1", "https://s.example/3"]);
+  });
+
+  it("counts for each TV: the lookups of another TV are not held back", async () => {
+    lookups();
+    const { phone } = await limited(1);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/1" });
+    await phone.nextWhere("RESOLVE_STATUS", (m) => m.status.phase === "found");
+    phone.send({ type: "PLAY_URL", url: "https://s.example/2" });
+    expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
+
+    const other = await pairedSetup();
+    other.phone.send({ type: "PLAY_URL", url: "https://s.example/3" });
+    expect((await other.tv.nextWhere("TV_CMD", (m) => m.command.type === "LOAD")).command.type).toBe("LOAD");
+  });
+
+  it("lets a person choose titles as fast as they can tap, and refuses the thirty-first in a minute", async () => {
+    const seen = lookups();
+    const { tv, phone } = await pairedSetup();
+    for (let n = 1; n <= 30; n++) {
+      phone.send({ type: "PLAY_URL", url: `https://s.example/${n}` });
+      await tv.nextWhere("TV_CMD", played);
+    }
+    phone.send({ type: "PLAY_URL", url: "https://s.example/31" });
+    expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
+    expect(seen).toHaveLength(30);
+  });
+});
+
 describe("TV_CANCEL (whoever is at the TV stops waiting for a video)", () => {
   it("drops a lookup that is still running, so its answer never starts the film, and tells the phone", async () => {
     const gate: { release: () => void } = { release: () => {} };
