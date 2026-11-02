@@ -21,9 +21,9 @@ export const FEEDBACK_MAX_BYTES = 150 * 1024 * 1024;
 export const FEEDBACK_MAX_REPORTS = 600;
 /** The most lines (answers, from either side) one report holds: a thread is not a chat room. */
 export const FEEDBACK_MAX_MESSAGES = 100;
-/** What the words of a report count for in the budget, besides its files. */
+/** What the words of a report count for in the budget, besides its files and the lines of its thread (those count for their length). */
 const RECORD_BYTES = 6 * 1024;
-/** What the taking in of new reports is chained on (see `chained`): not the number of any report. */
+/** What the taking in of new reports, and of the lines their senders add, is chained on (see `chained`): not the number of any report. */
 const NEW_REPORT = "new";
 
 export const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
@@ -304,7 +304,13 @@ export function waitingOn(record: FeedbackRecord): boolean {
   return last.from === "user";
 }
 
-const reportBytes = (record: FeedbackRecord) => RECORD_BYTES + record.files.reduce((sum, file) => sum + (file.gone ? 0 : file.bytes), 0);
+/** What adding a line comes to (see `addMessage`): the line, and the files of it that were left out. */
+type Added = { message: FeedbackMessage; refused: string[] } | "full" | undefined;
+
+const filesBytes = (record: FeedbackRecord) => record.files.reduce((sum, file) => sum + (file.gone ? 0 : file.bytes), 0);
+
+/** What a report takes up: a flat allowance for its own words, the lines of its thread for what they are (up to a hundred of five thousand characters), and its files. */
+const reportBytes = (record: FeedbackRecord) => RECORD_BYTES + record.messages.reduce((sum, message) => sum + Buffer.byteLength(message.text), 0) + filesBytes(record);
 
 /**
  * The reports. All of them are in memory (their words: some kilobytes each, 600 at the very most); every change is written to the backend first and is
@@ -519,40 +525,51 @@ export class FeedbackStore {
     });
   }
 
-  /** A line in the report's thread, with the files that go with it. False when the report is not there or its thread is full. */
+  /**
+   * A line in the report's thread, with the files that go with it. Undefined when the report is not there, and "full" when its thread is.
+   *
+   * A line from the sender is held to the budget as a new report is (see `fit`, and it is taken in one at a time with the new reports): room is made from
+   * what is closed, the files that still do not fit are left out and named in `refused` (the words are kept), and when not even the words fit there is
+   * `FeedbackFull`. The team's lines are never turned away: they are what closes reports, and what is closed makes room.
+   */
   async addMessage(
     id: string,
     line: { from: "user" | "team"; text: string; asks?: boolean; files?: Array<{ meta: Omit<FeedbackFile, "bytes">; data: Buffer }>; status?: FeedbackStatus },
-  ): Promise<FeedbackMessage | "full" | undefined> {
-    const files = line.files ?? [];
-    return this.chained(id, async () => {
-      const current = this.records.get(id);
-      if (!current) return undefined;
-      if (current.messages.length >= FEEDBACK_MAX_MESSAGES) return "full";
-      await Promise.all(files.map(({ meta, data }) => this.backend.putFile(id, meta.id, data)));
-      const draft = structuredClone(current);
-      const message: FeedbackMessage = {
-        id: (draft.messages[draft.messages.length - 1]?.id ?? 0) + 1,
-        at: this.now(),
-        from: line.from,
-        text: line.text,
-        ...(line.asks ? { asks: true as const } : {}),
-        ...(files.length ? { files: files.map(({ meta }) => meta.id) } : {}),
-      };
-      draft.messages.push(message);
-      draft.files.push(...files.map(({ meta, data }) => ({ ...meta, bytes: data.length })));
-      if (line.status) draft.status = line.status;
-      draft.updatedAt = message.at;
-      try {
-        await this.backend.save(draft);
-      } catch (error) {
-        await this.backend.removeFiles(id, files.map(({ meta }) => meta.id)).catch(() => {});
-        throw error;
-      }
-      this.records.set(id, draft);
-      this.bump();
-      return message;
-    });
+  ): Promise<Added> {
+    const given = line.files ?? [];
+    const write = (): Promise<Added> =>
+      this.chained(id, async () => {
+        const current = this.records.get(id);
+        if (!current) return undefined;
+        if (current.messages.length >= FEEDBACK_MAX_MESSAGES) return "full";
+        // (The report that is answered is not one to make room from: it is open once the answer is in.)
+        const { files, refused } = line.from === "user" ? await this.fit(given, line.text !== "", Buffer.byteLength(line.text), id) : { files: given, refused: [] };
+        await Promise.all(files.map(({ meta, data }) => this.backend.putFile(id, meta.id, data)));
+        const draft = structuredClone(current);
+        const message: FeedbackMessage = {
+          id: (draft.messages[draft.messages.length - 1]?.id ?? 0) + 1,
+          at: this.now(),
+          from: line.from,
+          text: line.text,
+          ...(line.asks ? { asks: true as const } : {}),
+          ...(files.length ? { files: files.map(({ meta }) => meta.id) } : {}),
+        };
+        draft.messages.push(message);
+        draft.files.push(...files.map(({ meta, data }) => ({ ...meta, bytes: data.length })));
+        if (line.status) draft.status = line.status;
+        draft.updatedAt = message.at;
+        try {
+          await this.backend.save(draft);
+        } catch (error) {
+          await this.backend.removeFiles(id, files.map(({ meta }) => meta.id)).catch(() => {});
+          throw error;
+        }
+        this.records.set(id, draft);
+        this.bump();
+        return { message, refused };
+      });
+    // (The report's turn is taken inside the turn for new reports, never the other way round: making room waits for the turns of other reports.)
+    return line.from === "user" ? this.chained(NEW_REPORT, write) : write();
   }
 
   /** Takes a report out for good, with its files. */
@@ -612,15 +629,23 @@ export class FeedbackStore {
       if (!victim) throw this.turnedAway();
       await this.evict(victim.id);
     }
+    return this.fit(files, optional, RECORD_BYTES);
+  }
+
+  /**
+   * The room half of `admit`, and what a line from a sender is held to: makes room for `words` bytes of words and for the `files` from the files of the oldest
+   * closed reports, and keeps the files that fit (see `admit`). `spare` is the report a line is added to: it is open once the line is in, so its files stay.
+   */
+  private async fit(files: NewReport["files"], optional: boolean, words: number, spare?: string): Promise<{ files: NewReport["files"]; refused: string[] }> {
     const wanted = files.reduce((sum, { data }) => sum + data.length, 0);
-    while (this.bytes + RECORD_BYTES + wanted > this.maxBytes) {
-      const victim = this.oldestFirst().find((record) => feedbackClosed(record.status) && record.files.some((file) => !file.gone));
+    while (this.bytes + words + wanted > this.maxBytes) {
+      const victim = this.oldestFirst().find((record) => record.id !== spare && feedbackClosed(record.status) && record.files.some((file) => !file.gone));
       if (!victim) break;
       await this.evictFiles(victim.id);
     }
-    let room = this.maxBytes - this.bytes - RECORD_BYTES;
+    let room = this.maxBytes - this.bytes - words;
     if (room >= wanted) return { files, refused: [] };
-    if (!optional || room < 0) throw this.turnedAway();
+    if (!optional || room < 0) throw this.turnedAway(spare === undefined ? "a report" : "an answer");
     const kept: NewReport["files"] = [];
     const refused: string[] = [];
     for (const file of files) {
@@ -634,8 +659,8 @@ export class FeedbackStore {
     return { files: kept, refused };
   }
 
-  private turnedAway(): FeedbackFull {
-    this.log.warn(`Feedback: turned a report away: ${this.records.size} reports are kept (${Math.round(this.bytes / 1024 / 1024)} MB) and no closed one is left to make room from.`);
+  private turnedAway(what = "a report"): FeedbackFull {
+    this.log.warn(`Feedback: turned ${what} away: ${this.records.size} reports are kept (${Math.round(this.bytes / 1024 / 1024)} MB) and no closed one is left to make room from.`);
     return new FeedbackFull();
   }
 }

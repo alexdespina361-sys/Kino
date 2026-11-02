@@ -326,10 +326,17 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     replies.hit(request.ip);
     // (A report that was waiting for this answer, or was closed, is the team's to look at again.)
     const status: FeedbackStatus | undefined = found.status === "needs_info" || found.status === "done" || found.status === "declined" || found.status === "duplicate" ? "in_review" : undefined;
-    const added = await store.addMessage(found.id, { from: "user", text, files, ...(status ? { status } : {}) });
+    let added: Awaited<ReturnType<FeedbackStore["addMessage"]>>;
+    try {
+      // (As for a report, the words are kept before the pictures: what does not fit the room for files is left out, and said, as what is too big is.)
+      added = await store.addMessage(found.id, { from: "user", text, files, ...(status ? { status } : {}) });
+    } catch (error) {
+      if (error instanceof FeedbackFull) return full(reply);
+      throw error;
+    }
     if (added === "full") return reply.code(409).send({ error: "thread_full" });
     if (!added) return reply.code(404).send({ error: "not_found" });
-    return reply.code(201).send({ message: messageView(added), rejected });
+    return reply.code(201).send({ message: messageView(added.message), rejected: [...rejected, ...added.refused.map((id) => ({ id, reason: "too_big" as const }))] });
   });
 
   /* ------------------------------ the team's side ------------------------------ */
@@ -387,7 +394,7 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     const status: FeedbackStatus = parsed.data.status ?? (parsed.data.ask ? "needs_info" : record.status === "new" ? "in_review" : record.status);
     const added = await store.addMessage(record.id, { from: "team", text: cleanText(parsed.data.text, FEEDBACK_LIMITS.text * 2), asks: Boolean(parsed.data.ask), status });
     if (added === "full") return reply.code(409).send({ error: "thread_full" });
-    return added ? reply.code(201).send({ message: added, status }) : reply.code(404).send({ error: "not_found" });
+    return added ? reply.code(201).send({ message: added.message, status }) : reply.code(404).send({ error: "not_found" });
   });
 
   app.patch<{ Params: { id: string } }>("/api/admin/feedback/:id", async (request, reply) => {
