@@ -730,6 +730,8 @@ per name and per address, so they are best-effort behind a shared proxy. A brows
 too. A TV that is paired when the server's disk is wiped (no database) is paired with nobody afterwards, and shows a new code.
 What makes the server fetch from another site for whoever asks is counted per address, in a minute: 60 asks to resolve a page, 120 questions about a title, 60 searches of the
 library and, while the proxy carries no film (`PROXY_VIDEO=off`), 300 to the proxy; past that the answer is a `429` with `Retry-After`, and nothing is fetched.
+Every answer carries `nosniff`, `Referrer-Policy: no-referrer`, a ban on being framed, a `Permissions-Policy` that withholds what the app never uses, a `Content-Security-Policy` for the base
+address, plugins, forms and frames, and, over https, `Strict-Transport-Security` (`src/server/guard.ts`). There is no `script-src`: the subtitle aligner's WebAssembly needs `'unsafe-eval'` in a Hisense's Chromium 94.
 
 ## Test
 

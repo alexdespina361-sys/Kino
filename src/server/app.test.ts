@@ -76,6 +76,14 @@ describe("what every answer tells the browser", () => {
     for (const [header, value] of Object.entries(SAFE)) expect(kept.headers[header], header).toBe(value);
   });
 
+  it("tells a browser, whatever it is sent, what no page of this site does: set another base address, embed a plugin, send a form elsewhere, be shown in a frame", async () => {
+    const site = await served();
+    // (Nothing about scripts, styles or pictures: the aligner's WebAssembly needs `'unsafe-eval'` in the Chromium of a Hisense. The proxy's own policy is below.)
+    for (const [name, request] of KINDS.filter(([name]) => !name.startsWith("the proxy"))) {
+      expect((await site.inject(request)).headers["content-security-policy"], name).toBe("base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'");
+    }
+  });
+
   it("leaves the camera, full screen, the wake lock and the clipboard to the page, which scans a code and plays a film with them", async () => {
     const policy = String((await (await served()).inject("/")).headers["permissions-policy"]);
     for (const feature of ["camera", "fullscreen", "screen-wake-lock", "clipboard-read", "clipboard-write"]) expect(policy, feature).not.toContain(feature);

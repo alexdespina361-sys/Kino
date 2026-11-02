@@ -4,15 +4,23 @@ import { RateLimiter } from "./accounts/rateLimit";
 const MINUTE = 60_000;
 
 /**
+ * What no page of this site does: set another base address, embed a plugin, send a form elsewhere, be shown in a frame. It has no `script-src` and no `default-src` on
+ * purpose: the subtitle aligner's WebAssembly needs `'unsafe-eval'` in the Chromium 94 of a Hisense, so a script policy that lets it run blocks very little and one that
+ * does not breaks that set. (The pages have no inline script, and no markup that a visitor wrote is ever put in one.)
+ */
+const BASELINE_POLICY = "base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'";
+
+/**
  * What every answer tells the browser that gets it, whatever the route: not to guess a type for what it is sent (`nosniff`), to say nothing of the page a visitor came
  * from, not to be shown inside a page of another site, not to let a page ask for what nothing here uses (the microphone, the position, a payment, a USB device) and,
  * over https, to come only that way for a year (a host's proxy says it was https: `trust.ts`). The camera, full screen, the wake lock and the clipboard are left alone:
  * the code scanner and the player use them. It is the first hook, so a route that says one of these itself keeps its own (the proxy's answers carry their own
- * `Content-Security-Policy` as well, which nothing here touches).
+ * `Content-Security-Policy`, `default-src 'none'; sandbox`, which takes the place of the one here).
  */
 export function securityHeaders(app: FastifyInstance): void {
   app.addHook("onRequest", async (request, reply) => {
     reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("Content-Security-Policy", BASELINE_POLICY);
     reply.header("Referrer-Policy", "no-referrer");
     reply.header("X-Frame-Options", "DENY");
     reply.header("Permissions-Policy", "microphone=(), geolocation=(), payment=(), usb=()");
