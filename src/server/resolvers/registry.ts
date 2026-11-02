@@ -5,15 +5,22 @@ export interface RegistryLog {
   info(object: Record<string, unknown>, message: string): void;
 }
 
-/** Results kept for ten minutes. The key is whatever address a visitor sent, so without a bound the memory only grows (a link to a plain `.mp4` costs the server nothing to answer). */
+/**
+ * Results kept for ten minutes. The key is whatever address a visitor sent, so without a bound the memory only grows (a link to a plain `.mp4` costs the server
+ * nothing to answer). Nor is the number of them the whole of it: a page decides how big its result is, so they are weighed too (their JSON, in characters), and
+ * one that is heavier than `MAX_CACHED_RESULT_BYTES` is given to whoever asked and not kept.
+ */
 export const MAX_CACHED_RESULTS = 500;
+export const MAX_CACHED_BYTES = 16 * 1024 * 1024;
+export const MAX_CACHED_RESULT_BYTES = 1024 * 1024;
 
 /**
  * URL -> domain lookup -> specific adapter if one exists, otherwise the generic resolver.
  * Adding a supported website = writing one SiteAdapter and passing it in.
  */
 export class ResolverRegistry {
-  private readonly cache = new Map<string, { result: ResolveResult; expiresAt: number }>();
+  private readonly cache = new Map<string, { result: ResolveResult; expiresAt: number; bytes: number }>();
+  private cachedBytes = 0;
 
   constructor(
     private readonly adapters: SiteAdapter[],
@@ -26,6 +33,24 @@ export class ResolverRegistry {
   adapterFor(url: URL): SiteAdapter | undefined {
     const host = url.hostname.toLowerCase();
     return this.adapters.find((a) => a.domains.some((d) => host === d || host.endsWith(`.${d}`)));
+  }
+
+  /** Keeps `result` as the newest, and lets the oldest go while there are too many or they weigh too much together. */
+  private keep(raw: string, result: ResolveResult, expiresAt: number): void {
+    const old = this.cache.get(raw);
+    if (old) {
+      this.cache.delete(raw); // (a Map keeps the order things were added in: this one is now the newest)
+      this.cachedBytes -= old.bytes;
+    }
+    const bytes = JSON.stringify(result).length;
+    if (bytes > MAX_CACHED_RESULT_BYTES) return;
+    this.cache.set(raw, { result, expiresAt, bytes });
+    this.cachedBytes += bytes;
+    for (const [oldest, entry] of this.cache) {
+      if (this.cache.size <= MAX_CACHED_RESULTS && this.cachedBytes <= MAX_CACHED_BYTES) break;
+      this.cache.delete(oldest);
+      this.cachedBytes -= entry.bytes;
+    }
   }
 
   resolve: ResolveFn = async (raw, isPrefetch = false) => {
@@ -49,12 +74,7 @@ export class ResolverRegistry {
 
     if (result.status === "success") {
       result = { ...result, media: completeSeries({ ...result.media, page: result.media.page ?? raw }) };
-      this.cache.delete(raw); // (a Map keeps the order things were added in: this one is now the newest)
-      this.cache.set(raw, { result, expiresAt: started + 600_000 }); // 10 min cache
-      for (const oldest of this.cache.keys()) {
-        if (this.cache.size <= MAX_CACHED_RESULTS) break;
-        this.cache.delete(oldest);
-      }
+      this.keep(raw, result, started + 600_000); // 10 min cache
       if (!isPrefetch && result.media.series?.next?.url) {
         // Pre-resolve only the immediate next episode in the background
         const nextUrl = result.media.series.next.url;

@@ -43,12 +43,24 @@ export function streamTypeOf(url: string, mime?: string): StreamType | null {
   return null;
 }
 
-/** Absolute http(s) URL or null. blob:/data:/javascript: and unparsable values are dropped. */
+/**
+ * The longest address, label and language a screen takes (`StreamSchema` and `SubtitleTrackSchema` in shared/media.ts): a message with a longer one is thrown away
+ * whole by every screen it is sent to, so the video would never start. A page decides these, so they are kept to what fits instead.
+ */
+const MAX_URL_LENGTH = 2048;
+const MAX_LABEL_LENGTH = 100;
+const MAX_LANG_LENGTH = 20;
+/** Subtitle tracks given to one video: every one is sent to every screen along with the video, and a menu of more than this is of no use to anybody. */
+const MAX_SUBTITLES = 40;
+/** Media addresses taken from the running text of a page (the last resort). Only the first few of them are ever offered (a main stream and `MAX_ALTERNATES`). */
+const MAX_MEDIA_URLS = 1000;
+
+/** Absolute http(s) URL (of a length the screens take) or null. blob:/data:/javascript: and unparsable values are dropped. */
 function absolute(raw: string | undefined, base: URL): string | null {
   if (!raw) return null;
   try {
     const url = new URL(raw.trim(), base);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
+    return (url.protocol === "http:" || url.protocol === "https:") && url.href.length <= MAX_URL_LENGTH ? url.href : null;
   } catch {
     return null;
   }
@@ -58,7 +70,8 @@ function absolute(raw: string | undefined, base: URL): string | null {
 
 // A page comes from whoever runs the site behind the link, and up to 2 MiB of it is read. A pattern such as `<video\b[^>]*>` that is tried at every
 // `<video` and runs on to the end of the page when nothing closes the tag costs the whole page for each start, so a page made of nothing but
-// `<video ` keeps the one thread busy for minutes. The scans below look at every character a bounded number of times: a tag cannot hold a `<`,
+// `<video ` keeps the one thread busy for minutes. The scans below look at every character a bounded number of times: nothing after the last `>` is
+// searched for a tag (so every start has its end ahead of it, and a tag, which runs to the first `>` as a browser's first look at it does, is read once),
 // and once a search for a closing tag has found none, no later search for it can.
 
 const MAX_TAGS = 10_000;
@@ -72,23 +85,24 @@ export interface Tag {
 
 /** The `<name ...>` tags of `html`, in order (the first 10,000 of them: no page needs more, and each one costs a little); a tag that is given its inner text is consumed up to its closing tag. Exported for the tests. */
 export function* tags(html: string, name: string, wantInner: (attrs: string) => boolean = () => false): Generator<Tag> {
-  const open = new RegExp(`<${name}\\b([^<>]*)>`, "gi");
+  const text = html.slice(0, html.lastIndexOf(">") + 1);
+  const open = new RegExp(`<${name}\\b([^>]*)>`, "gi");
   const close = new RegExp(`</${name}>`, "gi");
   let closing = true;
-  for (let tag = open.exec(html), count = 1; tag && count <= MAX_TAGS; tag = open.exec(html), count++) {
+  for (let tag = open.exec(text), count = 1; tag && count <= MAX_TAGS; tag = open.exec(text), count++) {
     const attrs = tag[1]!;
     if (!closing || !wantInner(attrs)) {
       yield { attrs };
       continue;
     }
     close.lastIndex = open.lastIndex;
-    const end = close.exec(html);
+    const end = close.exec(text);
     if (!end) {
       closing = false;
       yield { attrs };
       continue;
     }
-    const inner = html.slice(open.lastIndex, end.index);
+    const inner = text.slice(open.lastIndex, end.index);
     open.lastIndex = close.lastIndex;
     yield { attrs, inner };
   }
@@ -107,6 +121,7 @@ function html5Video(html: string, base: URL): Candidate[] {
 
     const subtitles: SubtitleTrack[] = [];
     for (const track of tags(inner, "track")) {
+      if (subtitles.length >= MAX_SUBTITLES) break;
       const attrs = attributes(`<track${track.attrs}>`);
       const src = attrs.src || attrs["data-src"] || attrs["data-url"];
       const trackUrl = absolute(src, base);
@@ -114,8 +129,8 @@ function html5Video(html: string, base: URL): Candidate[] {
         subtitles.push({
           id: subtitles.length,
           url: trackUrl,
-          label: attrs.label || attrs.srclang || `Subtitle ${subtitles.length + 1}`,
-          lang: attrs.srclang,
+          label: (attrs.label || attrs.srclang || `Subtitle ${subtitles.length + 1}`).slice(0, MAX_LABEL_LENGTH),
+          lang: attrs.srclang?.slice(0, MAX_LANG_LENGTH),
         });
       }
     }
@@ -223,7 +238,7 @@ function mediaEnd(run: string, from: number): number | null {
 /**
  * The media URLs written out in `text`, with how sure to be of each: `https://cdn.example/a.mp4` (wherever in a run it starts: 0.5), and `//cdn.example/a.mp4`
  * after a quote, white space, the start of the text or an equals sign (0.45). The same as `https?:\/\/[^\s"'<>\\()]+?\.(?:m3u8|mp4)(?:\?[^\s"'<>\\()]*)?` and
- * `(?:^|["'\s=])(\/\/ ...same)` find, without trying every start again to the end of a long run. Exported for the tests.
+ * `(?:^|["'\s=])(\/\/ ...same)` find, without trying every start again to the end of a long run; the first `MAX_MEDIA_URLS` of them. Exported for the tests.
  */
 export function mediaUrlsIn(text: string): { raw: string; confidence: number }[] {
   const found: { raw: string; confidence: number }[] = [];
@@ -233,6 +248,7 @@ export function mediaUrlsIn(text: string): { raw: string; confidence: number }[]
       const end = mediaEnd(run, scheme.index + scheme[0].length);
       if (end === null) break;
       found.push({ raw: run.slice(scheme.index, end), confidence: 0.5 });
+      if (found.length >= MAX_MEDIA_URLS) return found;
       SCHEME.lastIndex = end;
     }
   }
@@ -246,6 +262,7 @@ export function mediaUrlsIn(text: string): { raw: string; confidence: number }[]
       const end = mediaEnd(piece, start + 2);
       if (end === null) break;
       found.push({ raw: piece.slice(start, end), confidence: 0.45 });
+      if (found.length >= MAX_MEDIA_URLS) return found;
       AFTER_EQUALS.lastIndex = end;
       lead = AFTER_EQUALS.exec(piece);
       start = lead ? lead.index + 1 : -1;

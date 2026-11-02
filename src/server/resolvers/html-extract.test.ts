@@ -119,6 +119,11 @@ describe("a page that is made to be slow to read", () => {
     ["http:// over and over in one word", fill("http://")],
     ["=// over and over in one word", fill("=//")],
     ["a title of nothing but white space", `<meta property="og:title" content="${" ".repeat(512 * 1024)}">`],
+    // (A tag runs on to the first `>`, so a `>` far on is one tag that is read once, and none at all is no tag.)
+    ["video tags with one > at the very end", fill("<video ") + ">"],
+    ["meta tags with one > at the very end", fill("<meta ") + ">"],
+    ["source tags with one > at the very end of a video", "<video>" + fill("<source ") + "></video>"],
+    ["a > only after every start, and a closing tag that is never there", fill("<video <video <video >")],
   ];
 
   it.each(shapes)("is read in a moment: %s", (_name, html) => {
@@ -138,8 +143,8 @@ describe("a page that is made to be slow to read", () => {
 });
 
 describe("the scans find what the plain patterns find", () => {
-  // The plain patterns are what the scans replaced: simple, and slow on a page like the ones above. On any small text they must give the same answer.
-  // (One difference is meant: a tag cannot hold a `<`, so `<video a<b>` is no tag, where `[^>]*` took it.)
+  // The plain patterns are what the scans replaced: simple, and slow on a page like the ones above. On any small text they must give the same answer,
+  // including a text with a `<` inside a tag (`<video a<b>` is a tag, as it is for a browser's first look at it).
   const random = (seed: number) => () => {
     seed = (seed + 0x6d2b79f5) | 0;
     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
@@ -169,13 +174,52 @@ describe("the scans find what the plain patterns find", () => {
     for (let round = 0; round < 6000; round++) {
       const html = textOf(pieces, next, 30);
       const why = JSON.stringify(html);
-      const plainVideos = [...html.matchAll(/<video\b([^<>]*)>([\s\S]*?)<\/video>|<video\b([^<>]*)>/gi)].map((m) => ({ attrs: m[1] ?? m[3], inner: m[2] }));
+      const plainVideos = [...html.matchAll(/<video\b([^>]*)>([\s\S]*?)<\/video>|<video\b([^>]*)>/gi)].map((m) => ({ attrs: m[1] ?? m[3], inner: m[2] }));
       expect([...tags(html, "video", () => true)], why).toEqual(plainVideos);
-      const plainScripts = [...html.matchAll(/<script\b([^<>]*type\s*=\s*["']?application\/ld\+json[^<>]*)>([\s\S]*?)<\/script>/gi)].map((m) => m[2]);
+      const plainScripts = [...html.matchAll(/<script\b([^>]*type\s*=\s*["']?application\/ld\+json[^>]*)>([\s\S]*?)<\/script>/gi)].map((m) => m[2]);
       expect([...tags(html, "script", ldJson)].filter((tag) => tag.inner !== undefined).map((tag) => tag.inner), why).toEqual(plainScripts);
-      const plainTitle = html.match(/<title\b[^<>]*>([\s\S]*?)<\/title>/i)?.[1];
+      const plainTitle = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1];
       expect([...tags(html, "title", () => true)][0]?.inner, why).toEqual(plainTitle);
-      expect([...tags(html, "meta")].map((tag) => tag.attrs), why).toEqual([...html.matchAll(/<meta\b([^<>]*)>/gi)].map((m) => m[1]));
+      expect([...tags(html, "meta")].map((tag) => tag.attrs), why).toEqual([...html.matchAll(/<meta\b([^>]*)>/gi)].map((m) => m[1]));
     }
+  });
+
+  it("a tag with a `<` inside it is a tag, as it always was", () => {
+    expect(urls('<video data-note="1 < 2" src="/a.mp4"></video>')).toEqual([["html5-video", "mp4", "https://site.example/a.mp4"]]);
+    expect(urls('<video\n<source src="/b.mp4" type="video/mp4">')).toEqual([["html5-video", "mp4", "https://site.example/b.mp4"]]);
+  });
+});
+
+describe("what a page can make of the answer", () => {
+  // A page decides how many addresses and tracks it lists and how long each is, and what is found goes to every screen that watches. A screen throws a message
+  // away whole when an address in it is longer than 2048 characters, a label longer than 100 or a language longer than 20: then the video never starts.
+  const track = (n: number) => `<track src="/s${n}.vtt" label="${"L".repeat(300)}" srclang="${"x".repeat(50)}">`;
+
+  it("gives a video the first 40 of its subtitle tracks, each with a label and a language a screen takes", () => {
+    const subtitles = extract(`<video src="/a.mp4">${Array.from({ length: 200 }, (_, n) => track(n)).join("")}</video>`).candidates[0]!.subtitles!;
+    expect(subtitles).toHaveLength(40);
+    expect(subtitles.map((subtitle) => subtitle.url)).toEqual(Array.from({ length: 40 }, (_, n) => `https://site.example/s${n}.vtt`));
+    for (const subtitle of subtitles) {
+      expect(subtitle.label).toHaveLength(100);
+      expect(subtitle.lang).toHaveLength(20);
+    }
+  });
+
+  it("leaves out an address longer than 2048 characters and keeps one of exactly that length", () => {
+    const start = "https://site.example/";
+    const address = (length: number) => start + "b".repeat(length - start.length - ".mp4".length) + ".mp4";
+    expect(urls(`<video src="${address(2048)}"></video>`)).toEqual([["html5-video", "mp4", address(2048)]]);
+    expect(urls(`<video src="${address(2049)}"></video>`)).toEqual([]);
+    expect(urls(`<video><source src="${address(3000)}" type="video/mp4"><source src="/ok.mp4" type="video/mp4"></video>`)).toEqual([["html5-video", "mp4", "https://site.example/ok.mp4"]]);
+    // (A track with such an address is left out of the menu, not the video.)
+    expect(extract(`<video src="/a.mp4"><track src="${address(2049)}"><track src="/ok.vtt"></video>`).candidates[0]!.subtitles).toEqual([
+      { id: 0, url: "https://site.example/ok.vtt", label: "Subtitle 1", lang: undefined },
+    ]);
+  });
+
+  it("takes the first 1000 media addresses written out in a text, and no more", () => {
+    expect(mediaUrlsIn("https://cdn.example/a.mp4 ".repeat(5000))).toHaveLength(1000);
+    expect(mediaUrlsIn(" //cdn.example/a.mp4".repeat(5000))).toHaveLength(1000);
+    expect(mediaUrlsIn("https://cdn.example/a.mp4 ".repeat(999))).toHaveLength(999);
   });
 });

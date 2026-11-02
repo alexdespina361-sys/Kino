@@ -1,7 +1,7 @@
-import { MAX_ALTERNATES, type NormalizedMedia } from "../../shared";
+import { MAX_ALTERNATES, type AlternateSource, type NormalizedMedia } from "../../shared";
 import { extractMedia, streamTypeOf } from "./html-extract";
 import { SafeFetchError, type SafeFetch, type SafeFetchOptions } from "./safe-fetch";
-import { UNSUPPORTED_MESSAGE, type ResolveResult, type Resolver } from "./types";
+import { UNSUPPORTED_MESSAGE, type Candidate, type ResolveResult, type Resolver } from "./types";
 
 export interface GenericOptions {
   fetch: SafeFetch;
@@ -37,6 +37,23 @@ function titleFromUrl(url: URL): string | undefined {
 const success = (media: NormalizedMedia, resolver: string): ResolveResult => ({ status: "success", media, resolver });
 
 /**
+ * The streams after the best one, as the TV offers them when that does not play: no more than `MAX_ALTERNATES`, none twice and not the best one again.
+ * Taken one by one until there are enough, each address looked up in a set: a page can list tens of thousands of them, and asking "is it in the list before
+ * it" of every one costs the square of that (13 seconds of the whole server for a page of 2 MiB). Exported for the tests.
+ */
+export function alternatesOf(candidates: Candidate[], best: Candidate): AlternateSource[] {
+  const alternates: AlternateSource[] = [];
+  const taken = new Set([best.url]);
+  for (const candidate of candidates) {
+    if (alternates.length >= MAX_ALTERNATES) break;
+    if (taken.has(candidate.url)) continue;
+    taken.add(candidate.url);
+    alternates.push({ stream: { url: candidate.url, type: candidate.type }, ...(candidate.subtitles ? { subtitles: candidate.subtitles } : {}) });
+  }
+  return alternates;
+}
+
+/**
  * Deterministic, conservative discovery for sites we have no adapter for:
  *   1. the URL itself is a media file          (no network)
  *   2. the URL serves media directly           (content-type)
@@ -67,10 +84,7 @@ export function createGenericResolver({ fetch, fetchOptions }: GenericOptions): 
       const best = candidates[0];
       if (!best) return { status: "unsupported", reason: UNSUPPORTED_MESSAGE };
       // The other streams the page declares are fallbacks: if the best guess doesn't play, the TV tries them.
-      const alternates = candidates
-        .filter((candidate, index, all) => index > 0 && candidate.url !== best.url && all.findIndex((other) => other.url === candidate.url) === index)
-        .slice(0, MAX_ALTERNATES)
-        .map((candidate) => ({ stream: { url: candidate.url, type: candidate.type }, ...(candidate.subtitles ? { subtitles: candidate.subtitles } : {}) }));
+      const alternates = alternatesOf(candidates, best);
       return success(
         {
           title,

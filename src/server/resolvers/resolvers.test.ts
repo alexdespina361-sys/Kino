@@ -2,10 +2,11 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createResolver } from ".";
-import { createGenericResolver } from "./generic";
-import { MAX_CACHED_RESULTS, ResolverRegistry } from "./registry";
+import { MAX_ALTERNATES } from "../../shared";
+import { alternatesOf, createGenericResolver } from "./generic";
+import { MAX_CACHED_BYTES, MAX_CACHED_RESULT_BYTES, MAX_CACHED_RESULTS, ResolverRegistry } from "./registry";
 import { SafeFetchError, type FetchedPage, type SafeFetch } from "./safe-fetch";
-import { UNSUPPORTED_MESSAGE, type ResolveResult, type SiteAdapter } from "./types";
+import { UNSUPPORTED_MESSAGE, type Candidate, type ResolveResult, type SiteAdapter } from "./types";
 
 const page = (url: string, body: string, contentType = "text/html"): FetchedPage => ({
   url: new URL(url),
@@ -56,6 +57,16 @@ describe("generic resolver", () => {
         alternates: [{ stream: { url: "https://site.example/m/b.m3u8", type: "hls" } }],
       },
     });
+  });
+
+  it("offers at most eight alternates, none twice and not the main stream again, however many the page lists", () => {
+    // (Picking them out of a hundred thousand once cost the square of that: 13 seconds of the whole server for one page.)
+    const candidate = (n: number): Candidate => ({ url: `https://cdn.example/${n}.mp4`, type: "mp4", strategy: "url-pattern", confidence: 0.5 });
+    const candidates = Array.from({ length: 100_000 }, (_, n) => candidate(Math.floor(n / 2))); // every address twice, one after the other
+    const started = performance.now();
+    const alternates = alternatesOf(candidates, candidates[0]!);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(alternates.map((alternate) => alternate.stream.url)).toEqual(Array.from({ length: MAX_ALTERNATES }, (_, n) => `https://cdn.example/${n + 1}.mp4`));
   });
 
   it("has no alternates key at all when the page declares one stream", async () => {
@@ -164,6 +175,61 @@ describe("ResolverRegistry", () => {
     expect(asked).toBe(MAX_CACHED_RESULTS + 5);
     await registry.resolve("https://a.example/0.mp4"); // the oldest is not
     expect(asked).toBe(MAX_CACHED_RESULTS + 6);
+  });
+
+  describe("weighing what it keeps", () => {
+    // An answer with the most subtitle tracks a page is given (40 of about 2 KB each), about 85 KB: a page decides how heavy its answer is.
+    const withSubtitles = (n: number): ResolveResult => ({
+      status: "success",
+      resolver: "heavy",
+      media: {
+        stream: { url: "https://x/a.mp4", type: "mp4" },
+        subtitles: Array.from({ length: 40 }, (_, track) => ({ id: track, label: "English", url: `https://x/${"s".repeat(2000)}${n}/${track}` })),
+      },
+    });
+    const weight = JSON.stringify(withSubtitles(0)).length;
+
+    it("keeps the answers to as many addresses as weigh 16 MiB together, the oldest going first", async () => {
+      let asked = 0;
+      const heavy: SiteAdapter = { id: "heavy", domains: [], resolve: async () => (asked++, withSubtitles(asked)) };
+      const registry = new ResolverRegistry([], heavy, log);
+      const fit = Math.floor(MAX_CACHED_BYTES / weight);
+      expect(fit).toBeLessThan(MAX_CACHED_RESULTS); // (it is the weight that holds them back here, not their number)
+      const total = fit + 30;
+      for (let n = 0; n < total; n++) await registry.resolve(`https://a.example/${n}`);
+      expect(asked).toBe(total);
+      await registry.resolve(`https://a.example/${total - 1}`); // the newest is still there
+      expect(asked).toBe(total);
+      await registry.resolve("https://a.example/0"); // the oldest is not
+      expect(asked).toBe(total + 1);
+    });
+
+    it("gives an answer that weighs more than a megabyte and does not keep it", async () => {
+      let asked = 0;
+      const huge: SiteAdapter = {
+        id: "huge",
+        domains: [],
+        resolve: async () => (asked++, { status: "success", resolver: "huge", media: { stream: { url: "https://x/a.mp4", type: "mp4" }, title: "t".repeat(MAX_CACHED_RESULT_BYTES) } }),
+      };
+      const registry = new ResolverRegistry([], huge, log);
+      expect(await registry.resolve("https://a.example/1")).toMatchObject({ status: "success" });
+      await registry.resolve("https://a.example/1");
+      expect(asked).toBe(2);
+    });
+
+    it("counts what an address weighs once, however often its answer is renewed", async () => {
+      let asked = 0;
+      let t = 0;
+      const heavy: SiteAdapter = { id: "heavy", domains: [], resolve: async () => (asked++, withSubtitles(0)) };
+      const registry = new ResolverRegistry([], heavy, log, () => t);
+      for (let n = 0; n < Math.ceil((MAX_CACHED_BYTES * 2) / weight); n++) {
+        t += 700_000; // (past the ten minutes: it is asked again, and the answer it had goes)
+        await registry.resolve("https://a.example/same");
+      }
+      const before = asked;
+      await registry.resolve("https://a.example/same");
+      expect(asked).toBe(before); // (still kept)
+    });
   });
 
   it("logs how many episodes a series came with, and nothing for a plain video", async () => {
