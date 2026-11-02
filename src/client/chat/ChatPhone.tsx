@@ -96,7 +96,9 @@ function Composer({ session }: { session: ChatSession }) {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!checked.ok || session.sending) return;
-    if (await session.send(checked.text)) setText("");
+    const written = text;
+    // (Only what was sent leaves the box: what was typed while the message was on its way, wherever in the box, is the next one. A slow connection is seconds of typing.)
+    if (await session.send(checked.text)) setText((now) => now.replace(written, "").trim());
     input.current?.focus(); // (the keyboard stays up: the next message is what comes next)
   };
 

@@ -252,6 +252,30 @@ test.describe("the chat on the phone", () => {
     await expect(badge(ann.page)).toHaveCount(0);
   });
 
+  test("what is typed while a message is on its way stays in the box when the message has been sent", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { ann } = await twoFriends(browser);
+    await openChat(ann.page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await ann.page.route(/\/friends\/[^/]+\/chat(\?|$)/, async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      await held; // (a slow connection: the answer comes when this test says so)
+      return route.continue();
+    });
+    const input = ann.page.getByTestId("chat-input");
+    await input.fill("first message");
+    await ann.page.getByTestId("chat-send").click();
+    await input.pressSequentially("second one typed meanwhile");
+    release();
+    await expect(texts(ann.page)).toHaveText(["first message"]);
+    await expect(input).toHaveValue("second one typed meanwhile");
+    // ...and it goes as the next message, on its own.
+    await ann.page.getByTestId("chat-send").click();
+    await expect(texts(ann.page)).toHaveText(["first message", "second one typed meanwhile"]);
+    await expect(input).toHaveValue("");
+  });
+
   test("a message of one's own can be taken back, and is gone for both; a friend can be muted without being told, and the messages are in the chat when it is opened", async ({ browser }) => {
     test.setTimeout(150_000);
     const { ann, bob } = await twoFriends(browser);
@@ -330,8 +354,8 @@ test.describe("the chat on the phone", () => {
 
     // Ann writes before she has heard of it: the server turns it away and the page says so in a plain line, the box gives way to it
     await write(ann.page, "Are you free tonight?");
-    await expect(ann.page.getByTestId("chat-problem")).toHaveText(say(en["chat.error.chat_off"], { name: bob.name }));
     await expect(ann.page.getByTestId("chat-closed")).toHaveText(say(en["chat.closed"], { name: bob.name }));
+    await expect(ann.page.getByTestId("chat-problem")).toHaveCount(0); // (said once, by the line that takes the box's place)
     await expect(ann.page.getByTestId("chat-compose")).toHaveCount(0);
     await expect(lines(ann.page)).toHaveCount(0);
 

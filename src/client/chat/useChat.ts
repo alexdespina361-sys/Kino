@@ -115,8 +115,11 @@ export function useChat(profileId: string, friendId: string, options: { active?:
         setOffline(false);
         return true;
       } catch (error) {
-        // (A friend who stopped taking messages while the page was open: the box gives way to the line that says so.)
-        if (fail(error) === "chat_off") setState((before) => ({ ...before, open: false }));
+        // (A friend who stopped taking messages while the page was open: the box gives way to the line that says so, and that line is the only one: the same words twice were a mistake.)
+        if (fail(error) === "chat_off") {
+          setState((before) => ({ ...before, open: false }));
+          setFailure(null);
+        }
         return false;
       } finally {
         writing.current = false;
