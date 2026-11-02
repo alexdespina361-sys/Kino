@@ -573,6 +573,103 @@ describe("reconnects", () => {
   });
 });
 
+describe("a connection is one TV or one phone for as long as it lasts", () => {
+  it("is the same TV each time it says hello again, whatever it names, and makes no other", async () => {
+    const tv = await connect();
+    tv.send({ type: "TV_HELLO" });
+    const first = await tv.next("TV_WELCOME");
+    const hellos = [{ type: "TV_HELLO" }, { type: "TV_HELLO", deviceId: first.deviceId }, { type: "TV_HELLO", deviceId: "tv_from_before_restart" }];
+    const given = new Set([first.deviceId]);
+    const codes = new Set([first.pairing!.code]);
+    for (let n = 0; n < FRAME_BURST - 10; n++) {
+      tv.send(hellos[n % hellos.length]!);
+      const welcome = await tv.next("TV_WELCOME"); // (a page back from sleep is given a fresh picture each time)
+      given.add(welcome.deviceId);
+      codes.add(welcome.pairing!.code);
+    }
+    expect([...given]).toEqual([first.deviceId]); // (not one TV more, and so not one pairing code more)
+    expect(codes.size).toBe(1);
+  });
+
+  it("is the same phone each time it says hello again, whatever it names, welcomed with its TV", async () => {
+    const { tv, phone, controllerId } = await pairedSetup();
+    const hellos = [{ type: "CTL_HELLO" }, { type: "CTL_HELLO", controllerId }, { type: "CTL_HELLO", controllerId: "ctl_from_before_restart" }];
+    const given = new Set<string>();
+    for (let n = 0; n < FRAME_BURST - 10; n++) {
+      phone.send(hellos[n % hellos.length]!);
+      const welcome = await phone.next("CTL_WELCOME");
+      given.add(welcome.controllerId);
+      expect(welcome.tv).toMatchObject({ online: true, controllerCount: 1 });
+    }
+    expect([...given]).toEqual([controllerId]); // (not one phone more)
+    phone.send({ type: "CMD", command: { type: "PAUSE" } });
+    expect((await tv.next("TV_CMD")).command).toEqual({ type: "PAUSE" });
+  });
+
+  it("is not made a second TV by a hello that names no TV: the first is not left online when the connection goes", async () => {
+    const { tv, phone, deviceId } = await pairedSetup();
+    tv.send({ type: "TV_HELLO" });
+    expect(await tv.next("TV_WELCOME")).toMatchObject({ deviceId, paired: true, pairing: null });
+    tv.close();
+    expect((await phone.nextWhere("TV_STATUS", (m) => !m.online)).online).toBe(false);
+    phone.send({ type: "CMD", command: { type: "PLAY" } });
+    expect((await phone.next("ERROR")).code).toBe("TV_OFFLINE");
+  });
+
+  it("turns away a hello that names another TV, and neither TV is moved: the first goes offline with its connection, the other stays", async () => {
+    const a = await pairedSetup();
+    const b = await pairedSetup();
+    a.tv.send({ type: "TV_HELLO", deviceId: b.deviceId });
+    expect((await a.tv.next("ERROR")).code).toBe("ALREADY_HELLO");
+    await a.tv.expectNone((m) => m.type === "TV_WELCOME");
+
+    // The other TV's page is not told to stand down, and its phone still reaches it.
+    expect(b.tv.closeCode).toBeUndefined();
+    b.phone.send({ type: "CMD", command: { type: "PAUSE" } });
+    expect((await b.tv.next("TV_CMD")).command).toEqual({ type: "PAUSE" });
+
+    // The first TV is still the first one: when its connection goes, its phone is told, and the other phone is not.
+    a.tv.close();
+    expect((await a.phone.nextWhere("TV_STATUS", (m) => !m.online)).online).toBe(false);
+    await b.phone.expectNone((m) => m.type === "TV_STATUS" && !m.online);
+  });
+
+  it("turns away a hello that names another phone, and neither phone is moved", async () => {
+    const a = await pairedSetup();
+    const b = await pairedSetup();
+    a.phone.send({ type: "CTL_HELLO", controllerId: b.controllerId });
+    expect((await a.phone.next("ERROR")).code).toBe("ALREADY_HELLO");
+    await a.phone.expectNone((m) => m.type === "CTL_WELCOME");
+
+    // What the other TV reports still reaches the other phone, and the first phone still controls its own TV.
+    b.tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 9, duration: 100 } });
+    expect((await b.phone.next("STATE")).state.currentTime).toBe(9);
+    await a.phone.expectNone((m) => m.type === "STATE");
+    a.phone.send({ type: "CMD", command: { type: "PAUSE" } });
+    expect((await a.tv.next("TV_CMD")).command).toEqual({ type: "PAUSE" });
+    await b.tv.expectNone((m) => m.type === "TV_CMD");
+  });
+
+  it("turns away a hello of the other kind, and the connection goes on as what it was", async () => {
+    const { tv, phone, deviceId, controllerId } = await pairedSetup();
+    for (const hello of [{ type: "TV_HELLO" }, { type: "TV_HELLO", deviceId }]) {
+      phone.send(hello); // (the second would take the TV's place)
+      expect((await phone.next("ERROR")).code).toBe("ALREADY_HELLO");
+    }
+    for (const hello of [{ type: "CTL_HELLO" }, { type: "CTL_HELLO", controllerId }]) {
+      tv.send(hello);
+      expect((await tv.next("ERROR")).code).toBe("ALREADY_HELLO");
+    }
+    await Promise.all([tv.expectNone((m) => m.type === "CTL_WELCOME" || m.type === "TV_WELCOME"), phone.expectNone((m) => m.type === "CTL_WELCOME" || m.type === "TV_WELCOME")]);
+    expect(tv.closeCode).toBeUndefined();
+
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 5, duration: 100 } });
+    expect((await phone.next("STATE")).state.currentTime).toBe(5);
+    phone.send({ type: "CMD", command: { type: "PAUSE" } });
+    expect((await tv.next("TV_CMD")).command).toEqual({ type: "PAUSE" });
+  });
+});
+
 describe("PLAY_URL (phone pastes a link; server resolves; TV plays)", () => {
   const resolved = { title: "Resolved Movie", stream: { url: "https://cdn.example/m.mp4", type: "mp4" as const } };
 
@@ -938,6 +1035,134 @@ describe("lookups asked for faster than a person chooses", () => {
     phone.send({ type: "PLAY_URL", url: "https://s.example/31" });
     expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
     expect(seen).toHaveLength(30);
+  });
+
+  it("does not give a TV a new allowance when its connection says hello again: it is the same TV, whatever the hello names", async () => {
+    const seen = lookups();
+    const { tv } = await limited(2);
+    for (const n of [1, 2]) {
+      tv.send({ type: "TV_PLAY_URL", url: `https://s.example/${n}` });
+      await tv.nextWhere("TV_CMD", played);
+    }
+    for (const hello of [{ type: "TV_HELLO" }, { type: "TV_HELLO", deviceId: "tv_from_before_restart" }]) {
+      tv.send(hello);
+      await tv.next("TV_WELCOME");
+      tv.send({ type: "TV_PLAY_URL", url: "https://s.example/more" });
+      expect((await tv.next("ERROR")).code).toBe("RATE_LIMITED");
+    }
+    expect(seen).toEqual(["https://s.example/1", "https://s.example/2"]);
+  });
+
+  describe("from one address", () => {
+    /** A server that looks up at most `max` videos for one TV, and `byAddress` for one address, in `windowMs`. */
+    async function perAddress(max: number, byAddress: number, windowMs = 60_000) {
+      await app.close();
+      app = await buildApp({ resolve: (url) => resolveImpl(url), hub: { maxResolves: max, maxResolvesByAddress: byAddress, resolveWindowMs: windowMs } });
+      await app.ready();
+    }
+
+    /** A TV and a phone, paired, each connecting from the address it is given (a phone on mobile data is not where the TV is). */
+    async function pairedAt(tvAddress: string, phoneAddress = tvAddress) {
+      const tv = await Client.open(app, tvAddress);
+      clients.push(tv);
+      tv.send({ type: "TV_HELLO" });
+      const { pairing } = await tv.next("TV_WELCOME");
+      const phone = await Client.open(app, phoneAddress);
+      clients.push(phone);
+      phone.send({ type: "CTL_HELLO" });
+      await phone.next("CTL_WELCOME");
+      phone.send({ type: "PAIR", code: pairing!.code });
+      await phone.next("CTL_WELCOME");
+      await tv.next("TV_PAIRED");
+      return { tv, phone };
+    }
+
+    it("counts what every TV and phone there asks for together, and refuses the next of any of them though its own TV is under its limit", async () => {
+      const seen = lookups();
+      await perAddress(10, 3);
+      const first = await pairedAt("203.0.113.7");
+      const second = await pairedAt("203.0.113.7");
+      first.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/1" });
+      await first.tv.nextWhere("TV_CMD", played);
+      first.phone.send({ type: "PLAY_URL", url: "https://s.example/2" });
+      await first.tv.nextWhere("TV_CMD", played);
+      second.phone.send({ type: "PLAY_URL", url: "https://s.example/3" });
+      await second.tv.nextWhere("TV_CMD", played);
+      await Promise.all([first.tv.forget(), first.phone.forget(), second.tv.forget(), second.phone.forget()]);
+
+      second.phone.send({ type: "PLAY_URL", url: "https://s.example/4" });
+      const refused = await second.phone.next("ERROR");
+      expect(refused.code).toBe("RATE_LIMITED");
+      expect(refused.message).toMatch(/Too many.*Try again/); // (as when a TV has asked for too many)
+      first.tv.send({ type: "TV_PLAY_URL", url: "https://s.example/5" });
+      expect((await first.tv.next("ERROR")).code).toBe("RATE_LIMITED");
+      await first.tv.expectNone((m) => m.type === "TV_RESOLVING" || m.type === "TV_CMD");
+      await second.tv.expectNone((m) => m.type === "TV_RESOLVING" || m.type === "TV_CMD");
+      expect(seen).toEqual(["https://s.example/1", "https://s.example/2", "https://s.example/3"]);
+    });
+
+    it("does not hold back another address", async () => {
+      const seen = lookups();
+      await perAddress(10, 1);
+      const noisy = await pairedAt("203.0.113.7");
+      noisy.phone.send({ type: "PLAY_URL", url: "https://s.example/1" });
+      await noisy.tv.nextWhere("TV_CMD", played);
+      noisy.phone.send({ type: "PLAY_URL", url: "https://s.example/2" });
+      expect((await noisy.phone.next("ERROR")).code).toBe("RATE_LIMITED");
+
+      const neighbour = await pairedAt("198.51.100.9");
+      neighbour.phone.send({ type: "PLAY_URL", url: "https://s.example/3" });
+      await neighbour.tv.nextWhere("TV_CMD", played);
+      expect(seen).toEqual(["https://s.example/1", "https://s.example/3"]);
+    });
+
+    it("counts a phone's choice at the phone's address and the TV's own at the TV's", async () => {
+      const seen = lookups();
+      await perAddress(10, 2);
+      const { tv, phone } = await pairedAt("198.51.100.1", "203.0.113.7");
+      for (const n of [1, 2]) {
+        phone.send({ type: "PLAY_URL", url: `https://s.example/phone-${n}` });
+        await tv.nextWhere("TV_CMD", played);
+      }
+      phone.send({ type: "PLAY_URL", url: "https://s.example/phone-3" });
+      expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED"); // (the phone's address has had its two)
+      for (const n of [1, 2]) {
+        tv.send({ type: "TV_PLAY_URL", url: `https://s.example/tv-${n}` });
+        await tv.nextWhere("TV_CMD", played); // (the TV's has had none)
+      }
+      tv.send({ type: "TV_PLAY_URL", url: "https://s.example/tv-3" });
+      expect((await tv.next("ERROR")).code).toBe("RATE_LIMITED");
+      expect(seen).toHaveLength(4);
+    });
+
+    it("lets an address look up again once the window has passed", async () => {
+      const seen = lookups();
+      await perAddress(10, 1, 500);
+      const { tv, phone } = await pairedAt("203.0.113.7");
+      phone.send({ type: "PLAY_URL", url: "https://s.example/1" });
+      await tv.nextWhere("TV_CMD", played);
+      phone.send({ type: "PLAY_URL", url: "https://s.example/2" });
+      expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      phone.send({ type: "PLAY_URL", url: "https://s.example/3" });
+      await tv.nextWhere("TV_CMD", played);
+      expect(seen).toEqual(["https://s.example/1", "https://s.example/3"]);
+    });
+
+    it("lets the TVs of one address look up as many videos in a minute as /api/resolve allows an address, however they share them, and refuses the next", async () => {
+      const seen = lookups();
+      const homes = [await pairedAt("203.0.113.7"), await pairedAt("203.0.113.7"), await pairedAt("203.0.113.7")];
+      for (let n = 1; n <= 20; n++) {
+        for (const [i, { tv, phone }] of homes.entries()) {
+          phone.send({ type: "PLAY_URL", url: `https://s.example/${i}-${n}` });
+          await tv.nextWhere("TV_CMD", played);
+        }
+      }
+      expect(seen).toHaveLength(60); // (none of the three is past the 30 that one TV may ask for)
+      homes[0]!.phone.send({ type: "PLAY_URL", url: "https://s.example/61" });
+      expect((await homes[0]!.phone.next("ERROR")).code).toBe("RATE_LIMITED");
+      expect(seen).toHaveLength(60);
+    });
   });
 });
 
@@ -1999,16 +2224,47 @@ describe("several phones controlling one TV session", () => {
     expect((await tv.next("TV_CODE")).control).toBeUndefined(); // free again: it is a pairing code that is offered
   });
 
-  it("turns a phone away from a TV that has all the phones it can keep, says why without counting a wrong code, and lets it in once the TV has let its phones go", async () => {
-    const registry = new Registry();
+  const DAY = 24 * 3600 * 1000;
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 100)); // (for the server to take in that connections were dropped)
+
+  /**
+   * A server on a clock the test moves, and a TV with every one of its `MAX_PHONES_PER_TV` places taken by a phone that joined with its control code over
+   * a connection of its own (`phones[0]` is the one the TV was paired with).
+   */
+  async function crowdedTv() {
+    const clock = { now: Date.now() };
+    const registry = new Registry({ now: () => clock.now });
     await app.close();
     app = await buildApp({ registry, resolve: (url) => resolveImpl(url), hub: { maxFailedPairings: 1 } }); // (a single wrong code would pause this address)
     await app.ready();
-    const { tv, phone, deviceId } = await pairedSetup();
-    const device = registry.getDevice(deviceId)!;
-    const code = registry.ensureControlCode(device).code;
-    for (let n = 1; n < MAX_PHONES_PER_TV; n++) registry.joinController(registry.controllerHello(), code);
+    const { tv, phone, deviceId, controllerId } = await pairedSetup();
+    phone.send({ type: "CTL_HELLO", controllerId });
+    const code = (await phone.next("CTL_WELCOME")).tv!.controlCode!;
+    const phones = [{ client: phone, controllerId }];
+    for (let n = 1; n < MAX_PHONES_PER_TV; n++) {
+      const client = await connect();
+      client.send({ type: "CTL_HELLO" });
+      const { controllerId: id } = await client.next("CTL_WELCOME");
+      client.send({ type: "PAIR", code });
+      await client.nextWhere("CTL_WELCOME", (m) => m.tv !== null);
+      phones.push({ client, controllerId: id });
+    }
+    return { registry, clock, tv, device: registry.getDevice(deviceId)!, code, phones };
+  }
 
+  /** A phone that has never been here types the control code the TV shows now. */
+  async function lateComer(tv: Client) {
+    tv.send({ type: "TV_NEW_CODE" }); // (the code they joined with ran out with the days)
+    const { pairing } = await tv.next("TV_CODE");
+    const late = await connect();
+    late.send({ type: "CTL_HELLO" });
+    await late.next("CTL_WELCOME");
+    late.send({ type: "PAIR", code: pairing.code });
+    return late;
+  }
+
+  it("turns a phone away from a TV whose phones are all connected, says why without counting a wrong code, and lets it in once the TV has let its phones go", async () => {
+    const { tv, device, code, phones } = await crowdedTv();
     const late = await connect();
     late.send({ type: "CTL_HELLO" });
     await late.next("CTL_WELCOME");
@@ -2018,9 +2274,10 @@ describe("several phones controlling one TV session", () => {
       expect(refused.code).toBe("TV_PHONES_FULL");
       expect(refused.message).toMatch(/all it can keep.*Disconnect its phones on the TV/);
     }
-    expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+    expect(device.controllerIds).toEqual(phones.map((phone) => phone.controllerId));
 
     // A phone that is one of them is never turned away from it.
+    const { client: phone } = phones[0]!;
     await phone.forget();
     phone.send({ type: "PAIR", code });
     expect((await phone.next("CTL_WELCOME")).tv).toMatchObject({ online: true, controllerCount: MAX_PHONES_PER_TV });
@@ -2030,6 +2287,50 @@ describe("several phones controlling one TV session", () => {
     const { pairing } = await tv.next("TV_UNPAIRED");
     late.send({ type: "PAIR", code: pairing!.code });
     expect((await late.next("CTL_WELCOME")).tv).toMatchObject({ online: true, controllerCount: 1 });
+  });
+
+  it("makes room for a new phone on a TV that phones that are gone have filled, by letting go of the one seen least recently", async () => {
+    const { clock, tv, device, phones } = await crowdedTv();
+    phones.forEach(({ client }) => client.close());
+    await Promise.all(phones.map(({ client }) => client.closed()));
+
+    // The phones come by again over the next days and leave again, all but the seventh (each hello is a day it was seen).
+    clock.now += 3 * DAY;
+    for (const [n, { controllerId }] of phones.entries()) {
+      if (n === 6) continue;
+      const back = await connect();
+      back.send({ type: "CTL_HELLO", controllerId });
+      await back.next("CTL_WELCOME");
+      back.close();
+      await back.closed();
+    }
+    await settle();
+    expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+
+    const late = await lateComer(tv);
+    const joined = await late.nextWhere("CTL_WELCOME", (m) => m.tv !== null);
+    expect(joined.tv).toMatchObject({ online: true, controllerCount: MAX_PHONES_PER_TV });
+    expect(device.controllerIds).toEqual([...phones.filter((_, n) => n !== 6).map((phone) => phone.controllerId), joined.controllerId]);
+
+    // The phone that was let go is welcomed back with no TV (it pairs again with a code, like a phone that was never here); its id is still its own.
+    const gone = await connect();
+    gone.send({ type: "CTL_HELLO", controllerId: phones[6]!.controllerId });
+    const welcome = await gone.next("CTL_WELCOME");
+    expect(welcome).toMatchObject({ controllerId: phones[6]!.controllerId, tv: null, tvs: [] });
+  });
+
+  it("lets go of a phone that is not connected and never of one that is, whenever each was seen", async () => {
+    const { clock, registry, tv, device, phones } = await crowdedTv();
+    clock.now += 2 * DAY;
+    // The only phone that has gone is the one seen most recently; the other thirty-one are connected, and were last seen longer ago.
+    registry.markSeen(phones[20]!.controllerId);
+    phones[20]!.client.close();
+    await phones[20]!.client.closed();
+    await settle();
+
+    const late = await lateComer(tv);
+    const joined = await late.nextWhere("CTL_WELCOME", (m) => m.tv !== null);
+    expect(device.controllerIds).toEqual([...phones.filter((_, n) => n !== 20).map((phone) => phone.controllerId), joined.controllerId]);
   });
 });
 
