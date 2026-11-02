@@ -155,6 +155,12 @@ describe("handleStreamProxy", () => {
         for (let part = 0; part < 3; part++) response.write(Buffer.alloc(1024 * 1024 + 1, "a"));
         return void response.end();
       }
+      if (url.pathname === "/stacked.mp4") {
+        // (More content codings than a client takes, and the connection dropped before the body: an advisory for undici 8.11 (GHSA-xjj6-f33q-929c) says that took the whole process down.)
+        response.writeHead(200, { "content-type": "video/mp4", "content-encoding": "gzip, gzip, gzip, gzip, gzip, gzip", "content-length": "100" });
+        response.flushHeaders();
+        return void setTimeout(() => response.socket?.destroy(), 20);
+      }
       // (Pages and pictures under the names of films and subtitles: what a browser must never be told is a page when it comes from here.)
       if (url.pathname === "/page.vtt" || url.pathname === "/error-without-a-suffix") {
         response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
@@ -486,6 +492,14 @@ describe("handleStreamProxy", () => {
       expect(answer.statusCode).toBe(400);
       expect((await app.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/seg.ts"))}&referer=${encodeURIComponent("https://player.example/embed")}` })).statusCode).toBe(200);
     });
+  });
+
+  it("answers with a failure, and goes on serving, when the other end stacks more content codings than a client takes and drops the connection", async () => {
+    // (Any visitor can send the proxy to a server of their own: a library that fell over on that one answer would take every screen down with it.)
+    const answer = await ask(at(OKAY, "/stacked.mp4"));
+    expect(answer.statusCode).toBeGreaterThanOrEqual(500);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect((await ask(at(OKAY, "/seg.ts"))).statusCode).toBe(200);
   });
 
   it("says what the other end said when it has no such thing, and does not tell the player to keep that", async () => {
