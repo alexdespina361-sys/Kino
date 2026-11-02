@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { controlLink, firstLink, linkCodeOf, pairLink, partyLink, readLaunchParams, readPartyCode, typedLinkCode } from "./launch";
+import { controlLink, firstLink, linkCodeOf, linkOf, pairLink, partyLink, readLaunchParams, readPartyCode, typedLinkCode } from "./launch";
 
 describe("readLaunchParams", () => {
   it("reads a pairing code from the TV's QR code", () => {
@@ -101,5 +101,27 @@ describe("firstLink", () => {
     expect(firstLink("(see https://a.example/page)")).toBe("https://a.example/page");
     expect(firstLink("https://a.example/page?x=1.")).toBe("https://a.example/page?x=1");
     expect(firstLink("nothing here")).toBeUndefined();
+  });
+});
+
+describe("linkOf", () => {
+  it("leaves a link as it is, spaces around it apart", () => {
+    expect(linkOf("  https://a.example/watch?v=1  ")).toBe("https://a.example/watch?v=1");
+    expect(linkOf("https://a.example/it's.mp4")).toBe("https://a.example/it's.mp4"); // (a link is not cut where the prose-reading firstLink would cut it)
+    expect(linkOf("https://a.example/x.")).toBe("https://a.example/x."); // (a link that is only a link is the person's)
+  });
+
+  it("takes the link out of the words around it, or the brackets", () => {
+    expect(linkOf("Watch this https://a.example/x.mp4 !!")).toBe("https://a.example/x.mp4");
+    expect(linkOf("https://a.example/x.mp4 is the one")).toBe("https://a.example/x.mp4");
+    expect(linkOf("https://a.example/x.mp4.")).toBe("https://a.example/x.mp4.");
+    expect(linkOf("(https://a.example/x.mp4)")).toBe("https://a.example/x.mp4");
+    expect(linkOf("the first https://a.example/1 and the second https://a.example/2")).toBe("https://a.example/1");
+  });
+
+  it("leaves what has no link in it as it was written, for the server to say so", () => {
+    expect(linkOf("  just some words ")).toBe("just some words");
+    expect(linkOf("www.a.example/x.mp4")).toBe("www.a.example/x.mp4");
+    expect(linkOf("")).toBe("");
   });
 });

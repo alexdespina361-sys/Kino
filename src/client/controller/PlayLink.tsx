@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import type { ResolveStatus } from "../../shared";
 import { useT } from "../i18n";
 import { ClipboardIcon, CloseIcon, PlayIcon } from "../shared/icons";
-import { firstLink } from "../shared/launch";
+import { firstLink, linkOf } from "../shared/launch";
 import { resolveFailure } from "../shared/words";
 
 interface PlayLinkProps {
@@ -20,7 +20,8 @@ export function PlayLink({ tvName, onPlay }: PlayLinkProps) {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (url.trim()) onPlay(url.trim());
+    const link = linkOf(url);
+    if (link) onPlay(link);
   };
 
   // A copied link is what the button is for, so it plays at once (one tap, not two); anything else is only put in the box to be looked at.
@@ -53,6 +54,14 @@ export function PlayLink({ tvName, onPlay }: PlayLinkProps) {
             aria-label={t("play.pasteLabel")}
             value={url}
             onChange={(event) => setUrl(event.target.value)}
+            // (A box for a link drops the line breaks of what is pasted into it, which runs the words that follow a link into the link: the link is taken out first.)
+            onPaste={(event) => {
+              const pasted = event.clipboardData.getData("text");
+              const link = linkOf(pasted);
+              if (link === pasted.trim()) return;
+              event.preventDefault();
+              setUrl(link);
+            }}
           />
           {canPaste && !url && (
             <button type="button" className="field-btn" onClick={paste} data-testid="paste">

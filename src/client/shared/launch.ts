@@ -41,6 +41,15 @@ export function firstLink(text: string): string | undefined {
 
 const count = (text: string, char: string) => text.split(char).length - 1;
 
+/**
+ * What a box for one link makes of what was put in it: a link stays as it is, and a link among words or in brackets (a whole message copied from a chat) is the link,
+ * as it is for a link that is shared to the app or pasted with the button. What has no link in it is left for the server to say so.
+ */
+export function linkOf(text: string): string {
+  const trimmed = text.trim();
+  return /\s/.test(trimmed) || !isHttpUrl(trimmed) ? (firstLink(trimmed) ?? trimmed) : trimmed;
+}
+
 /** The address that connects a phone: this site with a TV's pairing code in it (what its QR code holds). */
 export const pairLink = (code: string, origin = location.origin) => `${origin}/?code=${code}`;
 

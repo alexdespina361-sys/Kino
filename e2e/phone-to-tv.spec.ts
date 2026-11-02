@@ -227,6 +227,76 @@ test.describe("phone UI -> server -> TV player", () => {
     await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
   });
 
+  test("the box for a link takes the link out of the words around it, typed or pasted, as the Paste button does", async ({ browser, baseURL }) => {
+    test.setTimeout(60_000);
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    const box = phone.getByTestId("url-input");
+
+    // Written with words round it, and in brackets: it is the link that is sent.
+    await box.fill(`Watch this ${baseURL}/fixtures/sample.mp4 !!`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await phone.getByTestId("stop").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
+    await box.fill(`(${baseURL}/fixtures/sample.mp4)`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    await phone.getByTestId("stop").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle");
+
+    // Pasted as a whole message with a line after the link: a box for a link would run that line into the link, so the link is taken out of what is on the clipboard.
+    await box.evaluate((input, text) => {
+      const data = new DataTransfer();
+      data.setData("text/plain", text);
+      input.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    }, `${baseURL}/fixtures/sample.mp4\nSent from my phone`);
+    await expect(box).toHaveValue(`${baseURL}/fixtures/sample.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+  });
+
+  test("the same link asked for again after the video failed starts it again, and the phone is not left waiting", async ({ browser, baseURL }) => {
+    test.setTimeout(60_000);
+    const tv = await openTv(browser);
+    let broken = true;
+    await tv.route(/\/fixtures\/flaky\.mp4/, (route) => (broken ? route.fulfill({ status: 404, body: "gone" }) : route.continue({ url: `${baseURL}/fixtures/sample.mp4` })));
+    const phone = await openPairedPhone(browser, tv);
+    const box = phone.getByTestId("url-input");
+    await box.fill(`${baseURL}/fixtures/flaky.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(tv.getByTestId("tv-error")).toBeVisible({ timeout: 15_000 });
+
+    // Whatever was wrong is put right, and the same link is asked for: it is a new try, and it is the TV that says how it went.
+    broken = false;
+    await phone.getByTestId("change-video").click();
+    await box.fill(`${baseURL}/fixtures/flaky.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+    await expect(tv.getByTestId("tv-error")).toHaveCount(0);
+    await expect(phone.getByTestId("player-state")).toHaveAttribute("data-state", "playing");
+  });
+
+  test("a TV page that another page of the same TV has replaced stops its video, and the phone steers the new page", async ({ browser, baseURL }) => {
+    test.setTimeout(60_000);
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4`);
+    await phone.getByTestId("play-url").click();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing");
+    const paused = (page: typeof tv) => page.evaluate(() => document.querySelector("video")!.paused);
+
+    const second = await tv.context().newPage(); // (the same browser, so the same TV)
+    await second.goto("/tv");
+    await expect(tv.getByTestId("tv-banner")).toContainText("another window");
+    await expect.poll(() => paused(tv)).toBe(true); // the old page does not go on playing with nobody to steer it
+    await expect(tvRoot(second)).toHaveAttribute("data-state", "paused"); // the new one is put back on the video, held
+
+    await phone.getByTestId("play").click();
+    await expect(tvRoot(second)).toHaveAttribute("data-state", "playing");
+    expect(await paused(tv)).toBe(true); // (and only that one: two soundtracks were what the phone's Play used to start)
+  });
+
   test("the TV and the phone stay paired when the browser forgets its page storage, or its cookies, and keeps the other", async ({ browser, baseURL }) => {
     test.setTimeout(60_000);
     const tv = await openTv(browser);

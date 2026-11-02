@@ -783,7 +783,8 @@ export function Tv() {
               const current = currentMediaRef.current;
               const isSameStream = current?.stream.url === command.media.stream.url;
 
-              if (isSameEpisode(current, command.media) || isSameStream) {
+              // (A film that has failed and is asked for again is a new try, from someone who may have just put right what failed: it starts over, like any other. Only one that is still going is left as it is.)
+              if (playerRef.current.state !== "error" && (isSameEpisode(current, command.media) || isSameStream)) {
                 putMedia(command.media);
                 return;
               }
@@ -1201,6 +1202,10 @@ export function Tv() {
   useEffect(() => {
     if (player.state === "playing") connectionRetriesRef.current = 0;
   }, [player.state]);
+  // A page that another page of this TV has taken the place of is steered by nobody (the phone talks to the new one): its film stops, or both would play.
+  useEffect(() => {
+    if (connection === "replaced") engineRef.current?.pause();
+  }, [connection]);
 
   // Arrow keys move along the buttons once one has focus; otherwise they seek. OK presses the focused button.
   useEffect(() => {
