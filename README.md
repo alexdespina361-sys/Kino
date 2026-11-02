@@ -728,6 +728,8 @@ an account with no password can be opened by anyone who types its name (give it 
 per name and per address, so they are best-effort behind a shared proxy. A browser that wipes **all** of a site's data when it is closed
 (a private window, some TV browsers) forgets which TV or phone it is, and no page can help that: the cookie that backs up the id goes
 too. A TV that is paired when the server's disk is wiped (no database) is paired with nobody afterwards, and shows a new code.
+What makes the server fetch from another site for whoever asks is counted per address, in a minute: 60 asks to resolve a page, 120 questions about a title, 60 searches of the
+library and, while the proxy carries no film (`PROXY_VIDEO=off`), 300 to the proxy; past that the answer is a `429` with `Retry-After`, and nothing is fetched.
 
 ## Test
 

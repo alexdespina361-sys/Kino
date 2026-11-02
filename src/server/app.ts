@@ -68,7 +68,7 @@ export interface AppOptions {
   allowPrivateNetwork?: boolean;
   /** Whether `/api/proxy` carries film (playlists, pieces, files) or only subtitles. On unless set; env PROXY_VIDEO=off turns it off (see `ProxyOptions.video`). */
   proxyVideo?: boolean;
-  /** How many times an address may ask in a minute for what makes the server fetch from another site: 60 for `/api/resolve`, 120 for the library's questions about a title, 300 for `/api/proxy` while it carries no film (see `FetchesPerMinute`). Tests use small ones. */
+  /** How many times an address may ask in a minute for what makes the server fetch from another site: 60 for `/api/resolve`, 120 for the library's questions about a title, 60 for its search, 300 for `/api/proxy` while it carries no film (see `FetchesPerMinute`). Tests use small ones. */
   fetchesPerMinute?: FetchesPerMinute;
   /** Whether screens may offer the cat companion. Off unless set; env CAT_COMPANION=on turns it on, and taking it back off is the kill switch (see `/api/features`). */
   cat?: boolean;

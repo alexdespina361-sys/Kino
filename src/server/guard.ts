@@ -69,6 +69,8 @@ export interface FetchesPerMinute {
   resolve?: number;
   /** The library's questions about one title (`similar`, `about`, `episodes` and `seasons`, counted together; 120 unless set). */
   library?: number;
+  /** The library's search (60 unless set, counted by itself): one ask goes to the movie database, to the places that list titles and to a probe of each title found, and the page of the likeliest title is fetched ahead for the player. */
+  search?: number;
   /** `/api/proxy`, while it carries no film (300 unless set). With film on, a player asks for one piece after another, and there is no limit here. */
   proxy?: number;
 }
@@ -77,14 +79,15 @@ export interface FetchesPerMinute {
 const TITLE_ASKS = ["/api/library/similar", "/api/library/about", "/api/library/episodes", "/api/library/seasons"];
 
 /**
- * Anyone may ask this server to go and fetch a page (`/api/resolve`, the library's questions about a title) or a text (`/api/proxy` without film, which is subtitles),
+ * Anyone may ask this server to go and fetch a page (`/api/resolve`, the library's questions about a title, the library's search) or a text (`/api/proxy` without film, which is subtitles),
  * and each ask costs a fetch from another site and some of this host's bandwidth, so an address may make only so many of them in a minute: past it the answer is a 429
  * with `Retry-After`, as everywhere else, and nothing is fetched. The count is of the route that answers (a path written another way reaches the same route and the
  * same count), and a request that the gate above turned away is not counted: it must not use up the allowance of the visitor whose browser it was sent from. A restart forgives everyone.
  */
-export function fetchLimits(app: FastifyInstance, { resolve = 60, library = 120, proxy = 300 }: FetchesPerMinute, { video }: { video: boolean }): void {
+export function fetchLimits(app: FastifyInstance, { resolve = 60, library = 120, search = 60, proxy = 300 }: FetchesPerMinute, { video }: { video: boolean }): void {
   const limiters = new Map<string, RateLimiter>();
   limiters.set("/api/resolve", new RateLimiter(resolve, MINUTE));
+  limiters.set("/api/library/search", new RateLimiter(search, MINUTE));
   const titles = new RateLimiter(library, MINUTE);
   for (const route of TITLE_ASKS) limiters.set(route, titles);
   if (!video) limiters.set("/api/proxy", new RateLimiter(proxy, MINUTE));

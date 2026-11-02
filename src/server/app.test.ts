@@ -7,6 +7,7 @@ import { MemoryPersistence } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
 import { buildApp, isDeployed, type AppOptions } from "./app";
 import { isOwnOrigin } from "./guard";
+import type { LibrarySource } from "./library/library";
 import type { ResolveFn } from "./resolvers";
 
 let dir: string | undefined;
@@ -305,16 +306,43 @@ describe("how often an address may ask for what makes the server fetch from anot
     // Whichever of them is asked next is the fifth.
     for (const url of questions) expect((await site.inject(url)).statusCode, url).toBe(429);
     // What takes no address of a title is not counted, nor is the rest of the api.
-    for (const url of ["/api/library", "/api/library/search?q=a", "/api/library/rows", "/api/library/more?row=a&page=2", "/api/health", "/api/features"]) {
+    for (const url of ["/api/library", "/api/library/rows", "/api/library/more?row=a&page=2", "/api/health", "/api/features"]) {
       for (let n = 0; n < 4; n++) expect((await site.inject(url)).statusCode, url).not.toBe(429);
     }
     // (...and a question about a title does not use up the resolver's allowance, nor the other way round.)
     expect((await site.inject(`/api/resolve?url=${encodeURIComponent(PAGE)}`)).statusCode).not.toBe(429);
   });
 
+  it("counts the library's search by itself, and turns one away without asking the places that list titles or fetching the page of the title it would have found", async () => {
+    const searched: string[] = [];
+    const places: LibrarySource = {
+      id: "places",
+      name: "Places",
+      load: async () => [],
+      search: async (words) => (searched.push(words), [{ id: words, title: words, url: `https://x.example/${words}` }]),
+    };
+    const { calls, resolve } = resolver();
+    const site = await buildApp({ resolve, librarySources: [places], fetchesPerMinute: { search: 2, library: 1 } });
+    app = site;
+    const search = (words: string): InjectOptions => ({ url: `/api/library/search?q=${words}` });
+    expect(await codes(site, [search("alpha"), search("bravo")])).toEqual([200, 200]);
+    const asked = searched.length;
+    const refused = await site.inject(search("charlie"));
+    expect([refused.statusCode, refused.json()]).toEqual([429, { error: "rate_limited", retryAfter: expect.any(Number) }]);
+    expect(await codes(site, [search("delta"), search("echo")])).toEqual([429, 429]);
+    await new Promise((done) => setTimeout(done, 400)); // (the page of the likeliest title is fetched ahead 200 ms after the answer)
+    expect(searched).toHaveLength(asked);
+    expect(calls).toEqual(["https://x.example/alpha", "https://x.example/bravo"]);
+    // (...and a question about a title does not use up the search's allowance, nor the other way round.)
+    expect((await site.inject(`/api/library/about?url=${encodeURIComponent(PAGE)}`)).statusCode).toBe(200);
+    expect((await site.inject(`/api/library/about?url=${encodeURIComponent(PAGE)}`)).statusCode).toBe(429);
+    expect((await site.inject(search("foxtrot"))).statusCode).toBe(429);
+  });
+
   it.each([
     ["/api/resolve?url=https://example.com/film", 60, {}],
     ["/api/library/about?url=https://example.com/film", 120, {}],
+    ["/api/library/search?q=casablanca", 60, {}],
     ["/api/proxy", 300, { proxyVideo: false }],
   ] as const)("lets an address ask %s %i times in a minute, and not one more, unless it is told otherwise", async (url, may, options: AppOptions) => {
     const { resolve } = resolver();
