@@ -9,7 +9,7 @@ import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
 import type { ResolveFn } from "../resolvers";
 import { PairingStore } from "../sessions/pairings";
 import { Registry } from "../sessions/registry";
-import { CLOSE_REPLACED, FRAME_BURST, STEER_ATTRIBUTION_MS } from "./hub";
+import { CLOSE_REPLACED, FRAME_BURST, MAX_BUFFERED_BYTES, STEER_ATTRIBUTION_MS } from "./hub";
 
 /**
  * Minimal fake TV / phone. It connects through `app.injectWS`, in memory: a client and a server that talk over real loopback
@@ -345,6 +345,63 @@ describe("a connection that sends too much", () => {
     await other.next("PONG");
     other.send({ type: "PING" });
     await other.next("PONG");
+  });
+});
+
+describe("a connection that does not read what it is sent", () => {
+  /** A paired TV and phone, and the server's end of each connection (the sockets the hub holds; the TV was connected first). */
+  async function pairedWithServerEnds() {
+    const before = new Set(app.websocketServer.clients);
+    const paired = await pairedSetup();
+    const [tvEnd, phoneEnd] = [...app.websocketServer.clients].filter((socket) => !before.has(socket));
+    return { ...paired, tvEnd: tvEnd!, phoneEnd: phoneEnd! };
+  }
+  /** What the server's end reports when its peer has stopped reading: that much is waiting to be written. */
+  const stall = (socket: WebSocket, buffered: number) => Object.defineProperty(socket, "bufferedAmount", { value: buffered, configurable: true });
+  const report = { state: "playing" as const, currentTime: 1, duration: 60 };
+
+  it("is dropped when it is a TV, and nothing more is queued for it; the phone, which reads, is left alone", async () => {
+    const { tv, phone, tvEnd } = await pairedWithServerEnds();
+    const queued = vi.spyOn(tvEnd, "send");
+    stall(tvEnd, MAX_BUFFERED_BYTES + 1);
+
+    phone.send({ type: "CMD", command: { type: "PLAY" } }); // (relayed to the TV)
+    expect(await tv.closed()).toBe(1006); // (no goodbye: it would never be read)
+    expect(queued).not.toHaveBeenCalled();
+    expect((await phone.nextWhere("TV_STATUS", (m) => !m.online)).online).toBe(false); // (tidied up as for any TV that goes)
+    expect(phone.closeCode).toBeUndefined();
+    phone.send({ type: "CMD", command: { type: "PLAY" } });
+    expect((await phone.next("ERROR")).code).toBe("TV_OFFLINE");
+  });
+
+  it("is dropped when it is a phone, the TV carries on, and the phone is served again when it comes back", async () => {
+    const { tv, phone, phoneEnd, controllerId } = await pairedWithServerEnds();
+    const queued = vi.spyOn(phoneEnd, "send");
+    stall(phoneEnd, MAX_BUFFERED_BYTES + 1);
+
+    tv.send({ type: "TV_STATE", state: report }); // (relayed to the phone)
+    expect(await phone.closed()).toBe(1006);
+    expect(queued).not.toHaveBeenCalled();
+    expect(tv.closeCode).toBeUndefined();
+
+    const back = await connect();
+    back.send({ type: "CTL_HELLO", controllerId });
+    expect((await back.next("CTL_WELCOME")).state).toMatchObject({ state: "playing", currentTime: 1 });
+    tv.send({ type: "TV_STATE", state: { ...report, currentTime: 2 } });
+    expect((await back.next("STATE")).state.currentTime).toBe(2);
+  });
+
+  it("is kept while it is behind but within the limit", async () => {
+    const { tv, phone, tvEnd, phoneEnd } = await pairedWithServerEnds();
+    stall(tvEnd, MAX_BUFFERED_BYTES);
+    stall(phoneEnd, MAX_BUFFERED_BYTES);
+
+    phone.send({ type: "CMD", command: { type: "PLAY" } });
+    expect((await tv.next("TV_CMD")).command.type).toBe("PLAY");
+    tv.send({ type: "TV_STATE", state: report });
+    expect((await phone.next("STATE")).state.currentTime).toBe(1);
+    expect(tv.closeCode).toBeUndefined();
+    expect(phone.closeCode).toBeUndefined();
   });
 });
 

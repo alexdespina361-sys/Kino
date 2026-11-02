@@ -31,6 +31,13 @@ export const CLOSE_REPLACED = 4000;
 export const FRAME_BURST = 100;
 export const FRAME_RATE_PER_S = 30;
 
+/**
+ * How much may be waiting to be written to one connection before it is taken to have stopped reading. A page that reads is never behind
+ * by more than a few messages (a report is a couple of hundred bytes), so this is far above any that works. One that answers pings and
+ * reads nothing would otherwise keep every report relayed to it in this server's memory: it is dropped instead.
+ */
+export const MAX_BUFFERED_BYTES = 1_000_000;
+
 /** A film that starts or holds within this long of an admin guest's play or pause is that guest's doing; otherwise it is the host's own. */
 export const STEER_ATTRIBUTION_MS = 4000;
 
@@ -805,7 +812,10 @@ export class Hub {
   /* ------------------------------ sending ------------------------------ */
 
   private send(socket: WebSocket | undefined, message: ServerMessage): void {
-    if (socket?.readyState === 1) socket.send(JSON.stringify(message));
+    if (socket?.readyState !== 1) return;
+    // (A connection that is not reading is let go of, not fed: its `close` handler tidies up as for any other that goes.)
+    if (socket.bufferedAmount > MAX_BUFFERED_BYTES) return socket.terminate();
+    socket.send(JSON.stringify(message));
   }
 
   private toControllers(device: Device, message: ServerMessage): void {
