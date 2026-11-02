@@ -172,7 +172,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   app.addHook("onClose", async () => hub.dispose());
 
   await app.register(fastifyWebsocket, { options: { maxPayload: 64 * 1024 } });
-  app.get("/ws", { websocket: true }, (socket, request) => {
+  // (No HEAD twin of the route: Fastify would call the handler with no socket.)
+  app.get("/ws", { websocket: true, exposeHeadRoute: false }, (socket, request) => {
     // Connection diagnostics (no tokens/ids): who is knocking, via which host, and how it ends.
     const { host, origin } = request.headers;
     request.log.info({ host, origin, ip: request.headers["x-forwarded-for"] ?? request.ip }, "ws connected");
@@ -244,6 +245,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   app.get<{ Querystring: { q?: string } }>("/api/library/search", async (request, reply) => {
     const q = request.query.q ?? "";
+    // (A name given twice reaches a handler as a list.)
+    if (typeof q !== "string") return reply.code(400).send({ error: "Bad 'q' parameter" });
     const { items, exact } = await library.search(q);
     const topItem = items[0];
     if (topItem?.url && process.env.PRELOAD_SEARCH !== "0" && isHttpUrl(topItem.url)) {
@@ -284,7 +287,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   app.get<{ Querystring: { url?: string } }>("/api/library/similar", async (request, reply) => {
     const link = request.query.url ?? "";
-    if (!link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
+    if (typeof link !== "string" || !link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
     const items = await library.similar(link);
     // Only an answer is kept by the browser: none may be a place that could not be reached just now.
     reply.header("Cache-Control", items.length > 0 ? "public, max-age=3600" : "no-store");
@@ -294,7 +297,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // library is. A title nobody knows (and a place that could not be reached just now) is `about: null`, which a browser is asked not to keep.
   app.get<{ Querystring: { url?: string } }>("/api/library/about", async (request, reply) => {
     const link = request.query.url ?? "";
-    if (!link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
+    if (typeof link !== "string" || !link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
     const about = await library.about(link);
     reply.header("Cache-Control", about ? "public, max-age=3600" : "no-store");
     return reply.send({ about });
@@ -302,14 +305,14 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   app.get<{ Querystring: { url?: string; season?: string } }>("/api/library/episodes", async (request, reply) => {
     const link = request.query.url ?? "";
     const season = Number(request.query.season);
-    if (!link || link.length > 2048 || !Number.isInteger(season) || season < 0 || season > 200) return reply.code(400).send({ error: "Missing 'url' or 'season' parameter" });
+    if (typeof link !== "string" || !link || link.length > 2048 || !Number.isInteger(season) || season < 0 || season > 200) return reply.code(400).send({ error: "Missing 'url' or 'season' parameter" });
     const episodes = await library.episodes(link, season);
     reply.header("Cache-Control", episodes.length > 0 ? "public, max-age=3600" : "no-store");
     return reply.send({ episodes });
   });
   app.get<{ Querystring: { url?: string } }>("/api/library/seasons", async (request, reply) => {
     const link = request.query.url ?? "";
-    if (!link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
+    if (typeof link !== "string" || !link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
     const seasons = await library.seasons(link);
     // Only an answer is kept by the browser: no seasons may be a place that could not be reached just now.
     reply.header("Cache-Control", seasons.length > 0 ? "public, max-age=3600" : "no-store");

@@ -531,12 +531,8 @@ const urlJunk = (): Array<Named<string>> => [
   { name: "a page that is not there", value: encodeURIComponent(`${origin}/missing`) },
 ];
 
-/** The probes (by the start of their names) that are known to be answered wrongly, and that a test of their own holds on to (see "known gaps" below) instead of the sweep. */
-const KNOWN: Record<string, string[]> = {
-  "GET /api/library/search": ["repeated query parameter q"],
-  "GET /api/library/about": ["repeated query parameter url"],
-  "GET /ws": ["the method HEAD"],
-};
+/** The probes (by the start of their names) that are known to be answered wrongly, and that a test of their own holds on to instead of the sweep (none now). */
+const KNOWN: Record<string, string[]> = {};
 
 function probesFor(route: Route, spec: Spec, pass: Pass, rand: () => number): Probe[] {
   const list: Probe[] = [];
@@ -755,25 +751,28 @@ describe("the HTTP API turns away what it should not take", () => {
 });
 
 /**
- * Answers that are wrong today. Each is a test that is expected to fail (`it.fails`): when the place is mended the test stops failing, which is the
- * reminder to take `.fails` off and the probe out of `KNOWN`. The sweep leaves these probes to them.
+ * What was once a 500: a name given twice reaches a handler as a list (the library takes `q` and `url` for text), and Fastify's HEAD twin of the
+ * socket's address calls the handler with no socket.
  */
-describe("known gaps", () => {
+describe("what was once a 500", () => {
   const asked = async (req: Req) => wrongWith(req, await send(req));
 
-  // FINDING: a repeated `q` reaches `spelledOut` as an array and throws (500): `app.ts:235` takes `request.query.q` for a string without looking (the throw is at `shared/search.ts:30`). Fix: answer 400 (or search for nothing) when `q` is not a string.
-  it.fails("turns away a library search whose q is given twice (a 500 today)", async () => {
-    expect(await asked({ method: "GET", url: "/api/library/search?q=a&q=b", headers: {} })).toBeUndefined();
+  it("turns away a library search whose q is given twice", async () => {
+    const req: Req = { method: "GET", url: "/api/library/search?q=a&q=b", headers: {} };
+    expect(await asked(req)).toBeUndefined();
+    expect((await send(req)).res?.statusCode).toBe(400);
   });
 
-  // FINDING: a repeated `url` reaches `canonicalUrl` as an array and throws (500): `app.ts:285` takes `request.query.url` for a string without looking (the throw is at `shared/account.ts:344`). Fix: answer 400 when `url` is not a string (the same check is the cheap one for `similar`, `episodes` and `seasons` at `app.ts:275-300`, whose sources turn an array into "no such title" today).
-  it.fails("turns away a library about whose url is given twice (a 500 today)", async () => {
-    expect(await asked({ method: "GET", url: "/api/library/about?url=a&url=b", headers: {} })).toBeUndefined();
+  it.each(["about", "similar", "seasons", "episodes"])("turns away a library %s whose url is given twice", async (route) => {
+    const req: Req = { method: "GET", url: `/api/library/${route}?url=a&url=b&season=1`, headers: {} };
+    expect(await asked(req)).toBeUndefined();
+    expect((await send(req)).res?.statusCode).toBe(400);
   });
 
-  // FINDING: the HEAD twin that Fastify adds to `GET /ws` calls the WebSocket handler with no socket (500, "socket.on is not a function" at `app.ts:170`). Fix: `exposeHeadRoute: false` in the options of `app.get("/ws", ...)` at `app.ts:166`.
-  it.fails("turns away a HEAD request to the WebSocket address (a 500 today)", async () => {
-    expect(await asked({ method: "HEAD", url: "/ws", headers: {} })).toBeUndefined();
+  it("turns away a HEAD request to the WebSocket address", async () => {
+    const req: Req = { method: "HEAD", url: "/ws", headers: {} };
+    expect(await asked(req)).toBeUndefined();
+    expect((await send(req)).res?.statusCode).toBe(404);
   });
 });
 
