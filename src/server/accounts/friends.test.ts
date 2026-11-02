@@ -412,12 +412,13 @@ describe("the inbox", () => {
     expect(friends.inboxOf("sam")).toEqual([]);
   });
 
-  it("remembers which screen an invitation's party is on, for the server only", () => {
+  it("remembers which screen an invitation's party is on, and which party it is, for the server only", () => {
     const { friends } = befriended();
-    friends.deliver("sam", "alex", party, "tv_host");
+    friends.deliver("sam", "alex", party, { host: "tv_host", party: "party_one" });
     friends.deliver("sam", "alex", dune);
-    expect(friends.inboxOf("sam").find((item) => item.kind === "party")).toMatchObject({ code: "482731", host: "tv_host" });
+    expect(friends.inboxOf("sam").find((item) => item.kind === "party")).toMatchObject({ code: "482731", host: "tv_host", party: "party_one" });
     expect(friends.inboxOf("sam").find((item) => item.kind === "recommend")).not.toHaveProperty("host");
+    expect(friends.inboxOf("sam").find((item) => item.kind === "recommend")).not.toHaveProperty("party");
   });
 
   it("keeps the newest hundred, whoever sent them", () => {

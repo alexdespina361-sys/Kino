@@ -52,8 +52,11 @@ interface RequestsDoc {
   v: 1;
   items: Array<{ from: string; at: number }>;
 }
-/** What an inbox keeps of a thing: what was sent, and for an invitation to a party, the screen (by its public id) that hosts it, which is how it is found again when the code is renewed. */
-export type StoredItem = InboxItem & { host?: string };
+/**
+ * What an inbox keeps of a thing: what was sent, and for an invitation to a party, the screen (by its public id) that hosts it and which party of that screen's
+ * it is, which is how it is found again when the code is renewed. (An invitation from before parties had an id of their own has none, and is no invitation to any.)
+ */
+export type StoredItem = InboxItem & { host?: string; party?: string };
 interface InboxDoc {
   v: 1;
   items: StoredItem[];
@@ -365,9 +368,9 @@ export class FriendBook {
    * Put something in an inbox. The same title from the same friend, or a newer invitation or request from them for a party, or a plan for the same
    * time, replaces the old one and is new again; but one that has not been looked at yet keeps its id, so that sending it over and over is not announced
    * over and over (a screen announces what it has not seen the id of). A friend has only so many things in an inbox (the newest): they cannot fill it
-   * and push out what the others sent (plans are held to their own limits: see `propose`). `host` is the screen an invitation's party is on (see `StoredItem`).
+   * and push out what the others sent (plans are held to their own limits: see `propose`). `party` is the screen an invitation's party is on, and which party it is (see `StoredItem`).
    */
-  deliver(to: string, from: string, message: Message | PlanReply, host?: string): StoredItem {
+  deliver(to: string, from: string, message: Message | PlanReply, party?: { host: string; party: string }): StoredItem {
     const sameThing = (old: InboxItem) => {
       if (old.from !== from || old.kind !== message.kind) return false;
       if (message.kind === "recommend") return old.kind === "recommend" && old.url === message.url;
@@ -377,7 +380,7 @@ export class FriendBook {
     };
     const items = this.inboxOf(to);
     const before = items.find(sameThing);
-    const item = { ...message, ...(host ? { host } : {}), id: before && !before.read ? before.id : newItemId(), at: this.host.now(), from, read: false } as StoredItem;
+    const item = { ...message, ...(party ? { host: party.host, party: party.party } : {}), id: before && !before.read ? before.id : newItemId(), at: this.host.now(), from, read: false } as StoredItem;
     let theirs = 1; // (this one is the first of the friend's)
     const kept = items.filter((old) => !sameThing(old) && (old.kind === "plan" || old.from !== from || ++theirs <= INBOX_PER_SENDER));
     this.setInbox(to, [item, ...kept].slice(0, INBOX_MAX));

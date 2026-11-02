@@ -671,6 +671,164 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.inParty(host)).toBe(false);
   });
 
+  it("gives each party an id that lasts as long as the party does - through a new code for the guests it has - and a party that begins later another", () => {
+    const { registry, advance, host, code, arrive } = hosted();
+    const first = registry.partyOfCode(code)!;
+    expect(first).toEqual({ host: host.publicId, party: expect.stringMatching(/^party_[0-9a-f]{24}$/) });
+    expect(registry.partyOfCode("000000")).toBeUndefined();
+    // The same party while its code stays good, and when the code ran out with a guest in it and the party got a new one...
+    expect(registry.ensurePartyCode(host)?.code).toBe(code);
+    expect(registry.partyOfCode(code)).toEqual(first);
+    expect(registry.joinParty(arrive(), code).ok).toBe(true);
+    advance(10 * 60 * 1000);
+    const renewed = registry.runningParty(host)!;
+    expect(renewed.code).not.toBe(code);
+    expect(registry.partyOfCode(renewed.code)).toEqual(first);
+    // ...and another once it was ended, or was left with nobody in it and no code.
+    registry.closeParty(host);
+    const second = registry.partyOfCode(registry.ensurePartyCode(host)!.code)!;
+    expect(second.host).toBe(host.publicId);
+    expect(second.party).not.toBe(first.party);
+    advance(10 * 60 * 1000);
+    const third = registry.partyOfCode(registry.ensurePartyCode(host)!.code)!;
+    expect(third.party).not.toBe(second.party);
+    expect(new Set([first.party, second.party, third.party]).size).toBe(3);
+  });
+
+  it("opens an invitation to the party it was to and to no party the screen hosts after it, and to nobody's party that is not there", () => {
+    const { registry, advance, host, code, arrive } = hosted();
+    const { party } = registry.partyOfCode(code)!;
+    expect(registry.invitedParty(host.publicId, party, "pro_bob")?.code).toBe(code);
+    expect(registry.invitedParty("nobody", party, "pro_bob")).toBeNull();
+    expect(registry.invitedParty(host.publicId, "party_other", "pro_bob")).toBeNull();
+    // With a guest in it the party outlives its code, and the invitation is given the new one.
+    registry.joinParty(arrive(), code);
+    advance(10 * 60 * 1000);
+    expect(registry.invitedParty(host.publicId, party, "pro_bob")?.code).not.toBe(code);
+    // Ended, and begun again: the invitation was to the party that ended.
+    registry.closeParty(host);
+    expect(registry.invitedParty(host.publicId, party, "pro_bob")).toBeNull();
+    registry.ensurePartyCode(host);
+    expect(registry.invitedParty(host.publicId, party, "pro_bob")).toBeNull();
+
+    // So it is for a party that ran out with nobody in it, and a new one is begun on the same screen.
+    const next = registry.partyOfCode(registry.ensurePartyCode(host)!.code)!;
+    expect(registry.invitedParty(host.publicId, next.party, "pro_bob")).not.toBeNull();
+    advance(10 * 60 * 1000);
+    expect(registry.invitedParty(host.publicId, next.party, "pro_bob")).toBeNull(); // (over)
+    registry.ensurePartyCode(host);
+    expect(registry.invitedParty(host.publicId, next.party, "pro_bob")).toBeNull(); // (and not back with the next party)
+  });
+
+  it("does not let a screen that was sent away back with any code, nor the profile signed in on it with another screen or from its bell", () => {
+    const { registry, host, code, arrive } = hosted();
+    const [kicked, stays] = [arrive(), arrive()];
+    registry.setProfile(kicked, "pro_bob");
+    registry.joinParty(kicked, code);
+    registry.joinParty(stays, code);
+    expect(registry.removeGuest(host, kicked.publicId)).toBe(kicked);
+
+    // The code it knew is changed, so it is no good to anyone...
+    const fresh = registry.partyCodeOf(host)!.code;
+    expect(fresh).not.toBe(code);
+    expect(registry.hostOfPartyCode(code)).toBeUndefined();
+    expect(registry.joinParty(arrive(), code)).toEqual({ ok: false, reason: "INVALID_CODE" });
+    // ...and the new one is no good to the screen that was sent away, nor to a profile that was signed in on it, on any other screen.
+    expect(registry.joinParty(kicked, fresh)).toEqual({ ok: false, reason: "INVALID_CODE" });
+    const elsewhere = arrive();
+    registry.setProfile(elsewhere, "pro_bob");
+    expect(registry.joinParty(elsewhere, fresh)).toEqual({ ok: false, reason: "INVALID_CODE" });
+    expect(registry.joinParty(arrive(), fresh).ok).toBe(true);
+    expect(host.followerIds).toHaveLength(2); // (the guest that stayed, and the one that came)
+    // A screen that nobody is signed in on is kept out by the screen itself.
+    const plain = arrive();
+    expect(registry.joinParty(plain, fresh).ok).toBe(true);
+    registry.removeGuest(host, plain.publicId);
+    expect(registry.joinParty(plain, registry.partyCodeOf(host)!.code)).toEqual({ ok: false, reason: "INVALID_CODE" });
+    // The bell of that profile is not given the code of the party it was sent away from.
+    const latest = registry.partyCodeOf(host)!.code; // (changed again when the plain one was sent away)
+    const { party } = registry.partyOfCode(latest)!;
+    expect(registry.invitedParty(host.publicId, party, "pro_bob")).toBeNull();
+    expect(registry.invitedParty(host.publicId, party, "pro_sam")?.code).toBe(latest);
+  });
+
+  it("sends a guest away for good from the phone of the host's TV too", () => {
+    const { registry, host, code, arrive } = hosted();
+    registry.ensureCode(host);
+    const phone = registry.controllerHello();
+    registry.pair(phone, host.code!.value);
+    const kicked = arrive();
+    registry.joinParty(kicked, code);
+    expect(registry.removeFollower(phone, "nobody")).toBeNull();
+    expect(registry.removeFollower(phone, kicked.publicId)).toEqual({ leader: host, follower: kicked });
+    const fresh = registry.partyCodeOf(host)!.code;
+    expect(fresh).not.toBe(code);
+    expect(registry.joinParty(kicked, fresh)).toEqual({ ok: false, reason: "INVALID_CODE" });
+    expect(registry.joinParty(arrive(), fresh).ok).toBe(true);
+  });
+
+  it("changes the code only if one is open when a guest is sent away, and forgets who was sent away when the party ends; a guest that left on its own was not sent away", () => {
+    const { registry, advance, host, code, arrive } = hosted();
+    const [kicked, leaver, other] = [arrive(), arrive(), arrive()];
+    for (const guest of [kicked, leaver, other]) registry.joinParty(guest, code);
+    registry.detachFollower(leaver);
+    expect(registry.partyCodeOf(host)?.code).toBe(code); // (a guest that leaves changes nothing for the others)
+    expect(registry.joinParty(leaver, code).ok).toBe(true); // (and comes back with the code, as it did)
+
+    advance(10 * 60 * 1000); // the code ran out; the party did not
+    registry.removeGuest(host, other.publicId);
+    expect(registry.partyCodeOf(host)).toBeNull(); // (none is made: none was being shown)
+    const renewed = registry.runningParty(host)!.code;
+    expect(registry.joinParty(other, renewed)).toEqual({ ok: false, reason: "INVALID_CODE" });
+
+    registry.closeParty(host);
+    const next = registry.ensurePartyCode(host)!.code;
+    expect(registry.joinParty(other, next).ok).toBe(true); // a new party: nobody was sent away from it
+    expect(registry.joinParty(kicked, next).ok).toBe(true);
+  });
+
+  it("goes on for the guests a restart remembers, as a party with an id that nothing from before the restart is to: the invitations of before are void, the new ones are good", () => {
+    const { registry, host, code, arrive } = hosted();
+    const guest = arrive();
+    registry.joinParty(guest, code);
+    const before = registry.partyOfCode(code)!;
+
+    const restarted = new Registry({ now: () => 1_000_000, generateCode: counter(codes) }); // (the clock `setup` starts with: a restart is a moment later)
+    restarted.restore(registry.records());
+    const hostAgain = restarted.tvHello(host.id);
+    expect(hostAgain.followerIds).toEqual([guest.id]); // (the party is there, with no code and no id)
+    expect(restarted.invitedParty(host.publicId, before.party, "pro_bob")).toBeNull();
+    const renewed = restarted.runningParty(hostAgain)!;
+    const now = restarted.partyOfCode(renewed.code)!;
+    expect(now.host).toBe(host.publicId);
+    expect(now.party).not.toBe(before.party);
+    expect(restarted.invitedParty(host.publicId, now.party, "pro_bob")?.code).toBe(renewed.code);
+    expect(restarted.invitedParty(host.publicId, before.party, "pro_bob")).toBeNull();
+  });
+
+  it("does not keep who was sent away, nor the id of the party, past its end: the host ending it, the host letting go, or its running out with nobody in it", () => {
+    for (const end of ["closed", "let go", "ran out"] as const) {
+      const { registry, advance, host, code, arrive } = hosted();
+      const [kicked, stays] = [arrive(), arrive()];
+      registry.joinParty(kicked, code);
+      registry.joinParty(stays, code);
+      registry.removeGuest(host, kicked.publicId);
+      expect([host.partyId, [...host.barred]], end).toEqual([expect.stringMatching(/^party_/), [kicked.id]]);
+      if (end === "closed") registry.closeParty(host);
+      else if (end === "let go") registry.unpairDevice(host);
+      if (end !== "ran out") expect([host.partyId, host.barred.size], end).toEqual([null, 0]);
+      else {
+        registry.detachFollower(stays);
+        advance(10 * 60 * 1000); // (the code ran out, and nobody is in the party: it is over, and the next one is a new party)
+        expect(registry.runningParty(host)).toBeNull();
+      }
+      // A party that begins now is a new one: nobody was sent away from it.
+      const next = registry.ensurePartyCode(host)!.code;
+      expect(host.barred.size, end).toBe(0);
+      expect(registry.joinParty(kicked, next).ok, end).toBe(true);
+    }
+  });
+
   it("lets the host make a guest an admin by its public id, and take that back: nobody else is one, and it lasts only as long as the guest's place in the party", () => {
     const { registry, host, code, arrive } = hosted();
     const [first, second] = [arrive(), arrive()];
@@ -687,14 +845,14 @@ describe("Registry: a party started on a TV", () => {
     expect(registry.setAdmin(host, first!.publicId, false)).toBe(first);
     expect(first!.admin).toBe(false);
 
-    // Sent away, leaving, or the end of the party: a guest that comes back comes back as an ordinary one.
+    // Leaving, being sent away, or the end of the party: a guest is no admin any more, and one that comes back (one that left) comes back as an ordinary one.
     registry.setAdmin(host, first!.publicId, true);
     registry.setAdmin(host, second!.publicId, true);
-    registry.removeGuest(host, first!.publicId);
+    registry.detachFollower(first!);
     expect(first!.admin).toBe(false);
     registry.joinParty(first!, code);
     expect(first!.admin).toBe(false);
-    registry.detachFollower(second!);
+    registry.removeGuest(host, second!.publicId);
     expect(second!.admin).toBe(false);
     registry.setAdmin(host, first!.publicId, true);
     registry.closeParty(host);

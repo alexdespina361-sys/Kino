@@ -696,6 +696,73 @@ describe("recommendations and invitations to a party", () => {
     expect(registry.hostOfPartyCode((item as { code: string }).code)).toBe(host);
   });
 
+  it("is to the party it was sent for: once the screen hosts another party, an old invitation does not open it, and a new one does", async () => {
+    const { alex, sam, registry } = await friends();
+    const first = openParty(registry);
+    registry.joinParty(registry.tvHello(), first.code); // (somebody came)
+    const invite = (code: string) => alex.client.post(mine(alex, "/send"), { to: [sam.id], kind: "party", code, endsAt: clock.now + 600_000 });
+    expect((await invite(first.code)).statusCode).toBe(200);
+    expect((await sam.state()).inbox[0]).toMatchObject({ kind: "party", open: true, code: first.code });
+
+    // The host ends it, and two hours later opens another one on the same screen for somebody else.
+    registry.closeParty(first.host);
+    clock.now += 2 * 3600_000;
+    const second = registry.ensurePartyCode(first.host)!.code;
+    registry.joinParty(registry.tvHello(), second);
+    const [stale] = (await sam.state()).inbox;
+    expect(stale).toMatchObject({ kind: "party", open: false });
+    expect(JSON.stringify(stale)).not.toContain(second);
+    expect(registry.hostOfPartyCode(second)).toBe(first.host);
+
+    // An invitation to the new one opens, with its code.
+    expect((await invite(second)).statusCode).toBe(200);
+    expect((await sam.state()).inbox[0]).toMatchObject({ kind: "party", open: true, code: second });
+  });
+
+  it("is closed for a friend the host sent away: the bell is not given the party's new code, what the friend knew of the party sends nothing on, and the others are given it", async () => {
+    const { app, alex, sam, registry } = await friends();
+    const erin = await person(app, "erin");
+    const dave = await person(app, "dave");
+    for (const each of [erin, dave]) await each.choose({ friends: true });
+    for (const [one, other] of [[alex, erin], [sam, dave]] as const) {
+      const made = await one.client.post(mine(one, "/invites"));
+      expect((await other.client.post(mine(other, "/accept"), { code: made.data.code })).statusCode).toBe(201);
+    }
+    const { host, code } = openParty(registry);
+    const samTv = registry.tvHello();
+    registry.setProfile(samTv, sam.id); // (as the accounts proved it: this screen is Sam's)
+    expect(registry.joinParty(samTv, code).ok).toBe(true);
+    const endsAt = clock.now + 600_000;
+    expect((await alex.client.post(mine(alex, "/send"), { to: [sam.id, erin.id], kind: "party", code, endsAt })).statusCode).toBe(200);
+    expect((await sam.state()).inbox[0]).toMatchObject({ open: true, code });
+
+    expect(registry.removeGuest(host, samTv.publicId)).toBe(samTv); // (the host's screen sends him away)
+    const fresh = registry.partyCodeOf(host)!.code;
+    expect(fresh).not.toBe(code);
+    const sams = (await sam.state()).inbox;
+    expect(sams[0]).toMatchObject({ kind: "party", open: false });
+    expect(JSON.stringify(sams)).not.toContain(fresh);
+    expect((await erin.state()).inbox[0]).toMatchObject({ open: true, code: fresh });
+
+    // He knows the code he had, which is no party's now: he cannot invite his own friends to the party with it.
+    const forwarded = await sam.client.post(mine(sam, "/send"), { to: [dave.id], kind: "party", code, endsAt });
+    expect([forwarded.statusCode, forwarded.data]).toEqual([409, { error: "party_closed" }]);
+    expect((await dave.state()).inbox).toEqual([]);
+    // And his screen, which has the new code from nobody, is turned away from it too.
+    expect(registry.joinParty(samTv, fresh)).toEqual({ ok: false, reason: "INVALID_CODE" });
+  });
+
+  it("is no invitation to any party when it was kept from before parties had an id of their own", async () => {
+    const { alex, sam, registry, store } = await friends();
+    const { host, code } = openParty(registry);
+    registry.joinParty(registry.tvHello(), code);
+    // (What an older server kept: the screen, and no party. The party that screen has now is not the one it was sent for, as far as anything can tell.)
+    store.friends.load(`inbox:${sam.id}`, { v: 1, items: [{ id: "old", kind: "party", code, endsAt: clock.now + 600_000, host: host.publicId, at: clock.now, from: alex.id, read: false }] });
+    expect((await sam.state()).inbox[0]).toMatchObject({ kind: "party", open: false });
+    expect(JSON.stringify((await sam.state()).inbox)).not.toContain(host.publicId);
+    expect(registry.runningParty(host)?.code).toBe(code); // (the party goes on: it is the invitation that is no good)
+  });
+
   it("says an invitation's party is over once nobody is in it and its code has run out (or it was ended), and keeps what was sent", async () => {
     const { alex, sam, registry } = await friends();
     const { host, code } = openParty(registry);

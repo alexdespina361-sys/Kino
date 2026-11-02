@@ -1727,6 +1727,57 @@ describe("a watch party started on a TV", () => {
     expect((await late.tv.next("ERROR")).code).toBe("INVALID_CODE");
   });
 
+  it("sends a guest away for good: the code it knew is changed and shown to the host, and the screen is let back in with neither the old code nor the new", async () => {
+    const host = await openParty();
+    const kicked = await joinWith(host.code);
+    const stays = await joinWith(host.code);
+    const guestCount = (count: number) => (message: { party: { guests: unknown[] } | null }) => message.party?.guests.length === count;
+    const view = (await host.tv.nextWhere("TV_PARTY", guestCount(2))).party!;
+    await host.tv.forget();
+
+    host.tv.send({ type: "TV_PARTY_REMOVE", id: view.guests[0]!.id }); // (the first to come is the first in the list)
+    const after = (await host.tv.nextWhere("TV_PARTY", guestCount(1))).party!;
+    expect(after.code!.code).toMatch(/^\d{6}$/);
+    expect(after.code!.code).not.toBe(host.code);
+    await kicked.tv.next("TV_UNPAIRED");
+    await kicked.tv.forget();
+
+    for (const code of [host.code, after.code!.code]) {
+      kicked.tv.send({ type: "TV_PARTY_JOIN", code });
+      expect((await kicked.tv.next("ERROR")).code, code).toBe("INVALID_CODE");
+    }
+    // Another screen is let in with the new code, and the guest that stayed was not touched.
+    const newcomer = await newTv();
+    newcomer.tv.send({ type: "TV_PARTY_JOIN", code: after.code!.code });
+    await newcomer.tv.next("TV_FOLLOWING");
+    await stays.tv.expectNone((m) => m.type === "TV_UNPAIRED");
+    // The old code is no good to anybody.
+    const late = await newTv();
+    late.tv.send({ type: "TV_PARTY_JOIN", code: host.code });
+    expect((await late.tv.next("ERROR")).code).toBe("INVALID_CODE");
+  });
+
+  it("sends a guest away for good from the phone of the host's TV too, and shows the phone the new code", async () => {
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "OPEN_PARTY" });
+    const opened = await phone.next("PARTY");
+    await tv.next("TV_PARTY");
+    const kicked = await joinWith(opened.code!.code);
+    const listed = await phone.nextWhere("PARTY", (message) => message.tvs.length === 1);
+    await phone.forget();
+
+    phone.send({ type: "REMOVE_TV", id: listed.tvs[0]!.id });
+    const after = await phone.nextWhere("PARTY", (message) => message.tvs.length === 0);
+    expect(after.code?.code).toMatch(/^\d{6}$/);
+    expect(after.code?.code).not.toBe(opened.code!.code);
+    await kicked.tv.next("TV_UNPAIRED");
+    await kicked.tv.forget();
+    for (const code of [opened.code!.code, after.code!.code]) {
+      kicked.tv.send({ type: "TV_PARTY_JOIN", code });
+      expect((await kicked.tv.next("ERROR")).code, code).toBe("INVALID_CODE");
+    }
+  });
+
   it("is ended for the guests by a host that lets go of its pairing", async () => {
     const host = await openParty();
     const guest = await joinWith(host.code);
@@ -1899,7 +1950,7 @@ describe("a watch party started on a TV", () => {
       await guest.tv.expectNone((m) => m.type === "TV_CMD" && m.command.type === "STOP");
     });
 
-    it("is no longer one once it leaves or is sent away, and does not come back as one", async () => {
+    it("is no longer one once it leaves or is sent away, and a screen that left does not come back as one (one that was sent away does not come back at all)", async () => {
       const host = await openParty();
       const guest = await joinWith(host.code);
       const guestId = await idOf(guest);
@@ -1919,8 +1970,7 @@ describe("a watch party started on a TV", () => {
       await guest.tv.next("TV_UNPAIRED");
       await guest.tv.forget();
       guest.tv.send({ type: "TV_PARTY_JOIN", code: host.code });
-      await guest.tv.next("TV_FOLLOWING");
-      expect(await adminsNext(guest)).toEqual([undefined]);
+      expect((await guest.tv.next("ERROR")).code).toBe("INVALID_CODE");
     });
 
     it("is made and taken back from the phone of the host's TV too, which is told who is one", async () => {

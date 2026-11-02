@@ -41,10 +41,13 @@ import type { StoreError, AccountStore } from "./store";
 
 /** The watch parties, as far as the friends need to know of them (the sessions keep them: see Registry). Screens are named by the id the lists give them. */
 export interface PartyLookup {
-  /** The screen whose party this code is open with now. */
-  hostOf(code: string): string | undefined;
-  /** The code the party of a screen is joined with now and how long that stays good: a party with guests whose code ran out is given a new one. Nothing when the party is over. */
-  running(host: string): { code: string; expiresInMs: number } | undefined;
+  /** The party this code is open with now: the screen that hosts it and which party that is. An invitation is to a party, and the same screen hosts another one later. */
+  partyOf(code: string): { host: string; party: string } | undefined;
+  /**
+   * The code that party is joined with now, for a friend who was invited to it, and how long that stays good: a party with guests whose code ran out is given a new one.
+   * Nothing when the party is over, is another one by now, or the friend was sent away from it.
+   */
+  running(host: string, party: string, profileId: string): { code: string; expiresInMs: number } | undefined;
 }
 
 /** What the routes of the accounts hand over for these to do their part in the same way. */
@@ -249,15 +252,12 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
 
   /**
    * A thing in the inbox as the one it is for is told of it. An invitation says what its party is now: the code it can be joined with
-   * (renewed since it was sent, if the host's screen has moved on) and for how long, or that the party is over. Which screen hosts it is
-   * for the server alone.
+   * (renewed since it was sent, if the host's screen has moved on) and for how long, or that the party is over (which it is for a friend the host sent
+   * away, and once the screen has begun another party: the invitation was to the one). Which screen hosts it, and which party it is, are for the server alone.
    */
-  function told(stored: StoredItem, now: number): InboxItem {
-    const item = { ...stored };
-    delete item.host;
+  function told({ host, party, ...item }: StoredItem, now: number, profileId: string): InboxItem {
     if (item.kind !== "party" || !parties) return item;
-    const host = stored.host ?? parties.hostOf(item.code);
-    const running = host === undefined ? undefined : parties.running(host);
+    const running = host !== undefined && party !== undefined ? parties.running(host, party, profileId) : undefined;
     return running ? { ...item, code: running.code, endsAt: now + running.expiresInMs, open: true } : { ...item, open: false };
   }
 
@@ -290,7 +290,7 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
       inbox: book
         .inboxOf(profileId)
         .filter((item) => known.has(item.from))
-        .map((item) => fitToShow(told(item, now), ownHost)),
+        .map((item) => fitToShow(told(item, now, profileId), ownHost)),
       activity,
       invites: book.invitesOf(profileId).map(({ code, expiresAt }) => ({ code, expiresAt })),
       // (Somebody who has turned friends off since asking is not shown: they cannot be answered.)
@@ -517,14 +517,14 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     const parsed = SendSchema.safeParse(request.body);
     if (!parsed.success) return helpers.invalid(reply, parsed.error);
     const { to, ...message } = parsed.data;
-    // An invitation is to a party that is open now, and keeps the screen that hosts it: the code is renewed, the screen is what the invitation goes by.
+    // An invitation is to a party that is open now, and keeps the screen that hosts it and which party that is: the code is renewed, the party is what the invitation goes by.
     // (A code that no party is open with counts as a wrong guess, as a wrong invite code or tag does: this tells an open party from a closed one, and six digits are few.)
     if (message.kind === "party" && parties) {
       const wait = guessWait(me, request);
       if (wait > 0) return helpers.tooMany(reply, wait);
     }
-    const host = message.kind === "party" ? parties?.hostOf(message.code) : undefined;
-    if (message.kind === "party" && parties && host === undefined) {
+    const invited = message.kind === "party" ? parties?.partyOf(message.code) : undefined;
+    if (message.kind === "party" && parties && invited === undefined) {
       guessedWrong(me, request);
       return refuse(reply, "party_closed");
     }
@@ -541,7 +541,7 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
         // (The time and the limits are the server's to hold to, whatever a screen let through. A plan goes to one friend, so nothing is half sent.)
         const put = book.propose(id, me.profileId, message);
         if (!put.ok) return refuse(reply, put.error);
-      } else book.deliver(id, me.profileId, message, host);
+      } else book.deliver(id, me.profileId, message, invited);
       // (An invitation answers a request for a party that came the other way, and is the party of a plan whose time has come.)
       if (message.kind === "party") {
         book.answerTogether(me.profileId, id);

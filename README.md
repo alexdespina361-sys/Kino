@@ -111,7 +111,10 @@ pnpm build && pnpm start     # http://localhost:8787
   episode you are at and how far into it ("S2:E5 · 63%", or *Watched*), with a thin bar over the picture; a title left after a few seconds is not counted, and a
   friend who does not hear what you watch sees none of it. **Watching together**: an invitation to a watch party is worked out when a friend reads it, not when it is
   sent: it carries the host's code *as it is now* (a party's code lasts ten minutes and is renewed only while the host's screen shows it, so the one an invitation was
-  sent with would be refused after a while) and says whether the party is still open. Pressing one that is not says *That party is not open any more*, and the
+  sent with would be refused after a while) and says whether the party is still open. An invitation is to the party it was sent for, not to the host's screen: once
+  that screen begins another party, the old invitation is closed. A friend the host sends away is shut out of that party, not only taken out of it: their invitation
+  closes, and neither their screen nor their profile can join it again, with the old code or the new one (the code is renewed when somebody is sent away); once the
+  party is over (ended, or nobody left in it and its code run out) the next one starts with nobody shut out. Pressing one that is not open says *That party is not open any more*, and the
   invitation becomes **Ask to watch together** (a button on that friend's page too) when that friend takes things (*Friends can send me titles and invitations*, on
   unless they turned it off), whether or not they tell what they watch: they get *"Sam wants to watch
   together"* with a **Start a party** button, which starts a party on their screen (the TV, or the TV their phone controls) and invites the one who asked, which takes

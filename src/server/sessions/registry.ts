@@ -26,6 +26,13 @@ export interface Device {
   profileId: string | null;
   /** On a TV hosting a watch party: the code the others join with. Valid for a while, asked for again when it runs out. */
   partyCode: { value: string; expiresAt: number } | null;
+  /**
+   * On a TV hosting a watch party: which party this is. An invitation is to a party and not to a screen, which hosts another one later. Made when the party
+   * begins and gone when the host ends it; not kept over a restart, which voids the invitations of before (the party goes on for its guests, as it did).
+   */
+  partyId: string | null;
+  /** On a TV hosting a party: the screens (by their id) and the profiles the host sent away from it. They do not come back to it by any code or invitation. Gone with the party. */
+  barred: Set<string>;
   /** Present only while unpaired. Single use: consumed by a successful pairing. */
   code: { value: string; expiresAt: number } | null;
   controllerId: string | null;
@@ -234,6 +241,8 @@ export class Registry {
         admin: kept.admin === true,
         profileId: null,
         partyCode: null,
+        partyId: null,
+        barred: new Set(),
         code: null,
         controlCode: null,
         media: null,
@@ -278,6 +287,8 @@ export class Registry {
       label: null,
       profileId: null,
       partyCode: null,
+      partyId: null,
+      barred: new Set(),
       code: null,
       controllerId: null,
       controllerIds: [],
@@ -626,11 +637,42 @@ export class Registry {
     if (host.leaderId) return null;
     const open = this.partyCodeOf(host);
     if (open) return open;
+    // (A party with guests whose code ran out goes on with a new one. A party with nobody in it was over: this is a new party, which nobody was invited to.)
+    if (host.followerIds.length === 0 || host.partyId === null) {
+      host.partyId = newId("party");
+      host.barred.clear();
+    }
+    return this.newPartyCode(host);
+  }
+
+  /** A new code for the party a TV hosts, in place of the one it had: that one is no good any more. */
+  private newPartyCode(host: Device): PairingCode {
     this.dropPartyCode(host);
     const value = this.freshCode();
     host.partyCode = { value, expiresAt: this.now() + this.codeTtlMs };
     this.deviceByPartyCode.set(value, host.id);
     return { code: value, expiresInMs: this.codeTtlMs };
+  }
+
+  /** The party a code is open with now: the screen that hosts it (by the id the lists give it) and which party it is, which is what an invitation is to. */
+  partyOfCode(code: string): { host: string; party: string } | undefined {
+    const host = this.hostOfPartyCode(code);
+    return host?.partyId ? { host: host.publicId, party: host.partyId } : undefined;
+  }
+
+  /**
+   * The code a friend who was invited to a party joins it with (see `runningParty`). Nothing when that party is over - the screen may host another by now,
+   * which nobody was invited to - or when the friend was sent away from it.
+   */
+  invitedParty(publicId: string, party: string, profileId: string): PairingCode | null {
+    const host = this.deviceByPublicId(publicId);
+    if (!host || host.partyId !== party || host.barred.has(profileId)) return null;
+    return this.runningParty(host);
+  }
+
+  /** Whether the host sent this screen, or the profile that is signed in on it, away from its party. */
+  private isBarred(host: Device, guest: Device): boolean {
+    return host.barred.has(guest.id) || (guest.profileId !== null && host.barred.has(guest.profileId));
   }
 
   private dropPartyCode(host: Device): void {
@@ -650,6 +692,7 @@ export class Registry {
       this.dropPartyCode(host);
       return { ok: false, reason: "INVALID_CODE" };
     }
+    if (this.isBarred(host, guest)) return { ok: false, reason: "INVALID_CODE" }; // (a screen that was sent away is told no more than any wrong code)
     if (guest.leaderId === host.id) return { ok: true, host };
     if (guest.leaderId) return { ok: false, reason: "ALREADY_IN_PARTY" };
     if (guest.followerIds.length > 0) return { ok: false, reason: "HOSTING" };
@@ -671,12 +714,23 @@ export class Registry {
     return guest;
   }
 
-  /** The host sends one guest away (by the id the lists give it): that TV is on its own again. */
+  /** The host sends one guest away (by the id the lists give it): that TV is on its own again, and does not come back to this party. */
   removeGuest(host: Device, publicId: string): Device | null {
     const guest = this.followersOf(host).find((candidate) => candidate.publicId === publicId);
     if (!guest) return null;
-    this.detachFollower(guest);
+    this.sendAway(host, guest);
     return guest;
+  }
+
+  /**
+   * A guest is sent away: it is on its own again, and neither it nor the profile signed in on it comes back to this party by any code or invitation. A code that
+   * is open is changed, so that the one the guest knew is no good; the host's screen is shown the new one (the party goes on with the guests it has).
+   */
+  private sendAway(host: Device, guest: Device): void {
+    host.barred.add(guest.id);
+    if (guest.profileId) host.barred.add(guest.profileId);
+    this.detachFollower(guest);
+    if (this.partyCodeOf(host)) this.newPartyCode(host);
   }
 
   /** The host ends its party: the code stops working and every guest is on its own again. Returns the guests that were in it. */
@@ -684,6 +738,8 @@ export class Registry {
     const guests = this.followersOf(host);
     for (const guest of guests) this.detachFollower(guest);
     this.dropPartyCode(host);
+    host.partyId = null;
+    host.barred.clear();
     return guests;
   }
 
@@ -692,7 +748,7 @@ export class Registry {
     const leader = this.deviceForController(controller);
     const follower = leader && this.followersOf(leader).find((candidate) => candidate.publicId === publicId);
     if (!leader || !follower) return null;
-    this.detachFollower(follower);
+    this.sendAway(leader, follower);
     return { leader, follower };
   }
 
@@ -758,6 +814,8 @@ export class Registry {
       device.controlCode = null;
     }
     this.dropPartyCode(device);
+    device.partyId = null;
+    device.barred.clear();
     this.dropCode(device);
     device.followerIds = [];
     device.admin = false;

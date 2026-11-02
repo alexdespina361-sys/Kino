@@ -138,13 +138,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ...(screens ? { screens } : {}),
       // (A chat reported by one of the two friends goes to the team as feedback does. The store is made below, after the accounts: it is looked at when a report is sent.)
       chatReport: (report) => chatReporter(feedback)(report),
-      // (What friends are invited to: the screen whose party a code is open with, and the code a party is joined with now.)
+      // (What friends are invited to: the party a code is open with, and the code that party is joined with now, for a friend who was invited to it.)
       parties: {
-        hostOf: (code) => registry.hostOfPartyCode(code)?.publicId,
-        running: (host) => {
-          const device = registry.deviceByPublicId(host);
-          return (device && registry.runningParty(device)) || undefined;
-        },
+        partyOf: (code) => registry.partyOfCode(code),
+        running: (host, party, profileId) => registry.invitedParty(host, party, profileId) ?? undefined,
       },
     });
   }
