@@ -445,6 +445,30 @@ describe("signing a TV in from a phone", () => {
     const typed = `${started.code.slice(0, 4).toLowerCase()}-${started.code.slice(4)}`;
     expect(links.peek(typed)?.code).toBe(started.code);
   });
+
+  it("never tells a TV that the site is busy: an address that asks for many keeps its ten newest, and a full table lets its oldest go", async () => {
+    const { app } = await start();
+    const ask = async (address: string) => {
+      const response = await app.inject({ method: "POST", url: "/api/link/start", remoteAddress: address, payload: { device: "tv" } });
+      expect(response.statusCode).toBe(201);
+      return response.json() as { code: string; secret: string };
+    };
+    const stateOf = async (started: { code: string; secret: string }, address: string) =>
+      (await app.inject({ method: "POST", url: "/api/link/poll", remoteAddress: address, payload: started })).json().status as string;
+
+    // twelve from one address: the first two have given way
+    const flooder = "198.51.100.1";
+    const sent: Array<{ code: string; secret: string }> = [];
+    for (let n = 0; n < 12; n++) sent.push(await ask(flooder));
+    expect(await Promise.all(sent.map((each) => stateOf(each, flooder)))).toEqual(["gone", "gone", ...Array.from({ length: 10 }, () => "waiting")]);
+
+    // a thousand open in all, from a hundred addresses, and a TV from one more is still given a code, at the cost of the oldest
+    for (let address = 2; address <= 100; address++) for (let n = 0; n < 10; n++) await ask(`198.51.100.${address}`);
+    const real = await ask("203.0.113.9");
+    expect(await stateOf(sent[2]!, flooder)).toBe("gone");
+    expect(await stateOf(sent[3]!, flooder)).toBe("waiting");
+    expect(await stateOf(real, "203.0.113.9")).toBe("waiting");
+  });
 });
 
 describe("describeDevice", () => {
