@@ -325,14 +325,14 @@ describe("how often an address may ask for what makes the server fetch from anot
 
   it("counts the library's four questions about a title together, and the rest of what the library answers not at all", async () => {
     const { resolve } = resolver();
-    const site = await buildApp({ resolve, fetchesPerMinute: { library: 4, resolve: 1, proxy: 1 }, proxyVideo: false });
+    const site = await buildApp({ resolve, fetchesPerMinute: { library: 4, resolve: 1, proxy: 1, browse: 100 }, proxyVideo: false });
     app = site;
     const title = `url=${encodeURIComponent(PAGE)}`;
     const questions = [`/api/library/similar?${title}`, `/api/library/about?${title}`, `/api/library/episodes?${title}&season=1`, `/api/library/seasons?${title}`];
     expect(await codes(site, questions.map((url) => ({ url })))).toEqual([200, 200, 200, 200]);
     // Whichever of them is asked next is the fifth.
     for (const url of questions) expect((await site.inject(url)).statusCode, url).toBe(429);
-    // What takes no address of a title is not counted, nor is the rest of the api.
+    // What takes no address of a title is not counted, nor is the rest of the api (the rows have an allowance of their own, below).
     for (const url of ["/api/library", "/api/library/rows", "/api/library/more?row=a&page=2", "/api/health", "/api/features"]) {
       for (let n = 0; n < 4; n++) expect((await site.inject(url)).statusCode, url).not.toBe(429);
     }
@@ -366,10 +366,48 @@ describe("how often an address may ask for what makes the server fetch from anot
     expect((await site.inject(search("foxtrot"))).statusCode).toBe(429);
   });
 
+  it("counts the library's rows and the titles of a row together, by themselves, and does not ask the places that list titles for one it turns away", async () => {
+    const asked: string[] = [];
+    const places: LibrarySource = {
+      id: "places",
+      name: "Places",
+      load: async () => [],
+      shelves: async (_section, cursor) => (asked.push(`rows ${cursor}`), { rows: [], next: null }),
+      more: async (row, page) => (asked.push(`more ${row} ${page}`), { items: [], last: true }),
+    };
+    let now = Date.parse("2026-11-02T12:00:00Z");
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const { resolve } = resolver();
+      const site = await buildApp({ resolve, librarySources: [places], fetchesPerMinute: { browse: 3, library: 1, search: 1 } });
+      app = site;
+      // (A row and a title of a row are asked for in turn as a page is scrolled: one allowance for both, three here.)
+      expect(await codes(site, [{ url: "/api/library/rows?cursor=0" }, { url: "/api/library/more?row=a&page=2" }, { url: "/api/library/rows?cursor=1" }])).toEqual([200, 200, 200]);
+      const kept = asked.length;
+      const refused = await site.inject("/api/library/more?row=b&page=3");
+      expect([refused.statusCode, refused.json()]).toEqual([429, { error: "rate_limited", retryAfter: expect.any(Number) }]);
+      expect(await codes(site, [{ url: "/api/library/rows?cursor=2" }, { url: "/api/library/more?row=c&page=4" }])).toEqual([429, 429]);
+      expect(asked).toHaveLength(kept);
+      // (...and the questions about a title and the search do not use it up, nor the other way round.)
+      expect((await site.inject(`/api/library/about?url=${encodeURIComponent(PAGE)}`)).statusCode).toBe(200);
+      expect((await site.inject("/api/library/search?q=alpha")).statusCode).toBe(200);
+      expect((await site.inject("/api/library/rows?cursor=3")).statusCode).toBe(429);
+      // It is a minute's allowance: a page that is scrolled goes on when the minute is over.
+      now += 59_999;
+      expect((await site.inject("/api/library/rows?cursor=3")).statusCode).toBe(429);
+      now += 1;
+      expect(await codes(site, [{ url: "/api/library/rows?cursor=3" }, { url: "/api/library/more?row=d&page=5" }])).toEqual([200, 200]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it.each([
     ["/api/resolve?url=https://example.com/film", 60, {}],
     ["/api/library/about?url=https://example.com/film", 120, {}],
     ["/api/library/search?q=casablanca", 60, {}],
+    ["/api/library/rows?cursor=0", 300, {}],
+    ["/api/library/more?row=a&page=2", 300, {}],
     ["/api/proxy", 300, { proxyVideo: false }],
   ] as const)("lets an address ask %s %i times in a minute, and not one more, unless it is told otherwise", async (url, may, options: AppOptions) => {
     const { resolve } = resolver();
