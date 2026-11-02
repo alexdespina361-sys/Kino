@@ -4,7 +4,7 @@ import path from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
-import { FEEDBACK_LIMITS } from "../../shared";
+import { FEEDBACK_DETAIL_KEYS, FEEDBACK_LIMITS } from "../../shared";
 import { MemoryPersistence } from "../accounts/persistence";
 import { AccountStore } from "../accounts/store";
 import { buildApp } from "../app";
@@ -350,6 +350,24 @@ describe("sending a report", () => {
     const sent = await page.post("/api/feedback", { key: key(2), message: "Some", attachments: files(FEEDBACK_LIMITS.attachments * 4) });
     expect(sent.statusCode).toBe(201);
     expect(sent.data.rejected).toHaveLength(FEEDBACK_LIMITS.attachments * 4);
+  });
+
+  it("turns away at once answers to more questions than there are, instead of reading each to leave it out", async () => {
+    const { app, feedback } = await start();
+    const page = new Client(app);
+    const answers = (count: number) => Object.fromEntries(Array.from({ length: count }, (_, n) => [`question${n}`, "a"]));
+    const most = FEEDBACK_DETAIL_KEYS.length * 4;
+    const refused = await page.post("/api/feedback", { key: key(1), message: "Many", details: answers(most + 1) });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.data).toEqual({ error: "invalid_request" });
+    expect(feedback.size).toBe(0);
+    // (Up to there it is read, and the questions there are get their answers.)
+    const sent = await page.post("/api/feedback", { key: key(2), message: "Some", details: { ...answers(most - 1), steps: "Open it" } });
+    expect(sent.statusCode).toBe(201);
+    expect(feedback.get(sent.data.id)?.details).toEqual({ steps: "Open it" });
+    // (Answers that are not a set of answers are read as none, as they always were: they are not too many.)
+    expect((await page.post("/api/feedback", { key: key(3), message: "Text", details: "x".repeat(500) })).statusCode).toBe(201);
+    expect((await page.post("/api/feedback", { key: key(4), message: "List", details: Array.from({ length: 500 }, () => "x") })).statusCode).toBe(201);
   });
 
   it("does the same for an answer: the list is turned away at once, and every try is counted before the body is read", async () => {

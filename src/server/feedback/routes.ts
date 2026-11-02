@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   cleanText,
   FEEDBACK_AREAS,
+  FEEDBACK_DETAIL_KEYS,
   FEEDBACK_KEY,
   FEEDBACK_KINDS,
   FEEDBACK_LIMITS,
@@ -134,6 +135,16 @@ const tooManyFiles = (body: unknown): boolean => {
   return Array.isArray(sent) && sent.length > FEEDBACK_LIMITS.attachments * 4;
 };
 
+/** Whether a body brings answers to more questions than there are (it is turned away at once as well: a body can hold hundreds of thousands, each to be read and left out). */
+const tooManyAnswers = (body: unknown): boolean => {
+  const sent = (body as { details?: unknown } | null | undefined)?.details;
+  if (!sent || typeof sent !== "object" || Array.isArray(sent)) return false;
+  let count = 0;
+  // (Counted up to the limit only: how many there are past it is not worth finding out.)
+  for (const _name in sent) if (++count > FEEDBACK_DETAIL_KEYS.length * 4) return true;
+  return false;
+};
+
 const digest = (value: string) => createHash("sha256").update(value).digest();
 
 const tooMany = (reply: FastifyReply, waitMs: number) => {
@@ -207,7 +218,7 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
   /* ------------------------------ the sender's side ------------------------------ */
 
   app.post("/api/feedback", { bodyLimit: FEEDBACK_LIMITS.bodyBytes, onRequest: counted }, async (request, reply) => {
-    if (tooManyFiles(request.body)) return invalid(reply);
+    if (tooManyFiles(request.body) || tooManyAnswers(request.body)) return invalid(reply);
     const parsed = FeedbackInputSchema.safeParse(request.body);
     if (!parsed.success) return invalid(reply);
     const input = parsed.data;
