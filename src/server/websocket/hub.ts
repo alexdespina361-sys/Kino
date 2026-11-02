@@ -18,7 +18,7 @@ import {
 import { RateLimiter } from "../accounts/rateLimit";
 import type { ScreenProfiles } from "../accounts/screens";
 import type { ResolveFn, ResolveResult } from "../resolvers";
-import type { Controller, Device, Registry } from "../sessions/registry";
+import { MAX_PHONES_PER_TV, type Controller, type Device, type Registry } from "../sessions/registry";
 
 /** Close code sent to an older TV page when a newer page takes over the same device. */
 export const CLOSE_REPLACED = 4000;
@@ -30,6 +30,13 @@ export const CLOSE_REPLACED = 4000;
  */
 export const FRAME_BURST = 100;
 export const FRAME_RATE_PER_S = 30;
+
+/**
+ * How much may be waiting to be written to one connection before it is taken to have stopped reading. A page that reads is never behind
+ * by more than a few messages (a report is a couple of hundred bytes), so this is far above any that works. One that answers pings and
+ * reads nothing would otherwise keep every report relayed to it in this server's memory: it is dropped instead.
+ */
+export const MAX_BUFFERED_BYTES = 1_000_000;
 
 /** A film that starts or holds within this long of an admin guest's play or pause is that guest's doing; otherwise it is the host's own. */
 export const STEER_ATTRIBUTION_MS = 4000;
@@ -58,6 +65,10 @@ export interface HubOptions {
   maxFailedPairingsInAll?: number;
   /** Length of that window. Default 60 s. */
   failedPairingWindowMs?: number;
+  /** Videos looked up for one TV (chosen on a phone, on the TV itself, or the next episode) tolerated in one window before further ones are refused. Default 30. */
+  maxResolves?: number;
+  /** Length of that window. Default 60 s. */
+  resolveWindowMs?: number;
   /** Whose a screen is, as the accounts prove it (see TV_PROFILE). Without it a watch party shows no profiles. */
   profiles?: ScreenProfiles;
 }
@@ -86,6 +97,8 @@ export class Hub {
    */
   private readonly wrongByAddress: RateLimiter;
   private readonly wrongInAll: RateLimiter;
+  /** Lookups lately, counted for each TV: every one is a fetch of a page that is somebody else's, and a person chooses a title every few seconds at the very most. */
+  private readonly resolvesByDevice: RateLimiter;
   /** Where each open socket comes from (see `addressOf`). */
   private readonly addresses = new WeakMap<WebSocket, string>();
   private readonly profiles: ScreenProfiles | undefined;
@@ -101,6 +114,7 @@ export class Hub {
     const windowMs = options.failedPairingWindowMs ?? 60_000;
     this.wrongByAddress = new RateLimiter(perAddress, windowMs);
     this.wrongInAll = new RateLimiter(options.maxFailedPairingsInAll ?? perAddress * 5, windowMs);
+    this.resolvesByDevice = new RateLimiter(options.maxResolves ?? 30, options.resolveWindowMs ?? 60_000);
     this.sweeper = setInterval(() => {
       const now = Date.now();
       for (const [socket, seen] of this.lastSeen) if (now - seen > staleAfterMs) socket.terminate();
@@ -418,6 +432,10 @@ export class Hub {
       // The code of a watch party, typed where a TV's code goes: it is no wrong guess, and the phone is told what it is for (see Controller.tsx).
       if (this.registry.isPartyCode(code)) {
         return this.error(controller.id, "PARTY_CODE", "That is the code of a watch party. Watch on this device to join it.");
+      }
+      // The right code of a TV that has no room for another phone: no wrong guess either, and the phone is told why (the TV can let its phones go: TV_UNPAIR).
+      if (this.registry.isFullControlCode(controller, code)) {
+        return this.error(controller.id, "TV_PHONES_FULL", `That TV already has ${MAX_PHONES_PER_TV} phones, all it can keep. Disconnect its phones on the TV, then try again.`);
       }
       this.wrongCode(socket);
       return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");
@@ -760,6 +778,14 @@ export class Hub {
     const tvOffline = () => status({ phase: "failed", reason: "tv_offline", message: "The TV is offline." });
     if (!this.tvs.has(device.id)) return tvOffline();
 
+    // Far more lookups than a person can choose are refused. Nothing is announced or dropped for one that is: the TV is not left waiting for it, and a lookup under way carries on.
+    if (this.resolvesByDevice.wait(device.id) > 0) {
+      const message = "Too many videos asked for in a short time. Try again in a minute.";
+      if (controllerId) return this.error(controllerId, "RATE_LIMITED", message);
+      return this.send(this.tvs.get(device.id), { type: "ERROR", code: "RATE_LIMITED", message });
+    }
+    this.resolvesByDevice.hit(device.id);
+
     const seq = this.bumpResolveSeq(device.id);
     status({ phase: "resolving" });
     this.send(this.tvs.get(device.id), { type: "TV_RESOLVING", active: true });
@@ -805,7 +831,10 @@ export class Hub {
   /* ------------------------------ sending ------------------------------ */
 
   private send(socket: WebSocket | undefined, message: ServerMessage): void {
-    if (socket?.readyState === 1) socket.send(JSON.stringify(message));
+    if (socket?.readyState !== 1) return;
+    // (A connection that is not reading is let go of, not fed: its `close` handler tidies up as for any other that goes.)
+    if (socket.bufferedAmount > MAX_BUFFERED_BYTES) return socket.terminate();
+    socket.send(JSON.stringify(message));
   }
 
   private toControllers(device: Device, message: ServerMessage): void {

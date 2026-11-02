@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MAX_PHONE_TVS } from "../../shared";
-import { KEEP_RESUME_DAYS, Registry, cleanLabel, generatePairingCode } from "./registry";
+import { KEEP_RESUME_DAYS, MAX_PHONES_PER_TV, Registry, cleanLabel, generatePairingCode } from "./registry";
 
 function setup(options: ConstructorParameters<typeof Registry>[0] = {}) {
   let time = 1_000_000;
@@ -155,6 +155,72 @@ describe("Registry: a second phone", () => {
     const result = registry.addFollower(second, registry.ensureCode(guest)!.code);
     expect(result).toEqual({ ok: true, leader: device, follower: guest });
     expect(registry.removeFollower(first, guest.publicId)).toEqual({ leader: device, follower: guest });
+  });
+
+  describe("when the TV has all the phones it can keep", () => {
+    /** A TV with `MAX_PHONES_PER_TV` phones, the first one included, and the control code they joined with. */
+    function crowded() {
+      const { registry, advance, device, first } = paired();
+      const code = registry.ensureControlCode(device).code;
+      const joined = Array.from({ length: MAX_PHONES_PER_TV - 1 }, () => {
+        const phone = registry.controllerHello();
+        expect(registry.joinController(phone, code)).toBe(device);
+        return phone;
+      });
+      return { registry, advance, device, code, phones: [first, ...joined] };
+    }
+
+    it("turns away one more, and changes nothing", () => {
+      const { registry, device, code } = crowded();
+      expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+      const late = registry.controllerHello();
+      expect(registry.isFullControlCode(late, code)).toBe(true);
+      expect(registry.joinController(late, code)).toBeNull();
+      expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+      expect(device.controllerIds).not.toContain(late.id);
+      expect(late.deviceId).toBeNull();
+      expect(late.deviceIds).toEqual([]);
+    });
+
+    it("lets a phone that is one of them come back to it, after it moved on to another TV", () => {
+      const { registry, device, code, phones } = crowded();
+      const [away] = phones;
+      const other = registry.tvHello();
+      registry.pair(away!, registry.ensureCode(other)!.code);
+      expect(away!.deviceId).toBe(other.id);
+      expect(registry.isFullControlCode(away!, code)).toBe(false);
+      expect(registry.joinController(away!, code)).toBe(device);
+      expect(away!.deviceId).toBe(device.id);
+      expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV); // (not listed twice)
+    });
+
+    it("has room again for the next phone when one lets go of the TV", () => {
+      const { registry, device, code, phones } = crowded();
+      const late = registry.controllerHello();
+      expect(registry.joinController(late, code)).toBeNull();
+      registry.unpair(phones[1]!, device.publicId);
+      expect(registry.isFullControlCode(late, code)).toBe(false);
+      expect(registry.joinController(late, code)).toBe(device);
+      expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+    });
+
+    it("does not take a wrong code, or one that ran out, for the code of a full TV", () => {
+      const { registry, advance, code } = crowded();
+      const late = registry.controllerHello();
+      expect(registry.isFullControlCode(late, "000000")).toBe(false);
+      advance(10 * 60 * 1000 + 1);
+      expect(registry.isFullControlCode(late, code)).toBe(false);
+      expect(registry.joinController(late, code)).toBeNull();
+    });
+  });
+
+  it("keeps a TV with a few phones open to more of them", () => {
+    const { registry, device } = paired();
+    const code = registry.ensureControlCode(device).code;
+    const second = registry.controllerHello();
+    expect(registry.isFullControlCode(second, code)).toBe(false);
+    expect(registry.joinController(second, code)).toBe(device);
+    expect(device.controllerIds).toHaveLength(2);
   });
 });
 

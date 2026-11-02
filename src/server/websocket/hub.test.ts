@@ -8,8 +8,8 @@ import { buildApp } from "../app";
 import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
 import type { ResolveFn } from "../resolvers";
 import { PairingStore } from "../sessions/pairings";
-import { Registry } from "../sessions/registry";
-import { CLOSE_REPLACED, FRAME_BURST, STEER_ATTRIBUTION_MS } from "./hub";
+import { MAX_PHONES_PER_TV, Registry } from "../sessions/registry";
+import { CLOSE_REPLACED, FRAME_BURST, MAX_BUFFERED_BYTES, STEER_ATTRIBUTION_MS } from "./hub";
 
 /**
  * Minimal fake TV / phone. It connects through `app.injectWS`, in memory: a client and a server that talk over real loopback
@@ -345,6 +345,63 @@ describe("a connection that sends too much", () => {
     await other.next("PONG");
     other.send({ type: "PING" });
     await other.next("PONG");
+  });
+});
+
+describe("a connection that does not read what it is sent", () => {
+  /** A paired TV and phone, and the server's end of each connection (the sockets the hub holds; the TV was connected first). */
+  async function pairedWithServerEnds() {
+    const before = new Set(app.websocketServer.clients);
+    const paired = await pairedSetup();
+    const [tvEnd, phoneEnd] = [...app.websocketServer.clients].filter((socket) => !before.has(socket));
+    return { ...paired, tvEnd: tvEnd!, phoneEnd: phoneEnd! };
+  }
+  /** What the server's end reports when its peer has stopped reading: that much is waiting to be written. */
+  const stall = (socket: WebSocket, buffered: number) => Object.defineProperty(socket, "bufferedAmount", { value: buffered, configurable: true });
+  const report = { state: "playing" as const, currentTime: 1, duration: 60 };
+
+  it("is dropped when it is a TV, and nothing more is queued for it; the phone, which reads, is left alone", async () => {
+    const { tv, phone, tvEnd } = await pairedWithServerEnds();
+    const queued = vi.spyOn(tvEnd, "send");
+    stall(tvEnd, MAX_BUFFERED_BYTES + 1);
+
+    phone.send({ type: "CMD", command: { type: "PLAY" } }); // (relayed to the TV)
+    expect(await tv.closed()).toBe(1006); // (no goodbye: it would never be read)
+    expect(queued).not.toHaveBeenCalled();
+    expect((await phone.nextWhere("TV_STATUS", (m) => !m.online)).online).toBe(false); // (tidied up as for any TV that goes)
+    expect(phone.closeCode).toBeUndefined();
+    phone.send({ type: "CMD", command: { type: "PLAY" } });
+    expect((await phone.next("ERROR")).code).toBe("TV_OFFLINE");
+  });
+
+  it("is dropped when it is a phone, the TV carries on, and the phone is served again when it comes back", async () => {
+    const { tv, phone, phoneEnd, controllerId } = await pairedWithServerEnds();
+    const queued = vi.spyOn(phoneEnd, "send");
+    stall(phoneEnd, MAX_BUFFERED_BYTES + 1);
+
+    tv.send({ type: "TV_STATE", state: report }); // (relayed to the phone)
+    expect(await phone.closed()).toBe(1006);
+    expect(queued).not.toHaveBeenCalled();
+    expect(tv.closeCode).toBeUndefined();
+
+    const back = await connect();
+    back.send({ type: "CTL_HELLO", controllerId });
+    expect((await back.next("CTL_WELCOME")).state).toMatchObject({ state: "playing", currentTime: 1 });
+    tv.send({ type: "TV_STATE", state: { ...report, currentTime: 2 } });
+    expect((await back.next("STATE")).state.currentTime).toBe(2);
+  });
+
+  it("is kept while it is behind but within the limit", async () => {
+    const { tv, phone, tvEnd, phoneEnd } = await pairedWithServerEnds();
+    stall(tvEnd, MAX_BUFFERED_BYTES);
+    stall(phoneEnd, MAX_BUFFERED_BYTES);
+
+    phone.send({ type: "CMD", command: { type: "PLAY" } });
+    expect((await tv.next("TV_CMD")).command.type).toBe("PLAY");
+    tv.send({ type: "TV_STATE", state: report });
+    expect((await phone.next("STATE")).state.currentTime).toBe(1);
+    expect(tv.closeCode).toBeUndefined();
+    expect(phone.closeCode).toBeUndefined();
   });
 });
 
@@ -774,6 +831,113 @@ describe("TV feedback while a link is being looked up", () => {
     expect((await tv.next("TV_RESOLVING")).active).toBe(true);
     expect((await tv.next("TV_RESOLVING")).active).toBe(false);
     await tv.expectNone((m) => m.type === "TV_CMD");
+  });
+});
+
+describe("lookups asked for faster than a person chooses", () => {
+  /** A paired TV and phone on a server that looks up at most `max` videos for one TV in `windowMs`. */
+  async function limited(max: number, windowMs = 60_000) {
+    await app.close();
+    app = await buildApp({ resolve: (url) => resolveImpl(url), hub: { maxResolves: max, resolveWindowMs: windowMs } });
+    await app.ready();
+    return pairedSetup();
+  }
+  /** Every address the resolver is asked about, and the answer to each: a video. */
+  function lookups() {
+    const seen: string[] = [];
+    resolveImpl = async (url) => (seen.push(url), { status: "success", resolver: "test", media });
+    return seen;
+  }
+  const played = (m: ServerMessage) => m.type === "TV_CMD" && m.command.type === "PLAY";
+
+  it("refuses a phone's choice past the limit: nothing is looked up, the TV is not left waiting for it, and the phone is told", async () => {
+    const seen = lookups();
+    const { tv, phone } = await limited(2);
+    for (const n of [1, 2]) {
+      phone.send({ type: "PLAY_URL", url: `https://s.example/${n}` });
+      await tv.nextWhere("TV_CMD", played);
+    }
+    await Promise.all([tv.forget(), phone.forget()]);
+
+    phone.send({ type: "PLAY_URL", url: "https://s.example/3" });
+    const refused = await phone.next("ERROR");
+    expect(refused.code).toBe("RATE_LIMITED");
+    expect(refused.message).toMatch(/Too many.*Try again/);
+    await tv.expectNone((m) => m.type === "TV_RESOLVING" || m.type === "TV_CMD");
+    await phone.expectNone((m) => m.type === "RESOLVE_STATUS" || m.type === "MEDIA" || m.type === "STATE");
+    expect(seen).toEqual(["https://s.example/1", "https://s.example/2"]);
+  });
+
+  it("counts what the TV asks for with what the phone does, and tells the TV when it is refused", async () => {
+    const seen = lookups();
+    const { tv, phone } = await limited(2);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/1" });
+    await tv.nextWhere("TV_CMD", played);
+    tv.send({ type: "TV_PLAY_URL", url: "https://s.example/2" });
+    await tv.nextWhere("TV_CMD", played);
+    await Promise.all([tv.forget(), phone.forget()]);
+
+    tv.send({ type: "TV_PLAY_URL", url: "https://s.example/3" });
+    expect((await tv.next("ERROR")).code).toBe("RATE_LIMITED");
+    await tv.expectNone((m) => m.type === "TV_RESOLVING" || m.type === "TV_CMD");
+    await phone.expectNone((m) => m.type === "RESOLVE_STATUS" || m.type === "ERROR");
+    expect(seen).toEqual(["https://s.example/1", "https://s.example/2"]);
+  });
+
+  it("leaves a lookup that is under way alone when it refuses another one", async () => {
+    const gate: { release: () => void } = { release: () => {} };
+    resolveImpl = async () => {
+      await new Promise<void>((resolve) => (gate.release = resolve));
+      return { status: "success", resolver: "test", media };
+    };
+    const { tv, phone } = await limited(1);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/slow" });
+    expect((await tv.next("TV_RESOLVING")).active).toBe(true);
+
+    phone.send({ type: "PLAY_URL", url: "https://s.example/more" });
+    expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
+    gate.release();
+    expect((await tv.next("TV_RESOLVING")).active).toBe(false); // (the TV waited for one lookup and is told when it ends)
+    expect((await tv.next("TV_CMD")).command.type).toBe("LOAD");
+    await tv.expectNone((m) => m.type === "TV_RESOLVING");
+  });
+
+  it("lets lookups through again once the window has passed", async () => {
+    const seen = lookups();
+    const { tv, phone } = await limited(1, 500);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/1" });
+    await tv.nextWhere("TV_CMD", played);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/2" });
+    expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    phone.send({ type: "PLAY_URL", url: "https://s.example/3" });
+    await tv.nextWhere("TV_CMD", played);
+    expect(seen).toEqual(["https://s.example/1", "https://s.example/3"]);
+  });
+
+  it("counts for each TV: the lookups of another TV are not held back", async () => {
+    lookups();
+    const { phone } = await limited(1);
+    phone.send({ type: "PLAY_URL", url: "https://s.example/1" });
+    await phone.nextWhere("RESOLVE_STATUS", (m) => m.status.phase === "found");
+    phone.send({ type: "PLAY_URL", url: "https://s.example/2" });
+    expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
+
+    const other = await pairedSetup();
+    other.phone.send({ type: "PLAY_URL", url: "https://s.example/3" });
+    expect((await other.tv.nextWhere("TV_CMD", (m) => m.command.type === "LOAD")).command.type).toBe("LOAD");
+  });
+
+  it("lets a person choose titles as fast as they can tap, and refuses the thirty-first in a minute", async () => {
+    const seen = lookups();
+    const { tv, phone } = await pairedSetup();
+    for (let n = 1; n <= 30; n++) {
+      phone.send({ type: "PLAY_URL", url: `https://s.example/${n}` });
+      await tv.nextWhere("TV_CMD", played);
+    }
+    phone.send({ type: "PLAY_URL", url: "https://s.example/31" });
+    expect((await phone.next("ERROR")).code).toBe("RATE_LIMITED");
+    expect(seen).toHaveLength(30);
   });
 });
 
@@ -1833,6 +1997,39 @@ describe("several phones controlling one TV session", () => {
     await tv.next("TV_UNPAIRED");
     tv.send({ type: "TV_NEW_CODE" });
     expect((await tv.next("TV_CODE")).control).toBeUndefined(); // free again: it is a pairing code that is offered
+  });
+
+  it("turns a phone away from a TV that has all the phones it can keep, says why without counting a wrong code, and lets it in once the TV has let its phones go", async () => {
+    const registry = new Registry();
+    await app.close();
+    app = await buildApp({ registry, resolve: (url) => resolveImpl(url), hub: { maxFailedPairings: 1 } }); // (a single wrong code would pause this address)
+    await app.ready();
+    const { tv, phone, deviceId } = await pairedSetup();
+    const device = registry.getDevice(deviceId)!;
+    const code = registry.ensureControlCode(device).code;
+    for (let n = 1; n < MAX_PHONES_PER_TV; n++) registry.joinController(registry.controllerHello(), code);
+
+    const late = await connect();
+    late.send({ type: "CTL_HELLO" });
+    await late.next("CTL_WELCOME");
+    for (let tries = 0; tries < 2; tries++) {
+      late.send({ type: "PAIR", code });
+      const refused = await late.next("ERROR");
+      expect(refused.code).toBe("TV_PHONES_FULL");
+      expect(refused.message).toMatch(/all it can keep.*Disconnect its phones on the TV/);
+    }
+    expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+
+    // A phone that is one of them is never turned away from it.
+    await phone.forget();
+    phone.send({ type: "PAIR", code });
+    expect((await phone.next("CTL_WELCOME")).tv).toMatchObject({ online: true, controllerCount: MAX_PHONES_PER_TV });
+
+    // What the answer says works: the TV lets its phones go, and the one that was turned away connects with the TV's new code.
+    tv.send({ type: "TV_UNPAIR" });
+    const { pairing } = await tv.next("TV_UNPAIRED");
+    late.send({ type: "PAIR", code: pairing!.code });
+    expect((await late.next("CTL_WELCOME")).tv).toMatchObject({ online: true, controllerCount: 1 });
   });
 });
 

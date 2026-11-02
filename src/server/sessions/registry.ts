@@ -144,6 +144,8 @@ const DAY_MS = 24 * 3600 * 1000;
 export const KEEP_PAIRINGS_DAYS = 400;
 /** What a TV was playing is put back when its page is opened again, unless that was longer ago than this. */
 export const KEEP_RESUME_DAYS = 30;
+/** How many phones can be remotes of one TV at once (they all join with its control code). A phone that is one of them already can always come back. */
+export const MAX_PHONES_PER_TV = 32;
 /** The place a TV reached is written down again when it has moved this far (and when the TV goes away). */
 const SAVE_EVERY_S = 30;
 /** A picture that has just been put back at a place is given this long to get there before its reports count again. */
@@ -451,7 +453,7 @@ export class Registry {
     return { code: leader.controlCode.value, expiresInMs: this.codeTtlMs };
   }
 
-  /** An additional phone joins an active session via the control code. */
+  /** An additional phone joins an active session via the control code. A TV that has all the phones it can keep (see `MAX_PHONES_PER_TV`) turns away one that is not among them. */
   joinController(controller: Controller, code: string): Device | null {
     const deviceId = this.deviceByControlCode.get(code);
     const device = deviceId ? this.devices.get(deviceId) : undefined;
@@ -461,8 +463,20 @@ export class Registry {
       device.controlCode = null;
       return null;
     }
+    if (this.hasNoRoomFor(device, controller)) return null;
     this.connect(controller, device);
     return device;
+  }
+
+  /** Whether `code` is a control code that is good now, of a TV that has no room for this phone: what `joinController` turned it away for, so that it can be told. */
+  isFullControlCode(controller: Controller, code: string): boolean {
+    const deviceId = this.deviceByControlCode.get(code);
+    const device = deviceId ? this.devices.get(deviceId) : undefined;
+    return device?.controlCode?.value === code && device.controlCode.expiresAt > this.now() && this.hasNoRoomFor(device, controller);
+  }
+
+  private hasNoRoomFor(device: Device, controller: Controller): boolean {
+    return device.controllerIds.length >= MAX_PHONES_PER_TV && !device.controllerIds.includes(controller.id);
   }
 
   /** Every phone that is a remote of this TV, the ones that have moved on to another TV included. */
