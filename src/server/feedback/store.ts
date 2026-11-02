@@ -262,6 +262,8 @@ export interface NewReport {
   context: FeedbackContext | null;
   contextDropped?: string[];
   files: Array<{ meta: Omit<FeedbackFile, "bytes">; data: Buffer }>;
+  /** Where it comes from (an address): kept in memory only, while the report is kept, to count the reports one sender has open (see `create`). Never written anywhere. */
+  from?: string;
 }
 
 export interface FeedbackStoreOptions {
@@ -280,6 +282,14 @@ export class FeedbackFull extends Error {
   constructor() {
     super("The feedback is full of reports that are still open");
     this.name = "FeedbackFull";
+  }
+}
+
+/** A report is not taken in because its sender already has as many reports open as one sender may (see `create`): the team has not dealt with them yet. */
+export class TooManyOpen extends Error {
+  constructor() {
+    super("The sender has as many reports open as one sender may");
+    this.name = "TooManyOpen";
   }
 }
 
@@ -320,6 +330,8 @@ export class FeedbackStore {
   private readonly records = new Map<string, FeedbackRecord>();
   private readonly chains = new Map<string, Promise<unknown>>();
   private readonly creating = new Map<string, Promise<{ record: FeedbackRecord; refused: string[] }>>();
+  /** Who sent each report that is kept (see `NewReport.from`): in memory only, so a restart forgives. */
+  private readonly senders = new Map<string, string>();
   private readonly waiters = new Set<() => void>();
   private nextId = 1;
   private revision = 0;
@@ -356,6 +368,17 @@ export class FeedbackStore {
     let sum = 0;
     for (const record of this.records.values()) sum += reportBytes(record);
     return sum;
+  }
+
+  /** Whether a report of words alone would be turned away now: what is open takes every place, or all the room (what is closed can make room, see `admit`). */
+  get full(): boolean {
+    const closed = this.oldestFirst().filter((record) => feedbackClosed(record.status));
+    // (The oldest closed reports go whole for the places, and the files of the others go for the room: what is left has to take the new words.)
+    const places = this.records.size - this.maxReports + 1;
+    if (closed.length < places) return true;
+    let used = this.bytes + RECORD_BYTES;
+    closed.forEach((record, n) => (used -= n < places ? reportBytes(record) : filesBytes(record)));
+    return used > this.maxBytes;
   }
 
   /** A number that goes up with every change that the team should hear of: a report, a line from the sender. */
@@ -448,15 +471,21 @@ export class FeedbackStore {
    *
    * Room is made from what is closed and from nothing else (see `admit`), and `FeedbackFull` is what comes when that is not enough. A file that does not
    * fit the budget for files is, with `filesOptional`, left out and named in `refused` (the words are kept); without it the report is not taken.
+   *
+   * With `maxOpen`, a sender (`input.from`) who already has that many reports open is not given another: `TooManyOpen`. The count is of the reports
+   * this run of the server has taken from that address, and is made in the same turn as the report is put in, so a burst cannot get past it.
    */
-  async create(input: NewReport, { filesOptional = false }: { filesOptional?: boolean } = {}): Promise<{ record: FeedbackRecord; created: boolean; refused: string[] }> {
+  async create(
+    input: NewReport,
+    { filesOptional = false, maxOpen }: { filesOptional?: boolean; maxOpen?: number } = {},
+  ): Promise<{ record: FeedbackRecord; created: boolean; refused: string[] }> {
     const hash = sha256(input.key);
     const known = this.byKey(input.key);
     if (known) return { record: known, created: false, refused: [] };
     const running = this.creating.get(hash);
     if (running) return { ...(await running), created: false };
     // (One report at a time is taken in, so that the room that was found is the room there is when the report is put in it.)
-    const job = this.chained(NEW_REPORT, () => this.make(input, hash, filesOptional));
+    const job = this.chained(NEW_REPORT, () => this.make(input, hash, filesOptional, maxOpen));
     this.creating.set(hash, job);
     try {
       return { ...(await job), created: true };
@@ -465,7 +494,8 @@ export class FeedbackStore {
     }
   }
 
-  private async make(input: NewReport, keyHash: string, filesOptional: boolean): Promise<{ record: FeedbackRecord; refused: string[] }> {
+  private async make(input: NewReport, keyHash: string, filesOptional: boolean, maxOpen: number | undefined): Promise<{ record: FeedbackRecord; refused: string[] }> {
+    if (input.from && maxOpen !== undefined && this.openFrom(input.from) >= maxOpen) throw new TooManyOpen();
     // (A report that is only its files is not kept without them: there would be nothing in it.)
     const hasWords = input.message !== "" || Object.keys(input.details).length > 0;
     const { files, refused } = await this.admit(input.files, filesOptional && hasWords);
@@ -503,8 +533,19 @@ export class FeedbackStore {
       throw error;
     }
     this.records.set(id, record);
+    if (input.from) this.senders.set(id, input.from);
     this.bump();
     return { record, refused };
+  }
+
+  /** How many of the reports kept that came from this address are still open. */
+  private openFrom(address: string): number {
+    let open = 0;
+    for (const [id, from] of this.senders) {
+      const record = this.records.get(id);
+      if (from === address && record && !feedbackClosed(record.status)) open++;
+    }
+    return open;
   }
 
   /**
@@ -578,6 +619,7 @@ export class FeedbackStore {
       if (!this.records.has(id)) return false;
       await this.backend.remove(id);
       this.records.delete(id);
+      this.senders.delete(id);
       this.bump();
       return true;
     });
@@ -596,6 +638,7 @@ export class FeedbackStore {
       if (!current || !feedbackClosed(current.status)) return;
       await this.backend.remove(id);
       this.records.delete(id);
+      this.senders.delete(id);
       this.bump();
     });
   }
@@ -626,7 +669,7 @@ export class FeedbackStore {
   private async admit(files: NewReport["files"], optional: boolean): Promise<{ files: NewReport["files"]; refused: string[] }> {
     while (this.records.size >= this.maxReports) {
       const victim = this.oldestFirst().find((record) => feedbackClosed(record.status));
-      if (!victim) throw this.turnedAway();
+      if (!victim) throw this.turnedAway("places");
       await this.evict(victim.id);
     }
     return this.fit(files, optional, RECORD_BYTES);
@@ -645,7 +688,7 @@ export class FeedbackStore {
     }
     let room = this.maxBytes - this.bytes - words;
     if (room >= wanted) return { files, refused: [] };
-    if (!optional || room < 0) throw this.turnedAway(spare === undefined ? "a report" : "an answer");
+    if (!optional || room < 0) throw this.turnedAway("room", spare === undefined ? "a report" : "an answer");
     const kept: NewReport["files"] = [];
     const refused: string[] = [];
     for (const file of files) {
@@ -659,8 +702,12 @@ export class FeedbackStore {
     return { files: kept, refused };
   }
 
-  private turnedAway(what = "a report"): FeedbackFull {
-    this.log.warn(`Feedback: turned ${what} away: ${this.records.size} reports are kept (${Math.round(this.bytes / 1024 / 1024)} MB) and no closed one is left to make room from.`);
+  /** `limit` is the one that was reached: the places for reports, or the room for them. */
+  private turnedAway(limit: "places" | "room", what = "a report"): FeedbackFull {
+    const megabytes = (bytes: number) => Math.round(bytes / 1024 / 1024);
+    const reached = limit === "places" ? `all ${this.maxReports} places are` : `all the room (${megabytes(this.maxBytes)} MB) is`;
+    const kept = `${this.records.size} reports are kept, ${megabytes(this.bytes)} MB`;
+    this.log.warn(`Feedback: turned ${what} away: ${reached} taken by reports that are still open, and no closed one is left to make room from (${kept}).`);
     return new FeedbackFull();
   }
 }

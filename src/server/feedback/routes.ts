@@ -20,7 +20,7 @@ import {
 } from "../../shared";
 import { RateLimiter } from "../accounts/rateLimit";
 import { isEmptyReport, readContext, readDetails, readFiles, readWords } from "./intake";
-import { FeedbackFull, unreadOf, waitingOn, type FeedbackRecord, type FeedbackStore } from "./store";
+import { FeedbackFull, TooManyOpen, unreadOf, waitingOn, type FeedbackRecord, type FeedbackStore } from "./store";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -159,6 +159,12 @@ const tooMany = (reply: FastifyReply, waitMs: number) => {
 const full = (reply: FastifyReply) => reply.header("Retry-After", 3600).code(503).send({ error: "full" });
 
 /**
+ * The sender has as many reports open as one address may (see `TooManyOpen`). That is the sender's doing, so it is a 429, but waiting a few minutes will not
+ * change it: it changes when the team has dealt with some of the reports, so the page is told to try again later.
+ */
+const tooManyOpen = (reply: FastifyReply) => reply.header("Retry-After", 3600).code(429).send({ error: "too_many_open" });
+
+/**
  * The check for the team's side of the site (the feedback below, and the owner's stats): true when the request brings the team's token
  * (`FEEDBACK_ADMIN_TOKEN`) as a Bearer; otherwise the answer is sent. Without a token that is long enough there is no team's side, and the answer is a
  * 404 (there is nothing to find). Wrong tries are slowed per address.
@@ -199,6 +205,11 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
   const reads = new RateLimiter(120, MINUTE);
   /** Every try to send, whatever comes of it, counted before the body is read: a request that is turned away has cost what it cost to read. */
   const tries = new RateLimiter(Math.max(30, sendsPer10Min * 5), 10 * MINUTE);
+  /**
+   * The most reports one address may have open at once (see `TooManyOpen`): as many as it may send in ten minutes. A person has a few things to say
+   * before anybody has looked at the first, so this is far above what one needs, and an address cannot fill the room with reports nobody has dealt with.
+   */
+  const maxOpen = Math.max(6, sendsPer10Min);
   const counted = async (request: FastifyRequest, reply: FastifyReply) => {
     const wait = tries.wait(request.ip);
     if (wait > 0) return tooMany(reply, wait);
@@ -261,16 +272,17 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
           context,
           ...(dropped.length ? { contextDropped: dropped } : {}),
           files,
+          from: request.ip,
         },
-        { filesOptional: true },
+        { filesOptional: true, maxOpen },
       );
     } catch (error) {
-      if (error instanceof FeedbackFull) {
+      if (error instanceof FeedbackFull || error instanceof TooManyOpen) {
         // (A report the store did not take is not one this address sent: what it cost the allowances comes back, so a full store does not use them up.)
         perAddress.undo(request.ip);
         perAddressDay.undo(request.ip);
         everyone.undo("all");
-        return full(reply);
+        return error instanceof FeedbackFull ? full(reply) : tooManyOpen(reply);
       }
       throw error;
     }

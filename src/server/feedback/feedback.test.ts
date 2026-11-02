@@ -16,6 +16,7 @@ import {
   FeedbackStore,
   MemoryFeedbackBackend,
   PostgresFeedbackBackend,
+  TooManyOpen,
   type FeedbackBackend,
   type FeedbackRecord,
   type NewReport,
@@ -523,10 +524,134 @@ it("tells a change from no change when it is waited for", async () => {
   expect(await store.waitForChange(before + 50, 2000)).toBe(before + 1);
 });
 
+describe("the reports one sender has open", () => {
+  const from = (address: string, n: number) => report(n, { from: address });
+  const most = { maxOpen: 3 };
+
+  it("are no more than a sender may have: the next is turned away, another sender is not, and what is closed or gone is not counted", async () => {
+    const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), log: quiet });
+    for (const n of [1, 2, 3]) await store.create(from("sender-a", n), most);
+    await expect(store.create(from("sender-a", 4), most)).rejects.toBeInstanceOf(TooManyOpen);
+    expect(store.size).toBe(3);
+    expect(store.byKey(key(4))).toBeUndefined();
+    // (A report that is sent again is the same report: it is not another one open. A sender of another address, and one with no address, have their own.)
+    expect((await store.create(from("sender-a", 1), most)).created).toBe(false);
+    expect((await store.create(from("sender-b", 5), most)).created).toBe(true);
+    expect((await store.create(report(6), most)).created).toBe(true);
+
+    // A report the team plans is still open; one it has closed, or deleted, is not.
+    await store.update("1", (draft) => void (draft.status = "planned"));
+    await expect(store.create(from("sender-a", 4), most)).rejects.toBeInstanceOf(TooManyOpen);
+    await store.update("1", (draft) => void (draft.status = "duplicate"));
+    expect((await store.create(from("sender-a", 4), most)).created).toBe(true);
+    await expect(store.create(from("sender-a", 7), most)).rejects.toBeInstanceOf(TooManyOpen);
+    await store.remove("2");
+    expect((await store.create(from("sender-a", 7), most)).created).toBe(true);
+    // (With no limit asked for, there is none.)
+    expect((await store.create(from("sender-a", 8))).created).toBe(true);
+  });
+
+  it("cannot be got past by sending them all at once: they are counted in the turn the report is put in", async () => {
+    const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), log: quiet });
+    const arrived = await Promise.allSettled([1, 2, 3, 4, 5].map((n) => store.create(from("sender-a", n), most)));
+    expect(arrived.filter((each) => each.status === "fulfilled")).toHaveLength(3);
+    expect(arrived.flatMap((each) => (each.status === "rejected" ? [each.reason] : []))).toEqual([expect.any(TooManyOpen), expect.any(TooManyOpen)]);
+    expect(store.size).toBe(3);
+  });
+
+  it("are counted from the address the report came from, which is never written down: not in the backend, not in what the team reads", async () => {
+    const backend = new MemoryFeedbackBackend();
+    const store = await FeedbackStore.open({ backend, log: quiet });
+    const { record } = await store.create(from("203.0.113.77", 1), most);
+    expect(JSON.stringify([...backend.records.values()])).not.toContain("203.0.113.77");
+    expect(JSON.stringify(record)).not.toContain("203.0.113.77");
+    // (So a server that starts again does not know it: a restart forgives, as it does for the allowances.)
+    const restarted = await FeedbackStore.open({ backend, log: quiet });
+    for (const n of [2, 3, 4]) await restarted.create(from("203.0.113.77", n), most);
+    await expect(restarted.create(from("203.0.113.77", 5), most)).rejects.toBeInstanceOf(TooManyOpen);
+  });
+
+  it("are counted from an address that is kept only as long as its report is: one taken out, or given up for a place, takes the address along", async () => {
+    const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxReports: 2, log: quiet });
+    // (The addresses are in the store's memory and nowhere else, so that is where this looks.)
+    const remembered = () => [...(store as unknown as { senders: Map<string, string> }).senders.keys()];
+    await store.create(from("203.0.113.77", 1), most);
+    await store.create(from("203.0.113.78", 2), most);
+    expect(remembered()).toEqual(["1", "2"]);
+    await store.remove("1");
+    expect(remembered()).toEqual(["2"]);
+    await store.update("2", (draft) => void (draft.status = "done"));
+    await store.create(from("203.0.113.79", 3), most);
+    await store.create(from("203.0.113.80", 4), most);
+    expect(store.get("2")).toBeUndefined();
+    expect(remembered()).toEqual(["3", "4"]);
+  });
+});
+
+describe("whether a new report would be turned away", () => {
+  const big = Buffer.concat([PNG, Buffer.alloc(40_000)]);
+  const withFile = (n: number) => report(n, { files: [{ meta: { id: `pic${n}1`, name: "a.png", mime: "image/png", role: "screenshot" }, data: big }] });
+  const closed = (store: FeedbackStore, id: string) => store.update(id, (draft) => void (draft.status = "done"));
+
+  it("is when the reports that are open take every place, and not when one that is closed can make a place", async () => {
+    const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxReports: 2, log: quiet });
+    expect(store.full).toBe(false);
+    await store.create(report(1));
+    expect(store.full).toBe(false);
+    await store.create(report(2));
+    expect(store.full).toBe(true);
+    await closed(store, "1");
+    expect(store.full).toBe(false);
+    expect((await store.create(report(3))).created).toBe(true);
+    expect(store.full).toBe(true);
+  });
+
+  it("is when the reports that are open take all the room, and not when the files of ones that are closed can make it", async () => {
+    // Room for the words of two reports and one picture.
+    const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxBytes: big.length + 2 * 6 * 1024, log: quiet });
+    await store.create(withFile(1));
+    expect(store.full).toBe(false);
+    await store.create(report(2));
+    expect(store.full).toBe(true);
+    await closed(store, "1");
+    expect(store.full).toBe(false);
+  });
+
+  it("counts the places that a closed report makes whole, with its words", async () => {
+    // Two places, both taken, one of them by a report that is closed; room for the words of three reports but a thousand bytes.
+    const store = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxReports: 2, maxBytes: 3 * 6 * 1024 - 1000, log: quiet });
+    await store.create(report(1));
+    await store.create(report(2));
+    expect(store.full).toBe(true);
+    await closed(store, "1");
+    // (The new report takes the place of the closed one, words and all.)
+    expect(store.full).toBe(false);
+    expect((await store.create(report(3))).created).toBe(true);
+    expect(store.list().map((each) => each.id).sort()).toEqual(["2", "3"]);
+  });
+});
+
+it("says in its log which limit it turned a report, or an answer, away at: the places or the room", async () => {
+  const told: string[] = [];
+  const log = { warn: (line: string) => void told.push(line) };
+  const places = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxReports: 1, log });
+  await places.create(report(1));
+  await expect(places.create(report(2))).rejects.toBeInstanceOf(FeedbackFull);
+  const room = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxBytes: 6 * 1024, log });
+  const { record } = await room.create(report(1));
+  await expect(room.create(report(2))).rejects.toBeInstanceOf(FeedbackFull);
+  await expect(room.addMessage(record.id, { from: "user", text: "More" })).rejects.toBeInstanceOf(FeedbackFull);
+  expect(told).toEqual([
+    expect.stringMatching(/^Feedback: turned a report away: all 1 places are taken by reports that are still open/),
+    expect.stringMatching(/^Feedback: turned a report away: all the room \(\d+ MB\) is taken by reports that are still open/),
+    expect.stringMatching(/^Feedback: turned an answer away: all the room \(\d+ MB\) is taken by reports that are still open/),
+  ]);
+});
+
 describe("the budget, whatever mix of reports and answers comes", () => {
   const FILE_SIZES = [0, 1_000, 5_000, 12_000, 25_000];
 
-  it("is never passed: a seeded run of reports, answers and closings, with the files kept and counted exactly", async () => {
+  it("is never passed: a seeded run of reports, answers and closings, with the files kept and counted exactly, and `full` saying what a report would meet", async () => {
     // (A budget that is nearly always spent, and ones that are spent now and then.)
     for (const [seed, maxBytes] of [[11, 90_000], [12, 150_000], [13, 250_000], [14, 400_000]] as const) {
       const next = seeded(seed);
@@ -564,7 +689,9 @@ describe("the budget, whatever mix of reports and answers comes", () => {
           const attached = someFiles();
           const n = ++reports;
           const made = report(n, { message: "w".repeat(1 + Math.floor(next() * 4000)), files: attached });
-          await unlessFull(() => store.create(made, { filesOptional: next() < 0.7 }));
+          const predicted = attached.length === 0 ? store.full : undefined;
+          const turnedAway = await unlessFull(() => store.create(made, { filesOptional: next() < 0.7 }));
+          if (predicted !== undefined) expect(turnedAway, `full said ${predicted}`).toBe(predicted);
         } else if (roll < 0.75) {
           await unlessFull(() => answer(pick(ids)));
         } else if (roll < 0.85) {
@@ -614,7 +741,7 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-async function start(options: { token?: string | null; accounts?: boolean; maxBytes?: number; maxReports?: number } = {}) {
+async function start(options: { token?: string | null; accounts?: boolean; maxBytes?: number; maxReports?: number; sendsPer10Min?: number } = {}) {
   const feedback = await FeedbackStore.open({
     backend: new MemoryFeedbackBackend(),
     ...(options.maxBytes ? { maxBytes: options.maxBytes } : {}),
@@ -625,6 +752,7 @@ async function start(options: { token?: string | null; accounts?: boolean; maxBy
   const app = await buildApp({
     feedback,
     ...(options.token === null ? {} : { feedbackAdminToken: options.token ?? TOKEN }),
+    ...(options.sendsPer10Min ? { feedbackSendsPer10Min: options.sendsPer10Min } : {}),
     ...(accounts ? { accounts, passwordCost: { N: 1024, r: 8, p: 1 } } : {}),
   });
   apps.push(app);
@@ -849,6 +977,53 @@ describe("sending a report", () => {
     }
   });
 
+  it("turns the report that would be one too many open from an address away with a 429 of its own, while another address still sends", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { app, feedback } = await start();
+      const sendFrom = (address: string, n: number) => app.inject({ method: "POST", url: "/api/feedback", remoteAddress: address, payload: { key: key(n), message: `Report ${n}` } });
+      // Six reports: what an address may send in ten minutes, and what it may have open.
+      for (let n = 1; n <= 6; n++) expect((await sendFrom("198.51.100.1", n)).statusCode).toBe(201);
+      vi.setSystemTime(Date.now() + 11 * 60_000);
+
+      // Ten minutes on it may send again, but the team has not dealt with any of the six. (A refused try does not use up the allowance: it stays what it is.)
+      for (let n = 7; n <= 14; n++) {
+        const refused = await sendFrom("198.51.100.1", n);
+        expect([refused.statusCode, refused.json()]).toEqual([429, { error: "too_many_open" }]);
+        expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
+      }
+      expect(feedback.size).toBe(6);
+      expect((await sendFrom("198.51.100.2", 15)).statusCode).toBe(201);
+
+      // One closed makes room for one.
+      expect((await team(app).patch("/api/admin/feedback/3", { status: "declined" })).statusCode).toBe(200);
+      expect((await sendFrom("198.51.100.1", 16)).statusCode).toBe(201);
+      expect((await sendFrom("198.51.100.1", 17)).json()).toEqual({ error: "too_many_open" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets an address have as many open as it may send in ten minutes when that is more than six: the cap goes with the allowance", async () => {
+    const { app, feedback } = await start({ sendsPer10Min: 20 });
+    const page = new Client(app);
+    for (let n = 1; n <= 12; n++) expect((await page.post("/api/feedback", { key: key(n), message: `Report ${n}` })).statusCode).toBe(201);
+    expect(feedback.size).toBe(12);
+  });
+
+  it("says in /api/health when a new report would be turned away", async () => {
+    const { app } = await start({ maxReports: 2 });
+    const page = new Client(app);
+    const health = async () => (await app.inject("/api/health")).json().feedback;
+    expect(await health()).toEqual({ reports: 0, full: false, team: true });
+    await page.post("/api/feedback", { key: key(1), message: "One" });
+    expect(await health()).toEqual({ reports: 1, full: false, team: true });
+    await page.post("/api/feedback", { key: key(2), message: "Two" });
+    expect(await health()).toEqual({ reports: 2, full: true, team: true });
+    await team(app).patch("/api/admin/feedback/1", { status: "done" });
+    expect(await health()).toEqual({ reports: 2, full: false, team: true });
+  });
+
   it("slows down an address that sends many", async () => {
     const { app } = await start();
     const page = new Client(app);
@@ -1071,7 +1246,7 @@ describe("the team's side", () => {
       await new Client(app).post("/api/feedback", { key: key(1), message: "Hello" });
       const response = await new Client(app, { authorization: `Bearer ${token ?? "x"}` }).get("/api/admin/feedback");
       expect(response.statusCode).toBe(404);
-      expect((await app.inject("/api/health")).json().feedback).toEqual({ reports: 1, team: false });
+      expect((await app.inject("/api/health")).json().feedback).toEqual({ reports: 1, full: false, team: false });
     }
   });
 
@@ -1085,7 +1260,7 @@ describe("the team's side", () => {
     for (let n = 0; n < 7; n++) expect((await guesser.get("/api/admin/feedback")).statusCode).toBe(401);
     // (Ten wrong tries in all; even the right token waits then.)
     expect((await team(app).get("/api/admin/feedback")).statusCode).toBe(429);
-    expect((await app.inject("/api/health")).json().feedback).toEqual({ reports: 0, team: true });
+    expect((await app.inject("/api/health")).json().feedback).toEqual({ reports: 0, full: false, team: true });
   });
 
   it("lists, filters, reads, downloads, answers, sorts and deletes", async () => {
