@@ -96,6 +96,8 @@ const REDIRECTS = 5;
 const PIECE_DEADLINE_MS = 60_000;
 /** A server that carries no film still passes a subtitle on, which is some tens of kilobytes: a text beyond this is not one. */
 const SUBTITLE_MAX_BYTES = 2 * 1024 * 1024;
+/** The longest text (a playlist, a subtitle) a server that does carry film reads: a playlist of a long film is some hundreds of kilobytes. */
+const TEXT_MAX_BYTES = 8 * 1024 * 1024;
 
 /** Whether the address says it is a piece of a film (the other way to tell is by the type the other end gives, which is known only after asking). */
 const isSegmentPath = (pathname: string): boolean => pathname.endsWith(".ts") || pathname.endsWith(".m4s") || pathname.includes("page-");
@@ -113,14 +115,24 @@ const corsHeaders = (reply: FastifyReply): void => {
  */
 const FILE_TYPE = "application/octet-stream";
 const TEXT_TYPE = "text/plain; charset=utf-8";
-const isMediaType = (contentType: string): boolean => /^(video|audio)\/[\w.+-]+\s*(;|$)/i.test(contentType.trim());
+/**
+ * The video or audio type ("video/mp4") of a header, lower-cased and without its parameters; undefined for anything else. Only this is passed on, never the
+ * header as it came: a browser reads a header like `video/mp4;, text/html` as a list and keeps the last type. A type that says XML or JSON is no video either.
+ */
+const mediaTypeOf = (contentType: string): string | undefined => {
+  const essence = contentType.split(";", 1)[0]!.trim().toLowerCase();
+  return /^(?:video|audio)\/[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/.test(essence) && !/\+(?:xml|json)$/.test(essence) ? essence : undefined;
+};
 const inert = (reply: FastifyReply): void => {
   reply.header("X-Content-Type-Options", "nosniff");
   reply.header("Content-Security-Policy", "default-src 'none'; sandbox");
 };
 
 /** Some sites send a piece of a film as a page or as plain bytes; a player wants to be told it is video. Whatever is not video or audio is told so. */
-const pieceType = (contentType: string): string => (isMediaType(contentType) ? contentType : "video/mp2t");
+const pieceType = (contentType: string): string => mediaTypeOf(contentType) ?? "video/mp2t";
+
+/** The status to answer with for one the other end gave: a number Fastify refuses (above 599) would end in an error of ours with the other end's connection left open. */
+const statusFrom = (status: number): number => (status >= 200 && status <= 599 ? status : 502);
 
 /**
  * One pool of connections for each rule about addresses. The pool looks at the address a name leads to when it connects (see `guardedLookup`),
@@ -241,7 +253,7 @@ function sendPiece(reply: FastifyReply, piece: Piece, stats?: ProxyStats): Fasti
   corsHeaders(reply);
   // (Only a piece that came is for keeping: an answer that said no, or that the site gave up on, is asked for again next time.)
   if (piece.status >= 200 && piece.status < 300) reply.header("Cache-Control", "public, max-age=86400, immutable");
-  reply.code(piece.status).header("Content-Type", pieceType(piece.contentType)).header("Content-Length", String(piece.length));
+  reply.code(statusFrom(piece.status)).header("Content-Type", pieceType(piece.contentType)).header("Content-Length", String(piece.length));
   return reply.send(Readable.from(counted(piece.read(), stats), { objectMode: false }));
 }
 
@@ -303,7 +315,7 @@ export async function handleStreamProxy(
   // Screens watching together ask for the same pieces of a film a few seconds apart: the place they come from is asked once.
   // (A part of a file, asked for with a range, is not a piece to share.)
   const handed: { answer?: Handover } = {};
-  if (options.segments && !request.headers.range && isSegmentPath(targetUrl.pathname)) {
+  if (options.segments && !request.headers.range && request.method !== "HEAD" && isSegmentPath(targetUrl.pathname)) {
     const segments = options.segments;
     const piece = await segments.get(targetUrl.href, () =>
       openPiece(targetUrl, headers, isAllowedAddress, segments.maxPiece, (answer) => {
@@ -354,7 +366,7 @@ export async function handleStreamProxy(
 
   if (!upstreamResponse.ok) {
     // (What the other end said is passed on as text, whatever it called it: it is for whoever reads the failure, not a page for a browser.)
-    reply.code(upstreamResponse.status).header("Cache-Control", "no-store").header("Content-Type", TEXT_TYPE);
+    reply.code(statusFrom(upstreamResponse.status)).header("Cache-Control", "no-store").header("Content-Type", TEXT_TYPE);
     const text = await textUpTo(upstreamResponse, 64 * 1024);
     const message = text ?? `Upstream returned HTTP ${upstreamResponse.status}`;
     if (stats) stats.bytes += Buffer.byteLength(message);
@@ -362,24 +374,26 @@ export async function handleStreamProxy(
   }
 
   if (isM3u8) {
-    const text = await upstreamResponse.text();
+    // (Counted as it is decoded: a small answer on the wire can be a very large text.)
+    const text = await textUpTo(upstreamResponse, TEXT_MAX_BYTES);
+    if (text === null) return reply.code(502).header("Content-Type", TEXT_TYPE).send("The playlist is too long");
     // Verify it actually looks like an m3u8
     if (text.includes("#EXTM3U")) {
       const rewritten = rewriteM3u8(text, upstreamUrl.href, referer, options.rewriteUrl);
       reply.header("Cache-Control", "no-store");
       if (stats) stats.bytes += Buffer.byteLength(rewritten);
       reply.header("Content-Type", "application/vnd.apple.mpegurl");
-      return reply.code(upstreamResponse.status).send(rewritten);
+      return reply.code(statusFrom(upstreamResponse.status)).send(rewritten);
     }
     if (stats) stats.bytes += Buffer.byteLength(text);
     reply.header("Content-Type", TEXT_TYPE);
-    return reply.code(upstreamResponse.status).send(text);
+    return reply.code(statusFrom(upstreamResponse.status)).send(text);
   }
 
   // Subtitle conversion to WebVTT
   if (isSubtitle) {
-    const rawText = video ? await upstreamResponse.text() : await textUpTo(upstreamResponse, SUBTITLE_MAX_BYTES);
-    if (rawText === null) return turnAway();
+    const rawText = await textUpTo(upstreamResponse, video ? TEXT_MAX_BYTES : SUBTITLE_MAX_BYTES);
+    if (rawText === null) return video ? reply.code(502).header("Content-Type", TEXT_TYPE).send("The subtitle is too long") : turnAway();
     const vtt = srtToVtt(rawText);
     if (stats) stats.bytes += Buffer.byteLength(vtt);
     reply.header("Content-Type", "text/vtt; charset=utf-8");
@@ -395,12 +409,20 @@ export async function handleStreamProxy(
   }
 
   // A segment that is not told to be video or audio (a page, a picture, anything) is video; any other file that is not is just a file.
-  const finalContentType = isSegment ? pieceType(contentType) : isMediaType(contentType) ? contentType : FILE_TYPE;
+  const finalContentType = isSegment ? pieceType(contentType) : (mediaTypeOf(contentType) ?? FILE_TYPE);
 
-  reply.code(upstreamResponse.status).header("Content-Type", finalContentType);
-  for (const h of ["content-length", "content-range", "accept-ranges"]) {
+  reply.code(statusFrom(upstreamResponse.status)).header("Content-Type", finalContentType);
+  // (The length and the part are those of what the other end sent, which `fetch` has unpacked if it came packed: they say nothing of what goes out then.)
+  const packed = (upstreamResponse.headers.get("content-encoding") ?? "identity").trim().toLowerCase() !== "identity";
+  for (const h of packed ? ["accept-ranges"] : ["content-length", "content-range", "accept-ranges"]) {
     const val = upstreamResponse.headers.get(h);
     if (val) reply.header(h, val);
+  }
+
+  // (Whoever asks for the headers alone is not sent the film: the other end is let go, not read to its end for nothing.)
+  if (request.method === "HEAD") {
+    abortController.abort();
+    return reply.send();
   }
 
   if (upstreamResponse.body) {

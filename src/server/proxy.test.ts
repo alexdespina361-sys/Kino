@@ -63,6 +63,7 @@ describe("handleStreamProxy", () => {
   /** The same proxy with the cache that screens watching together share. */
   let sharing: FastifyInstance;
   const hits: string[] = [];
+  let endlessLetGo = false;
 
   beforeAll(async () => {
     upstream = http.createServer((request, response) => {
@@ -171,6 +172,35 @@ describe("handleStreamProxy", () => {
       if (url.pathname === "/sound.mp3") {
         response.writeHead(200, { "content-type": "audio/mpeg", "content-length": "5" });
         return void response.end("sound");
+      }
+      if (url.pathname.startsWith("/typed/")) {
+        // (Whatever it is told to call itself, in as many Content-Type headers as it is told: `?t=["video/mp4;, text/html"]`.)
+        const types = JSON.parse(url.searchParams.get("t") ?? "[]") as string[];
+        response.writeHead(200, ["content-length", "5", ...types.flatMap((type) => ["content-type", type])]);
+        return void response.end("12345");
+      }
+      if (url.pathname === "/endless") {
+        // (Says it is sixteen megabytes and goes on writing for as long as anyone listens.)
+        response.writeHead(200, { "content-type": "video/mp4", "content-length": String(16 * 1024 * 1024) });
+        const writing = setInterval(() => response.write(Buffer.alloc(64 * 1024)), 5);
+        return void response.on("close", () => {
+          clearInterval(writing);
+          endlessLetGo = true;
+        });
+      }
+      if (url.pathname === "/status600.vtt") {
+        response.writeHead(600, { "content-type": "text/plain" });
+        return void response.end("odd");
+      }
+      if (url.pathname === "/huge.m3u8" || url.pathname === "/packed-huge.m3u8") {
+        // (Nine megabytes of playlist; the second is nine megabytes once it is unpacked, from some kilobytes.)
+        const text = Buffer.concat([Buffer.from("#EXTM3U\n"), Buffer.alloc(9 * 1024 * 1024, "#")]);
+        if (url.pathname === "/huge.m3u8") {
+          response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl", "content-length": String(text.length) });
+          return void response.end(text);
+        }
+        response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl", "content-encoding": "gzip" });
+        return void response.end(gzipSync(text));
       }
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("nothing here");
@@ -321,11 +351,14 @@ describe("handleStreamProxy", () => {
       await production.close();
     });
     type Answer = Awaited<ReturnType<typeof ask>>;
+    /** The type a browser takes an answer for: what the Fetch standard makes of the header (it reads a list and keeps the last type), not what the header looks like. */
+    const typeSeen = async (answer: Answer) => (await new Response("", { headers: { "content-type": String(answer.headers["content-type"]) } }).blob()).type.split(";")[0];
+    const KINDS = /^(text\/plain|text\/vtt|application\/(json|octet-stream|vnd\.apple\.mpegurl)|(video|audio)\/[a-z0-9.-]+)$/;
     /** Not a page by its type, not one by guessing, and not able to run if it were taken for one. */
-    const inert = (answer: Answer, name: string) => {
-      expect(String(answer.headers["content-type"]), name).not.toMatch(/html|xml|svg|script/i);
+    const inert = async (answer: Answer, name: string) => {
+      expect(await typeSeen(answer), name).toMatch(KINDS);
       expect(answer.headers["x-content-type-options"], name).toBe("nosniff");
-      expect(String(answer.headers["content-security-policy"]), name).toContain("sandbox");
+      expect(answer.headers["content-security-policy"], name).toBe("default-src 'none'; sandbox");
     };
     const shared = (target: string) => sharing.inject({ url: `/api/proxy?url=${encodeURIComponent(target)}` });
 
@@ -336,7 +369,7 @@ describe("handleStreamProxy", () => {
           expect(answer.statusCode, `${name} ${path}`).toBe(404);
           expect(answer.body, `${name} ${path}`).toBe("<p>an error page</p>");
           expect(answer.headers["content-type"], `${name} ${path}`).toBe("text/plain; charset=utf-8");
-          inert(answer, `${name} ${path}`);
+          await inert(answer, `${name} ${path}`);
         }
       }
     });
@@ -346,7 +379,7 @@ describe("handleStreamProxy", () => {
       for (const path of ["/page.m3u8", "/page.html", "/picture.svg"]) {
         const answer = await ask(at(OKAY, path));
         expect(answer.statusCode, path).toBe(200);
-        inert(answer, path);
+        await inert(answer, path);
       }
       expect((await ask(at(OKAY, "/page.html"))).headers["content-type"]).toBe("application/octet-stream");
     });
@@ -354,7 +387,86 @@ describe("handleStreamProxy", () => {
     it("tells a picture that is called a piece of a film that it is video, whether the screens share it or not", async () => {
       for (const [name, answer] of [["alone", await ask(at(OKAY, "/picture.ts"))], ["shared", await shared(at(OKAY, "/picture.ts"))]] as const) {
         expect(answer.headers["content-type"], name).toBe("video/mp2t");
-        inert(answer, name);
+        await inert(answer, name);
+      }
+    });
+
+    it("passes on the type of video or audio and nothing the other end wrote after it: a browser reads `video/mp4;, text/html` as a list, and takes the last", async () => {
+      // [what the other end calls it (one header each), what a piece of a film is called, what any other file is called]
+      const cases: [string[], string, string][] = [
+        [["video/mp4;, text/html"], "video/mp4", "video/mp4"],
+        [["video/mp4; codecs=avc1", "text/html"], "video/mp4", "video/mp4"],
+        [["video/mp2t;, image/svg+xml"], "video/mp2t", "video/mp2t"],
+        [["video/mp4;, text/javascript"], "video/mp4", "video/mp4"],
+        [["text/html, video/mp4"], "video/mp2t", "application/octet-stream"],
+        [["video/x+xml"], "video/mp2t", "application/octet-stream"],
+        [["audio/x+json"], "video/mp2t", "application/octet-stream"],
+        [["VIDEO/MP4"], "video/mp4", "video/mp4"],
+        [['video/mp4; codecs="avc1.64001F, mp4a.40.2"'], "video/mp4", "video/mp4"],
+        [["audio/mpeg"], "audio/mpeg", "audio/mpeg"],
+      ];
+      for (const [types, piece, file] of cases) {
+        const query = `?t=${encodeURIComponent(JSON.stringify(types))}`;
+        for (const [name, answer, expected] of [
+          ["a piece, alone", await ask(at(OKAY, `/typed/piece.ts${query}`)), piece],
+          ["a piece, shared", await shared(at(OKAY, `/typed/piece.ts${query}`)), piece],
+          ["a file", await ask(at(OKAY, `/typed/file.bin${query}`)), file],
+        ] as const) {
+          const why = `${name} ${JSON.stringify(types)}`;
+          expect(answer.headers["content-type"], why).toBe(expected);
+          expect(await typeSeen(answer), why).toBe(expected);
+          await inert(answer, why);
+        }
+      }
+    });
+
+    it("tells every answer, a refusal or a failure included, not to be guessed at and not to be run", async () => {
+      const target = (path: string) => encodeURIComponent(at(OKAY, path));
+      const asks: [string, FastifyInstance, string][] = [
+        ["no address", app, "/api/proxy"],
+        ["an address that is none", app, "/api/proxy?url=not%20an%20address"],
+        ["a place it may not go to", app, `/api/proxy?url=${encodeURIComponent(at("127.0.0.1", "/seg.ts"))}`],
+        ["a redirect to a place it may not go to", app, `/api/proxy?url=${target(`/hop?to=${encodeURIComponent(at("127.0.0.1", "/seg.ts"))}`)}`],
+        ["a 'referer' that is none", app, `/api/proxy?url=${target("/seg.ts")}&referer=none`],
+        ["a piece, from a server that carries no film", production, `/api/proxy?url=${target("/seg.ts")}`],
+        ["a file, from a server that carries no film", production, `/api/proxy?url=${target("/page.html")}&format=vtt`],
+        ["a place that does not answer", app, `/api/proxy?url=${encodeURIComponent(`http://${OKAY}:1/seg.ts`)}`],
+        ["a status of the other end's own invention", production, `/api/proxy?url=${target("/status600.vtt")}`],
+        ["a failure of the other end", app, `/api/proxy?url=${target("/missing.ts")}`],
+      ];
+      for (const [name, lane, url] of asks) await inert(await lane.inject({ url }), name);
+    });
+
+    it("answers for a status the other end invented with one of its own, instead of failing on it", async () => {
+      for (const [name, lane] of [["carrying no film", production], ["carrying film", app]] as const) {
+        const answer = await lane.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/status600.vtt"))}` });
+        expect(answer.statusCode, name).toBe(502);
+        expect(answer.body, name).toBe("odd");
+      }
+    });
+
+    it("sends the headers alone to whoever asks for those, and lets the other end go instead of reading the film to its end for nothing", async () => {
+      endlessLetGo = false;
+      const answer = await app.inject({ method: "HEAD", url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/endless"))}` });
+      expect(answer.statusCode).toBe(200);
+      expect(answer.headers["content-type"]).toBe("video/mp4");
+      expect(answer.body).toBe("");
+      for (let waited = 0; !endlessLetGo && waited < 2000; waited += 20) await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(endlessLetGo).toBe(true);
+    });
+
+    it("does not pass on the length of what was packed when what it passes on is what came out of the packing", async () => {
+      const answer = await ask(at(OKAY, "/p/zipped.ts"));
+      expect(answer.body).toBe("ZIPPED-BYTES");
+      expect(answer.headers["content-length"] ?? "12").toBe("12");
+    });
+
+    it("does not read a playlist beyond a size no film needs, nor one that is that long only once it is unpacked", async () => {
+      for (const path of ["/huge.m3u8", "/packed-huge.m3u8"]) {
+        const answer = await ask(at(OKAY, path));
+        expect(answer.statusCode, path).toBe(502);
+        expect(answer.body.length, path).toBeLessThan(100);
+        await inert(answer, path);
       }
     });
 
