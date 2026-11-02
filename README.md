@@ -43,13 +43,13 @@ pnpm build && pnpm start     # http://localhost:8787
 | `REGISTRATION` | `open` | `closed`: nobody new can make an account (once the people it is for have one). |
 | `MAX_ACCOUNTS` | `500` | A cap on accounts, for a small server: sign-ups close by themselves once there are this many. |
 | `SIGNUPS_PER_HOUR` | `10` | How many accounts one address may make in an hour (a household or a school behind one address may want more). |
-| `TRUST_PROXY` | `1` on Render, else off | How many proxies sit in front (a number, `true` or `false`), so the rate limits see the real address. Cloudflare's addresses and a host's own network are passed over on the way, so a site behind Cloudflare sees the visitor and not Cloudflare (`src/server/trust.ts`). |
+| `TRUST_PROXY` | `1` on Render, else off | How many proxies sit in front (a number, or `false`; anything that is not a number or `true` counts as `false`), so the rate limits see the real address. Use a number: `true` trusts every address in `X-Forwarded-For`, a list the visitor can write, so with it anybody can choose the address the rate limits see. Cloudflare's addresses and a host's own network are passed over on the way, so a site behind Cloudflare sees the visitor and not Cloudflare (`src/server/trust.ts`). |
 | `LIBRARY` | on | `off` starts without the browsing library. |
 | `TMDB_API_KEY` | built-in key of the Filmpire source | The library's TMDB key. Set your own; the built-in one is shared by everybody who runs this. TMDB's free licence is for non-commercial use and asks for a notice, which the phone's library shows (see [Library](#library)). |
 | `EDGE_STREAM_PROXY_URL` | – | The separate video relay endpoint. For the signed Node relay use `https://YOUR-RELAY-HOST/api/proxy`; see [relay setup](STREAM_RELAY_SETUP.md). |
 | `EDGE_STREAM_PROXY_KEY` | – | Server-side signing secret shared with the separate relay's `STREAM_RELAY_KEY`. Never expose it in browser code. |
-| `PROXY_VIDEO` | `on` | `off`: this server never carries a film (`/api/proxy` passes subtitles and nothing else), so the host's bandwidth cannot go on one. |
-| `DIRECT_STREAMING` | off | `true`: a source's own address is handed to the screen (unless there is a relay). Only for sources that let pages of other websites in; see below before you use it. |
+| `PROXY_VIDEO` | off | `on` (or `true`, `1`): `/api/proxy` may carry a film, so the host's bandwidth can go on one. Anything else, or nothing: it passes subtitles and nothing else. A film goes through the server only with `DIRECT_STREAMING` off as well (that is on by itself and comes first), so `PROXY_VIDEO=on` alone changes nothing. See [The film and the host's bandwidth](#the-film-and-the-hosts-bandwidth). |
+| `DIRECT_STREAMING` | `on` | `on` (or `true`, `1`; the server sets `on` when it is not set): a source's own address is handed to the screen (unless there is a relay), so the film does not come through this server. `PROXY_VIDEO=off` (or `false`, `0`) does the same. It works only for sources that let pages of other websites in; see below. To have the film come through the server, set `DIRECT_STREAMING=off` and `PROXY_VIDEO=on`. |
 | `FEEDBACK_ADMIN_TOKEN` | – | The team's token (24 characters or more) for reading and answering what people send with the **Feedback** button. Without it reports are kept and nobody can read them. Keep it secret; see [docs/feedback.md](docs/feedback.md). |
 | `FEEDBACK_MAX_MB` | `150` | What the reports (their pictures, nearly all of it) may take up before the oldest closed ones make room. |
 | `FEEDBACK_SENDS_PER_10_MIN` | `6` | How many reports one address may send in ten minutes. |
@@ -657,7 +657,7 @@ The library adapters use the relay; generic pasted links retain their resolver's
 signed, unexpired links and refuses private destinations. Video bandwidth belongs to its separate host. A relay IP that the provider blocks
 will still fail, so validate the upstream token, playlist and segment from the chosen host before deployment.
 
-**When the server has to carry the film** (no relay, `PROXY_VIDEO` on): the player's own quality choice stops at 720p on a stream that comes
+**When the server has to carry the film** (no relay, `PROXY_VIDEO=on` and `DIRECT_STREAMING=off`): the player's own quality choice stops at 720p on a stream that comes
 through `/api/proxy` (`proxiedQualityCap` in `src/client/tv/engine.ts`; a quality picked from the menu still goes higher), it keeps only
 about 90 seconds ahead of the picture (48 MB) when one screen watches, and the next episode is fetched only in the last two minutes of
 the one before. That halves what an hour costs (1.2 GB instead of 2.4 GB in the test above), which is a way to slow it down, not to stop it.
