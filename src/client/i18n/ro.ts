@@ -123,6 +123,7 @@ export const ro: Dictionary = {
   "account.deleteWarn": "Contul, profilurile, istoricul și listele se șterg definitiv. Scrie parola pentru a confirma.",
   "account.deleteConfirm": "Șterge tot",
   "account.deleted": "Contul a fost șters.",
+  "account.signOutFailed": "Nu te-am putut deconecta. Verifică conexiunea și încearcă din nou.",
 
   /* signing another device in */
   "link.title": "Autentifică-te cu alt dispozitiv",

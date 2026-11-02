@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { COLLECTIONS, MeSchema, type AvatarId, type DeviceKind, type Me, type Profile, type Registration } from "../../shared";
 import { readStorage, writeStorage } from "../shared/format";
-import { setLanguage, t } from "../i18n";
+import { screenLanguage, setLanguage, t } from "../i18n";
 import { ApiError, api, beaconSync } from "./api";
 import { applyAccent } from "./theme";
 import "./account.css";
@@ -143,11 +143,12 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
     if (scope !== GUEST && profileStore.adoptGuest()) say(t("account.adopted", { name: profile?.name ?? "" }));
   }, [scope, status, say, profile?.name]);
 
-  // The language and colour a profile chose follow it onto every screen it uses.
+  // The language and colour a profile chose follow it onto every screen it uses. One that chose no language leaves the screen in its own (not in the language of the profile
+  // or the guest before it, which a shared TV would otherwise keep until the page was loaded again).
   const { settings } = useProfileData();
   popupsRef.current = settings.newsPopups !== false;
   useEffect(() => {
-    if (settings.lang) setLanguage(settings.lang, false);
+    setLanguage(settings.lang ?? screenLanguage(), false);
   }, [settings.lang]);
   useEffect(() => {
     applyAccent(settings.accent);
@@ -267,7 +268,10 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
           try {
             await api.logout();
           } catch {
-            /* the cookie may already be gone */
+            // The server did not hear it (no network, a host that is waking up), and it ends a session that is not there as well as one that is: so the session is still
+            // alive. A screen that looked signed out would bring the person back at its next load, on a TV the next person to sit down. Stay as we are, and say so.
+            say(t("account.signOutFailed"));
+            return;
           }
         }
         profileStore.openScope(GUEST);

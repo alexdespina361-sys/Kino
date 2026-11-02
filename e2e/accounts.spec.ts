@@ -124,6 +124,31 @@ test.describe("accounts and profiles", () => {
     await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Maya/);
   });
 
+  test("a sign-out that the server does not hear leaves the person signed in and says so, instead of looking signed out while the session lives on", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, account);
+    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
+
+    // The network is gone as the button is pressed: the server has not ended anything, so this screen must not look as if it had.
+    await phone.route("**/api/auth/logout", (route) => route.abort());
+    await phone.getByTestId("sign-out").click();
+    await expect(phone.getByTestId("account-toast")).toHaveText(en["account.signOutFailed"]);
+    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
+    await phone.unroute("**/api/auth/logout");
+    await phone.reload(); // (what a guest page would not survive: the cookie is still good, and it is Robert's)
+    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Robert/);
+
+    // With the network back, the same press ends the session for good.
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("sign-out").click();
+    await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
+    await phone.reload();
+    await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
+  });
+
   test("a screen that was signed in stays that person while the server cannot be reached as its page opens, and the cookie is renewed when it can", async ({ browser }) => {
     test.setTimeout(60_000);
     const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
@@ -425,6 +450,26 @@ test.describe("a TV that nobody is at", () => {
     await expect(tv.getByTestId("tv-signin-again")).toHaveCount(0);
     await expect(tv.getByTestId("tv-signin-status")).toContainText(en["link.waiting"]);
   });
+
+  // The server says when a code ends by its own clock; a TV whose clock is minutes ahead of it must not read that as "already over" and ask for a new code every other second.
+  test("keeps the code it was given when its own clock is minutes ahead of the server's", async ({ browser }) => {
+    let starts = 0;
+    const tv = await openLibrary(browser, async (context) => {
+      await context.route("**/api/link/start", async (route) => {
+        starts += 1;
+        const now = await route.request().frame().evaluate(() => Date.now());
+        // (By the server's clock this code lasts five minutes; the page's clock is ten ahead of it, so by the page's own the code ended five minutes ago.)
+        await route.fulfill({ status: 201, json: { code: `TEST000${starts}`, secret: "s", expiresAt: now - 5 * 60_000 } });
+      });
+      await context.route("**/api/link/poll", (route) => route.fulfill({ json: { status: "waiting" } }));
+    });
+    await openTvSignIn(tv);
+    await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0001");
+    await tv.waitForTimeout(4500); // two polls, each of which used to throw the code away
+    expect(starts).toBe(1);
+    await expect(tv.getByTestId("tv-link-code")).toHaveText("TEST-0001");
+    await expect(tv.getByTestId("tv-signin-status")).toContainText(en["link.waiting"]);
+  });
 });
 
 /** A computer's screen page that has made an account with the email form, which is how a screen with a keyboard signs in. */
@@ -673,6 +718,41 @@ test.describe("English, Romanian and Italian", () => {
     await phone.getByTestId("menu-settings").click();
     await phone.getByTestId("lang-ro").click();
     await expect(phone.getByTestId("settings-page")).toContainText(ro["settings.language"]);
+  });
+
+  test("a profile that chose no language leaves the screen in the one it had, instead of keeping the language of the profile before it", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const account = { email: `Robert ${Date.now().toString(36)}${++counter}`, password: "1" };
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, account);
+    const first = (await phone.getByTestId("account-profile-name").innerText()).trim();
+    await phone.getByTestId("menu-profiles").click();
+    await phone.getByTestId("profile-add").click();
+    await phone.getByTestId("profile-name-input").fill("Maya");
+    await phone.getByTestId("profile-save").click();
+    await expect(phone.getByTestId("profile-Maya")).toBeVisible();
+
+    // The first profile chose Romanian on another screen: this one is told so by the server, and was never asked to remember it as its own.
+    const origin = new URL(phone.url()).origin;
+    const { me } = (await (await phone.context().request.get(`${origin}/api/me`)).json()) as { me: { profiles: Array<{ id: string; name: string }> } };
+    const robert = me.profiles.find((profile) => profile.name === first)!.id;
+    await phone.context().request.post(`${origin}/api/profiles/${robert}/sync`, { data: { since: 0, settings: [{ key: "lang", at: Date.now(), value: "ro" }] } });
+    await phone.reload();
+    await expect(phone.locator("html")).toHaveAttribute("lang", "ro");
+
+    // Maya chose nothing: the screen is as it was before anyone's language reached it.
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("menu-switch").click();
+    await phone.getByTestId("profile-Maya").click();
+    await expect(phone.locator("html")).toHaveAttribute("lang", "en");
+    await expect(phone.getByTestId("account-button")).toHaveAttribute("aria-label", /Maya/);
+
+    // ...and so does a screen that nobody is signed in at any more.
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("sign-out").click();
+    await expect(phone.getByTestId("account-button")).toContainText(en["account.signInPrompt"]);
+    await expect(phone.locator("html")).toHaveAttribute("lang", "en");
   });
 
   test("the TV's own account page changes it too, and the player speaks it", async ({ browser, baseURL }) => {

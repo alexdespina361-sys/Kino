@@ -33,7 +33,10 @@ export function detectLanguage(stored: string | undefined, browser: readonly str
   return known(stored) ?? browser.map(known).find(Boolean) ?? "en";
 }
 
-let current: UiLanguage = detectLanguage(readStorage(LANGUAGE_KEY), typeof navigator === "undefined" ? [] : (navigator.languages ?? [navigator.language]));
+/** The language of this screen when no profile says otherwise: what was chosen on it, else what its browser says. */
+export const screenLanguage = (): UiLanguage => detectLanguage(readStorage(LANGUAGE_KEY), typeof navigator === "undefined" ? [] : (navigator.languages ?? [navigator.language]));
+
+let current: UiLanguage = screenLanguage();
 const listeners = new Set<() => void>();
 const announce = () => {
   if (typeof document !== "undefined") document.documentElement.lang = current;

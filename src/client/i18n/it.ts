@@ -123,6 +123,7 @@ export const it: Dictionary = {
   "account.deleteWarn": "Account, profili, cronologia e liste vengono eliminati per sempre. Scrivi la password per confermare.",
   "account.deleteConfirm": "Elimina tutto",
   "account.deleted": "Il tuo account è stato eliminato.",
+  "account.signOutFailed": "Impossibile uscire. Controlla la connessione e riprova.",
 
   /* signing another device in */
   "link.title": "Accedi con un altro dispositivo",

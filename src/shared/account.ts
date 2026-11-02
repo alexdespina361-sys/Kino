@@ -69,6 +69,8 @@ export type Registration = z.infer<typeof RegistrationSchema>;
 export const SessionStateSchema = z.object({ me: MeSchema.nullable(), registration: RegistrationSchema });
 export type SessionState = z.infer<typeof SessionStateSchema>;
 
+/** How long a request to be signed in by a phone is good for, from the moment the device is given its code. */
+export const LINK_TTL_MS = 5 * 60 * 1000;
 /** A device asking to be signed in by a phone that already is: what it is and how long the request lasts. */
 export const LinkStartSchema = z.object({ device: DeviceKindSchema.optional() });
 export const LinkStartedSchema = z.object({ code: z.string(), secret: z.string(), expiresAt: z.number() });

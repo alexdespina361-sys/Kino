@@ -125,6 +125,7 @@ export const en = {
   "account.deleteWarn": "This deletes your account, profiles, history and lists for good. Enter your password to confirm.",
   "account.deleteConfirm": "Delete everything",
   "account.deleted": "Your account was deleted.",
+  "account.signOutFailed": "Couldn't sign out. Check your connection and try again.",
 
   /* signing another device in */
   "link.title": "Sign in with another device",

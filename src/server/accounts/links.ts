@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomInt } from "node:crypto";
-import type { DeviceKind, LinkView } from "../../shared";
+import { LINK_TTL_MS, type DeviceKind, type LinkView } from "../../shared";
 
 /**
  * Signing a TV in from a phone that is already signed in. The TV asks for a link and shows its code (as a QR code and as
@@ -14,7 +14,6 @@ import type { DeviceKind, LinkView } from "../../shared";
 
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O or 1/I to mix up when read aloud
 const CODE_LENGTH = 8;
-const TTL_MS = 5 * 60 * 1000;
 const MAX_LINKS = 1000;
 /** How many requests one address may have open at once (a household has a few TVs; a flood has more). */
 const MAX_PER_ADDRESS = 10;
@@ -77,7 +76,7 @@ export class LinkRegistry {
     do code = Array.from({ length: CODE_LENGTH }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
     while (this.links.has(code));
     const secret = randomBytes(24).toString("base64url");
-    const expiresAt = this.now() + TTL_MS;
+    const expiresAt = this.now() + LINK_TTL_MS;
     this.links.set(code, { code, secretHash: hash(secret), kind, label, ...(address !== undefined ? { address } : {}), expiresAt, state: "waiting" });
     return { code, secret, expiresAt };
   }

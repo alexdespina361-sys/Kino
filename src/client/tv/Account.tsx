@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ACCENTS, friendChoices, MAX_PROFILES, UI_LANGUAGES, type Profile } from "../../shared";
+import { ACCENTS, friendChoices, LINK_TTL_MS, MAX_PROFILES, UI_LANGUAGES, type Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api, ApiError } from "../account/api";
 import { AuthForm } from "../account/AuthForm";
@@ -84,9 +84,11 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
       if (!live) return;
       setRequest(started);
       setProblem(null);
+      // (The code lasts this long from now by this screen's own clock. The server's `expiresAt` is by the server's: a TV whose clock runs minutes ahead would find every code already out of time and ask for a new one every other second.)
+      const endsAt = Date.now() + LINK_TTL_MS;
       const poll = async () => {
         if (!live) return;
-        if (Date.now() >= started.expiresAt) return retry(null, 0);
+        if (Date.now() >= endsAt) return retry(null, 0);
         try {
           const outcome = await api.linkPoll(started.code, started.secret);
           if (!live) return;
