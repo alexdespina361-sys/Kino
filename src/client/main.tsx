@@ -10,6 +10,7 @@ import { roleOfThisPage, thisIsHandHeld } from "./role";
 import { installExitGuard } from "./shared/backButton";
 import { ExitHint } from "./shared/ExitHint";
 import { setUpFullscreen } from "./shared/fullscreen";
+import { ScreenGate } from "./shared/ScreenGate";
 import "./styles.css";
 import "./polish/base.css";
 
@@ -30,7 +31,9 @@ bootCat(role);
 createRoot(document.getElementById("root")!).render(
   <AccountProvider device={role === "tv" ? "tv" : "remote"}>
     <FriendsProvider>
-      <Suspense fallback={null}>{role === "tv" ? <Tv /> : <Controller />}</Suspense>
+      <ScreenGate>
+        <Suspense fallback={null}>{role === "tv" ? <Tv /> : <Controller />}</Suspense>
+      </ScreenGate>
     </FriendsProvider>
     <ExitHint />
     <FeedbackGate />

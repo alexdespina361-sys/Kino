@@ -15,6 +15,7 @@ export const it: Dictionary = {
   "common.continue": "Continua",
   "common.loading": "Caricamento…",
   "common.retry": "Riprova",
+  "common.screenFailed": "Non è stato possibile caricare questa schermata. Controlla la connessione e riprova.",
   "common.on": "Attivo",
   "common.off": "Disattivato",
   "common.optional": "Facoltativo",

@@ -9,6 +9,7 @@ import {
   type SubtitleTrack,
   trackLabel,
 } from "../../shared";
+import { reloadForScript, scriptIsMissing } from "../shared/scriptRescue";
 import { isHeld, markNoLanguage, release } from "../subsync/hold";
 import type { SyncStatus } from "../subsync/session";
 import { AudioTap, type HlsEvents } from "../subsync/tap";
@@ -286,7 +287,17 @@ export class PlayerEngine {
       return;
     }
 
-    const { default: HlsLib } = await import("hls.js");
+    let HlsLib: typeof Hls;
+    try {
+      HlsLib = (await import("hls.js")).default;
+    } catch (error) {
+      if (generation !== this.generation) return;
+      console.warn("[hls.js]", error instanceof Error ? error.message : "could not be fetched");
+      // (A page left open across a new version asks for a script that is no longer there: it starts again, once, with the new one's. If it cannot, or the connection
+      // only blinked, the card says that the connection went, and its tries and its button go to the script again.)
+      if (!(scriptIsMissing(error) && reloadForScript())) this.fail(PlayerError.ConnectionLost);
+      return;
+    }
     if (generation !== this.generation) return; // a newer load/stop superseded this one
 
     if (HlsLib.isSupported()) {

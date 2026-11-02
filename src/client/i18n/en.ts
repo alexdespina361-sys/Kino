@@ -17,6 +17,7 @@ export const en = {
   "common.continue": "Continue",
   "common.loading": "Loading…",
   "common.retry": "Try again",
+  "common.screenFailed": "This screen could not be loaded. Check your connection and try again.",
   "common.on": "On",
   "common.off": "Off",
   "common.optional": "Optional",

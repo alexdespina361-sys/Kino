@@ -43,6 +43,12 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* What a page says when the script of its screen could not be fetched (ScreenGate.tsx): the words, and a button that starts the page again. */
+.screen-failed { display: grid; place-content: center; justify-items: center; gap: 24px; height: 100%; padding: 24px; text-align: center; }
+.screen-failed p { margin: 0; max-width: 28em; font-size: 1.25rem; line-height: 1.4; }
+.screen-failed button { padding: 14px 28px; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font-size: 1.1rem; font-weight: 600; }
+.screen-failed button:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+
 /* The logo (Logo.tsx): two pictures of the same size, one over the other (the second has the cat's ears and fades in while the cat is on). Sized by the font-size of
    whatever holds it, 4em wide (its "o" is about as big as the old play button was); a screen that wants it bigger sets the width. The height is the pictures' own (269 by 115). */
 .logo {

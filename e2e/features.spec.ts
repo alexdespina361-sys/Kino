@@ -315,6 +315,78 @@ test.describe("a server that is slow to answer", () => {
   });
 });
 
+/** The screens are scripts of their own. One that cannot be fetched (the connection blinked as the page opened; the page was left open across a new version) left a blank page. */
+test.describe("a screen whose script cannot be fetched", () => {
+  const screens = [
+    ["the TV's player", "Tv", "/tv", "tv-browse"],
+    ["the phone's remote", "Controller", "/", "code-input"],
+  ] as const;
+  for (const [name, chunk, address, shown] of screens) {
+    /** A new device whose requests for the screen's script fail while `failing()` says so; `loads()` is how many times the page was asked for. */
+    const device = async (browser: Browser, failing: () => boolean) => {
+      let loads = 0;
+      const page = await openDevice(browser, name === "the TV's player" ? { viewport: { width: 1280, height: 720 } } : PHONE, {}, async (context) => {
+        await context.route(new RegExp(`/assets/${chunk}-[\\w-]+\\.js$`), (route) => (failing() ? route.abort() : route.continue()));
+      });
+      page.on("request", (request) => request.isNavigationRequest() && request.frame() === page.mainFrame() && loads++);
+      return { page, loads: () => loads };
+    };
+
+    test(`${name} is started again by the page, once, when its script could not be fetched the first time`, async ({ browser }) => {
+      let loads = () => 0;
+      const screen = await device(browser, () => loads() === 1); // (the first load only)
+      loads = screen.loads;
+      await screen.page.goto(address);
+      await expect(screen.page.getByTestId(shown)).toBeVisible({ timeout: 20_000 });
+      expect(screen.loads()).toBe(2);
+      await expect(screen.page.getByTestId("screen-failed")).toHaveCount(0);
+    });
+
+    test(`${name} says so, with a button that tries again, and does not go round, when its script is not coming`, async ({ browser }) => {
+      let coming = false;
+      const screen = await device(browser, () => !coming);
+      await screen.page.goto(address);
+      await expect(screen.page.getByTestId("screen-failed")).toBeVisible({ timeout: 20_000 });
+      await expect(screen.page.getByTestId("screen-failed")).toContainText(en["common.screenFailed"]);
+      await screen.page.waitForTimeout(1500);
+      expect(screen.loads()).toBe(2); // (the page and its one start again: not a loop)
+      coming = true;
+      await screen.page.getByRole("button", { name: en["common.retry"] }).click();
+      await expect(screen.page.getByTestId(shown)).toBeVisible({ timeout: 20_000 });
+      await expect(screen.page.getByTestId("screen-failed")).toHaveCount(0);
+    });
+
+    test(`${name} that breaks for any other reason than a script that is missing says so at once, without starting the page again`, async ({ browser }) => {
+      let loads = 0;
+      const page = await openDevice(browser, name === "the TV's player" ? { viewport: { width: 1280, height: 720 } } : PHONE, {}, async (context) => {
+        await context.route(new RegExp(`/assets/${chunk}-[\\w-]+\\.js$`), (route) => route.fulfill({ contentType: "text/javascript", body: 'throw new Error("a fault of the screen itself");' }));
+      });
+      page.on("request", (request) => request.isNavigationRequest() && request.frame() === page.mainFrame() && loads++);
+      await page.goto(address);
+      await expect(page.getByTestId("screen-failed")).toBeVisible({ timeout: 20_000 });
+      await page.waitForTimeout(1500);
+      expect(loads).toBe(1); // (asking for the same script again would not cure a fault in it)
+    });
+  }
+
+  test("a film that needs a script of the player which cannot be fetched is a card that says so after the page's one start again, not a screen that waits for ever", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    let loads = 0;
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, async (context) => {
+      await context.route(/\/assets\/hls-[\w-]+\.js$/, (route) => route.abort());
+    });
+    tv.on("request", (request) => request.isNavigationRequest() && request.frame() === tv.mainFrame() && loads++);
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await pressMenuLine(tv, "rail-connect");
+    const phone = await openPairedPhone(browser, tv);
+    await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/hls/master.m3u8`);
+    await phone.getByTestId("play-url").click();
+    await expect(tv.getByTestId("tv-error")).toBeVisible({ timeout: 60_000 });
+    expect(loads).toBe(2); // (the page and its one start again)
+  });
+});
+
 test.describe("playing links", () => {
   test("a link that is too long for the server to read is said to be too long, not blamed on the server's version", async ({ browser }) => {
     const tv = await openTv(browser);

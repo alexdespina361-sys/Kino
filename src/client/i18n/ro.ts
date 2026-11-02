@@ -15,6 +15,7 @@ export const ro: Dictionary = {
   "common.continue": "Continuă",
   "common.loading": "Se încarcă…",
   "common.retry": "Încearcă din nou",
+  "common.screenFailed": "Ecranul nu a putut fi încărcat. Verifică conexiunea și încearcă din nou.",
   "common.on": "Pornit",
   "common.off": "Oprit",
   "common.optional": "Opțional",
