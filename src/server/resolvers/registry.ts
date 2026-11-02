@@ -5,6 +5,9 @@ export interface RegistryLog {
   info(object: Record<string, unknown>, message: string): void;
 }
 
+/** Results kept for ten minutes. The key is whatever address a visitor sent, so without a bound the memory only grows (a link to a plain `.mp4` costs the server nothing to answer). */
+export const MAX_CACHED_RESULTS = 500;
+
 /**
  * URL -> domain lookup -> specific adapter if one exists, otherwise the generic resolver.
  * Adding a supported website = writing one SiteAdapter and passing it in.
@@ -46,7 +49,12 @@ export class ResolverRegistry {
 
     if (result.status === "success") {
       result = { ...result, media: completeSeries({ ...result.media, page: result.media.page ?? raw }) };
+      this.cache.delete(raw); // (a Map keeps the order things were added in: this one is now the newest)
       this.cache.set(raw, { result, expiresAt: started + 600_000 }); // 10 min cache
+      for (const oldest of this.cache.keys()) {
+        if (this.cache.size <= MAX_CACHED_RESULTS) break;
+        this.cache.delete(oldest);
+      }
       if (!isPrefetch && result.media.series?.next?.url) {
         // Pre-resolve only the immediate next episode in the background
         const nextUrl = result.media.series.next.url;

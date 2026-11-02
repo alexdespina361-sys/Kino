@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createResolver } from ".";
 import { createGenericResolver } from "./generic";
-import { ResolverRegistry } from "./registry";
+import { MAX_CACHED_RESULTS, ResolverRegistry } from "./registry";
 import { SafeFetchError, type FetchedPage, type SafeFetch } from "./safe-fetch";
 import { UNSUPPORTED_MESSAGE, type ResolveResult, type SiteAdapter } from "./types";
 
@@ -152,6 +152,18 @@ describe("ResolverRegistry", () => {
     expect(events[0]).toEqual({ domain: "secret.example", resolver: "generic:test", success: true, durationMs: 25 });
     expect(events[1]).toEqual({ domain: "other.example", resolver: "generic", success: false, reason: "UNSUPPORTED", durationMs: 7 });
     expect(JSON.stringify(events)).not.toMatch(/abc123|token/);
+  });
+
+  it("keeps the answers to the last few hundred addresses, not to every address it was ever asked about", async () => {
+    let asked = 0;
+    const counting: SiteAdapter = { id: "counting", domains: [], resolve: async () => (asked++, ok("counting")) };
+    const registry = new ResolverRegistry([], counting, log);
+    for (let n = 0; n < MAX_CACHED_RESULTS + 5; n++) await registry.resolve(`https://a.example/${n}.mp4`);
+    expect(asked).toBe(MAX_CACHED_RESULTS + 5);
+    await registry.resolve(`https://a.example/${MAX_CACHED_RESULTS + 4}.mp4`); // the newest is still there
+    expect(asked).toBe(MAX_CACHED_RESULTS + 5);
+    await registry.resolve("https://a.example/0.mp4"); // the oldest is not
+    expect(asked).toBe(MAX_CACHED_RESULTS + 6);
   });
 
   it("logs how many episodes a series came with, and nothing for a plain video", async () => {

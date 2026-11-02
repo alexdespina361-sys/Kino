@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeEntities, extractMedia, streamTypeOf } from "./html-extract";
+import { decodeEntities, extractMedia, mediaUrlsIn, streamTypeOf, tags } from "./html-extract";
 
 const page = new URL("https://site.example/movies/42/watch");
 const extract = (html: string) => extractMedia(html, page);
@@ -96,5 +96,86 @@ describe("helpers", () => {
 
   it("decodeEntities handles named, decimal and hex, and leaves unknowns", () => {
     expect(decodeEntities("a&amp;b &#39;q&#39; &#x41; &unknown;")).toBe("a&b 'q' A &unknown;");
+  });
+
+  it("decodeEntities leaves a name that only every object has alone, instead of printing the function behind it", () => {
+    expect(decodeEntities("&constructor; &toString; &hasOwnProperty; &valueOf;")).toBe("&constructor; &toString; &hasOwnProperty; &valueOf;");
+  });
+});
+
+describe("a page that is made to be slow to read", () => {
+  // The resolver reads up to 2 MiB of any page it is sent to, and the whole server waits meanwhile. Each of these cost the square of the page's length
+  // (about a minute for 512 KiB of the worst; many minutes for 2 MiB).
+  const fill = (piece: string, bytes = 512 * 1024) => piece.repeat(Math.ceil(bytes / piece.length));
+  const shapes: [string, string][] = [
+    ["video tags that are never closed", fill("<video>")],
+    ["video tags that never end", fill("<video ")],
+    ["meta tags that never end", fill("<meta ")],
+    ["JSON-LD scripts that are never closed", fill('<script type="application/ld+json">')],
+    ["script tags that never end", fill("<script ")],
+    ["title tags that are never closed", fill("<title>")],
+    ["source tags that never end inside a video", "<video>" + fill("<source ")],
+    ["track tags that never end inside a video", "<video>" + fill("<track ") + "</video>"],
+    ["http:// over and over in one word", fill("http://")],
+    ["=// over and over in one word", fill("=//")],
+    ["a title of nothing but white space", `<meta property="og:title" content="${" ".repeat(512 * 1024)}">`],
+  ];
+
+  it.each(shapes)("is read in a moment: %s", (_name, html) => {
+    const started = performance.now();
+    extract(html);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it("still finds the video that comes after all that", () => {
+    expect(urls(fill("<video ", 64 * 1024) + '<video src="/found.mp4"></video>')).toEqual([["html5-video", "mp4", "https://site.example/found.mp4"]]);
+    expect(urls(fill("http://", 64 * 1024) + ' "https://cdn.example/found.m3u8"')).toEqual([["url-pattern", "hls", "https://cdn.example/found.m3u8"]]);
+  });
+
+  it("goes through no more than 10,000 tags of one kind", () => {
+    expect([...tags("<b>".repeat(20_000), "b")]).toHaveLength(10_000);
+  });
+});
+
+describe("the scans find what the plain patterns find", () => {
+  // The plain patterns are what the scans replaced: simple, and slow on a page like the ones above. On any small text they must give the same answer.
+  // (One difference is meant: a tag cannot hold a `<`, so `<video a<b>` is no tag, where `[^>]*` took it.)
+  const random = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const textOf = (pieces: string[], next: () => number, longest: number) =>
+    Array.from({ length: Math.floor(next() * longest) }, () => pieces[Math.floor(next() * pieces.length)]).join("");
+
+  it("media URLs written out in a text", () => {
+    const pieces = ["http://", "https://", "HTTP://", "//", "=", '"', "'", " ", "\n", "a", "b/", "x=1", ".mp4", ".m3u8", ".MP4", "?", ".", "mp4", "(", ")", "<", ">", "\\", "&", ":"];
+    const plain = (text: string) => [
+      ...[...text.matchAll(/https?:\/\/[^\s"'<>\\()]+?\.(?:m3u8|mp4)(?:\?[^\s"'<>\\()]*)?/gi)].map((m) => ({ raw: m[0], confidence: 0.5 })),
+      ...[...text.matchAll(/(?:^|["'\s=])(\/\/[^\s"'<>\\()]+?\.(?:m3u8|mp4)(?:\?[^\s"'<>\\()]*)?)/gi)].map((m) => ({ raw: m[1]!, confidence: 0.45 })),
+    ];
+    const next = random(7);
+    for (let round = 0; round < 6000; round++) {
+      const text = textOf(pieces, next, 40);
+      expect(mediaUrlsIn(text), JSON.stringify(text)).toEqual(plain(text));
+    }
+  });
+
+  it("tags, with what is inside them for the ones that have an end", () => {
+    const pieces = ["<video", "<video>", "</video>", "</VIDEO>", "<script", " type=application/ld+json", ' type="application/ld+json"', "</script>", "<title>", "</title>", "<meta ", "<", ">", " ", "a=b", '"', "x"];
+    const ldJson = (attrs: string) => /type\s*=\s*["']?application\/ld\+json/i.test(attrs);
+    const next = random(11);
+    for (let round = 0; round < 6000; round++) {
+      const html = textOf(pieces, next, 30);
+      const why = JSON.stringify(html);
+      const plainVideos = [...html.matchAll(/<video\b([^<>]*)>([\s\S]*?)<\/video>|<video\b([^<>]*)>/gi)].map((m) => ({ attrs: m[1] ?? m[3], inner: m[2] }));
+      expect([...tags(html, "video", () => true)], why).toEqual(plainVideos);
+      const plainScripts = [...html.matchAll(/<script\b([^<>]*type\s*=\s*["']?application\/ld\+json[^<>]*)>([\s\S]*?)<\/script>/gi)].map((m) => m[2]);
+      expect([...tags(html, "script", ldJson)].filter((tag) => tag.inner !== undefined).map((tag) => tag.inner), why).toEqual(plainScripts);
+      const plainTitle = html.match(/<title\b[^<>]*>([\s\S]*?)<\/title>/i)?.[1];
+      expect([...tags(html, "title", () => true)][0]?.inner, why).toEqual(plainTitle);
+      expect([...tags(html, "meta")].map((tag) => tag.attrs), why).toEqual([...html.matchAll(/<meta\b([^<>]*)>/gi)].map((m) => m[1]));
+    }
   });
 });

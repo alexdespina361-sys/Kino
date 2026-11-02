@@ -16,7 +16,8 @@ export function decodeEntities(text: string): string {
       const code = body[1]?.toLowerCase() === "x" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
       return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : match;
     }
-    return ENTITIES[body.toLowerCase()] ?? match;
+    const name = body.toLowerCase();
+    return Object.hasOwn(ENTITIES, name) ? ENTITIES[name]! : match;
   });
 }
 
@@ -53,19 +54,60 @@ function absolute(raw: string | undefined, base: URL): string | null {
   }
 }
 
+/* ------------------------------ scanning ------------------------------ */
+
+// A page comes from whoever runs the site behind the link, and up to 2 MiB of it is read. A pattern such as `<video\b[^>]*>` that is tried at every
+// `<video` and runs on to the end of the page when nothing closes the tag costs the whole page for each start, so a page made of nothing but
+// `<video ` keeps the one thread busy for minutes. The scans below look at every character a bounded number of times: a tag cannot hold a `<`,
+// and once a search for a closing tag has found none, no later search for it can.
+
+const MAX_TAGS = 10_000;
+
+export interface Tag {
+  /** Everything between the tag's name and its `>`. */
+  attrs: string;
+  /** For the tags `wantInner` accepts and that have one: the text up to the next `</name>`. */
+  inner?: string;
+}
+
+/** The `<name ...>` tags of `html`, in order (the first 10,000 of them: no page needs more, and each one costs a little); a tag that is given its inner text is consumed up to its closing tag. Exported for the tests. */
+export function* tags(html: string, name: string, wantInner: (attrs: string) => boolean = () => false): Generator<Tag> {
+  const open = new RegExp(`<${name}\\b([^<>]*)>`, "gi");
+  const close = new RegExp(`</${name}>`, "gi");
+  let closing = true;
+  for (let tag = open.exec(html), count = 1; tag && count <= MAX_TAGS; tag = open.exec(html), count++) {
+    const attrs = tag[1]!;
+    if (!closing || !wantInner(attrs)) {
+      yield { attrs };
+      continue;
+    }
+    close.lastIndex = open.lastIndex;
+    const end = close.exec(html);
+    if (!end) {
+      closing = false;
+      yield { attrs };
+      continue;
+    }
+    const inner = html.slice(open.lastIndex, end.index);
+    open.lastIndex = close.lastIndex;
+    yield { attrs, inner };
+  }
+}
+
 /* ------------------------------ strategies ------------------------------ */
 
 function html5Video(html: string, base: URL): Candidate[] {
   const found: Candidate[] = [];
-  for (const block of html.matchAll(/<video\b([^>]*)>([\s\S]*?)<\/video>|<video\b([^>]*)\/?>/gi)) {
-    const openTag = `<video ${block[1] ?? block[3] ?? ""}>`;
+  for (const block of tags(html, "video", () => true)) {
+    const openTag = `<video ${block.attrs}>`;
     const openAttrs = attributes(openTag);
     const directSrc = openAttrs.src || openAttrs["data-src"] || openAttrs["data-url"];
     const direct = absolute(directSrc, base);
+    const inner = block.inner ?? "";
 
     const subtitles: SubtitleTrack[] = [];
-    for (const track of (block[2] ?? "").matchAll(/<track\b[^>]*>/gi)) {
-      const attrs = attributes(track[0]);
+    for (const track of tags(inner, "track")) {
+      const attrs = attributes(`<track${track.attrs}>`);
       const src = attrs.src || attrs["data-src"] || attrs["data-url"];
       const trackUrl = absolute(src, base);
       if (trackUrl) {
@@ -88,8 +130,8 @@ function html5Video(html: string, base: URL): Candidate[] {
         ...subProp,
       });
     }
-    for (const source of (block[2] ?? "").matchAll(/<source\b[^>]*>/gi)) {
-      const attrs = attributes(source[0]);
+    for (const source of tags(inner, "source")) {
+      const attrs = attributes(`<source${source.attrs}>`);
       const src = attrs.src || attrs["data-src"] || attrs["data-url"];
       const url = absolute(src, base);
       const type = url ? streamTypeOf(url, attrs.type) : null;
@@ -121,11 +163,14 @@ function walkJsonLd(node: unknown, out: { url: string; name?: string }[]): void 
   Object.values(object).forEach((child) => walkJsonLd(child, out));
 }
 
+const JSON_LD_TYPE = /type\s*=\s*["']?application\/ld\+json/i;
+
 function jsonLd(html: string, base: URL): { candidates: Candidate[]; title?: string } {
   const hits: { url: string; name?: string }[] = [];
-  for (const script of html.matchAll(/<script\b[^>]*type\s*=\s*["']?application\/ld\+json["']?[^>]*>([\s\S]*?)<\/script>/gi)) {
+  for (const script of tags(html, "script", (attrs) => JSON_LD_TYPE.test(attrs))) {
+    if (script.inner === undefined) continue;
     try {
-      walkJsonLd(JSON.parse(script[1]!), hits);
+      walkJsonLd(JSON.parse(script.inner), hits);
     } catch {
       /* malformed JSON-LD is common; ignore */
     }
@@ -141,8 +186,8 @@ function jsonLd(html: string, base: URL): { candidates: Candidate[]; title?: str
 
 function metaTags(html: string): Record<string, string> {
   const meta: Record<string, string> = {};
-  for (const tag of html.matchAll(/<meta\b[^>]*>/gi)) {
-    const attrs = attributes(tag[0]);
+  for (const tag of tags(html, "meta")) {
+    const attrs = attributes(`<meta${tag.attrs}>`);
     const key = (attrs.property ?? attrs.name ?? "").toLowerCase();
     if (key && attrs.content !== undefined && !(key in meta)) meta[key] = attrs.content;
   }
@@ -160,19 +205,63 @@ function openGraph(meta: Record<string, string>, base: URL): Candidate[] {
   return found;
 }
 
+/** What a URL found in a page is made of; a run of these ends at white space, a quote, an angle bracket, a backslash or a parenthesis. */
+const URL_RUN = /[^\s"'<>\\()]+/g;
+const SCHEME = /https?:\/\//gi;
+const AFTER_EQUALS = /=\/\//g;
+const MEDIA_SUFFIX = /\.(?:m3u8|mp4)/gi;
+
+/** Where a URL that has its start before `from` ends in this run: at the first `.m3u8` / `.mp4` with a character before it (and the query after it, if any). Null when there is none, and then there is none for a later start in the run either. */
+function mediaEnd(run: string, from: number): number | null {
+  MEDIA_SUFFIX.lastIndex = from + 1;
+  const suffix = MEDIA_SUFFIX.exec(run);
+  if (!suffix) return null;
+  const end = suffix.index + suffix[0].length;
+  return run[end] === "?" ? run.length : end;
+}
+
+/**
+ * The media URLs written out in `text`, with how sure to be of each: `https://cdn.example/a.mp4` (wherever in a run it starts: 0.5), and `//cdn.example/a.mp4`
+ * after a quote, white space, the start of the text or an equals sign (0.45). The same as `https?:\/\/[^\s"'<>\\()]+?\.(?:m3u8|mp4)(?:\?[^\s"'<>\\()]*)?` and
+ * `(?:^|["'\s=])(\/\/ ...same)` find, without trying every start again to the end of a long run. Exported for the tests.
+ */
+export function mediaUrlsIn(text: string): { raw: string; confidence: number }[] {
+  const found: { raw: string; confidence: number }[] = [];
+  for (const [run] of text.matchAll(URL_RUN)) {
+    SCHEME.lastIndex = 0;
+    for (let scheme = SCHEME.exec(run); scheme; scheme = SCHEME.exec(run)) {
+      const end = mediaEnd(run, scheme.index + scheme[0].length);
+      if (end === null) break;
+      found.push({ raw: run.slice(scheme.index, end), confidence: 0.5 });
+      SCHEME.lastIndex = end;
+    }
+  }
+  for (const run of text.matchAll(URL_RUN)) {
+    const piece = run[0];
+    const opens = run.index === 0 || /["'\s]/.test(text[run.index - 1]!);
+    AFTER_EQUALS.lastIndex = 0;
+    let lead = AFTER_EQUALS.exec(piece);
+    let start = opens && piece.startsWith("//") ? 0 : lead ? lead.index + 1 : -1;
+    while (start >= 0) {
+      const end = mediaEnd(piece, start + 2);
+      if (end === null) break;
+      found.push({ raw: piece.slice(start, end), confidence: 0.45 });
+      AFTER_EQUALS.lastIndex = end;
+      lead = AFTER_EQUALS.exec(piece);
+      start = lead ? lead.index + 1 : -1;
+    }
+  }
+  return found;
+}
+
 /** Last resort: a plain media URL mentioned anywhere (inline JSON, player config, ...). Low confidence. */
 function mediaUrlPattern(html: string, base: URL): Candidate[] {
   const unescaped = html.replace(/\\\//g, "/").replace(/\\u0026/gi, "&").replace(/\\u002f/gi, "/");
   const found: Candidate[] = [];
-  for (const match of unescaped.matchAll(/https?:\/\/[^\s"'<>\\()]+?\.(?:m3u8|mp4)(?:\?[^\s"'<>\\()]*)?/gi)) {
-    const url = absolute(decodeEntities(match[0]), base);
+  for (const { raw, confidence } of mediaUrlsIn(unescaped)) {
+    const url = absolute(decodeEntities(raw), base);
     const type = url ? streamTypeOf(url) : null;
-    if (url && type) found.push({ url, type, strategy: "url-pattern", confidence: 0.5 });
-  }
-  for (const match of unescaped.matchAll(/(?:^|["'\s=])(\/\/[^\s"'<>\\()]+?\.(?:m3u8|mp4)(?:\?[^\s"'<>\\()]*)?)/gi)) {
-    const url = absolute(decodeEntities(match[1]!), base);
-    const type = url ? streamTypeOf(url) : null;
-    if (url && type) found.push({ url, type, strategy: "url-pattern", confidence: 0.45 });
+    if (url && type) found.push({ url, type, strategy: "url-pattern", confidence });
   }
   return found;
 }
@@ -197,11 +286,16 @@ export function extractMedia(html: string, pageUrl: URL): Extracted {
   }
   const candidates = [...byUrl.values()].sort((a, b) => b.confidence - a.confidence);
 
-  const titleTag = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  let titleTag: string | undefined;
+  for (const tag of tags(html, "title", () => true)) {
+    titleTag = tag.inner;
+    break;
+  }
   const title = ld.title ?? meta["og:title"] ?? (titleTag ? decodeEntities(titleTag).replace(/\s+/g, " ").trim() : undefined);
   return { title: title ? cleanTitle(title).slice(0, 300) || undefined : undefined, candidates };
 }
 
 /** The Internet Archive ends every page title with its own boilerplate; the TV and the phone should show just the name. */
-const ARCHIVE_SUFFIX = /\s*:\s*Free Download, Borrow, and Streaming\s*:\s*Internet Archive\s*$/i;
-const cleanTitle = (title: string) => title.replace(ARCHIVE_SUFFIX, "");
+const ARCHIVE_SUFFIX = /:\s*Free Download, Borrow, and Streaming\s*:\s*Internet Archive\s*$/i;
+// (Not led by `\s*`: a title that is nothing but white space, which og:title and JSON-LD may be, would cost the square of its length.)
+const cleanTitle = (title: string) => (ARCHIVE_SUFFIX.test(title) ? title.replace(ARCHIVE_SUFFIX, "").trimEnd() : title);
