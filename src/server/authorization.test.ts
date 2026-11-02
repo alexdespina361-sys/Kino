@@ -443,7 +443,6 @@ const PUBLIC: Record<string, string> = {
   "GET /api/library/seasons": "the catalogue",
   "GET /api/resolve": "finds the video of a public page: no account is involved",
   "GET /api/proxy": "carries a public page or file: no account is involved",
-  "OPTIONS /api/proxy": "says the proxy may be asked from any page",
   "POST /api/auth/register": "makes a new account: there is nobody to be someone else yet",
   "POST /api/auth/login": "proves a name and a password, slowed per name and per address",
   "POST /api/link/start": "a TV that is not signed in asks for a code to show (see 'signing a TV in')",
@@ -900,8 +899,8 @@ describe("a code that is given out", () => {
     expect((await peek(w.tess, code)).statusCode).toBe(200);
   });
 
-  // FINDING: friends/send answers 409 party_closed for a code no party is open with and does not count it as a wrong guess (friendRoutes.ts:521-522; invite codes and tags are counted, 356-363 and 400-410)
-  it.fails("a party code that no party is open with counts as a wrong guess too, and ten of them make the account wait", async () => {
+  // (friends/send tells an open party from a closed one, so a code that no party is open with is a wrong guess, as it is for invite codes and tags)
+  it("a party code that no party is open with counts as a wrong guess too, and ten of them make the account wait", async () => {
     const w = await world();
     const { a, b } = w;
     const ask = (code: string) => b.client.post(`/api/profiles/${b.profile.id}/friends/send`, { to: [w.tess.profile.id], kind: "party", code, endsAt: w.clock.now + 3600_000 });

@@ -518,8 +518,16 @@ export function friendRoutes(app: FastifyInstance, helpers: FriendRouteHelpers):
     if (!parsed.success) return helpers.invalid(reply, parsed.error);
     const { to, ...message } = parsed.data;
     // An invitation is to a party that is open now, and keeps the screen that hosts it: the code is renewed, the screen is what the invitation goes by.
+    // (A code that no party is open with counts as a wrong guess, as a wrong invite code or tag does: this tells an open party from a closed one, and six digits are few.)
+    if (message.kind === "party" && parties) {
+      const wait = guessWait(me, request);
+      if (wait > 0) return helpers.tooMany(reply, wait);
+    }
     const host = message.kind === "party" ? parties?.hostOf(message.code) : undefined;
-    if (message.kind === "party" && parties && host === undefined) return refuse(reply, "party_closed");
+    if (message.kind === "party" && parties && host === undefined) {
+      guessedWrong(me, request);
+      return refuse(reply, "party_closed");
+    }
     const answer: Sent = { sent: [], declined: [] };
     for (const id of new Set(to)) {
       const theirs = friendChoices(store.settingsOf(id));
