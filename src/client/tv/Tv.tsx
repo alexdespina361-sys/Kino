@@ -770,8 +770,12 @@ export function Tv() {
             break;
           case "TV_RESOLVING":
             window.clearTimeout(lookupEndTimerRef.current);
-            if (message.active) setResolving(true);
-            else lookupEndTimerRef.current = window.setTimeout(() => setResolving(false), LOOKUP_END_GRACE_MS);
+            if (message.active) {
+              // (Noted here, as the messages come, and not by the effect below once the page has drawn it: the film can be there by then, and it is not what was on before the look-up.)
+              if (!wasResolvingRef.current) mediaBeforeLookupRef.current = currentMediaRef.current;
+              wasResolvingRef.current = true;
+              setResolving(true);
+            } else lookupEndTimerRef.current = window.setTimeout(() => setResolving(false), LOOKUP_END_GRACE_MS);
             break;
           case "TV_CMD": {
             const { command } = message;
@@ -877,8 +881,6 @@ export function Tv() {
   // The server only tells a phone when a lookup fails; here the end of the lookup with no video following it is the tell.
   useEffect(() => {
     if (resolving) {
-      if (!wasResolvingRef.current) mediaBeforeLookupRef.current = currentMediaRef.current;
-      wasResolvingRef.current = true;
       setNotice(null);
       return;
     }

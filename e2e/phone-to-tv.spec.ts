@@ -297,6 +297,30 @@ test.describe("phone UI -> server -> TV player", () => {
     expect(await paused(tv)).toBe(true); // (and only that one: two soundtracks were what the phone's Play used to start)
   });
 
+  test("a film that starts from the box for a link is not called one that would not play, however slowly the TV page draws what the server told it", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    // The server says that the look-up began, that it ended and what to play within a few milliseconds. A page that is slow to draw (a TV is) draws the first of them
+    // and gets the last before it has made anything of the drawing: what it made of it was "what was on before" = the film that had just been put on.
+    await (await tv.context().newCDPSession(tv)).send("Emulation.setCPUThrottlingRate", { rate: 6 });
+    await tv.evaluate(() => {
+      const seen: string[] = ((window as unknown as { __wouldntPlay: string[] }).__wouldntPlay = []);
+      new MutationObserver(() => {
+        for (const toast of document.querySelectorAll('[data-testid="tv-toast"]')) if (/wouldn't play/.test(toast.textContent ?? "")) seen.push(toast.textContent ?? "");
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+    for (let n = 1; n <= 6; n++) {
+      await phone.getByTestId("url-input").fill(`${baseURL}/fixtures/sample.mp4?n=${n}`);
+      await phone.getByTestId("play-url").click();
+      await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 20_000 });
+      await tv.waitForTimeout(1800); // (the page judges a look-up 1.5 s after it ended, and only a film that is still on)
+      await phone.getByTestId("stop").click();
+      await expect(tvRoot(tv)).toHaveAttribute("data-state", "idle", { timeout: 20_000 });
+    }
+    expect(await tv.evaluate(() => (window as unknown as { __wouldntPlay: string[] }).__wouldntPlay)).toEqual([]);
+  });
+
   test("the TV and the phone stay paired when the browser forgets its page storage, or its cookies, and keeps the other", async ({ browser, baseURL }) => {
     test.setTimeout(60_000);
     const tv = await openTv(browser);
