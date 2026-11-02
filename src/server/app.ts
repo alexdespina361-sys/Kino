@@ -13,6 +13,7 @@ import type { AccountStore } from "./accounts/store";
 import { chatReporter } from "./feedback/chatReport";
 import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
+import { securityHeaders } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy, type ProxyStats } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
@@ -106,6 +107,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
   // (First of all: a hook added to the app reaches only what is registered after it, and the pages are served by what comes below.)
   if (options.visits) countVisits(app, options.visits);
+  securityHeaders(app);
   await app.register(fastifyCompress, {
     threshold: 1024,
   });
