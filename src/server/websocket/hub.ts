@@ -18,7 +18,7 @@ import {
 import { RateLimiter } from "../accounts/rateLimit";
 import type { ScreenProfiles } from "../accounts/screens";
 import type { ResolveFn, ResolveResult } from "../resolvers";
-import type { Controller, Device, Registry } from "../sessions/registry";
+import { MAX_PHONES_PER_TV, type Controller, type Device, type Registry } from "../sessions/registry";
 
 /** Close code sent to an older TV page when a newer page takes over the same device. */
 export const CLOSE_REPLACED = 4000;
@@ -425,6 +425,10 @@ export class Hub {
       // The code of a watch party, typed where a TV's code goes: it is no wrong guess, and the phone is told what it is for (see Controller.tsx).
       if (this.registry.isPartyCode(code)) {
         return this.error(controller.id, "PARTY_CODE", "That is the code of a watch party. Watch on this device to join it.");
+      }
+      // The right code of a TV that has no room for another phone: no wrong guess either, and the phone is told why (the TV can let its phones go: TV_UNPAIR).
+      if (this.registry.isFullControlCode(controller, code)) {
+        return this.error(controller.id, "TV_PHONES_FULL", `That TV already has ${MAX_PHONES_PER_TV} phones, all it can keep. Disconnect its phones on the TV, then try again.`);
       }
       this.wrongCode(socket);
       return this.error(controller.id, "INVALID_CODE", "Invalid or expired code.");

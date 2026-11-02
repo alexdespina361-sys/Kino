@@ -8,7 +8,7 @@ import { buildApp } from "../app";
 import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
 import type { ResolveFn } from "../resolvers";
 import { PairingStore } from "../sessions/pairings";
-import { Registry } from "../sessions/registry";
+import { MAX_PHONES_PER_TV, Registry } from "../sessions/registry";
 import { CLOSE_REPLACED, FRAME_BURST, MAX_BUFFERED_BYTES, STEER_ATTRIBUTION_MS } from "./hub";
 
 /**
@@ -1890,6 +1890,39 @@ describe("several phones controlling one TV session", () => {
     await tv.next("TV_UNPAIRED");
     tv.send({ type: "TV_NEW_CODE" });
     expect((await tv.next("TV_CODE")).control).toBeUndefined(); // free again: it is a pairing code that is offered
+  });
+
+  it("turns a phone away from a TV that has all the phones it can keep, says why without counting a wrong code, and lets it in once the TV has let its phones go", async () => {
+    const registry = new Registry();
+    await app.close();
+    app = await buildApp({ registry, resolve: (url) => resolveImpl(url), hub: { maxFailedPairings: 1 } }); // (a single wrong code would pause this address)
+    await app.ready();
+    const { tv, phone, deviceId } = await pairedSetup();
+    const device = registry.getDevice(deviceId)!;
+    const code = registry.ensureControlCode(device).code;
+    for (let n = 1; n < MAX_PHONES_PER_TV; n++) registry.joinController(registry.controllerHello(), code);
+
+    const late = await connect();
+    late.send({ type: "CTL_HELLO" });
+    await late.next("CTL_WELCOME");
+    for (let tries = 0; tries < 2; tries++) {
+      late.send({ type: "PAIR", code });
+      const refused = await late.next("ERROR");
+      expect(refused.code).toBe("TV_PHONES_FULL");
+      expect(refused.message).toMatch(/all it can keep.*Disconnect its phones on the TV/);
+    }
+    expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+
+    // A phone that is one of them is never turned away from it.
+    await phone.forget();
+    phone.send({ type: "PAIR", code });
+    expect((await phone.next("CTL_WELCOME")).tv).toMatchObject({ online: true, controllerCount: MAX_PHONES_PER_TV });
+
+    // What the answer says works: the TV lets its phones go, and the one that was turned away connects with the TV's new code.
+    tv.send({ type: "TV_UNPAIR" });
+    const { pairing } = await tv.next("TV_UNPAIRED");
+    late.send({ type: "PAIR", code: pairing!.code });
+    expect((await late.next("CTL_WELCOME")).tv).toMatchObject({ online: true, controllerCount: 1 });
   });
 });
 
