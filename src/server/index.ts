@@ -1,6 +1,6 @@
 import { persistenceFromEnv } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
-import { buildApp, defaultClientDir, defaultFixturesDir } from "./app";
+import { buildApp, defaultClientDir, defaultFixturesDir, isDeployed } from "./app";
 import { FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { feedbackBackendFor, feedbackMaxBytes, FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { animeHeavenSource } from "./library/animeheaven";
@@ -9,6 +9,7 @@ import { PairingStore } from "./sessions/pairings";
 import { Registry } from "./sessions/registry";
 import { VisitCounter, visitsPersistenceFor } from "./stats/visits";
 import { subsyncStoreFor } from "./subsync/store";
+import { keepRunning } from "./survive";
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -54,7 +55,8 @@ if (process.env.DIRECT_STREAMING === undefined) {
 
 const app = await buildApp({
   clientDir: defaultClientDir(),
-  fixturesDir: defaultFixturesDir(),
+  // The test media (fixtures/, at /fixtures/) are for a machine that runs the app locally or for its tests: a deployed server has no use for them.
+  ...(isDeployed() ? {} : { fixturesDir: defaultFixturesDir() }),
   // LIBRARY=off: no browsing library (the e2e server, or anyone who would rather not fetch external library).
   librarySources: process.env.LIBRARY === "off" ? [] : [filmpireSource(), animeHeavenSource()],
   accounts,
@@ -77,6 +79,8 @@ const app = await buildApp({
   proxyVideo: process.env.PROXY_VIDEO === "on" || process.env.PROXY_VIDEO === "true" || process.env.PROXY_VIDEO === "1",
   logger: true,
 });
+// A promise that fails with nobody waiting for it is logged and the server carries on; an error that nothing catches is logged and stops it (src/server/survive.ts).
+keepRunning(app.log);
 app.log.info(`Accounts and pairings are kept in ${describe}.`);
 app.log.info(visits ? "Visitors are counted, a number for each day (docs/stats.md)." : "Visitors are not counted.");
 

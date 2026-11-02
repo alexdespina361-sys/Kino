@@ -13,6 +13,7 @@ import type { AccountStore } from "./accounts/store";
 import { chatReporter } from "./feedback/chatReport";
 import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
+import { fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy, type ProxyStats } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
@@ -67,6 +68,8 @@ export interface AppOptions {
   allowPrivateNetwork?: boolean;
   /** Whether `/api/proxy` carries film (playlists, pieces, files) or only subtitles. On unless set; env PROXY_VIDEO=off turns it off (see `ProxyOptions.video`). */
   proxyVideo?: boolean;
+  /** How many times an address may ask in a minute for what makes the server fetch from another site: 60 for `/api/resolve`, 120 for the library's questions about a title, 300 for `/api/proxy` while it carries no film (see `FetchesPerMinute`). Tests use small ones. */
+  fetchesPerMinute?: FetchesPerMinute;
   /** Whether screens may offer the cat companion. Off unless set; env CAT_COMPANION=on turns it on, and taking it back off is the kill switch (see `/api/features`). */
   cat?: boolean;
   /** Socket liveness tuning; tests shorten it. */
@@ -97,6 +100,10 @@ export function defaultClientDir(): string {
 export function defaultFixturesDir(): string {
   return process.env.FIXTURES_DIR ?? path.join(root, "fixtures");
 }
+/** Whether this is a deployed server (Render sets `RENDER`, and `NODE_ENV=production` says it too) and not a machine that runs the app for its owner or for its tests. */
+export function isDeployed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.RENDER) || env.NODE_ENV === "production";
+}
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
   // A number is "this many proxies in front of me" (Fastify no longer reads a bare number as that, so spell it out), and zero is none. Cloudflare's
@@ -106,6 +113,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
   // (First of all: a hook added to the app reaches only what is registered after it, and the pages are served by what comes below.)
   if (options.visits) countVisits(app, options.visits);
+  securityHeaders(app);
+  sameSiteGate(app);
   await app.register(fastifyCompress, {
     threshold: 1024,
   });
@@ -201,6 +210,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   const isProxyOff = process.env.PROXY_VIDEO === "off" || process.env.PROXY_VIDEO === "false" || process.env.PROXY_VIDEO === "0";
   const proxyVideo = options.proxyVideo ?? !isProxyOff;
+  // (After the gate at the top, so a request that is turned away for where it comes from is not counted against the visitor it was sent from, and before the routes it counts.)
+  fetchLimits(app, options.fetchesPerMinute ?? {}, { video: proxyVideo });
   // The cat companion is shown to nobody until the host says so; a screen asks here whether it may offer one (and its settings switch is hidden when it may not).
   // Setting CAT_COMPANION back to off is the kill switch: every screen's cat is gone at its next load.
   const catOn = options.cat ?? /^(1|on|true|yes)$/i.test(process.env.CAT_COMPANION ?? "");
@@ -304,12 +315,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     reply.header("Cache-Control", seasons.length > 0 ? "public, max-age=3600" : "no-store");
     return reply.send({ seasons });
   });
-  app.options("/api/proxy", async (_request, reply) => {
-    reply.header("Access-Control-Allow-Origin", "*");
-    reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-    reply.header("Access-Control-Allow-Headers", "*");
-    return reply.send();
-  });
   app.get<{ Querystring: { url?: string } }>("/api/resolve", async (request, reply) => {
     const rawUrl = request.query.url;
     if (!rawUrl) return reply.code(400).send({ error: "Missing 'url' parameter" });
@@ -327,7 +332,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
 
   const fixturesDir = options.fixturesDir;
   if (fixturesDir && existsSync(fixturesDir)) {
-    await app.register(fastifyStatic, { root: fixturesDir, prefix: "/fixtures/", decorateReply: false });
+    // (A file whose name starts with a dot, or that is in a folder whose name does, is served from neither folder, as `CLIENT_DIR` and `FIXTURES_DIR` may point at one with an `.env` in it.)
+    await app.register(fastifyStatic, { root: fixturesDir, prefix: "/fixtures/", decorateReply: false, dotfiles: "ignore" });
   }
 
   const clientDir = options.clientDir && path.resolve(options.clientDir);
@@ -337,6 +343,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     await app.register(fastifyStatic, {
       root: clientDir,
       prefix: "/",
+      dotfiles: "ignore",
       // Vite names the files in /assets after what is in them, so a changed file has a new name and an old one can be kept for good.
       // The subtitle aligner's model and worker are the same: a changed one goes in a new numbered folder (public/subtitle-sync/1/README.md).
       // The page itself is always checked again, which is how a new build reaches a screen that still has the old one.

@@ -132,16 +132,12 @@ const TEXT_MAX_BYTES = 8 * 1024 * 1024;
 /** Whether the address says it is a piece of a film (the other way to tell is by the type the other end gives, which is known only after asking). */
 const isSegmentPath = (pathname: string): boolean => pathname.endsWith(".ts") || pathname.endsWith(".m4s") || pathname.includes("page-");
 
-const corsHeaders = (reply: FastifyReply): void => {
-  reply.header("Access-Control-Allow-Origin", "*");
-  reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-  reply.header("Access-Control-Allow-Headers", "*");
-};
-
 /**
  * What comes through here comes from anybody's server and goes out under this site's own address, so the browser is never told it is a page: only video
  * and audio keep the type they came with, whatever else is just a file; and no answer may be taken for a page by guessing (`nosniff`), nor run as one if it
  * ever ends up as one (`sandbox`, with no script allowed). Nothing that asks for these answers (a player, a subtitle track) looks at either.
+ * Nor is any other site's page given leave to read them (no CORS headers): this site's own pages ask from this site, and a relay that is meant to be asked from
+ * anywhere says so itself (`streamRelay/app.ts`).
  */
 const FILE_TYPE = "application/octet-stream";
 const TEXT_TYPE = "text/plain; charset=utf-8";
@@ -280,7 +276,6 @@ async function textUpTo(response: Response, limit: number): Promise<string | nul
 
 /** A shared piece, to whoever asked: from its first byte, as far as it has come. */
 function sendPiece(reply: FastifyReply, piece: Piece, stats?: ProxyStats): FastifyReply {
-  corsHeaders(reply);
   // (Only a piece that came is for keeping: an answer that said no, or that the site gave up on, is asked for again next time.)
   if (piece.status >= 200 && piece.status < 300) reply.header("Cache-Control", "public, max-age=86400, immutable");
   reply.code(statusFrom(piece.status)).header("Content-Type", pieceType(piece.contentType)).header("Content-Length", String(piece.length));
@@ -327,7 +322,6 @@ export async function handleStreamProxy(
   const video = options.video !== false;
   const turnAway = (): FastifyReply => {
     if (stats) stats.refused += 1;
-    corsHeaders(reply);
     return reply.code(403).send({ error: "VIDEO_NOT_CARRIED" });
   };
   if (!video && isSegmentPath(targetUrl.pathname)) return turnAway();
@@ -374,8 +368,6 @@ export async function handleStreamProxy(
     const message = err instanceof Error ? err.message : "Upstream error";
     return reply.code(502).send({ error: "Upstream fetch failed", message });
   }
-
-  corsHeaders(reply);
 
   const contentType = upstreamResponse.headers.get("content-type") || "";
   const isM3u8 =
