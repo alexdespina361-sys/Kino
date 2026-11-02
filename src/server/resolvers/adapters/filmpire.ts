@@ -1,4 +1,5 @@
 import type { AlternateSource, EpisodeRef, SeriesInfo, SubtitleTrack } from "../../../shared";
+import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
 import type { ResolveResult, SiteAdapter } from "../types";
 import { streamAddress } from "./streamAddress";
 
@@ -158,7 +159,7 @@ export function createFilmpireAdapter(): SiteAdapter {
       let tmdbImdbId: string | undefined;
       try {
         const tmdbData = await fetchJson<{ title?: string; name?: string; imdb_id?: string }>(
-          `https://api.themoviedb.org/3/${contentType}/${id}?api_key=90b2cae8d7161e8ba0f3836240d7d352`,
+          `https://api.themoviedb.org/3/${contentType}/${id}?api_key=${FILMPIRE_TMDB_API_KEY}`,
         );
         if (tmdbData.title || tmdbData.name) {
           title = tmdbData.title || tmdbData.name || title;
@@ -272,7 +273,7 @@ export function createFilmpireAdapter(): SiteAdapter {
               const tmdbNames = new Map<number, string>();
               try {
                 const tmdbSeason = await fetchJson<{ episodes?: Array<{ episode_number?: number; name?: string }> }>(
-                  `https://api.themoviedb.org/3/tv/${id}/season/${currS}?api_key=90b2cae8d7161e8ba0f3836240d7d352`,
+                  `https://api.themoviedb.org/3/tv/${id}/season/${currS}?api_key=${FILMPIRE_TMDB_API_KEY}`,
                 );
                 if (tmdbSeason.episodes) {
                   for (const ep of tmdbSeason.episodes) {

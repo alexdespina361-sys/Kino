@@ -76,6 +76,12 @@ const MAX_SESSIONS = 20;
 const FUTURE_SLACK_MS = 60_000;
 /** When a write fails (the database is waking up, the network blinked), try again after this. */
 const RETRY_MS = 10_000;
+/**
+ * The most the live items of one part of a profile may weigh (their JSON, in characters), the newest first. The counts in `LIMITS` alone leave room for items of
+ * some kilobytes each, which is about 8 MB for one profile and some dozens of MB for one account. These are far above what anybody keeps (400 titles in the lists,
+ * or 500 ratings, of a kilobyte each use 60% and 75% of theirs), so they only ever hold back a profile that is filled with text on purpose.
+ */
+const BYTE_BUDGET: Record<CollectionName, number> = { progress: 192 * 1024, watched: 256 * 1024, list: 640 * 1024, listNames: 32 * 1024, ratings: 640 * 1024, settings: 64 * 1024 };
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString("base64url")}`;
@@ -572,9 +578,22 @@ export class AccountStore {
     };
   }
 
-  /** Keep the newest items up to the limit, and forget removals once everyone has had time to hear of them. Whether anything went. */
+  /**
+   * Keep the newest items up to the limit and up to the budget (the first that does not fit goes, and every older one with it), and forget removals once everyone
+   * has had time to hear of them (they weigh nothing: their count is bounded already). Whether anything went.
+   */
   private prune(map: Map<string, Stamped>, name: CollectionName, now: number): boolean {
-    const kept = mergeCollection([...map.values()].map((entry) => entry.item), [], { limit: LIMITS[name], now });
+    let weight = 0;
+    let over = false;
+    const kept = mergeCollection([...map.values()].map((entry) => entry.item), [], { limit: LIMITS[name], now }).filter((item) => {
+      if (item.deleted) return true;
+      // (What is past the budget is not weighed: it goes whatever it weighs.)
+      if (!over) {
+        weight += JSON.stringify(item).length;
+        over = weight > BYTE_BUDGET[name];
+      }
+      return !over;
+    });
     if (kept.length === map.size) return false;
     const keep = new Set(kept.map((item) => item.key));
     for (const key of [...map.keys()]) if (!keep.has(key)) map.delete(key);

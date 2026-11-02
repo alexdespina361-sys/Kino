@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { ChatReport, ChatReporter } from "../accounts/chatRoutes";
 import { readWords } from "./intake";
-import type { FeedbackStore } from "./store";
+import { FeedbackFull, type FeedbackStore } from "./store";
 
 const stamp = (at: number) => `${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
@@ -34,16 +34,22 @@ export function chatReporter(feedback: FeedbackStore): ChatReporter {
       title: `Chat reported: ${report.reporter.label} about ${report.about.label}`,
       message: `${report.reporter.label} reported their chat with ${report.about.label}. The last ${report.lines.length} messages are in chat.txt.`,
     });
-    await feedback.create({
-      key: randomBytes(18).toString("base64url"),
-      kind: "bug",
-      area: "friends",
-      title,
-      message,
-      details: {},
-      answer: false,
-      context: null,
-      files: [{ meta: { id: "chat", name: "chat.txt", mime: "text/plain", role: "file" }, data: Buffer.from(chatTranscript(report), "utf8") }],
-    });
+    try {
+      // (The messages are the report: a report that could not keep them is not taken, and the reporter is told so.)
+      await feedback.create({
+        key: randomBytes(18).toString("base64url"),
+        kind: "bug",
+        area: "friends",
+        title,
+        message,
+        details: {},
+        answer: false,
+        context: null,
+        files: [{ meta: { id: "chat", name: "chat.txt", mime: "text/plain", role: "file" }, data: Buffer.from(chatTranscript(report), "utf8") }],
+      });
+    } catch (error) {
+      if (error instanceof FeedbackFull) return "full";
+      throw error;
+    }
   };
 }

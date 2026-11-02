@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ChatReport } from "../accounts/chatRoutes";
 import { chatReporter, chatTranscript } from "./chatReport";
-import { FeedbackStore, MemoryFeedbackBackend } from "./store";
+import { FeedbackStore, MemoryFeedbackBackend, type NewReport } from "./store";
+
+const quiet = { warn: () => {} };
 
 const report: ChatReport = {
   reporter: { id: "pro_alex", label: "Alex#1" },
@@ -51,5 +53,29 @@ describe("reporting a chat to the team", () => {
     expect(feedback.size).toBe(2);
     expect(feedback.list({ area: "friends", kind: "bug" })).toHaveLength(2);
     expect(feedback.list({ q: "Sam#2" })).toHaveLength(2);
+  });
+
+  it("says it is full, and keeps nothing, when the team's side holds as many reports as it may and none of them is closed", async () => {
+    const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxReports: 1, log: quiet });
+    const open: NewReport = { key: "k".repeat(22), kind: "bug", area: "player", title: "Open", message: "It broke", details: {}, answer: true, context: null, files: [] };
+    await feedback.create(open);
+    expect(await chatReporter(feedback)(report)).toBe("full");
+    expect(feedback.list().map((each) => each.title)).toEqual(["Open"]);
+
+    await feedback.update("1", (draft) => void (draft.status = "done"));
+    expect(await chatReporter(feedback)(report)).toBeUndefined();
+    expect(feedback.list().map((each) => each.area)).toEqual(["friends"]);
+  });
+
+  it("does not keep a report without its messages: when they do not fit it is turned away, though its words would fit", async () => {
+    const messages = Buffer.byteLength(chatTranscript(report), "utf8");
+    // Room for the words of one report, and for its messages but a byte.
+    const short = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxBytes: 6 * 1024 + messages - 1, log: quiet });
+    expect(await chatReporter(short)(report)).toBe("full");
+    expect(short.size).toBe(0);
+
+    const enough = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxBytes: 6 * 1024 + messages, log: quiet });
+    expect(await chatReporter(enough)(report)).toBeUndefined();
+    expect((await enough.file("1", "chat"))?.data.toString("utf8")).toBe(chatTranscript(report));
   });
 });

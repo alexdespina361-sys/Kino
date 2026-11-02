@@ -17,8 +17,8 @@ export interface ChatReport {
   at: number;
   lines: Array<{ at: number; from: "reporter" | "about"; text: string }>;
 }
-/** Hands a report to the team (see `chatReporter` in feedback/chatReport.ts). */
-export type ChatReporter = (report: ChatReport) => Promise<void>;
+/** Hands a report to the team (see `chatReporter` in feedback/chatReport.ts): `"full"` when the team's side cannot take it now (nothing was kept). */
+export type ChatReporter = (report: ChatReport) => Promise<void | "full">;
 
 export interface ChatRouteOptions {
   chat: ChatBook;
@@ -155,12 +155,14 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (held.value.rev !== parsed.data.rev) return refuse(reply, "changed");
     if (held.value.lines.length === 0) return refuse(reply, "gone");
     reportsByAccount.hit(me.accountId);
-    await report({
+    const sent = await report({
       reporter: sideOf(me.profileId),
       about: sideOf(me.friendId),
       at: store.clock(),
       lines: held.value.lines.map((line) => ({ at: line.at, from: line.mine ? "reporter" : "about", text: line.text })),
     });
+    // (The team's side is full of reports nobody has closed: nothing was kept. That is the site's to put right, so it is a 503 and not a 429; the page may try again later.)
+    if (sent === "full") return reply.header("Retry-After", 3600).code(503).send({ error: "full" });
     return reply.code(204).send();
   });
 }

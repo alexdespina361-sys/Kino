@@ -20,9 +20,9 @@ afterEach(async () => {
 const cheap = { N: 1024, r: 8, p: 1 } as const;
 const clock = { now: Date.now() };
 
-async function start(persistence = new MemoryPersistence()) {
+async function start(persistence = new MemoryPersistence(), feedbackOptions: { maxReports?: number } = {}) {
   const store = await AccountStore.open({ persistence, flushMs: 0, now: () => clock.now });
-  const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend() });
+  const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), ...feedbackOptions, ...(feedbackOptions.maxReports ? { log: { warn: () => {} } } : {}) });
   const app = await buildApp({ accounts: store, feedback, passwordCost: cheap });
   apps.push(app);
   return { app, store, feedback, persistence };
@@ -92,8 +92,8 @@ async function person(app: FastifyInstance, login: string): Promise<Person> {
 }
 
 /** Alex and Sam, friends with friends on. */
-async function friends(persistence?: MemoryPersistence) {
-  const world = await start(persistence);
+async function friends(persistence?: MemoryPersistence, feedbackOptions?: { maxReports?: number }) {
+  const world = await start(persistence, feedbackOptions);
   const alex = await person(world.app, "alex");
   const sam = await person(world.app, "sam");
   await alex.choose({ friends: true });
@@ -233,6 +233,24 @@ describe("reporting a chat", () => {
     const refused = await sam.client.call("POST", sam.chat(alex, "/report"), { rev: preview.data.rev });
     expect(refused.statusCode).toBe(409);
     expect(feedback.size).toBe(0);
+  });
+
+  it("is not sent, and the reporter is told so with a 503, when the team's side is full of reports nobody has closed", async () => {
+    const { alex, sam, feedback } = await friends(undefined, { maxReports: 1 });
+    await feedback.create({ key: "k".repeat(22), kind: "bug", area: "player", title: "Open", message: "It broke", details: {}, answer: true, context: null, files: [] });
+    await alex.say(sam, "something unkind");
+    const preview = await sam.client.call("GET", sam.chat(alex, "/report"));
+
+    const refused = await sam.client.call("POST", sam.chat(alex, "/report"), { rev: preview.data.rev });
+    expect(refused.statusCode).toBe(503);
+    expect(refused.data).toEqual({ error: "full" });
+    expect(Number(refused.headers["retry-after"])).toBeGreaterThan(0);
+    expect(feedback.list().map((record) => record.title)).toEqual(["Open"]);
+
+    // (Once the team has closed that one there is room, and the same report goes.)
+    await feedback.update("1", (draft) => void (draft.status = "done"));
+    expect((await sam.client.call("POST", sam.chat(alex, "/report"), { rev: preview.data.rev })).statusCode).toBe(204);
+    expect(feedback.list().map((record) => record.area)).toEqual(["friends"]);
   });
 });
 

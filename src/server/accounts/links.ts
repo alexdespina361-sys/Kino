@@ -16,6 +16,8 @@ const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O or 1/I to mix up 
 const CODE_LENGTH = 8;
 const TTL_MS = 5 * 60 * 1000;
 const MAX_LINKS = 1000;
+/** How many requests one address may have open at once (a household has a few TVs; a flood has more). */
+const MAX_PER_ADDRESS = 10;
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -24,6 +26,8 @@ interface Link {
   secretHash: string;
   kind: DeviceKind;
   label: string;
+  /** Where the request came from (what `MAX_PER_ADDRESS` counts), when that was told. */
+  address?: string;
   expiresAt: number;
   state: "waiting" | "approved" | "denied";
   accountId?: string;
@@ -53,16 +57,28 @@ export class LinkRegistry {
     for (const code of [...this.links.keys()]) this.live(code);
   }
 
-  /** A new request from a device that wants to be signed in. `undefined` when too many are open (somebody is flooding). */
-  start(kind: DeviceKind, label: string): { code: string; secret: string; expiresAt: number } | undefined {
-    if (this.links.size >= MAX_LINKS) this.sweep();
-    if (this.links.size >= MAX_LINKS) return undefined;
+  /**
+   * A new request from a device that wants to be signed in, made from `address`. It always has its place, so that a flood cannot leave every real TV turned away:
+   * when the address has `MAX_PER_ADDRESS` requests open the oldest of them gives way, and when the table is full so does the oldest of all (a device whose request
+   * gave way asks again, as it does for one that ran out of time). `undefined` is for a table that cannot make room, which this one always can.
+   */
+  start(kind: DeviceKind, label: string, address?: string): { code: string; secret: string; expiresAt: number } | undefined {
+    this.sweep();
+    if (address !== undefined) {
+      // (The table is in the order the requests came, the oldest first, and one more is coming.)
+      const mine = [...this.links.values()].filter((link) => link.address === address);
+      for (const old of mine.slice(0, Math.max(0, mine.length - MAX_PER_ADDRESS + 1))) this.links.delete(old.code);
+    }
+    if (this.links.size >= MAX_LINKS) {
+      const oldest = this.links.keys().next().value;
+      if (oldest !== undefined) this.links.delete(oldest);
+    }
     let code = "";
     do code = Array.from({ length: CODE_LENGTH }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
     while (this.links.has(code));
     const secret = randomBytes(24).toString("base64url");
     const expiresAt = this.now() + TTL_MS;
-    this.links.set(code, { code, secretHash: hash(secret), kind, label, expiresAt, state: "waiting" });
+    this.links.set(code, { code, secretHash: hash(secret), kind, label, ...(address !== undefined ? { address } : {}), expiresAt, state: "waiting" });
     return { code, secret, expiresAt };
   }
 

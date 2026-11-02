@@ -17,12 +17,14 @@ import { PostgresPersistence, type Persistence, type SqlClient } from "../accoun
 
 /** What the reports may take up (the pictures are nearly all of it). A free Postgres has 500 MB, shared with the accounts and the subtitle timings. */
 export const FEEDBACK_MAX_BYTES = 150 * 1024 * 1024;
-/** The most reports kept; past this the oldest closed ones go (see `prune`). */
+/** The most reports kept; a new one past this takes the place of the oldest closed one, and is turned away when none is closed (see `admit`). */
 export const FEEDBACK_MAX_REPORTS = 600;
 /** The most lines (answers, from either side) one report holds: a thread is not a chat room. */
 export const FEEDBACK_MAX_MESSAGES = 100;
 /** What the words of a report count for in the budget, besides its files. */
 const RECORD_BYTES = 6 * 1024;
+/** What the taking in of new reports is chained on (see `chained`): not the number of any report. */
+const NEW_REPORT = "new";
 
 export const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
@@ -35,7 +37,7 @@ export interface FeedbackFile {
   width?: number;
   height?: number;
   bytes: number;
-  /** Taken out to make room (the words stay, see `prune`). */
+  /** Taken out to make room (the words stay, see `evictFiles`). */
   gone?: true;
 }
 
@@ -270,6 +272,17 @@ export interface FeedbackStoreOptions {
   log?: { warn(message: string): void };
 }
 
+/**
+ * A report is not taken in because the store is full of reports that are still open. Those are never given up to make room: a flood would take the
+ * place of what real people sent. The team closes some (what is closed makes room), and the next report is taken.
+ */
+export class FeedbackFull extends Error {
+  constructor() {
+    super("The feedback is full of reports that are still open");
+    this.name = "FeedbackFull";
+  }
+}
+
 export interface FeedbackFilter {
   status?: FeedbackStatus | "open" | "closed";
   kind?: FeedbackKind;
@@ -300,7 +313,7 @@ const reportBytes = (record: FeedbackRecord) => RECORD_BYTES + record.files.redu
 export class FeedbackStore {
   private readonly records = new Map<string, FeedbackRecord>();
   private readonly chains = new Map<string, Promise<unknown>>();
-  private readonly creating = new Map<string, Promise<FeedbackRecord>>();
+  private readonly creating = new Map<string, Promise<{ record: FeedbackRecord; refused: string[] }>>();
   private readonly waiters = new Set<() => void>();
   private nextId = 1;
   private revision = 0;
@@ -426,23 +439,30 @@ export class FeedbackStore {
   /**
    * Takes a report in. The same key twice is the same report (a page that did not hear the answer sends it again), so the second time is the first's
    * report and `created` is false. The files and the words are written before this answers.
+   *
+   * Room is made from what is closed and from nothing else (see `admit`), and `FeedbackFull` is what comes when that is not enough. A file that does not
+   * fit the budget for files is, with `filesOptional`, left out and named in `refused` (the words are kept); without it the report is not taken.
    */
-  async create(input: NewReport): Promise<{ record: FeedbackRecord; created: boolean }> {
+  async create(input: NewReport, { filesOptional = false }: { filesOptional?: boolean } = {}): Promise<{ record: FeedbackRecord; created: boolean; refused: string[] }> {
     const hash = sha256(input.key);
     const known = this.byKey(input.key);
-    if (known) return { record: known, created: false };
+    if (known) return { record: known, created: false, refused: [] };
     const running = this.creating.get(hash);
-    if (running) return { record: await running, created: false };
-    const job = this.make(input, hash);
+    if (running) return { ...(await running), created: false };
+    // (One report at a time is taken in, so that the room that was found is the room there is when the report is put in it.)
+    const job = this.chained(NEW_REPORT, () => this.make(input, hash, filesOptional));
     this.creating.set(hash, job);
     try {
-      return { record: await job, created: true };
+      return { ...(await job), created: true };
     } finally {
       this.creating.delete(hash);
     }
   }
 
-  private async make(input: NewReport, keyHash: string): Promise<FeedbackRecord> {
+  private async make(input: NewReport, keyHash: string, filesOptional: boolean): Promise<{ record: FeedbackRecord; refused: string[] }> {
+    // (A report that is only its files is not kept without them: there would be nothing in it.)
+    const hasWords = input.message !== "" || Object.keys(input.details).length > 0;
+    const { files, refused } = await this.admit(input.files, filesOptional && hasWords);
     const id = String(this.nextId++);
     const at = this.now();
     const record: FeedbackRecord = {
@@ -461,7 +481,7 @@ export class FeedbackStore {
       ...(input.frequency ? { frequency: input.frequency } : {}),
       answer: input.answer,
       status: "new",
-      files: input.files.map(({ meta, data }) => ({ ...meta, bytes: data.length })),
+      files: files.map(({ meta, data }) => ({ ...meta, bytes: data.length })),
       context: input.context,
       ...(input.contextDropped?.length ? { contextDropped: input.contextDropped } : {}),
       messages: [],
@@ -470,7 +490,7 @@ export class FeedbackStore {
       note: "",
     };
     try {
-      await Promise.all(input.files.map(({ meta, data }) => this.backend.putFile(id, meta.id, data)));
+      await Promise.all(files.map(({ meta, data }) => this.backend.putFile(id, meta.id, data)));
       await this.backend.save(record);
     } catch (error) {
       await this.backend.removeFiles(id).catch(() => {});
@@ -478,8 +498,7 @@ export class FeedbackStore {
     }
     this.records.set(id, record);
     this.bump();
-    await this.prune().catch((error: Error) => this.log.warn(`Feedback: could not make room: ${error.message}`));
-    return record;
+    return { record, refused };
   }
 
   /**
@@ -547,27 +566,77 @@ export class FeedbackStore {
     });
   }
 
+  /* ------------------------------ making room ------------------------------ */
+
+  private oldestFirst(): FeedbackRecord[] {
+    return [...this.records.values()].sort((a, b) => a.createdAt - b.createdAt || Number(a.id) - Number(b.id));
+  }
+
+  /** Takes a closed report out for good, with its files: if it is still closed when its turn comes (a sender who writes to a closed report opens it, and it stays). */
+  private evict(id: string): Promise<void> {
+    return this.chained(id, async () => {
+      const current = this.records.get(id);
+      if (!current || !feedbackClosed(current.status)) return;
+      await this.backend.remove(id);
+      this.records.delete(id);
+      this.bump();
+    });
+  }
+
+  /** The same for the files of a closed report alone: they go, and the words stay. */
+  private evictFiles(id: string): Promise<void> {
+    return this.chained(id, async () => {
+      const current = this.records.get(id);
+      if (!current || !feedbackClosed(current.status)) return;
+      const gone = current.files.filter((file) => !file.gone).map((file) => file.id);
+      if (gone.length === 0) return;
+      await this.backend.removeFiles(id, gone);
+      const draft = structuredClone(current);
+      for (const file of draft.files) file.gone = true;
+      await this.backend.save(draft);
+      this.records.set(id, draft);
+    });
+  }
+
   /**
-   * Makes room when the reports take up more than they may: first the files of the oldest report that is closed go (the words stay), then the files of the
-   * oldest that is not; and when there are more reports than may be kept, the oldest closed one goes, else the oldest.
+   * Makes room for a report that is coming in, from what is closed and from nothing else: a report that is still open is never given up, whatever comes in
+   * after it (a flood would take the place of what real people sent; the team closes what it has dealt with, and that makes room). Past the number of
+   * reports the oldest closed one goes; past the budget the files of the oldest closed reports go, and their words stay.
+   *
+   * When that is not enough there is `FeedbackFull`. The budget is for files, though, so a report that has words (`optional`) is kept without the files
+   * that do not fit (`refused` names them), and is turned away only when its words do not fit either.
    */
-  async prune(): Promise<void> {
-    const oldestFirst = () => [...this.records.values()].sort((a, b) => a.createdAt - b.createdAt || Number(a.id) - Number(b.id));
-    while (this.bytes > this.maxBytes) {
-      const withFiles = oldestFirst().filter((record) => record.files.some((file) => !file.gone));
-      const victim = withFiles.find((record) => feedbackClosed(record.status)) ?? withFiles[0];
+  private async admit(files: NewReport["files"], optional: boolean): Promise<{ files: NewReport["files"]; refused: string[] }> {
+    while (this.records.size >= this.maxReports) {
+      const victim = this.oldestFirst().find((record) => feedbackClosed(record.status));
+      if (!victim) throw this.turnedAway();
+      await this.evict(victim.id);
+    }
+    const wanted = files.reduce((sum, { data }) => sum + data.length, 0);
+    while (this.bytes + RECORD_BYTES + wanted > this.maxBytes) {
+      const victim = this.oldestFirst().find((record) => feedbackClosed(record.status) && record.files.some((file) => !file.gone));
       if (!victim) break;
-      const gone = victim.files.filter((file) => !file.gone).map((file) => file.id);
-      await this.backend.removeFiles(victim.id, gone);
-      await this.update(victim.id, (draft) => {
-        for (const file of draft.files) if (gone.includes(file.id)) file.gone = true;
-      }, { quiet: true });
+      await this.evictFiles(victim.id);
     }
-    while (this.records.size > this.maxReports) {
-      const all = oldestFirst();
-      const victim = all.find((record) => feedbackClosed(record.status)) ?? all[0];
-      if (!victim || !(await this.remove(victim.id))) break;
+    let room = this.maxBytes - this.bytes - RECORD_BYTES;
+    if (room >= wanted) return { files, refused: [] };
+    if (!optional || room < 0) throw this.turnedAway();
+    const kept: NewReport["files"] = [];
+    const refused: string[] = [];
+    for (const file of files) {
+      if (file.data.length > room) {
+        refused.push(file.meta.id);
+      } else {
+        kept.push(file);
+        room -= file.data.length;
+      }
     }
+    return { files: kept, refused };
+  }
+
+  private turnedAway(): FeedbackFull {
+    this.log.warn(`Feedback: turned a report away: ${this.records.size} reports are kept (${Math.round(this.bytes / 1024 / 1024)} MB) and no closed one is left to make room from.`);
+    return new FeedbackFull();
   }
 }
 

@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
 import { createFilmpireAdapter } from "./adapters/filmpire";
@@ -113,6 +114,34 @@ describe("createFilmpireAdapter", () => {
     const adapter = createFilmpireAdapter();
     const res = await adapter.resolve(new URL("https://filmpire.cc/browse"));
     expect(res.status).toBe("invalid_url");
+  });
+
+  it("asks TMDB with the key the site is set up with (TMDB_API_KEY)", async () => {
+    vi.stubEnv("TMDB_API_KEY", "configured-test-key");
+    vi.resetModules();
+    const asked: string[] = [];
+    // (A fake network: nothing is sent anywhere, and every answer is a failure, so the adapter gives up after its first questions.)
+    vi.stubGlobal("fetch", async (input: unknown) => {
+      asked.push(String(input));
+      return new Response("{}", { status: 503 });
+    });
+    try {
+      const { createFilmpireAdapter: fresh } = await import("./adapters/filmpire");
+      await fresh().resolve(new URL("https://filmpire.cc/movie/603"));
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+    const toTmdb = asked.map((url) => new URL(url)).filter((url) => url.hostname === "api.themoviedb.org");
+    expect(toTmdb.map((url) => url.searchParams.get("api_key"))).toEqual(["configured-test-key"]);
+  });
+
+  it("has no key written into it, in either of the two places it asks TMDB", async () => {
+    // (The second place is reached only after the answers of the player's site, which a test does not make up: the source is looked at instead.)
+    const source = await readFile(new URL("./adapters/filmpire.ts", import.meta.url), "utf8");
+    expect((source.match(/api_key=[0-9a-f]{32}/gi) ?? []).length).toBe(0);
+    expect((source.match(/api\.themoviedb\.org[^`]*api_key=\$\{FILMPIRE_TMDB_API_KEY\}/g) ?? []).length).toBe(2);
   });
 });
 

@@ -302,7 +302,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     const parsed = LinkStartSchema.safeParse(request.body ?? {});
     if (!parsed.success) return invalid(reply, parsed.error);
     linkStartByIp.hit(request.ip);
-    const started = links.start(parsed.data.device ?? "tv", describeDevice(request.headers["user-agent"]));
+    const started = links.start(parsed.data.device ?? "tv", describeDevice(request.headers["user-agent"]), request.ip);
     return started ? reply.code(201).send(started) : reply.code(503).send({ error: "busy" });
   });
 
