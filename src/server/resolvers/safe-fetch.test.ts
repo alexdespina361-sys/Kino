@@ -89,6 +89,23 @@ describe("safeFetch", () => {
     expect(error).toMatchObject({ code: "bad_status", status: 404 });
   });
 
+  it("lets go of an answer it has no use for - a redirect, an error - without reading it to the end: a body that never ends keeps no connection open", async () => {
+    const closed: string[] = [];
+    handler = (req, res) => {
+      if (req.url === "/moved" || req.url === "/broken") {
+        if (req.url === "/moved") res.writeHead(302, { location: "/fine" });
+        else res.writeHead(500);
+        res.write("..."); // (and the body goes on for ever)
+        res.on("close", () => closed.push(req.url!.slice(1)));
+        return;
+      }
+      res.writeHead(200, { "content-type": "text/plain" }).end("fine");
+    };
+    expect((await safeFetch(`${base}/moved`, loopbackOnly)).body).toBe("fine");
+    expect((await failure(safeFetch(`${base}/broken`, loopbackOnly))).code).toBe("bad_status");
+    await expect.poll(() => [...closed].sort()).toEqual(["broken", "moved"]);
+  });
+
   it("with the DEFAULT policy, refuses loopback by IP and by name", async () => {
     handler = (_req, res) => res.writeHead(200, { "content-type": "text/html" }).end("secret");
     const port = new URL(base).port;

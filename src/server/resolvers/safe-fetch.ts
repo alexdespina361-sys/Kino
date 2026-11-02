@@ -131,7 +131,7 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
       const status = res.statusCode ?? 0;
       const location = res.headers.location;
       if (status >= 300 && status < 400 && location) {
-        res.resume();
+        res.destroy(); // (not read to its end: a body that never ends would hold the connection for ever, once the time above is cleared)
         let next: URL;
         try {
           next = new URL(location, url);
@@ -143,7 +143,7 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
         continue;
       }
       if (status >= 400) {
-        res.resume();
+        res.destroy(); // (likewise)
         throw new SafeFetchError("bad_status", `HTTP ${status}`, status);
       }
 
