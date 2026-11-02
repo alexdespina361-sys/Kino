@@ -106,9 +106,21 @@ const corsHeaders = (reply: FastifyReply): void => {
   reply.header("Access-Control-Allow-Headers", "*");
 };
 
-/** Some sites send a piece of a film as a page or as plain bytes; a player wants to be told it is video. */
-const pieceType = (contentType: string): string =>
-  !contentType || contentType.includes("text/html") || contentType.includes("application/octet-stream") ? "video/mp2t" : contentType;
+/**
+ * What comes through here comes from anybody's server and goes out under this site's own address, so the browser is never told it is a page: only video
+ * and audio keep the type they came with, whatever else is just a file; and no answer may be taken for a page by guessing (`nosniff`), nor run as one if it
+ * ever ends up as one (`sandbox`, with no script allowed). Nothing that asks for these answers (a player, a subtitle track) looks at either.
+ */
+const FILE_TYPE = "application/octet-stream";
+const TEXT_TYPE = "text/plain; charset=utf-8";
+const isMediaType = (contentType: string): boolean => /^(video|audio)\/[\w.+-]+\s*(;|$)/i.test(contentType.trim());
+const inert = (reply: FastifyReply): void => {
+  reply.header("X-Content-Type-Options", "nosniff");
+  reply.header("Content-Security-Policy", "default-src 'none'; sandbox");
+};
+
+/** Some sites send a piece of a film as a page or as plain bytes; a player wants to be told it is video. Whatever is not video or audio is told so. */
+const pieceType = (contentType: string): string => (isMediaType(contentType) ? contentType : "video/mp2t");
 
 /**
  * One pool of connections for each rule about addresses. The pool looks at the address a name leads to when it connects (see `guardedLookup`),
@@ -238,6 +250,7 @@ export async function handleStreamProxy(
   reply: FastifyReply,
   options: ProxyOptions = {},
 ): Promise<FastifyReply> {
+  inert(reply);
   const rawUrl = request.query.url;
   if (!rawUrl) {
     return reply.code(400).send({ error: "Missing 'url' query parameter" });
@@ -256,6 +269,14 @@ export async function handleStreamProxy(
   } catch {
     return reply.code(403).send({ error: "URL not allowed" });
   }
+  // (What is said to be the page that asked, for the places that only answer to their own: a text that is not an address is turned away, not left to fail further on.)
+  const referer = request.query.referer || targetUrl.origin;
+  let refererOrigin: string;
+  try {
+    refererOrigin = new URL(referer).origin;
+  } catch {
+    return reply.code(400).send({ error: "Invalid 'referer' query parameter" });
+  }
   const stats = options.stats;
   if (stats) stats.requests += 1;
 
@@ -268,13 +289,12 @@ export async function handleStreamProxy(
   };
   if (!video && isSegmentPath(targetUrl.pathname)) return turnAway();
 
-  const referer = request.query.referer || targetUrl.origin;
   const headers: Record<string, string> = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     referer,
     accept: "*/*",
   };
-  if (!options.omitOrigin) headers.origin = new URL(referer).origin;
+  if (!options.omitOrigin) headers.origin = refererOrigin;
 
   if (request.headers.range) {
     headers.range = request.headers.range;
@@ -333,8 +353,8 @@ export async function handleStreamProxy(
   }
 
   if (!upstreamResponse.ok) {
-    reply.code(upstreamResponse.status).header("Cache-Control", "no-store");
-    if (contentType) reply.header("Content-Type", contentType);
+    // (What the other end said is passed on as text, whatever it called it: it is for whoever reads the failure, not a page for a browser.)
+    reply.code(upstreamResponse.status).header("Cache-Control", "no-store").header("Content-Type", TEXT_TYPE);
     const text = await textUpTo(upstreamResponse, 64 * 1024);
     const message = text ?? `Upstream returned HTTP ${upstreamResponse.status}`;
     if (stats) stats.bytes += Buffer.byteLength(message);
@@ -352,7 +372,7 @@ export async function handleStreamProxy(
       return reply.code(upstreamResponse.status).send(rewritten);
     }
     if (stats) stats.bytes += Buffer.byteLength(text);
-    reply.header("Content-Type", contentType || "text/plain");
+    reply.header("Content-Type", TEXT_TYPE);
     return reply.code(upstreamResponse.status).send(text);
   }
 
@@ -374,13 +394,10 @@ export async function handleStreamProxy(
     reply.header("Cache-Control", "public, max-age=86400, immutable");
   }
 
-  // If the upstream content-type is text/html or generic, but this is a segment, override to video/mp2t
-  const finalContentType = isSegment ? pieceType(contentType) : contentType;
+  // A segment that is not told to be video or audio (a page, a picture, anything) is video; any other file that is not is just a file.
+  const finalContentType = isSegment ? pieceType(contentType) : isMediaType(contentType) ? contentType : FILE_TYPE;
 
-  reply.code(upstreamResponse.status);
-  if (finalContentType) {
-    reply.header("Content-Type", finalContentType);
-  }
+  reply.code(upstreamResponse.status).header("Content-Type", finalContentType);
   for (const h of ["content-length", "content-range", "accept-ranges"]) {
     const val = upstreamResponse.headers.get(h);
     if (val) reply.header(h, val);

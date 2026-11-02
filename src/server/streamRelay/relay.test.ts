@@ -114,7 +114,9 @@ describe("a separate streaming relay", () => {
     start();
     const answer = await relay.inject(signed("/blocked.vtt"));
     expect(answer.statusCode).toBe(403);
-    expect(answer.headers["content-type"]).toContain("text/html");
+    // (The provider's failure comes through as its status and its words, as text: whatever it calls its error page, a browser is never told that is a page.)
+    expect(answer.headers["content-type"]).toBe("text/plain; charset=utf-8");
+    expect(answer.headers["x-content-type-options"]).toBe("nosniff");
     expect(answer.headers["cache-control"]).toBe("no-store");
   });
 

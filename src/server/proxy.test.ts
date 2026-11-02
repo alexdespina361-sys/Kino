@@ -154,6 +154,24 @@ describe("handleStreamProxy", () => {
         for (let part = 0; part < 3; part++) response.write(Buffer.alloc(1024 * 1024 + 1, "a"));
         return void response.end();
       }
+      // (Pages and pictures under the names of films and subtitles: what a browser must never be told is a page when it comes from here.)
+      if (url.pathname === "/page.vtt" || url.pathname === "/error-without-a-suffix") {
+        response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+        return void response.end("<p>an error page</p>");
+      }
+      if (url.pathname === "/page.m3u8" || url.pathname === "/page.html") {
+        response.writeHead(200, { "content-type": "text/html" });
+        return void response.end("<p>a page</p>");
+      }
+      if (url.pathname === "/picture.ts" || url.pathname === "/picture.svg") {
+        const picture = "<svg xmlns='http://www.w3.org/2000/svg'></svg>";
+        response.writeHead(200, { "content-type": "image/svg+xml", "content-length": String(Buffer.byteLength(picture)) });
+        return void response.end(picture);
+      }
+      if (url.pathname === "/sound.mp3") {
+        response.writeHead(200, { "content-type": "audio/mpeg", "content-length": "5" });
+        return void response.end("sound");
+      }
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("nothing here");
     });
@@ -287,6 +305,74 @@ describe("handleStreamProxy", () => {
     it("is what a proxy that is not told otherwise is not: that one carries a long text as well", async () => {
       expect((await ask(at(OKAY, "/long.srt"))).statusCode).toBe(200);
       expect((await ask(at(OKAY, "/seg.ts"))).statusCode).toBe(200);
+    });
+  });
+
+  describe("what a browser is told about what comes through (it all goes out under this site's own address)", () => {
+    let production: FastifyInstance;
+    beforeAll(async () => {
+      production = Fastify();
+      production.get<{ Querystring: { url?: string; referer?: string; format?: string } }>("/api/proxy", (request, reply) =>
+        handleStreamProxy(request, reply, { isAllowedAddress: allowed, video: false, segments: new SegmentCache() }),
+      );
+      await production.ready();
+    });
+    afterAll(async () => {
+      await production.close();
+    });
+    type Answer = Awaited<ReturnType<typeof ask>>;
+    /** Not a page by its type, not one by guessing, and not able to run if it were taken for one. */
+    const inert = (answer: Answer, name: string) => {
+      expect(String(answer.headers["content-type"]), name).not.toMatch(/html|xml|svg|script/i);
+      expect(answer.headers["x-content-type-options"], name).toBe("nosniff");
+      expect(String(answer.headers["content-security-policy"]), name).toContain("sandbox");
+    };
+    const shared = (target: string) => sharing.inject({ url: `/api/proxy?url=${encodeURIComponent(target)}` });
+
+    it("does not call the other end's error page a page, whether the address says it is a subtitle or the asker does (that is what gets past a server that carries no film)", async () => {
+      for (const [path, more] of [["/page.vtt", ""], ["/error-without-a-suffix", "&format=vtt"]] as const) {
+        for (const [name, lane] of [["carrying no film", production], ["carrying film", app]] as const) {
+          const answer = await lane.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, path))}${more}` });
+          expect(answer.statusCode, `${name} ${path}`).toBe(404);
+          expect(answer.body, `${name} ${path}`).toBe("<p>an error page</p>");
+          expect(answer.headers["content-type"], `${name} ${path}`).toBe("text/plain; charset=utf-8");
+          inert(answer, `${name} ${path}`);
+        }
+      }
+    });
+
+    it("does not call a page that is said to be a playlist a page, nor any other page or picture", async () => {
+      expect((await ask(at(OKAY, "/page.m3u8"))).headers["content-type"]).toBe("text/plain; charset=utf-8");
+      for (const path of ["/page.m3u8", "/page.html", "/picture.svg"]) {
+        const answer = await ask(at(OKAY, path));
+        expect(answer.statusCode, path).toBe(200);
+        inert(answer, path);
+      }
+      expect((await ask(at(OKAY, "/page.html"))).headers["content-type"]).toBe("application/octet-stream");
+    });
+
+    it("tells a picture that is called a piece of a film that it is video, whether the screens share it or not", async () => {
+      for (const [name, answer] of [["alone", await ask(at(OKAY, "/picture.ts"))], ["shared", await shared(at(OKAY, "/picture.ts"))]] as const) {
+        expect(answer.headers["content-type"], name).toBe("video/mp2t");
+        inert(answer, name);
+      }
+    });
+
+    it("keeps the type of video and audio, and tells every answer, a refusal included, not to be guessed at", async () => {
+      expect((await ask(at(OKAY, "/seg.ts"))).headers["content-type"]).toBe("video/mp2t");
+      expect((await ask(at(OKAY, "/range.mp4"))).headers["content-type"]).toBe("video/mp4");
+      const sound = await ask(at(OKAY, "/sound.mp3"));
+      expect(sound.headers["content-type"]).toBe("audio/mpeg");
+      expect(sound.headers["x-content-type-options"]).toBe("nosniff");
+      const refused = await ask(at("127.0.0.1", "/seg.ts"));
+      expect(refused.statusCode).toBe(403);
+      expect(refused.headers["x-content-type-options"]).toBe("nosniff");
+    });
+
+    it("turns away a 'referer' that is not an address, instead of failing on it", async () => {
+      const answer = await app.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/seg.ts"))}&referer=not%20an%20address` });
+      expect(answer.statusCode).toBe(400);
+      expect((await app.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/seg.ts"))}&referer=${encodeURIComponent("https://player.example/embed")}` })).statusCode).toBe(200);
     });
   });
 
