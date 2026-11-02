@@ -1,4 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import { RateLimiter } from "./accounts/rateLimit";
+
+const MINUTE = 60_000;
 
 /**
  * What every answer tells the browser that gets it, whatever the route: not to guess a type for what it is sent (`nosniff`), to say nothing of the page a visitor came
@@ -57,5 +60,42 @@ export function sameSiteGate(app: FastifyInstance): void {
       refused = elsewhere || (origin !== undefined && !isOwnOrigin(origin, host));
     }
     if (refused) return reply.code(403).send({ error: "cross_site" });
+  });
+}
+
+/** How many times an address may ask, in a minute, for what makes this server fetch from another site. Generous: a page asks a handful of times when a title is opened. */
+export interface FetchesPerMinute {
+  /** `/api/resolve` (60 unless set). */
+  resolve?: number;
+  /** The library's questions about one title (`similar`, `about`, `episodes` and `seasons`, counted together; 120 unless set). */
+  library?: number;
+  /** `/api/proxy`, while it carries no film (300 unless set). With film on, a player asks for one piece after another, and there is no limit here. */
+  proxy?: number;
+}
+
+/** The library's routes that take the address of a title and ask the place that lists it. */
+const TITLE_ASKS = ["/api/library/similar", "/api/library/about", "/api/library/episodes", "/api/library/seasons"];
+
+/**
+ * Anyone may ask this server to go and fetch a page (`/api/resolve`, the library's questions about a title) or a text (`/api/proxy` without film, which is subtitles),
+ * and each ask costs a fetch from another site and some of this host's bandwidth, so an address may make only so many of them in a minute: past it the answer is a 429
+ * with `Retry-After`, as everywhere else, and nothing is fetched. The count is of the route that answers (a path written another way reaches the same route and the
+ * same count), and a request that the gate above turned away is not counted: it must not use up the allowance of the visitor whose browser it was sent from. A restart forgives everyone.
+ */
+export function fetchLimits(app: FastifyInstance, { resolve = 60, library = 120, proxy = 300 }: FetchesPerMinute, { video }: { video: boolean }): void {
+  const limiters = new Map<string, RateLimiter>();
+  limiters.set("/api/resolve", new RateLimiter(resolve, MINUTE));
+  const titles = new RateLimiter(library, MINUTE);
+  for (const route of TITLE_ASKS) limiters.set(route, titles);
+  if (!video) limiters.set("/api/proxy", new RateLimiter(proxy, MINUTE));
+  app.addHook("onRequest", async (request, reply) => {
+    const limiter = limiters.get(request.routeOptions.url ?? "");
+    if (!limiter) return;
+    const wait = limiter.wait(request.ip);
+    if (wait > 0) {
+      const seconds = Math.ceil(wait / 1000);
+      return reply.header("Retry-After", seconds).code(429).send({ error: "rate_limited", retryAfter: seconds });
+    }
+    limiter.hit(request.ip);
   });
 }

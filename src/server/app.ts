@@ -13,7 +13,7 @@ import type { AccountStore } from "./accounts/store";
 import { chatReporter } from "./feedback/chatReport";
 import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
-import { sameSiteGate, securityHeaders } from "./guard";
+import { fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy, type ProxyStats } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
@@ -68,6 +68,8 @@ export interface AppOptions {
   allowPrivateNetwork?: boolean;
   /** Whether `/api/proxy` carries film (playlists, pieces, files) or only subtitles. On unless set; env PROXY_VIDEO=off turns it off (see `ProxyOptions.video`). */
   proxyVideo?: boolean;
+  /** How many times an address may ask in a minute for what makes the server fetch from another site: 60 for `/api/resolve`, 120 for the library's questions about a title, 300 for `/api/proxy` while it carries no film (see `FetchesPerMinute`). Tests use small ones. */
+  fetchesPerMinute?: FetchesPerMinute;
   /** Whether screens may offer the cat companion. Off unless set; env CAT_COMPANION=on turns it on, and taking it back off is the kill switch (see `/api/features`). */
   cat?: boolean;
   /** Socket liveness tuning; tests shorten it. */
@@ -208,6 +210,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   const isProxyOff = process.env.PROXY_VIDEO === "off" || process.env.PROXY_VIDEO === "false" || process.env.PROXY_VIDEO === "0";
   const proxyVideo = options.proxyVideo ?? !isProxyOff;
+  // (After the gate at the top, so a request that is turned away for where it comes from is not counted against the visitor it was sent from, and before the routes it counts.)
+  fetchLimits(app, options.fetchesPerMinute ?? {}, { video: proxyVideo });
   // The cat companion is shown to nobody until the host says so; a screen asks here whether it may offer one (and its settings switch is hidden when it may not).
   // Setting CAT_COMPANION back to off is the kill switch: every screen's cat is gone at its next load.
   const catOn = options.cat ?? /^(1|on|true|yes)$/i.test(process.env.CAT_COMPANION ?? "");

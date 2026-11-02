@@ -1,12 +1,13 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { FastifyInstance, InjectOptions } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from "fastify";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryPersistence } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
 import { buildApp, isDeployed, type AppOptions } from "./app";
 import { isOwnOrigin } from "./guard";
+import type { ResolveFn } from "./resolvers";
 
 let dir: string | undefined;
 let app: FastifyInstance | undefined;
@@ -216,6 +217,140 @@ describe("where a request to the api comes from", () => {
     const answer = await sentTo(site, "GET", "/api/proxy", { origin: "https://other.example" });
     expect(answer.statusCode).toBe(400);
     expect(corsHeaders(answer.headers)).toEqual([]);
+  });
+});
+
+describe("how often an address may ask for what makes the server fetch from another site", () => {
+  const PAGE = "https://example.com/film";
+  /** A resolver that answers at once and keeps what it was asked: what a refused ask must never reach. */
+  const resolver = () => {
+    const calls: string[] = [];
+    const resolve: ResolveFn = async (url) => {
+      calls.push(url);
+      return { status: "unsupported", reason: "no" };
+    };
+    return { calls, resolve };
+  };
+  const codes = async (site: FastifyInstance, requests: InjectOptions[]) => {
+    const found: number[] = [];
+    for (const request of requests) found.push((await site.inject(request)).statusCode);
+    return found;
+  };
+  const times = (count: number, request: InjectOptions) => Array.from({ length: count }, (): InjectOptions => ({ ...request }));
+
+  it("turns an address away once it has asked more often than it may in a minute, and does not go and fetch for the ask", async () => {
+    const { calls, resolve } = resolver();
+    const site = await buildApp({ resolve, fetchesPerMinute: { resolve: 3 } });
+    app = site;
+    const answers: LightMyRequestResponse[] = [];
+    for (let n = 1; n <= 5; n++) answers.push(await site.inject(`/api/resolve?url=${PAGE}/${n}`));
+    expect(answers.map((answer) => answer.statusCode)).toEqual([200, 200, 200, 429, 429]);
+    expect(calls).toEqual([`${PAGE}/1`, `${PAGE}/2`, `${PAGE}/3`]);
+    // (The same words as every other limit of the site, and the answer is as safe as any other.)
+    const refused = answers[3]!;
+    expect(refused.json()).toEqual({ error: "rate_limited", retryAfter: expect.any(Number) });
+    expect(refused.headers["retry-after"]).toBe(String(refused.json<{ retryAfter: number }>().retryAfter));
+    expect(refused.headers["x-content-type-options"]).toBe("nosniff");
+    expect(corsHeaders(refused.headers)).toEqual([]);
+  });
+
+  it("says how long to wait, lets the address ask again when the minute is over, and does not count the asks it turned away", async () => {
+    let now = Date.parse("2026-11-02T12:00:00Z");
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      const { resolve } = resolver();
+      const site = await buildApp({ resolve, fetchesPerMinute: { resolve: 2 } });
+      app = site;
+      const ask = () => site.inject(`/api/resolve?url=${PAGE}`);
+      expect((await ask()).statusCode).toBe(200);
+      now += 10_500;
+      expect((await ask()).statusCode).toBe(200);
+      const refused = await ask();
+      expect([refused.statusCode, refused.headers["retry-after"], refused.json()]).toEqual([429, "50", { error: "rate_limited", retryAfter: 50 }]); // (49.5 seconds to the first ask's end)
+      now += 40_000;
+      expect((await ask()).statusCode).toBe(429); // (a try that is turned away is no reason to wait longer)
+      now += 9_499;
+      const nearly = await ask();
+      expect([nearly.statusCode, nearly.headers["retry-after"]]).toEqual([429, "1"]);
+      now += 1;
+      expect((await ask()).statusCode).toBe(200); // (a minute after the first ask, which is the only one that has gone out of the count)
+      expect((await ask()).statusCode).toBe(429);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("keeps a count for each address, as the host's proxy says it is, and a visitor's own word about it does not give it another", async () => {
+    const { resolve } = resolver();
+    const behind = await buildApp({ resolve, trustProxy: 1, fetchesPerMinute: { resolve: 2 } });
+    app = behind;
+    const from = (address: string): InjectOptions => ({ url: `/api/resolve?url=${PAGE}`, headers: { "x-forwarded-for": address } });
+    expect(await codes(behind, [from("198.51.100.7"), from("198.51.100.7"), from("198.51.100.7")])).toEqual([200, 200, 429]);
+    expect(await codes(behind, [from("198.51.100.8"), from("198.51.100.8"), from("198.51.100.8")])).toEqual([200, 200, 429]); // (another visitor: its own two)
+    expect(await codes(behind, [from("203.0.113.9, 198.51.100.7")])).toEqual([429]); // (the proxy saw 198.51.100.7: what is written before it is not believed)
+    // With no proxy in front of the server, a header says nothing at all.
+    await behind.close();
+    const alone = await buildApp({ resolve, fetchesPerMinute: { resolve: 2 } });
+    app = alone;
+    expect(await codes(alone, [from("198.51.100.7"), from("198.51.100.8"), from("198.51.100.9")])).toEqual([200, 200, 429]);
+  });
+
+  it("counts the library's four questions about a title together, and the rest of what the library answers not at all", async () => {
+    const { resolve } = resolver();
+    const site = await buildApp({ resolve, fetchesPerMinute: { library: 4, resolve: 1, proxy: 1 }, proxyVideo: false });
+    app = site;
+    const title = `url=${encodeURIComponent(PAGE)}`;
+    const questions = [`/api/library/similar?${title}`, `/api/library/about?${title}`, `/api/library/episodes?${title}&season=1`, `/api/library/seasons?${title}`];
+    expect(await codes(site, questions.map((url) => ({ url })))).toEqual([200, 200, 200, 200]);
+    // Whichever of them is asked next is the fifth.
+    for (const url of questions) expect((await site.inject(url)).statusCode, url).toBe(429);
+    // What takes no address of a title is not counted, nor is the rest of the api.
+    for (const url of ["/api/library", "/api/library/search?q=a", "/api/library/rows", "/api/library/more?row=a&page=2", "/api/health", "/api/features"]) {
+      for (let n = 0; n < 4; n++) expect((await site.inject(url)).statusCode, url).not.toBe(429);
+    }
+    // (...and a question about a title does not use up the resolver's allowance, nor the other way round.)
+    expect((await site.inject(`/api/resolve?url=${encodeURIComponent(PAGE)}`)).statusCode).not.toBe(429);
+  });
+
+  it.each([
+    ["/api/resolve?url=https://example.com/film", 60, {}],
+    ["/api/library/about?url=https://example.com/film", 120, {}],
+    ["/api/proxy", 300, { proxyVideo: false }],
+  ] as const)("lets an address ask %s %i times in a minute, and not one more, unless it is told otherwise", async (url, may, options: AppOptions) => {
+    const { resolve } = resolver();
+    const site = await buildApp({ resolve, ...options });
+    app = site;
+    const found = await codes(site, times(may + 1, { url }));
+    expect(found.slice(0, may).filter((code) => code === 429)).toEqual([]);
+    expect(found[may]).toBe(429);
+  });
+
+  it("does not hold back the proxy while it carries film, which a player asks for one piece after another", async () => {
+    const site = await buildApp({ proxyVideo: true, fetchesPerMinute: { proxy: 2 } });
+    app = site;
+    expect((await codes(site, times(10, { url: "/api/proxy" }))).filter((code) => code === 429)).toEqual([]);
+    await site.close();
+    const without = await buildApp({ proxyVideo: false, fetchesPerMinute: { proxy: 2 } });
+    app = without;
+    expect(await codes(without, times(4, { url: "/api/proxy" }))).toEqual([400, 400, 429, 429]); // (the first two reach the proxy itself, which wants an address)
+  });
+
+  it("counts a path written another way and a request for the headers alone as the asks they are", async () => {
+    const { calls, resolve } = resolver();
+    const site = await buildApp({ resolve, fetchesPerMinute: { resolve: 3 } });
+    app = site;
+    const found = await codes(site, [{ url: `/api/resolve?url=${PAGE}` }, { method: "HEAD", url: `/api/resolve?url=${PAGE}` }, { url: `/%61pi/resolve?url=${PAGE}` }, { url: `/api/resolve?url=${PAGE}` }]);
+    expect(found).toEqual([200, 200, 200, 429]);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("does not count what was turned away for where it came from against the visitor whose browser it was sent from", async () => {
+    const { resolve } = resolver();
+    const site = await buildApp({ resolve, fetchesPerMinute: { resolve: 2 } });
+    app = site;
+    const elsewhere = { "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors" };
+    expect(await codes(site, times(5, { url: `/api/resolve?url=${PAGE}`, headers: elsewhere }))).toEqual([403, 403, 403, 403, 403]);
+    expect(await codes(site, times(3, { url: `/api/resolve?url=${PAGE}`, headers: { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" } }))).toEqual([200, 200, 429]);
   });
 });
 
