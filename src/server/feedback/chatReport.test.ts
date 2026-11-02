@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChatReport } from "../accounts/chatRoutes";
-import { chatReporter, chatTranscript } from "./chatReport";
+import { CHAT_REPORTS_OPEN, chatReporter, chatTranscript } from "./chatReport";
 import { FeedbackStore, MemoryFeedbackBackend, type NewReport } from "./store";
 
 const quiet = { warn: () => {} };
@@ -8,6 +8,7 @@ const quiet = { warn: () => {} };
 const report: ChatReport = {
   reporter: { id: "pro_alex", label: "Alex#1" },
   about: { id: "pro_sam", label: "Sam#2" },
+  account: "acc_alex",
   at: Date.UTC(2026, 9, 18, 14, 5, 30),
   lines: [
     { at: Date.UTC(2026, 9, 18, 14, 1, 2), from: "about", text: "something awful" },
@@ -77,5 +78,35 @@ describe("reporting a chat to the team", () => {
     const enough = await FeedbackStore.open({ backend: new MemoryFeedbackBackend(), maxBytes: 6 * 1024 + messages, log: quiet });
     expect(await chatReporter(enough)(report)).toBeUndefined();
     expect((await enough.file("1", "chat"))?.data.toString("utf8")).toBe(chatTranscript(report));
+  });
+
+  it("keeps three of an account's reports open at most: the next is turned away and keeps nothing, another account's is taken, and a report that is closed makes room", async () => {
+    expect(CHAT_REPORTS_OPEN).toBe(3);
+    const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend() });
+    const send = chatReporter(feedback);
+    for (let i = 0; i < 3; i++) expect(await send(report)).toBeUndefined();
+    expect(await send(report)).toBe("too_many_open");
+    expect(await send(report)).toBe("too_many_open");
+    expect(feedback.size).toBe(3);
+    // (Another account has its own three.)
+    for (let i = 0; i < 3; i++) expect(await send({ ...report, account: "acc_sam" })).toBeUndefined();
+    expect(await send({ ...report, account: "acc_sam" })).toBe("too_many_open");
+    expect(feedback.size).toBe(6);
+    // (What the team has closed is not open any more, and what it only answered or read still is.)
+    await feedback.update("1", (draft) => void (draft.status = "in_review"));
+    expect(await send(report)).toBe("too_many_open");
+    await feedback.update("1", (draft) => void (draft.status = "done"));
+    expect(await send(report)).toBeUndefined();
+    expect(await send(report)).toBe("too_many_open");
+    expect(feedback.size).toBe(7);
+  });
+
+  it("does not write the account into the report: it is counted while the server runs, and the report is not tied to it", async () => {
+    const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend() });
+    await chatReporter(feedback)(report);
+    const record = feedback.get("1")!;
+    expect(JSON.stringify(record)).not.toContain("acc_alex");
+    expect((await feedback.file("1", "chat"))?.data.toString("utf8")).not.toContain("acc_alex");
+    expect(record.accountId).toBeUndefined();
   });
 });

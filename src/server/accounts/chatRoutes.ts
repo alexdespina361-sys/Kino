@@ -14,11 +14,16 @@ export interface ChatSide {
 export interface ChatReport {
   reporter: ChatSide;
   about: ChatSide;
+  /** The account that sends it: the team's side counts the reports each account has open (see `chatReporter`). It is not written into the report. */
+  account: string;
   at: number;
   lines: Array<{ at: number; from: "reporter" | "about"; text: string }>;
 }
-/** Hands a report to the team (see `chatReporter` in feedback/chatReport.ts): `"full"` when the team's side cannot take it now (nothing was kept). */
-export type ChatReporter = (report: ChatReport) => Promise<void | "full">;
+/**
+ * Hands a report to the team (see `chatReporter` in feedback/chatReport.ts). Nothing was kept when it answers `"full"` (the team's side cannot take it now) or
+ * `"too_many_open"` (the account has as many reports open as it may: the team has not dealt with them yet).
+ */
+export type ChatReporter = (report: ChatReport) => Promise<void | "full" | "too_many_open">;
 
 export interface ChatRouteOptions {
   chat: ChatBook;
@@ -60,6 +65,8 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
   const readsByAccount = new RateLimiter(120, MINUTE);
   const writesByAccount = new RateLimiter(120, MINUTE);
   const reportsByAccount = new RateLimiter(5, 60 * MINUTE);
+  // (And the whole site's: a number of accounts cannot send reports faster than the team can read them. A form's own allowance is separate: see feedback/routes.ts.)
+  const reportsEveryone = new RateLimiter(60, 60 * MINUTE);
 
   const base = "/api/profiles/:id/friends/:fid/chat";
 
@@ -148,24 +155,28 @@ export function chatRoutes(app: FastifyInstance, helpers: FriendRouteHelpers, op
     if (!report) return helpers.refused(reply, "not_found");
     const parsed = ChatReportSchema.safeParse(request.body);
     if (!parsed.success) return helpers.invalid(reply, parsed.error);
-    const wait = reportsByAccount.wait(me.accountId);
+    const wait = Math.max(reportsByAccount.wait(me.accountId), reportsEveryone.wait("all"));
     if (wait > 0) return helpers.tooMany(reply, wait);
     const held = chat.lastLines(me.profileId, me.friendId);
     if (!held.ok) return fail(reply, held);
     if (held.value.rev !== parsed.data.rev) return refuse(reply, "changed");
     if (held.value.lines.length === 0) return refuse(reply, "gone");
     reportsByAccount.hit(me.accountId);
+    reportsEveryone.hit("all");
     const sent = await report({
       reporter: sideOf(me.profileId),
       about: sideOf(me.friendId),
+      account: me.accountId,
       at: store.clock(),
       lines: held.value.lines.map((line) => ({ at: line.at, from: line.mine ? "reporter" : "about", text: line.text })),
     });
-    // (The team's side is full of reports nobody has closed: nothing was kept. That is the site's to put right, so it is a 503 and not a 429; the page may try again
-    // later. A report that was not kept is not one the account sent: its place in the hour's few comes back.)
-    if (sent === "full") {
+    // (A report that was not kept is not one the account sent: its place in the hour's few comes back. The team's side is full of reports nobody has closed: that is
+    // the site's to put right, so it is a 503 and not a 429. The account has as many open as it may: that is its own doing, so it is a 429, and waiting a few
+    // minutes will not change it, so the page is told to try again later; both ways the page may try again later.)
+    if (sent === "full" || sent === "too_many_open") {
       reportsByAccount.undo(me.accountId);
-      return reply.header("Retry-After", 3600).code(503).send({ error: "full" });
+      reportsEveryone.undo("all");
+      return reply.header("Retry-After", 3600).code(sent === "full" ? 503 : 429).send({ error: sent });
     }
     return reply.code(204).send();
   });

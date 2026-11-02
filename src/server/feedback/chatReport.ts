@@ -1,7 +1,13 @@
 import { randomBytes } from "node:crypto";
 import type { ChatReport, ChatReporter } from "../accounts/chatRoutes";
 import { readWords } from "./intake";
-import { FeedbackFull, type FeedbackStore } from "./store";
+import { FeedbackFull, TooManyOpen, type FeedbackStore } from "./store";
+
+/**
+ * The most chat reports one account may have open at once (see `TooManyOpen`). A person reports a chat or two before anybody has looked at the first, and an
+ * account cannot fill the room the team's side has with reports nobody has dealt with (all of it is for everything people send: see `FeedbackFull`).
+ */
+export const CHAT_REPORTS_OPEN = 3;
 
 const stamp = (at: number) => `${new Date(at).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 
@@ -36,19 +42,25 @@ export function chatReporter(feedback: FeedbackStore): ChatReporter {
     });
     try {
       // (The messages are the report: a report that could not keep them is not taken, and the reporter is told so.)
-      await feedback.create({
-        key: randomBytes(18).toString("base64url"),
-        kind: "bug",
-        area: "friends",
-        title,
-        message,
-        details: {},
-        answer: false,
-        context: null,
-        files: [{ meta: { id: "chat", name: "chat.txt", mime: "text/plain", role: "file" }, data: Buffer.from(chatTranscript(report), "utf8") }],
-      });
+      await feedback.create(
+        {
+          key: randomBytes(18).toString("base64url"),
+          kind: "bug",
+          area: "friends",
+          title,
+          message,
+          details: {},
+          answer: false,
+          context: null,
+          files: [{ meta: { id: "chat", name: "chat.txt", mime: "text/plain", role: "file" }, data: Buffer.from(chatTranscript(report), "utf8") }],
+          // (Kept in memory only, while the report is open, to count an account's reports: the report itself is not tied to the account.)
+          from: `chat:${report.account}`,
+        },
+        { maxOpen: CHAT_REPORTS_OPEN },
+      );
     } catch (error) {
       if (error instanceof FeedbackFull) return "full";
+      if (error instanceof TooManyOpen) return "too_many_open";
       throw error;
     }
   };

@@ -1,7 +1,9 @@
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest, type LightMyRequestResponse } from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { friendChoices } from "../../shared";
 import { CHAT_SENDS_PER_MINUTE, CHAT_TEXT_MAX, type ChatThread } from "../../shared/chat";
+import { chatReporter } from "../feedback/chatReport";
+import { FeedbackStore, MemoryFeedbackBackend } from "../feedback/store";
 import { ChatBook } from "./chat";
 import { chatRoutes, type ChatReport, type ChatReporter } from "./chatRoutes";
 import { MemoryPersistence } from "./persistence";
@@ -14,7 +16,7 @@ afterEach(async () => {
 });
 
 /** The routes on a bare server: the helpers the account routes give them are made here from the store, the way those make them. */
-async function start({ report = true }: { report?: boolean } = {}) {
+async function start({ report = true, feedback }: { report?: boolean; feedback?: FeedbackStore } = {}) {
   const clock = { now: 1_700_000_000_000 };
   const store = await AccountStore.open({ persistence: new MemoryPersistence(), flushMs: 0, now: () => clock.now });
   const quiet = new Set<string>(); // (profiles that turned "Friends can message me" off)
@@ -28,8 +30,9 @@ async function start({ report = true }: { report?: boolean } = {}) {
     takes: (id) => on(id) && !quiet.has(id),
   });
   const reports: ChatReport[] = [];
-  const teamSide = { full: false }; // (while it is, the team's side takes no report)
-  const reporter: ChatReporter = async (made) => (teamSide.full ? "full" : void reports.push(made));
+  const teamSide = { full: false, tooMany: false }; // (while one is, the team's side takes no report: it is full, or the account has as many open as it may)
+  const stub: ChatReporter = async (made) => (teamSide.full ? "full" : teamSide.tooMany ? "too_many_open" : void reports.push(made));
+  const reporter = feedback ? chatReporter(feedback) : stub; // (the team's side itself, or what stands in for it)
   const app = Fastify();
   apps.push(app);
   chatRoutes(
@@ -55,6 +58,7 @@ type World = Awaited<ReturnType<typeof start>>;
 
 interface Person {
   id: string;
+  accountId: string;
   cookie: string;
   call(method: "GET" | "POST" | "PUT" | "DELETE", url: string, payload?: unknown): Promise<LightMyRequestResponse & { data: any }>;
   /** The routes of the chat with this friend. */
@@ -69,6 +73,7 @@ function person(world: World, login: string, { friends = true }: { friends?: boo
   if (friends) world.store.sync(profile.id, { since: 0, settings: [{ key: "friends", at: world.clock.now, value: true }] });
   const me: Person = {
     id: profile.id,
+    accountId: account.value.id,
     cookie: `${COOKIE}=${token}`,
     async call(method, url, payload) {
       const response = await world.app.inject({ method, url, headers: { cookie: me.cookie }, ...(payload === undefined ? {} : { payload: payload as object }) });
@@ -91,7 +96,7 @@ function befriend(world: World, a: Person, b: Person) {
 }
 
 /** Alex and Sam, friends with friends on. */
-async function friends(options?: { report?: boolean }) {
+async function friends(options?: { report?: boolean; feedback?: FeedbackStore }) {
   const world = await start(options);
   const alex = person(world, "alex");
   const sam = person(world, "sam");
@@ -292,6 +297,7 @@ describe("reporting a chat", () => {
     expect(reports[0]).toMatchObject({
       reporter: { id: alex.id, label: "Alex#1" },
       about: { id: sam.id, label: "Sam#1" },
+      account: alex.accountId,
       at: clock.now,
       lines: [
         { from: "about", text: "something awful" },
@@ -349,6 +355,92 @@ describe("reporting a chat", () => {
     for (let i = 0; i < 5; i++) expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev })).statusCode).toBe(204);
     expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev })).statusCode).toBe(429);
     expect(reports).toHaveLength(5);
+  });
+
+  it("tells an account that has as many reports open as it may so, with a 429 that waiting will not change, and does not use up its few an hour for it", async () => {
+    const { alex, sam, reports, teamSide } = await friends();
+    const sent = (await write(sam, alex, "hello")).data as ChatThread;
+    teamSide.tooMany = true;
+    for (let i = 0; i < 8; i++) {
+      const refused = await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev });
+      expect([refused.statusCode, refused.headers["retry-after"], refused.data]).toEqual([429, "3600", { error: "too_many_open" }]);
+    }
+    teamSide.tooMany = false;
+    for (let i = 0; i < 5; i++) expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev })).statusCode).toBe(204);
+    expect((await alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev })).data.error).toBe("rate_limited");
+    expect(reports).toHaveLength(5);
+  });
+
+  it("is a number an hour for the whole site, whoever sends them, so that accounts cannot send faster than the team reads; the hour is an hour", async () => {
+    let now = 1_700_000_000_000;
+    const spy = vi.spyOn(Date, "now").mockImplementation(() => now); // (before the routes are made: their limits keep the time of the call that makes them)
+    try {
+      const world = await start();
+      const sam = person(world, "sam");
+      const reporters = Array.from({ length: 13 }, (_, i) => person(world, `reporter${i}`));
+      const revs: number[] = [];
+      for (const each of reporters) {
+        befriend(world, each, sam);
+        revs.push(((await write(each, sam, "hi")).data as ChatThread).rev);
+      }
+      const report = (i: number) => reporters[i]!.call("POST", reporters[i]!.chatWith(sam, "/report"), { rev: revs[i] });
+      // Twelve accounts send all of their five, which is all of the site's sixty.
+      for (let i = 0; i < 12; i++) for (let n = 0; n < 5; n++) expect((await report(i)).statusCode, `account ${i}, report ${n}`).toBe(204);
+      expect(world.reports).toHaveLength(60);
+      // The thirteenth has sent none and is turned away all the same.
+      const turned = await report(12);
+      expect([turned.statusCode, turned.data.error]).toEqual([429, "rate_limited"]);
+      now += 30 * 60_000;
+      expect((await report(12)).statusCode).toBe(429);
+      now += 30 * 60_000 + 1;
+      expect((await report(12)).statusCode).toBe(204);
+      expect(world.reports).toHaveLength(61);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("does not use up the site's sixty an hour on reports that were not kept", async () => {
+    const world = await start();
+    const sam = person(world, "sam");
+    const reporters = Array.from({ length: 13 }, (_, i) => person(world, `reporter${i}`));
+    const revs: number[] = [];
+    for (const each of reporters) {
+      befriend(world, each, sam);
+      revs.push(((await write(each, sam, "hi")).data as ChatThread).rev);
+    }
+    const report = (i: number) => reporters[i]!.call("POST", reporters[i]!.chatWith(sam, "/report"), { rev: revs[i] });
+    // Reports that the team's side turns away, from twelve accounts and from the full store, many times over...
+    for (const refusal of ["full", "tooMany"] as const) {
+      world.teamSide[refusal] = true;
+      for (let i = 0; i < 12; i++) for (let n = 0; n < 5; n++) expect((await report(i)).statusCode).toBe(refusal === "full" ? 503 : 429);
+      world.teamSide[refusal] = false;
+    }
+    // ...leave all of the sixty to the ones that are kept.
+    for (let i = 0; i < 12; i++) for (let n = 0; n < 5; n++) expect((await report(i)).statusCode, `account ${i}, report ${n}`).toBe(204);
+    expect(world.reports).toHaveLength(60);
+    expect((await report(12)).statusCode).toBe(429);
+  });
+
+  it("keeps three of an account's reports open at the team's side, and the fourth is turned away until the team has closed one; another account has its own three", async () => {
+    const feedback = await FeedbackStore.open({ backend: new MemoryFeedbackBackend() });
+    const world = await friends({ feedback });
+    const { alex, sam } = world;
+    const sent = (await write(sam, alex, "hello")).data as ChatThread;
+    const report = () => alex.call("POST", alex.chatWith(sam, "/report"), { rev: sent.rev });
+    for (let i = 0; i < 3; i++) expect((await report()).statusCode).toBe(204);
+    const turned = await report();
+    expect([turned.statusCode, turned.headers["retry-after"], turned.data]).toEqual([429, "3600", { error: "too_many_open" }]);
+    expect(feedback.size).toBe(3);
+    const bob = person(world, "bob");
+    befriend(world, bob, sam);
+    const heard = (await write(bob, sam, "hi")).data as ChatThread;
+    expect((await bob.call("POST", bob.chatWith(sam, "/report"), { rev: heard.rev })).statusCode).toBe(204);
+    expect(feedback.size).toBe(4);
+    await feedback.update("2", (draft) => void (draft.status = "done"));
+    expect((await report()).statusCode).toBe(204);
+    expect((await report()).data).toEqual({ error: "too_many_open" });
+    expect(feedback.size).toBe(5);
   });
 
   it("is not there on a server that has nowhere to send it", async () => {

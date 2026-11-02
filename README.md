@@ -186,7 +186,7 @@ pnpm build && pnpm start     # http://localhost:8787
   this version, which cannot read an inbox item of a kind it does not know, is not hurt by it (it only does not show chats until it is reloaded). **Mute** (on the chat) stops a friend's messages from
   being counted anywhere, without telling the friend; they are in the chat when it is opened. **Report** shows exactly what would be sent (the last 20 messages, with who wrote each) and sends
   nothing until *Send to the Kino team* is pressed; then it reaches the team as a feedback report (a problem, area friends, the messages in a file `chat.txt` with both names, not answerable: the
-  friend is not told, and the team reads the part of a chat that somebody chose to send, never chats). **Messages are stored on the server as written, without encryption:** whoever runs the
+  friend is not told, and the team reads the part of a chat that somebody chose to send, never chats; an account sends five an hour and may have three open at once, the whole site sixty an hour). **Messages are stored on the server as written, without encryption:** whoever runs the
   server can read them, so the settings line and the empty chat say *"don't send anything private"*. They are kept like friends and inboxes are (a document for each pair, `chat:…`, in the
   data folder or the database). Routes: `GET|POST /api/profiles/:id/friends/:fid/chat` (`?since=<rev>` on the GET), `DELETE …/chat/:n`, `PUT …/chat/mute`, `GET|POST …/chat/report`.
   **Not in this first chat:** groups, pictures, files, link previews, reactions, typing marks, read receipts, a chat in a party, push or email notifications, search, attachments.
