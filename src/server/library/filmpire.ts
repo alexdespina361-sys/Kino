@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AGE_COUNTRIES, sectionOf, type EpisodeDetail, type LibraryItem, type LibraryRow, type LibrarySection, type TitleAbout } from "../../shared";
+import { remember } from "../boundedMap";
 import { providerFetch } from "../resolvers/providerFetch";
 import type { LibrarySource } from "./library";
 import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, type FilmpireCategory } from "./shelves";
@@ -95,6 +96,8 @@ export interface ProbeRecord {
 }
 
 const MAX_PROBE_CACHE = 2000;
+/** How many shows keep the seasons the video check told of (they come from what is searched, so the oldest go once there are more). */
+export const MAX_PRELOADED_SEASONS = 2000;
 const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export async function probePlayback(
@@ -422,7 +425,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
             const probe = await probePlayback(parsed.id, parsed.type, probeFetcher, probeCache, now, probeTimeout);
             if (!probe.ok) return null;
             if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
-              preloadedSeasons.set(parsed.id, probe.seasons);
+              remember(preloadedSeasons, parsed.id, probe.seasons, MAX_PRELOADED_SEASONS);
             }
             return item;
           }),
@@ -461,7 +464,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
           const probe = await probePlayback(parsed.id, parsed.type, probeFetcher, probeCache, now, probeTimeout);
           if (!probe.ok) return null;
           if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
-            preloadedSeasons.set(parsed.id, probe.seasons);
+            remember(preloadedSeasons, parsed.id, probe.seasons, MAX_PRELOADED_SEASONS);
           }
           return item;
         }),

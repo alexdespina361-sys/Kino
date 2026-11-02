@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { LibraryRowSchema } from "../../shared";
-import { FILMPIRE_CATEGORIES, filmpireSource, MAX_PAGE, type FilmpireCategory } from "./filmpire";
+import { FILMPIRE_CATEGORIES, filmpireSource, MAX_PAGE, MAX_PRELOADED_SEASONS, type FilmpireCategory } from "./filmpire";
+import type { LibrarySource } from "./library";
 import { sectionOfCategory } from "./shelves";
 
 const json = (body: unknown, status = 200) =>
@@ -482,6 +483,37 @@ describe("filmpireSource search", () => {
     expect(seasons).toEqual([1, 2]);
     // TMDB was only called once for the search, NOT called for seasons!
     expect(getTmdb).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["a search", (source: LibrarySource) => source.search!("many")],
+    ["the titles like another", (source: LibrarySource) => source.similar!("https://filmpire.sc/watch/1?s=1&e=1")],
+  ])("keeps the seasons the video check told of for no more than a set number of shows - %s: for the others TMDB is asked again", async (_name, ask) => {
+    expect(MAX_PRELOADED_SEASONS).toBeGreaterThanOrEqual(100);
+    expect(MAX_PRELOADED_SEASONS).toBeLessThanOrEqual(5000);
+    const shows = Array.from({ length: MAX_PRELOADED_SEASONS + 3 }, (_, at) => ({ id: 5000 + at, media_type: "tv", name: `Show ${at}`, first_air_date: "2022-01-01", poster_path: "/p.jpg" }));
+    const asked: string[] = [];
+    const getTmdb = vi.fn(async (url: string | URL) => {
+      asked.push(String(url));
+      return /\/(search\/multi|tv\/1\/recommendations)\?/.test(String(url)) ? json({ results: shows }) : json({ seasons: [{ season_number: 9, episode_count: 3 }] });
+    });
+    const probe = vi.fn(async () => json({ status_code: "200", data: { title: "Show", eps: { "1": ["1"] } } }));
+    const source = filmpireSource({ fetch: getTmdb as never, probeFetch: probe as never, verifyPlayback: true, filterTrash: false });
+
+    expect(await ask(source)).toHaveLength(shows.length);
+
+    let toldOf = 0;
+    for (const show of shows) {
+      const before = asked.length;
+      const seasons = await source.seasons!(`https://filmpire.sc/watch/${show.id}?s=1&e=1`);
+      if (asked.length === before) {
+        toldOf++;
+        expect(seasons).toEqual([1]);
+      } else {
+        expect(seasons).toEqual([9]);
+      }
+    }
+    expect(toldOf).toBe(MAX_PRELOADED_SEASONS);
   });
 
   it("filters out trash entries like podcasts and zero-vote posterless stubs", async () => {
