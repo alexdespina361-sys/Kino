@@ -19,7 +19,7 @@ import {
 } from "../../shared";
 import { RateLimiter } from "../accounts/rateLimit";
 import { isEmptyReport, readContext, readDetails, readFiles, readWords } from "./intake";
-import { unreadOf, waitingOn, type FeedbackRecord, type FeedbackStore } from "./store";
+import { FeedbackFull, unreadOf, waitingOn, type FeedbackRecord, type FeedbackStore } from "./store";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -142,6 +142,12 @@ const tooMany = (reply: FastifyReply, waitMs: number) => {
 };
 
 /**
+ * Every report the store keeps is still open, so a new one would have to take the place of one of them (see `FeedbackFull`). That is not the sender's
+ * doing, so it is not a 429: it is the site that cannot take it now, until the team has closed some, and the page may try again later.
+ */
+const full = (reply: FastifyReply) => reply.header("Retry-After", 3600).code(503).send({ error: "full" });
+
+/**
  * The check for the team's side of the site (the feedback below, and the owner's stats): true when the request brings the team's token
  * (`FEEDBACK_ADMIN_TOKEN`) as a Bearer; otherwise the answer is sent. Without a token that is long enough there is no team's side, and the answer is a
  * 404 (there is nothing to find). Wrong tries are slowed per address.
@@ -226,22 +232,33 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
     perAddress.hit(request.ip);
     perAddressDay.hit(request.ip);
     everyone.hit("all");
-    const { record } = await store.create({
-      key: input.key,
-      ...(account ? { accountId: account } : {}),
-      kind: input.kind,
-      area: input.area,
-      title,
-      message,
-      details,
-      severity: input.severity,
-      frequency: input.frequency,
-      answer: input.answer,
-      context,
-      ...(dropped.length ? { contextDropped: dropped } : {}),
-      files,
-    });
-    return reply.code(201).send({ id: record.id, status: record.status, createdAt: record.createdAt, rejected });
+    let made: Awaited<ReturnType<FeedbackStore["create"]>>;
+    try {
+      // (The words of a report are kept before its pictures: what does not fit the room for files is left out, and said, as what is too big is.)
+      made = await store.create(
+        {
+          key: input.key,
+          ...(account ? { accountId: account } : {}),
+          kind: input.kind,
+          area: input.area,
+          title,
+          message,
+          details,
+          severity: input.severity,
+          frequency: input.frequency,
+          answer: input.answer,
+          context,
+          ...(dropped.length ? { contextDropped: dropped } : {}),
+          files,
+        },
+        { filesOptional: true },
+      );
+    } catch (error) {
+      if (error instanceof FeedbackFull) return full(reply);
+      throw error;
+    }
+    const { record, refused } = made;
+    return reply.code(201).send({ id: record.id, status: record.status, createdAt: record.createdAt, rejected: [...rejected, ...refused.map((id) => ({ id, reason: "too_big" as const }))] });
   });
 
   /** The state of the reports whose keys a page holds (a page asks for these when it opens: is there an answer?). */
