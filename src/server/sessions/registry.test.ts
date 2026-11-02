@@ -113,6 +113,14 @@ describe("Registry: pairing", () => {
     expect(controller.id).not.toBe("ctl_gone");
     expect(registry.deviceForController(controller)).toBeUndefined();
   });
+
+  it("looks a phone up by its id, and has none for an id it never gave", () => {
+    const { registry } = setup();
+    const controller = registry.controllerHello();
+    expect(registry.getController(controller.id)).toBe(controller);
+    expect(registry.getController("ctl_gone")).toBeUndefined();
+    expect(registry.getController("ctl_gone")).toBeUndefined(); // (asking makes none)
+  });
 });
 
 describe("Registry: a second phone", () => {

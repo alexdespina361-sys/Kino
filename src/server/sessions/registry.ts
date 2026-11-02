@@ -390,6 +390,11 @@ export class Registry {
     device.code = null;
   }
 
+  /** A phone by the id it announced itself with, if this server has one (a hello makes a new one when it has not). */
+  getController(id: string): Controller | undefined {
+    return this.controllers.get(id);
+  }
+
   /** A phone announces itself. Unknown or missing id -> new controller, unpaired. */
   controllerHello(controllerId?: string): Controller {
     const existing = controllerId ? this.controllers.get(controllerId) : undefined;

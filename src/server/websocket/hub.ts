@@ -69,6 +69,8 @@ export interface HubOptions {
   maxResolves?: number;
   /** Length of that window. Default 60 s. */
   resolveWindowMs?: number;
+  /** Videos looked up for all the TVs and phones of one address together tolerated in that window before further ones are refused: what `/api/resolve` allows an address over HTTP. Default 60. */
+  maxResolvesByAddress?: number;
   /** Whose a screen is, as the accounts prove it (see TV_PROFILE). Without it a watch party shows no profiles. */
   profiles?: ScreenProfiles;
 }
@@ -99,6 +101,8 @@ export class Hub {
   private readonly wrongInAll: RateLimiter;
   /** Lookups lately, counted for each TV: every one is a fetch of a page that is somebody else's, and a person chooses a title every few seconds at the very most. */
   private readonly resolvesByDevice: RateLimiter;
+  /** ... and for each address, all the TVs and phones there together (the id of a TV is one that a new hello can renew; where a connection comes from is not). */
+  private readonly resolvesByAddress: RateLimiter;
   /** Where each open socket comes from (see `addressOf`). */
   private readonly addresses = new WeakMap<WebSocket, string>();
   private readonly profiles: ScreenProfiles | undefined;
@@ -114,7 +118,9 @@ export class Hub {
     const windowMs = options.failedPairingWindowMs ?? 60_000;
     this.wrongByAddress = new RateLimiter(perAddress, windowMs);
     this.wrongInAll = new RateLimiter(options.maxFailedPairingsInAll ?? perAddress * 5, windowMs);
-    this.resolvesByDevice = new RateLimiter(options.maxResolves ?? 30, options.resolveWindowMs ?? 60_000);
+    const resolveWindowMs = options.resolveWindowMs ?? 60_000;
+    this.resolvesByDevice = new RateLimiter(options.maxResolves ?? 30, resolveWindowMs);
+    this.resolvesByAddress = new RateLimiter(options.maxResolvesByAddress ?? 60, resolveWindowMs);
     this.sweeper = setInterval(() => {
       const now = Date.now();
       for (const [socket, seen] of this.lastSeen) if (now - seen > staleAfterMs) socket.terminate();
@@ -176,9 +182,9 @@ export class Hub {
   private dispatch(conn: Conn, message: ClientMessage): Conn {
     switch (message.type) {
       case "TV_HELLO":
-        return this.tvHello(conn.socket, message.deviceId, message.opened === true);
+        return this.tvHello(conn, message.deviceId, message.opened === true);
       case "CTL_HELLO":
-        return this.controllerHello(conn.socket, message.controllerId);
+        return this.controllerHello(conn, message.controllerId);
       case "PING":
         // A TV that stays on for weeks says hello once; the pings are how the registry knows it is still in use.
         if (conn.role !== "none") this.registry.markSeen(conn.role === "tv" ? conn.deviceId : conn.controllerId);
@@ -195,8 +201,16 @@ export class Hub {
 
   /* ------------------------------ TV ------------------------------ */
 
-  private tvHello(socket: WebSocket, deviceId?: string, opened = false): Conn {
-    const device = this.registry.tvHello(deviceId);
+  /**
+   * A connection is one TV for as long as it lasts. A hello on one that is a TV already is that page asking for a fresh picture (it comes back to the front): it is that
+   * TV again, whatever id it names, and no other is made. One that names another TV that exists, or comes from a phone, is turned away: the first TV's place in `tvs`
+   * would stay on a connection that goes away.
+   */
+  private tvHello(conn: Conn, named?: string, opened = false): Conn {
+    const mine = conn.role === "tv" ? conn.deviceId : undefined;
+    if (conn.role !== "none" && (!mine || (named && named !== mine && this.registry.getDevice(named)))) return this.refuseHello(conn);
+    const { socket } = conn;
+    const device = this.registry.tvHello(mine ?? named);
 
     // One live page per TV. The old page is told to stand down instead of fighting for the slot.
     const previous = this.tvs.get(device.id);
@@ -324,11 +338,21 @@ export class Hub {
 
   /* ------------------------------ phone ------------------------------ */
 
-  private controllerHello(socket: WebSocket, controllerId?: string): Conn {
-    const controller = this.registry.controllerHello(controllerId);
+  /** As for a TV: a connection is one phone for as long as it lasts, and a hello again (the menu asking for the code, a page back from sleep) is that phone again. */
+  private controllerHello(conn: Conn, named?: string): Conn {
+    const mine = conn.role === "controller" ? conn.controllerId : undefined;
+    if (conn.role !== "none" && (!mine || (named && named !== mine && this.registry.getController(named)))) return this.refuseHello(conn);
+    const { socket } = conn;
+    const controller = this.registry.controllerHello(mine ?? named);
     this.controllers.set(controller.id, socket);
     this.sendWelcome(controller);
     return { role: "controller", socket, controllerId: controller.id };
+  }
+
+  /** A hello that would make a connection a second TV or phone is answered with an error; the connection stays what it was. */
+  private refuseHello(conn: Conn): Conn {
+    this.send(conn.socket, { type: "ERROR", code: "ALREADY_HELLO", message: "This connection is a TV or a phone already. Connect again to be another." });
+    return conn;
   }
 
   private sendWelcome(controller: Controller): void {
@@ -778,13 +802,16 @@ export class Hub {
     const tvOffline = () => status({ phase: "failed", reason: "tv_offline", message: "The TV is offline." });
     if (!this.tvs.has(device.id)) return tvOffline();
 
-    // Far more lookups than a person can choose are refused. Nothing is announced or dropped for one that is: the TV is not left waiting for it, and a lookup under way carries on.
-    if (this.resolvesByDevice.wait(device.id) > 0) {
+    // Far more lookups than a person can choose are refused, from one TV and from one address (every TV and phone there together: the same count `/api/resolve` has). Nothing is
+    // announced or dropped for one that is: the TV is not left waiting for it, and a lookup under way carries on.
+    const address = this.addressOf(controllerId ? this.controllers.get(controllerId) : this.tvs.get(device.id));
+    if (this.resolvesByDevice.wait(device.id) > 0 || this.resolvesByAddress.wait(address) > 0) {
       const message = "Too many videos asked for in a short time. Try again in a minute.";
       if (controllerId) return this.error(controllerId, "RATE_LIMITED", message);
       return this.send(this.tvs.get(device.id), { type: "ERROR", code: "RATE_LIMITED", message });
     }
     this.resolvesByDevice.hit(device.id);
+    this.resolvesByAddress.hit(address);
 
     const seq = this.bumpResolveSeq(device.id);
     status({ phase: "resolving" });
