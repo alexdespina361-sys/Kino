@@ -13,7 +13,7 @@ import type { AccountStore } from "./accounts/store";
 import { chatReporter } from "./feedback/chatReport";
 import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
-import { securityHeaders } from "./guard";
+import { sameSiteGate, securityHeaders } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy, type ProxyStats } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
@@ -108,6 +108,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // (First of all: a hook added to the app reaches only what is registered after it, and the pages are served by what comes below.)
   if (options.visits) countVisits(app, options.visits);
   securityHeaders(app);
+  sameSiteGate(app);
   await app.register(fastifyCompress, {
     threshold: 1024,
   });
@@ -305,12 +306,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     // Only an answer is kept by the browser: no seasons may be a place that could not be reached just now.
     reply.header("Cache-Control", seasons.length > 0 ? "public, max-age=3600" : "no-store");
     return reply.send({ seasons });
-  });
-  app.options("/api/proxy", async (_request, reply) => {
-    reply.header("Access-Control-Allow-Origin", "*");
-    reply.header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-    reply.header("Access-Control-Allow-Headers", "*");
-    return reply.send();
   });
   app.get<{ Querystring: { url?: string } }>("/api/resolve", async (request, reply) => {
     const rawUrl = request.query.url;

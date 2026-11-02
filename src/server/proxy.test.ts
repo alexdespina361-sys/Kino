@@ -238,7 +238,6 @@ describe("handleStreamProxy", () => {
     expect(answer.statusCode).toBe(200);
     expect(answer.body).toBe("SEGMENT-BYTES");
     expect(answer.headers["content-type"]).toBe("video/mp2t");
-    expect(answer.headers["access-control-allow-origin"]).toBe("*");
   });
 
   it("passes a request for part of a file on, and the part comes back as one", async () => {
@@ -301,7 +300,6 @@ describe("handleStreamProxy", () => {
       const answer = await through("/seg.ts");
       expect(answer.statusCode).toBe(403);
       expect(answer.json()).toEqual({ error: "VIDEO_NOT_CARRIED" });
-      expect(answer.headers["access-control-allow-origin"]).toBe("*");
       expect(hits).toEqual([]);
       expect(stats.refused).toBe(before + 1);
     });
@@ -423,6 +421,25 @@ describe("handleStreamProxy", () => {
           expect(await typeSeen(answer), why).toBe(expected);
           await inert(answer, why);
         }
+      }
+    });
+
+    it("gives no other website leave to read what comes through: not a piece, a playlist, a subtitle, a file, a refusal or a failure", async () => {
+      // (This site's own pages ask from this site; a page of another one that could read these would be using the server to fetch for it.)
+      const kinds: [string, FastifyInstance, string][] = [
+        ["a piece", app, at(OKAY, "/seg.ts")],
+        ["a piece that screens share", sharing, at(OKAY, "/seg.ts")],
+        ["a part of a file", app, at(OKAY, "/range.mp4")],
+        ["a playlist", app, at(OKAY, "/list.m3u8")],
+        ["a subtitle, from a server that carries no film", production, at(OKAY, "/sub.srt")],
+        ["a piece, from a server that carries no film", production, at(OKAY, "/seg.ts")],
+        ["a file, from a server that carries no film", production, at(OKAY, "/p/plain.mp4")],
+        ["a failure of the other end", app, at(OKAY, "/missing.ts")],
+        ["a place it may not go to", app, at("127.0.0.1", "/seg.ts")],
+      ];
+      for (const [name, lane, target] of kinds) {
+        const answer = await lane.inject({ url: `/api/proxy?url=${encodeURIComponent(target)}` });
+        expect(Object.keys(answer.headers).filter((header) => header.startsWith("access-control-")), name).toEqual([]);
       }
     });
 
@@ -581,7 +598,7 @@ describe("handleStreamProxy", () => {
       const first = await askShared(at(OKAY, "/p/one.ts"));
       const second = await askShared(at(OKAY, "/p/one.ts"));
       expect([first.statusCode, first.body, second.statusCode, second.body]).toEqual([200, "ONE-BYTES", 200, "ONE-BYTES"]);
-      for (const header of ["content-type", "content-length", "cache-control", "access-control-allow-origin"]) expect(second.headers[header]).toBe(first.headers[header]);
+      for (const header of ["content-type", "content-length", "cache-control"]) expect(second.headers[header]).toBe(first.headers[header]);
       expect(first.headers["content-type"]).toBe("video/mp2t");
       expect(first.headers["content-length"]).toBe("9");
       expect(first.headers["cache-control"]).toBe("public, max-age=86400, immutable");
