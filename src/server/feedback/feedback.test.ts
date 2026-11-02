@@ -325,6 +325,65 @@ describe("sending a report", () => {
     // (A report that was kept can be sent again, it costs nothing.)
     expect((await page.post("/api/feedback", { key: key(1), message: "Report 1" })).statusCode).toBe(200);
   });
+
+  it("counts a try that comes to nothing as well, before the body is read: a request with no words is not free", async () => {
+    const { app, feedback } = await start();
+    const page = new Client(app);
+    for (let n = 1; n <= 30; n++) expect((await page.post("/api/feedback", { key: key(n), attachments: [{ id: "bad" }] })).statusCode).toBe(400);
+    const blocked = await page.post("/api/feedback", { key: key(31), attachments: [{ id: "bad" }] });
+    expect(blocked.statusCode).toBe(429);
+    expect(feedback.size).toBe(0);
+    // (Another address has its own.)
+    const elsewhere = await app.inject({ method: "POST", url: "/api/feedback", remoteAddress: "198.51.100.7", payload: { key: key(32), message: "From elsewhere" } });
+    expect(elsewhere.statusCode).toBe(201);
+  });
+
+  it("turns away at once a list of files longer than any page sends, instead of reading each to turn it away", async () => {
+    const { app, feedback } = await start();
+    const page = new Client(app);
+    const files = (count: number) => Array.from({ length: count }, () => ({}));
+    const refused = await page.post("/api/feedback", { key: key(1), message: "Many", attachments: files(FEEDBACK_LIMITS.attachments * 4 + 1) });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.data).toEqual({ error: "invalid_request" });
+    expect(feedback.size).toBe(0);
+    // (Up to there it is read: the files that are past the limit are said to be too many.)
+    const sent = await page.post("/api/feedback", { key: key(2), message: "Some", attachments: files(FEEDBACK_LIMITS.attachments * 4) });
+    expect(sent.statusCode).toBe(201);
+    expect(sent.data.rejected).toHaveLength(FEEDBACK_LIMITS.attachments * 4);
+  });
+
+  it("does the same for an answer: the list is turned away at once, and every try is counted before the body is read", async () => {
+    const { app } = await start();
+    const page = new Client(app);
+    const refused = await page.post("/api/feedback/reply", { key: key(1), text: "More", attachments: Array.from({ length: FEEDBACK_LIMITS.attachments * 4 + 1 }, () => ({})) });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.data).toEqual({ error: "invalid_request" });
+    // (That was the first of thirty tries; a body that is not even an object is one as well.)
+    for (let n = 2; n <= 30; n++) expect((await page.post("/api/feedback/reply", [])).statusCode).toBe(400);
+    expect((await page.post("/api/feedback/reply", [])).statusCode).toBe(429);
+  });
+
+  it("does not read a file that is longer than a file can be, nor one that is only called text", async () => {
+    const { app } = await start();
+    const page = new Client(app);
+    const longest = Math.ceil((FEEDBACK_LIMITS.imageBytes * 4) / 3) + 5;
+    const answer = await page.post("/api/feedback", {
+      key: key(1),
+      message: "Files",
+      attachments: [
+        { id: "long1", name: "x", mime: "text/plain", role: "file", data: "A".repeat(longest) },
+        { id: "bin01", name: "x", mime: "text/plain", role: "file", data: Buffer.from([1, 2, 0, 3]).toString("base64") },
+        { id: "big01", name: "x", mime: "text/plain", role: "file", data: Buffer.alloc(FEEDBACK_LIMITS.fileBytes + 1, "a").toString("base64") },
+        { id: "ok001", name: "x", mime: "text/plain", role: "file", data: Buffer.from("fine").toString("base64") },
+      ],
+    });
+    expect(answer.statusCode).toBe(201);
+    expect(answer.data.rejected).toEqual([
+      { id: "long1", reason: "too_big" },
+      { id: "bin01", reason: "bad_type" },
+      { id: "big01", reason: "too_big" },
+    ]);
+  });
 });
 
 describe("hearing back", () => {

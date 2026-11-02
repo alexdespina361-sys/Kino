@@ -36,13 +36,18 @@ function imageType(data: Buffer): "image/png" | "image/jpeg" | "image/webp" | un
   return undefined;
 }
 
-/** Text that a person could read: no zero bytes, and not a pile of broken characters. */
+/** Whether the first bytes hold a zero: what a person could read does not. */
+const looksBinary = (data: Buffer): boolean => data.subarray(0, 8192).includes(0);
+
+/** The text a file holds when a person could read it: not a pile of broken characters. */
 function textOf(data: Buffer): string | undefined {
-  if (data.subarray(0, 8192).includes(0)) return undefined;
   const text = data.toString("utf8");
   const broken = text.split("�").length - 1;
   return broken > Math.max(2, text.length * 0.02) ? undefined : text;
 }
+
+/** The most base64 a file can be, once decoded: nothing is decoded that is longer. */
+const MOST_BASE64 = Math.ceil((FEEDBACK_LIMITS.imageBytes * 4) / 3) + 4;
 
 const fileName = (name: string, fallback: string): string => cleanText(name, 80).replace(/[\\/:*?"<>|]+/g, "_").replace(/^\.+/, "") || fallback;
 
@@ -67,12 +72,25 @@ export function readFiles(inputs: unknown[], taken: Set<string> = new Set(), use
       reject("too_many");
       continue;
     }
+    if (input.data.length > MOST_BASE64) {
+      reject("too_big");
+      continue;
+    }
     const data = Buffer.from(input.data, "base64");
     if (data.length === 0) {
       reject("empty");
       continue;
     }
     const image = imageType(data);
+    if (!image && looksBinary(data)) {
+      reject("bad_type");
+      continue;
+    }
+    // (The size is looked at before the text is read: what is too big is not read.)
+    if (data.length > (image ? FEEDBACK_LIMITS.imageBytes : FEEDBACK_LIMITS.fileBytes) || total + data.length > FEEDBACK_LIMITS.totalBytes) {
+      reject("too_big");
+      continue;
+    }
     let mime: FeedbackMime;
     if (image) {
       mime = image;
@@ -83,10 +101,6 @@ export function readFiles(inputs: unknown[], taken: Set<string> = new Set(), use
         continue;
       }
       mime = input.mime === "application/json" && isJson(text) ? "application/json" : "text/plain";
-    }
-    if (data.length > (image ? FEEDBACK_LIMITS.imageBytes : FEEDBACK_LIMITS.fileBytes) || total + data.length > FEEDBACK_LIMITS.totalBytes) {
-      reject("too_big");
-      continue;
     }
     total += data.length;
     // (The id the page gave is kept unless it is taken, so the page can tell which of its files was left out.)

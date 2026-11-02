@@ -128,6 +128,12 @@ const adminFull = (record: FeedbackRecord) => ({
   note: record.note,
 });
 
+/** Whether a body brings more files than any page sends (it is turned away at once: each of them would be read to be turned away). */
+const tooManyFiles = (body: unknown): boolean => {
+  const sent = (body as { attachments?: unknown } | null | undefined)?.attachments;
+  return Array.isArray(sent) && sent.length > FEEDBACK_LIMITS.attachments * 4;
+};
+
 const digest = (value: string) => createHash("sha256").update(value).digest();
 
 const tooMany = (reply: FastifyReply, waitMs: number) => {
@@ -174,6 +180,13 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
   const everyone = new RateLimiter(Math.max(200, sendsPer10Min * 30), HOUR);
   const replies = new RateLimiter(30, 10 * MINUTE);
   const reads = new RateLimiter(120, MINUTE);
+  /** Every try to send, whatever comes of it, counted before the body is read: a request that is turned away has cost what it cost to read. */
+  const tries = new RateLimiter(Math.max(30, sendsPer10Min * 5), 10 * MINUTE);
+  const counted = async (request: FastifyRequest, reply: FastifyReply) => {
+    const wait = tries.wait(request.ip);
+    if (wait > 0) return tooMany(reply, wait);
+    tries.hit(request.ip);
+  };
   const invalid = (reply: FastifyReply) => reply.code(400).send({ error: "invalid_request" });
 
   app.addHook("onRequest", async (_request, reply) => {
@@ -193,7 +206,8 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
 
   /* ------------------------------ the sender's side ------------------------------ */
 
-  app.post("/api/feedback", { bodyLimit: FEEDBACK_LIMITS.bodyBytes }, async (request, reply) => {
+  app.post("/api/feedback", { bodyLimit: FEEDBACK_LIMITS.bodyBytes, onRequest: counted }, async (request, reply) => {
+    if (tooManyFiles(request.body)) return invalid(reply);
     const parsed = FeedbackInputSchema.safeParse(request.body);
     if (!parsed.success) return invalid(reply);
     const input = parsed.data;
@@ -269,7 +283,8 @@ export const feedbackRoutes: FastifyPluginAsync<FeedbackRoutesOptions> = async (
   });
 
   /** An answer to a question of the team's, or something more to say; the report is the team's to look at again. */
-  app.post("/api/feedback/reply", { bodyLimit: FEEDBACK_LIMITS.bodyBytes }, async (request, reply) => {
+  app.post("/api/feedback/reply", { bodyLimit: FEEDBACK_LIMITS.bodyBytes, onRequest: counted }, async (request, reply) => {
+    if (tooManyFiles(request.body)) return invalid(reply);
     const parsed = ReplyBodySchema.safeParse(request.body);
     if (!parsed.success) return invalid(reply);
     const wait = replies.wait(request.ip);
