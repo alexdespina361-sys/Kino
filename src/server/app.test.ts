@@ -236,6 +236,33 @@ describe("where a request to the api comes from", () => {
     expect(await asked("HEAD", allowed["a link from another site"]!)).toBe(400);
   });
 
+  it.each([
+    ["a profile's Friends page", "/api/profiles/p1/friends"],
+    ["an invitation code", "/api/profiles/p1/friends/invites/ABCDEFGH"],
+    ["a chat", "/api/profiles/p1/friends/f1/chat"],
+  ])("turns away a page of another site, and a link from one, that would have %s noted as looked at", async (_what, url) => {
+    const site = await withAccounts();
+    const asked = async (method: "GET" | "HEAD", headers: Record<string, string>) => (await sentTo(site, method, url, headers)).statusCode;
+    const refused: Record<string, Record<string, string>> = {
+      "a script of another site": { "sec-fetch-site": "cross-site", "sec-fetch-mode": "cors" },
+      "a picture of another site": { "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors" },
+      "a script of a sibling name": { "sec-fetch-site": "same-site", "sec-fetch-mode": "cors" },
+      "a link from another site": { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate" },
+      "a link from a sibling name": { "sec-fetch-site": "same-site", "sec-fetch-mode": "navigate" },
+      "another site that does not say how": { "sec-fetch-site": "cross-site" },
+    };
+    for (const [name, headers] of Object.entries(refused)) expect(await asked("GET", headers), name).toBe(403);
+    expect(await asked("HEAD", refused["a link from another site"]!)).toBe(403);
+    // (Nobody is signed in here: the route's own answer is a 401, so the request was let in.)
+    const allowed: Record<string, Record<string, string>> = {
+      "a page of this site": { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors" },
+      "an address that was typed": { "sec-fetch-site": "none", "sec-fetch-mode": "navigate" },
+      "a script, or an old browser, that says nothing of it": {},
+    };
+    for (const [name, headers] of Object.entries(allowed)) expect(await asked("GET", headers), name).toBe(401);
+    expect(await asked("HEAD", allowed["a page of this site"]!)).toBe(401);
+  });
+
   it("gives no website leave to read the proxy: a preflight is not answered and no answer has a CORS header", async () => {
     const site = await buildApp();
     app = site;

@@ -47,6 +47,12 @@ export function answerUnroutable(error: FastifyError, request: FastifyRequest, r
 /** The routes that make this server fetch from another site for whoever asks. */
 const FETCHES = new Set(["/api/proxy", "/api/resolve"]);
 
+/**
+ * The routes that only read, but note that someone looked: a profile's Friends page being open (that is how its friends see it online), a chat being open (what is in it
+ * has been seen), a code of an invitation that was not good (counted against the account). A link leads to none of them, so nothing but this site's own pages may ask.
+ */
+const LOOKS_THAT_COUNT = new Set(["/api/profiles/:id/friends", "/api/profiles/:id/friends/invites/:code", "/api/profiles/:id/friends/:fid/chat"]);
+
 /** Whether `origin`, as a browser writes it in `Origin` (an address without a path, or `null`), is the very host `host` (the `Host` header) names, with its port. */
 export function isOwnOrigin(origin: string, host: string | undefined): boolean {
   if (!host) return false;
@@ -68,7 +74,8 @@ export function isOwnOrigin(origin: string, host: string | undefined): boolean {
  * no referrer (`Referrer-Policy: no-referrer`, as every answer here says) and the request was not made in the CORS mode (a form, a beacon, a fetch kept to the origin).
  *
  * What only reads is let through, except what makes this server fetch for whoever asks (`FETCHES`): a page of another site must not be able to use the server
- * for that, so it is turned away on the same word of the browser, unless the visitor followed a link there (a navigation).
+ * for that, so it is turned away on the same word of the browser, unless the visitor followed a link there (a navigation); and what notes that someone looked
+ * (`LOOKS_THAT_COUNT`), which is turned away on that word whether or not a link led there.
  */
 export function sameSiteGate(app: FastifyInstance): void {
   app.addHook("onRequest", async (request, reply) => {
@@ -79,7 +86,7 @@ export function sameSiteGate(app: FastifyInstance): void {
     const elsewhere = site === "cross-site" || site === "same-site";
     let refused: boolean;
     if (request.method === "GET" || request.method === "HEAD") {
-      refused = FETCHES.has(route) && elsewhere && request.headers["sec-fetch-mode"] !== "navigate";
+      refused = elsewhere && (LOOKS_THAT_COUNT.has(route) || (FETCHES.has(route) && request.headers["sec-fetch-mode"] !== "navigate"));
     } else {
       const { origin, host } = request.headers;
       refused = elsewhere || (site !== "same-origin" && origin !== undefined && !isOwnOrigin(origin, host));
