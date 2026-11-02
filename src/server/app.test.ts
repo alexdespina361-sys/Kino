@@ -5,7 +5,7 @@ import type { FastifyInstance, InjectOptions } from "fastify";
 import { afterEach, describe, expect, it } from "vitest";
 import { MemoryPersistence } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
-import { buildApp, type AppOptions } from "./app";
+import { buildApp, isDeployed, type AppOptions } from "./app";
 import { isOwnOrigin } from "./guard";
 
 let dir: string | undefined;
@@ -216,6 +216,20 @@ describe("where a request to the api comes from", () => {
     const answer = await sentTo(site, "GET", "/api/proxy", { origin: "https://other.example" });
     expect(answer.statusCode).toBe(400);
     expect(corsHeaders(answer.headers)).toEqual([]);
+  });
+});
+
+describe("isDeployed", () => {
+  it.each([
+    [{}, false],
+    [{ NODE_ENV: "development" }, false],
+    [{ NODE_ENV: "test" }, false],
+    [{ RENDER: "" }, false],
+    [{ RENDER: "true" }, true],
+    [{ NODE_ENV: "production" }, true],
+    [{ RENDER: "true", NODE_ENV: "development" }, true],
+  ])("%j: %s", (env, deployed) => {
+    expect(isDeployed(env)).toBe(deployed);
   });
 });
 

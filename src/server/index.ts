@@ -1,6 +1,6 @@
 import { persistenceFromEnv } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
-import { buildApp, defaultClientDir, defaultFixturesDir } from "./app";
+import { buildApp, defaultClientDir, defaultFixturesDir, isDeployed } from "./app";
 import { FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { feedbackBackendFor, feedbackMaxBytes, FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { animeHeavenSource } from "./library/animeheaven";
@@ -54,7 +54,8 @@ if (process.env.DIRECT_STREAMING === undefined) {
 
 const app = await buildApp({
   clientDir: defaultClientDir(),
-  fixturesDir: defaultFixturesDir(),
+  // The test media (fixtures/, at /fixtures/) are for a machine that runs the app locally or for its tests: a deployed server has no use for them.
+  ...(isDeployed() ? {} : { fixturesDir: defaultFixturesDir() }),
   // LIBRARY=off: no browsing library (the e2e server, or anyone who would rather not fetch external library).
   librarySources: process.env.LIBRARY === "off" ? [] : [filmpireSource(), animeHeavenSource()],
   accounts,

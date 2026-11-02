@@ -98,6 +98,10 @@ export function defaultClientDir(): string {
 export function defaultFixturesDir(): string {
   return process.env.FIXTURES_DIR ?? path.join(root, "fixtures");
 }
+/** Whether this is a deployed server (Render sets `RENDER`, and `NODE_ENV=production` says it too) and not a machine that runs the app for its owner or for its tests. */
+export function isDeployed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.RENDER) || env.NODE_ENV === "production";
+}
 
 export async function buildApp(options: AppOptions = {}): Promise<FastifyInstance> {
   // A number is "this many proxies in front of me" (Fastify no longer reads a bare number as that, so spell it out), and zero is none. Cloudflare's
@@ -324,7 +328,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
 
   const fixturesDir = options.fixturesDir;
   if (fixturesDir && existsSync(fixturesDir)) {
-    await app.register(fastifyStatic, { root: fixturesDir, prefix: "/fixtures/", decorateReply: false });
+    // (A file whose name starts with a dot, or that is in a folder whose name does, is served from neither folder, as `CLIENT_DIR` and `FIXTURES_DIR` may point at one with an `.env` in it.)
+    await app.register(fastifyStatic, { root: fixturesDir, prefix: "/fixtures/", decorateReply: false, dotfiles: "ignore" });
   }
 
   const clientDir = options.clientDir && path.resolve(options.clientDir);
@@ -334,6 +339,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     await app.register(fastifyStatic, {
       root: clientDir,
       prefix: "/",
+      dotfiles: "ignore",
       // Vite names the files in /assets after what is in them, so a changed file has a new name and an old one can be kept for good.
       // The subtitle aligner's model and worker are the same: a changed one goes in a new numbered folder (public/subtitle-sync/1/README.md).
       // The page itself is always checked again, which is how a new build reaches a screen that still has the old one.

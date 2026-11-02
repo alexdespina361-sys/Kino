@@ -70,6 +70,36 @@ describe("serving the built page", () => {
     }
   });
 
+  it("does not serve a file whose name starts with a dot, nor one in a folder whose name does, from the page or from the test media", async () => {
+    // (`CLIENT_DIR` and `FIXTURES_DIR` can point at any folder, a project's own among them.)
+    dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
+    const page = path.join(dir, "page");
+    const media = path.join(dir, "media");
+    for (const folder of [page, media]) {
+      await mkdir(path.join(folder, ".git"), { recursive: true });
+      await writeFile(path.join(folder, ".env"), "SECRET=1");
+      await writeFile(path.join(folder, ".git", "config"), "SECRET=2");
+      await writeFile(path.join(folder, "sample.txt"), "film");
+    }
+    await writeFile(path.join(page, "index.html"), "<!doctype html><title>Kino</title>");
+    const app = await buildApp({ clientDir: page, fixturesDir: media });
+    try {
+      for (const url of ["/.env", "/%2eenv", "/.git/config", "/fixtures/.env", "/fixtures/.git/config"]) {
+        const answer = await app.inject({ url });
+        expect(answer.statusCode, url).toBe(404);
+        expect(answer.body, url).not.toContain("SECRET");
+      }
+      // (A browser that asks for such a path is shown the page, as for any path that is no file: it is not shown the file.)
+      const asked = await app.inject({ url: "/.env", headers: { accept: "text/html" } });
+      expect(asked.body).toBe("<!doctype html><title>Kino</title>");
+      // (...and the files that are served still are.)
+      expect((await app.inject({ url: "/sample.txt" })).body).toBe("film");
+      expect((await app.inject({ url: "/fixtures/sample.txt" })).body).toBe("film");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("does not treat a folder named assets higher up as the assets", async () => {
     dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
     const inside = path.join(dir, "assets", "site");
