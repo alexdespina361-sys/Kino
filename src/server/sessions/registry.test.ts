@@ -170,28 +170,79 @@ describe("Registry: a second phone", () => {
       return { registry, advance, device, code, phones: [first, ...joined] };
     }
 
-    it("turns away one more, and changes nothing", () => {
-      const { registry, device, code } = crowded();
+    const DAY = 24 * 3600 * 1000;
+
+    it("turns away one more when every one of them is connected, and changes nothing", () => {
+      const { registry, device, code, phones } = crowded();
       expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
       const late = registry.controllerHello();
       expect(registry.isFullControlCode(late, code)).toBe(true);
-      expect(registry.joinController(late, code)).toBeNull();
-      expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+      expect(registry.joinController(late, code, () => true)).toBeNull();
+      expect(registry.joinController(late, code)).toBeNull(); // (no word of who is connected: nobody is let go)
+      expect(device.controllerIds).toEqual(phones.map((phone) => phone.id));
       expect(device.controllerIds).not.toContain(late.id);
       expect(late.deviceId).toBeNull();
       expect(late.deviceIds).toEqual([]);
     });
 
-    it("lets a phone that is one of them come back to it, after it moved on to another TV", () => {
+    it("lets one more in by letting go of the phone seen least recently, and of no other", () => {
+      const { registry, advance, device, phones } = crowded();
+      advance(3 * DAY);
+      phones.forEach((phone, n) => n !== 6 && registry.markSeen(phone.id)); // (all but the seventh came by since)
+      const late = registry.controllerHello();
+      const code = registry.ensureControlCode(device).code; // (the code they joined with ran out)
+      expect(registry.joinController(late, code, () => false)).toBe(device);
+      expect(device.controllerIds).toEqual([...phones.filter((_, n) => n !== 6).map((phone) => phone.id), late.id]);
+      expect(device.controllerId).toBe(phones[0]!.id);
+      expect(late.deviceId).toBe(device.id);
+      // The one let go is no longer a remote of this TV and pairs again with a code, as a phone that was never here.
+      expect(phones[6]!.deviceId).toBeNull();
+      expect(phones[6]!.deviceIds).toEqual([]);
+      expect(registry.deviceForController(phones[6]!)).toBeUndefined();
+    });
+
+    it("lets go of a phone only as a remote of this TV: the other TVs of its list stay", () => {
+      const { registry, advance, device, phones } = crowded();
+      const other = registry.tvHello();
+      registry.pair(phones[6]!, registry.ensureCode(other)!.code); // (the seventh moved on to another TV, and is not seen again)
+      advance(DAY);
+      phones.forEach((phone, n) => n !== 6 && registry.markSeen(phone.id));
+      expect(registry.joinController(registry.controllerHello(), registry.ensureControlCode(device).code, () => false)).toBe(device);
+      expect(device.controllerIds).not.toContain(phones[6]!.id);
+      expect(phones[6]!.deviceIds).toEqual([other.id]);
+      expect(phones[6]!.deviceId).toBe(other.id);
+      expect(other.controllerIds).toEqual([phones[6]!.id]);
+    });
+
+    it("lets go of the one that joined first when they were all last seen on the same day, and the TV stays paired", () => {
+      const { registry, device, code, phones } = crowded();
+      const late = registry.controllerHello();
+      expect(registry.joinController(late, code, () => false)).toBe(device);
+      expect(device.controllerIds).toEqual([...phones.slice(1).map((phone) => phone.id), late.id]);
+      expect(device.controllerId).toBe(phones[1]!.id); // (the first phone was the one the TV went with: the next takes its place)
+      expect(registry.ensureCode(device)).toBeNull(); // (still paired: it shows no pairing code)
+    });
+
+    it("never lets go of a phone that is connected, however long ago it was seen", () => {
+      const { registry, advance, device, phones } = crowded();
+      advance(2 * DAY);
+      registry.markSeen(phones[31]!.id); // (the only one that is not connected is the one seen most recently)
+      const late = registry.controllerHello();
+      const connected = (id: string) => id !== phones[31]!.id;
+      expect(registry.joinController(late, registry.ensureControlCode(device).code, connected)).toBe(device);
+      expect(device.controllerIds).toEqual([...phones.slice(0, 31).map((phone) => phone.id), late.id]);
+    });
+
+    it("lets go of nobody for a phone that is one of them already", () => {
       const { registry, device, code, phones } = crowded();
       const [away] = phones;
       const other = registry.tvHello();
       registry.pair(away!, registry.ensureCode(other)!.code);
       expect(away!.deviceId).toBe(other.id);
       expect(registry.isFullControlCode(away!, code)).toBe(false);
-      expect(registry.joinController(away!, code)).toBe(device);
+      expect(registry.joinController(away!, code, () => false)).toBe(device);
       expect(away!.deviceId).toBe(device.id);
-      expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV); // (not listed twice)
+      expect(device.controllerIds).toEqual(phones.map((phone) => phone.id)); // (not listed twice, and none was let go)
     });
 
     it("has room again for the next phone when one lets go of the TV", () => {
@@ -219,7 +270,7 @@ describe("Registry: a second phone", () => {
     const code = registry.ensureControlCode(device).code;
     const second = registry.controllerHello();
     expect(registry.isFullControlCode(second, code)).toBe(false);
-    expect(registry.joinController(second, code)).toBe(device);
+    expect(registry.joinController(second, code, () => false)).toBe(device); // (room enough: nobody is let go, connected or not)
     expect(device.controllerIds).toHaveLength(2);
   });
 });

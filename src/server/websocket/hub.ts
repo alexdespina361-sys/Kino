@@ -425,7 +425,7 @@ export class Hub {
     let device = this.registry.pair(controller, code);
     let isNewPair = true;
     if (!device) {
-      device = this.registry.joinController(controller, code);
+      device = this.registry.joinController(controller, code, (id) => this.controllers.has(id)); // (a TV with all its places taken lets go of a phone that is not connected)
       isNewPair = false;
     }
     if (!device) {
@@ -433,7 +433,7 @@ export class Hub {
       if (this.registry.isPartyCode(code)) {
         return this.error(controller.id, "PARTY_CODE", "That is the code of a watch party. Watch on this device to join it.");
       }
-      // The right code of a TV that has no room for another phone: no wrong guess either, and the phone is told why (the TV can let its phones go: TV_UNPAIR).
+      // The right code of a TV that has no room for another phone (every one it has is connected): no wrong guess either, and the phone is told why (the TV can let its phones go: TV_UNPAIR).
       if (this.registry.isFullControlCode(controller, code)) {
         return this.error(controller.id, "TV_PHONES_FULL", `That TV already has ${MAX_PHONES_PER_TV} phones, all it can keep. Disconnect its phones on the TV, then try again.`);
       }

@@ -144,7 +144,10 @@ const DAY_MS = 24 * 3600 * 1000;
 export const KEEP_PAIRINGS_DAYS = 400;
 /** What a TV was playing is put back when its page is opened again, unless that was longer ago than this. */
 export const KEEP_RESUME_DAYS = 30;
-/** How many phones can be remotes of one TV at once (they all join with its control code). A phone that is one of them already can always come back. */
+/**
+ * How many phones can be remotes of one TV at once (they all join with its control code). A phone that is one of them already can always come back; when
+ * every place is taken, a new phone gets the place of the one seen least recently that is not connected now (see `joinController`).
+ */
 export const MAX_PHONES_PER_TV = 32;
 /** The place a TV reached is written down again when it has moved this far (and when the TV goes away). */
 const SAVE_EVERY_S = 30;
@@ -453,8 +456,13 @@ export class Registry {
     return { code: leader.controlCode.value, expiresInMs: this.codeTtlMs };
   }
 
-  /** An additional phone joins an active session via the control code. A TV that has all the phones it can keep (see `MAX_PHONES_PER_TV`) turns away one that is not among them. */
-  joinController(controller: Controller, code: string): Device | null {
+  /**
+   * An additional phone joins an active session via the control code. A TV that has all the phones it can keep (see `MAX_PHONES_PER_TV`) lets go of the one seen
+   * least recently that is not `connected` now to make room for one that is not among them (a phone whose storage was cleared comes back as a new one, so the places
+   * of phones that are gone would fill for good; the one let go pairs again with a code), and turns the newcomer away only when every one of them is connected.
+   * Without `connected`, every phone counts as connected and none is let go.
+   */
+  joinController(controller: Controller, code: string, connected: (controllerId: string) => boolean = () => true): Device | null {
     const deviceId = this.deviceByControlCode.get(code);
     const device = deviceId ? this.devices.get(deviceId) : undefined;
     if (!device?.controlCode || device.controlCode.value !== code) return null;
@@ -463,9 +471,17 @@ export class Registry {
       device.controlCode = null;
       return null;
     }
+    if (this.hasNoRoomFor(device, controller)) this.makeRoom(device, connected);
     if (this.hasNoRoomFor(device, controller)) return null;
     this.connect(controller, device);
     return device;
+  }
+
+  /** The TV lets go of the phone seen least recently that is not `connected` (of those last seen on the same day, the one that joined first). Nothing happens when every one is. */
+  private makeRoom(device: Device, connected: (controllerId: string) => boolean): void {
+    const away = this.phonesOf(device).filter((phone) => !connected(phone.id));
+    const [gone] = away.sort((a, b) => (this.seenDays.get(a.id) ?? 0) - (this.seenDays.get(b.id) ?? 0)); // (the sort is stable: the phones are in the order they joined)
+    if (gone) this.unpair(gone, device.publicId);
   }
 
   /** Whether `code` is a control code that is good now, of a TV that has no room for this phone: what `joinController` turned it away for, so that it can be told. */

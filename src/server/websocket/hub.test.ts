@@ -1999,16 +1999,47 @@ describe("several phones controlling one TV session", () => {
     expect((await tv.next("TV_CODE")).control).toBeUndefined(); // free again: it is a pairing code that is offered
   });
 
-  it("turns a phone away from a TV that has all the phones it can keep, says why without counting a wrong code, and lets it in once the TV has let its phones go", async () => {
-    const registry = new Registry();
+  const DAY = 24 * 3600 * 1000;
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 100)); // (for the server to take in that connections were dropped)
+
+  /**
+   * A server on a clock the test moves, and a TV with every one of its `MAX_PHONES_PER_TV` places taken by a phone that joined with its control code over
+   * a connection of its own (`phones[0]` is the one the TV was paired with).
+   */
+  async function crowdedTv() {
+    const clock = { now: Date.now() };
+    const registry = new Registry({ now: () => clock.now });
     await app.close();
     app = await buildApp({ registry, resolve: (url) => resolveImpl(url), hub: { maxFailedPairings: 1 } }); // (a single wrong code would pause this address)
     await app.ready();
-    const { tv, phone, deviceId } = await pairedSetup();
-    const device = registry.getDevice(deviceId)!;
-    const code = registry.ensureControlCode(device).code;
-    for (let n = 1; n < MAX_PHONES_PER_TV; n++) registry.joinController(registry.controllerHello(), code);
+    const { tv, phone, deviceId, controllerId } = await pairedSetup();
+    phone.send({ type: "CTL_HELLO", controllerId });
+    const code = (await phone.next("CTL_WELCOME")).tv!.controlCode!;
+    const phones = [{ client: phone, controllerId }];
+    for (let n = 1; n < MAX_PHONES_PER_TV; n++) {
+      const client = await connect();
+      client.send({ type: "CTL_HELLO" });
+      const { controllerId: id } = await client.next("CTL_WELCOME");
+      client.send({ type: "PAIR", code });
+      await client.nextWhere("CTL_WELCOME", (m) => m.tv !== null);
+      phones.push({ client, controllerId: id });
+    }
+    return { registry, clock, tv, device: registry.getDevice(deviceId)!, code, phones };
+  }
 
+  /** A phone that has never been here types the control code the TV shows now. */
+  async function lateComer(tv: Client) {
+    tv.send({ type: "TV_NEW_CODE" }); // (the code they joined with ran out with the days)
+    const { pairing } = await tv.next("TV_CODE");
+    const late = await connect();
+    late.send({ type: "CTL_HELLO" });
+    await late.next("CTL_WELCOME");
+    late.send({ type: "PAIR", code: pairing.code });
+    return late;
+  }
+
+  it("turns a phone away from a TV whose phones are all connected, says why without counting a wrong code, and lets it in once the TV has let its phones go", async () => {
+    const { tv, device, code, phones } = await crowdedTv();
     const late = await connect();
     late.send({ type: "CTL_HELLO" });
     await late.next("CTL_WELCOME");
@@ -2018,9 +2049,10 @@ describe("several phones controlling one TV session", () => {
       expect(refused.code).toBe("TV_PHONES_FULL");
       expect(refused.message).toMatch(/all it can keep.*Disconnect its phones on the TV/);
     }
-    expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+    expect(device.controllerIds).toEqual(phones.map((phone) => phone.controllerId));
 
     // A phone that is one of them is never turned away from it.
+    const { client: phone } = phones[0]!;
     await phone.forget();
     phone.send({ type: "PAIR", code });
     expect((await phone.next("CTL_WELCOME")).tv).toMatchObject({ online: true, controllerCount: MAX_PHONES_PER_TV });
@@ -2030,6 +2062,50 @@ describe("several phones controlling one TV session", () => {
     const { pairing } = await tv.next("TV_UNPAIRED");
     late.send({ type: "PAIR", code: pairing!.code });
     expect((await late.next("CTL_WELCOME")).tv).toMatchObject({ online: true, controllerCount: 1 });
+  });
+
+  it("makes room for a new phone on a TV that phones that are gone have filled, by letting go of the one seen least recently", async () => {
+    const { clock, tv, device, phones } = await crowdedTv();
+    phones.forEach(({ client }) => client.close());
+    await Promise.all(phones.map(({ client }) => client.closed()));
+
+    // The phones come by again over the next days and leave again, all but the seventh (each hello is a day it was seen).
+    clock.now += 3 * DAY;
+    for (const [n, { controllerId }] of phones.entries()) {
+      if (n === 6) continue;
+      const back = await connect();
+      back.send({ type: "CTL_HELLO", controllerId });
+      await back.next("CTL_WELCOME");
+      back.close();
+      await back.closed();
+    }
+    await settle();
+    expect(device.controllerIds).toHaveLength(MAX_PHONES_PER_TV);
+
+    const late = await lateComer(tv);
+    const joined = await late.nextWhere("CTL_WELCOME", (m) => m.tv !== null);
+    expect(joined.tv).toMatchObject({ online: true, controllerCount: MAX_PHONES_PER_TV });
+    expect(device.controllerIds).toEqual([...phones.filter((_, n) => n !== 6).map((phone) => phone.controllerId), joined.controllerId]);
+
+    // The phone that was let go is welcomed back with no TV (it pairs again with a code, like a phone that was never here); its id is still its own.
+    const gone = await connect();
+    gone.send({ type: "CTL_HELLO", controllerId: phones[6]!.controllerId });
+    const welcome = await gone.next("CTL_WELCOME");
+    expect(welcome).toMatchObject({ controllerId: phones[6]!.controllerId, tv: null, tvs: [] });
+  });
+
+  it("lets go of a phone that is not connected and never of one that is, whenever each was seen", async () => {
+    const { clock, registry, tv, device, phones } = await crowdedTv();
+    clock.now += 2 * DAY;
+    // The only phone that has gone is the one seen most recently; the other thirty-one are connected, and were last seen longer ago.
+    registry.markSeen(phones[20]!.controllerId);
+    phones[20]!.client.close();
+    await phones[20]!.client.closed();
+    await settle();
+
+    const late = await lateComer(tv);
+    const joined = await late.nextWhere("CTL_WELCOME", (m) => m.tv !== null);
+    expect(device.controllerIds).toEqual([...phones.filter((_, n) => n !== 20).map((phone) => phone.controllerId), joined.controllerId]);
   });
 });
 
