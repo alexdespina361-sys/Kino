@@ -564,6 +564,15 @@ describe("handleStreamProxy", () => {
       expect(answer.statusCode).toBe(400);
       expect((await app.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/seg.ts"))}&referer=${encodeURIComponent("https://player.example/embed")}` })).statusCode).toBe(200);
     });
+
+    it("turns away a 'url' or a 'referer' that is given twice, instead of taking the two as one text", async () => {
+      // (A name given twice reaches a handler as a list, and a list of two addresses reads as one address with a comma in it: the second of two referers
+      // would also have been as long as it liked.)
+      const piece = encodeURIComponent(at(OKAY, "/seg.ts"));
+      const page = encodeURIComponent("https://player.example/embed");
+      const asks = [`url=${piece}&url=${piece}`, `url=${piece}&referer=${page}&referer=${page}`, `url=${piece}&referer=${page}&referer=${encodeURIComponent("x".repeat(5000))}`];
+      for (const ask of asks) expect((await app.inject({ url: `/api/proxy?${ask}` })).statusCode, ask.slice(0, 60)).toBe(400);
+    });
   });
 
   it("answers with a failure, and goes on serving, when the other end stacks more content codings than a client takes and drops the connection", async () => {

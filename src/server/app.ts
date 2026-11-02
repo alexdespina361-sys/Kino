@@ -13,7 +13,7 @@ import type { AccountStore } from "./accounts/store";
 import { chatReporter } from "./feedback/chatReport";
 import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
-import { fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
+import { answerUnroutable, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy, type ProxyStats } from "./proxy";
 import { createResolver, type ResolveFn } from "./resolvers";
@@ -110,7 +110,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // addresses and the host's own are not taken for the visitor's on the way (trust.ts).
   const proxies = options.trustProxy;
   const trustProxy = typeof proxies === "number" ? (proxies > 0 ? trustedProxies(proxies) : false) : proxies;
-  const app = Fastify({ logger: options.logger ?? false, ...(trustProxy === undefined ? {} : { trustProxy }) });
+  const app = Fastify({ logger: options.logger ?? false, frameworkErrors: answerUnroutable, ...(trustProxy === undefined ? {} : { trustProxy }) });
   // (First of all: a hook added to the app reaches only what is registered after it, and the pages are served by what comes below.)
   if (options.visits) countVisits(app, options.visits);
   securityHeaders(app);
@@ -278,7 +278,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   app.get<{ Querystring: { row?: string; page?: string } }>("/api/library/more", async (request, reply) => {
     const row = request.query.row ?? "";
     const page = Number(request.query.page);
-    if (!row || row.length > 100 || !Number.isInteger(page) || page < 2 || page > 100) return reply.code(400).send({ error: "Missing 'row' or 'page' parameter" });
+    // (A name given twice reaches a handler as a list.)
+    if (typeof row !== "string" || !row || row.length > 100 || !Number.isInteger(page) || page < 2 || page > 100) return reply.code(400).send({ error: "Missing 'row' or 'page' parameter" });
     try {
       return reply.header("Cache-Control", "public, max-age=300").send(await library.more(row, page));
     } catch {
@@ -320,7 +321,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   app.get<{ Querystring: { url?: string } }>("/api/resolve", async (request, reply) => {
     const rawUrl = request.query.url;
-    if (!rawUrl) return reply.code(400).send({ error: "Missing 'url' parameter" });
+    // (A name given twice reaches a handler as a list.)
+    if (typeof rawUrl !== "string" || !rawUrl) return reply.code(400).send({ error: "Missing 'url' parameter" });
     const result = await resolve(rawUrl);
     return reply.send(result);
   });

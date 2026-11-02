@@ -289,7 +289,8 @@ export async function handleStreamProxy(
 ): Promise<FastifyReply> {
   inert(reply);
   const rawUrl = request.query.url;
-  if (!rawUrl) {
+  // (A name given twice reaches a handler as a list.)
+  if (typeof rawUrl !== "string" || !rawUrl) {
     return reply.code(400).send({ error: "Missing 'url' query parameter" });
   }
 
@@ -306,8 +307,9 @@ export async function handleStreamProxy(
   } catch {
     return reply.code(403).send({ error: "URL not allowed" });
   }
-  // (What is said to be the page that asked, for the places that only answer to their own: a text that is not an address is turned away, not left to fail further on.)
+  // (What is said to be the page that asked, for the places that only answer to their own: a text that is not an address is turned away, not left to fail further on, and neither is a name given twice.)
   const referer = request.query.referer || targetUrl.origin;
+  if (typeof referer !== "string") return reply.code(400).send({ error: "Invalid 'referer' query parameter" });
   let refererOrigin: string;
   try {
     refererOrigin = new URL(referer).origin;

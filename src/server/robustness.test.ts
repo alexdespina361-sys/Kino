@@ -751,8 +751,8 @@ describe("the HTTP API turns away what it should not take", () => {
 });
 
 /**
- * What was once a 500: a name given twice reaches a handler as a list (the library takes `q` and `url` for text), and Fastify's HEAD twin of the
- * socket's address calls the handler with no socket.
+ * What was once a 500: a name given twice reaches a handler as a list (the library takes `q`, `row` and `url` for text, and so does the resolver), and Fastify's
+ * HEAD twin of the socket's address calls the handler with no socket.
  */
 describe("what was once a 500", () => {
   const asked = async (req: Req) => wrongWith(req, await send(req));
@@ -765,6 +765,12 @@ describe("what was once a 500", () => {
 
   it.each(["about", "similar", "seasons", "episodes"])("turns away a library %s whose url is given twice", async (route) => {
     const req: Req = { method: "GET", url: `/api/library/${route}?url=a&url=b&season=1`, headers: {} };
+    expect(await asked(req)).toBeUndefined();
+    expect((await send(req)).res?.statusCode).toBe(400);
+  });
+
+  it.each(["/api/library/more?row=a&row=b&page=2", "/api/resolve?url=https%3A%2F%2Fexample.com%2Fa&url=https%3A%2F%2Fexample.com%2Fb"])("turns away %s, a name given twice", async (url) => {
+    const req: Req = { method: "GET", url, headers: {} };
     expect(await asked(req)).toBeUndefined();
     expect((await send(req)).res?.statusCode).toBe(400);
   });

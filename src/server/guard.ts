@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { RateLimiter } from "./accounts/rateLimit";
 
 const MINUTE = 60_000;
@@ -19,14 +19,29 @@ const BASELINE_POLICY = "base-uri 'self'; object-src 'none'; form-action 'self';
  */
 export function securityHeaders(app: FastifyInstance): void {
   app.addHook("onRequest", async (request, reply) => {
-    reply.header("X-Content-Type-Options", "nosniff");
-    reply.header("Content-Security-Policy", BASELINE_POLICY);
-    reply.header("Referrer-Policy", "no-referrer");
-    reply.header("X-Frame-Options", "DENY");
-    reply.header("Permissions-Policy", "microphone=(), geolocation=(), payment=(), usb=()");
-    // (A browser takes this from a page that came over https only, so it is not said to one that came over http.)
-    if (request.protocol === "https") reply.header("Strict-Transport-Security", "max-age=31536000");
+    stampHeaders(request, reply);
   });
+}
+
+function stampHeaders(request: FastifyRequest, reply: FastifyReply): void {
+  reply.header("X-Content-Type-Options", "nosniff");
+  reply.header("Content-Security-Policy", BASELINE_POLICY);
+  reply.header("Referrer-Policy", "no-referrer");
+  reply.header("X-Frame-Options", "DENY");
+  reply.header("Permissions-Policy", "microphone=(), geolocation=(), payment=(), usb=()");
+  // (A browser takes this from a page that came over https only, so it is not said to one that came over http.)
+  if (request.protocol === "https") reply.header("Strict-Transport-Security", "max-age=31536000");
+}
+
+/**
+ * What answers an address that cannot be read at all (`/%zz`, a part of the path too long to be a name): the router turns it away before any hook has run, so the hook
+ * above never sees it and its answer would go out bare. This is given to Fastify as `frameworkErrors` and says the same words, then the answer Fastify would have given.
+ * (The request it is handed is made before a host's proxy has been read, so behind one the `Strict-Transport-Security` of the other answers is not repeated here; a browser
+ * keeps what they said.)
+ */
+export function answerUnroutable(error: FastifyError, request: FastifyRequest, reply: FastifyReply): void {
+  stampHeaders(request, reply);
+  void reply.send(error);
 }
 
 /** The routes that make this server fetch from another site for whoever asks. */
@@ -48,7 +63,9 @@ export function isOwnOrigin(origin: string, host: string | undefined): boolean {
  * `24-7.ro` and not only this one (`SameSite=Lax`), and several routes that change something need no body, so a page of a sibling name could send them with a
  * visitor's cookie. A request that is not a read is turned away (403 `cross_site`) when the browser says it comes from another site or another name of this one
  * (`Sec-Fetch-Site`), or brings an `Origin` that is not the host it was sent to: the host is compared with the `Host` header, so each address the site is served
- * at is its own origin and none is listed. A request with none of these headers (a script, curl, an old browser) is as it was.
+ * at is its own origin and none is listed. A request with none of these headers (a script, curl, an old browser) is as it was. A browser that says the request is from
+ * this very origin (`same-origin`: a page cannot set that word, nor change it) is believed over its `Origin`, which a browser writes as `null` when the page asked for
+ * no referrer (`Referrer-Policy: no-referrer`, as every answer here says) and the request was not made in the CORS mode (a form, a beacon, a fetch kept to the origin).
  *
  * What only reads is let through, except what makes this server fetch for whoever asks (`FETCHES`): a page of another site must not be able to use the server
  * for that, so it is turned away on the same word of the browser, unless the visitor followed a link there (a navigation).
@@ -65,7 +82,7 @@ export function sameSiteGate(app: FastifyInstance): void {
       refused = FETCHES.has(route) && elsewhere && request.headers["sec-fetch-mode"] !== "navigate";
     } else {
       const { origin, host } = request.headers;
-      refused = elsewhere || (origin !== undefined && !isOwnOrigin(origin, host));
+      refused = elsewhere || (site !== "same-origin" && origin !== undefined && !isOwnOrigin(origin, host));
     }
     if (refused) return reply.code(403).send({ error: "cross_site" });
   });

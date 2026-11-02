@@ -61,10 +61,15 @@ describe("what every answer tells the browser", () => {
     ["a file that is not there", { url: "/assets/missing.js" }],
     ["the proxy turning a request away", { url: "/api/proxy" }],
   ];
+  // (The router turns these away before any hook has run, with a request of its own making: see `answerUnroutable`.)
+  const UNREADABLE: Array<[string, InjectOptions]> = [
+    ["a path that cannot be read", { url: "/%zz" }],
+    ["a path of the api that cannot be read", { method: "POST", url: "/api/%zz" }],
+  ];
 
   it("tells a browser, with a page, a file, a miss or a refusal alike, not to guess, not to tell where it came from, not to be framed and not to ask for what nothing here uses", async () => {
     const site = await served();
-    for (const [name, request] of KINDS) {
+    for (const [name, request] of [...KINDS, ...UNREADABLE]) {
       const answer = await site.inject(request);
       for (const [header, value] of Object.entries(SAFE)) expect(answer.headers[header], `${name}: ${header}`).toBe(value);
       expect(answer.headers["strict-transport-security"], name).toBeUndefined(); // (this visit was over http)
@@ -79,8 +84,17 @@ describe("what every answer tells the browser", () => {
   it("tells a browser, whatever it is sent, what no page of this site does: set another base address, embed a plugin, send a form elsewhere, be shown in a frame", async () => {
     const site = await served();
     // (Nothing about scripts, styles or pictures: the aligner's WebAssembly needs `'unsafe-eval'` in the Chromium of a Hisense. The proxy's own policy is below.)
-    for (const [name, request] of KINDS.filter(([name]) => !name.startsWith("the proxy"))) {
+    for (const [name, request] of [...KINDS, ...UNREADABLE].filter(([name]) => !name.startsWith("the proxy"))) {
       expect((await site.inject(request)).headers["content-security-policy"], name).toBe("base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'none'");
+    }
+  });
+
+  it("answers an address that cannot be read as it always did: a 400 that says so, and no other word", async () => {
+    const site = await served();
+    for (const [name, request] of UNREADABLE) {
+      const answer = await site.inject(request);
+      expect([answer.statusCode, answer.json<{ code: string }>().code], name).toEqual([400, "FST_ERR_BAD_URL"]);
+      expect(answer.headers["content-type"], name).toContain("application/json");
     }
   });
 
@@ -147,6 +161,9 @@ describe("where a request to the api comes from", () => {
       "a name that only ends like this one": { origin: "https://evil-kino.24-7.ro" },
       "this name at another port": { origin: `https://${HOST}:8443` },
       "a page with no origin of its own": { origin: "null" },
+      "a page with no origin of its own, as a browser words it": { "sec-fetch-site": "cross-site", origin: "null" },
+      // (Only `same-origin` is believed over the origin that comes with a request: an address that was typed is no such word.)
+      "an address that was typed, with the origin of another site": { "sec-fetch-site": "none", origin: "https://other.example" },
     };
     for (const [name, headers] of Object.entries(foreign)) {
       const answer = await approve(headers);
@@ -163,6 +180,8 @@ describe("where a request to the api comes from", () => {
       "a page of this site": { host: HOST, origin: `https://${HOST}`, "sec-fetch-site": "same-origin" },
       "a page of the site's other address": { host: "kino4tv.com", origin: "https://kino4tv.com", "sec-fetch-site": "same-origin" },
       "a page on this machine, with its port": { host: "127.0.0.1:8788", origin: "http://127.0.0.1:8788", "sec-fetch-site": "same-origin" },
+      // (A page that asked for no referrer, which is every page of this site, has the browser write `null` for the origin of a request that is not a fetch: a beacon, a form.)
+      "a page of this site that asked for no referrer, as a browser words its post": { host: HOST, origin: "null", "sec-fetch-site": "same-origin" },
       "a page on this machine, by an address in brackets": { host: "[::1]:8788", origin: "http://[::1]:8788" },
       "an origin that leaves out the port the host spells": { host: `${HOST}:443`, origin: `https://${HOST}` },
       "a host in other letters": { host: "KINO.24-7.RO", origin: `https://${HOST}` },

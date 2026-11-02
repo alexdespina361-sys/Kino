@@ -65,7 +65,8 @@ const homes: Array<[string, () => Promise<Home>]> = [
   ],
 ];
 
-describe.each(homes)("reports kept in %s", (_name, open) => {
+// (Each test of the Postgres home starts a whole database in WebAssembly, which on a machine that is busy with the rest of the suite takes longer than the 5 s a test is given.)
+describe.each(homes)("reports kept in %s", { timeout: 30_000 }, (_name, open) => {
   let home: Home | undefined;
   const make = async () => (home = await open());
   afterEach(async () => {
