@@ -18,6 +18,9 @@ export const comesIn = {
   onLoad: (event: SyntheticEvent<HTMLImageElement>) => event.currentTarget.setAttribute("data-in", ""),
 };
 
+/** The movie database keeps a poster in several sizes, and the rows' 500 px is soft over the width of a phone's screen: this one asks for its 780 px. */
+export const sharper = (picture: string | undefined) => picture?.replace(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w500\//, "$1w780/");
+
 /** A title's picture, or (when there is none, or it does not load) its first letter on a colour made from its name. `children` sit on top of it. */
 export function Poster({ title, image, seed, className, children }: { title: string; image?: string | undefined; seed?: string; className?: string; children?: ReactNode }) {
   const [broken, setBroken] = useState(false);

@@ -102,6 +102,9 @@ const activityOffTile = (): Entry => ({ id: "activity-off", title: t("friends.tu
  * While this profile has not turned on being told what friends watch (`iGet`: the one thing that is off until somebody turns it on, and what makes the
  * row of what they watch never appear) a row below the friends has a tile that says so and opens the settings.
  */
+/** The rows of what waits for an answer (the bell lists them too): the page puts them under one heading, "Waiting for you", and the rows below it are what is not waiting. */
+const ASKING_ROWS: readonly string[] = ["friend-requests", "friend-parties", "friend-plans", "friend-sent"];
+
 export function friendRows(state: FriendsState | null, now: number, iGet = true): HomeRow[] {
   const friends = state?.friends ?? [];
   const inbox = state?.inbox ?? [];
@@ -133,7 +136,7 @@ export function friendRows(state: FriendsState | null, now: number, iGet = true)
   rows.push({ id: "friend-people", layout: "categories", title: t("friends.yours"), entries: [...friends.map((friend) => entryOfFriend(friend, activity, now, waitingFrom(state, friend.id))), addTile(), settingsTile()] });
   // (below the friends, so that the remote still starts on them: it is a reminder, and a friend's page says it again)
   if (activity.length === 0 && !iGet && friends.some((friend) => friend.on)) rows.push({ id: "friend-activity-off", layout: "categories", title: t("friends.activity"), entries: [activityOffTile()] });
-  return rows;
+  return rows.map((row) => (ASKING_ROWS.includes(row.id) ? { ...row, group: t("bell.waiting") } : row));
 }
 
 /** A line of the TV's bell: the entry that pressing it acts on (the friends page's own), and what the line says. */
@@ -152,7 +155,7 @@ export interface BellRow {
 export function bellRows(state: FriendsState | null, now: number): { waiting: BellRow[]; lately: BellRow[]; more: number } {
   if (!state) return { waiting: [], lately: [], more: 0 };
   const rows = friendRows(state, now);
-  const asking = rows.filter((row) => row.id === "friend-requests" || row.id === "friend-parties" || row.id === "friend-plans" || row.id === "friend-sent").flatMap((row) => row.entries);
+  const asking = rows.filter((row) => ASKING_ROWS.includes(row.id)).flatMap((row) => row.entries);
   // (The friends who wrote come after what asks for an answer, with the same few places: see `bellView`.)
   const wrote = chatWaiting(state).flatMap(({ friend: id, count }) => {
     const friend = state.friends.find((each) => each.id === id);

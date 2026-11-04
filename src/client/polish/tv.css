@@ -211,6 +211,13 @@
 
 :root[data-ui="polish"] .tv-row-title { margin: 0 var(--page-r) calc(var(--em) * 0.1) var(--gutter); font-size: var(--fs-3); font-weight: 600; color: var(--text-1); }
 :root[data-ui="polish"] .tv-row-tiles { gap: var(--tile-gap); padding: calc(var(--em) * 0.6) var(--page-r) calc(var(--em) * 1) var(--gutter); }
+/* The friends page tells what waits for an answer from the rest by weight and room, not by lines: one heading ("Waiting for you", with the dot the bell has) over its rows, which are named
+   quietly under it, and the rows that are not waiting (what friends watch, the friends) have a heading of their own size with room above it. */
+:root[data-ui="polish"] .tv-row-group { display: flex; align-items: center; gap: calc(var(--em) * 0.7); margin: 0 var(--page-r) calc(var(--em) * 0.1) var(--gutter); font-size: var(--fs-4); font-weight: 700; color: var(--text-1); }
+:root[data-ui="polish"] .tv-row-group::before { content: ""; flex: none; width: calc(var(--em) * 0.9); height: calc(var(--em) * 0.9); border-radius: 50%; background: var(--accent); }
+:root[data-ui="polish"] .tv-row[data-grouped="true"] .tv-row-title { font-size: var(--fs-2); font-weight: 600; color: var(--text-3); }
+:root[data-ui="polish"] .tv-browse[data-view="friends"] .tv-row:not([data-grouped="true"]) .tv-row-title { font-size: var(--fs-4); font-weight: 700; }
+:root[data-ui="polish"] .tv-browse[data-view="friends"] .tv-row + .tv-row:not([data-grouped="true"]) .tv-row-title { margin-top: calc(var(--em) * 1.2); }
 /* What runs off the bottom fades out instead of being cut through a line of words (sticky: it stays at the bottom of what is shown; at the end of the page it is the room under the last row). */
 :root[data-ui="polish"] .tv-rows::after {
   content: "";

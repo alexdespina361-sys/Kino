@@ -6,7 +6,8 @@
  * on its side or a tablet gets, which has room for the TV's menu down the left.
  *
  * What changes, and why (the plan has the pictures): the menu is a bar of four places along the bottom, with names, where the TV has ten icons down the left; the sections of the library are a
- * row of buttons over the titles; the banner is gone (a title is read on its own page, which a tap opens); titles are upright posters, three across; a title's page is a picture, the name, one wide
+ * row of buttons over the titles; the banner is gone (a title is read on its own page, which a tap opens, and the page of rows opens with one title's poster across the screen, the way the phone
+ * apps of the big services do); titles are upright posters, three across; a title's page is a picture, the name, one wide
  * Play button; the player's buttons are as big as a thumb needs, in rows; and what is chosen over the film (speed, language, episodes) comes up from the bottom as a sheet.
  */
 
@@ -129,6 +130,25 @@
   /* A button that is lit by the remote on a phone is a ring, not a white slab that hides what it says. */
   :root[data-ui="polish"] .tv .tv-filters .tv-choice:focus-visible { transform: none; }
 
+  /* ------------------------------ the title a page of rows opens with ------------------------------ */
+
+  /* Its poster across the width of the screen (4 by 5, and no more than three fifths of the screen's height), the page's colour coming up over its foot, the name on that, and the two
+     buttons side by side under it: the way the phone apps of the big services open. It stands in the first row (Browse.tsx), so the row's own scroll brings it to the top. */
+  :root[data-ui="polish"] .tv .tv-feature { position: relative; box-sizing: border-box; aspect-ratio: 4 / 5; max-height: 62vh; margin: 4px var(--page-r) 12px var(--gutter); overflow: hidden; border-radius: var(--r-3); background: var(--surf-2); }
+  :root[data-ui="polish"] .tv .tv-feature-open { position: absolute; inset: 0; display: block; width: 100%; height: 100%; padding: 0; border-radius: inherit; }
+  :root[data-ui="polish"] .tv .tv-feature-open:focus-visible { outline: none; box-shadow: inset 0 0 0 3px #fff; }
+  :root[data-ui="polish"] .tv .tv-feature-art { position: absolute; inset: 0; display: block; }
+  :root[data-ui="polish"] .tv .tv-feature-art img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+  :root[data-ui="polish"] .tv .tv-feature-art::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(11, 11, 12, 0) 24%, rgba(11, 11, 12, 0.5) 46%, rgba(11, 11, 12, 0.93) 62%, rgba(11, 11, 12, 0.98) 100%); }
+  :root[data-ui="polish"] .tv .tv-feature-art .poster-initial { position: absolute; inset: 0; display: grid; place-items: center; padding-bottom: 30%; color: rgba(255, 255, 255, 0.35); font-size: 96px; font-weight: 700; }
+  :root[data-ui="polish"] .tv .tv-feature-text { position: absolute; right: 0; bottom: 0; left: 0; display: flex; flex-direction: column; gap: 4px; padding: 16px; pointer-events: none; }
+  :root[data-ui="polish"] .tv .tv-feature-title { display: -webkit-box; margin: 0; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; font-size: var(--fs-6); font-weight: 800; line-height: 1.15; letter-spacing: -0.01em; text-shadow: 0 1px 12px rgba(0, 0, 0, 0.6); }
+  :root[data-ui="polish"] .tv .tv-feature-meta { margin: 0; color: var(--text-2); font-size: var(--fs-2); font-weight: 600; }
+  :root[data-ui="polish"] .tv .tv-feature-actions { display: flex; gap: 8px; margin-top: 10px; pointer-events: auto; }
+  :root[data-ui="polish"] .tv .tv-feature-actions .tv-hero-button { flex: 1 1 0; justify-content: center; min-width: 0; min-height: 48px; padding: 0 12px; font-size: var(--fs-3); line-height: 1.15; text-align: center; white-space: normal; }
+  :root[data-ui="polish"] .tv .tv-feature-actions .tv-hero-button:not(.is-primary) { background: rgba(255, 255, 255, 0.18); }
+  :root[data-ui="polish"] .tv .tv-feature-actions .tv-hero-button[aria-pressed="true"] { background: rgb(var(--accent-rgb) / 0.3); box-shadow: inset 0 0 0 1.5px var(--accent); }
+
   /* ------------------------------ rows of titles ------------------------------ */
 
   /* No banner: nothing but what a page says in place of titles (loading, nothing here, retry), and the profile's head. */
@@ -144,12 +164,14 @@
   :root[data-ui="polish"] .tv .tv-rows::after { height: 24px; }
   :root[data-ui="polish"] .tv .tv-rows-note { margin: 0 var(--page-r) 12px var(--gutter); font-size: var(--fs-2); }
 
-  /* A title is an upright poster with its name under it (two lines of it, not one cut short) and the year. */
+  /* A title is an upright poster with its name under it (two lines of it, not one cut short). What a line under the name says (the episode and what is left of it) stays; the bare year
+     is for a screen reader only: three lines under every picture made a row of captions as tall as the posters were wide. */
   :root[data-ui="polish"] .tv .tv-tile { width: var(--poster); }
   :root[data-ui="polish"] .tv .tv-tile-art { aspect-ratio: 2 / 3; }
   :root[data-ui="polish"] .tv .tv-tile-body { gap: 6px; }
   :root[data-ui="polish"] .tv .tv-tile-name { display: -webkit-box; font-size: 14px; line-height: 1.3; white-space: normal; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   :root[data-ui="polish"] .tv .tv-tile-year { font-size: 14px; }
+  :root[data-ui="polish"] .tv .tv-tile-year.is-year { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   :root[data-ui="polish"] .tv .tv-tile-initial { font-size: 40px; }
   /* What is part way through is a card as wide as a picture of the film is, with the bar of how far it got. */
   :root[data-ui="polish"] .tv .tv-tile-continue { width: var(--card); }

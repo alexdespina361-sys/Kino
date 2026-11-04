@@ -146,6 +146,8 @@ export interface HomeRow {
   layout: Layout;
   title: string;
   source?: string;
+  /** The heading several rows stand under together (the friends page's "Waiting for you"): drawn once, over the first of them. */
+  group?: string;
   entries: Entry[];
 }
 

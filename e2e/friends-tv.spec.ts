@@ -670,6 +670,12 @@ test.describe("sending things to friends from the TV", () => {
     const invitation = tile(bob.page, `${ann.name}'s party`);
     await expect(invitation).toBeVisible();
     await expect(bob.page.locator(`.tv-row[aria-label="Watch parties"]`)).toBeVisible();
+    // ...under one heading for what waits for an answer, drawn once over the first of those rows; the friends below it are not under it
+    await expect(bob.page.getByTestId("tv-row-group")).toHaveCount(1);
+    await expect(bob.page.getByTestId("tv-row-group")).toHaveText("Waiting for you");
+    await expect(bob.page.locator(`.tv-row[aria-label="Watch parties"] .tv-row-group`)).toBeVisible();
+    await expect(bob.page.locator(`.tv-row[aria-label="Watch parties"]`)).toHaveAttribute("data-grouped", "true");
+    await expect(bob.page.locator(`.tv-row[aria-label="Your friends"]`)).not.toHaveAttribute("data-grouped", "true");
     await invitation.click();
     await expect(bob.page.getByTestId("tv-party-guest")).toBeVisible();
     await expect(ann.page.getByTestId("tv-party-member")).toHaveCount(2);

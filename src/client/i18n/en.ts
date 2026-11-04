@@ -177,7 +177,7 @@ export const en = {
   /* rows and cards */
   "rows.continue": "Continue watching",
   "rows.myList": "My Lists",
-  "rows.myListEmpty": "Titles you save with + show up here.",
+  "rows.myListEmpty": "Hold a title, or tap My Lists on its page, to save it here.",
   "rows.remove": "Remove from Continue watching",
   "rows.removeFromList": "Remove from {list}",
   "rows.inLists": "In your lists",

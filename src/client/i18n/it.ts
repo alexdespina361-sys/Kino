@@ -175,7 +175,7 @@ export const it: Dictionary = {
   /* rows and cards */
   "rows.continue": "Continua a guardare",
   "rows.myList": "Le mie liste",
-  "rows.myListEmpty": "I titoli che salvi con + appaiono qui.",
+  "rows.myListEmpty": "Tieni premuto un titolo, o tocca Le mie liste nella sua pagina, per salvarlo qui.",
   "rows.remove": "Rimuovi da “Continua a guardare”",
   "rows.removeFromList": "Rimuovi da {list}",
   "rows.inLists": "Nelle tue liste",

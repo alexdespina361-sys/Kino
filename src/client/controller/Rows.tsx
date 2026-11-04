@@ -9,7 +9,7 @@ import { Poster } from "../shared/Poster";
 import { ScoreBadge, useScoreWords } from "../shared/ScoreBadge";
 import { entryOfRating, entryOfSaved, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
-import { ListButton, RemoveButton, useListToggle, type ListToggle } from "./Round";
+import { RemoveButton, SavedMark, useListToggle, type ListToggle } from "./Round";
 
 /**
  * A heading (with something small at its far end, if need be) and a row of cards that scrolls sideways, to the screen's edge. `wide`:
@@ -45,14 +45,14 @@ interface CardProps {
   /** The score this profile gave the title, in the picture's corner. */
   score?: number | undefined;
   playLabel: string;
-  /** The cross in the corner: a card that cannot be taken off its row (a rated title's) has neither of these. */
+  /** The cross in the corner: a card that cannot be taken off its row (a rated title's) has none. */
   removeLabel?: string;
   onPlay: () => void;
   onRemove?: () => void;
   testId: string;
-  /** The round + beside the cross, which a hold on the card does as well. */
+  /** How the title stands with the lists: a hold on the card does what a tap on the button of its page does. */
   toggle?: ListToggle;
-  /** What a hold on the card does when there is no + on it. */
+  /** What a hold on the card does when the title has no list to toggle. */
   onHold?: () => void;
 }
 
@@ -60,11 +60,12 @@ export function Card({ title, image, note, progress = 0, score, playLabel, remov
   const hold = useHold(() => (onHold ?? toggle?.onHold)?.());
   const scoreWords = useScoreWords();
   return (
-    <div className="lib-tile" data-testid={`${testId}-item`}>
+    <div className="lib-tile" data-testid={`${testId}-item`} data-in-list={toggle?.inList}>
       {/* (The button's name is its own words, which leave out what is inside it: the score is added to them.) */}
       <button className="lib-card" onClick={hold.tap(onPlay)} {...hold.props} aria-label={score === undefined ? playLabel : `${playLabel}. ${scoreWords(score)}`} data-testid={`${testId}-play`}>
         <Poster className="lib-art" title={title} image={image}>
           {score !== undefined && <ScoreBadge score={score} />}
+          {toggle?.inList && !onRemove && <SavedMark />}
           {progress > 0 && (
             <span className="lib-progress" aria-hidden="true">
               <i style={{ width: `${Math.round(progress * 100)}%` }} />
@@ -74,10 +75,9 @@ export function Card({ title, image, note, progress = 0, score, playLabel, remov
         <span className="lib-title">{title}</span>
         {note && <span className="lib-year">{note}</span>}
       </button>
-      {(toggle || onRemove) && (
+      {onRemove && (
         <span className="lib-corner">
-          {toggle && <ListButton toggle={toggle} title={title} testId={`${testId}-list-toggle`} />}
-          {onRemove && <RemoveButton label={removeLabel ?? ""} onClick={onRemove} testId={`${testId}-remove`} />}
+          <RemoveButton label={removeLabel ?? ""} onClick={onRemove} testId={`${testId}-remove`} />
         </span>
       )}
     </div>
@@ -86,7 +86,7 @@ export function Card({ title, image, note, progress = 0, score, playLabel, remov
 
 /**
  * "Continue watching": the cards of what this profile started, newest first, big and one at a time. Tapping one picks it up where it
- * stopped; the + on it (or a hold) puts the title in a list, and the cross takes it off the row.
+ * stopped; a hold puts the title in a list, and the cross takes it off the row.
  */
 export function ContinueRow({
   items,
@@ -183,7 +183,6 @@ export function ListRows({ lists, items, onOpen, onPick, onRemove, onManage }: L
                   testId="list"
                   title={item.title}
                   image={item.image ?? item.backdrop}
-                  note={item.year ? String(item.year) : undefined}
                   score={scoreOf(scores, item.url)}
                   playLabel={`${t("rows.open")} ${item.title}`}
                   removeLabel={`${t("rows.removeFromList", { list: name })}: ${item.title}`}

@@ -350,6 +350,45 @@ test.describe("a phone used as the screen, held upright", () => {
     });
   }
 
+  test("Home opens with one title's poster across the screen: Play starts a film, the list button keeps it, the picture opens its page; a show's button opens its page; a library without pictures has none", async ({ browser }) => {
+    const size = SIZES[2]!;
+    // (A title with a picture: the address need not exist, the poster only has to be asked for.)
+    const pictured = (shelves: typeof library, kind = "movie") => ({ ...shelves, rows: shelves.rows.map((each, r) => ({ ...each, items: each.items.map((item) => ({ ...item, image: "/fixtures/missing.png", ...(r === 0 ? { kind } : {}) })) })) });
+    const tv = await screen(browser, size, "en-US", pictured(library));
+    const hero = tv.getByTestId("tv-feature");
+    await expect(hero).toBeVisible();
+    const box = (await hero.boundingBox())!;
+    expect(box.width, "across the screen, with the page's own margins").toBeGreaterThan(size.width - 40);
+    expect(box.y, "it starts under the sections").toBeLessThan(260);
+    await expect(hero.getByRole("heading")).toHaveText("Shelf 1 film 1");
+    await expectFits(tv, "Home with its poster");
+
+    const keep = tv.getByTestId("tv-feature-list");
+    await expect(keep).toHaveAttribute("aria-pressed", "false");
+    await keep.tap();
+    await expect(keep).toHaveAttribute("aria-pressed", "true");
+    await keep.tap();
+    await expect(keep).toHaveAttribute("aria-pressed", "false");
+
+    await tv.getByTestId("tv-feature-open").tap();
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("Shelf 1 film 1");
+    await settled(tv.getByTestId("tv-detail-close"));
+    await tv.getByTestId("tv-detail-close").tap();
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    await expect(hero, "the page is where it was left: the poster is still the first thing on it").toBeInViewport();
+
+    await tv.getByTestId("tv-feature-play").tap();
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "playing", { timeout: 15_000 });
+
+    const shows = await screen(browser, size, "en-US", pictured(library, "series"));
+    await expect(shows.getByTestId("tv-feature-play")).toHaveText("Episodes");
+    await shows.getByTestId("tv-feature-play").tap();
+    await expect(shows.getByTestId("tv-detail-title")).toHaveText("Shelf 1 film 1");
+
+    const bare = await screen(browser, size);
+    await expect(bare.getByTestId("tv-feature")).toHaveCount(0);
+  });
+
   for (const size of [SIZES[0]!, SIZES[2]!]) {
     test(`at ${size.name}: a tap on a title's picture, or on the empty part beside its words, leaves its page open, and its Close button closes it`, async ({ browser }) => {
       // (A title with a picture: its page keeps the top of the screen for it, and the words begin under it. The picture itself does not take a tap, so a tap lands on the page.)

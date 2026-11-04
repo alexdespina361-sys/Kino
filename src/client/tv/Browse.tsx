@@ -19,12 +19,12 @@ import { friendGrid, friendRows } from "../friends/pages";
 import { askLists, askRatings, useShared } from "../friends/useShared";
 import { useLanguage, useT } from "../i18n";
 import { handHeld, useHandHeldBack } from "../shared/backButton";
-import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
+import { AnimeIcon, BackspaceIcon, CartoonIcon, CheckIcon, ChevronIcon, ChevronLeftIcon, ClearIcon, ClockIcon, CloseIcon, FilmIcon, GridIcon, HomeIcon, InfoIcon, ListIcon, MessageIcon, PencilIcon, PhoneIcon, PlayIcon, PlusIcon, SearchIcon, StarIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { allRows, failedShelves, feed, GRID_CAP, hasMoreShelves, hasMoreTitles, loadingShelves, loadingTitles, nearBottom, pageRows, ROW_CAP, useFeed } from "../shared/feed";
 import { canFullscreen } from "../shared/fullscreen";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { Logo } from "../shared/Logo";
-import { comesIn, hueOf } from "../shared/Poster";
+import { comesIn, hueOf, Poster, sharper } from "../shared/Poster";
 import { useBecause } from "../shared/recommend";
 import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
@@ -115,6 +115,8 @@ const NARROW = "(max-width: 899px)";
 const NARROW_TILE_PX = 190;
 /** A phone held upright shows posters (compact.ts): three across, and two on the narrowest screens, where three would be thumbnails. */
 const POSTERS_THREE_FROM_PX = 360;
+/** The title such a phone opens a page of rows with is the first of the library's first row that has a picture, looked for among this many. */
+const FEATURE_FROM = 6;
 
 /** How many titles wide a grid is on a hand-held screen, or 0 when the screen is wide enough for the TV's own layout. */
 function useNarrowColumns(): number {
@@ -399,6 +401,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       ? { entry: start, label: homeRows[startRow]!.title, ...(homeRows[startRow]!.source ? { source: homeRows[startRow]!.source! } : {}) }
       : null;
   const actions = rowsPage ? heroActions(shown?.entry) : [];
+  // What a phone held upright opens a page of rows with (it has no banner): the first title of the library's first row that has a picture. It stands in the first row after Continue watching (what
+  // is part way through stays on top), inside that row, so that the row's own scroll brings it up.
+  const featured = compact && isRowsPage(view) ? homeRows.find((row) => row.layout === "ranked")?.entries.slice(0, FEATURE_FROM).find((entry) => entry.url && !entry.opens && (entry.image ?? entry.backdrop)) : undefined;
+  const featuredIn = featured ? homeRows.find((row) => row.layout !== "continue") : undefined;
   const saved = useMemo(() => savedKeys(list), [list]);
   const scores = useScores();
   const inList = (entry: Entry, id: string) => saved.has(listKey(entry.url, id));
@@ -1141,7 +1147,24 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           <div className="tv-rows" ref={rowsRef} onScroll={askShelves}>
             {homeRows.length > 0
               ? homeRows.map((row, r) => (
-                  <section className="tv-row" key={row.id} data-layout={row.layout} aria-label={row.title}>
+                  <section className="tv-row" key={row.id} data-layout={row.layout} data-grouped={row.group ? "true" : undefined} aria-label={row.title}>
+                    {row.group && homeRows[r - 1]?.group !== row.group && (
+                      // (Inside the first row of its group, so that the page, which brings a row to its top, brings the heading too.)
+                      <h2 className="tv-row-group" data-testid="tv-row-group">
+                        {row.group}
+                      </h2>
+                    )}
+                    {featured && row === featuredIn && (
+                      <Feature
+                        entry={resumable(featured, progress)}
+                        play={labelOf("play", resumable(featured, progress), false)}
+                        list={labelOf("list", featured, false)}
+                        kept={isSaved(featured)}
+                        onOpen={() => openDetail({ entry: resumable(featured, progress), label: row.title, ...(row.source ? { source: row.source } : {}) })}
+                        onPlay={() => playEntry(resumable(featured, progress))}
+                        onList={() => doAction("list", featured)}
+                      />
+                    )}
                     <h2 className="tv-row-title">{row.title}</h2>
                     <RowTiles {...(row.layout === "wide" && growing.has(row.id) ? { onNearEnd: () => feed.loadMore(row.id, ROW_CAP), loading: loadingTitles(feeding, row.id) } : {})}>
                       {row.entries.map((entry, c) => tile(entry, { zone: "rows", row: r, col: c }, row.title, row.layout, row.source, listOfRow(row.id)))}
@@ -1797,8 +1820,44 @@ function Tile({ entry, layout: asked, compact, rank, pos, corner, score, onArriv
           )}
         </span>
         {layout !== "ranked" && <span className="tv-tile-name">{entry.title}</span>}
-        {layout !== "ranked" && under && <span className="tv-tile-year">{under}</span>}
+        {layout !== "ranked" && under && <span className={entry.note ? "tv-tile-year" : "tv-tile-year is-year"}>{under}</span>}
       </span>
     </button>
+  );
+}
+
+/**
+ * What a phone held upright opens a page of rows with (the way the phone apps of the big services open): a title's poster across the screen, its name over the foot of it, and the two
+ * things to do with it, side by side: play it (a film; a show has its seasons to choose from, so its button, like the picture, opens its page) and keep it in a list. It stands in the
+ * first row, which the row's own scroll brings to the top; a finger needs no stop for the remote on it, and the arrow keys walk the titles as they did.
+ */
+function Feature({ entry, play, list, kept, onOpen, onPlay, onList }: { entry: Entry; play: ReactNode; list: ReactNode; kept: boolean; onOpen: () => void; onPlay: () => void; onList: () => void }) {
+  const t = useT();
+  const plays = entry.kind === "movie";
+  const meta = [entry.year, entry.kind === "movie" ? t("library.kindMovie") : entry.kind === "series" ? t("library.kindSeries") : undefined].filter(Boolean).join(" · ");
+  return (
+    <div className="tv-feature" data-testid="tv-feature">
+      <button type="button" className="tv-feature-open" onClick={onOpen} aria-label={`${t("rows.open")} ${entry.title}`} data-testid="tv-feature-open">
+        <Poster className="tv-feature-art" title={entry.title} image={sharper(entry.image) ?? entry.backdrop} seed={entry.id} />
+      </button>
+      <div className="tv-feature-text">
+        <h2 className="tv-feature-title">{entry.title}</h2>
+        {meta && <p className="tv-feature-meta">{meta}</p>}
+        <div className="tv-feature-actions">
+          <button type="button" className="tv-hero-button is-primary" onClick={plays ? onPlay : onOpen} data-testid="tv-feature-play">
+            {plays ? (
+              play
+            ) : (
+              <>
+                <InfoIcon /> {t(entry.kind === "series" ? "player.episodes" : "rows.open")}
+              </>
+            )}
+          </button>
+          <button type="button" className="tv-hero-button" onClick={onList} aria-pressed={kept} data-testid="tv-feature-list">
+            {list}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -2450,6 +2450,19 @@ test.describe("a watch party started on a TV", () => {
   });
 });
 
+/** A finger that stays on a title (the mouse here), then lets go: the title goes in a list, or a picker asks which when there are several. */
+async function hold(phone: Page, target: Locator) {
+  await target.evaluate((element) => element.scrollIntoView({ block: "center", inline: "center" })); // (clear of the bars, which a plain scroll into view may leave it under)
+  const box = (await target.boundingBox())!;
+  await phone.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await phone.mouse.down();
+  await phone.waitForTimeout(700);
+  await phone.mouse.up();
+}
+
+/** The tick on the poster of a title that is in a list (a title that is in none has nothing on its poster). */
+const ticked = (phone: Page, n: number) => phone.getByTestId("library-tile").nth(n).getByTestId("saved-mark");
+
 test.describe("the library", () => {
   const library = {
     updatedAt: Date.now(),
@@ -2482,7 +2495,7 @@ test.describe("the library", () => {
     await expect(phone.getByTestId("library-row").first()).toContainText("Test films");
     await expect(phone.getByTestId("library-tile")).toHaveCount(3);
     await expect(phone.getByTestId("library")).toContainText("From Test Source");
-    await expect(phone.getByTestId("library-tile").first()).toContainText("1999");
+    await expect(phone.getByTestId("library-tile").first()).not.toContainText("1999"); // (a poster has its name under it, and the year is on the title's page)
 
     await phone.getByTestId("library-tile").first().click();
     const page = phone.getByTestId("title-sheet");
@@ -2521,7 +2534,7 @@ test.describe("the library", () => {
   test("Escape closes the sheet on top, and the page under it the next time", async ({ browser }) => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
     // two lists, so that the list button on a title's page asks which
-    await phone.getByTestId("library-list-toggle").first().click();
+    await hold(phone, phone.getByTestId("library-tile").first());
     await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
     await phone.getByTestId("list-new").click();
@@ -2541,18 +2554,19 @@ test.describe("the library", () => {
     await expect(phone.getByTestId("title-sheet")).toHaveCount(0);
   });
 
-  test("the round button on a title saves it in Favourites; once there is a second list it asks which, and a cross takes a title off one list", async ({ browser }) => {
+  test("a hold on a title saves it in Favourites, and a tick on its poster says so; once there is a second list a hold asks which, and a cross takes a title off one list", async ({ browser }) => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
     await place(phone, "list");
     await expect(phone.getByTestId("list-row")).toHaveCount(0); // nothing saved: no row, and no button for lists yet
     await expect(phone.getByTestId("lists-manage")).toHaveCount(0);
     await expect(phone.getByTestId("my-lists-empty")).toBeVisible(); // (the place says what it is for, and how to fill it)
+    await expect(phone.getByTestId("my-lists-empty")).toContainText("Hold a title");
     await place(phone, "home");
 
-    const toggle = (n: number) => phone.getByTestId("library-list-toggle").nth(n);
-    await expect(toggle(0)).toHaveAccessibleName("Add to Favourites: The Sample");
-    await toggle(0).click();
-    await expect(toggle(0)).toHaveAccessibleName("In Favourites — tap to remove: The Sample");
+    await expect(ticked(phone, 0)).toHaveCount(0); // (no button on a poster, and nothing on one that is in no list)
+    await expect(phone.getByTestId("library-tile").first().locator("xpath=..").getByRole("button")).toHaveCount(1);
+    await hold(phone, phone.getByTestId("library-tile").first());
+    await expect(ticked(phone, 0)).toBeVisible();
     await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Sample");
 
@@ -2567,9 +2581,9 @@ test.describe("the library", () => {
     await expect(phone.getByTestId("lists-sheet")).toHaveCount(0);
     await place(phone, "home");
 
-    // With two lists the button asks: a tap on a list puts the title in it, and the title is "in your lists".
-    await expect(toggle(1)).toHaveAccessibleName("Add to a list: The Other One");
-    await toggle(1).click();
+    // With two lists a hold asks: a tap on a list puts the title in it, and its poster has the tick.
+    await expect(ticked(phone, 1)).toHaveCount(0);
+    await hold(phone, phone.getByTestId("library-tile").nth(1));
     const picker = phone.getByTestId("list-picker");
     await expect(picker).toContainText("The Other One");
     await expect(picker.getByRole("button", { name: "Weekend" })).toHaveAttribute("aria-pressed", "false");
@@ -2578,7 +2592,7 @@ test.describe("the library", () => {
     await picker.getByRole("button", { name: "Favourites" }).click();
     await expect(picker.getByRole("button", { name: "Favourites" })).toHaveAttribute("aria-pressed", "true");
     await phone.getByTestId("sheet-close").click();
-    await expect(toggle(1)).toHaveAccessibleName("In your lists: The Other One");
+    await expect(ticked(phone, 1)).toBeVisible();
     await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Sample");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Other One");
@@ -2590,13 +2604,13 @@ test.describe("the library", () => {
     await expect(phone.getByRole("region", { name: "Weekend" })).toHaveCount(0); // an empty list has no row
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("The Other One");
     await place(phone, "home");
-    await expect(toggle(1)).toHaveAccessibleName("In your lists: The Other One"); // still in the first
+    await expect(ticked(phone, 1)).toBeVisible(); // still in the first
   });
 
   test("a list is made from the picker with the title in it, then renamed, and deleted with the titles in it; the first list is renamed but not deleted", async ({ browser }) => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
-    const toggle = (n: number) => phone.getByTestId("library-list-toggle").nth(n);
-    await toggle(0).click(); // Favourites
+    const titleAt = (n: number) => phone.getByTestId("library-tile").nth(n);
+    await hold(phone, titleAt(0)); // Favourites
     await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
     await phone.getByTestId("list-new").click();
@@ -2606,7 +2620,7 @@ test.describe("the library", () => {
     await place(phone, "home");
 
     // "New list" in the picker makes the list and puts the title in it.
-    await toggle(2).click();
+    await hold(phone, titleAt(2));
     const picker = phone.getByTestId("list-picker");
     await picker.getByTestId("pick-new").click();
     await expect(picker.getByTestId("list-editor")).toBeVisible();
@@ -2651,12 +2665,12 @@ test.describe("the library", () => {
     await phone.getByTestId("sheet-close").click();
     await expect(phone.getByRole("region", { name: "Watch later" })).toContainText("The Sample");
     await place(phone, "home");
-    await expect(toggle(2)).toHaveAccessibleName("Add to a list: Third"); // (the title that was in the deleted list is in none now)
+    await expect(ticked(phone, 2)).toHaveCount(0); // (the title that was in the deleted list is in none now)
   });
 
   test("the lists are put in the order wanted from the sheet that manages them: a list moves one place, never the first, and a new name keeps its place", async ({ browser }) => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
-    await phone.getByTestId("library-list-toggle").first().click(); // Favourites: now there is a button for the lists
+    await hold(phone, phone.getByTestId("library-tile").first()); // Favourites: now there is a button for the lists
     await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
     const sheet = phone.getByTestId("lists-sheet");
@@ -2797,15 +2811,6 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
   }
   const tile = (phone: Page, title: string) => phone.locator(`[data-testid="library-tile"][title="${title}"]`);
 
-  /** A finger that stays on a title (the mouse here), then lets go. */
-  async function hold(phone: Page, target: ReturnType<Page["locator"]>) {
-    const box = (await target.boundingBox())!;
-    await phone.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await phone.mouse.down();
-    await phone.waitForTimeout(700);
-    await phone.mouse.up();
-  }
-
   test("a show's page lists its seasons and episodes; Play says which one it starts, and an episode plays on its own", async ({ browser, baseURL }) => {
     const { tv, phone } = await connect(browser, baseURL!);
     await tile(phone, "The Long Night").click();
@@ -2843,8 +2848,8 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     const { phone } = await connect(browser, baseURL!, { seed: guestStorage({ listNames }) });
     const words = "You have reached the limit of 12 lists. Delete one to make a new one.";
 
-    // The round button on a title asks which list; there is no way to make a thirteenth there.
-    await phone.getByTestId("library-list-toggle").first().click();
+    // A hold on a title asks which list; there is no way to make a thirteenth there.
+    await hold(phone, phone.getByTestId("library-tile").first());
     await expect(phone.getByTestId("list-picker")).toBeVisible();
     await expect(phone.getByTestId("pick-new")).toHaveCount(0);
     await expect(phone.getByTestId("lists-full")).toHaveText(words);
@@ -2882,19 +2887,20 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("title-list")).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("a hold on a title puts it in a list, as the round button does; a tap after a hold is still a tap", async ({ browser, baseURL }) => {
+  test("a hold on a title puts it in a list and a tick comes on its poster; a tap after a hold is still a tap", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!);
     const first = phone.getByTestId("library-tile").first();
+    await expect(ticked(phone, 0)).toHaveCount(0);
     await hold(phone, first);
-    await expect(phone.getByTestId("library-list-toggle").first()).toHaveAccessibleName("In Favourites — tap to remove: Film number 1");
+    await expect(ticked(phone, 0)).toBeVisible();
     await expect(phone.getByTestId("title-sheet")).toHaveCount(0); // the let-go that ends a hold is not a tap
-    await expect(phone.getByTestId("toast")).toHaveText("Added to Favourites"); // the + is a corner away from the finger: a line says what the hold did
+    await expect(phone.getByTestId("toast")).toHaveText("Added to Favourites"); // the finger is on the poster and sees no change on it: a line says what the hold did
     await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("Film number 1");
     await place(phone, "home");
 
     await hold(phone, first);
-    await expect(phone.getByTestId("library-list-toggle").first()).toHaveAccessibleName("Add to Favourites: Film number 1");
+    await expect(ticked(phone, 0)).toHaveCount(0);
     await expect(phone.getByTestId("toast")).toHaveText("Removed from Favourites");
     await first.click();
     await expect(phone.getByTestId("title-sheet")).toBeVisible();
@@ -2902,7 +2908,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
 
   test("with several lists a hold asks which", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!);
-    await phone.getByTestId("library-list-toggle").first().click();
+    await hold(phone, phone.getByTestId("library-tile").first());
     await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
     await phone.getByTestId("list-new").click();
@@ -2916,7 +2922,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("title-sheet")).toHaveCount(0);
   });
 
-  test("a search lists what it finds one under another, and is still there after something is played and stopped", async ({ browser, baseURL }) => {
+  test("a search shows what it finds as a grid of posters, and is still there after something is played and stopped", async ({ browser, baseURL }) => {
     const { tv, phone } = await connect(browser, baseURL!);
     await place(phone, "search");
     await phone.getByTestId("library-search-input").fill("film");
@@ -2924,13 +2930,17 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(results).toHaveCount(12);
     await expect(phone.getByTestId("library-search-results")).toContainText("Results for “film”");
     await expect(results.first()).toContainText("1930 · Movie");
-    await expect(phone.locator(".lib-scroller")).toHaveCount(0); // (the rows of the library are not there: only the list)
+    await expect(phone.locator(".lib-scroller")).toHaveCount(0); // (the rows of the library are not there: only the grid)
 
-    // one under another, not side by side
+    // three across, one row under the next
     const first = (await results.nth(0).boundingBox())!;
     const second = (await results.nth(1).boundingBox())!;
-    expect(second.y).toBeGreaterThanOrEqual(first.y + first.height - 1);
-    expect(Math.abs(second.x - first.x)).toBeLessThan(2);
+    const fourth = (await results.nth(3).boundingBox())!;
+    expect(Math.abs(second.y - first.y)).toBeLessThan(2);
+    expect(second.x).toBeGreaterThanOrEqual(first.x + first.width - 1);
+    expect(fourth.y).toBeGreaterThanOrEqual(first.y + first.height - 1);
+    expect(Math.abs(fourth.x - first.x)).toBeLessThan(2);
+    expect(first.height, "a poster is upright").toBeGreaterThan(first.width);
 
     // down the list, to one that is played
     await phone.evaluate(() => window.scrollTo(0, 400));
@@ -3001,7 +3011,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("library-row").locator("h3")).toHaveText(["Filme în tendințe", "Seriale de comedie", "Staff Picks"]);
   });
 
-  test("Continue watching is a row of big cards that snap one at a time, each with a + and a cross; a tap resumes", async ({ browser, baseURL }) => {
+  test("Continue watching is a row of big cards that snap one at a time, each with a cross; a tap resumes, and a hold saves the title", async ({ browser, baseURL }) => {
     const now = Date.now();
     const progress = [0, 1, 2].map((i) => ({ key: `url:${baseURL}/fixtures/sample.mp4?n=${i}`, at: now - (i + 1) * 60_000, title: `Film number ${i + 1}`, url: `${baseURL}/fixtures/sample.mp4?n=${i}`, position: 1500, duration: 6000 }));
     const { tv, phone } = await connect(browser, baseURL!, { seed: guestStorage({ progress }) });
@@ -3014,15 +3024,12 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     expect(first.width).toBeGreaterThan(200); // big cards...
     expect(next.x).toBeLessThan(390); // ...with the next one showing at the edge
     expect(next.x + next.width).toBeGreaterThan(390);
-    for (const id of ["continue-list-toggle", "continue-remove"]) {
-      const box = (await phone.getByTestId(id).first().boundingBox())!;
-      expect(box.width).toBeGreaterThanOrEqual(36); // thumb sized
-      expect(box.height).toBeGreaterThanOrEqual(36);
-    }
+    const cross = (await phone.getByTestId("continue-remove").first().boundingBox())!;
+    expect(cross.width).toBeGreaterThanOrEqual(36); // thumb sized
+    expect(cross.height).toBeGreaterThanOrEqual(36);
+    await expect(phone.getByTestId("continue-list-toggle")).toHaveCount(0); // (no + on a card: a hold saves the title)
 
-    const toggle = phone.getByTestId("continue-list-toggle").first();
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await hold(phone, phone.getByTestId("continue-play").first());
     await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Favourites" })).toContainText("Film number 1");
     await place(phone, "home");
@@ -3434,10 +3441,13 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(badge(phone.getByTestId("ratings-row"))).toHaveCount(0);
       await place(phone, "home");
 
-      // It is in the corner opposite the round button, so the two do not cover each other (and the button is still what a tap there reaches).
+      // It is in the corner opposite the tick of a title that is in a list, so the two do not cover each other.
+      await hold(phone, tile(phone, "Film number 1"));
       const score = (await badge(tile(phone, "Film number 1")).boundingBox())!;
-      const round = (await tile(phone, "Film number 1").locator("xpath=..").locator(".lib-round").boundingBox())!;
-      expect(score.x + score.width).toBeLessThan(round.x);
+      const tick = (await tile(phone, "Film number 1").getByTestId("saved-mark").boundingBox())!;
+      expect(score.x + score.width).toBeLessThan(tick.x);
+      await hold(phone, tile(phone, "Film number 1")); // (and out of the list again)
+      await expect(tile(phone, "Film number 1").getByTestId("saved-mark")).toHaveCount(0);
 
       // A search: the same on the line of each title.
       await place(phone, "search");

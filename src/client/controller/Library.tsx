@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibrarySection } from "../../shared";
+import { LibraryItemsSchema, LibrarySchema, sectionOf, type Library as LibraryData, type LibraryItem, type LibrarySection, type PlayHint } from "../../shared";
 import { listEntryOf } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useScores } from "../account/ratings";
@@ -12,7 +12,8 @@ import { keepMatching, matchLocal, mergeAnswers, type Answers } from "../tv/libr
 import { entryOfItem, type Entry } from "../tv/pages";
 import { useHold } from "./hold";
 import { RowHead } from "./Rows";
-import { ListButton, useListToggle, type ListToggle } from "./Round";
+import { SavedMark, useListToggle, type ListToggle } from "./Round";
+import { Hero } from "./shell/Hero";
 
 /** What the server last listed, so a visit to the home screen after the first shows it at once. (The rows are the feed's, which brings the rest as they are scrolled.) */
 let remembered: LibraryData | null = null;
@@ -47,6 +48,9 @@ const kept: { query: string; filter: Filter; found: { query: string; answers: An
 
 /** The titles of the first row, listed under the empty search box: a list worth tapping before a word is typed. */
 const SUGGESTED = 10;
+
+/** The title Home opens with is the first of the first row that has a picture, looked for among this many. */
+const HERO_FROM = 6;
 
 /** What a section's page says when the library has nothing of it (the TV's words). */
 const SECTION_EMPTY = { movie: "tv.kindEmptyMovies", series: "tv.kindEmptySeries", cartoon: "tv.kindEmptyCartoons", anime: "tv.kindEmptyAnime" } as const satisfies Readonly<Record<LibrarySection, string>>;
@@ -85,6 +89,7 @@ type LibraryMode = "browse" | "search";
  */
 export function Library({
   onOpen,
+  onPlay,
   onPick,
   onSeeAll,
   failedLookups = 0,
@@ -92,6 +97,8 @@ export function Library({
   mode = "browse",
 }: {
   onOpen: (entry: Entry) => void;
+  /** Start a film from the title that opens Home (see `Hero`). Absent on a phone with no TV: that title only opens its page. */
+  onPlay?: (url: string, startAt: number | undefined, hint: PlayHint) => void;
   onPick: (entry: ListEntry) => void;
   /** A row's heading ends with "See all", which opens the whole row (by its id) one title under the next. */
   onSeeAll?: (rowId: string) => void;
@@ -286,6 +293,8 @@ export function Library({
   const open = (item: LibraryItem) => () => onOpen(entryOfItem(item));
   /** The first row that has titles: what the search page lists until something is typed. */
   const suggested = searchPage && answers === null ? displayedRows.find((row) => row.items.length > 0) : undefined;
+  /** What Home opens with (the rows page only; the filter's first row when a kind is chosen). */
+  const heroItem = searchPage || answers !== null ? undefined : displayedRows[0]?.items.slice(0, HERO_FROM).find((item) => item.image ?? item.backdrop);
 
   return (
     <section className="library" data-testid="library" aria-label={t("library.title")} ref={root}>
@@ -330,11 +339,11 @@ export function Library({
             {searching && <span className="spinner" style={{ marginLeft: 8 }} />}
           </h3>
           {answers.items.length > 0 && (
-            <ul className="lib-list">
+            <ul className="poster-grid">
               {answers.items.map((item, at) => (
                 <Fragment key={item.id}>
                   {at === answers.exact && at > 0 && (
-                    <li>
+                    <li className="lib-closest-row">
                       <h4 className="lib-closest" data-testid="library-closest">
                         {t("tv.closest")}
                       </h4>
@@ -352,7 +361,7 @@ export function Library({
         suggested && (
           <div className="lib-row" data-testid="library-suggested">
             <h3>{rowTitle(suggested)}</h3>
-            <ul className="lib-list">
+            <ul className="poster-grid">
               {suggested.items.slice(0, SUGGESTED).map((item) => (
                 <li key={item.id}>
                   <Result item={item} score={scoreOf(scores, item.url)} toggle={toggleOf(item)} onOpen={open(item)} />
@@ -363,6 +372,7 @@ export function Library({
         )
       ) : (
         <>
+          {heroItem && <Hero item={heroItem} toggle={toggleOf(heroItem)} onOpen={onOpen} {...(onPlay ? { onPlay } : {})} />}
           {filter === "all" &&
             because.map((like) => (
               <div className="lib-row" key={`because:${like.key}`} data-testid="library-because">
@@ -448,7 +458,10 @@ function Scroller({ children, onNearEnd, loading }: { children: ReactNode; onNea
   );
 }
 
-/** A title in a row (or on the page of a whole row): its poster (with the score this profile gave it, if it did), the round + on it, and a hold that does what the + does. */
+/**
+ * A title in a row (or on the page of a whole row): its poster with its name under it, the score this profile gave it (top left) and a tick if it is in a list
+ * (top right). There is no button on it for the lists: a hold does that (`toggle.onHold`), and so does the button of the title's page.
+ */
 export function Tile({ item, score, toggle, onOpen }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void }) {
   const hold = useHold(toggle.onHold);
   return (
@@ -456,35 +469,30 @@ export function Tile({ item, score, toggle, onOpen }: { item: LibraryItem; score
       <button className="lib-card" data-testid="library-tile" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
         <Poster className="lib-art" title={item.title} image={item.image ?? item.backdrop} seed={item.id}>
           {score !== undefined && <ScoreBadge score={score} />}
+          {toggle.inList && <SavedMark />}
         </Poster>
         <span className="lib-title">{item.title}</span>
-        {item.year && <span className="lib-year">{item.year}</span>}
       </button>
-      <span className="lib-corner">
-        <ListButton toggle={toggle} title={item.title} />
-      </span>
     </div>
   );
 }
 
-/** A title found by the search: one line in a list that scrolls with the page. */
+/** A title found by the search: a poster in the grid of what it found, with its name, and its year and kind under that (a search is where they tell titles apart). */
 function Result({ item, score, toggle, onOpen }: { item: LibraryItem; score: number | undefined; toggle: ListToggle; onOpen: () => void }) {
   const t = useT();
   const hold = useHold(toggle.onHold);
   const kind = item.kind === "movie" ? t("library.kindMovie") : item.kind === "series" ? t("library.kindSeries") : undefined;
   const meta = [item.year, kind].filter(Boolean).join(" · ");
   return (
-    <div className="lib-result" data-in-list={toggle.inList}>
-      <button className="lib-result-main" data-testid="library-result" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
-        <Poster className="lib-result-art" title={item.title} image={item.backdrop ?? item.image} seed={item.id}>
+    <div className="lib-tile" data-in-list={toggle.inList}>
+      <button className="lib-card" data-testid="library-result" onClick={hold.tap(onOpen)} {...hold.props} title={item.title}>
+        <Poster className="lib-art" title={item.title} image={item.image ?? item.backdrop} seed={item.id}>
           {score !== undefined && <ScoreBadge score={score} />}
+          {toggle.inList && <SavedMark />}
         </Poster>
-        <span className="lib-result-text">
-          <span className="lib-title">{item.title}</span>
-          {meta && <span className="lib-year">{meta}</span>}
-        </span>
+        <span className="lib-title">{item.title}</span>
+        {meta && <span className="lib-year">{meta}</span>}
       </button>
-      <ListButton toggle={toggle} title={item.title} />
     </div>
   );
 }

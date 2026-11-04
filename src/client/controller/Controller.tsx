@@ -573,7 +573,7 @@ export function Controller() {
       {linkBox && <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />}
       <FriendsHome onOpenTitle={setTitle} onStartParty={startTogether} />
       <ContinueRow items={progress} onPlay={playLink} onRemove={(key) => profileStore.removeProgress(key)} onPick={pickList} />
-      <Library onOpen={setTitle} onPick={pickList} onSeeAll={setSeeAll} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />} />
+      <Library onOpen={setTitle} onPlay={playLink} onPick={pickList} onSeeAll={setSeeAll} failedLookups={failedLookups} fallback={linkBox ? undefined : <PlayLink tvName={tv.name} onPlay={(url) => playLink(url)} />} />
     </section>
   );
   const search = (

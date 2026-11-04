@@ -175,7 +175,7 @@ export const ro: Dictionary = {
   /* rows and cards */
   "rows.continue": "Continuă vizionarea",
   "rows.myList": "Listele mele",
-  "rows.myListEmpty": "Titlurile salvate cu + apar aici.",
+  "rows.myListEmpty": "Ține apăsat pe un titlu, sau apasă Listele mele pe pagina lui, ca să-l salvezi aici.",
   "rows.remove": "Scoate din „Continuă vizionarea”",
   "rows.removeFromList": "Scoate din {list}",
   "rows.inLists": "În listele tale",

@@ -4,15 +4,15 @@ import { listName } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
-import { CheckIcon, CloseIcon, PlusIcon } from "../shared/icons";
+import { CheckIcon, CloseIcon } from "../shared/icons";
 
-/** What the + on a title says and does: it is in a list (a tick, and a tap takes it out), or it can go in one; with several lists a tap asks which. */
+/** How a title stands with the lists: it is in one (a tick on its poster, and a tap takes it out), or it can go in one; with several lists a tap asks which. */
 export interface ListToggle {
   inList: boolean;
   label: string;
   asks: boolean;
   onClick: () => void;
-  /** The same, from a hold on the title: where the + is a corner away from the finger, a line at the bottom says what happened. */
+  /** The same, from a hold on the title: the finger is on the poster and sees nothing change on it, so a line at the bottom says what happened. */
   onHold: () => void;
 }
 
@@ -41,20 +41,15 @@ export function useListToggle(onPick: (entry: ListEntry) => void): (entry: ListE
   };
 }
 
-/** The round + on a title (a tick once it is in a list). */
-export function ListButton({ toggle, title, testId = "library-list-toggle" }: { toggle: ListToggle; title: string; testId?: string }) {
+/**
+ * What a poster says of a title that is in a list: a small tick in its corner, and nothing at all on one that is not (a poster with a button on it for every
+ * title was a wall of buttons). A title goes in a list by a hold on it (the line at the bottom says what happened), or by the button of its page.
+ */
+export function SavedMark() {
   return (
-    <button
-      type="button"
-      className="lib-round lib-add"
-      onClick={toggle.onClick}
-      aria-pressed={toggle.inList}
-      aria-haspopup={toggle.asks ? "dialog" : undefined}
-      aria-label={`${toggle.label}: ${title}`}
-      data-testid={testId}
-    >
-      {toggle.inList ? <CheckIcon /> : <PlusIcon />}
-    </button>
+    <span className="lib-saved" data-testid="saved-mark" aria-hidden="true">
+      <CheckIcon />
+    </span>
   );
 }
 
