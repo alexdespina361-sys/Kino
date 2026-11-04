@@ -42,7 +42,7 @@ The service's **Environment**, three variables:
 | `GOOGLE_REDIRECT_URIS` | `https://kino.24-7.ro/api/auth/google/callback,https://kino4tv.com/api/auth/google/callback` |
 
 Paste the secret into Render yourself, and nowhere else: not into a chat, not into a file, not into this repository (it is public). If it was ever
-pasted somewhere else, make a new one in Google Cloud (the client's page, **Add secret**, then delete the old one) and put the new one in Render.
+pasted somewhere else, make a new secret on the client's page in Google Cloud, put the new one in Render, and delete the old one there.
 
 **Save, rebuild, and deploy.**
 
@@ -57,8 +57,8 @@ purpose: Google sends a person back only to an address it knows. To have it ther
 
 If `"google"` is missing at `https://kino.24-7.ro` although the log says it is on there, the server does not see that request as
 `https://kino.24-7.ro`: it reads the address from the request's `Host` (or the proxy's `X-Forwarded-Host`) and the proxy's `X-Forwarded-Proto`
-(`TRUST_PROXY`, 1 on Render by default). The
-answer's `Strict-Transport-Security` header is a quick sign: the server sends it only when it sees `https`.
+(`TRUST_PROXY`, 1 on Render by default). The answer's `Strict-Transport-Security` header is a quick sign: the server sends it only when it sees
+`https`.
 
 ## How it works
 
@@ -80,7 +80,7 @@ answer's `Strict-Transport-Security` header is a quick sign: the server sends it
 - During the round trip (at most ten minutes): a cookie, `kino_oauth`, that ties Google's answer to the browser that went there, and the trip's own
   numbers in the server's memory. Both are gone when the browser comes back.
 - The server does not log the way back from Google (its address has the code in it). A refused sign-in is logged as one line that says only why
-  (`Google sign-in refused: the state.`, for example).
+  (`Google sign-in refused: too late.`, for example).
 
 ## Limits
 
