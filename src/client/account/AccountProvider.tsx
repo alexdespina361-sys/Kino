@@ -1,8 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { COLLECTIONS, MeSchema, type AvatarId, type DeviceKind, type Me, type Profile, type Registration } from "../../shared";
+import { COLLECTIONS, MeSchema, type AvatarId, type DeviceKind, type GoogleOutcome, type Me, type Profile, type Registration } from "../../shared";
 import { readStorage, writeStorage } from "../shared/format";
-import { screenLanguage, setLanguage, t } from "../i18n";
+import { screenLanguage, setLanguage, t, type Key } from "../i18n";
 import { ApiError, api, beaconSync } from "./api";
+import { describeError } from "./errors";
+import { deleteAfterGoogle, googleStartUrl, takeGoogleOutcome, type GooglePurpose } from "./google";
 import { applyAccent } from "./theme";
 import "./account.css";
 import { GUEST } from "./profileStore";
@@ -37,11 +39,29 @@ const FINAL_SYNC_MS = 2_500;
 /** How much a piece of news from friends matters to a viewer who is in the middle of a film: an invitation to something under way, or anything else (which can wait in the bell). */
 export type NewsLevel = "urgent" | "info";
 
+/** What the page says when the browser comes back from Google (a sign-in that worked says nothing, and a confirmation is the deleting's own business). */
+const GOOGLE_SAYS: Record<Exclude<GoogleOutcome, "reauth">, Key> = {
+  denied: "google.denied",
+  failed: "google.failed",
+  closed: "error.registration_closed",
+  busy: "error.rate_limited",
+  taken: "google.taken",
+  unavailable: "google.unavailable",
+  linked: "google.linked",
+};
+
 export interface AccountContextValue {
   /** `unavailable`: this server has no accounts, so everything stays on the device. */
   status: "loading" | "unavailable" | "ready";
   me: Me | null;
   registration: Registration;
+  /** Whether this server signs in with Google at this address. */
+  google: boolean;
+  /**
+   * Off to Google, and the page with it: to sign in (or make an account), to connect Google to the account signed in, or to confirm who is here and then delete
+   * the account (it is deleted when the browser comes back with Google's yes). How it ended is said when the page is back.
+   */
+  withGoogle(purpose: GooglePurpose): void;
   /** The profile in use. Null for a guest, and for someone signed in who has not picked yet. */
   profile: Profile | null;
   /** Signed in, but has to pick who is watching. */
@@ -82,6 +102,9 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
   const [status, setStatus] = useState<AccountContextValue["status"]>("loading");
   const [me, setMe] = useState<Me | null>(null);
   const [registration, setRegistration] = useState<Registration>("open");
+  const [google, setGoogle] = useState(false);
+  // (Read once, as the page opens: the word the server sent the browser back from Google with, if it did.)
+  const [fromGoogle] = useState(takeGoogleOutcome);
   const [profileId, setProfileId] = useState<string | null>(() => readStorage(PROFILE_KEY) ?? null);
   const [message, setMessage] = useState<AccountContextValue["message"]>(null);
 
@@ -108,6 +131,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
     try {
       const state = await api.session();
       setRegistration(state.registration);
+      setGoogle(state.google === true);
       setMe(state.me);
       setStatus("ready");
     } catch (error) {
@@ -239,16 +263,59 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
 
   /* ------------------------------ actions ------------------------------ */
 
+  const signOut = useCallback(
+    async (options?: { deleted?: boolean }) => {
+      const leaving = meRef.current;
+      // (An account that was just deleted has no session left: a last exchange would only be told so, and take it for a sign-out elsewhere.)
+      if (!options?.deleted) {
+        // What has not been sent yet is sent first, or it would be lost with this screen's copy.
+        await Promise.race([syncRef.current(), new Promise((resolve) => setTimeout(resolve, FINAL_SYNC_MS))]);
+        try {
+          await api.logout();
+        } catch {
+          // The server did not hear it (no network, a host that is waking up), and it ends a session that is not there as well as one that is: so the session is still
+          // alive. A screen that looked signed out would bring the person back at its next load, on a TV the next person to sit down. Stay as we are, and say so.
+          say(t("account.signOutFailed"));
+          return;
+        }
+      }
+      profileStore.openScope(GUEST);
+      for (const other of leaving?.profiles ?? []) profileStore.forget(other.id);
+      setProfileId(null);
+      setMe(null);
+      if (options?.deleted) say(t("account.deleted"));
+    },
+    [say],
+  );
+
+  // Back from Google: how it went is said once, as soon as the screen knows who is here. A confirmation that the person went to Google for, to delete the account, deletes it
+  // (the server deletes only for a session that Google has just confirmed; the word in the address alone deletes nothing).
+  const backFromGoogle = useRef(fromGoogle);
+  useEffect(() => {
+    if (status !== "ready") return;
+    const outcome = backFromGoogle.current;
+    backFromGoogle.current = null;
+    const deleting = deleteAfterGoogle.take();
+    if (!outcome) return;
+    if (outcome !== "reauth") return say(t(GOOGLE_SAYS[outcome]));
+    if (deleting) void api.deleteAccount("").then(() => signOut({ deleted: true }), (error: unknown) => say(describeError(error)));
+  }, [status, say, signOut]);
+
   const value = useMemo<AccountContextValue>(
     () => ({
       status,
       me,
       registration,
+      google,
       profile,
       choosing: me !== null && profile === null,
       message,
       say,
 
+      withGoogle(purpose) {
+        if (purpose === "delete") deleteAfterGoogle.ask();
+        location.assign(googleStartUrl(device, purpose, location.pathname));
+      },
       async signIn(email, password) {
         const signedIn = await api.login(email, password, device);
         setMe(signedIn);
@@ -259,27 +326,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
         setMe(created);
         return created;
       },
-      async signOut(options) {
-        const leaving = meRef.current;
-        // (An account that was just deleted has no session left: a last exchange would only be told so, and take it for a sign-out elsewhere.)
-        if (!options?.deleted) {
-          // What has not been sent yet is sent first, or it would be lost with this screen's copy.
-          await Promise.race([syncRef.current(), new Promise((resolve) => setTimeout(resolve, FINAL_SYNC_MS))]);
-          try {
-            await api.logout();
-          } catch {
-            // The server did not hear it (no network, a host that is waking up), and it ends a session that is not there as well as one that is: so the session is still
-            // alive. A screen that looked signed out would bring the person back at its next load, on a TV the next person to sit down. Stay as we are, and say so.
-            say(t("account.signOutFailed"));
-            return;
-          }
-        }
-        profileStore.openScope(GUEST);
-        for (const other of leaving?.profiles ?? []) profileStore.forget(other.id);
-        setProfileId(null);
-        setMe(null);
-        if (options?.deleted) say(t("account.deleted"));
-      },
+      signOut,
       signedInAs(signedIn) {
         setMe(signedIn);
       },
@@ -306,7 +353,7 @@ export function AccountProvider({ device, children }: { device: DeviceKind; chil
         await load();
       },
     }),
-    [status, me, registration, profile, message, say, device, load],
+    [status, me, registration, google, profile, message, say, signOut, device, load],
   );
 
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;

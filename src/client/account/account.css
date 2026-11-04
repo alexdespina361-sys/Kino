@@ -50,6 +50,29 @@
 .auth-switch:focus-visible { color: var(--text); }
 @media (hover: hover) { .auth-switch:hover { color: var(--text); } }
 .auth-switch.danger { color: var(--bad); text-decoration: none; }
+/* "Continue with Google" on the phone: Google's own look for it (light, dark words, its four-colour G), as tall as the phone's other buttons. On the TV it is a button
+   like the others there (light while the remote is on it, as every one is), with the G. */
+.google-btn { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; }
+.google-btn:not(.tv-action) {
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid #747775;
+  border-radius: 12px;
+  background: #fff;
+  color: #1f1f1f;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.google-btn:not(.tv-action):focus-visible { outline: none; box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.5); }
+@media (hover: hover) { .google-btn:not(.tv-action):hover { background: #f2f2f2; } }
+.google-btn:not(.tv-action):active { background: #e8e8e8; }
+.google-mark { flex: none; width: 20px; height: 20px; }
+.tv-action .google-mark { width: 1.1em; height: 1.1em; }
+/* The line between Google and the form. */
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--muted); font-size: 0.85rem; }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.tv .auth-tv .auth-or { gap: 0.6em; font-size: 1.4em; }
 
 /* ------------------------------ profiles ------------------------------ */
 

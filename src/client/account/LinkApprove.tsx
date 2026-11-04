@@ -51,13 +51,15 @@ export function useLinkApproval(code: string) {
 
   /** "A TV (Chrome on Windows)": who is asking, in words. */
   const who = view ? `${t(`link.device.${view.kind}`)}${view.label ? ` (${view.label})` : ""}` : "";
-  return { signedIn, email: account.me?.account.email ?? "", view, who, problem, outcome, busy, decide };
+  /** Who is asking, and into which account (an account made with Google has a name nobody chose, which is not said). */
+  const body = account.me?.account.googleOnly ? t("link.approveBodyGoogle", { device: who }) : t("link.approveBody", { device: who, email: account.me?.account.email ?? "" });
+  return { signedIn, view, body, problem, outcome, busy, decide };
 }
 
 /** "Sign in this device?" on the phone: who is asking, and a button for each answer. */
 export function LinkApprove({ code, onClose }: { code: string; onClose: () => void }) {
   const t = useT();
-  const { signedIn, email, view, who, problem, outcome, busy, decide } = useLinkApproval(code);
+  const { signedIn, view, body, problem, outcome, busy, decide } = useLinkApproval(code);
 
   if (!signedIn) {
     return (
@@ -94,7 +96,7 @@ export function LinkApprove({ code, onClose }: { code: string; onClose: () => vo
           <p className="link-code" aria-label={t("link.codeLabel")} data-testid="link-code">
             {formatLinkCode(view.code)}
           </p>
-          <p className="muted center">{t("link.approveBody", { device: who, email })}</p>
+          <p className="muted center">{body}</p>
         </>
       ) : problem ? null : (
         <p className="muted center">

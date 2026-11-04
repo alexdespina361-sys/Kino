@@ -3,6 +3,7 @@ import type { Profile } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { AuthForm } from "../account/AuthForm";
+import { signedInLine } from "../account/google";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
 import { useProfileData } from "../account/store";
 import { useFeedbackEntry } from "../feedback/entry";
@@ -289,7 +290,7 @@ export function AccountScreen({
             <Avatar id={profile.avatar} className="account-avatar" />
             <div className="account-who">
               <h1 data-testid="account-profile-name">{profile.name}</h1>
-              <p className="muted">{t("account.signedInAs", { email: me.account.email })}</p>
+              <p className="muted">{signedInLine(me)}</p>
             </div>
           </section>
           <div className="menu-groups">

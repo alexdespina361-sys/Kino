@@ -4,6 +4,7 @@ import { useT } from "../i18n";
 import { useBack } from "../tv/dpad";
 import { useAccount } from "./AccountProvider";
 import { describeError } from "./errors";
+import { GoogleButton } from "./GoogleButton";
 import { PasswordInput } from "./PasswordInput";
 import { weakness, type Weakness } from "./password";
 
@@ -120,6 +121,7 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
 
   return (
     <form className={`auth-form${tv ? " auth-tv" : ""}`} onSubmit={submit} noValidate data-testid="auth-form" data-mode={mode}>
+      <GoogleButton tv={tv} />
       <label className="auth-field" htmlFor={`${id}-email`}>
         <span>{t("auth.email")}</span>
         <input
@@ -135,6 +137,8 @@ export function AuthForm({ initialMode = "signIn", onDone, onMode, onWarning, tv
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           {...nav}
+          // (the TV's page lands on the name, as it did before Google's button was put above it)
+          {...(tv ? { "data-autofocus": true } : {})}
         />
       </label>
       <label className="auth-field" htmlFor={`${id}-password`}>

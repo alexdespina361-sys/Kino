@@ -8,6 +8,7 @@ import { emitCat } from "../cat/bus";
 import { CatIcon } from "../cat/Chip";
 import { CAT_LOOKS, CAT_SIZES, useCatAsleep, useCatSettings, useCatShown } from "../cat/settings";
 import { describeError } from "../account/errors";
+import { signedInLine } from "../account/google";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
@@ -250,7 +251,7 @@ function TvApprove({ onClose }: { onClose: () => void }) {
 /** The request behind a typed code: who is asking, and yes or no. Nothing has the focus to begin with, so a stray OK press never signs a screen in. */
 function TvApproveAsk({ code, onBack, onClose }: { code: string; onBack: () => void; onClose: () => void }) {
   const t = useT();
-  const { email, view, who, problem, outcome, busy, decide } = useLinkApproval(code);
+  const { view, body, problem, outcome, busy, decide } = useLinkApproval(code);
 
   if (outcome !== "asking") {
     return (
@@ -274,7 +275,7 @@ function TvApproveAsk({ code, onBack, onClose }: { code: string; onBack: () => v
           <p className="tv-code tv-link-code" data-testid="tv-approve-code">
             {formatLinkCode(view.code)}
           </p>
-          <p className="tv-lead tv-approve-body">{t("link.approveBody", { device: who, email })}</p>
+          <p className="tv-lead tv-approve-body">{body}</p>
         </>
       ) : problem ? null : (
         <p className="tv-lead tv-signin-status" role="status">
@@ -479,7 +480,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
                 )}
                 <div className="tv-who-text">
                   <h2 data-testid="tv-account-name">{me && profile ? profile.name : t("tv.notSignedIn")}</h2>
-                  {me && <p>{t("account.signedInAs", { email: me.account.email })}</p>}
+                  {me && <p>{signedInLine(me)}</p>}
                 </div>
               </div>
               {!me && <p className="tv-who-note">{t("auth.pitchDetail")}</p>}

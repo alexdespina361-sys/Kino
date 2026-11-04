@@ -6,6 +6,7 @@ import { hintOf, listEntryOf, listName } from "../account/cards";
 import { CatChip } from "../cat/Chip";
 import { useCatWanted } from "../cat/settings";
 import { describeError } from "../account/errors";
+import { signedInLine } from "../account/google";
 import { ListEditor } from "../account/Lists";
 import { ratingFor, scoreOf } from "../account/ratingText";
 import { useScores } from "../account/ratings";
@@ -1082,7 +1083,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               <ProfileHead
                 name={signedIn && profile ? profile.name : t("profile.guest")}
                 avatar={signedIn ? profile?.avatar : undefined}
-                line={me ? t("account.signedInAs", { email: me.account.email }) : canSignIn ? t("auth.pitchDetail") : ""}
+                line={me ? signedInLine(me) : canSignIn ? t("auth.pitchDetail") : ""}
                 signedIn={signedIn}
                 canSignIn={canSignIn}
                 onSignIn={onSignIn}

@@ -4,6 +4,7 @@ import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
 import { Avatar } from "../account/Avatar";
 import { describeError, describePasswordError } from "../account/errors";
+import { GoogleMark } from "../account/GoogleButton";
 import { PasswordInput } from "../account/PasswordInput";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
 import { ACCENT_INK, ACCENT_SWATCH } from "../account/theme";
@@ -459,9 +460,15 @@ function Password({ label, value, onChange, autoComplete, testId }: { label: str
   );
 }
 
+/**
+ * The password, Google, and deleting the account. An account made with Google has no password to change, and is deleted once the person has signed in to Google again
+ * (the page goes to Google, and the account is deleted when it comes back with Google's yes); one with a password can connect Google too, and sign in with either.
+ */
 export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
   const t = useT();
   const account = useAccount();
+  const googleOnly = account.me?.account.googleOnly === true;
+  const googleLinked = account.me?.account.google === true;
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [changed, setChanged] = useState(false);
@@ -503,29 +510,64 @@ export function SecurityPage({ onDeleted }: { onDeleted: () => void }) {
 
   return (
     <div className="page-stack" data-testid="security-page">
-      <form className="auth-form" onSubmit={change} noValidate>
-        <Group title={t("account.password")}>
-          <Password label={t("account.currentPassword")} value={current} onChange={setCurrent} autoComplete="current-password" testId="password-current" />
-          <Password label={t("auth.newPassword")} value={next} onChange={setNext} autoComplete="new-password" testId="password-new" />
-          <small className="muted">{t(next ? "auth.passwordHint" : "auth.noPasswordNote")}</small>
+      {googleOnly ? (
+        <Group title={t("account.google")}>
+          <p className="muted" data-testid="google-only">
+            {t("account.googleOnly")}
+          </p>
         </Group>
-        {changeProblem && (
-          <p className="auth-error" role="alert" data-testid="password-error">
-            {changeProblem}
-          </p>
-        )}
-        {changed && (
-          <p className="auth-ok" role="status" data-testid="password-changed">
-            <CheckIcon /> {t("account.passwordChanged")}
-          </p>
-        )}
-        <button type="submit" className="btn btn-block" disabled={busy || current === next} data-testid="password-save">
-          {t("common.save")}
-        </button>
-      </form>
+      ) : (
+        <form className="auth-form" onSubmit={change} noValidate>
+          <Group title={t("account.password")}>
+            <Password label={t("account.currentPassword")} value={current} onChange={setCurrent} autoComplete="current-password" testId="password-current" />
+            <Password label={t("auth.newPassword")} value={next} onChange={setNext} autoComplete="new-password" testId="password-new" />
+            <small className="muted">{t(next ? "auth.passwordHint" : "auth.noPasswordNote")}</small>
+          </Group>
+          {changeProblem && (
+            <p className="auth-error" role="alert" data-testid="password-error">
+              {changeProblem}
+            </p>
+          )}
+          {changed && (
+            <p className="auth-ok" role="status" data-testid="password-changed">
+              <CheckIcon /> {t("account.passwordChanged")}
+            </p>
+          )}
+          <button type="submit" className="btn btn-block" disabled={busy || current === next} data-testid="password-save">
+            {t("common.save")}
+          </button>
+        </form>
+      )}
+
+      {!googleOnly && (googleLinked || account.google) && (
+        <Group title={t("account.google")} help={googleLinked ? undefined : t("account.googleConnectHelp")}>
+          {googleLinked ? (
+            <p className="auth-ok" role="status" data-testid="google-connected">
+              <CheckIcon /> {t("account.googleConnected")}
+            </p>
+          ) : (
+            <button type="button" className="google-btn" onClick={() => account.withGoogle("link")} data-testid="google-connect">
+              <GoogleMark />
+              <span>{t("account.googleConnect")}</span>
+            </button>
+          )}
+        </Group>
+      )}
 
       <Group title={t("account.delete")}>
-        {deleting ? (
+        {deleting && googleOnly ? (
+          <div className="auth-form">
+            <p className="muted">{t("account.deleteWarnGoogle")}</p>
+            <div className="editor-actions">
+              <button type="button" className="btn btn-danger" onClick={() => account.withGoogle("delete")} data-testid="delete-google">
+                <TrashIcon /> {t("account.deleteWithGoogle")}
+              </button>
+              <button type="button" className="btn" onClick={() => setDeleting(false)}>
+                {t("common.cancel")}
+              </button>
+            </div>
+          </div>
+        ) : deleting ? (
           <form className="auth-form" onSubmit={remove} noValidate>
             <p className="muted">{t("account.deleteWarn")}</p>
             <Password label={t("auth.password")} value={confirm} onChange={setConfirm} autoComplete="current-password" testId="delete-password" />
