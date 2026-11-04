@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import type { FastifyInstance, LightMyRequestResponse } from "fastify";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp, type AppOptions } from "../app";
-import { googleFromEnv, profileNameOf, REAUTH_MS, type GoogleConfig } from "./google";
+import { googleFromEnv, postForm, profileNameOf, REAUTH_MS, type GoogleConfig } from "./google";
 import { MemoryPersistence } from "./persistence";
 import { AccountStore } from "./store";
 
@@ -516,6 +516,17 @@ describe("what a sign-in with Google does not take", () => {
     expect(google.forms).toHaveLength(0);
   });
 
+  it("does not take a missing or an overlong code to Google", async () => {
+    const { app } = await site();
+    const browser = new Browser(app);
+    for (const code of ["", "&code=", `&code=${"x".repeat(2049)}`]) {
+      const start = await browser.get("/api/auth/google/start?device=remote&next=/");
+      const state = new URL(String(start.headers.location)).searchParams.get("state");
+      expect((await browser.get(`/api/auth/google/callback?state=${state}${code}`, FROM_GOOGLE)).headers.location).toBe("/?google=failed");
+    }
+    expect(google.forms).toHaveLength(0);
+  });
+
   it("sends the browser back to the phone's page or the TV's, and nowhere else", async () => {
     const { app } = await site();
     for (const next of ["https://evil.example/", "//evil.example", "/\\evil.example", "/tv/../../x", "javascript:alert(1)", "/tv?x=1", ""]) {
@@ -527,9 +538,10 @@ describe("what a sign-in with Google does not take", () => {
     expect((await viaGoogle(new Browser(app), { next: "/tv", sub: BEN })).where).toBe("/tv");
   });
 
-  it("is not on at an address that is not one of the site's, nor at one of them over plain http", async () => {
+  it("is not on at an address that is not one of the site's, nor at one of them over plain http, nor for a Host that is more than an address", async () => {
     const { app } = await site();
-    for (const browser of [new Browser(app, "elsewhere.test"), new Browser(app, SITE, false), new Browser(app, `${SITE}:8443`)]) {
+    const odd = [`${SITE}/x`, `someone@${SITE}`, `${SITE}?x`, `${SITE}#x`].map((host) => new Browser(app, host));
+    for (const browser of [new Browser(app, "elsewhere.test"), new Browser(app, SITE, false), new Browser(app, `${SITE}:8443`), ...odd]) {
       const start = await browser.get("/api/auth/google/start?device=remote&next=/");
       expect([start.statusCode, start.headers.location, start.headers["set-cookie"]]).toEqual([302, "/?google=unavailable", undefined]);
       expect((await browser.get("/api/me")).data).toEqual({ me: null, registration: "open" });
@@ -710,6 +722,14 @@ describe("the account's side of it", () => {
     again.deleteAccount(made.value.id);
     expect(again.findByGoogle(ANA)).toBeUndefined();
     expect(again.createGoogleAccount(ANA, "Ana", "x").ok).toBe(true);
+  });
+});
+
+describe("postForm", () => {
+  it("sends a form only over https, or to this machine (and to nothing that is not an address)", async () => {
+    expect(await postForm("ftp://127.0.0.1/token", { code: "x" })).toEqual({ ok: false, reason: "address" });
+    expect(await postForm("not an address", { code: "x" })).toEqual({ ok: false, reason: "address" });
+    expect(await postForm(`${google.origin}/elsewhere`, {})).toEqual({ ok: true, body: {} });
   });
 });
 
