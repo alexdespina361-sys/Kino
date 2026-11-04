@@ -1,3 +1,4 @@
+import { googleFromEnv } from "./accounts/google";
 import { persistenceFromEnv } from "./accounts/persistence";
 import { AccountStore } from "./accounts/store";
 import { buildApp, defaultClientDir, defaultFixturesDir, isDeployed } from "./app";
@@ -48,6 +49,9 @@ const visits = /^(0|off|false|no)$/i.test(process.env.VISITOR_COUNT ?? "")
       return undefined;
     });
 
+// "Continue with Google" is on once GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URIS are all set (docs/google-sign-in.md); what is wrong with them is said, never the secret.
+const google = googleFromEnv(process.env, (message) => console.warn(message));
+
 // DIRECT_STREAMING is "on" by default to bypass the server middleman and stream directly to viewers.
 if (process.env.DIRECT_STREAMING === undefined) {
   process.env.DIRECT_STREAMING = "on";
@@ -73,6 +77,7 @@ const app = await buildApp({
   registration: process.env.REGISTRATION === "closed" ? "closed" : "open",
   ...(Number(process.env.MAX_ACCOUNTS) > 0 ? { maxAccounts: Number(process.env.MAX_ACCOUNTS) } : {}),
   ...(Number(process.env.SIGNUPS_PER_HOUR) > 0 ? { signUpsPerHour: Number(process.env.SIGNUPS_PER_HOUR) } : {}),
+  ...(google ? { google } : {}),
   trustProxy: trustProxy(process.env),
   // Website as middle man is toggled off by default so users cannot watch something if it uses website bandwidth.
   // Set PROXY_VIDEO=on to explicitly allow the server to proxy video.
@@ -83,6 +88,7 @@ const app = await buildApp({
 keepRunning(app.log);
 app.log.info(`Accounts and pairings are kept in ${describe}.`);
 app.log.info(visits ? "Visitors are counted, a number for each day (docs/stats.md)." : "Visitors are not counted.");
+app.log.info(google ? `Google sign-in is on at ${google.redirectUris.map((address) => new URL(address).host).join(", ")}.` : "Google sign-in is off.");
 
 await app.listen({ port, host });
 

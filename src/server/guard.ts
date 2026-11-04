@@ -50,17 +50,21 @@ const TITLE_ASKS = ["/api/library/similar", "/api/library/about", "/api/library/
 /** The library's routes that page through the shelves: more rows are asked for as a page is scrolled, and more titles of one row. Few answers are kept for as many as can be asked. */
 const BROWSE_ASKS = ["/api/library/rows", "/api/library/more"];
 
-/** The routes that make this server fetch from another site for whoever asks (the library's, when what it keeps has gone out of date). */
-const FETCHES = new Set(["/api/proxy", "/api/resolve", "/api/library", "/api/library/search", ...BROWSE_ASKS, ...TITLE_ASKS]);
+/**
+ * The routes that make this server fetch from another site for whoever asks (the library's, when what it keeps has gone out of date), and Google's way back from a
+ * sign-in, which takes the code it brings to Google's token endpoint: Google sends the browser there from its own site, which is a navigation, and nothing else does.
+ */
+const FETCHES = new Set(["/api/proxy", "/api/resolve", "/api/library", "/api/library/search", ...BROWSE_ASKS, ...TITLE_ASKS, "/api/auth/google/callback"]);
 
 /**
  * The routes that only read, but for the visitor whose session they are asked with, and count or note something against it: everything of a profile (the Friends page being open is how its
  * friends see it online, a chat being open is what has been seen in it, a tag or a code of an invitation that nobody has counts as a wrong guess, and each of them takes from the allowance of
  * reads), the lookup of the code of a link, and the visitor's own reports (which take from the address's allowance of reads). A link leads to none of them, so nothing but this site's own
- * pages may ask. (A route is told by the start of its path, so one that is added to these is covered at once.)
+ * pages may ask. (A route is told by the start of its path, so one that is added to these is covered at once.) The start of a sign-in with Google is one too: it is only ever this site's
+ * own button, and each one keeps a flow and takes from the address's allowance of them.
  */
 const COUNTED_PREFIXES = ["/api/profiles/", "/api/link/"];
-const COUNTED_ROUTES = new Set(["/api/feedback/mine"]);
+const COUNTED_ROUTES = new Set(["/api/feedback/mine", "/api/auth/google/start"]);
 const counts = (route: string) => COUNTED_ROUTES.has(route) || COUNTED_PREFIXES.some((prefix) => route.startsWith(prefix));
 
 /** Whether `origin`, as a browser writes it in `Origin` (an address without a path, or `null`), is the very host `host` (the `Host` header) names, with its port. */

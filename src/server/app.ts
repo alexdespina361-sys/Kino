@@ -6,6 +6,7 @@ import fastifyStatic from "@fastify/static";
 import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { isHttpUrl, LibraryKindSchema, LibrarySectionSchema, type Registration } from "../shared";
+import type { GoogleConfig } from "./accounts/google";
 import type { PasswordCost } from "./accounts/password";
 import { accountRoutes, COOKIE, readCookie } from "./accounts/routes";
 import { ScreenProofs, screenProfiles } from "./accounts/screens";
@@ -53,6 +54,8 @@ export interface AppOptions {
   trustProxy?: boolean | number;
   /** Tests use a cheaper password hash. */
   passwordCost?: PasswordCost;
+  /** Signing in with Google (env GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URIS: see accounts/google.ts and docs/google-sign-in.md). Off unless set. */
+  google?: GoogleConfig;
   /** Built Vite app. Served at / and /tv. Omitted in tests/dev where Vite serves the UI. */
   clientDir?: string;
   /** Local test media served at /fixtures/. */
@@ -76,7 +79,8 @@ export interface AppOptions {
   hub?: HubOptions;
   /** How much of a film the proxy keeps for the screens of a party (64 MB, 3 minutes unless set; env SEGMENT_CACHE_MB sets the size in megabytes). */
   segmentCache?: SegmentCacheOptions;
-  logger?: boolean;
+  /** Fastify's log of each request (a test reads it by giving a stream of its own). */
+  logger?: boolean | { level?: string; stream: { write(line: string): void } };
 }
 
 /** The size of the cache of film pieces from the environment (megabytes, a fraction will do), or nothing when it is not set to a number above zero. */
@@ -135,6 +139,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       ...(options.maxAccounts ? { maxAccounts: options.maxAccounts } : {}),
       ...(options.signUpsPerHour ? { signUpsPerHour: options.signUpsPerHour } : {}),
       ...(options.passwordCost ? { passwordCost: options.passwordCost } : {}),
+      ...(options.google ? { google: options.google } : {}),
       ...(screens ? { screens } : {}),
       // (A chat reported by one of the two friends goes to the team as feedback does. The store is made below, after the accounts: it is looked at when a report is sent.)
       chatReport: (report) => chatReporter(feedback)(report),

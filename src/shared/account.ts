@@ -58,16 +58,28 @@ export type Profile = z.infer<typeof ProfileSchema>;
 export const NewProfileSchema = z.object({ name: ProfileNameSchema, avatar: AvatarIdSchema });
 export const ProfilePatchSchema = NewProfileSchema.partial();
 
-export const AccountSchema = z.object({ id: z.string().max(60), email: z.string().max(254) });
+/**
+ * `google`: a Google account signs in to this one. `googleOnly`: the account was made by signing in with Google, so that is the only way in: its name was made up
+ * by the server (it is shown as nobody's) and it has no password anybody knows.
+ */
+export const AccountSchema = z.object({ id: z.string().max(60), email: z.string().max(254), google: z.literal(true).optional(), googleOnly: z.literal(true).optional() });
 export const MeSchema = z.object({ account: AccountSchema, profiles: z.array(ProfileSchema).max(MAX_PROFILES) });
 export type Me = z.infer<typeof MeSchema>;
 
 /** Whether new accounts can be made here (a server that is shared with friends may close it once they have one). */
 export const RegistrationSchema = z.enum(["open", "closed"]);
 export type Registration = z.infer<typeof RegistrationSchema>;
-/** The first thing a screen asks: who is signed in (nobody: `me` is null) and may somebody new sign up. */
-export const SessionStateSchema = z.object({ me: MeSchema.nullable(), registration: RegistrationSchema });
+/** The first thing a screen asks: who is signed in (nobody: `me` is null), may somebody new sign up, and (`google`, only when it may) can one sign in with Google at this address. */
+export const SessionStateSchema = z.object({ me: MeSchema.nullable(), registration: RegistrationSchema, google: z.boolean().optional() });
 export type SessionState = z.infer<typeof SessionStateSchema>;
+
+/**
+ * How a round trip to Google ended, as the server says it to the page it sends the browser back to (`?google=`): turned down at Google, did not work, no new
+ * accounts here, too many tries, that Google account is another account's, Google sign-in is not on at this address, Google is connected now, the person proved
+ * again who they are. A sign-in that worked says nothing.
+ */
+export const GOOGLE_OUTCOMES = ["denied", "failed", "closed", "busy", "taken", "unavailable", "linked", "reauth"] as const;
+export type GoogleOutcome = (typeof GOOGLE_OUTCOMES)[number];
 
 /** How long a request to be signed in by a phone is good for, from the moment the device is given its code. */
 export const LINK_TTL_MS = 5 * 60 * 1000;

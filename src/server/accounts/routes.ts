@@ -18,6 +18,7 @@ import {
 import { chatRoutes, type ChatReporter } from "./chatRoutes";
 import { describeDevice } from "./device";
 import { friendRoutes, type PartyLookup } from "./friendRoutes";
+import { googleRoutes, type GoogleConfig } from "./google";
 import { LinkRegistry } from "./links";
 import { decoyHash, hashPassword, verifyPassword, type PasswordCost } from "./password";
 import { RateLimiter } from "./rateLimit";
@@ -41,6 +42,8 @@ export interface AccountRoutesOptions {
   screens?: ScreenProofs;
   /** Hands a reported chat to the team (see feedback/chatReport.ts). Without it a chat cannot be reported. */
   chatReport?: ChatReporter;
+  /** Signing in with Google (see google.ts). Without it there is none. */
+  google?: GoogleConfig;
 }
 
 export const COOKIE = "kino_session";
@@ -58,7 +61,7 @@ const CreateProfileSchema = NewProfileSchema.partial({ avatar: true });
 /** The messages the forms know how to word; anything else the person typed wrong is just "invalid". */
 const FORM_ERRORS = new Set(["invalid_email", "weak_password", "invalid_name"]);
 
-const STORE_STATUS: Record<StoreError, number> = { email_taken: 409, profile_limit: 409, name_taken: 409, last_profile: 409, not_found: 404 };
+const STORE_STATUS: Record<StoreError, number> = { email_taken: 409, google_taken: 409, profile_limit: 409, name_taken: 409, last_profile: 409, not_found: 404 };
 
 export function readCookie(header: string | undefined, name: string): string | undefined {
   for (const part of header?.split(";") ?? []) {
@@ -119,7 +122,8 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
 
   const meOf = (accountId: string): Me => {
     const account = store.getAccount(accountId);
-    return { account: { id: account?.id ?? accountId, email: account?.email ?? "" }, profiles: store.profilesOf(accountId) };
+    const google = account?.google ? { google: true as const, ...(account.google.only ? { googleOnly: true as const } : {}) } : {};
+    return { account: { id: account?.id ?? accountId, email: account?.email ?? "", ...google }, profiles: store.profilesOf(accountId) };
   };
   const registrationNow = (): Registration => signUpsNow(registration, store.countAccounts(), maxAccounts);
 
@@ -129,6 +133,9 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     reply.header("Set-Cookie", setCookie(token, request.protocol === "https", Math.floor(SESSION_TTL_MS / 1000)));
   };
   const signOutCookie = (request: FastifyRequest, reply: FastifyReply) => reply.header("Set-Cookie", setCookie("", request.protocol === "https", 0));
+
+  // "Continue with Google" (google.ts): its sign-ups count with the others of the address.
+  const google = googleRoutes(app, { store, authenticate, signIn, readCookie, registrationNow, signUpByIp, passwordCost: options.passwordCost }, options.google);
 
   /** Check somebody's password, counting a wrong one against the account and the visitor. */
   async function passwordIsRight(email: string, ip: string, password: string): Promise<{ right: boolean; wait: number }> {
@@ -153,7 +160,7 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
     // A page asking who is signed in is a device in use: its cookie lasts a full term again, as its session does on the server
     // (see `getSession`). Otherwise the browser would drop it that long after the sign-in even for somebody who comes back every day.
     if (auth) reply.header("Set-Cookie", setCookie(auth.token, request.protocol === "https", Math.floor(SESSION_TTL_MS / 1000)));
-    const state: SessionState = { me: auth ? meOf(auth.accountId) : null, registration: registrationNow() };
+    const state: SessionState = { me: auth ? meOf(auth.accountId) : null, registration: registrationNow(), ...(google.here(request) ? { google: true } : {}) };
     return reply.send(state);
   });
 
@@ -209,13 +216,18 @@ export const accountRoutes: FastifyPluginAsync<AccountRoutesOptions> = async (ap
   app.post("/api/me/delete", async (request, reply) => {
     const auth = authenticate(request);
     if (!auth) return signedOut(reply);
-    const parsed = ConfirmSchema.safeParse(request.body);
-    if (!parsed.success) return invalid(reply, parsed.error);
     const account = store.getAccount(auth.accountId);
     if (!account) return signedOut(reply);
-    const { right, wait } = await passwordIsRight(account.email, request.ip, parsed.data.password);
-    if (wait > 0) return tooMany(reply, wait);
-    if (!right) return reply.code(401).send({ error: "invalid_credentials" });
+    if (account.google?.only) {
+      // An account made with Google has no password anybody knows: the person signs in to Google again on this device first (`reauth`, see google.ts).
+      if (!store.confirmedNow(auth.sessionId)) return reply.code(403).send({ error: "reauth_required" });
+    } else {
+      const parsed = ConfirmSchema.safeParse(request.body);
+      if (!parsed.success) return invalid(reply, parsed.error);
+      const { right, wait } = await passwordIsRight(account.email, request.ip, parsed.data.password);
+      if (wait > 0) return tooMany(reply, wait);
+      if (!right) return reply.code(401).send({ error: "invalid_credentials" });
+    }
     store.deleteAccount(account.id);
     signOutCookie(request, reply);
     return reply.code(204).send();
