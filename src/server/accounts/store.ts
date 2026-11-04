@@ -45,6 +45,11 @@ interface AccountDoc {
   hash: string;
   createdAt: number;
   profiles: ProfileMeta[];
+  /**
+   * The Google account that signs in to this one (see google.ts): Google's own number for the person (`sub`) and nothing else of theirs. `only`: the account was made by
+   * signing in with Google, so its name is one the server made up and nobody knows its password (the hash is of a random secret that was never kept).
+   */
+  google?: { sub: string; only?: true };
 }
 /** An item with the server's counter at the moment it last changed: what lets a screen ask only for what is new. */
 interface Stamped {
@@ -62,6 +67,8 @@ interface SessionDoc {
   createdAt: number;
   lastSeenAt: number;
   expiresAt: number;
+  /** Until when the person on this device has just proved again who they are (by signing in to Google again: what an account without a known password is deleted with). */
+  reauthUntil?: number;
 }
 interface ProfileData {
   rev: number;
@@ -86,6 +93,9 @@ const BYTE_BUDGET: Record<CollectionName, number> = { progress: 192 * 1024, watc
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 const newId = (prefix: string) => `${prefix}_${randomBytes(9).toString("base64url")}`;
+/** What an account made by signing in with Google is called where a name is needed: `g-` and 12 lower-case letters and digits (60 bits) nobody chose. */
+const BASE32 = "abcdefghijklmnopqrstuvwxyz234567";
+const googleLogin = () => `g-${[...randomBytes(12)].map((byte) => BASE32[byte & 31]).join("")}`;
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const canonicalName = (name: string) => name.normalize("NFC").trim().toLowerCase();
 /** A profile as it is told to others: who it is, and the tag that names it (kept apart from `createdAt`, which is the server's). */
@@ -93,7 +103,7 @@ const publicProfile = ({ id, name, avatar, tag }: ProfileMeta): Profile => ({ id
 /** The part of a session id that is shown and used to ask for it to be ended: enough to tell sessions apart, and no use as a token. */
 const shortId = (id: string) => id.slice(0, 16);
 
-export type StoreError = "email_taken" | "profile_limit" | "name_taken" | "last_profile" | "not_found";
+export type StoreError = "email_taken" | "google_taken" | "profile_limit" | "name_taken" | "last_profile" | "not_found";
 export type Result<T> = { ok: true; value: T } | { ok: false; error: StoreError };
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
 const fail = (error: StoreError): Result<never> => ({ ok: false, error });
@@ -125,6 +135,8 @@ export interface StoreOptions {
 export class AccountStore {
   private readonly accounts = new Map<string, AccountDoc>();
   private readonly emails = new Map<string, string>();
+  /** Google's number for a person -> the account it signs in to (one account for each, and one Google account for each account). */
+  private readonly googles = new Map<string, string>();
   private readonly data = new Map<string, ProfileData>();
   private readonly profileOwner = new Map<string, string>();
   private readonly sessions = new Map<string, SessionDoc>();
@@ -169,6 +181,11 @@ export class AccountStore {
           this.accounts.set(doc.id, doc);
           this.emails.set(doc.email, doc.id);
           for (const profile of doc.profiles) this.profileOwner.set(profile.id, doc.id);
+          if (doc.google) {
+            // (Two accounts with one Google account cannot be made here; one written by hand signs in nowhere rather than in the wrong place.)
+            if (this.googles.has(doc.google.sub)) this.options.log?.warn(`Two accounts have the same Google account: ${doc.id} is not signed in to with it.`);
+            else this.googles.set(doc.google.sub, doc.id);
+          }
         } else if (key.startsWith("pdata:")) {
           const doc = value as DataDoc;
           this.data.set(key.slice("pdata:".length), {
@@ -331,16 +348,51 @@ export class AccountStore {
   /** A new account with its first profile, named after the address. */
   createAccount(email: string, hash: string): Result<AccountDoc> {
     if (this.emails.has(email)) return fail("email_taken");
-    const first = this.newProfile(nameFromEmail(email), AVATAR_IDS[0]);
+    return ok(this.make(email, hash, nameFromEmail(email)));
+  }
+
+  /**
+   * A new account for a person who signed in with Google and has none: it signs in with that Google account only. Its name is made up (`g-` and 12 letters
+   * and digits nobody chose), its password is the hash given (of a secret nobody keeps), and its first profile is called `name`.
+   */
+  createGoogleAccount(sub: string, name: string, hash: string): Result<AccountDoc> {
+    if (this.googles.has(sub)) return fail("google_taken");
+    let login = googleLogin();
+    while (this.emails.has(login)) login = googleLogin();
+    return ok(this.make(login, hash, name, { sub, only: true }));
+  }
+
+  private make(email: string, hash: string, name: string, google?: AccountDoc["google"]): AccountDoc {
+    const first = this.newProfile(name, AVATAR_IDS[0]);
     this.takeTag(first);
-    const account: AccountDoc = { v: 1, id: newId("acc"), email, hash, createdAt: this.now(), profiles: [first] };
+    const account: AccountDoc = { v: 1, id: newId("acc"), email, hash, createdAt: this.now(), profiles: [first], ...(google ? { google } : {}) };
     this.accounts.set(account.id, account);
     this.emails.set(email, account.id);
+    if (google) this.googles.set(google.sub, account.id);
     this.profileOwner.set(first.id, account.id);
     this.data.set(first.id, emptyProfileData());
     this.touch(`account:${account.id}`);
     this.touch(`pdata:${first.id}`);
-    return ok(account);
+    return account;
+  }
+
+  /** The account a Google account signs in to, if it has one. */
+  findByGoogle(sub: string): AccountDoc | undefined {
+    const id = this.googles.get(sub);
+    return id ? this.accounts.get(id) : undefined;
+  }
+
+  /** Let a Google account sign in to this account too (the account keeps its name and password). Not one that signs in to another account, nor a second one. */
+  linkGoogle(accountId: string, sub: string): Result<null> {
+    const account = this.accounts.get(accountId);
+    if (!account) return fail("not_found");
+    const owner = this.googles.get(sub);
+    if (owner === accountId) return ok(null);
+    if (owner !== undefined || account.google) return fail("google_taken");
+    account.google = { sub };
+    this.googles.set(sub, accountId);
+    this.touch(`account:${accountId}`);
+    return ok(null);
   }
 
   private newProfile(name: string, avatar: AvatarId): ProfileMeta {
@@ -367,6 +419,7 @@ export class AccountStore {
       this.talk.forget(profile.id);
     }
     this.emails.delete(account.email);
+    if (account.google && this.googles.get(account.google.sub) === accountId) this.googles.delete(account.google.sub);
     this.accounts.delete(accountId);
     this.drop(`account:${accountId}`);
   }
@@ -492,6 +545,19 @@ export class AccountStore {
 
   private endSession(id: string) {
     if (this.sessions.delete(id)) this.drop(`session:${id}`);
+  }
+
+  /** The person on this device has just proved again who they are: it counts until `until`. */
+  confirmSession(sessionId: string, until: number) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.reauthUntil = until;
+    this.touch(`session:${session.id}`);
+  }
+
+  /** Whether the person on this device proved again who they are a moment ago (see `confirmSession`). */
+  confirmedNow(sessionId: string): boolean {
+    return (this.sessions.get(sessionId)?.reauthUntil ?? 0) > this.now();
   }
 
   listSessions(accountId: string, currentId?: string): SessionInfo[] {
