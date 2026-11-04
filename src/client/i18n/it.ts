@@ -52,6 +52,15 @@ export const it: Dictionary = {
   "auth.notNow": "Non ora",
   "auth.closed": "Questo server non accetta nuovi account.",
   "auth.working": "Un momento…",
+  "auth.google": "Continua con Google",
+  "auth.or": "oppure",
+
+  /* how a round trip to Google ended */
+  "google.denied": "Accesso con Google annullato.",
+  "google.failed": "L'accesso con Google non è riuscito. Riprova.",
+  "google.taken": "Questo account Google è già collegato a un altro account.",
+  "google.unavailable": "L'accesso con Google non è disponibile qui.",
+  "google.linked": "Google è collegato. Ora puoi accedere anche con Google.",
 
   /* things the server says no to */
   "error.generic": "Qualcosa è andato storto. Riprova.",
@@ -73,6 +82,7 @@ export const it: Dictionary = {
   "error.not_found": "Non esiste più.",
   "error.invalid_request": "Qualcosa non andava. Controlla e riprova.",
   "error.bad_response": "Questo server non ha gli account.",
+  "error.reauth_required": "Prima conferma con Google.",
 
   /* profiles */
   "profiles.title": "Chi sta guardando?",
@@ -125,6 +135,14 @@ export const it: Dictionary = {
   "account.deleteConfirm": "Elimina tutto",
   "account.deleted": "Il tuo account è stato eliminato.",
   "account.signOutFailed": "Impossibile uscire. Controlla la connessione e riprova.",
+  "account.signedInGoogle": "Connesso con Google",
+  "account.google": "Google",
+  "account.googleConnect": "Collega Google",
+  "account.googleConnectHelp": "Accedi con il tuo account Google, oltre che con nome utente e password.",
+  "account.googleConnected": "Google è collegato: puoi accedere con Google.",
+  "account.googleOnly": "Accedi con Google, quindi questo account non ha una password.",
+  "account.deleteWarnGoogle": "Account, profili, cronologia e liste vengono eliminati per sempre. Per confermare, accedi di nuovo con Google.",
+  "account.deleteWithGoogle": "Conferma con Google",
 
   /* signing another device in */
   "link.title": "Accedi con un altro dispositivo",
@@ -138,6 +156,7 @@ export const it: Dictionary = {
   "link.codeInstead": "Usa un altro dispositivo",
   "link.approveTitle": "Far accedere questo dispositivo?",
   "link.approveBody": "{device} chiede di accedere a {email}. Continua solo se lo stai guardando in questo momento.",
+  "link.approveBodyGoogle": "{device} chiede di accedere al tuo account. Continua solo se lo stai guardando in questo momento.",
   "link.approve": "Fallo accedere",
   "link.deny": "Non sono io",
   "link.approved": "Fatto! Il dispositivo ha effettuato l'accesso.",

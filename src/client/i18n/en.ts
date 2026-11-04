@@ -54,6 +54,15 @@ export const en = {
   "auth.notNow": "Not now",
   "auth.closed": "This server isn't accepting new accounts.",
   "auth.working": "One moment…",
+  "auth.google": "Continue with Google",
+  "auth.or": "or",
+
+  /* how a round trip to Google ended (a sign-in that worked says nothing) */
+  "google.denied": "Signing in with Google was cancelled.",
+  "google.failed": "Signing in with Google didn't work. Please try again.",
+  "google.taken": "That Google account is already connected to another account.",
+  "google.unavailable": "Signing in with Google isn't available here.",
+  "google.linked": "Google is connected. You can sign in with it now.",
 
   /* things the server says no to */
   "error.generic": "Something went wrong. Please try again.",
@@ -75,6 +84,7 @@ export const en = {
   "error.not_found": "That doesn't exist any more.",
   "error.invalid_request": "That didn't look right. Please check it and try again.",
   "error.bad_response": "This server doesn't support accounts.",
+  "error.reauth_required": "Confirm with Google first.",
 
   /* profiles */
   "profiles.title": "Who's watching?",
@@ -127,6 +137,14 @@ export const en = {
   "account.deleteConfirm": "Delete everything",
   "account.deleted": "Your account was deleted.",
   "account.signOutFailed": "Couldn't sign out. Check your connection and try again.",
+  "account.signedInGoogle": "Signed in with Google",
+  "account.google": "Google",
+  "account.googleConnect": "Connect Google",
+  "account.googleConnectHelp": "Sign in with your Google account as well as with your username and password.",
+  "account.googleConnected": "Google is connected: you can sign in with it.",
+  "account.googleOnly": "You sign in with Google, so this account has no password.",
+  "account.deleteWarnGoogle": "This deletes your account, profiles, history and lists for good. To confirm, sign in to Google again.",
+  "account.deleteWithGoogle": "Confirm with Google",
 
   /* signing another device in */
   "link.title": "Sign in with another device",
@@ -140,6 +158,7 @@ export const en = {
   "link.codeInstead": "Use another device instead",
   "link.approveTitle": "Sign in this device?",
   "link.approveBody": "{device} is asking to sign in to {email}. Only continue if you're looking at it right now.",
+  "link.approveBodyGoogle": "{device} is asking to sign in to your account. Only continue if you're looking at it right now.",
   "link.approve": "Sign it in",
   "link.deny": "That's not me",
   "link.approved": "Done! The device is signed in.",

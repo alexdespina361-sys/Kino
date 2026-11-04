@@ -52,6 +52,15 @@ export const ro: Dictionary = {
   "auth.notNow": "Nu acum",
   "auth.closed": "Acest server nu mai acceptă conturi noi.",
   "auth.working": "Un moment…",
+  "auth.google": "Continuă cu Google",
+  "auth.or": "sau",
+
+  /* how a round trip to Google ended */
+  "google.denied": "Conectarea cu Google a fost anulată.",
+  "google.failed": "Conectarea cu Google nu a reușit. Încearcă din nou.",
+  "google.taken": "Acest cont Google este deja legat de alt cont.",
+  "google.unavailable": "Conectarea cu Google nu este disponibilă aici.",
+  "google.linked": "Google este conectat. Acum te poți autentifica și cu el.",
 
   /* things the server says no to */
   "error.generic": "Ceva nu a mers bine. Încearcă din nou.",
@@ -73,6 +82,7 @@ export const ro: Dictionary = {
   "error.not_found": "Acest lucru nu mai există.",
   "error.invalid_request": "Ceva nu era în regulă. Verifică și încearcă din nou.",
   "error.bad_response": "Acest server nu are conturi.",
+  "error.reauth_required": "Confirmă mai întâi cu Google.",
 
   /* profiles */
   "profiles.title": "Cine se uită?",
@@ -125,6 +135,14 @@ export const ro: Dictionary = {
   "account.deleteConfirm": "Șterge tot",
   "account.deleted": "Contul a fost șters.",
   "account.signOutFailed": "Nu te-am putut deconecta. Verifică conexiunea și încearcă din nou.",
+  "account.signedInGoogle": "Conectat cu Google",
+  "account.google": "Google",
+  "account.googleConnect": "Conectează Google",
+  "account.googleConnectHelp": "Autentifică-te și cu contul Google, nu doar cu numele de utilizator și parola.",
+  "account.googleConnected": "Google este conectat: te poți autentifica cu el.",
+  "account.googleOnly": "Te autentifici cu Google, așa că acest cont nu are parolă.",
+  "account.deleteWarnGoogle": "Contul, profilurile, istoricul și listele se șterg definitiv. Pentru a confirma, autentifică-te din nou cu Google.",
+  "account.deleteWithGoogle": "Confirmă cu Google",
 
   /* signing another device in */
   "link.title": "Autentifică-te cu alt dispozitiv",
@@ -138,6 +156,7 @@ export const ro: Dictionary = {
   "link.codeInstead": "Folosește alt dispozitiv",
   "link.approveTitle": "Conectezi acest dispozitiv?",
   "link.approveBody": "{device} cere să se conecteze la {email}. Continuă doar dacă te uiți la el chiar acum.",
+  "link.approveBodyGoogle": "{device} cere să se conecteze la contul tău. Continuă doar dacă te uiți la el chiar acum.",
   "link.approve": "Conectează-l",
   "link.deny": "Nu sunt eu",
   "link.approved": "Gata! Dispozitivul este conectat.",
