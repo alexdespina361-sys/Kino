@@ -445,6 +445,9 @@ const PUBLIC: Record<string, string> = {
   "GET /api/proxy": "carries a public page or file: no account is involved",
   "POST /api/auth/register": "makes a new account: there is nobody to be someone else yet",
   "POST /api/auth/login": "proves a name and a password, slowed per name and per address",
+  "GET /api/auth/google/start": "sends the browser to Google with a flow of its own; connecting or confirming needs the browser's own session, and the answer is only a redirect (google.test.ts)",
+  "GET /api/auth/google/callback":
+    "Google's way back: it does something only for the browser that holds the flow's cookie, and connects or confirms only for the account that started the flow (google.test.ts)",
   "POST /api/link/start": "a TV that is not signed in asks for a code to show (see 'signing a TV in')",
   "POST /api/link/poll": "that TV asks if the code was approved, with a secret only it holds (see 'signing a TV in')",
   "POST /api/feedback": "anybody may send a report: it belongs to the key its page made (see 'feedback that belongs to a key')",

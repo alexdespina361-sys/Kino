@@ -319,6 +319,8 @@ beforeAll(async () => {
       librarySources: [library],
       allowPrivateNetwork: true,
       cat: true,
+      // (Google sign-in on, at the address the sweep's requests come to; its token endpoint is the sweep's own server, which has none: a code is never taken.)
+      google: { clientId: "sweep-client", clientSecret: "sweep-secret", redirectUris: ["http://localhost/api/auth/google/callback"], tokenUrl: `${origin}/token`, timeoutMs: 500 },
       clientDir: client,
       fixturesDir: fixtures,
       hub: { maxFailedPairings: 1_000_000 },
@@ -416,6 +418,9 @@ const SPECS: Record<string, Spec> = {
   "POST /api/auth/logout": { fresh: true, ok: [204] },
   "POST /api/me/password": { fresh: true, body: (w) => ({ current: w.password, next: "another-password" }), ok: [204] },
   "POST /api/me/delete": { fresh: true, body: (w) => ({ password: w.password }), ok: [204] },
+  // (The start sends the browser to Google; the way back is given a state that no flow has, which is a way back that went wrong: both answer with a redirect.)
+  "GET /api/auth/google/start": { query: () => ({ device: "remote", next: "/", mode: "signin" }) },
+  "GET /api/auth/google/callback": { query: () => ({ state: "s".repeat(43), code: "4/0Asweep" }) },
   "PATCH /api/sessions/:id": { params: { id: (w) => w.session }, body: () => ({ label: "Kitchen TV" }) },
   "DELETE /api/sessions/:id": { fresh: true, params: { id: (w) => w.session }, ok: [204] },
   "DELETE /api/sessions": { fresh: true, ok: [204] },
