@@ -3,6 +3,7 @@ import { remember } from "../../boundedMap";
 import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
 import { providerFetch } from "../providerFetch";
 import type { ResolveResult, SiteAdapter } from "../types";
+import { signedRelayUrl } from "../../streamRelay/links";
 import { streamAddress } from "./streamAddress";
 import { decryptInThread } from "./wasmDecrypt";
 
@@ -99,7 +100,13 @@ function parseJwtExp(jwt: string): number | null {
   return null;
 }
 
-export async function getHostToken(get: typeof fetch, streamOrigin: string, playerUrl: string, apiToken?: string): Promise<string> {
+export async function getHostToken(
+  get: typeof fetch,
+  streamOrigin: string,
+  playerUrl: string,
+  apiToken?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string> {
   const cached = hostTokenCache.get(streamOrigin);
   const now = Date.now();
   if (cached && cached.expiresAt > now + 60_000) {
@@ -110,7 +117,38 @@ export async function getHostToken(get: typeof fetch, streamOrigin: string, play
     const genUrl = apiToken
       ? `${streamOrigin}/generate.php?api_token=${encodeURIComponent(apiToken)}`
       : `${streamOrigin}/generate.php`;
-    const rawToken = await getText(get, genUrl, { referer: playerUrl });
+
+    let rawToken = "";
+    const relay = env.EDGE_STREAM_PROXY_URL?.trim();
+    const key = env.EDGE_STREAM_PROXY_KEY;
+
+    if (relay && key && key.length >= 32) {
+      try {
+        const relayGenUrl = signedRelayUrl(
+          relay,
+          { url: genUrl, referer: playerUrl, expires: now + 300_000, hostToken: false },
+          key,
+        );
+        const relayed = (await getText(get, relayGenUrl)).trim();
+        let extracted = "";
+        try {
+          const parsed = JSON.parse(relayed) as Record<string, string>;
+          extracted = parsed.token || parsed.data || relayed;
+        } catch {
+          extracted = relayed;
+        }
+        if (extracted && extracted.includes(".")) {
+          rawToken = extracted;
+        }
+      } catch {
+        // Fall back to direct fetch if relay fails
+      }
+    }
+
+    if (!rawToken) {
+      rawToken = await getText(get, genUrl, { referer: playerUrl });
+    }
+
     let token = "";
     try {
       const parsed = JSON.parse(rawToken.trim()) as Record<string, string>;

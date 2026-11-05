@@ -92,12 +92,14 @@ export interface FilmpireSourceOptions {
 export interface ProbeRecord {
   status: 200 | 404;
   seasons?: number[];
+  seasonCounts?: Record<number, number>;
   checkedAt: number;
 }
 
 const MAX_PROBE_CACHE = 2000;
 /** How many shows keep the seasons the video check told of (they come from what is searched, so the oldest go once there are more). */
 export const MAX_PRELOADED_SEASONS = 2000;
+const preloadedSeasonCounts = new Map<number, Record<number, number>>();
 const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export async function probePlayback(
@@ -107,11 +109,11 @@ export async function probePlayback(
   cache: Map<string, ProbeRecord>,
   now: () => number = Date.now,
   timeoutMs = 1500,
-): Promise<{ ok: boolean; seasons?: number[] }> {
+): Promise<{ ok: boolean; seasons?: number[]; seasonCounts?: Record<number, number> }> {
   const key = `${type}:${id}`;
   const cached = cache.get(key);
   if (cached && now() - cached.checkedAt < PROBE_TTL_MS) {
-    return { ok: cached.status === 200, seasons: cached.seasons };
+    return { ok: cached.status === 200, seasons: cached.seasons, seasonCounts: cached.seasonCounts };
   }
 
   try {
@@ -133,15 +135,21 @@ export async function probePlayback(
     }
     if (statusCode === "200") {
       let seasons: number[] | undefined;
+      let seasonCounts: Record<number, number> | undefined;
       if (type === "tv" && data?.data?.eps) {
         seasons = Object.keys(data.data.eps)
           .map(Number)
           .filter((n) => Number.isInteger(n) && n >= 1)
           .sort((a, b) => a - b);
+        seasonCounts = {};
+        for (const s of seasons) {
+          const list = data.data.eps[String(s)];
+          if (Array.isArray(list)) seasonCounts[s] = list.length;
+        }
       }
       if (cache.size >= MAX_PROBE_CACHE) cache.delete(cache.keys().next().value!);
-      cache.set(key, { status: 200, seasons, checkedAt: now() });
-      return { ok: true, seasons };
+      cache.set(key, { status: 200, seasons, seasonCounts, checkedAt: now() });
+      return { ok: true, seasons, seasonCounts };
     }
     return { ok: true };
   } catch {
@@ -428,6 +436,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
             if (!probe.ok) return null;
             if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
               remember(preloadedSeasons, parsed.id, probe.seasons, MAX_PRELOADED_SEASONS);
+              if (probe.seasonCounts) remember(preloadedSeasonCounts, parsed.id, probe.seasonCounts, MAX_PRELOADED_SEASONS);
             }
             return item;
           }),
@@ -467,6 +476,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
           if (!probe.ok) return null;
           if (parsed.type === "tv" && probe.seasons && probe.seasons.length > 0) {
             remember(preloadedSeasons, parsed.id, probe.seasons, MAX_PRELOADED_SEASONS);
+            if (probe.seasonCounts) remember(preloadedSeasonCounts, parsed.id, probe.seasonCounts, MAX_PRELOADED_SEASONS);
           }
           return item;
         }),
@@ -522,14 +532,44 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
       const title = parseWatchLink(link);
       if (title?.type !== "tv") return [];
+
+      let counts = preloadedSeasonCounts.get(title.id);
+      if (!counts && shouldVerify) {
+        try {
+          const probe = await probePlayback(title.id, "tv", probeFetcher, probeCache, now, probeTimeout);
+          if (probe.seasonCounts) {
+            counts = probe.seasonCounts;
+            remember(preloadedSeasonCounts, title.id, counts, MAX_PRELOADED_SEASONS);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       const fullUrl = `${BASE_URL}/tv/${title.id}/season/${season}?api_key=${apiKey}&language=en-US`;
       const res = await get(fullUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-      if (res.status === 404) return [];
-      if (!res.ok) throw new Error(`episodes: HTTP ${res.status}`);
       const day = today();
-      return TmdbSeasonSchema.parse(await res.json())
-        .episodes.filter((episode) => !(episode.air_date && episode.air_date > day)) // not out yet: nothing to play
-        .map((episode) => {
+
+      if (res.ok) {
+        const tmdbSeason = TmdbSeasonSchema.parse(await res.json());
+        const validEps = tmdbSeason.episodes.filter((episode) => !(episode.air_date && episode.air_date > day));
+
+        // If this is season 1, and the provider divided the series into multiple seasons
+        // (e.g. JJK where TMDB season 1 has 59 episodes, but provider season 1 only has 24):
+        const expectedCount = counts?.[season];
+        if (season === 1 && expectedCount && validEps.length > expectedCount && counts?.[2]) {
+          return validEps.slice(0, expectedCount).map((episode, idx) => ({
+            season: 1,
+            episode: idx + 1,
+            ...(episode.name?.trim() ? { title: episode.name.trim().slice(0, 200) } : {}),
+            ...(episode.overview?.trim() ? { overview: episode.overview.trim().slice(0, 400) } : {}),
+            ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
+            ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
+            url: `https://filmpire.sc/watch/${title.id}?s=1&e=${idx + 1}`,
+          }));
+        }
+
+        return validEps.map((episode) => {
           const name = episode.name?.trim();
           const overview = episode.overview?.trim();
           return {
@@ -542,6 +582,43 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
             url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${episode.episode_number}`,
           };
         });
+      }
+
+      // If TMDB returned 404 for this season (e.g. TMDB lumped all seasons into season 1):
+      if (res.status === 404 && season > 1 && counts && counts[season]) {
+        const s1Url = `${BASE_URL}/tv/${title.id}/season/1?api_key=${apiKey}&language=en-US`;
+        const s1Res = await get(s1Url, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+        if (s1Res.ok) {
+          const s1Data = TmdbSeasonSchema.parse(await s1Res.json());
+          const validEps = s1Data.episodes.filter((episode) => !(episode.air_date && episode.air_date > day));
+
+          let offset = 0;
+          for (let s = 1; s < season; s++) {
+            offset += counts[s] ?? 0;
+          }
+          const targetCount = counts[season] ?? 0;
+          const slice = validEps.slice(offset, offset + targetCount);
+
+          if (slice.length > 0) {
+            return slice.map((episode, idx) => {
+              const name = episode.name?.trim();
+              const overview = episode.overview?.trim();
+              return {
+                season,
+                episode: idx + 1,
+                ...(name ? { title: name.slice(0, 200) } : {}),
+                ...(overview ? { overview: overview.slice(0, 400) } : {}),
+                ...(episode.still_path ? { still: `${STILL_BASE}${episode.still_path}` } : {}),
+                ...(episode.runtime && episode.runtime > 0 ? { runtime: Math.min(1000, Math.round(episode.runtime)) } : {}),
+                url: `https://filmpire.sc/watch/${title.id}?s=${season}&e=${idx + 1}`,
+              };
+            });
+          }
+        }
+      }
+
+      if (res.status === 404) return [];
+      throw new Error(`episodes: HTTP ${res.status}`);
     },
     async seasons(link: string): Promise<number[]> {
       const title = parseWatchLink(link);
