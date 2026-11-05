@@ -634,27 +634,30 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       // The dedicated relay obtains its own IP-bound token. A website-issued token cannot authorize another machine's media requests.
       const relayOwnsToken = Boolean(process.env.EDGE_STREAM_PROXY_URL?.trim() && process.env.EDGE_STREAM_PROXY_KEY);
 
-      for (const sUrl of streamUrls) {
-        try {
-          const origin = new URL(sUrl).origin;
-          const tok = await getHostToken(get, origin, playerUrl, playerConfig?.apiToken);
-          if (tok) {
-            chosenStream = sUrl;
-            chosenToken = tok;
-            break;
+      if (!relayOwnsToken) {
+        for (const sUrl of streamUrls) {
+          try {
+            const origin = new URL(sUrl).origin;
+            const tok = await getHostToken(get, origin, playerUrl, playerConfig?.apiToken);
+            if (tok) {
+              chosenStream = sUrl;
+              chosenToken = tok;
+              break;
+            }
+          } catch {
+            // try next stream
           }
-        } catch {
-          // try next stream
         }
       }
 
-      // 8. Filmpire streams are locked by IP-CIDR to whoever fetched the player page and generate.php (this server).
-      // They must always be proxied through this host's /api/proxy so incoming requests to the CDN match the IP in token.
+      // 8. Stream delivery:
+      // When a dedicated relay is configured (EDGE_STREAM_PROXY_URL), the relay streams media chunks using its own IP-bound token (hostToken: true).
+      // Video bandwidth stays entirely on the dedicated relay (Oracle Cloud), keeping website bandwidth (Render) near zero.
       const delim = chosenStream.includes("?") ? "&" : "?";
       const finalStreamUrl = chosenToken
         ? `${chosenStream}${delim}token=${encodeURIComponent(chosenToken)}&bypass_localize=true`
         : chosenStream;
-      const proxiedUrl = `/api/proxy?url=${encodeURIComponent(finalStreamUrl)}&referer=${encodeURIComponent(playerUrl)}`;
+      const proxiedUrl = streamAddress(finalStreamUrl, playerUrl, process.env, relayOwnsToken);
 
       // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
       const alternates: AlternateSource[] = [];
@@ -664,7 +667,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         try {
           const origin = new URL(sUrl).origin;
           const hostName = new URL(sUrl).hostname.split(".")[0] || "Server";
-          const altToken = await getHostToken(get, origin, playerUrl, playerConfig?.apiToken);
+          const altToken = relayOwnsToken ? "" : await getHostToken(get, origin, playerUrl, playerConfig?.apiToken);
           const altDelim = sUrl.includes("?") ? "&" : "?";
           const altFinalUrl = altToken
             ? `${sUrl}${altDelim}token=${encodeURIComponent(altToken)}&bypass_localize=true`
@@ -672,7 +675,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           alternates.push({
             label: `Server ${alternates.length + 2} (${hostName})`,
             stream: {
-              url: `/api/proxy?url=${encodeURIComponent(altFinalUrl)}&referer=${encodeURIComponent(playerUrl)}`,
+              url: streamAddress(altFinalUrl, playerUrl, process.env, relayOwnsToken),
               type: "hls",
               directUrl: altFinalUrl,
             },

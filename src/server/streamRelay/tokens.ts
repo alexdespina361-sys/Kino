@@ -41,13 +41,12 @@ export class HostTokens {
         apiToken = refUrl.searchParams.get("api_token") || undefined;
 
         if (!apiToken) {
-          const embedReferer = `${refUrl.origin}${refUrl.pathname.replace("/embed/player/", "/embed/")}`;
+          const embedReferer = `${refUrl.origin}${refUrl.pathname.replace("/embed/player/", "/embed/")}${refUrl.search}`;
           const { response: refRes } = await openUpstream(
             refUrl,
             {
               accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
               referer: embedReferer,
-              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
             },
             this.allowedAddress,
             AbortSignal.timeout(8_000),
@@ -99,7 +98,7 @@ export class HostTokens {
       : new URL("/generate.php", origin);
 
     const { response } = await openUpstream(genUrl, {
-      referer, accept: "*/*", "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+      referer, accept: "*/*",
     }, this.allowedAddress, AbortSignal.timeout(15_000));
     if (!response.ok) {
       await response.body?.cancel();
