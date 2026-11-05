@@ -30,7 +30,7 @@ export function friendLine(friend: Friend, activity: readonly ActivityItem[], no
  */
 export function activityHint(friend: Friend, iGet: boolean): string | undefined {
   if (!friend.on || friend.activity) return undefined;
-  return iGet ? t("friends.hintTheirs", { name: friend.name }) : t("friends.hintMine", { name: friend.name, switch: t("friends.switchGet") });
+  return iGet ? t("friends.hintTheirs", { name: friend.name }) : t("friends.hintMine", { name: friend.name, switch: t("friends.switchGive") });
 }
 
 /** The episode a card is at ("S2:E5"), when it is of a show. */

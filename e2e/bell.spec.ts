@@ -243,9 +243,9 @@ test.describe("the bell on the phone", () => {
     await ann.keyboard.press("Escape");
     await expect(sheet).toHaveCount(0);
 
-    // Ann tells what she watches and Bob hears it: his bell gets a dot, never a number; the list says what and by whom, and opening it puts the dot out.
+    // Ann shares what she watches and Bob shares his too, which is how he hears it: his bell gets a dot, never a number; the list says what and by whom, and opening it puts the dot out.
     await setting(ann, "friends-give", true);
-    await setting(bob.page, "friends-get", true);
+    await setting(bob.page, "friends-give", true);
     await startsFilm(ann);
     await hearsActivity(bob.page);
     await look(bob.page);
@@ -357,12 +357,12 @@ test.describe("the bell on the TV", () => {
     await expect(tv.getByTestId("tv-bell-badge")).toHaveCount(0);
     await expect(button).toBeFocused();
 
-    // Bob tells what he watches and Cy hears it: a dot on the bell, a line in the list that opens the title.
+    // Bob shares what he watches and Cy does too, which is how he hears it: a dot on the bell, a line in the list that opens the title.
     await setting(bob.page, "friends-give", true);
     await openProfilePlace(tv, "friends");
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "friends");
     await tv.locator(`.tv-tile[title="${en["friends.settingsTile"]}"]`).click();
-    await tv.getByTestId("tv-friends-get").click();
+    await tv.getByTestId("tv-friends-give").click();
     await tv.getByTestId("tv-friend-settings-done").click();
     await startsFilm(bob.page);
     await hearsActivity(tv);

@@ -92,16 +92,16 @@ const entryOfChat = (friend: Friend, count: number): Entry => ({
 /** The last two tiles of the friends row: they open a page of their own over the library. */
 const addTile = (): Entry => ({ id: "add-friend", title: t("friends.add"), url: "", action: "addFriend" });
 const settingsTile = (): Entry => ({ id: "friend-settings", title: t("friends.settingsTile"), url: "", action: "friendSettings" });
-/** "Turn on: Tell me what friends watch": what is missing from the row of what they watch, and the way to the switch that makes it appear. */
-const activityOffTile = (): Entry => ({ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGet"), action: "friendSettings" });
+/** "Turn on: Share what I watch with friends": what is missing from the row of what they watch, and the way to the switch that makes it appear. */
+const activityOffTile = (): Entry => ({ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGive"), action: "friendSettings" });
 
 /**
  * The rows of the friends page, the friends first: the friends themselves (with the tiles to add one and to choose what is shared), then what waits for an
  * answer (the requests to be friends, invitations to the watch parties that are on, and the ones that are over from a friend who can be asked for another,
  * requests to watch together, plans to watch together, what friends sent), then a row of its own for what each of the friends who watched most lately
  * watched. Before the server has answered there are only the first row's last two tiles.
- * While this profile has not turned on being told what friends watch (`iGet`: the one thing that is off until somebody turns it on, and what makes the
- * rows of what they watch never appear) a last row has a tile that says so and opens the settings.
+ * While this profile does not share what it watches (`iGet`: the one thing that is off until somebody turns it on, and what makes the rows of what friends
+ * watch never appear, as a profile hears them while it shares its own) a last row has a tile that says so and opens the settings.
  */
 /** The rows of what waits for an answer (the bell lists them too): the page puts them under one heading, "Waiting for you", and the rows after them are what is not waiting. */
 const ASKING_ROWS: readonly string[] = ["friend-requests", "friend-parties", "friend-plans", "friend-sent"];

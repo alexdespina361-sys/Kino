@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { friendChoices, friendLink, parseTag, reachable, tagLabel, type FriendSetting, type Message, type OpenInvite, type Person, type PlanItem } from "../../shared";
+import { friendChoices, friendLink, parseTag, reachable, sunsetSwitches, tagLabel, type FriendSetting, type Message, type OpenInvite, type Person, type PlanItem, type SunsetSwitch } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -747,59 +747,68 @@ export function UnfriendTv({ id, name, onCancel, onGone }: { id: string; name: s
 
 /* ------------------------------ what is shared ------------------------------ */
 
-/** What a friend may do while friends are on, each its own switch (the one that turns friends on or off is in the settings). */
-const SWITCHES: ReadonlyArray<{ key: FriendSetting; label: Key; testId: string }> = [
+/**
+ * What a friend may do is on for everybody, and the one thing to choose is whether what is watched is shared (both ways: a profile sees what friends watch while it shares
+ * its own). A profile that had turned one of the others off keeps the switch for it, these ones (the one that turns friends on or off is in the settings).
+ */
+const SUNSET_ROWS: ReadonlyArray<{ key: Exclude<SunsetSwitch, "newsPopups">; label: Key; testId: string }> = [
   { key: "friendsLists", label: "friends.switchLists", testId: "tv-friends-lists" },
   { key: "friendsRatings", label: "friends.switchRatings", testId: "tv-friends-ratings" },
-  { key: "friendsGive", label: "friends.switchGive", testId: "tv-friends-give" },
-  { key: "friendsGet", label: "friends.switchGet", testId: "tv-friends-get" },
   { key: "friendsInbox", label: "friends.switchInbox", testId: "tv-friends-inbox" },
   { key: "friendsPresence", label: "friends.switchPresence", testId: "tv-friends-presence" },
   { key: "friendsMessages", label: "chat.settingsSwitch", testId: "tv-friends-messages" },
 ];
 
-/** Choosing what friends may see and send, and whether what each watches is told. Each change reaches the server at once: it is what decides what a friend is shown. */
+/** Choosing whether what each watches is told, and for a profile that turned something else off before, that too. Each change reaches the server at once: it is what decides what a friend is shown. */
 export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
   const t = useT();
   const account = useAccount();
   const { settings, set } = useSettings();
   const choices = friendChoices(settings);
+  const [sunset] = useState(() => sunsetSwitches(settings)); // (asked once: a switch that is turned back on stays under the remote until the screen is left)
+  const row = (key: FriendSetting, label: Key, testId: string) => (
+    <button
+      key={key}
+      className="tv-switch-row"
+      role="switch"
+      aria-checked={choices[key]}
+      onClick={() => {
+        set(key, !choices[key]);
+        account.syncNow();
+      }}
+      data-nav
+      data-testid={testId}
+    >
+      <span>{t(label)}</span>
+      <span className="tv-switch" aria-hidden="true" />
+    </button>
+  );
   return (
     <Screen testId="tv-friend-settings" compact focus onBack={onClose}>
       <h1 className="tv-headline tv-headline-small">{t("friends.settings")}</h1>
       <p className="tv-hint tv-friend-help">{t("friends.settingsHelp")}</p>
       <div className="tv-friend-switches">
-        {SWITCHES.filter(({ key }) => key !== "friendsRatings" || settings.ratings !== false).map(({ key, label, testId }) => (
+        {row("friendsGive", "friends.switchGive", "tv-friends-give")}
+        {SUNSET_ROWS.filter(({ key }) => sunset.includes(key) && (key !== "friendsRatings" || settings.ratings !== false)).map(({ key, label, testId }) => row(key, label, testId))}
+        {/* (What this screen does with friends' news, not what a friend may do: it stays on this side and is not sent to the server.) */}
+        {sunset.includes("newsPopups") && (
           <button
-            key={key}
             className="tv-switch-row"
             role="switch"
-            aria-checked={choices[key]}
-            onClick={() => {
-              set(key, !choices[key]);
-              account.syncNow();
-            }}
+            aria-checked={settings.newsPopups !== false}
+            onClick={() => set("newsPopups", settings.newsPopups === false ? undefined : false)}
             data-nav
-            data-testid={testId}
+            data-testid="tv-friends-popups"
           >
-            <span>{t(label)}</span>
+            <span>{t("friends.popups")}</span>
             <span className="tv-switch" aria-hidden="true" />
           </button>
-        ))}
-        {/* (What this screen does with friends' news, not what a friend may do: it stays on this side and is not sent to the server.) */}
-        <button
-          className="tv-switch-row"
-          role="switch"
-          aria-checked={settings.newsPopups !== false}
-          onClick={() => set("newsPopups", settings.newsPopups === false ? undefined : false)}
-          data-nav
-          data-testid="tv-friends-popups"
-        >
-          <span>{t("friends.popups")}</span>
-          <span className="tv-switch" aria-hidden="true" />
-        </button>
+        )}
       </div>
-      {/* (What a chat is kept as, said where the switch for it is: plain text, on the server, unencrypted, for so long.) */}
+      <p className="tv-hint tv-friend-help" data-testid="tv-friends-give-hint">
+        {t("friends.switchGiveHint")}
+      </p>
+      {/* (What a chat is kept as, said where friends are chosen: plain text, on the server, unencrypted, for so long.) */}
       <p className="tv-hint tv-friend-help" data-testid="tv-friends-messages-hint">
         {t("chat.settingsHint", CHAT_FACTS)}
       </p>

@@ -106,15 +106,15 @@ async function meet(giver: Screen, taker: Screen, add: string = WORDS.en["friend
 }
 
 /**
- * `giver` tells what it watches and `taker` hears it (that is what lets the one ask the other to watch together). Both are on the page of
- * their friends, and are left there.
+ * `giver` shares what it watches and `taker` does too, which is how it hears the other (that is what lets the one ask the other to watch together). Both are on the
+ * page of their friends, and are left there.
  */
 async function tellsWhatItWatches(giver: Screen, taker: Screen, words: (typeof WORDS)[Language] = WORDS.en) {
   await tile(giver.page, words["friends.settingsTile"]).click();
   await giver.page.getByTestId("tv-friends-give").click();
   await giver.page.getByTestId("tv-friend-settings-done").click();
   await tile(taker.page, words["friends.settingsTile"]).click();
-  await taker.page.getByTestId("tv-friends-get").click();
+  await taker.page.getByTestId("tv-friends-give").click();
   await taker.page.getByTestId("tv-friend-settings-done").click();
   // (the switches reach the server a moment after they are turned: the one who takes has it said of the friend before this goes on)
   const profile = await taker.page.evaluate(() => localStorage.getItem("kino.profile"));
@@ -132,6 +132,18 @@ async function seed(page: Page, data: Record<string, unknown[]>) {
   const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
   const response = await page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0, ...data } });
   expect(response.ok()).toBe(true);
+}
+
+/**
+ * A choice that a switch which is gone used to make, made the way a screen sends it: the server goes by it from now on. (A screen has a switch for it only if it
+ * was off when the screen opened: `hadTurnedOff` is for a test that looks at the switch.)
+ */
+const choose = (page: Page, choices: Record<string, boolean>) => seed(page, { settings: Object.entries(choices).map(([key, value]) => ({ key, at: Date.now(), value })) });
+
+/** A profile that turned these switches off before they went: the server has it, and the screen is loaded anew so that it does too (and starts at the home page). */
+async function hadTurnedOff(page: Page, ...keys: string[]) {
+  await choose(page, Object.fromEntries(keys.map((key) => [key, false])));
+  await page.reload();
 }
 
 /** `from` plans a watch together with `to`, the way a phone's sheet does it (the remote's own picker is tried in its own test). */
@@ -405,11 +417,8 @@ test.describe("a friend's page", () => {
     await bob.page.getByTestId("friend-tab-ratings").click();
     await expect(tile(bob.page, "Alpha Film")).toContainText("8/10");
 
-    // Ann stops sharing her ratings, in the page of what is shared; Bob is told so, not shown an empty page
-    await tile(ann.page, "Friends settings").click();
-    await ann.page.getByTestId("tv-friends-ratings").click();
-    await expect(ann.page.getByTestId("tv-friends-ratings")).toHaveAttribute("aria-checked", "false");
-    await ann.page.getByTestId("tv-friend-settings-done").click();
+    // Ann stops sharing her ratings (a choice that has no switch any more, so it is sent the way a screen would); Bob is told so, not shown an empty page
+    await choose(ann.page, { friendsRatings: false });
     await expect(async () => {
       await look(bob.page);
       await expect(bob.page.getByTestId("tv-view-empty")).toContainText(`${ann.name} is not sharing their ratings`, { timeout: 1500 });
@@ -442,11 +451,11 @@ test.describe("a friend's page", () => {
     const bob = await screenWithFriends(browser, "Bob");
     await meet(ann, bob);
     await seed(ann.page, { ...filmCards(), progress: [{ key: "alpha", at: Date.now(), title: "Alpha Film", url: FILM, year: 1931, position: 600, duration: 5400 }] });
-    await tile(ann.page, "Friends settings").click(); // (she tells what she watches...)
+    await tile(ann.page, "Friends settings").click(); // (she shares what she watches...)
     await ann.page.getByTestId("tv-friends-give").click();
     await ann.page.getByTestId("tv-friend-settings-done").click();
-    await tile(bob.page, "Friends settings").click(); // (...and he wants to hear it)
-    await bob.page.getByTestId("tv-friends-get").click();
+    await tile(bob.page, "Friends settings").click(); // (...and so does he, which is how he hears it)
+    await bob.page.getByTestId("tv-friends-give").click();
     await bob.page.getByTestId("tv-friend-settings-done").click();
 
     const her = tile(bob.page, ann.name);
@@ -529,22 +538,22 @@ test.describe("a friend's page", () => {
     // the page of friends has a row of its own for it, with a tile that turns it on (the friend's tile is on the page too)
     const turnOn = tile(ann.page, en["friends.turnOn"]);
     await expect(turnOn).toBeVisible();
-    await expect(turnOn).toContainText(en["friends.switchGet"]);
+    await expect(turnOn).toContainText(en["friends.switchGive"]);
     await expect(tile(ann.page, bob.name)).toBeVisible();
 
     // a friend's page says what is off and where; the button to ask is there, and the request reaches Bob, who tells nothing of what he watches
     await tile(ann.page, bob.name).click();
-    await expect(hint).toContainText(`To see what ${bob.name} is watching, turn on “${en["friends.switchGet"]}” in the Friends settings.`);
+    await expect(hint).toContainText(`To see what ${bob.name} is watching, turn on “${en["friends.switchGive"]}” in the Friends settings.`);
     await ann.page.getByTestId("friend-together").click();
     await expect(ann.page.getByTestId("tv-account-toast")).toContainText(`Asked ${bob.name} to watch together`);
     await look(bob.page);
     await expect(tile(bob.page, `${ann.name} wants to watch together`)).toBeVisible();
 
-    // the tile opens the settings; with "Tell me what friends watch" on the row is gone, and the reason is the friend's
+    // the tile opens the settings; with "Share what I watch with friends" on the row is gone, and the reason is the friend's
     await ann.page.getByTestId("tv-friend-back").click();
     await turnOn.click();
-    await ann.page.getByTestId("tv-friends-get").click();
-    await expect(ann.page.getByTestId("tv-friends-get")).toHaveAttribute("aria-checked", "true");
+    await ann.page.getByTestId("tv-friends-give").click();
+    await expect(ann.page.getByTestId("tv-friends-give")).toHaveAttribute("aria-checked", "true");
     await ann.page.getByTestId("tv-friend-settings-done").click();
     await expect(turnOn).toHaveCount(0);
     await tile(ann.page, bob.name).click();
@@ -562,42 +571,64 @@ test.describe("a friend's page", () => {
 });
 
 test.describe("what is shared", () => {
-  test("each thing a friend may do has a switch on its own page, with what is seen on by default and what is told off, and the choices reach the server", async ({ browser }) => {
+  /** What a screen sends of a profile's settings, as the server keeps it. */
+  const kept = async (page: Page) => {
+    const profile = await page.evaluate(() => localStorage.getItem("kino.profile"));
+    const answer = (await (await page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0 } })).json()) as { settings: Array<{ key: string; value?: unknown }> };
+    return Object.fromEntries(answer.settings.map((item) => [item.key, item.value]));
+  };
+
+  test("the one thing to choose is whether what is watched is shared (off to begin with), with what a chat is kept as said under it; the switches that are on for everybody are not there; the choice reaches the server", async ({ browser }) => {
     test.setTimeout(120_000);
     const ann = await screenWithFriends(browser, "Ann");
     await openFriends(ann.page);
     await tile(ann.page, "Friends settings").click();
-    const ids = ["tv-friends-lists", "tv-friends-ratings", "tv-friends-give", "tv-friends-get", "tv-friends-inbox", "tv-friends-presence"];
-    const states = () => Promise.all(ids.map((id) => ann.page.getByTestId(id).getAttribute("aria-checked")));
-    expect(await states()).toEqual(["true", "true", "false", "false", "true", "true"]); // (what a friend may see is on by default, and that they are online; telling what is watched is not)
-    await ann.page.getByTestId("tv-friends-give").click();
-    await ann.page.getByTestId("tv-friends-lists").click();
-    await ann.page.getByTestId("tv-friends-presence").click();
-    expect(await states()).toEqual(["false", "true", "true", "false", "true", "false"]);
-
-    const profile = await ann.page.evaluate(() => localStorage.getItem("kino.profile"));
-    await expect
-      .poll(async () => {
-        const answer = (await (await ann.page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0 } })).json()) as { settings: Array<{ key: string; value?: unknown }> };
-        return Object.fromEntries(answer.settings.map((item) => [item.key, item.value]));
-      })
-      .toMatchObject({ friends: true, friendsGive: true, friendsLists: false, friendsPresence: false });
+    const give = ann.page.getByTestId("tv-friends-give");
+    await expect(give).toHaveAttribute("aria-checked", "false");
+    await expect(give).toContainText(en["friends.switchGive"]);
+    await expect(ann.page.getByTestId("tv-friends-give-hint")).toHaveText(en["friends.switchGiveHint"]);
+    await expect(ann.page.getByTestId("tv-friends-messages-hint")).toContainText("without encryption");
+    for (const gone of ["lists", "ratings", "get", "inbox", "presence", "messages", "popups"]) await expect(ann.page.getByTestId(`tv-friends-${gone}`), gone).toHaveCount(0);
+    await give.click();
+    await expect(give).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => kept(ann.page)).toMatchObject({ friends: true, friendsGive: true });
 
     // Back from the page lands where it came from
     await ann.page.keyboard.press("Escape");
     await expect(tile(ann.page, "Friends settings")).toBeFocused();
   });
 
-  test("the switch that shares ratings is not there while ratings are turned off, and comes back with them", async ({ browser }) => {
-    test.setTimeout(120_000);
+  test("a profile that had turned some of the others off keeps the switches for those, and only those; one turned back on stays under the remote until the page is left", async ({ browser }) => {
+    test.setTimeout(150_000);
     const ann = await screenWithFriends(browser, "Ann");
+    await hadTurnedOff(ann.page, "friendsLists", "friendsPresence", "newsPopups");
+    await openFriends(ann.page);
+    await tile(ann.page, "Friends settings").click();
+    const lists = ann.page.getByTestId("tv-friends-lists");
+    for (const id of ["tv-friends-lists", "tv-friends-presence", "tv-friends-popups"]) await expect(ann.page.getByTestId(id), id).toHaveAttribute("aria-checked", "false");
+    for (const gone of ["ratings", "inbox", "messages", "get"]) await expect(ann.page.getByTestId(`tv-friends-${gone}`), gone).toHaveCount(0);
+
+    await lists.click();
+    await expect(lists).toHaveAttribute("aria-checked", "true"); // (turned on, and still there: it is not pulled from under the remote)
+    await expect.poll(() => kept(ann.page)).toMatchObject({ friendsLists: true, friendsPresence: false });
+
+    await ann.page.keyboard.press("Escape");
+    await tile(ann.page, "Friends settings").click();
+    await expect(ann.page.getByTestId("tv-friends-lists")).toHaveCount(0); // (and gone the next time)
+    await expect(ann.page.getByTestId("tv-friends-presence")).toHaveAttribute("aria-checked", "false");
+  });
+
+  test("the switch that shares ratings, for a profile that has one, is not there while ratings are turned off, and comes back with them", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    await hadTurnedOff(ann.page, "friendsRatings");
     await openProfilePlace(ann.page, "settings");
     await ann.page.getByTestId("tv-ratings-switch").click();
     await expect(ann.page.getByTestId("tv-ratings-switch")).toHaveAttribute("aria-checked", "false");
     await ann.page.getByTestId("tv-account-back").click();
     await openFriends(ann.page);
     await tile(ann.page, "Friends settings").click();
-    await expect(ann.page.getByTestId("tv-friends-lists")).toBeVisible();
+    await expect(ann.page.getByTestId("tv-friends-give")).toBeVisible();
     await expect(ann.page.getByTestId("tv-friends-ratings")).toHaveCount(0);
     await ann.page.keyboard.press("Escape");
 
@@ -607,7 +638,7 @@ test.describe("what is shared", () => {
     await ann.page.getByTestId("tv-account-back").click();
     await openFriends(ann.page);
     await tile(ann.page, "Friends settings").click();
-    await expect(ann.page.getByTestId("tv-friends-ratings")).toHaveAttribute("aria-checked", "true");
+    await expect(ann.page.getByTestId("tv-friends-ratings")).toHaveAttribute("aria-checked", "false");
   });
 });
 
@@ -743,11 +774,8 @@ test.describe("sending things to friends from the TV", () => {
     const ann = await screenWithFriends(browser, "Ann");
     const bob = await screenWithFriends(browser, "Bob");
     await meet(ann, bob);
-    // (Ann stops taking titles and invitations; she can still invite Bob, who is not asked to tell what he watches, nor does she tell)
-    await tile(ann.page, "Friends settings").click();
-    await ann.page.getByTestId("tv-friends-inbox").click();
-    await expect(ann.page.getByTestId("tv-friends-inbox")).toHaveAttribute("aria-checked", "false");
-    await ann.page.getByTestId("tv-friend-settings-done").click();
+    // (Ann stops taking titles and invitations, a choice that has no switch any more; she can still invite Bob, who is not asked to tell what he watches, nor does she tell)
+    await choose(ann.page, { friendsInbox: false });
 
     await ann.page.getByTestId("rail-party").click();
     await ann.page.getByTestId("tv-party-start").click();
@@ -889,10 +917,7 @@ test.describe("sending things to friends from the TV", () => {
     const bob = await screenWithFriends(browser, "Bob");
     await meet(ann, bob);
 
-    await openFriends(bob.page);
-    await tile(bob.page, "Friends settings").click();
-    await bob.page.getByTestId("tv-friends-inbox").click();
-    await expect(bob.page.getByTestId("tv-friends-inbox")).toHaveAttribute("aria-checked", "false");
+    await choose(bob.page, { friendsInbox: false }); // (Bob stops taking titles and invitations: a choice that has no switch any more)
 
     await ann.page.getByTestId("rail-home").click();
     await tile(ann.page, "Alpha Film").click();
@@ -993,7 +1018,7 @@ test.describe("friends' news while something plays", () => {
     await expect(toast).toHaveClass(/tv-toast/);
   });
 
-  test("a screen can turn friends' news off: nothing is said over a film or a library, the bell still counts, and the choice is kept", async ({ browser, baseURL }) => {
+  test("a profile that turned friends' news off before keeps that choice: nothing is said over a film or a library, the bell still counts, and the switch is there to turn it on again", async ({ browser, baseURL }) => {
     test.setTimeout(240_000);
     const ann = await screenWithFriends(browser, "Ann", { library: films(baseURL!) });
     const bob = await screenWithFriends(browser, "Bob", { library: films(baseURL!) });
@@ -1001,14 +1026,11 @@ test.describe("friends' news while something plays", () => {
     const page = bob.page;
     const popups = page.getByTestId("tv-friends-popups");
 
-    // It is on until it is turned off; turning it off is one press on the friends' settings.
+    // It is on for everybody and has no switch; Bob had turned it off, on another screen of his profile, and the page that has the switch for it is there for him.
+    await hadTurnedOff(page, "newsPopups");
+    await openFriends(page);
     await tile(page, "Friends settings").click();
-    await expect(popups).toHaveAttribute("aria-checked", "true");
-    await popups.click();
     await expect(popups).toHaveAttribute("aria-checked", "false");
-    await page.keyboard.press("Escape");
-    await tile(page, "Friends settings").click();
-    await expect(popups).toHaveAttribute("aria-checked", "false"); // (still, when the page is opened again)
     await page.keyboard.press("Escape");
 
     // Over the library: a title sent says nothing...
@@ -1062,17 +1084,11 @@ test.describe("walking the friends' pages with the remote", () => {
     await page.keyboard.press("ArrowRight");
     await expect(tile(page, "Friends settings")).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("tv-friends-lists")).toBeFocused();
-    await page.keyboard.press("ArrowRight"); // two columns of switches: lists | ratings, give | get, inbox | online
-    await expect(page.getByTestId("tv-friends-ratings")).toBeFocused();
+    await expect(page.getByTestId("tv-friends-give")).toBeFocused(); // (the one switch; Done is under it)
     await page.keyboard.press("ArrowDown");
-    await expect(page.getByTestId("tv-friends-get")).toBeFocused();
-    await page.keyboard.press("ArrowLeft");
+    await expect(page.getByTestId("tv-friend-settings-done")).toBeFocused();
+    await page.keyboard.press("ArrowUp");
     await expect(page.getByTestId("tv-friends-give")).toBeFocused();
-    await page.keyboard.press("ArrowDown");
-    await expect(page.getByTestId("tv-friends-inbox")).toBeFocused();
-    await page.keyboard.press("ArrowRight");
-    await expect(page.getByTestId("tv-friends-presence")).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(tile(page, "Friends settings")).toBeFocused();
   });
@@ -1421,7 +1437,7 @@ test.describe("everything of friends fits the screen", () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 
       await tile(page, bob.name).click();
-      await expect(page.getByTestId("tv-view-hint")).toContainText(say(words["friends.hintMine"], { name: bob.name, switch: words["friends.switchGet"] }));
+      await expect(page.getByTestId("tv-view-hint")).toContainText(say(words["friends.hintMine"], { name: bob.name, switch: words["friends.switchGive"] }));
       const line = (await page.getByTestId("tv-view-hint").boundingBox())!;
       expect(line.x, "the line from the left").toBeGreaterThanOrEqual(0);
       expect(line.x + line.width, "the line to the right").toBeLessThanOrEqual(screen.width + 0.5);

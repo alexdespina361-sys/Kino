@@ -612,7 +612,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
       {state.activity.length === 0 && !iGet && onOpenSettings && state.friends.some((friend) => friend.on) && (
         <Group title={t("friends.activity")}>
           <p className="muted" data-testid="friends-activity-off">
-            {t("friends.activityOff", { switch: t("friends.switchGet") })}
+            {t("friends.activityOff", { switch: t("friends.switchGive") })}
           </p>
           <button className="btn btn-block" onClick={onOpenSettings} data-testid="friends-activity-settings">
             {t("friends.settingsTile")}

@@ -60,9 +60,9 @@ export const FRIEND_DEFAULTS = {
   friendsLists: true,
   /** ...and at my ratings. */
   friendsRatings: true,
-  /** Friends are told what I watch... */
+  /** Friends are told what I watch, and I am told what they watch: one exchange (see `friendChoices`). */
   friendsGive: false,
-  /** ...and I am told what they watch. */
+  /** Not asked any more: it follows `friendsGive`, and a value an earlier version stored is not read. */
   friendsGet: false,
   /** Friends can send me titles and invitations to a watch party. */
   friendsInbox: true,
@@ -83,12 +83,22 @@ export function friendChoices(settings: Settings): FriendChoices {
     friendsLists: choice("friendsLists"),
     friendsRatings: choice("friendsRatings"),
     friendsGive: choice("friendsGive"),
-    friendsGet: choice("friendsGet"),
+    friendsGet: choice("friendsGive"), // (told what friends watch while one tells what one watches)
     friendsInbox: choice("friendsInbox"),
     friendsPresence: choice("friendsPresence"),
     friendsMessages: choice("friendsMessages"),
   };
 }
+
+/** The switches that are on for everybody now, with no switch to turn them off (the last is this screen's own, not what a friend may do). */
+export type SunsetSwitch = "friendsLists" | "friendsRatings" | "friendsInbox" | "friendsPresence" | "friendsMessages" | "newsPopups";
+const SUNSET_SWITCHES: readonly SunsetSwitch[] = ["friendsLists", "friendsRatings", "friendsInbox", "friendsPresence", "friendsMessages", "newsPopups"];
+
+/**
+ * Which of them a profile still has a switch for: the ones it turned off before they went, so that what it chose is neither undone nor out of its
+ * reach. (A screen asks once, when it opens: a switch turned back on stays under the remote until the screen is left, and is gone the next time.)
+ */
+export const sunsetSwitches = (settings: Settings): SunsetSwitch[] => SUNSET_SWITCHES.filter((key) => settings[key] === false);
 
 /** Whether a profile takes messages from its friends: friends are on, and it has not turned that switch off. */
 export function takesMessages(settings: Settings): boolean {

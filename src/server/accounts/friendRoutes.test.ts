@@ -1154,25 +1154,24 @@ describe("what friends watch", () => {
     expect(activity.every((item) => item.friend === alex.id)).toBe(true);
   });
 
-  it("needs the one to give it and the other to get it", async () => {
+  it("goes both ways: a profile hears what a friend watches while it tells what it watches, and what an earlier version stored for hearing changes nothing", async () => {
     const { alex, sam } = await friends();
     await alex.keep({ progress: [card(1, 600)] });
     await sam.keep({ progress: [card(5, 600)] });
 
     await alex.choose({ friendsGive: true });
-    expect((await sam.state()).activity).toEqual([]); // given, but not got
+    expect((await sam.state()).activity).toEqual([]); // told, but Sam tells nothing, so Sam hears nothing
     expect((await sam.state()).friends[0]).toMatchObject({ activity: false });
     await sam.choose({ friendsGet: true });
+    expect((await sam.state()).activity).toEqual([]); // (the old switch for hearing is not read any more)
+    await sam.choose({ friendsGive: true });
     expect((await sam.state()).activity).toMatchObject([{ friend: alex.id, title: "Film 1" }]);
     expect((await sam.state()).friends[0]).toMatchObject({ activity: true });
-    // Giving is not getting: Alex hears nothing of Sam, who gives nothing and watched something too.
-    expect((await alex.state()).activity).toEqual([]);
+    expect((await alex.state()).activity).toMatchObject([{ friend: sam.id, title: "Film 5" }]); // ...and Alex hears Sam
 
     await alex.choose({ friendsGive: false });
     expect((await sam.state()).activity).toEqual([]);
-    await alex.choose({ friendsGive: true, friendsGet: true });
-    await sam.choose({ friendsGive: true });
-    expect((await alex.state()).activity).toMatchObject([{ friend: sam.id, title: "Film 5" }]);
+    expect((await alex.state()).activity).toEqual([]); // (Alex tells nothing now, and is told nothing)
   });
 
   it("is off to begin with: nothing is given or got until it is turned on", async () => {
@@ -1242,14 +1241,14 @@ describe("how far a friend got in the titles they keep and rate", () => {
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.progress).toEqual([{ link: url(2), percent: 100, done: true }]);
   });
 
-  it("is not told unless the friend gives what they watch and this profile gets it: the lists and the ratings come without it", async () => {
+  it("is not told unless the friend gives what they watch and this profile gives what it watches too: the lists and the ratings come without it", async () => {
     const { alex, sam } = await friends();
     await alex.keep({ list: [saved(url(1), "Film 1")], ratings: [rated(url(1), "Film 1")], progress: [film] });
     for (const path of ["lists", "ratings"]) expect((await sam.client.get(mine(sam, `/${alex.id}/${path}`))).data, path).not.toHaveProperty("progress");
 
     await alex.choose({ friendsGive: true });
-    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data).not.toHaveProperty("progress"); // (given, but not got)
-    await sam.choose({ friendsGet: true });
+    expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data).not.toHaveProperty("progress"); // (told, but Sam tells nothing)
+    await sam.choose({ friendsGive: true });
     expect((await sam.client.get(mine(sam, `/${alex.id}/lists`))).data.progress).toHaveLength(1);
     await alex.choose({ friendsGive: false });
     expect((await sam.client.get(mine(sam, `/${alex.id}/ratings`))).data).not.toHaveProperty("progress");

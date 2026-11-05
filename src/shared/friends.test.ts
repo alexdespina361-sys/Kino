@@ -35,6 +35,7 @@ import {
   sameTag,
   sharesLists,
   sharesRatings,
+  sunsetSwitches,
   tagLabel,
   takesMessages,
   type Friend,
@@ -56,12 +57,25 @@ describe("the switches", () => {
       friendsLists: false,
       friendsRatings: true,
       friendsGive: true,
-      friendsGet: false,
+      friendsGet: true, // (told what friends watch while one tells what one watches)
       friendsInbox: true,
       friendsPresence: true,
       friendsMessages: true,
     });
     expect(friendChoices({ friendsPresence: false })).toMatchObject({ friendsPresence: false, friends: false }); // (being seen as online is its own switch, on until it is turned off)
+  });
+
+  it("tell and hear what is watched together: what an earlier version stored for hearing is not read", () => {
+    expect(friendChoices({ friendsGive: true, friendsGet: false }).friendsGet).toBe(true);
+    expect(friendChoices({ friendsGive: false, friendsGet: true }).friendsGet).toBe(false);
+    expect(friendChoices({ friendsGive: false }).friendsGet).toBe(false);
+  });
+
+  it("are left with a switch only for a profile that turned them off, whichever it was", () => {
+    expect(sunsetSwitches({})).toEqual([]);
+    expect(sunsetSwitches({ friends: true, friendsLists: true, friendsGive: false, newsPopups: true })).toEqual([]);
+    expect(sunsetSwitches({ friendsLists: false, friendsPresence: false, newsPopups: false })).toEqual(["friendsLists", "friendsPresence", "newsPopups"]);
+    expect(sunsetSwitches({ friendsRatings: false, friendsInbox: false, friendsMessages: false })).toEqual(["friendsRatings", "friendsInbox", "friendsMessages"]);
   });
 
   it("only take true or false", () => {

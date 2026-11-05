@@ -109,7 +109,7 @@ describe("the rows of the friends page", () => {
   it("say, in a tile that opens the settings, that being told what friends watch is off: only while it is off, with a friend to hear from, and nothing to show", () => {
     const row = (changes: Partial<FriendsState>, iGet: boolean) => friendRows(state(changes), NOW, iGet).find((each) => each.id === "friend-activity-off");
     expect(row({}, false)).toMatchObject({ layout: "categories", title: t("friends.activity") });
-    expect(row({}, false)?.entries).toEqual([{ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGet"), action: "friendSettings" }]);
+    expect(row({}, false)?.entries).toEqual([{ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGive"), action: "friendSettings" }]);
     expect(friendRows(state(), NOW, false).map((each) => each.id)).toEqual(["friend-people", "friend-activity-off"]); // (the last row)
     expect(row({}, true)).toBeUndefined(); // (on: as before, the rows are there when there is something to show)
     expect(row({ friends: [{ ...sam, on: false }] }, false)).toBeUndefined(); // (nobody who could be heard from)
@@ -336,7 +336,7 @@ describe("a friend's page", () => {
 
   it("says, when what a friend watches is not shown, why: this profile is not told, else the friend does not tell", () => {
     const quiet = state({ friends: [{ ...sam, activity: false }] });
-    expect(friendGrid(view, quiet, { data: lists() }, null, false)?.hint).toBe(t("friends.hintMine", { name: "Sam", switch: t("friends.switchGet") }));
+    expect(friendGrid(view, quiet, { data: lists() }, null, false)?.hint).toBe(t("friends.hintMine", { name: "Sam", switch: t("friends.switchGive") }));
     expect(friendGrid(view, quiet, { data: lists() }, null, true)?.hint).toBe(t("friends.hintTheirs", { name: "Sam" }));
     expect(friendGrid(view, state(), { data: lists() }, null, false)).not.toHaveProperty("hint"); // (it is shown: nothing to explain)
     expect(friendGrid(view, state({ friends: [{ ...sam, on: false, activity: false }] }), null, null, false)).not.toHaveProperty("hint"); // (friends off has a line of its own)

@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ACCENTS, DEVICE_NAME_MAX, friendChoices, preferredLanguages, UI_LANGUAGES, type FriendSetting, type KeptFriend, type SessionInfo } from "../../shared";
+import { ACCENTS, DEVICE_NAME_MAX, friendChoices, preferredLanguages, sunsetSwitches, UI_LANGUAGES, type FriendSetting, type KeptFriend, type SessionInfo, type SunsetSwitch } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { api } from "../account/api";
 import { Avatar } from "../account/Avatar";
@@ -127,12 +127,13 @@ function SubtitleLanguages() {
   );
 }
 
-/** What a friend may do while friends are on, each its own switch. */
-const FRIEND_SWITCHES: ReadonlyArray<{ key: FriendSetting; label: Key; testId: string }> = [
+/**
+ * What a friend may do is on for everybody while friends are on, and the one thing to choose is whether what is watched is shared (both ways). A profile that had
+ * turned one of these off keeps the switch for it (`sunsetSwitches`; the chat's and the news' are drawn apart, they say more).
+ */
+const SUNSET_SWITCH_ROWS: ReadonlyArray<{ key: FriendSetting & SunsetSwitch; label: Key; testId: string }> = [
   { key: "friendsLists", label: "friends.switchLists", testId: "friends-lists" },
   { key: "friendsRatings", label: "friends.switchRatings", testId: "friends-ratings" },
-  { key: "friendsGive", label: "friends.switchGive", testId: "friends-give" },
-  { key: "friendsGet", label: "friends.switchGet", testId: "friends-get" },
   { key: "friendsInbox", label: "friends.switchInbox", testId: "friends-inbox-switch" },
   { key: "friendsPresence", label: "friends.switchPresence", testId: "friends-presence" },
 ];
@@ -212,8 +213,8 @@ function KeptFriends({ profileId }: { profileId: string }) {
 }
 
 /**
- * Friends: the master switch and, once it is on, what friends may see and send and whether what each watches is told. These are
- * settings of the profile (so they follow it onto every screen), and each change is sent to the server at once: the server is
+ * Friends: the master switch and, once it is on, whether what each watches is shared (and, for a profile that turned something else off before, that too).
+ * These are settings of the profile (so they follow it onto every screen), and each change is sent to the server at once: the server is
  * what decides what a friend is shown, from what the profile has chosen here.
  */
 function FriendsGroup({ onOpen }: { onOpen: () => void }) {
@@ -221,6 +222,7 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
   const account = useAccount();
   const friends = useFriends();
   const { settings, set } = useSettings();
+  const [sunset] = useState(() => sunsetSwitches(settings)); // (asked once: a switch that is turned back on stays until the page is left)
   if (!account.me || !account.profile) {
     return (
       <Group title={t("friends.settings")}>
@@ -241,13 +243,17 @@ function FriendsGroup({ onOpen }: { onOpen: () => void }) {
       {choices.friends && (
         <>
           <Rows>
-            {FRIEND_SWITCHES.filter(({ key }) => key !== "friendsRatings" || settings.ratings !== false).map(({ key, label, testId }) => (
+            <Switch label={t("friends.switchGive")} hint={t("friends.switchGiveHint")} checked={choices.friendsGive} onChange={(on) => change("friendsGive", on)} testId="friends-give" />
+            {SUNSET_SWITCH_ROWS.filter(({ key }) => sunset.includes(key) && (key !== "friendsRatings" || settings.ratings !== false)).map(({ key, label, testId }) => (
               <Switch key={key} label={t(label)} checked={choices[key]} onChange={(on) => change(key, on)} testId={testId} />
             ))}
-            {/* (The one that says honestly what a chat is kept as: plain text, on the server, unencrypted, for so long.) */}
-            <Switch label={t("chat.settingsSwitch")} hint={t("chat.settingsHint", CHAT_FACTS)} checked={choices.friendsMessages} onChange={(on) => change("friendsMessages", on)} testId="friends-messages" />
-            <Switch label={t("friends.popups")} hint={t("friends.popupsHelp")} checked={settings.newsPopups !== false} onChange={(on) => set("newsPopups", on ? undefined : false)} testId="news-popups-switch" />
+            {sunset.includes("friendsMessages") && <Switch label={t("chat.settingsSwitch")} checked={choices.friendsMessages} onChange={(on) => change("friendsMessages", on)} testId="friends-messages" />}
+            {sunset.includes("newsPopups") && <Switch label={t("friends.popups")} hint={t("friends.popupsHelp")} checked={settings.newsPopups !== false} onChange={(on) => set("newsPopups", on ? undefined : false)} testId="news-popups-switch" />}
           </Rows>
+          {/* (What a chat is kept as, said where friends are chosen: plain text, on the server, unencrypted, for so long.) */}
+          <p className="muted small" data-testid="friends-messages-hint">
+            {t("chat.settingsHint", CHAT_FACTS)}
+          </p>
           <button className="btn btn-block" onClick={onOpen} data-testid="friends-open">
             <UsersIcon /> {t("friends.open")}
             {friends.state && <small>{t("friends.count", { count: friends.state.friends.length })}</small>}

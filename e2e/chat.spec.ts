@@ -29,6 +29,19 @@ const look = (page: Page) => page.evaluate(() => document.dispatchEvent(new Even
 
 const profileOf = (page: Page) => page.evaluate(() => localStorage.getItem("kino.profile"));
 
+/** What the server keeps of a profile's settings. */
+async function kept(page: Page) {
+  const answer = (await (await page.request.post(`/api/profiles/${await profileOf(page)}/sync`, { data: { since: 0 } })).json()) as { settings: Array<{ key: string; value?: unknown }> };
+  return Object.fromEntries(answer.settings.map((item) => [item.key, item.value]));
+}
+
+/** A choice that a switch which is gone used to make, sent the way a screen sends it; the page is loaded anew, to have it too (it starts at its home screen). */
+async function chose(page: Page, choices: Record<string, boolean>) {
+  const settings = Object.entries(choices).map(([key, value]) => ({ key, at: Date.now(), value }));
+  expect((await page.request.post(`/api/profiles/${await profileOf(page)}/sync`, { data: { since: 0, settings } })).ok()).toBe(true);
+  await page.reload();
+}
+
 const WORDS = { en, ro, it: italian };
 type Language = keyof typeof WORDS;
 
@@ -323,34 +336,28 @@ test.describe("the chat on the phone", () => {
     await expect(bob.page.getByTestId("chat-mute")).toHaveText(en["chat.mute"]);
   });
 
-  test("'Friends can message me' is on until it is turned off; a friend whose switch is off is not written to (the chat says so, in a plain line), and the box comes back when it is on again", async ({ browser }) => {
-    test.setTimeout(150_000);
+  test("friends can message a profile with no switch for it (the settings say what a chat is kept as); a friend who turned it off before is not written to (the chat says so, in a plain line), has the switch to turn it on, and the box comes back when it is on again", async ({ browser }) => {
+    test.setTimeout(180_000);
     const { ann, bob } = await twoFriends(browser);
 
-    // Bob's settings: the switch is among the others, on, with the line that says what a chat is kept as
+    // Bob's settings: no switch for it (it is on for everybody), and the line that says what a chat is kept as
     await bob.page.getByTestId("account-button").click();
     await bob.page.getByTestId("menu-settings").click();
-    const messages = bob.page.getByTestId("friends-messages");
-    await expect(messages).toHaveAttribute("aria-checked", "true");
-    await expect(messages).toContainText(en["chat.settingsSwitch"]);
-    await expect(messages).toContainText("without encryption"); // (the line under the switch says what a chat is kept as)
+    await expect(bob.page.getByTestId("friends-messages")).toHaveCount(0);
+    await expect(bob.page.getByTestId("friends-messages-hint")).toContainText("without encryption");
+    await bob.page.keyboard.press("Escape");
+    await home(bob.page);
 
-    // Ann's chat is open and will take Bob's switch from the server when it looks again
+    // Ann's chat is open and will take Bob's choice from the server when it looks again
     await openChat(ann.page);
     await expect(ann.page.getByTestId("chat-compose")).toBeVisible();
     await expect(ann.page.getByTestId("chat-closed")).toHaveCount(0);
     // (a chat that can't look again, to see what the server says to a message when the friend is off)
     await ann.page.route(/\/friends\/[^/]+\/chat(\?|$)/, (route) => (route.request().method() === "GET" ? route.abort("connectionfailed") : route.continue()));
 
-    await messages.click();
-    await expect(messages).toHaveAttribute("aria-checked", "false");
-    const profile = await profileOf(bob.page);
-    await expect
-      .poll(async () => {
-        const answer = (await (await bob.page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0 } })).json()) as { settings: Array<{ key: string; value?: unknown }> };
-        return Object.fromEntries(answer.settings.map((item) => [item.key, item.value]));
-      })
-      .toMatchObject({ friends: true, friendsMessages: false });
+    // Bob had turned messages off before the switch went: the server has it, and his page is loaded anew to have it too
+    await chose(bob.page, { friendsMessages: false });
+    await expect.poll(() => kept(bob.page)).toMatchObject({ friends: true, friendsMessages: false });
 
     // Ann writes before she has heard of it: the server turns it away and the page says so in a plain line, the box gives way to it
     await write(ann.page, "Are you free tonight?");
@@ -360,26 +367,19 @@ test.describe("the chat on the phone", () => {
     await expect(lines(ann.page)).toHaveCount(0);
 
     // Bob's own chat with her says that he is not taking messages either, so that it is no surprise she can't answer
-    await bob.page.keyboard.press("Escape");
-    await expect(bob.page.getByTestId("menu-friends")).toBeVisible();
-    await openFriendsPage(bob.page);
-    await bob.page.getByTestId("friend-row").click();
-    await bob.page.getByTestId("friend-chat").click();
+    await openChat(bob.page);
     await expect(bob.page.getByTestId("chat-mine-off")).toHaveText(say(en["chat.mineOff"], { name: ann.name }));
 
-    // on again: the other side has the box back when its chat looks
-    await bob.page.keyboard.press("Escape");
-    await bob.page.keyboard.press("Escape");
-    await bob.page.keyboard.press("Escape");
+    // the switch is there for him, off; on again: the other side has the box back when its chat looks
+    await backHome(bob.page);
+    await bob.page.getByTestId("account-button").click();
     await bob.page.getByTestId("menu-settings").click();
-    await bob.page.getByTestId("friends-messages").click();
-    await expect(bob.page.getByTestId("friends-messages")).toHaveAttribute("aria-checked", "true");
-    await expect
-      .poll(async () => {
-        const answer = (await (await bob.page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0 } })).json()) as { settings: Array<{ key: string; value?: unknown }> };
-        return Object.fromEntries(answer.settings.map((item) => [item.key, item.value]));
-      })
-      .toMatchObject({ friendsMessages: true });
+    const messages = bob.page.getByTestId("friends-messages");
+    await expect(messages).toHaveAttribute("aria-checked", "false");
+    await expect(messages).toContainText(en["chat.settingsSwitch"]);
+    await messages.click();
+    await expect(messages).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => kept(bob.page)).toMatchObject({ friendsMessages: true });
     await ann.page.unroute(/\/friends\/[^/]+\/chat(\?|$)/);
     await expect(ann.page.getByTestId("chat-compose")).toBeVisible(SOON);
     await write(ann.page, "Are you free tonight?");
@@ -513,11 +513,11 @@ test.describe("the chat on the phone", () => {
     await expect(bob.page.getByTestId("friend-unread")).toHaveText(say(ro["chat.unreadShort_one"], { count: "1" }));
     await fit(["friends-list", "friend-row", "friend-unread"], "the friends");
 
-    // ... and the setting, with its line
+    // ... and the settings, with the line that says what a chat is kept as
     await bob.page.keyboard.press("Escape");
     await bob.page.getByTestId("menu-settings").click();
-    await expect(bob.page.getByTestId("friends-messages")).toBeVisible();
-    await fit(["friends-messages"], "the setting");
+    await expect(bob.page.getByTestId("friends-messages-hint")).toBeVisible();
+    await fit(["friends-give", "friends-messages-hint"], "the setting");
   });
 });
 
@@ -595,15 +595,15 @@ async function meetPhone(screen: Screen, phone: Phone) {
 }
 
 /**
- * `giver` tells what it watches and `taker` hears it (that is what lets the one ask the other to watch together, and gives the friend's page its
- * two more buttons). Both are on the page of their friends, and are left there.
+ * `giver` shares what it watches and `taker` does too, which is how it hears the other (that is what lets the one ask the other to watch together, and gives
+ * the friend's page its two more buttons). Both are on the page of their friends, and are left there.
  */
 async function tellsWhatItWatches(giver: Screen, taker: Screen, words: (typeof WORDS)[Language] = en) {
   await tile(giver.page, words["friends.settingsTile"]).click();
   await giver.page.getByTestId("tv-friends-give").click();
   await giver.page.getByTestId("tv-friend-settings-done").click();
   await tile(taker.page, words["friends.settingsTile"]).click();
-  await taker.page.getByTestId("tv-friends-get").click();
+  await taker.page.getByTestId("tv-friends-give").click();
   await taker.page.getByTestId("tv-friend-settings-done").click();
   const profile = await profileOf(taker.page);
   await expect
@@ -760,26 +760,20 @@ test.describe("the chat on the TV", () => {
     await expect(tile(ann.page, bob.name)).not.toContainText("new message");
   });
 
-  test("the switch 'Friends can message me' is among the others in what is shared, on until it is turned off, with the line that says what a chat is kept as; a friend whose switch is off is not written to, and the chat says so", async ({ browser }) => {
+  test("friends can message a profile with no switch for it (what is shared says what a chat is kept as); a friend who turned it off before is not written to, the chat says so, and the switch is there to turn it on again", async ({ browser }) => {
     test.setTimeout(240_000);
     const ann = await screenWithFriends(browser, "Ann");
     const bob = await screenWithFriends(browser, "Bob");
     await meet(ann, bob);
 
     await tile(bob.page, en["friends.settingsTile"]).click();
-    const messages = bob.page.getByTestId("tv-friends-messages");
-    await expect(messages).toHaveAttribute("aria-checked", "true");
-    await expect(messages).toContainText(en["chat.settingsSwitch"]);
+    await expect(bob.page.getByTestId("tv-friends-messages")).toHaveCount(0);
     await expect(bob.page.getByTestId("tv-friends-messages-hint")).toContainText("without encryption");
-    await messages.click();
-    await expect(messages).toHaveAttribute("aria-checked", "false");
-    const profile = await profileOf(bob.page);
-    await expect
-      .poll(async () => {
-        const answer = (await (await bob.page.request.post(`/api/profiles/${profile}/sync`, { data: { since: 0 } })).json()) as { settings: Array<{ key: string; value?: unknown }> };
-        return Object.fromEntries(answer.settings.map((item) => [item.key, item.value]));
-      })
-      .toMatchObject({ friends: true, friendsMessages: false });
+    await bob.page.keyboard.press("Escape");
+
+    // Bob had turned messages off before the switch went: the server has it, and his screen is loaded anew to have it too
+    await chose(bob.page, { friendsMessages: false });
+    await expect.poll(() => kept(bob.page)).toMatchObject({ friends: true, friendsMessages: false });
 
     // Ann's chat with Bob says so, plainly, and has no Write: the remote is on Back
     await tile(ann.page, bob.name).click();
@@ -789,15 +783,16 @@ test.describe("the chat on the TV", () => {
     await expect(ann.page.getByTestId("tv-chat-back")).toBeFocused();
 
     // Bob's own chat with her says that he takes none either; Write is there (he may write to her), and the line says why she can't answer
-    await bob.page.getByTestId("tv-friend-settings-done").click();
+    await openFriendsView(bob.page);
     await tile(bob.page, ann.name).click();
     await bob.page.getByTestId("friend-chat").click();
     await expect(bob.page.getByTestId("tv-chat-mine-off")).toHaveText(say(en["chat.mineOff"], { name: ann.name }));
 
-    // on again: Ann's open chat has Write back within a few seconds
+    // on again, with the switch he has: Ann's open chat has Write back within a few seconds
     await bob.page.keyboard.press("Escape");
     await bob.page.keyboard.press("Escape");
     await tile(bob.page, en["friends.settingsTile"]).click();
+    await expect(bob.page.getByTestId("tv-friends-messages")).toHaveAttribute("aria-checked", "false");
     await bob.page.getByTestId("tv-friends-messages").click();
     await expect(bob.page.getByTestId("tv-friends-messages")).toHaveAttribute("aria-checked", "true");
     await expect(ann.page.getByTestId("tv-chat-write")).toBeVisible(SOON);
@@ -899,14 +894,14 @@ test.describe("the chat on the TV", () => {
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("friend-chat")).toBeFocused();
 
-      // what is shared: eight switches and the line that says what a chat is kept as
+      // what is shared: the one switch, and under it the line that says what a chat is kept as
       await page.getByTestId("tv-friend-back").click();
       await expect(view(page)).toHaveAttribute("data-view", "friends");
       await tile(page, words["friends.settingsTile"]).click();
-      await expect(page.getByTestId("tv-friends-messages")).toBeVisible();
+      await expect(page.getByTestId("tv-friends-give")).toBeVisible();
       await expect(page.getByTestId("tv-friends-messages-hint")).toBeVisible();
       await fits("tv-friend-settings", "the page of what is shared");
-      for (const id of ["tv-friends-messages", "tv-friends-messages-hint"]) {
+      for (const id of ["tv-friends-give", "tv-friends-messages-hint"]) {
         await page.getByTestId(id).scrollIntoViewIfNeeded();
         const at = (await page.getByTestId(id).boundingBox())!;
         expect(at.x, `${id} from the left`).toBeGreaterThanOrEqual(-0.5);
