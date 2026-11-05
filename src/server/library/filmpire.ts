@@ -531,7 +531,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     },
     async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
       const title = parseWatchLink(link);
-      if (!title) return [];
+      if (title?.type !== "tv") return [];
 
       let counts = preloadedSeasonCounts.get(title.id);
       if (!counts && shouldVerify) {
@@ -627,20 +627,8 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     },
     async seasons(link: string): Promise<number[]> {
       const title = parseWatchLink(link);
-      if (!title) return [];
-      let preloaded = preloadedSeasons.get(title.id);
-      if (!preloaded && shouldVerify) {
-        try {
-          const probe = await probePlayback(title.id, "tv", probeFetcher, probeCache, now, 5000);
-          if (probe.seasons && probe.seasons.length > 0) {
-            preloaded = probe.seasons;
-            remember(preloadedSeasons, title.id, preloaded, MAX_PRELOADED_SEASONS);
-            if (probe.seasonCounts) remember(preloadedSeasonCounts, title.id, probe.seasonCounts, MAX_PRELOADED_SEASONS);
-          }
-        } catch {
-          // ignore
-        }
-      }
+      if (title?.type !== "tv") return [];
+      const preloaded = preloadedSeasons.get(title.id);
       if (preloaded && preloaded.length > 0) return preloaded;
       // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
       const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
