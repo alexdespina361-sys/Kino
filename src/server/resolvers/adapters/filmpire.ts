@@ -24,7 +24,12 @@ async function getJson<T = Record<string, unknown>>(get: typeof fetch, url: stri
 
 async function getText(get: typeof fetch, url: string, headers: Record<string, string> = {}): Promise<string> {
   const res = await get(url, {
-    headers: { "user-agent": UA, accept: "*/*", ...headers },
+    headers: {
+      "user-agent": UA,
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "accept-language": "en-US,en;q=0.9",
+      ...headers,
+    },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
   return res.text();
@@ -320,16 +325,24 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       // 4. Fetch container page (stellarconductornexus)
       let playerUrl: string;
       try {
-        const landingHtml = await fetchText(containerUrl, { referer: "https://screenfetch4.cyou/" });
+        let landingHtml = "";
+        try {
+          landingHtml = await fetchText(containerUrl, { referer: "https://screenfetch4.cyou/" });
+        } catch {
+          // Retry once after 300ms on transient network/bot glitch
+          await new Promise((r) => setTimeout(r, 300));
+          landingHtml = await fetchText(containerUrl, { referer: "https://screenfetch4.cyou/" });
+        }
         const playerMatch = landingHtml.match(/"playerUrl"\s*:\s*"([^"]+)"/i);
         if (!playerMatch?.[1]) {
-          throw new Error("Missing playerUrl");
+          throw new Error(`Missing playerUrl in container (len ${landingHtml.length})`);
         }
         playerUrl = new URL(playerMatch[1].replace(/\\u0026/g, "&"), containerUrl).href;
-      } catch {
+      } catch (err) {
         const alt = await fallbackAnime();
         if (alt) return alt;
-        return { status: "temporary_failure", reason: "Could not load video player." };
+        const msg = err instanceof Error ? err.message : String(err);
+        return { status: "temporary_failure", reason: `Could not load video player: ${msg}` };
       }
 
       // 5. Fetch player page and extract CONFIG
@@ -338,10 +351,16 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let seriesInfo: SeriesInfo | undefined;
       let playerConfig: { api?: string; apiToken: string; mediaType?: string; streamBase?: string } | undefined;
       try {
-        playerHtml = await fetchText(playerUrl, { referer: containerUrl });
+        try {
+          playerHtml = await fetchText(playerUrl, { referer: containerUrl });
+        } catch {
+          await new Promise((r) => setTimeout(r, 300));
+          playerHtml = await fetchText(playerUrl, { referer: containerUrl });
+        }
         const configMatch = playerHtml.match(/window\.CONFIG\s*=\s*(\{[\s\S]*?\});/);
         if (!configMatch?.[1]) {
-          throw new Error("Missing window.CONFIG");
+          const titleTag = playerHtml.match(/<title>([^<]+)<\/title>/i)?.[1] || "";
+          throw new Error(`Missing window.CONFIG (title: "${titleTag}", len ${playerHtml.length})`);
         }
         const config = JSON.parse(configMatch[1]) as {
           api?: string;
@@ -463,10 +482,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const cleanApi = (config.api || "").replace(/\\u0026/g, "&");
           streamApiUrl = `${cleanApi}&api_token=${config.apiToken}`;
         }
-      } catch {
+      } catch (err) {
         const alt = await fallbackAnime();
         if (alt) return alt;
-        return { status: "temporary_failure", reason: "Could not parse video player config." };
+        const msg = err instanceof Error ? err.message : String(err);
+        return { status: "temporary_failure", reason: `Could not parse video player config: ${msg}` };
       }
 
       // 6. Fetch stream API and decrypt URLs
@@ -519,10 +539,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             });
           }
         }
-      } catch {
+      } catch (err) {
         const alt = await fallbackAnime();
         if (alt) return alt;
-        return { status: "temporary_failure", reason: "Could not retrieve video stream." };
+        const msg = err instanceof Error ? err.message : String(err);
+        return { status: "temporary_failure", reason: `Could not retrieve video stream: ${msg}` };
       }
 
       if (subtitles.length === 0) {
