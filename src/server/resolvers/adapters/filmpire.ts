@@ -199,8 +199,20 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const targetSeason = Number(s || "1");
           const targetEpisode = Number(e || "1");
 
-          const lower = rawShowTitle.toLowerCase();
-          let matched = results.find((r) => r.title.toLowerCase() === lower);
+          const extractAnimeSeason = (tTitle: string): number => {
+            const t = tTitle.toLowerCase();
+            if (/\b(?:season\s*2|2nd\s*season|second\s*season|part\s*2)\b/i.test(t)) return 2;
+            if (/\b(?:season\s*3|3rd\s*season|third\s*season|part\s*3|culling\s*game)\b/i.test(t)) return 3;
+            if (/\b(?:season\s*4|4th\s*season|fourth\s*season|part\s*4|final\s*season)\b/i.test(t)) return 4;
+            if (/\b(?:season\s*5|5th\s*season|fifth\s*season|part\s*5)\b/i.test(t)) return 5;
+            const sMatch = t.match(/\b(?:season|part)\s*(\d+)\b/i) || t.match(/\b(\d+)(?:st|nd|rd|th)\s*season\b/i);
+            if (sMatch) return Number(sMatch[1]);
+            if (/\b(?:movie|film|special|ova)\b/i.test(t) || /\b0\b/.test(t)) return 0;
+            return 1;
+          };
+
+          const matchedSeasonList = results.filter((r) => extractAnimeSeason(r.title) === targetSeason);
+          let matched = matchedSeasonList[0];
           if (!matched && targetSeason > 1) {
             matched = results.find(
               (r) =>
@@ -211,7 +223,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             );
           }
           if (!matched) {
-            matched = results.find((r) => r.title.toLowerCase().includes(lower)) || results[0];
+            matched = results.find((r) => extractAnimeSeason(r.title) === 1) || results[0];
           }
           if (!matched) return null;
 
@@ -222,7 +234,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const ahAdapter = createAnimeHeavenAdapter({ fetch: get });
           const res = await ahAdapter.resolve(new URL(targetEp.url));
           if (res.status === "success") {
-            return res;
+            return {
+              ...res,
+              media: {
+                ...res.media,
+                title,
+              },
+            };
           }
           return null;
         } catch {
@@ -572,7 +590,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
       // 8. Through the edge relay, the provider's own address or /api/proxy (see `streamAddress`)
       const hostTokenNeeded = relayOwnsToken && !chosenToken;
-      const proxiedUrl = streamAddress(finalStreamUrl, playerUrl, process.env, hostTokenNeeded, playerConfig?.apiToken);
+      const proxiedUrl = streamAddress(finalStreamUrl, playerUrl, process.env, hostTokenNeeded);
 
       // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
       const alternates: AlternateSource[] = [];
@@ -590,7 +608,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           alternates.push({
             label: `Server ${alternates.length + 2} (${hostName})`,
             stream: {
-              url: streamAddress(altFinalUrl, playerUrl, process.env, relayOwnsToken && !altToken, playerConfig?.apiToken),
+              url: streamAddress(altFinalUrl, playerUrl, process.env, relayOwnsToken && !altToken),
               type: "hls",
               directUrl: altFinalUrl,
             },

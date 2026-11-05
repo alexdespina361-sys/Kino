@@ -299,6 +299,8 @@ function parseWatchLink(link: string): { id: number; type: "movie" | "tv" } | nu
     const isTv =
       url.searchParams.has("s") ||
       url.searchParams.has("season") ||
+      url.searchParams.has("e") ||
+      url.searchParams.has("episode") ||
       url.searchParams.get("type") === "series" ||
       url.searchParams.get("type") === "tv";
     return { id: Number(match[1]), type: isTv ? "tv" : "movie" };

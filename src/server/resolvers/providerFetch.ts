@@ -1,7 +1,7 @@
 import { SafeFetchError, safeFetch, type SafeFetchOptions } from "./safe-fetch";
 
 /** What one answer of a supported site may weigh. A longer one is cut off here: a cut list of titles or a cut module does not parse, a cut page has only less in it. */
-export const PROVIDER_MAX_BYTES = 2 * 1024 * 1024;
+export const PROVIDER_MAX_BYTES = 8 * 1024 * 1024;
 
 export type ProviderFetchOptions = Pick<SafeFetchOptions, "isAllowedAddress" | "timeoutMs" | "maxBytes" | "maxRedirects">;
 

@@ -56,8 +56,8 @@ beforeAll(async () => {
 afterEach(async () => { await relay?.close(); asked.length = 0; tokenStatus = 200; issuedToken = token; vi.restoreAllMocks(); });
 afterAll(async () => { upstream.closeAllConnections(); await new Promise<void>((resolve) => upstream.close(() => resolve())); });
 
-const signed = (path: string, hostToken = false, expires = Date.now() + 3600_000, apiToken?: string) => {
-  const url = new URL(signedRelayUrl("https://streams.example/api/proxy", { url: `${origin}${path}`, referer, hostToken, expires, apiToken }, key));
+const signed = (path: string, hostToken = false, expires = Date.now() + 3600_000) => {
+  const url = new URL(signedRelayUrl("https://streams.example/api/proxy", { url: `${origin}${path}`, referer, hostToken, expires }, key));
   return url.pathname + url.search;
 };
 const start = () => relay = buildStreamRelay({ key, isAllowedAddress: () => true });
@@ -89,13 +89,6 @@ describe("a separate streaming relay", () => {
 
   });
 
-  it("forwards apiToken to /generate.php when provided in the relay link", async () => {
-    start();
-    const res = await relay.inject(signed("/pl/master.m3u8", true, undefined, "my-turnstile-token"));
-    expect(res.statusCode).toBe(200);
-    const genReq = asked.find((r) => r.path === "/generate.php");
-    expect(genReq?.apiToken).toBe("my-turnstile-token");
-  });
 
   it("refuses unsigned, changed and expired links before contacting any provider", async () => {
     start();

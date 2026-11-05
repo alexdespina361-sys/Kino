@@ -5,13 +5,10 @@ export interface RelayLink {
   referer: string;
   expires: number;
   hostToken: boolean;
-  apiToken?: string;
 }
 
 function parameters(link: RelayLink): URLSearchParams {
-  const params = new URLSearchParams({ url: link.url, referer: link.referer, expires: String(link.expires), hostToken: link.hostToken ? "1" : "0" });
-  if (link.apiToken) params.set("apiToken", link.apiToken);
-  return params;
+  return new URLSearchParams({ url: link.url, referer: link.referer, expires: String(link.expires), hostToken: link.hostToken ? "1" : "0" });
 }
 
 function signature(link: RelayLink, key: string): string {
@@ -31,8 +28,7 @@ export function verifyRelayLink(query: Record<string, unknown>, key: string, now
       typeof query.sig !== "string" || !/^[a-f0-9]{64}$/.test(query.sig) || (query.hostToken !== "0" && query.hostToken !== "1")) return null;
   const expires = Number(query.expires);
   if (!Number.isSafeInteger(expires) || expires <= now || expires > now + 24 * 3600_000) return null;
-  const apiToken = typeof query.apiToken === "string" ? query.apiToken : undefined;
-  const link: RelayLink = { url: query.url, referer: query.referer, expires, hostToken: query.hostToken === "1", ...(apiToken ? { apiToken } : {}) };
+  const link = { url: query.url, referer: query.referer, expires, hostToken: query.hostToken === "1" };
   const expected = Buffer.from(signature(link, key), "hex");
   return timingSafeEqual(expected, Buffer.from(query.sig, "hex")) ? link : null;
 }
