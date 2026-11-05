@@ -25,9 +25,7 @@ async function getJson<T = Record<string, unknown>>(get: typeof fetch, url: stri
 async function getText(get: typeof fetch, url: string, headers: Record<string, string> = {}): Promise<string> {
   const res = await get(url, {
     headers: {
-      "user-agent": UA,
-      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "accept-language": "en-US,en;q=0.9",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       ...headers,
     },
   });
@@ -364,12 +362,22 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
         const config = JSON.parse(configMatch[1]) as {
           api?: string;
-          apiToken: string;
+          apiToken?: string;
+          rateLimited?: boolean;
           mediaType?: string;
           streamBase?: string;
         };
 
-        playerConfig = config;
+        if (config.rateLimited || !config.apiToken) {
+          const alt = await fallbackAnime();
+          if (alt) return alt;
+          return {
+            status: "temporary_failure",
+            reason: "Upstream video provider is temporarily rate-limiting requests. Please wait a moment and try again.",
+          };
+        }
+
+        playerConfig = config as { api?: string; apiToken: string; mediaType?: string; streamBase?: string };
         if (config.mediaType === "tv" || config.streamBase || isTv) {
           const targetSeason = s || "1";
           const targetEpisode = e || "1";
