@@ -33,9 +33,73 @@ export class HostTokens {
   }
 
   private async fetchToken(origin: string, referer: string): Promise<Token> {
-    const genUrl = new URL("/generate.php", origin);
+    let apiToken: string | undefined;
+
+    if (referer && /^https?:\/\//i.test(referer)) {
+      try {
+        const refUrl = new URL(referer);
+        apiToken = refUrl.searchParams.get("api_token") || undefined;
+
+        if (!apiToken) {
+          const embedReferer = `${refUrl.origin}${refUrl.pathname.replace("/embed/player/", "/embed/")}`;
+          const { response: refRes } = await openUpstream(
+            refUrl,
+            {
+              accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              referer: embedReferer,
+              "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+            },
+            this.allowedAddress,
+            AbortSignal.timeout(8_000),
+          );
+
+          if (refRes.ok) {
+            const reader = refRes.body?.getReader();
+            if (reader) {
+              const chunks: Uint8Array[] = [];
+              let bytes = 0;
+              try {
+                while (bytes < 131_072) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+                  chunks.push(value);
+                  bytes += value.length;
+                }
+              } finally {
+                await reader.cancel();
+              }
+              const html = Buffer.concat(chunks).toString("utf8");
+              const configMatch = html.match(/window\.CONFIG\s*=\s*(\{[\s\S]*?\});/);
+              if (configMatch?.[1]) {
+                try {
+                  const parsed = JSON.parse(configMatch[1]) as { apiToken?: string };
+                  if (typeof parsed.apiToken === "string") apiToken = parsed.apiToken;
+                } catch {
+                  // ignore
+                }
+              }
+              if (!apiToken) {
+                const turnstileMatch =
+                  html.match(/name="turnstile_token"\s+value="([^"]+)"/) ||
+                  html.match(/["']api_token["']\s*:\s*["']([^"']+)["']/);
+                if (turnstileMatch) apiToken = turnstileMatch[1];
+              }
+            }
+          } else {
+            await refRes.body?.cancel();
+          }
+        }
+      } catch {
+        // Proceed to try generate.php directly
+      }
+    }
+
+    const genUrl = apiToken
+      ? new URL(`/generate.php?api_token=${encodeURIComponent(apiToken)}`, origin)
+      : new URL("/generate.php", origin);
+
     const { response } = await openUpstream(genUrl, {
-      referer, accept: "*/*", "user-agent": "Mozilla/5.0",
+      referer, accept: "*/*", "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
     }, this.allowedAddress, AbortSignal.timeout(15_000));
     if (!response.ok) {
       await response.body?.cancel();

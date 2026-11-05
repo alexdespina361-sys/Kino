@@ -260,13 +260,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                 r.title.toLowerCase().includes(`${targetSeason}th season`),
             );
           }
-          if (!matched) {
-            matched = results.find((r) => extractAnimeSeason(r.title) === 1) || results[0];
+          if (!matched && targetSeason === 1) {
+            matched = results.find((r) => extractAnimeSeason(r.title) === 1);
           }
           if (!matched) return null;
 
-          const eps = await ah.episodes(matched.url, targetSeason);
-          const targetEp = eps.find((ep) => ep.episode === targetEpisode) || eps[0];
+          const eps = await ah.episodes(matched.url, 1);
+          const targetEp = eps.find((ep) => ep.episode === targetEpisode);
           if (!targetEp?.url) return null;
 
           const ahAdapter = createAnimeHeavenAdapter({ fetch: get });
@@ -619,16 +619,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
       }
 
-      // If no host gave a token via generate.php, use primary stream
+      // 8. Filmpire streams are locked by IP-CIDR to whoever fetched the player page and generate.php (this server).
+      // They must always be proxied through this host's /api/proxy so incoming requests to the CDN match the IP in token.
       const delim = chosenStream.includes("?") ? "&" : "?";
-      let finalStreamUrl = chosenStream;
-      if (chosenToken) {
-        finalStreamUrl = `${chosenStream}${delim}token=${encodeURIComponent(chosenToken)}&bypass_localize=true`;
-      }
-
-      // 8. Through the edge relay, the provider's own address or /api/proxy (see `streamAddress`)
-      const hostTokenNeeded = relayOwnsToken && !chosenToken;
-      const proxiedUrl = streamAddress(finalStreamUrl, playerUrl, process.env, hostTokenNeeded);
+      const finalStreamUrl = chosenToken
+        ? `${chosenStream}${delim}token=${encodeURIComponent(chosenToken)}&bypass_localize=true`
+        : chosenStream;
+      const proxiedUrl = `/api/proxy?url=${encodeURIComponent(finalStreamUrl)}&referer=${encodeURIComponent(playerUrl)}`;
 
       // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
       const alternates: AlternateSource[] = [];
@@ -646,7 +643,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           alternates.push({
             label: `Server ${alternates.length + 2} (${hostName})`,
             stream: {
-              url: streamAddress(altFinalUrl, playerUrl, process.env, relayOwnsToken && !altToken),
+              url: `/api/proxy?url=${encodeURIComponent(altFinalUrl)}&referer=${encodeURIComponent(playerUrl)}`,
               type: "hls",
               directUrl: altFinalUrl,
             },

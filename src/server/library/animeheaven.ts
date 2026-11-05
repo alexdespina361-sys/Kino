@@ -65,15 +65,20 @@ function decodeHtmlEntities(str: string): string {
 }
 
 function detectSeasonFromTitle(title: string): { cleanTitle: string; season: number } {
-  const seasonMatch =
-    title.match(/\bseason\s*(\d+)\b/i) ||
-    title.match(/\b(\d+)(?:nd|rd|th|st)\s*season\b/i) ||
-    title.match(/\bpart\s*(\d+)\b/i);
+  const t = title.toLowerCase();
+  let season = 1;
+  if (/\b(?:season\s*2|2nd\s*season|second\s*season|part\s*2)\b/i.test(t)) season = 2;
+  else if (/\b(?:season\s*3|3rd\s*season|third\s*season|part\s*3|culling\s*game)\b/i.test(t)) season = 3;
+  else if (/\b(?:season\s*4|4th\s*season|fourth\s*season|part\s*4|final\s*season)\b/i.test(t)) season = 4;
+  else if (/\b(?:season\s*5|5th\s*season|fifth\s*season|part\s*5)\b/i.test(t)) season = 5;
+  else {
+    const sMatch = t.match(/\b(?:season|part)\s*(\d+)\b/i) || t.match(/\b(\d+)(?:st|nd|rd|th)\s*season\b/i);
+    if (sMatch) season = parseInt(sMatch[1]!, 10);
+  }
 
-  const season = seasonMatch ? parseInt(seasonMatch[1]!, 10) : 1;
   const cleanTitle = title
     .replace(/\s*\((?:Dub|Sub|TV|Movie)\)/gi, "")
-    .replace(/\b(?:Season\s*\d+|\d+(?:nd|rd|th|st)\s*Season|Part\s*\d+)\b/gi, "")
+    .replace(/\b(?:Season\s*\d+|\d+(?:nd|rd|th|st)\s*Season|Part\s*\d+|The\s*Culling\s*Game)\b/gi, "")
     .replace(/\s*:\s*$/, "")
     .trim();
 
@@ -309,7 +314,7 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
     },
     async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
       const parsed = parseAnimeHeavenLink(link);
-      if (!parsed || season !== 1) return [];
+      if (!parsed) return [];
 
       try {
         const html = await fetchHtml(`anime.php?${parsed.slug}`);

@@ -383,12 +383,14 @@ async function proxyRequest(
   if (stats) stats.requests += 1;
 
   // (A server that carries no film says no before it asks anyone, when the address is plainly a piece of one: see `ProxyOptions.video`.)
+  // Note: Upstream provider streams (.space, .cyou) that are IP-locked to this server must be allowed so playback works even if PROXY_VIDEO=off.
+  const isUpstreamMedia = targetUrl.hostname.endsWith(".space") || targetUrl.hostname.endsWith(".cyou");
   const video = options.video !== false;
   const turnAway = (): FastifyReply => {
     if (stats) stats.refused += 1;
     return reply.code(403).send({ error: "VIDEO_NOT_CARRIED" });
   };
-  if (!video && isSegmentPath(targetUrl.pathname)) return turnAway();
+  if (!video && !isUpstreamMedia && isSegmentPath(targetUrl.pathname)) return turnAway();
 
   const headers: Record<string, string> = {
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -455,7 +457,7 @@ async function proxyRequest(
     contentType.includes("subrip");
 
   // (A server that carries no film passes a subtitle on and nothing else: whatever the address, a playlist or a file is not one.)
-  if (!video && (isM3u8 || !isSubtitle)) {
+  if (!video && !isUpstreamMedia && (isM3u8 || !isSubtitle)) {
     await upstreamResponse.body?.cancel();
     return turnAway();
   }

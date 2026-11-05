@@ -72,6 +72,11 @@ export function guardedLookup(isAllowedAddress: (a: string) => boolean): net_loo
       if (addresses.length === 0 || addresses.some((a) => !isAllowedAddress(a.address))) {
         return callback(new SafeFetchError("blocked", "address not allowed") as NodeJS.ErrnoException, "", 4);
       }
+      // Prefer IPv4 addresses so machines without working IPv6 routes connect reliably without timing out
+      addresses.sort((a, b) => {
+        if (a.family === b.family) return 0;
+        return a.family === 4 ? -1 : 1;
+      });
       if (options.all) return (callback as unknown as (e: null, a: dns.LookupAddress[]) => void)(null, addresses);
       callback(null, addresses[0]!.address, addresses[0]!.family);
     });

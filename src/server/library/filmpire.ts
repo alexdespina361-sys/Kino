@@ -531,7 +531,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     },
     async episodes(link: string, season: number): Promise<EpisodeDetail[]> {
       const title = parseWatchLink(link);
-      if (title?.type !== "tv") return [];
+      if (!title) return [];
 
       let counts = preloadedSeasonCounts.get(title.id);
       if (!counts && shouldVerify) {
@@ -585,7 +585,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       }
 
       // If TMDB returned 404 for this season (e.g. TMDB lumped all seasons into season 1):
-      if (res.status === 404 && season > 1 && counts && counts[season]) {
+      if (res.status === 404 && season > 1) {
         const s1Url = `${BASE_URL}/tv/${title.id}/season/1?api_key=${apiKey}&language=en-US`;
         const s1Res = await get(s1Url, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
         if (s1Res.ok) {
@@ -593,11 +593,16 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
           const validEps = s1Data.episodes.filter((episode) => !(episode.air_date && episode.air_date > day));
 
           let offset = 0;
-          for (let s = 1; s < season; s++) {
-            offset += counts[s] ?? 0;
+          let targetCount = counts?.[season] ?? 0;
+          if (counts) {
+            for (let s = 1; s < season; s++) {
+              offset += counts[s] ?? 0;
+            }
+          } else if (validEps.length > 24) {
+            offset = (season - 1) * 24;
+            targetCount = 24;
           }
-          const targetCount = counts[season] ?? 0;
-          const slice = validEps.slice(offset, offset + targetCount);
+          const slice = validEps.slice(offset, targetCount > 0 ? offset + targetCount : undefined);
 
           if (slice.length > 0) {
             return slice.map((episode, idx) => {
@@ -622,8 +627,20 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
     },
     async seasons(link: string): Promise<number[]> {
       const title = parseWatchLink(link);
-      if (title?.type !== "tv") return [];
-      const preloaded = preloadedSeasons.get(title.id);
+      if (!title) return [];
+      let preloaded = preloadedSeasons.get(title.id);
+      if (!preloaded && shouldVerify) {
+        try {
+          const probe = await probePlayback(title.id, "tv", probeFetcher, probeCache, now, 5000);
+          if (probe.seasons && probe.seasons.length > 0) {
+            preloaded = probe.seasons;
+            remember(preloadedSeasons, title.id, preloaded, MAX_PRELOADED_SEASONS);
+            if (probe.seasonCounts) remember(preloadedSeasonCounts, title.id, probe.seasonCounts, MAX_PRELOADED_SEASONS);
+          }
+        } catch {
+          // ignore
+        }
+      }
       if (preloaded && preloaded.length > 0) return preloaded;
       // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
       const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
