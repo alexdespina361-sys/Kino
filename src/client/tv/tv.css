@@ -1168,7 +1168,9 @@
 /* Under the last row of a page that goes on as it is scrolled: a line when the rows that come next could not be had (they are asked for again in a moment). */
 .tv-rows-note { margin: 0.4em 2.4em 1.4em 4.1em; font-size: 1.4em; color: var(--muted); }
 /* In a search: the titles with every word typed, then this heading, then the closest others. It runs the width of the grid. */
-.tv-results-closest { grid-column: 1 / -1; margin: 0.6em 0 -0.2em; font-size: 1.7em; font-weight: 700; color: #e8e8ec; }
+.tv-results-closest, .tv-grid-heading { grid-column: 1 / -1; margin: 0.6em 0 -0.2em; font-size: 1.7em; font-weight: 700; color: #e8e8ec; }
+/* (A grid in sections, a friend's lists, starts with the first heading right under the buttons.) */
+.tv-grid-heading:first-child { margin-top: 0; }
 
 /* ------------------------------ library: menu, categories, search ------------------------------ */
 

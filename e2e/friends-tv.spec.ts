@@ -408,12 +408,14 @@ test.describe("a friend's page", () => {
     await meet(ann, bob);
     await seed(ann.page, filmCards());
 
-    // Bob opens Ann's tile: her lists first, the list each title is in under it
+    // Bob opens Ann's tile: her lists first, each under its name (the tile need not say which list it is in)
     await tile(bob.page, ann.name).click();
     await expect(view(bob.page)).toHaveAttribute("data-view", /^friend:/);
     await expect(bob.page.getByTestId("tv-view-title")).toHaveText(ann.name);
     await expect(bob.page.getByTestId("friend-tab-lists")).toHaveAttribute("aria-checked", "true");
-    await expect(tile(bob.page, "Alpha Film")).toContainText("Favourites");
+    await expect(bob.page.getByTestId("tv-grid-heading")).toHaveText(en["list.favourites"]);
+    await expect(tile(bob.page, "Alpha Film")).toBeVisible();
+    await expect(tile(bob.page, "Alpha Film")).not.toContainText(en["list.favourites"]);
     await bob.page.getByTestId("friend-tab-ratings").click();
     await expect(tile(bob.page, "Alpha Film")).toContainText("8/10");
 
@@ -443,6 +445,53 @@ test.describe("a friend's page", () => {
     await expect(tile(bob.page, ann.name)).toHaveCount(0);
     await look(ann.page);
     await expect(tile(ann.page, bob.name)).toHaveCount(0);
+  });
+
+  test("shows each of their lists as a section of its own, one under the other under its name (a title in two lists in both), and the remote walks from one section to the next", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await screenWithFriends(browser, "Ann");
+    const bob = await screenWithFriends(browser, "Bob");
+    await meet(ann, bob);
+    const BETA = "https://films.example/watch/18";
+    const at = Date.now();
+    await seed(ann.page, {
+      listNames: [{ key: "lweekend", at, name: "Weekend" }],
+      list: [
+        ...filmCards().list,
+        { key: listKey(BETA, "lweekend"), at, list: "lweekend", id: "f18", title: "Beta Film", url: BETA, year: 1940 },
+        { key: listKey(FILM, "lweekend"), at, list: "lweekend", id: "f17", title: "Alpha Film", url: FILM, year: 1931 },
+      ],
+    });
+
+    const page = bob.page;
+    await tile(page, ann.name).click();
+    await expect(view(page)).toHaveAttribute("data-view", /^friend:/);
+    await expect(page.getByTestId("tv-grid-heading")).toHaveText([en["list.favourites"], "Weekend"]);
+    await expect(tile(page, "Alpha Film")).toHaveCount(2); // (it is in both lists)
+    await expect(tile(page, "Beta Film")).toHaveCount(1);
+    // headings and tiles in the order of the page, each section starting a row of its own
+    const order = await page.evaluate(() =>
+      [...document.querySelectorAll<HTMLElement>(".tv-grid .tv-grid-heading, .tv-grid .tv-tile")].map((one) => (one.classList.contains("tv-grid-heading") ? `# ${one.textContent}` : `${one.title}@${one.dataset.row}`)),
+    );
+    expect(order.slice(0, 3)).toEqual([`# ${en["list.favourites"]}`, "Alpha Film@0", "# Weekend"]);
+    expect(order.slice(3).sort()).toEqual(["Alpha Film@1", "Beta Film@1"]);
+    // ...and one under the other on the screen
+    const [first, second] = await page.getByTestId("tv-grid-heading").evaluateAll((all) => all.map((one) => one.getBoundingClientRect().top));
+    const top = (title: string, which: "first" | "last") => tile(page, title)[which]().evaluate((one) => one.getBoundingClientRect().top);
+    expect(first!).toBeLessThan(await top("Alpha Film", "first"));
+    expect(await top("Alpha Film", "first")).toBeLessThan(second!);
+    expect(second!).toBeLessThan(await top("Beta Film", "first"));
+
+    // Down from the first section lands in the next one, Down again on Remove, and Up goes back the same way
+    await tile(page, "Alpha Film").first().focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator(".tv-tile:focus")).toHaveAttribute("data-row", "1");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("friend-remove")).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator(".tv-tile:focus")).toHaveAttribute("data-row", "1");
+    await page.keyboard.press("ArrowUp");
+    await expect(tile(page, "Alpha Film").first()).toBeFocused();
   });
 
   test("a friend's tile has their picture with a green dot while they are online, and their page has a Back button and, when they tell what they watch, how far they got on their titles", async ({ browser }) => {

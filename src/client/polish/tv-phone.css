@@ -215,7 +215,7 @@
   :root[data-ui="polish"] .tv .tv-grid .tv-tile-category { width: auto; height: 92px; }
   :root[data-ui="polish"] .tv .tv-grid .tv-tile-person { height: auto; }
   :root[data-ui="polish"] .tv .tv-view-foot { padding: 4px 0 16px; }
-  :root[data-ui="polish"] .tv .tv-results-closest { font-size: var(--fs-4); }
+  :root[data-ui="polish"] .tv .tv-results-closest, :root[data-ui="polish"] .tv .tv-grid-heading { font-size: var(--fs-4); }
 
   /* ------------------------------ search ------------------------------ */
 

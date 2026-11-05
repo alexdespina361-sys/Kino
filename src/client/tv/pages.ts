@@ -3,6 +3,7 @@ import { continueNote, listName, unfinished } from "../account/cards";
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
 import type { Because } from "../shared/recommend";
+import type { GridSection } from "./browseNav";
 
 /**
  * What the TV's library shows on each of its pages, worked out from the library's rows and from what this profile has watched
@@ -160,6 +161,8 @@ export interface GridPage {
   hint?: string;
   layout: Layout;
   entries: Entry[];
+  /** The entries in sections, one under the other, each under a heading (a friend's lists): how many of the entries, from the first, each section takes. Without it, the entries are one grid. */
+  sections?: GridSection[];
   /** What to say when there is nothing to show. */
   empty: string;
 }

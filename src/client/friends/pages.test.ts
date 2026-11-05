@@ -353,18 +353,38 @@ describe("a friend's page", () => {
     expect(friendGrid(view, state({ friends: [{ ...sam, on: false, activity: false }] }), null, null, false)).not.toHaveProperty("hint"); // (friends off has a line of its own)
   });
 
-  it("shows the titles in the lists they keep, each marked with its list, and none that were taken out", () => {
+  it("shows the titles in the lists they keep, a section to each list under its name, one under the other, and none that were taken out", () => {
     const grid = friendGrid(view, state(), { data: lists() }, null);
     expect(grid?.entries.map((entry) => entry.title)).toEqual(["Alien", "It"]);
-    expect(grid?.entries.map((entry) => entry.note)).toEqual([t("list.favourites"), "Horror"]);
+    expect(grid?.sections).toEqual([{ title: t("list.favourites"), count: 1 }, { title: "Horror", count: 1 }]);
+    expect(grid?.entries.map((entry) => entry.note)).toEqual([undefined, undefined]); // (the heading says which list: the tiles need not)
     expect(grid?.entries[1]).toMatchObject({ url: "https://x.example/it", image: "poster-it" });
+  });
+
+  it("has a title that is in two lists in both sections, as two tiles that are told apart", () => {
+    const twice: FriendLists = {
+      listNames: [{ key: "horror", at: 1, name: "Horror" }],
+      list: [
+        { key: "k1", at: 1, id: "k1", title: "Alien", url: "https://x.example/alien" },
+        { key: "horror|k1", at: 2, list: "horror", id: "k1", title: "Alien", url: "https://x.example/alien" },
+      ],
+    };
+    const grid = friendGrid(view, state(), { data: twice }, null);
+    expect(grid?.sections).toEqual([{ title: t("list.favourites"), count: 1 }, { title: "Horror", count: 1 }]);
+    expect(new Set(grid?.entries.map((entry) => entry.id)).size).toBe(2);
+  });
+
+  it("makes no section of a list with no titles, and none at all of the ratings", () => {
+    const empty: FriendLists = { ...lists(), listNames: [{ key: "horror", at: 1, name: "Horror" }, { key: "later", at: 2, name: "Later" }] };
+    expect(friendGrid(view, state(), { data: empty }, null)?.sections?.map((section) => section.title)).toEqual([t("list.favourites"), "Horror"]);
+    expect(friendGrid({ ...view, tab: "ratings" }, state(), null, { data: ratings() })).not.toHaveProperty("sections");
   });
 
   it("says that the friend is online, and puts how far they got on the titles they kept and rated", () => {
     expect(friendGrid(view, state({ friends: [{ ...sam, online: true }] }), { data: lists() }, null)?.meta).toBe(`${t("friends.online")}  ·  ${since(sam)}`);
     const progress = [{ link: titleLink("https://x.example/alien"), season: 2, episode: 5, percent: 63 }];
     const kept = friendGrid(view, state(), { data: { ...lists(), progress } }, null);
-    expect(kept?.entries[0]).toMatchObject({ title: "Alien", progress: 0.63, note: `S2:E5 · 63% · ${t("list.favourites")}` });
+    expect(kept?.entries[0]).toMatchObject({ title: "Alien", progress: 0.63, note: "S2:E5 · 63%" });
     expect(kept?.entries[1]?.progress).toBeUndefined();
     const rated = friendGrid({ ...view, tab: "ratings" }, state(), null, { data: { ...ratings(), progress } });
     expect(rated?.entries.find((entry) => entry.title === "Alien")).toMatchObject({ progress: 0.63, note: "S2:E5 · 63% · 9/10" });

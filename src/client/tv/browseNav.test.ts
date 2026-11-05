@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gridRows, stepFrom, type Pos, type Shape, type Zone } from "./browseNav";
+import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Zone } from "./browseNav";
 
 const at = (zone: Zone, row: number, col: number): Pos => ({ zone, row, col });
 
@@ -8,6 +8,37 @@ describe("gridRows", () => {
     expect(gridRows(0, 3)).toEqual([]);
     expect(gridRows(7, 3)).toEqual([3, 3, 1]);
     expect(gridRows(6, 3)).toEqual([3, 3]);
+  });
+});
+
+describe("things in sections, one under the other", () => {
+  const sections = [{ title: "Favourites", count: 4 }, { title: "Horror", count: 1 }, { title: "Weekend", count: 3 }];
+
+  it("start each section on a row of its own, so the last row of one is as short as it is", () => {
+    expect(sectionRows(sections, 3)).toEqual([3, 1, 1, 3]);
+    expect(sectionRows([], 3)).toEqual([]);
+  });
+
+  it("put each thing on the row and in the column that says, with the heading over the first of each section", () => {
+    expect(sectionPlaces(sections, 3)).toEqual([
+      { row: 0, col: 0, heading: "Favourites" },
+      { row: 0, col: 1 },
+      { row: 0, col: 2 },
+      { row: 1, col: 0 },
+      { row: 2, col: 0, heading: "Horror" },
+      { row: 3, col: 0, heading: "Weekend" },
+      { row: 3, col: 1 },
+      { row: 3, col: 2 },
+    ]);
+  });
+
+  it("are walked as one grid: down from a short row to the next section keeps the column as far as it goes, and up goes back", () => {
+    const shape: Shape = { rail: [1, 1], top: [1], chips: [4], grid: sectionRows(sections, 3), foot: [1] };
+    expect(stepFrom(shape, at("grid", 0, 2), "down")).toEqual(at("grid", 1, 0)); // (the second row of the first section has one title)
+    expect(stepFrom(shape, at("grid", 1, 0), "down")).toEqual(at("grid", 2, 0)); // (and the next section starts under it)
+    expect(stepFrom(shape, at("grid", 2, 0), "down")).toEqual(at("grid", 3, 0));
+    expect(stepFrom(shape, at("grid", 3, 2), "up")).toEqual(at("grid", 2, 0));
+    expect(stepFrom(shape, at("grid", 3, 2), "down")).toEqual(at("foot", 0, 0));
   });
 });
 

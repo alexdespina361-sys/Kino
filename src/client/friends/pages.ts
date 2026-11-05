@@ -219,7 +219,7 @@ export function bellRows(state: FriendsState | null, now: number): { waiting: Be
 export type Asked<T> = { data?: T; problem?: string } | null;
 
 /**
- * A friend's page: the titles in the lists they keep (the list each is in under it) or the ones they rated, the newest first.
+ * A friend's page: the titles in the lists they keep (each list a section of its own, under its name, one under the other) or the ones they rated, the newest first.
  * Null for a friend who is gone. When there is nothing to show, `empty` says why: not shared, turned off, still asked, or nothing yet.
  * Under the name: what they are doing (watching, else online) and since when they are friends; and, when what they watch is not shown, the line that says why.
  */
@@ -238,8 +238,14 @@ export function friendGrid(view: View, state: FriendsState | null, lists: Asked<
     if (!friend.lists) return none(t("friends.notSharingLists", { name: friend.name }));
     if (!lists) return none(t("common.loading"));
     if (!lists.data) return none(lists.problem ?? t("common.loading"));
-    const entries = listsOf(lists.data).flatMap((list) => entriesOfList(list).map((entry): Entry => ({ ...entry, note: listName(list.info) })));
-    return { ...page, entries: withProgress(entries, lists.data.progress), empty: t("friends.noLists", { name: friend.name }) };
+    // (Each list is a section under its name, one under the other. A title in two lists is in both, so its id says which.)
+    const shown = listsOf(lists.data).map((list) => ({ title: listName(list.info), entries: entriesOfList(list).map((entry): Entry => ({ ...entry, id: `${list.info.id}:${entry.id}` })) }));
+    return {
+      ...page,
+      entries: withProgress(shown.flatMap((section) => section.entries), lists.data.progress),
+      sections: shown.map((section) => ({ title: section.title, count: section.entries.length })),
+      empty: t("friends.noLists", { name: friend.name }),
+    };
   }
 
   if (!friend.ratings) return none(t("friends.notSharingRatings", { name: friend.name }));

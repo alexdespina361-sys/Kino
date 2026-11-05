@@ -157,3 +157,25 @@ export function gridRows(count: number, columns: number): number[] {
   for (let left = count; left > 0; left -= columns) rows.push(Math.min(columns, left));
   return rows;
 }
+
+/** Things in sections, one under the other: how many each section has, and the heading over it. */
+export interface GridSection {
+  title: string;
+  count: number;
+}
+
+/** Row lengths for things in sections, `columns` to a row, each section starting a row of its own (so the last row of one is as short as it is). */
+export function sectionRows(sections: readonly GridSection[], columns: number): number[] {
+  return sections.flatMap((section) => gridRows(section.count, columns));
+}
+
+/** Where each of the things of those sections lies (as `sectionRows` has the rows), and, for the first of each section, the heading that stands over it. */
+export function sectionPlaces(sections: readonly GridSection[], columns: number): Array<{ row: number; col: number; heading?: string }> {
+  const places: Array<{ row: number; col: number; heading?: string }> = [];
+  let first = 0;
+  for (const { title, count } of sections) {
+    for (let at = 0; at < count; at++) places.push({ row: first + Math.floor(at / columns), col: at % columns, ...(at === 0 ? { heading: title } : {}) });
+    first += gridRows(count, columns).length;
+  }
+  return places;
+}

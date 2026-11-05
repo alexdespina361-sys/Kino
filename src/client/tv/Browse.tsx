@@ -32,7 +32,7 @@ import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { aboutRows, useAbout } from "../shared/about";
 import { switchRole, thisIsPhone } from "../role";
-import { gridRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
+import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { isCompact, useCompact } from "./compact";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
@@ -384,6 +384,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   /* eslint-enable react-hooks/exhaustive-deps */
   // (A phone's categories are tiles of words, not pictures: two across, where the posters of the other pages are three.)
   const gridColumns = compact && grid?.layout === "categories" ? 2 : narrowColumns || GRID_COLUMNS;
+  // (A grid in sections, a friend's lists, has each section start a row of its own, under its heading.)
+  const sectionPlace = grid?.sections ? sectionPlaces(grid.sections, gridColumns) : undefined;
   // What a search found, as the kind chosen shows it: the titles with every word typed, and under them the closest others.
   const shownAnswers = useMemo(() => onlySection(results, filter), [results, filter]);
   const shownResults = shownAnswers.items;
@@ -546,7 +548,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     top: topButtons > 0 ? [topButtons] : [],
     ...(rowsPage ? { hero: profileButtons > 0 ? [profileButtons] : !compact && !deep && actions.length > 0 ? [actions.length] : [], rows: showRetry ? [1] : homeRows.map((row) => row.entries.length) } : {}),
     ...(sectionButtons ? { chips: [SECTION_CHIPS.length] } : {}),
-    ...(grid ? { grid: gridRows(grid.entries.length, gridColumns) } : {}),
+    ...(grid ? { grid: grid.sections ? sectionRows(grid.sections, gridColumns) : gridRows(grid.entries.length, gridColumns) } : {}),
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [SECTION_FILTERS.length], results: resultRowsOf(resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
@@ -1340,7 +1342,19 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
           )}
           {grid.entries.length > 0 ? (
             <div className="tv-grid" ref={gridRef} onScroll={askTitles} style={{ "--cols": gridColumns } as CSSProperties}>
-              {grid.entries.map((entry, i) => tile(entry, { zone: "grid", row: Math.floor(i / gridColumns), col: i % gridColumns }, grid.title, grid.layout, undefined, view.kind === "list" ? shownId : undefined))}
+              {grid.entries.map((entry, i) => {
+                const at: { row: number; col: number; heading?: string } = sectionPlace?.[i] ?? { row: Math.floor(i / gridColumns), col: i % gridColumns };
+                return (
+                  <Fragment key={`grid-${entry.id}`}>
+                    {at.heading !== undefined && (
+                      <h2 className="tv-grid-heading" data-testid="tv-grid-heading">
+                        {at.heading}
+                      </h2>
+                    )}
+                    {tile(entry, { zone: "grid", row: at.row, col: at.col }, grid.title, grid.layout, undefined, view.kind === "list" ? shownId : undefined)}
+                  </Fragment>
+                );
+              })}
               {/* (A category goes on with its titles as it is scrolled: empty tiles hold the place of the next ones.) */}
               {view.kind === "category" &&
                 loadingTitles(feeding, view.rowId) &&
