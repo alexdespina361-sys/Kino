@@ -650,6 +650,58 @@ test.describe("what a friend can see", () => {
     await expect(bob.page.getByTestId("friends-activity")).toHaveCount(0);
   });
 
+  test("the page of friends has the friends first (the one who watched last before the others), then what waits for an answer, then a row of what each friend watched", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    const cy = await phoneWithFriends(browser, "Cy");
+    await befriend(ann.page, bob.page);
+    await openFriends(cy.page); // Cy gives Bob a code too: he has two friends
+    await cy.page.getByTestId("friend-make-code").click();
+    const code = (await cy.page.getByTestId("friend-invite-code").textContent())!;
+    await openFriends(bob.page);
+    await bob.page.getByTestId("friend-code-input").fill(code);
+    await bob.page.getByTestId("friend-code-add").click();
+    await expect(bob.page.getByTestId("friend-row")).toHaveCount(2);
+    for (const page of [bob.page, cy.page]) await page.keyboard.press("Escape");
+
+    const share = async (page: Page) => {
+      await page.getByTestId("menu-settings").click();
+      await page.getByTestId("friends-give").click();
+      await expect(page.getByTestId("friends-give")).toHaveAttribute("aria-checked", "true");
+      await page.keyboard.press("Escape");
+    };
+    await seed(ann.page, filmCards()); // (Alpha Film, from Ann)
+    await share(ann.page);
+    await share(bob.page);
+    await share(cy.page);
+    await seed(cy.page, { progress: [{ key: "beta", at: Date.now(), title: "Beta Film", url: "https://films.example/watch/18", year: 1940, position: 300, duration: 5400 }] }); // (Beta Film, from Cy, later)
+
+    // Ann asks Bob to watch together: that waits on his page
+    await openFriends(ann.page);
+    await ann.page.getByTestId("friend-row").click();
+    await ann.page.getByTestId("friend-together").click();
+    await expect(ann.page.getByTestId("account-toast")).toContainText(`Asked ${bob.name} to watch together`);
+
+    await look(bob.page);
+    await openFriends(bob.page);
+    const rows = bob.page.getByTestId("friends-activity");
+    await expect(rows).toHaveCount(2); // one to a friend, not one for all of them
+    await expect(rows.nth(0)).toHaveAttribute("aria-label", `What ${cy.name} watched`); // (the one who watched last is first)
+    await expect(rows.nth(0)).toContainText("Beta Film");
+    await expect(rows.nth(1)).toHaveAttribute("aria-label", `What ${ann.name} watched`);
+    await expect(rows.nth(1)).toContainText("Alpha Film");
+    await expect(rows.nth(1)).not.toContainText("Beta Film");
+    await expect(bob.page.getByTestId("friend-row").nth(0)).toContainText(cy.name); // (and in the same order in the list of friends)
+    await expect(bob.page.getByTestId("friend-row").nth(1)).toContainText(ann.name);
+    await expect(bob.page.getByTestId("inbox-together")).toContainText(`${ann.name} wants to watch together`);
+
+    const top = async (id: string) => (await where(bob.page.getByTestId(id).first())).y;
+    const [friendsAt, waitingAt, watchedAt] = [await top("friends-list"), await top("friends-inbox"), await top("friends-activity")];
+    expect(friendsAt, "the friends come first").toBeLessThan(waitingAt);
+    expect(waitingAt, "then what waits").toBeLessThan(watchedAt);
+  });
+
   test("with the switches as they come, the page of friends says what friends watch is off and a button goes to the settings and back; a friend's page says why nothing of it is shown and can still be asked to watch together; with the switch on it says the friend is the one who does not tell", async ({ browser }) => {
     test.setTimeout(120_000);
     const ann = await phoneWithFriends(browser, "Ann");

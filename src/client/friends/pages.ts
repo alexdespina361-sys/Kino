@@ -129,16 +129,21 @@ export function friendOrder(state: FriendsState | null): Friend[] {
   });
 }
 
-/** What a friend watched lately, a row to each of the first few (the newest first): their name is in the title, so the tiles need not say it again. */
-function watchedRows(friends: readonly Friend[], activity: readonly ActivityItem[], now: number): HomeRow[] {
+/** The friends who watched lately (the one who watched most lately first), each with what they watched (the newest first); only the first few get a row of their own. */
+export function watchedLately(friends: readonly Friend[], activity: readonly ActivityItem[]): Array<{ friend: Friend; items: ActivityItem[] }> {
   const items = new Map<string, ActivityItem[]>();
   for (const item of activity) items.set(item.friend, [...(items.get(item.friend) ?? []), item]);
   return [...items]
-    .flatMap(([id, watched]): HomeRow[] => {
+    .flatMap(([id, watched]) => {
       const friend = friends.find((each) => each.id === id);
-      return friend ? [{ id: `friend-watched:${id}`, layout: "wide", title: t("friends.watchedBy", { name: friend.name }), entries: watched.map((item) => entryOfActivity(item, "", now)) }] : [];
+      return friend ? [{ friend, items: watched }] : [];
     })
     .slice(0, FRIEND_ROWS);
+}
+
+/** What a friend watched lately, a row to each of the first few: their name is in the title, so the tiles need not say it again. */
+function watchedRows(friends: readonly Friend[], activity: readonly ActivityItem[], now: number): HomeRow[] {
+  return watchedLately(friends, activity).map(({ friend, items }): HomeRow => ({ id: `friend-watched:${friend.id}`, layout: "wide", title: t("friends.watchedBy", { name: friend.name }), entries: items.map((item) => entryOfActivity(item, "", now)) }));
 }
 
 export function friendRows(state: FriendsState | null, now: number, iGet = true): HomeRow[] {

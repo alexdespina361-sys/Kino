@@ -11,6 +11,7 @@ import { waitingFrom } from "../chat/notices";
 import { PhoneChat } from "../chat/PhoneChat";
 import { activityHint, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, progressFor, progressNote, ratedBy, recommendationOf, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
+import { friendOrder, watchedLately } from "../friends/pages";
 import { dateValue, defaultPlan, duePlans, inboxToShow, momentOf, planLines, planMoment, planStatus, timeValue, whenLabel } from "../friends/plans";
 import { usePeek } from "../friends/usePeek";
 import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
@@ -509,8 +510,8 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
 }
 
 /**
- * Everything friends: what they sent, who they are, what they are watching, and how to add another. While this profile is not told what friends watch (off until
- * it is turned on), a card says so and leads to the settings, where the switch is (`onOpenSettings`).
+ * Everything friends: who they are (first), what they sent, what each of them is watching (a row to a friend), and how to add another. While this profile does not
+ * share what it watches (off until it is turned on), a card says so and leads to the settings, where the switch is (`onOpenSettings`).
  */
 export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSettings }: { onOpenFriend: (id: string) => void; onOpenTitle: OpenTitle; onStartParty?: (friendId: string) => void; onOpenSettings?: () => void }) {
   const t = useT();
@@ -552,24 +553,6 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
   return (
     <div className="page-stack" data-testid="friends-page">
       {friends.status === "offline" && <p className="muted small">{t("friends.offline")}</p>}
-      {state.requests.length > 0 && (
-        <Group title={t("friends.requests")}>
-          <ul className="inbox-list" data-testid="friends-requests">
-            {state.requests.map((request) => (
-              <RequestRow key={request.from.id} request={request} />
-            ))}
-          </ul>
-        </Group>
-      )}
-      {inbox.length > 0 && (
-        <Group title={t("friends.inbox")}>
-          <ul className="inbox-list" data-testid="friends-inbox">
-            {inbox.map((item) => (
-              <InboxRow key={item.id} item={item} friend={state.friends.find((each) => each.id === item.from)} onOpenTitle={onOpenTitle} onStartParty={onStartParty} onDismiss={() => void friends.dismiss(item.id).catch(() => undefined)} />
-            ))}
-          </ul>
-        </Group>
-      )}
       <Group title={t("friends.yours")}>
         {state.friends.length === 0 ? (
           <p className="muted" data-testid="friends-none">
@@ -577,7 +560,7 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
           </p>
         ) : (
           <ul className="friend-list" data-testid="friends-list">
-            {state.friends.map((friend) => {
+            {friendOrder(state).map((friend) => {
               const line = friendLine(friend, state.activity, now);
               const unread = waitingFrom(state, friend.id);
               return (
@@ -601,14 +584,32 @@ export function FriendsPage({ onOpenFriend, onOpenTitle, onStartParty, onOpenSet
           </ul>
         )}
       </Group>
-      {state.activity.length > 0 && (
-        <CardRow title={t("friends.activity")} testId="friends-activity">
-          {state.activity.map((item) => {
-            const entry = entryOfActivity(item, nameOf(state.friends, item.friend), now);
+      {state.requests.length > 0 && (
+        <Group title={t("friends.requests")}>
+          <ul className="inbox-list" data-testid="friends-requests">
+            {state.requests.map((request) => (
+              <RequestRow key={request.from.id} request={request} />
+            ))}
+          </ul>
+        </Group>
+      )}
+      {inbox.length > 0 && (
+        <Group title={t("friends.inbox")}>
+          <ul className="inbox-list" data-testid="friends-inbox">
+            {inbox.map((item) => (
+              <InboxRow key={item.id} item={item} friend={state.friends.find((each) => each.id === item.from)} onOpenTitle={onOpenTitle} onStartParty={onStartParty} onDismiss={() => void friends.dismiss(item.id).catch(() => undefined)} />
+            ))}
+          </ul>
+        </Group>
+      )}
+      {watchedLately(state.friends, state.activity).map(({ friend, items }) => (
+        <CardRow key={friend.id} title={t("friends.watchedBy", { name: friend.name })} testId="friends-activity">
+          {items.map((item) => {
+            const entry = entryOfActivity(item, "", now);
             return <Card key={entry.id} testId="activity" title={entry.title} image={entry.image ?? entry.backdrop} note={entry.note} progress={entry.progress ?? 0} playLabel={`${t("rows.open")} ${entry.title}`} onPlay={() => open(entry)} />;
           })}
         </CardRow>
-      )}
+      ))}
       {state.activity.length === 0 && !iGet && onOpenSettings && state.friends.some((friend) => friend.on) && (
         <Group title={t("friends.activity")}>
           <p className="muted" data-testid="friends-activity-off">

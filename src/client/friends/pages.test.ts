@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PLAN_KEEP_AFTER_MS, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InboxItem, type PlanItem } from "../../shared";
 import { formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
-import { bellRows, FRIEND_ROWS, friendGrid, friendOrder, friendRows } from "./pages";
+import { bellRows, FRIEND_ROWS, friendGrid, friendOrder, friendRows, watchedLately } from "./pages";
 import { planLines } from "./plans";
 
 const NOW = 50_000_000;
@@ -206,6 +206,17 @@ describe("the rows of the friends page", () => {
 
   it("make no row of a friend who is not a friend (any more)", () => {
     expect(friendRows(state({ friends: [sam], activity: [watched("pro_gone", "k")] }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+  });
+});
+
+describe("the friends who watched lately (the rows of the phone as well)", () => {
+  it("are each friend who watched, the one with the newest title first, with their titles, the first few only, and never someone who is not a friend (any more)", () => {
+    const friends = ["Ann", "Bo", "Cy", "Di"].map((name): Friend => ({ ...sam, id: `pro_${name.toLowerCase()}`, name }));
+    const activity = [watched("pro_gone", "g"), watched("pro_bo", "k1"), watched("pro_ann", "k2"), watched("pro_bo", "k3", { title: "Heat" }), watched("pro_cy", "k4"), watched("pro_di", "k5")];
+    const lately = watchedLately(friends, activity);
+    expect(lately.map((each) => each.friend.name)).toEqual(["Bo", "Ann", "Cy"]);
+    expect(lately[0]?.items.map((item) => item.key)).toEqual(["k1", "k3"]);
+    expect(watchedLately(friends, [])).toEqual([]);
   });
 });
 
