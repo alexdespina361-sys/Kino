@@ -928,6 +928,7 @@ export const ro: Dictionary = {
   "friends.inbox": "De la prietenii tăi",
   "friends.yours": "Prietenii tăi",
   "friends.activity": "Ce se uită prietenii",
+  "friends.watchedBy": "La ce s-a uitat {name}",
   "friends.none": "Încă niciun prieten. Fă un cod și dă-l cuiva sau scrie codul primit.",
   "friends.from": "De la {name}",
   "friends.partyInvite": "{name} te-a invitat la o vizionare comună",

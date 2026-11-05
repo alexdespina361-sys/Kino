@@ -916,6 +916,7 @@ export const it: Dictionary = {
   "friends.inbox": "Dai tuoi amici",
   "friends.yours": "I tuoi amici",
   "friends.activity": "Cosa guardano gli amici",
+  "friends.watchedBy": "Cosa ha guardato {name}",
   "friends.none": "Ancora nessun amico. Crea un codice e dallo a qualcuno, oppure scrivi il codice che hai ricevuto.",
   "friends.from": "Da {name}",
   "friends.partyInvite": "{name} ti invita a una visione condivisa",

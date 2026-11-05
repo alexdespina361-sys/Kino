@@ -642,11 +642,13 @@ test.describe("sending things to friends from the TV", () => {
     await expect(sent.locator(".tv-tile").first()).toContainText(`From ${ann.name}`);
     await expect(bob.page.getByTestId("tv-bell-badge")).toHaveCount(0); // (opening the page is seeing it)
 
-    // the banner offers what can be done with it (the page opens where the remote was last, so it goes to the new row), and the last of them sends it away
+    // the banner says what it is (its buttons are for the first row of a page: the friends are that row here, and the remote reaches these through the title's own page), whose last button sends it away
     await sent.locator(".tv-tile").first().focus();
     await expect(bob.page.getByTestId("tv-hero-title")).toHaveText("Alpha Film");
-    await expect(bob.page.getByTestId("tv-hero-play")).toBeVisible();
-    await bob.page.getByTestId("tv-hero-dismiss").click();
+    await expect(bob.page.getByTestId("tv-hero-play")).toBeHidden();
+    await sent.locator(".tv-tile").first().click();
+    await expect(bob.page.getByTestId("tv-detail-play")).toBeVisible();
+    await bob.page.getByTestId("tv-detail-dismiss").click();
     await expect(sent.locator(".tv-tile")).toHaveCount(0);
   });
 

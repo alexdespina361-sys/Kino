@@ -918,6 +918,7 @@ export const en = {
   "friends.inbox": "From your friends",
   "friends.yours": "Your friends",
   "friends.activity": "What friends watch",
+  "friends.watchedBy": "What {name} watched",
   "friends.none": "No friends yet. Make a code and give it to someone, or type the code you were given.",
   "friends.from": "From {name}",
   "friends.partyInvite": "{name} invited you to a watch party",

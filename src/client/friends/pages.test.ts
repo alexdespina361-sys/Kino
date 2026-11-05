@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PLAN_KEEP_AFTER_MS, titleLink, type ActivityItem, type Friend, type FriendLists, type FriendRatings, type FriendsState, type InboxItem, type PlanItem } from "../../shared";
 import { formatDay } from "../account/time";
 import { getLanguage, t } from "../i18n";
-import { bellRows, friendGrid, friendRows } from "./pages";
+import { bellRows, FRIEND_ROWS, friendGrid, friendOrder, friendRows } from "./pages";
 import { planLines } from "./plans";
 
 const NOW = 50_000_000;
@@ -27,26 +27,37 @@ describe("the rows of the friends page", () => {
     expect(friendRows(state(), NOW).map((row) => row.id)).toEqual(["friend-people"]);
   });
 
-  it("are the parties, what was sent, what friends watch and the friends, in that order", () => {
+  it("are the friends first, then the parties, what was sent, and a row of what the friend watched", () => {
     const rows = friendRows(state({ inbox: [recommendation("r"), invitation("p")], activity: [watched("pro_sam", "k")] }), NOW);
-    expect(rows.map((row) => row.id)).toEqual(["friend-parties", "friend-sent", "friend-activity", "friend-people"]);
-    expect(rows.map((row) => row.layout)).toEqual(["wide", "wide", "wide", "categories"]);
+    expect(rows.map((row) => row.id)).toEqual(["friend-people", "friend-parties", "friend-sent", "friend-watched:pro_sam"]);
+    expect(rows.map((row) => row.layout)).toEqual(["categories", "wide", "wide", "wide"]);
   });
 
-  it("start with the requests to be friends that wait for an answer: a tile for each, with the tag and the picture, that asks yes or no", () => {
+  it("put what waits for an answer under one heading, and neither the friends before it nor what friends watched after it", () => {
+    const rows = friendRows(state({ requests: [{ from: { id: "pro_kim", name: "Kim", avatar: "cat" as const, tag: 2 }, at: NOW - 1000 }], inbox: [invitation("p")], activity: [watched("pro_sam", "k")] }), NOW);
+    expect(rows.map((row) => [row.id, row.group])).toEqual([
+      ["friend-people", undefined],
+      ["friend-requests", t("bell.waiting")],
+      ["friend-parties", t("bell.waiting")],
+      ["friend-watched:pro_sam", undefined],
+    ]);
+  });
+
+  it("come after the friends: the requests to be friends that wait for an answer, a tile for each, with the tag and the picture, that asks yes or no", () => {
     const kim = { id: "pro_kim", name: "Kim", avatar: "cat" as const, tag: 2 };
     const rows = friendRows(state({ requests: [{ from: kim, at: NOW - 1000 }], inbox: [invitation("p")] }), NOW);
-    expect(rows.map((row) => row.id)).toEqual(["friend-requests", "friend-parties", "friend-people"]);
-    expect(rows[0]).toMatchObject({ layout: "categories", title: t("friends.requests") });
-    expect(rows[0]?.entries).toEqual([{ id: "request:pro_kim", title: "Kim#2", url: "", request: kim, avatar: "cat", note: t("friends.requestWants") }]);
+    expect(rows.map((row) => row.id)).toEqual(["friend-people", "friend-requests", "friend-parties"]);
+    const requests = rows.find((row) => row.id === "friend-requests");
+    expect(requests).toMatchObject({ layout: "categories", title: t("friends.requests") });
+    expect(requests?.entries).toEqual([{ id: "request:pro_kim", title: "Kim#2", url: "", request: kim, avatar: "cat", note: t("friends.requestWants") }]);
     expect(friendRows(state(), NOW).some((row) => row.id === "friend-requests")).toBe(false);
   });
 
-  it("have a tile for each friend that opens their page, before the tiles to add one and to choose what is shared", () => {
+  it("have a tile for each friend that opens their page (by name, when nothing else orders them), before the tiles to add one and to choose what is shared", () => {
     const rows = friendRows(state({ friends: [sam, robin] }), NOW);
     const people = rows.find((row) => row.id === "friend-people");
-    expect(people?.entries.map((entry) => entry.title)).toEqual(["Sam", "Robin", t("friends.add"), t("friends.settingsTile")]);
-    expect(people?.entries[0]).toMatchObject({ id: "friend:pro_sam", url: "", opens: { kind: "friend", id: "pro_sam" } });
+    expect(people?.entries.map((entry) => entry.title)).toEqual(["Robin", "Sam", t("friends.add"), t("friends.settingsTile")]);
+    expect(people?.entries[1]).toMatchObject({ id: "friend:pro_sam", url: "", opens: { kind: "friend", id: "pro_sam" } });
     expect(people?.entries[2]).toMatchObject({ url: "", action: "addFriend" });
     expect(people?.entries[3]).toMatchObject({ url: "", action: "friendSettings" });
   });
@@ -92,18 +103,18 @@ describe("the rows of the friends page", () => {
     }
     expect(friendRows(state({ friends: [], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
     // (telling what they watch is not needed to be asked: it is off until it is turned on)
-    expect(friendRows(state({ friends: [{ ...sam, activity: false }], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-parties", "friend-people"]);
+    expect(friendRows(state({ friends: [{ ...sam, activity: false }], inbox: over }), NOW).map((row) => row.id)).toEqual(["friend-people", "friend-parties"]);
   });
 
   it("say, in a tile that opens the settings, that being told what friends watch is off: only while it is off, with a friend to hear from, and nothing to show", () => {
     const row = (changes: Partial<FriendsState>, iGet: boolean) => friendRows(state(changes), NOW, iGet).find((each) => each.id === "friend-activity-off");
     expect(row({}, false)).toMatchObject({ layout: "categories", title: t("friends.activity") });
     expect(row({}, false)?.entries).toEqual([{ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGet"), action: "friendSettings" }]);
-    expect(friendRows(state(), NOW, false).map((each) => each.id)).toEqual(["friend-people", "friend-activity-off"]); // (below the friends: the remote starts on them)
-    expect(row({}, true)).toBeUndefined(); // (on: as before, the row is there when there is something to show)
+    expect(friendRows(state(), NOW, false).map((each) => each.id)).toEqual(["friend-people", "friend-activity-off"]); // (the last row)
+    expect(row({}, true)).toBeUndefined(); // (on: as before, the rows are there when there is something to show)
     expect(row({ friends: [{ ...sam, on: false }] }, false)).toBeUndefined(); // (nobody who could be heard from)
     expect(row({ friends: [] }, false)).toBeUndefined();
-    expect(friendRows(state({ activity: [watched("pro_sam", "k")] }), NOW, false).map((each) => each.id)).toEqual(["friend-activity", "friend-people"]);
+    expect(friendRows(state({ activity: [watched("pro_sam", "k")] }), NOW, false).map((each) => each.id)).toEqual(["friend-people", "friend-watched:pro_sam"]);
   });
 
   it("go by what the server says of a party, when it says: open is open whatever the clock, and over is over", () => {
@@ -161,7 +172,7 @@ describe("the rows of the friends page", () => {
 
   it("put the plans after the parties and before what friends sent", () => {
     const rows = friendRows(state({ inbox: [recommendation("r"), plan("p", NOW + 3_600_000), invitation("i")], activity: [watched("pro_sam", "k")] }), NOW);
-    expect(rows.map((row) => row.id)).toEqual(["friend-parties", "friend-plans", "friend-sent", "friend-activity", "friend-people"]);
+    expect(rows.map((row) => row.id)).toEqual(["friend-people", "friend-parties", "friend-plans", "friend-sent", "friend-watched:pro_sam"]);
   });
 
   it("show a title a friend sent as a card that plays it, says who sent it, and is taken off the row by its item of the inbox", () => {
@@ -170,12 +181,64 @@ describe("the rows of the friends page", () => {
     expect(sent?.entries[0]).toMatchObject({ id: "from:r1", title: "Dune", url: "https://filmpire.sc/watch/1", note: t("friends.from", { name: "Sam" }), description: "Slow but worth it", inboxId: "r1" });
   });
 
-  it("show what friends watched as cards that play it, with who and when", () => {
-    const activity = friendRows(state({ friends: [sam, robin], activity: [watched("pro_sam", "k1"), watched("pro_robin", "k2", { title: "Heat" })] }), NOW).find((row) => row.id === "friend-activity");
-    expect(activity?.entries.map((entry) => entry.title)).toEqual(["Alien", "Heat"]);
-    expect(activity?.entries[0]?.url).toBe("https://filmpire.sc/watch/2");
-    expect(activity?.entries[0]?.note).toMatch(/^Sam · /);
-    expect(activity?.entries[1]?.note).toMatch(/^Robin · /);
+  it("show what each friend watched as a row of its own, named for the friend, of cards that play it with the episode and when (and not who: the row says it)", () => {
+    const rows = friendRows(state({ friends: [sam, robin], activity: [watched("pro_sam", "k1"), watched("pro_robin", "k2", { title: "Heat" }), watched("pro_sam", "k3", { title: "Dune", season: 1, episode: 3, at: NOW - 7_200_000 })] }), NOW);
+    expect(rows.map((row) => row.id)).toEqual(["friend-people", "friend-watched:pro_sam", "friend-watched:pro_robin"]);
+    const [, samRow, robinRow] = rows;
+    expect(samRow).toMatchObject({ layout: "wide", title: t("friends.watchedBy", { name: "Sam" }) });
+    expect(samRow?.entries.map((entry) => entry.title)).toEqual(["Alien", "Dune"]);
+    expect(samRow?.entries[0]?.url).toBe("https://filmpire.sc/watch/2");
+    expect(samRow?.entries[1]?.note).toMatch(/^S1:E3 · /);
+    expect(robinRow?.entries.map((entry) => entry.title)).toEqual(["Heat"]);
+    for (const entry of [...(samRow?.entries ?? []), ...(robinRow?.entries ?? [])]) expect(entry.note).not.toMatch(/Sam|Robin/);
+  });
+
+  it("give a row to the first few friends who watched, the newest first, and leave the others to the line under their name and their page", () => {
+    const names = ["Ann", "Bo", "Cy", "Di", "Ed"];
+    const friends = names.map((name): Friend => ({ ...sam, id: `pro_${name.toLowerCase()}`, name }));
+    const activity = friends.map((friend, place) => watched(friend.id, `k${place}`, { title: `Title ${friend.name}`, at: NOW - 60_000 * (place + 1) }));
+    const rows = friendRows(state({ friends, activity }), NOW);
+    expect(rows.map((row) => row.id)).toEqual(["friend-people", "friend-watched:pro_ann", "friend-watched:pro_bo", "friend-watched:pro_cy"]);
+    expect(FRIEND_ROWS).toBe(3);
+    const tiles = rows[0]!.entries;
+    expect(tiles.find((entry) => entry.id === "friend:pro_ed")?.note).toBe(t("friends.line.watching", { title: "Title Ed" }));
+  });
+
+  it("make no row of a friend who is not a friend (any more)", () => {
+    expect(friendRows(state({ friends: [sam], activity: [watched("pro_gone", "k")] }), NOW).map((row) => row.id)).toEqual(["friend-people"]);
+  });
+});
+
+describe("the order of the friends", () => {
+  const names = (friends: Friend[]) => friends.map((friend) => friend.name);
+  const ann: Friend = { ...sam, id: "pro_ann", name: "Ann" };
+  const bo: Friend = { ...sam, id: "pro_bo", name: "Bo" };
+  const cy: Friend = { ...sam, id: "pro_cy", name: "Cy" };
+
+  it("is by name when nobody wrote and nobody watched", () => {
+    expect(names(friendOrder(state({ friends: [cy, ann, bo] })))).toEqual(["Ann", "Bo", "Cy"]);
+    expect(friendOrder(null)).toEqual([]);
+  });
+
+  it("puts the ones who watched first, the newest first, then the others by name", () => {
+    const activity = [watched("pro_cy", "k1", { at: NOW - 1000 }), watched("pro_bo", "k2", { at: NOW - 5000 })];
+    expect(names(friendOrder(state({ friends: [ann, bo, cy], activity })))).toEqual(["Cy", "Bo", "Ann"]);
+  });
+
+  it("puts the ones who wrote before everybody, the newest message first", () => {
+    const chat = [{ friend: "pro_ann", count: 1, at: NOW - 9000 }, { friend: "pro_bo", count: 3, at: NOW - 2000 }];
+    const activity = [watched("pro_cy", "k", { at: NOW - 1000 })];
+    expect(names(friendOrder(state({ friends: [ann, bo, cy], activity, chat })))).toEqual(["Bo", "Ann", "Cy"]);
+  });
+
+  it("puts a friend who turned friends off last, whatever they did", () => {
+    const chat = [{ friend: "pro_ann", count: 1, at: NOW - 1000 }];
+    expect(names(friendOrder(state({ friends: [{ ...ann, on: false }, bo, cy], chat })))).toEqual(["Bo", "Cy", "Ann"]);
+  });
+
+  it("does not move a friend because they came online or went offline", () => {
+    const [offline, online] = [friendOrder(state({ friends: [ann, bo] })), friendOrder(state({ friends: [ann, { ...bo, online: true }] }))];
+    expect(names(online)).toEqual(names(offline));
   });
 });
 
@@ -185,7 +248,7 @@ describe("what waits in the chats, on a TV", () => {
 
   it("is a quiet line under the name of the friend who wrote, in place of what they are doing, and not a row of its own", () => {
     const rows = friendRows(state({ ...waiting(2), activity: [watched("pro_sam", "k")] }), NOW);
-    expect(rows.map((row) => row.id)).toEqual(["friend-activity", "friend-people"]);
+    expect(rows.map((row) => row.id)).toEqual(["friend-people", "friend-watched:pro_sam"]);
     expect(tileOf(rows, sam).note).toBe(t("chat.unreadShort", { count: 2 }));
     expect(tileOf(friendRows(state({ activity: [watched("pro_sam", "k")] }), NOW), sam).note).toBe(t("friends.line.watching", { title: "Alien" }));
   });

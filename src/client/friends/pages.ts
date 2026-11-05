@@ -96,21 +96,58 @@ const settingsTile = (): Entry => ({ id: "friend-settings", title: t("friends.se
 const activityOffTile = (): Entry => ({ id: "activity-off", title: t("friends.turnOn"), url: "", note: t("friends.switchGet"), action: "friendSettings" });
 
 /**
- * The rows of the friends page: the requests to be friends that wait for an answer, invitations to the watch parties that are on (and the
- * ones that are over, from a friend who can be asked for another), requests to watch together, plans to watch together, what friends sent, what they watch, and the
- * friends themselves (with the tiles to add one and to choose what is shared). Before the server has answered there are only the last two.
+ * The rows of the friends page, the friends first: the friends themselves (with the tiles to add one and to choose what is shared), then what waits for an
+ * answer (the requests to be friends, invitations to the watch parties that are on, and the ones that are over from a friend who can be asked for another,
+ * requests to watch together, plans to watch together, what friends sent), then a row of its own for what each of the friends who watched most lately
+ * watched. Before the server has answered there are only the first row's last two tiles.
  * While this profile has not turned on being told what friends watch (`iGet`: the one thing that is off until somebody turns it on, and what makes the
- * row of what they watch never appear) a row below the friends has a tile that says so and opens the settings.
+ * rows of what they watch never appear) a last row has a tile that says so and opens the settings.
  */
-/** The rows of what waits for an answer (the bell lists them too): the page puts them under one heading, "Waiting for you", and the rows below it are what is not waiting. */
+/** The rows of what waits for an answer (the bell lists them too): the page puts them under one heading, "Waiting for you", and the rows after them are what is not waiting. */
 const ASKING_ROWS: readonly string[] = ["friend-requests", "friend-parties", "friend-plans", "friend-sent"];
+
+/** How many friends get a row of what they watched: the ones who watched most lately (the others keep the line under their name, and their page). */
+export const FRIEND_ROWS = 3;
+/** Past every place a friend can have in a list (a friend who has none comes after the ones who do). */
+const NO_PLACE = 1_000_000;
+
+/**
+ * The friends in the order the pages show them: the ones who wrote first (the newest message first), then the ones who watched something lately (the newest
+ * first), then the others by name, and a friend who turned friends off last. Whether somebody is online is a dot and never a place: it flips every minute or
+ * so, and the tiles would move under the remote.
+ */
+export function friendOrder(state: FriendsState | null): Friend[] {
+  const wrote = new Map(chatWaiting(state).map((notice, place) => [notice.friend, place]));
+  const lately = new Map<string, number>();
+  (state?.activity ?? []).forEach((item, place) => {
+    if (!lately.has(item.friend)) lately.set(item.friend, place);
+  });
+  const ranked = (friend: Friend) => ({ paused: friend.on ? 0 : 1, wrote: wrote.get(friend.id) ?? NO_PLACE, lately: lately.get(friend.id) ?? NO_PLACE });
+  return [...(state?.friends ?? [])].sort((a, b) => {
+    const [x, y] = [ranked(a), ranked(b)];
+    return x.paused - y.paused || x.wrote - y.wrote || x.lately - y.lately || a.name.localeCompare(b.name, getLanguage());
+  });
+}
+
+/** What a friend watched lately, a row to each of the first few (the newest first): their name is in the title, so the tiles need not say it again. */
+function watchedRows(friends: readonly Friend[], activity: readonly ActivityItem[], now: number): HomeRow[] {
+  const items = new Map<string, ActivityItem[]>();
+  for (const item of activity) items.set(item.friend, [...(items.get(item.friend) ?? []), item]);
+  return [...items]
+    .flatMap(([id, watched]): HomeRow[] => {
+      const friend = friends.find((each) => each.id === id);
+      return friend ? [{ id: `friend-watched:${id}`, layout: "wide", title: t("friends.watchedBy", { name: friend.name }), entries: watched.map((item) => entryOfActivity(item, "", now)) }] : [];
+    })
+    .slice(0, FRIEND_ROWS);
+}
 
 export function friendRows(state: FriendsState | null, now: number, iGet = true): HomeRow[] {
   const friends = state?.friends ?? [];
   const inbox = state?.inbox ?? [];
   const activity = state?.activity ?? [];
   const requests = state?.requests ?? [];
-  const rows: HomeRow[] = [];
+  // (The friends are the first row, so that the remote starts on them: what waits for an answer is in the bell, and a row's worth of it is the next thing under them.)
+  const rows: HomeRow[] = [{ id: "friend-people", layout: "categories", title: t("friends.yours"), entries: [...friendOrder(state).map((friend) => entryOfFriend(friend, activity, now, waitingFrom(state, friend.id))), addTile(), settingsTile()] }];
 
   if (requests.length > 0) rows.push({ id: "friend-requests", layout: "categories", title: t("friends.requests"), entries: requests.map(entryOfFriendRequest) });
 
@@ -131,10 +168,9 @@ export function friendRows(state: FriendsState | null, now: number, iGet = true)
   const sent = inbox.filter((item): item is Recommendation => item.kind === "recommend");
   if (sent.length > 0) rows.push({ id: "friend-sent", layout: "wide", title: t("friends.inbox"), entries: sent.map((item) => ({ ...entryOfRecommendation(item, nameOf(friends, item.from)), inboxId: item.id })) });
 
-  if (activity.length > 0) rows.push({ id: "friend-activity", layout: "wide", title: t("friends.activity"), entries: activity.map((item) => entryOfActivity(item, nameOf(friends, item.friend), now)) });
+  rows.push(...watchedRows(friends, activity, now));
 
-  rows.push({ id: "friend-people", layout: "categories", title: t("friends.yours"), entries: [...friends.map((friend) => entryOfFriend(friend, activity, now, waitingFrom(state, friend.id))), addTile(), settingsTile()] });
-  // (below the friends, so that the remote still starts on them: it is a reminder, and a friend's page says it again)
+  // (the last row: it is a reminder, and a friend's page says it again)
   if (activity.length === 0 && !iGet && friends.some((friend) => friend.on)) rows.push({ id: "friend-activity-off", layout: "categories", title: t("friends.activity"), entries: [activityOffTile()] });
   return rows.map((row) => (ASKING_ROWS.includes(row.id) ? { ...row, group: t("bell.waiting") } : row));
 }
