@@ -99,7 +99,7 @@ function parseJwtExp(jwt: string): number | null {
   return null;
 }
 
-export async function getHostToken(get: typeof fetch, streamOrigin: string, playerUrl: string): Promise<string> {
+export async function getHostToken(get: typeof fetch, streamOrigin: string, playerUrl: string, apiToken?: string): Promise<string> {
   const cached = hostTokenCache.get(streamOrigin);
   const now = Date.now();
   if (cached && cached.expiresAt > now + 60_000) {
@@ -107,7 +107,10 @@ export async function getHostToken(get: typeof fetch, streamOrigin: string, play
   }
 
   try {
-    const rawToken = await getText(get, `${streamOrigin}/generate.php`, { referer: playerUrl });
+    const genUrl = apiToken
+      ? `${streamOrigin}/generate.php?api_token=${encodeURIComponent(apiToken)}`
+      : `${streamOrigin}/generate.php`;
+    const rawToken = await getText(get, genUrl, { referer: playerUrl });
     let token = "";
     try {
       const parsed = JSON.parse(rawToken.trim()) as Record<string, string>;
@@ -165,17 +168,66 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       // 2. Fetch metadata from TMDB
       let title = "Filmpire Video";
       let tmdbImdbId: string | undefined;
+      let rawShowTitle: string | undefined;
       try {
         const tmdbData = await fetchJson<{ title?: string; name?: string; imdb_id?: string }>(
           `https://api.themoviedb.org/3/${contentType}/${id}?api_key=${FILMPIRE_TMDB_API_KEY}`,
         );
         if (tmdbData.title || tmdbData.name) {
-          title = tmdbData.title || tmdbData.name || title;
+          rawShowTitle = tmdbData.title || tmdbData.name;
+          title = rawShowTitle || title;
           if (s && e) title += ` · S${s} E${e}`;
         }
         if (tmdbData.imdb_id) tmdbImdbId = tmdbData.imdb_id;
       } catch {
         // Non-fatal if TMDB is unreachable
+      }
+
+      const fallbackAnime = async (): Promise<ResolveResult | null> => {
+        if (!rawShowTitle) return null;
+        try {
+          const { animeHeavenSource } = await import("../../library/animeheaven");
+          const { createAnimeHeavenAdapter } = await import("./animeheaven");
+          const ah = animeHeavenSource({ fetch: get });
+          if (!ah.search || !ah.episodes) return null;
+          let results = await ah.search(rawShowTitle);
+          if (results.length === 0 && rawShowTitle.toLowerCase().includes("jujutsu")) {
+            results = await ah.search("sorcery fight");
+          }
+          if (results.length === 0) return null;
+
+          const targetSeason = Number(s || "1");
+          const targetEpisode = Number(e || "1");
+
+          const lower = rawShowTitle.toLowerCase();
+          let matched = results.find((r) => r.title.toLowerCase() === lower);
+          if (!matched && targetSeason > 1) {
+            matched = results.find(
+              (r) =>
+                r.title.toLowerCase().includes(`season ${targetSeason}`) ||
+                r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
+                r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
+                r.title.toLowerCase().includes(`${targetSeason}th season`),
+            );
+          }
+          if (!matched) {
+            matched = results.find((r) => r.title.toLowerCase().includes(lower)) || results[0];
+          }
+          if (!matched) return null;
+
+          const eps = await ah.episodes(matched.url, targetSeason);
+          const targetEp = eps.find((ep) => ep.episode === targetEpisode) || eps[0];
+          if (!targetEp?.url) return null;
+
+          const ahAdapter = createAnimeHeavenAdapter({ fetch: get });
+          const res = await ahAdapter.resolve(new URL(targetEp.url));
+          if (res.status === "success") {
+            return res;
+          }
+          return null;
+        } catch {
+          return null;
+        }
       }
 
       // 3. Request embed player from screenfetch4 / vidsrc
@@ -197,11 +249,15 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           );
           containerUrl = vsData.src;
         } catch {
+          const alt = await fallbackAnime();
+          if (alt) return alt;
           return { status: "temporary_failure", reason: "Could not reach streaming server." };
         }
       }
 
       if (!containerUrl) {
+        const alt = await fallbackAnime();
+        if (alt) return alt;
         return { status: "unsupported", reason: "Video source currently unavailable." };
       }
 
@@ -215,6 +271,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
         playerUrl = new URL(playerMatch[1].replace(/\\u0026/g, "&"), containerUrl).href;
       } catch {
+        const alt = await fallbackAnime();
+        if (alt) return alt;
         return { status: "temporary_failure", reason: "Could not load video player." };
       }
 
@@ -222,6 +280,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let streamApiUrl: string;
       let playerHtml = "";
       let seriesInfo: SeriesInfo | undefined;
+      let playerConfig: { api?: string; apiToken: string; mediaType?: string; streamBase?: string } | undefined;
       try {
         playerHtml = await fetchText(playerUrl, { referer: containerUrl });
         const configMatch = playerHtml.match(/window\.CONFIG\s*=\s*(\{[\s\S]*?\});/);
@@ -235,6 +294,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           streamBase?: string;
         };
 
+        playerConfig = config;
         if (config.mediaType === "tv" || config.streamBase || isTv) {
           const targetSeason = s || "1";
           const targetEpisode = e || "1";
@@ -348,6 +408,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           streamApiUrl = `${cleanApi}&api_token=${config.apiToken}`;
         }
       } catch {
+        const alt = await fallbackAnime();
+        if (alt) return alt;
         return { status: "temporary_failure", reason: "Could not parse video player config." };
       }
 
@@ -402,6 +464,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           }
         }
       } catch {
+        const alt = await fallbackAnime();
+        if (alt) return alt;
         return { status: "temporary_failure", reason: "Could not retrieve video stream." };
       }
 
@@ -474,6 +538,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       }
 
       if (streamUrls.length === 0) {
+        const alt = await fallbackAnime();
+        if (alt) return alt;
         return { status: "unsupported", reason: "No video streams found." };
       }
 
@@ -483,10 +549,10 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       // The dedicated relay obtains its own IP-bound token. A website-issued token cannot authorize another machine's media requests.
       const relayOwnsToken = Boolean(process.env.EDGE_STREAM_PROXY_URL?.trim() && process.env.EDGE_STREAM_PROXY_KEY);
 
-      for (const sUrl of relayOwnsToken ? [] : streamUrls) {
+      for (const sUrl of streamUrls) {
         try {
           const origin = new URL(sUrl).origin;
-          const tok = await getHostToken(get, origin, playerUrl);
+          const tok = await getHostToken(get, origin, playerUrl, playerConfig?.apiToken);
           if (tok) {
             chosenStream = sUrl;
             chosenToken = tok;
@@ -505,7 +571,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       }
 
       // 8. Through the edge relay, the provider's own address or /api/proxy (see `streamAddress`)
-      const proxiedUrl = streamAddress(finalStreamUrl, playerUrl, process.env, relayOwnsToken);
+      const hostTokenNeeded = relayOwnsToken && !chosenToken;
+      const proxiedUrl = streamAddress(finalStreamUrl, playerUrl, process.env, hostTokenNeeded, playerConfig?.apiToken);
 
       // 9. Generate alternates for the other decrypted stream URLs (multiple sources support)
       const alternates: AlternateSource[] = [];
@@ -515,7 +582,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         try {
           const origin = new URL(sUrl).origin;
           const hostName = new URL(sUrl).hostname.split(".")[0] || "Server";
-          const altToken = relayOwnsToken ? "" : await getHostToken(get, origin, playerUrl);
+          const altToken = await getHostToken(get, origin, playerUrl, playerConfig?.apiToken);
           const altDelim = sUrl.includes("?") ? "&" : "?";
           const altFinalUrl = altToken
             ? `${sUrl}${altDelim}token=${encodeURIComponent(altToken)}&bypass_localize=true`
@@ -523,13 +590,27 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           alternates.push({
             label: `Server ${alternates.length + 2} (${hostName})`,
             stream: {
-              url: streamAddress(altFinalUrl, playerUrl, process.env, relayOwnsToken),
+              url: streamAddress(altFinalUrl, playerUrl, process.env, relayOwnsToken && !altToken, playerConfig?.apiToken),
               type: "hls",
               directUrl: altFinalUrl,
             },
           });
         } catch {
           // ignore failed alternate
+        }
+      }
+
+      if (rawShowTitle && isTv && alternates.length < 4) {
+        try {
+          const altAnime = await fallbackAnime();
+          if (altAnime?.status === "success") {
+            alternates.push({
+              label: `Server ${alternates.length + 2} (AnimeHeaven)`,
+              stream: altAnime.media.stream,
+            });
+          }
+        } catch {
+          // ignore
         }
       }
 

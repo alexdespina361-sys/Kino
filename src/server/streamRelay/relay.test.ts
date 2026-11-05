@@ -13,13 +13,13 @@ let tokenStatus = 200;
 let upstream: http.Server;
 let origin: string;
 let relay: ReturnType<typeof buildStreamRelay>;
-const asked: Array<{ path: string; token: string | null; origin?: string; referer?: string }> = [];
+const asked: Array<{ path: string; token: string | null; apiToken?: string | null; origin?: string; referer?: string }> = [];
 const bytes = Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]);
 
 beforeAll(async () => {
   upstream = http.createServer((request, response) => {
     const url = new URL(request.url!, "http://provider");
-    asked.push({ path: url.pathname, token: url.searchParams.get("token"), origin: request.headers.origin, referer: request.headers.referer });
+    asked.push({ path: url.pathname, token: url.searchParams.get("token"), apiToken: url.searchParams.get("api_token"), origin: request.headers.origin, referer: request.headers.referer });
     if (url.pathname === "/generate.php") {
       response.statusCode = tokenStatus;
       response.setHeader("content-type", "application/json");
@@ -56,8 +56,8 @@ beforeAll(async () => {
 afterEach(async () => { await relay?.close(); asked.length = 0; tokenStatus = 200; issuedToken = token; vi.restoreAllMocks(); });
 afterAll(async () => { upstream.closeAllConnections(); await new Promise<void>((resolve) => upstream.close(() => resolve())); });
 
-const signed = (path: string, hostToken = false, expires = Date.now() + 3600_000) => {
-  const url = new URL(signedRelayUrl("https://streams.example/api/proxy", { url: `${origin}${path}`, referer, hostToken, expires }, key));
+const signed = (path: string, hostToken = false, expires = Date.now() + 3600_000, apiToken?: string) => {
+  const url = new URL(signedRelayUrl("https://streams.example/api/proxy", { url: `${origin}${path}`, referer, hostToken, expires, apiToken }, key));
   return url.pathname + url.search;
 };
 const start = () => relay = buildStreamRelay({ key, isAllowedAddress: () => true });
@@ -68,6 +68,7 @@ describe("a separate streaming relay", () => {
     const masters = await Promise.all(Array.from({ length: 3 }, () => relay.inject(signed("/pl/master.m3u8?token=website-ip-token", true))));
     expect(masters.map((r) => r.statusCode)).toEqual([200, 200, 200]);
     expect(asked.filter((r) => r.path === "/generate.php")).toHaveLength(1);
+
     expect(asked.filter((r) => r.path.endsWith(".m3u8")).every((r) => r.token === token)).toBe(true);
     const child = masters[0]!.body.split("\n").find((line) => line.startsWith("/api/proxy"))!;
     const playlist = await relay.inject(child);
@@ -85,6 +86,15 @@ describe("a separate streaming relay", () => {
     }
     expect(asked.every((r) => !r.origin && r.referer === referer)).toBe(true);
     expect(asked.filter((r) => r.path === "/generate.php")).toHaveLength(1);
+
+  });
+
+  it("forwards apiToken to /generate.php when provided in the relay link", async () => {
+    start();
+    const res = await relay.inject(signed("/pl/master.m3u8", true, undefined, "my-turnstile-token"));
+    expect(res.statusCode).toBe(200);
+    const genReq = asked.find((r) => r.path === "/generate.php");
+    expect(genReq?.apiToken).toBe("my-turnstile-token");
   });
 
   it("refuses unsigned, changed and expired links before contacting any provider", async () => {

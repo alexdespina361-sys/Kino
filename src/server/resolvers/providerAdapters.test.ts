@@ -228,7 +228,7 @@ describe("the filmpire adapter", () => {
       const net = guardedPast({ streams: [`${local}/a.m3u8`] });
       const res = await createFilmpireAdapter({ fetch: net.fetch }).resolve(MOVIE);
       expect(res.status).toBe("success"); // (the stream is for the screen to play, not for this server to fetch)
-      expect(net.asked.some((url) => url.href === `${local}/generate.php`)).toBe(true);
+      expect(net.asked.some((url) => url.pathname === "/generate.php" && url.origin === local)).toBe(true);
       none();
     });
   });

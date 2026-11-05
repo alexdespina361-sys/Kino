@@ -10,13 +10,13 @@ export class HostTokens {
 
   constructor(private readonly allowedAddress = isPublicAddress) {}
 
-  async authorize(target: URL, referer: string): Promise<URL> {
+  async authorize(target: URL, referer: string, apiToken?: string): Promise<URL> {
     const key = `${target.origin}\n${new URL(referer).origin}`;
     let token = this.cache.get(key);
     if (!token || token.expires <= Date.now() + 60_000) {
       let pending = this.pending.get(key);
       if (!pending) {
-        pending = this.fetchToken(target.origin, referer).then((fresh) => {
+        pending = this.fetchToken(target.origin, referer, apiToken).then((fresh) => {
           // Bound memory even if a large catalogue uses many origins.
           if (this.cache.size >= 256) this.cache.delete(this.cache.keys().next().value!);
           this.cache.set(key, fresh);
@@ -32,8 +32,10 @@ export class HostTokens {
     return url;
   }
 
-  private async fetchToken(origin: string, referer: string): Promise<Token> {
-    const { response } = await openUpstream(new URL("/generate.php", origin), {
+  private async fetchToken(origin: string, referer: string, apiToken?: string): Promise<Token> {
+    const genUrl = new URL("/generate.php", origin);
+    if (apiToken) genUrl.searchParams.set("api_token", apiToken);
+    const { response } = await openUpstream(genUrl, {
       referer, accept: "*/*", "user-agent": "Mozilla/5.0",
     }, this.allowedAddress, AbortSignal.timeout(15_000));
     if (!response.ok) {

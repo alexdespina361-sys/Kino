@@ -35,7 +35,7 @@ export function buildStreamRelay(options: { key: string; isAllowedAddress?: (add
       return reply.code(403).send({ error: "URL_NOT_ALLOWED" });
     }
     try {
-      if (link.hostToken) target = await tokens.authorize(target, link.referer);
+      if (link.hostToken) target = await tokens.authorize(target, link.referer, link.apiToken);
     } catch (error) {
       return reply.code(502).send({ error: "UPSTREAM_TOKEN_FAILED", message: error instanceof Error ? error.message : "Token unavailable" });
     }
@@ -47,7 +47,7 @@ export function buildStreamRelay(options: { key: string; isAllowedAddress?: (add
         // Only the original playlist endpoint needs a token. Propagate the mode to child /pl/ playlists on the same host.
         const hostToken = link.hostToken && resource.origin === target.origin && resource.pathname.startsWith("/pl/") && resource.pathname.endsWith(".m3u8");
         if (hostToken) resource.searchParams.delete("token");
-        const signed = signedRelayUrl("http://relay/api/proxy", { url: resource.href, referer: link.referer, expires: link.expires, hostToken }, options.key);
+        const signed = signedRelayUrl("http://relay/api/proxy", { url: resource.href, referer: link.referer, expires: link.expires, hostToken, apiToken: link.apiToken }, options.key);
         return signed.slice("http://relay".length);
       },
     });
