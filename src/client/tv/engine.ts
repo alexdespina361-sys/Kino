@@ -41,6 +41,8 @@ export const PlayerError = {
   Blocked: "PLAYBACK_BLOCKED",
   /** Nothing came back from the network at all: the link or the server went away (it passes; the video itself is fine). */
   ConnectionLost: "CONNECTION_LOST",
+  /** The place the video comes from answered, and said no (a 5xx, a 404 for a link that has run out): the TV is not what failed, and another look for the link may find one that plays. */
+  SourceUnavailable: "SOURCE_UNAVAILABLE",
 } as const;
 
 /**
@@ -52,6 +54,11 @@ export function lostTheConnection(data: { type?: string; details?: string; respo
   if (data.details?.endsWith("TimeOut")) return true;
   const code = data.response?.code;
   return code === undefined || code < 100;
+}
+
+/** Whether a fatal hls.js error is the place the video comes from answering with a refusal or a failure (an HTTP status of 400 or more), where the TV, the picture and the connection were all fine. */
+export function sourceSaidNo(data: { type?: string; details?: string; response?: { code?: number } }): boolean {
+  return data.type === "networkError" && (data.response?.code ?? 0) >= 400 && !lostTheConnection(data);
 }
 
 /** Where an address leads, short: the host, the one behind it when the address is a proxy's (or the relay's) and carries the real one, and the file. Never the query or the rest of the path: those hold links' tokens and signatures. */
@@ -340,8 +347,10 @@ export class PlayerEngine {
             return;
           }
 
-          console.error("[HLS FATAL ERROR]", data.type, data.details, ...(data.response?.code ? [`HTTP ${data.response.code}`] : []));
-          this.fail(lostTheConnection(data) ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
+          // (Where it came from is in the line, short and without the link's token: a report that holds it says whether it was this server, a relay or the video's own host that answered.)
+          const where = whereIs(data.url);
+          console.error("[HLS FATAL ERROR]", data.type, data.details, ...(data.response?.code ? [`HTTP ${data.response.code}`] : []), ...(where ? [`from ${where}`] : []));
+          this.fail(lostTheConnection(data) ? PlayerError.ConnectionLost : sourceSaidNo(data) ? PlayerError.SourceUnavailable : PlayerError.NotDirectlyPlayable);
         }
       });
 

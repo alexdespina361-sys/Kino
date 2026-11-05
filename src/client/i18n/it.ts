@@ -620,6 +620,7 @@ export const it: Dictionary = {
   "playerError.HLS_UNSUPPORTED": "Il browser di questa TV non può riprodurre questo tipo di flusso.",
   "playerError.PLAYBACK_BLOCKED": "La TV aspetta che si prema un tasto. Premi OK sulla TV per avviare il video.",
   "playerError.CONNECTION_LOST": "La connessione al video è stata persa.",
+  "playerError.SOURCE_UNAVAILABLE": "La fonte di questo video non risponde in questo momento. Riprova tra poco o scegli un altro titolo.",
   "playerError.generic": "Qualcosa è andato storto durante la riproduzione di questo video.",
   "tv.leave": "Esci",
   "tv.fsPrompt": "Premi OK per lo schermo intero",

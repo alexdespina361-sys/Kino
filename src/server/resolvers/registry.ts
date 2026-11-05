@@ -35,13 +35,17 @@ export class ResolverRegistry {
     return this.adapters.find((a) => a.domains.some((d) => host === d || host.endsWith(`.${d}`)));
   }
 
+  /** Lets go of what is kept for `raw`. */
+  private drop(raw: string): void {
+    const old = this.cache.get(raw);
+    if (!old) return;
+    this.cache.delete(raw); // (a Map keeps the order things were added in: what is kept next is the newest)
+    this.cachedBytes -= old.bytes;
+  }
+
   /** Keeps `result` as the newest, and lets the oldest go while there are too many or they weigh too much together. */
   private keep(raw: string, result: ResolveResult, expiresAt: number): void {
-    const old = this.cache.get(raw);
-    if (old) {
-      this.cache.delete(raw); // (a Map keeps the order things were added in: this one is now the newest)
-      this.cachedBytes -= old.bytes;
-    }
+    this.drop(raw);
     const bytes = JSON.stringify(result).length;
     if (bytes > MAX_CACHED_RESULT_BYTES) return;
     this.cache.set(raw, { result, expiresAt, bytes });
@@ -53,10 +57,12 @@ export class ResolverRegistry {
     }
   }
 
-  resolve: ResolveFn = async (raw, isPrefetch = false) => {
+  resolve: ResolveFn = async (raw, isPrefetch = false, fresh = false) => {
     if (!isHttpUrl(raw)) return { status: "invalid_url" };
 
     const started = this.now();
+    // (A link that was tried and failed is not given again for the rest of its ten minutes: a stream's own link, with the token that came with it, can run out sooner.)
+    if (fresh) this.drop(raw);
     const cached = this.cache.get(raw);
     if (cached && cached.expiresAt > started) {
       return cached.result;

@@ -1,6 +1,6 @@
 import { expect, type APIRequestContext, type Browser, type Locator, type Page } from "@playwright/test";
 import { FEEDBACK_TOKEN } from "./feedbackToken";
-import { openDevice, openLibrary, openPairedPhone, openProfileByRemote, openTv, PHONE, RawPhone, readPairingCode, test, withLibrary } from "./helpers";
+import { openDevice, openLibrary, openPairedPhone, openProfileByRemote, openProfilePage, openTv, PHONE, RawPhone, readPairingCode, test, withLibrary } from "./helpers";
 
 /**
  * The Feedback button: a phone and a TV send what is wrong, what could be better or an idea, with a picture of the screen that was circled, and the team
@@ -435,6 +435,38 @@ test.describe("feedback from a TV", () => {
     expect(isPng(await fileOf(request, report, "annotated"))).toBe(true);
     // The picture is of the page, not of the form: the library's tiles are in it. (A form's own words are not asked of the page: nothing here reads the pixels.)
     expect(report.context.where?.view).toBeTruthy();
+  });
+});
+
+test.describe("feedback from a phone that is the screen", () => {
+  test("the TV page held in the hand is a phone's: the form offers the pictures, the photo and the file, and not the note a TV gets", async ({ browser }) => {
+    const tv = await openDevice(browser, PHONE, {}, withFilms);
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await openProfilePage(tv, "tap");
+    await tv.getByTestId("tv-profile-feedback").tap();
+    await tv.getByTestId("fb-kind-bug").tap();
+    await expect(tv.getByTestId("fb-show")).toBeVisible();
+    for (const id of ["fb-capture", "fb-add-picture", "fb-add-photo", "fb-add-file"]) await expect(tv.getByTestId(id), id).toBeVisible();
+    await expect(tv.getByTestId("fb-no-pictures")).toHaveCount(0);
+  });
+
+  test("a TV that only a remote walks still gets the note and no buttons for pictures", async ({ browser }) => {
+    // (No pointer to speak of and no touch: the page cannot tell it from a TV's browser.)
+    const tv = await openDevice(browser, { viewport: { width: 1280, height: 720 } }, {}, async (context) => {
+      await withFilms(context);
+      await context.addInitScript(() => {
+        const real = window.matchMedia.bind(window);
+        window.matchMedia = (query: string) => real(query.includes("pointer: fine") ? "not all" : query);
+      });
+    });
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+    await openProfilePage(tv);
+    await tv.getByTestId("tv-profile-feedback").click();
+    await tv.getByTestId("fb-kind-bug").click();
+    await expect(tv.getByTestId("fb-no-pictures")).toBeVisible();
+    await expect(tv.getByTestId("fb-capture")).toHaveCount(0);
   });
 });
 

@@ -158,8 +158,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     });
   const library = createLibrary({ sources: options.librarySources ?? [], log: app.log, ...(options.libraryNow ? { now: options.libraryNow } : {}) });
   // Every try at playing something tells the library how it went, so the titles a place lists but has no video of stop being offered.
-  const resolveForPlay: ResolveFn = async (url, isPrefetch) => {
-    const result = await resolve(url, isPrefetch);
+  const resolveForPlay: ResolveFn = async (url, isPrefetch, fresh) => {
+    const result = await resolve(url, isPrefetch, fresh);
     if (result.status === "success") library.played(url, "found");
     else if (result.status === "unsupported") library.played(url, "none");
     else if (result.status === "temporary_failure") library.played(url, "failed");

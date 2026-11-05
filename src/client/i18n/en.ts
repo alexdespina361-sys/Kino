@@ -623,6 +623,7 @@ export const en = {
   "playerError.HLS_UNSUPPORTED": "This TV's browser can't play this kind of stream.",
   "playerError.PLAYBACK_BLOCKED": "The TV is waiting for a press. Press OK on the TV to start the video.",
   "playerError.CONNECTION_LOST": "The connection to the video was lost.",
+  "playerError.SOURCE_UNAVAILABLE": "This video's source isn't answering right now. Try again in a moment, or pick another title.",
   "playerError.generic": "Something went wrong while playing this video.",
   "tv.leave": "Leave",
   "tv.fsPrompt": "Press OK for full screen",

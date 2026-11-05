@@ -14,6 +14,7 @@ import {
   describeHlsError,
   lostTheConnection,
   proxiedQualityCap,
+  sourceSaidNo,
   type SyncFilm,
   type SyncStarter,
 } from "./engine";
@@ -752,6 +753,60 @@ describe("lostTheConnection", () => {
     expect(lostTheConnection({ type: "mediaError", details: "fragParsingError" })).toBe(false);
     expect(lostTheConnection({ type: "otherError", details: "internalException" })).toBe(false);
     expect(lostTheConnection({})).toBe(false);
+  });
+});
+
+describe("a place the video comes from that says no", () => {
+  beforeEach(() => {
+    FakeHls.instances.length = 0;
+    FakeHls.supported = true;
+    stubBrowser();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+  /** The state a film ends in when hls.js reports a fatal error like `data`, and the lines the console was given. */
+  const endsWith = async (data: Record<string, unknown>, address = "https://cdn.example/a.m3u8") => {
+    const lines: unknown[][] = [];
+    vi.spyOn(console, "error").mockImplementation((...line: unknown[]) => void lines.push(line));
+    const { engine, states } = newEngine();
+    await engine.load(address, "hls");
+    FakeHls.instances.at(-1)!.emit("error", { fatal: true, ...data });
+    const last = states.at(-1);
+    engine.destroy();
+    return { last, lines };
+  };
+
+  it.each([404, 403, 410, 500, 502, 503])("is not the TV's fault when it answers HTTP %i: the card says the source, and Try again can ask for another link", async (code) => {
+    const { last } = await endsWith({ type: "networkError", details: "manifestLoadError", response: { code } });
+    expect(last).toMatchObject({ state: "error", error: "SOURCE_UNAVAILABLE" });
+  });
+
+  it("is still a lost connection when it does not answer at all, or when the answer is a time-out", async () => {
+    expect((await endsWith({ type: "networkError", details: "manifestLoadError" })).last).toMatchObject({ error: "CONNECTION_LOST" });
+    expect((await endsWith({ type: "networkError", details: "fragLoadTimeOut", response: { code: 504 } })).last).toMatchObject({ error: "CONNECTION_LOST" });
+  });
+
+  it("is still 'can't be played' for a picture that cannot be used, where nobody said no", async () => {
+    expect((await endsWith({ type: "otherError", details: "internalException" })).last).toMatchObject({ error: "SOURCE_NOT_DIRECTLY_PLAYABLE" });
+    expect((await endsWith({ type: "networkError", details: "manifestParsingError", response: { code: 200 } })).last).toMatchObject({ error: "SOURCE_NOT_DIRECTLY_PLAYABLE" });
+  });
+
+  it("tells a report where the answer came from, short and without the link's token", async () => {
+    const relay = "https://relay.example/api/proxy?url=" + encodeURIComponent("https://videos.example/pl/SECRETTOKEN/master.m3u8") + "&sig=SIGNATURE";
+    const { lines } = await endsWith({ type: "networkError", details: "manifestLoadError", url: relay, response: { code: 502 } });
+    const line = lines.at(-1)!.join(" ");
+    expect(line).toBe("[HLS FATAL ERROR] networkError manifestLoadError HTTP 502 from relay.example → videos.example master.m3u8");
+    for (const secret of ["SECRETTOKEN", "SIGNATURE"]) expect(line, secret).not.toContain(secret);
+  });
+
+  it("is a network error with an answer of 400 or more that is not a time-out, and nothing else", () => {
+    expect(sourceSaidNo({ type: "networkError", response: { code: 502 } })).toBe(true);
+    expect(sourceSaidNo({ type: "networkError", details: "fragLoadTimeOut", response: { code: 502 } })).toBe(false);
+    expect(sourceSaidNo({ type: "networkError", response: { code: 0 } })).toBe(false);
+    expect(sourceSaidNo({ type: "mediaError", response: { code: 502 } })).toBe(false);
+    expect(sourceSaidNo({})).toBe(false);
   });
 });
 

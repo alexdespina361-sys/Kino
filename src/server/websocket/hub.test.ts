@@ -120,7 +120,7 @@ let resolveImpl: ResolveFn;
 
 beforeEach(async () => {
   resolveImpl = async () => ({ status: "unsupported", reason: "no resolver configured in this test" });
-  app = await buildApp({ resolve: (url) => resolveImpl(url) });
+  app = await buildApp({ resolve: (url, prefetch, fresh) => resolveImpl(url, prefetch, fresh) });
   await app.ready();
 });
 
@@ -1408,6 +1408,103 @@ describe("TV feedback while a link is being looked up", () => {
     expect((await tv.next("TV_RESOLVING")).active).toBe(true);
     expect((await tv.next("TV_RESOLVING")).active).toBe(false);
     await tv.expectNone((m) => m.type === "TV_CMD");
+  });
+});
+
+describe("a link that was handed to a TV and did not play", () => {
+  /** Every address the resolver is asked about, with whether the look was made afresh (not read from what was kept). */
+  function looks() {
+    const seen: Array<[string, boolean]> = [];
+    resolveImpl = async (url, _prefetch, fresh) => (seen.push([url, Boolean(fresh)]), { status: "success", resolver: "test", media });
+    return seen;
+  }
+  const played = (m: ServerMessage) => m.type === "TV_CMD" && m.command.type === "PLAY";
+  const wouldNotPlay ={ state: "error" as const, currentTime: 0, duration: 0, error: "SOURCE_UNAVAILABLE" };
+
+  /** A TV that was given `url`, reported that it would not play, and was asked for it again by `ask`: the connections, once the second look has been made. */
+  async function askedAgain(url: string, ask: (tv: Client, phone: Client) => void) {
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url });
+    await tv.nextWhere("TV_CMD", played);
+    tv.send({ type: "TV_STATE", state: wouldNotPlay });
+    await phone.nextWhere("STATE", (m) => m.state.state === "error"); // (the report has been read)
+    ask(tv, phone);
+    await tv.nextWhere("TV_CMD", played);
+    return { tv, phone };
+  }
+
+  it("is looked up afresh when the TV asks for it again, where the first look was not", async () => {
+    const seen = looks();
+    await askedAgain("https://s.example/a", (tv) => tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" }));
+    expect(seen).toEqual([
+      ["https://s.example/a", false],
+      ["https://s.example/a", true],
+    ]);
+  });
+
+  it("is looked up afresh when a phone asks for it again, too", async () => {
+    const seen = looks();
+    await askedAgain("https://s.example/a", (_tv, phone) => phone.send({ type: "PLAY_URL", url: "https://s.example/a" }));
+    expect(seen.map(([, fresh]) => fresh)).toEqual([false, true]);
+  });
+
+  it("is afresh once: the look after that reads what was kept again", async () => {
+    const seen = looks();
+    const { tv } = await askedAgain("https://s.example/a", (tv) => tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" }));
+    await tv.forget();
+    tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" });
+    await tv.nextWhere("TV_CMD", played);
+    expect(seen.map(([, fresh]) => fresh)).toEqual([false, true, false]);
+  });
+
+  it("is about that link only: another title is looked up as ever", async () => {
+    const seen = looks();
+    await askedAgain("https://s.example/a", (tv) => tv.send({ type: "TV_PLAY_URL", url: "https://s.example/b" }));
+    expect(seen).toEqual([
+      ["https://s.example/a", false],
+      ["https://s.example/b", false],
+    ]);
+  });
+
+  it("is not blamed on a TV that plays: only a report of an error counts", async () => {
+    const seen = looks();
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: "https://s.example/a" });
+    await tv.nextWhere("TV_CMD", played);
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 3, duration: 100 } });
+    await phone.nextWhere("STATE", (m) => m.state.state === "playing");
+    tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" });
+    await tv.nextWhere("TV_CMD", played);
+    expect(seen.map(([, fresh]) => fresh)).toEqual([false, false]);
+  });
+
+  it("does not trouble a TV that has nothing it asked for: an error with no look-up behind it is only passed on", async () => {
+    looks();
+    const { tv, phone } = await pairedSetup();
+    tv.send({ type: "TV_STATE", state: wouldNotPlay });
+    expect((await phone.nextWhere("STATE", (m) => m.state.state === "error")).state.error).toBe("SOURCE_UNAVAILABLE");
+  });
+
+  it("is remembered for a bounded number of links, the newest", async () => {
+    await app.close();
+    app = await buildApp({ resolve: (url, prefetch, fresh) => resolveImpl(url, prefetch, fresh), hub: { maxFailedLinks: 2 } });
+    await app.ready();
+    const seen = looks();
+    const { tv, phone } = await pairedSetup();
+    const links = ["a", "b", "c"].map((name) => `https://s.example/${name}`);
+    for (const link of links) {
+      tv.send({ type: "TV_PLAY_URL", url: link });
+      await tv.nextWhere("TV_CMD", played);
+      tv.send({ type: "TV_STATE", state: wouldNotPlay });
+      await phone.nextWhere("STATE", (m) => m.state.state === "error");
+      await phone.forget();
+    }
+    seen.length = 0;
+    tv.send({ type: "TV_PLAY_URL", url: links[0]! }); // the oldest was let go
+    await tv.nextWhere("TV_CMD", played);
+    tv.send({ type: "TV_PLAY_URL", url: links[2]! }); // the newest is still marked
+    await tv.nextWhere("TV_CMD", played);
+    expect(seen.map(([, fresh]) => fresh)).toEqual([false, true]);
   });
 });
 

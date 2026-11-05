@@ -1168,12 +1168,23 @@ export function Tv() {
   useEffect(() => {
     if (failed) setMenu(null);
   }, [failed]);
-  /** From the first source again, as the first time: a failure is sometimes only a bad moment. Where it stopped is where it carries on from, not the start. */
+  /**
+   * From the first source again, as the first time: a failure is sometimes only a bad moment. Where it stopped is where it carries on from, not the start.
+   * When the place the video comes from said no, it is the link that failed (a token that ran out, a server that was busy when it was handed out): the title is
+   * looked up again, which the server does afresh for a link that did not play, and what comes carries on from the same place.
+   */
   const retryPlayback = () => {
     const engine = engineRef.current;
-    const source = currentMedia ? sourcesOf(currentMedia)[0] : undefined;
-    if (!source || !engine) return;
+    if (!currentMedia || !engine) return;
     const at = engine.resumePoint();
+    const page = currentMedia.page;
+    if (player.error === PlayerError.SourceUnavailable && page && !followingRef.current) {
+      const { poster, backdrop, year } = currentMedia;
+      playEpisode(page, { ...(at > 5 ? { startAt: at } : {}), hint: { poster, backdrop, year } });
+      return;
+    }
+    const source = sourcesOf(currentMedia)[0];
+    if (!source) return;
     resetApplied();
     resetSources();
     void engine.load(source.stream.url, source.stream.type, source.subtitles, at > 5 ? at : undefined, source.stream.directUrl);
@@ -1203,6 +1214,19 @@ export function Tv() {
   }, [connection, lostConnection]);
   useEffect(() => {
     if (player.state === "playing") connectionRetriesRef.current = 0;
+  }, [player.state]);
+  // A link that the place it comes from refuses (a token that ran out while the result of the look-up was kept) is asked for again by itself, once, before the card says
+  // so: it takes a moment, and the film often just plays. A title that has had its second look is left to the card's Try again until something plays.
+  const refused = failed && player.error === PlayerError.SourceUnavailable;
+  const lookedAgainRef = useRef<string | null>(null);
+  useEffect(() => {
+    const page = currentMediaRef.current?.page;
+    if (!refused || !page || lookedAgainRef.current === page) return;
+    lookedAgainRef.current = page;
+    retryRef.current();
+  }, [refused]);
+  useEffect(() => {
+    if (player.state === "playing") lookedAgainRef.current = null;
   }, [player.state]);
   // A page that another page of this TV has taken the place of is steered by nobody (the phone talks to the new one): its film stops, or both would play.
   useEffect(() => {

@@ -177,6 +177,47 @@ describe("ResolverRegistry", () => {
     expect(asked).toBe(MAX_CACHED_RESULTS + 6);
   });
 
+  describe("a look that is to be made afresh", () => {
+    /** Each look finds another link (as a stream's token is another each time). */
+    const tokens = () => {
+      let asked = 0;
+      const adapterOfTokens: SiteAdapter = { id: "tokens", domains: [], resolve: async () => ((asked += 1), { status: "success", resolver: "tokens", media: { stream: { url: `https://x/a.m3u8?token=${asked}`, type: "hls" } } }) };
+      return { adapterOfTokens, asked: () => asked };
+    };
+    const linkOf = (result: ResolveResult) => (result.status === "success" ? result.media.stream.url : undefined);
+
+    it("skips what was kept for the address, asks again, and keeps the new answer", async () => {
+      const { adapterOfTokens, asked } = tokens();
+      const registry = new ResolverRegistry([], adapterOfTokens, log);
+      expect(linkOf(await registry.resolve("https://a.example/1"))).toContain("token=1");
+      expect(linkOf(await registry.resolve("https://a.example/1"))).toContain("token=1"); // (kept)
+      expect(linkOf(await registry.resolve("https://a.example/1", false, true))).toContain("token=2");
+      expect(asked()).toBe(2);
+      expect(linkOf(await registry.resolve("https://a.example/1"))).toContain("token=2"); // (and the new one is what is kept)
+      expect(asked()).toBe(2);
+    });
+
+    it("does not touch what is kept for other addresses", async () => {
+      const { adapterOfTokens, asked } = tokens();
+      const registry = new ResolverRegistry([], adapterOfTokens, log);
+      await registry.resolve("https://a.example/1");
+      await registry.resolve("https://a.example/2");
+      await registry.resolve("https://a.example/1", false, true);
+      await registry.resolve("https://a.example/2");
+      expect(asked()).toBe(3);
+    });
+
+    it("lets the old answer go even when the new look fails, so that the link that did not play is not given again", async () => {
+      let asked = 0;
+      const flaky: SiteAdapter = { id: "flaky", domains: [], resolve: async () => (++asked === 2 ? { status: "temporary_failure", reason: "x" } : ok("flaky")) };
+      const registry = new ResolverRegistry([], flaky, log);
+      await registry.resolve("https://a.example/1");
+      expect(await registry.resolve("https://a.example/1", false, true)).toMatchObject({ status: "temporary_failure" });
+      expect(await registry.resolve("https://a.example/1")).toMatchObject({ status: "success" }); // (asked again, not read from the old answer)
+      expect(asked).toBe(3);
+    });
+  });
+
   describe("weighing what it keeps", () => {
     // An answer with the most subtitle tracks a page is given (40 of about 2 KB each), about 85 KB: a page decides how heavy its answer is.
     const withSubtitles = (n: number): ResolveResult => ({

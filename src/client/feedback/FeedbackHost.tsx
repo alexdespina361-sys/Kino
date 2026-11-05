@@ -77,8 +77,9 @@ export function FeedbackHost({ options, onClose }: HostProps) {
   const signedIn = account.me !== null;
   const role = useMemo(() => roleOfThisPage(), []);
   const handHeld = useMemo(() => thisIsHandHeld(), []);
-  // A screen that only a remote walks (a TV): no pictures can be taken or chosen on it, and the form says where to do that.
-  const picturesHere = useMemo(() => !(role === "tv" && !(typeof matchMedia === "function" && matchMedia("(pointer: fine)").matches)), [role]);
+  // A screen that only a remote walks (a TV): no pictures can be taken or chosen on it, and the form says where to do that. A phone that is the screen (the
+  // TV page, held in the hand) is not one: it has a touch screen, a picture picker and a camera, whichever page it is on.
+  const picturesHere = useMemo(() => handHeld || !(role === "tv" && !(typeof matchMedia === "function" && matchMedia("(pointer: fine)").matches)), [handHeld, role]);
 
   const start = useMemo(() => guess(options, role === "remote"), [options, role]);
   const [screen, setScreen] = useState<Screen>(() => initialScreen(options));

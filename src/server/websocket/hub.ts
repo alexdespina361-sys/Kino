@@ -55,6 +55,9 @@ export const KEEP_UNPAIRED_MS = PAIRING_CODE_TTL_MS;
  */
 export const MAX_UNPAIRED = 5000;
 
+/** How many links that did not play are remembered at most (see `Hub.noteFailed`): a link is a few hundred bytes, and the ones that matter are the latest. */
+export const MAX_FAILED_LINKS = 200;
+
 /** Whether a party's film was going when its host last reported, and whose doing that was (`PartyTv.id`). */
 interface Hold {
   playing: boolean;
@@ -91,6 +94,8 @@ export interface HubOptions {
   keepUnpairedMs?: number;
   /** How many TVs, and how many phones, that nobody has paired are kept at most (see MAX_UNPAIRED). */
   maxUnpaired?: number;
+  /** How many links that did not play are remembered at most (see MAX_FAILED_LINKS). */
+  maxFailedLinks?: number;
 }
 
 /** Relays between phones and TVs. Holds no state of its own beyond who is connected right now. */
@@ -101,6 +106,10 @@ export class Hub {
   private readonly phoneSockets = new Map<string, Set<WebSocket>>(); // controllerId -> sockets
   /** Latest PLAY_URL per device, so a slow resolve can't overwrite a newer choice (or a STOP). */
   private readonly resolveSeq = new Map<string, number>();
+  /** The link each TV last had looked up (the address of the page, which is what a result is kept by), to know which one a failure on that TV is about. */
+  private readonly lastLookup = new Map<string, string>(); // deviceId -> link
+  /** Links that were handed out and did not play: the next look-up of each is made afresh, not read from what was kept (see `ResolveFn`). The oldest go when there are many. */
+  private readonly failedLinks = new Set<string>();
   /** When each open socket last said anything. A TV that lost power never sends a close frame. */
   private readonly lastSeen = new Map<WebSocket, number>();
   /** TVs whose page has just been opened and has not reported yet: its first report is when a video it was on is put back. */
@@ -130,6 +139,7 @@ export class Hub {
   private goneSince = new Map<string, number>();
   private readonly keepUnpairedMs: number;
   private readonly maxUnpaired: number;
+  private readonly maxFailedLinks: number;
 
   constructor(
     private readonly registry: Registry,
@@ -140,6 +150,7 @@ export class Hub {
     this.profiles = options.profiles;
     this.keepUnpairedMs = options.keepUnpairedMs ?? KEEP_UNPAIRED_MS;
     this.maxUnpaired = options.maxUnpaired ?? MAX_UNPAIRED;
+    this.maxFailedLinks = options.maxFailedLinks ?? MAX_FAILED_LINKS;
     const perAddress = options.maxFailedPairings ?? 20;
     const windowMs = options.failedPairingWindowMs ?? 60_000;
     this.wrongByAddress = new RateLimiter(perAddress, windowMs);
@@ -259,6 +270,22 @@ export class Hub {
   private forget(id: string): void {
     this.registry.forgetFree(id);
     this.resolveSeq.delete(id); // (a lookup that was still running for it ends there: see `playUrlForDevice`)
+    this.lastLookup.delete(id);
+  }
+
+  /**
+   * A TV says that what it was given would not play. A stream's own link, with the token that came with it, can run out while the result of the look-up is
+   * kept (ten minutes), and asking again for the same title would hand out the same dead link: the next look-up of this one is made afresh.
+   */
+  private noteFailed(deviceId: string): void {
+    const link = this.lastLookup.get(deviceId);
+    if (!link) return;
+    this.failedLinks.delete(link); // (so that it is the newest)
+    this.failedLinks.add(link);
+    for (const oldest of this.failedLinks) {
+      if (this.failedLinks.size <= this.maxFailedLinks) break;
+      this.failedLinks.delete(oldest);
+    }
   }
 
   /** A hello that finds no room: the connection is closed without a word (a page that is told something tries again at once; one that is only cut off waits longer each time). */
@@ -326,6 +353,7 @@ export class Hub {
         this.toControllers(device, { type: "MEDIA", media: message.media });
       }
       device.state = message.state;
+      if (message.state.state === "error") this.noteFailed(deviceId);
       this.toControllers(device, { type: "STATE", state: message.state });
       this.syncFollowers(device);
       this.registry.noteProgress(device, message.state);
@@ -913,9 +941,12 @@ export class Hub {
     this.send(this.tvs.get(device.id), { type: "TV_RESOLVING", active: true });
     this.toFollowers(device, { type: "TV_RESOLVING", active: true });
 
+    // (A link that was handed to this server's screens and did not play is not read from what was kept: see `noteFailed`.)
+    const fresh = this.failedLinks.delete(url);
+    this.lastLookup.set(device.id, url);
     let result: ResolveResult;
     try {
-      result = await this.resolve(url);
+      result = await this.resolve(url, false, fresh);
     } catch {
       result = { status: "temporary_failure", reason: "Something went wrong while looking for the video." };
     }

@@ -623,6 +623,7 @@ export const ro: Dictionary = {
   "playerError.HLS_UNSUPPORTED": "Browserul acestui televizor nu poate reda acest tip de flux.",
   "playerError.PLAYBACK_BLOCKED": "Televizorul așteaptă o apăsare. Apasă OK pe televizor ca să pornească videoclipul.",
   "playerError.CONNECTION_LOST": "Conexiunea la videoclip s-a pierdut.",
+  "playerError.SOURCE_UNAVAILABLE": "Sursa acestui videoclip nu răspunde acum. Încearcă din nou peste puțin timp sau alege alt titlu.",
   "playerError.generic": "Ceva nu a mers la redarea acestui videoclip.",
   "tv.leave": "Ieși",
   "tv.fsPrompt": "Apasă OK pentru ecran complet",
