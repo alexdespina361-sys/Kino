@@ -7,14 +7,14 @@ import { signedRelayUrl } from "../../streamRelay/links";
  *  - the other end's own address (`DIRECT_STREAMING=true`): requires the provider to allow cross-origin playback;
  *  - this server (`/api/proxy`).
  */
-export function streamAddress(raw: string, referer: string, env: NodeJS.ProcessEnv = process.env, hostToken = false): string {
+export function streamAddress(raw: string, referer: string, env: NodeJS.ProcessEnv = process.env, hostToken = false, apiToken?: string): string {
   const relay = env.EDGE_STREAM_PROXY_URL?.trim();
   const asked = (base: string) => `${base}?url=${encodeURIComponent(raw)}&referer=${encodeURIComponent(referer)}`;
   if (relay) {
     const key = env.EDGE_STREAM_PROXY_KEY;
     if (key) {
       if (key.length < 32) throw new Error("EDGE_STREAM_PROXY_KEY must contain at least 32 characters");
-      return signedRelayUrl(relay, { url: raw, referer, expires: Date.now() + 12 * 3600_000, hostToken }, key);
+      return signedRelayUrl(relay, { url: raw, referer, expires: Date.now() + 12 * 3600_000, hostToken, apiToken }, key);
     }
     return asked(relay.replace(/\/$/, ""));
   }
