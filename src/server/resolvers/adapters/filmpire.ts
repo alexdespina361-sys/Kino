@@ -232,8 +232,15 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const ah = animeHeavenSource({ fetch: get });
           if (!ah.search || !ah.episodes) return null;
           let results = await ah.search(rawShowTitle);
-          if (results.length === 0 && rawShowTitle.toLowerCase().includes("jujutsu")) {
-            results = await ah.search("sorcery fight");
+          if (rawShowTitle.toLowerCase().includes("jujutsu")) {
+            const extra = await ah.search("sorcery fight");
+            const seenUrls = new Set(results.map((r) => r.url));
+            for (const item of extra) {
+              if (!seenUrls.has(item.url)) {
+                seenUrls.add(item.url);
+                results.push(item);
+              }
+            }
           }
           if (results.length === 0) return null;
 
@@ -266,7 +273,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           if (!matched && targetSeason === 1) {
             matched = results.find((r) => extractAnimeSeason(r.title) === 1);
           }
-          if (!matched) return null;
+          if (!matched || extractAnimeSeason(matched.title) !== targetSeason) return null;
 
           const eps = await ah.episodes(matched.url, 1);
           const targetEp = eps.find((ep) => ep.episode === targetEpisode);
@@ -280,6 +287,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               media: {
                 ...res.media,
                 title,
+                page: url.href,
               },
             };
           }

@@ -68,7 +68,7 @@ export function useEpisodeDetails(link: string | undefined, season: number | und
       .then((body: unknown) => {
         const parsed = EpisodeDetailsSchema.safeParse(body);
         const details = parsed.success && parsed.data.episodes.length > 0 ? new Map(parsed.data.episodes.map((detail) => [detail.episode, detail])) : null;
-        learned.set(key, details);
+        if (details) learned.set(key, details);
         if (live) setAnswer({ key, details });
       })
       .catch(() => live && setAnswer({ key, details: null }));

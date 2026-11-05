@@ -230,10 +230,18 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
         const rawTitle = inner.match(/alt=['"]([^'"]+)['"]/i)?.[1]?.replace(/Anime Poster/i, "").trim();
         if (!rawTitle) continue;
         seen.add(slug);
+        let title = decodeHtmlEntities(rawTitle);
+        if (/^sorcery fight$/i.test(title)) {
+          title = "JUJUTSU KAISEN";
+        } else if (/^sorcery fight 2nd season$/i.test(title)) {
+          title = "JUJUTSU KAISEN Season 2";
+        } else if (/^sorcery fight 0$/i.test(title)) {
+          title = "JUJUTSU KAISEN 0";
+        }
         const image = imgPath.startsWith("http") ? imgPath : `${BASE}/${imgPath.replace(/^\//, "")}`;
         items.push({
           id: `animeheaven-series-${slug}`,
-          title: decodeHtmlEntities(rawTitle),
+          title,
           kind: "series",
           section: "anime",
           image,
@@ -289,8 +297,26 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
       const q = query.trim();
       if (!q) return [];
       try {
-        const html = await fetchHtml(`search.php?s=${encodeURIComponent(q)}`);
-        const candidates = parseItemCards(html);
+        const queries = [q];
+        const lower = q.toLowerCase();
+        if (lower.includes("jujutsu")) queries.push("sorcery fight");
+        else if (lower.includes("sorcery fight")) queries.push("jujutsu");
+
+        const pages = await Promise.all(
+          queries.map((w) => fetchHtml(`search.php?s=${encodeURIComponent(w)}`).catch(() => "")),
+        );
+        const seenSlugs = new Set<string>();
+        const candidates: LibraryItem[] = [];
+        for (const html of pages) {
+          if (!html) continue;
+          for (const item of parseItemCards(html)) {
+            const slug = parseAnimeHeavenLink(item.url)?.slug;
+            if (slug && !seenSlugs.has(slug)) {
+              seenSlugs.add(slug);
+              candidates.push(item);
+            }
+          }
+        }
         if (candidates.length === 0) return [];
 
         const verified = await Promise.all(

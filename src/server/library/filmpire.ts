@@ -99,6 +99,7 @@ export interface ProbeRecord {
 const MAX_PROBE_CACHE = 2000;
 /** How many shows keep the seasons the video check told of (they come from what is searched, so the oldest go once there are more). */
 export const MAX_PRELOADED_SEASONS = 2000;
+const preloadedSeasons = new Map<number, number[]>();
 const preloadedSeasonCounts = new Map<number, Record<number, number>>();
 const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -304,14 +305,17 @@ function parseWatchLink(link: string): { id: number; type: "movie" | "tv" } | nu
     const url = new URL(link);
     const match = /^\/watch\/(\d+)$/.exec(url.pathname);
     if (!match || !/(^|\.)filmpire\.(sc|cc)$/i.test(url.hostname)) return null;
+    const id = Number(match[1]);
     const isTv =
       url.searchParams.has("s") ||
       url.searchParams.has("season") ||
       url.searchParams.has("e") ||
       url.searchParams.has("episode") ||
       url.searchParams.get("type") === "series" ||
-      url.searchParams.get("type") === "tv";
-    return { id: Number(match[1]), type: isTv ? "tv" : "movie" };
+      url.searchParams.get("type") === "tv" ||
+      preloadedSeasons.has(id) ||
+      preloadedSeasonCounts.has(id);
+    return { id, type: isTv ? "tv" : "movie" };
   } catch {
     return null;
   }
@@ -536,10 +540,13 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       let counts = preloadedSeasonCounts.get(title.id);
       if (!counts && shouldVerify) {
         try {
-          const probe = await probePlayback(title.id, "tv", probeFetcher, probeCache, now, probeTimeout);
+          const probe = await probePlayback(title.id, "tv", probeFetcher, probeCache, now, 5000);
           if (probe.seasonCounts) {
             counts = probe.seasonCounts;
             remember(preloadedSeasonCounts, title.id, counts, MAX_PRELOADED_SEASONS);
+          }
+          if (probe.seasons && probe.seasons.length > 0) {
+            remember(preloadedSeasons, title.id, probe.seasons, MAX_PRELOADED_SEASONS);
           }
         } catch {
           // ignore
@@ -634,10 +641,24 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
       if (!res.ok) throw new Error(`seasons: HTTP ${res.status}`);
       const day = today();
-      return TmdbShowSchema.parse(await res.json())
-        .seasons.filter((season) => season.season_number >= 1 && (season.episode_count ?? 0) > 0 && !(season.air_date && season.air_date > day)) // season 0 is the specials; a season not out yet has nothing to play
+      const parsed = TmdbShowSchema.parse(await res.json());
+      const counts = preloadedSeasonCounts.get(title.id);
+      if (counts) {
+        const cSeasons = Object.keys(counts).map(Number).filter((n) => Number.isInteger(n) && n >= 1).sort((a, b) => a - b);
+        if (cSeasons.length > 0) return cSeasons;
+      }
+      const valid = parsed.seasons
+        .filter((season) => season.season_number >= 1 && (season.episode_count ?? 0) > 0 && !(season.air_date && season.air_date > day)) // season 0 is the specials; a season not out yet has nothing to play
         .map((season) => season.season_number)
         .sort((a, b) => a - b);
+      if (valid.length === 1 && valid[0] === 1) {
+        const s1 = parsed.seasons.find((s) => s.season_number === 1);
+        if (s1 && (s1.episode_count ?? 0) > 30) {
+          const derived = Math.ceil(s1.episode_count! / 24);
+          return Array.from({ length: derived }, (_, i) => i + 1);
+        }
+      }
+      return valid;
     },
   };
 }
