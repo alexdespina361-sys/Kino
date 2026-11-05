@@ -1,5 +1,6 @@
 import type { AvatarId } from "../../shared";
 import { Avatar } from "../account/Avatar";
+import { GoogleMark } from "../account/GoogleButton";
 import { useFeedbackEntry } from "../feedback/entry";
 import { useT } from "../i18n";
 import { GearIcon, MessageIcon, UserIcon } from "../shared/icons";
@@ -20,14 +21,16 @@ interface ProfileHeadProps {
   onArrive: (col: number) => void;
   /** After Feedback, the menu's lines that a phone's bar of four has no room for (the watch party, the phone), as buttons. */
   places: readonly RailEntry[];
+  /** Given for an account that has no Google account yet, where Google sign-in is on: the button, last of all, that goes to Google to connect one. */
+  onConnectGoogle?: (() => void) | undefined;
 }
 
 /**
  * The top of the profile's page, where the other pages have a banner: who is watching, Settings in the corner (the button for the remote,
  * the keyboard and the mouse alike) with Feedback next to it, and for a guest the way to sign in, which is what the guest has come to this page for.
- * (Feedback comes after Settings, so the remote still starts where it did.)
+ * (Feedback comes after Settings, so the remote still starts where it did; connecting Google comes after all the others, for the same reason.)
  */
-export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn, onSettings, onArrive, places }: ProfileHeadProps) {
+export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn, onSettings, onArrive, places, onConnectGoogle }: ProfileHeadProps) {
   const t = useT();
   const feedback = useFeedbackEntry();
   const at = (col: number) => ({ "data-zone": "hero", "data-row": 0, "data-col": col, onFocus: () => onArrive(col) });
@@ -70,6 +73,11 @@ export function ProfileHead({ name, avatar, line, signedIn, canSignIn, onSignIn,
             {place.badge && <span className="tv-profile-badge">{place.badge}</span>}
           </button>
         ))}
+        {onConnectGoogle && (
+          <button className="tv-hero-button tv-profile-google" onClick={onConnectGoogle} data-testid="tv-profile-google" {...at(settingsCol + 2 + places.length)}>
+            <GoogleMark /> {t("account.googleConnect")}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -15,6 +15,15 @@ export function GoogleMark() {
 }
 
 /**
+ * Whether the profile's page offers to connect Google: somebody is signed in whose account has no Google account yet, and Google sign-in is on at this address (and
+ * this is not a TV's own browser: see `GoogleButton`). An account made with Google has one by being made, so it is never offered it.
+ */
+export function useCanConnectGoogle(): boolean {
+  const { google, me } = useAccount();
+  return google && me !== null && me.account.google !== true && !isTvAgent(navigator.userAgent);
+}
+
+/**
  * "Continue with Google", above the form that signs in or makes an account (Google tells which: a Google account that has an account here signs in, a new one makes it),
  * and an "or" under it. Only where the server has Google sign-in on at this address, and not in a TV's own browser, where Google's pages are hard to use with a remote
  * (a TV signs in from a phone, with its code).

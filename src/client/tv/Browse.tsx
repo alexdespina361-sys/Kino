@@ -7,6 +7,7 @@ import { CatChip } from "../cat/Chip";
 import { useCatWanted } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { signedInLine } from "../account/google";
+import { useCanConnectGoogle } from "../account/GoogleButton";
 import { ListEditor } from "../account/Lists";
 import { ratingFor, scoreOf } from "../account/ratingText";
 import { useScores } from "../account/ratings";
@@ -268,7 +269,9 @@ function slideAlong(element: HTMLElement) {
 export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJoinParty, onStartTogether, connected, partySize, notice }: BrowseProps) {
   const t = useT();
   const language = useLanguage();
-  const { status: accountStatus, me, profile, say } = useAccount();
+  const { status: accountStatus, me, profile, say, withGoogle } = useAccount();
+  /** The profile's page offers to connect Google to an account that has none yet (see `useCanConnectGoogle`). */
+  const canConnectGoogle = useCanConnectGoogle();
   const friends = useFriends();
   const bell = useBell();
   const showCat = useCatWanted(); // (the cat's button in the corner: only on a screen that has a cat)
@@ -526,8 +529,10 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const signedIn = Boolean(me && profile);
   /** What a phone's bar has no room for, as buttons after Feedback (none on a screen whose menu has a line for each). */
   const places = compact ? [partyPlace, phonePlace] : [];
+  /** For an account that has no Google account yet: a button after all the others on the profile's page that goes to Google to connect one. */
+  const connectGoogle = canConnectGoogle && signedIn ? () => withGoogle("link") : undefined;
   /** The profile's page has buttons where the other pages have a banner: Settings and Feedback, and for a guest the way to sign in before them. */
-  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) + places.length : 0;
+  const profileButtons = view.kind === "profile" ? (signedIn || !canSignIn ? 2 : 3) + places.length + (connectGoogle ? 1 : 0) : 0;
   /** A phone's pages of rows have their sections as a row of buttons where the others have a banner. */
   const sectionButtons = compact && isRowsPage(view);
   const showRetry = rowsPage && homeRows.length === 0 && status !== "loading";
@@ -1090,6 +1095,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 onSettings={onSettings}
                 onArrive={(col) => (remembered.focus[viewKey(view)] = { zone: "hero", row: 0, col })}
                 places={places}
+                onConnectGoogle={connectGoogle}
               />
             ) : shown && !compact ? (
               <div className="tv-hero-text" key={shown.entry.id}>

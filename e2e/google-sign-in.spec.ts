@@ -6,7 +6,7 @@ import type { AddressInfo } from "node:net";
 import { expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { weakness } from "../src/client/account/password";
 import { en } from "../src/client/i18n/en";
-import { openDevice, openLibrary, openTvSignIn, PHONE, test } from "./helpers";
+import { openDevice, openLibrary, openProfilePage, openTvSettings, openTvSignIn, PHONE, test } from "./helpers";
 import { TEST_ACCOUNT } from "./testAccount";
 
 /**
@@ -222,6 +222,18 @@ async function signUpWithPassword(page: Page, account: { email: string; password
   if (weakness(account.email, account.password)) await page.getByTestId("auth-agree").click();
 }
 
+/** A screen's own form (a computer used as the TV, or a TV's browser) opened from the profile's page, making an account with a name and a password. */
+async function signUpOnScreen(screen: Page, account: { email: string; password: string }) {
+  await openTvSignIn(screen);
+  await screen.getByTestId("tv-signin-email").click();
+  await screen.getByTestId("auth-switch").click();
+  await expect(screen.getByTestId("auth-form")).toHaveAttribute("data-mode", "signUp");
+  await screen.getByTestId("auth-email").fill(account.email);
+  await screen.getByTestId("auth-password").fill(account.password);
+  await screen.getByTestId("auth-submit").click();
+  if (weakness(account.email, account.password)) await screen.getByTestId("auth-agree").click();
+}
+
 const newPhone = (browser: Browser) => openDevice(browser, PHONE, SEED);
 
 test.describe("with Google sign-in off", () => {
@@ -234,6 +246,8 @@ test.describe("with Google sign-in off", () => {
     await expect(phone.getByTestId("auth-form")).toBeVisible();
     await expect(phone.getByTestId("google-button")).toHaveCount(0);
     await signUpWithPassword(phone, { email: `Robert ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
+    await expect(phone.getByTestId("menu-security")).toBeVisible();
+    await expect(phone.getByTestId("menu-google")).toHaveCount(0); // (the profile does not offer what the site cannot do)
     await phone.getByTestId("menu-security").click();
     await expect(phone.getByTestId("password-current")).toBeVisible();
     await expect(phone.getByTestId("google-connect")).toHaveCount(0);
@@ -309,6 +323,7 @@ test.describe("with Google sign-in on", () => {
     await phone.getByTestId("account-button").click();
     await expect(phone.getByTestId("account-profile-name")).toHaveText("Ana");
     await expect(phone.getByTestId("account-card")).toContainText(en["account.signedInGoogle"]);
+    await expect(phone.getByTestId("menu-google")).toHaveCount(0); // (an account made with Google has Google: its profile offers nothing to connect)
     const first = (await sessionOf(phone)).me!;
     expect(first.account).toMatchObject({ google: true, googleOnly: true });
     expect(first.account.email).toMatch(/^g-[a-z2-7]{12}$/); // (a login nobody chose: Google's e-mail is not kept)
@@ -359,6 +374,9 @@ test.describe("with Google sign-in on", () => {
     await tv.waitForURL(`${site.origin}/tv`);
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Bogdan/);
     expect(await deviceOf(tv)).toBe("tv");
+    await openProfilePage(tv);
+    await expect(tv.getByTestId("tv-profile-settings")).toBeVisible();
+    await expect(tv.getByTestId("tv-profile-google")).toHaveCount(0); // (an account made with Google has Google: its profile offers nothing to connect)
   });
 
   test("saying no at Google comes back to the TV's page, which says so", async ({ browser }) => {
@@ -403,6 +421,99 @@ test.describe("with Google sign-in on", () => {
     expect((await sessionOf(phone)).me?.account.id).toBe(id);
     await phone.getByTestId("account-button").click();
     await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Linda/); // (not a new account named after the person at Google)
+  });
+
+  test("the phone's profile offers an account with a password to connect Google, and the line is gone once it is connected", async ({ browser }) => {
+    test.setTimeout(60_000);
+    google.person = newPerson("Someone");
+    const phone = await newPhone(browser);
+    await phone.goto(`${site.origin}/`);
+    await phone.getByTestId("account-button").click();
+    await signUpWithPassword(phone, { email: `Mira ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Mira/);
+    const id = (await sessionOf(phone)).me!.account.id;
+
+    // On the profile itself, not behind Password & security: between Devices and that page.
+    const line = phone.getByTestId("menu-google");
+    await expect(line).toContainText(en["account.googleConnect"]);
+    const order = await phone.getByTestId("account-screen").locator("[data-testid^='menu-']").evaluateAll((rows) => rows.map((row) => row.getAttribute("data-testid")));
+    expect(order.slice(order.indexOf("menu-devices"))).toEqual(["menu-devices", "menu-google", "menu-security"]);
+
+    await viaGoogle(phone, google, line);
+    await expect(phone.getByTestId("account-toast")).toHaveText(en["google.linked"]);
+    await expect(phone).toHaveURL(`${site.origin}/`);
+    await phone.getByTestId("account-button").click();
+    await expect(phone.getByTestId("account-profile-name")).toHaveText(/^Mira/);
+    await expect(phone.getByTestId("menu-security")).toBeVisible();
+    await expect(phone.getByTestId("menu-google")).toHaveCount(0);
+
+    // A Google account belongs to one account at most: another account is told so, and keeps its line.
+    const other = await newPhone(browser);
+    await other.goto(`${site.origin}/`);
+    await other.getByTestId("account-button").click();
+    await signUpWithPassword(other, { email: `Nora ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
+    await expect(other.getByTestId("account-profile-name")).toHaveText(/^Nora/);
+    await viaGoogle(other, google, other.getByTestId("menu-google"));
+    await expect(other.getByTestId("account-toast")).toHaveText(en["google.taken"]);
+    await other.getByTestId("account-button").click();
+    await expect(other.getByTestId("menu-google")).toBeVisible();
+    expect((await sessionOf(other)).me!.account.id).not.toBe(id);
+  });
+
+  test("the TV's profile page offers an account with a password a button to connect Google, which the remote reaches after the others, and it is gone once connected", async ({ browser }) => {
+    test.setTimeout(90_000);
+    google.person = newPerson("Someone");
+    const tv = await openDevice(browser, { viewport: TV_SIZE }, SEED);
+    await tv.goto(`${site.origin}/tv`);
+    await expect(tv.getByTestId("tv-browse")).toBeVisible();
+
+    // Nobody is signed in: the page offers signing in, which is what a guest has come for.
+    await openProfilePage(tv);
+    await expect(tv.getByTestId("tv-profile-signin")).toBeVisible();
+    await expect(tv.getByTestId("tv-profile-google")).toHaveCount(0);
+
+    await signUpOnScreen(tv, { email: `Mira ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Mira/);
+
+    // The Settings' Profile group has the line too, with Manage profiles and signing a TV in.
+    await openTvSettings(tv);
+    await expect(tv.getByTestId("tv-connect-google")).toContainText(en["account.googleConnect"]);
+    await tv.getByTestId("tv-account-back").click();
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
+
+    const connect = tv.getByTestId("tv-profile-google");
+    await expect(connect).toContainText(en["account.googleConnect"]);
+    // (The remote still starts at Settings: this button is the last.)
+    await tv.getByTestId("tv-profile-settings").focus();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("tv-profile-feedback")).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(connect).toBeFocused();
+    await viaGoogle(tv, google, () => tv.keyboard.press("Enter"));
+    await tv.waitForURL(`${site.origin}/tv`);
+    await expect(tv.getByTestId("tv-account-toast")).toHaveText(en["google.linked"]);
+
+    await openProfilePage(tv);
+    await expect(tv.getByTestId("tv-profile-settings")).toBeVisible();
+    await expect(tv.getByTestId("tv-profile-google")).toHaveCount(0);
+    await openTvSettings(tv);
+    await expect(tv.getByTestId("tv-manage-profiles")).toBeVisible();
+    await expect(tv.getByTestId("tv-connect-google")).toHaveCount(0);
+  });
+
+  test("a TV's own browser is not offered Google on its profile page, signed in with a password", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const fireTv = await openDevice(browser, { viewport: TV_SIZE, userAgent: FIRE_TV }, SEED);
+    await fireTv.goto(`${site.origin}/tv`);
+    await expect(fireTv.getByTestId("tv-browse")).toBeVisible();
+    await signUpOnScreen(fireTv, { email: `Mira ${Date.now().toString(36)}${++counter}`, password: TEST_ACCOUNT.password });
+    await expect(fireTv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Mira/);
+    await openProfilePage(fireTv);
+    await expect(fireTv.getByTestId("tv-profile-settings")).toBeVisible();
+    await expect(fireTv.getByTestId("tv-profile-google")).toHaveCount(0);
+    await openTvSettings(fireTv);
+    await expect(fireTv.getByTestId("tv-manage-profiles")).toBeVisible();
+    await expect(fireTv.getByTestId("tv-connect-google")).toHaveCount(0);
   });
 
   test("an account made with Google has no password to change, and is deleted only once the person has signed in to Google again", async ({ browser }) => {

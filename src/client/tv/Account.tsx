@@ -9,6 +9,7 @@ import { CatIcon } from "../cat/Chip";
 import { CAT_LOOKS, CAT_SIZES, useCatAsleep, useCatSettings, useCatShown } from "../cat/settings";
 import { describeError } from "../account/errors";
 import { signedInLine } from "../account/google";
+import { GoogleMark, useCanConnectGoogle } from "../account/GoogleButton";
 import { useLinkApproval } from "../account/LinkApprove";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
 import { chooseAccent, chooseLanguage, useSettings } from "../account/settings";
@@ -456,6 +457,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
   const ratingsOn = settings.ratings ?? true;
   const friendsOn = friendChoices(settings).friends;
   const several = Boolean(me && me.profiles.length > 1);
+  const canConnectGoogle = useCanConnectGoogle(); // (an account that has no Google account yet is offered to connect one, with the lines of the profile)
   const cat = useCatSettings(); // (the cat's switches are there only on a host that offers a cat)
   return (
     <Screen testId="tv-account" focus onBack={onClose}>
@@ -489,6 +491,7 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
                   {several && <SettingsLine icon={<UsersIcon />} label={t("profiles.switch")} onPress={onSwitch} testId="tv-switch-profile" autoFocus />}
                   <SettingsLine icon={<PencilIcon />} label={t("profiles.manage")} onPress={onManage} testId="tv-manage-profiles" autoFocus={!several} />
                   <SettingsLine icon={<TvIcon />} label={t("account.signInTv")} onPress={onApprove} testId="tv-approve" />
+                  {canConnectGoogle && <SettingsLine icon={<GoogleMark />} label={t("account.googleConnect")} onPress={() => account.withGoogle("link")} testId="tv-connect-google" />}
                 </>
               ) : (
                 account.status === "ready" && (

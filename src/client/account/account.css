@@ -68,7 +68,8 @@
 @media (hover: hover) { .google-btn:not(.tv-action):hover { background: #f2f2f2; } }
 .google-btn:not(.tv-action):active { background: #e8e8e8; }
 .google-mark { flex: none; width: 20px; height: 20px; }
-.tv-action .google-mark { width: 1.1em; height: 1.1em; }
+.tv-action .google-mark, .tv-hero-button .google-mark { width: 1.1em; height: 1.1em; }
+.tv-line-icon .google-mark { width: 1em; height: 1em; }
 /* The line between Google and the form. */
 .auth-or { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--muted); font-size: 0.85rem; }
 .auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }

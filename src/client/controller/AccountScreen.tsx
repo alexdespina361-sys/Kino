@@ -4,6 +4,7 @@ import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { AuthForm } from "../account/AuthForm";
 import { signedInLine } from "../account/google";
+import { GoogleMark, useCanConnectGoogle } from "../account/GoogleButton";
 import { ProfileEditor, ProfileGrid } from "../account/Profiles";
 import { useProfileData } from "../account/store";
 import { useFeedbackEntry } from "../feedback/entry";
@@ -123,6 +124,8 @@ export function AccountScreen({
   const account = useAccount();
   const friends = useFriends();
   const feedback = useFeedbackEntry();
+  /** An account that has no Google account yet is offered to connect one, here on its profile and not only on the Security page. */
+  const canConnectGoogle = useCanConnectGoogle();
   const { ratings, settings } = useProfileData();
   const ratingsOn = settings.ratings ?? true;
   /** What this profile rated, over the account's page: it is the profile's, so it is kept here with the friends and the settings. */
@@ -309,6 +312,7 @@ export function AccountScreen({
               {feedbackRow}
               <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
               <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
+              {canConnectGoogle && <MenuRow icon={<GoogleMark />} label={t("account.googleConnect")} onClick={() => account.withGoogle("link")} testId="menu-google" />}
               <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />
             </nav>
           </div>
