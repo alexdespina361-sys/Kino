@@ -13,6 +13,7 @@ import {
   type PartyView,
   type PhoneTv,
   type PlayHint,
+  type PlayerState,
   type ResolveStatus,
   type ServerMessage,
 } from "../../shared";
@@ -96,6 +97,8 @@ export interface HubOptions {
   maxUnpaired?: number;
   /** How many links that did not play are remembered at most (see MAX_FAILED_LINKS). */
   maxFailedLinks?: number;
+  /** Where a video that would not play is written down (`playback-failed`: the title's site, the player's error and what it hit; never a link). */
+  log?: { info(object: Record<string, unknown>, message: string): void };
 }
 
 /** Relays between phones and TVs. Holds no state of its own beyond who is connected right now. */
@@ -110,6 +113,7 @@ export class Hub {
   private readonly lastLookup = new Map<string, string>(); // deviceId -> link
   /** Links that were handed out and did not play: the next look-up of each is made afresh, not read from what was kept (see `ResolveFn`). The oldest go when there are many. */
   private readonly failedLinks = new Set<string>();
+  private readonly log: HubOptions["log"];
   /** When each open socket last said anything. A TV that lost power never sends a close frame. */
   private readonly lastSeen = new Map<WebSocket, number>();
   /** TVs whose page has just been opened and has not reported yet: its first report is when a video it was on is put back. */
@@ -151,6 +155,7 @@ export class Hub {
     this.keepUnpairedMs = options.keepUnpairedMs ?? KEEP_UNPAIRED_MS;
     this.maxUnpaired = options.maxUnpaired ?? MAX_UNPAIRED;
     this.maxFailedLinks = options.maxFailedLinks ?? MAX_FAILED_LINKS;
+    this.log = options.log;
     const perAddress = options.maxFailedPairings ?? 20;
     const windowMs = options.failedPairingWindowMs ?? 60_000;
     this.wrongByAddress = new RateLimiter(perAddress, windowMs);
@@ -277,9 +282,17 @@ export class Hub {
    * A TV says that what it was given would not play. A stream's own link, with the token that came with it, can run out while the result of the look-up is
    * kept (ten minutes), and asking again for the same title would hand out the same dead link: the next look-up of this one is made afresh.
    */
-  private noteFailed(deviceId: string): void {
+  private noteFailed(deviceId: string, state: PlayerState): void {
     const link = this.lastLookup.get(deviceId);
     if (!link) return;
+    // (The one line that says why a title did not play: the look-up's own line says only that a link was found.)
+    let domain = "";
+    try {
+      domain = new URL(link).hostname;
+    } catch {
+      /* whatever was asked for: the look-up said no to it already */
+    }
+    this.log?.info({ domain, error: state.error, ...(state.detail && { detail: state.detail }) }, "playback-failed");
     this.failedLinks.delete(link); // (so that it is the newest)
     this.failedLinks.add(link);
     for (const oldest of this.failedLinks) {
@@ -353,7 +366,7 @@ export class Hub {
         this.toControllers(device, { type: "MEDIA", media: message.media });
       }
       device.state = message.state;
-      if (message.state.state === "error") this.noteFailed(deviceId);
+      if (message.state.state === "error") this.noteFailed(deviceId, message.state);
       this.toControllers(device, { type: "STATE", state: message.state });
       this.syncFollowers(device);
       this.registry.noteProgress(device, message.state);

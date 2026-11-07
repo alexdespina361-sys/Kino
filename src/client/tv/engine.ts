@@ -178,6 +178,7 @@ export class PlayerEngine {
   private loading = false;
   private pendingPlay = false;
   private errorCode: string | undefined;
+  private errorDetail: string | undefined;
   /** Resume point for a plain (non-hls.js) source; applied once the duration is known. */
   private startAt: number | undefined;
   /** Where the video that is loading (or has just failed to) was told to start, kept after the player has taken it: see `resumePoint`. */
@@ -242,7 +243,8 @@ export class PlayerEngine {
       if (this.hasSource) {
         if (this.useFallbackSource()) return;
         // (MEDIA_ERR_NETWORK, 2: the download broke off part of the way. A file that cannot be opened at all, or played, is another code.)
-        this.fail(video.error?.code === 2 ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable);
+        const { code, message } = video.error ?? {};
+        this.fail(code === 2 ? PlayerError.ConnectionLost : PlayerError.NotDirectlyPlayable, `MEDIA_ERR ${code ?? "?"}${message ? `: ${message}` : ""}`);
       }
     });
     this.ticker = setInterval(() => this.hasSource && this.emit(), 1000);
@@ -350,7 +352,10 @@ export class PlayerEngine {
           // (Where it came from is in the line, short and without the link's token: a report that holds it says whether it was this server, a relay or the video's own host that answered.)
           const where = whereIs(data.url);
           console.error("[HLS FATAL ERROR]", data.type, data.details, ...(data.response?.code ? [`HTTP ${data.response.code}`] : []), ...(where ? [`from ${where}`] : []));
-          this.fail(lostTheConnection(data) ? PlayerError.ConnectionLost : sourceSaidNo(data) ? PlayerError.SourceUnavailable : PlayerError.NotDirectlyPlayable);
+          this.fail(
+            lostTheConnection(data) ? PlayerError.ConnectionLost : sourceSaidNo(data) ? PlayerError.SourceUnavailable : PlayerError.NotDirectlyPlayable,
+            describeHlsError(data).replace(/^\[HLS\] /, ""),
+          );
         }
       });
 
@@ -656,7 +661,7 @@ export class PlayerEngine {
     if (!this.hasSource) return IDLE_STATE;
     const currentTime = this.video.currentTime || 0;
     const duration = Number.isFinite(this.video.duration) ? this.video.duration : 0;
-    if (this.errorCode) return { state: "error", currentTime, duration, error: this.errorCode };
+    if (this.errorCode) return { state: "error", currentTime, duration, error: this.errorCode, ...(this.errorDetail && { detail: this.errorDetail }) };
     if (this.loading) return { state: "loading", currentTime, duration };
 
     return {
@@ -763,8 +768,10 @@ export class PlayerEngine {
     this.teardown();
   }
 
-  private fail(code: string): void {
+  /** The video is over with `code` for the viewer, and `detail` (what was hit, short, never a link) for the server's log. */
+  private fail(code: string, detail?: string): void {
     this.errorCode = code;
+    this.errorDetail = detail?.slice(0, 200);
     this.loading = false;
     this.emit();
   }
@@ -787,6 +794,7 @@ export class PlayerEngine {
     this.hasSource = false;
     this.loading = false;
     this.errorCode = undefined;
+    this.errorDetail = undefined;
     this.video.pause();
     this.boostedFrom = null;
     this.video.playbackRate = 1;

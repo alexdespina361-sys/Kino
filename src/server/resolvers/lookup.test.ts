@@ -140,6 +140,22 @@ describe("where a look-up spent its time", () => {
     expect(JSON.stringify(events)).not.toMatch(/secret|\/one|\/two/);
   });
 
+  it("says of the slowest host that its answers began and then stood still, and what the last one that did had said", async () => {
+    handler = (_req, res) => {
+      res.writeHead(200, { "content-type": "text/html", "content-length": "5000" });
+      res.write("<html>"); // (and then nothing more)
+    };
+    const get = providerFetch({ ...loopbackOnly, idleTimeoutMs: 40 });
+    const asking: SiteAdapter = { id: "asking", domains: [], resolve: async () => (await get(`${base}/stalls`).catch(() => {}), ok("asking")) };
+    const registry = new ResolverRegistry([], asking, log);
+    await registry.resolve("https://a.example/1");
+    const upstream = events[0]!.upstream as { timeouts?: number; slowest: { ms: number; waitMs: number; bodyMs: number; stalled?: Record<string, unknown> } };
+    expect(upstream.timeouts).toBe(1);
+    expect(upstream.slowest.bodyMs).toBeGreaterThanOrEqual(30);
+    expect(upstream.slowest.waitMs).toBeLessThan(upstream.slowest.bodyMs);
+    expect(upstream.slowest.stalled).toEqual({ status: 200, length: 5000, bytes: 6 });
+  });
+
   it("counts a question that ran out of time as a timeout of its host, with the time spent waiting for the answer", async () => {
     handler = () => {}; // (never answers)
     const get = providerFetch({ ...loopbackOnly, timeoutMs: 40 });

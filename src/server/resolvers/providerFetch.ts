@@ -4,7 +4,7 @@ import { SafeFetchError, safeFetch, type FetchTiming, type SafeFetchOptions } fr
 /** What one answer of a supported site may weigh. A longer one is cut off here: a cut list of titles or a cut module does not parse, a cut page has only less in it. */
 export const PROVIDER_MAX_BYTES = 8 * 1024 * 1024;
 
-export type ProviderFetchOptions = Pick<SafeFetchOptions, "isAllowedAddress" | "timeoutMs" | "connectTimeoutMs" | "maxBytes" | "maxRedirects">;
+export type ProviderFetchOptions = Pick<SafeFetchOptions, "isAllowedAddress" | "timeoutMs" | "connectTimeoutMs" | "idleTimeoutMs" | "maxBytes" | "maxRedirects">;
 
 /** The statuses whose answer has no body (a `Response` with a body and one of these is an error; a 1xx never gets this far). */
 const NO_BODY = new Set([204, 205, 304]);

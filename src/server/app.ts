@@ -170,7 +170,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     else if (result.status === "temporary_failure") library.played(url, "failed");
     return result;
   };
-  const hub = new Hub(registry, resolveForPlay, { ...options.hub, ...(accounts && screens ? { profiles: screenProfiles(accounts, screens) } : {}) });
+  const hub = new Hub(registry, resolveForPlay, { log: app.log, ...options.hub, ...(accounts && screens ? { profiles: screenProfiles(accounts, screens) } : {}) });
   // Hooks run last-registered first: the pairs are written before the accounts close the database they share.
   if (options.pairings) {
     const pairings = options.pairings;

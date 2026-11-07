@@ -96,6 +96,43 @@ describe("safeFetch", () => {
     expect(page.timing).not.toHaveProperty("timedOut");
   });
 
+  it("gives up on a body that stops coming within the idle time, and says what had come of it", async () => {
+    handler = (_req, res) => {
+      res.writeHead(200, { "content-type": "text/html", "content-length": "1000" });
+      res.write("<html>"); // (and then nothing more)
+    };
+    const started = performance.now();
+    const error = await failure(safeFetch(`${base}/stalls`, { ...loopbackOnly, timeoutMs: 10_000, idleTimeoutMs: 100 }));
+    expect(error.code).toBe("timeout");
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(error.timing).toMatchObject({ timedOut: "body", status: 200, length: 1000, bytes: 6 });
+    expect(error.timing?.firstByteMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("takes a body whose connection closes before its end for a failure, not for a shorter body", async () => {
+    handler = (_req, res) => {
+      res.writeHead(200, { "content-type": "text/html", "content-length": "1000" });
+      res.write("<html>");
+      setTimeout(() => res.destroy(), 10);
+    };
+    const error = await failure(safeFetch(`${base}/cut`, loopbackOnly));
+    expect(error.code).toBe("network");
+    expect(error.timing).toMatchObject({ status: 200, bytes: 6 });
+    expect(error.timing).not.toHaveProperty("timedOut");
+  });
+
+  it("says how long a whole body took to come", async () => {
+    handler = (_req, res) => {
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.write("first ");
+      setTimeout(() => res.end("second"), 30);
+    };
+    const page = await safeFetch(`${base}/slow-body`, loopbackOnly);
+    expect(page.body).toBe("first second");
+    expect(page.timing).toMatchObject({ status: 200, bytes: 12 });
+    expect(page.timing?.bodyMs).toBeGreaterThanOrEqual(25);
+  });
+
   it("gives up on an address that never connects within the connect time, well before the whole budget", async () => {
     // (192.0.2.1 is TEST-NET-1: an address nothing answers at, so the connection is only ever attempted.)
     const started = performance.now();

@@ -72,6 +72,8 @@ export const PlayerStateSchema = z.object({
   duration: z.number().finite().min(0),
   /** Set when state is "error", e.g. SOURCE_NOT_DIRECTLY_PLAYABLE. */
   error: z.string().max(100).optional(),
+  /** With `error`: what the player hit, short (the error's name, the answer's status, the host it came from): for the server's log, never a link. */
+  detail: z.string().max(200).optional(),
   /** Playing (or seeking) but waiting for data. Drives the spinner on the TV and the phone. */
   buffering: z.boolean().optional(),
   /** End of the buffered range around the playhead, in seconds. Drives the grey bar. */

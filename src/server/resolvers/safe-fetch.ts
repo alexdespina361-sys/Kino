@@ -19,8 +19,16 @@ export interface FetchTiming {
   reused?: boolean;
   /** The address connected to. */
   address?: string;
-  /** What ran out, when the request timed out: the connection was never made, or the answer never began. */
-  timedOut?: "connect" | "answer";
+  /** How long the body took after its first byte, when it came to its end. */
+  bodyMs?: number;
+  /** How much of the body came. */
+  bytes?: number;
+  /** The answer's status, once it began. */
+  status?: number;
+  /** The length the answer announced, when it did. */
+  length?: number;
+  /** What ran out, when the request timed out: the connection was never made, the answer never began, or its body stopped coming. */
+  timedOut?: "connect" | "answer" | "body";
 }
 
 export class SafeFetchError extends Error {
@@ -44,6 +52,11 @@ export interface SafeFetchOptions {
    * connection that is not made within a few seconds is not going to be, and whoever asks (an adapter that tries again) is better told so at once.
    */
   connectTimeoutMs?: number;
+  /**
+   * How long a body may go on giving nothing, once the answer has begun, before the request fails as a timeout. An answer whose headers come at once and whose
+   * body then stands still is not coming at all, and is not worth the rest of the whole-request budget.
+   */
+  idleTimeoutMs?: number;
   /** Body bytes kept; the rest is dropped (the page is parsed from what we have). */
   maxBytes?: number;
   maxRedirects?: number;
@@ -75,7 +88,7 @@ export interface FetchedPage {
 
 export type SafeFetch = (url: string | URL, options?: SafeFetchOptions) => Promise<FetchedPage>;
 
-const DEFAULTS = { timeoutMs: 10_000, connectTimeoutMs: 6_000, maxBytes: 2 * 1024 * 1024, maxRedirects: 5 };
+const DEFAULTS = { timeoutMs: 10_000, connectTimeoutMs: 6_000, idleTimeoutMs: 5_000, maxBytes: 2 * 1024 * 1024, maxRedirects: 5 };
 const TEXT_TYPES = /^(text\/|application\/(json|ld\+json|xhtml\+xml|xml|javascript|x-javascript))/;
 
 /** Throws unless the URL is a plain http(s) URL pointing at an allowed address literal or a hostname. */
@@ -151,6 +164,7 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
   // (An option that is given as `undefined` is no option: it must not take the bound away.)
   const timeoutMs = options.timeoutMs ?? DEFAULTS.timeoutMs;
   const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULTS.connectTimeoutMs;
+  const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULTS.idleTimeoutMs;
   const maxBytes = options.maxBytes ?? DEFAULTS.maxBytes;
   const maxRedirects = options.maxRedirects ?? DEFAULTS.maxRedirects;
   const isAllowedAddress = options.isAllowedAddress ?? isPublicAddress;
@@ -187,6 +201,9 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
       const res = await get(url, headers, lookup, controller.signal, connectTimeoutMs, timing);
 
       const status = res.statusCode ?? 0;
+      timing.status = status;
+      const announced = Number(res.headers["content-length"]);
+      if (res.headers["content-length"] !== undefined && Number.isFinite(announced)) timing.length = announced;
       const location = res.headers.location;
       if (status >= 300 && status < 400 && location) {
         res.destroy(); // (not read to its end: a body that never ends would hold the connection for ever, once the time above is cleared)
@@ -211,7 +228,7 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
         res.destroy(); // media / binary: report the type, never download it
         return { url, status, contentType, body: "", truncated: false, timing };
       }
-      const read = await readCapped(res, maxBytes);
+      const read = await readCapped(res, maxBytes, idleTimeoutMs, timing);
       return { url, status, contentType, body: textual ? read.bytes.toString("utf8") : "", truncated: read.truncated, ...(options.anyType ? { bytes: read.bytes } : {}), timing };
     }
     throw new SafeFetchError("too_many_redirects", "too many redirects");
@@ -221,6 +238,7 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
     if (failure.code === "timeout" && !timing.timedOut) {
       if (timing.connectMs === undefined && !timing.reused) timing.timedOut = "connect";
       else if (timing.firstByteMs === undefined) timing.timedOut = "answer";
+      else timing.timedOut = "body";
     }
     failure.timing = timing;
     throw failure;
@@ -236,16 +254,41 @@ function withoutCredentials(headers: Record<string, string>): Record<string, str
   return rest;
 }
 
-function readCapped(res: http.IncomingMessage, maxBytes: number): Promise<{ bytes: Buffer; truncated: boolean }> {
+/**
+ * The body of `res`, up to `maxBytes`: no more than that is kept, and the rest is let go of. A body that gives nothing for `idleMs` is given up on as a
+ * timeout, and one whose connection closes before its end is a failure, not a shorter body. What came, and how long it took, goes into `timing`.
+ */
+function readCapped(res: http.IncomingMessage, maxBytes: number, idleMs: number, timing: FetchTiming): Promise<{ bytes: Buffer; truncated: boolean }> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    const started = performance.now();
     let size = 0;
     let done = false;
+    let idle: NodeJS.Timeout | undefined;
+    const stillComing = () => {
+      clearTimeout(idle);
+      idle = setTimeout(() => {
+        timing.timedOut = "body";
+        res.destroy(new SafeFetchError("timeout", "the answer stopped coming"));
+      }, idleMs);
+    };
+    const settle = () => {
+      done = true;
+      clearTimeout(idle);
+      timing.bytes = size;
+    };
     const finish = (truncated: boolean) => {
       if (done) return;
-      done = true;
+      settle();
+      timing.bodyMs = performance.now() - started;
       resolve({ bytes: Buffer.concat(chunks), truncated });
     };
+    const fail = (error: unknown) => {
+      if (done) return;
+      settle();
+      reject(error);
+    };
+    stillComing();
     res.on("data", (chunk: Buffer) => {
       if (done) return;
       size += chunk.length;
@@ -255,10 +298,12 @@ function readCapped(res: http.IncomingMessage, maxBytes: number): Promise<{ byte
         return finish(true);
       }
       chunks.push(chunk);
+      stillComing();
     });
     res.on("end", () => finish(false));
-    res.on("close", () => finish(false));
-    res.on("error", (error) => !done && reject(error));
+    // (A connection that closed before the body's end: what came is not the body, and whoever asked is not to take it for one.)
+    res.on("close", () => (res.complete ? finish(false) : fail(new SafeFetchError("network", "the answer was cut off before its end"))));
+    res.on("error", fail);
   });
 }
 

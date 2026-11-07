@@ -21,8 +21,11 @@ interface HostSeen {
   ms: number;
   connectingMs: number;
   waitingMs: number;
+  bodyMs: number;
   timeouts: number;
   address?: string;
+  /** The last answer whose body stopped coming: its status, the length it announced and how much of it came. */
+  stalled?: { status?: number; length?: number; bytes?: number };
 }
 
 /** What is known of one question, beyond its time (see `FetchTiming` in safe-fetch.ts). */
@@ -31,18 +34,22 @@ export interface UpstreamNote {
   firstByteMs?: number;
   reused?: boolean;
   address?: string;
-  timedOut?: "connect" | "answer";
+  bytes?: number;
+  status?: number;
+  length?: number;
+  timedOut?: "connect" | "answer" | "body";
 }
 
 /**
  * What the registry writes about a look-up's questions: how many, their time in all, how many ran out of time, and the host that took longest, with where
- * its time went: making the connection (`connectMs`) or waiting for the answer to begin (`waitMs`).
+ * its time went: making the connection (`connectMs`), waiting for the answer to begin (`waitMs`), or reading its body (`bodyMs`), and the last body of
+ * its that stopped coming (`stalled`).
  */
 export interface UpstreamSummary {
   requests: number;
   ms: number;
   timeouts?: number;
-  slowest?: { host: string; ms: number; connectMs: number; waitMs: number; timeouts?: number; address?: string };
+  slowest?: { host: string; ms: number; connectMs: number; waitMs: number; bodyMs: number; timeouts?: number; address?: string; stalled?: HostSeen["stalled"] };
 }
 
 const storage = new AsyncLocalStorage<Lookup>();
@@ -69,14 +76,18 @@ export function noteUpstream(host: string, ms: number, note: UpstreamNote = {}):
   upstream.requests += 1;
   upstream.ms += ms;
   if (note.timedOut) upstream.timeouts += 1;
-  const seen = upstream.hosts.get(host) ?? { requests: 0, ms: 0, connectingMs: 0, waitingMs: 0, timeouts: 0 };
+  const seen = upstream.hosts.get(host) ?? { requests: 0, ms: 0, connectingMs: 0, waitingMs: 0, bodyMs: 0, timeouts: 0 };
   seen.requests += 1;
   seen.ms += ms;
-  // (A connection that was never made took the whole time; one that was, the time until it was, and the answer the time from then to its first byte, or to the end.)
+  // (A connection that was never made took the whole time; one that was, the time until it was; the wait, the time from then to the answer's first byte, or to
+  // the end when none came; the body, the time from its first byte to the end.)
   const connecting = note.timedOut === "connect" ? ms : (note.connectMs ?? 0);
+  const firstByte = note.timedOut === "connect" ? ms : (note.firstByteMs ?? ms);
   seen.connectingMs += connecting;
-  seen.waitingMs += note.timedOut === "connect" ? 0 : Math.max(0, (note.firstByteMs ?? ms) - connecting);
+  seen.waitingMs += Math.max(0, firstByte - connecting);
+  seen.bodyMs += Math.max(0, ms - firstByte);
   if (note.timedOut) seen.timeouts += 1;
+  if (note.timedOut === "body") seen.stalled = { status: note.status, length: note.length, bytes: note.bytes };
   if (note.address) seen.address = note.address;
   upstream.hosts.set(host, seen);
 }
@@ -100,8 +111,10 @@ export function upstreamSummary(lookup: Lookup): UpstreamSummary | undefined {
         ms: round(slowest.seen.ms),
         connectMs: round(slowest.seen.connectingMs),
         waitMs: round(slowest.seen.waitingMs),
+        bodyMs: round(slowest.seen.bodyMs),
         ...(slowest.seen.timeouts > 0 && { timeouts: slowest.seen.timeouts }),
         ...(slowest.seen.address && { address: slowest.seen.address }),
+        ...(slowest.seen.stalled && { stalled: slowest.seen.stalled }),
       },
     }),
   };

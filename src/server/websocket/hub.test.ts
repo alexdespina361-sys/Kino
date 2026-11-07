@@ -1433,6 +1433,21 @@ describe("a link that was handed to a TV and did not play", () => {
     return { tv, phone };
   }
 
+  it("is written down, with the title's site, the player's error and what it hit, never the link", async () => {
+    const written: Array<[Record<string, unknown>, string]> = [];
+    await app.close();
+    app = await buildApp({ resolve: (url, prefetch, fresh) => resolveImpl(url, prefetch, fresh), hub: { log: { info: (object, message) => void written.push([object, message]) } } });
+    await app.ready();
+    looks();
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: "https://s.example/watch/1?token=secret" });
+    await tv.nextWhere("TV_CMD", played);
+    tv.send({ type: "TV_STATE", state: { ...wouldNotPlay, detail: "fragLoadError (fatal): HTTP 502 from relay.example → cdn.example seg-1.m4s" } });
+    await phone.nextWhere("STATE", (m) => m.state.state === "error");
+    expect(written).toEqual([[{ domain: "s.example", error: "SOURCE_UNAVAILABLE", detail: "fragLoadError (fatal): HTTP 502 from relay.example → cdn.example seg-1.m4s" }, "playback-failed"]]);
+    expect(JSON.stringify(written)).not.toContain("secret");
+  });
+
   it("is looked up afresh when the TV asks for it again, where the first look was not", async () => {
     const seen = looks();
     await askedAgain("https://s.example/a", (tv) => tv.send({ type: "TV_PLAY_URL", url: "https://s.example/a" }));
