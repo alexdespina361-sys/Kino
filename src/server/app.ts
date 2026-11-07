@@ -334,6 +334,29 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const result = await resolve(rawUrl);
     return reply.send(result);
   });
+  app.get<{ Params: { file: string } }>("/api/subtitles/ro/:file", async (request, reply) => {
+    const file = request.params.file || "";
+    const subId = file.replace(/\.vtt$/i, "");
+    const { getRomanianSubtitleManager } = await import("./subtitles/romanian");
+    const vtt = getRomanianSubtitleManager().getVtt(subId);
+    if (!vtt) return reply.code(404).send("Subtitle not found");
+    reply.header("Content-Type", "text/vtt; charset=utf-8");
+    reply.header("Cache-Control", "public, max-age=31536000, immutable");
+    reply.header("Access-Control-Allow-Origin", "*");
+    return reply.code(200).send(vtt);
+  });
+  app.get<{ Querystring: { imdbId?: string; tmdbId?: string; title?: string; season?: string; episode?: string } }>("/api/subtitles", async (request, reply) => {
+    const { getRomanianSubtitleManager } = await import("./subtitles/romanian");
+    const roManager = getRomanianSubtitleManager();
+    const subs = await roManager.getSubtitles({
+      imdbId: request.query.imdbId,
+      tmdbId: request.query.tmdbId,
+      title: request.query.title,
+      season: request.query.season,
+      episode: request.query.episode,
+    });
+    return reply.send({ subtitles: subs });
+  });
   app.get<{ Querystring: { url?: string; referer?: string } }>("/api/proxy", { compress: false }, async (request, reply) => {
     return handleStreamProxy(request, reply, {
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",

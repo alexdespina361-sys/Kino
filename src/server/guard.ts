@@ -54,7 +54,7 @@ const BROWSE_ASKS = ["/api/library/rows", "/api/library/more"];
  * The routes that make this server fetch from another site for whoever asks (the library's, when what it keeps has gone out of date), and Google's way back from a
  * sign-in, which takes the code it brings to Google's token endpoint: Google sends the browser there from its own site, which is a navigation, and nothing else does.
  */
-const FETCHES = new Set(["/api/proxy", "/api/resolve", "/api/library", "/api/library/search", ...BROWSE_ASKS, ...TITLE_ASKS, "/api/auth/google/callback"]);
+const FETCHES = new Set(["/api/proxy", "/api/resolve", "/api/subtitles", "/api/library", "/api/library/search", ...BROWSE_ASKS, ...TITLE_ASKS, "/api/auth/google/callback"]);
 
 /**
  * The routes that only read, but for the visitor whose session they are asked with, and count or note something against it: everything of a profile (the Friends page being open is how its

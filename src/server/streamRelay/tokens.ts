@@ -10,6 +10,15 @@ export class HostTokens {
 
   constructor(private readonly allowedAddress = isPublicAddress) {}
 
+  invalidate(targetOrigin: string, referer: string): void {
+    try {
+      const key = `${targetOrigin}\n${new URL(referer).origin}`;
+      this.cache.delete(key);
+    } catch {
+      // ignore
+    }
+  }
+
   async authorize(target: URL, referer: string): Promise<URL> {
     const key = `${target.origin}\n${new URL(referer).origin}`;
     let token = this.cache.get(key);
@@ -97,12 +106,22 @@ export class HostTokens {
       ? new URL(`/generate.php?api_token=${encodeURIComponent(apiToken)}`, origin)
       : new URL("/generate.php", origin);
 
-    const { response } = await openUpstream(genUrl, {
-      referer, accept: "*/*",
-    }, this.allowedAddress, AbortSignal.timeout(15_000));
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw new Error(`Token endpoint returned HTTP ${response.status}`);
+    let response: Awaited<ReturnType<typeof openUpstream>>["response"] | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const opened = await openUpstream(genUrl, {
+          referer, accept: "*/*",
+        }, this.allowedAddress, AbortSignal.timeout(15_000));
+        response = opened.response;
+        break;
+      } catch (e) {
+        if (attempt === 1) throw e;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+    if (!response || !response.ok) {
+      if (response) await response.body?.cancel();
+      throw new Error(`Token endpoint returned HTTP ${response?.status ?? 502}`);
     }
     const reader = response.body?.getReader();
     if (!reader) throw new Error("Empty token response");
