@@ -31,7 +31,7 @@ export function normalizeDubTitle(raw: string): string {
  * Curated list of TMDB IDs for animated and family features officially released with Romanian dubs.
  * Includes Disney, Pixar, DreamWorks, Illumination, Sony Pictures Animation, Blue Sky, and animated series.
  */
-const KNOWN_DUBBED_TMDB_IDS = new Set<number>([
+const KNOWN_DUBBED_MOVIE_IDS = new Set<number>([
   // Shrek & Puss in Boots
   808, 10527, 819, 10192, 6477, 76600,
   // Cars & Planes
@@ -78,10 +78,13 @@ const KNOWN_DUBBED_TMDB_IDS = new Set<number>([
   328111, 429617, 284052, 438695,
   // Rio, Ferdinand, Croods, Boss Baby, Bad Guys
   60420, 172391, 364689, 49519, 529203, 381284, 49519, 629542,
-  // Animated series (TMDB TV IDs)
-  // Sonic Boom (61845), Gravity Falls (40075), Phineas and Ferb (4783), Ben 10 (2210), SpongeBob (387)
-  61845, 40075, 4783, 2210, 387, 246, 38757, 1408, 4614, 46298, 65334,
 ]);
+/**
+ * Animated series, by their TMDB TV IDs: Sonic Boom (61845), Gravity Falls (40075), Phineas and Ferb (4783), Ben 10 (2210), SpongeBob
+ * (387), Avatar: The Last Airbender (246), Hunter x Hunter (46298), Miraculous (65334). A TV ID and a movie ID are different numberings
+ * (movie 387 is Das Boot), so an ID counts only for a title of its kind.
+ */
+const KNOWN_DUBBED_TV_IDS = new Set<number>([61845, 40075, 4783, 2210, 387, 246, 46298, 65334]);
 
 /**
  * Normalized keyword tokens of franchises or titles that have official Romanian dubs.
@@ -259,9 +262,10 @@ const counts = (name: string, info: DubLookupInfo): boolean => name.includes(" "
  * Useful for library preloads, shelves, and quick badge lookups.
  */
 export function hasRomanianDubSync(info: DubLookupInfo): boolean {
-  if (info.tmdbId) {
+  const ids = info.type === "tv" ? KNOWN_DUBBED_TV_IDS : info.type === "movie" ? KNOWN_DUBBED_MOVIE_IDS : undefined;
+  if (ids && info.tmdbId) {
     const numId = Number(info.tmdbId);
-    if (!Number.isNaN(numId) && KNOWN_DUBBED_TMDB_IDS.has(numId)) {
+    if (!Number.isNaN(numId) && ids.has(numId)) {
       return true;
     }
   }

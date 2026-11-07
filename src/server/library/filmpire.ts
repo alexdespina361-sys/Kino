@@ -290,6 +290,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   const section = animationOf(doc);
   const hasRoDub = hasRomanianDubSync({
     tmdbId: doc.id,
+    type: isTv ? "tv" : "movie",
     title,
     originalTitle: doc.original_title || doc.original_name,
     year: validYear,
