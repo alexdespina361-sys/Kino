@@ -225,6 +225,8 @@ const KNOWN_DUBBED_TITLES = new Set<string>([
  */
 const dynamicDubCache = new Map<string, { hasDub: boolean; expires: number }>();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+/** A lookup that failed (no answer in time, an error page) is not asked again for a while either: each would cost a title page its wait. */
+const FAILED_TTL_MS = 10 * 60 * 1000;
 const MAX_CACHE_SIZE = 1000;
 
 function getCached(key: string): boolean | undefined {
@@ -237,13 +239,20 @@ function getCached(key: string): boolean | undefined {
   return item.hasDub;
 }
 
-function setCached(key: string, hasDub: boolean): void {
+function setCached(key: string, hasDub: boolean, ttl = CACHE_TTL_MS): void {
   if (dynamicDubCache.size >= MAX_CACHE_SIZE) {
     const firstKey = dynamicDubCache.keys().next().value;
     if (firstKey) dynamicDubCache.delete(firstKey);
   }
-  dynamicDubCache.set(key, { hasDub, expires: Date.now() + CACHE_TTL_MS });
+  dynamicDubCache.set(key, { hasDub, expires: Date.now() + ttl });
 }
+
+/**
+ * Whether a curated name counts for this title. A one-word name ("up", "cars", "coco", "sing", "rio", "soul") is also the start or
+ * the middle of the names of many films that have nothing to do with it (Up in the Air, Rio Bravo, Sing Street, Coco Before Chanel):
+ * it counts only for an animated title. A name of more words is particular enough by itself.
+ */
+const counts = (name: string, info: DubLookupInfo): boolean => name.includes(" ") || info.isAnimation === true;
 
 /**
  * Fast synchronous check using the static curated catalog.
@@ -258,19 +267,20 @@ export function hasRomanianDubSync(info: DubLookupInfo): boolean {
   }
 
   const normTitle = normalizeDubTitle(info.title);
-  if (normTitle && KNOWN_DUBBED_TITLES.has(normTitle)) {
+  if (normTitle && KNOWN_DUBBED_TITLES.has(normTitle) && counts(normTitle, info)) {
     return true;
   }
 
   if (info.originalTitle) {
     const normOrig = normalizeDubTitle(info.originalTitle);
-    if (normOrig && KNOWN_DUBBED_TITLES.has(normOrig)) {
+    if (normOrig && KNOWN_DUBBED_TITLES.has(normOrig) && counts(normOrig, info)) {
       return true;
     }
   }
 
   // Check prefix / franchise matches
   for (const franchise of KNOWN_DUBBED_TITLES) {
+    if (!counts(franchise, info)) continue;
     if (normTitle.startsWith(franchise + " ") || normTitle.includes(" " + franchise + " ")) {
       return true;
     }
@@ -295,7 +305,7 @@ async function probeOnlineDubHub(title: string): Promise<boolean> {
       signal: AbortSignal.timeout(2500),
     });
     if (!res.ok) {
-      setCached(query, false);
+      setCached(query, false, FAILED_TTL_MS);
       return false;
     }
     const posts = (await res.json()) as Array<{ title?: { rendered?: string }; dfx_media?: { original_title?: string } }>;
@@ -316,6 +326,7 @@ async function probeOnlineDubHub(title: string): Promise<boolean> {
     setCached(query, hasMatch);
     return hasMatch;
   } catch {
+    setCached(query, false, FAILED_TTL_MS);
     return false;
   }
 }
@@ -346,6 +357,11 @@ export async function hasRomanianDub(info: DubLookupInfo): Promise<boolean> {
  * Attempts to retrieve a Romanian-dubbed alternate stream for the title/episode.
  */
 export async function getRomanianDubSource(info: DubLookupInfo & { season?: number; episode?: number }): Promise<{ stream: { url: string; type: "hls" | "mp4" }; subtitles?: any[] } | null> {
+  // Off unless RO_DUB_SOURCES=on. What this finds is not yet a source the player can play: the link is the embed host's player page
+  // (`embed_frame_url`), handed over as "hls"; and the post is the first of the search's with a player in it, not one checked to be this
+  // title (or this episode: the season and episode are not looked at). Offered as "Română (Dublat)" it would be a source that fails, or
+  // another film; and it made every resolve of an animated title wait for two more lookups.
+  if (process.env.RO_DUB_SOURCES !== "on") return null;
   // If not known to have a Romanian dub, return null
   const hasDub = await hasRomanianDub(info);
   if (!hasDub) return null;

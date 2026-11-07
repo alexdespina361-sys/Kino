@@ -293,6 +293,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
     title,
     originalTitle: doc.original_title || doc.original_name,
     year: validYear,
+    isAnimation: section !== undefined,
   });
 
   return {

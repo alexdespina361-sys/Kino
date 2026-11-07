@@ -2062,18 +2062,3 @@
   .tv-tile, .tv-tile-category, .tv-end-tile, .tv-action, .tv-hero-button, .tv-choice, .tv-swatch, .tv-switch-row, .tv-key, .tv-tile-corner { transition: none; }
   .tv-tile:focus, .tv-tile-category:focus, .tv-end-tile:focus-visible { transform: none; }
 }
-
-.about-dub-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.1em 0.6em;
-  border-radius: 4px;
-  background: rgba(56, 189, 248, 0.16);
-  border: 1px solid #38bdf8;
-  color: #38bdf8;
-  font-weight: 800;
-  font-size: 0.85em;
-  line-height: 1.4;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}

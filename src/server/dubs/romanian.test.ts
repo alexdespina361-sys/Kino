@@ -24,7 +24,7 @@ describe("Romanian dubbing service", () => {
   });
 
   it("identifies titles by English franchise and title names", () => {
-    expect(hasRomanianDubSync({ title: "Shrek the Third" })).toBe(true);
+    expect(hasRomanianDubSync({ title: "Shrek the Third", isAnimation: true })).toBe(true);
     expect(hasRomanianDubSync({ title: "Kung Fu Panda 4" })).toBe(true);
     expect(hasRomanianDubSync({ title: "How to Train Your Dragon: The Hidden World" })).toBe(true);
     expect(hasRomanianDubSync({ title: "Despicable Me 4" })).toBe(true);
@@ -37,7 +37,7 @@ describe("Romanian dubbing service", () => {
     expect(hasRomanianDubSync({ title: "Regele Leu" })).toBe(true);
     expect(hasRomanianDubSync({ title: "Regatul de gheață" })).toBe(true);
     expect(hasRomanianDubSync({ title: "Epoca de gheață 3" })).toBe(true);
-    expect(hasRomanianDubSync({ title: "Mașini 2" })).toBe(true);
+    expect(hasRomanianDubSync({ title: "Mașini 2", isAnimation: true })).toBe(true);
     expect(hasRomanianDubSync({ title: "Motanul încălțat" })).toBe(true);
     expect(hasRomanianDubSync({ title: "Întors pe dos 2" })).toBe(true);
   });
@@ -46,6 +46,16 @@ describe("Romanian dubbing service", () => {
     expect(hasRomanianDubSync({ tmdbId: 238, title: "The Godfather" })).toBe(false);
     expect(hasRomanianDubSync({ tmdbId: 424, title: "Schindler's List" })).toBe(false);
     expect(hasRomanianDubSync({ tmdbId: 872585, title: "Oppenheimer" })).toBe(false);
+  });
+
+  it("counts a one-word name only for an animated title", () => {
+    // (Films that start with, or have in them, the one-word name of a dubbed cartoon.)
+    expect(hasRomanianDubSync({ tmdbId: 22947, title: "Up in the Air" })).toBe(false);
+    expect(hasRomanianDubSync({ tmdbId: 301, title: "Rio Bravo" })).toBe(false);
+    expect(hasRomanianDubSync({ tmdbId: 369557, title: "Sing Street" })).toBe(false);
+    expect(hasRomanianDubSync({ tmdbId: 18232, title: "Coco Before Chanel", originalTitle: "Coco avant Chanel" })).toBe(false);
+    expect(hasRomanianDubSync({ title: "Rio 2", isAnimation: true })).toBe(true);
+    expect(hasRomanianDubSync({ title: "Toy Story 3" })).toBe(true); // (a name of more words is enough by itself)
   });
 
   it("supports async lookup with fallback", async () => {

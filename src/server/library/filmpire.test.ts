@@ -713,7 +713,7 @@ describe("filmpireSource about", () => {
   it("lists the titles like it without a part of the collection, rubbish or a title not out yet, in the shape of any other tile", async () => {
     const { source } = sourceWith((url) => json(url.includes("/collection/77") ? collection : kungFu));
     const about = await source.about!("https://filmpire.sc/watch/603");
-    expect(about!.similar).toEqual([{ id: "filmpire-movie-9", title: "Ice Age", year: 2002, image: "https://image.tmdb.org/t/p/w500/p.jpg", kind: "movie", url: "https://filmpire.sc/watch/9" }]);
+    expect(about!.similar).toEqual([{ id: "filmpire-movie-9", title: "Ice Age", year: 2002, image: "https://image.tmdb.org/t/p/w500/p.jpg", kind: "movie", url: "https://filmpire.sc/watch/9", hasRoDub: true }]); // (Epoca de gheață)
     expect(LibraryRowSchema.safeParse({ id: "r", title: "r", source: "s", items: about!.similar }).success).toBe(true);
   });
 

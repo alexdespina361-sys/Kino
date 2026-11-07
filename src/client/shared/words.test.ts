@@ -43,6 +43,13 @@ describe("trackName", () => {
     expect(trackName({ label: "English", lang: "en" })).toBe("Engleză");
     expect(trackName({ label: "English (SDH)", lang: "en" })).toBe("English (SDH)");
   });
+
+  it("calls a Romanian sound track dubbed only beside others", () => {
+    const romanian = { label: "Romanian", lang: "ro" };
+    expect(trackName(romanian, "audio", true)).toBe(t("player.roDubTrack"));
+    expect(trackName(romanian, "audio")).toBe(trackName(romanian)); // (a Romanian film's one sound is its own)
+    expect(trackName({ label: "English", lang: "en" }, "audio", true)).toBe("English");
+  });
 });
 
 describe("the menu of tracks", () => {

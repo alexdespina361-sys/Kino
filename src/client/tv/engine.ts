@@ -382,12 +382,25 @@ export class PlayerEngine {
       hls.on(HlsLib.Events.SUBTITLE_TRACK_SWITCH, () => this.emit());
       hls.on(HlsLib.Events.SUBTITLE_TRACKS_UPDATED, () => this.emit());
       hls.on(HlsLib.Events.AUDIO_TRACK_SWITCHED, () => this.emit());
+      // A viewer who reads the app in Romanian hears a film's Romanian sound first, when it has one. Only once, when the film's sound tracks
+      // are first known: hls.js says so again when it changes to a variant with its sound in another group, and the track the viewer
+      // picked by then is theirs. (A page that may not use its storage still plays: the setting is just not read.)
+      let audioChosen = false;
+      const prefersRomanian = (): boolean => {
+        if (typeof document !== "undefined" && document.documentElement.lang === "ro") return true;
+        try {
+          return localStorage.getItem("preferred_audio") === "ro";
+        } catch {
+          return false;
+        }
+      };
       hls.on(HlsLib.Events.AUDIO_TRACKS_UPDATED, () => {
-        if (hls.audioTracks && hls.audioTracks.length > 1 && hls.audioTrack <= 0) {
+        if (!audioChosen && hls.audioTracks && hls.audioTracks.length > 1) {
+          audioChosen = true;
           const roIdx = hls.audioTracks.findIndex(
             (t) => t.lang === "ro" || t.lang === "ron" || /romanian|română|romana/i.test(t.name),
           );
-          if (roIdx > 0 && typeof document !== "undefined" && (document.documentElement.lang === "ro" || localStorage.getItem("preferred_audio") === "ro")) {
+          if (roIdx > 0 && hls.audioTrack <= 0 && prefersRomanian()) {
             hls.audioTrack = roIdx;
           }
         }
