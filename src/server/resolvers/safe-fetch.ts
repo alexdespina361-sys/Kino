@@ -57,6 +57,14 @@ export interface SafeFetchOptions {
    * body then stands still is not coming at all, and is not worth the rest of the whole-request budget.
    */
   idleTimeoutMs?: number;
+  /**
+   * How long a body may stand still before the same request is made once more alongside it (see `hedged`), and the first of them to end is the answer. Off
+   * when not given: a request made twice is twice the load on the other end, so it is for the sites this server asks on a viewer's behalf (`providerFetch`),
+   * not for a page a viewer pasted.
+   */
+  hedgeAfterMs?: number;
+  /** How many requests may be made alongside the first, at most (two by default). */
+  maxHedges?: number;
   /** Body bytes kept; the rest is dropped (the page is parsed from what we have). */
   maxBytes?: number;
   maxRedirects?: number;
@@ -88,7 +96,7 @@ export interface FetchedPage {
 
 export type SafeFetch = (url: string | URL, options?: SafeFetchOptions) => Promise<FetchedPage>;
 
-const DEFAULTS = { timeoutMs: 10_000, connectTimeoutMs: 6_000, idleTimeoutMs: 5_000, maxBytes: 2 * 1024 * 1024, maxRedirects: 5 };
+const DEFAULTS = { timeoutMs: 10_000, connectTimeoutMs: 6_000, idleTimeoutMs: 5_000, maxHedges: 2, maxBytes: 2 * 1024 * 1024, maxRedirects: 5 };
 const TEXT_TYPES = /^(text\/|application\/(json|ld\+json|xhtml\+xml|xml|javascript|x-javascript))/;
 
 /** Throws unless the URL is a plain http(s) URL pointing at an allowed address literal or a hostname. */
@@ -165,6 +173,8 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
   const timeoutMs = options.timeoutMs ?? DEFAULTS.timeoutMs;
   const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULTS.connectTimeoutMs;
   const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULTS.idleTimeoutMs;
+  const hedgeAfterMs = options.hedgeAfterMs ?? 0;
+  const maxHedges = options.maxHedges ?? DEFAULTS.maxHedges;
   const maxBytes = options.maxBytes ?? DEFAULTS.maxBytes;
   const maxRedirects = options.maxRedirects ?? DEFAULTS.maxRedirects;
   const isAllowedAddress = options.isAllowedAddress ?? isPublicAddress;
@@ -175,78 +185,127 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
   if (options.signal?.aborted) controller.abort();
   else options.signal?.addEventListener("abort", onAbort, { once: true });
 
-  let url: URL;
+  let start: URL;
   try {
-    url = new URL(input);
+    start = new URL(input);
   } catch {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", onAbort);
     throw new SafeFetchError("invalid_url", "not a URL");
   }
 
-  let headers: Record<string, string> = {
+  const firstHeaders: Record<string, string> = {
     "user-agent": options.userAgent ?? "Mozilla/5.0 (compatible; PhoneToTvResolver/0.1)",
     accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.5",
     "accept-language": "en",
     "accept-encoding": "identity", // no decompression-bomb surface
   };
-  for (const [name, value] of Object.entries(options.headers ?? {})) headers[name.toLowerCase()] = value;
-  headers["accept-encoding"] = "identity";
+  for (const [name, value] of Object.entries(options.headers ?? {})) firstHeaders[name.toLowerCase()] = value;
+  firstHeaders["accept-encoding"] = "identity";
 
-  let timing: FetchTiming = {};
-  try {
-    for (let hop = 0; hop <= maxRedirects; hop++) {
-      assertAllowedUrl(url, isAllowedAddress);
-      timing = {};
-      const res = await get(url, headers, lookup, controller.signal, connectTimeoutMs, timing);
+  /** One request for the page, redirects followed, within `signal` (the whole-request time and the caller's, plus this request's own when it is one of several). */
+  const attempt = async (signal: AbortSignal, onStall?: () => void): Promise<FetchedPage> => {
+    let timing: FetchTiming = {};
+    let url = start;
+    let headers = { ...firstHeaders };
+    try {
+      for (let hop = 0; hop <= maxRedirects; hop++) {
+        assertAllowedUrl(url, isAllowedAddress);
+        timing = {};
+        const res = await get(url, headers, lookup, signal, connectTimeoutMs, timing);
 
-      const status = res.statusCode ?? 0;
-      timing.status = status;
-      const announced = Number(res.headers["content-length"]);
-      if (res.headers["content-length"] !== undefined && Number.isFinite(announced)) timing.length = announced;
-      const location = res.headers.location;
-      if (status >= 300 && status < 400 && location) {
-        res.destroy(); // (not read to its end: a body that never ends would hold the connection for ever, once the time above is cleared)
-        let next: URL;
-        try {
-          next = new URL(location, url);
-        } catch {
-          throw new SafeFetchError("invalid_url", "bad redirect");
+        const status = res.statusCode ?? 0;
+        timing.status = status;
+        const announced = Number(res.headers["content-length"]);
+        if (res.headers["content-length"] !== undefined && Number.isFinite(announced)) timing.length = announced;
+        const location = res.headers.location;
+        if (status >= 300 && status < 400 && location) {
+          res.destroy(); // (not read to its end: a body that never ends would hold the connection for ever, once the time above is cleared)
+          let next: URL;
+          try {
+            next = new URL(location, url);
+          } catch {
+            throw new SafeFetchError("invalid_url", "bad redirect");
+          }
+          if (next.origin !== url.origin) headers = withoutCredentials(headers);
+          url = next;
+          continue;
         }
-        if (next.origin !== url.origin) headers = withoutCredentials(headers);
-        url = next;
-        continue;
-      }
-      if (status >= 400) {
-        res.destroy(); // (likewise)
-        throw new SafeFetchError("bad_status", `HTTP ${status}`, status);
-      }
+        if (status >= 400) {
+          res.destroy(); // (likewise)
+          throw new SafeFetchError("bad_status", `HTTP ${status}`, status);
+        }
 
-      const contentType = String(res.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
-      const textual = TEXT_TYPES.test(contentType);
-      if (!textual && !options.anyType) {
-        res.destroy(); // media / binary: report the type, never download it
-        return { url, status, contentType, body: "", truncated: false, timing };
+        const contentType = String(res.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
+        const textual = TEXT_TYPES.test(contentType);
+        if (!textual && !options.anyType) {
+          res.destroy(); // media / binary: report the type, never download it
+          return { url, status, contentType, body: "", truncated: false, timing };
+        }
+        const read = await readCapped(res, maxBytes, idleTimeoutMs, timing, hedgeAfterMs, onStall);
+        return { url, status, contentType, body: textual ? read.bytes.toString("utf8") : "", truncated: read.truncated, ...(options.anyType ? { bytes: read.bytes } : {}), timing };
       }
-      const read = await readCapped(res, maxBytes, idleTimeoutMs, timing);
-      return { url, status, contentType, body: textual ? read.bytes.toString("utf8") : "", truncated: read.truncated, ...(options.anyType ? { bytes: read.bytes } : {}), timing };
+      throw new SafeFetchError("too_many_redirects", "too many redirects");
+    } catch (error) {
+      const failure = normalize(error, controller.signal);
+      // (A request that ran out of time as a whole: what it was still waiting for says where the other end is slow.)
+      if (failure.code === "timeout" && !timing.timedOut) {
+        if (timing.connectMs === undefined && !timing.reused) timing.timedOut = "connect";
+        else if (timing.firstByteMs === undefined) timing.timedOut = "answer";
+        else timing.timedOut = "body";
+      }
+      failure.timing = timing;
+      throw failure;
     }
-    throw new SafeFetchError("too_many_redirects", "too many redirects");
-  } catch (error) {
-    const failure = normalize(error, controller.signal);
-    // (A request that ran out of time as a whole: what it was still waiting for says where the other end is slow.)
-    if (failure.code === "timeout" && !timing.timedOut) {
-      if (timing.connectMs === undefined && !timing.reused) timing.timedOut = "connect";
-      else if (timing.firstByteMs === undefined) timing.timedOut = "answer";
-      else timing.timedOut = "body";
-    }
-    failure.timing = timing;
-    throw failure;
+  };
+
+  try {
+    if (!hedgeAfterMs) return await attempt(controller.signal);
+    return await hedged(attempt, controller.signal, maxHedges);
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", onAbort);
   }
 };
+
+/**
+ * `attempt`, and, each time the request under way stands still (its body stops coming: see `hedgeAfterMs`), the same request once more alongside it, up to
+ * `maxHedges` more; the first to come to its end is the answer and the others are let go of. When all of them fail, the first's failure is the failure (its
+ * timing says what the site did). A site that sends the head of a page and then nothing, and answers the next request at once, is read in a couple of
+ * seconds instead of after a timeout and a try again.
+ */
+async function hedged(attempt: (signal: AbortSignal, onStall?: () => void) => Promise<FetchedPage>, signal: AbortSignal, maxHedges: number): Promise<FetchedPage> {
+  return new Promise<FetchedPage>((resolve, reject) => {
+    const controls: AbortController[] = [];
+    let settled = false;
+    let failures = 0;
+    let first: unknown;
+    const launch = () => {
+      const own = new AbortController();
+      controls.push(own);
+      const index = controls.length - 1;
+      attempt(AbortSignal.any([signal, own.signal]), () => {
+        if (!settled && controls.length <= maxHedges) launch();
+      }).then(
+        (page) => {
+          if (settled) return;
+          settled = true;
+          controls.forEach((other, i) => i !== index && other.abort());
+          resolve(page);
+        },
+        (error: unknown) => {
+          if (index === 0) first = error;
+          failures += 1;
+          if (!settled && failures === controls.length) {
+            settled = true;
+            reject(first);
+          }
+        },
+      );
+    };
+    launch();
+  });
+}
 
 /** What was asked with a cookie or a login stays with the origin it was asked of: a redirect to another does not carry it along. */
 function withoutCredentials(headers: Record<string, string>): Record<string, string> {
@@ -258,23 +317,35 @@ function withoutCredentials(headers: Record<string, string>): Record<string, str
  * The body of `res`, up to `maxBytes`: no more than that is kept, and the rest is let go of. A body that gives nothing for `idleMs` is given up on as a
  * timeout, and one whose connection closes before its end is a failure, not a shorter body. What came, and how long it took, goes into `timing`.
  */
-function readCapped(res: http.IncomingMessage, maxBytes: number, idleMs: number, timing: FetchTiming): Promise<{ bytes: Buffer; truncated: boolean }> {
+function readCapped(
+  res: http.IncomingMessage,
+  maxBytes: number,
+  idleMs: number,
+  timing: FetchTiming,
+  stallMs = 0,
+  onStall?: () => void,
+): Promise<{ bytes: Buffer; truncated: boolean }> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const started = performance.now();
     let size = 0;
     let done = false;
     let idle: NodeJS.Timeout | undefined;
+    let stall: NodeJS.Timeout | undefined;
     const stillComing = () => {
       clearTimeout(idle);
       idle = setTimeout(() => {
         timing.timedOut = "body";
         res.destroy(new SafeFetchError("timeout", "the answer stopped coming"));
       }, idleMs);
+      if (!onStall) return;
+      clearTimeout(stall);
+      stall = setTimeout(() => !done && onStall(), stallMs);
     };
     const settle = () => {
       done = true;
       clearTimeout(idle);
+      clearTimeout(stall);
       timing.bytes = size;
     };
     const finish = (truncated: boolean) => {

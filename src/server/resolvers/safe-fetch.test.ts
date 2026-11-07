@@ -133,6 +133,65 @@ describe("safeFetch", () => {
     expect(page.timing?.bodyMs).toBeGreaterThanOrEqual(25);
   });
 
+  describe("a request made once more alongside one whose body stands still", () => {
+    /** A server whose first `stalls` answers send the head of the page and then nothing, and whose next answer is whole at once. */
+    const stallingServer = (stalls: number) => {
+      let asked = 0;
+      handler = (_req, res) => {
+        asked += 1;
+        res.writeHead(200, { "content-type": "text/html" });
+        if (asked <= stalls) return void res.write("<html>"); // (and then nothing more)
+        res.end("<html>whole</html>");
+      };
+      return () => asked;
+    };
+
+    it("is the answer when the first stands still, within a couple of stall times, and the first is let go of", async () => {
+      const asked = stallingServer(1);
+      const started = performance.now();
+      const page = await safeFetch(`${base}/stalls-once`, { ...loopbackOnly, hedgeAfterMs: 50, idleTimeoutMs: 5_000 });
+      expect(page.body).toBe("<html>whole</html>");
+      expect(performance.now() - started).toBeLessThan(1_000);
+      expect(asked()).toBe(2);
+    });
+
+    it("is made no more than `maxHedges` times, and the third request wins when the first two stand still", async () => {
+      const asked = stallingServer(2);
+      const page = await safeFetch(`${base}/stalls-twice`, { ...loopbackOnly, hedgeAfterMs: 50, idleTimeoutMs: 5_000 });
+      expect(page.body).toBe("<html>whole</html>");
+      expect(asked()).toBe(3);
+    });
+
+    it("fails as the first request failed when every one of them stands still, with no fourth request", async () => {
+      const asked = stallingServer(10);
+      const error = await failure(safeFetch(`${base}/stalls-always`, { ...loopbackOnly, hedgeAfterMs: 30, idleTimeoutMs: 150 }));
+      expect(error.code).toBe("timeout");
+      expect(error.timing).toMatchObject({ timedOut: "body", bytes: 6 });
+      expect(asked()).toBe(3);
+    });
+
+    it("is not made while the body keeps coming, nor when the option is not given", async () => {
+      let asked = 0;
+      handler = (_req, res) => {
+        asked += 1;
+        res.writeHead(200, { "content-type": "text/plain" });
+        let n = 0;
+        const tick = setInterval(() => {
+          res.write("x");
+          if ((n += 1) === 5) {
+            clearInterval(tick);
+            res.end();
+          }
+        }, 20);
+      };
+      expect((await safeFetch(`${base}/trickle`, { ...loopbackOnly, hedgeAfterMs: 60 })).body).toBe("xxxxx");
+      expect(asked).toBe(1);
+      stallingServer(1);
+      await failure(safeFetch(`${base}/stalls`, { ...loopbackOnly, idleTimeoutMs: 80 }));
+      expect(asked).toBe(1); // (the stalling server counts its own asks: one, and no second)
+    });
+  });
+
   it("gives up on an address that never connects within the connect time, well before the whole budget", async () => {
     // (192.0.2.1 is TEST-NET-1: an address nothing answers at, so the connection is only ever attempted.)
     const started = performance.now();
