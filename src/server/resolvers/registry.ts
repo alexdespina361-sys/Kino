@@ -80,7 +80,10 @@ export class ResolverRegistry {
 
     if (result.status === "success") {
       result = { ...result, media: completeSeries({ ...result.media, page: result.media.page ?? raw }) };
-      this.keep(raw, result, started + 600_000); // 10 min cache
+      // Filmpire / short-lived upstream provider tokens expire in ~60s; cache for 45s to avoid serving stale tokens.
+      const isShortLived = result.resolver === "filmpire" || /filmpire\.(sc|cc)/.test(raw);
+      const ttl = isShortLived ? 45_000 : 600_000;
+      this.keep(raw, result, started + ttl);
       if (!isPrefetch && result.media.series?.next?.url) {
         // Pre-resolve only the immediate next episode in the background
         const nextUrl = result.media.series.next.url;

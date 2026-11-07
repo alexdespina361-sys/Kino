@@ -47,7 +47,9 @@ export class HostTokens {
     if (referer && /^https?:\/\//i.test(referer)) {
       try {
         const refUrl = new URL(referer);
-        apiToken = refUrl.searchParams.get("api_token") || undefined;
+        // Upstream binds api_token to the IP address of the machine that loaded the player container page.
+        // The relay MUST fetch the container page itself from its own IP so the token matches this relay's IP.
+        refUrl.searchParams.delete("api_token");
 
         if (!apiToken) {
           const embedReferer = `${refUrl.origin}${refUrl.pathname.replace("/embed/player/", "/embed/")}${refUrl.search}`;

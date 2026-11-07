@@ -356,6 +356,27 @@ export function Tv() {
     loadSource(next, false);
   }, [player.state]);
 
+  // Watchdog: If playback is stuck in loading or buffering for 45s without starting, advance to the next untried source.
+  useEffect(() => {
+    if (player.state !== "loading") return;
+    const media = currentMediaRef.current;
+    if (!media) return;
+    const sources = sourcesOf(media);
+    const next = sources.findIndex((_, index) => !triedSourcesRef.current.has(index));
+    if (next === -1) return;
+
+    const timer = window.setTimeout(() => {
+      const curr = playerRef.current.state;
+      if (curr === "loading") {
+        const failed = sources[sourceIndexRef.current];
+        notify(t("notice.sourceFailed", { from: failed ? sourceName(failed, sourceIndexRef.current) : t("notice.thatSource"), to: sourceName(sources[next]!, next) }));
+        loadSource(next, false);
+      }
+    }, 45_000);
+
+    return () => window.clearTimeout(timer);
+  }, [player.state]);
+
   const triggerNextEpisode = () => {
     if (followingRef.current) return; // the TV being followed picks what comes next
     setUpNextCountdown(null);
@@ -1146,6 +1167,7 @@ export function Tv() {
     setUpNextCountdown(null);
     setMenu(null);
     engineRef.current?.stop();
+    resetSources();
     if (!followingRef.current) socketRef.current?.send({ type: "TV_CANCEL" });
   };
   const goToPrevious = () => {
