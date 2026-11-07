@@ -97,7 +97,7 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
           </div>
           {ratings && <RatingBox entry={entry} isShow={series.isShow} title={t("rating.yours")} testId="rate-title" />}
           {entry.description && <p className="muted title-about">{entry.description}</p>}
-          {about && <AboutFacts about={about} />}
+          {about && <AboutFacts about={about} hasRoDub={entry.hasRoDub || about.hasRoDub} />}
           {about && <AboutPeople about={about} />}
         </div>
       </div>

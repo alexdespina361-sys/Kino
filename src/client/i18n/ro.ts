@@ -556,6 +556,8 @@ export const ro: Dictionary = {
   "about.createdBy": "Creat de",
   "about.cast": "Distribuție",
   "about.age": "Categorie de vârstă",
+  "about.roDubTitle": "Disponibil dublat în limba română",
+  "player.roDubTrack": "Română (Dublat)",
   "about.parts": "Alte părți",
   "about.similar": "Titluri similare",
   "player.minLeft": "{n} min rămase",

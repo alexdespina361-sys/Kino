@@ -140,6 +140,8 @@ export interface Entry {
   /** A person's tile (a friend): the picture they chose, and whether they are online now. */
   avatar?: AvatarId;
   online?: boolean;
+  /** Whether a Romanian dub is available. */
+  hasRoDub?: boolean;
 }
 
 export interface HomeRow {
@@ -193,6 +195,7 @@ export const entryOfItem = (item: LibraryItem): Entry => ({
   ...(item.year ? { year: item.year } : {}),
   ...(item.description ? { description: item.description } : {}),
   ...(item.kind ? { kind: item.kind } : {}),
+  ...(item.hasRoDub !== undefined ? { hasRoDub: item.hasRoDub } : {}),
 });
 
 export function entryOfProgress(card: LiveProgress): Entry {

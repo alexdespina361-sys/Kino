@@ -739,6 +739,30 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
       }
 
+      // Check if Romanian dub stream or alternate source is available
+      try {
+        const { getRomanianDubSource } = await import("../../dubs/romanian");
+        const seasonNum = seriesInfo?.season ?? (s ? Number(s) : undefined);
+        const episodeNum = seriesInfo?.episode ?? (e ? Number(e) : undefined);
+        const roDub = await getRomanianDubSource({
+          tmdbId: id,
+          imdbId,
+          title: rawShowTitle || title,
+          type: isTv ? "tv" : "movie",
+          season: Number.isInteger(seasonNum) ? seasonNum : undefined,
+          episode: Number.isInteger(episodeNum) ? episodeNum : undefined,
+        });
+        if (roDub) {
+          alternates.unshift({
+            label: "Română (Dublat)",
+            stream: roDub.stream,
+            subtitles: roDub.subtitles,
+          });
+        }
+      } catch {
+        // Non-fatal
+      }
+
       return {
         status: "success",
         resolver: "filmpire",

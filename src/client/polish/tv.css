@@ -325,6 +325,7 @@
 :root[data-ui="polish"] .tv-detail .about-facts { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--em) * 0.3) calc(var(--em) * 1); margin: 0; font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
 :root[data-ui="polish"] .tv-detail .about-age { display: inline-flex; align-items: baseline; gap: calc(var(--em) * 0.4); padding: 0 calc(var(--em) * 0.7); border-radius: var(--r-1); box-shadow: inset 0 0 0 calc(var(--em) * 0.15) var(--text-3); color: var(--text-1); font-weight: 800; line-height: 1.5; }
 :root[data-ui="polish"] .tv-detail .about-age small { font-size: 0.7em; font-weight: 700; color: var(--text-3); }
+:root[data-ui="polish"] .tv-detail .about-dub-badge { display: inline-flex; align-items: center; padding: 0 calc(var(--em) * 0.7); border-radius: var(--r-1); box-shadow: inset 0 0 0 calc(var(--em) * 0.15) #38bdf8; background: rgba(56, 189, 248, 0.16); color: #38bdf8; font-weight: 800; font-size: 0.88em; line-height: 1.5; letter-spacing: 0.04em; text-transform: uppercase; }
 :root[data-ui="polish"] .tv-detail .about-people { display: flex; flex-direction: column; gap: calc(var(--em) * 0.2); margin: calc(var(--em) * 0.2) 0 0; font-size: var(--fs-2); line-height: 1.35; }
 :root[data-ui="polish"] .tv-detail .about-person { display: flex; align-items: flex-start; gap: calc(var(--em) * 1); }
 :root[data-ui="polish"] .tv-detail .about-person dt { flex: none; min-width: 6.5em; color: var(--text-3); font-weight: 600; }

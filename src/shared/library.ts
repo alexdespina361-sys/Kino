@@ -37,6 +37,8 @@ export const LibraryItemSchema = z.object({
   section: LibrarySectionSchema.optional(),
   /** A page or media link, as pasted on the phone. Relative links (`/fixtures/a.mp4`) are this server's own. */
   url: z.string().max(2048),
+  /** Whether a Romanian dubbed audio track or Romanian dubbed stream is available. */
+  hasRoDub: z.boolean().optional(),
 });
 export type LibraryItem = z.infer<typeof LibraryItemSchema>;
 
@@ -84,6 +86,8 @@ export const TitleAboutSchema = z.object({
   parts: z.array(LibraryItemSchema).max(30),
   /** Titles like it (none of them one of its parts). */
   similar: z.array(LibraryItemSchema).max(20),
+  /** Whether a Romanian dubbed audio track or Romanian dubbed stream is available. */
+  hasRoDub: z.boolean().optional(),
 });
 export type TitleAbout = z.infer<typeof TitleAboutSchema>;
 

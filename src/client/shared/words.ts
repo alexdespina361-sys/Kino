@@ -8,9 +8,12 @@ import { getLanguage, hasKey, t, type Key } from "../i18n";
 
 /** "Subtitle 3" and "Audio 2" are what the TV calls a track that says nothing about itself; a track named only by its language is said in the reader's. */
 const NUMBERED_TRACK = /^(Subtitle|Audio) (\d+)$/;
-export function trackName(track: { label: string; lang?: string | undefined }): string {
+export function trackName(track: { label: string; lang?: string | undefined }, kind: "subtitle" | "audio" = "subtitle"): string {
   const numbered = NUMBERED_TRACK.exec(track.label);
   if (numbered) return t(numbered[1] === "Subtitle" ? "player.subtitleN" : "player.audioN", { n: numbered[2]! });
+  if (kind === "audio" && (track.lang === "ro" || track.lang === "ron" || /romanian|română|romana/i.test(track.label))) {
+    return t("player.roDubTrack");
+  }
   return localTrackLabel(track, getLanguage());
 }
 
@@ -28,9 +31,9 @@ export function noticeText(notice: ChangeNotice): string {
     case "subtitlesOff":
       return t("notice.subtitlesOff");
     case "subtitles":
-      return t("notice.subtitles", { label: trackName(notice) });
+      return t("notice.subtitles", { label: trackName(notice, "subtitle") });
     case "audio":
-      return t("notice.audio", { label: trackName(notice) });
+      return t("notice.audio", { label: trackName(notice, "audio") });
     case "qualityAuto":
       return t("notice.qualityAuto");
     case "quality":

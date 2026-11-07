@@ -556,6 +556,8 @@ export const en = {
   "about.createdBy": "Created by",
   "about.cast": "Cast",
   "about.age": "Age rating",
+  "about.roDubTitle": "Available with Romanian dubbing",
+  "player.roDubTrack": "Romanian (Dubbed)",
   "about.parts": "Other parts",
   "about.similar": "More like this",
   "player.minLeft": "{n} min left",

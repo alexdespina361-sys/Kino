@@ -255,7 +255,7 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
       size: "narrow",
       options: audio.map((track) => ({
         key: track.id,
-        label: trackName(track),
+        label: trackName(track, "audio"),
         active: player.audio?.current === track.id,
         pick: () => p.onAudio(track.id),
       })),

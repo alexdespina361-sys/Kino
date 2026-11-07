@@ -553,6 +553,8 @@ export const it: Dictionary = {
   "about.createdBy": "Creato da",
   "about.cast": "Cast",
   "about.age": "Classificazione per età",
+  "about.roDubTitle": "Disponibile doppiato in rumeno",
+  "player.roDubTrack": "Rumeno (Doppiato)",
   "about.parts": "Altri capitoli",
   "about.similar": "Titoli simili",
   "player.minLeft": "{n} min rimanenti",

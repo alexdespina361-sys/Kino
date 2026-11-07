@@ -382,7 +382,17 @@ export class PlayerEngine {
       hls.on(HlsLib.Events.SUBTITLE_TRACK_SWITCH, () => this.emit());
       hls.on(HlsLib.Events.SUBTITLE_TRACKS_UPDATED, () => this.emit());
       hls.on(HlsLib.Events.AUDIO_TRACK_SWITCHED, () => this.emit());
-      hls.on(HlsLib.Events.AUDIO_TRACKS_UPDATED, () => this.emit());
+      hls.on(HlsLib.Events.AUDIO_TRACKS_UPDATED, () => {
+        if (hls.audioTracks && hls.audioTracks.length > 1 && hls.audioTrack <= 0) {
+          const roIdx = hls.audioTracks.findIndex(
+            (t) => t.lang === "ro" || t.lang === "ron" || /romanian|română|romana/i.test(t.name),
+          );
+          if (roIdx > 0 && typeof document !== "undefined" && (document.documentElement.lang === "ro" || localStorage.getItem("preferred_audio") === "ro")) {
+            hls.audioTrack = roIdx;
+          }
+        }
+        this.emit();
+      });
 
       // (The sound is listened to from the first piece, which comes as soon as the source is loaded, whether or not the aligner is there by then: the film does not wait for it.)
       if (this.syncLoader) {

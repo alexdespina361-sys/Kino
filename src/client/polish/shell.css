@@ -379,6 +379,7 @@
 :root[data-ui="polish"] .phone-ui .about-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0; font-size: var(--p-fs-2); font-weight: 600; color: var(--p-label); }
 :root[data-ui="polish"] .phone-ui .about-age { display: inline-flex; align-items: baseline; gap: 5px; padding: 1px 8px; border-radius: 6px; box-shadow: inset 0 0 0 1.5px var(--muted); color: var(--text); font-weight: 800; line-height: 1.4; }
 :root[data-ui="polish"] .phone-ui .about-age small { color: var(--muted); font-weight: 700; }
+:root[data-ui="polish"] .phone-ui .about-dub-badge { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 6px; box-shadow: inset 0 0 0 1.5px #38bdf8; background: rgba(56, 189, 248, 0.16); color: #38bdf8; font-weight: 800; font-size: 0.85em; line-height: 1.4; letter-spacing: 0.04em; text-transform: uppercase; }
 :root[data-ui="polish"] .phone-ui .about-people { display: flex; flex-direction: column; gap: 6px; margin: 0; font-size: var(--p-fs-2); line-height: 1.4; }
 :root[data-ui="polish"] .phone-ui .about-person { display: flex; align-items: flex-start; gap: 12px; }
 :root[data-ui="polish"] .phone-ui .about-person dt { flex: none; min-width: 92px; color: var(--muted); font-weight: 600; }

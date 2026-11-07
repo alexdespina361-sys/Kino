@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AGE_COUNTRIES, sectionOf, type EpisodeDetail, type LibraryItem, type LibraryRow, type LibrarySection, type TitleAbout } from "../../shared";
 import { remember } from "../boundedMap";
+import { hasRomanianDub, hasRomanianDubSync } from "../dubs/romanian";
 import { providerFetch } from "../resolvers/providerFetch";
 import type { LibrarySource } from "./library";
 import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, type FilmpireCategory } from "./shelves";
@@ -162,6 +163,8 @@ const TmdbItemSchema = z.object({
   id: z.number().int(),
   title: z.string().optional(),
   name: z.string().optional(),
+  original_title: z.string().optional(),
+  original_name: z.string().optional(),
   release_date: z.string().optional(),
   first_air_date: z.string().optional(),
   poster_path: z.string().nullable().optional(),
@@ -224,6 +227,12 @@ const TmdbShowSchema = z.object({
  * and the titles like it, all in this one answer. Every field is optional: a title TMDB knows little of still has its page.
  */
 const TmdbAboutSchema = z.object({
+  title: z.string().optional(),
+  name: z.string().optional(),
+  original_title: z.string().optional(),
+  original_name: z.string().optional(),
+  release_date: z.string().optional(),
+  first_air_date: z.string().optional(),
   genres: z.array(z.object({ name: z.string() })).optional(),
   created_by: z.array(z.object({ name: z.string() })).optional(),
   belongs_to_collection: z.object({ id: z.number().int() }).nullish(),
@@ -279,6 +288,12 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   const description = doc.overview ? doc.overview.trim().slice(0, 400) : undefined;
   const url = isTv ? `https://filmpire.sc/watch/${doc.id}?s=1&e=1` : `https://filmpire.sc/watch/${doc.id}`;
   const section = animationOf(doc);
+  const hasRoDub = hasRomanianDubSync({
+    tmdbId: doc.id,
+    title,
+    originalTitle: doc.original_title || doc.original_name,
+    year: validYear,
+  });
 
   return {
     id: `filmpire-${isTv ? "tv" : "movie"}-${doc.id}`,
@@ -290,6 +305,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
     kind: isTv ? "series" : "movie",
     ...(section ? { section } : {}),
     url,
+    ...(hasRoDub ? { hasRoDub: true } : {}),
   };
 }
 
@@ -521,6 +537,17 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         const age = ageIn(country, doc, title.type);
         if (age) ages[country] = age.slice(0, 20);
       }
+      const rawDate = doc.release_date || doc.first_air_date;
+      const releaseYear = rawDate ? Number.parseInt(rawDate.slice(0, 4), 10) : undefined;
+      const hasRoDub = await hasRomanianDub({
+        tmdbId: title.id,
+        type: title.type,
+        title: doc.title || doc.name || "",
+        originalTitle: doc.original_title || doc.original_name,
+        year: Number.isInteger(releaseYear) ? releaseYear : undefined,
+        isAnimation: doc.genres?.some((g) => g.name === "Animation"),
+      });
+
       const about: TitleAbout = {
         genres: namesOf(doc.genres, ABOUT_MAX.genres).map((name) => name.slice(0, 40)),
         directors: title.type === "movie" ? namesOf(doc.credits?.crew?.filter((one) => one.job === "Director"), ABOUT_MAX.directors) : [], // (a show's crew is its episodes' directors: it has its creators)
@@ -529,6 +556,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         ages,
         parts,
         similar,
+        ...(hasRoDub ? { hasRoDub: true } : {}),
       };
       const known = about.genres.length + about.directors.length + about.creators.length + about.cast.length + Object.keys(ages).length + parts.length + similar.length;
       return known > 0 ? about : null;

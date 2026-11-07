@@ -3,10 +3,11 @@ import { useLanguage, useT } from "../i18n";
 import { ageOf } from "./about";
 
 /** The age rating and the genres of a title, as a line. */
-export function AboutFacts({ about }: { about: TitleAbout }) {
+export function AboutFacts({ about, hasRoDub }: { about: TitleAbout; hasRoDub?: boolean }) {
   const t = useT();
   const age = ageOf(about.ages, useLanguage());
-  if (!age && about.genres.length === 0) return null;
+  const showDub = Boolean(hasRoDub ?? about.hasRoDub);
+  if (!age && about.genres.length === 0 && !showDub) return null;
   return (
     <p className="about-facts" data-testid="about-facts">
       {age && (
@@ -14,6 +15,11 @@ export function AboutFacts({ about }: { about: TitleAbout }) {
         <span className="about-age" data-testid="about-age" title={t("about.age")}>
           {age.rating}
           <small>{age.country}</small>
+        </span>
+      )}
+      {showDub && (
+        <span className="about-dub-badge" data-testid="about-ro-dub" title={t("about.roDubTitle")}>
+          Ro Dub
         </span>
       )}
       {about.genres.length > 0 && (
