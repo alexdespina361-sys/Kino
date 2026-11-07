@@ -8,7 +8,7 @@ its stream lookups and the relay are on one machine and one address, and the box
 | The site | `kino-web.service`, 127.0.0.1:8787, user `kino-web`, a checkout of `main` in `/opt/kino-web` |
 | Settings and secrets | `/etc/kino-web.env` (root:kino-web, 640), the lines of `kino-web.env.example` with Render's values |
 | Kept on `main` | `kino-web-update.timer` every 2 minutes runs `/opt/kino-tools/kino-web-update.sh`: install and build as Render's Build Command did, restart, and go back to the one before if `/api/health` does not answer within a minute (`journalctl -u kino-web-update`) |
-| Addresses | Caddy (`/etc/caddy/Caddyfile`), the block below; `kino4tv.com` and `www` point at the box (IONOS), `kino.24-7.ro` too (Cloudflare, proxied) |
+| Addresses | Caddy (`/etc/caddy/Caddyfile`), the block below; `kino4tv.com` and `www` point at the box (IONOS), `kino.24-7.ro` too (FreeDNS, freedns.afraid.org: its form has a CAPTCHA, so the owner saves it) |
 | Accounts | the same Postgres as before (`DATABASE_URL`). Only ONE running copy of the site may use it: Render's service stays suspended |
 
 ```
@@ -29,5 +29,5 @@ Install (as root, from this folder): `useradd --system --home-dir /nonexistent -
 Caddy block; `systemctl reload caddy`.
 
 Back to Render: resume the Render service only after `systemctl disable --now kino-web kino-web-update.timer` (one copy on the database),
-point the addresses at Render again (`kino4tv.com` A 216.24.57.1, `www` CNAME `kino-o78i.onrender.com`; `kino.24-7.ro` as it was in
-Cloudflare), and take the block out of the Caddyfile.
+point the addresses at Render again (`kino4tv.com` A 216.24.57.1, `www` CNAME `kino-o78i.onrender.com`; `kino.24-7.ro` A 216.24.57.1
+at FreeDNS), and take the block out of the Caddyfile (`/etc/caddy/Caddyfile.before-website` is the one from before).
