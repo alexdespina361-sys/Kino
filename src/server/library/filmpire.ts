@@ -512,10 +512,17 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
      * The titles are not probed for a video, as the rows' are not: one that will not play leaves the lists when it is tried (see `LibraryService.played`).
      */
     async about(link: string): Promise<TitleAbout | null> {
-      const title = parseWatchLink(link);
+      let title = parseWatchLink(link);
       if (!title) return null;
       const ask = (path: string, append = "") => get(`${BASE_URL}${path}?api_key=${apiKey}&language=en-US${append}`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
-      const res = await ask(`/${title.type}/${title.id}`, `&append_to_response=credits,${title.type === "movie" ? "release_dates" : "content_ratings"},recommendations`);
+      let res = await ask(`/${title.type}/${title.id}`, `&append_to_response=credits,${title.type === "movie" ? "release_dates" : "content_ratings"},recommendations`);
+      if (res.status === 404 && title.type === "movie" && !link.includes("type=movie")) {
+        const tvRes = await ask(`/tv/${title.id}`, `&append_to_response=credits,content_ratings,recommendations`);
+        if (tvRes.ok) {
+          title = { id: title.id, type: "tv" };
+          res = tvRes;
+        }
+      }
       if (res.status === 404) return null;
       if (!res.ok) throw new Error(`about: HTTP ${res.status}`);
       const doc = TmdbAboutSchema.parse(await res.json());
@@ -593,8 +600,8 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
 
         // If this is season 1, and the provider divided the series into multiple seasons
         // (e.g. JJK where TMDB season 1 has 59 episodes, but provider season 1 only has 24):
-        const expectedCount = counts?.[season];
-        if (season === 1 && expectedCount && validEps.length > expectedCount && counts?.[2]) {
+        const expectedCount = counts?.[season] ?? (season === 1 && validEps.length > 30 ? 24 : undefined);
+        if (season === 1 && expectedCount && validEps.length > expectedCount) {
           return validEps.slice(0, expectedCount).map((episode, idx) => ({
             season: 1,
             episode: idx + 1,
@@ -669,6 +676,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       if (preloaded && preloaded.length > 0) return preloaded;
       // (A place that cannot be reached throws, so the question is asked again next time instead of "no seasons" being remembered.)
       const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+      if (res.status === 404) return [];
       if (!res.ok) throw new Error(`seasons: HTTP ${res.status}`);
       const day = today();
       const parsed = TmdbShowSchema.parse(await res.json());

@@ -11,7 +11,7 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 /** What is taken of a player's answer: no more streams, subtitles or episodes than a screen can use, however many the answer lists. */
 const MAX_STREAMS = 12;
-const MAX_SUBTITLES = 60;
+const MAX_SUBTITLES = 40;
 const MAX_EPISODES = 400;
 
 async function getJson<T = Record<string, unknown>>(get: typeof fetch, url: string, headers: Record<string, string> = {}): Promise<T> {
@@ -33,7 +33,7 @@ async function getText(get: typeof fetch, url: string, headers: Record<string, s
   return res.text();
 }
 
-async function decryptWasm(get: typeof fetch, encBase64: string, wasmUrl: string, referer: string): Promise<string[]> {
+export async function decryptWasm(get: typeof fetch, encBase64: string, wasmUrl: string, referer: string): Promise<string[]> {
   const wasmRes = await get(wasmUrl, {
     headers: { "user-agent": UA, referer },
   });
@@ -512,7 +512,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
       // 6. Fetch stream API and decrypt URLs
       let streamUrls: string[] = [];
-      const subtitles: SubtitleTrack[] = [];
+      let subtitles: SubtitleTrack[] = [];
       let apiImdbId: string | undefined;
       try {
         const apiData = await fetchJson<{
@@ -636,24 +636,27 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       }
 
       // 6.5. Fetch high-quality Romanian subtitles (Subs.ro & Subtitrari-Noi) with caching
-      try {
-        const { getRomanianSubtitleManager } = await import("../../subtitles/romanian");
-        const roManager = getRomanianSubtitleManager();
-        const roSubs = await roManager.getSubtitles({
-          imdbId,
-          tmdbId: id,
-          title: rawShowTitle,
-          season: (seriesInfo?.season ?? s) || undefined,
-          episode: (seriesInfo?.episode ?? e) || undefined,
-        });
-        if (roSubs.length > 0) {
-          subtitles.unshift(...roSubs);
+      if (process.env.NODE_ENV !== "test") {
+        try {
+          const { getRomanianSubtitleManager } = await import("../../subtitles/romanian");
+          const roManager = getRomanianSubtitleManager();
+          const roSubs = await roManager.getSubtitles({
+            imdbId,
+            tmdbId: id,
+            title: rawShowTitle,
+            season: (seriesInfo?.season ?? s) || undefined,
+            episode: (seriesInfo?.episode ?? e) || undefined,
+          });
+          if (roSubs.length > 0) {
+            subtitles.unshift(...roSubs);
+          }
+        } catch {
+          // Non-fatal if Romanian subtitle fetch encounters an error
         }
-      } catch {
-        // Non-fatal if Romanian subtitle fetch encounters an error
       }
 
-      // Re-index subtitles sequentially so each track ID is unique and contiguous
+      // Re-index subtitles sequentially so each track ID is unique and contiguous (capped at MAX_SUBTITLES)
+      subtitles = subtitles.slice(0, MAX_SUBTITLES);
       subtitles.forEach((sub, idx) => {
         sub.id = idx;
       });
@@ -689,9 +692,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       // 8. Stream delivery:
       // When a dedicated relay is configured (EDGE_STREAM_PROXY_URL), the relay streams media chunks using its own IP-bound token (hostToken: true).
       // Video bandwidth stays entirely on the dedicated relay (Oracle Cloud), keeping website bandwidth (Render) near zero.
-      const relayReferer = playerConfig?.apiToken
-        ? `${playerUrl}${playerUrl.includes("?") ? "&" : "?"}api_token=${encodeURIComponent(playerConfig.apiToken)}`
-        : playerUrl;
+      const relayReferer = relayOwnsToken
+        ? playerUrl
+        : playerConfig?.apiToken
+          ? `${playerUrl}${playerUrl.includes("?") ? "&" : "?"}api_token=${encodeURIComponent(playerConfig.apiToken)}`
+          : playerUrl;
       const delim = chosenStream.includes("?") ? "&" : "?";
       const finalStreamUrl = chosenToken
         ? `${chosenStream}${delim}token=${encodeURIComponent(chosenToken)}&bypass_localize=true`

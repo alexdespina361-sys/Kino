@@ -156,6 +156,14 @@ export async function fetchTmdbAnimeSeasonDetails(
   }
 }
 
+function normalizeAnimeHeavenTitle(raw: string): string {
+  const title = decodeHtmlEntities(raw);
+  if (/^sorcery fight$/i.test(title)) return "JUJUTSU KAISEN";
+  if (/^sorcery fight 2nd season$/i.test(title)) return "JUJUTSU KAISEN Season 2";
+  if (/^sorcery fight 0$/i.test(title)) return "JUJUTSU KAISEN 0";
+  return title;
+}
+
 export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): LibrarySource {
   const get = options.fetch ?? providerFetch();
   const timeoutMs = options.timeoutMs ?? 10_000;
@@ -211,7 +219,7 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
       const image = imgPath.startsWith("http") ? imgPath : `${BASE}/${imgPath.replace(/^\//, "")}`;
       items.push({
         id: `animeheaven-series-${slug}`,
-        title: decodeHtmlEntities(rawTitle),
+        title: normalizeAnimeHeavenTitle(rawTitle),
         kind: "series",
         section: "anime",
         image,
@@ -230,7 +238,7 @@ export function animeHeavenSource(options: AnimeHeavenSourceOptions = {}): Libra
         const rawTitle = inner.match(/alt=['"]([^'"]+)['"]/i)?.[1]?.replace(/Anime Poster/i, "").trim();
         if (!rawTitle) continue;
         seen.add(slug);
-        let title = decodeHtmlEntities(rawTitle);
+        let title = normalizeAnimeHeavenTitle(rawTitle);
         if (/^sorcery fight$/i.test(title)) {
           title = "JUJUTSU KAISEN";
         } else if (/^sorcery fight 2nd season$/i.test(title)) {
