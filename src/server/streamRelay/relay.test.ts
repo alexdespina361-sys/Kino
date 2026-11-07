@@ -1,7 +1,7 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { buildStreamRelay } from "./app";
+import { buildStreamRelay, type RelayFailure } from "./app";
 import { signedRelayUrl } from "./links";
 import { streamAddress } from "../resolvers/adapters/streamAddress";
 
@@ -140,6 +140,23 @@ describe("a separate streaming relay", () => {
     expect((await relay.inject(signed("/pl/master.m3u8", true))).statusCode).toBe(200);
     expect(asked.filter((r) => r.path === "/generate.php")).toHaveLength(2);
     expect(asked.at(-1)!.token).toBe(issuedToken);
+  });
+
+  it("writes down every answer that says no - the status, the host, the file and what was said - and never the signed link or a token", async () => {
+    const written: RelayFailure[] = [];
+    relay = buildStreamRelay({ key, isAllowedAddress: () => true, log: (failure) => void written.push(failure) });
+    expect((await relay.inject(signed("/blocked.vtt"))).statusCode).toBe(403);
+    expect((await relay.inject(`/api/proxy?url=${encodeURIComponent(origin)}`)).statusCode).toBe(403);
+    tokenStatus = 403;
+    expect((await relay.inject(signed("/pl/master.m3u8?token=website-ip-token", true))).statusCode).toBe(502);
+    tokenStatus = 200;
+    expect((await relay.inject(signed("/seg.m4s"))).statusCode).toBe(200);
+    expect(written).toHaveLength(3);
+    expect(written[0]).toEqual({ status: 403, host: "127.0.0.1", file: "blocked.vtt", error: "Blocked by provider" });
+    expect(written[1]).toMatchObject({ status: 403, error: expect.stringContaining("INVALID_RELAY_LINK") });
+    expect(written[1]).not.toHaveProperty("host");
+    expect(written[2]).toMatchObject({ status: 502, host: "127.0.0.1", file: "master.m3u8", error: expect.stringContaining("UPSTREAM_TOKEN_FAILED") });
+    expect(JSON.stringify(written)).not.toMatch(/website-ip-token|sig=|expires=|\/api\/proxy/);
   });
 
   it("reports a blocked token endpoint without making an unauthorized media request", async () => {

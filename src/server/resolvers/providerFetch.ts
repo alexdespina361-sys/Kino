@@ -1,10 +1,10 @@
 import { noteUpstream, withLookupSignal } from "./lookup";
-import { SafeFetchError, safeFetch, type SafeFetchOptions } from "./safe-fetch";
+import { SafeFetchError, safeFetch, type FetchTiming, type SafeFetchOptions } from "./safe-fetch";
 
 /** What one answer of a supported site may weigh. A longer one is cut off here: a cut list of titles or a cut module does not parse, a cut page has only less in it. */
 export const PROVIDER_MAX_BYTES = 8 * 1024 * 1024;
 
-export type ProviderFetchOptions = Pick<SafeFetchOptions, "isAllowedAddress" | "timeoutMs" | "maxBytes" | "maxRedirects">;
+export type ProviderFetchOptions = Pick<SafeFetchOptions, "isAllowedAddress" | "timeoutMs" | "connectTimeoutMs" | "maxBytes" | "maxRedirects">;
 
 /** The statuses whose answer has no body (a `Response` with a body and one of these is an error; a 1xx never gets this far). */
 const NO_BODY = new Set([204, 205, 304]);
@@ -28,14 +28,14 @@ export function providerFetch(options: ProviderFetchOptions = {}): typeof fetch 
     const address = request?.url ?? String(input);
     const signal = withLookupSignal(init?.signal);
     const started = performance.now();
-    const note = () => {
+    const note = (timing?: FetchTiming) => {
       let host = "";
       try {
         host = new URL(address).hostname;
       } catch {
         /* not an address: `safeFetch` says so */
       }
-      noteUpstream(host, performance.now() - started);
+      noteUpstream(host, performance.now() - started, timing);
     };
     try {
       const page = await safeFetch(address, {
@@ -45,11 +45,11 @@ export function providerFetch(options: ProviderFetchOptions = {}): typeof fetch 
         anyType: true,
         ...(signal ? { signal } : {}),
       });
-      note();
+      note(page.timing);
       const body = page.bytes && !NO_BODY.has(page.status) ? new Uint8Array(page.bytes.buffer as ArrayBuffer, page.bytes.byteOffset, page.bytes.byteLength) : null;
       return new Response(body, { status: page.status, headers: { "content-type": page.contentType } });
     } catch (error) {
-      note();
+      note(error instanceof SafeFetchError ? error.timing : undefined);
       // (As with `fetch`, an answer that says no is an answer: whoever asks looks at `ok`. A place that cannot be reached, or may not be, throws.)
       if (error instanceof SafeFetchError && error.code === "bad_status") return new Response(null, { status: error.status ?? 502 });
       throw error;

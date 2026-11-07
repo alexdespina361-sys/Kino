@@ -129,11 +129,28 @@ describe("where a look-up spent its time", () => {
     };
     const registry = new ResolverRegistry([], asking, log);
     await registry.resolve("https://a.example/1");
-    const upstream = events[0]!.upstream as { requests: number; ms: number; slowest: { host: string; ms: number } };
+    const upstream = events[0]!.upstream as { requests: number; ms: number; timeouts?: number; slowest: { host: string; ms: number; connectMs: number; waitMs: number } };
     expect(upstream.requests).toBe(3);
     expect(upstream.ms).toBeGreaterThanOrEqual(30);
-    expect(upstream.slowest).toEqual({ host: "127.0.0.1", ms: upstream.ms });
+    expect(upstream.slowest).toMatchObject({ host: "127.0.0.1", ms: upstream.ms, address: "127.0.0.1" });
+    // (The time went on waiting for the answers, not on connecting: the first connection was made at once, the others were kept open.)
+    expect(upstream.slowest.waitMs).toBeGreaterThanOrEqual(30);
+    expect(upstream.slowest.connectMs).toBeLessThan(upstream.slowest.waitMs);
+    expect(upstream).not.toHaveProperty("timeouts");
     expect(JSON.stringify(events)).not.toMatch(/secret|\/one|\/two/);
+  });
+
+  it("counts a question that ran out of time as a timeout of its host, with the time spent waiting for the answer", async () => {
+    handler = () => {}; // (never answers)
+    const get = providerFetch({ ...loopbackOnly, timeoutMs: 40 });
+    const asking: SiteAdapter = { id: "asking", domains: [], resolve: async () => (await get(`${base}/slow`).catch(() => {}), ok("asking")) };
+    const registry = new ResolverRegistry([], asking, log);
+    await registry.resolve("https://a.example/1");
+    const upstream = events[0]!.upstream as { timeouts?: number; slowest: { ms: number; connectMs: number; waitMs: number; timeouts?: number } };
+    expect(upstream.timeouts).toBe(1);
+    expect(upstream.slowest.timeouts).toBe(1);
+    expect(upstream.slowest.waitMs).toBeGreaterThanOrEqual(30);
+    expect(upstream.slowest.connectMs + upstream.slowest.waitMs).toBeLessThanOrEqual(upstream.slowest.ms + 1);
   });
 
   it("counts nothing outside a look-up, and logs no `upstream` for a look-up that asked nobody", async () => {

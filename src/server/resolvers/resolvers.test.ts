@@ -186,6 +186,24 @@ describe("ResolverRegistry", () => {
     };
     const linkOf = (result: ResolveResult) => (result.status === "success" ? result.media.stream.url : undefined);
 
+    it("keeps a link that carries the site's token for 45 seconds, and one that carries none for ten minutes", async () => {
+      let now = 1_000_000;
+      const { adapterOfTokens, asked } = tokens();
+      let plain = 0;
+      const adapterOfPlain: SiteAdapter = { id: "plain", domains: ["plain.example"], resolve: async () => ((plain += 1), { status: "success", resolver: "plain", media: { stream: { url: `https://x/${plain}/master.m3u8`, type: "hls" } } }) };
+      const registry = new ResolverRegistry([adapterOfPlain], adapterOfTokens, log, () => now);
+      await registry.resolve("https://a.example/1");
+      await registry.resolve("https://plain.example/1");
+      now += 46_000;
+      await registry.resolve("https://a.example/1");
+      await registry.resolve("https://plain.example/1");
+      expect(asked()).toBe(2); // (asked again: the token it came with is about to run out)
+      expect(plain).toBe(1); // (kept: nothing in it runs out)
+      now += 600_000;
+      await registry.resolve("https://plain.example/1");
+      expect(plain).toBe(2);
+    });
+
     it("skips what was kept for the address, asks again, and keeps the new answer", async () => {
       const { adapterOfTokens, asked } = tokens();
       const registry = new ResolverRegistry([], adapterOfTokens, log);

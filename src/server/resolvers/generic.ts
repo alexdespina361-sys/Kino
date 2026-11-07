@@ -75,10 +75,10 @@ export function createGenericResolver({ fetch, fetchOptions }: GenericOptions): 
       try {
         page = await fetch(url, { ...fetchOptions, signal: withLookupSignal(fetchOptions?.signal) });
       } catch (error) {
-        noteUpstream(url.hostname, performance.now() - started);
+        noteUpstream(url.hostname, performance.now() - started, error instanceof SafeFetchError ? error.timing : undefined);
         return resultFromFetchError(error);
       }
-      noteUpstream(url.hostname, performance.now() - started);
+      noteUpstream(url.hostname, performance.now() - started, page.timing);
 
       const servedType = streamTypeOf(page.url.href, page.contentType);
       if (servedType && !page.body) {

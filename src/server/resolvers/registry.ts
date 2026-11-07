@@ -140,10 +140,11 @@ export class ResolverRegistry {
 
     if (result.status === "success") {
       result = { ...result, media: completeSeries({ ...result.media, page: result.media.page ?? raw }) };
-      // Filmpire / short-lived upstream provider tokens expire in ~60s; cache for 45s to avoid serving stale tokens.
-      const isShortLived = result.resolver === "filmpire" || /filmpire\.(sc|cc)/.test(raw);
-      const ttl = isShortLived ? 45_000 : 600_000;
-      this.keep(raw, result, started + ttl);
+      // A link that carries the site's own token is good for about a minute, and is kept for less than that; any other for ten minutes (a link that the relay
+      // authorizes itself carries none). A kept link that has run out all the same is what the screen's second look (`fresh`) is for.
+      const { url: streamUrl, directUrl } = result.media.stream;
+      const carriesToken = /[?&]token=/.test(`${streamUrl} ${directUrl ?? ""}`);
+      this.keep(raw, result, started + (carriesToken ? 45_000 : 600_000));
       if (!isPrefetch && result.media.series?.next?.url) {
         // Pre-resolve only the immediate next episode in the background, a while from now (see `DEFAULT_PREFETCH_DELAY_MS`).
         const nextUrl = result.media.series.next.url;

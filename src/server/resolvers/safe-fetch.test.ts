@@ -78,9 +78,32 @@ describe("safeFetch", () => {
     expect(page).toMatchObject({ contentType: "video/mp4", body: "" });
   });
 
-  it("times out on a server that never answers", async () => {
+  it("times out on a server that never answers, and says the connection was made but the answer never began", async () => {
     handler = () => {};
-    expect((await failure(safeFetch(`${base}/hang`, { ...loopbackOnly, timeoutMs: 200 }))).code).toBe("timeout");
+    const error = await failure(safeFetch(`${base}/hang`, { ...loopbackOnly, timeoutMs: 200 }));
+    expect(error.code).toBe("timeout");
+    expect(error.timing).toMatchObject({ timedOut: "answer", address: "127.0.0.1" });
+    expect(error.timing?.connectMs).toBeGreaterThanOrEqual(0);
+    expect(error.timing).not.toHaveProperty("firstByteMs");
+  });
+
+  it("says how long connecting took and when the answer began, and which address answered", async () => {
+    handler = (_req, res) => setTimeout(() => res.writeHead(200, { "content-type": "text/plain" }).end("hi"), 20);
+    const page = await safeFetch(`${base}/timed`, loopbackOnly);
+    expect(page.timing?.address).toBe("127.0.0.1");
+    expect(page.timing?.connectMs).toBeGreaterThanOrEqual(0);
+    expect(page.timing?.firstByteMs).toBeGreaterThanOrEqual((page.timing?.connectMs ?? 0) + 15);
+    expect(page.timing).not.toHaveProperty("timedOut");
+  });
+
+  it("gives up on an address that never connects within the connect time, well before the whole budget", async () => {
+    // (192.0.2.1 is TEST-NET-1: an address nothing answers at, so the connection is only ever attempted.)
+    const started = performance.now();
+    const error = await failure(safeFetch("http://192.0.2.1/", { isAllowedAddress: () => true, timeoutMs: 10_000, connectTimeoutMs: 200 }));
+    expect(error.code).toBe("timeout");
+    expect(performance.now() - started).toBeLessThan(3_000);
+    expect(error.timing).toMatchObject({ timedOut: "connect" });
+    expect(error.timing).not.toHaveProperty("connectMs");
   });
 
   it("reports HTTP errors with their status", async () => {

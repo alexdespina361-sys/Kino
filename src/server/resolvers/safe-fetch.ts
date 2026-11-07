@@ -6,7 +6,27 @@ import { isPublicAddress } from "./ip";
 
 export type FetchFailure = "invalid_url" | "blocked" | "timeout" | "network" | "too_many_redirects" | "bad_status";
 
+/**
+ * How long the parts of one request took, from its start: for telling a site that is slow to connect to from one that is slow to answer, and a connection
+ * made anew from one kept open since an earlier request. Of the last hop, when a request was redirected.
+ */
+export interface FetchTiming {
+  /** When the connection was made (TLS included). Absent when it never was, or when a kept connection was used. */
+  connectMs?: number;
+  /** When the first byte of the answer came. Absent when none did. */
+  firstByteMs?: number;
+  /** The connection was one kept open from an earlier request. */
+  reused?: boolean;
+  /** The address connected to. */
+  address?: string;
+  /** What ran out, when the request timed out: the connection was never made, or the answer never began. */
+  timedOut?: "connect" | "answer";
+}
+
 export class SafeFetchError extends Error {
+  /** How far the request got before it failed (see `FetchTiming`); set by `safeFetch`. */
+  timing?: FetchTiming;
+
   constructor(
     readonly code: FetchFailure,
     message: string,
@@ -19,6 +39,11 @@ export class SafeFetchError extends Error {
 export interface SafeFetchOptions {
   /** Whole-request budget including redirects. */
   timeoutMs?: number;
+  /**
+   * How long the connection to one address may take to be made (TLS included) before the request fails as a timeout. Shorter than the whole-request budget: a
+   * connection that is not made within a few seconds is not going to be, and whoever asks (an adapter that tries again) is better told so at once.
+   */
+  connectTimeoutMs?: number;
   /** Body bytes kept; the rest is dropped (the page is parsed from what we have). */
   maxBytes?: number;
   maxRedirects?: number;
@@ -44,11 +69,13 @@ export interface FetchedPage {
   truncated: boolean;
   /** What was read, for `anyType` only. */
   bytes?: Buffer;
+  /** How long the parts of the request took (of its last hop). */
+  timing?: FetchTiming;
 }
 
 export type SafeFetch = (url: string | URL, options?: SafeFetchOptions) => Promise<FetchedPage>;
 
-const DEFAULTS = { timeoutMs: 10_000, maxBytes: 2 * 1024 * 1024, maxRedirects: 5 };
+const DEFAULTS = { timeoutMs: 10_000, connectTimeoutMs: 6_000, maxBytes: 2 * 1024 * 1024, maxRedirects: 5 };
 const TEXT_TYPES = /^(text\/|application\/(json|ld\+json|xhtml\+xml|xml|javascript|x-javascript))/;
 
 /** Throws unless the URL is a plain http(s) URL pointing at an allowed address literal or a hostname. */
@@ -88,10 +115,33 @@ export type net_lookup = (
   callback: (error: NodeJS.ErrnoException | null, address: string, family: number) => void,
 ) => void;
 
-function get(url: URL, headers: Record<string, string>, lookup: net_lookup, signal: AbortSignal): Promise<http.IncomingMessage> {
+function get(url: URL, headers: Record<string, string>, lookup: net_lookup, signal: AbortSignal, connectTimeoutMs: number, timing: FetchTiming): Promise<http.IncomingMessage> {
   const lib = url.protocol === "https:" ? https : http;
+  const started = performance.now();
   return new Promise((resolve, reject) => {
-    const req = lib.request(url, { method: "GET", headers, lookup, signal }, resolve);
+    const req = lib.request(url, { method: "GET", headers, lookup, signal }, (res) => {
+      timing.firstByteMs = performance.now() - started;
+      resolve(res);
+    });
+    req.on("socket", (socket) => {
+      // (A connection kept open from an earlier request is handed over already made; a new one is still connecting.)
+      if (!socket.connecting) {
+        timing.reused = true;
+        timing.address = socket.remoteAddress;
+        return;
+      }
+      const made = lib === https ? "secureConnect" : "connect";
+      const waiting = setTimeout(() => {
+        timing.timedOut = "connect";
+        req.destroy(new SafeFetchError("timeout", "connecting timed out"));
+      }, connectTimeoutMs);
+      socket.once(made, () => {
+        clearTimeout(waiting);
+        timing.connectMs = performance.now() - started;
+        timing.address = socket.remoteAddress;
+      });
+      socket.once("close", () => clearTimeout(waiting));
+    });
     req.on("error", reject);
     req.end();
   });
@@ -100,6 +150,7 @@ function get(url: URL, headers: Record<string, string>, lookup: net_lookup, sign
 export const safeFetch: SafeFetch = async (input, options = {}) => {
   // (An option that is given as `undefined` is no option: it must not take the bound away.)
   const timeoutMs = options.timeoutMs ?? DEFAULTS.timeoutMs;
+  const connectTimeoutMs = options.connectTimeoutMs ?? DEFAULTS.connectTimeoutMs;
   const maxBytes = options.maxBytes ?? DEFAULTS.maxBytes;
   const maxRedirects = options.maxRedirects ?? DEFAULTS.maxRedirects;
   const isAllowedAddress = options.isAllowedAddress ?? isPublicAddress;
@@ -128,10 +179,12 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
   for (const [name, value] of Object.entries(options.headers ?? {})) headers[name.toLowerCase()] = value;
   headers["accept-encoding"] = "identity";
 
+  let timing: FetchTiming = {};
   try {
     for (let hop = 0; hop <= maxRedirects; hop++) {
       assertAllowedUrl(url, isAllowedAddress);
-      const res = await get(url, headers, lookup, controller.signal);
+      timing = {};
+      const res = await get(url, headers, lookup, controller.signal, connectTimeoutMs, timing);
 
       const status = res.statusCode ?? 0;
       const location = res.headers.location;
@@ -156,14 +209,21 @@ export const safeFetch: SafeFetch = async (input, options = {}) => {
       const textual = TEXT_TYPES.test(contentType);
       if (!textual && !options.anyType) {
         res.destroy(); // media / binary: report the type, never download it
-        return { url, status, contentType, body: "", truncated: false };
+        return { url, status, contentType, body: "", truncated: false, timing };
       }
       const read = await readCapped(res, maxBytes);
-      return { url, status, contentType, body: textual ? read.bytes.toString("utf8") : "", truncated: read.truncated, ...(options.anyType ? { bytes: read.bytes } : {}) };
+      return { url, status, contentType, body: textual ? read.bytes.toString("utf8") : "", truncated: read.truncated, ...(options.anyType ? { bytes: read.bytes } : {}), timing };
     }
     throw new SafeFetchError("too_many_redirects", "too many redirects");
   } catch (error) {
-    throw normalize(error, controller.signal);
+    const failure = normalize(error, controller.signal);
+    // (A request that ran out of time as a whole: what it was still waiting for says where the other end is slow.)
+    if (failure.code === "timeout" && !timing.timedOut) {
+      if (timing.connectMs === undefined && !timing.reused) timing.timedOut = "connect";
+      else if (timing.firstByteMs === undefined) timing.timedOut = "answer";
+    }
+    failure.timing = timing;
+    throw failure;
   } finally {
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", onAbort);
