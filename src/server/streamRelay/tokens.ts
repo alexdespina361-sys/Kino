@@ -1,6 +1,8 @@
 import { openUpstream } from "../proxy";
 import { isPublicAddress } from "../resolvers/ip";
 
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
 interface Token { value: string; expires: number }
 
 /** Tokens are IP-bound. This runs on the relay that downloads the media, never on the website or in the viewer's browser. */
@@ -56,6 +58,7 @@ export class HostTokens {
           const { response: refRes } = await openUpstream(
             refUrl,
             {
+              "user-agent": UA,
               accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
               referer: embedReferer,
             },
@@ -112,7 +115,9 @@ export class HostTokens {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const opened = await openUpstream(genUrl, {
-          referer, accept: "*/*",
+          "user-agent": UA,
+          referer,
+          accept: "*/*",
         }, this.allowedAddress, AbortSignal.timeout(15_000));
         response = opened.response;
         break;

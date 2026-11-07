@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyReply, type FastifyRequest } from "fastify";
 import { handleStreamProxy, type ProxyStats } from "../proxy";
 import { isPublicAddress } from "../resolvers/ip";
 import { assertAllowedUrl } from "../resolvers/safe-fetch";
@@ -21,8 +21,8 @@ export function buildStreamRelay(options: { key: string; isAllowedAddress?: (add
     reply.header("Cache-Control", "no-store");
   });
   app.get("/health", async () => ({ ok: true, role: "stream-relay", ...stats }));
-  app.options("/api/proxy", async (_request, reply) => reply.code(204).send());
-  app.get<{ Querystring: Record<string, unknown> }>("/api/proxy", async (request, reply) => {
+
+  const proxyHandler = async (request: FastifyRequest<{ Querystring: Record<string, unknown> }>, reply: FastifyReply) => {
     const link = verifyRelayLink(request.query, options.key);
     if (!link) return reply.code(403).send({ error: "INVALID_RELAY_LINK" });
     let target: URL;
@@ -51,6 +51,11 @@ export function buildStreamRelay(options: { key: string; isAllowedAddress?: (add
         return signed.slice("http://relay".length);
       },
     });
-  });
+  };
+
+  app.options("/api/proxy", async (_request, reply) => reply.code(204).send());
+  app.options("/", async (_request, reply) => reply.code(204).send());
+  app.get<{ Querystring: Record<string, unknown> }>("/api/proxy", proxyHandler);
+  app.get<{ Querystring: Record<string, unknown> }>("/", proxyHandler);
   return app;
 }
