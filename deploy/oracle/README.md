@@ -12,10 +12,15 @@ its stream lookups and the relay are on one machine and one address, and the box
 | Accounts | the same Postgres as before (`DATABASE_URL`). Only ONE running copy of the site may use it: Render's service stays suspended |
 
 ```
-kino.24-7.ro, kino4tv.com, www.kino4tv.com {
+kino.24-7.ro, kino4tv.com {
 	reverse_proxy 127.0.0.1:8787
 }
+www.kino4tv.com {
+	redir https://kino4tv.com{uri} permanent
+}
 ```
+
+`www` is sent on to the plain address, as Render did: Google sign-in only knows `kino4tv.com` and `kino.24-7.ro` (`GOOGLE_REDIRECT_URIS`).
 
 Install (as root, from this folder): `useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin kino-web`;
 `git clone https://github.com/alexdespina361-sys/Kino.git /opt/kino-web`; `install -m 755 kino-web-update.sh /opt/kino-tools/`;
