@@ -12,6 +12,9 @@ vi.mock("./providerFetch", async (importOriginal) => {
   const original = await importOriginal<typeof import("./providerFetch")>();
   return { ...original, providerFetch: vi.fn(original.providerFetch) };
 });
+// (The Romanian subtitle sites and the dub catalogue are asked by their own modules, with their own fetch: here they know nothing, at once. What the adapter does with them is tested in adapterExtras.test.ts.)
+vi.mock("../subtitles/romanian", () => ({ getRomanianSubtitleManager: () => ({ getSubtitles: async () => [] }) }));
+vi.mock("../dubs/romanian", () => ({ getRomanianDubSource: async () => null }));
 
 /*
  * The adapters ask the sites they are made for, and those name the next address to ask. Every question has to go through the one fetch the adapter is given

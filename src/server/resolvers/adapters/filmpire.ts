@@ -176,10 +176,108 @@ export async function getHostToken(
 export interface FilmpireAdapterOptions {
   /** How the sites are asked. Default: `providerFetch()`, which goes to public addresses only and reads no more than a bounded answer. */
   fetch?: typeof fetch;
+  /** What is looked for beside the stream (see `ExtrasLookup`). Default: the subtitle sites and the Romanian dub catalogue. */
+  extras?: ExtrasLookup;
+  /** How long the film waits for the extras once its stream is known (see `EXTRAS_GRACE_MS`). Tests shorten it. */
+  extrasGraceMs?: number;
+}
+
+/** The title whose extras are wanted: its numbers, its name, and the episode when it is a series. */
+export interface ExtrasAsk {
+  imdbId?: string;
+  tmdbId: string;
+  title?: string;
+  isTv: boolean;
+  season?: number;
+  episode?: number;
+}
+
+/**
+ * What is looked for beside the stream, each on its own: the subtitles the subtitle site lists (through the proxy), the Romanian subtitles the Romanian
+ * sites have (fetched and kept by `RomanianSubtitleManager`), and a Romanian dubbed source when the catalogue knows one. They are asked while the stream
+ * is being found, not after it, and the film does not wait for them past a moment (see `EXTRAS_GRACE_MS`).
+ */
+export interface Extras {
+  listed: Promise<SubtitleTrack[]>;
+  romanian: Promise<SubtitleTrack[]>;
+  dub: Promise<AlternateSource | undefined>;
+}
+export type ExtrasLookup = (ask: ExtrasAsk, get: typeof fetch) => Extras;
+
+/**
+ * How long after the stream is known the look-up waits for the extras. A viewer waits for the film, not for a fourth subtitle site; what has come by then
+ * goes with the film, and the rest is for the next look (the Romanian sites' answers are kept once they come, so the next episode has them from the start).
+ * The subtitle site's list takes a fraction of a second; the Romanian sites, which send whole archives, a few seconds when the title is new to them.
+ */
+export const EXTRAS_GRACE_MS = 4_000;
+
+/** The subtitles the subtitle site (OpenSubtitles, through strem.io) lists for a title, as tracks through the proxy: no more than twelve in one language. */
+async function listedSubtitles(get: typeof fetch, imdbId: string, season?: number, episode?: number): Promise<SubtitleTrack[]> {
+  const endpoint =
+    season && episode
+      ? `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${season}:${episode}.json`
+      : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
+  const subData = await getJson<{ subtitles?: Array<{ id: string; url: string; lang: string; subtitleFileName?: string }> }>(get, endpoint);
+  const tracks: SubtitleTrack[] = [];
+  const seenLangs = new Set<string>();
+  for (const item of subData?.subtitles ?? []) {
+    if (tracks.length >= MAX_SUBTITLES) break;
+    if (!item.url) continue;
+    const langCode = (item.lang || "en").toLowerCase();
+    const count = [...seenLangs].filter((l) => l.startsWith(langCode)).length;
+    if (count >= 12) continue;
+    seenLangs.add(`${langCode}_${count}`);
+
+    const langName = LANG_NAMES[langCode] || langCode.toUpperCase();
+    let label = langName;
+    if (item.subtitleFileName) {
+      const clean = item.subtitleFileName.replace(/\.(srt|vtt)$/i, "").trim();
+      label = count === 0 ? `${langName} · ${clean}` : `${langName} (${count + 1}) · ${clean}`;
+    } else if (count > 0) {
+      label = `${langName} (${count + 1})`;
+    }
+    tracks.push({
+      id: tracks.length,
+      url: `/api/proxy?url=${encodeURIComponent(item.url)}&format=vtt`,
+      label: label.slice(0, 100),
+      lang: langCode,
+    });
+  }
+  return tracks;
+}
+
+/** The extras as the server looks for them: the subtitle site, the Romanian subtitle sites and the Romanian dub catalogue, all three at once. */
+export const lookForExtras: ExtrasLookup = (ask, get) => ({
+  listed: ask.imdbId ? listedSubtitles(get, ask.imdbId, ask.isTv ? ask.season : undefined, ask.isTv ? ask.episode : undefined) : Promise.resolve([]),
+  romanian: (async () => {
+    const { getRomanianSubtitleManager } = await import("../../subtitles/romanian");
+    return getRomanianSubtitleManager().getSubtitles({ imdbId: ask.imdbId, tmdbId: ask.tmdbId, title: ask.title, season: ask.season, episode: ask.episode });
+  })(),
+  dub: (async () => {
+    const { getRomanianDubSource } = await import("../../dubs/romanian");
+    const roDub = await getRomanianDubSource({ tmdbId: ask.tmdbId, imdbId: ask.imdbId, title: ask.title ?? "", type: ask.isTv ? "tv" : "movie", season: ask.season, episode: ask.episode });
+    return roDub ? { label: "Română (Dublat)", stream: roDub.stream, subtitles: roDub.subtitles } : undefined;
+  })(),
+});
+
+/** What of the extras has come within `graceMs`: each that has not (or that failed) is as if it had found nothing. */
+async function extrasByThen(extras: Extras, graceMs: number): Promise<[SubtitleTrack[], SubtitleTrack[], AlternateSource | undefined]> {
+  let timer: NodeJS.Timeout | undefined;
+  const over = new Promise<void>((done) => {
+    timer = setTimeout(done, graceMs);
+  });
+  const byThen = <T>(value: Promise<T>, fallback: T): Promise<T> => Promise.race([value.catch(() => fallback), over.then(() => fallback)]);
+  try {
+    return await Promise.all([byThen(extras.listed, []), byThen(extras.romanian, []), byThen(extras.dub, undefined)]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): SiteAdapter {
   const get = options.fetch ?? providerFetch();
+  const extras = options.extras ?? lookForExtras;
+  const extrasGraceMs = options.extrasGraceMs ?? EXTRAS_GRACE_MS;
   const fetchJson = <T = Record<string, unknown>>(url: string, headers: Record<string, string> = {}): Promise<T> => getJson<T>(get, url, headers);
   const fetchText = (url: string, headers: Record<string, string> = {}): Promise<string> => getText(get, url, headers);
   return {
@@ -210,8 +308,10 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let title = "Filmpire Video";
       let tmdbImdbId: string | undefined;
       let rawShowTitle: string | undefined;
+      /** Whether TMDB says the title is animated (genre 16); unknown when TMDB did not answer, or said nothing of its genres. */
+      let animated: boolean | undefined;
       try {
-        const tmdbData = await fetchJson<{ title?: string; name?: string; imdb_id?: string }>(
+        const tmdbData = await fetchJson<{ title?: string; name?: string; imdb_id?: string; genres?: Array<{ id?: number }> }>(
           `https://api.themoviedb.org/3/${contentType}/${id}?api_key=${FILMPIRE_TMDB_API_KEY}`,
         );
         if (tmdbData.title || tmdbData.name) {
@@ -220,12 +320,20 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           if (s && e) title += ` · S${s} E${e}`;
         }
         if (tmdbData.imdb_id) tmdbImdbId = tmdbData.imdb_id;
+        if (Array.isArray(tmdbData.genres)) animated = tmdbData.genres.some((genre) => genre?.id === 16);
       } catch {
         // Non-fatal if TMDB is unreachable
       }
 
+      // The extras (see `ExtrasLookup`) are asked for now, while the sites of the stream are asked, when TMDB has said which title this is; otherwise once
+      // the stream's answer has said (below). The season and episode are the link's: a series without them is at its first.
+      const askExtras = (imdbId: string | undefined): Extras =>
+        extras({ imdbId, tmdbId: id, title: rawShowTitle, isTv, ...(isTv ? { season: Number(s || "1"), episode: Number(e || "1") } : {}) }, get);
+      let pendingExtras: Extras | undefined = tmdbImdbId ? askExtras(tmdbImdbId) : undefined;
+
+      // (An anime site is asked only for what can be an anime: a show that TMDB says is not animated is not looked for there, at any step.)
       const fallbackAnime = async (): Promise<ResolveResult | null> => {
-        if (!rawShowTitle) return null;
+        if (!rawShowTitle || animated === false) return null;
         try {
           const { animeHeavenSource } = await import("../../library/animeheaven");
           const { createAnimeHeavenAdapter } = await import("./animeheaven");
@@ -592,80 +700,24 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
       }
 
-      // Fetch multilingual subtitles via IMDb ID from OpenSubtitles
+      if (streamUrls.length === 0) {
+        const alt = await fallbackAnime();
+        if (alt) return alt;
+        return { status: "unsupported", reason: "No video streams found." };
+      }
+
+      // 6.5. The extras: the subtitle site's list, the Romanian sites' subtitles and a dubbed source, as far as they have come a moment after the stream
+      // (started earlier when TMDB knew the title; now, with what the stream's answer says of it, otherwise). The Romanian ones first, then the player's own, then the site's list.
       const imdbId = apiImdbId || tmdbImdbId;
-      if (imdbId) {
-        try {
-          const subSeason = seriesInfo?.season ?? s;
-          const subEpisode = seriesInfo?.episode ?? e;
-          const stremioEndpoint = (isTv || seriesInfo) && subSeason && subEpisode
-            ? `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${subSeason}:${subEpisode}.json`
-            : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
-          const subData = await fetchJson<{
-            subtitles?: Array<{ id: string; url: string; lang: string; subtitleFileName?: string }>;
-          }>(stremioEndpoint);
-          if (subData?.subtitles?.length) {
-            const seenLangs = new Set<string>();
-            for (const item of subData.subtitles) {
-              if (subtitles.length >= MAX_SUBTITLES) break;
-              if (!item.url) continue;
-              const langCode = (item.lang || "en").toLowerCase();
-              const count = [...seenLangs].filter((l) => l.startsWith(langCode)).length;
-              if (count >= 12) continue;
-              seenLangs.add(`${langCode}_${count}`);
-
-              const langName = LANG_NAMES[langCode] || langCode.toUpperCase();
-              let label = langName;
-              if (item.subtitleFileName) {
-                const clean = item.subtitleFileName.replace(/\.(srt|vtt)$/i, "").trim();
-                label = count === 0 ? `${langName} · ${clean}` : `${langName} (${count + 1}) · ${clean}`;
-              } else if (count > 0) {
-                label = `${langName} (${count + 1})`;
-              }
-              subtitles.push({
-                id: subtitles.length,
-                url: `/api/proxy?url=${encodeURIComponent(item.url)}&format=vtt`,
-                label: label.slice(0, 100),
-                lang: langCode,
-              });
-            }
-          }
-        } catch {
-          // Non-fatal if stremio is unreachable
-        }
-      }
-
-      // 6.5. Fetch high-quality Romanian subtitles (Subs.ro & Subtitrari-Noi) with caching
-      if (process.env.NODE_ENV !== "test") {
-        try {
-          const { getRomanianSubtitleManager } = await import("../../subtitles/romanian");
-          const roManager = getRomanianSubtitleManager();
-          const roSubs = await roManager.getSubtitles({
-            imdbId,
-            tmdbId: id,
-            title: rawShowTitle,
-            season: (seriesInfo?.season ?? s) || undefined,
-            episode: (seriesInfo?.episode ?? e) || undefined,
-          });
-          if (roSubs.length > 0) {
-            subtitles.unshift(...roSubs);
-          }
-        } catch {
-          // Non-fatal if Romanian subtitle fetch encounters an error
-        }
-      }
+      pendingExtras ??= askExtras(imdbId);
+      const [listed, romanian, dub] = await extrasByThen(pendingExtras, extrasGraceMs);
+      subtitles = [...romanian, ...subtitles, ...listed];
 
       // Re-index subtitles sequentially so each track ID is unique and contiguous (capped at MAX_SUBTITLES)
       subtitles = subtitles.slice(0, MAX_SUBTITLES);
       subtitles.forEach((sub, idx) => {
         sub.id = idx;
       });
-
-      if (streamUrls.length === 0) {
-        const alt = await fallbackAnime();
-        if (alt) return alt;
-        return { status: "unsupported", reason: "No video streams found." };
-      }
 
       // 7. Request host token with cache & fallback across streams
       let chosenStream = streamUrls[0]!;
@@ -744,29 +796,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
       }
 
-      // Check if Romanian dub stream or alternate source is available
-      try {
-        const { getRomanianDubSource } = await import("../../dubs/romanian");
-        const seasonNum = seriesInfo?.season ?? (s ? Number(s) : undefined);
-        const episodeNum = seriesInfo?.episode ?? (e ? Number(e) : undefined);
-        const roDub = await getRomanianDubSource({
-          tmdbId: id,
-          imdbId,
-          title: rawShowTitle || title,
-          type: isTv ? "tv" : "movie",
-          season: Number.isInteger(seasonNum) ? seasonNum : undefined,
-          episode: Number.isInteger(episodeNum) ? episodeNum : undefined,
-        });
-        if (roDub) {
-          alternates.unshift({
-            label: "Română (Dublat)",
-            stream: roDub.stream,
-            subtitles: roDub.subtitles,
-          });
-        }
-      } catch {
-        // Non-fatal
-      }
+      // A Romanian dubbed source, when the catalogue knows one (see `lookForExtras`), is the first alternate.
+      if (dub) alternates.unshift(dub);
 
       return {
         status: "success",

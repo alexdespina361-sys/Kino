@@ -1,5 +1,6 @@
 import { MAX_ALTERNATES, type AlternateSource, type NormalizedMedia } from "../../shared";
 import { extractMedia, streamTypeOf } from "./html-extract";
+import { noteUpstream, withLookupSignal } from "./lookup";
 import { SafeFetchError, type SafeFetch, type SafeFetchOptions } from "./safe-fetch";
 import { UNSUPPORTED_MESSAGE, type Candidate, type ResolveResult, type Resolver } from "./types";
 
@@ -68,12 +69,16 @@ export function createGenericResolver({ fetch, fetchOptions }: GenericOptions): 
         return success({ title: titleFromUrl(url), stream: { url: url.href, type: directType } }, "generic:direct-media");
       }
 
+      // (Asked as part of a look-up: cut off with it when it is given up on, and counted against it, as the adapters' questions are. See `lookup.ts`.)
       let page;
+      const started = performance.now();
       try {
-        page = await fetch(url, fetchOptions);
+        page = await fetch(url, { ...fetchOptions, signal: withLookupSignal(fetchOptions?.signal) });
       } catch (error) {
+        noteUpstream(url.hostname, performance.now() - started);
         return resultFromFetchError(error);
       }
+      noteUpstream(url.hostname, performance.now() - started);
 
       const servedType = streamTypeOf(page.url.href, page.contentType);
       if (servedType && !page.body) {
