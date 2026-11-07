@@ -1,0 +1,31 @@
+# The Kino website on the Oracle box, next to the video relay (it was on Render until 2026-11-07). Caddy sends the site's addresses to it.
+# Settings and secrets: /etc/kino-web.env (see kino-web.env.example). Kept up to date with GitHub's main by kino-web-update.timer.
+[Unit]
+Description=Kino website
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=kino-web
+Group=kino-web
+WorkingDirectory=/opt/kino-web
+EnvironmentFile=/etc/kino-web.env
+ExecStart=/opt/kino-node/bin/node /opt/kino-web/node_modules/tsx/dist/cli.mjs src/server/index.ts
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+LimitNOFILE=65536
+MemoryMax=1G
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+StateDirectory=kino-web
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

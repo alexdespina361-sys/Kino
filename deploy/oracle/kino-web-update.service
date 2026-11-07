@@ -1,0 +1,9 @@
+[Unit]
+Description=Update the Kino website to GitHub's main
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/kino-tools/kino-web-update.sh
+StateDirectory=kino-web-update

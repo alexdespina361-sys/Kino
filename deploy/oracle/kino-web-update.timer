@@ -1,0 +1,9 @@
+[Unit]
+Description=Look for a new Kino website on GitHub's main every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
