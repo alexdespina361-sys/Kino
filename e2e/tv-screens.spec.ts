@@ -337,7 +337,10 @@ test.describe("a menu's close button on the TV", () => {
     const modal = tv.getByTestId("audio-subtitles-modal");
     const close = modal.getByRole("button", { name: "Close" });
     const off = modal.getByRole("option", { name: "Off" });
-    await expect(off).toBeFocused(); // the subtitles in use, at the top of the first column
+    // (The subtitles in use have the remote: English, which is on unless the viewer chose otherwise, under "Off" at the top of the first column.)
+    await expect(modal.getByRole("option", { name: "English" })).toBeFocused();
+    await tv.keyboard.press("ArrowUp");
+    await expect(off).toBeFocused();
 
     await tv.keyboard.press("ArrowUp");
     await expect(close).toBeFocused();

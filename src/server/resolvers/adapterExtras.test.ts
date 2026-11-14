@@ -70,15 +70,21 @@ describe("the extras of a film", () => {
     expect(askedWhen).toEqual(new Set(["api.themoviedb.org"]));
   });
 
-  it("go with the film in order (the Romanian ones, the player's own, the site's list), numbered from zero", async () => {
+  it("go with the film by language (Romanian, then English, then the rest), the Romanian sites' own first, numbered from zero", async () => {
     const net = sites();
-    const extras: ExtrasLookup = () => ({ listed: Promise.resolve([track("Listed")]), romanian: Promise.resolve([track("Română")]), dub: Promise.resolve(undefined) });
+    // (As the Romanian sites' subtitles come: `RomanianSubtitleManager` names their language, and it is the language that puts a subtitle first.)
+    const romanian = [{ ...track("Română"), lang: "ron" }];
+    const listed = [{ ...track("Listed French"), lang: "fre" }, { ...track("Listed English"), lang: "eng" }, { ...track("Listed Romanian"), lang: "rum" }, track("Listed")];
+    const extras: ExtrasLookup = () => ({ listed: Promise.resolve(listed), romanian: Promise.resolve(romanian), dub: Promise.resolve(undefined) });
     const res = await createFilmpireAdapter({ fetch: net.fetch, extras }).resolve(MOVIE);
     if (res.status !== "success") throw new Error(res.status);
     expect(res.media.subtitles?.map((sub) => [sub.id, sub.label])).toEqual([
       [0, "Română"],
-      [1, "Player English"],
-      [2, "Listed"],
+      [1, "Listed Romanian"],
+      [2, "Player English"],
+      [3, "Listed English"],
+      [4, "Listed French"],
+      [5, "Listed"],
     ]);
   });
 
