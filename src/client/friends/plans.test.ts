@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { PLAN_KEEP_AFTER_MS, PLAN_MAX_AHEAD_MS, PLAN_MIN_AHEAD_MS, type InboxItem, type PlanItem } from "../../shared";
-import { setLanguage, t } from "../i18n";
+import { loadLanguage, setLanguage, t } from "../i18n";
 import { PLAN_DAYS, PLAN_HOURS, dateValue, defaultPlan, duePlans, inboxToShow, momentOf, nextPlanMoment, planLines, planMoment, planOffered, planStatus, timeValue, whenLabel, whenText } from "./plans";
+
+// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
+await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 /** A moment by this machine's own clock: a plan is shown in the viewer's own time, so the tests go by the clock they run on, not by UTC. November 2026. */
 const at = (day: number, hour = 0, minute = 0): number => new Date(2026, 10, day, hour, minute).getTime();

@@ -1,5 +1,15 @@
 import { parseServerMessage, type ClientMessage, type ServerMessage } from "../../shared";
 
+/** What kind of message it was, as far as that can be told (never what was in it): for the line about one that could not be read. */
+function kindOf(data: unknown): string {
+  try {
+    const read = JSON.parse(String(data)) as { type?: unknown; command?: { type?: unknown } } | null;
+    return [read?.type, read?.command?.type].filter((part) => typeof part === "string").join(" ") || "no type";
+  } catch {
+    return "not JSON";
+  }
+}
+
 export type SocketStatus = "connecting" | "open" | "reconnecting" | "replaced";
 
 /** Close code the server uses to tell an old TV page that a newer one took over. */
@@ -115,6 +125,8 @@ export function connectSocket(options: SocketOptions): Socket {
         if (roundTrips.length > ROUND_TRIPS_KEPT) roundTrips.shift();
       }
       if (message && message.type !== "PONG") options.onMessage(message);
+      // A message this page cannot read is let go, but not without a word: a film that "would not start" was once a message that did not fit, and nothing said so.
+      if (!message) console.warn("[kino] a message from the server was not understood", kindOf(event.data));
     };
     // No onerror: browsers expose no detail there, and the close event that always follows is what triggers the retry.
     socket.onclose = (event) => closed(event.code);

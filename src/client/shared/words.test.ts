@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { CAPTION_SETTINGS, CAPTION_VALUES, MAX_FOLLOWERS, type ResolveStatus } from "../../shared";
-import { setLanguage, t } from "../i18n";
+import { loadLanguage, setLanguage, t } from "../i18n";
 import { captionLabel, captionTitle, friendlyError, hasAudioChoice, noticeText, qualityName, resolveFailure, socketError, statusWords, syncWords, trackName, tracksTitle } from "./words";
+
+// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
+await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 const LANGUAGES = ["en", "ro", "it"] as const;
 afterEach(() => setLanguage("en", false));

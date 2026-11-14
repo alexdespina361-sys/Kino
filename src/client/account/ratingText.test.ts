@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { LiveRating } from "../../shared";
-import { translate } from "../i18n";
+import { loadLanguage, translate } from "../i18n";
 import { averageText, factLines, mergeFacts, ratingFor, ratingNote, ratingSummary, scoreOf, scoresOf, scoreWord, SCORES, sortRatings, storedFacts } from "./ratingText";
+
+// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
+await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 const en = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate("en", key, params);
 const ro = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) => translate("ro", key, params);
