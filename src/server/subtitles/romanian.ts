@@ -44,7 +44,7 @@ export const MAX_KEPT_CHARS = 64 * 1024 * 1024;
  * What an answer holds, read up to `max` bytes: nothing when it says it is longer, or turns out to be. (`arrayBuffer()` and `text()` read whatever is
  * sent, to the end.)
  */
-async function readCapped(res: Response, max: number): Promise<Buffer | undefined> {
+export async function readCapped(res: Response, max: number): Promise<Buffer | undefined> {
   const declared = Number(res.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > max) {
     await res.body?.cancel().catch(() => {});

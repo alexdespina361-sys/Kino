@@ -5,6 +5,8 @@
  * and badging titles with "Ro Dub" in the catalog and detail hero.
  */
 
+import { readCapped, siteFetch } from "../subtitles/romanian";
+
 export interface DubLookupInfo {
   tmdbId?: number | string;
   imdbId?: string;
@@ -224,6 +226,22 @@ const KNOWN_DUBBED_TITLES = new Set<string>([
 ]);
 
 /**
+ * `fetch` for the sites asked here: a redirect is followed only to a public address (see `siteFetch`), and an answer is read up to what a list of a few
+ * posts can be, not to whatever is sent.
+ */
+const get = siteFetch();
+const MAX_ANSWER_BYTES = 2 * 1024 * 1024;
+async function jsonOf<T>(res: Response): Promise<T | undefined> {
+  const body = await readCapped(res, MAX_ANSWER_BYTES);
+  if (!body) return undefined;
+  try {
+    return JSON.parse(body.toString("utf8")) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Memory LRU cache for dynamic probe lookups.
  */
 const dynamicDubCache = new Map<string, { hasDub: boolean; expires: number }>();
@@ -304,7 +322,7 @@ async function probeOnlineDubHub(title: string): Promise<boolean> {
   if (cached !== undefined) return cached;
 
   try {
-    const res = await fetch(`https://desenflix.online/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=3`, {
+    const res = await get(`https://desenflix.online/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=3`, {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Kino/2.0" },
       signal: AbortSignal.timeout(2500),
     });
@@ -312,7 +330,7 @@ async function probeOnlineDubHub(title: string): Promise<boolean> {
       setCached(query, false, FAILED_TTL_MS);
       return false;
     }
-    const posts = (await res.json()) as Array<{ title?: { rendered?: string }; dfx_media?: { original_title?: string } }>;
+    const posts = await jsonOf<Array<{ title?: { rendered?: string }; dfx_media?: { original_title?: string } }>>(res);
     if (!Array.isArray(posts) || posts.length === 0) {
       setCached(query, false);
       return false;
@@ -373,12 +391,12 @@ export async function getRomanianDubSource(info: DubLookupInfo & { season?: numb
   // Search DesenFlix for matching post
   try {
     const query = normalizeDubTitle(info.title);
-    const res = await fetch(`https://desenflix.online/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=3`, {
+    const res = await get(`https://desenflix.online/wp-json/wp/v2/posts?search=${encodeURIComponent(query)}&per_page=3`, {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Kino/2.0" },
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
-    const posts = (await res.json()) as Array<{ content?: { rendered?: string }; title?: { rendered?: string } }>;
+    const posts = await jsonOf<Array<{ content?: { rendered?: string }; title?: { rendered?: string } }>>(res);
     if (!Array.isArray(posts) || posts.length === 0) return null;
 
     // Look for iframe player or direct video in the post
@@ -393,7 +411,7 @@ export async function getRomanianDubSource(info: DubLookupInfo & { season?: numb
           if (codeMatch?.[1]) {
             const code = codeMatch[1];
             // Get embed details
-            const detailRes = await fetch(`https://byseraguci.com/api/videos/${code}/embed/details`, {
+            const detailRes = await get(`https://byseraguci.com/api/videos/${code}/embed/details`, {
               headers: {
                 "User-Agent": "Mozilla/5.0",
                 "Referer": "https://desenflix.online/",
@@ -402,8 +420,8 @@ export async function getRomanianDubSource(info: DubLookupInfo & { season?: numb
               signal: AbortSignal.timeout(3000),
             });
             if (detailRes.ok) {
-              const details = (await detailRes.json()) as { embed_frame_url?: string };
-              if (details.embed_frame_url) {
+              const details = await jsonOf<{ embed_frame_url?: string }>(detailRes);
+              if (details?.embed_frame_url) {
                 // Returns the playable embed/stream link
                 return {
                   stream: {
