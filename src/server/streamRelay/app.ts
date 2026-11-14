@@ -62,8 +62,10 @@ export function buildStreamRelay(options: { key: string; isAllowedAddress?: (add
     try {
       target = new URL(link.url);
       assertAllowedUrl(target, allowed);
-      const referer = new URL(link.referer);
-      assertAllowedUrl(referer, allowed);
+      if (link.referer && link.referer !== "none") {
+        const referer = new URL(link.referer);
+        assertAllowedUrl(referer, allowed);
+      }
     } catch {
       return reply.code(403).send({ error: "URL_NOT_ALLOWED" });
     }
