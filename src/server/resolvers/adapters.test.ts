@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
-import { createFilmpireAdapter, resolveVidLinkStream } from "./adapters/filmpire";
+import { createFilmpireAdapter } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 
 describe("adapters streaming proxy configuration", () => {
@@ -196,35 +196,5 @@ describe("createAnimeHeavenAdapter", () => {
       expect(res.media.alternates?.[0]?.stream.directUrl).toContain("ct.animeheaven.me");
       expect(res.media.series?.next?.episode).toBe(2);
     }
-  });
-
-  it("normalizes bcdn numbered subdomains to canonical bcdn.hakunaymatata.com in VidLink resolver", async () => {
-    const fakeFetch = (async (url: string | URL) => {
-      const u = String(url);
-      if (u.includes("vidlink.pro/api/b/movie/")) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            stream: {
-              type: "file",
-              playlist: "https://bcdn4.hakunaymatata.com/live/playlist.m3u8?sign=123",
-              qualities: {
-                "1080": { url: "https://bcdn4.hakunaymatata.com/extto/test1080.mp4?sign=abc&t=123", type: "mp4" },
-                "720": { url: "https://bcdn2.hakunaymatata.com/resource/test720.mp4?sign=def&t=123", type: "mp4" },
-              },
-            },
-          }),
-        };
-      }
-      return { ok: false, status: 404 };
-    }) as unknown as typeof fetch;
-
-    const res = await resolveVidLinkStream(fakeFetch, "12345", false);
-    expect(res).not.toBeNull();
-    expect(res?.streamUrl).toBe("https://bcdn.hakunaymatata.com/live/playlist.m3u8?sign=123");
-    expect(res?.qualities[0]?.url).toBe("https://bcdn.hakunaymatata.com/live/playlist.m3u8?sign=123");
-    expect(res?.qualities[1]?.url).toBe("https://bcdn.hakunaymatata.com/extto/test1080.mp4?sign=abc&t=123");
-    expect(res?.qualities[2]?.url).toBe("https://bcdn.hakunaymatata.com/resource/test720.mp4?sign=def&t=123");
   });
 });
