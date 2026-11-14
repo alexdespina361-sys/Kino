@@ -920,7 +920,7 @@
   gap: 2em;
   padding: 1.8em 4.4em 0 7em;
 }
-.tv-browse-logo { font-size: 2.2em; }
+.tv-browse-logo { font-size: 2.2em; padding: 0; border: 0; background: none; color: inherit; font-family: inherit; line-height: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 /* The account button and, beside it, a round one for full screen: the same height, the same way of answering the remote. */
 .tv-browse-corner { display: flex; align-items: center; gap: 0.6em; margin-left: auto; font-size: 1.5em; }
 .tv-browse-corner .tv-account-chip { position: static; font-size: 1em; }

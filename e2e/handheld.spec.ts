@@ -66,6 +66,19 @@ test.describe("a phone used as the screen", () => {
     await expect(tvRoot(phone)).toHaveAttribute("data-state", "playing");
   });
 
+  test("the name at the top is the way home, from whatever page the phone is on", async ({ browser }) => {
+    const phone = await openDevice(browser, PHONE, {}, withFilms);
+    await phone.goto("/");
+    await phone.getByTestId("switch-to-tv").tap();
+    await expect(phone.locator('.tv-tile[title="Film number 1"]')).toBeVisible();
+    await phone.getByTestId("rail-search").tap();
+    await expect(phone.getByTestId("tv-search")).toBeVisible();
+    await phone.getByTestId("tv-logo-home").tap();
+    await expect(phone.getByTestId("tv-search")).toHaveCount(0);
+    await expect(phone.locator('.tv-tile[title="Film number 1"]')).toBeVisible();
+    await expect(phone.getByTestId("tv-browse")).toHaveAttribute("data-view", "home");
+  });
+
   test("the pages that only a remote's arrow keys could leave have a Back button for a finger", async ({ browser }) => {
     const phone = await openDevice(browser, PHONE, {}, withFilms);
     await phone.goto("/tv");

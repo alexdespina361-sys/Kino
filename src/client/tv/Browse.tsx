@@ -1002,8 +1002,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     } else if (entry.progressKey) {
       profileStore.removeProgress(entry.progressKey);
       setFocused(null);
-      if (detail) closeDetail();
-      else go(CONTENT);
+      // On the title's own page the page stays, as that of a title nobody has started: Play where Resume was, and no Remove.
+      if (detail) {
+        const { progressKey: _gone, ...rest } = asOpened(entry);
+        setDetail({ ...detail, entry: rest });
+        setPending(fresh(DETAIL));
+      } else go(CONTENT);
     }
   };
 
@@ -1088,9 +1092,22 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       <Rail open={railOpen} onOpen={setRailOpen} entries={entries} bar={compact} onArrive={(element) => keepInView(element.closest<HTMLElement>(".tv-rail")!, element)} />
 
       <header className="tv-browse-top">
-        <span className="tv-browse-logo">
+        {/* The name is the way home, for a finger or a pointer (the remote has the menu's Home). */}
+        <button
+          type="button"
+          className="tv-browse-logo"
+          data-testid="tv-logo-home"
+          tabIndex={-1}
+          aria-label={t("tv.home")}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            if (detail) closeDetail();
+            choose({ kind: "home" });
+            rowsRef.current?.scrollTo({ top: 0 });
+          }}
+        >
           <Logo />
-        </span>
+        </button>
         {notice && !detail && (
           <p className="tv-notice" role="alert" data-testid="tv-notice">
             {notice}
