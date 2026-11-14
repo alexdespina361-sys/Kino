@@ -197,4 +197,96 @@ describe("createAnimeHeavenAdapter", () => {
       expect(res.media.series?.next?.episode).toBe(2);
     }
   });
+  it("routes anime and cartoons via fast-path without stalling through slow upstream", async () => {
+    let screenfetchCalled = false;
+    let animeHeavenCalled = false;
+
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 99999,
+            name: "Test Anime Series",
+            original_language: "ja",
+            genres: [{ id: 16 }],
+          }),
+        };
+      }
+      if (u.includes("vidlink.pro/api/b/tv/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            stream: {
+              type: "file",
+              qualities: {
+                "1080": { url: "https://bcdn.hakunaymatata.com/1080.mp4", type: "mp4" },
+                "720": { url: "https://bcdn.hakunaymatata.com/720.mp4", type: "mp4" },
+                "480": { url: "https://bcdn.hakunaymatata.com/480.mp4", type: "mp4" },
+              },
+            },
+          }),
+        };
+      }
+      if (u.includes("screenfetch4.cyou") || u.includes("vidsrc.me")) {
+        screenfetchCalled = true;
+        return { ok: false, status: 504 };
+      }
+      if (u.includes("animeheaven.me")) {
+        animeHeavenCalled = true;
+        return { ok: false, status: 404 };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    const res = await adapter.resolve(new URL("https://filmpire.sc/watch/99999?s=1&e=1&section=anime"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.stream.type).toBe("mp4");
+      expect(res.media.stream.directUrl).toBe("https://bcdn.hakunaymatata.com/1080.mp4");
+      // Fast path took VidLink immediately, skipping slow upstream retries
+      expect(screenfetchCalled).toBe(false);
+      // Multiple VidLink qualities mean AnimeHeaven was not needed
+      expect(animeHeavenCalled).toBe(false);
+    }
+  });
+
+  it("skips AnimeHeaven fallback for Western animation with English original language", async () => {
+    let animeHeavenCalled = false;
+
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 88888,
+            name: "Western Cartoon Show",
+            original_language: "en",
+            genres: [{ id: 16 }],
+          }),
+        };
+      }
+      if (u.includes("vidlink.pro/api/b/tv/")) {
+        return { ok: false, status: 404 };
+      }
+      if (u.includes("vidsrc.buzz")) {
+        return { ok: false, status: 404 };
+      }
+      if (u.includes("animeheaven.me")) {
+        animeHeavenCalled = true;
+        return { ok: true, status: 200, text: async () => "<html></html>" };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    await adapter.resolve(new URL("https://filmpire.sc/watch/88888?s=1&e=1"));
+    expect(animeHeavenCalled).toBe(false);
+  });
 });
