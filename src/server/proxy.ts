@@ -372,11 +372,13 @@ async function proxyRequest(
   // (What is said to be the page that asked, for the places that only answer to their own: a text that is not an address is turned away, not left to fail further on, and neither is a name given twice.)
   const referer = request.query.referer || targetUrl.origin;
   if (typeof referer !== "string") return reply.code(400).send({ error: "Invalid 'referer' query parameter" });
-  let refererOrigin: string;
-  try {
-    refererOrigin = new URL(referer).origin;
-  } catch {
-    return reply.code(400).send({ error: "Invalid 'referer' query parameter" });
+  let refererOrigin = "";
+  if (referer !== "none") {
+    try {
+      refererOrigin = new URL(referer).origin;
+    } catch {
+      return reply.code(400).send({ error: "Invalid 'referer' query parameter" });
+    }
   }
   if (referer.length > REFERER_MAX_LENGTH) return reply.code(400).send({ error: "Invalid 'referer' query parameter" });
   const stats = options.stats;
@@ -397,7 +399,7 @@ async function proxyRequest(
     referer,
     accept: "*/*",
   };
-  if (!options.omitOrigin) headers.origin = refererOrigin;
+  if (!options.omitOrigin && refererOrigin) headers.origin = refererOrigin;
   if (targetUrl.hostname.includes("hakunaymatata.com") || referer === "none") {
     delete headers.referer;
     delete headers.origin;
