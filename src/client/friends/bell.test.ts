@@ -1,3 +1,4 @@
+import { CLEARED_FOR_MS, isCleared, withCleared } from "./cleared";
 import { describe, expect, it } from "vitest";
 import { PLAN_KEEP_AFTER_MS, type ActivityItem, type Friend, type FriendRequest, type FriendsState, type InboxItem, type PlanItem } from "../../shared";
 import { BELL_LATELY, BELL_WAITING, bellView, hasNewActivity } from "./bell";
@@ -84,6 +85,25 @@ describe("what the bell lists", () => {
     const view = bellView(state({ activity }), NOW);
     expect(view.lately.map((item) => item.key)).toEqual(["b", "a", "c0", "c1"].slice(0, BELL_LATELY));
     expect(view.lately).toHaveLength(BELL_LATELY);
+  });
+
+  it("leaves out what was cleared on this device, without bringing an older line up in its place, until the friend watches it another day", () => {
+    const activity = [watched("a", NOW - 300), watched("b", NOW - 100), ...Array.from({ length: BELL_LATELY }, (_, at) => watched(`c${at}`, NOW - 1000 - at))];
+    const cleared = withCleared({}, [activity[1]!], NOW);
+    expect(isCleared(cleared, activity[1]!)).toBe(true);
+    expect(bellView(state({ activity }), NOW, cleared).lately.map((item) => item.key)).toEqual(["a", "c0", "c1"]);
+    // The friend is still watching it: the line is dated by their last minute of it, and stays away for the rest of the sitting.
+    const later = NOW + 40 * 60 * 1000;
+    const still = [watched("b", later - 5), ...activity.filter((item) => item.key !== "b")];
+    expect(bellView(state({ activity: still }), later, cleared).lately.map((item) => item.key)).toEqual(["a", "c0", "c1"]);
+    // Watched again another day: that is news again.
+    const tomorrow = NOW + CLEARED_FOR_MS + 60_000;
+    const again = [watched("b", tomorrow), ...activity.filter((item) => item.key !== "b")];
+    expect(bellView(state({ activity: again }), tomorrow, cleared).lately.map((item) => item.key)).toEqual(["b", "a", "c0", "c1"]);
+    // The record keeps the newest few and forgets the rest.
+    const many = withCleared(cleared, Array.from({ length: 200 }, (_, at) => watched(`m${at}`, NOW - 5000 - at)), NOW - 1);
+    expect(Object.keys(many)).toHaveLength(80);
+    expect(isCleared(many, activity[1]!)).toBe(true);
   });
 });
 

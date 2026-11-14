@@ -323,7 +323,8 @@ const categoryEntry = (row: LibraryRow, rows: readonly LibraryRow[], withSection
     url: "",
     opens: { kind: "category", rowId: row.id },
     ...sourceOf(rows, row),
-    note: [place, t("tv.titles", { count: row.items.length })].filter(Boolean).join(" · "),
+    // (No count of titles: a category goes on as it is scrolled, so the number was only what had come so far.)
+    ...(place ? { note: place } : {}),
     ...(picture ? { image: picture } : {}),
   };
 };
@@ -432,7 +433,7 @@ export function gridOf(view: View, data: PageData): GridPage | null {
       return { title: t("rating.mine"), meta: ratingSummary(t, getLanguage(), data.ratings) || t("rating.mineHelp"), layout: "wide", entries: sortRatings(data.ratings, "new").map(entryOfRating), empty: t("rating.empty") };
     case "category": {
       const row = data.all.find((candidate) => candidate.id === view.rowId);
-      return row ? { title: rowTitle(row), meta: [t("tv.titles", { count: row.items.length }), sourceOf(data.all, row).source].filter(Boolean).join(" · "), layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
+      return row ? { title: rowTitle(row), meta: sourceOf(data.all, row).source ?? "", layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;
     }
     case "categories": {
       const rows = data.all.filter((row) => !view.of || sectionOf(row) === view.of);

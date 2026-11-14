@@ -258,6 +258,24 @@ test.describe("the bell on the phone", () => {
     await expect(lately).toContainText(annName);
     await expect(dot(bob.page)).toHaveCount(0);
 
+    // A finger takes the line off the list: a short pull lets it come back, a pull to the side clears it. That is this phone's own fact, kept when the bell is opened again.
+    const pull = async (by: number) => {
+      const box = (await lately.boundingBox())!;
+      const at = { pointerId: 7, pointerType: "touch", isPrimary: true, bubbles: true, clientY: box.y + box.height / 2 };
+      await lately.dispatchEvent("pointerdown", { ...at, clientX: box.x + 40 });
+      await lately.dispatchEvent("pointermove", { ...at, clientX: box.x + 40 + by / 2 });
+      await lately.dispatchEvent("pointermove", { ...at, clientX: box.x + 40 + by });
+      await lately.dispatchEvent("pointerup", { ...at, clientX: box.x + 40 + by });
+    };
+    await pull(40);
+    await expect(lately).toHaveCount(1);
+    await pull(180);
+    await expect(lately).toHaveCount(0);
+    await expect(bob.page.getByTestId("bell-empty")).toBeVisible();
+    await bob.page.keyboard.press("Escape");
+    await bell(bob.page).click();
+    await expect(bob.page.getByTestId("bell-empty")).toBeVisible();
+
     // The list's last button goes on to the Friends page, and Back from there is straight home.
     await bob.page.getByTestId("bell-open-friends").click();
     await expect(bob.page.getByTestId("friends-page")).toBeVisible();
@@ -380,10 +398,25 @@ test.describe("the bell on the TV", () => {
     await tv.keyboard.press("Escape");
     await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
 
-    // With nothing left to answer, the list's own button goes on to the friends' page.
+    // With nothing left to answer, Down from the line is the list's own button. Right of the line is its cross: OK on it clears the line, the list says
+    // there is nothing new, and the remote is on the button that is left. Opening the bell again does not bring the line back.
     await tv.getByTestId("tv-bell").click();
     await tv.keyboard.press("ArrowDown");
     await expect(tv.getByTestId("tv-bell-friends")).toBeFocused();
+    await tv.keyboard.press("ArrowUp");
+    await expect(lines).toBeFocused();
+    await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("tv-bell-clear")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(lines).toHaveCount(0);
+    await expect(tv.getByTestId("tv-bell-empty")).toBeVisible();
+    await expect(tv.getByTestId("tv-bell-friends")).toBeFocused();
+    await tv.keyboard.press("Escape");
+    await tv.getByTestId("tv-bell").click();
+    await expect(tv.getByTestId("tv-bell-empty")).toBeVisible();
+    await expect(tv.getByTestId("tv-bell-friends")).toBeFocused();
+
+    // The list's own button goes on to the friends' page.
     await tv.keyboard.press("Enter");
     await expect(list).toHaveCount(0);
     await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "friends");

@@ -796,6 +796,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         const proxiedUrl = streamAddress(primary.url, "none", process.env, false);
         const alternates: AlternateSource[] = vl.qualities.slice(1).map((q) => ({
           label: q.label.slice(0, 60),
+          quality: q.label.slice(0, 20), // (the same stream in another quality, not another source: the screen lists it under Quality)
           stream: {
             url: streamAddress(q.url, "none", process.env, false),
             type: q.type,
@@ -826,6 +827,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           resolver: "filmpire",
           media: {
             title: title.slice(0, 300),
+            ...(vl.qualities.length > 1 ? { quality: primary.label.slice(0, 20) } : {}),
             stream: {
               url: proxiedUrl,
               type: primary.type,

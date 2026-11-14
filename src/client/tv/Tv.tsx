@@ -10,6 +10,7 @@ import {
   previousEpisode,
   resolveCaptionStyle,
   seriesKeyOf,
+  sourceMenus,
   sourcesOf,
   stateIsFor,
   type CaptionStyle,
@@ -842,14 +843,14 @@ export function Tv() {
               setResolving(false);
               setMenu(null);
               engine.stop();
-            } else if (command.type === "SET_QUALITY") engine.setQuality(command.level);
+            } else if (command.type === "SET_QUALITY") chooseQuality(command.level);
             else if (command.type === "SET_SUBTITLE") chooseSubtitle(command.track);
             else if (command.type === "SET_SUBTITLE_DELAY") chooseSubtitleDelay(command.delay);
             else if (command.type === "SET_SUBTITLE_SYNC") chooseSubtitleSync(command.on);
             else if (command.type === "SET_CAPTION_STYLE") changeCaptions(command.style);
             else if (command.type === "SET_SPEED") engine.setPlaybackRate(command.rate);
             else if (command.type === "SET_AUDIO") chooseAudio(command.track);
-            else if (command.type === "SET_SOURCE") loadSource(command.index, true);
+            else if (command.type === "SET_SOURCE") chooseSource(command.index);
             else if (command.type === "TOGGLE_FULLSCREEN") fullscreenFromPhone();
             else if (command.type === "NEXT_EPISODE") triggerNextEpisode();
             else if (command.type === "DISMISS_UP_NEXT") dismissUpNext();
@@ -1148,6 +1149,23 @@ export function Tv() {
     setScreen("library");
   };
   /** The next subtitle track, and off after the last. Works for a TV that watches along too: what is read is its own choice. */
+  /** A quality was picked. A film whose qualities are files of their own (see `sourceMenus`) plays the file of that quality from where it was; any other leaves it to the player. */
+  const chooseQuality = (level: number) => {
+    const media = currentMediaRef.current;
+    const all = media ? sourcesOf(media) : [];
+    const { qualities } = sourceMenus(all);
+    if (!qualities.includes(sourceIndexRef.current)) return void engineRef.current?.setQuality(level);
+    const auto = qualities.find((index) => isAutoQuality(all[index]!.quality));
+    loadSource(level >= FILE_QUALITY ? level - FILE_QUALITY : (auto ?? qualities[0]!), true);
+  };
+  /** A source was picked, by its place in the list the pickers show. The main one is whichever of its qualities was playing. */
+  const chooseSource = (place: number) => {
+    const media = currentMediaRef.current;
+    const menus = sourceMenus(media ? sourcesOf(media) : []);
+    const index = menus.sources[place];
+    if (index === undefined) return;
+    loadSource(index === 0 && menus.qualities.includes(sourceIndexRef.current) ? sourceIndexRef.current : index, true);
+  };
   const cycleSubtitles = () => {
     const subtitles = playerRef.current.subtitles;
     if (subtitles && subtitles.tracks.length > 0) chooseSubtitle(subtitles.current + 1 >= subtitles.tracks.length ? -1 : subtitles.current + 1);
@@ -1730,10 +1748,10 @@ export function Tv() {
           onSubtitle={chooseSubtitle}
           onAudio={chooseAudio}
           onSpeed={(rate) => engineRef.current?.setPlaybackRate(rate)}
-          onQuality={(level) => engineRef.current?.setQuality(level)}
+          onQuality={chooseQuality}
           onSource={(index) => {
             setMenu(null);
-            loadSource(index, true);
+            chooseSource(index);
           }}
           onCaption={changeCaptions}
           onKind={setMenu}
@@ -1761,6 +1779,36 @@ export function Tv() {
 /** What a source is called on screen: the name it came with, or its place in the list. */
 const sourceName = (source: PlayableSource, index: number) => source.label ?? t("player.sourceN", { n: index + 1 });
 
+/** The numbers the Quality picker gives the qualities that are files of their own: past any the player has for the qualities inside one stream. */
+const FILE_QUALITY = 1000;
+const isAutoQuality = (quality: string | undefined) => /auto/i.test(quality ?? "");
+
+/**
+ * What the Source and Quality pickers show for a film (shared/media.ts, `sourceMenus`): its sources, when there is more than one place to get it from, and its
+ * qualities, when they are files of their own. (The qualities inside one stream are the player's to say, and stay as it said them.)
+ */
+function pickersOf(media: NormalizedMedia, sourceIndex: number): Pick<PlayerState, "sources" | "quality"> {
+  const all = sourcesOf(media);
+  const menus = sourceMenus(all);
+  const inQualities = menus.qualities.includes(sourceIndex);
+  const levels = menus.qualities
+    .filter((index) => !isAutoQuality(all[index]!.quality))
+    .map((index) => {
+      const name = all[index]!.quality!;
+      const height = /^\d{3,4}p?$/.test(name) ? parseInt(name, 10) : undefined;
+      return { id: FILE_QUALITY + index, label: height ? `${height}p` : name, ...(height ? { height } : {}) };
+    });
+  return {
+    ...(menus.sources.length > 1
+      ? { sources: { labels: menus.sources.map((index, place) => sourceName(all[index]!, place)), current: Math.max(0, menus.sources.indexOf(inQualities ? 0 : sourceIndex)) } }
+      : {}),
+    // (Another place's film is another file: these qualities are not its own, so they are not offered while it plays.)
+    ...(inQualities && levels.length > 0
+      ? { quality: { levels, current: isAutoQuality(all[sourceIndex]!.quality) ? -1 : FILE_QUALITY + sourceIndex, ...(levels.length === menus.qualities.length ? { auto: false } : {}) } }
+      : {}),
+  };
+}
+
 /** What the TV knows that the video doesn't: which media this is, whether it is full screen, and how subtitles look. */
 /** The end of the picture, as the TV knows it: it played to the end, and the next episode is counting down (null: it waits to be asked for). */
 interface Ending {
@@ -1771,9 +1819,7 @@ interface Ending {
 const withTvState = (state: PlayerState, captionStyle: CaptionStyle, media: NormalizedMedia | null, sourceIndex: number, subtitleDelay: number, ending: Ending): PlayerState => ({
   ...state,
   ...(media && state.state !== "idle" ? { stream: media.stream.url } : {}),
-  ...(media && state.state !== "idle" && sourcesOf(media).length > 1
-    ? { sources: { labels: sourcesOf(media).map(sourceName), current: sourceIndex } }
-    : {}),
+  ...(media && state.state !== "idle" ? pickersOf(media, sourceIndex) : {}),
   fullscreen: Boolean(document.fullscreenElement),
   captionStyle,
   subtitleDelay,

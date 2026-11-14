@@ -73,7 +73,7 @@ export function QualitySheet({ player, onPick, onClose }: Close & { player: Play
   const quality = player.quality;
   const levels = [...(quality?.levels ?? [])].sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
   const choices: Choice[] = [
-    { key: -1, label: t("player.auto"), active: quality?.current === -1, testId: "quality--1", pick: () => onPick(-1) },
+    ...(quality?.auto === false ? [] : [{ key: -1, label: t("player.auto"), active: quality?.current === -1, testId: "quality--1", pick: () => onPick(-1) }]),
     ...levels.map((level) => ({
       key: level.id,
       label: level.label,

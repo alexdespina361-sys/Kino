@@ -7,6 +7,7 @@ import { getLanguage, t } from "../i18n";
 import { formatCode } from "../shared/format";
 import { entryOfRating, type Entry, type GridPage, type HomeRow, type View } from "../tv/pages";
 import { BELL_WAITING, bellView } from "./bell";
+import type { Cleared } from "./cleared";
 import { inboxToShow, planLines, planStatus, type PlanStatus } from "./plans";
 import { activityHint, entriesOfList, entryOfActivity, entryOfRecommendation, friendLine, listsOf, nameOf, ratedBy, withProgress, type PartyInvitation, type Recommendation, type TogetherRequest } from "./entries";
 
@@ -187,13 +188,15 @@ export interface BellRow {
   detail?: string | undefined;
   /** The picture of the friend it is about, where there is one. */
   avatar?: Entry["avatar"];
+  /** What a friend watched, for a line that says so: clearing the line is remembered by it (friends/cleared.ts). */
+  activity?: ActivityItem;
 }
 
 /**
  * What the bell lists on a TV: what waits for an answer (the friends page's own entries for requests to be friends, invitations, requests to watch
  * together and titles friends sent, a few of them) and what friends watch lately, with how many waiting things are left for the friends page.
  */
-export function bellRows(state: FriendsState | null, now: number): { waiting: BellRow[]; lately: BellRow[]; more: number } {
+export function bellRows(state: FriendsState | null, now: number, cleared: Cleared = {}): { waiting: BellRow[]; lately: BellRow[]; more: number } {
   if (!state) return { waiting: [], lately: [], more: 0 };
   const rows = friendRows(state, now);
   const asking = rows.filter((row) => ASKING_ROWS.includes(row.id)).flatMap((row) => row.entries);
@@ -203,10 +206,10 @@ export function bellRows(state: FriendsState | null, now: number): { waiting: Be
     return friend ? [entryOfChat(friend, count)] : [];
   });
   const waiting = [...asking, ...wrote];
-  const lately = bellView(state, now).lately.flatMap((item): BellRow[] => {
+  const lately = bellView(state, now, cleared).lately.flatMap((item): BellRow[] => {
     const friend = state.friends.find((each) => each.id === item.friend);
     if (!friend) return [];
-    return [{ entry: entryOfActivity(item, friend.name, now), heading: friend.name, detail: `${t(`friends.line.${activityVerb(item, now)}`, { title: item.title })} · ${ago(item.at, now, getLanguage())}`, avatar: friend.avatar }];
+    return [{ entry: entryOfActivity(item, friend.name, now), heading: friend.name, detail: `${t(`friends.line.${activityVerb(item, now)}`, { title: item.title })} · ${ago(item.at, now, getLanguage())}`, avatar: friend.avatar, activity: item }];
   });
   return {
     waiting: waiting.slice(0, BELL_WAITING).map((entry) => ({ entry, heading: entry.title, detail: entry.note, ...(entry.avatar ? { avatar: entry.avatar } : {}) })),

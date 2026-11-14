@@ -276,6 +276,12 @@ function setCached(key: string, hasDub: boolean, ttl = CACHE_TTL_MS): void {
 const counts = (name: string, info: DubLookupInfo): boolean => name.includes(" ") || info.isAnimation === true;
 
 /**
+ * Whether Romanian dubs are offered at all (RO_DUB_SOURCES=on). Off, nothing is said to have one: a "Ro Dub" badge on a title that then
+ * plays in English only is a promise the site does not keep. The badge and the dubbed source go on and off together.
+ */
+export const romanianDubsOn = (): boolean => process.env.RO_DUB_SOURCES === "on";
+
+/**
  * Fast synchronous check using the static curated catalog.
  * Useful for library preloads, shelves, and quick badge lookups.
  */
@@ -383,7 +389,7 @@ export async function getRomanianDubSource(info: DubLookupInfo & { season?: numb
   // (`embed_frame_url`), handed over as "hls"; and the post is the first of the search's with a player in it, not one checked to be this
   // title (or this episode: the season and episode are not looked at). Offered as "Română (Dublat)" it would be a source that fails, or
   // another film; and it made every resolve of an animated title wait for two more lookups.
-  if (process.env.RO_DUB_SOURCES !== "on") return null;
+  if (!romanianDubsOn()) return null;
   // If not known to have a Romanian dub, return null
   const hasDub = await hasRomanianDub(info);
   if (!hasDub) return null;

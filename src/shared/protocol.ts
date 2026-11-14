@@ -105,6 +105,8 @@ export const PlayerStateSchema = z.object({
       current: z.number().int(),
       /** The quality the picture is in right now, when it is known. */
       active: z.number().int().optional(),
+      /** False when the player cannot choose by itself (each quality is a file of its own): the pickers then leave "Auto" out. */
+      auto: z.boolean().optional(),
     })
     .optional(),
   subtitles: z

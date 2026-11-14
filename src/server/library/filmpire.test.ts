@@ -713,7 +713,18 @@ describe("filmpireSource about", () => {
   it("lists the titles like it without a part of the collection, rubbish or a title not out yet, in the shape of any other tile", async () => {
     const { source } = sourceWith((url) => json(url.includes("/collection/77") ? collection : kungFu));
     const about = await source.about!("https://filmpire.sc/watch/603");
-    expect(about!.similar).toEqual([{ id: "filmpire-movie-9", title: "Ice Age", year: 2002, image: "https://image.tmdb.org/t/p/w500/p.jpg", kind: "movie", url: "https://filmpire.sc/watch/9", hasRoDub: true }]); // (Epoca de gheață)
+    const iceAge = { id: "filmpire-movie-9", title: "Ice Age", year: 2002, image: "https://image.tmdb.org/t/p/w500/p.jpg", kind: "movie", url: "https://filmpire.sc/watch/9" };
+    expect(about!.similar).toEqual([iceAge]);
+    // A title that is dubbed in Romanian says so only while the dubbed sources are on (RO_DUB_SOURCES): a badge with no dub behind it is a promise not kept.
+    const before = process.env.RO_DUB_SOURCES;
+    process.env.RO_DUB_SOURCES = "on";
+    try {
+      const dubbed = await sourceWith((url) => json(url.includes("/collection/77") ? collection : kungFu)).source.about!("https://filmpire.sc/watch/603");
+      expect(dubbed!.similar).toEqual([{ ...iceAge, hasRoDub: true }]); // (Epoca de gheață)
+    } finally {
+      if (before === undefined) delete process.env.RO_DUB_SOURCES;
+      else process.env.RO_DUB_SOURCES = before;
+    }
     expect(LibraryRowSchema.safeParse({ id: "r", title: "r", source: "s", items: about!.similar }).success).toBe(true);
   });
 

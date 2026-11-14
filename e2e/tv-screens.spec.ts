@@ -1104,7 +1104,13 @@ test.describe("the library on the TV", () => {
     await tv.keyboard.press("ArrowRight"); // (Play, the list, Rate, then this)
     await expect(tv.getByTestId("tv-detail-remove")).toBeFocused();
     await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("tv-detail")).toHaveCount(0); // the card is gone, and so is its page
+    // The card is gone and the page stays, as that of a title nobody has started: Play where Resume was, with the remote on it, and nothing to remove.
+    await expect(tv.getByTestId("tv-detail-title")).toHaveText("Night Train");
+    await expect(tv.getByTestId("tv-detail-play")).toHaveText("Play");
+    await expect(tv.getByTestId("tv-detail-play")).toBeFocused();
+    await expect(tv.getByTestId("tv-detail-remove")).toHaveCount(0);
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
     await expect(tiles(tv).first()).toHaveAttribute("title", "Film number 1");
   });
 

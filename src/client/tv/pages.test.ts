@@ -128,7 +128,8 @@ describe("rowsOfPage: home", () => {
     expect(rows[3]).toMatchObject({ id: "categories", layout: "categories" });
     expect(rows[3]!.entries).toHaveLength(13);
     expect(rows[3]!.entries.at(-1)).toMatchObject({ title: t("tv.allCategories"), opens: { kind: "categories" } });
-    expect(rows[3]!.entries[0]).toMatchObject({ title: "Row r0", opens: { kind: "category", rowId: "r0" }, note: t("tv.titles", { count: 3 }), image: "wide-r0-0" });
+    expect(rows[3]!.entries[0]).toMatchObject({ title: "Row r0", opens: { kind: "category", rowId: "r0" }, image: "wide-r0-0" });
+    expect(rows[3]!.entries[0]!.note).toBeUndefined(); // (no count of titles: a category goes on as it is scrolled, so the number was only what had come so far)
   });
 
   it("has no row of categories when the library is only a few rows", () => {
@@ -288,12 +289,12 @@ describe("gridOf", () => {
   it("says which source a row is from only when the library has more than one", () => {
     const one = data({ rows: library });
     expect(rowsOfPage("home", one).every((each) => each.source === undefined)).toBe(true);
-    expect(gridOf({ kind: "category", rowId: "m1" }, one)!.meta).toBe(t("tv.titles", { count: 3 }));
+    expect(gridOf({ kind: "category", rowId: "m1" }, one)!.meta).toBe("");
     expect(gridOf({ kind: "categories" }, one)!.entries.every((each) => each.source === undefined)).toBe(true);
 
     const two = data({ rows: [...library.slice(0, 5), { ...library[5]!, source: "Archive" }] });
     expect(rowsOfPage("home", two).find((each) => each.id === "s3")?.source).toBe("Archive");
-    expect(gridOf({ kind: "category", rowId: "s3" }, two)!.meta).toBe(`${t("tv.titles", { count: 3 })} · Archive`);
+    expect(gridOf({ kind: "category", rowId: "s3" }, two)!.meta).toBe("Archive");
     expect(gridOf({ kind: "categories" }, two)!.entries.map((each) => each.source)).toEqual(["Test", "Test", "Test", "Test", "Test", "Archive"]);
   });
 
@@ -301,33 +302,33 @@ describe("gridOf", () => {
     const all = gridOf({ kind: "categories" }, data({ rows: library }))!;
     expect(all.title).toBe(t("tv.allCategories"));
     expect(all.entries.map((e) => e.id)).toEqual(["m1", "m2", "m3", "s1", "s2", "s3"]);
-    expect(all.entries[0]?.note).toBe(`${t("tv.movies")} · ${t("tv.titles", { count: 3 })}`);
-    expect(all.entries[3]?.note).toBe(`${t("tv.series")} · ${t("tv.titles", { count: 3 })}`);
+    expect(all.entries[0]?.note).toBe(t("tv.movies"));
+    expect(all.entries[3]?.note).toBe(t("tv.series"));
     // (a category of one kind has no need to say it, and one with no kind follows the others)
     const mixed = data({ rows: [row("x1", undefined), row("s1", "series"), row("m1", "movie")] });
     expect(gridOf({ kind: "categories" }, mixed)!.entries.map((e) => [e.id, e.note])).toEqual([
-      ["m1", `${t("tv.movies")} · ${t("tv.titles", { count: 3 })}`],
-      ["s1", `${t("tv.series")} · ${t("tv.titles", { count: 3 })}`],
-      ["x1", t("tv.titles", { count: 3 })],
+      ["m1", t("tv.movies")],
+      ["s1", t("tv.series")],
+      ["x1", undefined],
     ]);
-    expect(gridOf({ kind: "categories", of: "movie" }, data({ rows: library }))!.entries[0]?.note).toBe(t("tv.titles", { count: 3 }));
+    expect(gridOf({ kind: "categories", of: "movie" }, data({ rows: library }))!.entries[0]?.note).toBeUndefined(); // (no count: a category goes on as it is scrolled)
   });
 
   it("lists the categories of the cartoons and of the anime after those of films and shows, each saying which it is", () => {
     const rows = [row("a1", "series", 3, "anime"), row("c1", "movie", 3, "cartoon"), row("x1", undefined), row("s1", "series"), row("c2", "series", 3, "cartoon"), row("m1", "movie")];
     const all = gridOf({ kind: "categories" }, data({ rows }))!;
     expect(all.entries.map((e) => [e.id, e.note])).toEqual([
-      ["m1", `${t("tv.movies")} · ${t("tv.titles", { count: 3 })}`],
-      ["s1", `${t("tv.series")} · ${t("tv.titles", { count: 3 })}`],
-      ["c1", `${t("tv.cartoons")} · ${t("tv.titles", { count: 3 })}`],
-      ["c2", `${t("tv.cartoons")} · ${t("tv.titles", { count: 3 })}`],
-      ["a1", `${t("tv.anime")} · ${t("tv.titles", { count: 3 })}`],
-      ["x1", t("tv.titles", { count: 3 })],
+      ["m1", t("tv.movies")],
+      ["s1", t("tv.series")],
+      ["c1", t("tv.cartoons")],
+      ["c2", t("tv.cartoons")],
+      ["a1", t("tv.anime")],
+      ["x1", undefined],
     ]);
     const cartoons = gridOf({ kind: "categories", of: "cartoon" }, data({ rows }))!;
     expect(cartoons.title).toBe(t("tv.cartoonCategories"));
     expect(cartoons.entries.map((e) => e.id)).toEqual(["c1", "c2"]);
-    expect(cartoons.entries[0]?.note).toBe(t("tv.titles", { count: 3 }));
+    expect(cartoons.entries[0]?.note).toBeUndefined();
     const anime = gridOf({ kind: "categories", of: "anime" }, data({ rows }))!;
     expect(anime.title).toBe(t("tv.animeCategories"));
     expect(anime.entries.map((e) => e.id)).toEqual(["a1"]);

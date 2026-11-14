@@ -166,7 +166,7 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
       {
         title: t("player.quality"),
         options: [
-          { key: -1, label: t("player.auto"), active: quality?.current === -1, pick: () => p.onQuality(-1) },
+          ...(quality?.auto === false ? [] : [{ key: -1, label: t("player.auto"), active: quality?.current === -1, pick: () => p.onQuality(-1) }]),
           ...levels.map((level) => ({
             key: level.id,
             label: level.label,

@@ -1162,9 +1162,11 @@ test("a page that is flung, or scrolled too far and too fast to be a step of the
  * shelf moved, the farthest the cat was from the shelf (less where it was to begin with), and the frames in which the shelf moved by more than two pixels and the cat did not.
  */
 const ridesTheRows = async (tv: Page, slow: number, scroller = ".tv-rows", cards = ".tv-row .tv-tile") => {
+  // (A line whose top just shows at the bottom edge, its titles below the screen, is no place to put a cat: it is put on the lowest one it can be seen on.)
+  const tall = tv.viewportSize()!.height;
   const lowest = async () => {
     const seen = await worldOf(tv);
-    return { L: seen.bodyLength, shelf: seen.surfaces.filter((surface) => surface.kind === "shelfTop").sort((a, b) => b.y - a.y)[0]! };
+    return { L: seen.bodyLength, shelf: seen.surfaces.filter((surface) => surface.kind === "shelfTop" && surface.y < tall - seen.bodyLength / 2).sort((a, b) => b.y - a.y)[0]! };
   };
   const { L, shelf } = await lowest();
   // (taken by the scruff, held over the lowest shelf in sight and let go: it lands on it from wherever it was, which a call does not do from the floor of a grid)

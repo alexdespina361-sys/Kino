@@ -59,6 +59,8 @@ export const AlternateSourceSchema = z.object({
   stream: StreamSchema,
   /** Subtitles that belong to this stream; without them the main ones are used. */
   subtitles: z.array(SubtitleTrackSchema).optional(),
+  /** Set when this is the main stream again in another quality ("720p"), not another place to get the film from: it is listed under Quality, not under Source. */
+  quality: z.string().max(20).optional(),
 });
 export type AlternateSource = z.infer<typeof AlternateSourceSchema>;
 export const MAX_ALTERNATES = 8;
@@ -67,6 +69,8 @@ export const MAX_ALTERNATES = 8;
 export const NormalizedMediaSchema = z.object({
   title: z.string().max(300).optional(),
   stream: StreamSchema,
+  /** The quality the main stream is in, when the alternates hold the same stream in others (see `AlternateSourceSchema.quality`). */
+  quality: z.string().max(20).optional(),
   subtitles: z.array(SubtitleTrackSchema).optional(),
   series: SeriesInfoSchema.optional(),
   /** Other sources for the same video, in the order to try them. The main `stream` is always tried first. */
@@ -145,7 +149,8 @@ export function fitMedia(media: NormalizedMedia): { media: NormalizedMedia | nul
     if (!its) continue;
     const label = text(alternate.label, 60);
     const own = subtitles(alternate.subtitles);
-    alternates.push({ stream: its, ...(label ? { label } : {}), ...(own ? { subtitles: own } : {}) });
+    const quality = text(alternate.quality, 20);
+    alternates.push({ stream: its, ...(label ? { label } : {}), ...(own ? { subtitles: own } : {}), ...(quality ? { quality } : {}) });
   }
   let series: SeriesInfo | undefined;
   if (media.series && Number.isInteger(media.series.season) && Number.isInteger(media.series.episode)) {
@@ -162,6 +167,7 @@ export function fitMedia(media: NormalizedMedia): { media: NormalizedMedia | nul
   const fitted = NormalizedMediaSchema.safeParse({
     stream: main,
     ...(title ? { title } : {}),
+    ...(text(media.quality, 20) ? { quality: text(media.quality, 20) } : {}),
     ...(subs ? { subtitles: subs } : {}),
     ...(series ? { series } : {}),
     ...(alternates.length > 0 ? { alternates } : {}),
@@ -180,18 +186,40 @@ export interface PlayableSource {
   label: string | undefined;
   stream: NormalizedMedia["stream"];
   subtitles: SubtitleTrack[] | undefined;
+  /** The quality this one is in, when it is one of several of the same stream. */
+  quality?: string | undefined;
 }
 
 /** The main stream and then the alternates, in the order to try them. */
 export function sourcesOf(media: NormalizedMedia): PlayableSource[] {
   return [
-    { label: undefined, stream: media.stream, subtitles: media.subtitles },
+    { label: undefined, stream: media.stream, subtitles: media.subtitles, quality: media.quality?.trim() || undefined },
     ...(media.alternates ?? []).map((alternate) => ({
       label: alternate.label?.trim() || undefined,
       stream: alternate.stream,
       subtitles: alternate.subtitles ?? media.subtitles,
+      quality: alternate.quality?.trim() || undefined,
     })),
   ];
+}
+
+/** What the pickers list, as places in `sourcesOf`. */
+export interface SourceMenus {
+  /** The places to get the film from. The main stream stands for all of its qualities. */
+  sources: number[];
+  /** The main stream and the alternates that are it again in another quality, in the order the source gave them. Empty when there is nothing to choose. */
+  qualities: number[];
+}
+
+/**
+ * A film's sources and its qualities are two questions. Alternates that are the main stream in another quality (`quality`) are not other sources: they
+ * are listed under Quality, and the main stream stands for them all under Source.
+ */
+export function sourceMenus(all: readonly PlayableSource[]): SourceMenus {
+  const everything = all.map((_, index) => index);
+  const qualities = everything.filter((index) => all[index]!.quality);
+  if (qualities.length < 2 || qualities[0] !== 0) return { sources: everything, qualities: [] };
+  return { sources: everything.filter((index) => index === 0 || !all[index]!.quality), qualities };
 }
 
 /* ------------------------------ series helpers ------------------------------ */
