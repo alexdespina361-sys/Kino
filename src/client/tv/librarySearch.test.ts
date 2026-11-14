@@ -185,6 +185,14 @@ describe("editBox", () => {
     expect(editBox(box("night", 2), { kind: "move", to: 4 })).toEqual(box("night", 4));
   });
 
+  it("puts in at the caret what was copied somewhere else, as if it were typed: one line, tidy, and no longer than the box", () => {
+    expect(editBox(box("the ", 4), { kind: "paste", text: "Night Of\n" })).toEqual(box("the Night Of ", 13));
+    expect(editBox(box("ab", 1), { kind: "paste", text: "\t x \r\n  y" })).toEqual(box("a x yb", 5)); // (what is between the words is one space)
+    expect(editBox(box(""), { kind: "paste", text: "  Amelie \u{1F3AC}" })).toEqual(box("Amelie \u{1F3AC}")); // (any character: it is not a key of the remote)
+    expect(editBox(box("abc"), { kind: "paste", text: "defgh" }, 5)).toEqual(box("abcde"));
+    expect(editBox(box("abc", 1), { kind: "paste", text: "" })).toEqual(box("abc", 1));
+  });
+
   it("empties the box", () => {
     expect(editBox(box("night", 2), { kind: "clear" })).toEqual(box("", 0));
   });

@@ -224,6 +224,13 @@
   :root[data-ui="polish"] .tv input.tv-query { box-sizing: border-box; height: 48px; margin: 4px 0 0; padding: 0 16px; border-radius: 12px; background: var(--surf-2); font-size: 16px; }
   :root[data-ui="polish"] .tv input.tv-query::placeholder { color: var(--text-3); }
   :root[data-ui="polish"] .tv input.tv-query:focus { box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.7); }
+  /* The cross that empties the field: a button of its own, as big as a thumb (the browser's is a few pixels wide and is put away). */
+  :root[data-ui="polish"] .tv .tv-query-field { position: relative; }
+  :root[data-ui="polish"] .tv .tv-query-field input.tv-query { padding-right: 52px; }
+  :root[data-ui="polish"] .tv input.tv-query::-webkit-search-cancel-button { display: none; }
+  :root[data-ui="polish"] .tv .tv-query-clear { position: absolute; top: 4px; right: 0; display: grid; place-items: center; width: 48px; height: 48px; padding: 0; border: 0; border-radius: 12px; background: none; color: var(--text-2); }
+  :root[data-ui="polish"] .tv .tv-query-clear svg { width: 22px; height: 22px; }
+  :root[data-ui="polish"] .tv .tv-query-clear:active { color: var(--text-1, #fff); background: var(--surf-3, rgb(255 255 255 / 0.08)); }
   :root[data-ui="polish"] .tv .tv-search-main .tv-view-meta { margin-top: 0; }
 
   /* ------------------------------ the profile's page ------------------------------ */

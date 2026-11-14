@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
+import { Fragment, startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
 import { canAskTogether, DEFAULT_LIST, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
@@ -195,6 +195,9 @@ const SECTION_CHIPS = [
 ] as const;
 /** The button of the section a page is for, or -1 for a page that is none of them. */
 const sectionChip = (view: View): number => SECTION_CHIPS.findIndex((chip) => chip.kind === view.kind);
+
+/** How many rows a page of rows is drawn with at first, from the one the remote stands on: what a screen shows and a little more (see `drawnRows`). */
+const FIRST_ROWS = 4;
 
 /** Where the remote was on this page, with the row of a page of rows found again by name. */
 function savedPos(view: View, rows: readonly HomeRow[]): Pos | undefined {
@@ -397,6 +400,15 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const startRow = Math.min(homeFocus?.row ?? 0, Math.max(0, homeRows.length - 1));
   const startCol = Math.min(homeFocus?.col ?? 0, Math.max(0, (homeRows[startRow]?.entries.length ?? 1) - 1));
   const start = homeRows[startRow]?.entries[startCol];
+  // A page of rows is drawn in two steps: first the rows a screen shows (down to the one the remote stands on), then all the others, without holding
+  // up a tap or a key meanwhile. Drawing every title of the library in one go kept a phone waiting on a black screen each time it came back from a film.
+  const rowsKey = viewKey(view);
+  const [grownFor, setGrownFor] = useState<string | null>(null);
+  const allRowsDrawn = grownFor === rowsKey || homeRows.length <= startRow + FIRST_ROWS;
+  useEffect(() => {
+    if (grownFor !== rowsKey) startTransition(() => setGrownFor(rowsKey));
+  }, [rowsKey, grownFor]);
+  const drawnRows = allRowsDrawn ? homeRows : homeRows.slice(0, startRow + FIRST_ROWS);
   // What the banner says is read from the page as it is now: a tile's own line (how many friends, what is new) changes while the remote rests on it.
   const onNow = focused && rowsPage ? homeRows.find((row) => row.title === focused.label)?.entries.find((entry) => entry.id === focused.entry.id) : undefined;
   const shown: Focused | null = focused
@@ -645,11 +657,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // fill the screen yet: an answer, or a question that failed and may be asked again, looks again.
   useEffect(() => {
     if (status !== "ready") return;
-    if (isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageSection);
+    if (allRowsDrawn && isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageSection); // (not while the rows it has are still being drawn: the page is short then)
     if (view.kind === "category" && nearBottom(gridRef.current)) feed.loadMore(view.rowId, GRID_CAP);
-  }, [feeding, status, view, pageSection, homeRows.length, grid?.entries.length]);
+  }, [feeding, status, view, pageSection, homeRows.length, grid?.entries.length, allRowsDrawn]);
   const askShelves = () => {
-    if (status === "ready" && isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageSection);
+    if (status === "ready" && allRowsDrawn && isRowsPage(view) && nearBottom(rowsRef.current)) feed.loadShelves(pageSection);
   };
   const askTitles = () => {
     if (status === "ready" && view.kind === "category" && nearBottom(gridRef.current)) feed.loadMore(view.rowId, GRID_CAP);
@@ -805,6 +817,37 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // The search box of a big screen is drawn, not a field (SearchField), so the browser has nowhere to paste into or copy from: Ctrl+V puts what was copied
+  // in at the caret, Ctrl+C takes the box's text (when nothing else on the page is selected), Ctrl+X takes it and empties the box.
+  useEffect(() => {
+    const inBox = (event: ClipboardEvent) => {
+      const { view: page, detail: open, overlay: over } = latest.current;
+      const field = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+      return page.kind === "search" && !open && !over && !field;
+    };
+    const onPaste = (event: ClipboardEvent) => {
+      const text = inBox(event) ? event.clipboardData?.getData("text/plain") : "";
+      if (!text) return;
+      event.preventDefault();
+      edit({ kind: "paste", text });
+    };
+    const onCopy = (event: ClipboardEvent) => {
+      const text = latest.current.query;
+      if (!inBox(event) || !text || !event.clipboardData || window.getSelection()?.toString()) return;
+      event.preventDefault();
+      event.clipboardData.setData("text/plain", text);
+      if (event.type === "cut") edit({ kind: "clear" });
+    };
+    window.addEventListener("paste", onPaste);
+    window.addEventListener("copy", onCopy);
+    window.addEventListener("cut", onCopy);
+    return () => {
+      window.removeEventListener("paste", onPaste);
+      window.removeEventListener("copy", onCopy);
+      window.removeEventListener("cut", onCopy);
+    };
   }, []);
 
   /** The remote moved onto a title: keep it in view (the page itself never scrolls) and, after a pause, let the banner say what it is. */
@@ -1155,7 +1198,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
           <div className="tv-rows" ref={rowsRef} onScroll={askShelves}>
             {homeRows.length > 0
-              ? homeRows.map((row, r) => (
+              ? drawnRows.map((row, r) => (
                   <section className="tv-row" key={row.id} data-layout={row.layout} data-grouped={row.group ? "true" : undefined} aria-label={row.title}>
                     {row.group && homeRows[r - 1]?.group !== row.group && (
                       // (Inside the first row of its group, so that the page, which brings a row to its top, brings the heading too.)
@@ -1387,6 +1430,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         <div className="tv-search" data-testid="tv-search">
           <div className="tv-search-side">
             {narrow ? (
+              <div className="tv-query-field">
               <input
                 className="tv-query"
                 data-testid="tv-query"
@@ -1401,6 +1445,23 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 value={query}
                 onChange={(event) => setBox({ text: event.target.value, caret: event.target.value.length })}
               />
+              {/* (The browser's own little cross is too small for a thumb: this one is a button of the size a finger needs, and the keyboard stays up.) */}
+              {query && (
+                <button
+                  type="button"
+                  className="tv-query-clear"
+                  data-testid="tv-query-clear"
+                  aria-label={t("tv.clear")}
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={(event) => {
+                    edit({ kind: "clear" });
+                    event.currentTarget.parentElement?.querySelector("input")?.focus();
+                  }}
+                >
+                  <CloseIcon />
+                </button>
+              )}
+              </div>
             ) : (
               <>
                 <SearchField box={box} hint={t("tv.searchHint")} onPlace={(caret) => edit({ kind: "move", to: caret })} />
