@@ -134,7 +134,9 @@ export function editBox(box: SearchBox, edit: BoxEdit, max = 60): SearchBox {
     case "paste": {
       // What was copied elsewhere goes in at the caret as if it were typed, a character at a time: one line of it, and no more than the box holds.
       let next: SearchBox = { text, caret };
-      for (const char of Array.from(edit.text.replace(/[ -]+/g, " "))) next = editBox(next, { kind: "type", char }, max);
+      // (The end of the line that came with it is not a space the box should end in.)
+      const line = edit.text.replace(/[ -]+$/, "").replace(/[ -]+/g, " ");
+      for (const char of Array.from(line)) next = editBox(next, { kind: "type", char }, max);
       return next;
     }
     case "backspace":
