@@ -52,9 +52,23 @@ describe("pickBaseSubtitleTrack", () => {
     expect(pickBaseSubtitleTrack(tracks, "off")).toBe(-1);
   });
 
-  it("falls back to first available track if English is also missing", () => {
+  it("turns nothing on when the film has neither the language asked for nor English: a language nobody asked for is not put on screen", () => {
     const noEn = [{ id: 5, label: "Japanese", lang: "ja" }];
-    expect(pickBaseSubtitleTrack(noEn, { lang: "ro", label: "Română" })).toBe(5);
+    expect(pickBaseSubtitleTrack(noEn, { lang: "ro", label: "Română" })).toBeUndefined();
+    expect(pickBaseSubtitleTrack(noEn)).toBeUndefined();
+    // (Nor a release that is only the songs, though it is English.)
+    expect(pickBaseSubtitleTrack([{ id: 2, label: "English (3) · The.Boondocks.S01E10.Eng-Songs.WEB", lang: "en" }])).toBeUndefined();
+  });
+
+  it("starts with the first of the profile's own languages that the film has, before English", () => {
+    expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["nl", "ro"] })).toBe(1); // (no Dutch here: Romanian is next)
+    expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["nl"] })).toBe(0); // (none of them: English)
+    expect(pickBaseSubtitleTrack(tracks, { lang: "en", label: "English" }, { chosen: ["ro"] })).toBe(0); // (what was picked last time still comes first)
+  });
+
+  it("does not start with English for a profile that asked for its own languages only", () => {
+    expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["nl"], only: true })).toBeUndefined();
+    expect(pickBaseSubtitleTrack(tracks, undefined, { chosen: ["ro"], only: true })).toBe(1);
   });
 });
 

@@ -43,7 +43,8 @@ test.describe("the subtitle aligner", () => {
   });
 
   test("costs nothing while no subtitles are on: no worker and no model are fetched until one is chosen", async ({ browser }) => {
-    const tv = await openTv(browser);
+    // (A film starts with English subtitles unless the viewer turned subtitles off the last time: this viewer did.)
+    const tv = await openTv(browser, undefined, { "tv.prefs": JSON.stringify({ subtitles: "off" }) });
     const assets = watchAssets(tv);
     const workers: string[] = [];
     tv.on("response", (response) => {
