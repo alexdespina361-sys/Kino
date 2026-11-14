@@ -406,12 +406,12 @@ export async function listedSubtitles(get: typeof fetch, imdbId: string, season?
       : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
   const subData = await getJson<{ subtitles?: Array<{ id: string; url: string; lang: string; subtitleFileName?: string }> }>(get, endpoint);
   const rawList = subData?.subtitles ?? [];
-  // Prioritize Romanian (ro, ron, rum) and English (en, eng) at the top so both are always included
+  // English (en, eng) and then Romanian (ro, ron, rum) at the top, so both are always included
   const sortedSubs = [...rawList].sort((a, b) => {
     const lA = normalizeLang(a.lang);
     const lB = normalizeLang(b.lang);
-    const prioA = lA === "ro" ? 0 : lA === "en" ? 1 : 2;
-    const prioB = lB === "ro" ? 0 : lB === "en" ? 1 : 2;
+    const prioA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
+    const prioB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
     return prioA - prioB;
   });
 
@@ -661,8 +661,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         allSubs.sort((a, b) => {
           const lA = normalizeLang(a.lang);
           const lB = normalizeLang(b.lang);
-          const pA = lA === "ro" ? 0 : lA === "en" ? 1 : 2;
-          const pB = lB === "ro" ? 0 : lB === "en" ? 1 : 2;
+          const pA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
+          const pB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
           return pA - pB;
         });
         const subList = allSubs.length > 0 ? allSubs.slice(0, MAX_SUBTITLES) : undefined;
@@ -761,8 +761,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         uniqueSubs.sort((a, b) => {
           const lA = normalizeLang(a.lang);
           const lB = normalizeLang(b.lang);
-          const pA = lA === "ro" ? 0 : lA === "en" ? 1 : 2;
-          const pB = lB === "ro" ? 0 : lB === "en" ? 1 : 2;
+          const pA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
+          const pB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
           return pA - pB;
         });
         const subList = uniqueSubs.length > 0 ? uniqueSubs.slice(0, MAX_SUBTITLES) : undefined;
@@ -1185,7 +1185,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       }
 
       // 6.5. The extras: the subtitle site's list, the Romanian sites' subtitles and a dubbed source, as far as they have come a moment after the stream
-      // (started earlier when TMDB knew the title; now, with what the stream's answer says of it, otherwise). The Romanian ones first, then the player's own, then the site's list.
+      // (started earlier when TMDB knew the title; now, with what the stream's answer says of it, otherwise). Then by language: English first, then Romanian, then the rest, each in the order it came (the Romanian sites' own before the player's and the list's).
       const imdbId = apiImdbId || tmdbImdbId;
       pendingExtras ??= askExtras(imdbId);
       const [listed, romanian, dub] = await extrasByThen(pendingExtras, extrasGraceMs);
@@ -1193,8 +1193,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       subtitles.sort((a, b) => {
         const lA = normalizeLang(a.lang);
         const lB = normalizeLang(b.lang);
-        const pA = lA === "ro" ? 0 : lA === "en" ? 1 : 2;
-        const pB = lB === "ro" ? 0 : lB === "en" ? 1 : 2;
+        const pA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
+        const pB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
         return pA - pB;
       });
 
