@@ -74,6 +74,33 @@ describe("/api/health", () => {
     expect((await app.inject("/api/health")).json<{ proxy: unknown }>().proxy).toEqual({ bytes: 0, requests: 3, refused: 3, video: "off" });
   });
 
+  it("carries film from the hosts PROXY_EXEMPT_HOSTS names although it carries no film, and from no host when it names none", async () => {
+    upstream = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "video/mp2t", "content-length": "5" });
+      response.end("BYTES");
+    });
+    await new Promise<void>((resolve) => upstream!.listen(0, "127.0.0.1", resolve));
+    const piece = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/seg-1.ts`;
+    const before = process.env.PROXY_EXEMPT_HOSTS;
+    try {
+      // (As a host sets it: the whole server, from the setting to the answer.)
+      process.env.PROXY_EXEMPT_HOSTS = "elsewhere.example, 127.0.0.1";
+      app = await buildApp({ allowPrivateNetwork: true, proxyVideo: false });
+      expect((await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`)).body).toBe("BYTES");
+      await app.close();
+      delete process.env.PROXY_EXEMPT_HOSTS;
+      app = await buildApp({ allowPrivateNetwork: true, proxyVideo: false });
+      expect((await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`)).statusCode).toBe(403);
+      await app.close();
+      // (And as an option, which is what a test or another program gives.)
+      app = await buildApp({ allowPrivateNetwork: true, proxyVideo: false, proxyExemptHosts: ["127.0.0.1"] });
+      expect((await app.inject(`/api/proxy?url=${encodeURIComponent(piece)}`)).body).toBe("BYTES");
+    } finally {
+      if (before === undefined) delete process.env.PROXY_EXEMPT_HOSTS;
+      else process.env.PROXY_EXEMPT_HOSTS = before;
+    }
+  });
+
   it("is told to carry no film by PROXY_VIDEO=off, which is how a host says it", async () => {
     const before = process.env.PROXY_VIDEO;
     process.env.PROXY_VIDEO = "off";
