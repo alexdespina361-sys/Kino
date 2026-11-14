@@ -398,6 +398,10 @@ async function proxyRequest(
     accept: "*/*",
   };
   if (!options.omitOrigin) headers.origin = refererOrigin;
+  if (targetUrl.hostname.includes("hakunaymatata.com") || referer === "none") {
+    delete headers.referer;
+    delete headers.origin;
+  }
 
   if (request.headers.range) {
     headers.range = request.headers.range;

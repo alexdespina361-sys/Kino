@@ -339,7 +339,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const subId = file.replace(/\.vtt$/i, "");
     const { getRomanianSubtitleManager } = await import("./subtitles/romanian");
     const vtt = getRomanianSubtitleManager().getVtt(subId);
-    if (!vtt) return reply.code(404).send("Subtitle not found");
+    if (!vtt) return reply.code(404).send({ error: "Subtitle not found" });
     reply.header("Content-Type", "text/vtt; charset=utf-8");
     reply.header("Cache-Control", "public, max-age=31536000, immutable");
     reply.header("Access-Control-Allow-Origin", "*");

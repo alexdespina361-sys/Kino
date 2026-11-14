@@ -102,6 +102,7 @@ const MAX_PROBE_CACHE = 2000;
 export const MAX_PRELOADED_SEASONS = 2000;
 const preloadedSeasons = new Map<number, number[]>();
 const preloadedSeasonCounts = new Map<number, Record<number, number>>();
+const knownTvIds = new Set<number>();
 const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export async function probePlayback(
@@ -149,6 +150,7 @@ export async function probePlayback(
           if (Array.isArray(list)) seasonCounts[s] = list.length;
         }
       }
+      if (type === "tv") knownTvIds.add(id);
       if (cache.size >= MAX_PROBE_CACHE) cache.delete(cache.keys().next().value!);
       cache.set(key, { status: 200, seasons, seasonCounts, checkedAt: now() });
       return { ok: true, seasons, seasonCounts };
@@ -278,6 +280,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   if (!title) return null;
 
   const isTv = doc.media_type ? doc.media_type === "tv" : (defaultType ? defaultType === "tv" : Boolean(doc.first_air_date));
+  if (isTv) knownTvIds.add(doc.id);
   const rawDate = doc.release_date || doc.first_air_date;
   if (rawDate && rawDate.slice(0, 10) > today()) return null; // not out yet: nothing to play
   const year = rawDate ? Number.parseInt(rawDate.slice(0, 4), 10) : undefined;
@@ -331,6 +334,7 @@ function parseWatchLink(link: string): { id: number; type: "movie" | "tv" } | nu
       url.searchParams.has("episode") ||
       url.searchParams.get("type") === "series" ||
       url.searchParams.get("type") === "tv" ||
+      knownTvIds.has(id) ||
       preloadedSeasons.has(id) ||
       preloadedSeasonCounts.has(id);
     return { id, type: isTv ? "tv" : "movie" };
@@ -521,6 +525,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
         if (tvRes.ok) {
           title = { id: title.id, type: "tv" };
           res = tvRes;
+          knownTvIds.add(title.id);
         }
       }
       if (res.status === 404) return null;
@@ -678,6 +683,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       const res = await get(`${BASE_URL}/tv/${title.id}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
       if (res.status === 404) return [];
       if (!res.ok) throw new Error(`seasons: HTTP ${res.status}`);
+      knownTvIds.add(title.id);
       const day = today();
       const parsed = TmdbShowSchema.parse(await res.json());
       const counts = preloadedSeasonCounts.get(title.id);

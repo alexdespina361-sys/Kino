@@ -189,12 +189,13 @@ export class RomanianSubtitleManager {
 
     // 1 and 2. Subs.ro (human translations and retail) and Subtitrari-Noi (translation community and retail), asked at once; Subs.ro's come first, and
     // Subtitrari-Noi's only while Subs.ro's are few.
-    const [subsRoSubs, subtNoiSubs] = await Promise.all([quietly(this.fetchFromSubsRo(params)), quietly(this.fetchFromSubtitrariNoi(params))]);
+    const [subsRoSubs, subtNoiSubs, osSubs] = await Promise.all([quietly(this.fetchFromSubsRo(params)), quietly(this.fetchFromSubtitrariNoi(params)), params.imdbId ? quietly(this.fetchFromOpenSubtitles(params)) : Promise.resolve([])]);
     for (const s of subsRoSubs) addSub(s);
-    if (results.length < 5) for (const s of subtNoiSubs) addSub(s);
+    for (const s of subtNoiSubs) addSub(s);
+    for (const s of osSubs) addSub(s);
 
     // 3. Fallback to OpenSubtitles Stremio endpoint if needed
-    if (results.length < 3 && params.imdbId) {
+    if (false) {
       for (const s of await quietly(this.fetchFromOpenSubtitles(params))) addSub(s);
     }
 
@@ -234,7 +235,7 @@ export class RomanianSubtitleManager {
         Cookie: cookies,
       },
       body: form.toString(),
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(3_000),
     });
     if (!searchRes.ok) return list;
     const text = await searchRes.text();
@@ -256,7 +257,7 @@ export class RomanianSubtitleManager {
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
               Referer: `https://subs.ro/subtitrare/${slug}/${id}`,
             },
-            signal: AbortSignal.timeout(10_000),
+            signal: AbortSignal.timeout(4_000),
           });
           if (!dlRes.ok) return [];
           const buf = Buffer.from(await dlRes.arrayBuffer());
@@ -307,7 +308,7 @@ export class RomanianSubtitleManager {
         Referer: "https://www.subtitrari-noi.ro/",
       },
       body: body.toString(),
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(3_000),
     });
     if (!res.ok) return list;
     const html = await res.text();
@@ -325,7 +326,7 @@ export class RomanianSubtitleManager {
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
               Referer: "https://www.subtitrari-noi.ro/",
             },
-            signal: AbortSignal.timeout(10_000),
+            signal: AbortSignal.timeout(4_000),
           });
           if (!dlRes.ok) return [];
           const buf = Buffer.from(await dlRes.arrayBuffer());

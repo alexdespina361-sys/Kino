@@ -6,6 +6,7 @@ import type { ResolveResult, SiteAdapter } from "../types";
 import { signedRelayUrl } from "../../streamRelay/links";
 import { streamAddress } from "./streamAddress";
 import { decryptInThread } from "./wasmDecrypt";
+import nacl from "tweetnacl";
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
@@ -186,6 +187,102 @@ function isSecurityBlock(err: unknown): boolean {
   return msg.includes("not permitted") || msg.includes("loopback") || msg.includes("private network") || msg.includes("Private address");
 }
 
+export interface VidLinkResolvedStream {
+  streamUrl: string;
+  type: "mp4" | "hls";
+  qualities: Array<{ label: string; url: string; type: "mp4" | "hls" }>;
+  captions: Array<{ label: string; url: string; lang?: string }>;
+}
+
+const VIDLINK_KEY = Buffer.from("c75136c5668bbfe65a7ecad431a745db68b5f381555b38d8f6c699449cf11fcd", "hex");
+const ZERO_NONCE = new Uint8Array(24);
+
+export function encryptVidLinkToken(mediaId: string): string {
+  const timestamp = BigInt(Math.floor(Date.now() / 1000) + 480);
+  const mediaIdBuf = Buffer.from(mediaId, "utf-8");
+  const tsBuf = Buffer.alloc(8);
+  tsBuf.writeBigUInt64BE(timestamp);
+  const message = Buffer.concat([mediaIdBuf, tsBuf]);
+  const ciphertext = nacl.secretbox(message, ZERO_NONCE, VIDLINK_KEY);
+  const fullPayload = Buffer.concat([Buffer.from(ZERO_NONCE), Buffer.from(ciphertext)]);
+  return fullPayload.toString("base64url");
+}
+
+export async function resolveVidLinkStream(
+  get: typeof fetch,
+  tmdbId: string,
+  isTv: boolean,
+  season?: string | null,
+  episode?: string | null,
+): Promise<VidLinkResolvedStream | null> {
+  try {
+    const token = encryptVidLinkToken(tmdbId);
+    const s = season || "1";
+    const e = episode || "1";
+    const url = isTv
+      ? `https://vidlink.pro/api/b/tv/${token}/${encodeURIComponent(s)}/${encodeURIComponent(e)}?multiLang=1`
+      : `https://vidlink.pro/api/b/movie/${token}?multiLang=1`;
+
+    const res = await get(url, {
+      headers: {
+        "user-agent": UA,
+        origin: "https://vidlink.pro",
+        referer: "https://vidlink.pro/",
+      },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      stream?: {
+        type?: string;
+        playlist?: string;
+        qualities?: Record<string, { url?: string; type?: string }>;
+        captions?: Array<{ url?: string; language?: string; type?: string }>;
+      };
+    };
+    if (!data?.stream) return null;
+
+    const qualities: Array<{ label: string; url: string; type: "mp4" | "hls" }> = [];
+    if (data.stream.playlist && isHttpUrl(data.stream.playlist)) {
+      qualities.push({ label: "Auto (HLS)", url: data.stream.playlist, type: "hls" });
+    }
+    if (data.stream.qualities) {
+      const qKeys = Object.keys(data.stream.qualities).sort((a, b) => Number(b) - Number(a));
+      for (const q of qKeys) {
+        const item = data.stream.qualities[q];
+        if (item?.url && isHttpUrl(item.url)) {
+          qualities.push({
+            label: `${q}p`,
+            url: item.url,
+            type: item.type === "hls" || item.url.includes(".m3u8") ? "hls" : "mp4",
+          });
+        }
+      }
+    }
+    if (qualities.length === 0) return null;
+
+    const captions: Array<{ label: string; url: string; lang?: string }> = [];
+    for (const cap of data.stream.captions || []) {
+      if (cap.url && isHttpUrl(cap.url)) {
+        captions.push({
+          label: cap.language || "Subtitle",
+          url: cap.url,
+          lang: cap.language,
+        });
+      }
+    }
+
+    return {
+      streamUrl: qualities[0]!.url,
+      type: qualities[0]!.type,
+      qualities,
+      captions,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveBuzzStream(
   get: typeof fetch,
   tmdbId: string,
@@ -294,23 +391,34 @@ export type ExtrasLookup = (ask: ExtrasAsk, get: typeof fetch) => Extras;
 export const EXTRAS_GRACE_MS = 4_000;
 
 /** The subtitles the subtitle site (OpenSubtitles, through strem.io) lists for a title, as tracks through the proxy: no more than twelve in one language. */
-async function listedSubtitles(get: typeof fetch, imdbId: string, season?: number, episode?: number): Promise<SubtitleTrack[]> {
+export async function listedSubtitles(get: typeof fetch, imdbId: string, season?: number, episode?: number): Promise<SubtitleTrack[]> {
   const endpoint =
     season && episode
       ? `https://opensubtitles-v3.strem.io/subtitles/series/${imdbId}:${season}:${episode}.json`
       : `https://opensubtitles-v3.strem.io/subtitles/movie/${imdbId}.json`;
   const subData = await getJson<{ subtitles?: Array<{ id: string; url: string; lang: string; subtitleFileName?: string }> }>(get, endpoint);
+  const rawList = subData?.subtitles ?? [];
+  // Prioritize Romanian (ro, ron, rum) and English (en, eng) at the top so both are always included
+  const sortedSubs = [...rawList].sort((a, b) => {
+    const lA = (a.lang || "").toLowerCase();
+    const lB = (b.lang || "").toLowerCase();
+    const prioA = ["ro", "ron", "rum"].includes(lA) ? 0 : ["en", "eng"].includes(lA) ? 1 : 2;
+    const prioB = ["ro", "ron", "rum"].includes(lB) ? 0 : ["en", "eng"].includes(lB) ? 1 : 2;
+    return prioA - prioB;
+  });
+
   const tracks: SubtitleTrack[] = [];
   const seenLangs = new Set<string>();
-  for (const item of subData?.subtitles ?? []) {
+  for (const item of sortedSubs) {
     if (tracks.length >= MAX_SUBTITLES) break;
     if (!item.url) continue;
-    const langCode = (item.lang || "en").toLowerCase();
-    const count = [...seenLangs].filter((l) => l.startsWith(langCode)).length;
+    const rawLang = (item.lang || "en").toLowerCase();
+    const normalizedLang = ["ro", "ron", "rum"].includes(rawLang) ? "ro" : (["en", "eng"].includes(rawLang) ? "en" : rawLang);
+    const count = [...seenLangs].filter((l) => l.startsWith(normalizedLang)).length;
     if (count >= 12) continue;
-    seenLangs.add(`${langCode}_${count}`);
+    seenLangs.add(`${normalizedLang}_${count}`);
 
-    const langName = LANG_NAMES[langCode] || langCode.toUpperCase();
+    const langName = LANG_NAMES[rawLang] || LANG_NAMES[normalizedLang] || normalizedLang.toUpperCase();
     let label = langName;
     if (item.subtitleFileName) {
       const clean = item.subtitleFileName.replace(/\.(srt|vtt)$/i, "").trim();
@@ -322,7 +430,7 @@ async function listedSubtitles(get: typeof fetch, imdbId: string, season?: numbe
       id: tracks.length,
       url: `/api/proxy?url=${encodeURIComponent(item.url)}&format=vtt`,
       label: label.slice(0, 100),
-      lang: langCode,
+      lang: normalizedLang,
     });
   }
   return tracks;
@@ -393,8 +501,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       /** Whether TMDB says the title is animated (genre 16); unknown when TMDB did not answer, or said nothing of its genres. */
       let animated: boolean | undefined;
       try {
-        const tmdbData = await fetchJson<{ title?: string; name?: string; imdb_id?: string; genres?: Array<{ id?: number }> }>(
-          `https://api.themoviedb.org/3/${contentType}/${id}?api_key=${FILMPIRE_TMDB_API_KEY}`,
+        const tmdbData = await fetchJson<{
+          title?: string;
+          name?: string;
+          imdb_id?: string;
+          external_ids?: { imdb_id?: string };
+          genres?: Array<{ id?: number }>;
+        }>(
+          `https://api.themoviedb.org/3/${contentType}/${id}?append_to_response=external_ids&api_key=${FILMPIRE_TMDB_API_KEY}`,
         );
         if (tmdbData.title || tmdbData.name) {
           rawShowTitle = tmdbData.title || tmdbData.name;
@@ -402,6 +516,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           if (s && e) title += ` · S${s} E${e}`;
         }
         if (tmdbData.imdb_id) tmdbImdbId = tmdbData.imdb_id;
+        else if (tmdbData.external_ids?.imdb_id) tmdbImdbId = tmdbData.external_ids.imdb_id;
         if (Array.isArray(tmdbData.genres)) animated = tmdbData.genres.some((genre) => genre?.id === 16);
       } catch {
         // Non-fatal if TMDB is unreachable
@@ -570,6 +685,131 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         };
       };
 
+      const buildVidLinkResult = async (vl: VidLinkResolvedStream): Promise<ResolveResult> => {
+        const imdbId = tmdbImdbId;
+        pendingExtras ??= askExtras(imdbId);
+        const [listed, roSubs, dub] = pendingExtras
+          ? await extrasByThen(pendingExtras, extrasGraceMs)
+          : [[], [], undefined];
+
+        const vlSubs: SubtitleTrack[] = (vl.captions || []).map((c, i) => {
+          const rawLang = (c.lang || "").toLowerCase();
+          const normLang = ["ro", "ron", "rum"].includes(rawLang) ? "ro" : (["en", "eng"].includes(rawLang) ? "en" : rawLang || "en");
+          return {
+            id: i,
+            url: `/api/proxy?url=${encodeURIComponent(c.url)}&format=vtt`,
+            label: c.label || normLang.toUpperCase(),
+            lang: normLang,
+          };
+        });
+
+        const combinedSubs = [...roSubs, ...listed, ...vlSubs];
+        const seenSubUrls = new Set<string>();
+        const uniqueSubs: SubtitleTrack[] = [];
+        for (const sub of combinedSubs) {
+          if (!seenSubUrls.has(sub.url)) {
+            seenSubUrls.add(sub.url);
+            uniqueSubs.push(sub);
+          }
+        }
+        const subList = uniqueSubs.length > 0 ? uniqueSubs.slice(0, MAX_SUBTITLES) : undefined;
+        if (subList) {
+          subList.forEach((sub, idx) => {
+            sub.id = idx;
+          });
+        }
+
+        let sInfo: SeriesInfo | undefined;
+        if (isTv) {
+          const currS = Number(s || "1");
+          const currE = Number(e || "1");
+          sInfo = {
+            season: currS,
+            episode: currE,
+            next: {
+              season: currS,
+              episode: currE + 1,
+              url: `https://filmpire.sc/watch/${id}?s=${currS}&e=${currE + 1}`,
+            },
+          };
+        }
+
+        const primary = vl.qualities[0]!;
+        const proxiedUrl = streamAddress(primary.url, "none", process.env, false);
+        const alternates: AlternateSource[] = vl.qualities.slice(1).map((q) => ({
+          label: q.label,
+          stream: {
+            url: streamAddress(q.url, "none", process.env, false),
+            type: q.type,
+            directUrl: q.url,
+          },
+          subtitles: subList,
+        }));
+
+        if (rawShowTitle && isTv && alternates.length < 4) {
+          try {
+            const altAnime = await fallbackAnime();
+            if (altAnime?.status === "success") {
+              alternates.push({
+                label: `Server ${alternates.length + 2} (AnimeHeaven)`,
+                stream: altAnime.media.stream,
+              });
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        if (dub) alternates.unshift(dub);
+
+        return {
+          status: "success",
+          resolver: "filmpire",
+          media: {
+            title,
+            stream: {
+              url: proxiedUrl,
+              type: primary.type,
+              directUrl: primary.url,
+            },
+            ...(subList ? { subtitles: subList } : {}),
+            ...(alternates.length > 0 ? { alternates } : {}),
+            ...(sInfo ? { series: sInfo } : {}),
+            page: url.href,
+          },
+        };
+      };
+
+      const fallbackStreams = async (): Promise<ResolveResult | null> => {
+        try {
+          const vl = await resolveVidLinkStream(get, id, isTv, s, e);
+          if (vl) return await buildVidLinkResult(vl);
+        } catch {
+          // ignore
+        }
+        try {
+          const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+          if (buzz) return await buildBuzzResult(buzz);
+        } catch {
+          // ignore
+        }
+        try {
+          const alt = await fallbackAnime();
+          if (alt) return alt;
+        } catch {
+          // ignore
+        }
+        return null;
+      };
+
+      // Special-case titles:
+      // 1. Other Mommy (1400837): upstream has huge watermark "cinemacity", VidLink has clean release
+      // 2. Cartoons & Anime (animated === true): skip slow 15s upstream retries and resolve via fast provider immediately
+      if (id === "1400837" || animated === true) {
+        const fastResult = await fallbackStreams();
+        if (fastResult) return fastResult;
+      }
+
       // 3. Request embed player from screenfetch4 / vidsrc
       const tvQuery = s && e ? `&s=${encodeURIComponent(s)}&e=${encodeURIComponent(e)}` : "";
       let containerUrl: string | undefined;
@@ -592,19 +832,15 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           if (isSecurityBlock(err)) {
             return { status: "temporary_failure", reason: "Could not reach streaming server." };
           }
-          const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-          if (buzz) return buildBuzzResult(buzz);
-          const alt = await fallbackAnime();
-          if (alt) return alt;
+          const fb = await fallbackStreams();
+          if (fb) return fb;
           return { status: "temporary_failure", reason: "Could not reach streaming server." };
         }
       }
 
       if (!containerUrl) {
-        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-        if (buzz) return buildBuzzResult(buzz);
-        const alt = await fallbackAnime();
-        if (alt) return alt;
+        const fb = await fallbackStreams();
+        if (fb) return fb;
         return { status: "unsupported", reason: "Video source currently unavailable." };
       }
 
@@ -632,10 +868,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const msg = err instanceof Error ? err.message : String(err);
           return { status: "temporary_failure", reason: `Could not load video player: ${msg}` };
         }
-        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-        if (buzz) return buildBuzzResult(buzz);
-        const alt = await fallbackAnime();
-        if (alt) return alt;
+        const fb = await fallbackStreams();
+        if (fb) return fb;
         const msg = err instanceof Error ? err.message : String(err);
         return { status: "temporary_failure", reason: `Could not load video player: ${msg}` };
       }
@@ -669,10 +903,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         };
 
         if (config.rateLimited || !config.apiToken) {
-          const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-          if (buzz) return buildBuzzResult(buzz);
-          const alt = await fallbackAnime();
-          if (alt) return alt;
+          const fb = await fallbackStreams();
+          if (fb) return fb;
           return {
             status: "temporary_failure",
             reason: "Upstream video provider is temporarily rate-limiting requests. Please wait a moment and try again.",
@@ -797,10 +1029,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const msg = err instanceof Error ? err.message : String(err);
           return { status: "temporary_failure", reason: `Could not parse video player config: ${msg}` };
         }
-        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-        if (buzz) return buildBuzzResult(buzz);
-        const alt = await fallbackAnime();
-        if (alt) return alt;
+        const fb = await fallbackStreams();
+        if (fb) return fb;
         const msg = err instanceof Error ? err.message : String(err);
         return { status: "temporary_failure", reason: `Could not parse video player config: ${msg}` };
       }
@@ -894,10 +1124,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       }
 
       if (streamUrls.length === 0) {
-        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-        if (buzz) return buildBuzzResult(buzz);
-        const alt = await fallbackAnime();
-        if (alt) return alt;
+        const fb = await fallbackStreams();
+        if (fb) return fb;
         return { status: "unsupported", reason: "No video streams found." };
       }
 

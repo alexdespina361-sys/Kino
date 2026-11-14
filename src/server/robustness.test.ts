@@ -413,6 +413,7 @@ const SPECS: Record<string, Spec> = {
   "GET /api/library/seasons": { query: () => ({ url: TITLE }) },
   "GET /api/resolve": { query: () => ({ url: `${origin}/page.html` }) },
   "GET /api/proxy": { query: () => ({ url: `${origin}/video.mp4`, referer: `${origin}/` }) },
+  "GET /api/subtitles/ro/:file": { ok: [404] },
   "POST /api/auth/register": { heavy: true, body: () => ({ email: `new-${++registered}`, password: PASSWORD, device: "browser" }) },
   "POST /api/auth/login": { body: (w) => ({ email: w.email, password: w.password, device: "browser" }) },
   "POST /api/auth/logout": { fresh: true, ok: [204] },
