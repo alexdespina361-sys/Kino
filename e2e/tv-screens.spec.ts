@@ -1967,6 +1967,30 @@ test.describe("categories and search on the TV", () => {
     await expect(tv.getByTestId("key-clear")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-query")).toHaveText("Search titles");
+
+    // What was copied somewhere else is pasted into the box at the caret, and the box's text can be copied or cut.
+    // (What Ctrl+V, Ctrl+C and Ctrl+X do in a browser, without the machine's own clipboard: the event, with what it carries.)
+    const clipboard = (kind: "paste" | "copy" | "cut", text = "") =>
+      tv.evaluate(
+        ([kind, text]) => {
+          const data = new DataTransfer();
+          if (text) data.setData("text/plain", text);
+          const event = new ClipboardEvent(kind!, { clipboardData: data, bubbles: true, cancelable: true });
+          (document.activeElement ?? document.body).dispatchEvent(event);
+          return { taken: event.defaultPrevented, text: data.getData("text/plain") };
+        },
+        [kind, text] as const,
+      );
+    expect(await clipboard("copy")).toEqual({ taken: false, text: "" }); // (an empty box has nothing to copy: the browser does what it would)
+    expect((await clipboard("paste", "Film\tnumber\n")).taken).toBe(true);
+    await expect(tv.getByTestId("tv-query")).toHaveText("Film number"); // (one line of it, as it was written)
+    await expect(tiles(tv)).toHaveCount(10);
+    await tv.keyboard.press("Home");
+    await clipboard("paste", "a ");
+    await expect(tv.getByTestId("tv-query")).toHaveText("a Film number"); // (at the caret, not at the end)
+    expect(await clipboard("copy")).toEqual({ taken: true, text: "a Film number" });
+    expect(await clipboard("cut")).toEqual({ taken: true, text: "a Film number" });
+    await expect(tv.getByTestId("tv-query")).toHaveText("Search titles");
     await expect(tv.getByTestId("tv-search-status")).toHaveText("Type a title to search.");
     await expect(tv.getByTestId("key-clear")).toBeFocused(); // and it stays under the remote
   });

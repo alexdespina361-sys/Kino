@@ -31,7 +31,8 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   // The real thing: production build, one Fastify process serving UI + /ws + local fixtures.
   webServer: {
-    command: "pnpm build && pnpm start",
+    // (E2E_NO_BUILD=1: the build is already made, by a run that goes on beside this one on another port.)
+    command: process.env.E2E_NO_BUILD ? "pnpm start" : "pnpm build && pnpm start",
     url: `http://127.0.0.1:${PORT}/api/health`,
     // ALLOW_PRIVATE_NETWORK lets the resolver fetch our own localhost fixture pages. Test-only; off by default.
     // DATA_DIR=memory: accounts made by the tests are not kept (and do not end up in a data folder).

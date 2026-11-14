@@ -33,6 +33,14 @@ test.describe("a phone used as the screen", () => {
     // Search is typed on the phone's own keyboard, and three posters fit across (two on the narrowest phones).
     await searchFilms(phone);
     await expect(phone.getByTestId("tv-query")).toHaveJSProperty("tagName", "INPUT");
+    // The cross that empties the field is a button as big as a thumb, and the keyboard stays up for the next title.
+    const cross = await phone.getByTestId("tv-query-clear").boundingBox();
+    expect(Math.min(cross!.width, cross!.height)).toBeGreaterThanOrEqual(44);
+    await phone.getByTestId("tv-query-clear").tap();
+    await expect(phone.getByTestId("tv-query")).toHaveValue("");
+    await expect(phone.getByTestId("tv-query")).toBeFocused();
+    await expect(phone.getByTestId("tv-query-clear")).toHaveCount(0);
+    await searchFilms(phone);
     expect(await columns(phone)).toBe(3);
     expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
 

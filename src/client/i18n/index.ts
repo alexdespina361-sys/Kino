@@ -2,8 +2,6 @@ import { useSyncExternalStore } from "react";
 import { UI_LANGUAGES, type UiLanguage } from "../../shared";
 import { readStorage, writeStorage } from "../shared/format";
 import { en, type Dictionary } from "./en";
-import { it } from "./it";
-import { ro } from "./ro";
 
 export type { Dictionary };
 
@@ -19,7 +17,35 @@ type BaseKey<K> = K extends `${infer Base}_${PluralSuffix}` ? Base : K;
 export type Key = BaseKey<Extract<keyof typeof en, string>>;
 export type Params = Record<string, string | number>;
 
-export const DICTIONARIES: Record<UiLanguage, Dictionary> = { en, ro, it };
+/**
+ * The words that are here. English always is: it is the list of keys, and what a word that is missing falls back to. Romanian and Italian are a file each,
+ * downloaded when one of them is the language asked for, so that nobody downloads two languages they do not read.
+ */
+export const DICTIONARIES: Partial<Record<UiLanguage, Dictionary>> & { en: Dictionary } = { en };
+const LOADERS: Record<Exclude<UiLanguage, "en">, () => Promise<Dictionary>> = {
+  ro: () => import("./ro").then((module) => module.ro),
+  it: () => import("./it").then((module) => module.it),
+};
+const loading = new Map<UiLanguage, Promise<boolean>>();
+
+/** Have the words of a language at hand. False when they could not be had (no connection for a moment): they are asked for again the next time. */
+export function loadLanguage(language: UiLanguage): Promise<boolean> {
+  if (language === "en" || DICTIONARIES[language]) return Promise.resolve(true);
+  let pending = loading.get(language);
+  if (!pending) {
+    pending = LOADERS[language]()
+      .then(
+        (dictionary) => {
+          DICTIONARIES[language] = dictionary;
+          return true;
+        },
+        () => false,
+      )
+      .finally(() => loading.delete(language));
+    loading.set(language, pending);
+  }
+  return pending;
+}
 
 /** Whether `key` is one of the words (a server's error code, say, may be one nobody wrote a sentence for). */
 export const hasKey = (key: string): key is Key => key in en || `${key}_other` in en;
@@ -36,7 +62,9 @@ export function detectLanguage(stored: string | undefined, browser: readonly str
 /** The language of this screen when no profile says otherwise: what was chosen on it, else what its browser says. */
 export const screenLanguage = (): UiLanguage => detectLanguage(readStorage(LANGUAGE_KEY), typeof navigator === "undefined" ? [] : (navigator.languages ?? [navigator.language]));
 
-let current: UiLanguage = screenLanguage();
+/** The language asked for, and the one on screen, which follows it as soon as its words are here (at once when they already are). */
+let wanted: UiLanguage = screenLanguage();
+let current: UiLanguage = DICTIONARIES[wanted] ? wanted : "en";
 const listeners = new Set<() => void>();
 const announce = () => {
   if (typeof document !== "undefined") document.documentElement.lang = current;
@@ -47,12 +75,25 @@ export const getLanguage = () => current;
 
 /** Change the language of everything on screen. `remember: false` follows a profile's choice without making it this device's. */
 export function setLanguage(language: UiLanguage, remember = true): void {
+  if (language === wanted && language === current) return;
+  wanted = language;
+  if (remember) writeStorage(LANGUAGE_KEY, language);
+  if (DICTIONARIES[language]) return show(language);
+  // (Its words are on their way: the screen keeps the language it has until they are here, rather than show half of it in English.)
+  void loadLanguage(language).then((here) => {
+    if (here && wanted === language) show(language);
+  });
+}
+
+function show(language: UiLanguage): void {
   if (language === current) return;
   current = language;
-  if (remember) writeStorage(LANGUAGE_KEY, language);
   announce();
   listeners.forEach((listener) => listener());
 }
+
+/** Done when the language this screen starts in is on it (or could not be had, and it starts in English): what the first drawing of the page waits for. */
+export const languageReady: Promise<void> = current === wanted ? Promise.resolve() : loadLanguage(wanted).then((here) => void (here && show(wanted)));
 
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
@@ -71,7 +112,7 @@ export function useT(): typeof t {
 const fill = (text: string, params: Params | undefined) => (params ? text.replace(/\{(\w+)\}/g, (whole, name: string) => (name in params ? String(params[name]) : whole)) : text);
 
 export function translate(language: UiLanguage, key: Key, params?: Params): string {
-  const dictionary = DICTIONARIES[language] as Record<string, string>;
+  const dictionary = (DICTIONARIES[language] ?? en) as Record<string, string>;
   const english = en as Record<string, string>;
   let text: string | undefined;
   if (typeof params?.count === "number") {

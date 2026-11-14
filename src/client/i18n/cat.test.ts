@@ -5,9 +5,12 @@ import { catEn } from "./cat.en";
 import { catIt } from "./cat.it";
 import { catRo } from "./cat.ro";
 import { en } from "./en";
-import { hasKey, translate } from "./index";
+import { hasKey, loadLanguage, translate } from "./index";
 import { it as italian } from "./it";
 import { ro as romanian } from "./ro";
+
+// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
+await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
 const english: Record<string, string> = catEn;

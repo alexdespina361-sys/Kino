@@ -2,12 +2,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { en } from "./en";
-import { hasKey, translate } from "./index";
+import { hasKey, loadLanguage, translate } from "./index";
 import { it as italian } from "./it";
 import { ro as romanian } from "./ro";
 import { chatEn } from "./chat.en";
 import { chatIt } from "./chat.it";
 import { chatRo } from "./chat.ro";
+
+// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
+await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
 const baseOf = (key: string) => key.replace(/_(zero|one|two|few|many|other)$/, "");

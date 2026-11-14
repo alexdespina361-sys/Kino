@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { ARCHIVE_ROWS } from "../../server/library/internet-archive";
 import { FILMPIRE_CATEGORIES } from "../../server/library/filmpire";
 import { FILMPIRE_SHELVES } from "../../server/library/shelves";
-import { DICTIONARIES, detectLanguage, hasKey, rowTitle, translate } from "./index";
+import { DICTIONARIES, detectLanguage, hasKey, loadLanguage, rowTitle, translate } from "./index";
+
+// (Romanian and Italian are downloaded when asked for: here they are had before the tests begin.)
+await Promise.all([loadLanguage("ro"), loadLanguage("it")]);
 
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
 const baseOf = (key: string) => key.replace(/_(zero|one|two|few|many|other)$/, "");
@@ -40,7 +43,7 @@ describe("the dictionaries", () => {
   const keys = Object.keys(english);
 
   for (const language of ["ro", "it"] as const) {
-    const dictionary = DICTIONARIES[language];
+    const dictionary = DICTIONARIES[language]!;
 
     it(`${language} has every English word`, () => {
       expect(keys.filter((key) => !(key in dictionary))).toEqual([]);
@@ -63,7 +66,7 @@ describe("the dictionaries", () => {
   it("has every plural base in the forms its language needs", () => {
     for (const language of ["en", "ro", "it"] as const) {
       const rules = new Intl.PluralRules(language);
-      const dictionary = DICTIONARIES[language];
+      const dictionary = DICTIONARIES[language]!;
       const bases = new Set(Object.keys(english).filter((key) => /_(one|other)$/.test(key)).map(baseOf));
       for (const base of bases) {
         for (const form of rules.resolvedOptions().pluralCategories) {

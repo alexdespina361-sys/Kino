@@ -83,9 +83,10 @@ export interface SearchBox {
   caret: number;
 }
 
-/** What can be done to the box: type a character at the caret, take the one before it (Backspace) or the one after it (Delete), move the caret, or empty the box. */
+/** What can be done to the box: type a character at the caret, put in at the caret what was copied somewhere else, take the one before it (Backspace) or the one after it (Delete), move the caret, or empty the box. */
 export type BoxEdit =
   | { kind: "type"; char: string }
+  | { kind: "paste"; text: string }
   | { kind: "backspace" }
   | { kind: "delete" }
   | { kind: "move"; to: "left" | "right" | "start" | "end" | number }
@@ -130,6 +131,14 @@ export function editBox(box: SearchBox, edit: BoxEdit, max = 60): SearchBox {
       if (text.length >= max) return { text, caret };
       if (edit.char === " " && (caret === 0 || text[caret - 1] === " " || text[caret] === " ")) return { text, caret };
       return { text: text.slice(0, caret) + edit.char + text.slice(caret), caret: caret + edit.char.length };
+    case "paste": {
+      // What was copied elsewhere goes in at the caret as if it were typed, a character at a time: one line of it, and no more than the box holds.
+      let next: SearchBox = { text, caret };
+      // (The end of the line that came with it is not a space the box should end in.)
+      const line = edit.text.replace(/[ -]+$/, "").replace(/[ -]+/g, " ");
+      for (const char of Array.from(line)) next = editBox(next, { kind: "type", char }, max);
+      return next;
+    }
     case "backspace":
       return caret === 0 ? { text, caret } : tidy(text.slice(0, stepBack(text, caret)) + text.slice(caret), stepBack(text, caret));
     case "delete":

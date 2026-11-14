@@ -219,6 +219,8 @@
 :root[data-ui="polish"] .phone-ui .mini::after { content: ""; position: absolute; inset: -6px -5px; }
 :root[data-ui="polish"] .phone-ui .field-btn { min-width: 36px; min-height: 36px; justify-content: center; }
 :root[data-ui="polish"] .phone-ui .field-btn::after { content: ""; position: absolute; inset: -4px; }
+/* The cross that empties a field is read and hit at a glance: a bigger sign in a square as big as a thumb. */
+:root[data-ui="polish"] .phone-ui .field-btn.icon { min-width: 44px; min-height: 44px; font-size: 1.25rem; }
 :root[data-ui="polish"] .phone-ui .lib-corner { gap: 8px; }
 :root[data-ui="polish"] .phone-ui .lib-card .lib-title { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 :root[data-ui="polish"] .phone-ui .lib-round::after { inset: -4px; }
