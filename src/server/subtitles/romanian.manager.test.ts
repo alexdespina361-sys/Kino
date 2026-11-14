@@ -1,3 +1,5 @@
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import zlib from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { MAX_ARCHIVE_BYTES, MAX_ARCHIVE_FILES, MAX_FILE_BYTES, MAX_KEPT_TITLES, RomanianSubtitleManager, episodeId, extractSrtFromZip, isListedFile, siteFetch } from "./romanian";
@@ -231,6 +233,39 @@ describe("siteFetch", () => {
       const { asked, send } = sites({ "https://203.0.113.7/a": to(inside) });
       await expect(siteFetch(send, (address) => publicOnly(address))("https://203.0.113.7/a"), inside).rejects.toThrow();
       expect(asked.map((ask) => ask.url), inside).toEqual(["https://203.0.113.7/a"]);
+    }
+  });
+
+  it("really fetches: what is posted to one server and sent on to another arrives there as a GET without the cookie, and the answer is the last one's", async () => {
+    // (Two servers of this machine, so with every address allowed: the rest of these tests never leave the function.)
+    const seen: string[] = [];
+    const second = http.createServer((req, res) => {
+      seen.push(`${req.method} ${req.url} cookie=${req.headers.cookie ?? "-"} type=${req.headers["content-type"] ?? "-"}`);
+      res.writeHead(200, { "content-type": "text/plain" }).end("the archive");
+    });
+    const first = http.createServer((req, res) => {
+      seen.push(`${req.method} ${req.url} cookie=${req.headers.cookie ?? "-"}`);
+      if (req.url === "/page") return void res.writeHead(200, { "set-cookie": "s=1; Path=/" }).end("a page");
+      req.resume();
+      res.writeHead(302, { location: `http://127.0.0.1:${(second.address() as AddressInfo).port}/file` }).end();
+    });
+    await Promise.all([new Promise<void>((done) => first.listen(0, "127.0.0.1", done)), new Promise<void>((done) => second.listen(0, "127.0.0.1", done))]);
+    try {
+      const at = `http://127.0.0.1:${(first.address() as AddressInfo).port}`;
+      const get = siteFetch(undefined, () => true);
+      const page = await get(`${at}/page`);
+      expect(page.headers.get("set-cookie")).toContain("s=1"); // (the cookie a site sets is still there to be sent back)
+      expect(await page.text()).toBe("a page");
+      const res = await get(`${at}/search`, { method: "POST", body: "x=1", headers: { cookie: "s=1", "content-type": "application/x-www-form-urlencoded" }, signal: AbortSignal.timeout(5_000) });
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe("the archive");
+      expect(seen).toEqual(["GET /page cookie=-", "POST /search cookie=s=1", "GET /file cookie=- type=-"]);
+      // (And with the usual rule, this machine is not asked at all.)
+      await expect(siteFetch()(`${at}/page`)).rejects.toThrow("address not allowed");
+      expect(seen).toHaveLength(3);
+    } finally {
+      first.close();
+      second.close();
     }
   });
 
