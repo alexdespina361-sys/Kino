@@ -203,7 +203,7 @@ export function Remote({ tv, online, media, player, send, onStop, onNext, onPrev
               onClick={() => onOpen("episodes")}
             />
           )}
-          {hasTracks && (
+          {Boolean(player) && (
             <Chip
               testId="chip-tracks"
               icon={<SubtitlesIcon />}

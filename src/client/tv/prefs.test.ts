@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeTrack, parsePrefs, pickTrack, serializePrefs } from "./prefs";
+import { describeTrack, parsePrefs, pickBaseSubtitleTrack, pickTrack, serializePrefs } from "./prefs";
 
 const tracks = [
   { id: 0, label: "English", lang: "eng" },
@@ -32,6 +32,29 @@ describe("pickTrack", () => {
   it("finds nothing rather than guessing", () => {
     expect(pickTrack(tracks, { lang: "fr", label: "Français" })).toBeUndefined();
     expect(pickTrack([], { lang: "en", label: "English" })).toBeUndefined();
+  });
+});
+
+describe("pickBaseSubtitleTrack", () => {
+  it("picks the preferred track if present", () => {
+    expect(pickBaseSubtitleTrack(tracks, { lang: "ro", label: "Română" })).toBe(1);
+  });
+
+  it("falls back to English base subtitles when preferred language is not present", () => {
+    expect(pickBaseSubtitleTrack(tracks, { lang: "ja", label: "Japanese" })).toBe(0);
+  });
+
+  it("defaults base subtitles to English when no preference is set", () => {
+    expect(pickBaseSubtitleTrack(tracks)).toBe(0);
+  });
+
+  it("respects explicit 'off'", () => {
+    expect(pickBaseSubtitleTrack(tracks, "off")).toBe(-1);
+  });
+
+  it("falls back to first available track if English is also missing", () => {
+    const noEn = [{ id: 5, label: "Japanese", lang: "ja" }];
+    expect(pickBaseSubtitleTrack(noEn, { lang: "ro", label: "Română" })).toBe(5);
   });
 });
 

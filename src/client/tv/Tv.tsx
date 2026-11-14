@@ -58,6 +58,7 @@ import { Follower } from "./sync";
 import {
   describeTrack,
   parsePrefs,
+  pickBaseSubtitleTrack,
   pickTrack,
   PREFS_KEY,
   serializePrefs,
@@ -558,7 +559,7 @@ export function Tv() {
     if (player.state !== "paused") setEnded(false); // the end card lasts as long as the picture stays on the last frame
   }, [player.state]);
 
-  // When a video's tracks show up, switch to the language the viewer picked last time. Once per video, and never over a manual pick.
+  // When a video's tracks show up, switch to the language the viewer picked last time, or default base subtitles to English. Once per video, and never over a manual pick.
   useEffect(() => {
     const engine = engineRef.current;
     const applied = appliedRef.current;
@@ -566,12 +567,8 @@ export function Tv() {
     const subtitles = player.subtitles;
     if (!engine || !subtitles || applied.subtitles || subtitles.tracks.length === 0) return;
     applied.subtitles = true;
-    if (wanted.subtitles === "off") {
-      if (subtitles.current !== -1) engine.setSubtitle(-1);
-    } else if (wanted.subtitles) {
-      const id = pickTrack(subtitles.tracks, wanted.subtitles);
-      if (id !== undefined && id !== subtitles.current) engine.setSubtitle(id);
-    }
+    const id = pickBaseSubtitleTrack(subtitles.tracks, wanted.subtitles);
+    if (id !== undefined && id !== subtitles.current) engine.setSubtitle(id);
   }, [player.subtitles]);
 
   useEffect(() => {

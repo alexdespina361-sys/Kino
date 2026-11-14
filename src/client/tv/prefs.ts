@@ -53,3 +53,20 @@ export function pickTrack(tracks: readonly PlayerTrack[], wanted: ChosenTrack): 
   if (byLabel || !wanted.lang) return byLabel?.id;
   return defaultTrack(tracks.filter((track) => normalizeLang(track.lang) === wanted.lang))?.id;
 }
+
+/**
+ * Picks the subtitle track to play: the viewer's preferred track if found,
+ * otherwise falling back to English ("en") base subtitles, then the first available track.
+ * Returns -1 if the viewer explicitly turned subtitles off.
+ */
+export function pickBaseSubtitleTrack(tracks: readonly PlayerTrack[], wanted?: ChosenTrack | "off"): number | undefined {
+  if (wanted === "off") return -1;
+  if (wanted) {
+    const chosen = pickTrack(tracks, wanted);
+    if (chosen !== undefined) return chosen;
+  }
+  // Base subtitles default to English
+  const enTrack = defaultTrack(tracks.filter((t) => normalizeLang(t.lang) === "en")) ?? tracks.find((t) => normalizeLang(t.lang) === "en");
+  if (enTrack !== undefined) return enTrack.id;
+  return tracks[0]?.id;
+}

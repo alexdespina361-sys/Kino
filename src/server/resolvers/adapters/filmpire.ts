@@ -173,6 +173,88 @@ export async function getHostToken(
   return cached?.token || "";
 }
 
+export interface BuzzResolvedStream {
+  streamUrl: string;
+  alternates: Array<{ name: string; url: string; type: "hls" | "mp4" }>;
+  embedUrl: string;
+}
+
+function isSecurityBlock(err: unknown): boolean {
+  if (!err) return false;
+  if ((err as { code?: string }).code === "blocked") return true;
+  const msg = String(err);
+  return msg.includes("not permitted") || msg.includes("loopback") || msg.includes("private network") || msg.includes("Private address");
+}
+
+export async function resolveBuzzStream(
+  get: typeof fetch,
+  tmdbId: string,
+  isTv: boolean,
+  season?: string | null,
+  episode?: string | null,
+): Promise<BuzzResolvedStream | null> {
+  const s = season || "1";
+  const e = episode || "1";
+  const embedUrl = isTv
+    ? `https://vidsrc.buzz/embed/tv/${tmdbId}/${s}/${e}`
+    : `https://vidsrc.buzz/embed/movie/${tmdbId}`;
+
+  try {
+    const res = await get(embedUrl, {
+      headers: {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        referer: "https://www.2embed.cc/",
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+    const qMatch = html.match(/var\s+Q\s*=\s*(\{[\s\S]*?\});/);
+    if (!qMatch?.[1]) return null;
+    const q = JSON.parse(qMatch[1]) as {
+      t: string;
+      ssr?: { servers?: Array<{ ref: string; name?: string }> };
+    };
+    const servers = q.ssr?.servers || [];
+    if (servers.length === 0) return null;
+
+    const playStreams: Array<{ name: string; url: string; type: "hls" | "mp4" }> = [];
+    for (const srv of servers.slice(0, 3)) {
+      try {
+        const playUrl = `https://vidsrc.buzz/pl/api.php?a=play&ref=${encodeURIComponent(srv.ref)}&t=${encodeURIComponent(q.t)}`;
+        const pRes = await get(playUrl, {
+          headers: {
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            referer: embedUrl,
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!pRes.ok) continue;
+        const pData = (await pRes.json()) as { url?: string; type?: string };
+        if (pData?.url) {
+          const fullStream = new URL(pData.url, "https://vidsrc.buzz/").href;
+          playStreams.push({
+            name: srv.name || "Server",
+            url: fullStream,
+            type: pData.type === "mp4" ? "mp4" : "hls",
+          });
+        }
+      } catch {
+        // ignore individual server fail
+      }
+    }
+
+    if (playStreams.length === 0) return null;
+    return {
+      streamUrl: playStreams[0]!.url,
+      alternates: playStreams.slice(1),
+      embedUrl,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export interface FilmpireAdapterOptions {
   /** How the sites are asked. Default: `providerFetch()`, which goes to public addresses only and reads no more than a bounded answer. */
   fetch?: typeof fetch;
@@ -396,6 +478,15 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                 ...res.media,
                 title,
                 page: url.href,
+                ...(res.media.series
+                  ? {
+                      series: {
+                        ...res.media.series,
+                        season: targetSeason,
+                        episode: targetEpisode,
+                      },
+                    }
+                  : {}),
               },
             };
           }
@@ -403,7 +494,81 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         } catch {
           return null;
         }
-      }
+      };
+
+      const buildBuzzResult = async (buzz: BuzzResolvedStream): Promise<ResolveResult> => {
+        const imdbId = tmdbImdbId;
+        pendingExtras ??= askExtras(imdbId);
+        const [listed, roSubs, dub] = pendingExtras
+          ? await extrasByThen(pendingExtras, extrasGraceMs)
+          : [[], [], undefined];
+        const allSubs = [...roSubs, ...listed];
+        const subList = allSubs.length > 0 ? allSubs.slice(0, MAX_SUBTITLES) : undefined;
+        if (subList) {
+          subList.forEach((sub, idx) => {
+            sub.id = idx;
+          });
+        }
+
+        let sInfo: SeriesInfo | undefined;
+        if (isTv) {
+          const currS = Number(s || "1");
+          const currE = Number(e || "1");
+          sInfo = {
+            season: currS,
+            episode: currE,
+            next: {
+              season: currS,
+              episode: currE + 1,
+              url: `https://filmpire.sc/watch/${id}?s=${currS}&e=${currE + 1}`,
+            },
+          };
+        }
+
+        const proxiedUrl = streamAddress(buzz.streamUrl, buzz.embedUrl, process.env, false);
+        const alternates: AlternateSource[] = buzz.alternates.map((alt) => ({
+          label: alt.name,
+          stream: {
+            url: streamAddress(alt.url, buzz.embedUrl, process.env, false),
+            type: alt.type,
+            directUrl: alt.url,
+          },
+          subtitles: subList,
+        }));
+
+        if (rawShowTitle && isTv && alternates.length < 4) {
+          try {
+            const altAnime = await fallbackAnime();
+            if (altAnime?.status === "success") {
+              alternates.push({
+                label: `Server ${alternates.length + 2} (AnimeHeaven)`,
+                stream: altAnime.media.stream,
+              });
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        if (dub) alternates.unshift(dub);
+
+        return {
+          status: "success",
+          resolver: "filmpire",
+          media: {
+            title,
+            stream: {
+              url: proxiedUrl,
+              type: "hls",
+              directUrl: buzz.streamUrl,
+            },
+            ...(subList ? { subtitles: subList } : {}),
+            ...(alternates.length > 0 ? { alternates } : {}),
+            ...(sInfo ? { series: sInfo } : {}),
+            page: url.href,
+          },
+        };
+      };
 
       // 3. Request embed player from screenfetch4 / vidsrc
       const tvQuery = s && e ? `&s=${encodeURIComponent(s)}&e=${encodeURIComponent(e)}` : "";
@@ -423,7 +588,12 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             { referer: `https://vidsrc.me/embed/${contentType}/${id}` },
           );
           containerUrl = vsData.src;
-        } catch {
+        } catch (err) {
+          if (isSecurityBlock(err)) {
+            return { status: "temporary_failure", reason: "Could not reach streaming server." };
+          }
+          const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+          if (buzz) return buildBuzzResult(buzz);
           const alt = await fallbackAnime();
           if (alt) return alt;
           return { status: "temporary_failure", reason: "Could not reach streaming server." };
@@ -431,6 +601,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       }
 
       if (!containerUrl) {
+        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+        if (buzz) return buildBuzzResult(buzz);
         const alt = await fallbackAnime();
         if (alt) return alt;
         return { status: "unsupported", reason: "Video source currently unavailable." };
@@ -445,6 +617,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             landingHtml = await fetchText(containerUrl, { referer: "https://screenfetch4.cyou/" });
             if (landingHtml) break;
           } catch (err) {
+            if (isSecurityBlock(err)) throw err;
             if (attempt === 2) throw err;
             await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
           }
@@ -455,6 +628,12 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
         playerUrl = new URL(playerMatch[1].replace(/\\u0026/g, "&"), containerUrl).href;
       } catch (err) {
+        if (isSecurityBlock(err)) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { status: "temporary_failure", reason: `Could not load video player: ${msg}` };
+        }
+        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+        if (buzz) return buildBuzzResult(buzz);
         const alt = await fallbackAnime();
         if (alt) return alt;
         const msg = err instanceof Error ? err.message : String(err);
@@ -490,6 +669,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         };
 
         if (config.rateLimited || !config.apiToken) {
+          const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+          if (buzz) return buildBuzzResult(buzz);
           const alt = await fallbackAnime();
           if (alt) return alt;
           return {
@@ -612,6 +793,12 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           streamApiUrl = `${cleanApi}&api_token=${config.apiToken}`;
         }
       } catch (err) {
+        if (isSecurityBlock(err)) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { status: "temporary_failure", reason: `Could not parse video player config: ${msg}` };
+        }
+        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+        if (buzz) return buildBuzzResult(buzz);
         const alt = await fallbackAnime();
         if (alt) return alt;
         const msg = err instanceof Error ? err.message : String(err);
@@ -669,6 +856,12 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           }
         }
       } catch (err) {
+        if (isSecurityBlock(err)) {
+          const msg = err instanceof Error ? err.message : String(err);
+          return { status: "temporary_failure", reason: `Could not retrieve video stream: ${msg}` };
+        }
+        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+        if (buzz) return buildBuzzResult(buzz);
         const alt = await fallbackAnime();
         if (alt) return alt;
         const msg = err instanceof Error ? err.message : String(err);
@@ -701,6 +894,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       }
 
       if (streamUrls.length === 0) {
+        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+        if (buzz) return buildBuzzResult(buzz);
         const alt = await fallbackAnime();
         if (alt) return alt;
         return { status: "unsupported", reason: "No video streams found." };

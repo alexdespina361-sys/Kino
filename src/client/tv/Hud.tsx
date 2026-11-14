@@ -200,7 +200,7 @@ const fractionAt = (event: { clientX: number; currentTarget: HTMLElement }) => {
 /* The buttons that are the same on every screen, a screen that watches along included: what it reads and hears is its own choice. */
 
 function TracksButton({ p, player }: { p: HudProps; player: PlayerState }) {
-  if (!hasTracks(player)) return null;
+  // keep tracks button up at all times
   return (
     <button
       className={`tv-btn ${player.subtitles && player.subtitles.current !== -1 ? "tv-btn-on" : ""}`}
