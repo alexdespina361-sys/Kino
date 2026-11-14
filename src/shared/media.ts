@@ -94,6 +94,85 @@ export function withHint(media: NormalizedMedia, hint: PlayHint | undefined): No
   return { ...media, ...(poster ? { poster } : {}), ...(backdrop ? { backdrop } : {}), ...(year ? { year } : {}) };
 }
 
+/* ------------------------------ fitting ------------------------------ */
+
+/**
+ * `media` made to fit what a screen takes (`NormalizedMediaSchema`), and which of its fields did not (their places, never what was in them).
+ *
+ * A screen checks every message it is sent and lets go of one that does not fit without a word: a look-up that found a video with a ninth alternate, a
+ * label a few letters too long or a subtitle whose link is past the limit was a film that would not start, with nothing anywhere to say why. What is
+ * too long is cut, what is too many is cut off at the limit, and what cannot be made to fit (a subtitle, an alternate, a picture) is left out: the film
+ * plays without it. `media` is null only when the video's own address does not fit, which leaves nothing to play.
+ */
+export function fitMedia(media: NormalizedMedia): { media: NormalizedMedia | null; unfit: string[] } {
+  const asIs = NormalizedMediaSchema.safeParse(media);
+  if (asIs.success) return { media, unfit: [] };
+  const unfit = [...new Set(asIs.error.issues.map((issue) => issue.path.join(".").slice(0, 60)))].slice(0, 12);
+
+  const text = (value: unknown, max: number): string | undefined => (typeof value === "string" ? value.slice(0, max) : undefined);
+  const stream = (found: NormalizedMedia["stream"] | undefined): NormalizedMedia["stream"] | undefined => {
+    if (!found) return undefined;
+    const whole = StreamSchema.safeParse(found);
+    if (whole.success) return whole.data;
+    // (The address a screen may ask the other end at directly is an extra: without it the screen asks through the relay.)
+    const plain = StreamSchema.safeParse({ url: found.url, type: found.type });
+    return plain.success ? plain.data : undefined;
+  };
+  const subtitles = (tracks: SubtitleTrack[] | undefined): SubtitleTrack[] | undefined => {
+    if (!Array.isArray(tracks)) return undefined;
+    const kept: SubtitleTrack[] = [];
+    for (const track of tracks) {
+      const lang = typeof track?.lang === "string" && track.lang.length <= 20 ? track.lang : undefined;
+      const fitted = SubtitleTrackSchema.safeParse({ id: track?.id, label: text(track?.label, 100) ?? "", url: track?.url, ...(lang ? { lang } : {}) });
+      if (fitted.success) kept.push(fitted.data);
+    }
+    return kept;
+  };
+  const episode = (ref: EpisodeRef | undefined): EpisodeRef | undefined => {
+    const title = text(ref?.title, 300);
+    const fitted = EpisodeRefSchema.safeParse({ season: ref?.season, episode: ref?.episode, url: ref?.url, ...(title ? { title } : {}) });
+    return fitted.success ? fitted.data : undefined;
+  };
+
+  const main = stream(media.stream);
+  if (!main) return { media: null, unfit };
+  const title = text(media.title, 300);
+  const subs = subtitles(media.subtitles);
+  const alternates: AlternateSource[] = [];
+  for (const alternate of Array.isArray(media.alternates) ? media.alternates : []) {
+    if (alternates.length >= MAX_ALTERNATES) break;
+    const its = stream(alternate?.stream);
+    if (!its) continue;
+    const label = text(alternate.label, 60);
+    const own = subtitles(alternate.subtitles);
+    alternates.push({ stream: its, ...(label ? { label } : {}), ...(own ? { subtitles: own } : {}) });
+  }
+  let series: SeriesInfo | undefined;
+  if (media.series && Number.isInteger(media.series.season) && Number.isInteger(media.series.episode)) {
+    const next = episode(media.series.next);
+    const episodes = Array.isArray(media.series.episodes) ? media.series.episodes.map(episode).filter((ref): ref is EpisodeRef => ref !== undefined).slice(0, 400) : undefined;
+    series = { season: media.series.season, episode: media.series.episode, ...(next ? { next } : {}), ...(episodes ? { episodes } : {}) };
+  }
+  const picture = (value: unknown): string | undefined => (typeof value === "string" && value.length <= 2048 && isMediaUrl(value) ? value : undefined);
+  const page = typeof media.page === "string" && media.page.length <= 2048 ? media.page : undefined;
+  const poster = picture(media.poster);
+  const backdrop = picture(media.backdrop);
+  const year = typeof media.year === "number" && Number.isInteger(media.year) && media.year >= 1800 && media.year <= 2200 ? media.year : undefined;
+
+  const fitted = NormalizedMediaSchema.safeParse({
+    stream: main,
+    ...(title ? { title } : {}),
+    ...(subs ? { subtitles: subs } : {}),
+    ...(series ? { series } : {}),
+    ...(alternates.length > 0 ? { alternates } : {}),
+    ...(page ? { page } : {}),
+    ...(poster ? { poster } : {}),
+    ...(backdrop ? { backdrop } : {}),
+    ...(year ? { year } : {}),
+  });
+  return { media: fitted.success ? fitted.data : null, unfit };
+}
+
 /* ------------------------------ sources ------------------------------ */
 
 export interface PlayableSource {

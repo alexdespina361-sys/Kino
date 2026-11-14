@@ -268,8 +268,17 @@ describe("ResolverRegistry", () => {
       const huge: SiteAdapter = {
         id: "huge",
         domains: [],
-        resolve: async () => (asked++, { status: "success", resolver: "huge", media: { stream: { url: "https://x/a.mp4", type: "mp4" }, title: "t".repeat(MAX_CACHED_RESULT_BYTES) } }),
+        // (Heavy in a way a screen takes: a title of a megabyte is cut to what a title may be before it is weighed, see `fitMedia`.)
+        resolve: async () => (
+          asked++,
+          {
+            status: "success",
+            resolver: "huge",
+            media: { stream: { url: "https://x/a.mp4", type: "mp4" }, subtitles: Array.from({ length: 600 }, (_, n) => ({ id: n, label: "Subtitle", url: `/sub/${n}?${"u".repeat(2000)}` })) },
+          }
+        ),
       };
+      expect(600 * 2000).toBeGreaterThan(MAX_CACHED_RESULT_BYTES);
       const registry = new ResolverRegistry([], huge, log);
       expect(await registry.resolve("https://a.example/1")).toMatchObject({ status: "success" });
       await registry.resolve("https://a.example/1");

@@ -1,4 +1,4 @@
-import { completeSeries, isHttpUrl } from "../../shared";
+import { completeSeries, fitMedia, isHttpUrl } from "../../shared";
 import { newLookup, runLookup, upstreamSummary } from "./lookup";
 import type { ResolveFn, ResolveResult, Resolver, SiteAdapter } from "./types";
 
@@ -139,7 +139,13 @@ export class ResolverRegistry {
     if (timedOut) result = TOO_LONG;
 
     if (result.status === "success") {
-      result = { ...result, media: completeSeries({ ...result.media, page: result.media.page ?? raw }) };
+      // What was found is made to fit what a screen takes before it is kept or handed on: a screen lets go of what does not fit without a word, and the
+      // film would not start with nothing to say why (see `fitMedia`). The line says which fields did not fit, never what was in them.
+      const fitted = fitMedia(completeSeries({ ...result.media, page: result.media.page ?? raw }));
+      if (fitted.unfit.length > 0) this.log.info({ domain: url.hostname, resolver: result.resolver, fields: fitted.unfit, plays: fitted.media !== null }, "media-unfit");
+      result = fitted.media ? { ...result, media: fitted.media } : { status: "unsupported", reason: "The video was found, but not in a form this player can take." };
+    }
+    if (result.status === "success") {
       // A link that carries the site's own token is good for about a minute, and is kept for less than that; any other for ten minutes (a link that the relay
       // authorizes itself carries none). A kept link that has run out all the same is what the screen's second look (`fresh`) is for.
       const { url: streamUrl, directUrl } = result.media.stream;
