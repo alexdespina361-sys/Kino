@@ -1278,11 +1278,14 @@ test.describe("sources", () => {
     await expect(tv.getByTestId("tv-quality-btn")).toHaveText("1080p");
     await phone.getByTestId("chip-quality").click();
     await expect(phone.getByTestId("quality-1000")).toContainText("1080p");
+    await expect(phone.getByTestId("quality--1")).toHaveCount(0); // (each quality is a file of its own: there is no "Auto" to offer)
     await phone.getByTestId("quality-1001").click();
     await expect.poll(() => currentSrc(tv)).toContain("q=720");
     await expect.poll(() => tvTime(tv), { timeout: 10_000 }).toBeGreaterThan(11); // (from where it was)
     await expect(phone.getByTestId("chip-quality")).toContainText("720p");
     await expect(phone.getByTestId("chip-source")).toContainText("Source 1"); // still the first place
+    await phone.keyboard.press("Escape");
+    await expect(phone.getByTestId("quality-sheet")).toHaveCount(0);
 
     await phone.getByTestId("chip-source").click();
     await expect(phone.getByTestId("source-0")).toContainText("Source 1");

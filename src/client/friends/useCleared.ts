@@ -36,7 +36,7 @@ export function useCleared(): { cleared: Cleared; clear: (items: readonly Pick<A
   const clear = useCallback(
     (items: readonly Pick<ActivityItem, "friend" | "key" | "at">[]) => {
       if (!profileId || items.length === 0) return;
-      const next = withCleared(of(profileId), items);
+      const next = withCleared(of(profileId), items, Date.now());
       known.set(profileId, next);
       try {
         localStorage.setItem(key(profileId), JSON.stringify(next));

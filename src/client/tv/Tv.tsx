@@ -1804,7 +1804,7 @@ function pickersOf(media: NormalizedMedia, sourceIndex: number): Pick<PlayerStat
       : {}),
     // (Another place's film is another file: these qualities are not its own, so they are not offered while it plays.)
     ...(inQualities && levels.length > 0
-      ? { quality: { levels, current: isAutoQuality(all[sourceIndex]!.quality) ? -1 : FILE_QUALITY + sourceIndex } }
+      ? { quality: { levels, current: isAutoQuality(all[sourceIndex]!.quality) ? -1 : FILE_QUALITY + sourceIndex, ...(levels.length === menus.qualities.length ? { auto: false } : {}) } }
       : {}),
   };
 }

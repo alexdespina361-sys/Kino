@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AGE_COUNTRIES, sectionOf, type EpisodeDetail, type LibraryItem, type LibraryRow, type LibrarySection, type TitleAbout } from "../../shared";
 import { remember } from "../boundedMap";
-import { hasRomanianDub, hasRomanianDubSync } from "../dubs/romanian";
+import { hasRomanianDub, hasRomanianDubSync, romanianDubsOn } from "../dubs/romanian";
 import { providerFetch } from "../resolvers/providerFetch";
 import type { LibrarySource } from "./library";
 import { ANIMATION_GENRE, animated, SHELF_GROUPS, sectionOfCategory, shelfPlan, type FilmpireCategory } from "./shelves";
@@ -291,7 +291,7 @@ function toLibraryItem(raw: unknown, defaultType?: "movie" | "tv"): LibraryItem 
   const description = doc.overview ? doc.overview.trim().slice(0, 400) : undefined;
   const url = isTv ? `https://filmpire.sc/watch/${doc.id}?s=1&e=1` : `https://filmpire.sc/watch/${doc.id}`;
   const section = animationOf(doc);
-  const hasRoDub = hasRomanianDubSync({
+  const hasRoDub = romanianDubsOn() && hasRomanianDubSync({
     tmdbId: doc.id,
     type: isTv ? "tv" : "movie",
     title,
@@ -553,7 +553,7 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
       }
       const rawDate = doc.release_date || doc.first_air_date;
       const releaseYear = rawDate ? Number.parseInt(rawDate.slice(0, 4), 10) : undefined;
-      const hasRoDub = await hasRomanianDub({
+      const hasRoDub = romanianDubsOn() && await hasRomanianDub({
         tmdbId: title.id,
         type: title.type,
         title: doc.title || doc.name || "",
