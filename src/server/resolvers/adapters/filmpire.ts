@@ -19,7 +19,11 @@ async function getJson<T = Record<string, unknown>>(get: typeof fetch, url: stri
   const res = await get(url, {
     headers: { "user-agent": UA, accept: "application/json", ...headers },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status} from ${url}`);
+    (err as { status?: number }).status = res.status;
+    throw err;
+  }
   return res.json() as Promise<T>;
 }
 
@@ -30,7 +34,11 @@ async function getText(get: typeof fetch, url: string, headers: Record<string, s
       ...headers,
     },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status} from ${url}`);
+    (err as { status?: number }).status = res.status;
+    throw err;
+  }
   return res.text();
 }
 
@@ -483,16 +491,16 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         return { status: "invalid_url" };
       }
 
-      const s = url.searchParams.get("s") || url.searchParams.get("season");
-      const e = url.searchParams.get("e") || url.searchParams.get("episode");
-      const isTv = Boolean(
+      let s = url.searchParams.get("s") || url.searchParams.get("season");
+      let e = url.searchParams.get("e") || url.searchParams.get("episode");
+      let isTv = Boolean(
         (s && e) ||
         url.pathname.includes("/tv") ||
         url.pathname.includes("/series") ||
         url.searchParams.get("type") === "series" ||
         url.searchParams.get("type") === "tv"
       );
-      const contentType = isTv ? "tv" : "movie";
+      let contentType = isTv ? "tv" : "movie";
 
       // 2. Fetch metadata from TMDB
       let title = "Filmpire Video";
@@ -501,15 +509,42 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       /** Whether TMDB says the title is animated (genre 16); unknown when TMDB did not answer, or said nothing of its genres. */
       let animated: boolean | undefined;
       try {
-        const tmdbData = await fetchJson<{
+        const tmdbUrl = (cType: string) =>
+          `https://api.themoviedb.org/3/${cType}/${id}?append_to_response=external_ids&api_key=${FILMPIRE_TMDB_API_KEY}`;
+        let tmdbData: {
           title?: string;
           name?: string;
           imdb_id?: string;
           external_ids?: { imdb_id?: string };
           genres?: Array<{ id?: number }>;
-        }>(
-          `https://api.themoviedb.org/3/${contentType}/${id}?append_to_response=external_ids&api_key=${FILMPIRE_TMDB_API_KEY}`,
-        );
+        };
+        try {
+          tmdbData = await fetchJson<{
+            title?: string;
+            name?: string;
+            imdb_id?: string;
+            external_ids?: { imdb_id?: string };
+            genres?: Array<{ id?: number }>;
+          }>(tmdbUrl(contentType));
+        } catch (initialErr) {
+          const is404 = (initialErr as { status?: number })?.status === 404 || String(initialErr).includes("HTTP 404");
+          const isExplicitMovie = url.pathname.includes("/movie") || url.searchParams.get("type") === "movie";
+          if (!isTv && is404 && !isExplicitMovie) {
+            tmdbData = await fetchJson<{
+              title?: string;
+              name?: string;
+              imdb_id?: string;
+              external_ids?: { imdb_id?: string };
+              genres?: Array<{ id?: number }>;
+            }>(tmdbUrl("tv"));
+            isTv = true;
+            contentType = "tv";
+            s = s || "1";
+            e = e || "1";
+          } else {
+            throw initialErr;
+          }
+        }
         if (tmdbData.title || tmdbData.name) {
           rawShowTitle = tmdbData.title || tmdbData.name;
           title = rawShowTitle || title;

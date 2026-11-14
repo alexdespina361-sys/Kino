@@ -315,14 +315,16 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const link = request.query.url ?? "";
     const season = Number(request.query.season);
     if (typeof link !== "string" || !link || link.length > 2048 || !Number.isInteger(season) || season < 0 || season > 200) return reply.code(400).send({ error: "Missing 'url' or 'season' parameter" });
-    const episodes = await library.episodes(link, season);
+    const targetLink = !link.includes("?") && !link.includes("type=movie") ? `${link}?type=series&s=${season}&e=1` : link;
+    const episodes = await library.episodes(targetLink, season);
     reply.header("Cache-Control", episodes.length > 0 ? "public, max-age=3600" : "no-store");
     return reply.send({ episodes });
   });
   app.get<{ Querystring: { url?: string } }>("/api/library/seasons", async (request, reply) => {
     const link = request.query.url ?? "";
     if (typeof link !== "string" || !link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
-    const seasons = await library.seasons(link);
+    const targetLink = !link.includes("?") && !link.includes("type=movie") ? `${link}?type=series` : link;
+    const seasons = await library.seasons(targetLink);
     // Only an answer is kept by the browser: no seasons may be a place that could not be reached just now.
     reply.header("Cache-Control", seasons.length > 0 ? "public, max-age=3600" : "no-store");
     return reply.send({ seasons });

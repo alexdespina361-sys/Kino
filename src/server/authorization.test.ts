@@ -443,6 +443,8 @@ const PUBLIC: Record<string, string> = {
   "GET /api/library/seasons": "the catalogue",
   "GET /api/resolve": "finds the video of a public page: no account is involved",
   "GET /api/proxy": "carries a public page or file: no account is involved",
+  "GET /api/subtitles": "lists available subtitles for a title: no account is involved",
+  "GET /api/subtitles/ro/:file": "serves converted Romanian subtitles: no account is involved",
   "POST /api/auth/register": "makes a new account: there is nobody to be someone else yet",
   "POST /api/auth/login": "proves a name and a password, slowed per name and per address",
   "GET /api/auth/google/start": "sends the browser to Google with a flow of its own; connecting or confirming needs the browser's own session, and the answer is only a redirect (google.test.ts)",

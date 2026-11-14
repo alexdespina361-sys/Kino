@@ -403,6 +403,7 @@ async function proxyRequest(
   if (targetUrl.hostname.includes("hakunaymatata.com") || referer === "none") {
     delete headers.referer;
     delete headers.origin;
+    delete headers["user-agent"];
   }
 
   if (request.headers.range) {

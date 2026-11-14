@@ -102,7 +102,7 @@ const MAX_PROBE_CACHE = 2000;
 export const MAX_PRELOADED_SEASONS = 2000;
 const preloadedSeasons = new Map<number, number[]>();
 const preloadedSeasonCounts = new Map<number, Record<number, number>>();
-const knownTvIds = new Set<number>();
+export const knownTvIds = new Set<number>();
 const PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 
 export async function probePlayback(
