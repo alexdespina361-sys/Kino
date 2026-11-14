@@ -108,7 +108,7 @@ export interface ProxyOptions {
   /**
    * False when this server is not to carry film (env `PROXY_VIDEO=off`), for a host that charges for what it sends: a playlist, a piece of a
    * film or a file is turned away (403, whoever asks, and the player's own second try through here included), and only a subtitle goes through.
-   * Whatever the film's own address is, it is then the screen that asks for it (directly, or through a relay: see scripts/edge-stream-worker.js).
+   * Whatever the film's own address is, it is then the screen that asks for it (directly, or through a relay: see src/server/streamRelay).
    */
   video?: boolean;
   /**
