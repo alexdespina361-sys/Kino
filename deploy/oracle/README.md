@@ -8,6 +8,7 @@ its stream lookups and the relay are on one machine and one address, and the box
 | The site | `kino-web.service`, 127.0.0.1:8787, user `kino-web`, a checkout of `main` in `/opt/kino-web` |
 | Settings and secrets | `/etc/kino-web.env` (root:kino-web, 640), the lines of `kino-web.env.example` with Render's values |
 | Kept on `main` | `kino-web-update.timer` every 2 minutes runs `/opt/kino-tools/kino-web-update.sh`: install and build as Render's Build Command did, restart, and go back to the one before if `/api/health` does not answer within a minute (`journalctl -u kino-web-update`) |
+| The built pages | `dist/client` is made on the box by `pnpm build` and is not in the repository. The build is made next to the running one (`dist/client.next`) and moved into place in one step (`scripts/finish-build.mjs`), with the hashed files of the build before kept for one more build |
 | Addresses | Caddy (`/etc/caddy/Caddyfile`), the block below; `kino4tv.com` and `www` point at the box (IONOS), `kino.24-7.ro` too (FreeDNS, freedns.afraid.org: its form has a CAPTCHA, so the owner saves it) |
 | Accounts | the same Postgres as before (`DATABASE_URL`). Only ONE running copy of the site may use it: Render's service stays suspended |
 
