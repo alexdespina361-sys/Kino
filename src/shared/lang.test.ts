@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { languageName, localTrackLabel, normalizeLang, trackLabel } from "./lang";
 
+describe("normalizeLang", () => {
+  it("normalizes ISO 639-2 codes to ISO 639-1", () => {
+    expect(normalizeLang("eng")).toBe("en");
+    expect(normalizeLang("ron")).toBe("ro");
+    expect(normalizeLang("rum")).toBe("ro");
+  });
+
+  it("normalizes full language names to ISO 639-1", () => {
+    expect(normalizeLang("English")).toBe("en");
+    expect(normalizeLang("Romanian")).toBe("ro");
+    expect(normalizeLang("Română")).toBe("ro");
+    expect(normalizeLang("Español")).toBe("es");
+  });
+});
+
 describe("languageName", () => {
   it("names the languages people watch in, from two- or three-letter codes", () => {
     expect(languageName("ro")).toBe("Romanian");

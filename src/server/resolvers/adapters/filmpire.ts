@@ -1,4 +1,4 @@
-import { isHttpUrl, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
+import { isHttpUrl, normalizeLang, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
 import { remember } from "../../boundedMap";
 import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
 import { providerFetch } from "../providerFetch";
@@ -408,10 +408,10 @@ export async function listedSubtitles(get: typeof fetch, imdbId: string, season?
   const rawList = subData?.subtitles ?? [];
   // Prioritize Romanian (ro, ron, rum) and English (en, eng) at the top so both are always included
   const sortedSubs = [...rawList].sort((a, b) => {
-    const lA = (a.lang || "").toLowerCase();
-    const lB = (b.lang || "").toLowerCase();
-    const prioA = ["ro", "ron", "rum"].includes(lA) ? 0 : ["en", "eng"].includes(lA) ? 1 : 2;
-    const prioB = ["ro", "ron", "rum"].includes(lB) ? 0 : ["en", "eng"].includes(lB) ? 1 : 2;
+    const lA = normalizeLang(a.lang);
+    const lB = normalizeLang(b.lang);
+    const prioA = lA === "ro" ? 0 : lA === "en" ? 1 : 2;
+    const prioB = lB === "ro" ? 0 : lB === "en" ? 1 : 2;
     return prioA - prioB;
   });
 
@@ -653,6 +653,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           ? await extrasByThen(pendingExtras, extrasGraceMs)
           : [[], [], undefined];
         const allSubs = [...roSubs, ...listed];
+        allSubs.sort((a, b) => {
+          const lA = normalizeLang(a.lang);
+          const lB = normalizeLang(b.lang);
+          const pA = lA === "ro" ? 0 : lA === "en" ? 1 : 2;
+          const pB = lB === "ro" ? 0 : lB === "en" ? 1 : 2;
+          return pA - pB;
+        });
         const subList = allSubs.length > 0 ? allSubs.slice(0, MAX_SUBTITLES) : undefined;
         if (subList) {
           subList.forEach((sub, idx) => {
@@ -728,8 +735,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           : [[], [], undefined];
 
         const vlSubs: SubtitleTrack[] = (vl.captions || []).map((c, i) => {
-          const rawLang = (c.lang || "").toLowerCase();
-          const normLang = ["ro", "ron", "rum"].includes(rawLang) ? "ro" : (["en", "eng"].includes(rawLang) ? "en" : rawLang || "en");
+          const normLang = normalizeLang(c.lang) || "en";
           return {
             id: i,
             url: `/api/proxy?url=${encodeURIComponent(c.url)}&format=vtt`,
@@ -747,6 +753,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             uniqueSubs.push(sub);
           }
         }
+        uniqueSubs.sort((a, b) => {
+          const lA = normalizeLang(a.lang);
+          const lB = normalizeLang(b.lang);
+          const pA = lA === "ro" ? 0 : lA === "en" ? 1 : 2;
+          const pB = lB === "ro" ? 0 : lB === "en" ? 1 : 2;
+          return pA - pB;
+        });
         const subList = uniqueSubs.length > 0 ? uniqueSubs.slice(0, MAX_SUBTITLES) : undefined;
         if (subList) {
           subList.forEach((sub, idx) => {
@@ -941,8 +954,10 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const fb = await fallbackStreams();
           if (fb) return fb;
           return {
-            status: "temporary_failure",
-            reason: "Upstream video provider is temporarily rate-limiting requests. Please wait a moment and try again.",
+            status: config.rateLimited ? "temporary_failure" : "unsupported",
+            reason: config.rateLimited
+              ? "Upstream video provider is temporarily rate-limiting requests. Please wait a moment and try again."
+              : "No video stream is currently available for this title.",
           };
         }
 
@@ -1170,6 +1185,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       pendingExtras ??= askExtras(imdbId);
       const [listed, romanian, dub] = await extrasByThen(pendingExtras, extrasGraceMs);
       subtitles = [...romanian, ...subtitles, ...listed];
+      subtitles.sort((a, b) => {
+        const lA = normalizeLang(a.lang);
+        const lB = normalizeLang(b.lang);
+        const pA = lA === "ro" ? 0 : lA === "en" ? 1 : 2;
+        const pB = lB === "ro" ? 0 : lB === "en" ? 1 : 2;
+        return pA - pB;
+      });
 
       // Re-index subtitles sequentially so each track ID is unique and contiguous (capped at MAX_SUBTITLES)
       subtitles = subtitles.slice(0, MAX_SUBTITLES);

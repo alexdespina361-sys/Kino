@@ -7,11 +7,45 @@ const THREE_TO_TWO: Record<string, string> = {
   dan: "da", fin: "fi", ukr: "uk", ind: "id", vie: "vi", tha: "th",
 };
 
-/** "eng", "en-US", "EN" and "pob" all become comparable codes: "en", "en", "en", "pt". */
+/** Common full language names (e.g. from subtitle providers) -> ISO 639-1 (two letters). */
+const WORD_TO_TWO: Record<string, string> = {
+  english: "en",
+  romanian: "ro",
+  romana: "ro",
+  "română": "ro",
+  spanish: "es",
+  "español": "es",
+  french: "fr",
+  "français": "fr",
+  german: "de",
+  deutsch: "de",
+  italian: "it",
+  italiano: "it",
+  portuguese: "pt",
+  "português": "pt",
+  russian: "ru",
+  "русский": "ru",
+  japanese: "ja",
+  chinese: "zh",
+  "中文": "zh",
+  korean: "ko",
+  arabic: "ar",
+  turkish: "tr",
+  "türkçe": "tr",
+  polish: "pl",
+  vietnamese: "vi",
+  "tiếng việt": "vi",
+  indonesian: "id",
+};
+
+/** "eng", "en-US", "EN", "pob", "English", "Română" all become comparable codes: "en", "en", "en", "pt", "en", "ro". */
 export function normalizeLang(code: string | undefined): string | undefined {
-  const base = code?.trim().toLowerCase().split(/[-_]/)[0];
+  if (!code) return undefined;
+  const raw = code.trim().toLowerCase();
+  if (WORD_TO_TWO[raw]) return WORD_TO_TWO[raw];
+  const base = raw.split(/[-_]/)[0];
   if (!base) return undefined;
-  return THREE_TO_TWO[base] ?? base;
+  return WORD_TO_TWO[base] ?? THREE_TO_TWO[base] ?? base;
 }
 
 const displayNames = new Map<string, Intl.DisplayNames | null>();
