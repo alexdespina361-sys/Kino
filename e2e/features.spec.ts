@@ -1257,6 +1257,49 @@ test.describe("sources", () => {
     await expect(phone.getByTestId("chip-source")).toContainText("Source 1");
   });
 
+  test("the same film in another quality is picked under Quality, and only another place to get it from under Source", async ({ browser }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    const file = (name: string) => ({ url: `/fixtures/sample.mp4?${name}`, type: "mp4" as const });
+    await loadOnTv(phone, {
+      title: "Two Questions",
+      stream: file("q=1080"),
+      quality: "1080p",
+      alternates: [
+        { label: "720p", quality: "720p", stream: file("q=720") },
+        { label: "Mirror", stream: file("mirror=1") },
+      ],
+    });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    await tv.evaluate(() => void (document.querySelector("video")!.currentTime = 12));
+
+    // Two places to get it from, not three: the 720p file is the first place again.
+    await expect(tv.getByTestId("tv-source-btn")).toHaveText("Source 1");
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveText("1080p");
+    await phone.getByTestId("chip-quality").click();
+    await expect(phone.getByTestId("quality-1000")).toContainText("1080p");
+    await phone.getByTestId("quality-1001").click();
+    await expect.poll(() => currentSrc(tv)).toContain("q=720");
+    await expect.poll(() => tvTime(tv), { timeout: 10_000 }).toBeGreaterThan(11); // (from where it was)
+    await expect(phone.getByTestId("chip-quality")).toContainText("720p");
+    await expect(phone.getByTestId("chip-source")).toContainText("Source 1"); // still the first place
+
+    await phone.getByTestId("chip-source").click();
+    await expect(phone.getByTestId("source-0")).toContainText("Source 1");
+    await expect(phone.getByTestId("source-1")).toContainText("Mirror");
+    await expect(phone.getByTestId("source-2")).toHaveCount(0);
+    await phone.getByTestId("source-1").click();
+    await expect.poll(() => currentSrc(tv)).toContain("mirror=1");
+    await expect(tv.getByTestId("tv-source-btn")).toHaveText("Mirror");
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveCount(0); // (the mirror is one file: nothing to pick)
+
+    // Back to the first place, and its qualities are on offer again.
+    await tv.getByTestId("tv-source-btn").click();
+    await tv.getByRole("option", { name: "Source 1" }).click();
+    await expect.poll(() => currentSrc(tv)).toContain("q=1080");
+    await expect(tv.getByTestId("tv-quality-btn")).toHaveText("1080p");
+  });
+
   test("a video with one source shows no source button", async ({ browser }) => {
     const tv = await openTv(browser);
     const phone = await openPairedPhone(browser, tv);
