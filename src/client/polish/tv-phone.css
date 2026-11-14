@@ -224,6 +224,9 @@
   :root[data-ui="polish"] .tv input.tv-query { box-sizing: border-box; height: 48px; margin: 4px 0 0; padding: 0 16px; border-radius: 12px; background: var(--surf-2); font-size: 16px; }
   :root[data-ui="polish"] .tv input.tv-query::placeholder { color: var(--text-3); }
   :root[data-ui="polish"] .tv input.tv-query:focus { box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.7); }
+  /* The name at the top is the way home: what a thumb can land on reaches a little past the drawing, up and down. */
+  :root[data-ui="polish"] .tv .tv-browse-logo { position: relative; }
+  :root[data-ui="polish"] .tv .tv-browse-logo::after { content: ""; position: absolute; inset: -8px -4px; }
   /* The cross that empties the field: a button of its own, as big as a thumb (the browser's is a few pixels wide and is put away). */
   :root[data-ui="polish"] .tv .tv-query-field { position: relative; }
   :root[data-ui="polish"] .tv .tv-query-field input.tv-query { padding-right: 52px; }
