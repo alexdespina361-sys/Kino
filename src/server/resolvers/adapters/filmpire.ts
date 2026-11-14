@@ -250,19 +250,23 @@ export async function resolveVidLinkStream(
     };
     if (!data?.stream) return null;
 
+    const normalizeCdnUrl = (u: string) => u.replace(/^https?:\/\/bcdn\d+\.hakunaymatata\.com/i, "https://bcdn.hakunaymatata.com");
+
     const qualities: Array<{ label: string; url: string; type: "mp4" | "hls" }> = [];
     if (data.stream.playlist && isHttpUrl(data.stream.playlist)) {
-      qualities.push({ label: "Auto (HLS)", url: data.stream.playlist, type: "hls" });
+      const cleanUrl = normalizeCdnUrl(data.stream.playlist);
+      qualities.push({ label: "Auto (HLS)", url: cleanUrl, type: "hls" });
     }
     if (data.stream.qualities) {
       const qKeys = Object.keys(data.stream.qualities).sort((a, b) => Number(b) - Number(a));
       for (const q of qKeys) {
         const item = data.stream.qualities[q];
         if (item?.url && isHttpUrl(item.url)) {
+          const cleanUrl = normalizeCdnUrl(item.url);
           qualities.push({
             label: `${q}p`,
-            url: item.url,
-            type: item.type === "hls" || item.url.includes(".m3u8") ? "hls" : "mp4",
+            url: cleanUrl,
+            type: item.type === "hls" || cleanUrl.includes(".m3u8") ? "hls" : "mp4",
           });
         }
       }

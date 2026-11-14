@@ -248,6 +248,10 @@ describe("handleStreamProxy", () => {
         response.writeHead(200, { "content-type": "application/vnd.apple.mpegurl", "content-encoding": "gzip" });
         return void response.end(gzipSync(text));
       }
+      if (url.pathname === "/echo-headers") {
+        response.writeHead(200, { "content-type": "text/plain" });
+        return void response.end(JSON.stringify(request.headers));
+      }
       response.writeHead(404, { "content-type": "text/plain" });
       response.end("nothing here");
     });
@@ -278,6 +282,17 @@ describe("handleStreamProxy", () => {
     expect(answer.statusCode).toBe(200);
     expect(answer.body).toBe("SEGMENT-BYTES");
     expect(answer.headers["content-type"]).toBe("video/mp2t");
+  });
+
+  it("preserves user-agent and removes referer/origin when referer is 'none'", async () => {
+    const answer = await app.inject({
+      url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/echo-headers"))}&referer=none`,
+    });
+    expect(answer.statusCode).toBe(200);
+    const upstreamHeaders = JSON.parse(answer.body);
+    expect(upstreamHeaders["user-agent"]).toContain("Mozilla/5.0");
+    expect(upstreamHeaders.referer).toBeUndefined();
+    expect(upstreamHeaders.origin).toBeUndefined();
   });
 
   it("passes a request for part of a file on, and the part comes back as one", async () => {
