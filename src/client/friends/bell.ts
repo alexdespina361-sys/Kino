@@ -1,5 +1,6 @@
 import { partyOpen, type ActivityItem, type ChatNotice, type FriendRequest, type FriendsState, type InboxItem } from "../../shared";
 import { chatWaiting } from "../chat/notices";
+import { isCleared, type Cleared } from "./cleared";
 import { inboxToShow, planStatus } from "./plans";
 
 /**
@@ -33,7 +34,7 @@ function rank(item: InboxItem, now: number): number {
   return status === "due" ? 0 : status === "asks" ? 1 : 3;
 }
 
-export function bellView(state: FriendsState, now: number): BellView {
+export function bellView(state: FriendsState, now: number, cleared: Cleared = {}): BellView {
   const requests = [...state.requests].sort((a, b) => b.at - a.at);
   const inbox = inboxToShow(state.inbox, now).sort((a, b) => rank(a, now) - rank(b, now) || b.at - a.at);
   const messages = chatWaiting(state);
@@ -43,7 +44,9 @@ export function bellView(state: FriendsState, now: number): BellView {
   const lately = state.activity
     .filter((item) => state.friends.some((friend) => friend.id === item.friend))
     .sort((a, b) => b.at - a.at)
-    .slice(0, BELL_LATELY);
+    .slice(0, BELL_LATELY)
+    // (After the few newest are taken, not before: a line that is cleared is gone, and does not bring an older one up in its place.)
+    .filter((item) => !isCleared(cleared, item));
   const shown = shownRequests.length + shownInbox.length + shownChat.length;
   return { requests: shownRequests, inbox: shownInbox, chat: shownChat, lately, more: requests.length + inbox.length + messages.length - shown };
 }

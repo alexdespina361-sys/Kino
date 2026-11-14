@@ -6,11 +6,13 @@ import { bellView } from "../friends/bell";
 import { entryOfActivity } from "../friends/entries";
 import { useFriends } from "../friends/FriendsProvider";
 import { useBell } from "../friends/useBell";
+import { useCleared } from "../friends/useCleared";
 import { useLanguage, useT } from "../i18n";
-import { BellIcon } from "../shared/icons";
+import { BellIcon, CloseIcon } from "../shared/icons";
 import type { Entry } from "../tv/pages";
 import { InboxRow, RequestRow } from "./Friends";
 import { Sheet } from "./Sheet";
+import { useSwipeAway } from "./swipe";
 
 /** The bell beside the profile's picture: how many things wait for an answer, or a quiet dot when friends only watched something. Not there while friends are off. */
 export function BellButton({ onClick }: { onClick: () => void }) {
@@ -31,19 +33,23 @@ export function BellButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** Something a friend watched, as a row that opens the title. */
-function LatelyRow({ item, friend, onOpen }: { item: ActivityItem; friend: Friend; onOpen: (entry: Entry) => void }) {
+/** Something a friend watched, as a row that opens the title. The cross, or a swipe to the side, takes it off the list on this device. */
+function LatelyRow({ item, friend, onOpen, onClear }: { item: ActivityItem; friend: Friend; onOpen: (entry: Entry) => void; onClear: () => void }) {
   const t = useT();
   const language = useLanguage();
   const now = Date.now();
+  const swipe = useSwipeAway(onClear);
   return (
-    <li className="inbox-item" data-testid="bell-lately-item">
+    <li className="inbox-item" data-testid="bell-lately-item" {...swipe}>
       <button className="bell-lately" onClick={() => onOpen(entryOfActivity(item, friend.name, now))} aria-label={`${t("rows.open")} ${item.title}`}>
         <Avatar id={friend.avatar} className="friend-avatar" />
         <span className="inbox-text">
           <b>{friend.name}</b>
           <small>{`${t(`friends.line.${activityVerb(item, now)}`, { title: item.title })} · ${ago(item.at, now, language)}`}</small>
         </span>
+      </button>
+      <button className="mini" onClick={onClear} aria-label={t("friends.dismiss")} data-testid="bell-lately-clear">
+        <CloseIcon />
       </button>
     </li>
   );
@@ -87,6 +93,7 @@ export function NotificationsSheet({
   const t = useT();
   const friends = useFriends();
   const { markSeen } = useBell();
+  const { cleared, clear } = useCleared();
   const { state } = friends;
 
   // Opening it is seeing what is in the inbox, and how things stand now.
@@ -98,7 +105,7 @@ export function NotificationsSheet({
     if (friends.unread > 0) void friends.markRead().catch(() => undefined);
   }, [friends.unread]);
 
-  const view = state ? bellView(state, Date.now()) : null;
+  const view = state ? bellView(state, Date.now(), cleared) : null;
   const waiting = view !== null && view.requests.length + view.inbox.length + view.chat.length > 0;
   return (
     <Sheet title={t("bell.title")} onClose={onClose} testId="bell-sheet">
@@ -167,7 +174,12 @@ export function NotificationsSheet({
           )}
           {view.lately.length > 0 && (
             <>
-              <h3 className="sheet-section">{t("friends.activity")}</h3>
+              <h3 className="sheet-section sheet-section-with-action">
+                {t("friends.activity")}
+                <button className="sheet-clear" onClick={() => clear(view.lately)} data-testid="bell-lately-clear-all">
+                  {t("common.clear")}
+                </button>
+              </h3>
               <ul className="inbox-list" data-testid="bell-lately">
                 {view.lately.map((item) => (
                   <LatelyRow
@@ -178,6 +190,7 @@ export function NotificationsSheet({
                       onClose();
                       onOpenTitle(entry);
                     }}
+                    onClear={() => clear([item])}
                   />
                 ))}
               </ul>

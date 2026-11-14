@@ -68,6 +68,11 @@
 .bell-badge { position: absolute; top: 1px; right: -3px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 0.7rem; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
 .bell-dot { position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 2px var(--bg); pointer-events: none; }
 /* What a friend watched, in the bell's list: the whole row opens the title. */
+/* A line a finger can swipe away to the side (controller/swipe.ts): up and down stays the list's scrolling. It comes back softly when let go too soon. */
+.inbox-item { touch-action: pan-y; transition: transform 0.18s ease, opacity 0.18s ease; }
+.sheet-section-with-action { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sheet-clear { min-height: 44px; margin: -12px -8px -12px 0; padding: 0 10px; border: 0; border-radius: 10px; background: none; color: var(--muted); font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
+.sheet-clear:active { color: var(--text); background: var(--surface); }
 .bell-lately { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; padding: 4px 0 4px 4px; text-align: left; }
 
 /* The button that asks a second time before a friend goes. */

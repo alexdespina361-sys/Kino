@@ -622,6 +622,9 @@
 :root[data-ui="polish"] .tv-bell-line { border-radius: var(--r-2); background: var(--fill-1); color: var(--text-1); font-size: var(--fs-3); transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), transform var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
 :root[data-ui="polish"] .tv-bell-line:hover { background: var(--fill-2); color: var(--text-1); }
 :root[data-ui="polish"] .tv-bell-icon { background: var(--fill-2); }
+:root[data-ui="polish"] .tv-bell-clear { background: var(--fill-1); color: var(--text-2); font-size: var(--fs-3); transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease); }
+:root[data-ui="polish"] .tv-bell-clear:hover { background: var(--fill-2); color: var(--text-1); }
+:root[data-ui="polish"] .tv-bell-clear:focus-visible { background: var(--surf-4); color: var(--text-1); outline: none; box-shadow: inset 0 0 0 calc(var(--em) * 0.3) #fff; }
 :root[data-ui="polish"] .tv-bell-text small { font-size: var(--fs-1); color: var(--text-3); }
 :root[data-ui="polish"] .tv-bell-badge { font-size: var(--fs-1); }
 :root[data-ui="polish"] .tv-friend-ask { font-size: var(--fs-4); }

@@ -27,6 +27,7 @@ import { entryOfRating, type Entry } from "../tv/pages";
 import { listName } from "../account/cards";
 import { Group } from "./AccountPages";
 import { Sheet } from "./Sheet";
+import { useSwipeAway } from "./swipe";
 import { Card, CardRow } from "./Rows";
 import "./friends.css";
 
@@ -390,7 +391,7 @@ function useAskTogether(): (friendId: string, ended?: string) => Promise<void> {
  * A plan to watch together, as a line of the inbox: it asks for an answer (Accept, Decline), is on (a line to read, and to dismiss), is due (the button that
  * starts the party, when there is a TV to start it on), or was turned down (news to read). Answering is for the server to accept: a plan that is gone says so.
  */
-function PlanRow({ item, from, onStartParty, dismiss }: { item: PlanItem; from: string; onStartParty: ((friendId: string) => void) | undefined; dismiss: ReactNode }) {
+function PlanRow({ item, from, onStartParty, dismiss, swipe }: { item: PlanItem; from: string; onStartParty: ((friendId: string) => void) | undefined; dismiss: ReactNode; swipe: ReturnType<typeof useSwipeAway> }) {
   const t = useT();
   const account = useAccount();
   const friends = useFriends();
@@ -410,7 +411,7 @@ function PlanRow({ item, from, onStartParty, dismiss }: { item: PlanItem; from: 
     }
   };
   return (
-    <li className="inbox-item" data-testid="inbox-plan" data-status={status}>
+    <li className="inbox-item" data-testid="inbox-plan" data-status={status} {...swipe}>
       <span className="inbox-text">
         <b data-testid="inbox-plan-heading">{lines.heading}</b>
         <small data-testid="inbox-plan-detail">{lines.detail}</small>
@@ -441,6 +442,7 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
   const t = useT();
   const language = useLanguage();
   const ask = useAskTogether();
+  const swipe = useSwipeAway(onDismiss); // (the cross does the same)
   const now = Date.now();
   const from = friend?.name ?? "";
   const dismiss = (
@@ -452,7 +454,7 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
   if (item.kind === "party") {
     const live = partyOpen(item, now);
     return (
-      <li className="inbox-item" data-testid="inbox-party">
+      <li className="inbox-item" data-testid="inbox-party" {...swipe}>
         <span className="inbox-text">
           <b>{t("friends.partyInvite", { name: from })}</b>
           <small>{live ? `${formatCode(item.code)} · ${ago(item.at, now, language)}` : t("friends.partyOver")}</small>
@@ -476,7 +478,7 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
   }
   if (item.kind === "together") {
     return (
-      <li className="inbox-item" data-testid="inbox-together">
+      <li className="inbox-item" data-testid="inbox-together" {...swipe}>
         <span className="inbox-text">
           <b>{t("friends.togetherOf", { name: from })}</b>
           <small>{ago(item.at, now, language)}</small>
@@ -492,10 +494,10 @@ export function InboxRow({ item, friend, onOpenTitle, onStartParty, onDismiss }:
       </li>
     );
   }
-  if (item.kind === "plan") return <PlanRow item={item} from={from} onStartParty={onStartParty} dismiss={dismiss} />;
+  if (item.kind === "plan") return <PlanRow item={item} from={from} onStartParty={onStartParty} dismiss={dismiss} swipe={swipe} />;
   const entry = entryOfRecommendation(item, from);
   return (
-    <li className="inbox-item" data-testid="inbox-recommendation">
+    <li className="inbox-item" data-testid="inbox-recommendation" {...swipe}>
       <button className="rating-item inbox-open" onClick={() => onOpenTitle?.(entry)} aria-label={`${t("rows.open")} ${item.title}`} data-testid="inbox-open">
         <Poster className="lib-result-art" title={item.title} image={item.backdrop ?? item.image} />
         <span className="rating-text">
