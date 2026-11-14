@@ -1964,10 +1964,10 @@ test.describe("a watch party started on a TV", () => {
     await guest.mouse.move(60, 60);
     await guest.getByTestId("tv-audio-sub-btn").click();
     await expect(guest.getByTestId("audio-subtitles-modal")).toBeVisible();
-    await guest.getByRole("option", { name: "English" }).click();
-    await expect(guest.getByRole("option", { name: "English" })).toHaveAttribute("aria-selected", "true");
+    await guest.getByRole("option", { name: "Dutch" }).click(); // (English is on from the start, on both screens)
+    await expect(guest.getByRole("option", { name: "Dutch" })).toHaveAttribute("aria-selected", "true");
     await guest.waitForTimeout(800);
-    expect(phone.states.at(-1)?.subtitles?.current).toBe(-1); // what the host shows did not change
+    expect(phone.states.at(-1)?.subtitles?.current).toBe(0); // what the host shows did not change
     phone.close();
   });
 
