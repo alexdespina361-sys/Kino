@@ -7,7 +7,7 @@
  */
 
 /** The questions whose value says nothing about a visitor and helps to read the log. */
-const PLAIN = new Set(["format", "season", "episode", "page", "cursor", "kind", "section", "type", "role", "lang", "row"]);
+const PLAIN = new Set(["format", "season", "episode", "page", "cursor", "kind", "section", "type", "role", "device", "lang", "row"]);
 
 /** The address asked for, as the log may have it: the path, each question's name, and its value only where it is one of `PLAIN` (`/api/proxy` keeps the host of what it was asked to carry). */
 export function addressForLog(address: string): string {

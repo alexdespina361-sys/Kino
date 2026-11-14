@@ -54,19 +54,28 @@ export function pickTrack(tracks: readonly PlayerTrack[], wanted: ChosenTrack): 
   return defaultTrack(tracks.filter((track) => normalizeLang(track.lang) === wanted.lang))?.id;
 }
 
+/** The languages a profile chose for subtitles, in its order, and whether it wants no others offered (settings: "Subtitle languages", "Only these"). */
+export interface SubtitleLanguages {
+  chosen?: readonly string[] | undefined;
+  only?: boolean | undefined;
+}
+
 /**
- * Picks the subtitle track to play: the viewer's preferred track if found,
- * otherwise falling back to English ("en") base subtitles, then the first available track.
- * Returns -1 if the viewer explicitly turned subtitles off.
+ * The subtitles a film starts with. What the viewer did last time comes first: off stays off (-1), and the track they picked is picked again when the
+ * film has it. Then the languages the profile chose, in its order. Then English, unless the profile said "only these". And when none of that is there,
+ * nothing is turned on (undefined): a film whose only subtitles are in a language nobody asked for starts without them, and they are one press away.
  */
-export function pickBaseSubtitleTrack(tracks: readonly PlayerTrack[], wanted?: ChosenTrack | "off"): number | undefined {
+export function pickBaseSubtitleTrack(tracks: readonly PlayerTrack[], wanted?: ChosenTrack | "off", languages: SubtitleLanguages = {}): number | undefined {
   if (wanted === "off") return -1;
   if (wanted) {
     const chosen = pickTrack(tracks, wanted);
     if (chosen !== undefined) return chosen;
   }
-  // Base subtitles default to English
-  const enTrack = defaultTrack(tracks.filter((t) => normalizeLang(t.lang) === "en")) ?? tracks.find((t) => normalizeLang(t.lang) === "en");
-  if (enTrack !== undefined) return enTrack.id;
-  return tracks[0]?.id;
+  // (The best-fitting release of a language, and never one of only songs or forced lines: see `defaultTrack`.)
+  const bestOf = (lang: string) => defaultTrack(tracks.filter((track) => normalizeLang(track.lang) === lang));
+  for (const lang of [...(languages.chosen ?? []), ...(languages.only ? [] : ["en"])]) {
+    const found = bestOf(normalizeLang(lang) ?? lang);
+    if (found !== undefined) return found.id;
+  }
+  return undefined;
 }
