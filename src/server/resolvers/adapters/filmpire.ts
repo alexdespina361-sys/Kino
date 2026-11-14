@@ -559,8 +559,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
       // The extras (see `ExtrasLookup`) are asked for now, while the sites of the stream are asked, when TMDB has said which title this is; otherwise once
       // the stream's answer has said (below). The season and episode are the link's: a series without them is at its first.
-      const askExtras = (imdbId: string | undefined): Extras =>
-        extras({ imdbId, tmdbId: id, title: rawShowTitle, isTv, ...(isTv ? { season: Number(s || "1"), episode: Number(e || "1") } : {}) }, get);
+      const askExtras = (imdbId: string | undefined): Extras => {
+        const asked = extras({ imdbId, tmdbId: id, title: rawShowTitle, isTv, ...(isTv ? { season: Number(s || "1"), episode: Number(e || "1") } : {}) }, get);
+        // (They are waited for only when a stream is found. A look-up that ends without one leaves them, and one of them that fails then, cut off with the
+        // look-up, has to have somebody to fail to: a promise that fails with nobody waiting is an error of the whole server's.)
+        for (const each of [asked.listed, asked.romanian, asked.dub]) each.catch(() => {});
+        return asked;
+      };
       let pendingExtras: Extras | undefined = tmdbImdbId ? askExtras(tmdbImdbId) : undefined;
 
       // (An anime site is asked only for what can be an anime: a show that TMDB says is not animated is not looked for there, at any step.)

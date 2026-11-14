@@ -17,6 +17,7 @@ import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { answerUnroutable, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
 import { handleStreamProxy, type ProxyStats } from "./proxy";
+import { looksLikePage, requestForLog } from "./requestLog";
 import { createResolver, type ResolveFn } from "./resolvers";
 import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
 import { Hub, type HubOptions } from "./websocket/hub";
@@ -114,12 +115,18 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   // addresses and the host's own are not taken for the visitor's on the way (trust.ts).
   const proxies = options.trustProxy;
   const trustProxy = typeof proxies === "number" ? (proxies > 0 ? trustedProxies(proxies) : false) : proxies;
-  const app = Fastify({ logger: options.logger ?? false, frameworkErrors: answerUnroutable, ...(trustProxy === undefined ? {} : { trustProxy }) });
+  // (What the log says about a request: the route and the names of its questions, not the link, the code or the visitor. See requestLog.ts.)
+  const logger = options.logger === true ? { serializers: { req: requestForLog } } : options.logger ? { ...options.logger, serializers: { req: requestForLog } } : false;
+  const app = Fastify({ logger, frameworkErrors: answerUnroutable, ...(trustProxy === undefined ? {} : { trustProxy }) });
   // (First of all: a hook added to the app reaches only what is registered after it, and the pages are served by what comes below.)
   // A visitor is one network of 64 bits, not one address, in every limit and count that goes by `request.ip` (trust.ts).
   app.addHook("onRequest", async (request) => {
     const visitor = visitorOf(request.ip);
     if (visitor !== request.ip) Object.defineProperty(request, "ip", { value: visitor });
+  });
+  // A request that was refused is written with the visitor it was refused to: the one place the log names one (requestLog.ts).
+  app.addHook("onResponse", async (request, reply) => {
+    if (reply.statusCode === 403 || reply.statusCode === 429) request.log.info({ status: reply.statusCode, visitor: request.ip }, "refused");
   });
   if (options.visits) countVisits(app, options.visits);
   securityHeaders(app);
@@ -183,7 +190,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   app.get("/ws", { websocket: true, exposeHeadRoute: false }, (socket, request) => {
     // Connection diagnostics (no tokens/ids): who is knocking, via which host, and how it ends.
     const { host, origin } = request.headers;
-    request.log.info({ host, origin, ip: request.headers["x-forwarded-for"] ?? request.ip }, "ws connected");
+    request.log.info({ host, origin }, "ws connected");
     socket.on("close", (code, reason) => request.log.info({ code, reason: reason.toString() }, "ws closed"));
     hub.handleConnection(socket, request.ip);
   });
@@ -347,18 +354,6 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     reply.header("Access-Control-Allow-Origin", "*");
     return reply.code(200).send(vtt);
   });
-  app.get<{ Querystring: { imdbId?: string; tmdbId?: string; title?: string; season?: string; episode?: string } }>("/api/subtitles", async (request, reply) => {
-    const { getRomanianSubtitleManager } = await import("./subtitles/romanian");
-    const roManager = getRomanianSubtitleManager();
-    const subs = await roManager.getSubtitles({
-      imdbId: request.query.imdbId,
-      tmdbId: request.query.tmdbId,
-      title: request.query.title,
-      season: request.query.season,
-      episode: request.query.episode,
-    });
-    return reply.send({ subtitles: subs });
-  });
   app.get<{ Querystring: { url?: string; referer?: string } }>("/api/proxy", { compress: false }, async (request, reply) => {
     return handleStreamProxy(request, reply, {
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",
@@ -398,7 +393,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     // One SPA: "/" is the phone, "/tv" is the receiver. Both are index.html.
     app.setNotFoundHandler((request, reply) => {
       const isPage = request.method === "GET" && !request.url.startsWith("/api") && !request.url.startsWith("/ws");
-      if (isPage && request.headers.accept?.includes("text/html")) return reply.sendFile("index.html");
+      // (Not for what is no page of this site, a file or a place a scanner looks for: see `looksLikePage`.)
+      if (isPage && looksLikePage(request.url) && request.headers.accept?.includes("text/html")) return reply.sendFile("index.html");
       return reply.code(404).send({ error: "NOT_FOUND" });
     });
   }

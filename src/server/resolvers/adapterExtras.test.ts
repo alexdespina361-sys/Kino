@@ -111,6 +111,35 @@ describe("the extras of a film", () => {
     expect(res.media.alternates?.[1]?.stream.directUrl).toContain("https://cdn2.example/b.m3u8");
   });
 
+  it("that fail after a look-up that found no stream fail to somebody: nothing is left for the server to trip over", async () => {
+    const net = sites();
+    // (TMDB knows the title; no site of the stream has it.)
+    const nothing = (async (input: string | URL | Request) => {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+      return url.hostname === "api.themoviedb.org" ? net.fetch(input) : new Response("not found", { status: 404 });
+    }) as typeof globalThis.fetch;
+    const unheard: unknown[] = [];
+    const hear = (reason: unknown) => void unheard.push(reason);
+    process.on("unhandledRejection", hear);
+    try {
+      let fail: (reason: Error) => void = () => {};
+      const later = <T,>() => new Promise<T>((_, reject) => (fail = reject));
+      let asked = 0;
+      const extras: ExtrasLookup = () => {
+        asked += 1;
+        return { listed: later(), romanian: Promise.reject(new Error("down")), dub: never() };
+      };
+      const res = await createFilmpireAdapter({ fetch: nothing, extras }).resolve(MOVIE);
+      expect(res.status).not.toBe("success");
+      expect(asked).toBe(1);
+      fail(new Error("timed out")); // (the list was still on its way when the look-up ended, and is cut off with it)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unheard).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", hear);
+    }
+  });
+
   it("are asked for an episode with its season and episode", async () => {
     const net = sites();
     let ask: ExtrasAsk | undefined;

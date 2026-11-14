@@ -89,9 +89,12 @@ describe("serving the built page", () => {
         expect(answer.statusCode, url).toBe(404);
         expect(answer.body, url).not.toContain("SECRET");
       }
-      // (A browser that asks for such a path is shown the page, as for any path that is no file: it is not shown the file.)
+      // (A browser that asks for such a path is told the same: it is no page of the site, so it is not shown the page either. See `looksLikePage`.)
       const asked = await app.inject({ url: "/.env", headers: { accept: "text/html" } });
-      expect(asked.body).toBe("<!doctype html><title>Kino</title>");
+      expect(asked.statusCode).toBe(404);
+      expect(asked.body).not.toContain("SECRET");
+      // (An address that is no file is the page's own to make sense of.)
+      expect((await app.inject({ url: "/tv", headers: { accept: "text/html" } })).body).toBe("<!doctype html><title>Kino</title>");
       // (...and the files that are served still are.)
       expect((await app.inject({ url: "/sample.txt" })).body).toBe("film");
       expect((await app.inject({ url: "/fixtures/sample.txt" })).body).toBe("film");

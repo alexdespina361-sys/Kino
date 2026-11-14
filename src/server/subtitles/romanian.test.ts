@@ -75,7 +75,10 @@ describe("Romanian subtitle processing", () => {
   });
 
   it("stores and retrieves subtitles in RomanianSubtitleManager", async () => {
-    const manager = new RomanianSubtitleManager();
+    // (No site is asked in a test: a manager without a `get` of the test's own would reach the real ones.)
+    const manager = new RomanianSubtitleManager(undefined, async () => {
+      throw new Error("no site is asked in this test");
+    });
     // Simulate cached entry
     const sub = {
       id: "test_sub_1",
