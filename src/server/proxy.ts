@@ -111,6 +111,11 @@ export interface ProxyOptions {
    * Whatever the film's own address is, it is then the screen that asks for it (directly, or through a relay: see scripts/edge-stream-worker.js).
    */
   video?: boolean;
+  /**
+   * The hosts whose film is carried although `video` is false (env `PROXY_EXEMPT_HOSTS`, see `exemptHostsFrom`): none unless set. For a place that
+   * answers only to this server's own address, while nothing else can fetch from it; every host named here can be asked for anything through this server.
+   */
+  exemptHosts?: readonly string[];
   allowPrivateNetwork?: boolean;
   /** Which addresses may be gone to (a test narrows it to one that is on this machine); without it, any public one, or any at all with `allowPrivateNetwork`. */
   isAllowedAddress?: (address: string) => boolean;
@@ -123,6 +128,25 @@ export interface ProxyOptions {
    * (the time a screen takes to read what has come is not counted: only the wait for the other end). Without it 30 seconds; a test shortens it.
    */
   upstreamMs?: number;
+}
+
+/**
+ * `PROXY_EXEMPT_HOSTS` as a list: names divided by commas or spaces, each a host or the end of one (`cdn.example`, `.example`, `*.example` all mean
+ * `example` and every name under it). A name without a dot inside it (`space`, `.cyou`) is a whole top-level domain, which anybody can have a name
+ * under: it is taken as written, because that is what was asked for, and the log says at the start which hosts are exempt.
+ */
+export function exemptHostsFrom(value: string | undefined): string[] {
+  return (value ?? "")
+    .split(/[\s,]+/)
+    .map((name) => name.trim().toLowerCase().replace(/^\*?\.+/, "").replace(/\.+$/, ""))
+    .filter((name) => /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/.test(name))
+    .slice(0, 20);
+}
+
+/** Whether `hostname` is one of `exempt` or a name under one of them (see `exemptHostsFrom`). */
+export function isExemptHost(hostname: string, exempt: readonly string[] | undefined): boolean {
+  const host = hostname.toLowerCase();
+  return (exempt ?? []).some((name) => host === name || host.endsWith(`.${name}`));
 }
 
 const ANYWHERE = () => true;
@@ -385,11 +409,14 @@ async function proxyRequest(
   if (stats) stats.requests += 1;
 
   // (A server that carries no film says no before it asks anyone, when the address is plainly a piece of one: see `ProxyOptions.video`.)
-  // Note: Upstream provider streams (.space, .cyou) that are IP-locked to this server must be allowed so playback works even if PROXY_VIDEO=off.
-  const isUpstreamMedia = targetUrl.hostname.endsWith(".space") || targetUrl.hostname.endsWith(".cyou");
+  // (The hosts that are carried all the same are the ones this server was set up with, `ProxyOptions.exemptHosts`: none unless set. Any name under
+  // `.space` and `.cyou` used to be, which anybody can have one under, so the server carried whatever such a name sent.)
+  const isUpstreamMedia = isExemptHost(targetUrl.hostname, options.exemptHosts);
   const video = options.video !== false;
   const turnAway = (): FastifyReply => {
     if (stats) stats.refused += 1;
+    // (Which host it was, for whoever reads the log to see whether a film that used to come this way still tries to: the link is not written.)
+    request.log.info({ host: targetUrl.hostname.slice(0, 100) }, "proxy-refused");
     return reply.code(403).send({ error: "VIDEO_NOT_CARRIED" });
   };
   if (!video && !isUpstreamMedia && isSegmentPath(targetUrl.pathname)) return turnAway();

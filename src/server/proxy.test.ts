@@ -3,7 +3,7 @@ import type { AddressInfo, Socket } from "node:net";
 import { gzipSync } from "node:zlib";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { PlaylistTooLong, handleStreamProxy, rewriteM3u8, srtToVtt } from "./proxy";
+import { PlaylistTooLong, exemptHostsFrom, handleStreamProxy, isExemptHost, rewriteM3u8, srtToVtt } from "./proxy";
 import { SegmentCache } from "./segmentCache";
 
 describe("rewriteM3u8", () => {
@@ -371,6 +371,52 @@ describe("handleStreamProxy", () => {
       // (A range, a piece's other names and a plain "this is a subtitle" on the address make no difference to what it is.)
       expect((await quiet.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/range.mp4"))}`, headers: { range: "bytes=0-3" } })).statusCode).toBe(403);
       expect((await through("/list.m3u8", "&format=vtt")).statusCode).toBe(403);
+    });
+
+    it("carries film from a host it was set up to carry from and from no other: a name under `.space` or `.cyou` is not carried for being one", async () => {
+      // (As it used to be: a piece of a film at any such name went through, whatever `video` said.)
+      hits.length = 0;
+      for (const host of ["cdn.example.space", "anything.cyou"]) {
+        const answer = await quiet.inject({ url: `/api/proxy?url=${encodeURIComponent(`https://${host}/hls/seg.ts`)}` });
+        expect(answer.statusCode, host).toBe(403);
+        expect(answer.json(), host).toEqual({ error: "VIDEO_NOT_CARRIED" });
+      }
+      expect(hits).toEqual([]);
+
+      const lines: Array<{ msg?: string; host?: string }> = [];
+      const exempt = Fastify({ logger: { stream: { write: (line: string) => void lines.push(JSON.parse(line) as { msg?: string; host?: string }) } } });
+      exempt.get<{ Querystring: { url?: string; referer?: string; format?: string } }>("/api/proxy", (request, reply) =>
+        handleStreamProxy(request, reply, { isAllowedAddress: allowed, video: false, exemptHosts: exemptHostsFrom(` ${OKAY}, .not-this.example `), segments: new SegmentCache() }),
+      );
+      await exempt.ready();
+      try {
+        const piece = await exempt.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/seg.ts"))}` });
+        expect(piece.statusCode).toBe(200);
+        expect(piece.body).toBe("SEGMENT-BYTES");
+        expect((await exempt.inject({ url: `/api/proxy?url=${encodeURIComponent(at(OKAY, "/list.m3u8"))}` })).statusCode).toBe(200);
+        // (A host that is not named is turned away as before, and the log says which it was, without the link.)
+        const other = await exempt.inject({ url: `/api/proxy?url=${encodeURIComponent("https://cdn.example.space/hls/seg.ts?token=SECRET")}` });
+        expect(other.statusCode).toBe(403);
+        expect(lines.filter((line) => line.msg === "proxy-refused").map((line) => line.host)).toEqual(["cdn.example.space"]);
+        expect(JSON.stringify(lines.filter((line) => line.msg === "proxy-refused"))).not.toContain("SECRET");
+      } finally {
+        await exempt.close();
+      }
+    });
+
+    it("reads the list of hosts to carry from as names and the ends of names, and nothing else", () => {
+      expect(exemptHostsFrom(undefined)).toEqual([]);
+      expect(exemptHostsFrom("")).toEqual([]);
+      expect(exemptHostsFrom(".space, *.cyou cdn.Example.com.")).toEqual(["space", "cyou", "cdn.example.com"]);
+      expect(exemptHostsFrom("https://x.example/, a b/c, -x, ok.example")).toEqual(["a", "ok.example"]);
+      expect(isExemptHost("a.b.space", ["space"])).toBe(true);
+      expect(isExemptHost("SPACE", ["space"])).toBe(true);
+      expect(isExemptHost("myspace", ["space"])).toBe(false);
+      expect(isExemptHost("space.example", ["space"])).toBe(false);
+      expect(isExemptHost("cdn.example.com", ["example.com"])).toBe(true);
+      expect(isExemptHost("notexample.com", ["example.com"])).toBe(false);
+      expect(isExemptHost("a.b.space", [])).toBe(false);
+      expect(isExemptHost("a.b.space", undefined)).toBe(false);
     });
 
     it("still passes a subtitle on, as WebVTT, which is what a screen has it for", async () => {

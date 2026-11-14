@@ -16,7 +16,7 @@ import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { answerUnroutable, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
-import { handleStreamProxy, type ProxyStats } from "./proxy";
+import { exemptHostsFrom, handleStreamProxy, type ProxyStats } from "./proxy";
 import { looksLikePage, requestForLog } from "./requestLog";
 import { createResolver, type ResolveFn } from "./resolvers";
 import { SegmentCache, type SegmentCacheOptions } from "./segmentCache";
@@ -72,6 +72,8 @@ export interface AppOptions {
   allowPrivateNetwork?: boolean;
   /** Whether `/api/proxy` carries film (playlists, pieces, files) or only subtitles. On unless set; env PROXY_VIDEO=off turns it off (see `ProxyOptions.video`). */
   proxyVideo?: boolean;
+  /** The hosts whose film `/api/proxy` carries although it carries no film (see `ProxyOptions.exemptHosts`). None unless set; env PROXY_EXEMPT_HOSTS. */
+  proxyExemptHosts?: readonly string[];
   /** How many times an address may ask in a minute for what makes the server fetch from another site: 60 for `/api/resolve`, 120 for the library's questions about a title, 60 for its search, 300 for `/api/proxy` while it carries no film (see `FetchesPerMinute`). Tests use small ones. */
   fetchesPerMinute?: FetchesPerMinute;
   /** Whether screens may offer the cat companion. Off unless set; env CAT_COMPANION=on turns it on, and taking it back off is the kill switch (see `/api/features`). */
@@ -225,6 +227,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   });
   const isProxyOff = process.env.PROXY_VIDEO === "off" || process.env.PROXY_VIDEO === "false" || process.env.PROXY_VIDEO === "0";
   const proxyVideo = options.proxyVideo ?? !isProxyOff;
+  const proxyExemptHosts = options.proxyExemptHosts ?? exemptHostsFrom(process.env.PROXY_EXEMPT_HOSTS);
+  if (!proxyVideo && proxyExemptHosts.length > 0) app.log.info(`The proxy carries no film, except from: ${proxyExemptHosts.join(", ")}.`);
   // (After the gate at the top, so a request that is turned away for where it comes from is not counted against the visitor it was sent from, and before the routes it counts.)
   fetchLimits(app, options.fetchesPerMinute ?? {}, { video: proxyVideo });
   // The cat companion is shown to nobody until the host says so; a screen asks here whether it may offer one (and its settings switch is hidden when it may not).
@@ -358,6 +362,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     return handleStreamProxy(request, reply, {
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",
       video: proxyVideo,
+      exemptHosts: proxyExemptHosts,
       segments,
       stats: proxyStats,
     });
