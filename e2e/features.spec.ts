@@ -881,11 +881,11 @@ test.describe("the subtitle delay", () => {
 
     await phone.getByTestId("chip-tracks").click();
     await expect(phone.getByTestId("subtitle-0")).toBeVisible();
+    await expect(phone.getByTestId("subtitle-delay")).toBeVisible(); // (English subtitles are on from the start: see `pickBaseSubtitleTrack`)
+    await phone.getByTestId("subtitle--1").click(); // off
     await expect(phone.getByTestId("subtitle-delay")).toHaveCount(0);
     await phone.getByTestId("subtitle-0").click(); // English
     await expect(phone.getByTestId("subtitle-delay")).toBeVisible();
-    await phone.getByTestId("subtitle--1").click(); // off
-    await expect(phone.getByTestId("subtitle-delay")).toHaveCount(0);
   });
 });
 
@@ -1283,11 +1283,10 @@ test.describe("feedback", () => {
     await expect(phone.getByTestId("toast")).toHaveCount(0);
     await phone.getByTestId("sheet-close").click();
 
-    // asked for from the TV's own remote keys: C cycles the subtitles
+    // asked for from the TV's own remote keys: C cycles the subtitles (English is on from the start, so the next one is Dutch, and off comes after the last)
     await tv.keyboard.press("c");
-    await expect(tv.getByTestId("tv-toast")).toHaveText("Subtitles: English");
-    await expect(phone.getByTestId("toast")).toHaveText("Subtitles: English");
-    await tv.keyboard.press("c");
+    await expect(tv.getByTestId("tv-toast")).toHaveText("Subtitles: Dutch");
+    await expect(phone.getByTestId("toast")).toHaveText("Subtitles: Dutch");
     await tv.keyboard.press("c");
     await expect(tv.getByTestId("tv-toast")).toHaveText("Subtitles off");
   });
@@ -1301,7 +1300,7 @@ test.describe("feedback", () => {
     await tv.evaluate(() => void (document.querySelector("video")!.currentTime = 5)); // past the first second, when nothing is announced
     await tv.keyboard.press("c"); // the subtitles change on the TV, and the phone says so
     const toast = phone.getByTestId("toast");
-    await expect(toast).toHaveText("Subtitles: English");
+    await expect(toast).toHaveText("Subtitles: Dutch"); // (English is on from the start: the key goes on to the next)
     await expect(toast).toHaveCSS("opacity", "1"); // (its fade is the end of an animation, which this setting cuts to nothing: it would be gone before it was read)
   });
 
