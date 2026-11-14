@@ -1,4 +1,4 @@
-import { isHttpUrl, normalizeLang, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
+import { isHttpUrl, normalizeLang, MAX_ALTERNATES, type AlternateSource, type EpisodeRef, type SeriesInfo, type SubtitleTrack } from "../../../shared";
 import { remember } from "../../boundedMap";
 import { FILMPIRE_TMDB_API_KEY } from "../../library/filmpire";
 import { providerFetch } from "../providerFetch";
@@ -669,6 +669,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         if (subList) {
           subList.forEach((sub, idx) => {
             sub.id = idx;
+            if (sub.label) sub.label = sub.label.slice(0, 100);
+            if (sub.lang) sub.lang = sub.lang.slice(0, 20);
           });
         }
 
@@ -689,7 +691,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
         const proxiedUrl = streamAddress(buzz.streamUrl, buzz.embedUrl, process.env, false);
         const alternates: AlternateSource[] = buzz.alternates.map((alt) => ({
-          label: alt.name,
+          label: alt.name.slice(0, 60),
           stream: {
             url: streamAddress(alt.url, buzz.embedUrl, process.env, false),
             type: alt.type,
@@ -703,7 +705,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             const altAnime = await fallbackAnime();
             if (altAnime?.status === "success") {
               alternates.push({
-                label: `Server ${alternates.length + 2} (AnimeHeaven)`,
+                label: `Server ${alternates.length + 2} (AnimeHeaven)`.slice(0, 60),
                 stream: altAnime.media.stream,
               });
             }
@@ -713,19 +715,20 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
 
         if (dub) alternates.unshift(dub);
+        const cappedAlternates = alternates.slice(0, MAX_ALTERNATES);
 
         return {
           status: "success",
           resolver: "filmpire",
           media: {
-            title,
+            title: title.slice(0, 300),
             stream: {
               url: proxiedUrl,
               type: "hls",
               directUrl: buzz.streamUrl,
             },
             ...(subList ? { subtitles: subList } : {}),
-            ...(alternates.length > 0 ? { alternates } : {}),
+            ...(cappedAlternates.length > 0 ? { alternates: cappedAlternates } : {}),
             ...(sInfo ? { series: sInfo } : {}),
             page: url.href,
           },
@@ -744,8 +747,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           return {
             id: i,
             url: `/api/proxy?url=${encodeURIComponent(c.url)}&format=vtt`,
-            label: c.label || normLang.toUpperCase(),
-            lang: normLang,
+            label: (c.label || normLang.toUpperCase()).slice(0, 100),
+            lang: normLang.slice(0, 20),
           };
         });
 
@@ -769,6 +772,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         if (subList) {
           subList.forEach((sub, idx) => {
             sub.id = idx;
+            if (sub.label) sub.label = sub.label.slice(0, 100);
+            if (sub.lang) sub.lang = sub.lang.slice(0, 20);
           });
         }
 
@@ -790,7 +795,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         const primary = vl.qualities[0]!;
         const proxiedUrl = streamAddress(primary.url, "none", process.env, false);
         const alternates: AlternateSource[] = vl.qualities.slice(1).map((q) => ({
-          label: q.label,
+          label: q.label.slice(0, 60),
           stream: {
             url: streamAddress(q.url, "none", process.env, false),
             type: q.type,
@@ -804,7 +809,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             const altAnime = await fallbackAnime();
             if (altAnime?.status === "success") {
               alternates.push({
-                label: `Server ${alternates.length + 2} (AnimeHeaven)`,
+                label: `Server ${alternates.length + 2} (AnimeHeaven)`.slice(0, 60),
                 stream: altAnime.media.stream,
               });
             }
@@ -814,19 +819,20 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
 
         if (dub) alternates.unshift(dub);
+        const cappedAlternates = alternates.slice(0, MAX_ALTERNATES);
 
         return {
           status: "success",
           resolver: "filmpire",
           media: {
-            title,
+            title: title.slice(0, 300),
             stream: {
               url: proxiedUrl,
               type: primary.type,
               directUrl: primary.url,
             },
             ...(subList ? { subtitles: subList } : {}),
-            ...(alternates.length > 0 ? { alternates } : {}),
+            ...(cappedAlternates.length > 0 ? { alternates: cappedAlternates } : {}),
             ...(sInfo ? { series: sInfo } : {}),
             page: url.href,
           },
@@ -1178,6 +1184,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         }
       }
 
+      // Prioritize clean streams over intrusive watermarks like "cinemacity"
+      const cleanStreams = streamUrls.filter((u) => !u.toLowerCase().includes("cinemacity"));
+      const watermarked = streamUrls.filter((u) => u.toLowerCase().includes("cinemacity"));
+      streamUrls = cleanStreams.length > 0 ? [...cleanStreams, ...watermarked] : streamUrls;
+
       if (streamUrls.length === 0) {
         const fb = await fallbackStreams();
         if (fb) return fb;
@@ -1202,6 +1213,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       subtitles = subtitles.slice(0, MAX_SUBTITLES);
       subtitles.forEach((sub, idx) => {
         sub.id = idx;
+        if (sub.label) sub.label = sub.label.slice(0, 100);
+        if (sub.lang) sub.lang = sub.lang.slice(0, 20);
       });
 
       // 7. Request host token with cache & fallback across streams
@@ -1254,7 +1267,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             ? `${sUrl}${altDelim}token=${encodeURIComponent(altToken)}&bypass_localize=true`
             : sUrl;
           alternates.push({
-            label: `Server ${alternates.length + 2} (${hostName})`,
+            label: `Server ${alternates.length + 2} (${hostName})`.slice(0, 60),
             stream: {
               url: streamAddress(altFinalUrl, relayReferer, process.env, relayOwnsToken),
               type: "hls",
@@ -1272,7 +1285,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const altAnime = await fallbackAnime();
           if (altAnime?.status === "success") {
             alternates.push({
-              label: `Server ${alternates.length + 2} (AnimeHeaven)`,
+              label: `Server ${alternates.length + 2} (AnimeHeaven)`.slice(0, 60),
               stream: altAnime.media.stream,
             });
           }
@@ -1283,12 +1296,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
       // A Romanian dubbed source, when the catalogue knows one (see `lookForExtras`), is the first alternate.
       if (dub) alternates.unshift(dub);
+      const cappedAlternates = alternates.slice(0, MAX_ALTERNATES);
 
       return {
         status: "success",
         resolver: "filmpire",
         media: {
-          title,
+          title: title.slice(0, 300),
           stream: {
             url: proxiedUrl,
             type: "hls",
@@ -1296,7 +1310,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           },
           subtitles: subtitles.length ? subtitles : undefined,
           series: seriesInfo,
-          alternates: alternates.length ? alternates : undefined,
+          alternates: cappedAlternates.length ? cappedAlternates : undefined,
+          page: url.href,
         },
       };
     },

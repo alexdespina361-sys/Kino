@@ -275,7 +275,7 @@ export class RomanianSubtitleManager {
     return cached.map((sub, idx) => ({
       id: 9000 + idx,
       url: `/api/subtitles/ro/${sub.id}.vtt`,
-      label: sub.label,
+      label: sub.label.slice(0, 100),
       lang: "ron",
     }));
   }
@@ -418,7 +418,7 @@ export class RomanianSubtitleManager {
             const baseName = item.name.split("/").pop()?.replace(/\.srt$/i, "") || item.name;
             found.push({
               id: `subsro_${id}_${found.length + 1}`,
-              label: `Romanian (Subs.ro) · ${baseName}`,
+              label: `Romanian (Subs.ro) · ${baseName}`.slice(0, 100),
               vtt: srtToVtt(item.content),
               source: "subs.ro",
               release: baseName,
@@ -488,7 +488,7 @@ export class RomanianSubtitleManager {
             const baseName = item.name.split("/").pop()?.replace(/\.srt$/i, "") || item.name;
             found.push({
               id: `subtnoi_${n + 1}_${found.length + 1}_${Math.random().toString(36).slice(2, 6)}`,
-              label: `Romanian (Retail / Subtitrari-Noi) · ${baseName}`,
+              label: `Romanian (Retail / Subtitrari-Noi) · ${baseName}`.slice(0, 100),
               vtt: srtToVtt(item.content),
               source: "subtitrari-noi",
               release: baseName,
@@ -540,7 +540,7 @@ export class RomanianSubtitleManager {
           const release = item.subtitleFileName?.replace(/\.(srt|vtt)$/i, "") || "OpenSubtitles";
           // (The site's own name for the file goes into an address: letters, digits, `_` and `-` of it only.)
           const name = String(item.id ?? "").replace(/[^\w-]/g, "").slice(0, 40);
-          return { id: `os_${name || n + 1}`, label: `Romanian · ${release}`, vtt: srtToVtt(text), source: "opensubtitles", release };
+          return { id: `os_${name || n + 1}`, label: `Romanian · ${release}`.slice(0, 100), vtt: srtToVtt(text), source: "opensubtitles", release };
         } catch {
           return undefined;
         }
