@@ -877,12 +877,25 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         return null;
       };
 
-      // Special-case titles:
-      // 1. Other Mommy (1400837): upstream has huge watermark "cinemacity", VidLink has clean release
-      // 2. Cartoons & Anime (isAnimeOrCartoon): skip slow 15s upstream retries and resolve via fast provider immediately
-      if (id === "1400837" || isAnimeOrCartoon) {
-        const fastResult = await fallbackStreams();
-        if (fastResult) return fastResult;
+      // Primary streaming provider: VidLink (fast, multi-quality direct streams for all titles)
+      try {
+        const vl = await resolveVidLinkStream(get, id, isTv, s, e);
+        if (vl) {
+          const vlResult = await buildVidLinkResult(vl);
+          if (vlResult) return vlResult;
+        }
+      } catch {
+        // proceed to fallbacks
+      }
+
+      // Fast-path anime fallback: if anime and VidLink had no stream, try AnimeHeaven before slow upstream retries
+      if (isAnimeOrCartoon) {
+        try {
+          const alt = await fallbackAnime();
+          if (alt) return alt;
+        } catch {
+          // proceed to fallbacks
+        }
       }
 
       // 3. Request embed player from screenfetch4 / vidsrc

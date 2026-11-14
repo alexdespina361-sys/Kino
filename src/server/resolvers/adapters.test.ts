@@ -289,4 +289,52 @@ describe("createAnimeHeavenAdapter", () => {
     await adapter.resolve(new URL("https://filmpire.sc/watch/88888?s=1&e=1"));
     expect(animeHeavenCalled).toBe(false);
   });
+
+  it("queries VidLink first for live-action movies and TV series", async () => {
+    let screenfetchCalled = false;
+
+    const fakeFetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.includes("api.themoviedb.org")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 77777,
+            title: "Live Action Movie",
+            original_language: "en",
+            genres: [{ id: 28 }],
+          }),
+        };
+      }
+      if (u.includes("vidlink.pro/api/b/movie/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            stream: {
+              type: "file",
+              qualities: {
+                "1080": { url: "https://bcdn.hakunaymatata.com/movie1080.mp4", type: "mp4" },
+              },
+            },
+          }),
+        };
+      }
+      if (u.includes("screenfetch4.cyou") || u.includes("vidsrc.me")) {
+        screenfetchCalled = true;
+        return { ok: false, status: 504 };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createFilmpireAdapter({ fetch: fakeFetch });
+    const res = await adapter.resolve(new URL("https://filmpire.sc/watch/77777"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.stream.type).toBe("mp4");
+      expect(res.media.stream.directUrl).toBe("https://bcdn.hakunaymatata.com/movie1080.mp4");
+      expect(screenfetchCalled).toBe(false);
+    }
+  });
 });
