@@ -508,6 +508,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let rawShowTitle: string | undefined;
       /** Whether TMDB says the title is animated (genre 16); unknown when TMDB did not answer, or said nothing of its genres. */
       let animated: boolean | undefined;
+      let originalLang: string | undefined;
       try {
         const tmdbUrl = (cType: string) =>
           `https://api.themoviedb.org/3/${cType}/${id}?append_to_response=external_ids&api_key=${FILMPIRE_TMDB_API_KEY}`;
@@ -517,6 +518,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           imdb_id?: string;
           external_ids?: { imdb_id?: string };
           genres?: Array<{ id?: number }>;
+          original_language?: string;
         };
         try {
           tmdbData = await fetchJson<{
@@ -525,6 +527,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             imdb_id?: string;
             external_ids?: { imdb_id?: string };
             genres?: Array<{ id?: number }>;
+            original_language?: string;
           }>(tmdbUrl(contentType));
         } catch (initialErr) {
           const is404 = (initialErr as { status?: number })?.status === 404 || String(initialErr).includes("HTTP 404");
@@ -536,6 +539,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               imdb_id?: string;
               external_ids?: { imdb_id?: string };
               genres?: Array<{ id?: number }>;
+              original_language?: string;
             }>(tmdbUrl("tv"));
             isTv = true;
             contentType = "tv";
@@ -553,9 +557,18 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         if (tmdbData.imdb_id) tmdbImdbId = tmdbData.imdb_id;
         else if (tmdbData.external_ids?.imdb_id) tmdbImdbId = tmdbData.external_ids.imdb_id;
         if (Array.isArray(tmdbData.genres)) animated = tmdbData.genres.some((genre) => genre?.id === 16);
+        if (tmdbData.original_language) originalLang = tmdbData.original_language;
       } catch {
         // Non-fatal if TMDB is unreachable
       }
+
+      const sectionHint = url.searchParams.get("section") || url.searchParams.get("type");
+      const isAnimeOrCartoon =
+        animated === true ||
+        originalLang === "ja" ||
+        sectionHint === "anime" ||
+        sectionHint === "cartoon" ||
+        Boolean(url.searchParams.get("category")?.match(/anime|cartoon/i));
 
       // The extras (see `ExtrasLookup`) are asked for now, while the sites of the stream are asked, when TMDB has said which title this is; otherwise once
       // the stream's answer has said (below). The season and episode are the link's: a series without them is at its first.
@@ -568,9 +581,10 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       };
       let pendingExtras: Extras | undefined = tmdbImdbId ? askExtras(tmdbImdbId) : undefined;
 
-      // (An anime site is asked only for what can be an anime: a show that TMDB says is not animated is not looked for there, at any step.)
+      // (An anime site is asked only for what can be an anime: a show that TMDB says is not animated or has a Western original language is not looked for there.)
       const fallbackAnime = async (): Promise<ResolveResult | null> => {
         if (!rawShowTitle || animated === false) return null;
+        if (originalLang && originalLang !== "ja" && originalLang !== "zh") return null;
         try {
           const { animeHeavenSource } = await import("../../library/animeheaven");
           const { createAnimeHeavenAdapter } = await import("./animeheaven");
@@ -700,7 +714,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           subtitles: subList,
         }));
 
-        if (rawShowTitle && isTv && alternates.length < 4) {
+        if (rawShowTitle && isTv && alternates.length < 2) {
           try {
             const altAnime = await fallbackAnime();
             if (altAnime?.status === "success") {
@@ -804,7 +818,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           subtitles: subList,
         }));
 
-        if (rawShowTitle && isTv && alternates.length < 4) {
+        if (rawShowTitle && isTv && alternates.length < 2) {
           try {
             const altAnime = await fallbackAnime();
             if (altAnime?.status === "success") {
@@ -863,8 +877,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
       // Special-case titles:
       // 1. Other Mommy (1400837): upstream has huge watermark "cinemacity", VidLink has clean release
-      // 2. Cartoons & Anime (animated === true): skip slow 15s upstream retries and resolve via fast provider immediately
-      if (id === "1400837" || animated === true) {
+      // 2. Cartoons & Anime (isAnimeOrCartoon): skip slow 15s upstream retries and resolve via fast provider immediately
+      if (id === "1400837" || isAnimeOrCartoon) {
         const fastResult = await fallbackStreams();
         if (fastResult) return fastResult;
       }
@@ -907,14 +921,14 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let playerUrl: string;
       try {
         let landingHtml = "";
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 2; attempt++) {
           try {
             landingHtml = await fetchText(containerUrl, { referer: "https://screenfetch4.cyou/" });
             if (landingHtml) break;
           } catch (err) {
             if (isSecurityBlock(err)) throw err;
-            if (attempt === 2) throw err;
-            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+            if (attempt === 1) throw err;
+            await new Promise((r) => setTimeout(r, 150));
           }
         }
         const playerMatch = landingHtml.match(/"playerUrl"\s*:\s*"([^"]+)"/i);
@@ -939,13 +953,13 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       let seriesInfo: SeriesInfo | undefined;
       let playerConfig: { api?: string; apiToken: string; mediaType?: string; streamBase?: string } | undefined;
       try {
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 2; attempt++) {
           try {
             playerHtml = await fetchText(playerUrl, { referer: containerUrl });
             if (playerHtml) break;
           } catch (err) {
-            if (attempt === 2) throw err;
-            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+            if (attempt === 1) throw err;
+            await new Promise((r) => setTimeout(r, 150));
           }
         }
         const configMatch = playerHtml.match(/window\.CONFIG\s*=\s*(\{[\s\S]*?\});/);
@@ -1151,10 +1165,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           const msg = err instanceof Error ? err.message : String(err);
           return { status: "temporary_failure", reason: `Could not retrieve video stream: ${msg}` };
         }
-        const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-        if (buzz) return buildBuzzResult(buzz);
-        const alt = await fallbackAnime();
-        if (alt) return alt;
+        const fb = await fallbackStreams();
+        if (fb) return fb;
         const msg = err instanceof Error ? err.message : String(err);
         return { status: "temporary_failure", reason: `Could not retrieve video stream: ${msg}` };
       }
