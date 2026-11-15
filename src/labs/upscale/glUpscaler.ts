@@ -1,6 +1,7 @@
 import { BILINEAR_FRAGMENT, EASU_FRAGMENT, FULLSCREEN_VERTEX, RCAS_FRAGMENT } from "./fsrShaders";
 import { easuScale, rcasAmount } from "./measure";
 import { FILM_COMPOSITE_FRAGMENT, FilmNet, parseHooks } from "./fsrcnnx";
+import { FrameBoost } from "./frameBoost";
 
 /** The modes WebGL 2 draws: the browser's own bilinear scaling ("off"), AMD FSR 1 ("sharp": EASU, then RCAS), and FSRCNNX ("film": see fsrcnnx.ts). */
 export type GlMode = "off" | "sharp" | FilmMode;
@@ -38,6 +39,7 @@ export class GlUpscaler {
   private readonly floatTargets: boolean;
   private readonly films = new Map<FilmMode, FilmNet>();
   private composite: Program | undefined;
+  private boost: FrameBoost | undefined;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: "high-performance" });
@@ -77,19 +79,35 @@ export class GlUpscaler {
     return String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "");
   }
 
+  /** The frame boost (frameBoost.ts), made in this context the first time it is asked for: its frames are textures here, drawn with no copy. */
+  frameBoost(): FrameBoost {
+    this.boost ??= new FrameBoost(this.gl, this.floatTargets);
+    return this.boost;
+  }
+
+  /** A second frame boost, for a check by hand that must not disturb the one the video plays through (see main.ts `interpolate`). */
+  spareBoost(): FrameBoost {
+    return new FrameBoost(this.gl, this.floatTargets, 2);
+  }
+
   /** Draws the frame the video shows now, at `out` (the canvas is made that size). */
   draw(video: HTMLVideoElement, mode: GlMode, out: { width: number; height: number }): void {
+    this.upload(video);
+    this.drawFrom(this.source, this.sourceSize, mode, out);
+  }
+
+  /** Draws a picture already in this context (a texture of the frame boost, top row first) at `out`, with `mode`. */
+  drawFrom(source: WebGLTexture, size: { width: number; height: number }, mode: GlMode, out: { width: number; height: number }): void {
     const gl = this.gl;
     if (this.canvas.width !== out.width || this.canvas.height !== out.height) {
       this.canvas.width = out.width;
       this.canvas.height = out.height;
     }
-    this.upload(video);
-    if (isFilm(mode) && out.width >= FILM_FROM * this.sourceSize.width) {
+    if (isFilm(mode) && out.width >= FILM_FROM * size.width) {
       const net = this.films.get(mode);
       if (!net || !this.composite) throw new Error("The Film network is not loaded");
       // The network doubles the luma (in float textures of its own)...
-      const luma = net.run(this.source, this.sourceSize);
+      const luma = net.run(source, size);
       // ...and the composite puts the video's colour around it, at the target, the right way up.
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, out.width, out.height);
@@ -97,7 +115,7 @@ export class GlUpscaler {
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, luma.texture);
       gl.uniform1i(this.composite.uniform("luma"), 1);
-      this.bind(this.source, this.composite.uniform("src"));
+      this.bind(source, this.composite.uniform("src"));
       gl.uniform2f(this.composite.uniform("outSize"), out.width, out.height);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       return;
@@ -106,7 +124,7 @@ export class GlUpscaler {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, out.width, out.height);
       gl.useProgram(this.bilinear.program);
-      this.bind(this.source, this.bilinear.uniform("src"));
+      this.bind(source, this.bilinear.uniform("src"));
       gl.uniform2f(this.bilinear.uniform("outSize"), out.width, out.height);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       return;
@@ -116,9 +134,9 @@ export class GlUpscaler {
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.middleTarget);
     gl.viewport(0, 0, out.width, out.height);
     gl.useProgram(this.easu.program);
-    this.bind(this.source, this.easu.uniform("src"));
-    gl.uniform2i(this.easu.uniform("srcSize"), this.sourceSize.width, this.sourceSize.height);
-    gl.uniform4f(this.easu.uniform("con0"), ...easuScale(this.sourceSize.width, this.sourceSize.height, out.width, out.height));
+    this.bind(source, this.easu.uniform("src"));
+    gl.uniform2i(this.easu.uniform("srcSize"), size.width, size.height);
+    gl.uniform4f(this.easu.uniform("con0"), ...easuScale(size.width, size.height, out.width, out.height));
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     // ...then RCAS from it onto the canvas, the right way up.
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);

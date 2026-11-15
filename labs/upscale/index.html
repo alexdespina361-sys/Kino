@@ -62,6 +62,9 @@
         <div class="stage-scroll" id="stage-scroll">
           <div class="stage" id="stage">
             <video id="video" muted playsinline preload="auto"></video>
+            <canvas id="held-0" class="held" hidden></canvas>
+            <canvas id="held-1" class="held" hidden></canvas>
+            <canvas id="held-2" class="held" hidden></canvas>
             <canvas id="gl-canvas" data-testid="upscale-gl-canvas"></canvas>
             <canvas id="gpu-canvas" data-testid="upscale-gpu-canvas" hidden></canvas>
             <div class="split" aria-hidden="true"><span>as it is</span><span id="split-mode">upscaled</span></div>
@@ -93,6 +96,19 @@
                 <option value="2160">2160p (4K)</option>
               </select>
             </label>
+            <label>Frame boost
+              <select id="boost" data-testid="upscale-boost">
+                <option value="0" selected>Off (as the video)</option>
+                <option value="30">30 frames a second</option>
+                <option value="60">60 frames a second</option>
+              </select>
+            </label>
+            <label>Frames made by
+              <select id="boost-how" data-testid="upscale-boost-how">
+                <option value="motion" selected>Motion (follows what moves)</option>
+                <option value="blend">Blend (mixes two frames)</option>
+              </select>
+            </label>
             <label>Shown
               <select id="view">
                 <option value="fit" selected>To fit the page</option>
@@ -106,6 +122,7 @@
           </div>
         </div>
         <p class="muted" id="size-info" data-testid="upscale-size"></p>
+        <p class="muted" id="boost-info" data-testid="upscale-boost-info" hidden></p>
         <p class="muted" id="shown-info" data-testid="upscale-shown"></p>
         <p class="status" id="status" role="status" data-testid="upscale-status"></p>
       </section>

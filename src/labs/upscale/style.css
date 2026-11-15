@@ -205,6 +205,15 @@ h2 {
   clip-path: inset(0 0 0 var(--split));
 }
 
+/* With the frame boost on, the left side is the video's own frame of the moment shown (the boost shows the video a little late), not the video. */
+.stage canvas.held {
+  clip-path: none;
+}
+
+.stage.boosted video {
+  visibility: hidden;
+}
+
 .stage.pixelated video,
 .stage.pixelated canvas {
   image-rendering: pixelated;
