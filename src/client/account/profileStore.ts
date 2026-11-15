@@ -87,6 +87,8 @@ export interface RatedTitle {
   backdrop?: string | undefined;
   year?: number | undefined;
   kind?: LibraryKind | undefined;
+  /** A cartoon or an anime, when the library says so. */
+  section?: "cartoon" | "anime" | undefined;
 }
 
 /** What a person changes in a rating: the score, the note (the note alone changes nothing without a score). */
@@ -418,6 +420,7 @@ export class ProfileStore {
     const backdrop = title.backdrop ?? before?.backdrop;
     const year = title.year ?? before?.year;
     const kind = title.kind ?? before?.kind;
+    const section = title.section ?? before?.section;
     this.put("ratings", {
       key,
       at,
@@ -427,6 +430,7 @@ export class ProfileStore {
       ...(backdrop ? { backdrop } : {}),
       ...(year ? { year } : {}),
       ...(kind ? { kind } : {}),
+      ...(section ? { section } : {}),
       ...(season ? { season } : {}),
       score,
       ...(note ? { note } : {}),

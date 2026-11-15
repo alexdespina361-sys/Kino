@@ -364,6 +364,19 @@ describe("gridOf", () => {
     expect(page.meta).toContain("7.7"); // three ratings, their mean
   });
 
+  it("is the ratings of one section or of one score when the page says so, a cartoon or an anime told by the rating or by where the library lists it", () => {
+    const cartoon = { id: "c1", title: "Toons", url: "https://x.example/toon", kind: "movie" as const, section: "cartoon" as const };
+    const rows = [{ id: "c", title: "Cartoons", source: "Test", kind: "movie" as const, section: "cartoon" as const, items: [cartoon] }];
+    const ratings = [rated("film", 9, 100, { kind: "movie" }), rated("toon", 7, 200, { kind: "movie" }), rated("akira", 9, 300, { kind: "movie", section: "anime" }), rated("dark", 8, 400, { kind: "series" })];
+    const of = (view: { kind: "ratings"; section?: "movie" | "series" | "cartoon" | "anime"; score?: number }) => gridOf(view, data({ rows, ratings }))!.entries.map((e) => e.title);
+    expect(of({ kind: "ratings" })).toEqual(["Rated dark", "Rated akira", "Rated toon", "Rated film"]);
+    expect(of({ kind: "ratings", section: "cartoon" })).toEqual(["Rated toon"]); // (the library lists its link as a cartoon's)
+    expect(of({ kind: "ratings", section: "movie" })).toEqual(["Rated film"]);
+    expect(of({ kind: "ratings", score: 9 })).toEqual(["Rated akira", "Rated film"]);
+    expect(of({ kind: "ratings", section: "series", score: 9 })).toEqual(["Rated dark"]); // (no series was given a 9: the score is let go)
+    expect(gridOf({ kind: "ratings", score: 9 }, data({ rows, ratings }))!.meta).toContain("9"); // (the count and the average are of what is shown)
+  });
+
   it("says what the empty ratings page is for", () => {
     const page = gridOf({ kind: "ratings" }, data())!;
     expect(page.entries).toEqual([]);

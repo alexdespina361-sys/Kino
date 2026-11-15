@@ -256,6 +256,23 @@ describe("stepFrom on a title's page that lists rows of titles (the other parts 
   });
 });
 
+describe("stepFrom with two rows of buttons over a grid (the ratings' sections and scores)", () => {
+  const shape: Shape = { rail: [1, 1], top: [2], chips: [5, 4], grid: gridRows(7, 3) };
+
+  it("goes down from the sections to the scores, and from the scores to the titles; up the same way back", () => {
+    expect(stepFrom(shape, at("chips", 0, 4), "down")).toEqual(at("chips", 1, 3)); // (the last of a shorter row)
+    expect(stepFrom(shape, at("chips", 1, 2), "down")).toEqual(at("grid", 0, 2));
+    expect(stepFrom(shape, at("grid", 0, 2), "up")).toEqual(at("chips", 1, 2));
+    expect(stepFrom(shape, at("chips", 1, 1), "up")).toEqual(at("chips", 0, 1));
+    expect(stepFrom(shape, at("chips", 0, 1), "up")).toEqual(at("top", 0, 0));
+  });
+
+  it("goes from the titles to the one row of buttons there is, when there is one", () => {
+    expect(stepFrom({ ...shape, chips: [4] }, at("grid", 0, 2), "up")).toEqual(at("chips", 0, 2));
+    expect(stepFrom({ ...shape, chips: [4] }, at("chips", 0, 3), "down")).toEqual(at("grid", 0, 2));
+  });
+});
+
 describe("stepFrom with the search filter (All, Movies, Series)", () => {
   // The filter sits above the results, to the right of the keys.
   const shape: Shape = { rail: [1, 1], top: [1], keys: [6, 6, 6, 2], chips: [3], results: gridRows(7, 3) };

@@ -42,7 +42,8 @@ import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
 import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlySection, selectedText, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
 import { columnsFor, pageWidth, PITCH_EM } from "./columns";
-import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
+import { filterRows, ownSection, ratingChoices, usableFilter, type RatingFilter } from "../account/ratingFilter";
+import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, overviewActions, ratingSectionIn, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
 import { ProfileHead } from "./ProfileHead";
 import { Rail, type RailEntry } from "./Rail";
@@ -416,6 +417,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   // (`data` holds this profile's own lists and ratings: what it has in common with the friend comes first on their page.)
   const grid = useMemo(() => gridOf(view, data) ?? friendGrid(view, friends.state, sharedLists, sharedRatings, iGet, Date.now(), data), [view, data, language, friends.state, sharedLists, sharedRatings, iGet]);
   /* eslint-enable react-hooks/exhaustive-deps */
+  // The ratings' filters: a row of the sections they are in and a row of the scores given (each only with more than one thing to choose; see ratingFilter.ts).
+  const ratingSectionOf = useMemo(() => (view.kind === "ratings" ? ratingSectionIn(everyRow) : ownSection), [view.kind, everyRow]);
+  const ratingFilter: RatingFilter = view.kind === "ratings" ? usableFilter(data.ratings, view, ratingSectionOf) : {};
+  const ratingOptions = view.kind === "ratings" ? ratingChoices(data.ratings, ratingFilter, ratingSectionOf) : null;
+  const ratingRows = ratingOptions ? filterRows(ratingOptions) : { sections: [], scores: [] };
+  const ratingChipRows = [ratingRows.sections.length, ratingRows.scores.length].filter((length) => length > 0);
+  const scoreRow = ratingRows.sections.length > 0 ? 1 : 0;
   // (A phone's categories are tiles of words, not pictures: two across, where the posters of the other pages are three.)
   const posterGrid = !!grid && grid.layout !== "categories" && grid.entries.every(isTitle);
   // (A window wider than 16 by 9, or a computer's wide monitor, has room for more across: see `columnsFor`.)
@@ -494,6 +502,12 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const selectList = (id: string) => {
     const next: View = { kind: "list", list: id };
     remembered.list = id;
+    remembered.view = next;
+    setViewState(next);
+  };
+  /** Another filter of the ratings: the same way (the buttons keep the remote). A score the section that is chosen has none of is let go (see ratingFilter.ts). */
+  const selectRatings = (filter: RatingFilter) => {
+    const next: View = { kind: "ratings", ...(filter.section ? { section: filter.section } : {}), ...(filter.score !== undefined ? { score: filter.score } : {}) };
     remembered.view = next;
     setViewState(next);
   };
@@ -640,6 +654,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     ...(view.kind === "search" ? { ...(narrow ? {} : { keys: KEYBOARD_SHAPE }), chips: [SECTION_FILTERS.length], results: resultRowsOf(resultColumns) } : {}),
     // The lists page: a button for each list, to make another and to change this one, over its titles.
     ...(view.kind === "list" ? { chips: [lists.length + (canAdd ? 2 : 1)] } : {}),
+    // What was rated: the sections, then the scores, over the titles.
+    ...(view.kind === "ratings" && ratingChipRows.length > 0 ? { chips: ratingChipRows } : {}),
     // A friend's page: the way back, their lists and their ratings over the titles (and, for a friend who takes invitations, to ask them to watch and to plan it), the chat, and under them the button that takes them off the friends.
     ...(view.kind === "friend" && friend ? { chips: [canAskTogether(friend) ? 6 : 4], foot: [1] } : {}),
     ...(detail
@@ -1434,6 +1450,68 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 </p>
               )}
             </>
+          )}
+          {view.kind === "ratings" && ratingOptions && ratingChipRows.length > 0 && (
+            // (The owner: "a simple filter around rating". Each button says how many it keeps.)
+            <div className="tv-rating-filters" data-testid="rating-filters">
+              {ratingRows.sections.length > 0 && (
+                <div className="tv-filters" role="radiogroup" aria-label={t("rating.filterKind")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+                  {ratingRows.sections.map((section, col) => {
+                    const pos: Pos = { zone: "chips", row: 0, col };
+                    const count = section ? (ratingOptions.sections.find((each) => each.section === section)?.count ?? 0) : data.ratings.length;
+                    return (
+                      <button
+                        key={section ?? "all"}
+                        className="tv-choice"
+                        role="radio"
+                        aria-checked={ratingFilter.section === section}
+                        data-testid={`rating-filter-${section ?? "all"}`}
+                        data-zone={pos.zone}
+                        data-row={pos.row}
+                        data-col={pos.col}
+                        onClick={() => selectRatings({ ...ratingFilter, section })}
+                        onFocus={() => (remembered.focus[viewKey(view)] = pos)}
+                      >
+                        {t(section === undefined ? "tv.filterAll" : section === "movie" ? "tv.filterMovies" : section === "series" ? "tv.filterSeries" : section === "cartoon" ? "tv.filterCartoons" : "tv.filterAnime")}
+                        <span className="tv-choice-count">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {ratingRows.scores.length > 0 && (
+                <div className="tv-filters" role="radiogroup" aria-label={t("rating.filterScores")} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+                  {ratingRows.scores.map((score, col) => {
+                    const pos: Pos = { zone: "chips", row: scoreRow, col };
+                    const count = score === undefined ? ratingOptions.scores.reduce((sum, each) => sum + each.count, 0) : (ratingOptions.scores.find((each) => each.score === score)?.count ?? 0);
+                    return (
+                      <button
+                        key={score ?? "any"}
+                        className="tv-choice"
+                        role="radio"
+                        aria-checked={ratingFilter.score === score}
+                        {...(score !== undefined ? { "aria-label": `${t("rating.filterScore", { score })} (${count})` } : {})}
+                        data-testid={`rating-score-${score ?? "any"}`}
+                        data-zone={pos.zone}
+                        data-row={pos.row}
+                        data-col={pos.col}
+                        onClick={() => selectRatings({ ...ratingFilter, score })}
+                        onFocus={() => (remembered.focus[viewKey(view)] = pos)}
+                      >
+                        {score === undefined ? (
+                          t("rating.filterAnyScore")
+                        ) : (
+                          <>
+                            <StarIcon filled /> {score}
+                          </>
+                        )}
+                        <span className="tv-choice-count">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
           {view.kind === "list" && !canAdd && (
             <p className="tv-view-meta" data-testid="lists-full">

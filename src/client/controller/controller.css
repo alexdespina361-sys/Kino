@@ -541,8 +541,13 @@ html.sheet-open { overscroll-behavior-y: contain; }
 
 /* (Five of them, and a narrow phone has room for four: the last goes on a second line, and no name is ever broken in two.) */
 .lib-pills { display: flex; flex-wrap: wrap; gap: 8px; margin: -4px 0 0; }
+/* (in a sheet, whose body is a scrolling column, a row of pills keeps its height: squeezed by a long list under it, the rows of the ratings' sort and filters lay over one another and over the list) */
+.sheet-body > .lib-pills { flex: none; }
 .lib-pill { padding: 7px 15px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 0.85rem; font-weight: 600; white-space: nowrap; transition: background 0.15s ease, color 0.15s ease; }
 .lib-pill[aria-pressed="true"] { background: #fff; color: #000; }
+/* (how many a filter of the ratings keeps, beside its name) */
+.lib-pill-count { margin-left: 3px; opacity: 0.6; font-variant-numeric: tabular-nums; }
+.lib-pill svg { width: 0.95em; height: 0.95em; margin-right: 2px; vertical-align: -0.12em; }
 
 /* Ratings: a box on a title's page (folded to one line), and the page of everything rated. */
 /* (`flex: none`: a sheet is a column that scrolls, and a box that hides its overflow may shrink, so a long page would squeeze it flat.) */

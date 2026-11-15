@@ -221,6 +221,8 @@ const RatingLive = z.object({
   backdrop: z.string().max(2048).optional(),
   year: z.number().int().optional(),
   kind: z.enum(["movie", "series"]).optional(),
+  /** Said only for a cartoon or an anime, when the title was rated where the library said so (the ratings are filtered by it: see client/account/ratingFilter.ts). */
+  section: z.enum(["cartoon", "anime"]).optional(),
   /** Absent: the whole title (a film, or a show as a whole). */
   season: z.number().int().min(1).max(200).optional(),
   score: z.number().int().min(1).max(MAX_SCORE),

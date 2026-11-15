@@ -1335,6 +1335,11 @@
 .tv-filters { display: flex; flex: none; gap: 0.8em; padding: 0.8em; margin: -0.5em; overflow-x: auto; scrollbar-width: none; }
 .tv-filters::-webkit-scrollbar { display: none; }
 .tv-filters > * { flex: none; }
+/* The ratings' filters: the sections over the scores, each button with how many titles it keeps in a small pill of its own. */
+.tv-rating-filters { display: flex; flex-direction: column; gap: 0.15em; margin: 0.7em 0 0.5em; }
+.tv-choice-count { min-width: 1.5em; padding: 0.08em 0.45em; border-radius: 999px; background: rgba(255, 255, 255, 0.12); font-size: 0.7em; font-weight: 700; line-height: 1.3; text-align: center; font-variant-numeric: tabular-nums; }
+.tv-choice[aria-checked="true"] .tv-choice-count { background: rgba(255, 255, 255, 0.22); }
+.tv-choice:focus-visible .tv-choice-count { background: rgba(0, 0, 0, 0.1); }
 /* A friend's page has up to six buttons in its line (the way back, their lists and ratings, to ask them to watch and to plan it, the chat): in Romanian the words of the long ones are as wide as the screen with the usual room round them, so there is less of it, and all six show without sliding. */
 .tv-filters-friend > .tv-choice { padding-inline: 0.85em; }
 /*
