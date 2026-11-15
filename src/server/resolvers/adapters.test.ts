@@ -504,14 +504,22 @@ function animeWorld(options: {
   titles: (words: string) => Array<{ slug: string; name: string }>;
   episodes: Record<string, number[]>;
   buzz?: boolean;
+  /** "hang": VidLink answers nothing until it is given up on (as it does for a title it does not have). */
+  vidlink?: boolean | "hang";
 }): typeof fetch {
   const card = ({ slug, name }: { slug: string; name: string }) =>
     `<div class='similarimg'><div class='p1'><a href='anime.php?${slug}'><img class='coverimg' src='image.php?${slug}' alt='${name}'></a><div class='similarname c'><a href='anime.php?${slug}' class='c'>${name}</a></div></div></div>`;
   const id = (slug: string, episode: number) => `${slug}${episode}`.replace(/[^0-9a-f]/g, "a").padEnd(32, "0").slice(0, 32);
-  return (async (url: string | URL, init?: { headers?: Record<string, string> }) => {
+  return (async (url: string | URL, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => {
     const u = new URL(String(url));
     const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
     if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith(`/tv/${options.tmdbId}`)) return { ok: true, status: 200, json: async () => options.tmdb };
+    if (u.hostname === "vidlink.pro" && options.vidlink === "hang") {
+      return new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted", "AbortError"))));
+    }
+    if (u.hostname === "vidlink.pro" && options.vidlink) {
+      return text(JSON.stringify({ stream: { playlist: "https://cdn.vidlink.test/master.m3u8" } }));
+    }
     if (u.hostname.endsWith("vidsrc.buzz") && options.buzz) {
       if (u.pathname.startsWith("/embed/")) return text(`<script>var Q = {"t":"tok","ssr":{"servers":[{"ref":"r1","name":"One"}]}};</script>`);
       if (u.pathname.startsWith("/pl/")) return text(JSON.stringify({ url: "https://cdn.buzz.test/episode/master.m3u8", type: "hls" }));
@@ -651,5 +659,96 @@ describe("the anime site: a season is never another season's title", () => {
     const get = animeWorld({ tmdbId: "209867", tmdb: frieren, titles: () => [{ slug: "sousou", name: "Sousou no Frieren" }], episodes: { sousou: [1, 2, 3] } });
     const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/209867?s=1&e=2"));
     expect(JSON.stringify(res)).toContain("sousou.mp4");
+  });
+
+  it("keeps the full order of sources: VidLink before Buzz before the anime site", async () => {
+    // When VidLink has the episode, it is preferred over both Buzz and AnimeHeaven
+    const getWithVidlink = animeWorld({
+      tmdbId: "60572",
+      tmdb: pokemon,
+      titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
+      episodes: { pokemonuj: [5, 6, 7] },
+      buzz: true,
+      vidlink: true,
+    });
+    const resVl = await createFilmpireAdapter({ fetch: getWithVidlink }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(resVl.status).toBe("success");
+    if (resVl.status === "success") expect(resVl.media.stream.directUrl).toContain("cdn.vidlink.test");
+
+    // When VidLink is absent, Buzz is taken before AnimeHeaven
+    const getWithBuzz = animeWorld({
+      tmdbId: "60572",
+      tmdb: pokemon,
+      titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
+      episodes: { pokemonuj: [5, 6, 7] },
+      buzz: true,
+      vidlink: false,
+    });
+    const resBuzz = await createFilmpireAdapter({ fetch: getWithBuzz }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(resBuzz.status).toBe("success");
+    if (resBuzz.status === "success") expect(resBuzz.media.stream.directUrl).toContain("cdn.buzz.test");
+
+    // When neither VidLink nor Buzz has it, AnimeHeaven is taken
+    const getWithAh = animeWorld({
+      tmdbId: "60572",
+      tmdb: pokemon,
+      titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
+      episodes: { pokemonuj: [5, 6, 7] },
+      buzz: false,
+      vidlink: false,
+    });
+    const resAh = await createFilmpireAdapter({ fetch: getWithAh }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(resAh.status).toBe("success");
+    if (resAh.status === "success") expect(resAh.media.stream.directUrl).toContain("pokemonuj.mp4");
+  });
+
+  it("VidLink aborts promptly within the configured timeout when an episode hangs", async () => {
+    let aborted = false;
+    const hangingFetch = ((_url: string | URL, init?: { signal?: AbortSignal }) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("The operation was aborted", "AbortError"));
+        });
+      });
+    }) as unknown as typeof fetch;
+
+    const res = await resolveVidLinkStream(hangingFetch, "60572", true, "25", "6", 50);
+    expect(res).toBeNull();
+    expect(aborted).toBe(true);
+  });
+
+  it("an anime episode VidLink does not answer for is played from Buzz after 2.5 s, not after VidLink's usual 6", { timeout: 20_000 }, async () => {
+    const get = animeWorld({ tmdbId: "60572", tmdb: pokemon, titles: () => [], episodes: {}, buzz: true, vidlink: "hang" });
+    const started = Date.now();
+    const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    const took = Date.now() - started;
+    expect(res.status).toBe("success");
+    if (res.status === "success") expect(res.media.stream.directUrl).toContain("cdn.buzz.test");
+    expect(took).toBeGreaterThanOrEqual(2_400);
+    expect(took).toBeLessThan(5_000);
+  });
+
+  it("an anime request with no sources returns unsupported without querying fallback streams twice", async () => {
+    const queriedHosts: string[] = [];
+    const trackingFetch = (async (url: string | URL, init?: { headers?: Record<string, string> }) => {
+      const u = new URL(String(url));
+      queriedHosts.push(u.hostname);
+      return animeWorld({
+        tmdbId: "60572",
+        tmdb: pokemon,
+        titles: () => [],
+        episodes: {},
+        buzz: false,
+        vidlink: false,
+      })(url, init);
+    }) as unknown as typeof fetch;
+
+    const res = await createFilmpireAdapter({ fetch: trackingFetch }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(res.status).not.toBe("success");
+
+    // VidLink was queried exactly once (never twice even when upstream containerUrl lookups fail)
+    const vidlinkQueries = queriedHosts.filter((h) => h === "vidlink.pro");
+    expect(vidlinkQueries.length).toBe(1);
   });
 });
