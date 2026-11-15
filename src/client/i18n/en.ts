@@ -184,6 +184,9 @@ export const en = {
   "settings.subtitleLanguages": "Subtitle languages",
   "settings.subtitleLanguagesHelp": "Listed first in the subtitle menu, in this order.",
   "settings.onlySubtitleLanguages": "Hide all other languages",
+  "settings.subtitlePickHelp": "Listed first in the subtitle menu, in the order you pick them. Pick one again to take it out.",
+  "settings.subtitleOrder": "Order",
+  "settings.subtitles": "Subtitles",
   "settings.signInToSave": "Sign in to keep these on all your screens.",
   "accent.red": "Red",
   "accent.blue": "Blue",
@@ -460,7 +463,6 @@ export const en = {
   "tv.connecting": "Connecting…",
   "role.asTv": "Use this screen as the TV",
   "role.asRemote": "Use this screen as a remote",
-  "tv.subtitlesHint": "Pick which subtitle languages are listed first in Settings on your phone.",
   "tv.notSignedIn": "Not signed in",
   "tv.approveHelp": "Type the code the other device is showing.",
   /* the TV's library */

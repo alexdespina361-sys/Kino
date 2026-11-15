@@ -182,6 +182,9 @@ export const ro: Dictionary = {
   "settings.subtitleLanguages": "Limbi pentru subtitrări",
   "settings.subtitleLanguagesHelp": "Apar primele în meniul de subtitrări, în această ordine.",
   "settings.onlySubtitleLanguages": "Ascunde toate celelalte limbi",
+  "settings.subtitlePickHelp": "Apar primele în meniul de subtitrări, în ordinea în care le alegi. Alege una din nou ca s-o scoți.",
+  "settings.subtitleOrder": "Ordine",
+  "settings.subtitles": "Subtitrări",
   "settings.signInToSave": "Autentifică-te ca să păstrezi acestea pe toate ecranele.",
   "accent.red": "Roșu",
   "accent.blue": "Albastru",
@@ -458,7 +461,6 @@ export const ro: Dictionary = {
   "tv.connecting": "Se conectează…",
   "role.asTv": "Folosește acest ecran ca televizor",
   "role.asRemote": "Folosește acest ecran ca telecomandă",
-  "tv.subtitlesHint": "Alege în Setări, de pe telefon, ce limbi de subtitrări apar primele.",
   "tv.notSignedIn": "Neautentificat",
   "tv.approveHelp": "Scrie codul pe care îl arată celălalt dispozitiv.",
   /* the TV's library */

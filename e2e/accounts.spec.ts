@@ -4,7 +4,7 @@ import { weakness } from "../src/client/account/password";
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, openTvSettings, openTvSignIn, PHONE, place, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
+import { guestStorage, openDevice, openLibrary, openProfilePlace, openTv, openTvSettings, openTvSignIn, PHONE, place, pressMenuLine, RawPhone, readPairingCode, test, tvRoot } from "./helpers";
 import { TEST_ACCOUNT, TEST_ACCOUNT_B } from "./testAccount";
 
 /**
@@ -888,6 +888,68 @@ test.describe("the subtitle languages a profile chose", () => {
     await tv.getByRole("option", { name: en["player.showAll"] }).click();
     await expect.poll(() => optionsOf(tv)).toEqual(["Off", "Dutch", "French", "English", "Romanian"]);
     phone.close();
+  });
+
+  test("chosen on the TV's own settings with the remote, they come first in the order they were pressed; pressed again, one is taken out", async ({ browser, baseURL }) => {
+    // (The owner, 15 Nov 2026: "allow subtitle picking on tv/pc too not just phone as it says". A guest's are kept on the TV.)
+    const tv = await openLibrary(browser);
+    await openTvSettings(tv);
+    const line = tv.getByTestId("tv-subtitle-languages");
+    await expect(line.locator(".tv-line-value")).toHaveCount(0); // (nothing chosen yet: the defaults)
+    await line.focus();
+    await tv.keyboard.press("Enter");
+    const page = tv.getByTestId("tv-subtitle-settings");
+    await expect(page).toBeVisible();
+    await expect(page.getByTestId("tv-subtitle-order")).toHaveText("Shown first now: English, Romanian, Italian.");
+    const lang = (code: string) => page.getByTestId(`tv-subtitle-lang-${code}`);
+    await expect(lang("en")).toBeFocused(); // (the remote starts on the first language)
+    await tv.keyboard.press("Enter");
+    await expect(lang("en")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("tv-subtitle-order")).toHaveText("1. English");
+    await tv.keyboard.press("Enter"); // (pressed again, it is taken out, and the remote is still on it)
+    await expect(lang("en")).toHaveAttribute("aria-pressed", "false");
+    await expect(lang("en")).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowDown"); // (the third row starts with Dutch: English Romanian Italian Spanish French German / Portuguese ... / Dutch ...)
+    await expect(lang("nl")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await tv.keyboard.press("ArrowUp");
+    await tv.keyboard.press("ArrowUp");
+    for (let step = 0; step < 4; step++) await tv.keyboard.press("ArrowRight");
+    await expect(lang("fr")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(page.getByTestId("tv-subtitle-order")).toHaveText("1. Dutch  ·  2. French");
+    await expect(lang("nl").locator(".tv-lang-rank")).toHaveText("1");
+    await expect(lang("fr").locator(".tv-lang-rank")).toHaveText("2");
+
+    await tv.keyboard.press("Escape"); // (back on the settings, on the row it came from, which says how it stands)
+    await expect(tv.getByTestId("tv-account")).toBeVisible();
+    await expect(line).toBeFocused();
+    await expect(line).toContainText("Dutch +1");
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-account")).toHaveCount(0);
+
+    await pressMenuLine(tv, "rail-connect");
+    const phone = await openMenu(tv, baseURL!);
+    await expect.poll(() => optionsOf(tv)).toEqual(["Off", "Dutch", "French", "English", "Romanian"]);
+    phone.close();
+  });
+
+  test("twelve at most on the TV: the rest wait, and taking one out makes room", async ({ browser }) => {
+    const twelve = ["en", "ro", "it", "es", "fr", "de", "pt", "hu", "bg", "el", "tr", "pl"];
+    const tv = await openLibrary(browser, undefined, undefined, guestStorage({ settings: [{ key: "subtitleLanguages", at: Date.now(), value: twelve }] }));
+    await openTvSettings(tv);
+    await expect(tv.getByTestId("tv-subtitle-languages")).toContainText("English +11");
+    await tv.getByTestId("tv-subtitle-languages").click();
+    const lang = (code: string) => tv.getByTestId(`tv-subtitle-lang-${code}`);
+    await expect(lang("nl")).toHaveAttribute("aria-disabled", "true");
+    await lang("nl").click({ force: true }); // (Playwright waits for an aria-disabled button to be enabled: a press is made anyway, as a hand or a remote can)
+    await expect(lang("nl")).toHaveAttribute("aria-pressed", "false"); // (not taken)
+    await lang("it").click();
+    await expect(lang("nl")).not.toHaveAttribute("aria-disabled", "true");
+    await lang("nl").click();
+    await expect(lang("nl").locator(".tv-lang-rank")).toHaveText("12");
+    await expect(lang("hu").locator(".tv-lang-rank")).toHaveText("7"); // (those after the one taken out moved up a place)
   });
 
   test("someone who chose nothing gets the languages of the site first", async ({ browser, baseURL }) => {

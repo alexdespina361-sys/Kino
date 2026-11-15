@@ -182,6 +182,9 @@ export const it: Dictionary = {
   "settings.subtitleLanguages": "Lingue dei sottotitoli",
   "settings.subtitleLanguagesHelp": "Compaiono per prime nel menu dei sottotitoli, in quest'ordine.",
   "settings.onlySubtitleLanguages": "Nascondi tutte le altre lingue",
+  "settings.subtitlePickHelp": "Compaiono per prime nel menu dei sottotitoli, nell'ordine in cui le scegli. Sceglila di nuovo per toglierla.",
+  "settings.subtitleOrder": "Ordine",
+  "settings.subtitles": "Sottotitoli",
   "settings.signInToSave": "Accedi per tenerle su tutti i tuoi schermi.",
   "accent.red": "Rosso",
   "accent.blue": "Blu",
@@ -457,7 +460,6 @@ export const it: Dictionary = {
   "tv.connecting": "Connessione…",
   "role.asTv": "Usa questo schermo come TV",
   "role.asRemote": "Usa questo schermo come telecomando",
-  "tv.subtitlesHint": "Scegli nelle Impostazioni, dal telefono, quali lingue dei sottotitoli compaiono per prime.",
   "tv.notSignedIn": "Accesso non effettuato",
   "tv.approveHelp": "Scrivi il codice che mostra l'altro dispositivo.",
   /* the TV's library */

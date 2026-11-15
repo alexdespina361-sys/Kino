@@ -3173,13 +3173,38 @@ test.describe("ratings on the TV", () => {
       const tv = await openLibrary(browser, withLibrary(library), { width: screen.width, height: screen.height });
       await openProfilePlace(tv, "settings");
       await expect(tv.getByTestId("tv-ratings-switch")).toBeVisible();
-      for (const id of ["tv-lang-en", "tv-autoplay", "tv-tap-to-pause", "tv-adaptive-quality", "tv-ratings-switch", "tv-account-back"]) {
+      for (const id of ["tv-lang-en", "tv-autoplay", "tv-subtitle-languages", "tv-tap-to-pause", "tv-adaptive-quality", "tv-ratings-switch", "tv-account-back"]) {
         const at = (await tv.getByTestId(id).boundingBox())!;
         expect(at.x, `${id} from the left`).toBeGreaterThanOrEqual(0);
         expect(at.y, `${id} from the top`).toBeGreaterThanOrEqual(0);
         expect(at.x + at.width, `${id} to the right`).toBeLessThanOrEqual(screen.width + 0.5);
         expect(at.y + at.height, `${id} to the bottom`).toBeLessThanOrEqual(screen.height + 0.5);
       }
+    });
+  }
+
+  // (The owner, 15 Nov 2026: "it's not aesthetic how the cat square is slightly lower than it should be": the last card of every column ends on one line.)
+  for (const { name, width, height, cat } of [
+    { name: "720p, with the cat's row", width: 1280, height: 720, cat: true },
+    { name: "1080p, with the cat's row", width: 1920, height: 1080, cat: true },
+    { name: "1080p, without it", width: 1920, height: 1080, cat: false },
+  ]) {
+    test(`the settings' columns end on one line: ${name}`, async ({ browser }) => {
+      const tv = await openLibrary(browser, async (context) => {
+        await withLibrary(library)(context);
+        await context.route("**/api/features", (route) => route.fulfill({ json: { cat } }));
+      }, { width, height });
+      await openProfilePlace(tv, "settings");
+      await expect(tv.getByTestId("tv-cat-open")).toHaveCount(cat ? 1 : 0);
+      const bottoms = await tv.locator(".tv-set-grid-panel > .tv-set-col").evaluateAll((columns) =>
+        columns.map((column) => {
+          const cards = column.querySelectorAll(".tv-group-body");
+          return cards[cards.length - 1]!.getBoundingClientRect().bottom;
+        }),
+      );
+      expect(bottoms).toHaveLength(3);
+      for (const bottom of bottoms) expect(Math.abs(bottom - bottoms[0]!), `${bottoms.join(", ")}`).toBeLessThan(1);
+      expect(bottoms[0]!).toBeLessThanOrEqual(height);
     });
   }
 
