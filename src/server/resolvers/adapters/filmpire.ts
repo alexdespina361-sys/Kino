@@ -653,7 +653,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             }
           }
 
-          // Build search queries: show title, clean show title, show title + season name, season name alone
+          // Build search queries: show title, clean show title, show title + season name. (Not the season's name alone: "Ultimate Journeys" or "Final
+          // Season" on its own finds other shows' titles.)
           const searchQueries = new Set<string>();
           searchQueries.add(rawShowTitle);
           if (cleanShow && cleanShow !== rawShowTitle.toLowerCase()) {
@@ -661,26 +662,22 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           }
           if (targetSeasonName && !isGenericSeasonName) {
             searchQueries.add(`${cleanShow} ${targetSeasonName}`);
-            searchQueries.add(targetSeasonName);
           }
           if (cleanShow.includes("jujutsu")) {
             searchQueries.add("sorcery fight");
           }
 
-          let results: Array<{ title: string; url: string }> = [];
+          // (All the searches at once, so a show with a season name waits for one search and not three in a row; the results are kept in the order of the
+          // queries, the show's own title first.)
+          const results: Array<{ title: string; url: string }> = [];
           const seenUrls = new Set<string>();
-
-          for (const query of searchQueries) {
-            try {
-              const found = await ah.search(query);
-              for (const item of found) {
-                if (!seenUrls.has(item.url)) {
-                  seenUrls.add(item.url);
-                  results.push(item);
-                }
+          const answers = await Promise.all([...searchQueries].map((query) => ah.search!(query).catch(() => [] as Array<{ title: string; url: string }>)));
+          for (const found of answers) {
+            for (const item of found) {
+              if (!seenUrls.has(item.url)) {
+                seenUrls.add(item.url);
+                results.push(item);
               }
-            } catch {
-              // Ignore individual search failures
             }
           }
 
@@ -704,9 +701,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
 
           if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
             const cleanSeasonWords = normSeasonName.replace(/\b(?:the\s*series|part\s*\d+|arc)\b/g, "").trim();
+            // (The title must have the show's own name in it too: another show can have a season of the same name.)
             matched = results.find((r) => {
               const normR = normalizeTitle(r.title);
               return (
+                normR.includes(cleanShow) &&
                 (normR.includes(normSeasonName) || (cleanSeasonWords.length >= 3 && normR.includes(cleanSeasonWords))) &&
                 !/\b(?:movie|film|special|ova)\b/i.test(r.title)
               );
@@ -740,7 +739,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               matched = results.find((r) => extractAnimeSeason(r.title) === 1);
               if (matched) episodeToFind = targetEpisode;
             } else if (absoluteEpisode) {
-              const baseMatch = results.find((r) => extractAnimeSeason(r.title) === 1);
+              // (The numbering from the first episode is only looked for in the show itself: a title of the show's own name, or else one that begins with
+              // it, such as "Detective Conan (TV)"; not "Pokemon Horizons" or another show the search found.)
+              const baseMatch =
+                results.find((r) => normalizeTitle(r.title) === cleanShow) ??
+                results.find((r) => extractAnimeSeason(r.title) === 1 && normalizeTitle(r.title).startsWith(`${cleanShow} `) && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
               if (baseMatch) {
                 matched = baseMatch;
                 episodeToFind = absoluteEpisode;
@@ -751,10 +754,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           if (!matched) return null;
 
           const eps = await ah.episodes(matched.url, 1);
-          let targetEp = eps.find((ep) => ep.episode === episodeToFind);
-          if (!targetEp && absoluteEpisode && episodeToFind === absoluteEpisode) {
-            targetEp = eps.find((ep) => ep.episode === targetEpisode);
-          }
+          // (When the numbering from the first episode is not there, nothing is played: the same number in the first series is another episode.)
+          const targetEp = eps.find((ep) => ep.episode === episodeToFind);
           if (!targetEp?.url) return null;
 
           const ahAdapter = createAnimeHeavenAdapter({ fetch: get });
@@ -978,7 +979,8 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         const isAnime = isTv && (originalLang === "ja" || originalLang === "zh");
         if (isAnime) {
           // For anime series, VidLink either responds in <300ms or times out after 12s.
-          // If VidLink hasn't responded within 2000ms, start fallbackAnime in parallel.
+          // If VidLink hasn't responded within 2000ms, start fallbackAnime in parallel. (Its answer is still taken last, after Buzz's, as for every
+          // other title: VidLink, then Buzz, then the anime site; starting it early only saves the wait.)
           let animePromise: Promise<ResolveResult | null> | undefined;
           const animeTimer = setTimeout(() => {
             animePromise = fallbackAnime().catch(() => null);
@@ -993,15 +995,15 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           }
 
           try {
-            const alt = animePromise ? await animePromise : await fallbackAnime();
-            if (alt) return alt;
+            const buzz = await resolveBuzzStream(get, id, isTv, s, e);
+            if (buzz) return await buildBuzzResult(buzz);
           } catch {
             // ignore
           }
 
           try {
-            const buzz = await resolveBuzzStream(get, id, isTv, s, e);
-            if (buzz) return await buildBuzzResult(buzz);
+            const alt = animePromise ? await animePromise : await fallbackAnime();
+            if (alt) return alt;
           } catch {
             // ignore
           }

@@ -494,3 +494,91 @@ describe("createAnimeHeavenAdapter", () => {
     }
   });
 });
+/**
+ * TMDB, VidLink, Buzz and the anime site as a test has them (all made up here: nothing is asked of the real ones). The site's search answers by the
+ * words asked (`titles`), and each of its titles lists the episodes in `episodes`. Buzz has the episode when `buzz` is set.
+ */
+function animeWorld(options: {
+  tmdbId: string;
+  tmdb: Record<string, unknown>;
+  titles: (words: string) => Array<{ slug: string; name: string }>;
+  episodes: Record<string, number[]>;
+  buzz?: boolean;
+}): typeof fetch {
+  const card = ({ slug, name }: { slug: string; name: string }) =>
+    `<div class='similarimg'><div class='p1'><a href='anime.php?${slug}'><img class='coverimg' src='image.php?${slug}' alt='${name}'></a><div class='similarname c'><a href='anime.php?${slug}' class='c'>${name}</a></div></div></div>`;
+  const id = (slug: string, episode: number) => `${slug}${episode}`.replace(/[^0-9a-f]/g, "a").padEnd(32, "0").slice(0, 32);
+  return (async (url: string | URL) => {
+    const u = new URL(String(url));
+    const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+    if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith(`/tv/${options.tmdbId}`)) return { ok: true, status: 200, json: async () => options.tmdb };
+    if (u.hostname.endsWith("vidsrc.buzz") && options.buzz) {
+      if (u.pathname.startsWith("/embed/")) return text(`<script>var Q = {"t":"tok","ssr":{"servers":[{"ref":"r1","name":"One"}]}};</script>`);
+      if (u.pathname.startsWith("/pl/")) return text(JSON.stringify({ url: "https://cdn.buzz.test/episode/master.m3u8", type: "hls" }));
+    }
+    if (u.hostname.endsWith("animeheaven.me")) {
+      if (u.pathname.endsWith("/search.php")) return text(`<div class='boldtext'><div class='info3 bc1'>${options.titles(u.searchParams.get("s") ?? "").map(card).join("")}</div></div>`);
+      if (u.pathname.endsWith("/anime.php")) {
+        const slug = u.search.slice(1);
+        const name = Object.keys(options.episodes).includes(slug) ? slug : "";
+        return text(`<div class='infotitle c'>${name}</div>${(options.episodes[slug] ?? []).map((n) => `<a class='c' id="${id(slug, n)}" href='gate.php'><div class='watch1'>Episode</div><div class='watch2'>${n}</div></a>`).join("")}`);
+      }
+      if (u.pathname.endsWith("/gate.php")) return text(`<video id='vid'><source src='https://cdn.animeheaven.me/episode.mp4?x' type='video/mp4'></video>`);
+    }
+    return { ok: false, status: 404 };
+  }) as unknown as typeof fetch;
+}
+
+const POKEMON_SEASONS = Array.from({ length: 26 }, (_, i) => ({ season_number: i + 1, name: i === 24 ? "Ultimate Journeys" : `Series ${i + 1}`, episode_count: 40 }));
+
+describe("the anime site for a show TMDB keeps as one with many seasons", () => {
+  it("plays no episode of another series when the season is not found and the count from the first episode is not there either", async () => {
+    // (The site has only the first series, "Pokemon", episodes 1 to 10: season 25 is not on it, and episode 966 of the first series is not either. Episode 6 of
+    // the first series is not season 25's episode 6.)
+    const get = animeWorld({
+      tmdbId: "60572",
+      tmdb: { id: 60572, name: "Pokémon", original_language: "ja", genres: [{ id: 16 }], seasons: POKEMON_SEASONS },
+      titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemon", name: "Pokemon" }] : []),
+      episodes: { pokemon: Array.from({ length: 10 }, (_, i) => i + 1) },
+    });
+    const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(res.status).not.toBe("success");
+  });
+
+  it("keeps the order of the sources for anime: Buzz, when it has the episode, before the anime site", async () => {
+    const get = animeWorld({
+      tmdbId: "60572",
+      tmdb: { id: 60572, name: "Pokémon", original_language: "ja", genres: [{ id: 16 }], seasons: POKEMON_SEASONS },
+      titles: (words) => (/pokemon/i.test(words) ? [{ slug: "pokemonuj", name: "Pokemon Ultimate Journeys: The Series" }] : []),
+      episodes: { pokemonuj: [5, 6, 7] },
+      buzz: true,
+    });
+    const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") expect(res.media.stream.directUrl).toContain("cdn.buzz.test");
+  });
+
+  it("does not take another show's title that has the season's name in it", async () => {
+    // (A search with the season's name finds another show's "Ultimate Journeys", as a site's loose search can; the show's own name finds nothing of season 25.)
+    const get = animeWorld({
+      tmdbId: "60572",
+      tmdb: { id: 60572, name: "Pokémon", original_language: "ja", genres: [{ id: 16 }], seasons: POKEMON_SEASONS.map((season) => ({ ...season, episode_count: undefined })) },
+      titles: (words) => (/ultimate journeys/i.test(words) ? [{ slug: "digimonuj", name: "Digimon Ultimate Journeys" }] : /pokemon/i.test(words) ? [{ slug: "pokemon", name: "Pokemon" }] : []),
+      episodes: { pokemon: [1, 2, 3], digimonuj: [5, 6, 7] },
+    });
+    const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(res.status).not.toBe("success");
+  });
+
+  it("looks for the numbering from the first episode in the show itself, not in another show the search found", async () => {
+    // (Naruto's season 2 episode 5 is its 40th; "Boruto: Naruto Next Generations", which the search finds first, has a 40th episode too.)
+    const get = animeWorld({
+      tmdbId: "46260",
+      tmdb: { id: 46260, name: "Naruto", original_language: "ja", genres: [{ id: 16 }], seasons: [{ season_number: 1, name: "Season 1", episode_count: 35 }, { season_number: 2, name: "Season 2", episode_count: 48 }] },
+      titles: (words) => (/naruto/i.test(words) ? [{ slug: "boruto", name: "Boruto: Naruto Next Generations" }] : []),
+      episodes: { boruto: Array.from({ length: 60 }, (_, i) => i + 1) },
+    });
+    const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/46260?s=2&e=5"));
+    expect(res.status).not.toBe("success");
+  });
+});
