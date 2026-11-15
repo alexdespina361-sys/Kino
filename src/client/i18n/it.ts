@@ -1006,6 +1006,8 @@ export const it: Dictionary = {
   "friends.partyOf": "Visione di {name}",
   "friends.partyGone": "Questa visione condivisa non è più aperta.",
   "friends.askTogether": "Chiedi di guardare insieme",
+  "friends.togetherShort": "Guardate insieme",
+  "friends.planShort": "Pianifica",
   "friends.askSent": "Hai chiesto a {name} di guardare insieme",
   "friends.togetherOf": "{name} vuole guardare insieme",
   "friends.startParty": "Avvia una visione condivisa",

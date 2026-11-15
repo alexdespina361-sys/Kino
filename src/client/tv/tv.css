@@ -1337,6 +1337,28 @@
 .tv-filters > * { flex: none; }
 /* A friend's page has up to six buttons in its line (the way back, their lists and ratings, to ask them to watch and to plan it, the chat): in Romanian the words of the long ones are as wide as the screen with the usual room round them, so there is less of it, and all six show without sliding. */
 .tv-filters-friend > .tv-choice { padding-inline: 0.85em; }
+/*
+ * A friend's page: their picture beside their name and what they are doing, then the one line of buttons in two groups (see Browse.tsx), the way back a
+ * round button with an arrow, their lists and ratings one switch of two, and what to do with them pushed to the right, watching together first and in the
+ * accent. Removing them is a quiet line at the foot: it asks first, and it is not what anybody comes to the page for.
+ */
+.tv-friend-head { display: flex; flex: none; align-items: center; gap: 1.4em; margin-bottom: 0.9em; }
+.tv-friend-head .tv-person-pic { font-size: 6.6em; }
+.tv-friend-head .tv-person-pic[data-online="true"]::after { right: 0; bottom: 0; width: 0.2em; height: 0.2em; }
+.tv-friend-names { min-width: 0; }
+.tv-friend-names .tv-view-meta { margin-top: 0.1em; }
+.tv-friend-names .tv-view-hint { margin-bottom: 0; }
+.tv-filters-friend { align-items: center; }
+.tv-filters > .tv-friend-gap { flex: 1 1 0; min-width: 1em; }
+.tv-friend-tabs { display: flex; gap: 0.2em; padding: 0.25em; border-radius: 0.7em; background: rgba(0, 0, 0, 0.35); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+.tv-friend-tabs > .tv-choice { flex: none; padding-inline: 1em; }
+.tv-filters-friend > .tv-choice-round { padding: 0.6em; border-radius: 50%; }
+.tv-choice-primary { background: var(--accent); color: #fff; }
+.tv-choice-primary:hover { background: rgb(var(--accent-rgb) / 0.85); color: #fff; }
+.tv-badge { display: inline-grid; place-items: center; min-width: 1.5em; height: 1.5em; margin-left: 0.15em; padding: 0 0.4em; border-radius: 0.75em; background: var(--accent); color: #fff; font-size: 0.72em; font-weight: 700; line-height: 1; }
+.tv-friend-foot .tv-choice-danger { padding: 0.45em 0.9em; background: transparent; color: #a9a9b2; font-size: 1.4em; }
+.tv-friend-foot .tv-choice-danger:hover { background: rgba(255, 107, 107, 0.16); color: #ffb4b4; }
+.tv-friend-foot .tv-choice-danger:focus-visible { background: #fff; color: #b3261e; }
 .tv-grid {
   position: relative;
   flex: 1 1 0;
