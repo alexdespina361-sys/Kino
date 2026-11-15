@@ -70,47 +70,109 @@ node scripts/subfix.mjs film.ass --lang en --polish-command "node my-model.mjs" 
 - ffsubsync (MIT) times a file to a film's sound, or to another subtitle file. It needs the film, so it is for this computer only. The
   screens' aligner does the same job here, and it is ours.
 
-## Generation on request (Workflow B): first measurements (15 Nov 2026, Kaggle T4)
+## Generation on request (Workflow B): measurements (15 Nov 2026, free T4 on Kaggle and Colab)
+
+**The goal:** subtitles with the right words, each line starting where its speech starts, to about a tenth of a second.
 
 The model cards (licences, sizes, their own numbers):
 
 | Use | Candidates | Notes |
 |---|---|---|
-| English speech | Qwen3-ASR-0.6B / 1.7B (Apache-2.0); FUTO asr4all-s (28M, CPU, English only, its own "ethical use" licence) | asr4all-s: RTFx 52 single-thread on a desktop i9 (its card); no timestamps stated |
-| Japanese speech | Qwen3-ASR-1.7B (Apache-2.0); Parakeet TDT-CTC 0.6B ja (CC-BY-4.0, NeMo, CER 6.4 JSUT) | The anime/galgame fine-tune of Qwen3-ASR-1.7B scores better only on its author's own set, and its licence is "other" with dataset terms: avoid |
+| English speech | Qwen3-ASR-0.6B / 1.7B (Apache-2.0); faster-whisper large-v3-turbo (MIT); FUTO asr4all-s (28M, CPU, English only, its own "ethical use" licence) | asr4all-s: RTFx 52 single-thread on a desktop i9 (its card); no timestamps stated |
+| Japanese speech | Qwen3-ASR-1.7B (Apache-2.0); Parakeet TDT-CTC 0.6B ja (CC-BY-4.0, NeMo, CER 6.4 on JSUT) | The anime/galgame fine-tune of Qwen3-ASR-1.7B scores better only on its author's own set, and its licence is "other" with dataset terms: avoid |
 | Timing words | Qwen3-ForcedAligner-0.6B (Apache-2.0) | Audio + transcript to word times, 11 languages incl. English and Japanese, up to 5 min a call |
 
-**What was run:** `scripts/asr-bench/` (a notebook built from `bench.py`, imported into Kaggle as the private notebook `kino-asr-bench`).
-- **Hardware and setup:** one T4 (16 GB), bf16. Batch size 1, one stream. The sound is cut every 30 s and served in order, as one viewer's request would be.
-- **English clip:** *Tears of Steel* (CC BY 3.0, Blender Foundation), the whole film: 734 s, music and action. It is scored against its official English subtitles, which are not a word-for-word transcript, so the WER is an upper bound.
+**What was run:** `scripts/asr-bench/`:
+- `bench.py`: the benchmark;
+- `diag.py`: the Japanese clip line by line;
+- `more.sh`: the Whisper run plus the diag runs.
+
+Version 1 ran on Kaggle. Version 2 ran in a Colab notebook in "Browser 1": Kaggle queued it for 45 minutes and it was cancelled unrun.
+- **Hardware and setup:** one T4 (16 GB), bf16, batch size 1, one stream. The sound is cut every 30 s, or at the quietest moment 10-20 s along ("at pauses"), and served in order, as one viewer's request would be.
+- **English clip:** *Tears of Steel* (CC BY 3.0, Blender Foundation), the whole film: 734 s, music and action. It is scored against its official English subtitles, which are not a word-for-word transcript.
 - **Japanese clip:** FLEURS ja_jp (CC BY 4.0), 15 sentences joined to 188 s. It is **read speech: it says nothing about anime.**
 
-Version 1, Qwen3-ASR with the forced aligner (numbers read from the run's log):
+| engine | cut | English: first 30 s / 3 min / speed | English WER | Japanese: first 30 s / 3 min / speed | Japanese CER | VRAM |
+|---|---|---|---|---|---|---|
+| Qwen3-ASR-0.6B + aligner | every 30 s | 3.3 s / 12.1 s / 16x | 23% | 4.5 s / 28.6 s / 6.4x | 14.4% | 3.6 GB |
+| Qwen3-ASR-1.7B + aligner | every 30 s | 3.7 s / 15.5 s / 12x | 25% | 5.4 s / 32.8 s / 5.6x | 10.8% | 6.1 GB |
+| Qwen3-ASR-0.6B + aligner | at pauses | 4.6 s (first piece 1.2 s) / 13.0 s / 15x | 30% | 7.6 s (1.9 s) / 31.7 s / 5.9x | 11.1% | 3.6 GB |
+| Qwen3-ASR-1.7B + aligner | at pauses | 5.5 s (first piece 1.6 s) / 44.2 s / 6.2x | 29% | 8.1 s (1.7 s) / 35.1 s / 5.4x | **6.3%** | 6.1 GB |
+| faster-whisper large-v3-turbo | every 30 s | **0.8 s / 3.2 s / 43x** | 26% | 1.1 s / 5.9 s / 30x | 18.7% | (not torch) |
 
-| model | clip | load (incl. download) | first 30 s | 3 min covered | speed vs playback | WER / CER | VRAM |
-|---|---|---|---|---|---|---|---|
-| 0.6B | Tears of Steel (en) | 58 s | 9.9 s (cold GPU) | 18.2 s | 14.9x | 23% | 3.6 GB |
-| 1.7B | Tears of Steel (en) | 32 s | 3.7 s | 15.2 s | 12.5x | 25% | 6.1 GB |
-| 0.6B | FLEURS (ja) | | 4.3 s | 26.8 s | 6.8x | 14.4% | 3.6 GB |
-| 1.7B | FLEURS (ja) | | 5.0 s | 30.2 s | 6.0x | 10.8% | 6.1 GB |
+**Speed is settled.**
+- Every engine runs well ahead of playback on a free T4; the slowest is 5.4x.
+- With cuts at pauses, the first lines are ready in under 2 s.
+- The 1.7B English run at pauses was slower (6.2x) with no sign of looping: its SRT has 825 words, against Whisper's 812. That slowdown is not explained yet.
 
-- **Speed:** both models run far faster than playback, even on a free T4. A viewer would wait about 4-5 s for the first 30 s of subtitles. The 9.9 s is the very first call on a fresh GPU; a server pays that once at start. Dense speech (Japanese) runs at about 6x, sparse film dialogue at 12-15x.
-- **English timing:** the line's first word lands within 1 s of the official subtitle's start for 81% (0.6B) and 85% (1.7B) of the lines that were heard, with a median of 0.3 s.
-- **Japanese words:** the 1.7B model makes clearly fewer errors (10.8% against 14.4% CER). Names written in katakana and rarer kanji are where it slips. For example, ロランド・メンドーサ came out as ロランド面倒差, and 敵対的環境 as 適体適環境.
-- **Japanese timing, problem 1:** in several 30 s chunks, the aligner put Japanese words 1-2 s late (against where each sentence's speech starts, measured from the loudness).
-- **Japanese timing, problem 2:** one whole 7 s sentence (65-72 s) was missing from the text, and the aligner then placed the next sentence's first word in its gap.
-- **Japanese timing, a mistake of mine:** version 1 also measured lines from the start of each FLEURS file, not from where the speech starts, which made all its Japanese timing numbers look worse. Version 2 measures from the speech start.
-- **Baseline:** faster-whisper large-v3-turbo did not run. It needs CUDA 12's cuBLAS, and Kaggle's image is CUDA 13. Version 2 adds the CUDA 12 libraries.
-- **Version 2** (queued on Kaggle at the time of writing) adds:
-  - a mode that cuts at the quietest moment 10-20 s along instead of every 30 s, to test whether short pieces fix the Japanese timing and the lost sentence;
-  - the faster-whisper baseline;
-  - a warm-up call before timing.
+**Japanese words: Qwen3-ASR-1.7B, cut at pauses, is clearly best.**
+- Its CER is 6.3%, against 10.8% when cut every 30 s, 11.1% for the 0.6B model and 18.7% for Whisper.
+- Where it slips is names and rarer words. For example, ロランド・メンドーサ came out as ロランド面倒さ, 九龍 as 空ロ and 磁気反転 as 時計判定.
+- In both cuts it dropped one whole 7 s sentence, which Whisper heard.
 
-**Kaggle:** "Browser 1" is signed in and phone-verified. Version 1 used 6 minutes of the 30 free GPU hours a week. Nothing paid.
+**English words: these runs cannot rank the engines.**
+- The reference is a subtitle file, not a transcript.
+- 23% against 25% is about five words.
+- Cutting at pauses hears more interjections that the subtitles leave out (17 "Oh"s), which count as errors.
+- Deciding this needs a verbatim reference (see the next step).
+
+**Timing, Japanese, line by line.** These are measured against where each line's speech starts, found by loudness against the recording's own noise floor.
+
+| | within 0.1 s | within 0.3 s | badly off |
+|---|---|---|---|
+| Qwen3-ForcedAligner (on 1.7B's words) | 11 of 14 lines (all within 0.04 s) | 11 of 14 | 3 lines, all **too early**: 1.6 s and 4.2 s, where a piece starts with a quiet or noisy lead-in and the first word is put in it; 7.8 s for the line after the dropped sentence, whose first word went into that sentence's gap |
+| Whisper turbo's own word times | 1 of 14 | 14 of 14 (consistently about 0.17 s early) | none |
+
+- So the aligner is very exact when it is right, but now and then badly wrong. Every one of its misses puts a word where nobody speaks, which a voice detector can see.
+- Whisper is never far off, but never exact either.
+- **A mistake of mine, now fixed:** up to now the reference took the first moment louder than 5% of the loudest. That fired on the background noise before people speak in 9 of the 15 lines, and made every engine look 1-2 s late. It had been reported as "the aligner is 1-2 s late" in version 1.
+- The rule now: 3x the recording's quiet level and 15% of its loudest. It is checked against Whisper's times, which do not depend on it; nearby settings give the same answer.
+
+**English timing** (against the official subtitles' starts, which are hand-made):
+- the median is 0.3 s for every engine;
+- 81-89% of lines are within 1 s for Qwen, and 95% for Whisper.
+
+**Free GPU used:** Kaggle 6 minutes (version 1), Colab about 20 minutes. Nothing paid.
+
+## The generation pipeline: the order, and why
+
+1. **Sound from the watching screen.** The site aligner already captures it (`src/client/subsync/capture.ts`), measured within 30-47 ms of the picture, and decides which stretch to listen to first, nearest the picture (`schedule.ts`). Reused as it is. The film itself is never fetched.
+2. **Voice detector, then cut.** Silero, already in the site aligner, finds where people speak. The sound is cut in the gaps between speech, into pieces of 10-20 s that start just before speech. (The bench's "quietest moment" cut stands in for this.)
+3. **ASR:** the words exactly as they are said.
+4. **Word times:** the forced aligner, on those exact words, over the same piece. It has to come straight after ASR, before anything rewrites the text, because an aligner can only time the words that were actually said.
+5. **Check against the voice detector.** This is where the existing alignment code earns its place, and these rules catch all three Qwen misses above:
+   - a line whose first word sits where the detector hears no speech is moved to where speech starts;
+   - speech with no words in it goes back to ASR on its own (the dropped sentence);
+   - a word that cannot be placed is marked unsure, never given an invented time.
+6. **Lines from the word times.** Plain rules, not AI:
+   - a new line after a pause over 0.5 s or a sentence end;
+   - at most 42 characters by 2 lines, 1-7 s on screen, at most 17 characters a second (a line's end moves into the gap after it).
+   AI may add punctuation and capitals only, and its answer is used only if the words come back unchanged.
+7. **Japanese:** translate a few lines at a time with their neighbours as context, into English or Romanian, and put each translation on its Japanese line's times. A translation is never aligned to the sound.
+8. **Cache:** keyed by film, sound track and pipeline version, and shared between viewers. This reuses the site aligner's sharing (`share.ts`, `src/server/subsync/`).
+
+**Why not ASR, then formatting, then alignment:** reformatted or rewritten text no longer matches what is said, so the aligner cannot time it. Formatting comes after word timing and works from it.
+
+**Why the site aligner's solver does not time the generated lines:**
+- It moves a whole existing file onto the sound (offset and stretch): 0.22 s on its lab clip with English words, 1-3 s with the voice detector alone. Japanese only ever gets the voice detector.
+- Generated words are already timed from the same sound, so there is no file shift to find.
+- What it does give generation: the capture, the voice detector, the "nearest the picture first" order and the sharing.
+
+**Speed or quality first: quality,** since speed is already well ahead of playback.
+- **Japanese:** Qwen3-ASR-1.7B, cut at pauses, plus the aligner and the check. Parakeet-ja is the one alternative worth a single run, on anime-like sound.
+- **English:** Qwen3-ASR-1.7B or Whisper turbo, undecided until a verbatim test. Whisper is 3x faster with steadier times, so it may be the fast first pass if Qwen wins on words.
 
 ## Next step (one)
 
-Read version 2. Then build the generation path on the box's API with the GPU work elsewhere:
-- Qwen3-ASR-1.7B plus the forced aligner, on sound cut at pauses, served from the viewer's position.
-- The sound comes from the watching screen, as the aligner's does; never from fetching the film.
-- Japanese is transcribed and timed first, then translated. The translation is projected onto the Japanese timing, never force-aligned against Japanese audio.
+Build steps 2-6 as `scripts/asr-bench/generate.py` and run it on the same two clips on Colab:
+- Silero cuts;
+- Qwen3-ASR-1.7B plus the aligner;
+- the voice-detector check, with the retry for speech that has no words;
+- the line rules.
+
+Done when the Japanese clip has:
+- 14 of 14 lines within 0.3 s of the speech start;
+- the dropped sentence back;
+- a CER of 6.5% or less.
+
+Add one English clip with a word-for-word transcript, to settle Qwen against Whisper. After that, the queue and cache at the site (Phase 3).
