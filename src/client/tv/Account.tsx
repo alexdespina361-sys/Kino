@@ -567,20 +567,19 @@ export function TvAccountPanel({ onClose, onSignIn, onApprove, onSwitch, onManag
           <div className="tv-set-col" data-nav-column>
             <SettingsGroup title={t("settings.playback")} testId="tv-group-playback">
               <SettingsSwitch label={t("settings.autoplayNext")} on={autoplay} onToggle={() => set("autoplayNext", !autoplay)} testId="tv-autoplay" />
-              <SettingsSwitch label={t("settings.tapToPause")} on={tapToPause} onToggle={() => set("tapToPause", !tapToPause)} testId="tv-tap-to-pause" />
-              <SettingsSwitch label={t("settings.adaptiveQuality")} on={adaptiveQuality} onToggle={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)} testId="tv-adaptive-quality" />
             </SettingsGroup>
             {me && (
               <p className="tv-hint tv-set-hint">
                 <InfoIcon /> <span>{t("tv.subtitlesHint")}</span>
               </p>
             )}
-            {/* (one row, and the cat's switches on a page of their own, in the column with the most room: the settings are no taller with a cat offered than without, on any screen) */}
-            {cat.offered && (
-              <SettingsGroup title={t("cat.settings.title")} testId="tv-group-cat">
-                <SettingsLine icon={<CatIcon />} label={t("cat.settings.on")} value={cat.settings.on ? t("common.on") : t("common.off")} onPress={onCat} testId="tv-cat-open" />
-              </SettingsGroup>
-            )}
+            {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). The cat is one row, and its switches are on a page
+                of their own, in the column with the most room: the settings are no taller with a cat offered than without, on any screen. */}
+            <SettingsGroup title={t("settings.labs")} testId="tv-group-labs">
+              <SettingsSwitch label={t("settings.tapToPause")} on={tapToPause} onToggle={() => set("tapToPause", !tapToPause)} testId="tv-tap-to-pause" />
+              <SettingsSwitch label={t("settings.adaptiveQuality")} on={adaptiveQuality} onToggle={() => set("adaptiveQuality", adaptiveQuality ? false : undefined)} testId="tv-adaptive-quality" />
+              {cat.offered && <SettingsLine icon={<CatIcon />} label={t("cat.settings.title")} value={cat.settings.on ? t("common.on") : t("common.off")} onPress={onCat} testId="tv-cat-open" />}
+            </SettingsGroup>
           </div>
         </div>
       </div>

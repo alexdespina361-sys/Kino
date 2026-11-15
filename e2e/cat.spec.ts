@@ -1296,12 +1296,12 @@ const openCatSettings = async (tv: Page) => {
 test("the settings page has a row for the cat only on a host that offers a cat, and its page has the switch that is the cat", async ({ browser }) => {
   const tv = await openLibrary(browser, setup(false));
   await openTvSettings(tv);
-  await expect(tv.getByTestId("tv-group-cat")).toHaveCount(0);
+  await expect(tv.getByTestId("tv-cat-open")).toHaveCount(0);
 
   const other = await openLibrary(browser, setup());
   await openTvSettings(other);
   const row = other.getByTestId("tv-cat-open");
-  await expect(other.getByTestId("tv-group-cat")).toBeVisible();
+  await expect(other.getByTestId("tv-group-labs").getByTestId("tv-cat-open")).toBeVisible(); // (in Labs, with what else is still being tried)
   await expect(row).toContainText("Off");
   await row.click();
   await expect(other.getByTestId("tv-cat-settings")).toBeVisible();
