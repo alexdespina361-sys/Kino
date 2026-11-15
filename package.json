@@ -20,6 +20,7 @@
     "@fastify/compress": "^9.2.2",
     "@fastify/static": "^10.1.5",
     "@fastify/websocket": "^11.3.3",
+    "anime4k-webgpu": "1.0.0",
     "fastify": "^5.12.7",
     "hls.js": "^1.7.3",
     "html-to-image": "^1.11.13",

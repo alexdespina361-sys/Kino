@@ -103,6 +103,27 @@ describe("serving the built page", () => {
     }
   });
 
+  it("serves the upscaler test page of Kino Labs as a page of its own, checked again every time, and sends its address without the last slash to it", async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
+    await mkdir(path.join(dir, "labs", "upscale"), { recursive: true });
+    await writeFile(path.join(dir, "index.html"), "<!doctype html><title>Kino</title>");
+    await writeFile(path.join(dir, "labs", "upscale", "index.html"), "<!doctype html><title>Kino Labs: upscaler test</title>");
+    const app = await buildApp({ clientDir: dir });
+    try {
+      const page = await app.inject({ url: "/labs/upscale/", headers: { accept: "text/html" } });
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toContain("upscaler test");
+      expect(page.headers["cache-control"]).toMatch(/no-cache/);
+      const bare = await app.inject({ url: "/labs/upscale", headers: { accept: "text/html" } });
+      expect(bare.statusCode).toBe(301);
+      expect(bare.headers.location).toBe("/labs/upscale/");
+      // (The app's own addresses are the app's still.)
+      expect((await app.inject({ url: "/tv", headers: { accept: "text/html" } })).body).toBe("<!doctype html><title>Kino</title>");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("does not treat a folder named assets higher up as the assets", async () => {
     dir = await mkdtemp(path.join(tmpdir(), "kino-client-"));
     const inside = path.join(dir, "assets", "site");

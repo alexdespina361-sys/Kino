@@ -483,6 +483,10 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
         }
       },
     });
+    // Kino Labs' upscaler test is a page of its own (labs/upscale/index.html): without the last slash its address would be taken for one of the app's.
+    if (existsSync(path.join(clientDir, "labs", "upscale", "index.html"))) {
+      app.get("/labs/upscale", (_request, reply) => reply.redirect("/labs/upscale/", 301));
+    }
     // One SPA: "/" is the phone, "/tv" is the receiver. Both are index.html.
     app.setNotFoundHandler((request, reply) => {
       const isPage = request.method === "GET" && !request.url.startsWith("/api") && !request.url.startsWith("/ws");
