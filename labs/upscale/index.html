@@ -35,10 +35,23 @@
         </dl>
       </section>
 
+      <section class="card samples" aria-labelledby="samples-title">
+        <h2 id="samples-title">Try it with a free clip</h2>
+        <p class="muted">No video file at hand? These 45-second 480p clips come with the page (about 3.5 MB each).</p>
+        <div class="sample-buttons">
+          <button type="button" class="button" data-sample="sintel-480p-45s.mp4" data-testid="upscale-sample-sintel">Sintel <span>animated, 854 × 480</span></button>
+          <button type="button" class="button" data-sample="tears-of-steel-480p-45s.mp4" data-testid="upscale-sample-tears">Tears of Steel <span>live action, 854 × 356</span></button>
+        </div>
+        <p class="credit muted">
+          Sintel, © Blender Foundation | durian.blender.org. Tears of Steel, (CC) Blender Foundation | mango.blender.org. Both under
+          <a href="https://creativecommons.org/licenses/by/3.0/" rel="noreferrer" target="_blank">CC BY 3.0</a>; cut and made smaller for this page.
+        </p>
+      </section>
+
       <label class="drop" id="drop" data-testid="upscale-drop">
         <input type="file" id="file" accept="video/*,.mkv" data-testid="upscale-file" />
-        <span class="drop-title">Choose a video file</span>
-        <span class="drop-hint">or drop one here. An MP4 or WebM plays in every browser; a 480p one shows the most.</span>
+        <span class="drop-title">Or choose a video file of your own</span>
+        <span class="drop-hint">or drop one here. It plays from this computer: nothing is uploaded. An MP4 or WebM plays in every browser; a 480p one shows the most.</span>
       </label>
 
       <section class="card" id="viewer" hidden aria-labelledby="viewer-title">

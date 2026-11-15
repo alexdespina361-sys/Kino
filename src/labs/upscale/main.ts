@@ -259,16 +259,38 @@ function fitStage(): void {
   stage.classList.toggle("pixelated", view === "zoom");
 }
 
-function open(file: File | undefined): void {
+/** Plays `video` (a file from this computer, or a free clip of the page brought whole first: a test must not wait on the network). */
+function open(file: Blob | undefined, name = file instanceof File ? file.name : "video", from = "on this computer"): void {
   if (!file) return;
   if (objectUrl) URL.revokeObjectURL(objectUrl);
   objectUrl = URL.createObjectURL(file);
-  element("file-name").textContent = `${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB, on this computer)`;
+  element("file-name").textContent = `${name} (${(file.size / 1024 / 1024).toFixed(1)} MB, ${from})`;
   element("viewer").hidden = false;
   element("tests").hidden = false;
   say("Opening...");
   video.src = objectUrl;
   video.load();
+  element("viewer").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+/** One of the page's free clips (public/labs/upscale/clips/, CC BY: see CREDITS.txt there). */
+async function openSample(name: string): Promise<void> {
+  const buttons = [...document.querySelectorAll<HTMLButtonElement>("[data-sample]")];
+  for (const button of buttons) button.disabled = true;
+  element("viewer").hidden = false;
+  say(`Bringing the clip ${name}...`);
+  try {
+    const answer = await fetch(`/labs/upscale/clips/${encodeURIComponent(name)}`);
+    if (!answer.ok) throw new Error(`the site answered ${answer.status}`);
+    open(await answer.blob(), name, "a free clip of this page");
+  } catch (error) {
+    say(`The clip did not come: ${problemText(error)}. Try again, or choose a file of your own.`);
+  } finally {
+    for (const button of buttons) button.disabled = false;
+  }
+}
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-sample]")) {
+  button.addEventListener("click", () => void openSample(button.dataset.sample!));
 }
 
 video.addEventListener("loadedmetadata", () => {
