@@ -614,6 +614,40 @@ describe("a device whose recogniser is slow (a phone)", () => {
   });
 });
 
+describe("what the status says while it works", () => {
+  /** The status every ten seconds of playback, from the first timing on. */
+  async function statuses(rig: Rig, from: number): Promise<SyncStatus[]> {
+    const seen: SyncStatus[] = [];
+    for (let t = 10; t <= SECONDS; t += 10) {
+      await rig.play(t);
+      if (t >= from) seen.push(rig.session.status());
+    }
+    rig.session.close();
+    return seen;
+  }
+  const quiet = (cues: Cue[]) => cues.filter((cue) => cue.start < 120 || cue.start > 175);
+
+  it("says it is in time all along an MP4 film once it is, though the sound comes only after it is played", { timeout: 240_000 }, async () => {
+    // (It used to say "Syncing…" a third of the time: what is timed always ends just behind the picture there.)
+    expect(new Set(await statuses(new Rig({ tracks: [track("English", late(3))], shown: 0, live: true }), 30))).toEqual(new Set(["synced"]));
+  });
+
+  it("says it is in time where the subtitles have no lines for a while, music or a fight", { timeout: 240_000 }, async () => {
+    expect(new Set(await statuses(new Rig({ tracks: [track("English", quiet(late(3)))], shown: 0 }), 30))).toEqual(new Set(["synced"]));
+  });
+
+  it("says it is still timing before anything was timed, and where it has not reached", { timeout: 120_000 }, async () => {
+    const rig = new Rig({ tracks: [track("English", late(3))], shown: 0 });
+    await rig.play(10);
+    expect(rig.session.status()).toBe("syncing");
+    await rig.play(100);
+    expect(rig.session.status()).toBe("synced");
+    rig.video.currentTime = 250; // (a jump far ahead of the sound there is)
+    expect(rig.session.status()).toBe("syncing");
+    rig.session.close();
+  });
+});
+
 describe("giving up", () => {
   it("gives the lines back when the viewer turns it off after it gave up", { timeout: 240_000 }, async () => {
     // (A device that cannot keep up with the voice detector: what it had timed stays, and the viewer's switch still puts the file's times back.)
