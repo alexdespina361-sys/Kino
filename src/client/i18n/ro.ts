@@ -49,7 +49,6 @@ export const ro: Dictionary = {
   "auth.toSignIn": "Ai deja un cont? Autentifică-te",
   "auth.pitch": "Continuă de unde ai rămas, pe orice ecran.",
   "auth.pitchDetail": "Autentifică-te și ce vezi pe telefon, pe televizor sau pe calculator te urmează peste tot.",
-  "auth.notNow": "Nu acum",
   "auth.closed": "Acest server nu mai acceptă conturi noi.",
   "auth.working": "Un moment…",
   "auth.google": "Continuă cu Google",
@@ -95,7 +94,6 @@ export const ro: Dictionary = {
   "profiles.delete": "Șterge profilul",
   "profiles.deleteAsk": "Ștergi profilul „{name}”? Se șterg și istoricul, și listele lui.",
   "profiles.switch": "Schimbă profilul",
-  "profiles.watchingAs": "Te uiți ca {name}",
   "profiles.count": "{count} din {max} profiluri",
   "avatar.fox": "Vulpe",
   "avatar.cat": "Pisică",
@@ -440,7 +438,6 @@ export const ro: Dictionary = {
   "tv.welcomeStart": "Începe vizionarea",
   "tv.ready": "Gata când ești și tu",
   "tv.pressOk": "Apasă OK sau atinge ecranul pentru a porni",
-  "tv.browse": "Răsfoiește biblioteca",
   "tv.finding": "Caut videoclipul…",
   "tv.slow": "Durează mai mult decât de obicei.",
   "starting.finding": "Caut cea mai bună sursă…",
@@ -502,7 +499,6 @@ export const ro: Dictionary = {
   "tv.clear": "Șterge tot",
   "tv.caretLeft": "Mută cursorul la stânga",
   "tv.caretRight": "Mută cursorul la dreapta",
-  "tv.openCategory": "Deschide",
 
   /* the player: menus, sheets and the controls over the picture */
   "player.audioSubtitles": "Audio și subtitrări",

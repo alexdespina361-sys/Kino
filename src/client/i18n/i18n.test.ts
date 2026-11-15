@@ -12,13 +12,13 @@ const baseOf = (key: string) => key.replace(/_(zero|one|two|few|many|other)$/, "
 
 describe("translate", () => {
   it("fills in the values the sentence asks for", () => {
-    expect(translate("en", "profiles.watchingAs", { name: "Alex" })).toBe("Watching as Alex");
-    expect(translate("ro", "profiles.watchingAs", { name: "Alex" })).toBe("Te uiți ca Alex");
+    expect(translate("en", "account.signedInAs", { email: "a@b.c" })).toBe("Signed in as a@b.c");
+    expect(translate("ro", "account.signedInAs", { email: "a@b.c" })).toBe("Conectat ca a@b.c");
     expect(translate("it", "account.signedInAs", { email: "a@b.c" })).toBe("Connesso come a@b.c");
   });
 
   it("leaves a placeholder alone when it was not given a value", () => {
-    expect(translate("en", "profiles.watchingAs")).toBe("Watching as {name}");
+    expect(translate("en", "account.signedInAs")).toBe("Signed in as {email}");
   });
 
   it("picks the plural form the language uses for the number", () => {

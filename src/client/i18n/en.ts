@@ -51,7 +51,6 @@ export const en = {
   "auth.toSignIn": "Already have an account? Sign in",
   "auth.pitch": "Pick up where you left off, on every screen.",
   "auth.pitchDetail": "Sign in and what you watch on your phone, TV or computer follows you everywhere.",
-  "auth.notNow": "Not now",
   "auth.closed": "This server isn't accepting new accounts.",
   "auth.working": "One moment…",
   "auth.google": "Continue with Google",
@@ -97,7 +96,6 @@ export const en = {
   "profiles.delete": "Delete profile",
   "profiles.deleteAsk": "Delete “{name}”? Its watch history and lists are deleted too.",
   "profiles.switch": "Switch profile",
-  "profiles.watchingAs": "Watching as {name}",
   "profiles.count": "{count} of {max} profiles",
   "avatar.fox": "Fox",
   "avatar.cat": "Cat",
@@ -442,7 +440,6 @@ export const en = {
   "tv.welcomeStart": "Start watching",
   "tv.ready": "Ready when you are",
   "tv.pressOk": "Press OK or tap to start",
-  "tv.browse": "Browse library",
   "tv.finding": "Finding your video…",
   "tv.slow": "This is taking longer than usual.",
   "starting.finding": "Finding the best source…",
@@ -502,7 +499,6 @@ export const en = {
   "tv.clear": "Clear",
   "tv.caretLeft": "Move the cursor left",
   "tv.caretRight": "Move the cursor right",
-  "tv.openCategory": "Open",
 
   /* the player: menus, sheets and the controls over the picture */
   "player.audioSubtitles": "Audio & subtitles",
