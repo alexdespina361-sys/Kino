@@ -78,10 +78,10 @@ describe("cleanCues: the text", () => {
 
   it("writes a song's notes that a wrong code page made question marks as notes, and leaves a question alone", () => {
     const cleaned = cleanCues(
-      film(at(100, "<i>? La la la\nOn we go ?</i>"), at(200, "? One more time!?"), at(300, "Where to ?"), at(400, "♪ Already right ♪")),
+      film(at(100, "<i>? La la la\nOn we go ?</i>"), at(200, "? One more time!?"), at(300, "Where to ?"), at(400, "♪ Already right ♪"), at(500, "? Hello.\n? Hi.")),
       "en",
     );
-    expect(texts(cleaned.cues).slice(0, 4)).toEqual(["<i>♪ La la la\nOn we go ♪</i>", "♪ One more time! ♪", "Where to?", "♪ Already right ♪"]);
+    expect(texts(cleaned.cues).slice(0, 5)).toEqual(["<i>♪ La la la\nOn we go ♪</i>", "♪ One more time! ♪", "Where to?", "♪ Already right ♪", "? Hello.\n? Hi."]);
   });
 
   it("counts the lines it changed, and keeps a line that needs nothing as it was", () => {

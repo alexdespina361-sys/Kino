@@ -76,11 +76,11 @@ const LEADING_MARKUP = String.raw`(?:<[^>]*>|\{\\[^}]*\})*`;
 const plainOf = (line: string) => line.replace(/<[^>]*>|\{\\[^}]*\}/g, "").trim();
 
 /**
- * A song in a file whose ♪ a wrong code page made "?": a cue whose first line starts with "? " is sung, its lines' leading "?" and the
+ * A song in a file whose ♪ a wrong code page made "?": a cue whose first line starts with "? " and whose last line ends with "?" is sung, its lines' leading "?" and the
  * last line's last "?" are ♪ ("<i>? Chop, chop ?</i>" is "<i>♪ Chop, chop ♪</i>"). No line of speech starts with a question mark.
  */
 function musicMarks(lines: string[]): string[] {
-  if (!/^\?(?:\s|$)/.test(plainOf(lines[0] ?? ""))) return lines;
+  if (!/^\?(?:\s|$)/.test(plainOf(lines[0] ?? "")) || !/\?$/.test(plainOf(lines[lines.length - 1] ?? ""))) return lines;
   return lines.map((line, index) => {
     let out = line.replace(new RegExp(String.raw`^(${LEADING_MARKUP}\s*)\?(?=\s|$)`), "$1♪");
     if (index === lines.length - 1) out = out.replace(/\s*\?((?:<\/[^>]*>|\s)*)$/, " ♪$1");
