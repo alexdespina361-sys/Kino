@@ -113,4 +113,54 @@ describe("fallbackSubtitles", () => {
     const vtt2 = manager.getVtt(subId2);
     expect(vtt2).toContain("Episode 2");
   });
+  /** A site with one show and one season pack holding `files`; counts what is asked. */
+  function siteWith(files: Array<{ name: string; content: string }>) {
+    const zip = makeZip(files);
+    const asked: string[] = [];
+    const get: typeof fetch = async (input) => {
+      const url = String(input);
+      asked.push(url);
+      if (url.includes("search2.php")) return new Response('<a href="/tvshow-7.html">Some Show</a>', { status: 200 });
+      if (url.includes("tvshow-7-")) return new Response('<a href="subtitle-7-1-en.html">', { status: 200 });
+      if (url.includes("subtitle-7-1-en.html")) return new Response("<b>filename:</b></td><td>Some_Show - season 1.en.zip</td>", { status: 200 });
+      if (url.includes(".zip")) return new Response(new Uint8Array(zip), { status: 200 });
+      return new Response("Not Found", { status: 404 });
+    };
+    return { get, asked };
+  }
+  const line = (text: string) => `1\n00:00:01,000 --> 00:00:03,000\n${text}`;
+
+  it("asks nothing for a film: only an episode of a series has a season pack", async () => {
+    const { get, asked } = siteWith([{ name: "Some Show - 1x01.srt", content: line("one") }]);
+    const manager = new FallbackSubtitleManager(undefined, get);
+    expect(await manager.getSubtitles({ title: "Some Show" })).toEqual([]);
+    expect(await manager.getSubtitles({ title: "Some Show", season: 1 })).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+
+  it("gives an episode only its own files: not another season's, not a pack's unnumbered ones", async () => {
+    const { get } = siteWith([
+      { name: "Some Show - 1x01.srt", content: line("one") },
+      { name: "Some Show - 2x01.srt", content: line("other season") },
+      { name: "extras.srt", content: line("unnumbered") },
+      { name: "commentary.srt", content: line("unnumbered too") },
+    ]);
+    const manager = new FallbackSubtitleManager(undefined, get);
+    const tracks = await manager.getSubtitles({ title: "Some Show", season: 1, episode: 1 });
+    expect(tracks).toHaveLength(1);
+    expect(manager.getVtt(tracks[0]!.url.replace("/api/subtitles/fallback/", "").replace(".vtt", ""))).toContain("one");
+    expect(await manager.getSubtitles({ title: "Some Show", season: 1, episode: 2 })).toEqual([]);
+  });
+
+  it("does not ask again about a season the site had nothing for", async () => {
+    const asked: string[] = [];
+    const get: typeof fetch = async (input) => {
+      asked.push(String(input));
+      return new Response("no shows here", { status: 200 });
+    };
+    const manager = new FallbackSubtitleManager(undefined, get);
+    expect(await manager.getSubtitles({ title: "Nowhere", season: 1, episode: 1 })).toEqual([]);
+    expect(await manager.getSubtitles({ title: "Nowhere", season: 1, episode: 2 })).toEqual([]);
+    expect(asked).toHaveLength(1);
+  });
 });

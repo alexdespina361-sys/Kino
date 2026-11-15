@@ -82,6 +82,8 @@ export function trackLanguageKey(track: SubtitleTrack): string {
 export interface DiverseFilterOptions {
   maxFromBestSource?: number; // default: 3
   maxFromOtherSource?: number; // default: 1
+  /** A language keeps at least this many when it has them, whatever their sources (default: 3): one good source and one crowd file is not a choice. */
+  minPerLanguage?: number;
   maxTotal?: number; // default: 40
 }
 
@@ -98,6 +100,7 @@ export function filterDiverseSubtitles(
 ): SubtitleTrack[] {
   const maxFromBest = options.maxFromBestSource ?? 3;
   const maxFromOther = options.maxFromOtherSource ?? 1;
+  const minPerLanguage = options.minPerLanguage ?? 3;
   const maxTotal = options.maxTotal ?? 40;
 
   // 1. Deduplicate by URL
@@ -161,22 +164,22 @@ export function filterDiverseSubtitles(
       bestSource = bySource.keys().next().value;
     }
 
-    const selectedForLang: CandidateSubtitleTrack[] = [];
-    if (bestSource && bySource.has(bestSource)) {
-      const bestList = bySource.get(bestSource)!;
-      selectedForLang.push(...bestList.slice(0, maxFromBest));
-    }
+    // The best source's picks come first, in its own order of quality: the stream's own captions (or Kino Official) stay ahead of crowd files, as before.
+    const fromBest = bestSource && bySource.has(bestSource) ? bySource.get(bestSource)!.slice(0, maxFromBest) : [];
 
-    // Pick top 1 from every other source
-    for (const [src, list] of bySource.entries()) {
-      if (src === bestSource) continue;
-      if (list.length > 0) {
-        selectedForLang.push(...list.slice(0, maxFromOther));
-      }
-    }
+    // Then the best of every other source, by score (in the order of `priorityOrder` when level).
+    const others = [...bySource.entries()].filter(([src]) => src !== bestSource);
+    others.sort(([a], [b]) => priorityOrder.indexOf(a) - priorityOrder.indexOf(b));
+    const fromOthers = others.flatMap(([, list]) => list.slice(0, maxFromOther));
+    fromOthers.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
-    // Sort selected tracks of this language by score
-    selectedForLang.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    const selectedForLang = [...fromBest, ...fromOthers];
+    // A language with few sources keeps at least `minPerLanguage` files when it has them: the next best of what is left.
+    if (selectedForLang.length < minPerLanguage) {
+      const chosen = new Set(selectedForLang);
+      const rest = tracks.filter((track) => !chosen.has(track)).sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+      selectedForLang.push(...rest.slice(0, minPerLanguage - selectedForLang.length));
+    }
     languagePicks.set(lang, selectedForLang);
   }
 

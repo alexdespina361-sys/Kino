@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { normalizeLang } from "../../shared/lang";
 import type { SubtitleTrack } from "../../shared/media";
-import { siteFetch } from "./romanian";
+import { MAX_ARCHIVE_BYTES, readCapped, siteFetch } from "./romanian";
 import { extractSubtitlesFromZip } from "./unzip";
 
 export interface FallbackSubtitleRecord {
@@ -21,6 +22,23 @@ export interface FallbackSearchParams {
   episode?: number | string;
   imdbId?: string;
   tmdbId?: string | number;
+}
+
+/** How much of a page of the sites is read (they are a few KB). */
+const MAX_PAGE_BYTES = 1024 * 1024;
+/** The seasons kept in memory, and their text, before the ones asked about longest ago go (a season in five languages is a few MB). */
+export const MAX_KEPT_SEASONS = 60;
+export const MAX_KEPT_CHARS = 64 * 1024 * 1024;
+/** A season the sites had nothing for is not asked about again for this long. */
+export const NOTHING_FOR = 6 * 60 * 60 * 1000;
+
+async function pageText(res: Response): Promise<string> {
+  return (await readCapped(res, MAX_PAGE_BYTES))?.toString("utf8") ?? "";
+}
+
+/** A short mark of a file's name, so two files whose first 30 letters are the same still have ids of their own. */
+function mark(text: string): string {
+  return createHash("sha256").update(text).digest("hex").slice(0, 8);
 }
 
 export function srtToVtt(srt: string): string {
@@ -56,6 +74,10 @@ export function normalizeTvSubtitlesLang(raw: string): string {
 export class FallbackSubtitleManager {
   private cacheByTitleSeason = new Map<string, FallbackSubtitleRecord[]>();
   private subtitleById = new Map<string, string>(); // id -> vtt
+  /** How much text `subtitleById` holds (see `MAX_KEPT_CHARS`). */
+  private keptChars = 0;
+  /** The seasons the sites had nothing for, and when that was found (see `NOTHING_FOR`). */
+  private nothingSince = new Map<string, number>();
   private pending = new Map<string, Promise<FallbackSubtitleRecord[]>>();
   private dataDir?: string;
   private readonly get: typeof fetch;
@@ -74,12 +96,17 @@ export class FallbackSubtitleManager {
    * All extracted season episodes are saved/cached in memory and on disk.
    */
   async getSubtitles(params: FallbackSearchParams): Promise<SubtitleTrack[]> {
-    if (!params.title) return [];
-    const season = params.season ? Number(params.season) : 1;
-    const episode = params.episode ? Number(params.episode) : 1;
+    // (Only an episode of a series: a film of the same name as a show must not get the show's lines.)
+    const season = Number(params.season);
+    const episode = Number(params.episode);
+    if (!params.title || !Number.isInteger(season) || !Number.isInteger(episode) || season < 0 || episode < 1) return [];
     const key = `${normalizeSearchTitle(params.title)}:s${season}`;
+    if (!normalizeSearchTitle(params.title)) return [];
+    const nothing = this.nothingSince.get(key);
+    if (nothing !== undefined && Date.now() - nothing < NOTHING_FOR) return [];
 
     let seasonSubs = this.cacheByTitleSeason.get(key);
+    if (seasonSubs) this.keep(key, seasonSubs);
     if (!seasonSubs) {
       let underway = this.pending.get(key);
       if (!underway) {
@@ -91,10 +118,12 @@ export class FallbackSubtitleManager {
       seasonSubs = await underway;
     }
 
-    // Filter to the requested episode
-    const episodeMatches = seasonSubs.filter(
-      (sub) => sub.episode === episode || sub.episode === undefined,
-    );
+    // The requested episode's files only. A file with no episode number in its name goes with every episode only when it is the season's one file
+    // of its language and site (a pack of many unnumbered files cannot be told apart, and the wrong episode's lines are worse than none).
+    const episodeMatches = seasonSubs.filter((sub) => {
+      if (sub.episode !== undefined) return sub.episode === episode;
+      return seasonSubs!.filter((other) => other.lang === sub.lang && other.source === sub.source).length === 1;
+    });
 
     return episodeMatches.map((sub, idx) => ({
       id: 8000 + idx,
@@ -149,15 +178,43 @@ export class FallbackSubtitleManager {
       if (this.dataDir) {
         void this.saveToDisk(key, records);
       }
+    } else {
+      this.nothingSince.set(key, Date.now());
+      if (this.nothingSince.size > 2000) this.nothingSince.delete(this.nothingSince.keys().next().value!);
     }
 
     return records;
   }
 
   private cacheRecords(key: string, records: FallbackSubtitleRecord[]): void {
-    this.cacheByTitleSeason.set(key, records);
+    this.forget(key);
     for (const r of records) {
+      if (!this.subtitleById.has(r.id)) this.keptChars += r.vtt.length;
       this.subtitleById.set(r.id, r.vtt);
+    }
+    this.keep(key, records);
+  }
+
+  /** Keeps a season as the newest, and lets the seasons asked about longest ago go while there are too many of them or too much text. */
+  private keep(key: string, records: FallbackSubtitleRecord[]): void {
+    this.cacheByTitleSeason.delete(key);
+    this.cacheByTitleSeason.set(key, records);
+    while (this.cacheByTitleSeason.size > 1 && (this.cacheByTitleSeason.size > MAX_KEPT_SEASONS || this.keptChars > MAX_KEPT_CHARS)) {
+      const oldest = this.cacheByTitleSeason.keys().next().value!;
+      if (oldest === key) break;
+      this.forget(oldest);
+    }
+  }
+
+  private forget(key: string): void {
+    const records = this.cacheByTitleSeason.get(key);
+    if (!records) return;
+    this.cacheByTitleSeason.delete(key);
+    for (const r of records) {
+      const vtt = this.subtitleById.get(r.id);
+      if (vtt === undefined) continue;
+      this.keptChars -= vtt.length;
+      this.subtitleById.delete(r.id);
     }
   }
 
@@ -179,7 +236,7 @@ export class FallbackSubtitleManager {
       signal: AbortSignal.timeout(6000),
     });
     if (!searchRes.ok) return [];
-    const searchHtml = await searchRes.text();
+    const searchHtml = await pageText(searchRes);
 
     const showMatches = [...searchHtml.matchAll(/<a\s+href="\/tvshow-(\d+)\.html">([^<]+)<\/a>/g)];
     if (showMatches.length === 0) return [];
@@ -202,7 +259,7 @@ export class FallbackSubtitleManager {
       signal: AbortSignal.timeout(6000),
     });
     if (!seasonRes.ok) return [];
-    const seasonHtml = await seasonRes.text();
+    const seasonHtml = await pageText(seasonRes);
 
     // Find season pack links e.g. <a href="subtitle-3593-1-en.html">
     const packLinks = [...seasonHtml.matchAll(/<a\s+href="subtitle-(\d+)-(\d+)-([a-z]{2})\.html">/g)];
@@ -220,7 +277,7 @@ export class FallbackSubtitleManager {
           signal: AbortSignal.timeout(6000),
         });
         if (!packRes.ok) return;
-        const packHtml = await packRes.text();
+        const packHtml = await pageText(packRes);
 
         const fnMatch = packHtml.match(/filename:\s*<\/b><\/td><td[^>]*>([^<]+\.zip)<\/td>/i) ||
           packHtml.match(/<b>filename:<\/b><\/td><td[^>]*>([^<]+\.zip)<\/td>/i) ||
@@ -235,14 +292,17 @@ export class FallbackSubtitleManager {
         });
         if (!zipRes.ok) return;
 
-        const zipBuf = Buffer.from(await zipRes.arrayBuffer());
+        const zipBuf = await readCapped(zipRes, MAX_ARCHIVE_BYTES);
+        if (!zipBuf) return;
         const extracted = extractSubtitlesFromZip(zipBuf);
         const normLang = normalizeTvSubtitlesLang(rawLang);
 
         for (const item of extracted) {
+          // (A file that says it is of another season is not this season's.)
+          if (item.season !== undefined && item.season !== season) continue;
           const epNum = item.episode;
           const cleanName = item.name.replace(/\.(srt|vtt)$/i, "").trim();
-          const subId = `tvs_${showId}_s${season}e${epNum ?? 1}_${normLang}_${cleanName.slice(0, 30).replace(/[^a-zA-Z0-9]/g, "_")}`;
+          const subId = `tvs_${showId}_s${season}e${epNum ?? 0}_${normLang}_${cleanName.slice(0, 30).replace(/[^a-zA-Z0-9]/g, "_")}_${mark(item.name)}`;
           records.push({
             id: subId,
             label: `${normLang.toUpperCase()} (TVSubtitles) · ${cleanName}`,
@@ -287,7 +347,7 @@ export class FallbackSubtitleManager {
     });
     if (!apiRes.ok) return [];
 
-    const json = (await apiRes.json()) as {
+    const json = JSON.parse((await pageText(apiRes)) || "null") as {
       status?: boolean;
       subtitles?: Array<{
         url?: string;
@@ -312,14 +372,16 @@ export class FallbackSubtitleManager {
         });
         if (!dlRes.ok) return;
 
-        const zipBuf = Buffer.from(await dlRes.arrayBuffer());
+        const zipBuf = await readCapped(dlRes, MAX_ARCHIVE_BYTES);
+        if (!zipBuf) return;
         const extracted = extractSubtitlesFromZip(zipBuf);
         const normLang = normalizeLang(sub.lang) || "en";
 
         for (const item of extracted) {
+          if (item.season !== undefined && item.season !== season) continue;
           const epNum = item.episode ?? sub.episode;
           const cleanName = (item.name || sub.release_name || `Subtitle ${idx + 1}`).replace(/\.(srt|vtt)$/i, "").trim();
-          const subId = `subdl_s${season}e${epNum ?? 1}_${normLang}_${idx}_${cleanName.slice(0, 30).replace(/[^a-zA-Z0-9]/g, "_")}`;
+          const subId = `subdl_${mark(dlUrl)}_s${season}e${epNum ?? 0}_${normLang}_${cleanName.slice(0, 30).replace(/[^a-zA-Z0-9]/g, "_")}_${mark(item.name)}`;
           records.push({
             id: subId,
             label: `${normLang.toUpperCase()} (SubDL) · ${cleanName}`,

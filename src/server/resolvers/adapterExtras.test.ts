@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createFilmpireAdapter, listedSubtitles, subtitleQualityScore, resolveFinalSubtitles, type ExtrasAsk, type ExtrasLookup } from "./adapters/filmpire";
+import { createFilmpireAdapter, listedSubtitles, subtitleQualityScore, finalSubtitles, type ExtrasAsk, type ExtrasLookup } from "./adapters/filmpire";
 
 /*
  * What the filmpire adapter does around the stream it finds: the extras (the subtitle sites' lists and the Romanian subtitles) are asked for while the
@@ -225,8 +225,8 @@ describe("subtitle quality scoring and ranking", () => {
     ]);
   });
 
-  describe("resolveFinalSubtitles", () => {
-    it("cleans up subtitles into top 3 from best source + top 1 from each other source per language", async () => {
+  describe("finalSubtitles", () => {
+    it("keeps a few of each language: the best source's first, then the others' best, at least three when there are", () => {
       const tracks = [
         ...Array.from({ length: 5 }, (_, i) => ({
           id: i,
@@ -242,27 +242,19 @@ describe("subtitle quality scoring and ranking", () => {
         },
       ];
 
-      const res = await resolveFinalSubtitles({
-        existingTracks: tracks,
-        title: "Test Movie",
-      });
+      const res = finalSubtitles(tracks);
 
-      expect(res).toBeDefined();
-      // Best source (provider) has 1, opensubtitles has 1 (top 1 from other source)
-      expect(res!.filter((t) => t.lang === "en")).toHaveLength(2);
+      // (The stream's own track first, then the best two of the five crowd files: one language is not cut down to two.)
+      expect(res!.map((t) => t.url)).toEqual([
+        "https://provider.example/sub.vtt",
+        "https://opensubtitles.example/0.srt",
+        "https://opensubtitles.example/1.srt",
+      ]);
+      expect(res!.map((t) => t.id)).toEqual([0, 1, 2]);
     });
 
-    it("triggers fallback subtitles when existing tracks array is empty", async () => {
-      const res = await resolveFinalSubtitles({
-        existingTracks: [],
-        title: "Sakamoto Days",
-        season: 1,
-        episode: 1,
-      });
-
-      // Even if fallback network in offline test env fails or returns empty,
-      // it handles it gracefully without throwing.
-      expect(Array.isArray(res) || res === undefined).toBe(true);
+    it("is undefined when there is nothing", () => {
+      expect(finalSubtitles([])).toBeUndefined();
     });
   });
 });

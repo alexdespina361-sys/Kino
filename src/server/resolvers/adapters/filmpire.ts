@@ -479,41 +479,32 @@ export async function listedSubtitles(get: typeof fetch, imdbId: string, season?
   }
   return tracks;
 }
-export interface FinalSubtitlesOptions {
-  existingTracks: SubtitleTrack[];
-  title?: string;
-  season?: number;
-  episode?: number;
-  imdbId?: string;
-  tmdbId?: string | number;
+/**
+ * The subtitles that go with the film: a few of each language from each source (see `filterDiverseSubtitles`), English first, then Romanian, with
+ * clean numbers. Undefined when there are none. (The season-pack sites are asked as one of the extras, see `lookForExtras`: never a wait of their own.)
+ */
+export function finalSubtitles(tracks: SubtitleTrack[]): SubtitleTrack[] | undefined {
+  const diverse = filterDiverseSubtitles(tracks, { maxTotal: MAX_SUBTITLES });
+  return diverse.length > 0 ? diverse : undefined;
 }
 
-export async function resolveFinalSubtitles(options: FinalSubtitlesOptions): Promise<SubtitleTrack[] | undefined> {
-  const tracks = [...options.existingTracks];
-  if (tracks.length === 0) {
-    try {
-      const { getFallbackSubtitleManager } = await import("../../subtitles/fallbackSubtitles");
-      const fallbackTracks = await getFallbackSubtitleManager().getSubtitles({
-        title: options.title,
-        season: options.season,
-        episode: options.episode,
-        imdbId: options.imdbId,
-        tmdbId: options.tmdbId,
-      });
-      tracks.push(...fallbackTracks);
-    } catch {
-      // fallback fetch failed
-    }
-  }
-
-  const diverse = filterDiverseSubtitles(tracks);
-  return diverse.length > 0 ? diverse : undefined;
+/**
+ * The season-pack sites (TVSubtitles, and SubDL when it has a key), for an episode the subtitle site listed nothing for. They are asked only then, and
+ * only for a series: a film of the same name as a show must not get the show's lines. They answer within the same moment as the other extras or not
+ * at all for this look; what they send is kept, so the next episode of the season has it from the start.
+ */
+async function seasonPackSubtitles(ask: ExtrasAsk): Promise<SubtitleTrack[]> {
+  if (!ask.isTv || !ask.title || ask.season === undefined || ask.episode === undefined) return [];
+  const { getFallbackSubtitleManager } = await import("../../subtitles/fallbackSubtitles");
+  return getFallbackSubtitleManager().getSubtitles({ title: ask.title, season: ask.season, episode: ask.episode, imdbId: ask.imdbId, tmdbId: ask.tmdbId });
 }
 
 
 /** The extras as the server looks for them: the subtitle site, the Romanian subtitle sites and the Romanian dub catalogue, all three at once. */
 export const lookForExtras: ExtrasLookup = (ask, get) => ({
-  listed: ask.imdbId ? listedSubtitles(get, ask.imdbId, ask.isTv ? ask.season : undefined, ask.isTv ? ask.episode : undefined) : Promise.resolve([]),
+  listed: (ask.imdbId ? listedSubtitles(get, ask.imdbId, ask.isTv ? ask.season : undefined, ask.isTv ? ask.episode : undefined) : Promise.resolve([]))
+    .catch((): SubtitleTrack[] => [])
+    .then(async (listed) => (listed.length > 0 ? listed : await seasonPackSubtitles(ask).catch((): SubtitleTrack[] => []))),
   romanian: (async () => {
     const { getRomanianSubtitleManager } = await import("../../subtitles/romanian");
     return getRomanianSubtitleManager().getSubtitles({ imdbId: ask.imdbId, tmdbId: ask.tmdbId, title: ask.title, season: ask.season, episode: ask.episode });
@@ -975,14 +966,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
                 ? await extrasByThen(pendingExtras, extrasGraceMs)
                 : [[], []];
 
-              const subList = await resolveFinalSubtitles({
-                existingTracks: [...roSubs, ...hiSubs, ...listed],
-                title,
-                season: targetSeason,
-                episode: targetEpisode,
-                imdbId: tmdbImdbId,
-                tmdbId: id,
-              });
+              const subList = finalSubtitles([...roSubs, ...hiSubs, ...listed]);
 
               const alternates: AlternateSource[] = [];
               if (resolved.altDubStream) {
@@ -1055,14 +1039,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         const [listed, roSubs, dub] = pendingExtras
           ? await extrasByThen(pendingExtras, extrasGraceMs)
           : [[], [], undefined];
-        const subList = await resolveFinalSubtitles({
-          existingTracks: [...roSubs, ...listed],
-          title,
-          season: isTv ? Number(s || "1") : undefined,
-          episode: isTv ? Number(e || "1") : undefined,
-          imdbId: tmdbImdbId,
-          tmdbId: id,
-        });
+        const subList = finalSubtitles([...roSubs, ...listed]);
 
         let sInfo: SeriesInfo | undefined;
         if (isTv) {
@@ -1142,14 +1119,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           };
         });
 
-        const subList = await resolveFinalSubtitles({
-          existingTracks: [...roSubs, ...vlSubs, ...listed],
-          title,
-          season: isTv ? Number(s || "1") : undefined,
-          episode: isTv ? Number(e || "1") : undefined,
-          imdbId: tmdbImdbId,
-          tmdbId: id,
-        });
+        const subList = finalSubtitles([...roSubs, ...vlSubs, ...listed]);
 
         let sInfo: SeriesInfo | undefined;
         if (isTv) {
@@ -1615,14 +1585,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
       const imdbId = apiImdbId || tmdbImdbId;
       pendingExtras ??= askExtras(imdbId);
       const [listed, romanian, dub] = await extrasByThen(pendingExtras, extrasGraceMs);
-      const resolvedBaseSubs = await resolveFinalSubtitles({
-        existingTracks: [...romanian, ...subtitles, ...listed],
-        title,
-        season: seriesInfo?.season,
-        episode: seriesInfo?.episode,
-        imdbId: apiImdbId || tmdbImdbId,
-        tmdbId: id,
-      });
+      const resolvedBaseSubs = finalSubtitles([...romanian, ...subtitles, ...listed]);
       subtitles = resolvedBaseSubs ?? [];
 
       // 7. Request host token with cache & fallback across streams

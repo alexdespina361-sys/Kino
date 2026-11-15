@@ -9,6 +9,8 @@ export interface ExtractedSubtitle {
 
 export const MAX_UNZIP_FILE_BYTES = 4 * 1024 * 1024; // 4MB per subtitle max
 export const MAX_UNZIP_FILES = 500;
+/** All an archive may unpack to (a season pack of 30 episodes in five languages is a few MB): past it, the rest is left out. */
+export const MAX_UNZIP_TOTAL_BYTES = 48 * 1024 * 1024;
 
 const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
 const win1250Decoder = new TextDecoder("windows-1250", { fatal: false });
@@ -91,6 +93,7 @@ export function parseSeasonAndEpisode(fileName: string): { season?: number; epis
 export function extractSubtitlesFromZip(zipBuf: Buffer): ExtractedSubtitle[] {
   const results: ExtractedSubtitle[] = [];
   let pos = 0;
+  let unpacked = 0;
 
   while (pos < zipBuf.length - 4 && results.length < MAX_UNZIP_FILES) {
     const sig = zipBuf.readUInt32LE(pos);
@@ -114,6 +117,8 @@ export function extractSubtitlesFromZip(zipBuf: Buffer): ExtractedSubtitle[] {
           const raw = method === 8
             ? zlib.inflateRawSync(data, { maxOutputLength: MAX_UNZIP_FILE_BYTES })
             : data;
+          unpacked += raw.length;
+          if (unpacked > MAX_UNZIP_TOTAL_BYTES) break;
           const text = decodeSubtitleBuffer(raw);
           if (text.length > 10) {
             const parsed = parseSeasonAndEpisode(name);
