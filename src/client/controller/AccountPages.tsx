@@ -304,18 +304,21 @@ export function SettingsPage({ onOpenFriends }: { onOpenFriends: () => void }) {
       <Group title={t("settings.playback")} help={t("settings.playbackHelp")}>
         <Rows>
           <Switch label={t("settings.autoplayNext")} checked={settings.autoplayNext ?? true} onChange={(on) => set("autoplayNext", on)} testId="autoplay-next" />
-          <Switch label={t("settings.tapToPause")} hint={t("settings.tapToPauseHelp")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
-          <Switch label={t("settings.adaptiveQuality")} hint={t("settings.adaptiveQualityHelp")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
         </Rows>
-      </Group>
-      <Group title={t("settings.pasteLink")}>
-        <Switch label={t("settings.pasteLinkSwitch")} hint={t("settings.linkBoxHelp")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />
       </Group>
       <Group title={t("rating.settings")}>
         <Switch label={t("rating.settingsSwitch")} hint={t("rating.settingsHelp")} checked={settings.ratings ?? true} onChange={(on) => set("ratings", on)} testId="ratings-switch" />
       </Group>
       <FriendsGroup onOpen={onOpenFriends} />
       <SubtitleLanguages />
+      {/* Labs: what few people use, or what is still being tried, last and together (each keeps what was chosen for it). */}
+      <Group title={t("settings.labs")} help={t("settings.labsHelp")}>
+        <Rows>
+          <Switch label={t("settings.tapToPause")} hint={t("settings.tapToPauseHelp")} checked={settings.tapToPause ?? false} onChange={(on) => set("tapToPause", on)} testId="tap-to-pause" />
+          <Switch label={t("settings.adaptiveQuality")} hint={t("settings.adaptiveQualityHelp")} checked={settings.adaptiveQuality !== false} onChange={(on) => set("adaptiveQuality", on ? undefined : false)} testId="adaptive-quality" />
+          <Switch label={t("settings.pasteLinkSwitch")} hint={t("settings.linkBoxHelp")} checked={linkBox} onChange={setLinkBox} testId="link-box-setting" />
+        </Rows>
+      </Group>
       {account.me === null && <p className="muted small">{t("settings.signInToSave")}</p>}
     </div>
   );
