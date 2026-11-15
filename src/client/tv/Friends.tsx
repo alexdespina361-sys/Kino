@@ -13,6 +13,7 @@ import { PLAN_DAYS, PLAN_HOURS, defaultPlan, planLines, planMoment, planOffered,
 import { useAnswerRequests, useTagAsk } from "../friends/useRequests";
 import { useBell } from "../friends/useBell";
 import { useCleared } from "../friends/useCleared";
+import { useClearChat } from "../chat/useClearChat";
 import { usePeek } from "../friends/usePeek";
 import { useLanguage, useT, type Key } from "../i18n";
 import { CopyCode } from "../shared/CopyLink";
@@ -619,7 +620,7 @@ export function PlanPickerTv({ friendId, onClose }: { friendId: string; onClose:
 /* ------------------------------ the bell ------------------------------ */
 
 /** A line of the bell's list: pressing it does what pressing the same tile of the friends page does. */
-function BellLine({ row, onPress, onClear }: { row: BellRow; onPress: (entry: Entry) => void; /** Not given for a line that waits for an answer nobody else can give (a request to be friends, a friend who wrote). */ onClear?: ((button: HTMLElement) => void) | undefined }) {
+function BellLine({ row, onPress, onClear }: { row: BellRow; onPress: (entry: Entry) => void; /** Not given for a line that waits for an answer nobody else can give (a request to be friends). */ onClear?: ((button: HTMLElement) => void) | undefined }) {
   const t = useT();
   const { entry } = row;
   return (
@@ -649,6 +650,7 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
   const friends = useFriends();
   const { markSeen } = useBell();
   const { cleared, clear } = useCleared();
+  const clearChat = useClearChat();
   const { waiting, lately, more } = bellRows(friends.state, Date.now(), cleared);
   const page = useRef<HTMLDivElement>(null);
   /** A line is cleared: what a friend sent is taken out of the inbox, what a friend watched is forgotten on this device. The remote goes on to the line that takes its place. */
@@ -657,6 +659,7 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
     const at = all.indexOf(button);
     if (row.activity) clear([row.activity]);
     else if (row.entry.inboxId) void friends.dismiss(row.entry.inboxId).catch(() => undefined);
+    else if (row.entry.chat) clearChat(row.entry.chat);
     window.setTimeout(() => {
       if (page.current?.contains(document.activeElement) && document.activeElement !== document.body) return;
       const left = [...(page.current?.querySelectorAll<HTMLElement>("[data-testid=tv-bell-clear]") ?? [])];
@@ -690,7 +693,7 @@ export function NotificationsTv({ onPress, onFriends, onClose }: { onPress: (ent
               <h2 className="tv-bell-heading">{t("bell.waiting")}</h2>
               <ul className="tv-bell-list" data-testid="tv-bell-waiting">
                 {waiting.map((row) => (
-                  <BellLine key={row.entry.id} row={row} onPress={onPress} onClear={row.entry.inboxId ? (button) => clearLine(row, button) : undefined} />
+                  <BellLine key={row.entry.id} row={row} onPress={onPress} onClear={row.entry.inboxId || row.entry.chat ? (button) => clearLine(row, button) : undefined} />
                 ))}
               </ul>
               {more > 0 && (
