@@ -92,6 +92,8 @@ const LOAD_WAIT_MS = 15_000;
 const SWITCH_WAIT_MS = 30_000;
 const IDLE_MS = 500;
 const TICK_MS = 500;
+/** Seconds either side of the picture with no line in them: a stretch with nothing to time (the status says so, see `status`). */
+const QUIET_AROUND = 10;
 /** The voice detector must get through sound this much faster than the picture plays it, or the aligner is no use on this device. */
 const MAX_BUSY_SHARE = 0.8;
 /** The track's lines must have kept the same count for this many looks (a file arrives in pieces) before they are taken. */
@@ -1313,7 +1315,18 @@ export class SyncSession {
     const current = this.current;
     if (this.closed || !current) return "ready";
     const at = this.deps.video.currentTime;
-    return current.coverage.some((range) => range.from - 5 <= at && range.to + 5 >= at) ? "synced" : "syncing";
+    // (Nothing timed yet: it is still finding out.)
+    if (current.coverage.length === 0) return "syncing";
+    // (Sound that comes as the film plays is heard after it is played: the lines timed reach to a window or so behind the picture, never
+    // ahead of it, and the ones ahead take the shift learned there. That is the aligner keeping up, not falling behind.)
+    const behind = this.deps.live ? WINDOW + SOLVE_STEP + 5 : 5;
+    if (current.coverage.some((range) => range.from - 5 <= at && range.to + behind >= at)) return "synced";
+    // (A stretch with no lines, music or a fight, has nothing to time: once anything was timed, it is not "syncing" there.)
+    const quiet = !current.cues.some((_, index) => {
+      const line = current.editor.current(index);
+      return line.end > at - QUIET_AROUND && line.start < at + QUIET_AROUND;
+    });
+    return quiet ? "synced" : "syncing";
   }
 
   private report(): void {
