@@ -667,7 +667,7 @@ export function Controller() {
           }}
         />
       ) : (
-        <div className="tab-panel" key={tabs.tab}>
+        <div className="tab-panel" key={tabs.tab} ref={tabs.place}>
           {panel}
         </div>
       )}
