@@ -1,4 +1,4 @@
-import { MAX_FOLLOWERS, localTrackLabel, type CaptionSetting, type CaptionStyle, type ChangeNotice, type PlayerState, type ResolveStatus, type StatusWords } from "../../shared";
+import { MAX_FOLLOWERS, localTrackLabel, type CaptionPreset, type CaptionSetting, type CaptionStyle, type ChangeNotice, type PlayerState, type ResolveStatus, type StatusWords } from "../../shared";
 import { getLanguage, hasKey, t, type Key } from "../i18n";
 
 /**
@@ -78,6 +78,9 @@ export function captionLabel<S extends CaptionSetting>(setting: S, value: Captio
   if (setting === "edge" && value === "none") return t("caption.none");
   return t(`caption.${setting}.${value}` as Key);
 }
+
+/** What one of the three looks is called ("Large text"). */
+export const captionPresetName = (preset: CaptionPreset): string => t(`player.capPreset.${preset}` as Key);
 
 /** Plain words for the error codes the player reports. The raw code stays available for debugging. */
 export function friendlyError(code: string | undefined): string {

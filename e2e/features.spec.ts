@@ -717,6 +717,9 @@ test.describe("the TV player", () => {
     await tv.getByRole("option", { name: "Subtitle style…" }).click();
     await expect(modal).toHaveAttribute("data-kind", "captions");
     await expect(tv.getByTestId("subtitle-preview")).toBeVisible();
+    await tv.getByRole("option", { name: "More options…" }).click(); // past the three looks, to the eight settings
+    await expect(modal).toHaveAttribute("data-page", "more");
+    await expect(tv.getByTestId("subtitle-preview")).toBeVisible();
 
     const box = async () => (await modal.boundingBox())!;
     const before = await box();
@@ -740,6 +743,55 @@ test.describe("the TV player", () => {
     expect([now.x, now.y, now.width, now.height]).toEqual([before.x, before.y, before.width, before.height]);
 
     expect(JSON.parse(await tv.evaluate(() => localStorage.getItem("tv.prefs")!)).captionStyle).toMatchObject({ size: "large", color: "yellow" });
+    phone.close();
+  });
+
+  test("the subtitle style starts with three looks: one OK is a whole look and keeps the height, the eight settings are a page further, and Back goes one page at a time", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    phone.cmd({ type: "LOAD", media: seriesMedia(baseURL!) });
+    await expect(tvRoot(tv)).toHaveAttribute("data-state", "paused");
+    phone.cmd({ type: "SET_CAPTION_STYLE", style: { position: "high" } }); // a viewer who raised the text
+    await expect.poll(() => phone.states.at(-1)?.captionStyle?.position).toBe("high");
+    const prefs = async () => JSON.parse((await tv.evaluate(() => localStorage.getItem("tv.prefs")))!).captionStyle as Record<string, string>;
+
+    await tv.getByTestId("tv-audio-sub-btn").click();
+    const modal = tv.getByTestId("audio-subtitles-modal");
+    await tv.getByRole("option", { name: "Subtitle style…" }).click();
+    await expect(modal).toHaveAttribute("data-kind", "captions");
+    await expect(modal).not.toHaveAttribute("data-page", /./);
+    const look = (name: string) => tv.getByRole("option", { name, exact: true });
+    await expect(look("Standard")).toHaveAttribute("aria-selected", "true"); // the height does not make it another look
+    await expect(look("Standard")).toBeFocused(); // the remote starts on the look there is
+    await expect(tv.getByRole("option", { name: /^Size/ })).toHaveCount(0); // the eight settings are not on this page
+
+    await tv.keyboard.press("ArrowDown");
+    await expect(look("Large text")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(look("Large text")).toHaveAttribute("aria-selected", "true");
+    await expect.poll(prefs).toMatchObject({ size: "large", background: "75", edge: "shadow", position: "high" }); // the whole look, the height kept
+    await expect(modal).not.toHaveAttribute("data-page", /./); // still on the looks, to try another
+
+    await tv.keyboard.press("ArrowDown");
+    await tv.keyboard.press("ArrowDown");
+    await expect(tv.getByRole("option", { name: "More options…" })).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(modal).toHaveAttribute("data-page", "more");
+    await expect(tv.getByRole("option", { name: /^Size/ })).toBeVisible();
+    await tv.getByRole("option", { name: /^Text color/ }).focus();
+    await tv.getByRole("option", { name: "Yellow", exact: true }).click();
+    await expect.poll(prefs).toMatchObject({ color: "yellow", size: "large" });
+
+    await tv.keyboard.press("Escape"); // one page back: the looks, on the entry that opened the settings
+    await expect(modal).not.toHaveAttribute("data-page", /./);
+    await expect(tv.getByRole("option", { name: /^More options…/ })).toBeFocused();
+    await expect(tv.getByRole("option", { name: /^More options…/ })).toContainText("Your own"); // no look is this one any more
+    for (const name of ["Standard", "Large text", "No box"]) await expect(look(name)).toHaveAttribute("aria-selected", "false");
+    await tv.keyboard.press("Escape");
+    await expect(modal).toHaveAttribute("data-kind", "tracks");
+    await expect(tv.getByRole("option", { name: "Subtitle style…" })).toBeFocused();
+    await tv.keyboard.press("Escape");
+    await expect(modal).toHaveCount(0);
     phone.close();
   });
 
@@ -811,6 +863,7 @@ test.describe("the phone's subtitle style", () => {
     await phone.getByTestId("subtitle-0").click(); // English
     await phone.getByTestId("open-caption-style").click();
     await expect(phone.getByTestId("captions-sheet")).toBeVisible();
+    await phone.getByTestId("caption-more").click(); // the eight settings are folded under the three looks
     await expect(phone.getByTestId("caption-color-white")).toHaveAttribute("aria-checked", "true");
 
     await phone.getByTestId("caption-color-yellow").click();
@@ -824,6 +877,39 @@ test.describe("the phone's subtitle style", () => {
     await phone.getByTestId("caption-reset").click();
     await expect(caption).toHaveCSS("color", "rgb(255, 255, 255)");
     await expect(phone.getByTestId("caption-spacing-normal")).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("three looks come first, one tap each; the eight settings stay folded until asked for, and open by themselves for a look of one's own", async ({ browser, baseURL }) => {
+    const tv = await openTv(browser);
+    const phone = await openPairedPhone(browser, tv);
+    await loadOnTv(phone, seriesMedia(baseURL!));
+    await expect(phone.getByTestId("media-title")).toBeVisible();
+    await phone.getByTestId("chip-tracks").click();
+    await phone.getByTestId("subtitle-0").click(); // English
+    await phone.getByTestId("open-caption-style").click();
+    await expect(phone.getByTestId("captions-sheet")).toBeVisible();
+
+    await expect(phone.getByTestId("caption-look-standard")).toHaveAttribute("aria-checked", "true");
+    await expect(phone.getByTestId("caption-color-white")).toHaveCount(0); // folded
+    await phone.getByTestId("caption-look-large").click();
+    await expect(phone.getByTestId("caption-look-large")).toHaveAttribute("aria-checked", "true"); // the TV reported it back
+    const caption = tv.getByTestId("caption");
+    await expect.poll(async () => parseFloat(await caption.evaluate((el) => getComputedStyle(el).fontSize))).toBeCloseTo(0.06 * 720, 0);
+    await phone.getByTestId("caption-look-clear").click();
+    await expect(caption).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+
+    await phone.getByTestId("caption-more").click();
+    await phone.getByTestId("caption-color-yellow").click();
+    await expect(phone.getByTestId("caption-color-yellow")).toHaveAttribute("aria-checked", "true");
+    for (const name of ["standard", "large", "clear"]) await expect(phone.getByTestId(`caption-look-${name}`)).toHaveAttribute("aria-checked", "false");
+
+    // Opened again with a look of one's own, the settings are there at once.
+    await phone.keyboard.press("Escape");
+    await expect(phone.getByTestId("captions-sheet")).toHaveCount(0);
+    await phone.getByTestId("chip-tracks").click();
+    await phone.getByTestId("open-caption-style").click();
+    await expect(phone.getByTestId("caption-color-yellow")).toHaveAttribute("aria-checked", "true");
+    await expect(phone.getByTestId("caption-more")).toHaveCount(0);
   });
 });
 
