@@ -20,11 +20,12 @@ case "$1" in
     python -c "import torch, transformers; print('torch', torch.__version__, 'transformers', transformers.__version__, 'cuda', torch.cuda.is_available())"
     exit ;;
   venv-nemo)  # (NeMo for Parakeet, in its own environment that still sees the main one's torch)
-    python -m venv --system-site-packages /content/venv-nemo && /content/venv-nemo/bin/pip install -q "nemo_toolkit[asr]" 2>&1 | tail -2
+    # (Colab's Python has no ensurepip, so `python -m venv` fails: virtualenv brings its own pip.)
+    pip install -q virtualenv && python -m virtualenv -q --system-site-packages /content/venv-nemo && /content/venv-nemo/bin/pip install -q "nemo_toolkit[asr]" 2>&1 | tail -2
     /content/venv-nemo/bin/python -c "import nemo.collections.asr; print('ok nemo')"
     exit ;;
   venv-cohere)  # (transformers >= 5.4 for Cohere Transcribe; the Hugging Face token comes from the HF_TOKEN environment variable)
-    python -m venv --system-site-packages /content/venv-cohere && /content/venv-cohere/bin/pip install -q "transformers>=5.4.0" sentencepiece protobuf librosa 2>&1 | tail -2
+    pip install -q virtualenv && python -m virtualenv -q --system-site-packages /content/venv-cohere && /content/venv-cohere/bin/pip install -q "transformers>=5.4.0" sentencepiece protobuf librosa 2>&1 | tail -2
     /content/venv-cohere/bin/python -c "from transformers import CohereAsrForConditionalGeneration; print('ok cohere')"
     exit ;;
   clean-losers)  # (models and sounds that lost, to free the disk: Musci, the two isolators and their sounds, the dry run)
@@ -47,6 +48,7 @@ LIBS=$(python -c "import nvidia.cublas.lib as a, nvidia.cudnn.lib as b; print(li
 export LD_LIBRARY_PATH="$LIBS:$LD_LIBRARY_PATH"
 case "$1" in
   prepare|prepare-film|prepare-corpus|agree) python generate.py "$1" 2>&1 | grep -vE "$quiet" ;;
+  show) python generate.py show "$2" "$3" "${4:-missed}" 2>&1 | grep -vE "$quiet" ;;
   whisper|qwen|musci|granite) python generate.py run "$1" 2>&1 | grep -vE "$quiet" ;;
   parakeet) /content/venv-nemo/bin/python generate.py transcribe parakeet 2>&1 | grep -vE "$quiet|^\[NeMo W|^\s*warnings" ; python generate.py run aligned:parakeet 2>&1 | grep -vE "$quiet" ;;
   cohere) /content/venv-cohere/bin/python generate.py transcribe cohere 2>&1 | grep -vE "$quiet" ; python generate.py run aligned:cohere 2>&1 | grep -vE "$quiet" ;;
