@@ -580,6 +580,37 @@ describe("subtitles that are not the words of the English that is said (a dub)",
   });
 });
 
+describe("a device whose recogniser is slow (a phone)", () => {
+  it("goes on timing with the voice detector where the recogniser's words fall behind the picture, and keeps the lines the words placed", { timeout: 240_000 }, async () => {
+    // (Each window of fifteen seconds takes the recogniser a minute: once it has measured that, no window ahead of the picture can be finished
+    // in time, and it hears no more. The film must not be left with "Syncing…" from there on.)
+    const heard: number[] = [];
+    const inner = listener({ heard });
+    let rig: Rig | undefined;
+    const slow: Recogniser = {
+      async hear(pcm) {
+        rig?.pass(60_000);
+        return inner.hear(pcm);
+      },
+      close() {},
+    };
+    // (Three seconds late, and six after a cut at 150 s: the shift learned at the start is not enough for what comes after the cut.)
+    rig = new Rig({ tracks: [track("English", misTimed(film, (t) => (t < 150 ? -3 : -6)))], shown: 0, recogniser: async () => slow });
+    await rig.play(100);
+    expect(heard.length).toBeGreaterThan(0);
+    const lines = rig.video.textTracks[0]!.lines;
+    const wordedFrom = heard[0] as number;
+    const worded = film.truth.map((cue, i) => ({ cue, i })).filter(({ cue }) => cue.start >= wordedFrom && cue.start < wordedFrom + 15).map(({ i }) => i);
+    const before = worded.map((i) => lines[i]!.startTime);
+    await rig.play(SECONDS);
+    expect(heard.length).toBeLessThan(4);
+    expect(rig.within(0, 0.6, 170, 250)).toBeGreaterThan(0.8);
+    expect(rig.session.status()).toBe("synced");
+    expect(worded.map((i) => lines[i]!.startTime)).toEqual(before);
+    rig.session.close();
+  });
+});
+
 describe("giving up", () => {
   it("gives the lines back when the viewer turns it off after it gave up", { timeout: 240_000 }, async () => {
     // (A device that cannot keep up with the voice detector: what it had timed stays, and the viewer's switch still puts the file's times back.)
