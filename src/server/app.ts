@@ -29,6 +29,8 @@ import { countVisits, statsRoutes } from "./stats/routes";
 import type { VisitCounter } from "./stats/visits";
 import { subsyncRoutes, type SubsyncStats } from "./subsync/routes";
 import { MemorySubsyncStore, type SubsyncStore } from "./subsync/store";
+import { MemoryOfficialStore, Officials, type OfficialStore } from "./subtitles/official";
+import { officialRoutes } from "./subtitles/officialRoutes";
 import { trustedProxies, visitorOf } from "./trust";
 
 export interface AppOptions {
@@ -40,6 +42,8 @@ export interface AppOptions {
   storage?: "postgres" | "file" | "memory";
   /** Where the subtitle timings that screens share are kept (memory, gone with the server, unless set): see `shared/subsync.ts`. */
   subsync?: SubsyncStore;
+  /** Where the Kino Official subtitles are kept (memory, gone with the server, unless set): see `subtitles/official.ts`. */
+  official?: OfficialStore;
   /** Where the feedback people send from the profile is kept (memory, gone with the server, unless set): see `shared/reports.ts`. */
   feedback?: FeedbackStore;
   /** The team's token for reading and answering feedback (env FEEDBACK_ADMIN_TOKEN, at least 24 characters). Without it nobody can read what is sent. */
@@ -182,18 +186,22 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   app.addHook("onClose", async () => unavailable.close());
   // Every try at playing something (from a phone or the TV: the look-up ahead of the next episode is the resolver's own, and does not come here) tells the library how it went, so the titles a place lists but has no video of stop being offered, and what no source had
   // is kept for the screens to mark and for the team to look for (it is asked about before the library hears it: a title that would not play is no longer one it tells).
+  // The Kino Official subtitles (subtitles/official.ts): a title that has one is sent it first of its language, and the subtitle sites' tracks it is sent
+  // are remembered, as the ones a screen may offer its timing of.
+  const officials = await Officials.open({ store: options.official ?? new MemoryOfficialStore(), log: app.log });
   const resolveForPlay: ResolveFn = async (url, isPrefetch, fresh) => {
     const result = await resolve(url, isPrefetch, fresh);
+    const play = result.status === "success" || result.status === "unsupported" ? playKeyOf(url) : null;
+    const known = play ? library.known(play.titleId) : undefined;
+    const about = known ? { title: known.title, kind: known.kind } : undefined;
     if (result.status === "success") unavailable.found(url);
-    else if (result.status === "unsupported") {
-      const play = playKeyOf(url);
-      const known = play ? library.known(play.titleId) : undefined;
-      unavailable.nothingFound(url, known ? { title: known.title, kind: known.kind } : undefined);
-    }
+    else if (result.status === "unsupported") unavailable.nothingFound(url, about);
     if (result.status === "success") library.played(url, "found");
     else if (result.status === "unsupported") library.played(url, "none");
     else if (result.status === "temporary_failure") library.played(url, "failed");
-    return result;
+    if (result.status !== "success") return result;
+    officials.heard(url, result, about);
+    return officials.withOfficial(url, result);
   };
   const hub = new Hub(registry, resolveForPlay, { log: app.log, ...options.hub, ...(accounts && screens ? { profiles: screenProfiles(accounts, screens) } : {}) });
   // Hooks run last-registered first: the pairs are written before the accounts close the database they share.
@@ -217,6 +225,15 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
   const proxyStats: ProxyStats = { bytes: 0, requests: 0, refused: 0 };
   const subsyncStats: SubsyncStats = { found: 0, missed: 0, stored: 0 };
   subsyncRoutes(app, { store: options.subsync ?? new MemorySubsyncStore(), stats: subsyncStats });
+  officialRoutes(app, {
+    officials,
+    adminToken: options.feedbackAdminToken,
+    // (The file as a screen got it: the server's own answer for the track's link, which is the Romanian sites' file it keeps or OpenSubtitles' through the proxy.)
+    fetchFile: async (track) => {
+      const answer = await app.inject({ method: "GET", url: track });
+      return answer.statusCode === 200 ? answer.body : undefined;
+    },
+  });
   const feedback = options.feedback ?? (await FeedbackStore.open({ backend: new MemoryFeedbackBackend() }));
   app.addHook("onClose", async () => feedback.close());
   await app.register(feedbackRoutes, {
@@ -265,6 +282,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     proxy: { bytes: proxyStats.bytes, requests: proxyStats.requests, refused: proxyStats.refused, video: proxyVideo ? "on" : "off" },
     // (`subsync` counts the asks for a shared subtitle timing that found one and the ones that did not, and the timings screens have left.)
     subsync: subsyncStats,
+    // (`official` is how many Kino Official subtitles are kept.)
+    official: officials.size,
     // (`feedback` is how many reports are kept, whether the team can read them, and whether a new report would be turned away: `team` is false while
     // FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more, and `full` is true while the reports that are still open take every place or all the room.)
     feedback: { reports: feedback.size, full: feedback.full, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },

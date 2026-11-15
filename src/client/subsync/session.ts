@@ -1,10 +1,11 @@
-import { byRelease, normalizeLang } from "../../shared";
+import { byRelease, normalizeLang, OFFICIAL_MIN_PLACED, type OfficialOfferLine } from "../../shared";
 import { CueEditor, type EditableCue } from "./apply";
 import { AudioFeed } from "./audio";
 import type { Backend } from "./backend";
 import { pairCaptions, timeFromEnglish } from "./bridge";
 import type { Cue } from "./cues";
 import { hasNoLanguage, hold, isHeld, release } from "./hold";
+import { offerLines } from "./official";
 import { bestAlternative, EVIDENCE_SECONDS, MAX_TESTS, MIN_HEARD_RATE, MIN_SECONDS, MIN_WORDS, RETEST_GROWTH, verdict, type Verdict } from "./pick";
 import { nextWindow, rest, WINDOW } from "./schedule";
 import { Borrowed, Lent, timingKeys, type Sent, type Shared } from "./share";
@@ -66,6 +67,11 @@ export interface SessionDeps {
   delay?(): number;
   /** The timings that screens leave each other (see `share.ts`). Without it nothing is borrowed or left. */
   shared?: Shared;
+  /**
+   * Track `id` (the number the menus use) is timed well enough to make a Kino Official subtitle of (see `official.ts`): its lines, and the
+   * film's length. `last`: the page or the film is closing. Without it nothing is offered.
+   */
+  offer?(id: number, offer: { duration: number; lines: OfficialOfferLine[] }, last: boolean): void;
   /** Processors of the device; the recogniser takes less of a small one. */
   cores?: number;
   now?(): number;
@@ -140,6 +146,11 @@ interface Followed {
   /** The name it is left under: the one a timing was found under, else the first of `keys`. Not any more once the server has refused what was sent (`refused`). */
   leaveAs: string | undefined;
   refused: boolean;
+  /** Lines placed from a believed timing that had words for them (as `worded` is this screen's own). */
+  borrowedWords: Set<number>;
+  /** How many lines were placed when the file was last looked at for a Kino Official subtitle (0: never), and whether it was offered. */
+  offered: number;
+  offerSent: boolean;
 }
 
 interface Job {
@@ -681,6 +692,9 @@ export class SyncSession {
       lentAt: 0,
       leaveAs: undefined,
       refused: false,
+      borrowedWords: new Set(),
+      offered: 0,
+      offerSent: false,
     };
     this.followed.set(track, follow);
     return follow;
@@ -1191,6 +1205,7 @@ export class SyncSession {
       if (!cue) continue;
       follow.placed[index] = { start: line.start, end: line.end, text: cue.text };
       follow.solved.add(index);
+      if (line.words) follow.borrowedWords.add(index);
       follow.lent.drop(index);
       if (follow === this.current) follow.editor.place(index, line.start, line.end, now);
     }
@@ -1216,6 +1231,7 @@ export class SyncSession {
 
   /** Leaves what this screen has placed of the track on screen for the screens that play the same file: every few minutes, and (`last`) as the page closes. */
   private lend(last: boolean): void {
+    this.offerOfficial(last);
     const shared = this.deps.shared;
     const follow = this.current;
     // (Nothing before the answer to the question whether there is a timing already: it says which name this goes under.)
@@ -1235,6 +1251,31 @@ export class SyncSession {
       follow.lent.confirm(timing);
       stats.sent += timing.placed.length;
     });
+  }
+
+  /**
+   * Offers the timing of the track on screen for a Kino Official subtitle once it is good enough (most of it placed, most of that by words), and
+   * once more as the film closes if a good deal more of it was placed since.
+   */
+  private offerOfficial(last: boolean): void {
+    const offer = this.deps.offer;
+    const follow = this.current;
+    if (!offer || !follow?.verified) return;
+    const count = follow.cues.length;
+    // (Cheap first: the file is looked at only once there is enough of it placed.)
+    if (follow.solved.size < OFFICIAL_MIN_PLACED * count) return;
+    // (Looked at again only once more of it is placed; once it was offered, only as the film closes.)
+    if (follow.offerSent && !last) return;
+    if (follow.offered > 0 && follow.solved.size < follow.offered + 0.05 * count) return;
+    const { duration } = this.deps.video;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    const worded = follow.borrowedWords.size > 0 ? new Set([...follow.worded, ...follow.borrowedWords]) : follow.worded;
+    const lines = offerLines({ cues: follow.cues, placed: follow.placed, solved: follow.solved, worded });
+    follow.offered = follow.solved.size;
+    if (!lines) return;
+    follow.offerSent = true;
+    stats.offered++;
+    offer(this.idOf(follow.track) ?? follow.id, { duration, lines }, last);
   }
 
   /** The page is closing: whatever has been found and not yet left is left now. */

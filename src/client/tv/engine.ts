@@ -2,6 +2,7 @@ import type Hls from "hls.js";
 import { prepareBrowserStream } from "./browserStream";
 import {
   IDLE_STATE,
+  type OfficialOfferLine,
   type PlayerQualityLevel,
   type PlayerState,
   type PlayerTrack,
@@ -10,6 +11,7 @@ import {
   trackLabel,
 } from "../../shared";
 import { reloadForScript, scriptIsMissing } from "../shared/scriptRescue";
+import { offerOfficial } from "./officialOffer";
 import { isHeld, markNoLanguage, release } from "../subsync/hold";
 import type { SyncStatus } from "../subsync/session";
 import { canCapture, ElementTap } from "../subsync/capture";
@@ -31,6 +33,8 @@ export interface SyncFilm {
   report(status: SyncStatus): void;
   /** The viewer's own subtitle delay. */
   delay?: () => number;
+  /** Offers a file the aligner has timed well for a Kino Official subtitle (see `subsync/official.ts`). */
+  offer?: (id: number, offer: { duration: number; lines: OfficialOfferLine[] }, last: boolean) => void;
 }
 export interface SyncHandle {
   /** `restore`: the lines go back to the file's times (the viewer turned it off). */
@@ -619,6 +623,9 @@ export class PlayerEngine {
             this.emit();
           },
           ...(this.syncDelay ? { delay: this.syncDelay } : {}),
+          offer: (id, offer, last) => {
+            if (generation === this.generation) offerOfficial(this.video, id, offer, last);
+          },
         });
         this.syncHandle = handle;
         this.syncStatus = handle ? "ready" : "unavailable";
