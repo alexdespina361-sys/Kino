@@ -445,7 +445,18 @@ export function Controller() {
           <LinkApprove code={approveCode} onClose={closeApprove} />
         </Page>
       ) : (
-        showAccount && <AccountScreen key={accountAt} initial={accountAt} onClose={closeAccount} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} {...(tv ? { onStartParty: startTogether } : {})} />
+        showAccount && (
+          <AccountScreen
+            key={accountAt}
+            initial={accountAt}
+            onClose={closeAccount}
+            onSessionsChanged={tellTvToLookAgain}
+            onOpenTitle={setTitle}
+            onTvs={() => setSheet("tvs")}
+            tvCount={tvs.length}
+            {...(tv ? { onStartParty: startTogether } : {})}
+          />
+        )
       )}
       {showBell && !showAccount && !approveCode && (
         <NotificationsSheet
@@ -596,7 +607,9 @@ export function Controller() {
       onBrowse={() => tabs.setTab("home")}
     />
   );
-  const you = <AccountScreen inline onClose={() => tabs.setTab("home")} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} onStartParty={startTogether} />;
+  const you = (
+    <AccountScreen inline onClose={() => tabs.setTab("home")} onSessionsChanged={tellTvToLookAgain} onOpenTitle={setTitle} onStartParty={startTogether} onTvs={() => setSheet("tvs")} tvCount={tvs.length} />
+  );
   const panel = { home, search, list: myLists, you }[tabs.tab];
   /** What plays is a line above the bar, on every page, until the remote is the page (and not while the TV is gone: what it says of the film cannot be trusted). */
   const mini = active && !remoteOpen && !away;
