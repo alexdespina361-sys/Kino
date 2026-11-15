@@ -637,6 +637,47 @@ def prepare_corpus() -> None:
             log(f"{name}: FAILED {error!r}"[:300])
 
 
+def show(lang: str, sound: str, which: str = "missed") -> None:
+    """
+    Reference lines next to what every engine wrote there (final words, from OUT/gen-words-*), with the voice detector's highest value in
+    the line: `missed` = lines some engine missed, `all` = every line, `stray` = engine words where no reference line is.
+    """
+    import glob
+
+    ref = load_ref(lang, sound)
+    pcm = np.load(os.path.join(GEN, f"{lang}-{sound}.npy"))
+    p = vad_track(pcm)
+    eng = {}
+    for path in sorted(glob.glob(os.path.join(bench.OUT, f"gen-words-*-{lang}-{sound}.json"))):
+        name = os.path.basename(path)[len("gen-words-"):-len(f"-{lang}-{sound}.json")]
+        with open(path, encoding="utf-8") as f:
+            eng[name] = [Word(*w) for w in json.load(f)["final"]]
+    j = "" if lang == "ja" else " "
+    if which == "stray":
+        for name, ws in eng.items():
+            out = [w for w in ws if not any(c.start - 0.5 <= w.start <= c.end + 0.3 for c in ref)]
+            log(f"== {name}: {len(out)} words where no reference line is")
+            groups: list[list[Word]] = []
+            for w in out:
+                if groups and w.start - groups[-1][-1].end < 1.5:
+                    groups[-1].append(w)
+                else:
+                    groups.append([w])
+            for g in groups:
+                log(f"  {g[0].start:7.2f}  p {float(p[int(g[0].start * 100): int(g[-1].end * 100) + 1].max(initial=0)):.2f}  {j.join(w.text for w in g)}")
+        return
+    for n, c in enumerate(ref):
+        got = {name: j.join(w.text for w in ws if c.start - 1.0 <= w.start <= c.end + 0.5) for name, ws in eng.items()}
+        want = set(norm(c.text, lang))
+        lost = [name for name, t in got.items() if want and len(want & set(norm(t, lang))) < 0.5 * len(want)]
+        if which == "missed" and not lost:
+            continue
+        pm = float(p[int(c.start * 100): int(c.end * 100) + 1].max(initial=0))
+        log(f"#{n} {c.start:7.2f}-{c.end:7.2f} p {pm:.2f} REF: {c.text}" + (f"   (lost by {', '.join(lost)})" if lost else ""))
+        for name, t in got.items():
+            log(f"      {name}: {t}")
+
+
 def agree() -> None:
     """For sounds with no reference: each engine's final words against each other engine's, as a WER (lower = they heard the same)."""
     import glob
@@ -1087,6 +1128,8 @@ if __name__ == "__main__":
         run(sys.argv[2])
     elif cmd == "transcribe":
         transcribe_pieces(sys.argv[2])
+    elif cmd == "show":
+        show(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else "missed")
     elif cmd == "replay":
         replay()
     else:
