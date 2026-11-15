@@ -965,5 +965,8 @@
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections { gap: 8px; margin: 0; padding: 2px var(--edge-r) 4px var(--gutter); scroll-padding-inline: var(--gutter); }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections .tv-choice { min-height: 40px; padding: 0 16px; border-radius: 20px; font-size: 14px; font-weight: 600; white-space: nowrap; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections .tv-choice:focus-visible { transform: none; }
-/* (the banner gives back what the row of sections takes, from the empty room over its words: a row of titles still fits under it) */
+/* (the banner gives back what the row of sections takes, so that a row of titles still fits under it: it leaves out the line over the title, which is the name of the
+   row under it, and keeps the title to one line, the whole of it on the title's page) */
 :root[data-ui="polish"] .tv-browse:not([data-deep="true"]) > .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) { height: calc(var(--hero-h) - 34px); }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) .tv-hero-eyebrow { display: none; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) .tv-hero-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

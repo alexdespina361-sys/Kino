@@ -167,10 +167,18 @@ test.describe("a phone used as the screen", () => {
       { width: 844, height: 390 },
       { width: 667, height: 375 },
     ]) {
-      const phone = await openDevice(browser, { viewport: size, deviceScaleFactor: 2.75, isMobile: true, hasTouch: true }, {}, withFilms);
+      const long = { id: "long", title: "A title far too long for one line of a phone held sideways, as some are", year: 2020, url: "/fixtures/sample.mp4?long=1" };
+      const withLong = withLibrary({ updatedAt: Date.now(), rows: [{ id: "r1", title: "Classics", source: "Test Source", items: [long, ...films] }] }, search);
+      const phone = await openDevice(browser, { viewport: size, deviceScaleFactor: 2.75, isMobile: true, hasTouch: true }, {}, withLong);
       await phone.goto("/tv");
       await expect(phone.getByTestId("tv-hero-title")).toBeVisible();
       const where = `at ${size.width} by ${size.height}`;
+      // nothing of the banner is cut off at its top, a long title included (it is one line there, the whole of it on its page)
+      const cut = await phone.evaluate(() => {
+        const hero = document.querySelector(".tv-hero")!.getBoundingClientRect();
+        return [...document.querySelectorAll<HTMLElement>(".tv-hero-text > *")].filter((part) => part.offsetParent !== null && part.getBoundingClientRect().top < hero.top - 0.5).map((part) => part.className);
+      });
+      expect(cut, where).toEqual([]);
       const lines = await phone.locator(".tv-rail .tv-rail-item").evaluateAll((items) => items.map((item) => ({ id: item.getAttribute("data-testid"), ...item.getBoundingClientRect().toJSON() })));
       expect(lines.map((line) => line.id), where).toEqual(["rail-home", "rail-search", "rail-categories", "rail-list"]);
       for (const line of lines) {
