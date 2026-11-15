@@ -29,12 +29,8 @@ async function signUp(page: Page, account: Account) {
   await expect(page.getByTestId("account-card")).toBeVisible();
 }
 
-/** The account page is open: friends on, in the settings, and back. */
+/** The account page is open: it has Friends (they are on for everybody since 15 Nov 2026: there is no switch to turn on). */
 async function turnOnFriends(page: Page) {
-  await page.getByTestId("menu-settings").click();
-  await page.getByTestId("friends-switch").click();
-  await expect(page.getByTestId("friends-switch")).toHaveAttribute("aria-checked", "true");
-  await page.keyboard.press("Escape"); // (back to the account page)
   await expect(page.getByTestId("menu-friends")).toBeVisible();
 }
 
@@ -165,19 +161,15 @@ const filmCards = () => {
 };
 
 test.describe("friends are optional", () => {
-  test("they are off until the one switch in the settings is turned on; then there is one switch, for sharing what is watched, and the choice reaches the server", async ({ browser }) => {
+  test("they are on from the start, with one switch, for sharing what is watched, and the choice reaches the server; a profile that had turned friends off shares nothing until it says so", async ({ browser }) => {
     const account = fresh("Ann");
     const page = await newPhone(browser);
     await page.goto("/");
     await signUp(page, account);
-    await expect(page.getByTestId("menu-friends")).toHaveCount(0); // nothing of it on the account page...
+    await expect(page.getByTestId("menu-friends")).toBeVisible(); // (on for everybody since 15 Nov 2026: the account page has them at once)
     await page.getByTestId("menu-settings").click();
-    const master = page.getByTestId("friends-switch");
-    await expect(master).toHaveAttribute("aria-checked", "false");
-    await expect(page.getByTestId("friends-give")).toHaveCount(0); // ...and nothing to choose while it is off
-    await expect(page.getByTestId("friends-open")).toHaveCount(0);
-
-    await master.click();
+    await expect(page.getByTestId("friends-switch")).toHaveCount(0); // (no switch for friends themselves, nor for ratings)
+    await expect(page.getByTestId("ratings-switch")).toHaveCount(0);
     const give = page.getByTestId("friends-give");
     await expect(give).toHaveAttribute("aria-checked", "false"); // (what is watched is told to nobody until that is turned on)
     await expect(give).toContainText(en["friends.switchGive"]);
@@ -185,17 +177,23 @@ test.describe("friends are optional", () => {
     // (what a friend may do is on for everybody: no switch for it, and the line that says what a chat is kept as is there all the same)
     for (const gone of ["friends-lists", "friends-ratings", "friends-get", "friends-inbox-switch", "friends-presence", "friends-messages", "news-popups-switch"]) await expect(page.getByTestId(gone), gone).toHaveCount(0);
     await expect(page.getByTestId("friends-messages-hint")).toContainText("without encryption");
+    await expect(page.getByTestId("friends-open")).toBeVisible();
+    await expect(page.getByTestId("kept-friends")).toHaveCount(0); // (friends are on: the page of friends is the place for them)
     await give.click();
     await expect(give).toHaveAttribute("aria-checked", "true");
 
     // the server keeps it (it decides what a friend is shown from it)
-    await expect.poll(() => kept(page)).toMatchObject({ friends: true, friendsGive: true });
+    await expect.poll(() => kept(page)).toMatchObject({ friendsGive: true });
 
-    await page.getByTestId("friends-switch").click(); // off again: the rest goes away
-    await expect(page.getByTestId("friends-give")).toHaveCount(0);
-    await expect(page.getByTestId("kept-friends")).toHaveCount(0); // (no friends were made, so there is none to keep)
-    await page.keyboard.press("Escape");
-    await expect(page.getByTestId("menu-friends")).toHaveCount(0);
+    // A profile that had turned friends off before the switch went (`friends: false`, sharing on): it shares nothing, and turning sharing on says friends are on as well.
+    await chose(page, { friends: false });
+    await page.getByTestId("account-button").click();
+    await expect(page.getByTestId("menu-friends")).toBeVisible();
+    await page.getByTestId("menu-settings").click();
+    await expect(give).toHaveAttribute("aria-checked", "false");
+    await give.click();
+    await expect(give).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => kept(page)).toMatchObject({ friends: true, friendsGive: true });
   });
 
   test("a profile that had turned some of the others off keeps the switches for those, and only those; one turned back on stays until the page is left, and the lists it shares come back with it", async ({ browser }) => {
@@ -219,7 +217,7 @@ test.describe("friends are optional", () => {
     await expect(page.getByTestId("friends-presence")).toHaveAttribute("aria-checked", "false");
   });
 
-  test("turned off again, the friends are kept: the settings list them, and a friendship can be ended from there without turning anything back on", async ({ browser }) => {
+  test("for a profile friends are turned off for, the friends are kept: the settings list them, and a friendship can be ended from there", async ({ browser }) => {
     test.setTimeout(90_000);
     const ann = await phoneWithFriends(browser, "Ann");
     const bob = await phoneWithFriends(browser, "Bob");
@@ -227,20 +225,24 @@ test.describe("friends are optional", () => {
 
     await ann.page.getByTestId("menu-settings").click();
     await expect(ann.page.getByTestId("kept-friends")).toHaveCount(0); // (while they are on, the page of friends is the place for them)
-    await ann.page.getByTestId("friends-switch").click();
-    await expect(ann.page.getByTestId("friends-lists")).toHaveCount(0);
+    await ann.page.keyboard.press("Escape");
+    // (No switch turns them off any more: `friendsOff` is kept for the child profile to come, and is set here the way a screen sends it.)
+    await chose(ann.page, { friendsOff: true });
+    await ann.page.getByTestId("account-button").click();
+    await expect(ann.page.getByTestId("menu-friends")).toHaveCount(0);
+    await ann.page.getByTestId("menu-settings").click();
+    await expect(ann.page.getByTestId("friends-give")).toHaveCount(0);
     const kept = ann.page.getByTestId("kept-friend");
     await expect(kept).toHaveCount(1);
     await expect(kept).toContainText(bob.name);
 
-    // it takes a second press, and then Bob is no longer a friend; friends stay off
+    // it takes a second press, and then Bob is no longer a friend
     const remove = ann.page.getByTestId("kept-friend-remove");
     await remove.click();
     await expect(remove).toHaveAttribute("data-asking", "true");
     await remove.click();
     await expect(ann.page.getByTestId("account-toast")).toContainText(`${bob.name} is no longer your friend`);
     await expect(ann.page.getByTestId("kept-friends")).toHaveCount(0);
-    await expect(ann.page.getByTestId("friends-switch")).toHaveAttribute("aria-checked", "false");
 
     await openFriends(bob.page);
     await look(bob.page);
@@ -252,18 +254,19 @@ test.describe("friends are optional", () => {
     const ann = await phoneWithFriends(browser, "Ann");
     const bob = await phoneWithFriends(browser, "Bob");
     await befriend(ann.page, bob.page);
+    await chose(ann.page, { friendsOff: true }); // (friends turned off for the profile, the way the child profile to come will)
 
     let asked = 0;
     await ann.page.route("**/friends/kept", (route) => (++asked === 1 ? route.abort("connectionfailed") : route.continue()));
+    await ann.page.getByTestId("account-button").click();
     await ann.page.getByTestId("menu-settings").click();
-    await ann.page.getByTestId("friends-switch").click();
     const kept = ann.page.getByTestId("kept-friend");
     await expect(kept).toHaveCount(1, { timeout: 30_000 });
     await expect(kept).toContainText(bob.name);
     expect(asked).toBeGreaterThan(1);
   });
 
-  test("when ratings are turned off, friends are shown none until they are back on", async ({ browser }) => {
+  test("a profile that had turned ratings off shows friends none of them until it shares them again, with the switch that is there for it", async ({ browser }) => {
     test.setTimeout(90_000);
     const ann = await phoneWithFriends(browser, "Ann");
     const bob = await phoneWithFriends(browser, "Bob");
@@ -274,15 +277,21 @@ test.describe("friends are optional", () => {
     await bob.page.getByTestId("friend-tab-ratings").click();
     await expect(bob.page.getByTestId("friend-rating")).toContainText("Alpha Film");
 
-    await ann.page.getByTestId("menu-settings").click();
-    await expect(ann.page.getByTestId("friends-ratings")).toHaveCount(0); // (on for everybody: no switch for it)
-    await ann.page.getByTestId("ratings-switch").click();
+    await chose(ann.page, { ratings: false }); // (turned off before the switch went: it is kept as it was)
     await expect(async () => {
       await look(bob.page);
       await expect(bob.page.getByTestId("friend-not-sharing")).toContainText(`${ann.name} is not sharing their ratings`, { timeout: 1500 });
     }).toPass();
 
-    await ann.page.getByTestId("ratings-switch").click();
+    // Ann still has her own ratings; the settings have the one switch for showing them to friends, off, and turned on it says ratings are on again too.
+    await ann.page.getByTestId("account-button").click();
+    await expect(ann.page.getByTestId("menu-ratings")).toBeVisible();
+    await ann.page.getByTestId("menu-settings").click();
+    await expect(ann.page.getByTestId("ratings-switch")).toHaveCount(0);
+    const share = ann.page.getByTestId("friends-ratings");
+    await expect(share).toHaveAttribute("aria-checked", "false");
+    await share.click();
+    await expect.poll(() => kept(ann.page)).toMatchObject({ friendsRatings: true, ratings: true });
     await expect(async () => {
       await look(bob.page);
       await expect(bob.page.getByTestId("friend-rating")).toContainText("Alpha Film", { timeout: 1500 });
@@ -506,8 +515,7 @@ test.describe("making friends", () => {
     await dee.getByTestId("auth-submit").click();
     await expect(dee.getByTestId("account-card")).toBeVisible();
     await dee.getByTestId("page-back").click(); // the account page closes, and the question is back
-    await expect(dee.getByTestId("friend-link-turn-on")).toBeVisible(); // friends are off for the new profile
-    await dee.getByTestId("friend-link-turn-on").click();
+    // (friends are on for everybody: who it is from shows at once)
     await expect(dee.getByTestId("friend-code-name")).toHaveText(ann.name);
     await dee.getByTestId("friend-code-add").click();
     await expect(dee.getByTestId("friend-link-sheet")).toHaveCount(0);
@@ -593,7 +601,7 @@ test.describe("what a friend can see", () => {
     await expect(bob.page.getByTestId("friend-list-card-item")).toContainText("Alpha Film"); // (the lists are still shared)
 
     // and with friends turned off altogether she shows nothing, and says so in the list
-    await ann.page.getByTestId("friends-switch").click();
+    await chooses(ann.page, { friendsOff: true }); // (friends turned off for her, the way the child profile to come will: no switch does it any more)
     await bob.page.keyboard.press("Escape");
     await look(bob.page);
     await expect(bob.page.getByTestId("friend-row")).toContainText("Friends turned off");

@@ -43,13 +43,13 @@ describe("how a watch party shows the profile of a screen", () => {
     if (!created.ok) throw new Error("could not create");
     const profile = store.profilesOf(created.value.id)[0]!;
     const proofs = new ScreenProofs(() => clock.now);
-    const choose = (friends: boolean) => store.sync(profile.id, { since: 0, settings: [{ key: "friends", at: (clock.now += 1000), value: friends }] });
+    const choose = (friends: boolean) => store.sync(profile.id, { since: 0, settings: [{ key: "friendsOff", at: (clock.now += 1000), value: !friends }] }); // (only `friendsOff` turns friends off now)
     return { store, account: created.value, profile, proofs, shown: screenProfiles(store, proofs), choose };
   }
 
-  it("is the name, the picture and the tag of a profile that has friends turned on, and nobody when it has not, or is gone", async () => {
+  it("is the name, the picture and the tag of a profile that has friends on, and nobody when they are turned off for it, or it is gone", async () => {
     const { store, account, profile, shown, choose } = await sam();
-    expect(shown.card(profile.id)).toBeUndefined(); // (friends are off until they are turned on)
+    expect(shown.card(profile.id)).toEqual({ name: "Sam", avatar: "fox", tag: 1 }); // (friends are on for everybody)
     choose(true);
     expect(shown.card(profile.id)).toEqual({ name: "Sam", avatar: "fox", tag: 1 });
     choose(false);

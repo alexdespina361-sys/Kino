@@ -1,5 +1,5 @@
 import { Fragment, startTransition, useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type MouseEvent, type ReactNode } from "react";
-import { canAskTogether, DEFAULT_LIST, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, savedKeys, titleLink, type Library, type PlayHint, type Person } from "../../shared";
+import { canAskTogether, DEFAULT_LIST, friendChoices, LibraryItemsSchema, LibrarySchema, listKey, MAX_LISTS, ratingsShown, savedKeys, titleLink, type Library, type PlayHint, type Person } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { hintOf, listEntryOf, listName } from "../account/cards";
@@ -304,7 +304,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const bell = useBell();
   const showCat = useCatWanted(); // (the cat's button in the corner: only on a screen that has a cat)
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
-  const ratingsOn = settings.ratings ?? true;
+  const ratingsOn = ratingsShown(settings);
   /** Whether this profile is told what friends watch (off until it is turned on: the friends' pages say so while it is). */
   const iGet = friendChoices(settings).friendsGet;
   /** A phone held upright (compact.ts): a bar of four places at the bottom, the sections as buttons over the titles, posters, and no banner. */

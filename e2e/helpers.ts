@@ -274,6 +274,11 @@ export async function openProfilePage(tv: Page, how: "click" | "tap" = "click"):
   await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "profile");
 }
 
+/** The profile's page of a TV, opened unless it is open already (signing in leaves a screen on it). */
+export async function showProfilePage(tv: Page): Promise<void> {
+  if (!(await onProfilePage(tv))) await openProfilePage(tv);
+}
+
 /** A place on the profile's page, clicked as a mouse does it (the profile's page is opened first unless it is open). */
 export async function openProfilePlace(tv: Page, place: ProfilePlace): Promise<void> {
   if (!(await onProfilePage(tv))) await openProfilePage(tv);

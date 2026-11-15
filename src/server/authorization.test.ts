@@ -881,7 +881,7 @@ describe("what a friendship gives", () => {
     await choose(["friendsRatings", false]);
     expect((await read(a.friend, "ratings")).data).toEqual({ error: "not_shared" });
     // with friends off altogether nothing of hers is shown, no word reaches her and nothing is sent
-    await choose(["friendsLists", true], ["friendsRatings", true], ["friends", false]);
+    await choose(["friendsLists", true], ["friendsRatings", true], ["friendsOff", true]);
     expect((await read(a.friend, "lists")).data).toEqual({ error: "not_shared" });
     const word = await a.friend.client.post(`/api/profiles/${a.friend.profile.id}/friends/${a.ids.profile}/chat`, { text: "hi" });
     expect([word.statusCode, word.data.error]).toEqual([403, "chat_off"]);

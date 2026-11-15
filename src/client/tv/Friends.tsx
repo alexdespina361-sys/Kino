@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { friendChoices, friendLink, parseTag, reachable, sunsetSwitches, tagLabel, type FriendSetting, type Message, type OpenInvite, type Person, type PlanItem, type SunsetSwitch } from "../../shared";
+import { friendChoices, friendLink, friendSwitchWrites, parseTag, reachable, sunsetSwitches, tagLabel, type FriendSetting, type Message, type OpenInvite, type Person, type PlanItem, type SunsetSwitch } from "../../shared";
 import { useAccount } from "../account/AccountProvider";
 import { Avatar } from "../account/Avatar";
 import { describeError } from "../account/errors";
@@ -797,7 +797,7 @@ export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
       role="switch"
       aria-checked={choices[key]}
       onClick={() => {
-        set(key, !choices[key]);
+        for (const [name, value] of friendSwitchWrites(settings, key, !choices[key])) set(name, value);
         account.syncNow();
       }}
       data-nav
@@ -813,7 +813,7 @@ export function FriendSettingsTv({ onClose }: { onClose: () => void }) {
       <p className="tv-hint tv-friend-help">{t("friends.settingsHelp")}</p>
       <div className="tv-friend-switches">
         {row("friendsGive", "friends.switchGive", "tv-friends-give")}
-        {SUNSET_ROWS.filter(({ key }) => sunset.includes(key) && (key !== "friendsRatings" || settings.ratings !== false)).map(({ key, label, testId }) => row(key, label, testId))}
+        {SUNSET_ROWS.filter(({ key }) => sunset.includes(key)).map(({ key, label, testId }) => row(key, label, testId))}
         {/* (What this screen does with friends' news, not what a friend may do: it stays on this side and is not sent to the server.) */}
         {sunset.includes("newsPopups") && (
           <button

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   describeChange,
   episodeLabel,
+  friendChoices,
   formatDelay,
   groupBySeason,
   IDLE_STATE,
@@ -1099,7 +1100,7 @@ export function Tv() {
   // can ask it to be friends. The party cannot see the cookie, so the server gives this screen a proof, once, and the party asks the server
   // about it. Said again with every connection and every change of profile; with nobody signed in, or friends off, the message is empty.
   const profileId = account.me && account.profile ? account.profile.id : undefined;
-  const friendsOn = settings.friends === true;
+  const friendsOn = friendChoices(settings).friends;
   useEffect(() => {
     if (connection !== "open") return;
     if (!profileId || !friendsOn) return void socketRef.current?.send({ type: "TV_PROFILE" });

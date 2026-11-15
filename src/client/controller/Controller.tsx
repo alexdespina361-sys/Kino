@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   IDLE_STATE,
   MAX_LINK_LENGTH,
+  ratingsShown,
   describeChange,
   previousEpisode,
   seriesKeyOf,
@@ -107,7 +108,7 @@ export function Controller() {
   const [linkBox] = useLinkBox();
   // What the profile in use has watched and saved: "Continue watching", its lists, and the marks on the episode list.
   const { progress, watched, lists, list, ratings, settings } = useProfileData();
-  const ratingsOn = settings.ratings ?? true;
+  const ratingsOn = ratingsShown(settings);
   /** The page that lists everything this profile rated. */
   const [ratingsOpen, setRatingsOpen] = useState(false);
   /** The row of the library that "See all" opened on a page of its own (by its id). */

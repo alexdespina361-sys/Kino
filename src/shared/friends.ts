@@ -75,19 +75,43 @@ export type FriendSetting = keyof typeof FRIEND_DEFAULTS;
 export const FRIEND_SETTINGS = Object.keys(FRIEND_DEFAULTS) as FriendSetting[];
 export type FriendChoices = { [K in FriendSetting]: boolean };
 
-/** What a profile has chosen about friends, with the default for each thing it has not. */
+/**
+ * What a profile has chosen about friends, with the default for each thing it has not.
+ *
+ * Friends are on for everybody (the owner, 15 Nov 2026: "remove the ratings and friends and turn it on for all accounts"): the old master switch `friends` is not
+ * read to say whether they are, and only `friendsOff` turns them off (nothing sets it yet: it is kept for the child profile). What a profile chose before is kept
+ * and is not undone behind its back:
+ *  - one that had turned friends off (`friends: false`) does not share what it watches, whatever `friendsGive` says, until it turns that on again;
+ *  - one that had turned ratings off (`ratings: false`) does not show its ratings to friends until it turns that on again.
+ * (`friendSwitchWrites` writes what turning one of them on again takes. Nothing here writes or deletes a setting: a profile that never touches a switch keeps what it had.)
+ */
 export function friendChoices(settings: Settings): FriendChoices {
   const choice = (key: FriendSetting): boolean => settings[key] ?? FRIEND_DEFAULTS[key];
+  const gives = settings.friends === false ? false : choice("friendsGive");
   return {
-    friends: choice("friends"),
+    friends: settings.friendsOff !== true,
     friendsLists: choice("friendsLists"),
-    friendsRatings: choice("friendsRatings"),
-    friendsGive: choice("friendsGive"),
-    friendsGet: choice("friendsGive"), // (told what friends watch while one tells what one watches)
+    friendsRatings: settings.ratings === false ? false : choice("friendsRatings"),
+    friendsGive: gives,
+    friendsGet: gives, // (told what friends watch while one tells what one watches)
     friendsInbox: choice("friendsInbox"),
     friendsPresence: choice("friendsPresence"),
     friendsMessages: choice("friendsMessages"),
   };
+}
+
+/** Ratings show for everybody (they had a switch until 15 Nov 2026; a `false` kept from it is not read for this). The one place that says so. */
+export const ratingsShown = (_settings: Settings): boolean => true;
+
+/**
+ * What a switch of what friends may do writes when it is turned on or off: itself, and, turned on, the old choice that kept it off as well (see `friendChoices`):
+ * sharing what is watched turned on again also says friends are on, and showing ratings to friends also says ratings are on.
+ */
+export function friendSwitchWrites(settings: Settings, key: FriendSetting, on: boolean): Array<[FriendSetting | "ratings", boolean]> {
+  const writes: Array<[FriendSetting | "ratings", boolean]> = [[key, on]];
+  if (on && key === "friendsGive" && settings.friends === false) writes.push(["friends", true]);
+  if (on && key === "friendsRatings" && settings.ratings === false) writes.push(["ratings", true]);
+  return writes;
 }
 
 /** The switches that are on for everybody now, with no switch to turn them off (the last is this screen's own, not what a friend may do). */
@@ -98,7 +122,7 @@ const SUNSET_SWITCHES: readonly SunsetSwitch[] = ["friendsLists", "friendsRating
  * Which of them a profile still has a switch for: the ones it turned off before they went, so that what it chose is neither undone nor out of its
  * reach. (A screen asks once, when it opens: a switch turned back on stays under the remote until the screen is left, and is gone the next time.)
  */
-export const sunsetSwitches = (settings: Settings): SunsetSwitch[] => SUNSET_SWITCHES.filter((key) => settings[key] === false);
+export const sunsetSwitches = (settings: Settings): SunsetSwitch[] => SUNSET_SWITCHES.filter((key) => settings[key] === false || (key === "friendsRatings" && settings.ratings === false));
 
 /** Whether a profile takes messages from its friends: friends are on, and it has not turned that switch off. */
 export function takesMessages(settings: Settings): boolean {
@@ -112,13 +136,10 @@ export function sharesLists(settings: Settings): boolean {
   return choices.friends && choices.friendsLists;
 }
 
-/**
- * Whether a profile lets its ratings be looked at: friends are on, it shares them, and it has not turned ratings off. (Turned off,
- * ratings show to nobody, themselves included, though what was rated stays kept: so nobody else is shown it either.)
- */
+/** Whether a profile lets its ratings be looked at: friends are on and it shares them (one that had turned ratings off does not, until it says so: see `friendChoices`). */
 export function sharesRatings(settings: Settings): boolean {
   const choices = friendChoices(settings);
-  return choices.friends && choices.friendsRatings && settings.ratings !== false;
+  return choices.friends && choices.friendsRatings;
 }
 
 /* ------------------------------ tags ------------------------------ */
