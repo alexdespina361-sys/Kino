@@ -21,11 +21,11 @@ case "$1" in
     exit ;;
   venv-nemo)  # (NeMo for Parakeet, in its own environment that still sees the main one's torch)
     # (Colab's Python has no ensurepip, so `python -m venv` fails: virtualenv brings its own pip.)
-    pip install -q virtualenv && python -m virtualenv -q --system-site-packages /content/venv-nemo && /content/venv-nemo/bin/pip install -q "nemo_toolkit[asr]" 2>&1 | tail -2
+    rm -rf /content/venv-nemo; pip install -q virtualenv && python -m virtualenv -q --system-site-packages /content/venv-nemo && /content/venv-nemo/bin/pip install -q "nemo_toolkit[asr]" 2>&1 | tail -2
     /content/venv-nemo/bin/python -c "import nemo.collections.asr; print('ok nemo')"
     exit ;;
   venv-cohere)  # (transformers >= 5.4 for Cohere Transcribe; the Hugging Face token comes from the HF_TOKEN environment variable)
-    pip install -q virtualenv && python -m virtualenv -q --system-site-packages /content/venv-cohere && /content/venv-cohere/bin/pip install -q "transformers>=5.4.0" sentencepiece protobuf librosa 2>&1 | tail -2
+    rm -rf /content/venv-cohere; pip install -q virtualenv && python -m virtualenv -q --system-site-packages /content/venv-cohere && /content/venv-cohere/bin/pip install -q "transformers>=5.4.0" sentencepiece protobuf librosa 2>&1 | tail -2
     /content/venv-cohere/bin/python -c "from transformers import CohereAsrForConditionalGeneration; print('ok cohere')"
     exit ;;
   clean-losers)  # (models and sounds that lost, to free the disk: Musci, the two isolators and their sounds, the dry run)
