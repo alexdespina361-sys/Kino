@@ -1049,6 +1049,7 @@ function templates(): Template[] {
     message("TV_PLAY_URL", () => ({ url: TITLE, startAt: 5, hint: HINT() })),
     message("TV_UNPAIR"),
     message("TV_CANCEL"),
+    message("TV_STARTED", () => ({ lookupMs: 812, loadMs: 1430 })),
     message("TV_NAME", () => ({ name: "Kitchen" })),
     message("TV_PROFILE", (ids) => ({ proof: ids.proof })),
     message("TV_PARTY_OPEN"),
