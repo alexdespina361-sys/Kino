@@ -3421,3 +3421,106 @@ describe("what playing teaches the library", () => {
     expect(await listed()).toEqual(["alive"]);
   });
 });
+
+describe("connections that would hold the hub's room", () => {
+  /** Waits until `client` was closed, and says how. */
+  async function closedCode(client: Client, timeoutMs = 2_000): Promise<number | undefined> {
+    const deadline = Date.now() + timeoutMs;
+    while (client.closeCode === undefined && Date.now() < deadline) await new Promise((wake) => setTimeout(wake, 10));
+    return client.closeCode;
+  }
+
+  it("closes a connection that has not said hello in time, however often it pings, and leaves one that has", async () => {
+    const app = await buildApp({ hub: { helloWithinMs: 100, sweepEveryMs: 20 } });
+    await app.ready();
+    try {
+      const silent = await Client.open(app, "203.0.113.7");
+      const tv = await Client.open(app, "203.0.113.7");
+      tv.send({ type: "TV_HELLO" });
+      await tv.next("TV_WELCOME");
+      const pinging = setInterval(() => {
+        silent.send({ type: "PING" });
+        tv.send({ type: "PING" });
+      }, 20);
+      try {
+        expect(await closedCode(silent)).toBe(1008);
+        await new Promise((wake) => setTimeout(wake, 200));
+        expect(tv.closeCode).toBeUndefined();
+      } finally {
+        clearInterval(pinging);
+        tv.close();
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("takes only so many connections from one address at once, and the others' all the same", async () => {
+    const app = await buildApp({ hub: { maxSocketsPerAddress: 2 } });
+    await app.ready();
+    try {
+      const first = await Client.open(app, "203.0.113.7");
+      const second = await Client.open(app, "203.0.113.7");
+      const third = await Client.open(app, "203.0.113.7");
+      expect(await closedCode(third)).toBe(1013);
+      const neighbour = await Client.open(app, "198.51.100.9");
+      neighbour.send({ type: "TV_HELLO" });
+      await neighbour.next("TV_WELCOME");
+      first.close();
+      expect(await closedCode(first)).toBeDefined();
+      await new Promise((wake) => setTimeout(wake, 50));
+      const again = await Client.open(app, "203.0.113.7"); // (one went: there is room again)
+      again.send({ type: "TV_HELLO" });
+      await again.next("TV_WELCOME");
+      [second, neighbour, again].forEach((client) => client.close());
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("takes only so many connections in all", async () => {
+    const app = await buildApp({ hub: { maxSockets: 2 } });
+    await app.ready();
+    try {
+      const open = [await Client.open(app, "203.0.113.7"), await Client.open(app, "198.51.100.9")];
+      const one = await Client.open(app, "192.0.2.1");
+      expect(await closedCode(one)).toBe(1013);
+      open.forEach((client) => client.close());
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("pairs only so many phones from one address in an hour (each is kept for months), and the others' all the same", async () => {
+    const app = await buildApp({ hub: { maxNewPairs: 1 } });
+    await app.ready();
+    const tvWithCode = async () => {
+      const tv = await Client.open(app);
+      tv.send({ type: "TV_HELLO" });
+      return { tv, code: (await tv.next("TV_WELCOME")).pairing!.code };
+    };
+    const phoneAt = async (address: string) => {
+      const phone = await Client.open(app, address);
+      phone.send({ type: "CTL_HELLO" });
+      await phone.next("CTL_WELCOME");
+      return phone;
+    };
+    try {
+      const one = await tvWithCode();
+      const phone = await phoneAt("203.0.113.7");
+      phone.send({ type: "PAIR", code: one.code });
+      expect((await phone.nextWhere("CTL_WELCOME", (m) => m.tv !== null)).tv).toMatchObject({ online: true });
+
+      const two = await tvWithCode();
+      const another = await phoneAt("203.0.113.7");
+      another.send({ type: "PAIR", code: two.code });
+      expect((await another.next("ERROR")).code).toBe("RATE_LIMITED");
+      const neighbour = await phoneAt("198.51.100.9");
+      neighbour.send({ type: "PAIR", code: two.code }); // (the code was not used up by the one turned away)
+      expect((await neighbour.nextWhere("CTL_WELCOME", (m) => m.tv !== null)).tv).toMatchObject({ online: true });
+      [one.tv, two.tv, phone, another, neighbour].forEach((client) => client.close());
+    } finally {
+      await app.close();
+    }
+  });
+});
