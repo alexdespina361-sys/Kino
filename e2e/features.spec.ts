@@ -2604,7 +2604,7 @@ test.describe("the library", () => {
 
   test("Escape closes the sheet on top, and the page under it the next time", async ({ browser }) => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
-    // two lists, so that the list button on a title's page asks which
+    // two lists, so that a title's page has Other lists
     await hold(phone, phone.getByTestId("library-tile").first());
     await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
@@ -2616,7 +2616,7 @@ test.describe("the library", () => {
 
     // a title's page, and a list picker on top of it
     await phone.getByTestId("library-tile").first().click();
-    await phone.getByTestId("title-list").click();
+    await phone.getByTestId("title-lists").click();
     await expect(phone.getByTestId("list-picker")).toBeVisible();
     await phone.keyboard.press("Escape");
     await expect(phone.getByTestId("list-picker")).toHaveCount(0);
@@ -2625,7 +2625,7 @@ test.describe("the library", () => {
     await expect(phone.getByTestId("title-sheet")).toHaveCount(0);
   });
 
-  test("a hold on a title saves it in Favourites, and a tick on its poster says so; once there is a second list a hold asks which, and a cross takes a title off one list", async ({ browser }) => {
+  test("a hold on a title saves it in Favourites, and a tick on its poster says so; with a second list a hold still does, the title's Other lists asks which, and a cross takes a title off one list", async ({ browser }) => {
     const { phone } = await phoneWithLibrary(browser, (route) => route.fulfill({ json: library }));
     await place(phone, "list");
     await expect(phone.getByTestId("list-row")).toHaveCount(0); // nothing saved: no row, and no button for lists yet
@@ -2652,16 +2652,25 @@ test.describe("the library", () => {
     await expect(phone.getByTestId("lists-sheet")).toHaveCount(0);
     await place(phone, "home");
 
-    // With two lists a hold asks: a tap on a list puts the title in it, and its poster has the tick.
+    // With two lists a hold still puts the title in Favourites at once (the line says so); another list is the title page's Other lists.
     await expect(ticked(phone, 1)).toHaveCount(0);
     await hold(phone, phone.getByTestId("library-tile").nth(1));
+    await expect(phone.getByTestId("toast")).toHaveText("Added to Favourites");
+    await expect(phone.getByTestId("list-picker")).toHaveCount(0);
+    await expect(ticked(phone, 1)).toBeVisible();
+    await phone.getByTestId("library-tile").nth(1).click();
+    await phone.getByTestId("title-lists").click();
     const picker = phone.getByTestId("list-picker");
     await expect(picker).toContainText("The Other One");
+    await expect(picker.getByRole("button", { name: "Favourites" })).toHaveAttribute("aria-pressed", "true");
     await expect(picker.getByRole("button", { name: "Weekend" })).toHaveAttribute("aria-pressed", "false");
     await picker.getByRole("button", { name: "Weekend" }).click();
     await expect(picker.getByRole("button", { name: "Weekend" })).toHaveAttribute("aria-pressed", "true");
-    await picker.getByRole("button", { name: "Favourites" }).click();
-    await expect(picker.getByRole("button", { name: "Favourites" })).toHaveAttribute("aria-pressed", "true");
+    await phone.getByTestId("sheet-close").click();
+    await phone.getByTestId("title-back").click();
+    // A title that is in another list too is more than one tap can say: a hold asks which.
+    await hold(phone, phone.getByTestId("library-tile").nth(1));
+    await expect(picker).toBeVisible();
     await phone.getByTestId("sheet-close").click();
     await expect(ticked(phone, 1)).toBeVisible();
     await place(phone, "list");
@@ -2690,8 +2699,9 @@ test.describe("the library", () => {
     await phone.getByTestId("sheet-close").click();
     await place(phone, "home");
 
-    // "New list" in the picker makes the list and puts the title in it.
-    await hold(phone, titleAt(2));
+    // "New list" in the picker (the title page's Other lists) makes the list and puts the title in it.
+    await titleAt(2).click();
+    await phone.getByTestId("title-lists").click();
     const picker = phone.getByTestId("list-picker");
     await picker.getByTestId("pick-new").click();
     await expect(picker.getByTestId("list-editor")).toBeVisible();
@@ -2703,6 +2713,7 @@ test.describe("the library", () => {
     await phone.getByTestId("list-save").click();
     await expect(picker.getByRole("button", { name: "Classics" })).toHaveAttribute("aria-pressed", "true");
     await phone.getByTestId("sheet-close").click();
+    await phone.getByTestId("title-back").click();
     await place(phone, "list");
     await expect(phone.getByRole("region", { name: "Classics" })).toContainText("Third");
 
@@ -2922,13 +2933,15 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     const { phone } = await connect(browser, baseURL!, { seed: guestStorage({ listNames }) });
     const words = "You have reached the limit of 12 lists. Delete one to make a new one.";
 
-    // A hold on a title asks which list; there is no way to make a thirteenth there.
-    await hold(phone, phone.getByTestId("library-tile").first());
+    // A title's Other lists asks which list; there is no way to make a thirteenth there.
+    await phone.getByTestId("library-tile").first().click();
+    await phone.getByTestId("title-lists").click();
     await expect(phone.getByTestId("list-picker")).toBeVisible();
     await expect(phone.getByTestId("pick-new")).toHaveCount(0);
     await expect(phone.getByTestId("lists-full")).toHaveText(words);
     await phone.getByTestId("pick-favourites").click(); // (a saved title is what gives the row its button for the lists)
     await phone.getByTestId("sheet-close").click();
+    await phone.getByTestId("title-back").click();
 
     await place(phone, "list");
     await phone.getByTestId("lists-manage").click();
@@ -2980,7 +2993,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await expect(phone.getByTestId("title-sheet")).toBeVisible();
   });
 
-  test("with several lists a hold asks which", async ({ browser, baseURL }) => {
+  test("with several lists a hold puts a title in the first list or takes it out at once, and asks which only for a title that is in another list", async ({ browser, baseURL }) => {
     const { phone } = await connect(browser, baseURL!);
     await hold(phone, phone.getByTestId("library-tile").first());
     await place(phone, "list");
@@ -2991,6 +3004,19 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     await phone.getByTestId("sheet-close").click();
     await place(phone, "home");
 
+    await hold(phone, tile(phone, "Film number 2"));
+    await expect(phone.getByTestId("toast")).toHaveText("Added to Favourites");
+    await expect(phone.getByTestId("list-picker")).toHaveCount(0);
+    await hold(phone, tile(phone, "Film number 2"));
+    await expect(phone.getByTestId("toast")).toHaveText("Removed from Favourites");
+
+    // Into Weekend from its page; after that a hold has two lists to choose from, and asks.
+    await tile(phone, "Film number 2").click();
+    await phone.getByTestId("title-lists").click();
+    await phone.getByTestId("list-picker").getByRole("button", { name: "Weekend" }).click();
+    await phone.getByTestId("sheet-close").click();
+    await expect(phone.getByTestId("title-list")).toHaveAttribute("aria-haspopup", "dialog"); // (its own button asks too)
+    await phone.getByTestId("title-back").click();
     await hold(phone, tile(phone, "Film number 2"));
     await expect(phone.getByTestId("list-picker")).toContainText("Film number 2");
     await expect(phone.getByTestId("title-sheet")).toHaveCount(0);

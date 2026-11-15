@@ -970,3 +970,5 @@
 :root[data-ui="polish"] .tv-browse:not([data-deep="true"]) > .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) { height: calc(var(--hero-h) - 34px); }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) .tv-hero-eyebrow { display: none; }
 :root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) .tv-hero-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ...and a title's page has the width of the screen for its buttons (with two lists and a TV to play on there are five), not the column its words keep to on a TV. */
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-detail .tv-detail-text { max-width: none; }

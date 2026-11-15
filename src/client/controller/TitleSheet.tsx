@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
-import { listKey, savedKeys, type PlayHint } from "../../shared";
+import type { PlayHint } from "../../shared";
 import { hintOf, listEntryOf, listName } from "../account/cards";
 import type { ListEntry } from "../account/profileStore";
 import { scoreOf, useRatingsOn, useScores } from "../account/ratings";
-import { profileStore, useProfileData } from "../account/store";
+import { useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { aboutRows, useAbout } from "../shared/about";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
-import { CheckIcon, PlayIcon, PlusIcon } from "../shared/icons";
+import { CheckIcon, ListIcon, PlayIcon, PlusIcon } from "../shared/icons";
 import { Poster } from "../shared/Poster";
 import { useSeriesPage, type PageEpisode, type SeriesPage } from "../tv/Episodes";
 import { entryOfItem, resumable, type Entry } from "../tv/pages";
@@ -23,7 +23,7 @@ interface TitleSheetProps {
   entry: Entry;
   /** Start something on the TV: a link, where to pick it up, and the picture and year the title is known by. A phone with no TV has none: the page is for the list, the rating and the rest. */
   onPlay?: (url: string, startAt: number | undefined, hint: PlayHint) => void;
-  /** With more than one list: ask which one the title goes in. */
+  /** With more than one list: ask which one the title goes in ("Other lists", or the list button of a title that is in another list). */
   onPick: (entry: ListEntry) => void;
   /** A tap on a title of the rows under the page (the other parts of its collection, titles like it): that title's page opens in place of this one. */
   onOpenTitle: (entry: Entry) => void;
@@ -38,7 +38,7 @@ interface TitleSheetProps {
  */
 export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose }: TitleSheetProps) {
   const t = useT();
-  const { progress, watched, lists, list } = useProfileData();
+  const { progress, watched, lists } = useProfileData();
   const ratings = useRatingsOn();
   const scores = useScores();
   const toggleFor = useListToggle(onPick);
@@ -49,15 +49,15 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
   const hint = hintOf(entry);
   const play = onPlay ? (url: string, startAt?: number) => onPlay(new URL(url, location.href).href, startAt, hint) : undefined;
 
-  const saved = savedKeys(list);
-  const kept = lists.some((info) => saved.has(listKey(entry.url, info.id)));
+  // One tap for the main list (in it, or out of it); with several lists, "Other lists" beside it opens the picker, whatever lists the title is in, so that nothing moves.
+  const toggle = toggleFor(listEntryOf(entry));
   const several = lists.length > 1;
 
   const at = series.isShow ? series.start : undefined;
   const playLabel = at ? t(at.startAt !== undefined ? "series.resume" : "series.play", { season: at.season, episode: at.episode }) : entry.startAt !== undefined ? t("rows.resume") : t("rows.play");
   // The button says which list it is about, short enough to share a line with Play (the icon says whether the title is in it); what a tap does is its name for a screen reader.
-  const listLabel = several ? t(kept ? "rows.inLists" : "library.addToAList") : t(kept ? "rows.removeFromList" : "library.addToList", { list: listName(lists[0]!) });
-  const listText = several ? t("rows.myList") : listName(lists[0]!);
+  const listLabel = toggle.asks ? t("rows.inLists") : t(toggle.inList ? "rows.removeFromList" : "library.addToList", { list: listName(lists[0]!) });
+  const listText = toggle.asks ? t("rows.myList") : listName(lists[0]!);
   const kind = entry.kind === "movie" ? t("library.kindMovie") : entry.kind === "series" ? t("library.kindSeries") : undefined;
   const meta = [entry.year, kind].filter(Boolean).join(" · ");
 
@@ -82,16 +82,14 @@ export function TitleSheet({ entry: given, onPlay, onPick, onOpenTitle, onClose 
               </button>
             )}
             <div className="title-secondary">
-              <button
-                className="btn"
-                data-testid="title-list"
-                aria-pressed={kept}
-                aria-haspopup={several ? "dialog" : undefined}
-                aria-label={listLabel}
-                onClick={() => (several ? onPick(listEntryOf(entry)) : profileStore.setInList(listEntryOf(entry), !kept))}
-              >
-                {kept ? <CheckIcon /> : <PlusIcon />} {listText}
+              <button className="btn" data-testid="title-list" aria-pressed={toggle.inList} aria-haspopup={toggle.asks ? "dialog" : undefined} aria-label={listLabel} onClick={toggle.onClick}>
+                {toggle.inList ? <CheckIcon /> : <PlusIcon />} {listText}
               </button>
+              {several && (
+                <button className="btn" data-testid="title-lists" aria-haspopup="dialog" onClick={() => onPick(listEntryOf(entry))}>
+                  <ListIcon /> {t("rows.otherLists")}
+                </button>
+              )}
               <RecommendButton entry={entry} />
             </div>
           </div>

@@ -526,6 +526,10 @@ describe("overviewActions", () => {
     expect(overviewActions({ id: "a", title: "A", url: "u" })).toEqual(["play", "list", "rate"]);
     expect(overviewActions({ id: "a", title: "A", url: "u", progressKey: "k" })).toEqual(["play", "list", "rate", "remove"]);
   });
+  it("has Other lists after My List when there are several lists, whatever lists the title is in", () => {
+    expect(overviewActions({ id: "a", title: "A", url: "u" }, true, false, false, true)).toEqual(["play", "list", "lists", "rate"]);
+    expect(overviewActions({ id: "a", title: "A", url: "u" }, true, false, true, true)).toEqual(["play", "tv", "list", "lists", "rate"]);
+  });
   it("has no Rate for a profile that turned ratings off", () => {
     expect(overviewActions({ id: "a", title: "A", url: "u" }, false)).toEqual(["play", "list"]);
     expect(overviewActions({ id: "a", title: "A", url: "u", progressKey: "k" }, false)).toEqual(["play", "list", "remove"]);

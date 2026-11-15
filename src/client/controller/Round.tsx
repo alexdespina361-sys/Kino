@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import { listKey, savedKeys } from "../../shared";
 import { listName } from "../account/cards";
+import { listTap } from "../account/listTap";
 import type { ListEntry } from "../account/profileStore";
 import { profileStore, useProfileData } from "../account/store";
 import { useT } from "../i18n";
 import { CheckIcon, CloseIcon } from "../shared/icons";
 
-/** How a title stands with the lists: it is in one (a tick on its poster, and a tap takes it out), or it can go in one; with several lists a tap asks which. */
+/** How a title stands with the lists: it is in one (a tick on its poster), or it can go in the main one at a tap; a title that is in another list too asks which (`listTap`). */
 export interface ListToggle {
   inList: boolean;
   label: string;
@@ -19,23 +20,27 @@ export interface ListToggle {
 /** The page is told (see Controller.tsx) what to say at the bottom of the screen by this event on the window, its text the event's detail. */
 export const LINE_EVENT = "kino:line";
 
-/** How a title stands with the lists: for any title, what its + says and does (`onPick` asks which list when there are several). */
+/**
+ * How a title stands with the lists: for any title, what its + says and does. One tap puts it in the main list or takes it out of it, with one list or
+ * several; a title that is in another list too asks which (`onPick`), since one tap cannot say. The other lists are on the title's page ("Other lists").
+ */
 export function useListToggle(onPick: (entry: ListEntry) => void): (entry: ListEntry) => ListToggle {
   const t = useT();
   const { lists, list } = useProfileData();
   const saved = useMemo(() => savedKeys(list), [list]);
-  const several = lists.length > 1;
   return (entry) => {
     const inList = lists.some((info) => saved.has(listKey(entry.url, info.id)));
-    const onClick = () => (several ? onPick(entry) : profileStore.setInList(entry, !inList));
+    const tap = listTap(lists, saved, entry.url);
+    const main = listName(lists[0]!);
+    const onClick = () => (tap === "pick" ? onPick(entry) : profileStore.setInList(entry, tap === "add"));
     return {
       inList,
-      asks: several,
-      label: several ? t(inList ? "rows.inLists" : "library.addToAList") : t(inList ? "library.inList" : "library.addToList", { list: listName(lists[0]!) }),
+      asks: tap === "pick",
+      label: tap === "pick" ? t("rows.inLists") : t(tap === "remove" ? "library.inList" : "library.addToList", { list: main }),
       onClick,
       onHold: () => {
         onClick();
-        if (!several) window.dispatchEvent(new CustomEvent(LINE_EVENT, { detail: t(inList ? "rows.removedFrom" : "rows.addedTo", { list: listName(lists[0]!) }) }));
+        if (tap !== "pick") window.dispatchEvent(new CustomEvent(LINE_EVENT, { detail: t(tap === "remove" ? "rows.removedFrom" : "rows.addedTo", { list: main }) }));
       },
     };
   };

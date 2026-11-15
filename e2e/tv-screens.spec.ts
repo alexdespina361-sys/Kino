@@ -781,7 +781,7 @@ test.describe("the library on the TV", () => {
     await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing here yet");
   });
 
-  test("with one list a press saves a title in Favourites; with two the buttons ask which list, and Home has a row for each", async ({ browser }) => {
+  test("with one list a press saves a title in Favourites; with two a press still does, Other lists asks which, and Home has a row for each", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await expect(tiles(tv).first()).toBeFocused();
 
@@ -803,11 +803,22 @@ test.describe("the library on the TV", () => {
     await expect(tv.getByTestId("tv-view-empty")).toContainText("Nothing here yet");
     await expect(tv.locator('[data-testid^="list-chip-l"]')).toBeFocused(); // the remote is on the new list's button
 
-    // Now the page of a title asks which list; a press on a list puts the title in it or takes it out, and Done closes the question.
+    // With two lists the list button of a title is still one press for Favourites, in and out (beside Other lists it says the list's name; what a press does
+    // is its spoken name, and the buttons stay one line); Other lists, beside it, asks which list.
     await tv.getByTestId("rail-home").click();
     await tv.locator('[data-testid="tv-browse-tile"][title="Film number 3"]').click();
-    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Add to a list");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("Favourites");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveAccessibleName("Add to Favourites");
+    const rate = (await tv.getByTestId("tv-detail-rate").boundingBox())!;
+    expect(Math.abs(rate.y - (await tv.getByTestId("tv-detail-play").boundingBox())!.y), "the buttons are one line").toBeLessThan(4);
     await tv.getByTestId("tv-detail-list").click();
+    await expect(tv.getByTestId("tv-list-picker")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-detail-list")).toHaveAccessibleName("Remove from Favourites");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveAttribute("aria-pressed", "true");
+    await tv.getByTestId("tv-detail-list").click();
+    await expect(tv.getByTestId("tv-detail-list")).toHaveAccessibleName("Add to Favourites");
+    await expect(tv.getByTestId("tv-detail-lists")).toHaveText("Other lists");
+    await tv.getByTestId("tv-detail-lists").click();
     await expect(tv.getByTestId("tv-list-picker")).toBeVisible();
     await expect(tv.getByTestId("pick-favourites")).toBeFocused();
     await expect(tv.getByTestId("pick-favourites")).toHaveAttribute("aria-pressed", "false");
@@ -820,8 +831,13 @@ test.describe("the library on the TV", () => {
     await expect(tv.getByTestId("pick-done")).toBeFocused();
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-list-picker")).toHaveCount(0);
-    await expect(tv.getByTestId("tv-detail-list")).toBeFocused();
-    await expect(tv.getByTestId("tv-detail-list")).toHaveText("In your lists");
+    await expect(tv.getByTestId("tv-detail-lists")).toBeFocused();
+    // In a list besides Favourites: one press cannot say which, so the list button asks too.
+    await expect(tv.getByTestId("tv-detail-list")).toHaveText("My Lists");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveAccessibleName("In your lists");
+    await tv.getByTestId("tv-detail-list").click();
+    await expect(tv.getByTestId("tv-list-picker")).toBeVisible();
+    await tv.getByTestId("pick-done").click();
 
     // Home has a row for each list; the lists page has a button for each, and keeps the one that was last shown.
     await tv.keyboard.press("Escape");
@@ -927,7 +943,7 @@ test.describe("the library on the TV", () => {
     const seed = guestStorage({ listNames: [{ key: "lweekend", at: Date.now() - 5000, name: "Weekend" }] }); // two lists, so that the page of a title asks which
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await tv.locator('[data-testid="tv-browse-tile"][title="Film number 3"]').click();
-    await tv.getByTestId("tv-detail-list").click();
+    await tv.getByTestId("tv-detail-lists").click();
     await expect(tv.getByTestId("tv-list-picker")).toBeVisible();
 
     await tv.getByTestId("pick-new").click();
@@ -950,7 +966,7 @@ test.describe("the library on the TV", () => {
     await expect(tv.getByRole("button", { name: "Weekend" })).toHaveAttribute("aria-pressed", "false");
     await expect(tv.getByTestId("pick-done")).toBeFocused(); // the remote is on the answer
     await tv.keyboard.press("Enter");
-    await expect(tv.getByTestId("tv-detail-list")).toHaveText("In your lists");
+    await expect(tv.getByTestId("tv-detail-list")).toHaveAccessibleName("In your lists");
     await tv.keyboard.press("Escape");
     await expect(tv.getByRole("region", { name: "Kids" }).getByTestId("tv-browse-tile")).toHaveCount(1);
   });
@@ -1051,7 +1067,7 @@ test.describe("the library on the TV", () => {
     // The question of which list for a title says the same, and Done is still on the screen below it.
     await tv.getByTestId("rail-home").click();
     await tv.locator('[data-testid="tv-browse-tile"][title="Film number 3"]').click();
-    await tv.getByTestId("tv-detail-list").click();
+    await tv.getByTestId("tv-detail-lists").click();
     await expect(tv.getByTestId("tv-list-picker")).toBeVisible();
     await expect(tv.getByTestId("pick-new")).toHaveCount(0);
     await expect(tv.getByTestId("lists-full")).toHaveText(words);
