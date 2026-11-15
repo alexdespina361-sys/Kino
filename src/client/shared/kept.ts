@@ -55,6 +55,9 @@ export function readKept(key: string): string | undefined {
   return value;
 }
 
+/** Whether either copy of `key` is here (neither is made again: see `readKept`). */
+export const hasKept = (key: string): boolean => readStorage(key) !== undefined || readCookie(key) !== undefined;
+
 export function writeKept(key: string, value: string): void {
   writeStorage(key, value);
   writeCookie(key, value);

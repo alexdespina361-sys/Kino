@@ -17,9 +17,28 @@ export const test = base.extend<{ closeDevices: void }>({
   ],
 });
 
-/** A phone: a narrow touch screen, which is how the page tells a remote from a TV. */
-/** (The screen is the phone's own: the project's desktop browser would otherwise say 1920 by 1080 whatever the window is.) */
-export const PHONE = { viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: true } as const;
+/** Where the tests' pages are (playwright.config.ts). */
+const ORIGIN = `http://127.0.0.1:${Number(process.env.E2E_PORT) || 8788}`;
+/** What every page of the tests starts with (playwright.config.ts): a device that is given a storage of its own is given these with it. */
+export const SEEDED = [
+  { name: "kino.fullscreen.left", value: "1" },
+  { name: "kino.linkbox", value: "1" },
+  { name: "kino.fit", value: "couch" },
+] as const;
+/** A storage with what every page starts with (`SEEDED`) and `more`, or without the ones named in `without`. */
+export const seeded = (more: { name: string; value: string }[] = [], without: string[] = []) => ({
+  cookies: [],
+  origins: [{ origin: ORIGIN, localStorage: [...SEEDED.filter((entry) => !without.includes(entry.name)), ...more] }],
+});
+/** A narrow touch screen: a phone. (The screen is the phone's own: the project's desktop browser would otherwise say 1920 by 1080 whatever the window is.) */
+const PHONE_SIZE = { viewport: { width: 390, height: 844 }, screen: { width: 390, height: 844 }, hasTouch: true } as const;
+/**
+ * A phone that is somebody's remote, which is what most of the tests are of: one that has been the remote here before stays it (see `chooseRole`), and
+ * these say so the way the switch does. (A phone that comes for the first time opens on the library: `NEW_PHONE`.)
+ */
+export const PHONE = { ...PHONE_SIZE, storageState: seeded([{ name: "kino.role", value: "remote" }]) } as const;
+/** A phone that comes here for the first time, with what every page starts with but nothing it chose. */
+export const NEW_PHONE = { ...PHONE_SIZE, storageState: seeded() } as const;
 
 /**
  * One stream at two sizes, for a screen that is to be offered a choice of quality: the context serves /fixtures/hls/multi.m3u8, the smaller
@@ -43,6 +62,8 @@ export const twoSizes = (context: BrowserContext) =>
 
 /** A device that has never opened the page: nothing kept, so a screen goes full screen at its first press (the config's pages start as if it had been left). */
 export const FIRST_VISIT = { cookies: [], origins: [] };
+/** ...one that has nothing kept but the choice of being the remote (which a phone has that was one before, or came by the TV's QR code). */
+export const REMOTE_FIRST_VISIT = seeded([{ name: "kino.role", value: "remote" }], SEEDED.map((entry) => entry.name));
 
 /**
  * A browser that starts a video only for a press made in the last few seconds, which is what a phone's does (and what some of them

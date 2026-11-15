@@ -18,15 +18,24 @@ const page = (changes: Partial<RoleInput>): RoleInput => ({
   storedRole: undefined,
   userAgent: DESKTOP,
   touchPoints: 0,
+  remoteBefore: false,
   ...changes,
 });
 
 describe("chooseRole", () => {
-  it("makes a screen without touch the TV, and a touch screen the remote", () => {
+  it("makes a screen without touch the TV, and a touch screen that comes for the first time a screen too: it opens on the library", () => {
     expect(chooseRole(page({}))).toBe("tv"); // a desktop or a monitor
-    expect(chooseRole(page({ userAgent: IPHONE, touchPoints: 5 }))).toBe("remote");
-    expect(chooseRole(page({ userAgent: IPAD, touchPoints: 5 }))).toBe("remote"); // a tablet is a remote too
-    expect(chooseRole(page({ userAgent: FIRE_TABLET, touchPoints: 10 }))).toBe("remote");
+    expect(chooseRole(page({ userAgent: IPHONE, touchPoints: 5 }))).toBe("tv");
+    expect(chooseRole(page({ userAgent: IPAD, touchPoints: 5 }))).toBe("tv"); // a tablet as well
+    expect(chooseRole(page({ userAgent: FIRE_TABLET, touchPoints: 10 }))).toBe("tv");
+  });
+
+  it("keeps a touch screen that has been the remote here before the remote: it may be somebody's, paired with their TV", () => {
+    expect(chooseRole(page({ userAgent: IPHONE, touchPoints: 5, remoteBefore: true }))).toBe("remote");
+    expect(chooseRole(page({ userAgent: IPAD, touchPoints: 5, remoteBefore: true }))).toBe("remote");
+    expect(chooseRole(page({ userAgent: PIXEL, touchPoints: 5, remoteBefore: true, storedRole: "tv" }))).toBe("tv"); // (what was chosen with the switch wins)
+    expect(chooseRole(page({ remoteBefore: true }))).toBe("tv"); // (a screen without touch plays, whatever it was once)
+    expect(chooseRole(page({ userAgent: FIRE_TV, touchPoints: 1, remoteBefore: true }))).toBe("tv");
   });
 
   it.each([

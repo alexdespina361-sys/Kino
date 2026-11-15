@@ -7,7 +7,7 @@ import { MAX_LINK_LENGTH, progressKey, type NormalizedMedia } from "../src/share
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { FIRST_VISIT, guestStorage, heldUpright, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, place, playFirst, pressMenuLine, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
+import { FIRST_VISIT, guestStorage, heldUpright, REMOTE_FIRST_VISIT, loadOnTv, openDevice, openLibrary, openPairedPhone, openTv, PHONE, place, playFirst, pressMenuLine, RawPhone, readPairingCode, serverDown, serverUp, sleepingServer, test, tvRoot, tvTime, twoSizes, withLibrary } from "./helpers";
 
 const sample = (baseURL: string) => `${baseURL}/fixtures/sample.mp4`;
 
@@ -1571,7 +1571,7 @@ test.describe("full screen", () => {
   });
 
   test("the remote does not go full screen by itself, but has the button on its first screen and in its menu", async ({ browser }) => {
-    const first = await openDevice(browser, { ...PHONE, storageState: FIRST_VISIT });
+    const first = await openDevice(browser, { ...PHONE, storageState: REMOTE_FIRST_VISIT });
     await first.goto("/");
     await first.getByTestId("code-input").tap(); // where a code gets typed: no surprises
     await first.waitForTimeout(600);
@@ -2845,7 +2845,10 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     ],
   });
   /** A phone whose storage has not been told to show the box for pasting a link (as a new phone's). */
-  const withoutLinkBox = (baseURL: string) => ({ cookies: [], origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: "kino.fullscreen.left", value: "1" }] }] });
+  const withoutLinkBox = (baseURL: string) => ({
+    cookies: [],
+    origins: [{ origin: new URL(baseURL).origin, localStorage: [{ name: "kino.fullscreen.left", value: "1" }, { name: "kino.role", value: "remote" }] }],
+  });
 
   let searches = 0;
   /** A TV, and a phone paired to it that is shown the library: two seasons of three episodes for the show (pages that play), and a search over the films. */

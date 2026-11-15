@@ -468,7 +468,7 @@ export function freshSimilar(items: readonly LibraryItem[], progress: readonly L
 }
 
 /** What the buttons under the banner can do for a title. */
-export type HeroAction = "play" | "list" | "remove" | "rate" | "recommend" | "dismiss" | "join" | "ask" | "start";
+export type HeroAction = "play" | "tv" | "list" | "remove" | "rate" | "recommend" | "dismiss" | "join" | "ask" | "start";
 export const heroActions = (entry: Entry | undefined): HeroAction[] => {
   if (!entry || entry.opens || entry.action || entry.request || entry.plan) return []; // (somebody who asks to be friends, or a plan to watch together, is no film: pressing the tile answers)
   if (entry.party) return ["join", "dismiss"]; // an invitation to a watch party
@@ -478,12 +478,13 @@ export const heroActions = (entry: Entry | undefined): HeroAction[] => {
   return entry.inboxId ? ["play", "list", "dismiss"] : ["play", "list"]; // (what a friend sent can be sent away)
 };
 /**
- * ...and on a title's own page, which any title can be kept from: play it (or pick it up), keep it in a list, give it a score (unless
- * ratings are turned off), send it to a friend (when friends are on), and for one part way through, take it off its row (as one a
- * friend sent is taken off theirs).
+ * ...and on a title's own page, which any title can be kept from: play it (or pick it up), on a phone or a tablet play it on the TV instead
+ * (`onTv`), keep it in a list, give it a score (unless ratings are turned off), send it to a friend (when friends are on), and for one part
+ * way through, take it off its row (as one a friend sent is taken off theirs).
  */
-export const overviewActions = (entry: Entry, ratings = true, friends = false): HeroAction[] => [
+export const overviewActions = (entry: Entry, ratings = true, friends = false, onTv = false): HeroAction[] => [
   "play",
+  ...(onTv && entry.url ? (["tv"] as const) : []),
   "list",
   ...(ratings ? (["rate"] as const) : []),
   ...(friends && entry.url ? (["recommend"] as const) : []),

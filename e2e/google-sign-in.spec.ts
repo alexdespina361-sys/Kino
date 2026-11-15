@@ -234,7 +234,8 @@ async function signUpOnScreen(screen: Page, account: { email: string; password: 
   if (weakness(account.email, account.password)) await screen.getByTestId("auth-agree").click();
 }
 
-const newPhone = (browser: Browser) => openDevice(browser, PHONE, SEED);
+// (The phone that has been the remote: `PHONE`'s saved state is for the address of the tests' own server, and the site with Google on is another.)
+const newPhone = (browser: Browser) => openDevice(browser, PHONE, { ...SEED, "kino.role": "remote" });
 
 test.describe("with Google sign-in off", () => {
   test("the phone's form and the TV's have no Google button, the Security page has no Google, and /api/me says nothing of Google", async ({ browser, request }) => {

@@ -1,9 +1,12 @@
 import { readStorage, writeStorage } from "./shared/format";
+import { hasKept } from "./shared/kept";
 
 /** What this screen is for: the TV that plays, or the remote that chooses what plays. */
 export type Role = "tv" | "remote";
 
 export const ROLE_KEY = "kino.role";
+/** The id the server gave this browser's remote, kept from the first time it was one (see `readKept`). */
+export const CONTROLLER_KEY = "controller.id";
 
 export interface RoleInput {
   pathname: string;
@@ -13,6 +16,8 @@ export interface RoleInput {
   userAgent: string;
   /** `navigator.maxTouchPoints`: phones and tablets have touch, TVs and desktops do not. */
   touchPoints: number;
+  /** This browser has been the remote here before: it keeps the id the server gave it (`CONTROLLER_KEY`), and it may be somebody's remote today. */
+  remoteBefore: boolean;
 }
 
 /** TV browsers say so in their user agent: Fire TV ("AFTM"), Tizen, webOS, VIDAA (Hisense), Android TV sets, Chromecast, Apple TV, Roku... */
@@ -24,8 +29,9 @@ export const isTvAgent = (userAgent: string): boolean => TV_AGENT.test(userAgent
 /**
  * One page, two screens. In order: an address that asks for one ("/tv", "?role=remote", the "?party=" link of a watch party and the "?title="
  * link of a title's page, which are for a screen that plays, or the "?code=" / "?link=" / "?friend=" / "?url=" links made for the phone), then what was chosen with
- * the switch, then a guess from the device: a TV's browser, or any screen without touch (a TV, a monitor), plays; a phone or
- * tablet is the remote.
+ * the switch, then a guess from the device: a TV's browser, or any screen without touch (a TV, a monitor), plays. So does a phone or a tablet
+ * that comes for the first time: it opens on the library, where a title's page has "Play on TV" for a TV in the room. One that has been the remote
+ * here before stays the remote, as it was (it is somebody's remote, paired with their TV, until they choose otherwise).
  */
 export function chooseRole(input: RoleInput): Role {
   if (input.pathname.replace(/\/+$/, "") === "/tv") return "tv";
@@ -36,7 +42,7 @@ export function chooseRole(input: RoleInput): Role {
   if (params.has("code") || params.has("url") || params.has("text") || params.has("link") || params.has("friend")) return "remote";
   if (input.storedRole === "tv" || input.storedRole === "remote") return input.storedRole;
   if (TV_AGENT.test(input.userAgent)) return "tv";
-  return input.touchPoints > 0 ? "remote" : "tv";
+  return input.touchPoints > 0 && input.remoteBefore ? "remote" : "tv";
 }
 
 export interface PhoneInput {
@@ -100,7 +106,18 @@ export const roleOfThisPage = (): Role =>
     storedRole: readStorage(ROLE_KEY),
     userAgent: navigator.userAgent,
     touchPoints: navigator.maxTouchPoints ?? 0,
+    remoteBefore: hasKept(CONTROLLER_KEY),
   });
+
+/**
+ * "Play on TV", on a phone or a tablet that is the screen: the remote plays `link` on the TV it is paired with, and asks for one first when it
+ * has none. Where this device opens stays as it was: a phone that never chose opens on the library again (the trip to the remote leaves the
+ * remote's id here, which would make it the remote next time: see `chooseRole`).
+ */
+export function playOnTv(link: string): void {
+  if (readStorage(ROLE_KEY) === undefined) writeStorage(ROLE_KEY, "tv");
+  location.assign(`/?url=${encodeURIComponent(link)}`);
+}
 
 /** Make this screen the other one, and remember it. A fresh load of "/" keeps the two screens' styles and connections apart. */
 export function switchRole(to: Role): void {

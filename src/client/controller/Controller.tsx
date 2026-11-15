@@ -25,6 +25,7 @@ import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
 import { Rich } from "../i18n/Rich";
 import { useBackWhile } from "../shared/backButton";
+import { CONTROLLER_KEY } from "../role";
 import { readKept, writeKept } from "../shared/kept";
 import { FullscreenToggle } from "../shared/FullscreenToggle";
 import { ChevronLeftIcon } from "../shared/icons";
@@ -70,7 +71,6 @@ import "./controller.css";
 import "../polish/phone.css";
 import "../polish/shell.css";
 
-const CONTROLLER_KEY = "controller.id";
 /** A lookup that has not answered by now is reported as failed instead of spinning forever. */
 const RESOLVE_TIMEOUT_MS = 40_000;
 
