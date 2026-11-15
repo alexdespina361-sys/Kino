@@ -7,6 +7,19 @@ export interface Piece {
   data: Uint8Array;
 }
 
+/** What a tap is to the aligner: pieces of the film's sound, for whoever takes them (`AudioTap` here, for a film that plays through hls.js; `ElementTap` in capture.ts, for one the browser plays by itself). */
+export interface SoundTap {
+  /** The pieces from now on go to `take`, after the ones that were kept for it. */
+  connect(take: (piece: Piece) => void): void;
+  /** Nobody takes the pieces any more. */
+  disconnect(): void;
+  /** While nobody takes the pieces: keep the first of them (`on`) for the one who will, or let them go. */
+  keep(on: boolean): void;
+  /** Whether the sound is of use now (a subtitle track is on screen). A tap that costs something to run stops meanwhile; this one copies only what hls.js hands on, and goes on. */
+  wanted?(on: boolean): void;
+  stop(): void;
+}
+
 /** The parts of an hls.js `BUFFER_APPENDING` event this needs. */
 interface Appending {
   type: string;
@@ -43,7 +56,7 @@ const isInit = (bytes: Uint8Array): boolean => {
  * hundred bytes), and a viewer who turns the aligner on in the middle of a film has them; the pieces are copied only while someone takes
  * them, or is on the way to (`keep`).
  */
-export class AudioTap {
+export class AudioTap implements SoundTap {
   private readonly inits = new Map<string, Uint8Array>();
   private take: ((piece: Piece) => void) | undefined;
   private keeping = false;

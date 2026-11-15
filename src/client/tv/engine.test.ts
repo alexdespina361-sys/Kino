@@ -14,6 +14,7 @@ import {
   describeHlsError,
   lostTheConnection,
   proxiedQualityCap,
+  readableFrom,
   sourceSaidNo,
   type SyncFilm,
   type SyncStarter,
@@ -734,6 +735,176 @@ describe("the subtitle aligner", () => {
     await engine.load(HLS, "hls");
     known(video);
     expect(engine.getState().subtitles).toMatchObject({ current: -1 });
+    engine.destroy();
+  });
+});
+
+/** A <video> whose sound a page may take (Chromium's `captureStream`), with the attribute that asks for a film so that it can be read. */
+class CapturingVideo extends FakeVideo {
+  crossOrigin: string | null = null;
+  captureStream() {
+    const stream = new EventTarget() as EventTarget & { getAudioTracks(): unknown[]; getTracks(): unknown[] };
+    stream.getAudioTracks = () => [];
+    stream.getTracks = () => [];
+    return stream;
+  }
+  override removeAttribute(name: string) {
+    if (name === "crossorigin") this.crossOrigin = null;
+    else super.removeAttribute(name);
+  }
+}
+
+/** Just enough of the Web Audio API for the tap to be made (no sound goes through it here: what it does with sound is in capture.test.ts). */
+const stubAudio = () => {
+  const node = () => ({ connect: vi.fn(), disconnect: vi.fn(), gain: { value: 1 }, onaudioprocess: null });
+  class FakeAudioContext {
+    sampleRate = 48000;
+    destination = {};
+    createScriptProcessor() {
+      return node();
+    }
+    createMediaStreamSource() {
+      return node();
+    }
+    createGain() {
+      return node();
+    }
+    resume() {
+      return Promise.resolve();
+    }
+    close() {
+      return Promise.resolve();
+    }
+  }
+  vi.stubGlobal("AudioContext", FakeAudioContext);
+  vi.stubGlobal("OfflineAudioContext", class {});
+};
+
+describe("a file the browser plays by itself, and the subtitle aligner", () => {
+  const RELAY = "https://relay.example/api/proxy?url=https%3A%2F%2Fcdn.example%2Fa.mp4&expires=1&sig=abc";
+  beforeEach(() => {
+    stubBrowser();
+    stubAudio();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+  const aligner = () => {
+    const films: SyncFilm[] = [];
+    const starter: SyncStarter = (film) => {
+      films.push(film);
+      return { close: vi.fn() };
+    };
+    return { films, loader: vi.fn(() => Promise.resolve(starter)) };
+  };
+  const newCapturing = () => {
+    const video = new CapturingVideo();
+    const states: Array<{ state: string; error?: string }> = [];
+    const engine = new PlayerEngine(video as unknown as HTMLVideoElement, (state) => states.push(state));
+    return { video, engine, states };
+  };
+
+  it("knows which films a page may read: this site's, and the relay's", () => {
+    const here = "https://kino4tv.com/tv";
+    expect(readableFrom("/fixtures/a.mp4", here)).toBe("same-origin");
+    expect(readableFrom("https://kino4tv.com/api/proxy?url=x", here)).toBe("same-origin");
+    expect(readableFrom(RELAY, here)).toBe("cors");
+    expect(readableFrom("https://cdn.example/a.mp4", here)).toBeUndefined(); // (a host that says nothing of it)
+    expect(readableFrom("https://other.example/api/proxy?url=x", here)).toBeUndefined(); // (not signed: not the relay)
+  });
+
+  it("listens to a film through the relay, which it asks for so that it can be read; the aligner is told the sound comes as it plays", async () => {
+    const { video, engine } = newCapturing();
+    const sync = aligner();
+    engine.useSubtitleSync(sync.loader);
+    await engine.load(RELAY, "mp4");
+    expect(video.crossOrigin).toBe("anonymous");
+    expect(video.src).toBe(RELAY);
+    await vi.waitFor(() => expect(sync.films).toHaveLength(1));
+    expect(sync.films[0]!.live).toBe(true);
+    expect(sync.films[0]!.hls).toBeUndefined();
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(engine.getState().subtitleSync).toBe("ready");
+    // (the next film starts clean: one from a host that says nothing is asked for as before)
+    await engine.load("https://cdn.example/b.mp4", "mp4");
+    expect(video.crossOrigin).toBeNull();
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(engine.getState().subtitleSync).toBe("unavailable");
+    engine.destroy();
+  });
+
+  it("listens to a film from this site without asking for it in any other way", async () => {
+    const { video, engine } = newCapturing();
+    const sync = aligner();
+    engine.useSubtitleSync(sync.loader);
+    await engine.load("/fixtures/sample.mp4", "mp4");
+    expect(video.crossOrigin).toBeNull();
+    await vi.waitFor(() => expect(sync.films).toHaveLength(1));
+    engine.destroy();
+  });
+
+  it("asks for nothing new without an aligner, and leaves a direct address that goes first as it was", async () => {
+    const plain = newCapturing();
+    await plain.engine.load(RELAY, "mp4");
+    expect(plain.video.crossOrigin).toBeNull();
+    plain.engine.destroy();
+
+    const direct = newCapturing();
+    const sync = aligner();
+    direct.engine.useSubtitleSync(sync.loader);
+    await direct.engine.load("http://kino.test/api/proxy?url=https%3A%2F%2Fcdn.example%2Fa.mp4", "mp4", undefined, undefined, "https://cdn.example/a.mp4");
+    expect(direct.video.crossOrigin).toBeNull();
+    expect(direct.video.src).toBe("https://cdn.example/a.mp4");
+    direct.video.dispatchEvent(new Event("loadedmetadata"));
+    expect(direct.engine.getState().subtitleSync).toBe("unavailable");
+    expect(sync.loader).not.toHaveBeenCalled();
+    direct.engine.destroy();
+  });
+
+  it("a film through the relay that will not start when asked for so is asked for again as before, once, without the aligner; the place it starts and the play wanted are kept", async () => {
+    const { video, engine } = newCapturing();
+    const sync = aligner();
+    engine.useSubtitleSync(sync.loader);
+    await engine.load(RELAY, "mp4", undefined, 120);
+    engine.play(); // (wanted while it loads)
+    let asked = 0;
+    const src = Object.getOwnPropertyDescriptor(video, "src")!;
+    Object.defineProperty(video, "src", { get: () => src.value as string, set: (value: string) => { asked++; src.value = value; }, configurable: true });
+    video.dispatchEvent(new Event("error"));
+    expect(asked).toBe(1);
+    expect(video.src).toBe(RELAY);
+    expect(video.crossOrigin).toBeNull();
+    expect(engine.getState().state).not.toBe("error");
+    // (it starts now: where it was asked to, and playing)
+    const play = vi.spyOn(engine, "play");
+    (video as unknown as { duration: number }).duration = 600;
+    video.dispatchEvent(new Event("loadedmetadata"));
+    expect(video.currentTime).toBe(120);
+    expect(play).toHaveBeenCalled();
+    expect(engine.getState().subtitleSync).toBe("unavailable");
+    engine.destroy();
+  });
+
+  it("a film through the relay that fails twice is a film that fails", async () => {
+    const { video, engine } = newCapturing();
+    engine.useSubtitleSync(aligner().loader);
+    await engine.load(RELAY, "mp4");
+    video.dispatchEvent(new Event("error"));
+    video.dispatchEvent(new Event("error"));
+    expect(engine.getState().state).toBe("error");
+    engine.destroy();
+  });
+
+  it("does not ask again for a film that had begun when it failed", async () => {
+    const { video, engine } = newCapturing();
+    engine.useSubtitleSync(aligner().loader);
+    await engine.load(RELAY, "mp4");
+    video.dispatchEvent(new Event("loadedmetadata"));
+    video.readyState = 4;
+    video.dispatchEvent(new Event("error"));
+    expect(engine.getState().state).toBe("error");
+    expect(video.crossOrigin).toBe("anonymous");
     engine.destroy();
   });
 });
