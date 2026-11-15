@@ -267,11 +267,13 @@ def score(ref: list[Cue], words: list[Word], lang: str) -> dict:
     for b in difflib.SequenceMatcher(None, ref_tokens, hyp, autojunk=False).get_matching_blocks():
         for k in range(b.size):
             where[b.a + k] = b.b + k
-    offsets, heard, worst, per_line = [], 0, [], {}
+    offsets, heard, worst, per_line, missed = [], 0, [], {}, []
     for n, c in enumerate(ref):
         span = range(first[n], first[n + 1])
         if len(span) and sum(i in where for i in span) / len(span) >= 0.5:
             heard += 1
+        else:
+            missed.append(n)
         if first[n] in where:
             d = when[where[first[n]]] - c.start
             offsets.append(d)
@@ -284,6 +286,7 @@ def score(ref: list[Cue], words: list[Word], lang: str) -> dict:
         ("cer" if lang == "ja" else "wer"): round(err / ref_n, 4),
         "ref_tokens": ref_n,
         "lines_heard": f"{heard}/{len(ref)}",
+        "lines_missed": missed,
         "lines_timed": len(offsets),
         "within_0_1": int((off <= 0.1).sum()),
         "within_0_3": int((off <= 0.3).sum()),
@@ -412,23 +415,34 @@ def film_background(length: int) -> np.ndarray:
     return np.tile(bg, int(np.ceil(length / len(bg))))[:length]
 
 
-def speech_rms(pcm: np.ndarray, ref: list[Cue]) -> float:
-    sel = np.concatenate([pcm[int(c.start * SR): int(c.end * SR)] for c in ref])
-    return float(np.sqrt(np.mean(sel ** 2)))
+def line_rms(pcm: np.ndarray, c: Cue) -> float:
+    x = pcm[int(c.start * SR): int(c.end * SR)]
+    return max(1e-4, float(np.sqrt(np.mean(x ** 2)))) if len(x) else 1e-4
 
 
-def mix(speech: np.ndarray, bg: np.ndarray, ref: list[Cue], snr_db: float) -> np.ndarray:
-    g = speech_rms(speech, ref) / max(1e-9, float(np.sqrt(np.mean(bg ** 2)))) / (10 ** (snr_db / 20))
-    return (speech + g * bg).astype(np.float32)
+def mix(speech: np.ndarray, bg: np.ndarray, ref: list[Cue], snr_db: float, starts: list[float]) -> np.ndarray:
+    """
+    The film's music and effects under the speech at `snr_db` for EVERY line: FLEURS recordings differ by up to 40 dB, so one level for
+    the whole clip buried the quiet speakers (the first dry run: both engines lost the same lines). The background's level follows each
+    recording and changes over the 0.6 s gap before it.
+    """
+    bg_rms = max(1e-9, float(np.sqrt(np.mean(bg ** 2))))
+    g = [line_rms(speech, c) / bg_rms / (10 ** (snr_db / 20)) for c in ref]
+    knots_t, knots_g = [0.0], [g[0]]
+    for i in range(1, len(ref)):
+        knots_t += [max(knots_t[-1], starts[i] - 0.6), starts[i]]
+        knots_g += [g[i - 1], g[i]]
+    gain = np.interp(np.arange(len(speech)) / SR, knots_t, knots_g).astype(np.float32)
+    return (speech + gain * bg).astype(np.float32)
 
 
-def old_film(speech: np.ndarray, bg: np.ndarray, ref: list[Cue]) -> np.ndarray:
+def old_film(speech: np.ndarray, bg: np.ndarray, ref: list[Cue], starts: list[float]) -> np.ndarray:
     """A simulated old optical soundtrack: music at +5 dB, a 200-4000 Hz band, 60 Hz hum with two harmonics, and hiss."""
     from scipy.signal import butter, sosfiltfilt
 
-    x = mix(speech, bg, ref, OLD_SNR_DB)
+    x = mix(speech, bg, ref, OLD_SNR_DB, starts)
     x = sosfiltfilt(butter(4, [200, 4000], btype="band", fs=SR, output="sos"), x)  # zero phase: no delay
-    level = speech_rms(speech, ref)
+    level = float(np.median([line_rms(speech, c) for c in ref]))  # (hum and hiss are steady: set against the typical line)
     t = np.arange(len(x)) / SR
     hum = sum(np.sin(2 * np.pi * f * t) / k for k, f in enumerate((60, 120, 180), 1)) * level * 10 ** (-25 / 20)
     rng = np.random.default_rng(7)
@@ -497,10 +511,16 @@ def prepare() -> None:
         with open(os.path.join(GEN, f"{lang}-ref.json"), "w", encoding="utf-8") as f:
             json.dump({"ref": [[c.start, c.end, c.text] for c in ref], "starts": starts}, f, ensure_ascii=False)
         bg = film_background(len(clean))
-        sounds = {"clean": clean, "film": mix(clean, bg, ref, FILM_SNR_DB), "old": old_film(clean, bg, ref)}
+        sounds = {"clean": clean, "film": mix(clean, bg, ref, FILM_SNR_DB, starts), "old": old_film(clean, bg, ref, starts)}
         for name, x in sounds.items():
             np.save(os.path.join(GEN, f"{lang}-{name}.npy"), x)
         log(f"{lang}: {len(clean) / SR:.0f} s, {len(ref)} lines; film mix SI-SDR {si_sdr(sounds['film'], clean)} dB, old {si_sdr(sounds['old'], clean)} dB")
+        p = vad_track(clean)
+        levels = [round(20 * np.log10(line_rms(clean, c)), 1) for c in ref]
+        heard = [round(float((p[int(c.start * 100): int(c.end * 100)] >= 0.5).mean()), 2) for c in ref]
+        line = f"{lang} lines: loudness dBFS {levels}; share of each line Silero calls speech {heard}"
+        log(line)
+        notes.append(line)
         for iso in ("tiger", "demucs"):
             for name in ("clean", "film", "old"):
                 if iso == "demucs" and name == "clean":
@@ -710,7 +730,7 @@ def brief(r: dict) -> str:
         return f"{r['engine']} {r.get('lang')} {r.get('sound')}: FAILED {r['error'][:200]}"
     f, raw = r["final"], r["raw"]
     err = lambda s: s.get("wer", s.get("cer"))  # noqa: E731
-    out = (f"{r['engine']} | {r['lang']} {r['sound']} | err {err(raw)} -> {err(f)} | heard {f['lines_heard']} | 0.3 s: {raw['within_0_3']} -> "
+    out = (f"{r['engine']} | {r['lang']} {r['sound']} | err {err(raw)} -> {err(f)} | heard {f['lines_heard']} missed {f.get('lines_missed')} | 0.3 s: {raw['within_0_3']} -> "
            f"{f['within_0_3']}/{f['lines_timed']} (0.1 s: {f['within_0_1']}) | off {f['off_by_more_than_0_3'][:4]} | stray {f['words_where_nobody_speaks']} | "
            f"worse {r['made_worse_by_fix'][:3]} | {r.get('checks', '')} | {r['x_realtime']}x, first piece {r['first_piece_s']} s")
     for k in ("first_15_lines_before_checks", "first_15_lines", "lines_16_on_before_checks", "lines_16_on"):
