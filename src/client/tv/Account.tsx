@@ -615,6 +615,10 @@ export function TvCatSettings({ onBack }: { onBack: () => void }) {
         </header>
         <div className="tv-set-grid tv-set-grid-2">
           <div className="tv-set-col" data-nav-column>
+            {/* (why the cat is off: the owner turned it off on every screen, see cat/settings.ts CAT_SWITCH) */}
+            <p className="tv-hint tv-set-hint" data-testid="tv-cat-notice" role="note">
+              <InfoIcon /> <span>{t("cat.settings.notice")}</span>
+            </p>
             <SettingsGroup title={t("cat.settings.behaviour")} testId="tv-group-cat-behaviour">
               <SettingsSwitch label={t("cat.settings.on")} on={cat.settings.on} onToggle={() => cat.set({ on: !cat.settings.on })} testId="tv-cat-switch" />
               {cat.settings.on && (

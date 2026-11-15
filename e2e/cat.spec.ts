@@ -1,7 +1,9 @@
 import { expect, type BrowserContext, type Page } from "@playwright/test";
 import { PNG } from "pngjs";
 import { CORES } from "../src/client/cat/engine/shape-table";
-import { openDevice, openLibrary, openTvSettings, playFirst, RawPhone, readPairingCode, test, withLibrary } from "./helpers";
+import { CAT_TESTS, CAT_TESTS_OFF, openDevice, openLibrary, openTvSettings, playFirst, RawPhone, readPairingCode, test, withLibrary } from "./helpers";
+
+test.skip(!CAT_TESTS, CAT_TESTS_OFF);
 
 /**
  * The cat companion (client/cat): a cat that lives on the TV's screen, only for a screen that asks for one and a host that offers it. It walks along the
@@ -41,7 +43,7 @@ const setup = (yes = true, shelves: unknown = library) => async (context: Browse
  * but the ones that are about the white and grey one: a headless browser's card is a software one, so the tests of the cat's behaviour are made with the
  * ginger one (the other would only be slower).
  */
-const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, look: "ginger", ...over }) });
+const WANTS = (over: Record<string, unknown> = {}) => ({ "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, look: "ginger", switched: 2, ...over }) });
 
 interface Snap {
   frame: { x: number; y: number; facing: number; clip: string; appear: number; petted: boolean; carried: boolean; grounded: boolean; struggle?: number; emote?: string };
@@ -1549,7 +1551,7 @@ test("the settings page offers two cats, the white and grey one and the ginger o
 });
 
 test("a device that kept the old settings keeps its cat: the detailed one is the white and grey cat, and the simple one is the ginger", async ({ browser }) => {
-  const old = (detail: boolean) => ({ "kino.cat": JSON.stringify({ on: true, quiet: true, films: true, detail, coat: detail ? "tuxedo" : "ragdoll", size: "large" }) });
+  const old = (detail: boolean) => ({ "kino.cat": JSON.stringify({ on: true, quiet: true, films: true, detail, coat: detail ? "tuxedo" : "ragdoll", size: "large", switched: 2 }) });
   const simple = await openLibrary(browser, setup(), undefined, old(false));
   await simple.goto("/tv?cat=debug");
   await expect(simple.getByTestId("tv-browse")).toBeVisible();

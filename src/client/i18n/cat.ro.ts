@@ -56,6 +56,7 @@ export const catRo: CatDictionary = {
   "cat.size.small": "Mică",
   "cat.size.normal": "Normală",
   "cat.size.large": "Mare",
+  "cat.settings.notice": "Pisica nu a fost actualizată odată cu restul Kino și s-ar putea să nu funcționeze cum trebuie, așa că este oprită pe toate ecranele. O poți porni în continuare de aici.",
   "cat.settings.help": "O pisică ce trăiește pe ecran: se plimbă pe rândurile de titluri, moțăie în josul filmului și poate fi mângâiată. Cu mouse-ul o poți și ridica, ca s-o pui pe alt rând, sau poți apăsa pe ea cu butonul din dreapta ca s-o trimiți la culcare. Nu pornește niciodată nimic singură.",
   "cat.settings.credit": "Pisica albă cu gri pornește de la modelul „Fluffy Blue-Eyed Cat” de la Meshy AI (CC BY 4.0, creativecommons.org/licenses/by/4.0), modificat. Animația ei în picioare pornește de la animația „Fox” de tomkranis, convertită în glTF de AsoboStudio și scurest (CC BY 4.0), modificată.",
 };

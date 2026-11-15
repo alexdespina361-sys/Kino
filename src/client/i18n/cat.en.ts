@@ -61,6 +61,7 @@ export const catEn = {
   "cat.size.small": "Small",
   "cat.size.normal": "Normal",
   "cat.size.large": "Large",
+  "cat.settings.notice": "The cat has not been updated along with the rest of Kino and may not work as intended, so it is off on every screen. You can still turn it on here.",
   "cat.settings.help": "A cat that lives on the screen: it walks along the rows of titles, naps at the foot of the film and can be petted. With a mouse you can also pick it up and put it on another row, or right-click it to send it to sleep. It never plays anything by itself.",
   "cat.settings.credit": "The white and grey cat is based on the model \"Fluffy Blue-Eyed Cat\" by Meshy AI (CC BY 4.0, creativecommons.org/licenses/by/4.0), changed to fit. Its standing animation is adapted from the \"Fox\" animation by tomkranis, converted to glTF by AsoboStudio and scurest (CC BY 4.0), changed to fit.",
 } as const;
