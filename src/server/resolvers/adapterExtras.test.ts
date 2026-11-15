@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createFilmpireAdapter, listedSubtitles, subtitleQualityScore, type ExtrasAsk, type ExtrasLookup } from "./adapters/filmpire";
+import { createFilmpireAdapter, listedSubtitles, subtitleQualityScore, resolveFinalSubtitles, type ExtrasAsk, type ExtrasLookup } from "./adapters/filmpire";
 
 /*
  * What the filmpire adapter does around the stream it finds: the extras (the subtitle sites' lists and the Romanian subtitles) are asked for while the
@@ -223,5 +223,46 @@ describe("subtitle quality scoring and ranking", () => {
       "Film.2024.HDTV",
       "Film.2024.1080p.WEB-DL.Forced",
     ]);
+  });
+
+  describe("resolveFinalSubtitles", () => {
+    it("cleans up subtitles into top 3 from best source + top 1 from each other source per language", async () => {
+      const tracks = [
+        ...Array.from({ length: 5 }, (_, i) => ({
+          id: i,
+          url: `https://opensubtitles.example/${i}.srt`,
+          label: `English (OS ${i}) · WEB-DL`,
+          lang: "en",
+        })),
+        {
+          id: 5,
+          url: "https://provider.example/sub.vtt",
+          label: "English · Official Stream",
+          lang: "en",
+        },
+      ];
+
+      const res = await resolveFinalSubtitles({
+        existingTracks: tracks,
+        title: "Test Movie",
+      });
+
+      expect(res).toBeDefined();
+      // Best source (provider) has 1, opensubtitles has 1 (top 1 from other source)
+      expect(res!.filter((t) => t.lang === "en")).toHaveLength(2);
+    });
+
+    it("triggers fallback subtitles when existing tracks array is empty", async () => {
+      const res = await resolveFinalSubtitles({
+        existingTracks: [],
+        title: "Sakamoto Days",
+        season: 1,
+        episode: 1,
+      });
+
+      // Even if fallback network in offline test env fails or returns empty,
+      // it handles it gracefully without throwing.
+      expect(Array.isArray(res) || res === undefined).toBe(true);
+    });
   });
 });

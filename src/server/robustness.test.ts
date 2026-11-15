@@ -416,6 +416,7 @@ const SPECS: Record<string, Spec> = {
   "GET /api/resolve": { query: () => ({ url: `${origin}/page.html` }) },
   "GET /api/proxy": { query: () => ({ url: `${origin}/video.mp4`, referer: `${origin}/` }) },
   "GET /api/subtitles/ro/:file": { ok: [404] },
+  "GET /api/subtitles/fallback/:file": { ok: [404] },
   "GET /api/subtitles/official/:file": { params: { file: () => `${"a".repeat(20)}-abc.vtt` }, ok: [404] },
   "POST /api/official/offer": {
     heavy: true,
