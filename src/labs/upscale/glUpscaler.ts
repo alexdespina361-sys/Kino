@@ -1,8 +1,14 @@
 import { BILINEAR_FRAGMENT, EASU_FRAGMENT, FULLSCREEN_VERTEX, RCAS_FRAGMENT } from "./fsrShaders";
 import { easuScale, rcasAmount } from "./measure";
+import { FILM_COMPOSITE_FRAGMENT, FilmNet, parseHooks } from "./fsrcnnx";
 
-/** The modes WebGL 2 draws: the browser's own bilinear scaling ("off"), and AMD FSR 1 ("sharp": EASU, then RCAS). */
-export type GlMode = "off" | "sharp";
+/** The modes WebGL 2 draws: the browser's own bilinear scaling ("off"), AMD FSR 1 ("sharp": EASU, then RCAS), and FSRCNNX ("film": see fsrcnnx.ts). */
+export type GlMode = "off" | "sharp" | FilmMode;
+export type FilmMode = "film" | "film-quality";
+export const isFilm = (mode: string): mode is FilmMode => mode === "film" || mode === "film-quality";
+
+/** A Film mode doubles only a picture drawn at least this many times as big (as mpv runs FSRCNNX); a smaller one is drawn plainly. */
+export const FILM_FROM = 1.3;
 
 /** RCAS sharpness in stops, as AMD's sample sets it (0 = the most). */
 const SHARPNESS_STOPS = 0.2;
@@ -28,6 +34,10 @@ export class GlUpscaler {
   private middleSize = { width: 0, height: 0 };
   private readonly pixel = new Uint8Array(4);
   private fence: WebGLSync | null = null;
+  /** Whether this chip can draw into float textures (EXT_color_buffer_float), which FSRCNNX's passes need: nearly every computer's can. */
+  private readonly floatTargets: boolean;
+  private readonly films = new Map<FilmMode, FilmNet>();
+  private composite: Program | undefined;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: "high-performance" });
@@ -39,6 +49,25 @@ export class GlUpscaler {
     this.source = this.texture(gl.LINEAR);
     this.middle = this.texture(gl.NEAREST);
     this.middleTarget = gl.createFramebuffer()!;
+    this.floatTargets = Boolean(gl.getExtension("EXT_color_buffer_float"));
+  }
+
+  /** Why the Film modes cannot run here, or "". */
+  filmProblem(): string {
+    return this.floatTargets ? "" : "This graphics chip cannot draw into float textures (EXT_color_buffer_float), which the network needs.";
+  }
+
+  hasFilm(mode: FilmMode): boolean {
+    return this.films.has(mode);
+  }
+
+  /** Compiles an FSRCNNX network from its mpv shader file (the text of it). Throws what went wrong. */
+  loadFilm(mode: FilmMode, shader: string): void {
+    const why = this.filmProblem();
+    if (why) throw new Error(why);
+    this.composite ??= this.link(FILM_COMPOSITE_FRAGMENT);
+    this.films.get(mode)?.dispose();
+    this.films.set(mode, new FilmNet(this.gl, parseHooks(shader), (fragment) => this.link(fragment)));
   }
 
   /** The name the browser gives the graphics chip (only shown on the page: nothing is sent anywhere). */
@@ -56,7 +85,24 @@ export class GlUpscaler {
       this.canvas.height = out.height;
     }
     this.upload(video);
-    if (mode === "off") {
+    if (isFilm(mode) && out.width >= FILM_FROM * this.sourceSize.width) {
+      const net = this.films.get(mode);
+      if (!net || !this.composite) throw new Error("The Film network is not loaded");
+      // The network doubles the luma (in float textures of its own)...
+      const luma = net.run(this.source, this.sourceSize);
+      // ...and the composite puts the video's colour around it, at the target, the right way up.
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, out.width, out.height);
+      gl.useProgram(this.composite.program);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, luma.texture);
+      gl.uniform1i(this.composite.uniform("luma"), 1);
+      this.bind(this.source, this.composite.uniform("src"));
+      gl.uniform2f(this.composite.uniform("outSize"), out.width, out.height);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      return;
+    }
+    if (mode !== "sharp") {
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, out.width, out.height);
       gl.useProgram(this.bilinear.program);

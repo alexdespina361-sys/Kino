@@ -1,5 +1,5 @@
 import "./style.css";
-import { GlUpscaler, type GlMode } from "./glUpscaler";
+import { FILM_FROM, GlUpscaler, isFilm, type FilmMode, type GlMode } from "./glUpscaler";
 import { GpuUpscaler, webgpuAdapter, type AnimeMode } from "./gpuUpscaler";
 import { animeSteps, frameRate, ms, summarize, targetSize, verdict, type Timing, type Verdict } from "./measure";
 
@@ -16,6 +16,13 @@ type Group = "off" | "any" | "drawn";
 const MODES: readonly { mode: Mode; name: string; about: string; group: Group }[] = [
   { mode: "off", name: "Off", about: "Plain scaling, the way the browser draws a video now.", group: "off" },
   { mode: "sharp", name: "Sharp (FSR 1)", about: "AMD FSR 1: finds the edges and keeps them crisp, then sharpens. Any video, most graphics chips.", group: "any" },
+  {
+    mode: "film",
+    name: "Film (FSRCNNX)",
+    about: "FSRCNNX 8-0-4-1: a small neural network trained on photographs that redraws the picture's detail at twice the size. For films and shows; WebGL 2 is enough.",
+    group: "any",
+  },
+  { mode: "film-quality", name: "Film (FSRCNNX, bigger)", about: "FSRCNNX 16-0-4-1: twice the network, a little more detail, about three times the work.", group: "any" },
   { mode: "anime-fast", name: "Anime (fast)", about: "Anime4K CNNx2M: a small neural network made for drawn pictures (cartoons, anime). Needs WebGPU, as all the Anime modes.", group: "drawn" },
   { mode: "anime-quality", name: "Anime (quality)", about: "Anime4K CNNx2VL: a bigger network, cleaner lines.", group: "drawn" },
   {
@@ -136,8 +143,42 @@ function startGpu(): Promise<GpuUpscaler | undefined> {
   return gpuStarting;
 }
 
+/** The FSRCNNX shader files (public/labs/upscale/fsrcnnx/, LGPL 3.0, served unchanged: see the README there). */
+const FILM_FILES: Record<FilmMode, string> = { film: "FSRCNNX_x2_8-0-4-1.glsl", "film-quality": "FSRCNNX_x2_16-0-4-1.glsl" };
+const filmProblems = new Map<FilmMode, string>();
+const filmLoading = new Map<FilmMode, Promise<void>>();
+
+/** Fetches and compiles a Film network, the first time it is chosen (70 KB or 250 KB of shader text). */
+function loadFilm(wanted: FilmMode): Promise<void> {
+  const loading =
+    filmLoading.get(wanted) ??
+    (async () => {
+      say(`Loading ${nameOf(wanted)}...`);
+      try {
+        const answer = await fetch(`/labs/upscale/fsrcnnx/${FILM_FILES[wanted]}`);
+        if (!answer.ok) throw new Error(`the site answered ${answer.status}`);
+        gl!.loadFilm(wanted, await answer.text());
+        say("");
+      } catch (error) {
+        filmProblems.set(wanted, `The network did not load: ${problemText(error)}`);
+        say(filmProblems.get(wanted)!);
+      } finally {
+        filmLoading.delete(wanted);
+      }
+    })();
+  filmLoading.set(wanted, loading);
+  return loading;
+}
+
 /** Whether `wanted` can draw here now; why not, if it cannot. */
 async function ready(wanted: Mode): Promise<string> {
+  if (isFilm(wanted)) {
+    if (!gl) return glProblem || "WebGL 2 is not available";
+    const why = gl.filmProblem() || filmProblems.get(wanted);
+    if (why) return why;
+    if (!gl.hasFilm(wanted)) await loadFilm(wanted);
+    return filmProblems.get(wanted) ?? "";
+  }
   if (!isAnime(wanted)) return gl ? "" : glProblem || "WebGL 2 is not available";
   if (!adapter) return gpuProblem || "WebGPU is not available";
   return (await startGpu()) ? "" : gpuProblem;
@@ -147,7 +188,7 @@ function drawModes(): void {
   const box = element("modes");
   box.replaceChildren(
     ...MODES.map(({ mode: each, name, about }) => {
-      const why = isAnime(each) ? (adapter ? "" : gpuProblem) : gl ? "" : glProblem;
+      const why = isAnime(each) ? (adapter ? "" : gpuProblem) : !gl ? glProblem : isFilm(each) ? gl.filmProblem() || filmProblems.get(each) || "" : "";
       const label = document.createElement("label");
       label.className = "mode";
       const input = document.createElement("input");
@@ -271,6 +312,13 @@ function describeSize(): void {
   const factor = out.width / video.videoWidth;
   const parts = [`The video is ${video.videoWidth} × ${video.videoHeight}; it is drawn at ${out.width} × ${out.height}`];
   parts[0] += factor > 1.001 ? ` (${factor.toFixed(2).replace(/\.?0+$/, "")} times as big).` : ": it is that big already, so the modes only sharpen it.";
+  if (isFilm(mode)) {
+    parts.push(
+      factor >= FILM_FROM
+        ? `FSRCNNX redraws its brightness at ${video.videoWidth * 2} × ${video.videoHeight * 2}, then that is fitted to ${out.width} × ${out.height} (bicubic); the colour is the video's.`
+        : `FSRCNNX only works on a picture drawn at least ${FILM_FROM} times as big: this one is drawn plainly.`,
+    );
+  }
   if (isAnime(mode)) {
     const steps = animeSteps(mode, { width: video.videoWidth, height: video.videoHeight }, out).map(
       ({ network, size }) => `${network === "Downscale" ? "shrinks it" : network} to ${size.width} × ${size.height}`,
@@ -633,7 +681,7 @@ async function runTests(modes: readonly Mode[]): Promise<void> {
 
 testOne.addEventListener("click", () => void runTests([mode]));
 testAll.addEventListener("click", () => {
-  const here = MODES.map(({ mode: each }) => each).filter((each) => (isAnime(each) ? Boolean(adapter) : Boolean(gl)));
+  const here = MODES.map(({ mode: each }) => each).filter((each) => (isAnime(each) ? Boolean(adapter) : isFilm(each) ? Boolean(gl) && !gl!.filmProblem() : Boolean(gl)));
   void runTests(here);
 });
 testStop.addEventListener("click", () => {
