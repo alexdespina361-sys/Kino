@@ -10,6 +10,7 @@ import { STRIKE_GAP_MS, type LibrarySource } from "../library/library";
 import { OCCASION_GAP_MS, UnavailableStore } from "../library/unavailable";
 import type { ResolveFn } from "../resolvers";
 import { PairingStore } from "../sessions/pairings";
+import { toVtt } from "../subtitles/vtt";
 import { MAX_PHONES_PER_TV, Registry } from "../sessions/registry";
 import { CLOSE_REPLACED, FRAME_BURST, Hub, KEEP_UNPAIRED_MS, MAX_BUFFERED_BYTES, MAX_UNPAIRED, STEER_ATTRIBUTION_MS, type HubOptions } from "./hub";
 
@@ -3590,5 +3591,48 @@ describe("connections that would hold the hub's room", () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe("Kino Official subtitles: a screen's timing of a listed file is what the next Play is sent", () => {
+  // (Made-up lines only: the repo is public.)
+  const link = "https://filmpire.sc/watch/60572?s=2&e=3";
+  const track = `/api/proxy?url=${encodeURIComponent("https://subs5.strem.io/en/download/file/1")}&format=vtt`;
+  const cues = Array.from({ length: 60 }, (_, i) => ({ start: 60 + i * 10, end: 62 + i * 10, text: `Line number ${i}.` }));
+  const withTrack = { ...media, subtitles: [{ id: 0, lang: "en", url: track, label: "English · Some.Show.S02E03.WEB" }] };
+
+  it("lists the file the screen timed first of its language, under the site's name, and serves it", async () => {
+    await app.close();
+    const fetched: string[] = [];
+    resolveImpl = async () => ({ status: "success", resolver: "test", media: withTrack });
+    app = await buildApp({
+      resolve: (url) => resolveImpl(url),
+      officialFetch: async (asked) => (fetched.push(asked), asked === track ? toVtt(cues) : undefined),
+    });
+    await app.ready();
+    const { tv, phone } = await pairedSetup();
+    const play = async () => {
+      phone.send({ type: "PLAY_URL", url: link });
+      await phone.nextWhere("RESOLVE_STATUS", (message) => message.status.phase === "found");
+      const load = await tv.nextWhere("TV_CMD", (message) => message.command.type === "LOAD");
+      if (load.command.type !== "LOAD") throw new Error("not a LOAD");
+      return load.command.media.subtitles ?? [];
+    };
+    expect((await play()).map((each) => each.label)).toEqual(["English · Some.Show.S02E03.WEB"]);
+
+    const lines = cues.map((cue) => [Math.round(cue.start * 100), Math.round(cue.start * 100) + 150, Math.round(cue.end * 100) + 150, 1]);
+    const offer = await app.inject({ method: "POST", url: "/api/official/offer", payload: { v: 1, track, duration: 2700, lines } });
+    expect(offer.statusCode).toBe(201);
+    expect(fetched).toEqual([track]);
+
+    const listed = await play();
+    expect(listed.map((each) => [each.id, each.label])).toEqual([
+      [0, "English · Kino Official"],
+      [1, "English · Some.Show.S02E03.WEB"],
+    ]);
+    const served = await app.inject({ url: listed[0]!.url });
+    expect(served.statusCode).toBe(200);
+    expect(served.body).toContain("00:01:01.500 --> 00:01:03.500");
+    expect((await app.inject({ url: "/api/health" })).json()).toMatchObject({ official: { kept: 1, offers: { taken: 1 } } });
   });
 });

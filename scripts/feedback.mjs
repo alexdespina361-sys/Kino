@@ -11,6 +11,10 @@
 //   node scripts/feedback.mjs stats [--days 14] [--json]    (how many accounts and how many visitors, by day: counts only; `node scripts/stats.mjs` is the same; docs/stats.md)
 //   node scripts/feedback.mjs unavailable [--all] [--json]  (what nobody could play, the most asked for first, to look for sources with; `node scripts/unavailable.mjs` is the same;
 //                                                            --all adds what found nothing only once, or not for two weeks: docs/unavailable.md)
+//   node scripts/feedback.mjs official [--json]               (the Kino Official subtitles, newest first; `node scripts/official.mjs` is the same: docs/official-subtitles.md)
+//   node scripts/feedback.mjs official show <id>              (saves .official/<id>.srt to correct, and .official/<id>.json with what the file first said)
+//   node scripts/feedback.mjs official put <id> <file.srt> [--times] [--note "..."]   (the team's text, line for line; --times takes its times too)
+//   node scripts/feedback.mjs official remove <id> --yes
 //
 // Where: KINO_URL (the site, http://localhost:8787 when not set) and FEEDBACK_ADMIN_TOKEN, or both in .kino-feedback.json ({ "url": "...", "token": "..." },
 // which git ignores): beside the scripts folder, else in the main folder of the repository when this is a git worktree, else the file KINO_FEEDBACK_FILE names.
@@ -74,7 +78,7 @@ async function settings() {
 
 /** Arguments: words, and --flags (a flag takes the next word unless it is one of the switches). */
 function parse(argv) {
-  const switches = new Set(["all", "waiting", "json", "ask", "yes", "no-files"]);
+  const switches = new Set(["all", "waiting", "json", "ask", "yes", "no-files", "times"]);
   const words = [];
   const flags = {};
   for (let i = 0; i < argv.length; i++) {
@@ -105,6 +109,8 @@ async function call(method, route, body, { timeoutMs = 90_000 } = {}) {
   if (response.status === 401) throw new Error("The server did not take the token (401).");
   if (response.status === 404 && route.startsWith("/api/admin/feedback") && !/\/\d/.test(route)) throw new Error("The server has no team side: FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters (404).");
   if (response.status === 404 && route.startsWith("/api/admin/unavailable")) throw new Error("The server has no list for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before the list was added.");
+  if (response.status === 404 && route === "/api/admin/official") throw new Error("The server has no Kino Official subtitles for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before they were added.");
+  if (response.status === 404 && route.startsWith("/api/admin/official/")) throw new Error("There is no Kino Official subtitle with that id (404): `official` lists them.");
   if (response.status === 404 && route.startsWith("/api/admin/stats")) throw new Error("The server has no stats for you (404): FEEDBACK_ADMIN_TOKEN is not set there, or is shorter than 24 characters, or the site was deployed before the stats were added.");
   if (response.status === 429) throw new Error("Too many wrong tries from this address: wait a quarter of an hour.");
   return response;
@@ -360,6 +366,98 @@ async function unavailable({ flags }) {
   console.log('\n"Times" is how many separate occasions (6 hours apart or more) a play found nothing since one last found a video. A play that finds one takes it off.');
 }
 
+/* ------------------------------ Kino Official subtitles ------------------------------ */
+
+const stamp = (cs) => {
+  const ms = cs * 10;
+  const pad = (n, width = 2) => String(n).padStart(width, "0");
+  return `${pad(Math.floor(ms / 3_600_000))}:${pad(Math.floor((ms % 3_600_000) / 60_000))}:${pad(Math.floor((ms % 60_000) / 1000))},${pad(ms % 1000, 3)}`;
+};
+
+/** An SRT file of the lines (`[start, end, text]`, in centiseconds). */
+function toSrt(lines) {
+  return lines.map(([start, end, text], i) => `${i + 1}\n${stamp(start)} --> ${stamp(end)}\n${text}\n`).join("\n");
+}
+
+/** The lines of an SRT file, in its order: `[start, end, text]` in centiseconds. */
+function fromSrt(file) {
+  const time = (text) => {
+    const match = /^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{3})$/.exec(text.trim());
+    if (!match) throw new Error(`Not a time: "${text.trim()}"`);
+    return Math.round((Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])) * 100 + Number(match[4]) / 10);
+  };
+  const lines = [];
+  for (const block of file.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split(/\n[ \t]*\n/)) {
+    const rows = block.split("\n").filter((row) => row.trim() !== "");
+    const at = rows.findIndex((row) => row.includes("-->"));
+    if (at < 0) continue;
+    const [from, to] = rows[at].split("-->");
+    const text = rows.slice(at + 1).join("\n").trim();
+    if (!text) throw new Error(`Line ${lines.length + 1} has no text: a line that is to go is for the server to drop, not the file (keep it, or say so in the note).`);
+    lines.push([time(from), time(to.trim().split(/\s+/)[0]), text]);
+  }
+  return lines;
+}
+
+const describeOfficial = (meta) => {
+  const name = meta.title ?? `(${meta.titleId})`;
+  return meta.season !== undefined ? `${name} S${String(meta.season).padStart(2, "0")}E${String(meta.episode).padStart(2, "0")}` : name;
+};
+
+/** The Kino Official subtitles: a list, one saved to correct, the corrected one sent back, one taken away (docs/official-subtitles.md). */
+async function official({ words, flags }) {
+  const action = words[1] ?? "list";
+  const id = words[2];
+  if (action === "list") {
+    const data = await json("GET", "/api/admin/official");
+    if (flags.json) return console.log(JSON.stringify(data, null, 2));
+    console.log(`Kino on ${connection.url}, at ${when(data.at)} UTC: ${data.total} Kino Official subtitles.`);
+    if (data.items.length === 0) return console.log("\nNone yet: they are made as screens time the subtitle sites' files on the films people watch.");
+    console.log(`\n${"Id".padEnd(20)}  Lang  ${"Changed".padEnd(10)}  Words  Lines  Tidied  Team  What, and the file it was made from`);
+    for (const meta of data.items) {
+      const tidied = `-${meta.cleaned.removed}/~${meta.cleaned.changed}`;
+      console.log(
+        `${meta.id}  ${meta.lang.padEnd(4)}  ${when(meta.updated).slice(0, 10)}  ${`${Math.round(meta.shares.words * 100)}%`.padStart(5)}  ${String(meta.lines).padStart(5)}  ${tidied.padStart(6)}  ${meta.team ? " yes" : "  no"}  ${one(describeOfficial(meta), 60)}\n${" ".repeat(68)}${one(meta.from.label, 70)}`,
+      );
+    }
+    console.log('\n"Words" is the share of the lines a screen placed by the words it heard; "Tidied" is lines left out / lines whose text the rules changed. One the team has been over is never replaced by a screen.');
+    return;
+  }
+  if (!id || !/^[0-9a-f]{20}$/.test(id)) fail(`official ${action} <id>   (\`official\` lists the ids)`);
+  if (action === "show") {
+    const record = await json("GET", `/api/admin/official/${id}`);
+    const folder = path.join(root, ".official");
+    await mkdir(folder, { recursive: true });
+    await writeFile(path.join(folder, `${id}.srt`), toSrt(record.lines));
+    await writeFile(path.join(folder, `${id}.json`), JSON.stringify(record, null, 2));
+    const { meta } = record;
+    console.log(`${describeOfficial(meta)} (${meta.lang}), ${meta.lines} lines, timed on a film of ${Math.round(meta.duration / 60)} min, ${Math.round(meta.shares.words * 100)} % by words.`);
+    console.log(`Made from: ${one(meta.from.label, 120)}${meta.team ? `\nThe team has been over it (${when(meta.team.at)})${meta.team.note ? `: ${one(meta.team.note, 200)}` : ""}.` : ""}`);
+    console.log(`\nSaved .official/${id}.srt (correct the words there, line for line) and .official/${id}.json (with "source": what the file first said, where it was changed).`);
+    console.log(`Send it back with: node scripts/official.mjs put ${id} .official/${id}.srt --note "what was done"`);
+    return;
+  }
+  if (action === "put") {
+    const file = words[3];
+    if (!file) fail(`official put <id> <file.srt> [--times] [--note "..."]`);
+    const record = await json("GET", `/api/admin/official/${id}`);
+    const edited = fromSrt(await readFile(path.resolve(file), "utf8"));
+    if (edited.length !== record.lines.length) fail(`The file has ${edited.length} lines and the subtitle ${record.lines.length}: correct the words line for line, without adding or taking away lines.`);
+    const lines = flags.times ? edited : record.lines.map(([start, end], i) => [start, end, edited[i][2]]);
+    const changed = lines.filter((line, i) => line[2] !== record.lines[i][2] || line[0] !== record.lines[i][0] || line[1] !== record.lines[i][1]).length;
+    const meta = await json("PUT", `/api/admin/official/${id}`, { lines, ...(typeof flags.note === "string" && flags.note ? { note: flags.note } : {}) });
+    console.log(`${describeOfficial(meta)} (${meta.lang}): ${changed} lines changed, kept as the team's from now on.`);
+    return;
+  }
+  if (action === "remove") {
+    if (!flags.yes) fail("official remove <id> --yes   (the next screen that times the file well makes it again)");
+    await json("DELETE", `/api/admin/official/${id}`);
+    console.log(`${id} removed.`);
+    return;
+  }
+  fail("official [list|show <id>|put <id> <file.srt>|remove <id> --yes]");
+}
+
 const parsed = parse(process.argv.slice(2));
 const command = parsed.words[0];
 const commands = {
@@ -369,6 +467,7 @@ const commands = {
   watch,
   stats,
   unavailable,
+  official,
   export: exportAll,
   status: ({ words }) => {
     if (!STATUSES.includes(words[2])) fail(`status <id> <${STATUSES.join("|")}>`);
