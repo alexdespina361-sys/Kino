@@ -366,6 +366,10 @@ class QwenEngine(Engine):
     def transcribe(self, pcm, lang):
         r = self.model.transcribe(audio=(pcm, SR), language=LANG_NAME[lang], return_time_stamps=True, context=self.context)[0]
         words = stamp_words(r.time_stamps, len(pcm) / SR, self)
+        if os.environ.get("GEN_RESTORE", "1") == "1":
+            from finish import restore_text  # (the model's own capitals and punctuation back on the aligner's bare words)
+
+            words = [Word(w.text, w.start, w.end) for w in restore_text(words, r.text or "", lang)]
         if not words and r.text.strip():
             words = [Word(r.text.strip(), 0.0, len(pcm) / SR)]
         return words

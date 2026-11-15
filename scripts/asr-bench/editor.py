@@ -100,11 +100,45 @@ def fills(main: list[Word], others: list[list[Word]], lang: str, pad: float = 0.
     return out
 
 
+class Cache:
+    """Answers kept by prompt (EDITOR_CACHE=file.json), so the steps after the model can be changed and rerun without a GPU."""
+
+    def __init__(self, path: str | None):
+        self.path, self.got = path, {}
+        if path and os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                self.got = json.load(f)
+
+    @staticmethod
+    def key(model: str, system: str, user: str) -> str:
+        import hashlib
+
+        return hashlib.sha1(f"{model}\n{system}\n{user}".encode("utf-8")).hexdigest()
+
+    def put(self, k: str, answer: str) -> None:
+        self.got[k] = answer
+        if self.path:
+            with open(self.path, "w", encoding="utf-8") as f:
+                json.dump(self.got, f, ensure_ascii=False)
+
+
+class CachedOnly:
+    """A model that only answers from the cache (on a PC with no GPU); a prompt it has not seen gets no answer."""
+
+    def __init__(self, model_id: str, cache: Cache):
+        self.id, self.cache = model_id + " (cached)", cache
+        self.model_id = model_id
+
+    def ask(self, system: str, user: str, max_new: int = 1500) -> str:
+        return self.cache.got.get(Cache.key(self.model_id, system, user), "")
+
+
 class LLM:
-    def __init__(self, model_id: str):
+    def __init__(self, model_id: str, cache: Cache | None = None):
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
+        self.cache = cache or Cache(None)
         self.id = model_id
         self.tok = AutoTokenizer.from_pretrained(model_id)
         kw = {"dtype": torch.float16, "device_map": "cuda:0"}
@@ -116,6 +150,14 @@ class LLM:
         self.model = AutoModelForCausalLM.from_pretrained(model_id, **kw).eval()
 
     def ask(self, system: str, user: str, max_new: int = 1500) -> str:
+        k = Cache.key(self.id, system, user)
+        if k in self.cache.got:
+            return self.cache.got[k]
+        answer = self._ask(system, user, max_new)
+        self.cache.put(k, answer)
+        return answer
+
+    def _ask(self, system: str, user: str, max_new: int = 1500) -> str:
         import torch
 
         msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -187,8 +229,16 @@ def edit(main: list[Word], others: list[list[Word]], lang: str, title: str, name
                 stats["fill"] = fill
             log.append({"start": round(seg[0].start, 2), "before": before, "model": wrote, "after": after, **stats})
             if after:
-                out += finish.carry(seg, after)
+                got = finish.carry(seg, after)
+                # (A segment is not a sentence: one that goes on from the last without a sentence end keeps the engine's small letter,
+                # where the model gave it a capital only because the segment began there.)
+                if out and got and not finish.END.search(out[-1].text) and got[0].text[:1].isupper() and seg[0].text[:1].islower() \
+                        and finish.key(got[0].text) == finish.key(seg[0].text):
+                    got[0] = Word(got[0].text[:1].lower() + got[0].text[1:], got[0].start, got[0].end)
+                out += got
                 done.append(after)
+    if lang != "ja":
+        out = finish.fix_caps(finish.snap_names(out, names))
     return out, log
 
 
@@ -196,8 +246,8 @@ def main(argv: list[str]) -> None:
     sys.stdout.reconfigure(encoding="utf-8")
     opts, args, i = {}, [], 0
     while i < len(argv):
-        if argv[i] == "--raw":
-            opts["raw"] = "1"
+        if argv[i] in ("--raw", "--cached-only"):
+            opts[argv[i][2:]] = "1"
             i += 1
         elif argv[i].startswith("--"):
             opts[argv[i][2:]] = argv[i + 1]
@@ -219,7 +269,13 @@ def main(argv: list[str]) -> None:
         except Exception:  # noqa: BLE001
             pass
     t = time.time()
-    llm = None if "raw" in opts else LLM(opts.get("model", MODEL))
+    cache = Cache(opts.get("cache") or os.environ.get("EDITOR_CACHE"))
+    if "raw" in opts:
+        llm = None
+    elif opts.get("cached-only") or os.environ.get("EDITOR_CACHED_ONLY") == "1":
+        llm = CachedOnly(opts.get("model", MODEL), cache)
+    else:
+        llm = LLM(opts.get("model", MODEL), cache)
     loaded = time.time() - t
     words, log = edit(main_w, other_w, lang, opts.get("title", ""), names, llm, normalise)
     evs = finish.events(words, lang)

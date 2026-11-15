@@ -700,6 +700,16 @@ def agree() -> None:
 
 # ------------------------------------------------------------------------------------------------ engines
 
+def timed(stamps, text: str, pcm, lang: str) -> list[Word]:
+    """The aligner's words for `text`, with the recogniser's own capitals and punctuation put back (GEN_RESTORE=0: bare, as before)."""
+    words = bench.stamp_words(stamps, len(pcm) / SR)
+    if os.environ.get("GEN_RESTORE", "1") == "1":
+        import finish
+
+        words = [Word(w.text, w.start, w.end) for w in finish.restore_text(words, text, lang)]
+    return words or [Word(text, 0.0, len(pcm) / SR)]
+
+
 class Musci(bench.Engine):
     name = "Musci-ASR-2.4B + ForcedAligner-0.6B"
 
@@ -734,7 +744,7 @@ class Musci(bench.Engine):
         if not text:
             return []
         r = self.aligner.align(audio=(pcm, SR), text=text, language="English")[0]
-        return bench.stamp_words(r, len(pcm) / SR) or [Word(text, 0.0, len(pcm) / SR)]
+        return timed(r, text, pcm, lang)
 
 
 class Granite(bench.Engine):
@@ -770,7 +780,7 @@ class Granite(bench.Engine):
         if not text:
             return []
         r = self.aligner.align(audio=(pcm, SR), text=text, language=bench.LANG_NAME[lang])[0]
-        return bench.stamp_words(r, len(pcm) / SR) or [Word(text, 0.0, len(pcm) / SR)]
+        return timed(r, text, pcm, lang)
 
 
 # Engines whose libraries cannot share one Python with qwen-asr (NeMo; transformers >= 5.4) run in their own virtual environment and
@@ -896,7 +906,7 @@ class Aligned(bench.Engine):
         if not text.strip():
             return []
         r = self.aligner.align(audio=(pcm, SR), text=text, language=bench.LANG_NAME[lang])[0]
-        return bench.stamp_words(r, len(pcm) / SR) or [Word(text, 0.0, len(pcm) / SR)]
+        return timed(r, text, pcm, lang)
 
 
 class Replay(bench.Engine):

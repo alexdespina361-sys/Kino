@@ -51,6 +51,111 @@ def key(text: str) -> str:
     return re.sub(r"[^\w']", "", t).strip("'")
 
 
+# ------------------------------------------------------------------------------------------------ the recogniser's own writing back
+
+def _bare(text: str) -> str:
+    return re.sub(r"[\W_]", "", key(text))
+
+
+def restore_text(words: list[Word], text: str, lang: str = "en") -> list[Word]:
+    """
+    The forced aligner times the words of a text but gives them back bare ("youre a jerk tom look celia"): the recogniser's own capitals,
+    punctuation and spelling ("You're a jerk, Tom. Look, Celia,") put back on the timed words. A word the aligner cut differently
+    ("twenty-five" timed as "twenty" + "five") becomes one word over both times; anything that does not match is left as timed.
+    """
+    if not words or not text.strip():
+        return words
+    if lang == "ja":
+        out, p = [], 0
+        for w in words:
+            i = text.find(w.text.strip(), p)
+            if i < 0 or i - p > 2 * len(w.text) + 8:
+                out.append(w)
+                continue
+            j = i + len(w.text.strip())
+            while j < len(text) and text[j] in "、。，．？！…‥」』）〕!?,.~〜ー":
+                j += 1
+            out.append(Word(text[i:j], w.start, w.end))
+            p = j
+        return out
+    toks = text.split()
+    wk, tk = [_bare(w.text) for w in words], [_bare(t) for t in toks]
+    out: list[Word] = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, wk, tk, autojunk=False).get_opcodes():
+        if op == "equal":
+            out += [Word(toks[j1 + k], words[i1 + k].start, words[i1 + k].end) for k in range(i2 - i1)]
+        elif op == "replace" and "".join(wk[i1:i2]) == "".join(tk[j1:j2]) and "".join(wk[i1:i2]):
+            # (Same letters, cut differently: each written word takes the timed words its letters cover.)
+            i = i1
+            for j in range(j1, j2):
+                if not tk[j]:
+                    continue
+                need, got, first = len(tk[j]), 0, i
+                while i < i2 and got < need:
+                    got += len(wk[i])
+                    i += 1
+                out.append(Word(toks[j], words[first].start, words[max(first, i - 1)].end))
+        elif op == "insert":
+            # (A written token with no timed word: "…" or "--" goes onto the word before; a real word the aligner skipped stays out.)
+            for j in range(j1, j2):
+                if not tk[j] and out and re.fullmatch(r"[.…?!,;:\-–—]+", toks[j]):
+                    out[-1] = Word(out[-1].text + ("…" if "." in toks[j] or "…" in toks[j] else ""), out[-1].start, out[-1].end)
+        else:
+            out += words[i1:i2]
+    return out
+
+
+def _lev(a: str, b: str) -> int:
+    row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        prev, row[0] = row[0], i
+        for j, cb in enumerate(b, 1):
+            prev, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, prev + (ca != cb))
+    return row[-1]
+
+
+def snap_names(words: list[Word], names: list[str]) -> list[Word]:
+    """
+    A word written as a name that sounds like one of the title's names, one or two letters off, becomes that name ("Tom" -> "Thom",
+    "Celia" stays). Only a capitalised word inside a sentence, or one said on its own ("Tom!"), so "Barely, ..." is never "Barley".
+    """
+    def sk(a: str) -> str:  # (sounds() with the first letter as a class too: "Selia" ~ "Celia", "Tom" ~ "Thom")
+        s = sounds(a)
+        return ({"c": "2", "k": "2", "s": "2", "z": "2", "q": "2", "g": "2", "j": "2", "t": "3", "d": "3", "b": "1", "p": "1", "f": "1",
+                 "v": "1", "m": "5", "n": "5", "l": "4", "r": "6"}.get(s[:1], "0") + s[1:]) if s else ""
+
+    table: dict[str, list[str]] = {}
+    for n in names:
+        for part in n.split():
+            if len(key(part)) >= 3:
+                table.setdefault(sk(part), []).append(part.strip(",."))
+    if not table:
+        return words
+    out: list[Word] = []
+    for i, w in enumerate(words):
+        m = re.match(r"^(\W*)([A-Z][\w]*)('s|’s)?(\W*)$", w.text)
+        if m:
+            k = key(m.group(2))
+            cands = {p for p in table.get(sk(k), []) if key(p) != k and _lev(key(p), k) <= 2}
+            first = i == 0 or bool(END.search(words[i - 1].text))
+            alone = bool(END.search(w.text))  # (a sentence that is only the name: "Tom!")
+            if len(cands) == 1 and (not first or alone):
+                w = Word(m.group(1) + cands.pop() + (m.group(3) or "") + m.group(4), w.start, w.end)
+        out.append(w)
+    return out
+
+
+def fix_caps(words: list[Word]) -> list[Word]:
+    """The first word of every sentence starts with a capital ("go! come on" -> "go! Come on")."""
+    out: list[Word] = []
+    for i, w in enumerate(words):
+        if (i == 0 or END.search(out[-1].text)) and re.match(r"^\W*[a-z]", w.text) and not w.text.startswith(("...", "…")):
+            j = re.search(r"[a-z]", w.text).start()
+            w = Word(w.text[:j] + w.text[j].upper() + w.text[j + 1:], w.start, w.end)
+        out.append(w)
+    return out
+
+
 # ------------------------------------------------------------------------------------------------ tidy
 
 def tidy(words: list[Word]) -> list[Word]:
