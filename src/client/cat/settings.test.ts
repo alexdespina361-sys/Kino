@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isTvAgent } from "../role";
-import { CAT_LOOKS, CAT_SIZE_FACTOR, CAT_SIZES, catAsk, catCoatAsk, catLook, catSizeAsk, coatOfLook, parseCatSettings, wantsCat, type CatSettings } from "./settings";
+import { CAT_LOOKS, CAT_SIZE_FACTOR, CAT_SIZES, CAT_SWITCH, catAsk, catCoatAsk, catLook, catSizeAsk, coatOfLook, parseCatSettings, wantsCat, type CatSettings } from "./settings";
 
 /** What a device that has said nothing gets, a TV's browser being quiet. */
 const base = (over: Partial<CatSettings> = {}): CatSettings => ({ on: false, quiet: false, films: true, look: "ragdoll", size: "normal", ...over });
@@ -12,9 +12,26 @@ describe("what this device says about the cat", () => {
     expect(parseCatSettings("", true)).toEqual(base({ quiet: true }));
   });
 
+  it("is off for a device that turned it on before the owner turned it off for every screen (15 Nov 2026), with the rest of what it chose kept; turned on after, it is on", () => {
+    expect(parseCatSettings(JSON.stringify({ on: true, quiet: false, films: false, look: "ginger", size: "large" }), false)).toEqual(base({ films: false, look: "ginger", size: "large" }));
+    expect(parseCatSettings(JSON.stringify({ on: true, switched: 1 }), false).on).toBe(false);
+    expect(parseCatSettings(JSON.stringify({ on: true, switched: CAT_SWITCH }), false).on).toBe(true);
+    expect(parseCatSettings(JSON.stringify({ on: false, switched: CAT_SWITCH }), false).on).toBe(false);
+  });
+
+  it("is on once it is turned on now, and off again when it is turned off", async () => {
+    const { readCatSettings, writeCatSettings } = await import("./settings");
+    writeCatSettings({ on: true });
+    expect(readCatSettings().on).toBe(true);
+    writeCatSettings({ size: "small" }); // (another choice keeps the switch as it is)
+    expect(readCatSettings()).toMatchObject({ on: true, size: "small" });
+    writeCatSettings({ on: false });
+    expect(readCatSettings().on).toBe(false);
+  });
+
   it("reads what was stored, and takes anything it does not understand for the default", () => {
-    expect(parseCatSettings(JSON.stringify({ on: true, quiet: false, films: false }), true)).toEqual(base({ on: true, films: false }));
-    expect(parseCatSettings(JSON.stringify({ on: true }), true)).toEqual(base({ on: true, quiet: true }));
+    expect(parseCatSettings(JSON.stringify({ on: true, quiet: false, films: false, switched: CAT_SWITCH }), true)).toEqual(base({ on: true, films: false }));
+    expect(parseCatSettings(JSON.stringify({ on: true, switched: CAT_SWITCH }), true)).toEqual(base({ on: true, quiet: true }));
     expect(parseCatSettings(JSON.stringify({ on: "yes", quiet: 1, films: null, look: 4, detail: "no", coat: 4, size: {} }), false)).toEqual(base());
     expect(parseCatSettings("{not json", true)).toEqual(base({ quiet: true }));
     expect(parseCatSettings("[1,2]", false)).toEqual(base());

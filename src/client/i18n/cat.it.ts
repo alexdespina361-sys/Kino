@@ -56,6 +56,7 @@ export const catIt: CatDictionary = {
   "cat.size.small": "Piccolo",
   "cat.size.normal": "Normale",
   "cat.size.large": "Grande",
+  "cat.settings.notice": "Il gatto non è stato aggiornato insieme al resto di Kino e potrebbe non funzionare come previsto, quindi è spento su ogni schermo. Puoi comunque accenderlo da qui.",
   "cat.settings.help": "Un gatto che vive sullo schermo: cammina sulle file dei titoli, schiaccia un pisolino in fondo al film e si lascia accarezzare. Con il mouse puoi anche prenderlo e metterlo su un'altra fila, oppure fare clic destro su di lui per mandarlo a dormire. Non avvia mai niente da solo.",
   "cat.settings.credit": "Il gatto bianco e grigio parte dal modello «Fluffy Blue-Eyed Cat» di Meshy AI (CC BY 4.0, creativecommons.org/licenses/by/4.0), modificato. La sua animazione in piedi parte dall'animazione «Fox» di tomkranis, convertita in glTF da AsoboStudio e scurest (CC BY 4.0), modificata.",
 };

@@ -41,6 +41,13 @@ export interface CatSettings {
 export const CAT_KEY = "kino.cat";
 const CHANGED = "kino:cat-settings";
 
+/**
+ * Which turn of the cat's switch counts. The owner turned the cat off for every screen on 15 Nov 2026 (it has not been brought up to date with the rest of
+ * the site and may not behave as it should): a device that turned it on before that has it off, and the switch is on again only once it is turned on after
+ * (its settings page says why it is off). What else was chosen (which cat, its size) is kept.
+ */
+export const CAT_SWITCH = 2;
+
 export type CatAsk = "on" | "off" | "debug" | undefined;
 
 /** What the address asks for: `?cat=on` shows the cat for this load only, `?cat=off` hides it, `?cat=debug` shows it with its numbers. */
@@ -79,7 +86,7 @@ export function parseCatSettings(raw: string | undefined, tv: boolean): CatSetti
     const stored: unknown = JSON.parse(raw);
     if (typeof stored === "object" && stored !== null) {
       const each = stored as Record<string, unknown>;
-      if (typeof each.on === "boolean") settings.on = each.on;
+      if (typeof each.on === "boolean" && each.switched === CAT_SWITCH) settings.on = each.on; // (an "on" from before the cat was turned off for everyone is not one: see CAT_SWITCH)
       if (typeof each.quiet === "boolean") settings.quiet = each.quiet;
       if (typeof each.films === "boolean") settings.films = each.films;
       settings.look = CAT_LOOKS.find((look) => look === each.look) ?? (each.detail === false ? "ginger" : settings.look);
@@ -103,7 +110,7 @@ const rawSettings = (): string => readStorage(CAT_KEY) ?? kept ?? "";
 export const readCatSettings = (): CatSettings => parseCatSettings(rawSettings() || undefined, onTv());
 
 export function writeCatSettings(patch: Partial<CatSettings>): void {
-  const next = { ...readCatSettings(), ...patch };
+  const next = { ...readCatSettings(), ...patch, switched: CAT_SWITCH };
   kept = JSON.stringify(next);
   writeStorage(CAT_KEY, kept);
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGED));

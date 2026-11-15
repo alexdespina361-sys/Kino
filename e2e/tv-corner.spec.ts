@@ -2,7 +2,7 @@ import { expect, type BrowserContext, type Locator, type Page } from "@playwrigh
 import { en } from "../src/client/i18n/en";
 import { it as italian } from "../src/client/i18n/it";
 import { ro } from "../src/client/i18n/ro";
-import { openDevice, openLibrary, openTvSettings, openTvSignIn, readPairingCode, test, withLibrary } from "./helpers";
+import { CAT_TESTS, CAT_TESTS_OFF, openDevice, openLibrary, openTvSettings, openTvSignIn, readPairingCode, test, withLibrary } from "./helpers";
 
 /**
  * The corners and edges of the TV's pages that every page shares: the way out of a full-screen page, a code that can be copied, the wordmark
@@ -94,7 +94,7 @@ for (const viewport of [HD, { width: 1024, height: 768 }, FULL_HD]) {
  * The cat's ears on the wordmark (Logo.tsx): a second picture over the plain one, shown while the cat is on (the cat's own setting, as the library's corner
  * button has it), and the wordmark never moves for them. The ginger cat is the flat one, which a headless browser draws without trouble.
  */
-const WANTS_CAT = { "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, look: "ginger" }) };
+const WANTS_CAT = { "kino.cat": JSON.stringify({ on: true, quiet: false, films: true, look: "ginger", switched: 2 }) };
 const hostWith = (cat: boolean, asked = { count: 0 }) => async (context: BrowserContext) => {
   await withLibrary(library)(context);
   await context.route("**/api/features", (route) => {
@@ -109,6 +109,7 @@ const rect = (locator: Locator) =>
   });
 
 test("the wordmark has the cat's ears when the cat is on, and only then, and it does not move for them", async ({ browser }) => {
+  test.skip(!CAT_TESTS, CAT_TESTS_OFF);
   const seen: Record<string, Awaited<ReturnType<typeof rect>>> = {};
   for (const [name, seed, cat] of [
     ["no cat asked for", {}, true],
@@ -131,6 +132,7 @@ test("the wordmark has the cat's ears when the cat is on, and only then, and it 
 });
 
 test("the wordmark has its size before its pictures have come, the two pictures sit exactly over each other, and the box does not change when they arrive", async ({ browser }) => {
+  test.skip(!CAT_TESTS, CAT_TESTS_OFF); // (the second picture is the cat's ears)
   let release = () => {};
   const held = new Promise<void>((resolve) => (release = resolve));
   try {
@@ -165,6 +167,7 @@ test("the wordmark has its size before its pictures have come, the two pictures 
 });
 
 test("the cat's switch gives the wordmark its ears at once, on the page it is on, and takes them away again", async ({ browser }) => {
+  test.skip(!CAT_TESTS, CAT_TESTS_OFF);
   const tv = await openLibrary(browser, hostWith(true), FULL_HD);
   await openTvSettings(tv);
   await tv.getByTestId("tv-cat-open").click();
@@ -179,6 +182,7 @@ test("the cat's switch gives the wordmark its ears at once, on the page it is on
 });
 
 test("the ears fade in over a moment, and are there at once for a screen set to less motion", async ({ browser }) => {
+  test.skip(!CAT_TESTS, CAT_TESTS_OFF);
   const fade = async (reducedMotion: "no-preference" | "reduce") => {
     const tv = await openDevice(browser, { viewport: FULL_HD, reducedMotion }, WANTS_CAT, hostWith(true));
     await tv.goto("/tv");
