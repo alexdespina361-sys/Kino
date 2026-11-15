@@ -30,7 +30,7 @@ export interface SyncFilm {
   live?: boolean;
   /** Puts subtitle track `id` on screen. */
   show(id: number): void;
-  report(status: SyncStatus): void;
+  report(status: SyncStatus, moved?: number): void;
   /** The viewer's own subtitle delay. */
   delay?: () => number;
   /** Offers a file the aligner has timed well for a Kino Official subtitle (see `subsync/official.ts`). */
@@ -239,6 +239,8 @@ export class PlayerEngine {
   private syncOn = true;
   private syncHandle: SyncHandle | undefined;
   private syncStatus: SyncStatus = "ready";
+  /** How far the aligner moved the lines, while they are timed (see `SyncSession.moved`). */
+  private syncMoved: number | undefined;
   /** What listens to the sound hls.js downloads, whether or not the aligner is on (see `AudioTap`), and the name of the event for a switch of the sound track. */
   private tap: SoundTap | undefined;
   private audioSwitching: string | undefined;
@@ -617,9 +619,10 @@ export class PlayerEngine {
             this.quietUntil = Date.now() + 2500;
             this.setSubtitle(id);
           },
-          report: (status) => {
+          report: (status, moved) => {
             if (generation !== this.generation || !this.syncOn) return;
             this.syncStatus = status;
+            this.syncMoved = moved;
             this.emit();
           },
           ...(this.syncDelay ? { delay: this.syncDelay } : {}),
@@ -756,6 +759,7 @@ export class PlayerEngine {
       subtitles: this.getSubtitleState(),
       audio: this.getAudioState(),
       ...(this.syncLoader ? { subtitleSync: this.syncOn ? this.syncStatus : ("off" as const) } : {}),
+      ...(this.syncLoader && this.syncOn && this.syncStatus === "synced" && this.syncMoved !== undefined ? { subtitleShift: this.syncMoved } : {}),
     };
   }
 

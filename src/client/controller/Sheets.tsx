@@ -137,7 +137,7 @@ export function TracksSheet({
   const nudge = (by: number) => onDelay?.(Math.round((delay + by) * 10) / 10);
   // A TV without the aligner reports nothing about it, and then there is nothing to switch. While it is on, the line under the switch says how it is going.
   const sync = player.subtitleSync;
-  const syncHint = sync === undefined || sync === "off" || sync === "ready" ? t("player.autoSyncHelp") : syncWords(sync);
+  const syncHint = sync === undefined || sync === "off" || sync === "ready" ? t("player.autoSyncHelp") : syncWords(sync, player.subtitleShift);
 
   // The profile's own languages first; the rest are one tap away, and "Show all" lifts a profile's "only these".
   const tracks = subtitles?.tracks ?? NO_TRACKS;

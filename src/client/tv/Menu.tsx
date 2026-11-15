@@ -342,7 +342,7 @@ function columnsFor(p: MenuProps, { groups, shown, details, setSeason, setting, 
   const sync = player.subtitleSync;
   const autoSync: Option[] =
     sync !== undefined && p.onSubtitleSync
-      ? [{ key: "sub-sync", label: t("player.autoSync"), detail: syncWords(sync), active: false, pick: () => p.onSubtitleSync?.(sync === "off") }]
+      ? [{ key: "sub-sync", label: t("player.autoSync"), detail: syncWords(sync, player.subtitleShift), active: false, pick: () => p.onSubtitleSync?.(sync === "off") }]
       : [];
   columns.push({
     title: t("player.adjust"),

@@ -122,6 +122,8 @@ class Rig {
   readonly tap = new AudioTap(this.hls, APPENDING);
   readonly video: { currentTime: number; playbackRate: number; duration: number; textTracks: FakeTrack[] };
   readonly statuses: SyncStatus[] = [];
+  /** How far the session said it moved the lines, with each status. */
+  readonly moves: Array<number | undefined> = [];
   readonly shows: number[] = [];
   readonly logs: string[] = [];
   recogniserCalls = 0;
@@ -165,7 +167,10 @@ class Rig {
       ...(rigging.shared ? { shared: rigging.shared } : {}),
       ...(rigging.offer ? { offer: rigging.offer } : {}),
       ...(rigging.live ? { live: true } : {}),
-      report: (status) => this.statuses.push(status),
+      report: (status, moved) => {
+        this.statuses.push(status);
+        this.moves.push(moved);
+      },
       now: () => this.clock,
       log: (message) => this.logs.push(message),
     });
@@ -634,6 +639,17 @@ describe("what the status says while it works", () => {
 
   it("says it is in time where the subtitles have no lines for a while, music or a fight", { timeout: 240_000 }, async () => {
     expect(new Set(await statuses(new Rig({ tracks: [track("English", quiet(late(3)))], shown: 0 }), 30))).toEqual(new Set(["synced"]));
+  });
+
+  it("says how far it moved the lines once it is sure, and nothing of it before", { timeout: 120_000 }, async () => {
+    const rig = new Rig({ tracks: [track("English", late(3))], shown: 0 });
+    await rig.play(10);
+    expect(rig.session.moved()).toBeUndefined();
+    await rig.play(SECONDS);
+    expect(rig.session.moved()).toBeCloseTo(-3, 0);
+    expect(rig.moves.at(-1)).toBeCloseTo(-3, 0);
+    expect(rig.moves.filter((moved, i) => moved !== undefined && rig.statuses[i] !== "synced")).toEqual([]);
+    rig.session.close();
   });
 
   it("says it is still timing before anything was timed, and where it has not reached", { timeout: 120_000 }, async () => {

@@ -114,15 +114,20 @@ describe("syncWords", () => {
   it("says On or Off, and while it is on how it is going, in each language", () => {
     expect(syncWords("off")).toBe("Off");
     expect(syncWords("ready")).toBe("On");
-    expect(syncWords("syncing")).toBe("Syncing…");
+    expect(syncWords("syncing")).toBe("Checking the timing…");
     expect(syncWords("synced")).toBe("In sync");
+    // (Once the aligner is sure how far it moved the lines: by how much, or that they were right.)
+    expect(syncWords("synced", -2.4)).toBe("In sync · moved 2.4 s");
+    expect(syncWords("synced", 0.2)).toBe("In sync · it was right");
     expect(syncWords("unavailable")).toBe("Not available for this video");
     for (const language of ["ro", "it"] as const) {
       setLanguage(language, false);
       const words = (["off", "ready", "syncing", "synced", "unavailable"] as const).map(syncWords);
       for (const word of words) expect(word, language).not.toMatch(/^player\.|^common\./); // (a missing word would show as its key)
       expect(new Set(words).size, language).toBe(words.length); // (every state reads differently)
-      expect(words, language).not.toContain("Syncing…");
+      expect(words, language).not.toContain("Checking the timing…");
+      expect(syncWords("synced", 1.5), language).toMatch(/1\.5 s$/);
+      expect(syncWords("synced", 0), language).not.toBe(syncWords("synced"));
     }
   });
 

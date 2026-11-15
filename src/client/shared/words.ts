@@ -42,15 +42,21 @@ export function noticeText(notice: ChangeNotice): string {
   }
 }
 
-/** What the switch for timing the subtitles to the sound by itself says: On or Off (its own words: the name of the switch is a feminine noun in Romanian and Italian), and while it is on, how it is going. */
-export function syncWords(state: PlayerState["subtitleSync"]): string {
+/**
+ * What the switch for timing the subtitles to the sound by itself says: On or Off (its own words: the name of the switch is a feminine noun in
+ * Romanian and Italian), and while it is on, how it is going: still checking, in time (and how far it moved the lines, or that they were
+ * right), or not possible here.
+ */
+export function syncWords(state: PlayerState["subtitleSync"], moved?: number): string {
   switch (state) {
     case "off":
       return t("player.autoSyncOff");
     case "syncing":
       return t("player.syncSyncing");
     case "synced":
-      return t("player.syncDone");
+      if (moved === undefined) return t("player.syncDone");
+      // (Under a third of a second nobody sees: the file was right.)
+      return Math.abs(moved) < 0.3 ? t("player.syncRight") : t("player.syncMoved", { seconds: Math.abs(moved).toFixed(1) });
     case "unavailable":
       return t("player.syncUnavailable");
     default:

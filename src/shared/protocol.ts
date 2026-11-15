@@ -98,6 +98,11 @@ export const PlayerStateSchema = z.object({
    * timing, timed, or not possible here (a video the browser plays by itself, a device that cannot read the sound). Absent: this TV has no aligner.
    */
   subtitleSync: z.enum(["off", "ready", "syncing", "synced", "unavailable"]).optional(),
+  /**
+   * While `synced`: how far the aligner moved the lines (seconds, later is more), once it is sure. A field of its own, not a new state: a TV
+   * page of an older build and a server of a newer one (or the other way round, during a deploy) must still understand each other.
+   */
+  subtitleShift: z.number().finite().min(-600).max(600).optional(),
   quality: z
     .object({
       levels: z.array(PlayerQualityLevelSchema),

@@ -523,6 +523,12 @@ describe("the subtitle aligner", () => {
     expect(engine.getState().subtitleSync).toBe("syncing");
     aligner.films[0]!.report("synced");
     expect(engine.getState().subtitleSync).toBe("synced");
+    expect("subtitleShift" in engine.getState()).toBe(false);
+    // (How far the lines were moved, once the aligner is sure: only while they are in time.)
+    aligner.films[0]!.report("synced", -2.4);
+    expect(engine.getState()).toMatchObject({ subtitleSync: "synced", subtitleShift: -2.4 });
+    aligner.films[0]!.report("syncing", -2.4);
+    expect("subtitleShift" in engine.getState()).toBe(false);
     engine.destroy();
   });
 
