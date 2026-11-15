@@ -87,11 +87,14 @@ export class GpuUpscaler {
     return new GpuUpscaler(device, canvas, library);
   }
 
-  /** Draws the frame the video shows now with `mode`, at `out`. */
-  draw(video: HTMLVideoElement, mode: AnimeMode, out: Size): void {
+  /**
+   * Draws the frame the video shows now with `mode`, at `out`; or, with `size`, the picture `video` stands for (a canvas the frame boost just drew, of
+   * that size: it must be drawn in the same task, while the canvas still holds it).
+   */
+  draw(video: HTMLVideoElement | HTMLCanvasElement, mode: AnimeMode, out: Size, size?: Size): void {
     if (this.lost) throw new Error("The graphics chip was lost (its driver restarted): reload the page");
-    const width = video.videoWidth;
-    const height = video.videoHeight;
+    const width = size?.width ?? (video as HTMLVideoElement).videoWidth;
+    const height = size?.height ?? (video as HTMLVideoElement).videoHeight;
     if (this.canvas.width !== out.width || this.canvas.height !== out.height) {
       this.canvas.width = out.width;
       this.canvas.height = out.height;

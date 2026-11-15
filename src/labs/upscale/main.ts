@@ -2,6 +2,8 @@ import "./style.css";
 import { FILM_FROM, GlUpscaler, isFilm, type FilmMode, type GlMode } from "./glUpscaler";
 import { GpuUpscaler, webgpuAdapter, type AnimeMode } from "./gpuUpscaler";
 import { animeSteps, frameRate, ms, summarize, targetSize, verdict, type Timing, type Verdict } from "./measure";
+import { Cadence, HELD_FRAMES, VideoClock, boostDelay, boostPhase, refreshRate, type HeldFrame, type Phase } from "./boostTiming";
+import type { BoostHow } from "./frameBoost";
 
 /**
  * The upscaler test page (labs/upscale/index.html): plays a video file picked on this computer, draws it bigger with one of several modes, and times
@@ -73,6 +75,10 @@ const viewSelect = element<HTMLSelectElement>("view");
 const testOne = element<HTMLButtonElement>("test-one");
 const testAll = element<HTMLButtonElement>("test-all");
 const testStop = element<HTMLButtonElement>("test-stop");
+const boostSelect = element<HTMLSelectElement>("boost");
+const boostHowSelect = element<HTMLSelectElement>("boost-how");
+/** The left side's copies of the frames the boost holds (one each, by the boost's number for the frame). */
+const heldCanvases = Array.from({ length: HELD_FRAMES }, (_, index) => element<HTMLCanvasElement>(`held-${index}`));
 
 let mode: Mode = "sharp";
 let gl: GlUpscaler | undefined;
@@ -237,6 +243,12 @@ async function finishNow(drawn: Mode): Promise<void> {
 function render(): void {
   if (timing || !hasFrame()) return;
   try {
+    if (boostOn()) {
+      // (The boost draws on the screen's own rhythm, below: it is only asked to draw again, with the video's frame of now if it holds none.)
+      if (held.length === 0) takeFrame(performance.now(), video.currentTime);
+      lastDrawn = "";
+      return;
+    }
     drawNow(mode);
   } catch (error) {
     say(`${nameOf(mode)} could not draw: ${problemText(error)}. Back to Off.`);
@@ -263,12 +275,18 @@ async function choose(wanted: Mode): Promise<void> {
 /** The mode of the key pressed: 1 for the first of MODES, 0 for the tenth. */
 const modeOfKey = (key: string): Mode | undefined => (/^[0-9]$/.test(key) ? MODES[(Number(key) + 9) % 10]?.mode : undefined);
 
-/** The frames counted while a speed test plays the video (by the loop below). */
-const counted = { on: false, drawn: 0, firstPresented: -1, lastPresented: -1, mediaTimes: [] as number[] };
+/** The frames counted while a speed test plays the video (by the loop below, and with the frame boost by its own loop: the frames it showed). */
+const counted = { on: false, drawn: 0, firstPresented: -1, lastPresented: -1, mediaTimes: [] as number[], boostFrames: 0, boostOnTime: 0, boostFirst: -1, boostLast: -1 };
 
 const engineOf = (drawn: Mode): { caughtUp(): boolean; mark(): void } | undefined => (isAnime(drawn) ? gpu : gl);
 
-function onVideoFrame(_now: number, frame: VideoFrameCallbackMetadata): void {
+function onVideoFrame(now: number, frame: VideoFrameCallbackMetadata): void {
+  if (boostOn()) {
+    if (!timing) takeFrame(now, frame.mediaTime);
+    if (counted.on && !timing) counted.mediaTimes.push(frame.mediaTime);
+    video.requestVideoFrameCallback(onVideoFrame);
+    return;
+  }
   const counting = counted.on && !timing;
   // (A frame counts as drawn only if the chip had finished the one before when this one arrived: work that is merely queued has not been seen.)
   const onTime = counting ? (engineOf(mode)?.caughtUp() ?? false) : true;
@@ -286,7 +304,10 @@ function onVideoFrame(_now: number, frame: VideoFrameCallbackMetadata): void {
 /** (For a browser without requestVideoFrameCallback: draws on every animation frame while the video plays.) */
 let lastTime = -1;
 function onAnimationFrame(): void {
-  if (!video.paused && video.currentTime !== lastTime) {
+  if (boostOn()) {
+    if (video.currentTime !== lastTime && !timing) takeFrame(performance.now(), video.currentTime);
+    lastTime = video.currentTime;
+  } else if (!video.paused && video.currentTime !== lastTime) {
     lastTime = video.currentTime;
     render();
     if (counted.on && !timing) counted.drawn++;
@@ -294,6 +315,180 @@ function onAnimationFrame(): void {
   requestAnimationFrame(onAnimationFrame);
 }
 const frameCallbacks = typeof video.requestVideoFrameCallback === "function";
+
+// ---------------------------------------------------------------- the frame boost (frameBoost.ts, boostTiming.ts)
+
+/** Frames a second the boost makes the video (0: off, the video as it is). */
+const boostFps = (): number => Number(boostSelect.value) || 0;
+const boostHow = (): BoostHow => (boostHowSelect.value === "blend" ? "blend" : "motion");
+const boostOn = (): boolean => boostFps() > 0 && Boolean(gl);
+const boostName = (): string => `${boostFps()} fps (${boostHow() === "blend" ? "Blend" : "Motion"})`;
+
+const videoClock = new VideoClock();
+const cadence = new Cadence();
+/** The frames the boost holds, oldest first: their moments, and the boost's numbers for them. */
+let held: { frame: HeldFrame; serial: number }[] = [];
+/** What was drawn last (the two frames and where between them): the same again is not drawn again. */
+let lastDrawn = "";
+/** The times between the screen's refreshes (ms), for its refresh rate. */
+const refreshGaps: number[] = [];
+let lastRefresh = Number.NaN;
+/** New frames shown in the last second, for the line under the picture. */
+const shownTimes: number[] = [];
+let lastLine = 0;
+
+const screenHz = (): number => refreshRate(refreshGaps);
+/** What the boost worked out last (for a look by hand: `kinoUpscaleLab.boost()`). */
+let lastPhase: (Phase & { shown: number; frames: number[] }) | undefined;
+
+/** Takes the video's frame of now (at `now`, its moment `mediaTime`) into the boost, and its copy for the left side. */
+function takeFrame(now: number, mediaTime: number): void {
+  if (!gl || !hasFrame()) return;
+  const boost = gl.frameBoost();
+  const size = { width: video.videoWidth, height: video.videoHeight };
+  try {
+    const serial = boost.push(video, size);
+    const frame = { mediaTime, arrived: now };
+    videoClock.add(frame, video.playbackRate || 1);
+    held.push({ frame, serial });
+    held = held.filter((each) => boost.holds(each.serial)).slice(-HELD_FRAMES);
+    const copy = heldCanvases[serial % HELD_FRAMES]!;
+    if (copy.width !== size.width || copy.height !== size.height) {
+      copy.width = size.width;
+      copy.height = size.height;
+    }
+    copy.getContext("2d")?.drawImage(video, 0, 0, size.width, size.height);
+  } catch (error) {
+    stopBoost(`The frame boost stopped: ${problemText(error)}`);
+  }
+}
+
+/** Draws a picture of the boost (a texture of the video's size) with `drawn`, at the target. */
+function drawPicture(picture: { texture: WebGLTexture; size: { width: number; height: number } }, drawn: Mode): void {
+  const out = outSize();
+  if (isAnime(drawn)) {
+    if (!gpu) throw new Error("The Anime engine is not started");
+    // (WebGPU cannot read WebGL's textures: the picture is drawn plainly on the WebGL canvas, hidden in an Anime mode, and taken from there at once.)
+    gl!.drawFrom(picture.texture, picture.size, "off", picture.size);
+    gpu.draw(glCanvas, drawn, out, picture.size);
+  } else {
+    gl!.drawFrom(picture.texture, picture.size, drawn, out);
+  }
+}
+
+/** Shows, on the left, the video's own frame number `serial` (the frame of the moment the boost shows). */
+function showHeld(serial: number): void {
+  heldCanvases.forEach((canvas, index) => {
+    canvas.hidden = index !== serial % HELD_FRAMES;
+  });
+  stage.classList.add("boosted");
+}
+
+/** Draws what the boost shows at the refresh of `now`, if it is a new frame. Returns whether it drew. */
+function drawBoost(now: number): boolean {
+  const hz = screenHz();
+  const fps = boostFps();
+  const shown = video.paused ? Number.POSITIVE_INFINITY : videoClock.at(now, video.playbackRate || 1) - boostDelay(videoClock.frameTime(), hz);
+  const phase: Phase = boostPhase(
+    held.map((each) => each.frame),
+    shown,
+    fps,
+  );
+  lastPhase = { ...phase, shown, frames: held.map((each) => each.frame.mediaTime) };
+  if (phase.between && !cadence.tick(now, fps, hz)) return false;
+  const from = held[phase.from]!;
+  const to = held[phase.to]!;
+  const key = `${from.serial} ${to.serial} ${phase.t.toFixed(4)} ${mode} ${outSize().width}`;
+  if (key === lastDrawn) return false;
+  lastDrawn = key;
+  drawPicture(gl!.frameBoost().draw(from.serial, to.serial, phase.t, boostHow()), mode);
+  showHeld(phase.t >= 1 ? to.serial : from.serial);
+  return true;
+}
+
+function onBoostRefresh(now: number): void {
+  requestAnimationFrame(onBoostRefresh);
+  if (Number.isFinite(lastRefresh)) {
+    refreshGaps.push(now - lastRefresh);
+    if (refreshGaps.length > 120) refreshGaps.shift();
+  }
+  lastRefresh = now;
+  if (!boostOn() || timing || held.length === 0) return;
+  // (A frame counts as drawn in time only if the chip had finished the one before when this one is drawn, as for the video's own frames above.)
+  const counting = counted.on;
+  const onTime = counting ? (engineOf(mode)?.caughtUp() ?? false) : true;
+  let drew = false;
+  try {
+    drew = drawBoost(now);
+  } catch (error) {
+    stopBoost(`The frame boost stopped: ${problemText(error)}`);
+    return;
+  }
+  if (!drew) return;
+  if (counting) {
+    engineOf(mode)?.mark();
+    counted.boostFrames++;
+    if (onTime) counted.boostOnTime++;
+    if (counted.boostFirst < 0) counted.boostFirst = now;
+    counted.boostLast = now;
+  }
+  shownTimes.push(now);
+  while (shownTimes.length && shownTimes[0]! < now - 1000) shownTimes.shift();
+  if (now - lastLine > 500) {
+    lastLine = now;
+    describeBoost();
+  }
+}
+
+/** Starts the boost again from the frame of now (a new setting, a new video, or after a speed test). */
+function restartBoost(): void {
+  held = [];
+  videoClock.reset();
+  cadence.reset();
+  lastDrawn = "";
+  shownTimes.length = 0;
+  if (!boostOn()) {
+    stage.classList.remove("boosted");
+    for (const canvas of heldCanvases) canvas.hidden = true;
+  }
+  describeBoost();
+  render();
+}
+
+function stopBoost(why: string): void {
+  say(why);
+  boostSelect.value = "0";
+  restartBoost();
+}
+
+function describeBoost(): void {
+  const line = element("boost-info");
+  const fps = boostFps();
+  line.hidden = fps === 0;
+  if (fps === 0) return;
+  if (!gl) {
+    line.textContent = `The frame boost needs WebGL 2: ${glProblem || "not available here"}.`;
+    return;
+  }
+  const how = boostHow() === "blend" ? "Blend (two frames mixed)" : "Motion (each part moved along its path)";
+  const frameTime = videoClock.frameTime();
+  const own = frameTime > 0 ? 1 / frameTime : 0;
+  const hz = screenHz();
+  const parts: string[] = [];
+  if (own > 0 && own >= fps * 0.99) parts.push(`This video has ${own.toFixed(own % 1 > 0.05 ? 2 : 0)} frames a second already: the boost adds none.`);
+  else {
+    parts.push(
+      `Frame boost: ${own > 0 ? `the video's ${own.toFixed(Math.abs(own - Math.round(own)) > 0.01 ? 3 : 0)}` : "the video's"} frames a second made into ${fps}, by ${how}.`,
+    );
+    if (frameTime > 0) parts.push(`It is shown ${Math.round(boostDelay(frameTime, hz) * 1000)} ms late (it needs the next frame to make the ones before it); the left side is the video's own frame of the same moment.`);
+  }
+  if (hz > 0) parts.push(`This screen refreshes ${Math.round(hz)} times a second${hz < fps * 0.95 ? `, so it shows ${Math.round(hz)} at most` : ""}.`);
+  if (!video.paused && shownTimes.length > 1) parts.push(`Now: ${shownTimes.length} new frames a second.`);
+  line.textContent = parts.join(" ");
+}
+
+boostSelect.addEventListener("change", restartBoost);
+boostHowSelect.addEventListener("change", restartBoost);
 
 // ---------------------------------------------------------------- the video and its controls
 
@@ -416,6 +611,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("[data-sample]
 video.addEventListener("loadedmetadata", () => {
   describeSize();
   say("");
+  restartBoost();
 });
 video.addEventListener("loadeddata", render);
 video.addEventListener("seeked", render);
@@ -497,9 +693,13 @@ interface Played {
   expected: number;
   dropped: number;
   fps: number;
+  /** With the frame boost: the screen's refresh rate (the frames it showed are counted, not the video's). */
+  screenHz?: number;
 }
 interface Result {
   mode: Mode;
+  /** The frame boost it was tested with (none: the video's own frames). */
+  boost?: { fps: number; how: BoostHow };
   timing?: Timing;
   /** The longest of the first frames, drawn before the timed ones: building and compiling the mode's networks, once. */
   gettingReady?: number;
@@ -508,7 +708,34 @@ interface Result {
   problem?: string;
 }
 
-const results = new Map<Mode, Result>();
+/** What the tests found, by mode, and by mode and frame boost (`resultKey`). */
+const results = new Map<string, Result>();
+const resultKey = (tested: Mode): string => (boostOn() ? `${tested} ${boostFps()} ${boostHow()}` : tested);
+
+/** The frames a second the screen should get with the boost on: the boost's, or the video's own if it has more, and never more than the screen shows. */
+function boostTarget(): number {
+  const own = counted.mediaTimes.length > 2 ? frameRate(counted.mediaTimes) : videoClock.frameTime() > 0 ? 1 / videoClock.frameTime() : 0;
+  const wanted = Math.max(own, boostFps());
+  const hz = screenHz();
+  return hz > 0 ? Math.min(wanted, hz) : wanted;
+}
+
+/** Draws one frame for a speed test, as the playing video would be drawn: with the boost on, a frame between two, its motion search included. */
+let timedSerial = 0;
+function drawTimed(tested: Mode): void {
+  if (!boostOn()) {
+    drawNow(tested);
+    return;
+  }
+  const boost = gl!.frameBoost();
+  const size = { width: video.videoWidth, height: video.videoHeight };
+  if (!boost.holds(timedSerial)) timedSerial = boost.push(video, size);
+  // (The video stands still during the timing: the same frame twice costs the boost what two frames do.)
+  const serial = boost.push(video, size);
+  if (boostHow() === "motion") boost.prepare(timedSerial, serial);
+  drawPicture(boost.draw(timedSerial, serial, 0.5, boostHow()), tested);
+  timedSerial = serial;
+}
 
 /**
  * Plays the video for a few seconds and counts the frames the mode drew in time of those the video showed (and the browser dropped). "unseen": the
@@ -516,7 +743,7 @@ const results = new Map<Mode, Result>();
  */
 async function playThrough(): Promise<Played | "unseen" | undefined> {
   const before = video.getVideoPlaybackQuality?.();
-  Object.assign(counted, { on: true, drawn: 0, firstPresented: -1, lastPresented: -1, mediaTimes: [] });
+  Object.assign(counted, { on: true, drawn: 0, firstPresented: -1, lastPresented: -1, mediaTimes: [], boostFrames: 0, boostOnTime: 0, boostFirst: -1, boostLast: -1 });
   const looped = video.loop;
   video.loop = true;
   try {
@@ -532,6 +759,13 @@ async function playThrough(): Promise<Played | "unseen" | undefined> {
   }
   const after = video.getVideoPlaybackQuality?.();
   const dropped = before && after ? Math.max(0, after.droppedVideoFrames - before.droppedVideoFrames) : 0;
+  if (boostOn()) {
+    // The frames the screen got from the boost, against what it should have got in that time.
+    if (counted.boostFrames < 3) return "unseen";
+    const seconds = (counted.boostLast - counted.boostFirst) / 1000;
+    const fps = seconds > 0 ? (counted.boostFrames - 1) / seconds : 0;
+    return { drawn: counted.boostOnTime, expected: Math.max(1, Math.round(seconds * boostTarget()) + 1), dropped, fps, screenHz: screenHz() };
+  }
   // (A browser that showed the page no frames at all gives nothing to count: not "none kept up", and its times are a throttled page's.)
   if (frameCallbacks ? counted.mediaTimes.length < 3 : counted.drawn < 3) return "unseen";
   const shown = frameCallbacks ? Math.max(0, counted.lastPresented - counted.firstPresented) : Math.round(PLAY_SECONDS * frameRate(counted.mediaTimes));
@@ -552,11 +786,12 @@ async function speedTest(tested: Mode): Promise<Result> {
   showCanvasFor(tested);
   const samples: number[] = [];
   let gettingReady = 0;
+  const boost = boostOn() ? { fps: boostFps(), how: boostHow() } : undefined;
   timing = true;
   try {
     for (let index = 0; index < WARM_UP + TIMED && !stopAsked; index++) {
       const start = performance.now();
-      drawNow(tested);
+      drawTimed(tested);
       await finishNow(tested);
       const took = performance.now() - start;
       if (index >= WARM_UP) samples.push(took);
@@ -568,13 +803,20 @@ async function speedTest(tested: Mode): Promise<Result> {
       await nextFrame();
     }
   } catch (error) {
-    return { mode: tested, problem: problemText(error) };
+    return { mode: tested, boost, problem: problemText(error) };
   } finally {
     timing = false;
+    // (The timing pushed the same frame again and again: the boost starts again from the video's next frame.)
+    if (boost) {
+      held = [];
+      videoClock.reset();
+      cadence.reset();
+      lastDrawn = "";
+    }
   }
   const measured = summarize(samples);
-  if (stopAsked) return { mode: tested, problem: "Stopped" };
-  if (measured.samples === 0) return { mode: tested, problem: `It took ${ms(gettingReady)} to get ready, and no frame was timed: far too slow here.` };
+  if (stopAsked) return { mode: tested, boost, problem: "Stopped" };
+  if (measured.samples === 0) return { mode: tested, boost, problem: `It took ${ms(gettingReady)} to get ready, and no frame was timed: far too slow here.` };
   let played: Played | undefined;
   if (measured.samples > 0 && measured.median < 1000) {
     const was = mode;
@@ -587,20 +829,24 @@ async function speedTest(tested: Mode): Promise<Result> {
     if (seen === "unseen") wentAway = true;
     else played = seen;
   }
-  if (wentAway) return { mode: tested, problem: AWAY };
-  const fps = played?.fps ?? 30;
-  return { mode: tested, timing: measured, gettingReady, played, verdict: verdict(measured, fps, played ? played.drawn / played.expected : undefined) };
+  if (wentAway) return { mode: tested, boost, problem: AWAY };
+  // (With the boost, a frame has the time the boost's frames have: at 60 fps, 16.7 ms, whatever the video's own rate.)
+  const fps = boost ? boostTarget() || boost.fps : (played?.fps ?? 30);
+  return { mode: tested, boost, timing: measured, gettingReady, played, verdict: verdict(measured, fps, played ? played.drawn / played.expected : undefined) };
 }
 
 const VERDICT_WORDS: Record<Verdict, string> = { smooth: "Smooth", tight: "Tight", slow: "Too slow" };
 
 function showResults(): void {
   const body = element("results-body");
+  const order = (result: Result): number => MODES.findIndex((entry) => entry.mode === result.mode) * 1000 + (result.boost?.fps ?? 0) + (result.boost?.how === "blend" ? 1 : 0);
+  const boostText = (result: Result): string => (result.boost ? ` + ${result.boost.fps} fps (${result.boost.how === "blend" ? "Blend" : "Motion"})` : "");
   body.replaceChildren(
-    ...MODES.filter(({ mode: each }) => results.has(each)).map(({ mode: each, name }) => {
-      const result = results.get(each)!;
+    ...[...results.values()].sort((a, b) => order(a) - order(b)).map((result) => {
+      const each = result.mode;
+      const name = `${nameOf(each)}${boostText(result)}`;
       const row = document.createElement("tr");
-      row.dataset.testid = `upscale-result-${each}`;
+      row.dataset.testid = result.boost ? `upscale-result-${each}-${result.boost.fps}-${result.boost.how}` : `upscale-result-${each}`;
       const cell = (text: string, className = ""): HTMLTableCellElement => {
         const td = document.createElement("td");
         td.textContent = text;
@@ -622,19 +868,23 @@ function showResults(): void {
       cell(`${ms(time.median)} (9 in 10 under ${ms(time.p90)})${ready >= 250 ? `; ${(ready / 1000).toFixed(1)} s to get ready, once` : ""}`);
       cell(
         played
-          ? `${Math.min(played.drawn, played.expected)} of ${played.expected} frames drawn${played.dropped ? `, ${played.dropped} dropped` : ""}, at ${played.fps.toFixed(played.fps % 1 ? 2 : 0)} fps (${ms(1000 / played.fps)} a frame)`
+          ? played.screenHz !== undefined
+            ? `${Math.min(played.drawn, played.expected)} of ${played.expected} frames shown in time, at ${played.fps.toFixed(1)} new frames a second (screen: ${Math.round(played.screenHz)} Hz)${played.dropped ? `; the browser dropped ${played.dropped} of the video's own` : ""}`
+            : `${Math.min(played.drawn, played.expected)} of ${played.expected} frames drawn${played.dropped ? `, ${played.dropped} dropped` : ""}, at ${played.fps.toFixed(played.fps % 1 ? 2 : 0)} fps (${ms(1000 / played.fps)} a frame)`
           : time.median >= 1000
             ? "not played: too slow to try"
             : "not played (the video did not start)",
       );
       const word = cell(VERDICT_WORDS[result.verdict!], `verdict ${result.verdict!}`);
-      word.dataset.testid = `upscale-verdict-${each}`;
+      word.dataset.testid = result.boost ? `upscale-verdict-${each}-${result.boost.fps}-${result.boost.how}` : `upscale-verdict-${each}`;
       return row;
     }),
   );
   element("results").hidden = results.size === 0;
-  const tested = MODES.map(({ mode: each }) => results.get(each)).filter((result): result is Result => Boolean(result?.verdict));
-  const height = `${Number(targetSelect.value)}p`;
+  // (The summary is for the frame boost chosen now: the modes tested with it, or without one.)
+  const now = boostOn() ? { fps: boostFps(), how: boostHow() } : undefined;
+  const tested = MODES.map(({ mode: each }) => results.get(now ? `${each} ${now.fps} ${now.how}` : each)).filter((result): result is Result => Boolean(result?.verdict));
+  const height = `${Number(targetSelect.value)}p${now ? ` with ${boostName()}` : ""}`;
   // For each group, the heaviest mode that keeps up with room to spare (each group's modes are listed lightest first), and a heavier one that keeps
   // up barely.
   const line = (group: Group, label: string): string => {
@@ -663,7 +913,7 @@ async function runTests(modes: readonly Mode[]): Promise<void> {
   try {
     for (const each of modes) {
       if (stopAsked) break;
-      results.set(each, await speedTest(each));
+      results.set(resultKey(each), await speedTest(each));
       showResults();
       video.currentTime = at; // (every mode is tested on the same frames)
       await new Promise((done) => video.addEventListener("seeked", done, { once: true }));
@@ -699,6 +949,18 @@ void findWebGpu();
 }
 if (frameCallbacks) video.requestVideoFrameCallback(onVideoFrame);
 else requestAnimationFrame(onAnimationFrame);
+requestAnimationFrame(onBoostRefresh);
+{
+  // (The motion search needs what the Film modes need: float textures. Blend runs on any WebGL 2.)
+  const motionOption = boostHowSelect.querySelector<HTMLOptionElement>('option[value="motion"]')!;
+  const why = !gl ? glProblem || "WebGL 2 is not available" : gl.filmProblem();
+  if (why) {
+    motionOption.disabled = true;
+    motionOption.textContent += ` (not here: ${why})`;
+    boostHowSelect.value = "blend";
+  }
+  if (!gl) boostSelect.disabled = true;
+}
 
 /**
  * For the page's own tests (e2e/upscale-lab.spec.ts) and for a look by hand: draws the frame shown now with `probed` and compares what was drawn with the
@@ -782,4 +1044,69 @@ async function snapshot(shot: Mode = mode, region?: { x: number; y: number; widt
   return canvas.toDataURL("image/png");
 }
 
-(window as Window & { kinoUpscaleLab?: unknown }).kinoUpscaleLab = { probe, snapshot, results };
+/**
+ * For the page's own tests and the known-answer check by hand: the frame the boost makes `t` of the way from picture `first` to picture `second`
+ * (addresses of two pictures of one size), by `how`, as a PNG (data: address). Uses a boost of its own: the playing video's is left alone.
+ */
+async function interpolate(first: string, second: string, t: number, how: BoostHow = "motion"): Promise<string> {
+  if (!gl) return glProblem || "WebGL 2 is not available";
+  const pictures = await Promise.all(
+    [first, second].map(async (address) => createImageBitmap(await (await fetch(address)).blob(), { colorSpaceConversion: "none", premultiplyAlpha: "none" })),
+  );
+  const size = { width: pictures[0]!.width, height: pictures[0]!.height };
+  if (pictures[1]!.width !== size.width || pictures[1]!.height !== size.height) return "The two pictures are not of one size";
+  const spare = gl.spareBoost();
+  timing = true;
+  try {
+    const a = spare.push(pictures[0]!, size);
+    const b = spare.push(pictures[1]!, size);
+    gl.drawFrom(spare.draw(a, b, t, how).texture, size, "off", size);
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    canvas.getContext("2d")!.drawImage(glCanvas, 0, 0); // (in the same task as the drawing: the canvas still holds it)
+    return canvas.toDataURL("image/png");
+  } finally {
+    timing = false;
+    spare.dispose();
+    for (const picture of pictures) picture.close();
+    render();
+  }
+}
+
+/**
+ * For making a boosted video by hand (frame by frame, nothing dropped): as `interpolate`, then drawn by `shot` at the target (the size the loaded video gets),
+ * as a PNG (data: address). The two pictures must be of the loaded video's size.
+ */
+async function boosted(first: string, second: string, t: number, how: BoostHow = "motion", shot: Mode = mode): Promise<string> {
+  if (!gl) return glProblem || "WebGL 2 is not available";
+  const why = await ready(shot);
+  if (why) return why;
+  const pictures = await Promise.all(
+    [first, second].map(async (address) => createImageBitmap(await (await fetch(address)).blob(), { colorSpaceConversion: "none", premultiplyAlpha: "none" })),
+  );
+  const size = { width: pictures[0]!.width, height: pictures[0]!.height };
+  const spare = gl.spareBoost();
+  const out = outSize();
+  timing = true;
+  try {
+    const a = spare.push(pictures[0]!, size);
+    const b = spare.push(pictures[1]!, size);
+    drawPicture(spare.draw(a, b, t, how), shot);
+    const canvas = document.createElement("canvas");
+    canvas.width = out.width;
+    canvas.height = out.height;
+    canvas.getContext("2d")!.drawImage(isAnime(shot) ? gpuCanvas : glCanvas, 0, 0, out.width, out.height, 0, 0, out.width, out.height); // (same task)
+    return canvas.toDataURL("image/png");
+  } finally {
+    timing = false;
+    spare.dispose();
+    for (const picture of pictures) picture.close();
+    render();
+  }
+}
+
+/** The frame boost's state now, for a look by hand. */
+const boost = (): object => ({ on: boostOn(), fps: boostFps(), how: boostHow(), hz: screenHz(), frameTime: videoClock.frameTime(), shownLastSecond: shownTimes.length, lastPhase });
+
+(window as Window & { kinoUpscaleLab?: unknown }).kinoUpscaleLab = { probe, snapshot, interpolate, boosted, boost, results };

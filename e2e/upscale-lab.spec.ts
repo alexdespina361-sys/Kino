@@ -146,6 +146,94 @@ test.describe("Kino Labs: the upscaler test page", () => {
     await expect(page.getByTestId("upscale-test-one")).toBeEnabled();
   });
 
+  test("the frame boost makes the frame between two: Motion draws a moving square where it is at that moment, Blend shows it faintly in both places", async ({ page }) => {
+    await openSample(page);
+    const seen = await page.evaluate(async () => {
+      const lab = (window as unknown as { kinoUpscaleLab: { interpolate: (a: string, b: string, t: number, how: string) => Promise<string> } }).kinoUpscaleLab;
+      // Pictures of a white square moved to the right, on a background of grey blocks that stands still.
+      const picture = (x: number, side: number): string => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 320;
+        canvas.height = 180;
+        const context = canvas.getContext("2d")!;
+        let seed = 7;
+        for (let by = 0; by < 180; by += 4) {
+          for (let bx = 0; bx < 320; bx += 4) {
+            seed = (seed * 1103515245 + 12345) % 2147483648;
+            const grey = 40 + (seed % 60);
+            context.fillStyle = `rgb(${grey}, ${grey}, ${grey})`;
+            context.fillRect(bx, by, 4, 4);
+          }
+        }
+        context.fillStyle = "#fff";
+        context.fillRect(x, 90 - side / 2, side, side);
+        return canvas.toDataURL("image/png");
+      };
+      const read = async (address: string): Promise<(x: number, y: number) => number> => {
+        const image = await createImageBitmap(await (await fetch(address)).blob());
+        const canvas = new OffscreenCanvas(image.width, image.height);
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        return (x, y) => context.getImageData(x, y, 1, 1).data[0]!;
+      };
+      const at = async (pair: string[], t: number, how: string, xs: number[]): Promise<number[]> => {
+        const made = await read(await lab.interpolate(pair[0]!, pair[1]!, t, how));
+        return xs.map((x) => made(x, 90));
+      };
+      // A big square (48 pixels) moved 24 pixels: it overlaps itself. Seen at x = 80 (where only the first had it), 112 (both), 128 and 144 (the second only).
+      const big = [picture(80, 48), picture(104, 48)];
+      const bigAt = [80, 112, 128, 144];
+      // A small square (24 pixels) moved 40: farther than its own size, the hard case. Seen at 92 (its middle before), 112 (half way) and 132 (after).
+      const small = [picture(80, 24), picture(120, 24)];
+      const smallAt = [92, 112, 132];
+      return {
+        bigHalf: await at(big, 0.5, "motion", bigAt),
+        bigQuarter: await at(big, 0.25, "motion", bigAt),
+        blendHalf: await at(big, 0.5, "blend", bigAt),
+        ends: await at(big, 1, "motion", bigAt),
+        smallHalf: await at(small, 0.5, "motion", smallAt),
+      };
+    });
+    // Motion: the square is where it is at that moment (92 to 140 half way, 86 to 134 a quarter of the way); the background shows where it left.
+    expect(seen.bigHalf[0]).toBeLessThan(120);
+    expect(seen.bigHalf[1]).toBeGreaterThan(220);
+    expect(seen.bigHalf[2]).toBeGreaterThan(220);
+    expect(seen.bigHalf[3]).toBeLessThan(120);
+    expect(seen.bigQuarter[0]).toBeLessThan(120);
+    expect(seen.bigQuarter[1]).toBeGreaterThan(220);
+    expect(seen.bigQuarter[3]).toBeLessThan(120);
+    // The small fast square is half way too (not lost, not left behind).
+    expect(seen.smallHalf[0]).toBeLessThan(120);
+    expect(seen.smallHalf[1]).toBeGreaterThan(220);
+    expect(seen.smallHalf[2]).toBeLessThan(120);
+    // Blend: half of the square where only one picture had it, white where both did.
+    for (const where of [0, 2, 3]) expect(seen.blendHalf[where]).toBeGreaterThan(130), expect(seen.blendHalf[where]).toBeLessThan(200);
+    expect(seen.blendHalf[1]).toBeGreaterThan(220);
+    // At 1, the second picture as it is.
+    expect(seen.ends[3]).toBe(255);
+  });
+
+  test("with the frame boost at 60, plays on the screen's rhythm, says what it does, and is timed against 60 frames a second", async ({ page }) => {
+    await openSample(page, "/labs/upscale/?seconds=2");
+    await page.getByTestId("upscale-boost").selectOption("60");
+    await expect(page.getByTestId("upscale-boost-info")).toBeVisible();
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+    await expect(page.getByTestId("upscale-boost-info")).toContainText("frames a second made into 60, by Motion", { timeout: 10_000 });
+    await expect(page.getByTestId("upscale-boost-info")).toContainText(/Now: \d+ new frames a second/);
+    await expect(page.locator(".stage.boosted")).toHaveCount(1); // (the left side is the video's own frame of the moment shown)
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
+    await page.getByTestId("upscale-test-one").click();
+    const row = page.getByTestId("upscale-result-sharp-60-motion");
+    await expect(row).toBeVisible({ timeout: 60_000 });
+    await expect(row).toContainText("Sharp (FSR 1) + 60 fps (Motion)");
+    await expect(row).toContainText(/frames shown in time, at [\d.]+ new frames a second \(screen: \d+ Hz\)|not played: too slow to try/);
+    await expect(page.getByTestId("upscale-verdict-sharp-60-motion")).toHaveText(/^(Smooth|Tight|Too slow)$/);
+    // Off again: the video as it is, on the left too.
+    await page.getByTestId("upscale-boost").selectOption("0");
+    await expect(page.getByTestId("upscale-boost-info")).toBeHidden();
+    await expect(page.locator(".stage.boosted")).toHaveCount(0);
+  });
+
   test("where the browser has no WebGPU, says so, keeps the Anime modes off, and tests the others", async ({ page }) => {
     await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "gpu", { get: () => undefined, configurable: true }));
     await openSample(page, "/labs/upscale/?seconds=1");
