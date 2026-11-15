@@ -1,5 +1,6 @@
 import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
 import { createFilmpireAdapter } from "./adapters/filmpire";
+import { createHiAnimeAdapter } from "./adapters/hianime";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 import { createGenericResolver } from "./generic";
 import { isPublicAddress } from "./ip";
@@ -30,7 +31,7 @@ export function createResolver({ log, allowPrivateNetwork = false, adapters, reg
   const generic = createGenericResolver({ fetch: safeFetch, fetchOptions });
   // (The adapters ask the sites they are made for, and those name the next address to ask: they are held to the same addresses as a pasted link.)
   const providers = providerFetch(fetchOptions);
-  const activeAdapters = adapters ?? [createFilmpireAdapter({ fetch: providers }), createSitefilmeAdapter(), createAnimeHeavenAdapter({ fetch: providers })];
+  const activeAdapters = adapters ?? [createFilmpireAdapter({ fetch: providers }), createSitefilmeAdapter(), createAnimeHeavenAdapter({ fetch: providers }), createHiAnimeAdapter({ fetch: providers })];
   const fromEnv = deadlineFromEnv();
   const options: RegistryOptions = { ...(fromEnv !== undefined ? { deadlineMs: fromEnv } : {}), ...registry };
   return new ResolverRegistry(activeAdapters, generic, log, Date.now, options).resolve;

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAnimeHeavenAdapter } from "./adapters/animeheaven";
+import { createHiAnimeAdapter } from "./adapters/hianime";
 import { createFilmpireAdapter, resolveVidLinkStream } from "./adapters/filmpire";
 import { createSitefilmeAdapter } from "./adapters/sitefilme";
 
@@ -737,3 +738,142 @@ describe("the anime site: a season is never another season's title", () => {
     expect(vidlinkQueries.length).toBe(1);
   });
 });
+
+describe("HiAnime provider and multi-season anime fallback", () => {
+  const NAMES: Record<number, string> = {
+    1: "Indigo League",
+    23: "Pokémon Journeys: The Series",
+    24: "Pokémon Master Journeys: The Series",
+    25: "Pokémon Ultimate Journeys: The Series",
+  };
+  const seasons = Array.from({ length: 25 }, (_, i) => ({
+    season_number: i + 1,
+    name: NAMES[i + 1] ?? `Series ${i + 1}`,
+    episode_count: i === 22 ? 48 : i === 23 ? 42 : i === 24 ? 46 : 40,
+  }));
+  const pokemonTmdb = { id: 60572, name: "Pokémon", original_language: "ja", genres: [{ id: 16 }], seasons };
+
+  function makeZokoBlob(json: object): string {
+    const jsonStr = JSON.stringify(json);
+    const buf = Buffer.from(jsonStr, "utf8");
+    const keyBuf = Buffer.from("otaku-embed-v1", "utf8");
+    const out = Buffer.alloc(buf.length);
+    for (let i = 0; i < buf.length; i++) {
+      out[i] = buf[i]! ^ keyBuf[i % keyBuf.length]!;
+    }
+    return out.toString("base64");
+  }
+
+  function mockAnimeWorldWithHiAnime(options: {
+    tmdbId?: string;
+    tmdb?: Record<string, unknown>;
+    hiEpisodes?: number[];
+  }): typeof fetch {
+    const requestedEpisodes = options.hiEpisodes ?? Array.from({ length: 146 }, (_, i) => i + 1);
+
+    return (async (url: string | URL) => {
+      const u = new URL(String(url));
+      const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
+
+      if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith(`/tv/${options.tmdbId ?? "60572"}`)) {
+        return { ok: true, status: 200, json: async () => options.tmdb ?? pokemonTmdb };
+      }
+
+      // AnimeHeaven only has Horizons
+      if (u.hostname.endsWith("animeheaven.me")) {
+        if (u.pathname.endsWith("/search.php")) {
+          return text("<div class='boldtext'><div class='info3 bc1'><div class='similarimg'><div class='p1'><a href='anime.php?horizons'><img class='coverimg' src='image.php?horizons' alt='Pokemon Horizons'></a><div class='similarname c'><a href='anime.php?horizons' class='c'>Pokemon Horizons: The Series</a></div></div></div></div></div>");
+        }
+        if (u.pathname.endsWith("/anime.php")) {
+          return text("<div class='infotitle c'>Pokemon Horizons: The Series</div><a class='c' id='horizons1' href='gate.php'><div class='watch1'>Episode</div><div class='watch2'>1</div></a>");
+        }
+      }
+
+      // HiAnime mock
+      if (u.hostname.endsWith("hianime.at")) {
+        if (u.pathname === "/search") {
+          return text(`
+            <div class="film-detail">
+              <h3 class="film-name"><a href="/pokemon-journeys-the-series-1879" title="Pokemon Journeys: The Series">Pokemon Journeys</a></h3>
+            </div>
+            <div class="film-detail">
+              <h3 class="film-name"><a href="/pokemon-7102" title="Pokémon">Pokémon</a></h3>
+            </div>
+          `);
+        }
+        if (u.pathname.startsWith("/api/theme/episode/list/")) {
+          const epHtml = requestedEpisodes.map((n) => `<a class="ep-item" data-id="${10000 + n}" data-number="${n}" title="Episode ${n}"></a>`).join("");
+          return text(JSON.stringify({ status: true, html: epHtml }));
+        }
+        if (u.pathname.startsWith("/api/theme/episode/servers")) {
+          const epId = u.searchParams.get("episodeId") || "10001";
+          const subEmbed = `https://zokoanime.video/stream/mal/40351/${epId}/sub`;
+          return text(JSON.stringify({
+            status: true,
+            html: `<div class="server-item" data-type="sub" data-server-name="ZokoAnime" data-hash="${Buffer.from(subEmbed).toString("base64")}"></div>`,
+          }));
+        }
+      }
+
+      // ZokoAnime mock
+      if (u.hostname === "zokoanime.video") {
+        const match = u.pathname.match(/\/stream\/mal\/40351\/(\d+)\/sub/);
+        const epNum = match ? match[1] : "1";
+        const blob = makeZokoBlob({
+          src: `https://cdn.hianime.test/pokemon/${epNum}/master.m3u8`,
+          subtitles: [{ lang: "en", label: "English", src: `https://cdn.hianime.test/pokemon/${epNum}/sub.vtt`, default: true }],
+        });
+        return text(`<html><script>window.__P="${blob}";</script></html>`);
+      }
+
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+  }
+
+  it("resolves Pokémon S23 E3 via HiAnime when VidLink, Buzz, and AnimeHeaven do not have it", async () => {
+    const fetcher = mockAnimeWorldWithHiAnime({});
+    const res = await createFilmpireAdapter({ fetch: fetcher }).resolve(new URL("https://filmpire.sc/watch/60572?s=23&e=3"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.stream.directUrl).toContain("cdn.hianime.test/pokemon/10003/master.m3u8");
+      expect(res.media.subtitles?.[0]?.lang).toBe("en");
+    }
+  });
+
+  it("resolves Pokémon S25 E6 via HiAnime by calculating umbrella episode offset 96", async () => {
+    const fetcher = mockAnimeWorldWithHiAnime({});
+    const res = await createFilmpireAdapter({ fetch: fetcher }).resolve(new URL("https://filmpire.sc/watch/60572?s=25&e=6"));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      // S23 (48) + S24 (42) + 6 = 96 -> internal ID 10096
+      expect(res.media.stream.directUrl).toContain("cdn.hianime.test/pokemon/10096/master.m3u8");
+      expect(res.media.subtitles?.[0]?.lang).toBe("en");
+    }
+  });
+
+  it("resolves direct ZokoAnime and HiAnime URLs via createHiAnimeAdapter", async () => {
+    const subEmbed = "https://zokoanime.video/stream/mal/40351/1/sub";
+    const blob = makeZokoBlob({
+      src: "https://cdn.hianime.test/pokemon/1/master.m3u8",
+      subtitles: [{ lang: "en", label: "English", src: "https://cdn.hianime.test/pokemon/1/sub.vtt", default: true }],
+    });
+
+    const directFetcher = (async (url: string | URL) => {
+      const u = String(url);
+      if (u === subEmbed) {
+        return { ok: true, status: 200, text: async () => `<html><script>window.__P="${blob}";</script></html>` };
+      }
+      return { ok: false, status: 404 };
+    }) as unknown as typeof fetch;
+
+    const adapter = createHiAnimeAdapter({ fetch: directFetcher });
+    const res = await adapter.resolve(new URL(subEmbed));
+    expect(res.status).toBe("success");
+    if (res.status === "success") {
+      expect(res.media.stream.directUrl).toBe("https://cdn.hianime.test/pokemon/1/master.m3u8");
+      expect(res.media.stream.type).toBe("hls");
+      expect(res.media.subtitles).toHaveLength(1);
+    }
+  });
+});
+
