@@ -450,6 +450,29 @@ def old_film(speech: np.ndarray, bg: np.ndarray, ref: list[Cue], starts: list[fl
     return (x + hum + hiss).astype(np.float32)
 
 
+def level(x: np.ndarray, target: float = 0.05, window_s: float = 3.0, up_db: float = 40.0, down_db: float = 20.0) -> np.ndarray:
+    """
+    The pipeline's first step: the sound brought to a steady loudness (RMS `target` over a sliding 3 s window, at most +40 dB, at most
+    -20 dB), with no delay. Why: what the screen captures is at whatever level the film and the player volume give, and the voice detector
+    is level-sensitive (it heard nothing in the FLEURS recordings 35-40 dB below the others: one Japanese line, most English ones).
+    """
+    frames = len(x) // 160
+    if not frames:
+        return x.astype(np.float32)
+    power = (x[: frames * 160].reshape(-1, 160).astype(np.float64) ** 2).mean(axis=1)
+    win = max(1, int(window_s * 100))
+    smooth = np.sqrt(np.convolve(power, np.ones(win) / win, mode="same"))
+    gain = np.clip(target / np.maximum(smooth, 1e-9), 10 ** (-down_db / 20), 10 ** (up_db / 20))
+    g = np.interp(np.arange(len(x)), np.arange(frames) * 160 + 80, gain)
+    return np.clip(x * g, -1, 1).astype(np.float32)
+
+
+def line_si_sdr(est: np.ndarray, ref: np.ndarray, cues: list[Cue]) -> float:
+    """Median over lines of each line's SI-SDR: one figure for the whole clip is ruled by the loudest lines and hides what happens to quiet ones."""
+    vals = [si_sdr(est[int(c.start * SR): int(c.end * SR)], ref[int(c.start * SR): int(c.end * SR)]) for c in cues if c.end - c.start > 0.5]
+    return round(float(np.median(vals)), 1) if vals else float("nan")
+
+
 def si_sdr(est: np.ndarray, ref: np.ndarray) -> float:
     n = min(len(est), len(ref))
     est, ref = est[:n] - est[:n].mean(), ref[:n] - ref[:n].mean()
@@ -511,14 +534,20 @@ def prepare() -> None:
         with open(os.path.join(GEN, f"{lang}-ref.json"), "w", encoding="utf-8") as f:
             json.dump({"ref": [[c.start, c.end, c.text] for c in ref], "starts": starts}, f, ensure_ascii=False)
         bg = film_background(len(clean))
-        sounds = {"clean": clean, "film": mix(clean, bg, ref, FILM_SNR_DB, starts), "old": old_film(clean, bg, ref, starts)}
+        raw = {"clean": clean, "film": mix(clean, bg, ref, FILM_SNR_DB, starts), "old": old_film(clean, bg, ref, starts)}
+        # (Every sound goes through the level step first, as the pipeline would do with what the screen captures; what is saved and
+        # isolated is the levelled sound. SI-SDR is a median over lines, so quiet lines count as much as loud ones.)
+        sounds = {name: level(x) for name, x in raw.items()}
         for name, x in sounds.items():
             np.save(os.path.join(GEN, f"{lang}-{name}.npy"), x)
-        log(f"{lang}: {len(clean) / SR:.0f} s, {len(ref)} lines; film mix SI-SDR {si_sdr(sounds['film'], clean)} dB, old {si_sdr(sounds['old'], clean)} dB")
-        p = vad_track(clean)
-        levels = [round(20 * np.log10(line_rms(clean, c)), 1) for c in ref]
-        heard = [round(float((p[int(c.start * 100): int(c.end * 100)] >= 0.5).mean()), 2) for c in ref]
-        line = f"{lang} lines: loudness dBFS {levels}; share of each line Silero calls speech {heard}"
+        log(f"{lang}: {len(clean) / SR:.0f} s, {len(ref)} lines; per-line SI-SDR film {line_si_sdr(raw['film'], clean, ref)} dB, old {line_si_sdr(raw['old'], clean, ref)} dB")
+        levels = [round(float(20 * np.log10(line_rms(clean, c))), 1) for c in ref]
+        heard = {}
+        for name, x in (("raw", clean), ("levelled", sounds["clean"])):
+            p = vad_track(x)
+            heard[name] = [round(float((p[int(c.start * 100): int(c.end * 100)] >= 0.5).mean()), 2) for c in ref]
+        line = (f"{lang} lines: loudness dBFS {levels}\n  share of each line Silero calls speech, as recorded {heard['raw']}\n"
+                f"  after the level step {heard['levelled']}")
         log(line)
         notes.append(line)
         for iso in ("tiger", "demucs"):
@@ -530,7 +559,8 @@ def prepare() -> None:
                     y = isolate(iso, sounds[name])
                     took = time.time() - t
                     np.save(os.path.join(GEN, f"{lang}-{name}+{iso}.npy"), y)
-                    line = f"{lang}-{name}+{iso}: {len(y) / SR / took:.0f}x real time, SI-SDR vs clean speech {si_sdr(y, clean)} dB (input {si_sdr(sounds[name], clean)} dB), lag {lag_ms(y, clean):+.0f} ms"
+                    line = (f"{lang}-{name}+{iso}: {len(y) / SR / took:.0f}x real time, per-line SI-SDR vs clean speech {line_si_sdr(y, clean, ref)} dB "
+                            f"(input {line_si_sdr(sounds[name], clean, ref)} dB), lag {lag_ms(y, sounds['clean']):+.0f} ms")
                 except Exception as error:  # noqa: BLE001 (an isolator that will not install or run is reported, the rest go on)
                     line = f"{lang}-{name}+{iso}: FAILED {error!r}"[:300]
                 log(line)
