@@ -638,11 +638,6 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
         if (!rawShowTitle || animated === false) return null;
         if (originalLang && originalLang !== "ja" && originalLang !== "zh") return null;
         try {
-          const { animeHeavenSource } = await import("../../library/animeheaven");
-          const { createAnimeHeavenAdapter } = await import("./animeheaven");
-          const ah = animeHeavenSource({ fetch: get });
-          if (!ah.search || !ah.episodes) return null;
-
           const targetSeason = Number(s || "1");
           const targetEpisode = Number(e || "1");
 
@@ -684,8 +679,7 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             }
           }
 
-          // Build search queries: show title, clean show title, show title + season name. (Not the season's name alone: "Ultimate Journeys" or "Final
-          // Season" on its own finds other shows' titles.)
+          // Build search queries: show title, clean show title, show title + season name
           const searchQueries = new Set<string>();
           searchQueries.add(rawShowTitle);
           if (cleanShow && cleanShow !== rawShowTitle.toLowerCase()) {
@@ -697,25 +691,6 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           if (cleanShow.includes("jujutsu")) {
             searchQueries.add("sorcery fight");
           }
-
-          // (One search after another: each one opens up to 15 of the titles it finds, and a title one search opened is not opened again by the next.)
-          const results: Array<{ title: string; url: string }> = [];
-          const seenUrls = new Set<string>();
-          for (const query of searchQueries) {
-            try {
-              const found = await ah.search(query);
-              for (const item of found) {
-                if (!seenUrls.has(item.url)) {
-                  seenUrls.add(item.url);
-                  results.push(item);
-                }
-              }
-            } catch {
-              // Ignore individual search failures
-            }
-          }
-
-          if (results.length === 0) return null;
 
           const extractAnimeSeason = (tTitle: string): number => {
             const t = tTitle.toLowerCase();
@@ -729,9 +704,6 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             return 1;
           };
 
-          // Which of the show's named seasons a title on the site is: the one whose name (TMDB's, with or without "The Series", "Part N", "Arc") is the
-          // longest that the title has in it, beside the show's own name. So "Pokemon Ultimate Journeys" is Ultimate Journeys (25), not Journeys (23),
-          // and "Pokemon Horizons" is not Indigo League. Undefined: no season's name is in it (or the title does not have the show's name).
           const namedSeasons = (tmdbSeasons ?? []).flatMap((sn) => {
             const number = sn.season_number;
             const name = sn.name ? normalizeTitle(sn.name) : "";
@@ -753,94 +725,308 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             const named = seasonOfTitle(tTitle);
             return named !== undefined && named !== targetSeason;
           };
-          // The show itself: a title of the show's own name, or that name with only "(TV)" or a year after it, such as "Detective Conan (TV)"; not
-          // "Naruto Shippuden", "Pokemon Horizons" or another show the search found.
+
           const itself = (name: string): boolean => {
             const norm = normalizeTitle(name);
             if (norm === cleanShow) return true;
             if (!norm.startsWith(`${cleanShow} `)) return false;
             return /^(?:tv|(?:tv )?(?:19|20)\d\d)$/.test(norm.slice(cleanShow.length + 1));
           };
-          /** The show's name and more words after it: a sequel or a later series ("Pokemon Horizons", "Naruto Shippuden"), unless it is only "(TV)" or a year. */
           const sequel = (name: string): boolean => normalizeTitle(name).startsWith(`${cleanShow} `) && !itself(name);
 
-          // 1. Try matching by season name if this season has a distinct name (e.g. "Ultimate Journeys")
-          let matched: { title: string; url: string } | undefined;
-          let episodeToFind = targetEpisode;
-
-          if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
-            matched = results.find((r) => seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
-            if (matched) {
-              episodeToFind = targetEpisode;
-            }
-          }
-
-          // 2. Try explicit numbered season matching (e.g. "Season 2", "2nd Season", etc.)
-          // (Never a title that is another of the show's named seasons, and for the first season never a sequel of the show: the first that reads
-          // as season 1 can be "Pokemon Horizons" for Pokémon's Indigo League. A title of the show's own name comes first; one the site names in its own
-          // words, such as "Sousou no Frieren" for "Frieren: Beyond Journey's End", is still taken.)
-          if (!matched && targetSeason > 1) {
-            const matchedSeasonList = results.filter((r) => extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
-            matched = matchedSeasonList[0];
-            if (!matched) {
-              matched = results.find(
-                (r) =>
-                  !otherSeason(r.title) &&
-                  (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
-                    r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
-                    r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
-                    r.title.toLowerCase().includes(`${targetSeason}th season`)),
-              );
-            }
-            if (matched) {
-              episodeToFind = targetEpisode;
-            }
-          }
-
-          // 3. For Season 1 or fallback to continuous/absolute-numbered series
-          if (!matched) {
-            if (targetSeason === 1) {
-              const first = (r: { title: string }) => extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
-              matched = results.find((r) => first(r) && itself(r.title)) ?? results.find((r) => first(r) && !sequel(r.title));
-              if (matched) episodeToFind = targetEpisode;
-            } else if (absoluteEpisode) {
-              // (The numbering from the first episode is only looked for in the show itself, see `itself`.)
-              const baseMatch = results.find((r) => normalizeTitle(r.title) === cleanShow) ?? results.find((r) => itself(r.title));
-              if (baseMatch) {
-                matched = baseMatch;
-                episodeToFind = absoluteEpisode;
+          // Calculates episode offset if the show has grouped seasons under an umbrella title (e.g. "Pokemon Journeys" covering S23-S25)
+          const umbrellaSeasonOffset = (matchedTitle: string): number => {
+            if (!tmdbSeasons || targetSeason <= 1) return 0;
+            const normMatched = normalizeTitle(matchedTitle);
+            const keywords = normMatched.split(" ").filter((w) => w.length > 3 && !["series", "season", "anime"].includes(w) && w !== cleanShow);
+            const matchingKeyword = keywords.find((w) => normSeasonName?.includes(w));
+            if (!matchingKeyword) return 0;
+            let offset = 0;
+            for (const sn of tmdbSeasons) {
+              if (sn.season_number && sn.season_number < targetSeason) {
+                const sName = sn.name ? normalizeTitle(sn.name) : "";
+                if (sName.includes(matchingKeyword) && typeof sn.episode_count === "number") {
+                  offset += sn.episode_count;
+                }
               }
             }
-          }
+            return offset;
+          };
 
-          if (!matched) return null;
+          // 1. Try AnimeHeaven
+          const tryAnimeHeaven = async (): Promise<ResolveResult | null> => {
+            try {
+              const { animeHeavenSource } = await import("../../library/animeheaven");
+              const { createAnimeHeavenAdapter } = await import("./animeheaven");
+              const ah = animeHeavenSource({ fetch: get });
+              if (!ah.search || !ah.episodes) return null;
 
-          const eps = await ah.episodes(matched.url, 1);
-          // (When the numbering from the first episode is not there, nothing is played: the same number in the first series is another episode.)
-          const targetEp = eps.find((ep) => ep.episode === episodeToFind);
-          if (!targetEp?.url) return null;
-
-          const ahAdapter = createAnimeHeavenAdapter({ fetch: get });
-          const res = await ahAdapter.resolve(new URL(targetEp.url));
-          if (res.status === "success") {
-            return {
-              ...res,
-              media: {
-                ...res.media,
-                title,
-                page: url.href,
-                ...(res.media.series
-                  ? {
-                      series: {
-                        ...res.media.series,
-                        season: targetSeason,
-                        episode: targetEpisode,
-                      },
+              const results: Array<{ title: string; url: string }> = [];
+              const seenUrls = new Set<string>();
+              for (const query of searchQueries) {
+                try {
+                  const found = await ah.search(query);
+                  for (const item of found) {
+                    if (!seenUrls.has(item.url)) {
+                      seenUrls.add(item.url);
+                      results.push(item);
                     }
-                  : {}),
+                  }
+                } catch {
+                  // Ignore
+                }
+              }
+
+              if (results.length === 0) return null;
+
+              let matched: { title: string; url: string } | undefined;
+              let episodeToFind = targetEpisode;
+
+              if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
+                matched = results.find((r) => seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
+                if (matched) episodeToFind = targetEpisode;
+              }
+
+              if (!matched && targetSeason > 1) {
+                const matchedSeasonList = results.filter((r) => extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
+                matched = matchedSeasonList[0];
+                if (!matched) {
+                  matched = results.find(
+                    (r) =>
+                      !otherSeason(r.title) &&
+                      (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
+                        r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
+                        r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
+                        r.title.toLowerCase().includes(`${targetSeason}th season`)),
+                  );
+                }
+                if (matched) episodeToFind = targetEpisode;
+              }
+
+              if (!matched) {
+                if (targetSeason === 1) {
+                  const first = (r: { title: string }) => extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
+                  matched = results.find((r) => first(r) && itself(r.title)) ?? results.find((r) => first(r) && !sequel(r.title));
+                  if (matched) episodeToFind = targetEpisode;
+                } else if (absoluteEpisode) {
+                  const baseMatch = results.find((r) => normalizeTitle(r.title) === cleanShow) ?? results.find((r) => itself(r.title));
+                  if (baseMatch) {
+                    matched = baseMatch;
+                    episodeToFind = absoluteEpisode;
+                  }
+                }
+              }
+
+              if (!matched) return null;
+
+              const eps = await ah.episodes(matched.url, 1);
+              const targetEp = eps.find((ep) => ep.episode === episodeToFind);
+              if (!targetEp?.url) return null;
+
+              const ahAdapter = createAnimeHeavenAdapter({ fetch: get });
+              const res = await ahAdapter.resolve(new URL(targetEp.url));
+              if (res.status === "success") {
+                return {
+                  ...res,
+                  media: {
+                    ...res.media,
+                    title,
+                    page: url.href,
+                    ...(res.media.series
+                      ? {
+                          series: {
+                            ...res.media.series,
+                            season: targetSeason,
+                            episode: targetEpisode,
+                          },
+                        }
+                      : {}),
+                  },
+                };
+              }
+              return null;
+            } catch {
+              return null;
+            }
+          };
+
+          // 2. Try HiAnime / ZokoAnime
+          const tryHiAnime = async (): Promise<ResolveResult | null> => {
+            try {
+              const { searchHiAnime, getHiAnimeEpisodes, resolveHiAnimeEpisodeStream } = await import("../../library/hianime");
+              const hiResults: Array<{ title: string; href: string; id: string }> = [];
+              const seenHiIds = new Set<string>();
+              for (const query of searchQueries) {
+                try {
+                  const found = await searchHiAnime(query, get);
+                  for (const item of found) {
+                    if (!seenHiIds.has(item.id)) {
+                      seenHiIds.add(item.id);
+                      hiResults.push(item);
+                    }
+                  }
+                } catch {
+                  // Ignore
+                }
+              }
+              if (hiResults.length === 0) return null;
+
+              let hiMatched: { title: string; href: string; id: string } | undefined;
+              let hiEpisodeToFind = targetEpisode;
+
+              if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
+                hiMatched = hiResults.find((r) => seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
+                if (hiMatched) {
+                  hiEpisodeToFind = targetEpisode;
+                } else {
+                  for (const r of hiResults) {
+                    if (/\b(?:movie|film|special|ova)\b/i.test(r.title)) continue;
+                    const offset = umbrellaSeasonOffset(r.title);
+                    if (offset > 0) {
+                      hiMatched = r;
+                      hiEpisodeToFind = offset + targetEpisode;
+                      break;
+                    }
+                  }
+                }
+              }
+
+              if (!hiMatched && targetSeason > 1) {
+                const matchedSeasonList = hiResults.filter((r) => extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
+                hiMatched = matchedSeasonList[0];
+                if (!hiMatched) {
+                  hiMatched = hiResults.find(
+                    (r) =>
+                      !otherSeason(r.title) &&
+                      (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
+                        r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
+                        r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
+                        r.title.toLowerCase().includes(`${targetSeason}th season`)),
+                  );
+                }
+                if (hiMatched) hiEpisodeToFind = targetEpisode;
+              }
+
+              if (!hiMatched) {
+                if (targetSeason === 1) {
+                  const first = (r: { title: string }) => extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
+                  hiMatched = hiResults.find((r) => first(r) && itself(r.title)) ?? hiResults.find((r) => first(r) && !sequel(r.title));
+                  if (hiMatched) hiEpisodeToFind = targetEpisode;
+                } else if (absoluteEpisode) {
+                  const baseMatch = hiResults.find((r) => normalizeTitle(r.title) === cleanShow) ?? hiResults.find((r) => itself(r.title));
+                  if (baseMatch) {
+                    hiMatched = baseMatch;
+                    hiEpisodeToFind = absoluteEpisode;
+                  }
+                }
+              }
+
+              if (!hiMatched) return null;
+
+              const eps = await getHiAnimeEpisodes(hiMatched.id, get);
+              const targetEp = eps.find((ep) => ep.num === hiEpisodeToFind);
+              if (!targetEp) return null;
+
+              const resolved = await resolveHiAnimeEpisodeStream(hiMatched.id, hiEpisodeToFind, { fetcher: get });
+              if (!resolved) return null;
+
+              const proxiedUrl = streamAddress(resolved.stream.src, resolved.embedUrl, process.env, false);
+              const hiSubs: SubtitleTrack[] = resolved.stream.subtitles.map((sub, idx) => ({
+                id: idx,
+                url: `/api/proxy?url=${encodeURIComponent(sub.src)}&format=vtt`,
+                label: (sub.label || sub.lang).slice(0, 100),
+                lang: normalizeLang(sub.lang) || "en",
+              }));
+
+              pendingExtras ??= askExtras(tmdbImdbId);
+              const [listed, roSubs] = pendingExtras
+                ? await extrasByThen(pendingExtras, extrasGraceMs)
+                : [[], []];
+
+              const combinedSubs = [...roSubs, ...hiSubs, ...listed];
+              const seenSubUrls = new Set<string>();
+              const uniqueSubs: SubtitleTrack[] = [];
+              for (const sub of combinedSubs) {
+                if (!seenSubUrls.has(sub.url)) {
+                  seenSubUrls.add(sub.url);
+                  uniqueSubs.push(sub);
+                }
+              }
+              uniqueSubs.sort((a, b) => {
+                const lA = normalizeLang(a.lang);
+                const lB = normalizeLang(b.lang);
+                const pA = lA === "en" ? 0 : lA === "ro" ? 1 : 2;
+                const pB = lB === "en" ? 0 : lB === "ro" ? 1 : 2;
+                return pA - pB;
+              });
+              const subList = uniqueSubs.length > 0 ? uniqueSubs.slice(0, MAX_SUBTITLES) : undefined;
+              if (subList) {
+                subList.forEach((sub, idx) => {
+                  sub.id = idx;
+                  if (sub.label) sub.label = sub.label.slice(0, 100);
+                  if (sub.lang) sub.lang = sub.lang.slice(0, 20);
+                });
+              }
+
+              const alternates: AlternateSource[] = [];
+              if (resolved.altDubStream) {
+                alternates.push({
+                  label: "Server 2 (English Dub)",
+                  stream: {
+                    url: streamAddress(resolved.altDubStream.stream.src, resolved.altDubStream.embedUrl, process.env, false),
+                    type: "hls",
+                    directUrl: resolved.altDubStream.stream.src,
+                  },
+                });
+              }
+
+              return {
+                status: "success",
+                resolver: "filmpire",
+                media: {
+                  title,
+                  stream: {
+                    url: proxiedUrl,
+                    type: "hls",
+                    directUrl: resolved.stream.src,
+                  },
+                  ...(subList ? { subtitles: subList } : {}),
+                  ...(alternates.length > 0 ? { alternates } : {}),
+                  page: url.href,
+                  series: {
+                    season: targetSeason,
+                    episode: targetEpisode,
+                  },
+                },
+              };
+            } catch {
+              return null;
+            }
+          };
+
+          const [ahRes, hiRes] = await Promise.allSettled([
+            tryAnimeHeaven(),
+            tryHiAnime(),
+          ]);
+          const ah = ahRes.status === "fulfilled" ? ahRes.value : null;
+          const hi = hiRes.status === "fulfilled" ? hiRes.value : null;
+
+          if (hi && hi.status === "success" && ah && ah.status === "success") {
+            const alternates = [...(hi.media.alternates ?? [])];
+            alternates.push({
+              label: "Server (AnimeHeaven)",
+              stream: ah.media.stream,
+            });
+            return {
+              ...hi,
+              media: {
+                ...hi.media,
+                alternates: alternates.slice(0, MAX_ALTERNATES),
               },
             };
           }
+          if (hi && hi.status === "success") return hi;
+          if (ah && ah.status === "success") return ah;
           return null;
         } catch {
           return null;
