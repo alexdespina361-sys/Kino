@@ -1,13 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
   CAPTION_LABELS,
+  CAPTION_PRESET_NAMES,
+  CAPTION_PRESETS,
   CAPTION_SETTINGS,
   CAPTION_TITLES,
   CAPTION_VALUES,
   CaptionStyleSchema,
   DEFAULT_CAPTION_STYLE,
+  captionPresetOf,
   resolveCaptionStyle,
 } from "./captions";
+
+describe("the three looks", () => {
+  it("are each a real style, and the first is the default exactly, so nobody's subtitles change", () => {
+    for (const name of CAPTION_PRESET_NAMES) expect(CaptionStyleSchema.safeParse({ ...CAPTION_PRESETS[name], position: "normal" }).success, name).toBe(true);
+    expect({ ...CAPTION_PRESETS.standard, position: DEFAULT_CAPTION_STYLE.position }).toEqual(DEFAULT_CAPTION_STYLE);
+    expect(CAPTION_PRESET_NAMES.filter((name) => captionPresetOf({ ...DEFAULT_CAPTION_STYLE, ...CAPTION_PRESETS[name] }) === "standard")).toEqual(["standard"]);
+  });
+
+  it("never set the height, and a style is still its look whatever the height", () => {
+    for (const name of CAPTION_PRESET_NAMES) {
+      expect(CAPTION_PRESETS[name]).not.toHaveProperty("position");
+      expect(captionPresetOf({ ...DEFAULT_CAPTION_STYLE, ...CAPTION_PRESETS[name], position: "higher" })).toBe(name);
+    }
+  });
+
+  it("a style the viewer made is none of them", () => {
+    expect(captionPresetOf({ ...DEFAULT_CAPTION_STYLE, color: "yellow" })).toBeNull();
+    expect(captionPresetOf({ ...DEFAULT_CAPTION_STYLE, ...CAPTION_PRESETS.large, font: "serif" })).toBeNull();
+  });
+});
 
 describe("caption style", () => {
   it("has a title and a label for every setting and value, so every menu can list them", () => {

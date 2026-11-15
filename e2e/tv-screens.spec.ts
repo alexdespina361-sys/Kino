@@ -302,6 +302,7 @@ test.describe("subtitle height on the TV", () => {
     await tv.getByTestId("tv-audio-sub-btn").click();
     await tv.getByRole("option", { name: "Subtitle style…" }).click();
     await expect(tv.getByTestId("audio-subtitles-modal")).toHaveAttribute("data-kind", "captions");
+    await tv.getByRole("option", { name: "More options…" }).click(); // the height is one of the eight settings, past the three looks
 
     const sample = tv.getByTestId("subtitle-preview");
     const fromBottom = async () => 720 - (await sample.boundingBox())!.y - (await sample.boundingBox())!.height;

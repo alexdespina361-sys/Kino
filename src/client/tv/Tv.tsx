@@ -51,7 +51,7 @@ import { TvIdle, TvLocked, TvWelcome, type Pairing } from "./Idle";
 import { STARTING_FADE_MS, StartingFilm, startingFrom, UNHEARD_MS, type Starting } from "./Starting";
 import { keepPageFor, TvBrowse, type PlayOptions } from "./Browse";
 import { actionForKey, partyCommandForKey, SKIP_SECONDS } from "./keys";
-import { moveInMenu, TvMenu, type MenuKind } from "./Menu";
+import { moveInMenu, pageBefore, TvMenu, type MenuKind } from "./Menu";
 import { keepNativePlayerOut } from "./nativePlayer";
 import { pressWhatOkPresses } from "./okPress";
 import { PartyPage, PartyPanel } from "./Party";
@@ -87,6 +87,10 @@ const LOOKUP_END_GRACE_MS = 250;
 const SKIP_RUN_MS = 1200;
 /** A click that puts the controls away is not undone by the mouse settling for this long. */
 const PUT_AWAY_QUIET_MS = 600;
+
+/** The page a menu's Back goes to: a page of the audio and subtitles menu goes back up it, the friends to invite go back to the party's menu. */
+const menuBack = (menu: MenuKind | "party" | "partyInvite"): MenuKind | "party" | null =>
+  menu === "partyInvite" ? "party" : menu === "party" ? null : pageBefore(menu);
 
 export function Tv() {
   useT();
@@ -184,6 +188,8 @@ export function Tv() {
 
   // Audio / subtitles / speed / quality / episodes picker, and the watch party over a film (with its page for choosing the friends to invite)
   const [menu, setMenu] = useState<MenuKind | "party" | "partyInvite" | null>(null);
+  /** The subtitle look is shown over the picture as it really is: the player's own subtitles and controls step aside. */
+  const lookMenu = menu === "captions" || menu === "captionsMore";
   /** The control that opened the menu, which gets the focus back when it closes, so Back never leaves the remote with nothing selected. */
   const openerRef = useRef<HTMLElement | null>(null);
   const openMenu = (kind: MenuKind | "party") => {
@@ -1377,7 +1383,7 @@ export function Tv() {
 
       if (menu) {
         // The picker owns the keys; OK presses the focused option itself.
-        if (action === "back") setMenu(menu === "captions" ? "tracks" : menu === "partyInvite" ? "party" : null); // the caption style is a page of the audio and subtitles menu, the friends to invite a page of the party's
+        if (action === "back") setMenu(menuBack(menu)); // the caption style is a page of the audio and subtitles menu, the friends to invite a page of the party's
         else if (action === "up" || action === "down" || action === "left" || action === "right") moveInMenu(menuRef.current, action);
         else return;
         event.preventDefault();
@@ -1521,7 +1527,7 @@ export function Tv() {
   // next press of Play picks it up. A film that others are watching is the exception, a Back is too easy to make by mistake for that.
   const hosting = party?.role === "host" && party.guests.length > 0;
   useBackWhile(browserBack() && unlocked && showVideo, () => {
-    if (menu) setMenu(menu === "captions" ? "tracks" : menu === "partyInvite" ? "party" : null);
+    if (menu) setMenu(menuBack(menu));
     else if (upNextCountdown !== null) dismissUpNext();
     else if (following) pressAgain("exit.leaveParty") && leaveParty();
     else if (stuck) cancelLoad();
@@ -1625,7 +1631,7 @@ export function Tv() {
     >
       <video ref={videoRef} className="tv-video" data-picture preload="auto" style={{ display: showVideo ? "block" : "none" }} playsInline />
 
-      {showVideo && menu !== "captions" && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
+      {showVideo && !lookMenu && <Captions videoRef={videoRef} style={captionStyle} delay={subtitleDelay} />}
 
       {startingShown && <StartingFilm starting={starting} stuck={stuck} onCancel={cancelLoad} />}
 
@@ -1749,7 +1755,7 @@ export function Tv() {
 
       {unlocked && showVideo && !finished && !failed && (
         <Hud
-          visible={controlsVisible && menu !== "captions" && !startingWaits}
+          visible={controlsVisible && !lookMenu && !startingWaits}
           hideWait={startingWaits}
           player={player}
           title={mainTitle}
