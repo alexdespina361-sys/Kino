@@ -341,10 +341,12 @@ def torch_dtype():
 
 
 class QwenEngine(Engine):
-    def __init__(self, model_id: str):
+    def __init__(self, model_id: str, context: str = ""):
         self.model_id = model_id
         self.name = model_id.split("/")[-1] + " + ForcedAligner-0.6B"
         self.shown = False
+        # Text the model is told before it listens (Qwen3-ASR's system prompt): names and terms to expect, e.g. a title's cast.
+        self.context = context
 
     def load(self):
         from qwen_asr import Qwen3ASRModel
@@ -362,32 +364,36 @@ class QwenEngine(Engine):
         results["notes"].append(f"{self.name}: dtype {dtype}")
 
     def transcribe(self, pcm, lang):
-        r = self.model.transcribe(audio=(pcm, SR), language=LANG_NAME[lang], return_time_stamps=True)[0]
-        stamps = r.time_stamps
-        items = list(getattr(stamps, "items", None) or stamps or [])
-        if items and isinstance(items[0], (list, tuple)) and items and not hasattr(items[0], "start_time"):
-            items = [x for group in items for x in group]
-        if not self.shown:
-            self.shown = True
-            results["notes"].append(f"{self.name}: first raw stamp {items[0]!r}"[:300] if items else f"{self.name}: no stamps; text {r.text[:80]!r}")
-        words = []
-        for x in items:
-            get = (lambda k: x.get(k)) if isinstance(x, dict) else (lambda k: getattr(x, k, None))
-            text, s, e = get("text"), get("start_time"), get("end_time")
-            if text is None or s is None or e is None:
-                continue
-            words.append(Word(str(text), float(s), float(e)))
-        # (Seconds or milliseconds is not written down: a stamp past the chunk's length is taken as milliseconds.)
-        length = len(pcm) / SR
-        if words and max(w.end for w in words) > length * 1.5:
-            words = [Word(w.text, w.start / 1000, w.end / 1000) for w in words]
+        r = self.model.transcribe(audio=(pcm, SR), language=LANG_NAME[lang], return_time_stamps=True, context=self.context)[0]
+        words = stamp_words(r.time_stamps, len(pcm) / SR, self)
         if not words and r.text.strip():
-            words = [Word(r.text.strip(), 0.0, length)]
+            words = [Word(r.text.strip(), 0.0, len(pcm) / SR)]
         return words
 
     def unload(self):
         self.model = None
         super().unload()
+
+
+def stamp_words(stamps, length: float, engine=None) -> list[Word]:
+    """Qwen3-ForcedAligner's items as words, in seconds from the start of a piece `length` seconds long."""
+    items = list(getattr(stamps, "items", None) or stamps or [])
+    if items and isinstance(items[0], (list, tuple)) and not hasattr(items[0], "start_time"):
+        items = [x for group in items for x in group]
+    if engine is not None and not getattr(engine, "shown", True):
+        engine.shown = True
+        results["notes"].append(f"{engine.name}: first raw stamp {items[0]!r}"[:300] if items else f"{engine.name}: no stamps")
+    words = []
+    for x in items:
+        get = (lambda k: x.get(k)) if isinstance(x, dict) else (lambda k: getattr(x, k, None))
+        text, s, e = get("text"), get("start_time"), get("end_time")
+        if text is None or s is None or e is None:
+            continue
+        words.append(Word(str(text), float(s), float(e)))
+    # (Seconds or milliseconds is not written down: a stamp past the chunk's length is taken as milliseconds.)
+    if words and max(w.end for w in words) > length * 1.5:
+        words = [Word(w.text, w.start / 1000, w.end / 1000) for w in words]
+    return words
 
 
 class WhisperEngine(Engine):
