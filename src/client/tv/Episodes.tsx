@@ -4,6 +4,7 @@ import { describeStatus, episodeName, episodeStatus } from "../../shared";
 import { t } from "../i18n";
 import { useEpisodeDetails, useSeasons } from "../shared/episodeDetails";
 import { formatLeft } from "../shared/format";
+import { episodeKey, useUnavailable } from "../shared/unavailable";
 import { statusWords } from "../shared/words";
 import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
 import { showKeyOf, startOf, type Entry, type Start } from "./pages";
@@ -36,6 +37,8 @@ export interface SeriesPage {
   pick: (season: number) => void;
   /** Its episodes, in order: none while they are being asked for, and `null` when the library has nothing to list. */
   episodes: PageEpisode[] | null | undefined;
+  /** A film that no source had the last times it was played (see `useUnavailable`): the page says so beside Play. Never for a show: its episodes are marked. */
+  unavailable: boolean;
 }
 
 /**
@@ -59,6 +62,8 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
   const chosen = picked?.id === entry?.id ? picked?.season : undefined;
   const season = [chosen, start?.season].find((n) => n !== undefined && seasons.includes(n)) ?? seasons[0];
   const details = useEpisodeDetails(season === undefined ? undefined : entry?.url, season);
+  // (What nobody could play of it: asked for a film too, which is the one thing about a film this page asks.)
+  const marks = useUnavailable(entry !== undefined && !entry.opens && entry.url !== "" ? entry.url : undefined);
 
   let episodes: PageEpisode[] | null | undefined;
   if (!entry || (asked && found === undefined) || details === undefined) episodes = undefined; // still being asked for
@@ -83,13 +88,23 @@ export function useSeriesPage(entry: Entry | undefined, progress: readonly LiveP
           meta: describeStatus(status, statusWords()) ?? (detail.runtime ? formatLeft(detail.runtime * 60) : undefined),
           state: status.kind,
           fraction: status.kind === "started" ? status.fraction : undefined,
+          unavailable: marks?.episodes.has(episodeKey(season, detail.episode)) ?? false,
         },
       };
     });
     if (episodes.length === 0) episodes = null;
   }
 
-  return { seasons, isShow, loading: found === undefined && asked, start, season, pick: (next) => entry && setPicked({ id: entry.id, season: next }), episodes };
+  return {
+    seasons,
+    isShow,
+    loading: found === undefined && asked,
+    start,
+    season,
+    pick: (next) => entry && setPicked({ id: entry.id, season: next }),
+    episodes,
+    unavailable: !isShow && Boolean(marks?.title),
+  };
 }
 
 /** Under a show's buttons: its seasons (when there is a choice) and the episodes of the one that is shown. The remote walks them as zones `seasons` and `episodes`. */
@@ -130,6 +145,7 @@ export function SeriesSection({ page, onPlay, onSlide }: { page: SeriesPage; onP
               data-col={0}
               data-target={episode.target}
               data-active={episode.target}
+              data-unavailable={episode.card.unavailable || undefined}
               onClick={() => onPlay(episode)}
             >
               <EpisodeRow {...episode.card} />

@@ -228,6 +228,8 @@ export const it: Dictionary = {
   "library.results_one": "{count} risultato",
   "library.results_other": "{count} risultati",
   "library.kindMovie": "Film",
+  "library.unavailable": "Non ancora disponibile",
+  "library.unavailableFilm": "Nessuna fonte aveva questo film le ultime volte che è stato avviato. Riproduci cerca di nuovo.",
   "library.kindSeries": "Serie",
 
   /* the rows of the library that this app lists itself, by what the place calls them (see rowTitle): the places name them in English */

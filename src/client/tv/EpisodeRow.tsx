@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { t } from "../i18n";
 import { CheckIcon, PlayIcon } from "../shared/icons";
 import { comesIn, hueOf } from "../shared/Poster";
 
@@ -13,10 +14,12 @@ export interface EpisodeCard {
   state: "now" | "new" | "started" | "watched";
   /** How far in you are (0 to 1), drawn along the foot of the picture. */
   fraction?: number | undefined;
+  /** No source had it the last times it was played: it says "Not available yet" (Play still looks again). */
+  unavailable?: boolean | undefined;
 }
 
 /** What is inside one button of the episode list, the way a streaming app lists them: number, a still, the name and length, a line about it. */
-export function EpisodeRow({ number, name, still, overview, meta, state, fraction }: EpisodeCard) {
+export function EpisodeRow({ number, name, still, overview, meta, state, fraction, unavailable }: EpisodeCard) {
   const [broken, setBroken] = useState(false);
   const hue = hueOf(name);
   return (
@@ -43,6 +46,11 @@ export function EpisodeRow({ number, name, still, overview, meta, state, fractio
             </span>
           )}
         </span>
+        {unavailable && (
+          <span className="tv-ep-gone" data-testid="episode-unavailable">
+            {t("library.unavailable")}
+          </span>
+        )}
         {overview && <span className="tv-ep-about">{overview}</span>}
       </span>
     </>

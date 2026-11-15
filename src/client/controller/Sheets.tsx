@@ -33,6 +33,7 @@ import { Rich } from "../i18n/Rich";
 import { captionBottom, captionTextStyle } from "../shared/captionCss";
 import { CopyLink } from "../shared/CopyLink";
 import { useEpisodeDetails } from "../shared/episodeDetails";
+import { episodeKey, useUnavailable } from "../shared/unavailable";
 import { formatCode, formatLeft } from "../shared/format";
 import { CheckIcon, ChevronIcon, PhoneIcon, PlayIcon, PlusIcon, ScanIcon, TvIcon, UsersIcon } from "../shared/icons";
 import { controlLink, partyLink } from "../shared/launch";
@@ -362,6 +363,7 @@ export function EpisodesSheet({
   const shown = groups.find((group) => group.season === season) ?? groups[0];
   const listRef = useRef<HTMLUListElement>(null);
   const details = useEpisodeDetails(shown?.episodes[0]?.url, shown?.season);
+  const marks = useUnavailable(shown?.episodes[0]?.url);
   // Nothing known beyond the names: the plain list. While it is being asked the cards are already there, so the list does not change shape.
   const rich = details !== null;
 
@@ -397,6 +399,12 @@ export function EpisodesSheet({
           const known = details?.get(episode.episode);
           const name = episodeName(known?.title ? { ...episode, title: known.title } : episode, t("player.episodeN", { n: episode.episode }));
           const runtime = known?.runtime ? formatLeft(known.runtime * 60) : undefined;
+          const gone = !now && (marks?.episodes.has(episodeKey(episode.season, episode.episode)) ?? false);
+          const goneNote = gone ? (
+            <span className="episode-gone" data-testid="episode-unavailable">
+              {t("library.unavailable")}
+            </span>
+          ) : null;
           const marked = now ? (
             <span className="episode-now">
               <CheckIcon /> {t("player.nowPlaying")}
@@ -413,6 +421,7 @@ export function EpisodesSheet({
                 data-season={episode.season}
                 data-episode={episode.episode}
                 data-status={status.kind}
+                data-unavailable={gone || undefined}
                 onClick={() => !now && onPlay(episode.url)}
               >
                 <span className="episode-no">{episode.episode}</span>
@@ -422,6 +431,7 @@ export function EpisodesSheet({
                     <span className="episode-text">
                       <span className="episode-title">{name}</span>
                       {(marked ?? runtime) && <span className="episode-meta">{marked ?? <span className="episode-note">{runtime}</span>}</span>}
+                      {goneNote}
                       {known?.overview && <span className="episode-about">{known.overview}</span>}
                     </span>
                   </>
@@ -429,6 +439,7 @@ export function EpisodesSheet({
                   <>
                     <span className="episode-title">{name}</span>
                     {marked}
+                    {goneNote}
                   </>
                 )}
                 {status.kind === "started" && (

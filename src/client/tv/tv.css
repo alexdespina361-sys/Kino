@@ -860,6 +860,9 @@
 .tv-ep-meta { display: inline-flex; flex: none; align-items: center; gap: 0.3em; font-size: 1.15em; color: #9a9a9a; white-space: nowrap; }
 .tv-ep-meta[data-state="watched"] { color: #46d369; }
 .tv-ep-meta[data-state="now"] { color: #fff; font-weight: 700; }
+/* No source had it the last times it was played: said in words, and its picture is dimmed (Play still looks again). */
+.tv-ep-gone { align-self: flex-start; padding: 0.15em 0.6em; border-radius: 999px; background: rgba(255, 186, 73, 0.16); color: #ffc46b; font-size: 1em; font-weight: 700; }
+.tv-ep[data-unavailable] .tv-ep-still { opacity: 0.5; }
 .tv-ep-about {
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -979,6 +982,7 @@
 }
 .tv-hero .tv-hero-status { font-size: 2.4em; text-wrap: balance; white-space: normal; } /* a sentence, not a title: it wraps instead of being cut short */
 .tv-hero-meta { margin: 0; font-size: 1.4em; font-weight: 600; color: #cfcfd4; }
+.tv-detail-gone { margin: 0.4em 0 0; max-width: 40em; font-size: 1.2em; font-weight: 600; color: #ffc46b; }
 .tv-hero-about {
   margin: 0;
   font-size: 1.4em;

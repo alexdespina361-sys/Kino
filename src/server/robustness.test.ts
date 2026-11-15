@@ -412,6 +412,7 @@ const SPECS: Record<string, Spec> = {
   "GET /api/library/title": { query: () => ({ id: "filmpire-movie-603" }), ok: [200] },
   "GET /api/library/episodes": { query: () => ({ url: TITLE, season: "1" }) },
   "GET /api/library/seasons": { query: () => ({ url: TITLE }) },
+  "GET /api/library/unavailable": { query: () => ({ url: TITLE }) },
   "GET /api/resolve": { query: () => ({ url: `${origin}/page.html` }) },
   "GET /api/proxy": { query: () => ({ url: `${origin}/video.mp4`, referer: `${origin}/` }) },
   "GET /api/subtitles/ro/:file": { ok: [404] },
@@ -477,6 +478,7 @@ const SPECS: Record<string, Spec> = {
   "PATCH /api/admin/feedback/:id": { team: true, params: { id: (w) => w.report.id }, body: () => ({ status: "in_review", tags: ["a"], note: "n" }) },
   "DELETE /api/admin/feedback/:id": { team: true, params: { id: (w) => w.doomed }, ok: [204, 404] },
   "GET /api/admin/stats": { team: true, query: () => ({ days: "30" }) },
+  "GET /api/admin/unavailable": { team: true, query: () => ({ all: "1" }) },
   "GET /api/subsync/:key": { params: { key: () => "a".repeat(32) }, ok: [204] },
   "PUT /api/subsync/:key": { heavy: true, params: { key: () => "b".repeat(32) }, body: () => ({ v: 1, lines: 10, placed: [[0, 5, 5, 1], [1, 10, 10, 0]] }), ok: [204] },
 };

@@ -3,6 +3,7 @@ import type { Registration } from "../../shared";
 import { DEFAULT_MAX_ACCOUNTS, signUpsNow } from "../accounts/routes";
 import type { AccountStore } from "../accounts/store";
 import { teamGuard } from "../feedback/routes";
+import type { UnavailableStore } from "../library/unavailable";
 import { statsView, type RequestSeen } from "./summary";
 import type { VisitCounter } from "./visits";
 
@@ -50,13 +51,15 @@ export interface StatsRoutesOptions {
   adminToken: string | undefined;
   accounts?: AccountStore | undefined;
   visits?: VisitCounter | undefined;
+  /** What nobody could play, for `GET /api/admin/unavailable`. */
+  unavailable?: UnavailableStore | undefined;
   registration?: Registration | undefined;
   maxAccounts?: number | undefined;
   now?: (() => number) | undefined;
 }
 
 /** The owner's stats, `GET /api/admin/stats?days=30`: how many accounts and how many visitors, by day (see `summary.ts`), and how the server read the address of the request that asked. Counts only; the team's token and nothing else. */
-export const statsRoutes: FastifyPluginAsync<StatsRoutesOptions> = async (app, { adminToken, accounts, visits, registration = "open", maxAccounts = DEFAULT_MAX_ACCOUNTS, now = Date.now }) => {
+export const statsRoutes: FastifyPluginAsync<StatsRoutesOptions> = async (app, { adminToken, accounts, visits, unavailable, registration = "open", maxAccounts = DEFAULT_MAX_ACCOUNTS, now = Date.now }) => {
   const team = teamGuard(adminToken);
   app.addHook("onRequest", async (_request, reply) => {
     reply.header("Cache-Control", "no-store");
@@ -73,5 +76,28 @@ export const statsRoutes: FastifyPluginAsync<StatsRoutesOptions> = async (app, {
         you: seenAs(request),
       }),
     );
+  });
+  // What nobody could play, the most asked for first, for whoever looks for sources (`node scripts/unavailable.mjs`): titles, episodes and dates, never who pressed Play.
+  app.get<{ Querystring: { all?: string } }>("/api/admin/unavailable", async (request, reply) => {
+    if (!team(request, reply)) return;
+    const records = unavailable?.list() ?? [];
+    const shown = request.query.all === "1" ? records : records.filter((record) => record.marked);
+    return reply.send({
+      at: now(),
+      total: records.length,
+      marked: records.filter((record) => record.marked).length,
+      items: shown.map(({ title, kind, titleId, season, episode, link, occasions, first, last, marked }) => ({
+        ...(title ? { title } : {}),
+        ...(kind ? { kind } : {}),
+        titleId,
+        ...(season !== undefined ? { season } : {}),
+        ...(episode !== undefined ? { episode } : {}),
+        link,
+        occasions,
+        first,
+        last,
+        marked,
+      })),
+    });
   });
 };

@@ -44,6 +44,8 @@ export interface LibraryService {
   about(link: string): Promise<TitleAbout | null>;
   /** One title as its tile, by its id, for the link to a title's page: one the library has listed is answered from memory, any other is asked of the places (see `LibrarySource.title`). None for a title nobody knows, or one that would not play. */
   title(id: string): Promise<LibraryItem | null>;
+  /** A title the library has met, by its id, from memory only (nothing is asked of a place), whether or not it would play: what the list of what nobody could play calls it. */
+  known(id: string): LibraryItem | undefined;
   episodes(link: string, season: number): Promise<EpisodeDetail[]>;
   seasons(link: string): Promise<number[]>;
   /**
@@ -379,6 +381,7 @@ export function createLibrary(options: LibraryOptions): LibraryService {
       learn([found]);
       return listed(found) ? found : null;
     },
+    known: (id: string) => pool.get(id),
     episodes: (link: string, season: number) => episodesOf(`${season}|${link}`, (source) => source.episodes?.(link, season)),
     seasons: (link: string) => seasonsOf(link, (source) => source.seasons?.(link)),
     played(link: string, outcome: PlayOutcome) {

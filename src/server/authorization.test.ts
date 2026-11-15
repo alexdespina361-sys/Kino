@@ -442,6 +442,7 @@ const PUBLIC: Record<string, string> = {
   "GET /api/library/title": "the catalogue",
   "GET /api/library/episodes": "the catalogue",
   "GET /api/library/seasons": "the catalogue",
+  "GET /api/library/unavailable": "the catalogue: what no source had, the same for everybody",
   "GET /api/resolve": "finds the video of a public page: no account is involved",
   "GET /api/proxy": "carries a public page or file: no account is involved",
   "GET /api/subtitles/ro/:file": "serves converted Romanian subtitles: no account is involved",
@@ -469,6 +470,7 @@ const TEAM: Array<{ route: string; body?: object; query?: string; ok: number }> 
   { route: "POST /api/admin/feedback/:id/reply", body: { text: "Thank you" }, ok: 201 },
   { route: "PATCH /api/admin/feedback/:id", body: { note: "seen" }, ok: 200 },
   { route: "GET /api/admin/stats", ok: 200 },
+  { route: "GET /api/admin/unavailable", ok: 200 },
   { route: "DELETE /api/admin/feedback/:id", ok: 204 },
 ];
 

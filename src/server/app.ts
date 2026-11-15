@@ -16,6 +16,8 @@ import { feedbackRoutes, FEEDBACK_TOKEN_MIN } from "./feedback/routes";
 import { FeedbackStore, MemoryFeedbackBackend } from "./feedback/store";
 import { answerUnroutable, fetchLimits, sameSiteGate, securityHeaders, type FetchesPerMinute } from "./guard";
 import { createLibrary, type LibrarySource } from "./library/library";
+import { playKeyOf, UnavailableStore } from "./library/unavailable";
+import { MemoryPersistence } from "./accounts/persistence";
 import { exemptHostsFrom, handleStreamProxy, type ProxyStats } from "./proxy";
 import { looksLikePage, requestForLog } from "./requestLog";
 import { createResolver, type ResolveFn } from "./resolvers";
@@ -46,6 +48,8 @@ export interface AppOptions {
   feedbackSendsPer10Min?: number;
   /** Counts the people who open the site, a number for each day (see `stats/visits.ts`); the owner reads it at `/api/admin/stats`. Without it nobody is counted. The app writes what is left of it when it stops. */
   visits?: VisitCounter;
+  /** What nobody could play (see `library/unavailable.ts`): the screens mark it, the team reads it at `/api/admin/unavailable`. Memory, gone with the server, unless set. The app writes what is left of it when it stops. */
+  unavailable?: UnavailableStore;
   /** `closed` stops new accounts being made. */
   registration?: Registration;
   maxAccounts?: number;
@@ -173,9 +177,19 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
       allowPrivateNetwork: options.allowPrivateNetwork ?? process.env.ALLOW_PRIVATE_NETWORK === "1",
     });
   const library = createLibrary({ sources: options.librarySources ?? [], log: app.log, ...(options.libraryNow ? { now: options.libraryNow } : {}) });
-  // Every try at playing something tells the library how it went, so the titles a place lists but has no video of stop being offered.
+  // (Registered after the accounts' close, so it runs before it: what is left is written before the accounts close the database they share.)
+  const unavailable = options.unavailable ?? (await UnavailableStore.open({ persistence: new MemoryPersistence(), flushMs: 0 }));
+  app.addHook("onClose", async () => unavailable.close());
+  // Every try at playing something tells the library how it went, so the titles a place lists but has no video of stop being offered, and what no source had
+  // is kept for the screens to mark and for the team to look for (it is asked about before the library hears it: a title that would not play is no longer one it tells).
   const resolveForPlay: ResolveFn = async (url, isPrefetch, fresh) => {
     const result = await resolve(url, isPrefetch, fresh);
+    if (result.status === "success") unavailable.found(url);
+    else if (result.status === "unsupported") {
+      const play = playKeyOf(url);
+      const known = play ? library.known(play.titleId) : undefined;
+      unavailable.nothingFound(url, known ? { title: known.title, kind: known.kind } : undefined);
+    }
     if (result.status === "success") library.played(url, "found");
     else if (result.status === "unsupported") library.played(url, "none");
     else if (result.status === "temporary_failure") library.played(url, "failed");
@@ -224,6 +238,7 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     adminToken: options.feedbackAdminToken,
     accounts,
     visits: options.visits,
+    unavailable,
     registration: options.registration,
     maxAccounts: options.maxAccounts,
   });
@@ -363,6 +378,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     const episodes = await library.episodes(targetLink, season);
     reply.header("Cache-Control", episodes.length > 0 ? "public, max-age=3600" : "no-store");
     return reply.send({ episodes });
+  });
+  // What no source had of the title a link plays (see `library/unavailable.ts`): the film, or the show's episodes. Never kept by a browser: it changes as titles are played.
+  app.get<{ Querystring: { url?: string } }>("/api/library/unavailable", async (request, reply) => {
+    const link = request.query.url ?? "";
+    if (typeof link !== "string" || !link || link.length > 2048) return reply.code(400).send({ error: "Missing 'url' parameter" });
+    return reply.header("Cache-Control", "no-store").send(unavailable.answerFor(link));
   });
   app.get<{ Querystring: { url?: string } }>("/api/library/seasons", async (request, reply) => {
     const link = request.query.url ?? "";
