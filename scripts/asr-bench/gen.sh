@@ -52,5 +52,14 @@ case "$1" in
   whisper|qwen|musci|granite) python generate.py run "$1" 2>&1 | grep -vE "$quiet" ;;
   parakeet) /content/venv-nemo/bin/python generate.py transcribe parakeet 2>&1 | grep -vE "$quiet|^\[NeMo W|^\s*warnings" ; python generate.py run aligned:parakeet 2>&1 | grep -vE "$quiet" ;;
   cohere) /content/venv-cohere/bin/python generate.py transcribe cohere 2>&1 | grep -vE "$quiet" ; python generate.py run aligned:cohere 2>&1 | grep -vE "$quiet" ;;
-  *) echo "sh gen.sh install | venv-nemo | venv-cohere | clean-losers | prepare | prepare-film | prepare-corpus | whisper | qwen | granite | parakeet | cohere | musci | agree | table" ;;
+  edit)  # sh gen.sh edit <lang> <sound> <main engine> <other engines, comma-separated> "<title>" "<names>" [raw]: editing step + subtitle events
+    python -c "import bitsandbytes" 2>/dev/null || pip install -q bitsandbytes 2>&1 | tail -1
+    others=""; for e in $(echo "$5" | tr ',' ' '); do others="$others${others:+,}$BENCH_OUT/gen-words-$e-$2-$3.json"; done
+    if [ -n "$8" ]; then tag=raw; flag=--raw; else tag=llm; flag=""; fi
+    python editor.py "$BENCH_OUT/gen-words-$4-$2-$3.json" "$others" "$BENCH_OUT/final-$tag-$4-$2-$3.srt" --lang "$2" --title "$6" --names "$7" $flag 2>&1 | grep -vE "$quiet" ;;
+  score)  # sh gen.sh score <lang> <sound> <reference.srt | ref> SRT...: one line each (words, lines, starts, invented candidates, format)
+    lang="$2"; ref="$4"
+    if [ "$ref" = ref ]; then ref="$BENCH_OUT/ref-$2-$3.srt"; python generate.py refsrt "$2" "$3" "$ref"; fi
+    shift 4; python subscore.py summary "$ref" "$ref" "$@" --lang "$lang" ;;
+  *) echo "sh gen.sh install | venv-nemo | venv-cohere | clean-losers | prepare | prepare-film | prepare-corpus | whisper | qwen | granite | parakeet | cohere | musci | agree | show | edit | score | table" ;;
 esac

@@ -376,6 +376,15 @@ def main(argv: list[str]) -> None:
     elif cmd == "sheet":
         variants = dict(a.split("=", 1) for a in args[3:])
         sheet(args[1], args[2], variants, int(opts.get("n", 40)), int(opts.get("seed", 1)), lang)
+    elif cmd == "summary":  # summary REF HYP [HYP ...]: one line per file
+        ref = read_srt(args[1])
+        for path in args[2:]:
+            hyp = read_srt(path)
+            c, f = compare(ref, hyp, lang), format_report(hyp, lang)
+            bad = {k: v for k, v in f["per_100_events"].items() if v}
+            print(f"{os.path.basename(path)}: err {c['error_rate']} | heard {c['lines_heard']}/{c['ref_lines']} | starts <=0.3 s "
+                  f"{c['starts_within_0_3']}/{c['starts_compared']} (median {c['start_median_abs_s']}, mean {c['mean_offset_s']}) | "
+                  f"lonely {c['lonely_hyp_events']} | events {f['events']}, cps {f['median_cps']} | per 100: {bad} | clock {c['reference_clock'].get('a')}, {c['reference_clock'].get('b')}")
     elif cmd == "tally":
         print(json.dumps(tally(args[1]), ensure_ascii=False, indent=1))
     else:

@@ -1128,6 +1128,8 @@ if __name__ == "__main__":
         run(sys.argv[2])
     elif cmd == "transcribe":
         transcribe_pieces(sys.argv[2])
+    elif cmd == "refsrt":  # (a prepared sound's reference lines as an SRT, for subscore.py)
+        bench.write_srt(load_ref(sys.argv[2], sys.argv[3]), sys.argv[4])
     elif cmd == "show":
         show(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else "missed")
     elif cmd == "replay":
