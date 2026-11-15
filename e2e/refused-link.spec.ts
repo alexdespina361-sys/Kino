@@ -59,6 +59,42 @@ test.describe("a film whose link the source refuses", () => {
     expect(await lookups(tv)).toBe(1);
   });
 
+  test("a film in three qualities, every one through a proxy of ours and every one refused: each is tried, then the title is looked up once by itself, and no more", async ({ browser, baseURL }) => {
+    const asked: string[] = [];
+    const tv = await openLibrary(browser, async (context) => {
+      await refuse(context);
+      await context.route("**/api/proxy?*", (route) => {
+        asked.push(new URL(route.request().url()).searchParams.get("url") ?? "");
+        return route.fulfill({ status: 403, contentType: "text/plain", body: "ERROR: ACCESS DENIED" });
+      });
+    });
+    await pressMenuLine(tv, "rail-connect");
+    const phone = await RawPhone.connect(baseURL!, await readPairingCode(tv));
+    const relayed = (name: string) => ({ url: `/api/proxy?url=${encodeURIComponent(`https://cdn.test/${name}.mp4`)}&expires=1&sig=abc`, type: "mp4" as const });
+    phone.cmd({
+      type: "LOAD",
+      media: {
+        title: "Refused in every quality",
+        page: `${baseURL}/fixtures/no-such-page.html`,
+        stream: relayed("1080"),
+        quality: "1080",
+        alternates: [
+          { quality: "720", stream: relayed("720") },
+          { quality: "480", stream: relayed("480") },
+        ],
+      },
+    });
+    const card = tv.getByTestId("tv-error");
+    await expect(card).toBeVisible({ timeout: 25_000 });
+    await expect(card).toContainText("source isn't answering");
+    await expect(tvRoot(tv)).toHaveAttribute("data-error", "SOURCE_UNAVAILABLE");
+    // (every quality was tried: none of them is left out because the one before it was refused)
+    for (const name of ["1080", "720", "480"]) expect(asked).toContain(`https://cdn.test/${name}.mp4`);
+    // One look of its own after the last of them, and the card stays: not one look for each quality, and not a loop.
+    await tv.waitForTimeout(2000);
+    expect(await lookups(tv)).toBe(1);
+  });
+
   test("says that the source did not answer when the second look does not help, and Try again asks for the title once more", async ({ browser, baseURL }) => {
     const { tv } = await refusedFilm(browser, baseURL!, `${baseURL}/fixtures/no-such-page.html`);
     const card = tv.getByTestId("tv-error");
