@@ -49,6 +49,17 @@ export function parseVtt(file: string): VttCue[] {
   return cues;
 }
 
+/**
+ * The cues in the order a browser's `track.cues` lists them (the HTML standard's "text track cue order"): by start, earliest first; with the
+ * same start, the one that ends latest first; else in the file's order. A screen numbers a file's lines in this order.
+ */
+export function inCueOrder(cues: readonly VttCue[]): VttCue[] {
+  return cues
+    .map((cue, index) => ({ cue, index }))
+    .sort((a, b) => a.cue.start - b.cue.start || b.cue.end - a.cue.end || a.index - b.index)
+    .map(({ cue }) => cue);
+}
+
 function stamp(at: number): string {
   const ms = Math.max(0, Math.round(at * 1000));
   const h = Math.floor(ms / 3_600_000);

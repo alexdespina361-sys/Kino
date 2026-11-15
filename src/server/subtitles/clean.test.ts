@@ -17,11 +17,12 @@ describe("cleanCues: credits and advertising", () => {
         at(2000, "It was translated by my mother."),
         at(2010, "Subtitrare de mâna mea, zise el."),
         at(5300, "Sync and corrections by nobody"),
+        at(5310, "<font color=red>Provided by somebody</font>"),
       ),
       "en",
     );
     expect(texts(cleaned.cues)).toEqual(["It was translated by my mother.", "Subtitrare de mâna mea, zise el.", "The last line of the film."]);
-    expect(cleaned.removed).toBe(3);
+    expect(cleaned.removed).toBe(4);
   });
 
   it("leaves out a subtitle site's name and a link anywhere, and only that line of a cue", () => {
@@ -57,10 +58,30 @@ describe("cleanCues: the text", () => {
     expect(texts(cleanCues(film(at(100, "<I>Keep</I> <b>this</b>")), "en").cues)[0]).toBe("<i>keep</i> <b>this</b>".replace("keep", "Keep"));
   });
 
-  it("makes one line of a line said twice in a row, and leaves out one that was only markup", () => {
-    const cleaned = cleanCues(film({ start: 100, end: 101, text: "Run!" }, { start: 101.05, end: 102, text: "Run!" }, at(200, "<i> </i>")), "en");
+  it("makes one line of a line written twice over itself, and leaves out one that was only markup", () => {
+    const cleaned = cleanCues(film({ start: 100, end: 101.5, text: "Run!" }, { start: 101, end: 102, text: "Run!" }, at(200, "<i> </i>")), "en");
     expect(cleaned.cues.slice(0, 1)).toEqual([{ start: 100, end: 102, text: "Run!" }]);
     expect(cleaned.removed).toBe(2);
+    expect(cleaned.dropped).toEqual([1, 2]);
+  });
+
+  it("keeps a line said again once the first is gone: a refrain, an answer twice", () => {
+    const cleaned = cleanCues(film({ start: 100, end: 101, text: "Copy." }, { start: 101, end: 102, text: "Copy." }, at(103, "Copy.")), "en");
+    expect(texts(cleaned.cues).slice(0, 3)).toEqual(["Copy.", "Copy.", "Copy."]);
+    expect(cleaned.removed).toBe(0);
+  });
+
+  it("writes the first speaker's dash after the markup, and not twice", () => {
+    const cleaned = cleanCues(film(at(100, "<i>- Gone.</i>\n- Not yet."), at(200, "<i>Gone.</i>\n- Not yet."), at(300, "<i>-Gone.</i>")), "en");
+    expect(texts(cleaned.cues).slice(0, 3)).toEqual(["<i>- Gone.</i>\n- Not yet.", "<i>- Gone.</i>\n- Not yet.", "<i>- Gone.</i>"]);
+  });
+
+  it("writes a song's notes that a wrong code page made question marks as notes, and leaves a question alone", () => {
+    const cleaned = cleanCues(
+      film(at(100, "<i>? La la la\nOn we go ?</i>"), at(200, "? One more time!?"), at(300, "Where to ?"), at(400, "♪ Already right ♪")),
+      "en",
+    );
+    expect(texts(cleaned.cues).slice(0, 4)).toEqual(["<i>♪ La la la\nOn we go ♪</i>", "♪ One more time! ♪", "Where to?", "♪ Already right ♪"]);
   });
 
   it("counts the lines it changed, and keeps a line that needs nothing as it was", () => {

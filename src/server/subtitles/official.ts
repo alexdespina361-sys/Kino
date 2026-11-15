@@ -12,12 +12,13 @@ import {
   type OfficialLang,
   type OfficialOffer,
   type SubtitleTrack,
+  SUBSYNC_MAX_MOVE,
 } from "../../shared";
 import { PostgresPersistence, type Persistence, type SqlClient } from "../accounts/persistence";
 import { playKeyOf, type PlayKey } from "../library/unavailable";
 import type { ResolveResult } from "../resolvers";
 import { cleanCues, CLEAN_RULES } from "./clean";
-import { parseVtt, toVtt, type VttCue } from "./vtt";
+import { inCueOrder, parseVtt, toVtt, type VttCue } from "./vtt";
 
 /**
  * Kino Official subtitles: for each film and episode of the library, one subtitle file for each language (English and Romanian), the best the
@@ -76,6 +77,8 @@ export interface OfficialRecord {
   lines: OfficialLine[];
   /** The text each line had in the file, where the tidying or the team changed it: `[line, text]`. */
   source: Array<[number, string]>;
+  /** The lines of the file the tidying left out: `[where the file starts it (centiseconds), text]`. */
+  dropped?: Array<[number, string]>;
 }
 
 /** Where they are kept. Read one at a time; only the `meta` of all of them is held in memory. */
@@ -163,15 +166,15 @@ export class PostgresOfficialStore implements OfficialStore {
     const { rows } = await this.db.query("select meta, body from kino_official where id = $1", [id]);
     const row = rows[0];
     if (!row) return undefined;
-    const body = row.body as Pick<OfficialRecord, "lines" | "source">;
-    return { meta: row.meta as OfficialMeta, lines: body.lines, source: body.source };
+    const body = row.body as Pick<OfficialRecord, "lines" | "source" | "dropped">;
+    return { meta: row.meta as OfficialMeta, lines: body.lines, source: body.source, ...(body.dropped ? { dropped: body.dropped } : {}) };
   }
   async put(record: OfficialRecord) {
     await this.table();
     await this.db.query("insert into kino_official (id, meta, body) values ($1, $2::jsonb, $3::jsonb) on conflict (id) do update set meta = excluded.meta, body = excluded.body, updated = now()", [
       record.meta.id,
       JSON.stringify(record.meta),
-      JSON.stringify({ lines: record.lines, source: record.source }),
+      JSON.stringify({ lines: record.lines, source: record.source, ...(record.dropped ? { dropped: record.dropped } : {}) }),
     ]);
   }
   async remove(id: string) {
@@ -271,6 +274,9 @@ export function timesFromOffer(file: readonly VttCue[], offer: OfficialOffer): V
   });
 }
 
+/** What became of the offers since the server started, for `/api/health`: a parser that reads files otherwise than the screens shows as `different_file`. */
+export type OfferCounts = Record<OfferOutcome, number>;
+
 export interface OfficialsOptions {
   store: OfficialStore;
   now?: () => number;
@@ -288,6 +294,10 @@ export class Officials {
   private readonly turns = new Turns();
   private readonly now: () => number;
   private readonly max: number;
+  /** Whether what is kept has been read: until it is, no offer is taken (it could write over a file the team has been over). */
+  private loaded = false;
+  private lastLoad = 0;
+  readonly counts: OfferCounts = { taken: 0, kept: 0, not_good_enough: 0, unknown_track: 0, different_file: 0, unavailable: 0 };
 
   private constructor(
     private readonly store: OfficialStore,
@@ -302,12 +312,22 @@ export class Officials {
   /** Learns what is kept. A store that cannot be read gives none for now (the site works the same without them). */
   static async open(options: OfficialsOptions): Promise<Officials> {
     const officials = new Officials(options.store, options.log, options.now, options.max);
-    try {
-      for (const meta of await options.store.metas()) officials.index(meta);
-    } catch (error) {
-      options.log?.warn(`Kino Official subtitles could not be read: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    await officials.load();
     return officials;
+  }
+
+  /** Reads what is kept (again, at most once a minute, after it could not be). */
+  private async load(): Promise<boolean> {
+    if (this.loaded) return true;
+    if (this.lastLoad > 0 && this.now() - this.lastLoad < 60_000) return false;
+    this.lastLoad = this.now();
+    try {
+      for (const meta of await this.store.metas()) this.index(meta);
+      this.loaded = true;
+    } catch (error) {
+      this.log?.warn(`Kino Official subtitles could not be read: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    return this.loaded;
   }
 
   private index(meta: OfficialMeta): void {
@@ -401,6 +421,15 @@ export class Officials {
    * the track's link). The text is the file's, never the screen's.
    */
   async offer(offer: OfficialOffer, fetchFile: (track: string) => Promise<string | undefined>): Promise<OfferOutcome> {
+    const outcome = await this.weigh(offer, fetchFile);
+    this.counts[outcome]++;
+    return outcome;
+  }
+
+  private async weigh(offer: OfficialOffer, fetchFile: (track: string) => Promise<string | undefined>): Promise<OfferOutcome> {
+    if (!(await this.load())) return "unavailable";
+    // (No line is moved further than a shared timing may move one: a file for another cut is more than that off.)
+    if (offer.lines.some((line) => line && Math.abs(line[1] - line[0]) > SUBSYNC_MAX_MOVE * 100)) return "different_file";
     const listed = this.listed.get(offer.track);
     if (!listed || this.now() - listed.at > LISTED_MS) return "unknown_track";
     if (!goodEnoughToOffer(offer.lines)) return "not_good_enough";
@@ -409,10 +438,12 @@ export class Officials {
       const kept = this.metas.get(id);
       const shares = offerShares(offer.lines);
       if (kept?.team) return "kept";
-      if (kept && shares.words < kept.shares.words + BETTER_BY && shares.placed < kept.shares.placed + BETTER_BY) return "kept";
+      // (One made by older tidying rules is made again by the new ones.)
+      if (kept && kept.cleaned.rules >= CLEAN_RULES && shares.words < kept.shares.words + BETTER_BY && shares.placed < kept.shares.placed + BETTER_BY) return "kept";
       const text = await fetchFile(offer.track).catch(() => undefined);
       if (!text) return "unavailable";
-      const file = parseVtt(text);
+      // (In the order the screen's browser numbered the lines in.)
+      const file = inCueOrder(parseVtt(text));
       // The same file, read the same way: as many lines, each starting where the screen says the file starts it.
       if (file.length !== offer.lines.length) return "different_file";
       let same = 0;
@@ -448,7 +479,8 @@ export class Officials {
         created: kept?.created ?? at,
         updated: at,
       };
-      await this.store.put({ meta, lines, source });
+      const dropped: Array<[number, string]> = cleaned.dropped.map((index) => [cs(file[index]!.start), file[index]!.text]);
+      await this.store.put({ meta, lines, source, ...(dropped.length > 0 ? { dropped } : {}) });
       this.index(meta);
       this.log?.info?.(`Kino Official subtitles: ${describe(meta)} ${kept ? "made better" : "made"} (${Math.round(shares.words * 100)} % by words).`);
       await this.makeRoom();
@@ -508,7 +540,7 @@ export class Officials {
       });
       const at = this.now();
       const meta: OfficialMeta = { ...record.meta, rev: at.toString(36), updated: at, team: { at, ...(edited.note ? { note: edited.note } : {}) } };
-      await this.store.put({ meta, lines: edited.lines, source: [...source].sort((a, b) => a[0] - b[0]) });
+      await this.store.put({ meta, lines: edited.lines, source: [...source].sort((a, b) => a[0] - b[0]), ...(record.dropped ? { dropped: record.dropped } : {}) });
       this.index(meta);
       return meta;
     });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OfficialOffer, SubtitleTrack } from "../../shared";
 import type { ResolveResult } from "../resolvers";
+import { CLEAN_RULES } from "./clean";
 import { BETTER_BY, fromSubtitleSite, MemoryOfficialStore, officialId, Officials, timesFromOffer } from "./official";
 import { parseVtt, toVtt } from "./vtt";
 
@@ -83,6 +84,8 @@ describe("an offer", () => {
     expect(record.lines[0]).toEqual([7250, 7450, "Line number 1."]);
     expect(record.lines[6]).toEqual([13250, 13450, "- Line number 7."]);
     expect(record.source).toContainEqual([6, "-Line number 7."]);
+    // (What the tidying left out is kept, with where the file had it.)
+    expect(record.dropped).toEqual([[500, "Subtitles by A Made Up Team"]]);
 
     const answer = officials.withOfficial(EPISODE, played(LISTED));
     if (answer.status !== "success") throw new Error("not a success");
@@ -123,6 +126,44 @@ describe("an offer", () => {
     expect(await officials.offer(moved, fetchFile)).toBe("different_file");
     const none = await setUp({});
     expect(await none.officials.offer(offerOf(file()), none.fetchFile)).toBe("unavailable");
+  });
+
+  it("is turned away when it moves a line further than a shared timing may: the file is for another cut", async () => {
+    const { officials, fetchFile, fetched } = await setUp();
+    expect(await officials.offer(offerOf(file(), { late: 301 }), fetchFile)).toBe("different_file");
+    expect(fetched).toEqual([]);
+    expect(officials.counts).toMatchObject({ different_file: 1, taken: 0 });
+  });
+
+  it("makes the file again when the kept one was tidied by older rules, even if it placed no more", async () => {
+    const { officials, store, fetchFile } = await setUp();
+    expect(await officials.offer(offerOf(file()), fetchFile)).toBe("taken");
+    const id = officialId(PLAY, "en");
+    expect(await officials.offer(offerOf(file()), fetchFile)).toBe("kept");
+    store.records.get(id)!.meta.cleaned.rules = CLEAN_RULES - 1;
+    const again = await Officials.open({ store, now: () => 1_800_000_100_000 });
+    again.heard(EPISODE, played(LISTED), { title: "Some Show", kind: "series" });
+    expect(await again.offer(offerOf(file()), fetchFile)).toBe("taken");
+    expect((await store.get(id))!.meta.cleaned.rules).toBe(CLEAN_RULES);
+    expect(officials.counts).toMatchObject({ taken: 1, kept: 1 });
+  });
+
+  it("is turned away while what is kept could not be read, and taken once it could", async () => {
+    let now = 1_800_000_000_000;
+    let down = true;
+    const store = new MemoryOfficialStore();
+    const flaky = { ...store, metas: async () => (down ? Promise.reject(new Error("down")) : store.metas()), get: store.get.bind(store), put: store.put.bind(store), remove: store.remove.bind(store) };
+    const officials = await Officials.open({ store: flaky, now: () => now, log: { warn: () => {} } });
+    officials.heard(EPISODE, played(LISTED), { title: "Some Show", kind: "series" });
+    const fetchFile = async () => file();
+    expect(await officials.offer(offerOf(file()), fetchFile)).toBe("unavailable");
+    down = false;
+    // (Read again at most once a minute.)
+    now += 30_000;
+    expect(await officials.offer(offerOf(file()), fetchFile)).toBe("unavailable");
+    now += 31_000;
+    expect(await officials.offer(offerOf(file()), fetchFile)).toBe("taken");
+    expect(officials.counts).toMatchObject({ unavailable: 2, taken: 1 });
   });
 
   it("places a line the screen did not place as the lines either side of it moved", () => {

@@ -135,6 +135,9 @@ describe("releaseRank", () => {
   it("puts a Kino Official file before any release, and only one the site named so", () => {
     expect(rank(["English · Kino Official", "Română · Kino Official", "English · Kino Official.WEB", "Kino Official"])).toEqual([-1, -1, 0, 3]);
     expect(defaultTrack([{ label: "English · Film.WEB-DL" }, { label: "English · Kino Official" }])?.label).toBe("English · Kino Official");
+    // (In the menu, inside its language, it is called by its own name.)
+    const [english] = groupTracks([track(0, "English · Kino Official", "en"), track(1, "English · Film.WEB-DL", "en")]);
+    expect(english!.tracks.map((each, i) => versionLabel(each, "English", i))).toEqual(["Kino Official", "Film.WEB-DL"]);
   });
 
   it("then BluRay, then DVD, then everything else", () => {

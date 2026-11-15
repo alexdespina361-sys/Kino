@@ -44,6 +44,8 @@ export interface AppOptions {
   subsync?: SubsyncStore;
   /** Where the Kino Official subtitles are kept (memory, gone with the server, unless set): see `subtitles/official.ts`. */
   official?: OfficialStore;
+  /** Tests: how an offer's file is fetched (else the server asks itself for the track's link). */
+  officialFetch?: (track: string) => Promise<string | undefined>;
   /** Where the feedback people send from the profile is kept (memory, gone with the server, unless set): see `shared/reports.ts`. */
   feedback?: FeedbackStore;
   /** The team's token for reading and answering feedback (env FEEDBACK_ADMIN_TOKEN, at least 24 characters). Without it nobody can read what is sent. */
@@ -229,10 +231,12 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     officials,
     adminToken: options.feedbackAdminToken,
     // (The file as a screen got it: the server's own answer for the track's link, which is the Romanian sites' file it keeps or OpenSubtitles' through the proxy.)
-    fetchFile: async (track) => {
-      const answer = await app.inject({ method: "GET", url: track });
-      return answer.statusCode === 200 ? answer.body : undefined;
-    },
+    fetchFile:
+      options.officialFetch ??
+      (async (track) => {
+        const answer = await app.inject({ method: "GET", url: track });
+        return answer.statusCode === 200 ? answer.body : undefined;
+      }),
   });
   const feedback = options.feedback ?? (await FeedbackStore.open({ backend: new MemoryFeedbackBackend() }));
   app.addHook("onClose", async () => feedback.close());
@@ -282,8 +286,8 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     proxy: { bytes: proxyStats.bytes, requests: proxyStats.requests, refused: proxyStats.refused, video: proxyVideo ? "on" : "off" },
     // (`subsync` counts the asks for a shared subtitle timing that found one and the ones that did not, and the timings screens have left.)
     subsync: subsyncStats,
-    // (`official` is how many Kino Official subtitles are kept.)
-    official: officials.size,
+    // (`official` is how many Kino Official subtitles are kept, and what became of the offers screens made since the server started.)
+    official: { kept: officials.size, offers: officials.counts },
     // (`feedback` is how many reports are kept, whether the team can read them, and whether a new report would be turned away: `team` is false while
     // FEEDBACK_ADMIN_TOKEN is not set to 24 characters or more, and `full` is true while the reports that are still open take every place or all the room.)
     feedback: { reports: feedback.size, full: feedback.full, team: (options.feedbackAdminToken?.length ?? 0) >= FEEDBACK_TOKEN_MIN },

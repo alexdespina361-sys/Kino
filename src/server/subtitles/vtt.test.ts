@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { parseVtt, toVtt } from "./vtt";
+import { inCueOrder, parseVtt, toVtt } from "./vtt";
+
+describe("inCueOrder: the order a browser lists a file's cues in", () => {
+  it("puts the earliest first; with the same start, the one that ends latest; else the file's order", () => {
+    const cues = [
+      { start: 5, end: 6, text: "c" },
+      { start: 1, end: 2, text: "a" },
+      { start: 5, end: 9, text: "b" },
+      { start: 5, end: 6, text: "d" },
+    ];
+    expect(inCueOrder(cues).map((cue) => cue.text)).toEqual(["a", "b", "c", "d"]);
+    expect(cues.map((cue) => cue.text)).toEqual(["c", "a", "b", "d"]);
+  });
+});
 
 describe("parseVtt: a file read the way a browser reads it", () => {
   it("reads cues with and without a name, any line ending, and their markup", () => {
