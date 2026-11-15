@@ -206,6 +206,10 @@ describe("handleStreamProxy", () => {
         response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
         return void response.end("<p>an error page</p>");
       }
+      if (url.pathname === "/long-error") {
+        response.writeHead(404, { "content-type": "text/html; charset=utf-8" });
+        return void response.end(`<p>someone else's page</p>${"x".repeat(10_000)}`);
+      }
       if (url.pathname === "/page.m3u8" || url.pathname === "/page.html") {
         response.writeHead(200, { "content-type": "text/html" });
         return void response.end("<p>a page</p>");
@@ -435,6 +439,22 @@ describe("handleStreamProxy", () => {
         expect(answer.statusCode, path).toBe(403);
       }
       expect(stats.bytes).toBe(before.bytes);
+    });
+
+    it("passes on as a subtitle only what has a subtitle's times in it, and of another site's error no more than a few words", async () => {
+      // (Anyone can ask for any address "as a subtitle": what comes back must be one, or this server is a way to read other sites' pages from its address.)
+      const before = { ...stats };
+      for (const path of ["/page.html", "/p/plain.mp4"]) {
+        const answer = await through(path, "&format=vtt");
+        expect(answer.statusCode, path).toBe(403);
+        expect(answer.json(), path).toEqual({ error: "VIDEO_NOT_CARRIED" });
+      }
+      expect(stats.bytes).toBe(before.bytes);
+      const error = await through("/long-error", "&format=vtt");
+      expect(error.statusCode).toBe(404);
+      expect(error.body).toBe("Upstream returned HTTP 404");
+      // (A short one is still said, as it was: see "does not call the other end's error page a page".)
+      expect((await through("/error-without-a-suffix", "&format=vtt")).body).toBe("<p>an error page</p>");
     });
 
     it("is what a proxy that is not told otherwise is not: that one carries a long text as well", async () => {
