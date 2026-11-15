@@ -839,6 +839,8 @@ export const ro: Dictionary = {
   "profile.friendsCount_few": "{count} prieteni",
   "profile.friendsCount_other": "{count} de prieteni",
   "profile.friendsNone": "Încă niciun prieten",
+  "profile.recent": "Văzute recent",
+  "profile.best": "Cele mai bine notate de tine",
   "profile.friendsNew_one": "{count} necitit",
   "profile.friendsNew_few": "{count} necitite",
   "profile.friendsNew_other": "{count} de necitite",

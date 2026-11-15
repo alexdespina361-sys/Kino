@@ -9,7 +9,7 @@ const friendsOf = (...people: Friend[]): FriendsState => ({ friends: people, inb
 const rated = (key: string, score: number): LiveRating => ({ key: `rate:${key}`, at: 1, title: key, url: `https://x.example/${key}`, score, ratedAt: 1 });
 
 /** A signed-in profile with everything on and nothing in it yet. */
-const facts = (changes: Partial<ProfileFacts> = {}): ProfileFacts => ({ name: "Ann", signedIn: true, ratingsOn: true, ratings: [], friendsOn: true, friends: friendsOf(), unread: 0, watched: 0, ...changes });
+const facts = (changes: Partial<ProfileFacts> = {}): ProfileFacts => ({ name: "Ann", signedIn: true, ratingsOn: true, ratings: [], friendsOn: true, friends: friendsOf(), unread: 0, watched: 0, progress: [], ...changes });
 const tiles = (changes?: Partial<ProfileFacts>) => profileRows(facts(changes))[0]!.entries;
 const ids = (changes?: Partial<ProfileFacts>) => tiles(changes).map((entry) => entry.id);
 
@@ -19,6 +19,25 @@ describe("the profile's page", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ id: "profile", layout: "categories", title: "Ann" });
     expect(ids()).toEqual(["profile:ratings", "profile:friends", "profile:history"]);
+  });
+
+  it("has under the places what was watched last and what was liked best, a look at a dozen of each, where there is any", () => {
+    const card = (n: number) => ({ key: `url:https://x.example/${n}`, at: 100 - n, title: `Seen ${n}`, url: `https://x.example/${n}`, position: 600, duration: 6000 });
+    const progress = Array.from({ length: 14 }, (_, n) => card(n));
+    const ratings = [rated("ok", 6), rated("best", 10), rated("good", 8)];
+    const rows = profileRows(facts({ progress, ratings, watched: progress.length }));
+    expect(rows.map((row) => [row.id, row.layout, row.title])).toEqual([
+      ["profile", "categories", "Ann"],
+      ["profile:recent", "continue", t("profile.recent")],
+      ["profile:best", "wide", t("profile.best")],
+    ]);
+    expect(rows[1]!.entries.map((entry) => entry.title)).toEqual(progress.slice(0, 12).map((each) => each.title)); // (newest first, as History has them)
+    expect(rows[2]!.entries.map((entry) => [entry.title, entry.note])).toEqual([
+      ["best", "10/10"],
+      ["good", "8/10"],
+      ["ok", "6/10"],
+    ]);
+    expect(profileRows(facts({ progress, ratings, ratingsOn: false })).map((row) => row.id)).toEqual(["profile", "profile:recent"]);
   });
 
   it("opens the three pages it holds", () => {

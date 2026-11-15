@@ -35,8 +35,14 @@ test.describe("the profile's page", () => {
     await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-current", "page");
     await expect(tv.getByTestId("rail-profile")).toHaveCount(0); // (who is watching is the corner's button, not a line of the menu)
     expect(await places(tv)).toEqual(["profile:ratings", "profile:history"]);
-    await expect(tv.getByTestId("tv-tile-corner")).toHaveCount(0); // (a place is no title to keep)
+    await expect(tv.locator('.tv-row[data-layout="categories"]').getByTestId("tv-tile-corner")).toHaveCount(0); // (a place is no title to keep)
     await expect(tv.getByTestId("tv-profile-name")).toHaveText("Guest");
+    // Under the places, a look at what was watched last and what was liked best (the highest first).
+    const recent = tv.locator('section.tv-row[aria-label="Recently watched"]');
+    const best = tv.locator('section.tv-row[aria-label="Your highest rated"]');
+    await expect(recent.getByTestId("tv-browse-tile")).toHaveCount(1);
+    await expect(recent.getByTestId("tv-browse-tile")).toHaveAttribute("title", "Night Train");
+    expect(await best.getByTestId("tv-browse-tile").evaluateAll((all) => all.map((one) => one.getAttribute("title")))).toEqual(["Film number 1", "Film number 3"]);
     await expect(tv.getByTestId("tv-profile-settings")).toBeVisible();
     await expect(place(tv, "ratings")).toContainText("2 ratings · average 7.5");
     await expect(place(tv, "history")).toContainText("1 title");
@@ -50,6 +56,13 @@ test.describe("the profile's page", () => {
     await tv.keyboard.press("ArrowRight");
     await expect(place(tv, "history")).toBeFocused();
     await tv.keyboard.press("ArrowLeft");
+    await expect(place(tv, "ratings")).toBeFocused();
+    await tv.keyboard.press("ArrowDown"); // (Down from the places, the rows under them)
+    await expect(recent.getByTestId("tv-browse-tile")).toBeFocused();
+    await tv.keyboard.press("ArrowDown");
+    await expect(best.getByTestId("tv-browse-tile").first()).toBeFocused();
+    await tv.keyboard.press("ArrowUp");
+    await tv.keyboard.press("ArrowUp");
     await expect(place(tv, "ratings")).toBeFocused();
     await tv.keyboard.press("ArrowUp");
     await expect(tv.getByTestId("tv-profile-signin")).toBeFocused();

@@ -833,6 +833,8 @@ export const it: Dictionary = {
   "profile.friendsCount_one": "{count} amico",
   "profile.friendsCount_other": "{count} amici",
   "profile.friendsNone": "Ancora nessun amico",
+  "profile.recent": "Visti di recente",
+  "profile.best": "I tuoi voti più alti",
   "profile.friendsNew_one": "{count} da leggere",
   "profile.friendsNew_other": "{count} da leggere",
   "tv.listEmpty": "Ancora niente qui. Apri un titolo e aggiungilo a questa lista.",
