@@ -1008,6 +1008,8 @@ export const en = {
   "friends.partyOf": "{name}'s party",
   "friends.partyGone": "That party is not open any more.",
   "friends.askTogether": "Ask to watch together",
+  "friends.togetherShort": "Watch together",
+  "friends.planShort": "Plan",
   "friends.askSent": "Asked {name} to watch together",
   "friends.togetherOf": "{name} wants to watch together",
   "friends.startParty": "Start a party",

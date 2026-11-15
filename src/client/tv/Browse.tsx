@@ -1366,14 +1366,36 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
 
       {grid && (
         <div className="tv-view" data-testid={view.kind === "category" ? "tv-category" : `tv-${view.kind}`}>
-          <h1 className="tv-view-title" data-testid="tv-view-title">
-            {grid.title}
-          </h1>
-          {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
-          {grid.hint && (
-            <p className="tv-view-hint" data-testid="tv-view-hint">
-              {grid.hint}
-            </p>
+          {view.kind === "friend" && friend ? (
+            // (A friend's page: who they are in one block, their picture beside their name, what they are doing, and why some of it is not shown.)
+            <div className="tv-friend-head">
+              <span className="tv-person-pic" data-online={friend.on && friend.online ? "true" : undefined}>
+                <Avatar id={friend.avatar} />
+              </span>
+              <div className="tv-friend-names">
+                <h1 className="tv-view-title" data-testid="tv-view-title">
+                  {grid.title}
+                </h1>
+                {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
+                {grid.hint && (
+                  <p className="tv-view-hint" data-testid="tv-view-hint">
+                    {grid.hint}
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <h1 className="tv-view-title" data-testid="tv-view-title">
+                {grid.title}
+              </h1>
+              {grid.meta && <p className="tv-view-meta">{grid.meta}</p>}
+              {grid.hint && (
+                <p className="tv-view-hint" data-testid="tv-view-hint">
+                  {grid.hint}
+                </p>
+              )}
+            </>
           )}
           {view.kind === "list" && !canAdd && (
             <p className="tv-view-meta" data-testid="lists-full">
@@ -1425,18 +1447,23 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             </div>
           )}
           {view.kind === "friend" && friend && (
-            <div className="tv-filters tv-filters-friend" role="radiogroup" aria-label={friend.name} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
+            // One line for the remote, in two groups to the eye: the way back and what to see of them (their lists or their ratings, one switch of two) on the left,
+            // what to do with them (watch together, plan it, chat) on the right. The order is the remote's, left to right, as it always was.
+            <div className="tv-filters tv-filters-friend" role="toolbar" aria-label={friend.name} onFocus={(event) => slideIntoView(event.target as HTMLElement)}>
               <button
-                className="tv-choice"
+                className="tv-choice tv-choice-round"
                 data-testid="tv-friend-back"
                 data-zone="chips"
                 data-row={0}
                 data-col={0}
+                aria-label={t("common.back")}
+                title={t("common.back")}
                 onClick={() => choose({ kind: "friends" })}
                 onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 0 })}
               >
-                <ChevronIcon className="flip" /> {t("common.back")}
+                <ChevronIcon className="flip" />
               </button>
+              <span className="tv-segmented tv-friend-tabs" role="radiogroup" aria-label={friend.name}>
               {FRIEND_TABS.map((value, index) => (
                 <button
                   key={value}
@@ -1453,29 +1480,33 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                   {t(value === "lists" ? "friends.tabLists" : "friends.tabRatings")}
                 </button>
               ))}
+              </span>
+              <span className="tv-friend-gap" aria-hidden="true" />
               {canAskTogether(friend) && (
                 <>
                   <button
-                    className="tv-choice"
+                    className="tv-choice tv-choice-primary"
                     data-testid="friend-together"
+                    title={t("friends.askTogether")}
                     data-zone="chips"
                     data-row={0}
                     data-col={1 + FRIEND_TABS.length}
                     onClick={() => void askToWatch(friend.id)}
                     onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 1 + FRIEND_TABS.length })}
                   >
-                    <UsersIcon /> {t("friends.askTogether")}
+                    <UsersIcon /> {t("friends.togetherShort")}
                   </button>
                   <button
                     className="tv-choice"
                     data-testid="friend-plan"
+                    title={t("friends.planButton")}
                     data-zone="chips"
                     data-row={0}
                     data-col={2 + FRIEND_TABS.length}
                     onClick={() => setOverlay({ kind: "planPick", friend: friend.id, back: { zone: "chips", row: 0, col: 2 + FRIEND_TABS.length } })}
                     onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: 2 + FRIEND_TABS.length })}
                   >
-                    <ClockIcon /> {t("friends.planButton")}
+                    <ClockIcon /> {t("friends.planShort")}
                   </button>
                 </>
               )}
@@ -1490,7 +1521,11 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 onFocus={() => (remembered.focus[viewKey(view)] = { zone: "chips", row: 0, col: chatChip })}
               >
                 <MessageIcon /> {t("chat.open")}
-                {waitingFrom(friends.state, friend.id) > 0 && <small data-testid="friend-chat-unread"> · {waitingFrom(friends.state, friend.id)}</small>}
+                {waitingFrom(friends.state, friend.id) > 0 && (
+                  <small className="tv-badge" data-testid="friend-chat-unread">
+                    {waitingFrom(friends.state, friend.id)}
+                  </small>
+                )}
               </button>
             </div>
           )}
@@ -1520,7 +1555,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
             </p>
           )}
           {view.kind === "friend" && friend && (
-            <div className="tv-view-foot">
+            <div className="tv-view-foot tv-friend-foot">
               <button
                 className="tv-choice tv-choice-danger"
                 data-testid="friend-remove"

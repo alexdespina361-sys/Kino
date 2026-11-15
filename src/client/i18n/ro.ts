@@ -1018,6 +1018,8 @@ export const ro: Dictionary = {
   "friends.partyOf": "Vizionarea lui {name}",
   "friends.partyGone": "Vizionarea comună nu mai este deschisă.",
   "friends.askTogether": "Cere o vizionare comună",
+  "friends.togetherShort": "Vedeți împreună",
+  "friends.planShort": "Planifică",
   "friends.askSent": "Ai cerut o vizionare comună lui {name}",
   "friends.togetherOf": "{name} vrea o vizionare comună",
   "friends.startParty": "Începe o vizionare comună",

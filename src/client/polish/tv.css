@@ -530,6 +530,15 @@
 :root[data-ui="polish"] .tv-choice-danger { background: rgba(255, 107, 107, 0.16); color: #ffb4b4; }
 :root[data-ui="polish"] .tv-choice-danger:hover { background: rgba(255, 107, 107, 0.3); color: #fff; }
 :root[data-ui="polish"] .tv-choice-danger:focus-visible { background: #fff; color: #b3261e; }
+/* A friend's page (see tv/tv.css): watching together is the main thing to do there, in the accent; their lists and ratings are one switch of two; removing them is a quiet line. */
+:root[data-ui="polish"] .tv-choice-primary { background: var(--accent); color: #fff; }
+:root[data-ui="polish"] .tv-choice-primary:hover { background: rgb(var(--accent-rgb) / 0.85); color: #fff; }
+:root[data-ui="polish"] .tv-choice-primary:focus-visible { background: #fff; color: #0b0b0c; box-shadow: var(--focus-ring-accent), var(--lift); }
+:root[data-ui="polish"] .tv-friend-tabs.tv-segmented { padding: calc(var(--em) * 0.25); }
+:root[data-ui="polish"] .tv-friend-tabs.tv-segmented .tv-choice { flex: none; padding: calc(var(--em) * 0.75) calc(var(--em) * 1.6); background: transparent; color: var(--text-2); font-size: var(--fs-3); }
+:root[data-ui="polish"] .tv-friend-foot .tv-choice-danger { background: transparent; color: var(--text-3); font-size: var(--fs-2); }
+:root[data-ui="polish"] .tv-friend-foot .tv-choice-danger:hover { background: rgba(255, 107, 107, 0.16); color: #ffb4b4; }
+:root[data-ui="polish"] .tv-friend-foot .tv-choice-danger:focus-visible { background: #fff; color: #b3261e; }
 
 /* A switch row: the words on the left, the switch on the right. */
 :root[data-ui="polish"] .tv-switch-row { border-radius: var(--r-2); background: var(--surf-1); color: var(--text-1); font-size: var(--fs-3); }
