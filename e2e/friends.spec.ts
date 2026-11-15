@@ -837,8 +837,7 @@ test.describe("sending things to friends", () => {
     await expect(row).toContainText(`From ${ann.name}`);
     await bob.page.getByTestId("friends-play").click(); // a tap opens the title's page, with the note
     await expect(bob.page.getByTestId("title-sheet")).toContainText("You will like the ending");
-    await bob.page.getByTestId("rate-title-toggle").click(); // (Bob rates it: the score is on its card in the row, as it is on every card)
-    await bob.page.getByTestId("rate-title-score-7").click();
+    await bob.page.getByTestId("rate-title-score-7").click(); // (Bob rates it: the score is on its card in the row, as it is on every card)
     await bob.page.getByTestId("title-back").click(); // (a title's page has its own way back, since it is a page of the app now and not a sheet)
     await expect(row.getByTestId("score-badge")).toHaveText("7");
 

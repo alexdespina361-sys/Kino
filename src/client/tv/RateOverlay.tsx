@@ -25,9 +25,10 @@ interface RateProps {
 }
 
 /**
- * Rating a title on the TV, a page over the library: the ten scores (pressing one is a rating, nothing else is needed), the word for
- * it, what the note says, and the lines about the watching behind it. A show can be rated as a whole or season by season. The note is
- * typed on the keys of a page of its own. Back goes back to the title's page.
+ * Rating a title on the TV, a page over the library: the ten scores and the word for the score. One press of a score is the rating, and
+ * the page goes back to the title's (pressing the score it already has only goes back). Under More: a show's seasons, each rated on its
+ * own, the note (typed on the keys of a page of its own) and the lines about the watching behind it; with More open a score is kept and
+ * the page stays, for the season or the note that comes next. Back goes back to the title's page.
  */
 export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }: RateProps) {
   const t = useT();
@@ -35,6 +36,8 @@ export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }
   /** What is being rated: a season of the show, or (absent) the title as a whole. */
   const [scope, setScope] = useState<number | undefined>(undefined);
   const [noting, setNoting] = useState(false);
+  /** The seasons, the note and the watching are shown. */
+  const [more, setMore] = useState(false);
   const { rating, facts, score, note, remove } = useRatingFor(entry, isShow, scope, scope !== undefined && scope === shown ? episodes : undefined);
   const name = scope === undefined ? entry.title : `${entry.title} · ${t("player.season", { n: scope })}`;
 
@@ -57,13 +60,19 @@ export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }
 
   const lines = factLines(t, language, rating?.ratedAt, facts);
   const start = rating?.score ?? START_SCORE;
+  const press = (value: number) => {
+    if (more) return score(value);
+    // (The score it already has is not given again: that would only change when it was last touched.)
+    if (rating?.score !== value) score(value);
+    onClose();
+  };
   return (
     <Screen key="rate" testId="tv-rate" compact focus onBack={onClose}>
       <h1 className="tv-headline tv-headline-small">{t("rating.yours")}</h1>
       <p className="tv-lead" data-testid="tv-rate-title">
         {name}
       </p>
-      {isShow && seasons.length > 0 && (
+      {more && isShow && seasons.length > 0 && (
         <div className="tv-choices tv-rate-scopes" role="radiogroup" aria-label={t("player.seasons")}>
           <button className="tv-choice" role="radio" aria-checked={scope === undefined} onClick={() => setScope(undefined)} data-nav data-testid="rate-scope-all">
             {t("rating.wholeShow")}
@@ -83,7 +92,7 @@ export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }
             role="radio"
             aria-checked={rating?.score === value}
             aria-label={t("rating.setScore", { score: value })}
-            onClick={() => score(value)}
+            onClick={() => press(value)}
             data-nav
             {...(value === start ? { "data-autofocus": true } : {})}
             data-testid={`rate-score-${value}`}
@@ -95,21 +104,36 @@ export function RateOverlay({ entry, isShow, seasons, shown, episodes, onClose }
       <p className="tv-rate-word" role="status" data-testid="rate-word">
         {rating ? scoreWord(t, rating.score) : t("rating.pick")}
       </p>
-      {rating?.note && (
+      {more && rating?.note && (
         <p className="tv-rate-note" data-testid="rate-note-text">
           {rating.note}
         </p>
       )}
-      {lines.length > 0 && (
+      {more && lines.length > 0 && (
         <ul className="tv-rate-facts" data-testid="rate-facts">
           {lines.map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
       )}
-      <div className="tv-actions">
-        <button className="tv-action" disabled={!rating} onClick={() => setNoting(true)} data-nav data-testid="rate-note-button">
-          {t(rating?.note ? "rating.editNote" : "rating.addNote")}
+      <div className="tv-actions tv-rate-actions">
+        {more && (
+          <button className="tv-action" disabled={!rating} onClick={() => setNoting(true)} data-nav data-testid="rate-note-button">
+            {t(rating?.note ? "rating.editNote" : "rating.addNote")}
+          </button>
+        )}
+        <button
+          className="tv-action"
+          aria-expanded={more}
+          onClick={() => {
+            // (Fewer again: what a press rates is the title as a whole, as the page says.)
+            if (more) setScope(undefined);
+            setMore(!more);
+          }}
+          data-nav
+          data-testid="rate-more"
+        >
+          {t(more ? "rating.less" : "rating.more")}
         </button>
         {rating && (
           <button

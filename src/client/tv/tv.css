@@ -1844,6 +1844,11 @@
   .tv-choice { font-size: 1.5em; }
   .tv-rate-scopes .tv-choice { font-size: 1.3em; }
   .tv-scores { flex-wrap: wrap; gap: 0.6em; padding: 0.2em; }
+  /* Ten scores on a phone's width: two rows of five, not nine and one. */
+  .tv-screen-compact .tv-scores { display: grid; grid-template-columns: repeat(5, auto); justify-content: center; }
+  /* The rating page's buttons (up to four, with More open) two to a row, so that the note above them keeps its room; one left over takes the row. */
+  .tv-rate-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tv-rate-actions > :last-child:nth-child(odd) { grid-column: 1 / -1; }
   .tv-score { font-size: 2em; }
   .tv-rate-word { font-size: 1.7em; }
   .tv-rate-note { font-size: 1.3em; }
@@ -2047,6 +2052,8 @@
 @media (max-height: 520px) and (min-width: 600px) {
   .tv-pair, .tv-screen-compact .tv-pair, .tv-screen-compact .tv-party-invite { flex-direction: row; }
   .tv-actions { grid-auto-flow: column; grid-auto-columns: 1fr; width: auto; max-width: none; }
+  .tv-rate-actions { grid-template-columns: none; }
+  .tv-rate-actions > :last-child:nth-child(odd) { grid-column: auto; }
   .tv-party-choices { flex-direction: row; width: auto; max-width: none; }
   .tv-party-choice { width: 22em; }
   /* The party panel over a film: the code and the people side by side. One above the other they are taller than the screen, and the panel opened scrolled to the bottom. */

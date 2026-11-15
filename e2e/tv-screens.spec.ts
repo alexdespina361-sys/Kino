@@ -2723,78 +2723,103 @@ test.describe("ratings on the TV", () => {
     await tv.keyboard.press("Enter");
   };
 
-  test("Rate on a title's page opens the scores with the remote on 7; OK on a score is a rating, and Back goes back to the page, where the button says it", async ({ browser }) => {
+  test("Rate on a title's page opens the scores with the remote on 7; one OK on a score is the rating and goes back to the page, where the button says it", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await openRating(tv);
     await expect(tv.getByTestId("tv-rate-title")).toHaveText("Film number 1");
     await expect(tv.getByTestId("rate-score-7")).toBeFocused(); // a little above the middle
     await expect(tv.getByTestId("rate-score-7")).toHaveAttribute("aria-checked", "false");
     await expect(tv.getByTestId("rate-word")).toHaveText("Pick a score out of 10");
-    await expect(tv.getByTestId("rate-note-button")).toBeDisabled(); // a note is for a score that is there
+    await expect(tv.getByTestId("rate-more")).toHaveAttribute("aria-expanded", "false"); // (the note and the watching are under More)
+    await expect(tv.getByTestId("rate-note-button")).toHaveCount(0);
     await expect(tv.getByTestId("rate-remove")).toHaveCount(0);
     await expect(tv.getByTestId("rate-facts")).toHaveCount(0);
     await expect(tv.getByTestId("rate-scope-all")).toHaveCount(0); // (a film is not rated by season)
 
     await tv.keyboard.press("ArrowRight");
     await expect(tv.getByTestId("rate-score-8")).toBeFocused();
-    await tv.keyboard.press("Enter"); // that is all it takes
-    await expect(tv.getByTestId("rate-score-8")).toHaveAttribute("aria-checked", "true");
-    await expect(tv.getByTestId("rate-score-7")).toHaveAttribute("aria-checked", "false");
-    await expect(tv.getByTestId("rate-word")).toHaveText("Very good");
-    await expect(facts(tv)).toHaveText([RATED_TODAY]);
-    await expect(tv.getByTestId("rate-note-button")).toBeEnabled();
-    await expect(tv.getByTestId("rate-note-button")).toHaveText("Add a note");
-    await expect(tv.getByTestId("rate-remove")).toBeVisible();
+    await tv.keyboard.press("Enter"); // that is all it takes: rated, and back on the title's page
+    await expect(tv.getByTestId("tv-rate")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-detail-rate")).toBeFocused();
+    await expect(tv.getByTestId("tv-detail-rate")).toHaveText("8/10");
 
+    await tv.keyboard.press("Enter"); // opened again, it starts on the score it has, and taking it back is there at once
+    await expect(tv.getByTestId("rate-score-8")).toBeFocused();
+    await expect(tv.getByTestId("rate-score-8")).toHaveAttribute("aria-checked", "true");
+    await expect(tv.getByTestId("rate-word")).toHaveText("Very good");
+    await expect(tv.getByTestId("rate-remove")).toBeVisible();
+    const kept = () => tv.evaluate(() => JSON.stringify((JSON.parse(localStorage.getItem("kino.data.guest") ?? "{}") as { data?: { ratings?: unknown[] } }).data?.ratings ?? []));
+    await expect.poll(kept).toContain('"score":8'); // (kept a moment after it is given)
+    const before = await kept();
+    await tv.keyboard.press("Enter"); // the score it has: back to the page, and the rating is not given again
+    await expect(tv.getByTestId("tv-rate")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-detail-rate")).toBeFocused();
+    await tv.waitForTimeout(800); // (longer than the profile waits before it keeps a change)
+    expect(await kept()).toBe(before);
+
+    await tv.keyboard.press("Enter");
     for (let i = 0; i < 5; i++) await tv.keyboard.press("ArrowLeft");
     await expect(tv.getByTestId("rate-score-3")).toBeFocused();
     await tv.keyboard.press("Enter"); // another score replaces it
-    await expect(tv.getByTestId("rate-word")).toHaveText("Very bad");
-    await expect(tv.locator('[data-testid^="rate-score-"][aria-checked="true"]')).toHaveCount(1);
+    await expect(tv.getByTestId("tv-detail-rate")).toBeFocused();
+    await expect(tv.getByTestId("tv-detail-rate")).toHaveText("3/10");
 
-    await tv.keyboard.press("ArrowDown"); // from the scores to the buttons below them, and back up
-    expect(["rate-note-button", "rate-remove", "rate-done"]).toContain(await onScreen(tv));
-    await tv.keyboard.press("ArrowUp");
+    // More: the watching and the note; with it open a score is kept and the page stays.
+    await tv.keyboard.press("Enter");
+    await tv.keyboard.press("ArrowDown"); // from the scores to the buttons below them
+    expect(["rate-more", "rate-remove", "rate-done"]).toContain(await onScreen(tv));
+    await tv.getByTestId("rate-more").focus();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("rate-more")).toHaveAttribute("aria-expanded", "true");
+    await expect(tv.getByTestId("rate-more")).toBeFocused(); // (the remote stays where it was)
+    await expect(tv.getByTestId("rate-more")).toHaveText("Less");
+    await expect(facts(tv)).toHaveText([RATED_TODAY]);
+    await expect(tv.getByTestId("rate-note-button")).toHaveText("Add a note");
+    await tv.keyboard.press("ArrowUp"); // and back up to the scores
     expect(await onScreen(tv)).toMatch(/^rate-score-\d+$/);
+    await tv.getByTestId("rate-score-4").focus();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("rate-word")).toHaveText("Bad");
+    await expect(tv.getByTestId("tv-rate")).toBeVisible();
+    await expect(tv.locator('[data-testid^="rate-score-"][aria-checked="true"]')).toHaveCount(1);
 
     await tv.keyboard.press("Escape"); // Back: the page of the title, with the remote on the button it pressed
     await expect(tv.getByTestId("tv-rate")).toHaveCount(0);
     await expect(tv.getByTestId("tv-detail-rate")).toBeFocused();
-    await expect(tv.getByTestId("tv-detail-rate")).toHaveText("3/10");
+    await expect(tv.getByTestId("tv-detail-rate")).toHaveText("4/10");
     await expect(tv.getByTestId("tv-detail-rate")).toBeVisible();
-
-    await tv.keyboard.press("Enter"); // opened again, it starts on the score it has
-    await expect(tv.getByTestId("rate-score-3")).toBeFocused();
-    await expect(tv.getByTestId("rate-score-3")).toHaveAttribute("aria-checked", "true");
-    await expect(tv.getByTestId("rate-word")).toHaveText("Very bad");
+    await tv.keyboard.press("Escape"); // and one more Back leaves the title's page (a score that closed the page left nothing behind)
+    await expect(tiles(tv).first()).toBeFocused();
   });
 
-  test("a mouse rates as well: a click on a score, Done, and the rating taken back with its button", async ({ browser }) => {
+  test("a mouse rates as well: one click on a score, the rating taken back with its button, and Done leaves without one", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await tiles(tv).nth(2).click();
     await tv.getByTestId("tv-detail-rate").click();
     await expect(tv.getByTestId("tv-rate-title")).toHaveText("Film number 3");
-    await tv.getByTestId("rate-score-9").click();
-    await expect(tv.getByTestId("rate-word")).toHaveText("Great");
-    await expect(tv.getByTestId("rate-score-9")).toHaveAttribute("aria-checked", "true");
-    await tv.getByTestId("rate-done").click();
+    await tv.getByTestId("rate-score-9").click(); // rated, and back on the title's page
     await expect(tv.getByTestId("tv-rate")).toHaveCount(0);
     await expect(tv.getByTestId("tv-detail-rate")).toHaveText("9/10");
 
     await tv.getByTestId("tv-detail-rate").click();
+    await expect(tv.getByTestId("rate-word")).toHaveText("Great");
     await tv.getByTestId("rate-remove").click(); // the remote lands on the scores, where the button was
     await expect(tv.getByTestId("rate-word")).toHaveText("Pick a score out of 10");
     await expect(tv.getByTestId("rate-remove")).toHaveCount(0);
-    await expect(tv.getByTestId("rate-note-button")).toBeDisabled();
     await expect(tv.locator('[data-testid^="rate-score-"][aria-checked="true"]')).toHaveCount(0);
     expect(await onScreen(tv)).toMatch(/^rate-score-\d+$/);
     await tv.getByTestId("rate-done").click();
+    await expect(tv.getByTestId("tv-rate")).toHaveCount(0);
     await expect(tv.getByTestId("tv-detail-rate")).toHaveText("Rate");
   });
 
   test("a note is typed on the keys of a page of its own and kept; Back from there is the scores again, and an empty note takes it away", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library));
     await openRating(tv);
+    await tv.getByTestId("rate-more").focus();
+    await tv.keyboard.press("Enter"); // the note is under More (and with More open, a score keeps the page)
+    await expect(tv.getByTestId("rate-note-button")).toBeDisabled(); // a note is for a score that is there
+    await tv.getByTestId("rate-score-7").focus();
     await tv.keyboard.press("Enter"); // 7
     await expect(tv.getByTestId("rate-word")).toHaveText("Good");
     await tv.getByTestId("rate-note-button").focus();
@@ -2858,6 +2883,7 @@ test.describe("ratings on the TV", () => {
     await tiles(tv).first().click();
     await expect(tv.getByTestId("tv-detail-title")).toHaveText("Night Train");
     await tv.getByTestId("tv-detail-rate").click();
+    await tv.getByTestId("rate-more").click();
     await tv.getByTestId("rate-score-8").click();
     await expect(facts(tv)).toHaveText([RATED_TODAY, "50% watched", "Last watched 4 Oct 2026"]);
   });
@@ -2869,6 +2895,8 @@ test.describe("ratings on the TV", () => {
     await tv.keyboard.press("Enter");
     await expect(tv.getByTestId("tv-episode")).toHaveCount(3); // (the page lists the seasons before it is asked about them)
     await tv.getByTestId("tv-detail-rate").click();
+    await expect(tv.getByTestId("rate-scope-all")).toHaveCount(0); // (a show's seasons are under More)
+    await tv.getByTestId("rate-more").click();
 
     await expect(tv.getByTestId("tv-rate-title")).toHaveText("The Long Night");
     await expect(tv.getByTestId("rate-scope-all")).toHaveAttribute("aria-checked", "true");
@@ -3021,8 +3049,9 @@ test.describe("ratings on the TV", () => {
       await tv.keyboard.press("Enter");
       await expect(tv.getByTestId("tv-episode")).toHaveCount(3);
       await tv.getByTestId("tv-detail-rate").click();
+      await tv.getByTestId("rate-more").click();
       await expect(tv.getByTestId("rate-note-text")).toBeVisible();
-      for (const id of ["tv-rate-title", "rate-scope-all", "rate-scope-2", "rate-score-1", "rate-score-10", "rate-word", "rate-note-text", "rate-facts", "rate-note-button", "rate-remove", "rate-done"]) {
+      for (const id of ["tv-rate-title", "rate-scope-all", "rate-scope-2", "rate-score-1", "rate-score-10", "rate-word", "rate-note-text", "rate-facts", "rate-note-button", "rate-more", "rate-remove", "rate-done"]) {
         const at = await tv.getByTestId(id).boundingBox();
         expect(at, id).not.toBeNull();
         expect(at!.x, `${id} from the left`).toBeGreaterThanOrEqual(0);
