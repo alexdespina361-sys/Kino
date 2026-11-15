@@ -1311,6 +1311,60 @@ test.describe("a show's own page on the TV", () => {
   const tiles = (tv: Page) => tv.getByTestId("tv-browse-tile");
   const episodes = (tv: Page) => tv.getByTestId("tv-episode");
 
+  test("a long show's seasons that run off the screen have an arrow at each end for a mouse, which slides them and leaves the remote where it was", async ({ browser, baseURL }) => {
+    const many = Array.from({ length: 20 }, (_, at) => at + 1);
+    const tv = await openLibrary(browser, withShow(baseURL!, many));
+    await expect(tiles(tv).first()).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-season-1")).toHaveAttribute("aria-checked", "true");
+    const row = tv.getByTestId("tv-seasons");
+    const left = () => row.evaluate((el) => el.scrollLeft);
+    const inView = (n: number) =>
+      tv.getByTestId(`tv-season-${n}`).evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        const frame = el.parentElement!.getBoundingClientRect();
+        return box.left >= frame.left - 1 && box.right <= frame.right + 1;
+      });
+
+    await expect(tv.getByTestId("tv-seasons-back")).toHaveCount(0); // nothing before the first season
+    await expect(tv.getByTestId("tv-seasons-next")).toBeVisible();
+    expect(await inView(20)).toBe(false);
+    /** Where the row is once it stops sliding. */
+    const settled = async () => {
+      for (let was = await left(); ; ) {
+        await tv.waitForTimeout(150);
+        const now = await left();
+        if (now === was) return now;
+        was = now;
+      }
+    };
+    for (let press = 0; press < 8 && (await tv.getByTestId("tv-seasons-next").count()) > 0; press++) {
+      const was = await settled();
+      await tv.getByTestId("tv-seasons-next").click();
+      await expect.poll(left).toBeGreaterThan(was);
+      await settled();
+      await expect(tv.getByTestId("tv-seasons-back")).toBeVisible();
+    }
+    await expect(tv.getByTestId("tv-seasons-next")).toHaveCount(0); // at the end
+    await expect.poll(() => inView(20)).toBe(true);
+    await tv.getByTestId("tv-season-20").click();
+    await expect(tv.getByTestId("tv-season-20")).toHaveAttribute("aria-checked", "true");
+    await expect(episodes(tv).first()).toContainText("Pilot again");
+
+    await tv.getByTestId("tv-seasons-back").click();
+    await expect.poll(() => inView(20)).toBe(false);
+    await expect(tv.getByTestId("tv-season-20")).toHaveAttribute("aria-checked", "true"); // an arrow chooses nothing
+  });
+
+  test("a show with few seasons has no arrows", async ({ browser, baseURL }) => {
+    const tv = await openLibrary(browser, withShow(baseURL!));
+    await expect(tiles(tv).first()).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-season-2")).toBeVisible();
+    await expect(tv.getByTestId("tv-seasons-next")).toHaveCount(0);
+    await expect(tv.getByTestId("tv-seasons-back")).toHaveCount(0);
+  });
+
   test("its seasons and episodes lie under its buttons, and Play says which episode it starts", async ({ browser, baseURL }) => {
     const tv = await openLibrary(browser, withShow(baseURL!));
     await expect(tiles(tv).first()).toBeFocused();

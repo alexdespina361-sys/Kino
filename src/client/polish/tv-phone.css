@@ -297,7 +297,7 @@
   /* A show's seasons and episodes: the seasons slide, each episode is a row with its still, its name and what it is about. */
   :root[data-ui="polish"] .tv .tv-detail-eps { padding: 4px var(--page-r) 32px var(--gutter); }
   :root[data-ui="polish"] .tv .tv-detail-eps-title { margin-bottom: 4px; font-size: var(--fs-4); }
-  :root[data-ui="polish"] .tv .tv-detail-eps > .tv-filters { margin-inline: calc(var(--gutter) * -1); padding-inline: var(--gutter); }
+  :root[data-ui="polish"] .tv .tv-detail-eps > .tv-filters-box > .tv-filters { margin-inline: calc(var(--gutter) * -1); padding-inline: var(--gutter); }
   :root[data-ui="polish"] .tv .tv-detail-list { gap: 8px; margin: 0; padding: 4px 0; }
   :root[data-ui="polish"] .tv .tv-opt.tv-ep { grid-template-columns: 24px 112px minmax(0, 1fr); gap: 10px; min-height: 76px; }
   :root[data-ui="polish"] .tv .tv-ep-no { font-size: 18px; }

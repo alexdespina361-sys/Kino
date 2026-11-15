@@ -7,6 +7,7 @@ import { formatLeft } from "../shared/format";
 import { episodeKey, useUnavailable } from "../shared/unavailable";
 import { statusWords } from "../shared/words";
 import { EpisodeRow, type EpisodeCard } from "./EpisodeRow";
+import { SideScroll } from "./SideScroll";
 import { showKeyOf, startOf, type Entry, type Start } from "./pages";
 
 /** One episode of the season that is shown, as the page lists it. */
@@ -114,7 +115,8 @@ export function SeriesSection({ page, onPlay, onSlide }: { page: SeriesPage; onP
     <section className="tv-detail-eps" aria-label={t("player.episodes")} data-testid="tv-episodes">
       <h2 className="tv-detail-eps-title">{t("player.episodes")}</h2>
       {seasons.length > 1 && (
-        <div className="tv-filters" role="radiogroup" aria-label={t("player.seasons")} onFocus={(event) => onSlide(event.target as HTMLElement)}>
+        // (A long show's seasons run off the screen: a mouse has an arrow at each end.)
+        <SideScroll label={t("player.seasons")} testId="tv-seasons" onFocus={(event) => onSlide(event.target as HTMLElement)}>
           {seasons.map((number, col) => (
             <button
               key={number}
@@ -130,7 +132,7 @@ export function SeriesSection({ page, onPlay, onSlide }: { page: SeriesPage; onP
               {t("player.season", { n: number })}
             </button>
           ))}
-        </div>
+        </SideScroll>
       )}
       {episodes ? (
         <div className="tv-detail-list">

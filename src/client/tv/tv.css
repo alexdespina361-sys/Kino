@@ -1124,7 +1124,7 @@
 /* A show's seasons and episodes, under its buttons. The cards are the player's own (.tv-opt.tv-ep); the section darkens the picture it slides over. */
 .tv-detail-eps { position: relative; flex: none; padding: 1em 4em 6em 7em; background: linear-gradient(to bottom, transparent, var(--bg) 5em); }
 .tv-detail-eps > * { max-width: 62em; }
-.tv-detail-eps > .tv-filters { max-width: none; } /* the seasons run as far as there is room */
+.tv-detail-eps > .tv-filters-box { max-width: none; } /* the seasons run as far as there is room */
 .tv-detail-eps-title { margin: 0 0 0.5em; font-size: 1.9em; font-weight: 800; letter-spacing: -0.01em; }
 .tv-detail-list { display: flex; flex-direction: column; gap: 0.5em; padding: 0.5em; margin: 0 -0.5em; } /* room for the ring around the one the remote is on */
 .tv-detail-eps-note { margin: 0.2em 0 0; font-size: 1.5em; color: var(--muted); }
