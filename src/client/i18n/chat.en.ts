@@ -21,6 +21,8 @@ export const chatEn = {
   "chat.takeBackLast": "Take back last message",
   "chat.mute": "Mute",
   "chat.unmute": "Unmute",
+  "chat.more": "More",
+  "chat.mutedShort": "Muted",
   "chat.muted": "Muted: you aren't told about new messages from {name}. {name} isn't told.",
   "chat.closed": "{name} isn't taking messages.",
   "chat.mineOff": "Messages from friends are turned off for you, so {name} can't answer. Turn them on in the Friends settings.",

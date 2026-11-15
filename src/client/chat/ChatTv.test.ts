@@ -17,6 +17,38 @@ describe("the chat on the TV", () => {
     expect(count(html, "chat-line")).toBe(3);
   });
 
+  it("is one window: the friend at the top, and taking back, muting and reporting behind the ⋯, shut until it is opened", () => {
+    const html = read({ avatar: "fox", online: true });
+    expect(html).toContain('data-testid="tv-chat-name">Sam<');
+    expect(has(html, "tv-chat-status")).toBe(true);
+    expect(html).toContain("Online");
+    expect(tagOf(html, "tv-chat-more")).toContain('aria-expanded="false"');
+    expect(tagOf(html, "tv-chat-more")).toContain("data-nav");
+    expect(tagOf(html, "tv-chat-menu")).toContain("hidden");
+    // (what is in it is inside it, not a row of buttons beside the box)
+    const menu = html.slice(html.indexOf('data-testid="tv-chat-menu"'));
+    for (const id of ["tv-chat-takeback", "tv-chat-mute", "tv-chat-report"]) expect(has(menu, id), id).toBe(true);
+    expect(read({ session: fakeSession({ state: { lines, muted: true } }) })).toContain("Muted");
+  });
+
+  it("on a TV, the box at the bottom opens the page that writes, and shows what was typed and not sent", () => {
+    expect(read()).toContain("Write a message");
+    expect(read({ draft: "See you at eight" })).toContain("See you at eight");
+    expect(has(read(), "tv-chat-box")).toBe(false);
+  });
+
+  it("on a computer, the box is a box: the remote (the keyboard) starts in it, and Send waits for a message", () => {
+    const html = read({ desk: true });
+    expect(has(html, "tv-chat-write")).toBe(false);
+    expect(tagOf(html, "tv-chat-box")).toContain("data-autofocus");
+    expect(tagOf(html, "tv-chat-box")).toContain('maxLength="500"');
+    expect(tagOf(html, "tv-chat-box-send")).toContain("disabled");
+    expect(tagOf(read({ desk: true, draft: "Hello" }), "tv-chat-box-send")).not.toContain("disabled");
+    expect(tagOf(read({ desk: true, draft: "Hello", session: fakeSession({ sending: true, state: { lines } }) }), "tv-chat-box-send")).toContain("disabled");
+    // (a friend who takes no messages: no box, as no Write)
+    expect(has(read({ desk: true, session: fakeSession({ state: { lines, open: false } }) }), "tv-chat-box")).toBe(false);
+  });
+
   it("lands the remote on Write, and can be walked: every button and the list are `data-nav`", () => {
     const html = read();
     expect(tagOf(html, "tv-chat-write")).toContain("data-autofocus");
