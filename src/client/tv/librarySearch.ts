@@ -77,19 +77,30 @@ export function appendTo(text: string, char: string, max = 60): string {
   return (text + char).slice(0, max);
 }
 
-/** The search box: what was typed, and where the caret stands in it (0 is before the first character, the length is after the last). */
+/**
+ * The search box: what was typed, and where the caret stands in it (0 is before the first character, the length is after the last). While some of
+ * the text is selected (dragged over with the mouse, Shift with an arrow, Ctrl+A), `anchor` is where the selection began: the caret is its other end.
+ */
 export interface SearchBox {
   text: string;
   caret: number;
+  anchor?: number | undefined;
 }
 
-/** What can be done to the box: type a character at the caret, put in at the caret what was copied somewhere else, take the one before it (Backspace) or the one after it (Delete), move the caret, or empty the box. */
+/**
+ * What can be done to the box: type a character at the caret, put in at the caret what was copied somewhere else, take the one before it (Backspace) or
+ * the one after it (Delete), move the caret (`extend`: and select what it passes over, as Shift does), select from one place to another, a word, or all
+ * of it, or empty the box. Typing, pasting, Backspace and Delete on a selection replace it or take it out, as in any field.
+ */
 export type BoxEdit =
   | { kind: "type"; char: string }
   | { kind: "paste"; text: string }
   | { kind: "backspace" }
   | { kind: "delete" }
-  | { kind: "move"; to: "left" | "right" | "start" | "end" | number }
+  | { kind: "move"; to: "left" | "right" | "start" | "end" | number; extend?: boolean }
+  | { kind: "select"; from: number; to: number }
+  | { kind: "selectWord"; at: number }
+  | { kind: "selectAll" }
   | { kind: "clear" };
 
 /** Does a pair of UTF-16 units that make one character (an emoji typed on a narrow screen's own keyboard) start at `at`? */
@@ -119,11 +130,49 @@ function tidy(text: string, caret: number): SearchBox {
   return { text: kept, caret: Math.max(0, Math.min(at, kept.length)) };
 }
 
+/** The selected part of the box, from `start` up to (not including) `end`, or null when nothing is selected. */
+export function selectionOf(box: SearchBox): { start: number; end: number } | null {
+  if (box.anchor === undefined) return null;
+  const anchor = snap(box.text, box.anchor);
+  const caret = snap(box.text, box.caret);
+  return anchor === caret ? null : { start: Math.min(anchor, caret), end: Math.max(anchor, caret) };
+}
+
+/** What is selected in the box ("" when nothing is). */
+export const selectedText = (box: SearchBox): string => {
+  const part = selectionOf(box);
+  return part ? box.text.slice(part.start, part.end) : "";
+};
+
+/** The box with what was selected in it, if anything, taken out (the caret where it was), or with the selection forgotten. */
+function withoutSelection(box: SearchBox): SearchBox {
+  const part = selectionOf(box);
+  if (!part) return { text: box.text, caret: snap(box.text, box.caret) };
+  return tidy(box.text.slice(0, part.start) + box.text.slice(part.end), part.start);
+}
+
+/** The run of characters that are not spaces around a place in the text (what a double click selects). */
+function wordAt(text: string, at: number): { start: number; end: number } {
+  let start = snap(text, at);
+  let end = start;
+  while (start > 0 && text[start - 1] !== " ") start--;
+  while (end < text.length && text[end] !== " ") end++;
+  return { start, end };
+}
+
 /**
  * The box after an edit. The text stays what `appendTo` keeps it (no leading or double spaces, not longer than `max`), but a character
  * goes in where the caret is and not only at the end, so a slip in the middle of a title is mended without typing it all again.
  */
 export function editBox(box: SearchBox, edit: BoxEdit, max = 60): SearchBox {
+  const part = selectionOf(box);
+  // A selection is replaced by what is typed or pasted (put where it was before the spaces around it are tidied, so "the [night] of" with "d" typed is
+  // "the d of"), and is what Backspace and Delete take out.
+  if (part && (edit.kind === "type" || edit.kind === "paste")) {
+    const next = editBox({ text: box.text.slice(0, part.start) + box.text.slice(part.end), caret: part.start }, edit, max);
+    return tidy(next.text, next.caret);
+  }
+  if (part && (edit.kind === "backspace" || edit.kind === "delete")) return withoutSelection(box);
   const { text } = box;
   const caret = snap(text, box.caret);
   switch (edit.kind) {
@@ -144,9 +193,25 @@ export function editBox(box: SearchBox, edit: BoxEdit, max = 60): SearchBox {
     case "delete":
       return caret === text.length ? { text, caret } : tidy(text.slice(0, caret) + text.slice(stepOn(text, caret)), caret);
     case "move": {
+      // (Without Shift, an arrow on a selection goes to that end of it, as in any field; with Shift, the selection grows or shrinks from where it began.)
+      if (part && !edit.extend && (edit.to === "left" || edit.to === "right")) return { text, caret: edit.to === "left" ? part.start : part.end };
       const to = edit.to === "left" ? stepBack(text, caret) : edit.to === "right" ? stepOn(text, caret) : edit.to === "start" ? 0 : edit.to === "end" ? text.length : edit.to;
-      return { text, caret: snap(text, to) };
+      if (!edit.extend) return { text, caret: snap(text, to) };
+      const anchor = box.anchor === undefined ? caret : snap(text, box.anchor);
+      const next = snap(text, to);
+      return next === anchor ? { text, caret: next } : { text, caret: next, anchor };
     }
+    case "select": {
+      const from = snap(text, edit.from);
+      const to = snap(text, edit.to);
+      return from === to ? { text, caret: to } : { text, caret: to, anchor: from };
+    }
+    case "selectWord": {
+      const word = wordAt(text, edit.at);
+      return word.start === word.end ? { text, caret: word.start } : { text, caret: word.end, anchor: word.start };
+    }
+    case "selectAll":
+      return text === "" ? { text, caret: 0 } : { text, caret: text.length, anchor: 0 };
     case "clear":
       return { text: "", caret: 0 };
   }

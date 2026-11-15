@@ -40,7 +40,7 @@ import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
 import { AddFriendTv, FriendPickerTv, FriendRequestTv, FriendSettingsTv, NotificationsTv, PlanPickerTv, PlanTv, UnfriendTv } from "./Friends";
 import { AccountChip, BackButton, BellChip, Screen } from "./Idle";
 import { actionForKey } from "./keys";
-import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlySection, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
+import { allExact, editBox, KEYBOARD_COLUMNS, KEYBOARD_KEYS, KEYBOARD_SHAPE, keepMatching, matchLocal, mergeAnswers, NO_ANSWERS, onlySection, selectedText, typedCharacter, type Answers, type BoxEdit, type SearchBox } from "./librarySearch";
 import { columnsFor, pageWidth, PITCH_EM } from "./columns";
 import { asOpened, backOf, entryOfItem, gridOf, hasRows, heroActions, isProfilePage, isRowsPage, isTitle, listOfRow, overviewActions, resumable, rowsOfPage, SECTION_FILTERS, sectionOfPage, shownList, viewKey, type Entry, type FriendTab, type HeroAction, type HomeRow, type Layout, type PageData, type SectionFilter, type Start, type View } from "./pages";
 import { profileRows } from "./profile";
@@ -652,8 +652,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
         }
       : {}),
   };
-  const latest = useRef({ shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact, few });
-  latest.current = { shape, view, query, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact, few };
+  const latest = useRef({ shape, view, query, box, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact, few });
+  latest.current = { shape, view, query, box, railIndex, homeRows, detail, overlay, lists, signedIn, pageSection, growing, compact, few };
 
   /**
    * Turn "the menu entry for this page" and "the title the remote was last on" into a button that is on screen. `leaving` is the block of buttons
@@ -838,12 +838,25 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const root = rootRef.current;
-      if (!root || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (!root) return;
       const { shape: now, view: page, query: text, detail: open, overlay: over, lists: all } = latest.current;
       if (over) return; // a page over the library walks its own buttons (see Idle.tsx)
 
       // A keyboard types into the search box, at the caret (not while a title's page is over it; a small screen's box is a field that takes its keys itself).
       const boxKeys = page.kind === "search" && !open && !(event.target instanceof HTMLInputElement);
+      // Ctrl+A selects all of the box, and Shift with an arrow, Home or End selects from the caret, as in any field (the arrows alone still walk the keys).
+      if (boxKeys && (event.ctrlKey || event.metaKey) && !event.altKey && (event.key === "a" || event.key === "A")) {
+        event.preventDefault();
+        edit({ kind: "selectAll" });
+        return;
+      }
+      if (event.altKey || event.ctrlKey || event.metaKey) return; // (the rest of the browser's shortcuts are the browser's: Ctrl+C, X and V come back as the clipboard's events, below)
+      const extendTo = !boxKeys || !event.shiftKey ? null : event.key === "ArrowLeft" ? "left" : event.key === "ArrowRight" ? "right" : event.key === "Home" ? "start" : event.key === "End" ? "end" : null;
+      if (extendTo) {
+        event.preventDefault();
+        edit({ kind: "move", to: extendTo, extend: true });
+        return;
+      }
       const typed = boxKeys ? typedCharacter(event) : null;
       if (typed !== null) {
         event.preventDefault();
@@ -896,7 +909,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   }, []);
 
   // The search box of a big screen is drawn, not a field (SearchField), so the browser has nowhere to paste into or copy from: Ctrl+V puts what was copied
-  // in at the caret, Ctrl+C takes the box's text (when nothing else on the page is selected), Ctrl+X takes it and empties the box.
+  // in at the caret (in place of what is selected), Ctrl+C takes what is selected in the box, or all of its text when nothing is (and nothing else on the
+  // page is selected), Ctrl+X takes the same and takes it out of the box.
   useEffect(() => {
     const inBox = (event: ClipboardEvent) => {
       const { view: page, detail: open, overlay: over } = latest.current;
@@ -910,11 +924,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       edit({ kind: "paste", text });
     };
     const onCopy = (event: ClipboardEvent) => {
-      const text = latest.current.query;
+      const { box: now } = latest.current;
+      const part = selectedText(now);
+      const text = part || now.text;
       if (!inBox(event) || !text || !event.clipboardData || window.getSelection()?.toString()) return;
       event.preventDefault();
       event.clipboardData.setData("text/plain", text);
-      if (event.type === "cut") edit({ kind: "clear" });
+      if (event.type === "cut") edit(part ? { kind: "backspace" } : { kind: "clear" });
     };
     window.addEventListener("paste", onPaste);
     window.addEventListener("copy", onCopy);
@@ -1632,7 +1648,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
               </div>
             ) : (
               <>
-                <SearchField box={box} hint={t("tv.searchHint")} onPlace={(caret) => edit({ kind: "move", to: caret })} />
+                <SearchField box={box} hint={t("tv.searchHint")} onEdit={edit} />
                 <div className="tv-keys" role="group" aria-label={t("tv.keyboard")}>
                   {KEYBOARD_KEYS.map((key, i) => (
                     <Key key={key} testId={`key-${key}`} pos={{ zone: "keys", row: Math.floor(i / KEYBOARD_COLUMNS), col: i % KEYBOARD_COLUMNS }} onPress={() => edit({ kind: "type", char: key })}>
