@@ -394,8 +394,8 @@ export function DevicesPage({ onChanged }: { /** Some of them were signed out. *
   };
 
   return (
-    <div className="page-stack" data-testid="devices-page">
-      <p className="muted">{t("account.devicesHelp")}</p>
+    <section className="page-stack" data-testid="devices-page" aria-label={t("account.devicesHelp")}>
+      <h3 className="sheet-section">{t("account.devicesHelp")}</h3>
       {sessions === null && !problem && (
         <p className="muted">
           <span className="spinner" /> {t("common.loading")}
@@ -461,7 +461,7 @@ export function DevicesPage({ onChanged }: { /** Some of them were signed out. *
           {problem}
         </p>
       )}
-    </div>
+    </section>
   );
 }
 

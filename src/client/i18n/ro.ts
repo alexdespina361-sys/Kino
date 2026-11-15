@@ -118,7 +118,7 @@ export const ro: Dictionary = {
   "account.signInTv": "Autentifică alt dispozitiv",
   "account.signInTvHelp": "Scanează codul de pe celălalt dispozitiv sau scrie-l.",
   "account.devices": "Dispozitive",
-  "account.devicesHelp": "Dispozitivele pe care ești conectat.",
+  "account.devicesHelp": "Unde ești conectat",
   "account.thisDevice": "Acest dispozitiv",
   "account.signOutDevice": "Deconectează",
   "account.renameDevice": "Redenumește {name}",

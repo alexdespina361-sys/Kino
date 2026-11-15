@@ -118,7 +118,7 @@ export const it: Dictionary = {
   "account.signInTv": "Fai accedere un altro dispositivo",
   "account.signInTvHelp": "Inquadra il codice sull'altro dispositivo oppure scrivilo.",
   "account.devices": "Dispositivi",
-  "account.devicesHelp": "I dispositivi su cui hai effettuato l'accesso.",
+  "account.devicesHelp": "Dove hai effettuato l'accesso",
   "account.thisDevice": "Questo dispositivo",
   "account.signOutDevice": "Disconnetti",
   "account.renameDevice": "Rinomina {name}",

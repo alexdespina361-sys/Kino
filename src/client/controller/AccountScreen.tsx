@@ -10,7 +10,7 @@ import { useProfileData } from "../account/store";
 import { useFeedbackEntry } from "../feedback/entry";
 import { useFriends } from "../friends/FriendsProvider";
 import { useT } from "../i18n";
-import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, MessageIcon, PencilIcon, PhoneIcon, ScanIcon, StarIcon, UserIcon, UsersIcon } from "../shared/icons";
+import { ChevronIcon, GearIcon, LockIcon, LogoutIcon, MessageIcon, PencilIcon, PhoneIcon, StarIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { Logo } from "../shared/Logo";
 import type { Entry } from "../tv/pages";
 import { DevicesPage, LinkPage, SecurityPage, SettingsPage } from "./AccountPages";
@@ -85,7 +85,7 @@ export function Page({ title, onBack, children, testId, backTestId, bare = false
   );
 }
 
-type View = "main" | "picker" | "profiles" | "edit" | "settings" | "devices" | "security" | "link" | "approve" | "friends" | "friend";
+type View = "main" | "picker" | "profiles" | "edit" | "settings" | "devices" | "security" | "approve" | "friends" | "friend";
 
 function MenuRow({ icon, label, onClick, testId, detail }: { icon: ReactNode; label: string; onClick: () => void; testId: string; detail?: string }) {
   return (
@@ -110,11 +110,17 @@ export function AccountScreen({
   onSessionsChanged,
   onOpenTitle,
   onStartParty,
+  onTvs,
+  tvCount = 0,
 }: {
   onClose: () => void;
   initial?: View;
   inline?: boolean;
   onSessionsChanged?: () => void;
+  /** Open the TVs this phone controls (the same sheet as the TV's menu has), from the Devices page. */
+  onTvs?: () => void;
+  /** How many TVs this phone has: the Devices page has a row for them when there are any. */
+  tvCount?: number;
   /** A title a friend sent, or has in a list, was tapped (not given on a phone that has no TV to play it on). */
   onOpenTitle?: (entry: Entry) => void;
   /** A friend's request to watch together was answered with "Start a party" (not given on a phone that has no TV to host one). */
@@ -156,20 +162,8 @@ export function AccountScreen({
 
   if (view === "approve" && linkCode) {
     return (
-      <Page title={t("account.signInTv")} onBack={() => setView("link")} testId="approve-page">
-        <LinkApprove code={linkCode} onClose={back} />
-      </Page>
-    );
-  }
-  if (view === "link") {
-    return (
-      <Page title={t("account.signInTv")} onBack={back}>
-        <LinkPage
-          onCode={(code) => {
-            setLinkCode(code);
-            setView("approve");
-          }}
-        />
+      <Page title={t("account.signInTv")} onBack={() => setView("devices")} testId="approve-page">
+        <LinkApprove code={linkCode} onClose={() => setView("devices")} />
       </Page>
     );
   }
@@ -207,10 +201,27 @@ export function AccountScreen({
       </Page>
     );
   }
+  // Every device in one place: the TVs this phone controls, signing another screen in with its code, and where the account is signed in.
   if (view === "devices") {
     return (
       <Page title={t("account.devices")} onBack={back}>
-        <DevicesPage onChanged={onSessionsChanged} />
+        <div className="page-stack">
+          {onTvs && tvCount > 0 && (
+            <nav className="menu">
+              <MenuRow icon={<TvIcon />} label={tvCount > 1 ? t("menu.tvsCount", { count: tvCount }) : t("menu.tvs")} onClick={onTvs} testId="devices-tvs" />
+            </nav>
+          )}
+          <section aria-label={t("account.signInTv")}>
+            <h3 className="sheet-section">{t("account.signInTv")}</h3>
+            <LinkPage
+              onCode={(code) => {
+                setLinkCode(code);
+                setView("approve");
+              }}
+            />
+          </section>
+          <DevicesPage onChanged={onSessionsChanged} />
+        </div>
       </Page>
     );
   }
@@ -310,7 +321,6 @@ export function AccountScreen({
             <nav className="menu">
               <MenuRow icon={<GearIcon />} label={t("settings.title")} onClick={() => openSettings("main")} testId="menu-settings" />
               {feedbackRow}
-              <MenuRow icon={<ScanIcon />} label={t("account.signInTv")} onClick={() => setView("link")} testId="menu-link" />
               <MenuRow icon={<PhoneIcon />} label={t("account.devices")} onClick={() => setView("devices")} testId="menu-devices" />
               {canConnectGoogle && <MenuRow icon={<GoogleMark />} label={t("account.googleConnect")} onClick={() => account.withGoogle("link")} testId="menu-google" />}
               <MenuRow icon={<LockIcon />} label={t("account.security")} onClick={() => setView("security")} testId="menu-security" />

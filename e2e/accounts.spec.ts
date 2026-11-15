@@ -398,6 +398,62 @@ test.describe("signing a TV in from the phone", () => {
     await expect(tv.getByTestId("tv-account-toast")).toHaveText(en["error.signed_out"], { timeout: 10_000 });
   });
 
+  test("the Devices page holds every device: a TV's code typed there signs it in, Back comes back to the page, and one device can be signed out alone", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, fresh());
+    await expect(phone.getByTestId("account-profile-name")).toHaveText("Viewer");
+    await expect(phone.getByTestId("menu-link")).toHaveCount(0); // one row for the devices, not two
+
+    const tv = await openLibrary(browser);
+    await openTvSignIn(tv);
+    const code = tv.getByTestId("tv-link-code");
+    await expect(code).toHaveText(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    const shown = (await code.textContent())!.trim();
+
+    await phone.getByTestId("menu-devices").click();
+    await expect(phone.getByTestId("devices-page")).toBeVisible();
+    await expect(phone.getByTestId("device")).toHaveCount(1); // this phone
+    await expect(phone.getByTestId("devices-tvs")).toHaveCount(0); // (a phone with no TV has no row for them)
+    await phone.getByTestId("link-code-input").fill(shown);
+    await expect(phone.getByTestId("approve-page")).toBeVisible();
+    await expect(phone.getByTestId("link-code")).toHaveText(shown);
+    await phone.getByTestId("link-approve-button").click();
+    await expect(phone.getByTestId("link-done")).toBeVisible();
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", /Viewer/, { timeout: 15_000 });
+
+    await phone.getByTestId("link-close").click(); // back on the Devices page, where the TV is now listed
+    await expect(phone.getByTestId("devices-page")).toBeVisible();
+    await expect(phone.getByTestId("device")).toHaveCount(2);
+    await phone.locator('[data-testid="device"][data-current="false"]').getByTestId("device-signout").click();
+    await expect(phone.getByTestId("device")).toHaveCount(1);
+    await tv.reload(); // (the TV was signed out; it finds out at its next exchange with the server, or now)
+    await expect(tv.getByTestId("tv-account-chip")).toHaveAttribute("aria-label", en["account.signInPrompt"], { timeout: 15_000 });
+    await expect(phone.getByTestId("devices-page")).toBeVisible(); // (this phone stayed signed in)
+  });
+
+  test("on a phone that controls a TV, the Devices page has a row for its TVs, which opens the same list as the TV's menu", async ({ browser }) => {
+    const phone = await newPhone(browser);
+    await phone.goto("/");
+    await signUp(phone, fresh());
+    await expect(phone.getByTestId("account-profile-name")).toHaveText("Viewer");
+    const tv = await openTv(browser);
+    await phone.goto("/");
+    await phone.getByTestId("code-input").fill(await readPairingCode(tv));
+    await expect(phone.getByTestId("tv-online")).toHaveText("TV connected");
+
+    await phone.getByTestId("account-button").click();
+    await phone.getByTestId("menu-devices").click();
+    await expect(phone.getByTestId("devices-tvs")).toContainText(en["menu.tvs"]);
+    await phone.getByTestId("devices-tvs").click();
+    await expect(phone.getByTestId("tvs-sheet")).toBeVisible();
+    await expect(phone.getByTestId("tv-row")).toHaveCount(1);
+    await phone.keyboard.press("Escape"); // the sheet closes, the Devices page is under it
+    await expect(phone.getByTestId("tvs-sheet")).toHaveCount(0);
+    await expect(phone.getByTestId("devices-page")).toBeVisible();
+  });
+
   test("a phone that says no leaves the TV signed out", async ({ browser }) => {
     const { phone, tv } = await askToSignIn(browser);
     await phone.getByTestId("link-deny-button").click();

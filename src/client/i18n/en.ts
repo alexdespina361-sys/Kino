@@ -120,7 +120,7 @@ export const en = {
   "account.signInTv": "Sign in another device",
   "account.signInTvHelp": "Scan the code on the other device, or type it in.",
   "account.devices": "Devices",
-  "account.devicesHelp": "Devices where you're signed in.",
+  "account.devicesHelp": "Where you're signed in",
   "account.thisDevice": "This device",
   "account.signOutDevice": "Sign out",
   "account.renameDevice": "Rename {name}",
