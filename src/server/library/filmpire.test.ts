@@ -802,6 +802,21 @@ describe("filmpireSource about", () => {
     expect((await source.about!("https://filmpire.sc/watch/603"))!.similar.map((one) => [one.title, one.section])).toEqual([["Spirited Away", "anime"], ["Shrek", "cartoon"]]);
   });
 
+  it("tells a cartoon from an anime when asked for one title, from the genres of its own page (which says them otherwise than a list does)", async () => {
+    const pages: Record<string, unknown> = {
+      "/tv/46260": { id: 46260, name: "Naruto", first_air_date: "2002-10-03", poster_path: "/n.jpg", genres: [{ id: 16, name: "Animation" }, { id: 10759, name: "Action & Adventure" }], original_language: "ja", origin_country: ["JP"] },
+      "/tv/1434": { id: 1434, name: "Family Guy", first_air_date: "1999-01-31", poster_path: "/f.jpg", genres: [{ id: 16, name: "Animation" }, { id: 35, name: "Comedy" }], original_language: "en", origin_country: ["US"] },
+      "/tv/1396": { id: 1396, name: "Breaking Bad", first_air_date: "2008-01-20", poster_path: "/b.jpg", genres: [{ id: 18, name: "Drama" }], original_language: "en" },
+      "/movie/603": { id: 603, title: "The Matrix", release_date: "1999-03-31", poster_path: "/m.jpg", genres: "not a list" },
+    };
+    const page = (url: string) => pages[new URL(url).pathname.replace(/^\/3/, "")];
+    const { source } = sourceWith((url) => json(page(url) ?? {}, page(url) ? 200 : 404));
+    expect(await source.title!("filmpire-tv-46260")).toMatchObject({ title: "Naruto", kind: "series", section: "anime" });
+    expect(await source.title!("filmpire-tv-1434")).toMatchObject({ title: "Family Guy", section: "cartoon" });
+    expect((await source.title!("filmpire-tv-1396"))?.section).toBeUndefined();
+    expect(await source.title!("filmpire-movie-603")).toMatchObject({ title: "The Matrix", kind: "movie" }); // (genres it cannot read: the title is still had)
+  });
+
   it("knows nothing about links that are not Filmpire's, and says so without asking anyone", async () => {
     const get = vi.fn();
     const source = filmpireSource({ fetch: get as never });

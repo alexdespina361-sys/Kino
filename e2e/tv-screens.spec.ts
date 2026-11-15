@@ -1646,6 +1646,40 @@ test.describe("movies, series, and the rest of the menu", () => {
     await expect(tv.getByTestId("tv-hero-title")).toHaveText(/^Cartoon /);
   });
 
+  test("a show part way through that no row lists goes where the server says it belongs: an anime is on the Anime page, not among the Series (the owner's report of 15 Nov)", async ({ browser }) => {
+    const url = "https://films.example/watch/46260?s=1&e=2";
+    const seed = guestStorage({ progress: [{ key: "show:Sky Blades", at: Date.now() - 60_000, title: "Sky Blades", url, position: 600, duration: 1400, season: 1, episode: 2 }] });
+    const asked: string[] = [];
+    const tv = await openLibrary(
+      browser,
+      async (context) => {
+        await withLibrary(animatedLibrary)(context);
+        await context.route(/\/api\/library\/title/, (route) => {
+          asked.push(new URL(route.request().url()).searchParams.get("id") ?? "");
+          return route.fulfill({ json: { item: { id: "filmpire-tv-46260", title: "Sky Blades", kind: "series", section: "anime", url } } });
+        });
+      },
+      undefined,
+      seed,
+    );
+    const going = () => tv.getByRole("region", { name: "Continue watching" }).getByTestId("tv-browse-tile");
+    await expect(tv.getByTestId("tv-browse-tile").first()).toHaveAttribute("title", "Sky Blades"); // (Home has every card)
+    await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
+
+    // The rows do not list it and it is a show: the page of a section asks the server once what it is, and Series has no card of it then.
+    await choose(tv, "rail-series");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "series");
+    await expect.poll(() => asked).toEqual(["filmpire-tv-46260"]);
+    await expect(going()).toHaveCount(0);
+    await choose(tv, "rail-anime");
+    await expect(tv.getByTestId("tv-browse")).toHaveAttribute("data-view", "anime");
+    await expect(going()).toHaveCount(1);
+    await expect(going().first()).toHaveAttribute("title", "Sky Blades");
+    // The answer is kept on this device (a title does not change section): asked once, not again for the next page.
+    expect(asked).toEqual(["filmpire-tv-46260"]);
+    expect(await tv.evaluate(() => JSON.parse(localStorage.getItem("kino.cardSections") ?? "{}"))).toEqual({ "tv-46260": "anime" });
+  });
+
   test("Categories keeps the categories of the cartoons and of the anime after those of the films and the series, each saying which", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(animatedLibrary));
     await expect(tv.getByTestId("tv-browse-tile").first()).toBeFocused();
