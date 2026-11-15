@@ -5,6 +5,9 @@ import {
   computeTrackScore,
 } from "./diversity";
 
+/** A file of the subtitle site as `listedSubtitles` lists it: through the proxy, from strem.io. */
+const crowd = (n: number) => `/api/proxy?url=${encodeURIComponent(`https://subs5.strem.io/en/download/subencoding-stremio-utf8/src-api/file/${n}`)}&format=vtt`;
+
 describe("diversity subtitle cleanup", () => {
   it("infers source from url and labels correctly", () => {
     expect(inferSubtitleSource({ id: 0, label: "English", url: "/api/subtitles/ro/123.vtt" })).toBe("romanian");
@@ -13,6 +16,17 @@ describe("diversity subtitle cleanup", () => {
     expect(inferSubtitleSource({ id: 3, label: "English", url: "https://opensubtitles-v3.strem.io/sub.srt" })).toBe("opensubtitles");
     expect(inferSubtitleSource({ id: 4, label: "English", url: "https://dl.subdl.com/sub.zip" })).toBe("subdl");
     expect(inferSubtitleSource({ id: 5, label: "English", url: "https://bcdn.hakunaymatata.com/sub.vtt" })).toBe("provider");
+    // (As `listedSubtitles` really writes them: through the proxy, from strem.io's file host.)
+    expect(inferSubtitleSource({ id: 6, label: "English · Film.2024.1080p.WEB-DL", url: crowd(1) })).toBe("opensubtitles");
+    expect(inferSubtitleSource({ id: 7, label: "English", url: `/api/proxy?url=${encodeURIComponent("https://cdn.example/captions/en.vtt")}&format=vtt` })).toBe("provider");
+  });
+
+  it("keeps the stream's own caption first, ahead of three well-named crowd files", () => {
+    const stream = { id: 0, label: "English", lang: "en", url: `/api/proxy?url=${encodeURIComponent("https://cdn.example/captions/en.vtt")}&format=vtt` };
+    const listed = [1, 2, 3, 4].map((n) => ({ id: n, label: `English (${n}) · Film.2024.1080p.WEB-DL`, lang: "en", url: crowd(n) }));
+    const result = filterDiverseSubtitles([...listed, stream]);
+    expect(result[0]!.url).toBe(stream.url);
+    expect(result.map((t) => t.url)).toEqual([stream.url, crowd(1), crowd(2)]);
   });
 
   it("limits one language from taking all slots: picks top 3 from best source + top 1 from each other", () => {
