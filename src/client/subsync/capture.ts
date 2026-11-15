@@ -182,6 +182,8 @@ export class ElementTap implements SoundTap {
     void this.context?.resume().catch(() => undefined);
   };
   private readonly trackCame = (): void => this.attach();
+  /** The sound track the processor is connected to. */
+  private track: MediaStreamTrack | undefined;
 
   constructor(private readonly video: CaptureVideo) {}
 
@@ -253,20 +255,21 @@ export class ElementTap implements SoundTap {
     const processor = this.processor;
     if (!context || !processor) return;
     try {
-      this.stream ??= this.video.captureStream!();
-      this.stream.removeEventListener("addtrack", this.trackCame);
-      const track = this.stream.getAudioTracks().find((one) => one.readyState === "live");
-      if (!track) {
+      if (!this.stream) {
+        this.stream = this.video.captureStream!();
+        // (Tracks come when the film has loaded, and again when its source changes.)
         this.stream.addEventListener("addtrack", this.trackCame);
-        return;
       }
+      // (The browser copies the picture too for as long as its track lives, and nothing here wants it.)
+      for (const picture of this.stream.getVideoTracks()) picture.stop();
+      if (this.track?.readyState === "live") return;
+      const track = this.stream.getAudioTracks().find((one) => one.readyState === "live");
+      if (!track) return;
       this.source?.disconnect();
       this.source = context.createMediaStreamSource(new MediaStream([track]));
       this.source.connect(processor);
-      track.addEventListener("ended", () => {
-        this.stamper?.flush();
-        this.stream?.addEventListener("addtrack", this.trackCame);
-      }, { once: true });
+      this.track = track;
+      track.addEventListener("ended", () => this.stamper?.flush(), { once: true });
     } catch {
       this.quiet();
     }
@@ -321,5 +324,6 @@ export class ElementTap implements SoundTap {
     this.mute = undefined;
     this.stamper = undefined;
     this.stream = undefined;
+    this.track = undefined;
   }
 }

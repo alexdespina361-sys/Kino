@@ -113,6 +113,14 @@ describe("a separate streaming relay", () => {
     expect(answer.headers["access-control-expose-headers"]).toContain("Content-Range");
   });
 
+  it("answers a page that reads the film (it asks with an Origin, in CORS mode) the same, with leave to read it, and does not tell the film's host", async () => {
+    start();
+    const answer = await relay.inject({ url: signed("/film.mp4"), headers: { range: "bytes=0-3", origin: "https://kino4tv.com", "sec-fetch-mode": "cors" } });
+    expect(answer.statusCode).toBe(206); // (the fake host refuses anything that comes with an Origin)
+    expect(answer.headers["access-control-allow-origin"]).toBe("*");
+    expect(asked.at(-1)?.origin).toBeUndefined();
+  });
+
   it("preserves provider errors, including subtitles, rather than caching them or returning successful media", async () => {
     start();
     const answer = await relay.inject(signed("/blocked.vtt"));

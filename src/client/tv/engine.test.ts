@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hold, isHeld } from "../subsync/hold";
 import { AudioTap } from "../subsync/tap";
+import { signedRelayUrl } from "../../server/streamRelay/links";
 import { prepareBrowserStream } from "./browserStream";
 import {
   DIRECT_START_MS,
@@ -810,6 +811,9 @@ describe("a file the browser plays by itself, and the subtitle aligner", () => {
     expect(readableFrom("/fixtures/a.mp4", here)).toBe("same-origin");
     expect(readableFrom("https://kino4tv.com/api/proxy?url=x", here)).toBe("same-origin");
     expect(readableFrom(RELAY, here)).toBe("cors");
+    // (an address as the server makes them)
+    const made = signedRelayUrl("https://kino-relay.example/api/proxy", { url: "https://cdn.example/a.mp4", referer: "https://cdn.example/", expires: Date.now() + 1000, hostToken: false }, "k".repeat(32));
+    expect(readableFrom(made, here)).toBe("cors");
     expect(readableFrom("https://cdn.example/a.mp4", here)).toBeUndefined(); // (a host that says nothing of it)
     expect(readableFrom("https://other.example/api/proxy?url=x", here)).toBeUndefined(); // (not signed: not the relay)
   });
