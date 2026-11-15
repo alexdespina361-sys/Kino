@@ -409,6 +409,7 @@ const SPECS: Record<string, Spec> = {
   "GET /api/library/more": { query: () => ({ row: "row1", page: "2" }) },
   "GET /api/library/similar": { query: () => ({ url: TITLE }) },
   "GET /api/library/about": { query: () => ({ url: TITLE }), ok: [200] },
+  "GET /api/library/title": { query: () => ({ id: "filmpire-movie-603" }), ok: [200] },
   "GET /api/library/episodes": { query: () => ({ url: TITLE, season: "1" }) },
   "GET /api/library/seasons": { query: () => ({ url: TITLE }) },
   "GET /api/resolve": { query: () => ({ url: `${origin}/page.html` }) },

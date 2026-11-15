@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { LibraryRow, TitleAbout } from "../../shared";
+import type { LibraryItem, LibraryRow, TitleAbout } from "../../shared";
 import { createLibrary, STRIKE_GAP_MS, type LibrarySource } from "./library";
 
 const row = (title: string, count = 2): LibraryRow => ({
@@ -153,6 +153,55 @@ describe("createLibrary similar", () => {
     const broken = knowing("a", () => Promise.reject(new Error("down")));
     expect(await setup([broken]).library.similar("https://x.example/watch/1")).toEqual([]);
     expect(await setup([fakeSource("plain", [gives(row("R"))])]).library.similar("https://x.example/watch/1")).toEqual([]);
+  });
+});
+
+describe("createLibrary title", () => {
+  const item = (id: string) => ({ id, title: id, url: `https://x.example/${id}` });
+  /** A source that lists one row and knows any title it is asked for by id, and counts how often it was asked. */
+  const knowing = (id: string, answer: (asked: string) => Promise<LibraryItem | null>): LibrarySource & { asked: string[] } => {
+    const asked: string[] = [];
+    return {
+      id,
+      name: id,
+      load: gives({ id: "R", title: "R", source: id, items: [item("listed")] }),
+      asked,
+      title: (titleId: string) => {
+        asked.push(titleId);
+        return answer(titleId);
+      },
+    };
+  };
+
+  it("answers a title the library has listed from memory, without asking anyone", async () => {
+    const source = knowing("a", () => Promise.resolve(null));
+    const { library } = setup([source]);
+    await library.get();
+    expect(await library.title("listed")).toMatchObject({ id: "listed", url: "https://x.example/listed" });
+    expect(source.asked).toEqual([]);
+  });
+
+  it("asks the places for any other, once, and remembers that nobody knows one (but not that a place could not be reached)", async () => {
+    let up = false;
+    const silent = knowing("a", () => (up ? Promise.resolve(null) : Promise.reject(new Error("down"))));
+    const wise = knowing("b", (asked) => Promise.resolve(asked === "known" ? item("known") : null));
+    const { library } = setup([silent, wise]);
+    expect(await library.title("known")).toMatchObject({ id: "known" });
+    expect(await library.title("known")).toMatchObject({ id: "known" });
+    expect(wise.asked).toEqual(["known"]); // (the second time it was a title the library had met)
+    expect(await library.title("nobody")).toBeNull();
+    expect(await library.title("nobody")).toBeNull();
+    expect(silent.asked.filter((each) => each === "nobody")).toHaveLength(2); // asked again: a place that was down is not an answer
+    up = true;
+    expect(await library.title("nobody")).toBeNull();
+    expect(await library.title("nobody")).toBeNull();
+    expect(silent.asked.filter((each) => each === "nobody")).toHaveLength(3);
+  });
+
+  it("is none for a title that would not play, as the lists leave it out", async () => {
+    const { library } = setup([knowing("a", () => Promise.resolve(item("gone")))]);
+    library.played("https://x.example/gone", "none");
+    expect(await library.title("gone")).toBeNull();
   });
 });
 

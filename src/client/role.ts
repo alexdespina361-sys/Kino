@@ -22,8 +22,8 @@ const TV_AGENT = /smart-?tv|hbbtv|netcast|googletv|android ?tv|bravia|\bAFT[A-Z0
 export const isTvAgent = (userAgent: string): boolean => TV_AGENT.test(userAgent);
 
 /**
- * One page, two screens. In order: an address that asks for one ("/tv", "?role=remote", the "?party=" link of a watch party,
- * which is for a screen that plays, or the "?code=" / "?link=" / "?friend=" / "?url=" links made for the phone), then what was chosen with
+ * One page, two screens. In order: an address that asks for one ("/tv", "?role=remote", the "?party=" link of a watch party and the "?title="
+ * link of a title's page, which are for a screen that plays, or the "?code=" / "?link=" / "?friend=" / "?url=" links made for the phone), then what was chosen with
  * the switch, then a guess from the device: a TV's browser, or any screen without touch (a TV, a monitor), plays; a phone or
  * tablet is the remote.
  */
@@ -32,7 +32,7 @@ export function chooseRole(input: RoleInput): Role {
   const params = new URLSearchParams(input.search);
   const asked = params.get("role");
   if (asked === "tv" || asked === "remote") return asked;
-  if (params.has("party")) return "tv";
+  if (params.has("party") || params.has("title")) return "tv";
   if (params.has("code") || params.has("url") || params.has("text") || params.has("link") || params.has("friend")) return "remote";
   if (input.storedRole === "tv" || input.storedRole === "remote") return input.storedRole;
   if (TV_AGENT.test(input.userAgent)) return "tv";

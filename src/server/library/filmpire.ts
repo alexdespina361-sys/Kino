@@ -515,6 +515,16 @@ export function filmpireSource(options: FilmpireSourceOptions = {}): LibrarySour
      * is all, and only when a page asks. A link that is not Filmpire's, and a title TMDB does not know, have none; a place that cannot be reached throws (as above).
      * The titles are not probed for a video, as the rows' are not: one that will not play leaves the lists when it is tried (see `LibraryService.played`).
      */
+    /** A title by the id this place gives its tiles (`filmpire-movie-603`, `filmpire-tv-1399`): one question to TMDB, which says the rest. */
+    async title(id: string): Promise<LibraryItem | null> {
+      const match = /^filmpire-(movie|tv)-(\d{1,10})$/.exec(id);
+      if (!match) return null;
+      const type = match[1] as "movie" | "tv";
+      const res = await get(`${BASE_URL}/${type}/${match[2]}?api_key=${apiKey}&language=en-US`, { signal: AbortSignal.timeout(timeoutMs), headers: { accept: "application/json" } });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`title: HTTP ${res.status}`);
+      return toLibraryItem(await res.json(), type);
+    },
     async about(link: string): Promise<TitleAbout | null> {
       let title = parseWatchLink(link);
       if (!title) return null;

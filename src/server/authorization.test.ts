@@ -439,6 +439,7 @@ const PUBLIC: Record<string, string> = {
   "GET /api/library/more": "the catalogue",
   "GET /api/library/similar": "the catalogue",
   "GET /api/library/about": "the catalogue",
+  "GET /api/library/title": "the catalogue",
   "GET /api/library/episodes": "the catalogue",
   "GET /api/library/seasons": "the catalogue",
   "GET /api/resolve": "finds the video of a public page: no account is involved",

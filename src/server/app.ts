@@ -322,6 +322,18 @@ export async function buildApp(options: AppOptions = {}): Promise<FastifyInstanc
     reply.header("Cache-Control", about ? "public, max-age=3600" : "no-store");
     return reply.send({ about });
   });
+  // One title by its id, for a link to its page (`/tv?title=movie-603`) opened by someone whose library has not met it yet. None for a title nobody knows; a place
+  // that could not be reached just now is a 502, which the page treats as no title (and a browser is asked not to keep).
+  app.get<{ Querystring: { id?: string } }>("/api/library/title", async (request, reply) => {
+    const id = request.query.id ?? "";
+    if (typeof id !== "string" || !/^[a-z0-9-]{3,80}$/.test(id)) return reply.code(400).send({ error: "Missing 'id' parameter" });
+    try {
+      const item = await library.title(id);
+      return reply.header("Cache-Control", item ? "public, max-age=3600" : "no-store").send({ item });
+    } catch {
+      return reply.code(502).header("Cache-Control", "no-store").send({ error: "The library could not be reached" });
+    }
+  });
   app.get<{ Querystring: { url?: string; season?: string } }>("/api/library/episodes", async (request, reply) => {
     const link = request.query.url ?? "";
     const season = Number(request.query.season);

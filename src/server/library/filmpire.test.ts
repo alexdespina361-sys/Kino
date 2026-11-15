@@ -639,6 +639,37 @@ describe("filmpireSource similar", () => {
   });
 });
 
+describe("filmpireSource title", () => {
+  const sourceWith = (answer: (url: string) => Response | Promise<Response>) => {
+    const asked: string[] = [];
+    const get = vi.fn(async (url: string | URL) => {
+      asked.push(String(url));
+      return answer(String(url));
+    });
+    return { source: filmpireSource({ apiKey: "k", fetch: get as never, filterTrash: true }), asked };
+  };
+
+  it("asks TMDB once for a film or a show by the id of its tile, and makes the same tile of it", async () => {
+    const { source, asked } = sourceWith((url) =>
+      json(url.includes("/tv/") ? { id: 1399, name: "Game of Thrones", first_air_date: "2011-04-17", poster_path: "/g.jpg" } : { id: 603, title: "The Matrix", release_date: "1999-03-30", poster_path: "/m.jpg", overview: "A hacker." }),
+    );
+    expect(await source.title!("filmpire-movie-603")).toMatchObject({ id: "filmpire-movie-603", title: "The Matrix", year: 1999, kind: "movie", url: "https://filmpire.sc/watch/603", description: "A hacker." });
+    expect(await source.title!("filmpire-tv-1399")).toMatchObject({ id: "filmpire-tv-1399", title: "Game of Thrones", kind: "series", url: "https://filmpire.sc/watch/1399?s=1&e=1" });
+    expect(asked).toHaveLength(2);
+    expect(asked[0]).toContain("/movie/603?");
+    expect(asked[1]).toContain("/tv/1399?");
+  });
+
+  it("knows nothing of an id that is not one of its own, and says so without asking anyone; a title TMDB does not know is none, and one it could not answer throws", async () => {
+    const { source, asked } = sourceWith((url) => json({}, url.includes("/movie/1?") ? 404 : 503));
+    expect(await source.title!("archive-movie-603")).toBeNull();
+    expect(await source.title!("filmpire-movie-603x")).toBeNull();
+    expect(asked).toEqual([]);
+    expect(await source.title!("filmpire-movie-1")).toBeNull();
+    await expect(source.title!("filmpire-movie-2")).rejects.toThrow();
+  });
+});
+
 describe("filmpireSource about", () => {
   const film = (id: number, title: string, date: string | undefined, poster: string | null = "/p.jpg") => ({ id, title, media_type: "movie", poster_path: poster, ...(date ? { release_date: date } : {}) });
   /** What TMDB answers for a film that is the first of a collection, with the people, the ratings and the recommendations appended. */
