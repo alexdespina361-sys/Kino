@@ -231,6 +231,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("TV_UNPAIR") }),
   /** Whoever is at the TV stopped waiting for a video that will not come: a lookup still running is dropped and what was loading stops. */
   z.object({ type: z.literal("TV_CANCEL") }),
+  /**
+   * A film this TV asked for is playing: how long the look-up took from the press (when the TV saw the press or the look-up start) and how long the
+   * picture took after it. Written down for the team (`playback-started`), once per film, to see where the wait before a film goes.
+   */
+  z.object({ type: z.literal("TV_STARTED"), lookupMs: z.number().int().min(0).max(600_000).optional(), loadMs: z.number().int().min(0).max(600_000) }),
   /** What this screen is called on the others' lists: the profile in use, or nothing for the TV's own name. */
   z.object({ type: z.literal("TV_NAME"), name: z.string().max(60) }),
   /** Whose screen this is: the proof (from `POST /api/profiles/:id/screen`, which only that profile's signed-in account gets) for the profile in use here, or none when nobody is. */
@@ -323,7 +328,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   /** The phone forgot this TV. Back to the pairing screen with a fresh code. */
   z.object({ type: z.literal("TV_UNPAIRED"), pairing: PairingCodeSchema.nullable() }),
   /** The server is looking up a pasted link; lets the TV say so instead of looking idle. */
-  z.object({ type: z.literal("TV_RESOLVING"), active: z.boolean() }),
+  /** A look-up for this TV started or ended. A start carries what the one who asked knew about the title (its name and picture), which the TV shows while it waits. */
+  z.object({ type: z.literal("TV_RESOLVING"), active: z.boolean(), hint: PlayHintSchema.optional() }),
   // To phone
   z.object({
     type: z.literal("CTL_WELCOME"),

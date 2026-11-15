@@ -1413,6 +1413,50 @@ describe("TV feedback while a link is being looked up", () => {
   });
 });
 
+describe("a film on its way to the TV", () => {
+  const played = (m: ServerMessage) => m.type === "TV_CMD" && m.command.type === "PLAY";
+
+  it("the TV is told what the phone knew about the title as the look-up starts, so it can show it while it waits", async () => {
+    resolveImpl = async () => ({ status: "success", resolver: "test", media });
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: "https://s.example/a", hint: { title: "Dune", backdrop: "https://img.example/dune.jpg" } });
+    expect(await tv.next("TV_RESOLVING")).toMatchObject({ active: true, hint: { title: "Dune", backdrop: "https://img.example/dune.jpg" } });
+    // (What the source calls the film is what is kept: the name in the hint is only shown.)
+    expect((await tv.nextWhere("TV_CMD", (m) => m.type === "TV_CMD" && m.command.type === "LOAD")).command).toMatchObject({ media: { title: "Sample" } });
+  });
+
+  it("how long it took to start is written down once per film, with the title's site and the kind of stream, never the link", async () => {
+    const written: Array<[Record<string, unknown>, string]> = [];
+    await app.close();
+    app = await buildApp({ resolve: (url, prefetch, fresh) => resolveImpl(url, prefetch, fresh), hub: { log: { info: (object, message) => void written.push([object, message]) } } });
+    await app.ready();
+    resolveImpl = async () => ({ status: "success", resolver: "test", media });
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "PLAY_URL", url: "https://s.example/watch/1?token=secret" });
+    await tv.nextWhere("TV_CMD", played);
+    tv.send({ type: "TV_STARTED", lookupMs: 812, loadMs: 1430 });
+    tv.send({ type: "TV_STARTED", lookupMs: 812, loadMs: 1431 }); // (said twice: written once)
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 1, duration: 30 } });
+    await phone.nextWhere("STATE", (m) => m.state.state === "playing"); // (the TV's messages before it have been read)
+    expect(written.filter(([, message]) => message === "playback-started")).toEqual([[{ domain: "s.example", type: "mp4", lookupMs: 812, loadMs: 1430 }, "playback-started"]]);
+    expect(JSON.stringify(written)).not.toContain("secret");
+  });
+
+  it("a film a phone handed to the TV itself (no look-up) is not written down: there is no site to say", async () => {
+    const written: Array<[Record<string, unknown>, string]> = [];
+    await app.close();
+    app = await buildApp({ resolve: (url, prefetch, fresh) => resolveImpl(url, prefetch, fresh), hub: { log: { info: (object, message) => void written.push([object, message]) } } });
+    await app.ready();
+    const { tv, phone } = await pairedSetup();
+    phone.send({ type: "CMD", command: { type: "LOAD", media } });
+    await tv.nextWhere("TV_CMD", (m) => m.type === "TV_CMD" && m.command.type === "LOAD");
+    tv.send({ type: "TV_STARTED", loadMs: 900 });
+    tv.send({ type: "TV_STATE", state: { state: "playing", currentTime: 1, duration: 30 } });
+    await phone.nextWhere("STATE", (m) => m.state.state === "playing");
+    expect(written.filter(([, message]) => message === "playback-started")).toEqual([]);
+  });
+});
+
 describe("a link that was handed to a TV and did not play", () => {
   /** Every address the resolver is asked about, with whether the look was made afresh (not read from what was kept). */
   function looks() {
