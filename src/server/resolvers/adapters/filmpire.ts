@@ -667,17 +667,20 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             searchQueries.add("sorcery fight");
           }
 
-          // (All the searches at once, so a show with a season name waits for one search and not three in a row; the results are kept in the order of the
-          // queries, the show's own title first.)
+          // (One search after another: each one opens up to 15 of the titles it finds, and a title one search opened is not opened again by the next.)
           const results: Array<{ title: string; url: string }> = [];
           const seenUrls = new Set<string>();
-          const answers = await Promise.all([...searchQueries].map((query) => ah.search!(query).catch(() => [] as Array<{ title: string; url: string }>)));
-          for (const found of answers) {
-            for (const item of found) {
-              if (!seenUrls.has(item.url)) {
-                seenUrls.add(item.url);
-                results.push(item);
+          for (const query of searchQueries) {
+            try {
+              const found = await ah.search(query);
+              for (const item of found) {
+                if (!seenUrls.has(item.url)) {
+                  seenUrls.add(item.url);
+                  results.push(item);
+                }
               }
+            } catch {
+              // Ignore individual search failures
             }
           }
 
@@ -739,11 +742,15 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
               matched = results.find((r) => extractAnimeSeason(r.title) === 1);
               if (matched) episodeToFind = targetEpisode;
             } else if (absoluteEpisode) {
-              // (The numbering from the first episode is only looked for in the show itself: a title of the show's own name, or else one that begins with
-              // it, such as "Detective Conan (TV)"; not "Pokemon Horizons" or another show the search found.)
-              const baseMatch =
-                results.find((r) => normalizeTitle(r.title) === cleanShow) ??
-                results.find((r) => extractAnimeSeason(r.title) === 1 && normalizeTitle(r.title).startsWith(`${cleanShow} `) && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
+              // (The numbering from the first episode is only looked for in the show itself: a title of the show's own name, or that name with only "(TV)"
+              // or a year after it, such as "Detective Conan (TV)"; not "Naruto Shippuden", "Pokemon Horizons" or another show the search found.)
+              const itself = (name: string): boolean => {
+                const norm = normalizeTitle(name);
+                if (norm === cleanShow) return true;
+                if (!norm.startsWith(`${cleanShow} `)) return false;
+                return /^(?:tv|(?:tv )?(?:19|20)\d\d)$/.test(norm.slice(cleanShow.length + 1));
+              };
+              const baseMatch = results.find((r) => normalizeTitle(r.title) === cleanShow) ?? results.find((r) => itself(r.title));
               if (baseMatch) {
                 matched = baseMatch;
                 episodeToFind = absoluteEpisode;

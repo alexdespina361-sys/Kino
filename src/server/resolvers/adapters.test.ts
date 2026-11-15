@@ -581,4 +581,23 @@ describe("the anime site for a show TMDB keeps as one with many seasons", () => 
     const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/46260?s=2&e=5"));
     expect(res.status).not.toBe("success");
   });
+
+  it("does not take a sequel or spin-off whose title begins with the show's name for the numbering from the first episode", async () => {
+    const naruto = { id: 46260, name: "Naruto", original_language: "ja", genres: [{ id: 16 }], seasons: [{ season_number: 1, name: "Season 1", episode_count: 35 }, { season_number: 2, name: "Season 2", episode_count: 48 }] };
+    const spinOff = animeWorld({
+      tmdbId: "46260",
+      tmdb: naruto,
+      titles: (words) => (/naruto/i.test(words) ? [{ slug: "shippuden", name: "Naruto Shippuden" }] : []),
+      episodes: { shippuden: Array.from({ length: 60 }, (_, i) => i + 1) },
+    });
+    expect((await createFilmpireAdapter({ fetch: spinOff }).resolve(new URL("https://filmpire.sc/watch/46260?s=2&e=5"))).status).not.toBe("success");
+    // (The show itself under a name with only a "(TV)" or a year after it is still the show.)
+    const itself = animeWorld({
+      tmdbId: "46260",
+      tmdb: naruto,
+      titles: (words) => (/naruto/i.test(words) ? [{ slug: "narutotv", name: "Naruto (TV)" }] : []),
+      episodes: { narutotv: Array.from({ length: 60 }, (_, i) => i + 1) },
+    });
+    expect((await createFilmpireAdapter({ fetch: itself }).resolve(new URL("https://filmpire.sc/watch/46260?s=2&e=5"))).status).toBe("success");
+  });
 });
