@@ -132,6 +132,11 @@ describe("releaseRank", () => {
     ).toEqual(Array(10).fill(0));
   });
 
+  it("puts a Kino Official file before any release, and only one the site named so", () => {
+    expect(rank(["English · Kino Official", "Română · Kino Official", "English · Kino Official.WEB", "Kino Official"])).toEqual([-1, -1, 0, 3]);
+    expect(defaultTrack([{ label: "English · Film.WEB-DL" }, { label: "English · Kino Official" }])?.label).toBe("English · Kino Official");
+  });
+
   it("then BluRay, then DVD, then everything else", () => {
     expect(releaseRank("English (5) · The.Bad.Guys.2022.BDRip.x264-KNiVES [NON-HI]")).toBe(1);
     expect(releaseRank("Film.2023.1080p.BluRay.x264")).toBe(1);

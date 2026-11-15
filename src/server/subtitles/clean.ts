@@ -29,7 +29,7 @@ const LINK = /\b(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]{2,}\.(?:com|net|org|ro|info
 /** What credits and advertising say (English and Romanian). */
 const CREDIT_WORDS = new RegExp(
   [
-    String.raw`\b(?:subtitles?|subs|captions?|captioning|transcript|sync(?:ed|hro(?:nized|nised))?|re-?sync(?:ed)?|corrected|ripped|encoded|edited|timed|translated|translation|improved|adapted)\s+(?:by|from)\b`,
+    String.raw`\b(?:subtitles?|subs|captions?|captioning|transcript|sync(?:ed|hro(?:nized|nised))?|re-?sync(?:ed)?|corrected|corrections?|ripped|encoded|edited|timed|translated|translation|improved|adapted)(?:\s+(?:and|&)\s+\w+)?\s+(?:by|from)\b`,
     String.raw`\bdownloaded\s+from\b`,
     String.raw`\badvertise\s+your\s+product\b`,
     String.raw`\bbecome\s+(?:a\s+)?vip\b`,
