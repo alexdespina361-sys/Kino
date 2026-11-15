@@ -970,6 +970,8 @@ export const ro: Dictionary = {
   "friends.tabLists": "Liste",
   "friends.tabRatings": "Note",
   "friends.noLists": "{name} nu are nimic în liste.",
+  "friends.bothWant": "Vreți amândoi să le vedeți",
+  "friends.yourScore": "Tu: {score}/10",
   "friends.noRatings": "{name} nu a dat încă nicio notă.",
   "friends.notSharingLists": "{name} nu își împărtășește listele.",
   "friends.notSharingRatings": "{name} nu își împărtășește notele.",

@@ -603,6 +603,36 @@ test.describe("what a friend can see", () => {
     await expect(bob.page.getByTestId("friend-list-card-item")).toHaveCount(0);
   });
 
+  test("a friend's page puts first what both keep in a list, and says one's own score beside theirs", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const ann = await phoneWithFriends(browser, "Ann");
+    const bob = await phoneWithFriends(browser, "Bob");
+    await befriend(ann.page, bob.page);
+    await seed(ann.page, filmCards());
+
+    // Bob has nothing of Ann's in his lists yet: no such row
+    await bob.page.getByTestId("menu-friends").click();
+    await bob.page.getByTestId("friend-row").click();
+    await expect(bob.page.getByTestId("friend-list-card-item")).toContainText("Alpha Film");
+    await expect(bob.page.getByTestId("friend-both")).toHaveCount(0);
+
+    // Bob keeps the same film and rates it too (as another screen of his would): Ann's page now starts with it, and says his score after hers
+    const at = Date.now();
+    await seed(bob.page, { list: [{ key: listKey(FILM), at, id: "f17", title: "Alpha Film", url: FILM, year: 1931 }], ratings: [{ key: ratingKey(FILM), at, title: "Alpha Film", url: FILM, year: 1931, kind: "movie", score: 6, ratedAt: at }] });
+    await bob.page.reload();
+    await bob.page.getByTestId("account-button").click();
+    await openFriends(bob.page);
+    await bob.page.getByTestId("friend-row").click();
+    await expect(bob.page.getByTestId("friend-both")).toContainText(en["friends.bothWant"]);
+    await expect(bob.page.getByTestId("friend-both-card-item")).toContainText("Alpha Film");
+    const both = await bob.page.getByTestId("friend-both").boundingBox();
+    const theirs = await bob.page.getByTestId("friend-list").first().boundingBox();
+    expect(both!.y).toBeLessThan(theirs!.y); // (above her own lists)
+    await bob.page.getByTestId("friend-tab-ratings").click();
+    await expect(bob.page.getByTestId("friend-rating")).toContainText("8/10");
+    await expect(bob.page.getByTestId("friend-rating-mine")).toHaveText("You: 6/10");
+  });
+
   test("what a friend watches is told when both share what they watch, and not otherwise", async ({ browser }) => {
     test.setTimeout(90_000);
     const ann = await phoneWithFriends(browser, "Ann");

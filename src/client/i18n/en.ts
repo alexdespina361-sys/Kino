@@ -960,6 +960,8 @@ export const en = {
   "friends.tabLists": "Lists",
   "friends.tabRatings": "Ratings",
   "friends.noLists": "{name} has nothing in their lists.",
+  "friends.bothWant": "You both want to watch",
+  "friends.yourScore": "You: {score}/10",
   "friends.noRatings": "{name} has not rated anything yet.",
   "friends.notSharingLists": "{name} is not sharing their lists.",
   "friends.notSharingRatings": "{name} is not sharing their ratings.",
