@@ -19,6 +19,7 @@ import { formatLinkCode } from "../shared/format";
 import { CheckIcon, ChevronIcon, InfoIcon, LogoutIcon, PencilIcon, TvIcon, UserIcon, UsersIcon } from "../shared/icons";
 import { linkCodeOf, typedLinkCode } from "../shared/launch";
 import { QrCode } from "../shared/QrCode";
+import { handHeld } from "../shared/backButton";
 import { BackButton, Screen } from "./Idle";
 import { TvCode } from "./TvCode";
 
@@ -39,12 +40,16 @@ interface Request {
 
 /**
  * Sign this TV in without typing: it shows a code and a QR code, a phone that is already signed in opens the code and approves it,
- * and the answer to the TV's next question carries the session. A name and password typed here is the way for a TV with a keyboard.
+ * and the answer to the TV's next question carries the session. A name and password typed here is the way for a TV with a keyboard, and the first
+ * one for a phone or a tablet that is the screen: it has a keyboard of its own, and the code would ask for another phone (it is a press away).
  */
 export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /** Where Back goes, when that is not where signing in ends up (the panel it was opened from). */ onBack?: () => void }) {
   const t = useT();
   const account = useAccount();
-  const [mode, setMode] = useState<"phone" | "email">("phone");
+  const [typed] = useState(handHeld);
+  const [mode, setMode] = useState<"phone" | "email">(typed ? "email" : "phone");
+  /** Back from the typed form: to the code where that is the first page, out where the form is. */
+  const formBack = typed ? onBack : () => setMode("phone");
   const [creating, setCreating] = useState(false); // the typed form is making an account, not signing in
   const [asking, setAsking] = useState(false); // ...and is asking whether to, with the password it was given
   const [request, setRequest] = useState<Request | null>(null);
@@ -129,13 +134,13 @@ export function TvSignIn({ onClose, onBack = onClose }: { onClose: () => void; /
   if (mode === "email") {
     return (
       // (While the form asks whether to make an account with a poor password, Back is the form's: it goes back to the password.)
-      <Screen key="email" testId="tv-signin" compact focus onBack={asking ? undefined : () => setMode("phone")}>
+      <Screen key="email" testId="tv-signin" compact focus onBack={asking ? undefined : formBack}>
         <h1 className="tv-headline tv-headline-small">{t(creating ? "auth.signUp" : "auth.signIn")}</h1>
         <AuthForm tv onDone={onClose} onMode={(next) => setCreating(next === "signUp")} onWarning={setAsking} />
         <button className="tv-action" onClick={() => setMode("phone")} data-nav data-testid="tv-signin-phone">
           {t("link.codeInstead")}
         </button>
-        {!asking && <BackButton onClick={() => setMode("phone")} testId="tv-signin-form-back" />}
+        {!asking && <BackButton onClick={formBack} testId="tv-signin-form-back" />}
       </Screen>
     );
   }

@@ -431,11 +431,12 @@ test.describe("a phone used as the screen, held upright", () => {
       await expectFits(tv, `${name}, settings`, true);
       await tv.getByTestId("tv-account-back").tap();
 
+      // (a phone that is the screen signs in with the typed form first: the code would ask for another phone)
       await tv.getByTestId("tv-profile-signin").tap();
-      await expect(tv.getByTestId("tv-signin-back")).toBeVisible();
-      await settled(tv.getByTestId("tv-signin-back"));
+      await expect(tv.getByTestId("tv-signin-form-back")).toBeVisible();
+      await settled(tv.getByTestId("tv-signin-form-back"));
       await expectFits(tv, `${name}, the way in`, true);
-      await tv.getByTestId("tv-signin-back").tap();
+      await tv.getByTestId("tv-signin-form-back").tap();
 
       await tv.getByTestId("rail-party").tap();
       await expect(tv.getByTestId("tv-back-to-library")).toBeVisible();

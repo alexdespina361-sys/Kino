@@ -535,6 +535,9 @@ describe("overviewActions", () => {
     expect(overviewActions({ id: "a", title: "A", url: "u" }, false, true)).toEqual(["play", "list", "recommend"]);
     expect(overviewActions({ id: "a", title: "A", url: "u" }, true, false)).toEqual(["play", "list", "rate"]);
     expect(overviewActions({ id: "a", title: "A", url: "" }, true, true)).toEqual(["play", "list", "rate"]);
+    // (a phone or a tablet that is the screen can send the title to the TV instead, beside Play; not a title with nothing to send)
+    expect(overviewActions({ id: "a", title: "A", url: "u" }, true, false, true)).toEqual(["play", "tv", "list", "rate"]);
+    expect(overviewActions({ id: "a", title: "A", url: "" }, true, false, true)).toEqual(["play", "list", "rate"]);
   });
   it("offers Dismiss besides for a title a friend sent", () => {
     expect(overviewActions({ id: "a", title: "A", url: "u", inboxId: "i" }, true, true)).toEqual(["play", "list", "rate", "recommend", "dismiss"]);

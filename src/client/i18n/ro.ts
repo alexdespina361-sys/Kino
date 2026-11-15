@@ -814,6 +814,7 @@ export const ro: Dictionary = {
   "tv.historyHelp": "Tot ce ai urmărit, de la cele mai recente.",
   "tv.connectPhone": "Conectează un telefon",
   "tv.useRemote": "Folosește ca telecomandă",
+  "tv.playOnTv": "Redă pe TV",
   "tv.phoneConnected": "Telefon conectat",
   "tv.phoneJoined": "S-a conectat un telefon.",
   "tv.settings": "Setări",

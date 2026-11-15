@@ -32,7 +32,7 @@ import { ScoreBadge } from "../shared/ScoreBadge";
 import { AboutFacts, AboutPeople } from "../shared/AboutFacts";
 import { aboutRows, useAbout } from "../shared/about";
 import { addressOf, fetchTitle, linkedTitle, showTitle } from "../shared/titleAddress";
-import { switchRole, thisIsPhone } from "../role";
+import { playOnTv, switchRole, thisIsPhone } from "../role";
 import { gridRows, sectionPlaces, sectionRows, stepFrom, type Pos, type Shape, type Target, type Zone } from "./browseNav";
 import { isCompact, useCompact } from "./compact";
 import { SeriesSection, useSeriesPage, type PageEpisode } from "./Episodes";
@@ -629,7 +629,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     ...(detail
       ? {
           close: [1],
-          detail: [overviewActions(detail.entry, ratingsOn, friends.on).length],
+          detail: [overviewActions(detail.entry, ratingsOn, friends.on, handHeld()).length],
           ...(series.seasons.length > 1 ? { seasons: [series.seasons.length] } : {}),
           ...(series.episodes?.length ? { episodes: series.episodes.map(() => 1) } : {}),
           ...(aboutList.length > 0 ? { related: aboutList.map((row) => row.items.length) } : {}),
@@ -951,6 +951,8 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
     const startAt = at ? at.startAt : entry.startAt;
     onPlay(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href, { hint: hintOf(entry), ...(startAt ? { startAt } : {}) });
   };
+  /** "Play on TV" on a phone or a tablet that is the screen: what Play would start here, on the TV this device is the remote of (see `playOnTv`). */
+  const playEntryOnTv = (entry: Entry, at?: Pick<Start, "url" | "startAt">) => playOnTv(new URL(at?.url ?? entry.resumeUrl ?? entry.url, location.href).href);
   /**
    * Asks a friend to watch together: they get a request with a button that starts a party and invites us. `ended` is the invitation to a party
    * that is over, if that is where this was pressed: once the friend is asked it is of no more use.
@@ -1042,6 +1044,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
   const doAction = (action: HeroAction, entry: Entry | undefined = shown?.entry, from: Target = CONTENT, at?: Start) => {
     if (!entry) return;
     if (action === "play") playEntry(entry, at);
+    else if (action === "tv") playEntryOnTv(entry, at);
     else if (action === "rate") setOverlay({ kind: "rate", entry, back: from, isShow: series.isShow, seasons: series.seasons, shown: series.season, episodes: series.episodes?.length });
     else if (action === "recommend") setOverlay({ kind: "recommend", entry, back: from });
     else if (action === "join") {
@@ -1079,6 +1082,13 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
       return (
         <>
           <PlayIcon /> {at ? t(at.startAt !== undefined ? "series.resume" : "series.play", { season: at.season, episode: at.episode }) : entry.startAt !== undefined ? t("rows.resume") : t("rows.play")}
+        </>
+      );
+    }
+    if (action === "tv") {
+      return (
+        <>
+          <TvIcon /> {t("tv.playOnTv")}
         </>
       );
     }
@@ -1646,7 +1656,7 @@ export function TvBrowse({ onPlay, onSignIn, onSettings, onConnect, onParty, onJ
                 {detail.entry.description && <p className="tv-detail-about">{detail.entry.description}</p>}
                 {about && <AboutPeople about={about} />}
                 <div className="tv-hero-actions">
-                  {overviewActions(detail.entry, ratingsOn, friends.on).map((action, col) => (
+                  {overviewActions(detail.entry, ratingsOn, friends.on, handHeld()).map((action, col) => (
                     <button
                       key={action}
                       className={`tv-hero-button${action === "play" ? " is-primary" : ""}`}

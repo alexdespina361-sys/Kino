@@ -811,6 +811,7 @@ export const en = {
   "tv.historyHelp": "Everything you've watched, newest first.",
   "tv.connectPhone": "Connect a phone",
   "tv.useRemote": "Use as a remote",
+  "tv.playOnTv": "Play on TV",
   "tv.phoneConnected": "Phone connected",
   "tv.phoneJoined": "A phone is connected.",
   "tv.settings": "Settings",

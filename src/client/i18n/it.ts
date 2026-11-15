@@ -809,6 +809,7 @@ export const it: Dictionary = {
   "tv.historyHelp": "Tutto quello che hai guardato, dal più recente.",
   "tv.connectPhone": "Collega un telefono",
   "tv.useRemote": "Usa come telecomando",
+  "tv.playOnTv": "Riproduci sulla TV",
   "tv.phoneConnected": "Telefono collegato",
   "tv.phoneJoined": "Si è collegato un telefono.",
   "tv.settings": "Impostazioni",
