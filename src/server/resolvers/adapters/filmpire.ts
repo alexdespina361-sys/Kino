@@ -698,37 +698,67 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
             return 1;
           };
 
+          // Which of the show's named seasons a title on the site is: the one whose name (TMDB's, with or without "The Series", "Part N", "Arc") is the
+          // longest that the title has in it, beside the show's own name. So "Pokemon Ultimate Journeys" is Ultimate Journeys (25), not Journeys (23),
+          // and "Pokemon Horizons" is not Indigo League. Undefined: no season's name is in it (or the title does not have the show's name).
+          const namedSeasons = (tmdbSeasons ?? []).flatMap((sn) => {
+            const number = sn.season_number;
+            const name = sn.name ? normalizeTitle(sn.name) : "";
+            if (!number || number < 1 || !name || /^season\s*\d+$/.test(name) || name === "specials" || ` ${cleanShow} `.includes(` ${name} `)) return [];
+            const words = name.replace(/\b(?:the\s*series|part\s*\d+|arc)\b/g, "").replace(/\s+/g, " ").trim();
+            return [{ number, names: words.length >= 3 && words !== name ? [name, words] : [name] }];
+          });
+          const seasonOfTitle = (tTitle: string): number | undefined => {
+            const norm = ` ${normalizeTitle(tTitle)} `;
+            if (!norm.includes(` ${cleanShow} `)) return undefined;
+            let best: { number: number; length: number } | undefined;
+            for (const { number, names } of namedSeasons) {
+              for (const name of names) if (norm.includes(` ${name} `) && (!best || name.length > best.length)) best = { number, length: name.length };
+            }
+            return best?.number;
+          };
+          /** A title that is another of the show's named seasons than the one asked for. */
+          const otherSeason = (tTitle: string): boolean => {
+            const named = seasonOfTitle(tTitle);
+            return named !== undefined && named !== targetSeason;
+          };
+          // The show itself: a title of the show's own name, or that name with only "(TV)" or a year after it, such as "Detective Conan (TV)"; not
+          // "Naruto Shippuden", "Pokemon Horizons" or another show the search found.
+          const itself = (name: string): boolean => {
+            const norm = normalizeTitle(name);
+            if (norm === cleanShow) return true;
+            if (!norm.startsWith(`${cleanShow} `)) return false;
+            return /^(?:tv|(?:tv )?(?:19|20)\d\d)$/.test(norm.slice(cleanShow.length + 1));
+          };
+          /** The show's name and more words after it: a sequel or a later series ("Pokemon Horizons", "Naruto Shippuden"), unless it is only "(TV)" or a year. */
+          const sequel = (name: string): boolean => normalizeTitle(name).startsWith(`${cleanShow} `) && !itself(name);
+
           // 1. Try matching by season name if this season has a distinct name (e.g. "Ultimate Journeys")
           let matched: { title: string; url: string } | undefined;
           let episodeToFind = targetEpisode;
 
           if (targetSeasonName && !isGenericSeasonName && normSeasonName) {
-            const cleanSeasonWords = normSeasonName.replace(/\b(?:the\s*series|part\s*\d+|arc)\b/g, "").trim();
-            // (The title must have the show's own name in it too: another show can have a season of the same name.)
-            matched = results.find((r) => {
-              const normR = normalizeTitle(r.title);
-              return (
-                normR.includes(cleanShow) &&
-                (normR.includes(normSeasonName) || (cleanSeasonWords.length >= 3 && normR.includes(cleanSeasonWords))) &&
-                !/\b(?:movie|film|special|ova)\b/i.test(r.title)
-              );
-            });
+            matched = results.find((r) => seasonOfTitle(r.title) === targetSeason && !/\b(?:movie|film|special|ova)\b/i.test(r.title));
             if (matched) {
               episodeToFind = targetEpisode;
             }
           }
 
           // 2. Try explicit numbered season matching (e.g. "Season 2", "2nd Season", etc.)
-          if (!matched) {
-            const matchedSeasonList = results.filter((r) => extractAnimeSeason(r.title) === targetSeason);
+          // (Never a title that is another of the show's named seasons, and for the first season never a sequel of the show: the first that reads
+          // as season 1 can be "Pokemon Horizons" for Pokémon's Indigo League. A title of the show's own name comes first; one the site names in its own
+          // words, such as "Sousou no Frieren" for "Frieren: Beyond Journey's End", is still taken.)
+          if (!matched && targetSeason > 1) {
+            const matchedSeasonList = results.filter((r) => extractAnimeSeason(r.title) === targetSeason && !otherSeason(r.title));
             matched = matchedSeasonList[0];
-            if (!matched && targetSeason > 1) {
+            if (!matched) {
               matched = results.find(
                 (r) =>
-                  r.title.toLowerCase().includes(`season ${targetSeason}`) ||
-                  r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
-                  r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
-                  r.title.toLowerCase().includes(`${targetSeason}th season`),
+                  !otherSeason(r.title) &&
+                  (r.title.toLowerCase().includes(`season ${targetSeason}`) ||
+                    r.title.toLowerCase().includes(`${targetSeason}nd season`) ||
+                    r.title.toLowerCase().includes(`${targetSeason}rd season`) ||
+                    r.title.toLowerCase().includes(`${targetSeason}th season`)),
               );
             }
             if (matched) {
@@ -739,17 +769,11 @@ export function createFilmpireAdapter(options: FilmpireAdapterOptions = {}): Sit
           // 3. For Season 1 or fallback to continuous/absolute-numbered series
           if (!matched) {
             if (targetSeason === 1) {
-              matched = results.find((r) => extractAnimeSeason(r.title) === 1);
+              const first = (r: { title: string }) => extractAnimeSeason(r.title) === 1 && !otherSeason(r.title) && !/\b(?:movie|film|special|ova)\b/i.test(r.title);
+              matched = results.find((r) => first(r) && itself(r.title)) ?? results.find((r) => first(r) && !sequel(r.title));
               if (matched) episodeToFind = targetEpisode;
             } else if (absoluteEpisode) {
-              // (The numbering from the first episode is only looked for in the show itself: a title of the show's own name, or that name with only "(TV)"
-              // or a year after it, such as "Detective Conan (TV)"; not "Naruto Shippuden", "Pokemon Horizons" or another show the search found.)
-              const itself = (name: string): boolean => {
-                const norm = normalizeTitle(name);
-                if (norm === cleanShow) return true;
-                if (!norm.startsWith(`${cleanShow} `)) return false;
-                return /^(?:tv|(?:tv )?(?:19|20)\d\d)$/.test(norm.slice(cleanShow.length + 1));
-              };
+              // (The numbering from the first episode is only looked for in the show itself, see `itself`.)
               const baseMatch = results.find((r) => normalizeTitle(r.title) === cleanShow) ?? results.find((r) => itself(r.title));
               if (baseMatch) {
                 matched = baseMatch;
