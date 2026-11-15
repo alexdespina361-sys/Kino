@@ -294,6 +294,38 @@
   :root[data-ui="polish"] .tv-row-more[data-side="after"] { right: calc(var(--em) * 1.4); }
 }
 
+/* The same arrows at the ends of a show's seasons, for a mouse. A row of seasons is short, so they stay on while there is more that way,
+   over a fade that says the row goes on. */
+:root[data-ui="polish"] .tv-filters-box { position: relative; }
+:root[data-ui="polish"] .tv-filters-more { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  :root[data-ui="polish"] .tv-filters-more {
+    position: absolute;
+    top: 50%;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: calc(var(--em) * 3.4);
+    height: calc(var(--em) * 3.4);
+    border-radius: 50%;
+    background: rgba(11, 11, 12, 0.85);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22), var(--lift);
+    color: var(--text-1);
+    font-size: var(--fs-4);
+    transform: translateY(-50%);
+    transition: background var(--t-base) var(--ease), color var(--t-base) var(--ease);
+  }
+  :root[data-ui="polish"] .tv-filters-more:hover { background: #fff; box-shadow: var(--lift); color: #0b0b0c; }
+  :root[data-ui="polish"] .tv-filters-more[data-side="before"] { left: 0; }
+  :root[data-ui="polish"] .tv-filters-more[data-side="after"] { right: 0; }
+  :root[data-ui="polish"] .tv-filters-box[data-more-after] > .tv-filters { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--em) * 6), transparent); mask-image: linear-gradient(to right, #000 calc(100% - var(--em) * 6), transparent); }
+  :root[data-ui="polish"] .tv-filters-box[data-more-before] > .tv-filters { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - var(--em) * 6), transparent); mask-image: linear-gradient(to left, #000 calc(100% - var(--em) * 6), transparent); }
+  :root[data-ui="polish"] .tv-filters-box[data-more-before][data-more-after] > .tv-filters {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 calc(var(--em) * 6), #000 calc(100% - var(--em) * 6), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 calc(var(--em) * 6), #000 calc(100% - var(--em) * 6), transparent);
+  }
+}
+
 /* ------------------------------ a title's own page ------------------------------ */
 
 :root[data-ui="polish"] .tv-detail-text { gap: calc(var(--em) * 0.6); padding: 0 var(--page-r) var(--detail-b) var(--gutter); }
