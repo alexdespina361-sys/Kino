@@ -13,6 +13,7 @@
 .auth-field > small { color: var(--muted); font-size: 0.78rem; }
 .auth-field input {
   width: 100%;
+  min-height: 44px; /* a thumb's size, where the text is smaller (a small phone used as the screen) */
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
