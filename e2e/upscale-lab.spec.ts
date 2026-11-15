@@ -116,6 +116,23 @@ test.describe("Kino Labs: the upscaler test page", () => {
     await expect.poll(() => page.evaluate(() => document.fullscreenElement)).toBeNull();
   });
 
+  test("draws films with FSRCNNX: fetches its shader file once, as served (LGPL, unchanged), and draws the picture the right way up", async ({ page, baseURL }) => {
+    const asked = await openSample(page);
+    await page.getByTestId("upscale-mode-film").check();
+    await expect(page.getByTestId("upscale-size")).toContainText("FSRCNNX redraws its brightness at 640 × 360, then that is fitted to 1280 × 720 (bicubic)");
+    const film = await probe(page, "film");
+    expect(film.problem).toBeUndefined();
+    expect({ width: film.width, height: film.height }).toEqual({ width: 1280, height: 720 });
+    expect(film.brightness).toBeGreaterThan(10);
+    expect(film.difference).toBeLessThan(15); // (a network upside down, or its sub-pixels swapped, garbles the picture far more)
+    expect(asked.filter((url) => url.includes("/fsrcnnx/"))).toEqual([`${baseURL}/labs/upscale/fsrcnnx/FSRCNNX_x2_8-0-4-1.glsl`]);
+    // The file the page runs is the one released (its hash is in the README next to it).
+    const shader = await (await page.request.get("/labs/upscale/fsrcnnx/FSRCNNX_x2_8-0-4-1.glsl")).body();
+    const { createHash } = await import("node:crypto");
+    expect(createHash("sha256").update(shader).digest("hex")).toBe("e800dbc5c1c95185cc82216c597724533ff5f2880179f256eef600f03e8dc2ae");
+    await expect(page.locator("footer a[href='/labs/upscale/fsrcnnx/README.txt']")).toHaveText("LGPL 3.0");
+  });
+
   test("times the chosen mode, plays it through, and says whether this computer keeps up", async ({ page }) => {
     await openSample(page, "/labs/upscale/?seconds=1");
     await expect(page.getByTestId("upscale-mode-sharp")).toBeChecked();
