@@ -572,6 +572,60 @@ def prepare() -> None:
         json.dump(notes, f, ensure_ascii=False, indent=1)
 
 
+HGF = "https://archive.org/download/his_girl_friday/his_girl_friday.mp3"  # His Girl Friday (1940), public domain (archive.org item his_girl_friday)
+HGF_FROM, HGF_SECONDS = float(os.environ.get("GEN_HGF_FROM", "120")), float(os.environ.get("GEN_HGF_SECONDS", "600"))
+
+
+def prepare_film() -> None:
+    """
+    Real film sound, both clips may be shared: Tears of Steel, the whole film, its official English subtitles as the reference (hand-made,
+    not word for word); and 10 minutes of His Girl Friday, a 1940 soundtrack with no reference at all (archive.org's only subtitle is its own
+    speech recognition), scored by how far the engines agree with each other. Each as captured (levelled), and with the speech isolated.
+    """
+    os.makedirs(GEN, exist_ok=True)
+    with open(bench.fetch(bench.TOS_SRT, "TOS-en.srt"), encoding="utf-8", errors="replace") as f:
+        tos_ref = bench.parse_srt(f.read())
+    films = {
+        "tos": (bench.pcm_of(bench.fetch(bench.TOS_FILM, "tos_720p.mov")), tos_ref),
+        "hgf": (bench.pcm_of(bench.fetch(HGF, "his_girl_friday.mp3"), start=HGF_FROM, seconds=HGF_SECONDS), []),
+    }
+    for name, (pcm, ref) in films.items():
+        with open(os.path.join(GEN, f"en-{name}-ref.json"), "w", encoding="utf-8") as f:
+            json.dump({"ref": [[c.start, c.end, c.text] for c in ref], "starts": []}, f, ensure_ascii=False)
+        x = level(pcm)
+        np.save(os.path.join(GEN, f"en-{name}.npy"), x)
+        p = vad_track(x)
+        log(f"{name}: {len(x) / SR:.0f} s, {len(ref)} reference lines, Silero calls {float((p >= 0.5).mean()):.0%} of it speech")
+        for iso in ("tiger", "demucs"):
+            try:
+                t = time.time()
+                y = isolate(iso, x)
+                np.save(os.path.join(GEN, f"en-{name}+{iso}.npy"), y)
+                log(f"en-{name}+{iso}: {len(y) / SR / (time.time() - t):.0f}x real time, lag against the input {lag_ms(y, x):+.0f} ms")
+            except Exception as error:  # noqa: BLE001
+                log(f"en-{name}+{iso}: FAILED {error!r}"[:300])
+
+
+def agree() -> None:
+    """For sounds with no reference: each engine's final words against each other engine's, as a WER (lower = they heard the same)."""
+    import glob
+
+    found: dict[str, dict[str, list[Word]]] = {}
+    for path in glob.glob(os.path.join(bench.OUT, "gen-words-*-en-hgf*.json")):
+        stem = os.path.basename(path)[len("gen-words-"):-len(".json")]
+        engine, sound = stem.split("-en-", 1)
+        with open(path, encoding="utf-8") as f:
+            found.setdefault(sound, {})[engine] = [Word(*w) for w in json.load(f)["final"]]
+    for sound in sorted(found, key=lambda s: (len(s), s)):
+        e = found[sound]
+        pairs = [(a, b) for a in sorted(e) for b in sorted(e) if a < b]
+        cells = []
+        for a, b in pairs:
+            ta, tb = norm(" ".join(w.text for w in e[a]), "en"), norm(" ".join(w.text for w in e[b]), "en")
+            cells.append(f"{a}~{b} {bench.edits(ta, tb) / max(1, len(ta)):.3f} ({len(ta)}/{len(tb)} words)")
+        log(f"hgf {sound}: " + "; ".join(cells))
+
+
 # ------------------------------------------------------------------------------------------------ engines
 
 class Musci(bench.Engine):
@@ -634,12 +688,15 @@ class Replay(bench.Engine):
 
 # ------------------------------------------------------------------------------------------------ runs
 
-def load_ref(lang: str) -> list[Cue]:
-    with open(os.path.join(GEN, f"{lang}-ref.json"), encoding="utf-8") as f:
+def load_ref(lang: str, sound: str = "clean") -> list[Cue]:
+    family = sound.split("+")[0]
+    name = f"{lang}-{family}-ref.json" if family in ("tos", "hgf") else f"{lang}-ref.json"
+    with open(os.path.join(GEN, name), encoding="utf-8") as f:
         return [Cue(s, e, t) for s, e, t in json.load(f)["ref"]]
 
 
-ORDER = ["clean", "film", "film+tiger", "old", "old+tiger", "clean+tiger", "film+demucs", "old+demucs"]  # most telling first
+ORDER = ["clean", "film", "film+tiger", "old", "old+tiger", "clean+tiger", "film+demucs", "old+demucs",  # most telling first
+         "tos", "tos+tiger", "tos+demucs", "hgf", "hgf+tiger", "hgf+demucs"]  # (real film sound: prepare-film)
 
 
 def sounds(lang: str) -> list[str]:
@@ -682,6 +739,9 @@ def table(rows: list[dict]) -> str:
         if "error" in r:
             out.append(f"| {r['engine']} | {r.get('lang')} | {r.get('sound')} | failed: {r['error'][:90]} |||||||")
             continue
+        if "final" not in r:
+            out.append(f"| {r['engine']} | {r['lang']} | {r['sound']} | (no reference: {r['words']} words) ||||| {r.get('checks', '')} | {r.get('first_piece_s')} s | {r.get('x_realtime')} |")
+            continue
         s, raw = r["final"], r["raw"]
         out.append(f"| {r['engine']} | {r['lang']} | {r['sound']} | {s.get('wer', s.get('cer'))} ({raw.get('wer', raw.get('cer'))}) | {s['lines_heard']} | "
                    f"{s['within_0_1']} / {s['within_0_3']} of {s['lines_timed']} ({raw['within_0_3']}) | {s['start_median_s']} | {s['words_where_nobody_speaks']} | "
@@ -710,12 +770,12 @@ def run(which: str) -> None:
         log(table([r]))
         return
     jobs = [(lang, s, "") for lang in langs for s in sounds(lang)]
-    if which == "qwen":
+    if which == "qwen" and "clean" in sounds("ja"):
         jobs.append(("ja", "clean", "names"))
     for lang, sound, ctx in jobs:
         try:
             pcm = np.load(os.path.join(GEN, f"{lang}-{sound}.npy"))
-            ref = load_ref(lang)
+            ref = load_ref(lang, sound)
             p = vad_track(pcm)
             if ctx:
                 # (A title's cast and places, as TMDB would give them; here the clip's own proper names: katakana runs of 3+ and names written
@@ -737,11 +797,16 @@ def run(which: str) -> None:
             with open(os.path.join(bench.OUT, f"gen-words-{stem}.json"), "w", encoding="utf-8") as f:
                 json.dump({k: [[w.text, round(w.start, 3), round(w.end, 3)] for w in g[k]] for k in ("raw", "fixed", "final")}, f, ensure_ascii=False)
             r = {"engine": engine.name + (f" + context ({ctx})" if ctx else ""), "lang": lang, "sound": sound, "audio_s": round(len(pcm) / SR, 1),
-                 "first_piece_s": g["first_piece_s"], "total_s": g["total_s"], "x_realtime": g["x_realtime"],
-                 "raw": score(ref, g["raw"], lang), "fixed": score(ref, g["fixed"], lang), "final": score(ref, g["final"], lang)}
-            r["made_worse_by_fix"] = made_worse(r["raw"], r["fixed"])
+                 "first_piece_s": g["first_piece_s"], "total_s": g["total_s"], "x_realtime": g["x_realtime"], "words": len(g["final"])}
             if which != "whisper":
                 r["checks"] = g["checks"]
+            if not ref:  # (no reference: scored by `agree` against the other engines)
+                append_result(r)
+                rows.append(r)
+                log(f"{r['engine']} | {lang} {sound} | {r['words']} words, no reference | {r.get('checks', '')} | {r['x_realtime']}x")
+                continue
+            r.update({"raw": score(ref, g["raw"], lang), "fixed": score(ref, g["fixed"], lang), "final": score(ref, g["final"], lang)})
+            r["made_worse_by_fix"] = made_worse(r["raw"], r["fixed"])
             if lang == "ja" and len(ref) > 15:
                 # (Lines 1-15 are the clip the checks were tuned on (MIN_MOVE_S, the second listener); lines 16 on were never looked at.)
                 r["first_15_lines"] = score(ref[:15], [w for w in g["final"] if w.start < ref[14].end + 0.5], lang)
@@ -806,6 +871,10 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
     if cmd == "prepare":
         prepare()
+    elif cmd == "prepare-film":
+        prepare_film()
+    elif cmd == "agree":
+        agree()
     elif cmd == "run":
         run(sys.argv[2])
     elif cmd == "replay":
