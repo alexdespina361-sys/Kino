@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBackWhile } from "../../shared/backButton";
+import { backTo, type Left } from "./placeScroll";
 
 /** The four places of the phone's bar. */
 export type Tab = "home" | "search" | "list" | "you";
@@ -17,9 +18,12 @@ const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(pre
  */
 export function useTabs(hidden: boolean, paired: boolean) {
   const [tab, setTab] = useState<Tab>("home");
-  const scrolls = useRef<Record<Tab, number>>({ home: 0, search: 0, list: 0, you: 0 });
+  const scrolls = useRef<Record<Tab, Left>>({ home: { y: 0, top: 0 }, search: { y: 0, top: 0 }, list: { y: 0, top: 0 }, you: { y: 0, top: 0 } });
   const now = useRef({ tab, hidden });
   now.current = { tab, hidden };
+  /** The element the place is shown in (where its top lies in the page is kept with how far it was scrolled: see `backTo`). */
+  const place = useRef<HTMLDivElement | null>(null);
+  const topOfPlace = () => (place.current ? place.current.getBoundingClientRect().top + window.scrollY : 0);
 
   // The browser puts a page back where its history entry left it when a Back goes through the entry (the remote's: it was made with the page at the top, and
   // takes the place out of its scroll when it goes). The places are where their readers left them, and that is kept here.
@@ -35,7 +39,7 @@ export function useTabs(hidden: boolean, paired: boolean) {
   // How far each place has been scrolled, as it is scrolled (a page that gets shorter under the finger is not the finger's doing: while the remote has the screen nothing is kept).
   useEffect(() => {
     const onScroll = () => {
-      if (!now.current.hidden) scrolls.current[now.current.tab] = window.scrollY;
+      if (!now.current.hidden) scrolls.current[now.current.tab] = { y: window.scrollY, top: topOfPlace() };
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -43,7 +47,7 @@ export function useTabs(hidden: boolean, paired: boolean) {
 
   // A place is shown where it was left: after a change of place, and when what was over it (the remote, a page, a sheet) has gone.
   useLayoutEffect(() => {
-    if (!hidden) window.scrollTo(0, scrolls.current[tab]);
+    if (!hidden) window.scrollTo(0, backTo(scrolls.current[tab], topOfPlace()));
   }, [tab, hidden]);
 
   useEffect(() => {
@@ -54,9 +58,9 @@ export function useTabs(hidden: boolean, paired: boolean) {
 
   const select = (next: Tab) => {
     if (next !== tab) return setTab(next);
-    scrolls.current[tab] = 0;
+    scrolls.current[tab] = { y: 0, top: topOfPlace() };
     window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
   };
 
-  return { tab, select, setTab };
+  return { tab, select, setTab, place };
 }
