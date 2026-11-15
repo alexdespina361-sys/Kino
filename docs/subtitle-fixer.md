@@ -116,21 +116,25 @@ Version 1 ran on Kaggle. Version 2 ran in a Colab notebook in "Browser 1": Kaggl
 - Cutting at pauses hears more interjections that the subtitles leave out (17 "Oh"s), which count as errors.
 - Deciding this needs a verbatim reference (see the next step).
 
-**Timing, Japanese, line by line.** These are measured against where each line's speech starts, found by loudness against the recording's own noise floor.
+**Timing, Japanese, line by line.** This is measured against where each line's speech starts, as the site's own voice detector finds it. That is the Silero port in `src/client/subsync/silero.ts`, run over the clip on the CPU. It does not depend on either engine. It also agrees within 0.07 s with a separate loudness rule (3x the recording's own quiet level and 15% of its loudest) on every line both can see.
 
 | | within 0.1 s | within 0.3 s | badly off |
 |---|---|---|---|
-| Qwen3-ForcedAligner (on 1.7B's words) | 11 of 14 lines (all within 0.04 s) | 11 of 14 | 3 lines, all **too early**: 1.6 s and 4.2 s, where a piece starts with a quiet or noisy lead-in and the first word is put in it; 7.8 s for the line after the dropped sentence, whose first word went into that sentence's gap |
-| Whisper turbo's own word times | 1 of 14 | 14 of 14 (consistently about 0.17 s early) | none |
+| Qwen3-ForcedAligner (on 1.7B's words) | 11 of 14 lines (all within 0.07 s) | 11 of 14 | 3 lines, all **too early**, by 1.6 s, 4.2 s and 7.9 s |
+| Whisper turbo's own word times | 1 of 14 | 12 of 14 (about 0.2 s early throughout; the two misses are 0.30 s and 0.37 s) | none |
 
-- So the aligner is very exact when it is right, but now and then badly wrong. Every one of its misses puts a word where nobody speaks, which a voice detector can see.
+- **How the aligner misses:** in each of the three, it stretched the line's first word back over silence. パリジャン was given 66.67-74.91 s (8.2 s), 参列 1.9 s and 私 4.5 s.
+  - Their starts sit where Silero gives a speech probability of 0.01. The highest it gives within 0.3 s of any of them is 0.08.
+  - Moving such a word's start to the first moment inside it where Silero hears speech puts all three lines on Silero's speech start. Those three are measured against Silero itself, but on the other lines Silero agrees with the loudness rule within 0.07 s.
+  - So the aligner plus this one rule is within about 0.07 s on all 14 timed lines. This was measured offline from the saved word times; it has not been run as a pipeline yet.
+- **What that rule does not catch:** the sentence Qwen dropped (65-72 s). Silero hears no speech in it at all (at most 0.02), yet Whisper wrote it down almost word for word, so the voice detector cannot be what notices it is missing. A second, cheap listener can: Whisper turbo runs at 30-43x. Where Whisper hears words and Qwen gave none, that stretch goes back to Qwen alone.
 - Whisper is never far off, but never exact either.
-- **A mistake of mine, now fixed:** up to now the reference took the first moment louder than 5% of the loudest. That fired on the background noise before people speak in 9 of the 15 lines, and made every engine look 1-2 s late. It had been reported as "the aligner is 1-2 s late" in version 1.
-- The rule now: 3x the recording's quiet level and 15% of its loudest. It is checked against Whisper's times, which do not depend on it; nearby settings give the same answer.
+- **A mistake of mine, now fixed:** the reference used to take the first moment louder than 5% of the loudest. That fired on the background noise before people speak in 9 of the 15 lines, and made every engine look 1-2 s late. Version 1 reported this as "the aligner is 1-2 s late". `bench.py` now uses the loudness rule above.
 
 **English timing** (against the official subtitles' starts, which are hand-made):
 - the median is 0.3 s for every engine;
 - 81-89% of lines are within 1 s for Qwen, and 95% for Whisper.
+- These count only the lines whose first word was recognised: 53-58 of the 76 for Qwen.
 
 **Free GPU used:** Kaggle 6 minutes (version 1), Colab about 20 minutes. Nothing paid.
 
@@ -140,10 +144,10 @@ Version 1 ran on Kaggle. Version 2 ran in a Colab notebook in "Browser 1": Kaggl
 2. **Voice detector, then cut.** Silero, already in the site aligner, finds where people speak. The sound is cut in the gaps between speech, into pieces of 10-20 s that start just before speech. (The bench's "quietest moment" cut stands in for this.)
 3. **ASR:** the words exactly as they are said.
 4. **Word times:** the forced aligner, on those exact words, over the same piece. It has to come straight after ASR, before anything rewrites the text, because an aligner can only time the words that were actually said.
-5. **Check against the voice detector.** This is where the existing alignment code earns its place, and these rules catch all three Qwen misses above:
-   - a line whose first word sits where the detector hears no speech is moved to where speech starts;
-   - speech with no words in it goes back to ASR on its own (the dropped sentence);
-   - a word that cannot be placed is marked unsure, never given an invented time.
+5. **Check against the voice detector and a second listener.** This is where the existing alignment code earns its place.
+   - A word that starts where Silero hears no speech starts instead at the first moment inside it where Silero does. Measured offline, this fixes all three Qwen misses above.
+   - Where Whisper turbo hears words and Qwen gave none, that stretch goes back to Qwen on its own (the dropped sentence, which the voice detector cannot see).
+   - A word that still cannot be placed is marked unsure, never given an invented time.
 6. **Lines from the word times.** Plain rules, not AI:
    - a new line after a pause over 0.5 s or a sentence end;
    - at most 42 characters by 2 lines, 1-7 s on screen, at most 17 characters a second (a line's end moves into the gap after it).
@@ -159,7 +163,7 @@ Version 1 ran on Kaggle. Version 2 ran in a Colab notebook in "Browser 1": Kaggl
 - What it does give generation: the capture, the voice detector, the "nearest the picture first" order and the sharing.
 
 **Speed or quality first: quality,** since speed is already well ahead of playback.
-- **Japanese:** Qwen3-ASR-1.7B, cut at pauses, plus the aligner and the check. Parakeet-ja is the one alternative worth a single run, on anime-like sound.
+- **Japanese:** Qwen3-ASR-1.7B, cut at pauses, plus the aligner and the check, with Whisper turbo as the second listener. Parakeet-ja is the one alternative worth a single run, on anime-like sound.
 - **English:** Qwen3-ASR-1.7B or Whisper turbo, undecided until a verbatim test. Whisper is 3x faster with steadier times, so it may be the fast first pass if Qwen wins on words.
 
 ## Next step (one)
@@ -167,12 +171,12 @@ Version 1 ran on Kaggle. Version 2 ran in a Colab notebook in "Browser 1": Kaggl
 Build steps 2-6 as `scripts/asr-bench/generate.py` and run it on the same two clips on Colab:
 - Silero cuts;
 - Qwen3-ASR-1.7B plus the aligner;
-- the voice-detector check, with the retry for speech that has no words;
+- the voice-detector check, and a Whisper turbo pass to find the stretches Qwen left out;
 - the line rules.
 
 Done when the Japanese clip has:
-- 14 of 14 lines within 0.3 s of the speech start;
-- the dropped sentence back;
+- every timed line within 0.3 s of the speech start;
+- the dropped sentence back (15 of 15 lines);
 - a CER of 6.5% or less.
 
 Add one English clip with a word-for-word transcript, to settle Qwen against Whisper. After that, the queue and cache at the site (Phase 3).
