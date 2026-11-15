@@ -508,7 +508,7 @@ function animeWorld(options: {
   const card = ({ slug, name }: { slug: string; name: string }) =>
     `<div class='similarimg'><div class='p1'><a href='anime.php?${slug}'><img class='coverimg' src='image.php?${slug}' alt='${name}'></a><div class='similarname c'><a href='anime.php?${slug}' class='c'>${name}</a></div></div></div>`;
   const id = (slug: string, episode: number) => `${slug}${episode}`.replace(/[^0-9a-f]/g, "a").padEnd(32, "0").slice(0, 32);
-  return (async (url: string | URL) => {
+  return (async (url: string | URL, init?: { headers?: Record<string, string> }) => {
     const u = new URL(String(url));
     const text = (body: string) => ({ ok: true, status: 200, text: async () => body, json: async () => JSON.parse(body) });
     if (u.hostname === "api.themoviedb.org" && u.pathname.endsWith(`/tv/${options.tmdbId}`)) return { ok: true, status: 200, json: async () => options.tmdb };
@@ -523,7 +523,11 @@ function animeWorld(options: {
         const name = Object.keys(options.episodes).includes(slug) ? slug : "";
         return text(`<div class='infotitle c'>${name}</div>${(options.episodes[slug] ?? []).map((n) => `<a class='c' id="${id(slug, n)}" href='gate.php'><div class='watch1'>Episode</div><div class='watch2'>${n}</div></a>`).join("")}`);
       }
-      if (u.pathname.endsWith("/gate.php")) return text(`<video id='vid'><source src='https://cdn.animeheaven.me/episode.mp4?x' type='video/mp4'></video>`);
+      // (The episode's file is named after the title it is from, which the gate is asked from: so a test can tell which title played.)
+      if (u.pathname.endsWith("/gate.php")) {
+        const from = /anime\.php\?([a-z0-9]+)/i.exec(init?.headers?.Referer ?? "")?.[1] ?? "episode";
+        return text(`<video id='vid'><source src='https://cdn.animeheaven.me/${from}.mp4?x' type='video/mp4'></video>`);
+      }
     }
     return { ok: false, status: 404 };
   }) as unknown as typeof fetch;
@@ -599,5 +603,53 @@ describe("the anime site for a show TMDB keeps as one with many seasons", () => 
       episodes: { narutotv: Array.from({ length: 60 }, (_, i) => i + 1) },
     });
     expect((await createFilmpireAdapter({ fetch: itself }).resolve(new URL("https://filmpire.sc/watch/46260?s=2&e=5"))).status).toBe("success");
+  });
+});
+
+describe("the anime site: a season is never another season's title", () => {
+  // (TMDB keeps Pokémon as one show; its seasons have the names of the series. None of these is on the site but the ones a test lists.)
+  const NAMES: Record<number, string> = { 1: "Indigo League", 23: "Journeys", 24: "Master Journeys", 25: "Ultimate Journeys" };
+  const seasons = Array.from({ length: 25 }, (_, i) => ({ season_number: i + 1, name: NAMES[i + 1] ?? `Series ${i + 1}`, episode_count: 40 }));
+  const pokemon = { id: 60572, name: "Pokémon", original_language: "ja", genres: [{ id: 16 }], seasons };
+  const resolve = (titles: Array<{ slug: string; name: string }>, s: number, e: number) =>
+    createFilmpireAdapter({ fetch: animeWorld({ tmdbId: "60572", tmdb: pokemon, titles: (words) => (/pokemon/i.test(words) ? titles : []), episodes: Object.fromEntries(titles.map((title) => [title.slug, Array.from({ length: 12 }, (_, i) => i + 1)])) }) }).resolve(
+      new URL(`https://filmpire.sc/watch/60572?s=${s}&e=${e}`),
+    );
+
+  it("plays no later series for the first season: Pokémon S1 E1 is not Pokémon Horizons' first episode", async () => {
+    expect((await resolve([{ slug: "horizons", name: "Pokemon Horizons: The Series" }], 1, 1)).status).not.toBe("success");
+  });
+
+  it("tells a season from one whose name has it in it: Journeys (23) is not Ultimate Journeys (25)", async () => {
+    expect((await resolve([{ slug: "ultimate", name: "Pokemon Ultimate Journeys: The Series" }], 23, 3)).status).not.toBe("success");
+    const both = await resolve(
+      [
+        { slug: "ultimate", name: "Pokemon Ultimate Journeys: The Series" },
+        { slug: "journeys", name: "Pokemon Journeys: The Series" },
+      ],
+      23,
+      3,
+    );
+    expect(both.status).toBe("success");
+    expect(JSON.stringify(both)).toContain("journeys.mp4");
+    const later = await resolve(
+      [
+        { slug: "journeys", name: "Pokemon Journeys: The Series" },
+        { slug: "ultimate", name: "Pokemon Ultimate Journeys: The Series" },
+      ],
+      25,
+      6,
+    );
+    expect(JSON.stringify(later)).toContain("ultimate.mp4");
+  });
+
+  it("still finds a first season by the show's own name, or by a name of the site's own", async () => {
+    const own = await resolve([{ slug: "horizons", name: "Pokemon Horizons: The Series" }, { slug: "pokemon", name: "Pokemon" }], 1, 1);
+    expect(JSON.stringify(own)).toContain("pokemon.mp4");
+    // (A show the site knows by another name: TMDB's "Frieren: Beyond Journey's End" is "Sousou no Frieren" there.)
+    const frieren = { id: 209867, name: "Frieren: Beyond Journey's End", original_language: "ja", genres: [{ id: 16 }], seasons: [{ season_number: 1, name: "Season 1", episode_count: 28 }] };
+    const get = animeWorld({ tmdbId: "209867", tmdb: frieren, titles: () => [{ slug: "sousou", name: "Sousou no Frieren" }], episodes: { sousou: [1, 2, 3] } });
+    const res = await createFilmpireAdapter({ fetch: get }).resolve(new URL("https://filmpire.sc/watch/209867?s=1&e=2"));
+    expect(JSON.stringify(res)).toContain("sousou.mp4");
   });
 });
