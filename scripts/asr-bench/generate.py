@@ -609,6 +609,34 @@ def prepare_film() -> None:
                 log(f"en-{name}+{iso}: FAILED {error!r}"[:300])
 
 
+def prepare_corpus() -> None:
+    """
+    The film corpus, from a list of films (GEN_FILMS, a JSON file: [{"name", "lang", "audio", "subs", "from", "seconds", "licence"}]):
+    the stretch of each soundtrack, levelled, as `<lang>-<name>.npy`, and its human subtitles over that stretch as the reference. The
+    subtitles' own clock may differ from the sound's (another cut, 25 fps): `subscore.fit_timing` finds and corrects that when scoring.
+    """
+    os.makedirs(GEN, exist_ok=True)
+    with open(os.environ["GEN_FILMS"], encoding="utf-8") as f:
+        films = json.load(f)
+    for film in films:
+        name, lang = film["name"], film.get("lang", "en")
+        try:
+            a, n = float(film.get("from", 0)), film.get("seconds")
+            audio = bench.fetch(film["audio"], f"film-{name}" + os.path.splitext(film["audio"].split("?")[0])[1])
+            pcm = bench.pcm_of(audio, start=a or None, seconds=float(n) if n else None)
+            with open(bench.fetch(film["subs"], f"film-{name}.srt"), encoding="utf-8-sig", errors="replace") as f:
+                ref = [c for c in bench.parse_srt(f.read()) if c.start >= a and (not n or c.end <= a + float(n))]
+            ref = [Cue(c.start - a, c.end - a, c.text) for c in ref]
+            with open(os.path.join(GEN, f"{lang}-{name}-ref.json"), "w", encoding="utf-8") as f:
+                json.dump({"ref": [[c.start, c.end, c.text] for c in ref], "starts": []}, f, ensure_ascii=False)
+            x = level(pcm)
+            np.save(os.path.join(GEN, f"{lang}-{name}.npy"), x)
+            p = vad_track(x)
+            log(f"{name}: {len(x) / SR:.0f} s, {len(ref)} reference lines, Silero calls {float((p >= 0.5).mean()):.0%} of it speech")
+        except Exception as error:  # noqa: BLE001
+            log(f"{name}: FAILED {error!r}"[:300])
+
+
 def agree() -> None:
     """For sounds with no reference: each engine's final words against each other engine's, as a WER (lower = they heard the same)."""
     import glob
@@ -693,7 +721,7 @@ class Replay(bench.Engine):
 
 def load_ref(lang: str, sound: str = "clean") -> list[Cue]:
     family = sound.split("+")[0]
-    name = f"{lang}-{family}-ref.json" if family in ("tos", "hgf") else f"{lang}-ref.json"
+    name = f"{lang}-{family}-ref.json" if os.path.exists(os.path.join(GEN, f"{lang}-{family}-ref.json")) else f"{lang}-ref.json"
     with open(os.path.join(GEN, name), encoding="utf-8") as f:
         return [Cue(s, e, t) for s, e, t in json.load(f)["ref"]]
 
@@ -705,7 +733,8 @@ ORDER = ["clean", "film", "film+tiger", "old", "old+tiger", "clean+tiger", "film
 def sounds(lang: str) -> list[str]:
     names = {n[len(lang) + 1: -4] for n in os.listdir(GEN) if n.startswith(lang + "-") and n.endswith(".npy")}
     only = [s for s in os.environ.get("GEN_SOUNDS", "").split(",") if s]
-    return [s for s in ORDER if s in names and (not only or s in only)]
+    ordered = [s for s in ORDER if s in names] + sorted(names - set(ORDER))  # (corpus films after the test mixes)
+    return [s for s in ordered if not only or s in only]
 
 
 def words_path(engine: str, lang: str, sound: str) -> str:
@@ -878,6 +907,8 @@ if __name__ == "__main__":
         prepare()
     elif cmd == "prepare-film":
         prepare_film()
+    elif cmd == "prepare-corpus":
+        prepare_corpus()
     elif cmd == "agree":
         agree()
     elif cmd == "run":

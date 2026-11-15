@@ -32,7 +32,7 @@ esac
 LIBS=$(python -c "import nvidia.cublas.lib as a, nvidia.cudnn.lib as b; print(list(a.__path__)[0] + ':' + list(b.__path__)[0])")
 export LD_LIBRARY_PATH="$LIBS:$LD_LIBRARY_PATH"
 case "$1" in
-  prepare|prepare-film|agree) python generate.py "$1" 2>&1 | grep -vE "$quiet" ;;
+  prepare|prepare-film|prepare-corpus|agree) python generate.py "$1" 2>&1 | grep -vE "$quiet" ;;
   whisper|qwen|musci) python generate.py run "$1" 2>&1 | grep -vE "$quiet" ;;
   *) echo "sh gen.sh install | prepare | whisper | qwen | musci | table" ;;
 esac
