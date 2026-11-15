@@ -216,6 +216,9 @@ export const heldUpright = (page: Page): boolean => {
   return size !== null && size.width <= COMPACT_MAX_WIDTH && size.height >= COMPACT_MIN_HEIGHT;
 };
 
+/** Whether the page is on a phone held on its side: its menu says so. */
+export const onItsSide = async (page: Page): Promise<boolean> => (await page.getByTestId("tv-rail").getAttribute("data-flat")) === "true";
+
 /** Whether the profile's page is the one that is open. */
 const onProfilePage = async (tv: Page): Promise<boolean> => (await tv.getByTestId("tv-browse").getAttribute("data-view")) === "profile";
 
@@ -224,7 +227,8 @@ const onProfilePage = async (tv: Page): Promise<boolean> => (await tv.getByTestI
  * page, with the same test id, and the profile's page is opened first. `how`: pressed with the mouse, or with a finger (a touch screen's tests are about touches).
  */
 export async function pressMenuLine(tv: Page, id: "rail-party" | "rail-connect", how: "click" | "tap" = "click"): Promise<void> {
-  if (heldUpright(tv) && !(await onProfilePage(tv))) await openProfilePage(tv, how);
+  // (A phone on its side has the upright phone's four places in its menu too: the party and the phone are on the profile's page. See compact.ts `isFlatHand`.)
+  if ((heldUpright(tv) || (await onItsSide(tv))) && !(await onProfilePage(tv))) await openProfilePage(tv, how);
   await tv.getByTestId(id)[how]();
 }
 

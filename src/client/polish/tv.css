@@ -952,3 +952,18 @@
   :root[data-ui="polish"] .tv-rail { gap: 0; }
   :root[data-ui="polish"] .tv-rail-item { padding-top: calc(var(--em) * 0.2); padding-bottom: calc(var(--em) * 0.2); font-size: calc(var(--em) * 1.45); }
 }
+
+/* A phone on its side (compact.ts `isFlatHand`): its four places down the left, each a thumb high (48 px, what Android asks of a button) with room between
+   them, the icons no bigger than they were. (The TV's ten lines squeezed into a screen this low came out 24 px each, touching.) */
+:root[data-ui="polish"] .tv-rail[data-flat="true"] { gap: 10px; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] .tv-rail-item { min-height: 48px; margin-left: 4px; padding-top: 0; padding-bottom: 0; font-size: 15px; }
+/* (shut, a line is a 48 px square around its icon: the menu is 56 px wide) */
+:root[data-ui="polish"] .tv-rail[data-flat="true"]:not([data-open="true"]) .tv-rail-item { align-self: flex-start; justify-content: center; width: 48px; margin-right: 0; padding-inline: 0; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] .tv-rail-item svg { font-size: 18px; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] .tv-rail-item[aria-current="page"]::before { left: -2px; }
+/* The sections, as buttons over the titles (as on the upright phone), start where the page does, right of the menu, and are a thumb's size, not a TV's. */
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections { gap: 8px; margin: 0; padding: 2px var(--edge-r) 4px var(--gutter); scroll-padding-inline: var(--gutter); }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections .tv-choice { min-height: 40px; padding: 0 16px; border-radius: 20px; font-size: 14px; font-weight: 600; white-space: nowrap; }
+:root[data-ui="polish"] .tv-rail[data-flat="true"] ~ .tv-sections .tv-choice:focus-visible { transform: none; }
+/* (the banner gives back what the row of sections takes, from the empty room over its words: a row of titles still fits under it) */
+:root[data-ui="polish"] .tv-browse:not([data-deep="true"]) > .tv-rail[data-flat="true"] ~ .tv-sections ~ .tv-hero:not(.tv-hero-profile) { height: calc(var(--hero-h) - 34px); }

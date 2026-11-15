@@ -159,6 +159,54 @@ test.describe("a phone used as the screen", () => {
     expect(firstRowBottom).toBeLessThanOrEqual(390);
     expect(await sidewaysScroll(sideways)).toBeLessThanOrEqual(0);
   });
+
+  test("a phone on its side has the four places of an upright phone down the left, each a thumb's size with room between them, and its sections over the titles", async ({ browser }) => {
+    // (The owner's phone, installed: 780 by 353 at 2.75. The TV's ten lines came out 24 px each there, touching.)
+    for (const size of [
+      { width: 780, height: 353 },
+      { width: 844, height: 390 },
+      { width: 667, height: 375 },
+    ]) {
+      const phone = await openDevice(browser, { viewport: size, deviceScaleFactor: 2.75, isMobile: true, hasTouch: true }, {}, withFilms);
+      await phone.goto("/tv");
+      await expect(phone.getByTestId("tv-hero-title")).toBeVisible();
+      const where = `at ${size.width} by ${size.height}`;
+      const lines = await phone.locator(".tv-rail .tv-rail-item").evaluateAll((items) => items.map((item) => ({ id: item.getAttribute("data-testid"), ...item.getBoundingClientRect().toJSON() })));
+      expect(lines.map((line) => line.id), where).toEqual(["rail-home", "rail-search", "rail-categories", "rail-list"]);
+      for (const line of lines) {
+        expect(line.height, `${line.id} ${where}`).toBeGreaterThanOrEqual(48);
+        expect(line.width, `${line.id} ${where}`).toBeGreaterThanOrEqual(48);
+        expect(line.bottom, `${line.id} ${where}`).toBeLessThanOrEqual(size.height);
+      }
+      for (let i = 1; i < lines.length; i++) expect(lines[i]!.top - lines[i - 1]!.bottom, where).toBeGreaterThanOrEqual(8);
+      // the sections are buttons over the titles, right of the menu, and Home is lit for any of them
+      const menuRight = await phone.getByTestId("tv-rail").evaluate((rail) => rail.getBoundingClientRect().right);
+      for (const kind of ["home", "movies", "series", "cartoons", "anime"]) {
+        const box = (await phone.getByTestId(`section-${kind}`).boundingBox())!;
+        expect(box.x, `section-${kind} ${where}`).toBeGreaterThanOrEqual(menuRight);
+        expect(box.height, `section-${kind} ${where}`).toBeGreaterThanOrEqual(40);
+      }
+      await phone.getByTestId("section-movies").tap();
+      await expect(phone.getByTestId("section-movies")).toHaveAttribute("aria-checked", "true");
+      await expect(phone.getByTestId("rail-home")).toHaveAttribute("aria-current", "page");
+      // a row of titles still fits under the banner, and nothing sticks out
+      const firstRowBottom = await phone.evaluate(() => document.querySelector(".tv-row")?.getBoundingClientRect().bottom ?? 0);
+      expect(firstRowBottom, where).toBeLessThanOrEqual(size.height);
+      expect(await sidewaysScroll(phone)).toBeLessThanOrEqual(0);
+      // the party and the phone are on the profile's page, as on an upright phone
+      await pressMenuLine(phone, "rail-party", "tap");
+      await expect(phone.getByTestId("tv-party-start")).toBeVisible();
+      await phone.context().close();
+    }
+
+    // A TV (or a computer) whose page is as low keeps the TV's menu: only a device in the hand is a phone on its side.
+    const tv = await openDevice(browser, { viewport: { width: 780, height: 353 } }, {}, withFilms);
+    await tv.goto("/tv");
+    await expect(tv.getByTestId("tv-hero-title")).toBeVisible();
+    await expect(tv.getByTestId("rail-movies")).toHaveCount(1);
+    await expect(tv.getByTestId("rail-party")).toHaveCount(1);
+    await expect(tv.getByTestId("section-movies")).toHaveCount(0);
+  });
 });
 
 test.describe("a phone that watches a party along", () => {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { handHeld } from "../shared/backButton";
 
 /**
  * A phone held upright, or a window that narrow (docs/phone-layout/PLAN.md, "the TV page on a phone"): the TV's page is laid out for a thumb, with a bar of four
@@ -12,14 +13,31 @@ const COMPACT = `(max-width: ${COMPACT_MAX_WIDTH}px) and (min-height: ${COMPACT_
 
 export const isCompact = (): boolean => typeof matchMedia === "function" && matchMedia(COMPACT).matches;
 
-/** Whether the page is the compact one now, and again when the window is turned or resized (listened to as `resize`, which every browser a TV or a phone has has). */
-export function useCompact(): boolean {
-  const [compact, setCompact] = useState(isCompact);
+/**
+ * A phone on its side (or a tablet as flat): a screen in the hand too low for the TV's ten lines down the left, which there came out a finger's width
+ * apart, under half of what a thumb needs. It has the upright phone's four places (Home, Search, the categories, the lists), down the left, a thumb high
+ * each; the sections are buttons over the titles and the party and the phone are on the profile's page, as on the upright phone. A TV, a computer or a
+ * window as low keeps its menu: only a device held in the hand (see `handHeld`) is one of these. polish/tv.css answers it as the menu's `data-flat`.
+ */
+export const FLAT_MAX_HEIGHT = 520;
+const FLAT = `(max-height: ${FLAT_MAX_HEIGHT}px) and (orientation: landscape)`;
+
+export const isFlatHand = (): boolean => typeof matchMedia === "function" && matchMedia(FLAT).matches && handHeld();
+
+/** Whether `test` holds now, and again when the window is turned or resized (listened to as `resize`, which every browser a TV or a phone has has). */
+function useScreen(test: () => boolean): boolean {
+  const [holds, setHolds] = useState(test);
   useEffect(() => {
-    const update = () => setCompact(isCompact());
+    const update = () => setHolds(test());
     update();
     addEventListener("resize", update);
     return () => removeEventListener("resize", update);
-  }, []);
-  return compact;
+  }, [test]);
+  return holds;
 }
+
+/** Whether the page is the compact one now, and again when the window is turned or resized. */
+export const useCompact = (): boolean => useScreen(isCompact);
+
+/** Whether the page is on a phone on its side now (see `isFlatHand`), and again when it is turned. */
+export const useFlatHand = (): boolean => useScreen(isFlatHand);
