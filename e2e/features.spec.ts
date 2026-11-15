@@ -3226,7 +3226,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
     const RATED_TODAY = /^Rated \d{1,2} [A-Za-z]{3,4} \d{4}$/;
     const facts = (phone: Page, id = "rate-title") => phone.getByTestId(`${id}-facts`).locator("li");
 
-    /** A rating box, opened if it was folded. */
+    /** A rating box, opened if it was folded (a season's), or with its More open (a title's: the note and the watching). */
     async function open(phone: Page, id = "rate-title") {
       const toggle = phone.getByTestId(`${id}-toggle`);
       if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
@@ -3259,12 +3259,10 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await tile(phone, "Film number 1").click();
       const box = phone.getByTestId("rate-title");
       await expect(box).toHaveAttribute("data-rated", "false");
-      await expect(phone.getByTestId("rate-title-value")).toHaveText("Rate");
-      await expect(phone.getByTestId("rate-title-score-8")).toHaveCount(0); // (folded: one line until it is wanted)
-
-      await open(phone);
+      await expect(phone.getByTestId("rate-title-value")).toHaveText(""); // (nothing yet: the scores are right under it)
+      await expect(phone.getByTestId("rate-title-score-8")).toBeVisible(); // (a tap away: nothing to open first)
       await expect(phone.getByTestId("rate-title-word")).toHaveText("Pick a score out of 10");
-      await expect(phone.getByTestId("rate-title-note")).toBeDisabled(); // (a note is for a score that is there)
+      await expect(phone.getByTestId("rate-title-note")).toHaveCount(0); // (the note is under More)
       await expect(phone.getByTestId("rate-title-facts")).toHaveCount(0);
       await expect(phone.getByTestId("rate-title-remove")).toHaveCount(0);
       await expect(phone.getByTestId("ratings-row")).toHaveCount(0);
@@ -3275,6 +3273,9 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(phone.getByTestId("rate-title-score-8")).toHaveAttribute("aria-checked", "true");
       await expect(phone.getByTestId("rate-title-score-7")).toHaveAttribute("aria-checked", "false");
       await expect(phone.getByTestId("rate-title-word")).toHaveText("Very good");
+      await expect(phone.getByTestId("rate-title-remove")).toBeVisible(); // (taking it back is there at once too)
+      await open(phone); // More: the day it was rated, and the note
+      await expect(phone.getByTestId("rate-title-toggle")).toHaveText("Less");
       await expect(facts(phone)).toHaveText([RATED_TODAY]); // (a title never played here has no watching to tell of)
       await expect(phone.getByTestId("rate-title-note")).toBeEnabled();
 
@@ -3335,7 +3336,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       // Taking the rating back takes the note with it, and a new one starts clean.
       await phone.getByTestId("rate-title-remove").click();
       await expect(phone.getByTestId("rate-title")).toHaveAttribute("data-rated", "false");
-      await expect(phone.getByTestId("rate-title-value")).toHaveText("Rate");
+      await expect(phone.getByTestId("rate-title-value")).toHaveText("");
       await expect(phone.getByTestId("rate-title-note")).toBeDisabled();
       await expect(phone.getByTestId("rate-title-note")).toHaveValue("");
       await expect.poll(() => notesKept(phone)).toEqual([]);
@@ -3385,7 +3386,7 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await tile(phone, "The Long Night").click();
 
       await open(phone); // the show as a whole
-      await expect(phone.getByTestId("rate-title-toggle")).toContainText("Your rating");
+      await expect(phone.getByTestId("rate-title")).toContainText("Your rating");
       await phone.getByTestId("rate-title-score-9").click();
       await expect(facts(phone)).toHaveText([RATED_TODAY, "3 episodes watched", "Last watched 4 Oct 2026"]);
 
@@ -3562,12 +3563,10 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
 
       // A score given on the title's page is on its picture when the page is closed, and gone when the rating is taken back.
       await tile(phone, "Film number 3").click();
-      await open(phone);
       await phone.getByTestId("rate-title-score-4").click();
       await phone.getByTestId("title-back").click();
       await expect(badge(tile(phone, "Film number 3"))).toHaveText("4");
       await tile(phone, "Film number 3").click();
-      await open(phone);
       await phone.getByTestId("rate-title-remove").click();
       await phone.getByTestId("title-back").click();
       await expect(badge(tile(phone, "Film number 3"))).toHaveCount(0);

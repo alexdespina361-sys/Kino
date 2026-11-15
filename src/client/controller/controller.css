@@ -553,6 +553,13 @@ html.sheet-open { overscroll-behavior-y: contain; }
 .rating-head-value { flex: none; color: var(--muted); font-size: 0.9rem; }
 .rating-box[data-rated="true"] .rating-head-value { color: var(--text); font-weight: 700; }
 .rating-body { display: flex; flex-direction: column; gap: 12px; padding: 0 14px 14px; }
+/* A title's own rating: its head is only a line saying what it is (the scores under it are there at once), and More and Remove share a row. */
+.rating-head-static { cursor: default; }
+@media (hover: hover) { .rating-head-static:hover { background: none; } }
+.rating-head-static:active { background: none; }
+.rating-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rating-actions > .btn { flex: 1 1 0; min-width: max-content; }
+.rating-more > svg { font-size: 1rem; }
 .rating-scores { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .rating-score { min-height: 46px; border-radius: 10px; background: var(--surface-2); font-size: 1.05rem; font-weight: 700; transition: background 0.15s ease, color 0.15s ease, transform 0.08s ease; }
 .rating-score:focus-visible { background: rgba(255, 255, 255, 0.18); }

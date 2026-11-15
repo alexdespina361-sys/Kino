@@ -232,8 +232,7 @@ test.describe("the score a profile gave a title", () => {
     await expect(tv.getByTestId("score-badge")).toHaveCount(0);
     await tileOf(tv, "Film number 2").click();
     await tv.getByTestId("tv-detail-rate").click();
-    await tv.getByTestId("rate-score-9").click();
-    await tv.getByTestId("rate-done").click();
+    await tv.getByTestId("rate-score-9").click(); // (one press: rated, and back on the title's page)
     await tv.getByTestId("tv-detail-close").click();
     await expect(badge(tv, "Film number 2")).toHaveText("9");
 

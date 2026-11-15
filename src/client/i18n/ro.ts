@@ -894,6 +894,8 @@ export const ro: Dictionary = {
   "rating.addNote": "Adaugă o notiță",
   "rating.editNote": "Editează notița",
   "rating.remove": "Șterge nota",
+  "rating.more": "Mai mult",
+  "rating.less": "Mai puțin",
   "rating.ratedOn": "Notat pe {date}",
   "rating.watchedFull": "Văzut complet",
   "rating.watchedPercent": "{percent}% văzut",

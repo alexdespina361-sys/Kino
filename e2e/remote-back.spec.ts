@@ -65,6 +65,7 @@ test("the remote's Back goes one step out of every page, menu and window of the 
       { open: click("tv-detail-rate"), shown: id("tv-rate") },
       {
         open: async () => {
+          await tv.getByTestId("rate-more").click();
           await tv.getByTestId("rate-score-8").click();
           await tv.getByTestId("rate-note-button").click();
         },

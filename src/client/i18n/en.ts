@@ -888,6 +888,8 @@ export const en = {
   "rating.addNote": "Add a note",
   "rating.editNote": "Edit note",
   "rating.remove": "Remove rating",
+  "rating.more": "More",
+  "rating.less": "Less",
   "rating.ratedOn": "Rated {date}",
   "rating.watchedFull": "Watched all of it",
   "rating.watchedPercent": "{percent}% watched",

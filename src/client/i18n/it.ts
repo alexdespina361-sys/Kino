@@ -886,6 +886,8 @@ export const it: Dictionary = {
   "rating.addNote": "Aggiungi una nota",
   "rating.editNote": "Modifica la nota",
   "rating.remove": "Rimuovi la valutazione",
+  "rating.more": "Altro",
+  "rating.less": "Meno",
   "rating.ratedOn": "Valutato il {date}",
   "rating.watchedFull": "Visto per intero",
   "rating.watchedPercent": "{percent}% visto",
