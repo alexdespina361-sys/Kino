@@ -9,13 +9,14 @@ import { profileStore, useProfileData } from "./store";
 export * from "./ratingText";
 
 /** The title a rating is filed under, from what the library (or a list, or a card) knows of it. A page that knows it is a show says so. */
-export const ratedTitleOf = (entry: Pick<Entry, "title" | "url" | "image" | "backdrop" | "year" | "kind">, isShow = false): RatedTitle => ({
+export const ratedTitleOf = (entry: Pick<Entry, "title" | "url" | "image" | "backdrop" | "year" | "kind" | "section">, isShow = false): RatedTitle => ({
   title: entry.title,
   url: entry.url,
   image: entry.image,
   backdrop: entry.backdrop,
   year: entry.year,
   kind: isShow ? "series" : entry.kind,
+  section: entry.section,
 });
 
 /**

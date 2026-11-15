@@ -296,6 +296,13 @@ describe("ratings", () => {
     ]);
   });
 
+  it("keeps whether a rated title is a cartoon or an anime, which the ratings are filtered by, when another score is given without saying it", () => {
+    const d = device(1_000_000);
+    d.store.setRating({ ...dune, section: "cartoon" }, undefined, { score: 8 });
+    d.store.setRating(dune, undefined, { score: 9 });
+    expect(d.store.getSnapshot().ratings[0]).toMatchObject({ section: "cartoon", score: 9 });
+  });
+
   it("keeps a note with the score, and a change of the note alone leaves the date of the score where it was", () => {
     const d = device(1_000_000);
     d.store.setRating(dune, undefined, { score: 7 }, { percent: 60 });

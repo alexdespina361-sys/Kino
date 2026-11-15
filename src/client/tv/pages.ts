@@ -1,5 +1,6 @@
 import { DEFAULT_LIST, fractionOf, listOf, resumeAt, sectionOf, type AvatarId, type LibraryItem, type LibraryKind, type LibraryRow, type LibrarySection, type ListInfo, type LiveListItem, type LiveProgress, type LiveRating, type Person } from "../../shared";
 import { continueNote, listName, unfinished } from "../account/cards";
+import { filterRatings, ownSection, type SectionOfRating } from "../account/ratingFilter";
 import { ratingNote, ratingSummary, sortRatings } from "../account/ratingText";
 import { getLanguage, rowTitle, t } from "../i18n";
 import type { Because } from "../shared/recommend";
@@ -23,8 +24,8 @@ export type View =
   /** One of the lists (the first when none is named). */
   | { kind: "list"; list?: string }
   | { kind: "history" }
-  /** The titles this profile gave a score, and the seasons it scored. */
-  | { kind: "ratings" }
+  /** The titles this profile gave a score, and the seasons it scored: all of them, or only one section's, or only those given one score (see ratingFilter.ts). */
+  | { kind: "ratings"; section?: LibrarySection; score?: number }
   /** One category's titles; `from` is the list of every category when it was opened from there (Back goes back to it). */
   | { kind: "category"; rowId: string; from?: "categories" }
   /** Every category, or only those of one section (Movies, Series, Cartoons or Anime). */
@@ -117,6 +118,8 @@ export interface Entry {
   progressKey?: string;
   /** A film or a show, when it is known (a title saved in a list does not say). */
   kind?: LibraryKind;
+  /** A cartoon or an anime, when the library says so: kept with a rating, which the ratings are filtered by. */
+  section?: "cartoon" | "anime";
   /** A category: opening it shows that page instead of playing. */
   opens?: View;
   /** Where a category's titles come from. */
@@ -197,6 +200,7 @@ export const entryOfItem = (item: LibraryItem): Entry => ({
   ...(item.year ? { year: item.year } : {}),
   ...(item.description ? { description: item.description } : {}),
   ...(item.kind ? { kind: item.kind } : {}),
+  ...(item.section === "cartoon" || item.section === "anime" ? { section: item.section } : {}),
   ...(item.hasRoDub !== undefined ? { hasRoDub: item.hasRoDub } : {}),
 });
 
@@ -307,6 +311,7 @@ export const entryOfRating = (rating: LiveRating): Entry => ({
   ...(rating.backdrop ? { backdrop: rating.backdrop } : {}),
   ...(rating.year ? { year: rating.year } : {}),
   ...(rating.kind ? { kind: rating.kind } : {}),
+  ...(rating.section ? { section: rating.section } : {}),
   note: ratingNote(t, rating),
 });
 
@@ -392,6 +397,23 @@ function sectionsByLink(rows: readonly LibraryRow[]): Map<string, LibrarySection
 }
 
 /**
+ * Where each rated title is browsed: what the rating says when it says it is a cartoon or an anime, else where the library lists it (a title rated before
+ * ratings kept that), else its kind (see `ownSection`). A rating that does not say whether it is a show is looked for as a film and as a show.
+ */
+export function ratingSectionIn(rows: readonly LibraryRow[]): SectionOfRating {
+  const known = sectionsByLink(rows);
+  return (rating) => {
+    if (rating.section) return rating.section;
+    const keys = rating.kind ? [linkKey(rating.url, rating.kind === "series")] : [linkKey(rating.url, false), linkKey(rating.url, true)];
+    for (const key of keys) {
+      const section = key ? known.get(key) : undefined;
+      if (section) return section;
+    }
+    return ownSection(rating);
+  };
+}
+
+/**
  * The section a card of "Continue watching" belongs to: where the library lists its title, else its kind's (a card says only whether it is of a show,
  * so a title that was not listed here — one that was found by a search, long ago — is in Movies or Series).
  */
@@ -443,8 +465,11 @@ export function gridOf(view: View, data: PageData): GridPage | null {
     }
     case "history":
       return { title: t("tv.history"), meta: t("tv.historyHelp"), layout: "wide", entries: data.progress.map(entryOfProgress), empty: t("tv.historyEmpty") };
-    case "ratings":
-      return { title: t("rating.mine"), meta: ratingSummary(t, getLanguage(), data.ratings) || t("rating.mineHelp"), layout: "wide", entries: sortRatings(data.ratings, "new").map(entryOfRating), empty: t("rating.empty") };
+    case "ratings": {
+      // (What the filter keeps: the line under the title is about those, the count and the average of what is shown.)
+      const shown = filterRatings(data.ratings, view, ratingSectionIn(data.all));
+      return { title: t("rating.mine"), meta: ratingSummary(t, getLanguage(), shown) || t("rating.mineHelp"), layout: "wide", entries: sortRatings(shown, "new").map(entryOfRating), empty: t("rating.empty") };
+    }
     case "category": {
       const row = data.all.find((candidate) => candidate.id === view.rowId);
       return row ? { title: rowTitle(row), meta: sourceOf(data.all, row).source ?? "", layout: "wide", entries: row.items.map(entryOfItem), empty: "" } : null;

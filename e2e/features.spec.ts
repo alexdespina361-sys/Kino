@@ -3568,6 +3568,24 @@ test.describe("a title's page, a hold, the search and the cards, on the phone", 
       await expect(sheet.getByTestId("ratings-sort-high")).toHaveAttribute("aria-pressed", "true");
       await expect(entries.locator(".rating-name")).toHaveText(["Film number 2", "The Long Night · Season 2", "Film number 1"]);
 
+      // The filter (the owner: "filters for stuff rated a specific number plus series/anime/movie/cartoon"): only the kinds and scores there are, each with how many it keeps.
+      await expect(sheet.getByTestId("ratings-filter-all")).toHaveAttribute("aria-pressed", "true");
+      await expect(sheet.locator('[data-testid^="ratings-filter-"]')).toHaveText(["All 3", "Movies 2", "Series 1"]);
+      await expect(sheet.locator('[data-testid^="ratings-score-"]')).toHaveText(["Any score", "9", "8", "6"]);
+      await sheet.getByTestId("ratings-filter-series").click();
+      await expect(entries.locator(".rating-name")).toHaveText(["The Long Night · Season 2"]);
+      await expect(sheet.locator('[data-testid^="ratings-score-"]')).toHaveCount(0); // (one score among the series: nothing to choose)
+      await sheet.getByTestId("ratings-filter-all").click();
+      await sheet.getByTestId("ratings-score-9").click();
+      await expect(entries.locator(".rating-name")).toHaveText(["Film number 2"]);
+      await expect(sheet.getByTestId("ratings-summary")).toContainText("average 9");
+      await sheet.getByTestId("ratings-filter-movie").click(); // (both: the films given a 9)
+      await expect(entries.locator(".rating-name")).toHaveText(["Film number 2"]);
+      await expect(sheet.locator('[data-testid^="ratings-score-"]')).toHaveText(["Any score", "9", "6"]);
+      await sheet.getByTestId("ratings-filter-all").click();
+      await sheet.getByTestId("ratings-score-any").click();
+      await expect(entries.locator(".rating-name")).toHaveText(["Film number 2", "The Long Night · Season 2", "Film number 1"]);
+
       await entries.first().click(); // a tap opens the title, where the score can be changed
       const page = phone.getByTestId("title-sheet");
       await expect(page).toContainText("Film number 2");

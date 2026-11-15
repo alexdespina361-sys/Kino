@@ -137,10 +137,12 @@ export function stepFrom(shape: Shape, at: Pos, direction: Direction): Target {
       if (at.row > 0) return into(at.row - 1);
       if (at.zone === "rows" && shape.hero?.length) return { zone: "hero", row: 0, col: 0 };
       if (at.zone === "rows" && shape.chips?.length) return { zone: "chips", row: 0, col: 0 }; // (the page says which of them: the one that is shown)
-      if ((at.zone === "results" || at.zone === "grid") && shape.chips?.length) return { zone: "chips", row: 0, col: Math.min(at.col, (shape.chips[0] ?? 1) - 1) };
+      // (A page can have two rows of buttons over its titles, as the ratings' filters are: up from the titles is the lower of them.)
+      if ((at.zone === "results" || at.zone === "grid") && shape.chips?.length) return { zone: "chips", row: shape.chips.length - 1, col: Math.min(at.col, (shape.chips[shape.chips.length - 1] ?? 1) - 1) };
       return shape.top?.length ? { zone: "top", row: 0, col: 0 } : null;
     case "down":
       if (at.zone === "chips") {
+        if (at.row < lengths.length - 1) return into(at.row + 1);
         if (shape.rows?.length) return CONTENT;
         const below = shape.results?.length ? "results" : shape.grid?.length ? "grid" : shape.foot?.length ? "foot" : null;
         return below ? { zone: below, row: 0, col: Math.min(at.col, (shape[below]?.[0] ?? 1) - 1) } : toBar;

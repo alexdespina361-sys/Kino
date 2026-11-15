@@ -208,6 +208,55 @@ test.describe("the score a profile gave a title", () => {
     await expect(tileOf(tv, "Film number 1")).toContainText("8/10");
   });
 
+  test("filters what was rated by kind and by score, with the remote and with a mouse: each button says how many it keeps, a title opened and left keeps the filter", async ({ browser }) => {
+    // (the owner: "In ratings, add a simple filter around rating (filters for stuff rated a specific number plus series/anime/movie/cartoon filter)")
+    const toon = { id: "t1", title: "Toon Town", year: 2001, kind: "movie", section: "cartoon", url: "https://toons.example/watch/1" };
+    const withToons = { ...library, rows: [...library.rows, { id: "r3", title: "Cartoons", source: "Test Source", kind: "movie", section: "cartoon", items: [toon] }] };
+    const ratings = [rated(film(1).url, film(1).title, 8), rated(film(2).url, film(2).title, 9), rated(toon.url, toon.title, 9), { ...rated(show.url, show.title, 8), kind: "series" }];
+    const tv = await openLibrary(browser, withLibrary(withToons), undefined, guestStorage({ ratings }));
+    await openProfilePlace(tv, "ratings");
+    await expect(tiles(tv)).toHaveCount(4);
+    // (the cartoon was rated with no word of it: the library lists its link as a cartoon's)
+    await expect(tv.locator('[data-testid^="rating-filter-"]')).toHaveText(["All4", "Movies2", "Series1", "Cartoons1"]);
+    await expect(tv.locator('[data-testid^="rating-score-"]')).toHaveText(["Any score4", "92", "82"]);
+
+    // The remote: up from the titles to the scores, up again to the kinds; a kind is chosen and the remote stays on it.
+    await tiles(tv).first().focus();
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.getByTestId("rating-score-any")).toBeFocused();
+    await tv.keyboard.press("ArrowUp");
+    await expect(tv.getByTestId("rating-filter-all")).toBeFocused();
+    for (let step = 0; step < 3; step++) await tv.keyboard.press("ArrowRight");
+    await expect(tv.getByTestId("rating-filter-cartoon")).toBeFocused();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("rating-filter-cartoon")).toHaveAttribute("aria-checked", "true");
+    await expect(tiles(tv)).toHaveCount(1);
+    await expect(tileOf(tv, "Toon Town")).toBeVisible();
+    await expect(tv.getByTestId("rating-filter-cartoon")).toBeFocused();
+    await expect(tv.locator('[data-testid^="rating-score-"]')).toHaveCount(0); // (one score among the cartoons: nothing to choose)
+    await tv.keyboard.press("ArrowDown");
+    await expect(tileOf(tv, "Toon Town")).toBeFocused();
+
+    // A mouse: a score, then a kind as well; the line under the title counts what is shown.
+    await tv.getByTestId("rating-filter-all").click();
+    await tv.getByTestId("rating-score-9").click();
+    await expect(tiles(tv)).toHaveCount(2);
+    await expect(tv.locator(".tv-view-meta").first()).toHaveText("2 ratings · average 9");
+    await tv.getByTestId("rating-filter-movie").click();
+    await expect(tiles(tv)).toHaveCount(1);
+    await expect(tileOf(tv, "Film number 2")).toBeVisible();
+
+    // A title opened from there and left: the same filter.
+    await tileOf(tv, "Film number 2").focus();
+    await tv.keyboard.press("Enter");
+    await expect(tv.getByTestId("tv-detail")).toBeVisible();
+    await tv.keyboard.press("Escape");
+    await expect(tv.getByTestId("tv-detail")).toHaveCount(0);
+    await expect(tv.getByTestId("rating-filter-movie")).toHaveAttribute("aria-checked", "true");
+    await expect(tv.getByTestId("rating-score-9")).toHaveAttribute("aria-checked", "true");
+    await expect(tiles(tv)).toHaveCount(1);
+  });
+
   test("is gone with ratings turned off, and back, with what was rated, once they are on", async ({ browser }) => {
     const tv = await openLibrary(browser, withLibrary(library), undefined, seed);
     await expect(tv.getByTestId("score-badge")).toHaveCount(3);
